@@ -1,0 +1,21 @@
+# Rust
+/target/
+
+# Node / App
+app/node_modules/
+app/.yarn/cache/
+app/dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Joy credentials (never commit)
+.joy/ai/config.yaml

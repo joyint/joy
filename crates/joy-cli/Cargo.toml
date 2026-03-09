@@ -1,0 +1,32 @@
+[package]
+name = "joyint"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[[bin]]
+name = "joy"
+path = "src/main.rs"
+
+[dependencies]
+joy-core = { path = "../joy-core" }
+joy-ai = { path = "../joy-ai" }
+clap = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_yml = { workspace = true }
+tokio = { workspace = true }
+
+# TUI (optional)
+ratatui = { version = "0.29", optional = true }
+crossterm = { version = "0.28", optional = true }
+
+# Server (optional)
+axum = { version = "0.8", optional = true }
+tower-http = { version = "0.6", optional = true, features = ["cors"] }
+
+[features]
+default = ["tui"]
+tui = ["dep:ratatui", "dep:crossterm"]
+server = ["dep:axum", "dep:tower-http"]
+full = ["tui", "server"]

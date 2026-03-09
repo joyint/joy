@@ -1,0 +1,12 @@
+[package]
+name = "joy-ai"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+joy-core = { path = "../joy-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }

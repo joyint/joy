@@ -1,0 +1,40 @@
+# Joy App -- Tauri + SolidJS
+
+# List available recipes
+default:
+    @just --list
+
+# Check installed tools
+doctor:
+    @echo "=== App ==="
+    @command -v node >/dev/null && echo "  node: $(node --version)" || echo "  node: MISSING"
+    @command -v yarn >/dev/null && echo "  yarn: $(yarn --version)" || echo "  yarn: MISSING"
+    @test -d node_modules && echo "  node_modules: ok" || echo "  node_modules: MISSING (run just app install)"
+
+# Start Tauri dev server
+dev:
+    yarn tauri dev
+
+# Tauri production build
+build:
+    yarn tauri build
+
+# Install Node dependencies
+install:
+    yarn install
+
+# Run TypeScript tests
+test:
+    yarn test
+
+# Format with Prettier
+fmt:
+    yarn prettier --write .
+
+# Check formatting
+fmt-check:
+    yarn prettier --check .
+
+# Lint with ESLint
+lint:
+    yarn eslint .

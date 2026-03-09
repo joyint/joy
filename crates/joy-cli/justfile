@@ -1,0 +1,31 @@
+# Joy CLI
+
+# List available recipes
+default:
+    @just --list
+
+# Run CLI in dev mode (all features)
+dev:
+    cargo run --features full --
+
+# Release build
+build:
+    cargo build --release --features full
+
+# Install binary locally
+install:
+    cargo install --path . --features full
+
+# Check installed tools
+doctor:
+    @echo "=== CLI ==="
+    @command -v cargo >/dev/null && echo "  cargo: $(cargo --version)" || echo "  cargo: MISSING"
+    @cargo --list 2>/dev/null | grep -q insta && echo "  cargo-insta: ok" || echo "  cargo-insta: MISSING (cargo install cargo-insta)"
+    @cargo --list 2>/dev/null | grep -q 'llvm-cov' && echo "  cargo-llvm-cov: ok" || echo "  cargo-llvm-cov: MISSING (optional, cargo install cargo-llvm-cov)"
+    @cargo --list 2>/dev/null | grep -q watch && echo "  cargo-watch: ok" || echo "  cargo-watch: MISSING (optional, cargo install cargo-watch)"
+
+# Generate shell completions
+completions:
+    cargo run --features full -- completions bash > ../../target/joy.bash \
+    && cargo run --features full -- completions zsh > ../../target/_joy \
+    && cargo run --features full -- completions fish > ../../target/joy.fish
