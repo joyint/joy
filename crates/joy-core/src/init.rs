@@ -61,9 +61,7 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
             .unwrap_or("project")
             .to_string()
     });
-    let acronym = options
-        .acronym
-        .unwrap_or_else(|| derive_acronym(&name));
+    let acronym = options.acronym.unwrap_or_else(|| derive_acronym(&name));
 
     // Write config and project files
     let config = Config::default();
@@ -233,11 +231,7 @@ mod tests {
     #[test]
     fn init_does_not_duplicate_gitignore_entry() {
         let dir = tempdir().unwrap();
-        std::fs::write(
-            dir.path().join(".gitignore"),
-            ".joy/credentials.yaml\n",
-        )
-        .unwrap();
+        std::fs::write(dir.path().join(".gitignore"), ".joy/credentials.yaml\n").unwrap();
 
         init(InitOptions {
             root: dir.path().to_path_buf(),
@@ -247,10 +241,7 @@ mod tests {
         .unwrap();
 
         let content = std::fs::read_to_string(dir.path().join(".gitignore")).unwrap();
-        assert_eq!(
-            content.matches(".joy/credentials.yaml").count(),
-            1
-        );
+        assert_eq!(content.matches(".joy/credentials.yaml").count(), 1);
     }
 
     #[test]
