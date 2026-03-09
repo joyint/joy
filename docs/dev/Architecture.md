@@ -20,7 +20,7 @@ Pin all dependencies to their current stable **major.minor** version. Track stab
 | **clap** (derive API)        | 4.5                  | De-facto CLI standard, shell completions, derive macros           |
 | **ratatui**                  | 0.29                 | TUI framework, ships in same binary as CLI                        |
 | **axum**                     | 0.8                  | Async HTTP, tower-based, consistent Rust ecosystem                |
-| **serde** + **serde_yml**    | 1.0 / 0.0.12         | YAML for `.joy/` files, JSON for API                              |
+| **serde** + **serde_yml**    | 1.0 / 0.0.12         | YAML for `.joy/` files, JSON for API. 0.0.x is the current stable fork of the deprecated `serde_yaml` -- re-evaluate if a breaking change occurs |
 | **tokio**                    | 1.43                 | Async runtime for server, sync, AI jobs                           |
 | **thiserror**                | 2.0                  | Explicit error types in library crates                            |
 | **anyhow**                   | 1.0                  | Convenient error handling in binary crate                         |
@@ -214,7 +214,14 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for coding conventions (Rust and TypeSc
 
 ### Credentials
 
-**AI API keys** are stored in user-level config (`~/.joy/credentials.yaml`), never in the project `.joy/` directory, never committed to Git. The `.gitignore` template includes credential paths.
+Secrets (API keys, OAuth tokens) are stored in `credentials.yaml`. Configuration (settings, AI tool config, output preferences) is stored in `config.yaml`. Both support two levels:
+
+| File | Global (`~/.config/joy/`) | Project (`.joy/`) |
+| ---- | ------------------- | ----------------- |
+| `config.yaml` | User defaults | Project-specific, committed to Git |
+| `credentials.yaml` | User defaults | Project-specific, gitignored |
+
+Project-local values override global defaults. File permissions for `credentials.yaml` are 0600.
 
 **Sync authentication** uses OAuth 2.0 with the user's e-mail address as the stable identifier (see [ADR-009](./adr/ADR-009-email-identity-oauth.md)). Supported OAuth providers:
 
@@ -223,13 +230,13 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for coding conventions (Rust and TypeSc
 | GitHub   | P0       | Primary provider, covers most of the target audience |
 | Gitea    | P0       | Self-hosted Git, aligns with self-hosted Joy servers |
 
-The server issues JWTs after OAuth login. Tokens are stored in OS keychain where available (via `keyring` crate), fallback to `~/.joy/credentials.yaml` with restrictive file permissions (0600). Additional OAuth providers (GitLab, Google, Microsoft) can be added later without migration -- the e-mail address is the identity, not the provider.
+The server issues JWTs after OAuth login. Tokens are stored in OS keychain where available (via `keyring` crate), fallback to `credentials.yaml` (global or project-local). Additional OAuth providers (GitLab, Google, Microsoft) can be added later without migration -- the e-mail address is the identity, not the provider.
 
 ### End-to-End Encryption (v2)
 
 End-to-end encryption is planned for v2. In v1, sync operates over HTTPS without content encryption. Projects should use private repositories and authenticated server connections.
 
-The v2 design is documented in [ADR-006](./adr/ADR-006-client-side-encryption.md): AES-256-GCM per project, key stored in `~/.joy/keys/{project-id}.key`, cleartext metadata for server-side dashboards, Web Crypto API for browser compatibility.
+The v2 design is documented in [ADR-006](./adr/ADR-006-client-side-encryption.md): AES-256-GCM per project, key stored in `~/.config/joy/keys/{project-id}.key`, cleartext metadata for server-side dashboards, Web Crypto API for browser compatibility.
 
 ### Agent Sandboxing
 
@@ -255,10 +262,10 @@ Significant architectural decisions are documented as individual files in `docs/
 
 ## Configuration Reference
 
-### Project Config (`.joy/config.yaml`)
+### Config (`~/.config/joy/config.yaml` and `.joy/config.yaml`)
 
 ```yaml
-# .joy/config.yaml
+# .joy/config.yaml (project-local, committed)
 version: 1 # Config schema version
 
 sync:
@@ -268,6 +275,25 @@ sync:
 output:
   color: auto # auto | always | never
   emoji: true # true | false
+
+ai:
+  tool: claude-code            # claude-code | mistral-vibe | github-copilot | qwen-code
+  command: claude              # CLI command to invoke
+  model: auto                  # model name or "auto" (tool default)
+  max_cost_per_job: 10.00
+  currency: EUR
+```
+
+Global defaults in `~/.config/joy/config.yaml` use the same structure. Project-local values override global values per field.
+
+### Credentials (`~/.config/joy/credentials.yaml` and `.joy/credentials.yaml`)
+
+```yaml
+# ~/.config/joy/credentials.yaml (global) or .joy/credentials.yaml (project-local, gitignored)
+ai:
+  api_key: sk-ant-...
+sync:
+  token: eyJ...
 ```
 
 IDs are not stored in config. The next available ID is derived at runtime by scanning existing filenames (e.g. all files in `.joy/items/`) and incrementing the highest found value. This eliminates redundancy and avoids sync conflicts on a shared counter. Valid ranges: EP-0001 to EP-FFFF, IT-0001 to IT-FFFF, MS-01 to MS-FF, JOB-0001 to JOB-FFFF.

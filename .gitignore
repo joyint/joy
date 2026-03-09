@@ -18,4 +18,4 @@ app/dist/
 Thumbs.db
 
 # Joy credentials (never commit)
-.joy/ai/config.yaml
+.joy/credentials.yaml

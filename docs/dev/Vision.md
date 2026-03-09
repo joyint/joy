@@ -14,7 +14,7 @@ The portal and sync service run under **joyint.com**. Self-hosting is fully supp
 
 ## Core Principles
 
-**Git-native.** All data lives in `.joy/` inside your repo. YAML files, versioned with Git, no external service required to start. Your product management history is part of your code history.
+**Git-native.** All data lives in `.joy/` inside your repo. YAML files, versioned with Git, no external service required to start. Your product management history is part of your code history. When you sync, the portal acts as the conflict resolver (see [ADR-004](./Architecture.md#architecture-decision-records-adrs)) -- but your local `.joy/` directory is always yours, always readable, always complete.
 
 **Terminal-first, not terminal-only.** The CLI is the primary interface. A TUI provides visual overview. A portal (joyint.com or self-hosted) enables access from any device — browser, desktop app, mobile app — plus collaboration and AI agent orchestration.
 
@@ -34,7 +34,8 @@ A Joy project is initialized in any directory (typically a Git repo root). It cr
 
 ```
 .joy/
-├── config.yaml              # Project-level settings
+├── config.yaml              # Project-level settings (committed)
+├── credentials.yaml         # Project-level secrets (gitignored)
 ├── project.yaml             # Project metadata
 ├── items/
 │   ├── EP-0001-auth-system.yaml
@@ -45,11 +46,12 @@ A Joy project is initialized in any directory (typically a Git repo root). It cr
 │   ├── MS-01-beta-release.yaml
 │   └── ...
 ├── ai/
-│   ├── config.yaml          # AI provider settings
 │   ├── agents/              # Agent role definitions
 │   └── jobs/                # Active and completed AI jobs
 └── log/                     # Local change log (supplements git log)
 ```
+
+Both `config.yaml` and `credentials.yaml` support two levels: global (`~/.config/joy/`) and project-local (`.joy/`). Project-local values override global defaults. This lets you set your API key once globally and override per project when needed.
 
 ### User Identity
 
@@ -332,7 +334,7 @@ joy completions [shell]                 # Generate shell completions
 
 ### Supported AI Tools
 
-Joy does not implement its own agent runtime. Instead, it dispatches work to external CLI-based AI tools and tracks the results.
+Joy does not implement its own agent runtime. Instead, it dispatches work to external CLI-based AI tools and tracks the results. Each tool requires an adapter in `joy-ai` that handles context preparation, invocation, and output parsing. The adapter interface is kept minimal to limit coupling to specific CLI conventions.
 
 | Tool | Config ID | Command | Priority |
 |------|-----------|---------|----------|
@@ -360,15 +362,24 @@ Each project configures exactly one tool via `joy ai setup`. The tool can be set
 Each project uses one AI tool, configured with a fixed model or `auto` (tool picks its default). There is no separate LLM config -- the tool handles model selection.
 
 ```yaml
-# .joy/ai/config.yaml
-tool: claude-code              # claude-code | mistral-vibe | github-copilot | qwen-code
-command: claude                # CLI command to invoke
-model: auto                    # model name or "auto" (tool default)
-max_cost_per_job: 10.00
-currency: EUR
+# .joy/config.yaml (ai section)
+ai:
+  tool: claude-code            # claude-code | mistral-vibe | github-copilot | qwen-code
+  command: claude              # CLI command to invoke
+  model: auto                  # model name or "auto" (tool default)
+  max_cost_per_job: 10.00
+  currency: EUR
 ```
 
-`joy ai setup` detects installed tools, lets the user pick one, and writes this config. Switching tools is a single `joy ai setup` call.
+API keys are stored separately in `credentials.yaml` (see [Architecture.md](./Architecture.md#credentials)):
+
+```yaml
+# .joy/credentials.yaml or ~/.config/joy/credentials.yaml
+ai:
+  api_key: sk-ant-...
+```
+
+`joy ai setup` detects installed tools, lets the user pick one, and writes the tool config to `config.yaml` and the API key to `credentials.yaml`. Switching tools is a single `joy ai setup` call.
 
 ### Cost Tracking
 

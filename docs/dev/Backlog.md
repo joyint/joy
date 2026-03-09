@@ -1,6 +1,6 @@
 # Joy -- Backlog
 
-This file is the initial product backlog for Joy. It is structured as Epics, Stories, and Tasks using Joy's own item format. After Phase 0 (`joy init` + `joy add`), the content of this file will be imported into `.joy/` and managed with Joy itself.
+This file is the initial product backlog for Joy. It is structured as Epics, Stories, and Tasks using Joy's own item format. After Phase 0 (`joy init` + `joy add`), the content of this file will be imported into `.joy/` and managed with Joy itself. This file then becomes obsolete.
 
 Items are listed in YAML blocks for direct import. Priorities: critical, high, medium, low. Dependencies are noted where known.
 
@@ -329,8 +329,8 @@ description: |
   description: |
     Configure one AI tool per project (claude-code, mistral-vibe, github-copilot, qwen-code).
     Detect installed CLI tools. Set model name or "auto".
-    Store API keys in ~/.joy/credentials.yaml (never in repo).
-    Write tool config to .joy/ai/config.yaml.
+    Write tool config to .joy/config.yaml (ai section).
+    Store API key in credentials.yaml (project-local or global).
 
 - id: IT-0013
   title: "joy ai estimate: effort and cost estimation"
@@ -529,7 +529,7 @@ description: |
   description: |
     Deferred to v2. In v1, sync uses HTTPS without content encryption.
     v2 design: AES-256-GCM key per project, stored in
-    ~/.joy/keys/{project-id}.key. Encrypt item content (title,
+    ~/.config/joy/keys/{project-id}.key. Encrypt item content (title,
     description, comments) before push. Keep metadata in cleartext.
     See ADR-006 for the full design.
 
@@ -544,7 +544,7 @@ description: |
     E-mail address as user identity (matched against git config user.email locally).
     Server issues JWTs after OAuth login.
     Store tokens in OS keychain (keyring crate) with fallback
-    to ~/.joy/credentials.yaml (0600 permissions).
+    to credentials.yaml (project-local or global).
     See ADR-009 for the identity model.
 ```
 
