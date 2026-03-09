@@ -1,0 +1,8 @@
+---
+source: crates/joy-core/src/model/config.rs
+expression: yaml
+---
+version: 1
+output:
+  color: auto
+  emoji: true
