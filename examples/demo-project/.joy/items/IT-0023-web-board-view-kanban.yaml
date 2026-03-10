@@ -1,0 +1,11 @@
+id: IT-0023
+title: 'Web: board view (Kanban)'
+type: story
+status: new
+priority: high
+epic: EP-0006
+deps:
+- IT-0022
+created: '2026-03-10T00:16:16.433634693Z'
+updated: '2026-03-10T00:16:16.433634693Z'
+description: Kanban board with drag-and-drop status changes. Filter by epic, type, priority, assignee.

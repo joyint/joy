@@ -1,0 +1,12 @@
+id: IT-002D
+title: joyint.com deployment
+type: task
+status: new
+priority: medium
+epic: EP-0006
+deps:
+- IT-001D
+- IT-0028
+created: '2026-03-10T00:16:16.441463552Z'
+updated: '2026-03-10T00:16:16.441463552Z'
+description: Deploy joy serve to joyint.com as managed service. CI/CD pipeline. SSL, monitoring, backups.

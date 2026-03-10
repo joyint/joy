@@ -1,0 +1,11 @@
+id: IT-000C
+title: 'joy project: view and edit project metadata'
+type: task
+status: new
+priority: medium
+epic: EP-0001
+deps:
+- IT-0001
+created: '2026-03-10T00:16:16.403177485Z'
+updated: '2026-03-10T00:16:16.403177485Z'
+description: Display and edit project.yaml fields. Interactive mode when called without flags.

@@ -5,7 +5,7 @@ use anyhow::{bail, Result};
 use clap::Args;
 
 use joy_core::items;
-use joy_core::model::item::{Item, ItemType, Priority};
+use joy_core::model::item::{Item, ItemType, Priority, Status};
 use joy_core::store;
 
 #[derive(Args)]
@@ -37,6 +37,18 @@ pub struct AddArgs {
     /// Tags (comma-separated)
     #[arg(long)]
     tags: Option<String>,
+
+    /// Explicit item ID (skip auto-generation)
+    #[arg(long)]
+    id: Option<String>,
+
+    /// Dependencies (comma-separated IDs)
+    #[arg(long)]
+    deps: Option<String>,
+
+    /// Initial status: new, open, in-progress, review, closed, deferred
+    #[arg(short, long)]
+    status: Option<String>,
 }
 
 pub fn run(args: AddArgs) -> Result<()> {
@@ -62,7 +74,11 @@ pub fn run(args: AddArgs) -> Result<()> {
         .parse()
         .map_err(|e: String| anyhow::anyhow!("{}", e))?;
 
-    let id = items::next_id(&root, &item_type)?;
+    let id = match args.id {
+        Some(id) => id,
+        None => items::next_id(&root, &item_type)?,
+    };
+
     let mut item = Item::new(id.clone(), title.clone(), item_type, priority);
     item.epic = args.epic;
     item.description = args.description;
@@ -71,6 +87,16 @@ pub fn run(args: AddArgs) -> Result<()> {
         .tags
         .map(|t| t.split(',').map(|s| s.trim().to_string()).collect())
         .unwrap_or_default();
+    item.deps = args
+        .deps
+        .map(|d| d.split(',').map(|s| s.trim().to_string()).collect())
+        .unwrap_or_default();
+
+    if let Some(ref s) = args.status {
+        item.status = s
+            .parse::<Status>()
+            .map_err(|e: String| anyhow::anyhow!("{}", e))?;
+    }
 
     items::save_item(&root, &item)?;
 

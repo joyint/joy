@@ -1,0 +1,9 @@
+id: EP-0005
+title: Sync and Server
+type: epic
+status: new
+priority: medium
+milestone: MS-02
+created: '2026-03-10T00:16:16.385258252Z'
+updated: '2026-03-10T00:16:16.385258252Z'
+description: Push/pull synchronization with a central portal. End-to-end encryption for item content.

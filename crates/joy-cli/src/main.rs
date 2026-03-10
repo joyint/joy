@@ -20,6 +20,10 @@ enum Commands {
     Add(commands::add::AddArgs),
     /// List items
     Ls(commands::ls::LsArgs),
+    /// Show item details
+    Show(commands::show::ShowArgs),
+    /// Modify an existing item
+    Edit(commands::edit::EditArgs),
     /// Change item status
     Status(commands::status::StatusArgs),
 }
@@ -31,6 +35,8 @@ fn main() -> anyhow::Result<()> {
         Some(Commands::Init(args)) => commands::init::run(args),
         Some(Commands::Add(args)) => commands::add::run(args),
         Some(Commands::Ls(args)) => commands::ls::run(args),
+        Some(Commands::Show(args)) => commands::show::run(args),
+        Some(Commands::Edit(args)) => commands::edit::run(args),
         Some(Commands::Status(args)) => commands::status::run(args),
         None => commands::board::run(),
     }

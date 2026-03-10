@@ -1,0 +1,9 @@
+id: EP-0001
+title: Core CLI
+type: epic
+status: new
+priority: critical
+milestone: MS-01
+created: '2026-03-10T00:16:16.378847111Z'
+updated: '2026-03-10T00:16:16.378847111Z'
+description: Implement the core CLI commands that make Joy usable for daily product management. This is the minimum viable product.

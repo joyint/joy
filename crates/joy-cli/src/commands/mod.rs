@@ -3,6 +3,8 @@
 
 pub mod add;
 pub mod board;
+pub mod edit;
 pub mod init;
 pub mod ls;
+pub mod show;
 pub mod status;

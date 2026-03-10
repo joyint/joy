@@ -1,0 +1,11 @@
+id: IT-0021
+title: OAuth authentication with GitHub and Gitea
+type: task
+status: new
+priority: high
+epic: EP-0005
+deps:
+- IT-001D
+created: '2026-03-10T00:16:16.431370407Z'
+updated: '2026-03-10T00:16:16.431370407Z'
+description: OAuth 2.0 authentication for sync. E-mail as user identity. Server issues JWTs after OAuth login.

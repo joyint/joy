@@ -1,0 +1,11 @@
+id: IT-0025
+title: 'Web: visual roadmap and dependency graph'
+type: story
+status: new
+priority: medium
+epic: EP-0006
+deps:
+- IT-0023
+created: '2026-03-10T00:16:16.435992584Z'
+updated: '2026-03-10T00:16:16.435992584Z'
+description: Timeline view with milestones and epic progress. Interactive dependency graph.

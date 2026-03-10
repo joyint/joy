@@ -1,0 +1,9 @@
+id: IT-001A
+title: 'joy app: basic board view'
+type: story
+status: new
+priority: high
+epic: EP-0004
+created: '2026-03-10T00:16:16.423045170Z'
+updated: '2026-03-10T00:16:16.423045170Z'
+description: Kanban-style board with columns per status. Navigate items with keyboard. Open detail with Enter.

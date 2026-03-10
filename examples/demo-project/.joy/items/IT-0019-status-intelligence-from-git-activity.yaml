@@ -1,0 +1,12 @@
+id: IT-0019
+title: Status intelligence from git activity
+type: story
+status: new
+priority: low
+epic: EP-0003
+deps:
+- IT-0012
+- IT-0004
+created: '2026-03-10T00:16:16.421826239Z'
+updated: '2026-03-10T00:16:16.421826239Z'
+description: AI analyzes git log and branch names. Suggest status updates based on development activity.
