@@ -1,0 +1,11 @@
+id: IT-0006
+title: 'joy edit: modify existing items'
+type: story
+status: closed
+priority: high
+epic: EP-0001
+deps:
+- IT-0002
+created: '2026-03-10T00:19:05.696998845Z'
+updated: '2026-03-10T00:19:05.696998845Z'
+description: Edit item fields interactively or via flags. Update the updated timestamp automatically.

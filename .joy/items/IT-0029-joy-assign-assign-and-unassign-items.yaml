@@ -1,0 +1,11 @@
+id: IT-0029
+title: 'joy assign: assign and unassign items'
+type: story
+status: new
+priority: medium
+epic: EP-0001
+deps:
+- IT-0001
+created: '2026-03-10T00:19:05.707692157Z'
+updated: '2026-03-10T00:19:05.707692157Z'
+description: Assign an item to a person or agent. Validates email format. Updates assignee field.

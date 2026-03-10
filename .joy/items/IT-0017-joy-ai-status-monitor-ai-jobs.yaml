@@ -1,0 +1,11 @@
+id: IT-0017
+title: 'joy ai status: monitor AI jobs'
+type: story
+status: new
+priority: medium
+epic: EP-0003
+deps:
+- IT-0015
+created: '2026-03-10T00:19:05.723528009Z'
+updated: '2026-03-10T00:19:05.723528009Z'
+description: Show running AI jobs with progress. Support --history and --costs for aggregation.

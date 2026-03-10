@@ -1,0 +1,9 @@
+id: EP-0002
+title: Terminal Output and UX
+type: epic
+status: new
+priority: high
+milestone: MS-01
+created: '2026-03-10T00:19:05.684027989Z'
+updated: '2026-03-10T00:19:05.684027989Z'
+description: Define and implement the visual language of Joy's terminal output. Colors, indicators, formatting, and user preferences.

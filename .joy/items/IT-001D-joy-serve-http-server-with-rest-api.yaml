@@ -1,0 +1,9 @@
+id: IT-001D
+title: 'joy serve: HTTP server with REST API'
+type: story
+status: new
+priority: high
+epic: EP-0005
+created: '2026-03-10T00:19:05.730702030Z'
+updated: '2026-03-10T00:19:05.730702030Z'
+description: Axum-based server. Support --daemon. REST API for all CRUD operations. Behind server feature flag.

@@ -1,0 +1,11 @@
+id: IT-0004
+title: 'joy status: change item status'
+type: story
+status: closed
+priority: critical
+epic: EP-0001
+deps:
+- IT-0002
+created: '2026-03-10T00:19:05.693235216Z'
+updated: '2026-03-10T00:19:05.693235216Z'
+description: Change status of an item by ID. Warn on closing epic with open children. Auto-close epics when all children closed.

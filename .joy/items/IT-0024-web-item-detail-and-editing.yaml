@@ -1,0 +1,11 @@
+id: IT-0024
+title: 'Web: item detail and editing'
+type: story
+status: new
+priority: high
+epic: EP-0006
+deps:
+- IT-0022
+created: '2026-03-10T00:19:05.738668883Z'
+updated: '2026-03-10T00:19:05.738668883Z'
+description: View and edit all item fields. Inline editing for status and priority. Comment thread.

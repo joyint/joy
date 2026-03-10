@@ -1,0 +1,11 @@
+id: IT-002A
+title: 'joy comment: add comments to items'
+type: story
+status: new
+priority: medium
+epic: EP-0001
+deps:
+- IT-0001
+created: '2026-03-10T00:19:05.708846911Z'
+updated: '2026-03-10T00:19:05.708846911Z'
+description: Add a comment to an item with author and timestamp. Inline text or interactive via EDITOR.

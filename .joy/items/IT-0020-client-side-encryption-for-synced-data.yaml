@@ -1,0 +1,11 @@
+id: IT-0020
+title: Client-side encryption for synced data (v2)
+type: story
+status: new
+priority: low
+epic: EP-0005
+deps:
+- IT-001E
+created: '2026-03-10T00:19:05.734303483Z'
+updated: '2026-03-10T00:19:05.734303483Z'
+description: Deferred to v2. AES-256-GCM key per project. Encrypt item content before push.

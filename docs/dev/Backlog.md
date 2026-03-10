@@ -1,8 +1,16 @@
 # Joy -- Backlog
 
-This file is the initial product backlog for Joy. It is structured as Epics, Stories, and Tasks using Joy's own item format. After Phase 0 (`joy init` + `joy add`), the content of this file will be imported into `.joy/` and managed with Joy itself. This file then becomes obsolete.
+> **DEPRECATED** -- This file is kept for reference only. The backlog has been
+> imported into `.joy/items/` and is now managed with Joy itself.
+>
+> Use `joy ls` to list items, `joy show <ID>` for details, `joy` for the
+> board overview. See `joy --help` for all available commands.
+>
+> Do not add new items to this file. Use `joy add` instead.
 
-Items are listed in YAML blocks for direct import. Priorities: critical, high, medium, low. Dependencies are noted where known.
+---
+
+This file was the initial product backlog for Joy, structured as Epics, Stories, and Tasks using Joy's own item format. It was imported into `.joy/` using `examples/import-backlog.sh`.
 
 For the overall product vision see [Vision.md](./Vision.md). For architecture see [Architecture.md](./Architecture.md).
 

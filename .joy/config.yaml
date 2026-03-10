@@ -1,0 +1,4 @@
+version: 1
+output:
+  color: auto
+  emoji: true
