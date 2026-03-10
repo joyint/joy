@@ -1,0 +1,22 @@
+---
+source: crates/joy-core/src/model/item.rs
+expression: yaml
+---
+id: IT-002A
+title: Payment Integration
+type: story
+status: new
+priority: high
+epic: EP-0001
+deps:
+- IT-0017
+- IT-0026
+milestone: MS-01
+tags:
+- backend
+- payments
+created: '2026-03-09T10:00:00Z'
+updated: '2026-03-09T10:00:00Z'
+description: |
+  Integrate Stripe for payment processing.
+  Must support EUR and USD.

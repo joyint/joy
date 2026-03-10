@@ -5,5 +5,6 @@
 
 pub mod error;
 pub mod init;
+pub mod items;
 pub mod model;
 pub mod store;

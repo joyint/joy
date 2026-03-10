@@ -8,6 +8,12 @@ pub enum JoyError {
     #[error("project already initialized at {0}")]
     AlreadyInitialized(PathBuf),
 
+    #[error("no Joy project found (run `joy init` first)")]
+    NotInitialized,
+
+    #[error("item not found: {0}")]
+    ItemNotFound(String),
+
     #[error("failed to create directory {path}")]
     CreateDir {
         path: PathBuf,

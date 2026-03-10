@@ -16,6 +16,12 @@ struct Cli {
 enum Commands {
     /// Initialize a new Joy project
     Init(commands::init::InitArgs),
+    /// Create a new item
+    Add(commands::add::AddArgs),
+    /// List items
+    Ls(commands::ls::LsArgs),
+    /// Change item status
+    Status(commands::status::StatusArgs),
 }
 
 fn main() -> anyhow::Result<()> {
@@ -23,9 +29,9 @@ fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Some(Commands::Init(args)) => commands::init::run(args),
-        None => {
-            println!("joy v0.1.0 -- run `joy init` to get started");
-            Ok(())
-        }
+        Some(Commands::Add(args)) => commands::add::run(args),
+        Some(Commands::Ls(args)) => commands::ls::run(args),
+        Some(Commands::Status(args)) => commands::status::run(args),
+        None => commands::board::run(),
     }
 }

@@ -13,6 +13,7 @@ joy-core = { path = "../joy-core" }
 joy-ai = { path = "../joy-ai" }
 clap = { workspace = true }
 anyhow = { workspace = true }
+chrono = { workspace = true }
 serde = { workspace = true }
 serde_yml = { workspace = true }
 tokio = { workspace = true }
