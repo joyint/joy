@@ -4,7 +4,7 @@
 mod color;
 mod commands;
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "joy", version, about = "Terminal-native product management")]
@@ -29,12 +29,30 @@ enum Commands {
     Status(commands::status::StatusArgs),
     /// Delete an item
     Rm(commands::rm::RmArgs),
+    /// Add a comment to an item
+    Comment(commands::comment::CommentArgs),
     /// Manage dependencies
     Deps(commands::deps::DepsArgs),
     /// Manage milestones
     Milestone(commands::milestone::MilestoneArgs),
     /// Assign or unassign items
     Assign(commands::assign::AssignArgs),
+    /// Show change history for items
+    Log(commands::log::LogArgs),
+    /// Generate shell completions
+    Completions(commands::completions::CompletionsArgs),
+    /// Shortcut: set item status to in-progress
+    Start(ShortcutArgs),
+    /// Shortcut: set item status to review
+    Submit(ShortcutArgs),
+    /// Shortcut: set item status to closed
+    Close(ShortcutArgs),
+}
+
+#[derive(clap::Args)]
+struct ShortcutArgs {
+    /// Item ID (e.g. IT-0001)
+    id: String,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -48,9 +66,24 @@ fn main() -> anyhow::Result<()> {
         Some(Commands::Edit(args)) => commands::edit::run(args),
         Some(Commands::Status(args)) => commands::status::run(args),
         Some(Commands::Rm(args)) => commands::rm::run(args),
+        Some(Commands::Comment(args)) => commands::comment::run(args),
         Some(Commands::Deps(args)) => commands::deps::run(args),
         Some(Commands::Milestone(args)) => commands::milestone::run(args),
         Some(Commands::Assign(args)) => commands::assign::run(args),
+        Some(Commands::Log(args)) => commands::log::run(args),
+        Some(Commands::Completions(args)) => commands::completions::run(args, &mut Cli::command()),
+        Some(Commands::Start(args)) => commands::status::run(commands::status::StatusArgs::new(
+            args.id,
+            "in-progress".to_string(),
+        )),
+        Some(Commands::Submit(args)) => commands::status::run(commands::status::StatusArgs::new(
+            args.id,
+            "review".to_string(),
+        )),
+        Some(Commands::Close(args)) => commands::status::run(commands::status::StatusArgs::new(
+            args.id,
+            "closed".to_string(),
+        )),
         None => commands::board::run(),
     }
 }

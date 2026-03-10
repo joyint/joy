@@ -20,6 +20,12 @@ pub struct StatusArgs {
     status: String,
 }
 
+impl StatusArgs {
+    pub fn new(id: String, status: String) -> Self {
+        Self { id, status }
+    }
+}
+
 pub fn run(args: StatusArgs) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;

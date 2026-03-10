@@ -12,6 +12,7 @@ path = "src/main.rs"
 joy-core = { path = "../joy-core" }
 joy-ai = { path = "../joy-ai" }
 clap = { workspace = true }
+clap_complete = "4.5"
 anyhow = { workspace = true }
 chrono = { workspace = true }
 serde = { workspace = true }

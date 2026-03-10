@@ -1,11 +1,11 @@
 id: IT-000A
 title: 'joy milestone: milestone management'
 type: story
-status: new
+status: closed
 priority: medium
 parent: EP-0001
 deps:
 - IT-0002
 created: '2026-03-10T00:19:05.703267261Z'
-updated: '2026-03-10T00:19:05.703267261Z'
+updated: '2026-03-10T23:00:58.203873776Z'
 description: Create, list, show, remove milestones. Link items to milestones. Show progress and risks.
