@@ -12,9 +12,9 @@ dev:
 build:
     cargo build --release --features full
 
-# Install binary locally
+# Install joy binary to ~/.local/bin/
 install:
-    cargo install --path . --features full
+    cargo build --release -p joyint && mkdir -p ~/.local/bin && cp ../../target/release/joy ~/.local/bin/joy
 
 # Check installed tools
 doctor:

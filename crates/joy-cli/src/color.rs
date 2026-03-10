@@ -82,7 +82,7 @@ pub fn item_type(t: &ItemType) -> String {
 }
 
 pub fn blocked(text: &str) -> String {
-    wrap(RED, text)
+    wrap(MAGENTA, text)
 }
 
 pub fn label(text: &str) -> String {

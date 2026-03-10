@@ -62,6 +62,10 @@ doctor:
     @just cli doctor
     @just app doctor
 
+# Install all components
+install:
+    just cli install && just app install
+
 # Tag and push a release
 release tag:
     git tag {{tag}} && git push origin {{tag}}
