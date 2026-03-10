@@ -200,7 +200,8 @@ joy edit [id]                           # Edit item
 joy rm [id]                             # Delete item (with confirmation)
   joy rm IT-002A
   joy rm IT-002A --force                # skip confirmation
-  joy rm EP-0001 --cascade               # item + all descendants
+  joy rm EP-0001 --recursive             # item + all descendants
+  joy rm -rf EP-0001                     # same as --recursive --force
 
 joy ls                                  # List and filter items
   joy ls                                # all active items (excludes closed and deferred)

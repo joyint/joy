@@ -112,7 +112,7 @@ description: |
   description: |
     Delete items with confirmation prompt.
     Support --force to skip confirmation.
-    Support --cascade on epics to delete all linked items.
+    Support --recursive to delete item and all descendants.
     Remove deleted item IDs from other items' deps lists.
 
 - id: IT-0008

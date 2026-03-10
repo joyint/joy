@@ -15,12 +15,12 @@ pub struct RmArgs {
     id: String,
 
     /// Skip confirmation prompt
-    #[arg(long)]
+    #[arg(short, long)]
     force: bool,
 
     /// Delete item and all its children (recursively)
-    #[arg(long)]
-    cascade: bool,
+    #[arg(short, long, alias = "cascade")]
+    recursive: bool,
 }
 
 pub fn run(args: RmArgs) -> Result<()> {
@@ -31,13 +31,13 @@ pub fn run(args: RmArgs) -> Result<()> {
 
     let mut to_delete = vec![item.id.clone()];
 
-    if args.cascade {
+    if args.recursive {
         let all_items = items::load_items(&root)?;
         collect_descendants(&all_items, &item.id, &mut to_delete);
     }
 
     if !args.force {
-        if args.cascade {
+        if args.recursive {
             eprintln!(
                 "Delete {} and {} child item(s)?",
                 color::id(&item.id),
