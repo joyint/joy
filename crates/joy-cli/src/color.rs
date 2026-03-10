@@ -92,6 +92,10 @@ pub fn heading(text: &str) -> String {
     wrap(BOLD, text)
 }
 
+pub fn text(text: &str) -> String {
+    wrap(DIM, text)
+}
+
 pub fn status_heading(s: &Status, text: &str) -> String {
     match s {
         Status::New => wrap(BOLD, text),
