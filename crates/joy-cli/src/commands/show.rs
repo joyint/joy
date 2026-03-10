@@ -74,7 +74,7 @@ pub fn run(args: ShowArgs) -> Result<()> {
     }
 
     if let Some(ref desc) = item.description {
-        println!("\n{}", color::text(desc.trim_end()));
+        println!("\n{}", desc.trim_end());
     }
 
     if !item.comments.is_empty() {

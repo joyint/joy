@@ -67,7 +67,7 @@ pub fn run() -> Result<()> {
             println!(
                 "  {} {} [{}]{}",
                 color::id(&item.id),
-                color::text(&item.title),
+                item.title,
                 color::priority(&item.priority),
                 blocked_str
             );

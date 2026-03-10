@@ -46,7 +46,7 @@ fn wrap2(code1: &str, code2: &str, text: &str) -> String {
 }
 
 pub fn id(text: &str) -> String {
-    wrap(BOLD, text)
+    wrap(DIM, text)
 }
 
 pub fn status(s: &Status) -> String {
@@ -92,9 +92,6 @@ pub fn heading(text: &str) -> String {
     wrap(BOLD, text)
 }
 
-pub fn text(text: &str) -> String {
-    wrap(DIM, text)
-}
 
 pub fn status_heading(s: &Status, text: &str) -> String {
     match s {

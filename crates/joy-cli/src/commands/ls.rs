@@ -172,7 +172,7 @@ fn print_table(items: &[&Item], all_items: &[Item]) {
             pad_colored(&type_str, &item.item_type.to_string(), 12),
             pad_colored(&status_str, &item.status.to_string(), 13),
             pad_colored(&priority_str, &item.priority.to_string(), 10),
-            color::text(&item.title),
+            item.title,
             blocked_str
         );
     }
@@ -200,7 +200,7 @@ fn print_tree(items: &[&Item]) {
         println!(
             "{} {} [{}]",
             color::id(&epic.id),
-            color::text(&epic.title),
+            epic.title,
             color::status(&epic.status)
         );
         let children: Vec<&&Item> = items
@@ -217,7 +217,7 @@ fn print_tree(items: &[&Item]) {
                 "  {} {} {} [{}] [{}]",
                 color::label(connector),
                 color::id(&child.id),
-                color::text(&child.title),
+                child.title,
                 color::item_type(&child.item_type),
                 color::status(&child.status)
             );
@@ -232,7 +232,7 @@ fn print_tree(items: &[&Item]) {
             println!(
                 "{} {} [{}] [{}]",
                 color::id(&orphan.id),
-                color::text(&orphan.title),
+                orphan.title,
                 color::item_type(&orphan.item_type),
                 color::status(&orphan.status)
             );
