@@ -13,9 +13,20 @@ Before making any changes, read and follow the rules in these documents:
 - `docs/dev/Vision.md` -- product vision, data model, CLI commands
 - `docs/dev/Architecture.md` -- tech stack, repo structure, security, ADRs
 - `docs/dev/CONTRIBUTING.md` -- coding conventions, testing, CI/CD, commit messages
-- `docs/dev/Backlog.md` -- current backlog with Epics, Stories, Tasks
-
 These documents are the source of truth. Do not redefine or contradict anything from them.
+
+## Backlog
+
+The backlog lives in `.joy/items/`. Use the `joy` CLI to query and manage it:
+
+- `joy` -- board overview (items grouped by status)
+- `joy ls` -- list items with filters (`--type`, `--status`, `--epic`, `--priority`, `--blocked`)
+- `joy show <ID>` -- item details with dependencies
+- `joy add` -- create new items
+- `joy edit <ID>` -- modify items
+- `joy status <ID> <status>` -- change item status
+
+Do not edit `.joy/items/*.yaml` files directly. Do not add items to `docs/dev/Backlog.md` (deprecated).
 
 ## Rules
 

@@ -2,7 +2,9 @@
 
 This document covers the day-to-day process of working on Joy: coding conventions, testing, CI/CD, documentation rules, and the task runner.
 
-For product vision and data model see [Vision.md](./Vision.md). For technology choices and architecture see [Architecture.md](./Architecture.md). For the product backlog (Epics, Stories, Tasks) see [Backlog.md](./Backlog.md).
+For product vision and data model see [Vision.md](./Vision.md). For technology choices and architecture see [Architecture.md](./Architecture.md).
+
+The product backlog lives in `.joy/items/` and is managed with the `joy` CLI. Run `joy` for a board overview, `joy ls` to list items, `joy show <ID>` for details. See [Backlog.md](./Backlog.md) for the original import reference (deprecated).
 
 ---
 
