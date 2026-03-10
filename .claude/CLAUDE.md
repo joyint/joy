@@ -25,6 +25,14 @@ The backlog lives in `.joy/items/`. Use the `joy` CLI to query and manage it:
 - `joy add` -- create new items
 - `joy edit <ID>` -- modify items
 - `joy status <ID> <status>` -- change item status
+- `joy start/submit/close <ID>` -- status shortcuts
+- `joy rm <ID>` -- delete items (`-rf` for recursive + force)
+- `joy deps <ID>` -- manage dependencies (`--add`, `--rm`, `--tree`)
+- `joy milestone` -- manage milestones (add, ls, show, rm, link)
+- `joy assign <ID> [email]` -- assign/unassign items
+- `joy comment <ID> <text>` -- add comments
+- `joy log` -- change history from git log (`--item`, `--since`, `--limit`)
+- `joy completions <shell>` -- generate shell completions
 
 Do not edit `.joy/items/*.yaml` files directly. Do not add items to `docs/dev/Backlog.md` (deprecated).
 

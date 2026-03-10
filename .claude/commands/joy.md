@@ -54,9 +54,9 @@ Rules for item creation:
 
 ### Status changes
 
-- "Start IT-0003" -- run `joy status IT-0003 in-progress`
-- "Submit IT-0003 for review" -- run `joy status IT-0003 review`
-- "Close IT-0003" -- run `joy status IT-0003 closed`
+- "Start IT-0003" -- run `joy start IT-0003`
+- "Submit IT-0003 for review" -- run `joy submit IT-0003`
+- "Close IT-0003" -- run `joy close IT-0003`
 - Always confirm before changing status
 
 ### Editing and organizing
