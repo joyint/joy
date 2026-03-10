@@ -3,9 +3,9 @@ title: 'joy rm: delete items'
 type: story
 status: new
 priority: high
-epic: EP-0001
+parent: EP-0001
 deps:
 - IT-0002
 created: '2026-03-10T00:19:05.698893346Z'
-updated: '2026-03-10T00:19:05.698893346Z'
+updated: '2026-03-10T06:22:23.897658767Z'
 description: Delete items with confirmation prompt. Support --force and --cascade on epics.

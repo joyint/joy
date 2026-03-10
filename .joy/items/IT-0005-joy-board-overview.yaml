@@ -3,7 +3,7 @@ title: 'joy: board overview'
 type: story
 status: closed
 priority: critical
-epic: EP-0001
+parent: EP-0001
 deps:
 - IT-0003
 created: '2026-03-10T00:19:05.695126293Z'

@@ -13,7 +13,7 @@ pub struct Item {
     pub status: Status,
     pub priority: Priority,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub epic: Option<String>,
+    pub parent: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub assignee: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -78,7 +78,7 @@ impl Item {
             item_type,
             status: Status::New,
             priority,
-            epic: None,
+            parent: None,
             assignee: None,
             deps: Vec::new(),
             milestone: None,
@@ -237,7 +237,7 @@ mod tests {
             ItemType::Story,
             Priority::High,
         );
-        item.epic = Some("EP-0001".into());
+        item.parent = Some("EP-0001".into());
         item.description = Some("Implement the login page.".into());
         item.tags = vec!["frontend".into()];
 
@@ -258,7 +258,7 @@ mod tests {
         );
         item.created = fixed;
         item.updated = fixed;
-        item.epic = Some("EP-0001".into());
+        item.parent = Some("EP-0001".into());
         item.milestone = Some("MS-01".into());
         item.deps = vec!["IT-0017".into(), "IT-0026".into()];
         item.tags = vec!["backend".into(), "payments".into()];

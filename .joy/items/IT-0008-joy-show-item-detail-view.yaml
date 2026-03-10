@@ -3,7 +3,7 @@ title: 'joy show: item detail view'
 type: story
 status: closed
 priority: high
-epic: EP-0001
+parent: EP-0001
 deps:
 - IT-0002
 created: '2026-03-10T00:19:05.700610911Z'

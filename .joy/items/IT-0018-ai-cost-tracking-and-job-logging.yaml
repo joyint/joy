@@ -3,9 +3,9 @@ title: AI cost tracking and job logging
 type: task
 status: new
 priority: high
-epic: EP-0003
+parent: IT-0015
 deps:
 - IT-0015
 created: '2026-03-10T00:19:05.724584308Z'
-updated: '2026-03-10T00:19:05.724584308Z'
+updated: '2026-03-10T06:52:11.191140668Z'
 description: Every AI job writes a JOB-ID.yaml with item, type, provider, model, status, tokens, cost, result.

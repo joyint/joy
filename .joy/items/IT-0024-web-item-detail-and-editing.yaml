@@ -3,7 +3,7 @@ title: 'Web: item detail and editing'
 type: story
 status: new
 priority: high
-epic: EP-0006
+parent: EP-0006
 deps:
 - IT-0022
 created: '2026-03-10T00:19:05.738668883Z'

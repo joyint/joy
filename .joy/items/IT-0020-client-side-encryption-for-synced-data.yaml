@@ -3,7 +3,7 @@ title: Client-side encryption for synced data (v2)
 type: story
 status: new
 priority: low
-epic: EP-0005
+parent: EP-0005
 deps:
 - IT-001E
 created: '2026-03-10T00:19:05.734303483Z'

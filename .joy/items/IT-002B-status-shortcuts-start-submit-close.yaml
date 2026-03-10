@@ -3,9 +3,9 @@ title: 'Status shortcuts: start, submit, close'
 type: task
 status: new
 priority: low
-epic: EP-0001
+parent: IT-0004
 deps:
 - IT-0004
 created: '2026-03-10T00:19:05.710064590Z'
-updated: '2026-03-10T00:19:05.710064590Z'
+updated: '2026-03-10T06:52:10.538106028Z'
 description: 'Convenience aliases: joy start, joy submit, joy close for common status transitions.'

@@ -3,7 +3,7 @@ title: 'joy app: basic board view'
 type: story
 status: new
 priority: high
-epic: EP-0004
+parent: EP-0004
 created: '2026-03-10T00:19:05.726906725Z'
 updated: '2026-03-10T00:19:05.726906725Z'
 description: Kanban-style board with columns per status. Navigate items with keyboard. Open detail with Enter.

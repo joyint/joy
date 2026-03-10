@@ -109,6 +109,62 @@ pub fn load_item(root: &Path, id: &str) -> Result<Item, JoyError> {
     store::read_yaml(&path)
 }
 
+/// Delete an item by ID. Returns the deleted item.
+pub fn delete_item(root: &Path, id: &str) -> Result<Item, JoyError> {
+    let path = find_item_file(root, id)?;
+    let item: Item = store::read_yaml(&path)?;
+    std::fs::remove_file(&path).map_err(|e| JoyError::WriteFile { path, source: e })?;
+    Ok(item)
+}
+
+/// Remove references to a deleted item from other items' deps lists.
+pub fn remove_dep_references(root: &Path, deleted_id: &str) -> Result<Vec<String>, JoyError> {
+    let items = load_items(root)?;
+    let mut updated = Vec::new();
+    for mut item in items {
+        if item.deps.contains(&deleted_id.to_string()) {
+            item.deps.retain(|d| d != deleted_id);
+            item.updated = chrono::Utc::now();
+            update_item(root, &item)?;
+            updated.push(item.id.clone());
+        }
+    }
+    Ok(updated)
+}
+
+/// Check if adding a dependency would create a cycle.
+/// Returns the cycle path if one exists.
+pub fn detect_cycle(
+    root: &Path,
+    item_id: &str,
+    new_dep_id: &str,
+) -> Result<Option<Vec<String>>, JoyError> {
+    let items = load_items(root)?;
+    let mut visited = vec![item_id.to_string()];
+    if find_cycle(&items, new_dep_id, &mut visited) {
+        visited.push(new_dep_id.to_string());
+        Ok(Some(visited))
+    } else {
+        Ok(None)
+    }
+}
+
+fn find_cycle(items: &[Item], current: &str, visited: &mut Vec<String>) -> bool {
+    if visited.contains(&current.to_string()) {
+        return true;
+    }
+    if let Some(item) = items.iter().find(|i| i.id == current) {
+        visited.push(current.to_string());
+        for dep in &item.deps {
+            if find_cycle(items, dep, visited) {
+                return true;
+            }
+        }
+        visited.pop();
+    }
+    false
+}
+
 /// Update an item in place (overwrites its file).
 pub fn update_item(root: &Path, item: &Item) -> Result<(), JoyError> {
     // Remove old file (title may have changed, altering the filename)

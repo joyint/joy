@@ -40,8 +40,8 @@ pub fn run(args: ShowArgs) -> Result<()> {
         color::priority(&item.priority)
     );
 
-    if let Some(ref epic) = item.epic {
-        println!("{} {}", color::label("Epic:    "), color::id(epic));
+    if let Some(ref parent) = item.parent {
+        println!("{} {}", color::label("Parent:  "), color::id(parent));
     }
     if let Some(ref assignee) = item.assignee {
         println!("{} {}", color::label("Assignee:"), assignee);

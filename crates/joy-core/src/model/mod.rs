@@ -3,8 +3,10 @@
 
 pub mod config;
 pub mod item;
+pub mod milestone;
 pub mod project;
 
 pub use config::Config;
 pub use item::{Comment, Item, ItemType, Priority, Status};
+pub use milestone::Milestone;
 pub use project::Project;

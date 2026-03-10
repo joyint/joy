@@ -22,9 +22,9 @@ pub struct AddArgs {
     #[arg(short, long, default_value = "medium")]
     priority: String,
 
-    /// Parent epic ID
-    #[arg(short, long)]
-    epic: Option<String>,
+    /// Parent item ID (epic, story, or task)
+    #[arg(long, alias = "epic")]
+    parent: Option<String>,
 
     /// Description
     #[arg(short, long)]
@@ -80,7 +80,7 @@ pub fn run(args: AddArgs) -> Result<()> {
     };
 
     let mut item = Item::new(id.clone(), title.clone(), item_type, priority);
-    item.epic = args.epic;
+    item.parent = args.parent;
     item.description = args.description;
     item.milestone = args.milestone;
     item.tags = args
@@ -96,6 +96,15 @@ pub fn run(args: AddArgs) -> Result<()> {
         item.status = s
             .parse::<Status>()
             .map_err(|e: String| anyhow::anyhow!("{}", e))?;
+    }
+
+    // Warn if parent is closed
+    if let Some(ref parent_id) = item.parent {
+        if let Ok(parent) = items::load_item(&root, parent_id) {
+            if !parent.is_active() {
+                eprintln!("Warning: parent {} is {}.", parent_id, parent.status);
+            }
+        }
     }
 
     items::save_item(&root, &item)?;

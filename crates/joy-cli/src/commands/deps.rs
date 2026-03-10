@@ -1,0 +1,165 @@
+// Copyright (c) 2026 Joydev GmbH (joydev.com)
+// SPDX-License-Identifier: MIT
+
+use anyhow::Result;
+use chrono::Utc;
+use clap::Args;
+
+use joy_core::items;
+use joy_core::store;
+
+use crate::color;
+
+#[derive(Args)]
+pub struct DepsArgs {
+    /// Item ID (e.g. IT-0001)
+    id: String,
+
+    /// Add a dependency
+    #[arg(long)]
+    add: Option<String>,
+
+    /// Remove a dependency
+    #[arg(long)]
+    rm: Option<String>,
+
+    /// Show dependency tree
+    #[arg(long)]
+    tree: bool,
+}
+
+pub fn run(args: DepsArgs) -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+
+    if let Some(ref dep_id) = args.add {
+        return add_dep(&root, &args.id, dep_id);
+    }
+
+    if let Some(ref dep_id) = args.rm {
+        return rm_dep(&root, &args.id, dep_id);
+    }
+
+    // Show dependencies
+    let item = items::load_item(&root, &args.id)?;
+    let all_items = items::load_items(&root)?;
+
+    if item.deps.is_empty() {
+        println!("{} has no dependencies.", color::id(&item.id));
+        return Ok(());
+    }
+
+    if args.tree {
+        println!("{} {}", color::id(&item.id), item.title);
+        print_dep_tree(&all_items, &item.deps, "  ", &mut Vec::new());
+    } else {
+        println!("Dependencies of {} {}:", color::id(&item.id), item.title);
+        for dep_id in &item.deps {
+            let info = all_items
+                .iter()
+                .find(|i| &i.id == dep_id)
+                .map(|i| format!("{} [{}]", i.title, color::status(&i.status)))
+                .unwrap_or_else(|| "(not found)".to_string());
+            println!("  {} {}", color::id(dep_id), info);
+        }
+    }
+
+    Ok(())
+}
+
+fn add_dep(root: &std::path::Path, item_id: &str, dep_id: &str) -> Result<()> {
+    // Verify dep exists
+    let _ = items::load_item(root, dep_id)?;
+
+    let mut item = items::load_item(root, item_id)?;
+
+    if item.deps.contains(&dep_id.to_string()) {
+        println!(
+            "{} already depends on {}",
+            color::id(item_id),
+            color::id(dep_id)
+        );
+        return Ok(());
+    }
+
+    // Check for cycles
+    if let Some(cycle) = items::detect_cycle(root, item_id, dep_id)? {
+        let path: Vec<String> = cycle.iter().map(|id| color::id(id)).collect();
+        anyhow::bail!("circular dependency detected: {}", path.join(" -> "));
+    }
+
+    item.deps.push(dep_id.to_string());
+    item.updated = Utc::now();
+    items::update_item(root, &item)?;
+
+    println!(
+        "{} now depends on {}",
+        color::id(item_id),
+        color::id(dep_id)
+    );
+
+    Ok(())
+}
+
+fn rm_dep(root: &std::path::Path, item_id: &str, dep_id: &str) -> Result<()> {
+    let mut item = items::load_item(root, item_id)?;
+
+    if !item.deps.contains(&dep_id.to_string()) {
+        println!(
+            "{} does not depend on {}",
+            color::id(item_id),
+            color::id(dep_id)
+        );
+        return Ok(());
+    }
+
+    item.deps.retain(|d| d != dep_id);
+    item.updated = Utc::now();
+    items::update_item(root, &item)?;
+
+    println!(
+        "Removed dependency {} from {}",
+        color::id(dep_id),
+        color::id(item_id)
+    );
+
+    Ok(())
+}
+
+fn print_dep_tree(
+    all_items: &[joy_core::model::Item],
+    deps: &[String],
+    indent: &str,
+    visited: &mut Vec<String>,
+) {
+    for (i, dep_id) in deps.iter().enumerate() {
+        let is_last = i == deps.len() - 1;
+        let connector = if is_last { "└── " } else { "├── " };
+        let child_indent = if is_last {
+            format!("{indent}    ")
+        } else {
+            format!("{indent}│   ")
+        };
+
+        if visited.contains(dep_id) {
+            println!("{indent}{connector}{} (circular)", color::id(dep_id));
+            continue;
+        }
+
+        if let Some(item) = all_items.iter().find(|i| &i.id == dep_id) {
+            println!(
+                "{indent}{connector}{} {} [{}]",
+                color::id(dep_id),
+                item.title,
+                color::status(&item.status)
+            );
+            if !item.deps.is_empty() {
+                visited.push(dep_id.clone());
+                print_dep_tree(all_items, &item.deps, &child_indent, visited);
+                visited.pop();
+            }
+        } else {
+            println!("{indent}{connector}{} (not found)", color::id(dep_id));
+        }
+    }
+}

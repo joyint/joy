@@ -3,10 +3,10 @@ title: Output format configuration in config.yaml
 type: task
 status: new
 priority: medium
-epic: EP-0002
+parent: IT-000E
 deps:
 - IT-000E
 - IT-000F
 created: '2026-03-10T00:19:05.715218927Z'
-updated: '2026-03-10T00:19:05.715218927Z'
+updated: '2026-03-10T06:52:10.764832325Z'
 description: Persist output preferences in .joy/config.yaml. CLI flags override config. Env vars override flags.

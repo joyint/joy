@@ -14,6 +14,12 @@ pub enum JoyError {
     #[error("item not found: {0}")]
     ItemNotFound(String),
 
+    #[error("milestone not found: {0}")]
+    MilestoneNotFound(String),
+
+    #[error("circular dependency detected: {0}")]
+    CircularDependency(String),
+
     #[error("failed to create directory {path}")]
     CreateDir {
         path: PathBuf,

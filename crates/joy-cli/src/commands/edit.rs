@@ -22,9 +22,9 @@ pub struct EditArgs {
     #[arg(short, long)]
     priority: Option<String>,
 
-    /// Set parent epic ID (use "none" to remove)
-    #[arg(short, long)]
-    epic: Option<String>,
+    /// Set parent item ID (use "none" to remove)
+    #[arg(long, alias = "epic")]
+    parent: Option<String>,
 
     /// New description
     #[arg(short, long)]
@@ -66,11 +66,16 @@ pub fn run(args: EditArgs) -> Result<()> {
         changed = true;
     }
 
-    if let Some(ref epic) = args.epic {
-        item.epic = if epic == "none" {
-            None
+    if let Some(ref parent) = args.parent {
+        if parent == "none" {
+            item.parent = None;
         } else {
-            Some(epic.clone())
+            if let Ok(parent_item) = items::load_item(&root, parent) {
+                if !parent_item.is_active() {
+                    eprintln!("Warning: parent {} is {}.", parent, parent_item.status);
+                }
+            }
+            item.parent = Some(parent.clone());
         };
         changed = true;
     }
@@ -109,7 +114,7 @@ pub fn run(args: EditArgs) -> Result<()> {
     }
 
     if !changed {
-        println!("Nothing to change. Use flags like --title, --priority, --epic, etc.");
+        println!("Nothing to change. Use flags like --title, --priority, --parent, etc.");
         return Ok(());
     }
 

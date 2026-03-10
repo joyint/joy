@@ -3,7 +3,7 @@ title: 'Web: AI job dispatch and monitoring'
 type: story
 status: new
 priority: medium
-epic: EP-0006
+parent: EP-0006
 deps:
 - IT-0022
 - IT-0017

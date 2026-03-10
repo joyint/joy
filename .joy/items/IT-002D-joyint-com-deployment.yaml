@@ -3,7 +3,7 @@ title: joyint.com deployment
 type: task
 status: new
 priority: medium
-epic: EP-0006
+parent: EP-0006
 deps:
 - IT-001D
 - IT-0028

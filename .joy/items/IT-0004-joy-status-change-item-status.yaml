@@ -3,7 +3,7 @@ title: 'joy status: change item status'
 type: story
 status: closed
 priority: critical
-epic: EP-0001
+parent: EP-0001
 deps:
 - IT-0002
 created: '2026-03-10T00:19:05.693235216Z'

@@ -3,7 +3,7 @@ title: Status intelligence from git activity
 type: story
 status: new
 priority: low
-epic: EP-0003
+parent: EP-0003
 deps:
 - IT-0012
 - IT-0004

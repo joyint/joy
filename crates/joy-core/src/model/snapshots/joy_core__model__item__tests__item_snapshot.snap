@@ -7,7 +7,7 @@ title: Payment Integration
 type: story
 status: new
 priority: high
-epic: EP-0001
+parent: EP-0001
 deps:
 - IT-0017
 - IT-0026

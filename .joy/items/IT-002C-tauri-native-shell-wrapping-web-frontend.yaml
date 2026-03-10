@@ -3,7 +3,7 @@ title: Tauri native shell wrapping web frontend
 type: task
 status: new
 priority: medium
-epic: EP-0006
+parent: EP-0006
 deps:
 - IT-0022
 created: '2026-03-10T00:19:05.744370328Z'

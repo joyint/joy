@@ -3,7 +3,7 @@ title: 'TUI: dependency tree view'
 type: story
 status: new
 priority: low
-epic: EP-0004
+parent: EP-0004
 deps:
 - IT-001A
 created: '2026-03-10T00:19:05.729321452Z'

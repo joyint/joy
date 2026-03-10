@@ -27,6 +27,14 @@ enum Commands {
     Edit(commands::edit::EditArgs),
     /// Change item status
     Status(commands::status::StatusArgs),
+    /// Delete an item
+    Rm(commands::rm::RmArgs),
+    /// Manage dependencies
+    Deps(commands::deps::DepsArgs),
+    /// Manage milestones
+    Milestone(commands::milestone::MilestoneArgs),
+    /// Assign or unassign items
+    Assign(commands::assign::AssignArgs),
 }
 
 fn main() -> anyhow::Result<()> {
@@ -39,6 +47,10 @@ fn main() -> anyhow::Result<()> {
         Some(Commands::Show(args)) => commands::show::run(args),
         Some(Commands::Edit(args)) => commands::edit::run(args),
         Some(Commands::Status(args)) => commands::status::run(args),
+        Some(Commands::Rm(args)) => commands::rm::run(args),
+        Some(Commands::Deps(args)) => commands::deps::run(args),
+        Some(Commands::Milestone(args)) => commands::milestone::run(args),
+        Some(Commands::Assign(args)) => commands::assign::run(args),
         None => commands::board::run(),
     }
 }

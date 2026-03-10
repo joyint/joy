@@ -3,7 +3,7 @@ title: 'joy sync: push and pull'
 type: story
 status: new
 priority: high
-epic: EP-0005
+parent: EP-0005
 deps:
 - IT-001D
 created: '2026-03-10T00:19:05.731925202Z'

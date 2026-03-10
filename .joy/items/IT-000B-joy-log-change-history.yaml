@@ -3,7 +3,7 @@ title: 'joy log: change history'
 type: story
 status: new
 priority: medium
-epic: EP-0001
+parent: EP-0001
 deps:
 - IT-0001
 created: '2026-03-10T00:19:05.704387243Z'

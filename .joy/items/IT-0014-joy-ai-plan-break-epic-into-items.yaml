@@ -3,7 +3,7 @@ title: 'joy ai plan: break epic into items'
 type: story
 status: new
 priority: high
-epic: EP-0003
+parent: EP-0003
 deps:
 - IT-0012
 created: '2026-03-10T00:19:05.720246283Z'

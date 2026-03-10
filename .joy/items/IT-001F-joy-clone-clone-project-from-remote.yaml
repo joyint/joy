@@ -3,7 +3,7 @@ title: 'joy clone: clone project from remote'
 type: story
 status: new
 priority: medium
-epic: EP-0005
+parent: EP-0005
 deps:
 - IT-001D
 created: '2026-03-10T00:19:05.733166820Z'

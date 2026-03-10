@@ -3,7 +3,7 @@ title: 'Web: visual roadmap and dependency graph'
 type: story
 status: new
 priority: medium
-epic: EP-0006
+parent: EP-0006
 deps:
 - IT-0023
 created: '2026-03-10T00:19:05.739859930Z'

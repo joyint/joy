@@ -6,7 +6,7 @@ use chrono::Utc;
 use clap::Args;
 
 use joy_core::items;
-use joy_core::model::item::{ItemType, Status};
+use joy_core::model::item::Status;
 use joy_core::store;
 
 use crate::color;
@@ -32,16 +32,16 @@ pub fn run(args: StatusArgs) -> Result<()> {
     let mut item = items::load_item(&root, &args.id)?;
     let old_status = item.status.clone();
 
-    // Warn when closing an epic with open children
-    if matches!(new_status, Status::Closed) && matches!(item.item_type, ItemType::Epic) {
+    // Warn when closing an item that has open children
+    if matches!(new_status, Status::Closed) {
         let all_items = items::load_items(&root)?;
         let open_children: Vec<_> = all_items
             .iter()
-            .filter(|i| i.epic.as_deref() == Some(&item.id) && i.is_active())
+            .filter(|i| i.parent.as_deref() == Some(&item.id) && i.is_active())
             .collect();
         if !open_children.is_empty() {
             eprintln!(
-                "Warning: epic {} has {} open child item(s):",
+                "Warning: {} has {} open child item(s):",
                 color::id(&item.id),
                 open_children.len()
             );
@@ -91,25 +91,25 @@ pub fn run(args: StatusArgs) -> Result<()> {
         color::status(&new_status)
     );
 
-    // Auto-close epic when all children are closed
-    if let (Status::Closed, Some(ref epic_id)) = (&new_status, &item.epic) {
+    // Auto-close parent when all children are closed
+    if let (Status::Closed, Some(ref parent_id)) = (&new_status, &item.parent) {
         let all_items = items::load_items(&root)?;
         let has_open_siblings = all_items
             .iter()
-            .any(|i| i.epic.as_deref() == Some(epic_id) && i.is_active());
+            .any(|i| i.parent.as_deref() == Some(parent_id) && i.is_active());
 
         if !has_open_siblings {
-            if let Ok(mut epic) = items::load_item(&root, epic_id) {
-                if epic.is_active() {
-                    let epic_old = epic.status.clone();
-                    epic.status = Status::Closed;
-                    epic.updated = Utc::now();
-                    items::update_item(&root, &epic)?;
+            if let Ok(mut parent) = items::load_item(&root, parent_id) {
+                if parent.is_active() {
+                    let parent_old = parent.status.clone();
+                    parent.status = Status::Closed;
+                    parent.updated = Utc::now();
+                    items::update_item(&root, &parent)?;
                     println!(
                         "{} {} -> {} (all children closed)",
-                        color::id(&epic.id),
-                        color::status(&epic_old),
-                        color::status(&epic.status)
+                        color::id(&parent.id),
+                        color::status(&parent_old),
+                        color::status(&parent.status)
                     );
                 }
             }
