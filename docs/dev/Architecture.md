@@ -122,18 +122,19 @@ joy/
 │   │   └── src/
 │   │       ├── lib.rs
 │   │       ├── model/          # Item, Milestone, Project structs
-│   │       ├── store/          # YAML file read/write, ID generation
-│   │       ├── status/         # Status transitions, dependency checks
-│   │       ├── deps/           # Dependency graph, cycle detection
-│   │       └── sync/           # Sync protocol, conflict resolution
+│   │       ├── store.rs        # YAML file read/write, project root detection
+│   │       ├── items.rs        # Item CRUD, ID generation, dependency cycle detection
+│   │       ├── milestones.rs   # Milestone CRUD, ID generation
+│   │       ├── init.rs         # Project initialization
+│   │       └── error.rs        # Error types (thiserror)
 │   ├── joy-cli/                # CLI binary (clap) -- includes TUI and server
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── main.rs
-│   │       ├── commands/       # One module per command (add, ls, status, ...)
-│   │       ├── tui/            # ratatui views (behind feature flag)
-│   │       ├── server/         # axum server for `joy serve` (behind feature flag)
-│   │       └── output/         # Terminal output: colors, emoji, formatting
+│   │       ├── commands/       # One module per command (add, ls, status, rm, deps, ...)
+│   │       ├── color.rs        # Semantic terminal colors
+│   │       ├── tui/            # ratatui views (behind feature flag, planned)
+│   │       └── server/         # axum server for `joy serve` (behind feature flag, planned)
 │   └── joy-ai/                 # AI tool dispatch, job tracking
 │       ├── Cargo.toml
 │       └── src/

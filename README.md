@@ -19,7 +19,7 @@ cargo install joyint                                # install
 cd my-project && joy init                           # initialize
 
 joy add "User login" --type story --priority high   # plan
-joy add "OAuth flow" --type task --epic EP-0001
+joy add "OAuth flow" --type task --parent EP-0001
 joy start IT-0001                                   # work
 joy submit IT-0001                                  # review
 

@@ -20,7 +20,7 @@ These documents are the source of truth. Do not redefine or contradict anything 
 The backlog lives in `.joy/items/`. Use the `joy` CLI to query and manage it:
 
 - `joy` -- board overview (items grouped by status)
-- `joy ls` -- list items with filters (`--type`, `--status`, `--epic`, `--priority`, `--blocked`)
+- `joy ls` -- list items with filters (`--type`, `--status`, `--parent`, `--priority`, `--blocked`, `--milestone`, `--mine`)
 - `joy show <ID>` -- item details with dependencies
 - `joy add` -- create new items
 - `joy edit <ID>` -- modify items

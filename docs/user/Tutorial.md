@@ -39,10 +39,10 @@ joy add "Recipe Management" --type epic
 Joy assigns ID `EP-0001` and creates `.joy/items/EP-0001-recipe-management.yaml`.
 
 ```sh
-joy add "Add a recipe" --type story --epic EP-0001 --priority high
-joy add "Edit a recipe" --type story --epic EP-0001 --priority high
-joy add "List recipes with filters" --type story --epic EP-0001 --priority medium
-joy add "Set up SQLite database" --type task --epic EP-0001 --priority critical
+joy add "Add a recipe" --type story --parent EP-0001 --priority high
+joy add "Edit a recipe" --type story --parent EP-0001 --priority high
+joy add "List recipes with filters" --type story --parent EP-0001 --priority medium
+joy add "Set up SQLite database" --type task --parent EP-0001 --priority critical
 ```
 
 Items are created with status `new`. Without any flags, `joy add` opens an interactive prompt.
@@ -63,12 +63,12 @@ IT-0003  story  medium    new     List recipes with filters
 IT-0004  task   critical  new     Set up SQLite database
 ```
 
-Filter by type, status, priority, or epic:
+Filter by type, status, priority, or parent:
 
 ```sh
 joy ls --type story
 joy ls --priority critical
-joy ls --epic EP-0001
+joy ls --parent EP-0001
 ```
 
 See the full project overview (board-style):

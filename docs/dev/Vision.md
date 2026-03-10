@@ -72,7 +72,7 @@ title: Payment Integration
 type: story           # epic | story | task | bug | rework | decision
 status: new           # new | open | in-progress | review | closed | deferred
 priority: high        # low | medium | high | critical
-epic: EP-0001         # parent epic (null for epics themselves)
+parent: EP-0001       # parent item (null for top-level items)
 assignee: null        # e-mail address or agent:role@joy
 deps:
   - IT-0017           # must be completed before this item
@@ -103,7 +103,7 @@ comments:
 | `rework` | Refactoring or improvement of existing code |
 | `decision` | Architectural or product decision to document |
 
-Epics are items too — they just have `type: epic` and no `epic:` parent field. This means all commands (`add`, `ls`, `status`, `rm`, etc.) work uniformly.
+Items form a generic parent-child hierarchy via the `parent` field. Any item can be a parent -- epics group stories, stories group tasks, etc. This means all commands (`add`, `ls`, `status`, `rm`, etc.) work uniformly across any nesting depth.
 
 ### Milestones
 
@@ -115,7 +115,7 @@ date: 2026-06-01
 description: "First public beta with core features."
 ```
 
-Items are linked to milestones via their `milestone` field.
+Items are linked to milestones via their `milestone` field. Milestones are inherited: if an item has no milestone but its parent does, the parent's milestone applies. This inheritance walks the full parent chain.
 
 ### Status Workflow
 
@@ -187,7 +187,7 @@ joy log                                 # Chronological change history
 
 ```sh
 joy add [title]                         # Create new item
-  joy add "Login Page" --type story --epic EP-0001 --priority high
+  joy add "Login Page" --type story --parent EP-0001 --priority high
   joy add "Crash bei Umlauten" --type bug
   joy add "Auth System" --type epic
   joy add                               # interactive mode (default)
@@ -199,18 +199,20 @@ joy edit [id]                           # Edit item
 joy rm [id]                             # Delete item (with confirmation)
   joy rm IT-002A
   joy rm IT-002A --force                # skip confirmation
-  joy rm EP-0001 --cascade               # epic + all linked items
+  joy rm EP-0001 --cascade               # item + all descendants
 
 joy ls                                  # List and filter items
   joy ls                                # all active items (excludes closed and deferred)
-  joy ls --epic EP-0001                  # items of an epic
+  joy ls --parent EP-0001                # items of a parent (and descendants)
   joy ls --type bug                     # only bugs
   joy ls --status in-progress           # by status
   joy ls --blocked                      # items with open deps
-  joy ls --blocking                     # items blocking others
   joy ls --priority critical            # by priority
   joy ls --mine                         # assigned to me
-  joy ls --tree                         # hierarchical view
+  joy ls --milestone MS-01              # by milestone (includes inherited)
+  joy ls --tree                         # hierarchical tree view
+  joy ls --tree --group milestone       # tree grouped by milestone
+  joy ls --show milestone,assignee      # extra columns (milestone, assignee, parent)
 
 joy show [id]                           # Detail view
   joy show IT-002A                      # all info, deps, history, comments
@@ -223,6 +225,8 @@ joy status [id] [state]                 # Change status
   joy status IT-002A in-progress
   joy status IT-002A closed             # warns if dependents still open
   joy status EP-0001 closed              # warns if child items still open
+  # Adding children to a closed parent triggers a warning
+
 
 # Shortcuts for common transitions
 joy start [id]                          # alias for: joy status [id] in-progress
