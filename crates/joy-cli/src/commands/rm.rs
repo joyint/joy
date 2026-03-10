@@ -19,7 +19,7 @@ pub struct RmArgs {
     force: bool,
 
     /// Delete item and all its children (recursively)
-    #[arg(short, long, alias = "cascade")]
+    #[arg(short, long)]
     recursive: bool,
 }
 
