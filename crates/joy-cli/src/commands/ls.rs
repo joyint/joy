@@ -8,6 +8,8 @@ use joy_core::items;
 use joy_core::model::item::{Item, ItemType, Priority, Status};
 use joy_core::store;
 
+use crate::color;
+
 #[derive(Args)]
 pub struct LsArgs {
     /// Filter by epic ID
@@ -90,7 +92,7 @@ pub fn run(args: LsArgs) -> Result<()> {
             }
 
             if let Some(ref epic) = args.epic {
-                if item.epic.as_deref() != Some(epic.as_str()) {
+                if item.id != *epic && item.epic.as_deref() != Some(epic.as_str()) {
                     return false;
                 }
             }
@@ -142,35 +144,48 @@ pub fn run(args: LsArgs) -> Result<()> {
 }
 
 fn print_table(items: &[&Item], all_items: &[Item]) {
-    // Header
     println!(
         "{:<10} {:<12} {:<13} {:<10} TITLE",
-        "ID", "TYPE", "STATUS", "PRIORITY"
+        color::heading("ID"),
+        color::heading("TYPE"),
+        color::heading("STATUS"),
+        color::heading("PRIORITY"),
     );
-    println!("{}", "-".repeat(70));
+    println!("{}", color::label(&"-".repeat(70)));
 
     for item in items {
-        let blocked = if item.is_blocked_by(all_items) {
-            " [blocked]"
+        let blocked_str = if item.is_blocked_by(all_items) {
+            format!(" {}", color::blocked("[blocked]"))
         } else {
-            ""
+            String::new()
         };
+        // Pad the colored strings to account for ANSI escape sequences
+        let id_str = color::id(&item.id);
+        let type_str = color::item_type(&item.item_type);
+        let status_str = color::status(&item.status);
+        let priority_str = color::priority(&item.priority);
+
+        // Use fixed-width formatting on the raw text, then print colored
         println!(
             "{:<10} {:<12} {:<13} {:<10} {}{}",
-            item.id,
-            item.item_type.to_string(),
-            item.status.to_string(),
-            item.priority.to_string(),
+            pad_colored(&id_str, &item.id, 10),
+            pad_colored(&type_str, &item.item_type.to_string(), 12),
+            pad_colored(&status_str, &item.status.to_string(), 13),
+            pad_colored(&priority_str, &item.priority.to_string(), 10),
             item.title,
-            blocked
+            blocked_str
         );
     }
 
-    println!("\n{} item(s)", items.len());
+    println!("\n{}", color::label(&format!("{} item(s)", items.len())));
+}
+
+fn pad_colored(colored: &str, raw: &str, width: usize) -> String {
+    let padding = width.saturating_sub(raw.len());
+    format!("{}{}", colored, " ".repeat(padding))
 }
 
 fn print_tree(items: &[&Item]) {
-    // Collect epics and their children
     let epics: Vec<&&Item> = items
         .iter()
         .filter(|i| matches!(i.item_type, ItemType::Epic))
@@ -182,7 +197,12 @@ fn print_tree(items: &[&Item]) {
         .collect();
 
     for epic in &epics {
-        println!("{} {} [{}]", epic.id, epic.title, epic.status);
+        println!(
+            "{} {} [{}]",
+            color::id(&epic.id),
+            epic.title,
+            color::status(&epic.status)
+        );
         let children: Vec<&&Item> = items
             .iter()
             .filter(|i| i.epic.as_deref() == Some(&epic.id))
@@ -195,7 +215,11 @@ fn print_tree(items: &[&Item]) {
             };
             println!(
                 "  {} {} {} [{}] [{}]",
-                connector, child.id, child.title, child.item_type, child.status
+                color::label(connector),
+                color::id(&child.id),
+                child.title,
+                color::item_type(&child.item_type),
+                color::status(&child.status)
             );
         }
     }
@@ -207,12 +231,15 @@ fn print_tree(items: &[&Item]) {
         for orphan in &orphans {
             println!(
                 "{} {} [{}] [{}]",
-                orphan.id, orphan.title, orphan.item_type, orphan.status
+                color::id(&orphan.id),
+                orphan.title,
+                color::item_type(&orphan.item_type),
+                color::status(&orphan.status)
             );
         }
     }
 
-    println!("\n{} item(s)", items.len());
+    println!("\n{}", color::label(&format!("{} item(s)", items.len())));
 }
 
 fn get_git_email() -> Result<String> {

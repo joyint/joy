@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
+mod color;
 mod commands;
 
 use clap::{Parser, Subcommand};

@@ -1,9 +1,9 @@
 id: IT-000E
 title: Semantic color scheme for terminal output
 type: story
-status: new
+status: closed
 priority: high
 epic: EP-0002
 created: '2026-03-10T00:19:05.711816132Z'
-updated: '2026-03-10T00:19:05.711816132Z'
+updated: '2026-03-10T00:28:39.595837334Z'
 description: Implement color scheme using console/owo-colors. Semantic mapping for status, priority, IDs. Respect NO_COLOR.

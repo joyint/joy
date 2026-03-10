@@ -7,13 +7,15 @@ use joy_core::items;
 use joy_core::model::item::{Item, Status};
 use joy_core::store;
 
+use crate::color;
+
 pub fn run() -> Result<()> {
     let cwd = std::env::current_dir()?;
 
     let root = match store::find_project_root(&cwd) {
         Some(r) => r,
         None => {
-            println!("joy v0.1.0 -- run `joy init` to get started");
+            println!("joy v0.2.0 -- run `joy init` to get started");
             return Ok(());
         }
     };
@@ -51,28 +53,37 @@ pub fn run() -> Result<()> {
             closed = count;
         }
 
-        println!("--- {} ({}) ---", label, count);
+        println!(
+            "--- {} ({}) ---",
+            color::status_heading(status, label),
+            count
+        );
         for item in &items_in_status {
-            let blocked = if item.is_blocked_by(&all_items) {
-                " [blocked]"
+            let blocked_str = if item.is_blocked_by(&all_items) {
+                format!(" {}", color::blocked("[blocked]"))
             } else {
-                ""
+                String::new()
             };
             println!(
                 "  {} {} [{}]{}",
-                item.id, item.title, item.priority, blocked
+                color::id(&item.id),
+                item.title,
+                color::priority(&item.priority),
+                blocked_str
             );
         }
         println!();
     }
 
-    // Summary line
     if total > 0 {
         println!(
-            "{} item(s), {} closed, {} active",
-            total,
-            closed,
-            total - closed
+            "{}",
+            color::label(&format!(
+                "{} item(s), {} closed, {} active",
+                total,
+                closed,
+                total - closed
+            ))
         );
     }
 

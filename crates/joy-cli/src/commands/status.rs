@@ -9,6 +9,8 @@ use joy_core::items;
 use joy_core::model::item::{ItemType, Status};
 use joy_core::store;
 
+use crate::color;
+
 #[derive(Args)]
 pub struct StatusArgs {
     /// Item ID (e.g. IT-0001)
@@ -40,11 +42,16 @@ pub fn run(args: StatusArgs) -> Result<()> {
         if !open_children.is_empty() {
             eprintln!(
                 "Warning: epic {} has {} open child item(s):",
-                item.id,
+                color::id(&item.id),
                 open_children.len()
             );
             for child in &open_children {
-                eprintln!("  {} {} [{}]", child.id, child.title, child.status);
+                eprintln!(
+                    "  {} {} [{}]",
+                    color::id(&child.id),
+                    child.title,
+                    color::status(&child.status)
+                );
             }
         }
     }
@@ -59,11 +66,16 @@ pub fn run(args: StatusArgs) -> Result<()> {
         if !open_deps.is_empty() {
             eprintln!(
                 "Warning: {} has {} open dependency(ies):",
-                item.id,
+                color::id(&item.id),
                 open_deps.len()
             );
             for dep in &open_deps {
-                eprintln!("  {} {} [{}]", dep.id, dep.title, dep.status);
+                eprintln!(
+                    "  {} {} [{}]",
+                    color::id(&dep.id),
+                    dep.title,
+                    color::status(&dep.status)
+                );
             }
         }
     }
@@ -72,7 +84,12 @@ pub fn run(args: StatusArgs) -> Result<()> {
     item.updated = Utc::now();
     items::update_item(&root, &item)?;
 
-    println!("{} {} -> {}", item.id, old_status, new_status);
+    println!(
+        "{} {} -> {}",
+        color::id(&item.id),
+        color::status(&old_status),
+        color::status(&new_status)
+    );
 
     // Auto-close epic when all children are closed
     if let (Status::Closed, Some(ref epic_id)) = (&new_status, &item.epic) {
@@ -90,7 +107,9 @@ pub fn run(args: StatusArgs) -> Result<()> {
                     items::update_item(&root, &epic)?;
                     println!(
                         "{} {} -> {} (all children closed)",
-                        epic.id, epic_old, epic.status
+                        color::id(&epic.id),
+                        color::status(&epic_old),
+                        color::status(&epic.status)
                     );
                 }
             }
