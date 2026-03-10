@@ -69,7 +69,7 @@ Everything is an **Item**. An Item has a `type` that determines its semantics, b
 # .joy/items/IT-002A-payment-integration.yaml
 id: IT-002A
 title: Payment Integration
-type: story           # epic | story | task | bug | rework | decision
+type: story           # epic | story | task | bug | rework | decision | idea
 status: new           # new | open | in-progress | review | closed | deferred
 priority: high        # low | medium | high | critical
 parent: EP-0001       # parent item (null for top-level items)
@@ -102,6 +102,7 @@ comments:
 | `bug` | Defect to fix |
 | `rework` | Refactoring or improvement of existing code |
 | `decision` | Architectural or product decision to document |
+| `idea` | Spontaneous idea, not yet refined into a concrete item |
 
 Items form a generic parent-child hierarchy via the `parent` field. Any item can be a parent -- epics group stories, stories group tasks, etc. This means all commands (`add`, `ls`, `status`, `rm`, etc.) work uniformly across any nesting depth.
 

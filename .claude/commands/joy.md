@@ -25,6 +25,7 @@ When the user describes features, ideas, problems, or requirements in prose:
    - `bug` -- defect to fix
    - `rework` -- refactoring or improvement of existing code
    - `decision` -- architectural, product, or system decision to document
+   - `idea` -- spontaneous idea, not yet refined into a concrete item
 
 2. Present a short numbered list of proposed items (title, type, priority) and ask if the structure looks right.
 

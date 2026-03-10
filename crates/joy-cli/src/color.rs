@@ -76,6 +76,7 @@ pub fn item_type(t: &ItemType) -> String {
     match t {
         ItemType::Epic => wrap(MAGENTA, &text),
         ItemType::Bug => wrap(RED, &text),
+        ItemType::Idea => wrap(CYAN, &text),
         _ => wrap(DIM, &text),
     }
 }

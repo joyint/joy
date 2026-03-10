@@ -14,7 +14,7 @@ pub struct AddArgs {
     #[arg(short, long)]
     title: Option<String>,
 
-    /// Item type: epic, story, task, bug, rework, decision
+    /// Item type: epic, story, task, bug, rework, decision, idea
     #[arg(short = 'T', long = "type")]
     item_type: Option<String>,
 

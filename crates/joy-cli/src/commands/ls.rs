@@ -17,7 +17,7 @@ pub struct LsArgs {
     #[arg(long, alias = "epic")]
     parent: Option<String>,
 
-    /// Filter by type: epic, story, task, bug, rework, decision
+    /// Filter by type: epic, story, task, bug, rework, decision, idea
     #[arg(short = 'T', long = "type")]
     item_type: Option<String>,
 

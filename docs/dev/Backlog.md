@@ -38,7 +38,7 @@ description: |
 - id: IT-0001
   title: "joy init: project initialization"
   type: task
-  epic: EP-0001
+  parent: EP-0001
   priority: critical
   description: |
     Create .joy/ directory structure with config.yaml and project.yaml.
@@ -48,7 +48,7 @@ description: |
 - id: IT-0002
   title: "joy add: create items interactively"
   type: story
-  epic: EP-0001
+  parent: EP-0001
   priority: critical
   deps: [IT-0001]
   description: |
@@ -60,7 +60,7 @@ description: |
 - id: IT-0003
   title: "joy ls: list and filter items"
   type: story
-  epic: EP-0001
+  parent: EP-0001
   priority: critical
   deps: [IT-0001]
   description: |
@@ -72,7 +72,7 @@ description: |
 - id: IT-0004
   title: "joy status: change item status"
   type: story
-  epic: EP-0001
+  parent: EP-0001
   priority: critical
   deps: [IT-0002]
   description: |
@@ -84,7 +84,7 @@ description: |
 - id: IT-0005
   title: "joy: board overview (default command)"
   type: story
-  epic: EP-0001
+  parent: EP-0001
   priority: critical
   deps: [IT-0003]
   description: |
@@ -96,7 +96,7 @@ description: |
 - id: IT-0006
   title: "joy edit: modify existing items"
   type: story
-  epic: EP-0001
+  parent: EP-0001
   priority: high
   deps: [IT-0002]
   description: |
@@ -106,7 +106,7 @@ description: |
 - id: IT-0007
   title: "joy rm: delete items"
   type: story
-  epic: EP-0001
+  parent: EP-0001
   priority: high
   deps: [IT-0002]
   description: |
@@ -118,7 +118,7 @@ description: |
 - id: IT-0008
   title: "joy show: item detail view"
   type: story
-  epic: EP-0001
+  parent: EP-0001
   priority: high
   deps: [IT-0002]
   description: |
@@ -128,7 +128,7 @@ description: |
 - id: IT-0009
   title: "joy deps: dependency management"
   type: story
-  epic: EP-0001
+  parent: EP-0001
   priority: high
   deps: [IT-0002]
   description: |
@@ -139,7 +139,7 @@ description: |
 - id: IT-000A
   title: "joy milestone: milestone management"
   type: story
-  epic: EP-0001
+  parent: EP-0001
   priority: medium
   deps: [IT-0002]
   description: |
@@ -151,7 +151,7 @@ description: |
 - id: IT-000B
   title: "joy log: change history"
   type: story
-  epic: EP-0001
+  parent: EP-0001
   priority: medium
   deps: [IT-0001]
   description: |
@@ -163,7 +163,7 @@ description: |
 - id: IT-000C
   title: "joy project: view and edit project metadata"
   type: task
-  epic: EP-0001
+  parent: EP-0001
   priority: medium
   deps: [IT-0001]
   description: |
@@ -173,7 +173,7 @@ description: |
 - id: IT-000D
   title: "joy completions: shell completion generation"
   type: task
-  epic: EP-0001
+  parent: EP-0001
   priority: medium
   deps: [IT-0001]
   description: |
@@ -184,7 +184,7 @@ description: |
 - id: IT-0029
   title: "joy assign: assign and unassign items"
   type: story
-  epic: EP-0001
+  parent: EP-0001
   priority: medium
   deps: [IT-0001]
   description: |
@@ -195,7 +195,7 @@ description: |
 - id: IT-002A
   title: "joy comment: add comments to items"
   type: story
-  epic: EP-0001
+  parent: EP-0001
   priority: medium
   deps: [IT-0001]
   description: |
@@ -206,7 +206,7 @@ description: |
 - id: IT-002B
   title: "Status shortcuts: joy start, joy submit, joy close"
   type: task
-  epic: EP-0001
+  parent: EP-0001
   priority: low
   deps: [IT-0004]
   description: |
@@ -241,7 +241,7 @@ description: |
 - id: IT-000E
   title: Semantic color scheme for terminal output
   type: story
-  epic: EP-0002
+  parent: EP-0002
   priority: high
   description: |
     Implement color scheme using console/owo-colors crate.
@@ -263,7 +263,7 @@ description: |
 - id: IT-000F
   title: Emoji indicators for item types and status
   type: story
-  epic: EP-0002
+  parent: EP-0002
   priority: medium
   description: |
     Use emoji as visual indicators for type and status at runtime.
@@ -285,7 +285,7 @@ description: |
 - id: IT-0010
   title: Output format configuration in config.yaml
   type: task
-  epic: EP-0002
+  parent: EP-0002
   priority: medium
   deps: [IT-000E, IT-000F]
   description: |
@@ -298,7 +298,7 @@ description: |
 - id: IT-0011
   title: Compact table formatting for joy ls
   type: task
-  epic: EP-0002
+  parent: EP-0002
   priority: medium
   deps: [IT-0003, IT-000E]
   description: |
@@ -332,7 +332,7 @@ description: |
 - id: IT-0012
   title: "joy ai setup: tool and model configuration"
   type: story
-  epic: EP-0003
+  parent: EP-0003
   priority: high
   description: |
     Configure one AI tool per project (claude-code, mistral-vibe, github-copilot, qwen-code).
@@ -343,7 +343,7 @@ description: |
 - id: IT-0013
   title: "joy ai estimate: effort and cost estimation"
   type: story
-  epic: EP-0003
+  parent: EP-0003
   priority: high
   deps: [IT-0012]
   description: |
@@ -354,7 +354,7 @@ description: |
 - id: IT-0014
   title: "joy ai plan: break epic into items"
   type: story
-  epic: EP-0003
+  parent: EP-0003
   priority: high
   deps: [IT-0012]
   description: |
@@ -365,7 +365,7 @@ description: |
 - id: IT-0015
   title: "joy ai implement: dispatch to external agent CLI"
   type: story
-  epic: EP-0003
+  parent: EP-0003
   priority: high
   deps: [IT-0012]
   description: |
@@ -378,7 +378,7 @@ description: |
 - id: IT-0016
   title: "joy ai review: automated code review"
   type: story
-  epic: EP-0003
+  parent: EP-0003
   priority: medium
   deps: [IT-0012]
   description: |
@@ -388,7 +388,7 @@ description: |
 - id: IT-0017
   title: "joy ai status: monitor AI jobs"
   type: story
-  epic: EP-0003
+  parent: EP-0003
   priority: medium
   deps: [IT-0015]
   description: |
@@ -399,7 +399,7 @@ description: |
 - id: IT-0018
   title: AI cost tracking and job logging
   type: task
-  epic: EP-0003
+  parent: EP-0003
   priority: high
   deps: [IT-0015]
   description: |
@@ -411,7 +411,7 @@ description: |
 - id: IT-0019
   title: Status intelligence from git activity
   type: story
-  epic: EP-0003
+  parent: EP-0003
   priority: low
   deps: [IT-0012, IT-0004]
   description: |
@@ -444,7 +444,7 @@ description: |
 - id: IT-001A
   title: "joy app: basic board view"
   type: story
-  epic: EP-0004
+  parent: EP-0004
   priority: high
   description: |
     Kanban-style board with columns per status.
@@ -454,7 +454,7 @@ description: |
 - id: IT-001B
   title: "TUI: item detail panel"
   type: story
-  epic: EP-0004
+  parent: EP-0004
   priority: medium
   deps: [IT-001A]
   description: |
@@ -464,7 +464,7 @@ description: |
 - id: IT-001C
   title: "TUI: dependency tree view"
   type: story
-  epic: EP-0004
+  parent: EP-0004
   priority: low
   deps: [IT-001A]
   description: |
@@ -496,7 +496,7 @@ description: |
 - id: IT-001D
   title: "joy serve: HTTP server with REST API"
   type: story
-  epic: EP-0005
+  parent: EP-0005
   priority: high
   description: |
     Axum-based server started via joy serve.
@@ -508,7 +508,7 @@ description: |
 - id: IT-001E
   title: "joy sync: push and pull"
   type: story
-  epic: EP-0005
+  parent: EP-0005
   priority: high
   deps: [IT-001D]
   description: |
@@ -520,7 +520,7 @@ description: |
 - id: IT-001F
   title: "joy clone: clone project from remote"
   type: story
-  epic: EP-0005
+  parent: EP-0005
   priority: medium
   deps: [IT-001D]
   description: |
@@ -531,7 +531,7 @@ description: |
 - id: IT-0020
   title: "Client-side encryption for synced data (v2)"
   type: story
-  epic: EP-0005
+  parent: EP-0005
   priority: low
   deps: [IT-001E]
   description: |
@@ -544,7 +544,7 @@ description: |
 - id: IT-0021
   title: OAuth authentication with GitHub and Gitea
   type: task
-  epic: EP-0005
+  parent: EP-0005
   priority: high
   deps: [IT-001D]
   description: |
@@ -581,7 +581,7 @@ description: |
 - id: IT-0022
   title: Web frontend scaffolding with SolidJS
   type: task
-  epic: EP-0006
+  parent: EP-0006
   priority: high
   description: |
     Set up web/ project with SolidJS + TypeScript + Vite + Tailwind.
@@ -590,7 +590,7 @@ description: |
 - id: IT-0023
   title: "Web: board view (Kanban)"
   type: story
-  epic: EP-0006
+  parent: EP-0006
   priority: high
   deps: [IT-0022]
   description: |
@@ -601,7 +601,7 @@ description: |
 - id: IT-0024
   title: "Web: item detail and editing"
   type: story
-  epic: EP-0006
+  parent: EP-0006
   priority: high
   deps: [IT-0022]
   description: |
@@ -612,7 +612,7 @@ description: |
 - id: IT-0025
   title: "Web: visual roadmap and dependency graph"
   type: story
-  epic: EP-0006
+  parent: EP-0006
   priority: medium
   deps: [IT-0023]
   description: |
@@ -622,7 +622,7 @@ description: |
 - id: IT-0026
   title: "Web: AI job dispatch and monitoring"
   type: story
-  epic: EP-0006
+  parent: EP-0006
   priority: medium
   deps: [IT-0022, IT-0017]
   description: |
@@ -633,7 +633,7 @@ description: |
 - id: IT-0027
   title: "Web: encryption key handling in browser (v2)"
   type: task
-  epic: EP-0006
+  parent: EP-0006
   priority: low
   deps: [IT-0020, IT-0022]
   description: |
@@ -645,7 +645,7 @@ description: |
 - id: IT-0028
   title: Embed web frontend in joy serve
   type: task
-  epic: EP-0006
+  parent: EP-0006
   priority: high
   deps: [IT-001D, IT-0022]
   description: |
@@ -656,7 +656,7 @@ description: |
 - id: IT-002C
   title: Tauri native shell wrapping web frontend
   type: task
-  epic: EP-0006
+  parent: EP-0006
   priority: medium
   deps: [IT-0022]
   description: |
@@ -669,7 +669,7 @@ description: |
 - id: IT-002D
   title: joyint.com deployment
   type: task
-  epic: EP-0006
+  parent: EP-0006
   priority: medium
   deps: [IT-001D, IT-0028]
   description: |

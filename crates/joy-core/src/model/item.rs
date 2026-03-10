@@ -39,6 +39,7 @@ pub enum ItemType {
     Bug,
     Rework,
     Decision,
+    Idea,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -115,6 +116,7 @@ impl std::fmt::Display for ItemType {
             ItemType::Bug => write!(f, "bug"),
             ItemType::Rework => write!(f, "rework"),
             ItemType::Decision => write!(f, "decision"),
+            ItemType::Idea => write!(f, "idea"),
         }
     }
 }
@@ -153,6 +155,7 @@ impl std::str::FromStr for ItemType {
             "bug" => Ok(ItemType::Bug),
             "rework" => Ok(ItemType::Rework),
             "decision" => Ok(ItemType::Decision),
+            "idea" => Ok(ItemType::Idea),
             _ => Err(format!("unknown item type: {s}")),
         }
     }
