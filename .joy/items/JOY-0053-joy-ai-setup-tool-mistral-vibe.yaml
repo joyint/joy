@@ -1,0 +1,11 @@
+id: JOY-0053
+title: 'joy ai setup tool: Mistral Vibe integration'
+type: task
+status: new
+priority: medium
+parent: JOY-0018
+deps:
+- JOY-0050
+created: '2026-03-11T18:34:25.977300765Z'
+updated: '2026-03-11T18:34:38.938169480Z'
+description: Generate project instructions for Mistral Vibe (vibe CLI). Detect installed vibe command. References shared instructions document.

@@ -1,0 +1,11 @@
+id: JOY-0051
+title: 'joy ai setup tool: Claude Code integration'
+type: task
+status: new
+priority: high
+parent: JOY-0018
+deps:
+- JOY-0050
+created: '2026-03-11T18:34:25.107856275Z'
+updated: '2026-03-11T18:34:38.029846157Z'
+description: Generate .claude/commands/joy.md skill file and update CLAUDE.md with Joy instructions. Detect existing Claude Code config and merge. References shared instructions document.

@@ -1,0 +1,9 @@
+id: JOY-0050
+title: Shared Joy instructions document for AI tools
+type: task
+status: new
+priority: high
+parent: JOY-0018
+created: '2026-03-11T18:33:57.509109286Z'
+updated: '2026-03-11T18:33:57.509109286Z'
+description: Create a tool-agnostic document with Joy CLI usage instructions, workflow conventions, and best practices. All tool-specific integrations reference this shared document. Lives in .joy/ or docs/.

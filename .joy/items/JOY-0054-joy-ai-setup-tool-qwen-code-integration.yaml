@@ -1,0 +1,11 @@
+id: JOY-0054
+title: 'joy ai setup tool: Qwen Code integration'
+type: task
+status: new
+priority: medium
+parent: JOY-0018
+deps:
+- JOY-0050
+created: '2026-03-11T18:34:26.411120524Z'
+updated: '2026-03-11T18:34:39.340785405Z'
+description: Generate project instructions for Qwen Code (qwen CLI). Detect installed qwen command. References shared instructions document.

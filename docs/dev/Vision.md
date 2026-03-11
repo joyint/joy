@@ -361,11 +361,20 @@ Joy supports two modes of AI integration:
 
 ### Tool mode (MS-02): Joy as a tool for AI agents
 
-External AI agents (Claude Code, Cursor, Windsurf, etc.) use Joy's CLI as
-a tool. The agent calls `joy` commands to read, create, and manage items.
-This already works today via skill definitions (e.g. the `/joy` Claude Code
-skill). `joy ai setup tool` formalizes this by generating the appropriate
-config files for the detected AI tool.
+External AI agents use Joy's CLI as a tool. The agent calls `joy` commands
+to read, create, and manage items. This already works today via skill
+definitions (e.g. the `/joy` Claude Code skill). `joy ai setup tool`
+formalizes this by generating the appropriate config files for the detected
+AI tool.
+
+Supported tools for tool mode:
+
+| Tool | Config ID | Integration |
+|------|-----------|-------------|
+| Claude Code (Anthropic) | `claude-code` | Skill file + CLAUDE.md |
+| GitHub Copilot (GitHub) | `github-copilot` | `.github/copilot-instructions.md` |
+| Mistral Vibe (Mistral) | `mistral-vibe` | Project instructions |
+| Qwen Code (Alibaba) | `qwen-code` | Project instructions |
 
 No own agent runtime, no API calls, no cost tracking needed. The AI tool
 handles everything -- Joy just provides the product management interface.
