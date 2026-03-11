@@ -34,7 +34,11 @@ pub fn run(args: ProjectArgs) -> Result<()> {
             project.name = name;
         }
         if let Some(description) = args.description {
-            project.description = Some(description);
+            project.description = if description.is_empty() {
+                None
+            } else {
+                Some(description)
+            };
         }
         store::write_yaml(&project_path, &project)?;
         println!("Project updated.");

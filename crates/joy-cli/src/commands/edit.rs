@@ -31,7 +31,7 @@ pub struct EditArgs {
     description: Option<String>,
 
     /// Set milestone (use "none" to remove)
-    #[arg(short, long)]
+    #[arg(short = 'm', long)]
     milestone: Option<String>,
 
     /// Tags (comma-separated, replaces existing)
