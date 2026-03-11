@@ -1,0 +1,12 @@
+id: JOY-004E
+title: Default joy output should be reduced
+type: idea
+status: closed
+priority: medium
+created: '2026-03-11T17:54:45.208116660Z'
+updated: '2026-03-11T17:58:05.349278790Z'
+description: A compact overview of a limited number of items per status shall be shown. If there are more then 10 in a status then there shall be an info that all items can be shown with joy -all
+comments:
+- author: horst.schwarz@joydev.com
+  date: '2026-03-11T17:56:05.540307338Z'
+  text: Limit applies only to joy (board view), not to joy ls. Show max 10 items per status group, with a hint like '(+N more, use joy --all)' when truncated.

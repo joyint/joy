@@ -9,7 +9,9 @@ use joy_core::store;
 
 use crate::color;
 
-pub fn run() -> Result<()> {
+const MAX_PER_GROUP: usize = 10;
+
+pub fn run(args: crate::BoardArgs) -> Result<()> {
     let cwd = std::env::current_dir()?;
 
     let root = match store::find_project_root(&cwd) {
@@ -62,7 +64,12 @@ pub fn run() -> Result<()> {
             color::status_heading(status, label),
             count
         );
-        for item in &items_in_status {
+        let show_count = if args.all {
+            count
+        } else {
+            count.min(MAX_PER_GROUP)
+        };
+        for item in items_in_status.iter().take(show_count) {
             let blocked_str = if item.is_blocked_by(&all_items) {
                 format!(" {}", color::blocked("[blocked]"))
             } else {
@@ -74,6 +81,15 @@ pub fn run() -> Result<()> {
                 item.title,
                 color::priority(&item.priority),
                 blocked_str
+            );
+        }
+        if show_count < count {
+            println!(
+                "  {}",
+                color::label(&format!(
+                    "(+{} more, use `joy board --all`)",
+                    count - show_count
+                ))
             );
         }
         println!();

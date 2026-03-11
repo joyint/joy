@@ -26,3 +26,7 @@
 2026-03-11T17:48:45.144Z JOY-003C item.updated "Add --tag filter to joy ls" [horst.schwarz@joydev.com]
 2026-03-11T17:48:59.463Z JOY-003C item.updated "Add --tag filter to joy ls" [horst.schwarz@joydev.com]
 2026-03-11T17:48:59.904Z JOY-003C item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
+2026-03-11T17:54:45.213Z JOY-004E item.created "Default joy output should be reduced" [horst.schwarz@joydev.com]
+2026-03-11T17:56:05.542Z JOY-004E comment.added "Limit applies only to joy (board view), not to joy ls. Show max 10 items per status group, with a hint like '(+N more, use joy --all)' when truncated." [horst.schwarz@joydev.com]
+2026-03-11T17:56:10.694Z JOY-004E item.status_changed "new -> in-progress" [horst.schwarz@joydev.com]
+2026-03-11T17:58:05.351Z JOY-004E item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]

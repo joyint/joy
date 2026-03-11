@@ -68,6 +68,15 @@ enum Commands {
     Close(ShortcutArgs),
     /// Shortcut: set item status back to open
     Reopen(ShortcutArgs),
+    /// Show the board (default when no command given)
+    Board(BoardArgs),
+}
+
+#[derive(clap::Args)]
+pub(crate) struct BoardArgs {
+    /// Show all items (no limit per status group)
+    #[arg(short, long)]
+    pub all: bool,
 }
 
 #[derive(clap::Args)]
@@ -122,6 +131,7 @@ fn main() -> anyhow::Result<()> {
             args.id,
             "open".to_string(),
         )),
-        None => commands::board::run(),
+        Some(Commands::Board(args)) => commands::board::run(args),
+        None => commands::board::run(BoardArgs { all: false }),
     }
 }

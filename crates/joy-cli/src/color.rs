@@ -57,7 +57,7 @@ pub fn status_indicator(s: &Status) -> &'static str {
         return "";
     }
     match s {
-        Status::New => "",
+        Status::New => "\u{1f331} ",
         Status::Open => "\u{1f7e2} ",
         Status::InProgress => "\u{25b6}\u{fe0f} ",
         Status::Review => "\u{1f440} ",
