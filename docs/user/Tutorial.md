@@ -33,19 +33,19 @@ Everything Joy knows about your project lives here. It is plain YAML, versioned 
 Create an epic to group related work, then add stories and tasks beneath it:
 
 ```sh
-joy add "Recipe Management" --type epic
+joy add --title "Recipe Management" --type epic
 ```
 
 Joy assigns ID `EP-0001` and creates `.joy/items/EP-0001-recipe-management.yaml`.
 
 ```sh
-joy add "Add a recipe" --type story --parent EP-0001 --priority high
-joy add "Edit a recipe" --type story --parent EP-0001 --priority high
-joy add "List recipes with filters" --type story --parent EP-0001 --priority medium
-joy add "Set up SQLite database" --type task --parent EP-0001 --priority critical
+joy add --title "Add a recipe" --type story --parent EP-0001 --priority high
+joy add --title "Edit a recipe" --type story --parent EP-0001 --priority high
+joy add --title "List recipes with filters" --type story --parent EP-0001 --priority medium
+joy add --title "Set up SQLite database" --type task --parent EP-0001 --priority critical
 ```
 
-Items are created with status `new`. Without any flags, `joy add` opens an interactive prompt.
+Items are created with status `new`.
 
 ---
 
@@ -303,12 +303,7 @@ In v1, sync uses HTTPS with authenticated connections. End-to-end encryption for
 | `joy deps`         | Manage dependencies                 |
 | `joy milestone`    | Manage milestones                   |
 | `joy log`          | Change history                      |
-| `joy ai`           | AI estimation, planning, dispatch   |
-| `joy sync`         | Push/pull to remote                 |
-| `joy clone`        | Clone a remote project              |
 | `joy project`      | View/edit project info              |
-| `joy serve`        | Start server for sync and web UI    |
-| `joy app`          | Launch TUI                          |
 | `joy completions`  | Generate shell completions          |
 
 For developer documentation see [docs/dev/](../dev/).

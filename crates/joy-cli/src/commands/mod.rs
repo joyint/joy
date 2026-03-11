@@ -12,6 +12,7 @@ pub mod init;
 pub mod log;
 pub mod ls;
 pub mod milestone;
+pub mod project;
 pub mod rm;
 pub mod show;
 pub mod status;

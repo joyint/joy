@@ -1984,7 +1984,7 @@ checksum = "8eaf4bc02d17cbdd7ff4c7438cafcdf7fb9a4613313ad11b4f8fefe7d3fa0130"
 
 [[package]]
 name = "joy-ai"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "joy-core",
  "serde",
@@ -1995,7 +1995,7 @@ dependencies = [
 
 [[package]]
 name = "joy-app"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "joy-ai",
  "joy-core",
@@ -2007,7 +2007,7 @@ dependencies = [
 
 [[package]]
 name = "joy-core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "chrono",
  "insta",
@@ -2020,7 +2020,7 @@ dependencies = [
 
 [[package]]
 name = "joyint"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -2038,6 +2038,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tower-http",
+ "unicode-width 0.2.0",
 ]
 
 [[package]]

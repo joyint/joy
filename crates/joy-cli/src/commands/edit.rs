@@ -23,7 +23,7 @@ pub struct EditArgs {
     priority: Option<String>,
 
     /// Set parent item ID (use "none" to remove)
-    #[arg(long, alias = "epic")]
+    #[arg(long)]
     parent: Option<String>,
 
     /// New description
@@ -91,16 +91,29 @@ pub fn run(args: EditArgs) -> Result<()> {
     }
 
     if let Some(ref tags) = args.tags {
-        item.tags = tags.split(',').map(|s| s.trim().to_string()).collect();
+        item.tags = if tags.is_empty() {
+            Vec::new()
+        } else {
+            tags.split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        };
         changed = true;
     }
 
     if let Some(ref deps) = args.deps {
-        item.deps = if deps.is_empty() {
-            Vec::new()
+        if deps.is_empty() {
+            item.deps = Vec::new();
         } else {
-            deps.split(',').map(|s| s.trim().to_string()).collect()
-        };
+            let new_deps: Vec<String> = deps.split(',').map(|s| s.trim().to_string()).collect();
+            for dep_id in &new_deps {
+                if let Some(cycle) = items::detect_cycle(&root, &item.id, dep_id)? {
+                    anyhow::bail!("circular dependency: {}", cycle.join(" -> "));
+                }
+            }
+            item.deps = new_deps;
+        }
         changed = true;
     }
 

@@ -35,6 +35,8 @@ enum Commands {
     Deps(commands::deps::DepsArgs),
     /// Manage milestones
     Milestone(commands::milestone::MilestoneArgs),
+    /// View or edit project metadata
+    Project(commands::project::ProjectArgs),
     /// Assign or unassign items
     Assign(commands::assign::AssignArgs),
     /// Show change history for items
@@ -56,6 +58,9 @@ struct ShortcutArgs {
 }
 
 fn main() -> anyhow::Result<()> {
+    let config = joy_core::store::load_config();
+    color::init(&config.output);
+
     let cli = Cli::parse();
 
     match cli.command {
@@ -69,6 +74,7 @@ fn main() -> anyhow::Result<()> {
         Some(Commands::Comment(args)) => commands::comment::run(args),
         Some(Commands::Deps(args)) => commands::deps::run(args),
         Some(Commands::Milestone(args)) => commands::milestone::run(args),
+        Some(Commands::Project(args)) => commands::project::run(args),
         Some(Commands::Assign(args)) => commands::assign::run(args),
         Some(Commands::Log(args)) => commands::log::run(args),
         Some(Commands::Completions(args)) => commands::completions::run(args, &mut Cli::command()),

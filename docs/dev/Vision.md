@@ -182,20 +182,19 @@ joy project                             # View/edit project info (interactive)
 joy log                                 # Chronological change history
   joy log --since 7d
   joy log --item IT-002A
+  joy log --limit 50                    # max entries (default: 20)
 ```
 
 ### Items
 
 ```sh
-joy add [title]                         # Create new item
-  joy add "Login Page" --type story --parent EP-0001 --priority high
-  joy add "Crash bei Umlauten" --type bug
-  joy add "Auth System" --type epic
-  joy add                               # interactive mode (default)
+joy add                                 # Create new item
+  joy add --title "Login Page" --type story --parent EP-0001 --priority high
+  joy add --title "Crash bei Umlauten" --type bug
+  joy add --title "Auth System" --type epic
 
 joy edit [id]                           # Edit item
   joy edit IT-002A --title "Payment v2" --priority critical
-  joy edit IT-002A                      # interactive
 
 joy rm [id]                             # Delete item (with confirmation)
   joy rm IT-002A
@@ -204,7 +203,8 @@ joy rm [id]                             # Delete item (with confirmation)
   joy rm -rf EP-0001                     # same as --recursive --force
 
 joy ls                                  # List and filter items
-  joy ls                                # all active items (excludes closed and deferred)
+  joy ls                                # active items (excludes closed and deferred)
+  joy ls --all                          # all items including closed and deferred
   joy ls --parent EP-0001                # items of a parent (and descendants)
   joy ls --type bug                     # only bugs
   joy ls --status in-progress           # by status
@@ -249,7 +249,6 @@ joy assign [id] [email]                 # Assign item to a person or agent
 ```sh
 joy comment [id] [text]                 # Add a comment to an item
   joy comment IT-002A "Looks good, ready to merge."
-  joy comment IT-002A                   # interactive (opens $EDITOR)
 ```
 
 ### Dependencies
@@ -269,7 +268,6 @@ joy milestone add [name]                # Create milestone
   joy milestone add "Beta Release" --date 2026-06-01
 
 joy milestone ls                        # List milestones
-  joy milestone ls --upcoming
 
 joy milestone rm [id]                   # Delete milestone
 joy milestone show [id]                 # Detail: items, progress, risks

@@ -15,7 +15,10 @@ pub fn run() -> Result<()> {
     let root = match store::find_project_root(&cwd) {
         Some(r) => r,
         None => {
-            println!("joy v0.2.0 -- run `joy init` to get started");
+            println!(
+                "joy v{} -- run `joy init` to get started",
+                env!("CARGO_PKG_VERSION")
+            );
             return Ok(());
         }
     };
@@ -54,7 +57,8 @@ pub fn run() -> Result<()> {
         }
 
         println!(
-            "--- {} ({}) ---",
+            "--- {}{} ({}) ---",
+            color::status_indicator(status),
             color::status_heading(status, label),
             count
         );

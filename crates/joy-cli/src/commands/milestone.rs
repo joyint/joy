@@ -10,6 +10,7 @@ use joy_core::milestones;
 use joy_core::model::milestone::Milestone;
 use joy_core::store;
 
+use super::ls::effective_milestone;
 use crate::color;
 
 #[derive(Args)]
@@ -121,7 +122,7 @@ fn run_ls() -> Result<()> {
     for ms in &milestones {
         let linked: Vec<_> = all_items
             .iter()
-            .filter(|i| i.milestone.as_deref() == Some(&ms.id))
+            .filter(|i| effective_milestone(i, &all_items) == Some(&ms.id))
             .collect();
         let closed = linked.iter().filter(|i| !i.is_active()).count();
         let total = linked.len();
@@ -154,7 +155,7 @@ fn run_show(args: ShowArgs) -> Result<()> {
     let all_items = items::load_items(&root)?;
     let linked: Vec<_> = all_items
         .iter()
-        .filter(|i| i.milestone.as_deref() == Some(&ms.id))
+        .filter(|i| effective_milestone(i, &all_items) == Some(&ms.id))
         .collect();
 
     println!("{} {}", color::id(&ms.id), color::heading(&ms.title));
@@ -192,6 +193,19 @@ fn run_show(args: ShowArgs) -> Result<()> {
                 item.title,
                 color::status(&item.status)
             );
+            for dep_id in &item.deps {
+                if let Some(dep) = all_items.iter().find(|i| i.id == *dep_id) {
+                    if dep.is_active() {
+                        println!(
+                            "    {} {} {} [{}]",
+                            color::label("blocked by"),
+                            color::id(&dep.id),
+                            dep.title,
+                            color::status(&dep.status)
+                        );
+                    }
+                }
+            }
         }
     }
 

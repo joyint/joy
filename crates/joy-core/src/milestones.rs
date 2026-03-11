@@ -72,7 +72,10 @@ pub fn next_id(root: &Path) -> Result<String, JoyError> {
         }
     }
 
-    Ok(format!("MS-{:02X}", max_num + 1))
+    let next = max_num
+        .checked_add(1)
+        .ok_or_else(|| JoyError::Other("MS ID space exhausted (max MS-FF)".to_string()))?;
+    Ok(format!("MS-{next:02X}"))
 }
 
 /// Find the file path for a milestone by its ID.

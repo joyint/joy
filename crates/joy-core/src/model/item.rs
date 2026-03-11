@@ -212,8 +212,13 @@ pub fn slugify(title: &str) -> String {
     }
     let trimmed = result.trim_end_matches('-');
     if trimmed.len() > 40 {
-        // Cut at last hyphen before 40 chars for clean break
-        let cut = &trimmed[..40];
+        // Cut at a char boundary near 40 bytes
+        let mut end = 40;
+        while end > 0 && !trimmed.is_char_boundary(end) {
+            end -= 1;
+        }
+        let cut = &trimmed[..end];
+        let cut = cut.trim_end_matches('-');
         match cut.rfind('-') {
             Some(pos) if pos > 10 => cut[..pos].to_string(),
             _ => cut.to_string(),

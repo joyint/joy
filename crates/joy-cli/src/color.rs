@@ -4,12 +4,71 @@
 use std::io::IsTerminal;
 use std::sync::OnceLock;
 
+use joy_core::model::config::{ColorMode, OutputConfig};
 use joy_core::model::item::{ItemType, Priority, Status};
 
 static ENABLED: OnceLock<bool> = OnceLock::new();
+static EMOJI_ENABLED: OnceLock<bool> = OnceLock::new();
+
+/// Initialize color and emoji support from config. Call once at startup.
+pub fn init(output: &OutputConfig) {
+    let color_enabled = match output.color {
+        ColorMode::Always => true,
+        ColorMode::Never => false,
+        ColorMode::Auto => {
+            if std::env::var_os("NO_COLOR").is_some() {
+                false
+            } else {
+                std::io::stdout().is_terminal()
+            }
+        }
+    };
+    let _ = ENABLED.set(color_enabled);
+
+    let emoji_enabled = if std::env::var_os("JOY_NO_EMOJI").is_some() {
+        false
+    } else {
+        output.emoji
+    };
+    let _ = EMOJI_ENABLED.set(emoji_enabled);
+}
+
+fn is_emoji_enabled() -> bool {
+    *EMOJI_ENABLED.get_or_init(|| false)
+}
+
+pub fn item_type_indicator(t: &ItemType) -> &'static str {
+    if !is_emoji_enabled() {
+        return "";
+    }
+    match t {
+        ItemType::Epic => "\u{1f4cb} ",
+        ItemType::Story => "\u{1f4d6} ",
+        ItemType::Task => "\u{1f527} ",
+        ItemType::Bug => "\u{1f41b} ",
+        ItemType::Rework => "\u{267b}\u{fe0f} ",
+        ItemType::Decision => "\u{1f4a1} ",
+        ItemType::Idea => "\u{2728} ",
+    }
+}
+
+pub fn status_indicator(s: &Status) -> &'static str {
+    if !is_emoji_enabled() {
+        return "";
+    }
+    match s {
+        Status::New => "",
+        Status::Open => "\u{1f7e2} ",
+        Status::InProgress => "\u{25b6}\u{fe0f} ",
+        Status::Review => "\u{1f440} ",
+        Status::Closed => "\u{2705} ",
+        Status::Deferred => "\u{23f8}\u{fe0f} ",
+    }
+}
 
 fn is_enabled() -> bool {
     *ENABLED.get_or_init(|| {
+        // Fallback if init() was never called: use auto behavior.
         if std::env::var_os("NO_COLOR").is_some() {
             return false;
         }

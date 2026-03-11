@@ -25,13 +25,15 @@ pub fn run(args: ShowArgs) -> Result<()> {
     println!("{} {}", color::id(&item.id), color::heading(&item.title));
     println!("{}", color::label(&"-".repeat(60)));
     println!(
-        "{} {}",
+        "{} {}{}",
         color::label("Type:    "),
+        color::item_type_indicator(&item.item_type),
         color::item_type(&item.item_type)
     );
     println!(
-        "{} {}",
+        "{} {}{}",
         color::label("Status:  "),
+        color::status_indicator(&item.status),
         color::status(&item.status)
     );
     println!(
@@ -65,12 +67,20 @@ pub fn run(args: ShowArgs) -> Result<()> {
         }
     }
 
-    let blocked = item.is_blocked_by(&all_items);
-    if blocked {
-        println!(
-            "\n  {}",
-            color::blocked("** BLOCKED by open dependencies **")
-        );
+    if item.is_blocked_by(&all_items) {
+        let blockers: Vec<_> = all_items
+            .iter()
+            .filter(|i| item.deps.contains(&i.id) && i.is_active())
+            .collect();
+        println!("\n  {}", color::blocked("BLOCKED"));
+        for blocker in &blockers {
+            println!(
+                "    {} {} [{}]",
+                color::id(&blocker.id),
+                blocker.title,
+                color::status(&blocker.status)
+            );
+        }
     }
 
     if let Some(ref desc) = item.description {

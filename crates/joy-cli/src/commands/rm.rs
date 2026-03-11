@@ -63,7 +63,7 @@ pub fn run(args: RmArgs) -> Result<()> {
 
     for id in &to_delete {
         let deleted = items::delete_item(&root, id)?;
-        let updated = items::remove_dep_references(&root, id)?;
+        let updated = items::remove_references(&root, id)?;
         println!("Deleted {} {}", color::id(id), deleted.title);
         for ref_id in &updated {
             println!("  Removed dependency from {}", color::id(ref_id));

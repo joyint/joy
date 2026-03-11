@@ -23,7 +23,7 @@ pub struct AddArgs {
     priority: String,
 
     /// Parent item ID (epic, story, or task)
-    #[arg(long, alias = "epic")]
+    #[arg(long)]
     parent: Option<String>,
 
     /// Description
@@ -75,7 +75,12 @@ pub fn run(args: AddArgs) -> Result<()> {
         .map_err(|e: String| anyhow::anyhow!("{}", e))?;
 
     let id = match args.id {
-        Some(id) => id,
+        Some(id) => {
+            if items::find_item_file(&root, &id).is_ok() {
+                bail!("item {} already exists", id);
+            }
+            id
+        }
         None => items::next_id(&root, &item_type)?,
     };
 

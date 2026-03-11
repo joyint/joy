@@ -49,6 +49,20 @@ pub fn write_yaml<T: Serialize>(path: &Path, value: &T) -> Result<(), JoyError> 
     })
 }
 
+/// Load project config from a `.joy/` directory, or return defaults if not found.
+pub fn load_config() -> crate::model::Config {
+    let cwd = match std::env::current_dir() {
+        Ok(p) => p,
+        Err(_) => return crate::model::Config::default(),
+    };
+    let root = match find_project_root(&cwd) {
+        Some(r) => r,
+        None => return crate::model::Config::default(),
+    };
+    let config_path = joy_dir(&root).join(CONFIG_FILE);
+    read_yaml(&config_path).unwrap_or_default()
+}
+
 pub fn read_yaml<T: DeserializeOwned>(path: &Path) -> Result<T, JoyError> {
     let content = std::fs::read_to_string(path).map_err(|e| JoyError::ReadFile {
         path: path.to_path_buf(),

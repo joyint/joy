@@ -43,4 +43,7 @@ pub enum JoyError {
 
     #[error("git error: {0}")]
     Git(String),
+
+    #[error("{0}")]
+    Other(String),
 }

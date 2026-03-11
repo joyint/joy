@@ -65,9 +65,9 @@ description: |
   deps: [IT-0001]
   description: |
     List all active items by default (excludes closed and deferred).
-    Support filters: --epic, --type, --status, --priority, --mine,
-    --blocked, --blocking.
-    Support --tree for hierarchical view (epics with children).
+    Support filters: --parent, --type, --status, --priority, --mine,
+    --blocked, --milestone, --all.
+    Support --tree for hierarchical view with --group (parent, milestone).
 
 - id: IT-0004
   title: "joy status: change item status"

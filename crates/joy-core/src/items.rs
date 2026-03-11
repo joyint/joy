@@ -80,7 +80,10 @@ pub fn next_id(root: &Path, item_type: &ItemType) -> Result<String, JoyError> {
         }
     }
 
-    Ok(format!("{prefix}-{:04X}", max_num + 1))
+    let next = max_num.checked_add(1).ok_or_else(|| {
+        JoyError::Other(format!("{prefix} ID space exhausted (max {prefix}-FFFF)"))
+    })?;
+    Ok(format!("{prefix}-{next:04X}"))
 }
 
 /// Find the file path for an item by its ID.
@@ -117,13 +120,21 @@ pub fn delete_item(root: &Path, id: &str) -> Result<Item, JoyError> {
     Ok(item)
 }
 
-/// Remove references to a deleted item from other items' deps lists.
-pub fn remove_dep_references(root: &Path, deleted_id: &str) -> Result<Vec<String>, JoyError> {
+/// Remove references to a deleted item from other items' deps and parent fields.
+pub fn remove_references(root: &Path, deleted_id: &str) -> Result<Vec<String>, JoyError> {
     let items = load_items(root)?;
     let mut updated = Vec::new();
     for mut item in items {
+        let mut changed = false;
         if item.deps.contains(&deleted_id.to_string()) {
             item.deps.retain(|d| d != deleted_id);
+            changed = true;
+        }
+        if item.parent.as_deref() == Some(deleted_id) {
+            item.parent = None;
+            changed = true;
+        }
+        if changed {
             item.updated = chrono::Utc::now();
             update_item(root, &item)?;
             updated.push(item.id.clone());
@@ -167,13 +178,17 @@ fn find_cycle(items: &[Item], current: &str, visited: &mut Vec<String>) -> bool 
 
 /// Update an item in place (overwrites its file).
 pub fn update_item(root: &Path, item: &Item) -> Result<(), JoyError> {
-    // Remove old file (title may have changed, altering the filename)
     let old_path = find_item_file(root, &item.id)?;
-    std::fs::remove_file(&old_path).map_err(|e| JoyError::WriteFile {
-        path: old_path,
-        source: e,
-    })?;
-    save_item(root, item)
+    // Write new file first to avoid data loss if write fails
+    save_item(root, item)?;
+    // Remove old file if the filename changed (title may have changed)
+    let new_path = store::joy_dir(root)
+        .join(store::ITEMS_DIR)
+        .join(item_filename(&item.id, &item.title));
+    if old_path != new_path {
+        let _ = std::fs::remove_file(&old_path);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
