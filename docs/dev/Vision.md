@@ -179,10 +179,19 @@ joy init                                # Initialize new project
 joy project                             # View/edit project info (interactive)
   joy project --name "Joyint Platform"
 
-joy log                                 # Chronological change history
+joy log                                 # Event log (audit trail)
   joy log --since 7d
   joy log --item JOY-002A
   joy log --limit 50                    # max entries (default: 20)
+
+joy roadmap                             # Milestone roadmap (tree view)
+  joy roadmap --all                    # include closed and deferred items
+
+joy find [query]                        # Search items by text
+  joy find "payment"                   # case-insensitive, matches title and description
+
+joy board                               # Board overview (same as bare joy)
+  joy board --all                      # show all items (no limit per group)
 ```
 
 ### Items
@@ -214,6 +223,7 @@ joy ls                                  # List and filter items
   joy ls --milestone JOY-MS-01              # by milestone (includes inherited)
   joy ls --tree                         # hierarchical tree view
   joy ls --tree --group milestone       # tree grouped by milestone
+  joy ls --tag backend                  # by tag
   joy ls --show milestone,assignee      # extra columns (milestone, assignee, parent)
 
 joy show [id]                           # Detail view
@@ -234,6 +244,7 @@ joy status [id] [state]                 # Change status
 joy start [id]                          # alias for: joy status [id] in-progress
 joy submit [id]                         # alias for: joy status [id] review
 joy close [id]                          # alias for: joy status [id] closed
+joy reopen [id]                         # alias for: joy status [id] open
 ```
 
 ### Assignment
@@ -274,6 +285,11 @@ joy milestone show [id]                 # Detail: items, progress, risks
 
 joy milestone link [item-id] [ms-id]    # Assign item to milestone
   joy milestone link JOY-002A JOY-MS-01
+
+joy milestone unlink [item-id]          # Remove item from milestone
+
+joy milestone edit [id]                 # Modify milestone
+  joy milestone edit JOY-MS-01 --title "Beta" --date 2026-07-01
 ```
 
 ### Sync & Collaboration
@@ -291,9 +307,10 @@ joy clone [url]                         # Clone project from remote
 ### AI
 
 ```sh
-joy ai setup [tool]                     # Configure AI tool and model
-  joy ai setup claude-code
-  joy ai setup mistral-vibe --model devstral-small
+joy ai setup tool                       # Generate config for external AI agent (MS-02)
+joy ai setup agent [tool]               # Configure Joy as AI dispatcher (MS-05)
+  joy ai setup agent claude-code
+  joy ai setup agent mistral-vibe --model devstral-small
 
 joy ai estimate [id]                    # Estimate effort and cost
   joy ai estimate JOY-002A
@@ -340,38 +357,47 @@ joy tutorial                            # Read the tutorial in a pager
 
 ## AI Integration
 
-### Supported AI Tools
+Joy supports two modes of AI integration:
 
-Joy does not implement its own agent runtime. Instead, it dispatches work to external CLI-based AI tools and tracks the results. Each tool requires an adapter in `joy-ai` that handles context preparation, invocation, and output parsing. The adapter interface is kept minimal to limit coupling to specific CLI conventions.
+### Tool mode (MS-02): Joy as a tool for AI agents
 
-| Tool | Config ID | Command | Priority |
-|------|-----------|---------|----------|
-| Claude Code (Anthropic) | `claude-code` | `claude` | P0 |
-| Mistral Vibe (Mistral) | `mistral-vibe` | `vibe` | P0 |
-| GitHub Copilot (GitHub) | `github-copilot` | `copilot` | P1 |
-| Qwen Code (Alibaba) | `qwen-code` | `qwen` | P1 |
+External AI agents (Claude Code, Cursor, Windsurf, etc.) use Joy's CLI as
+a tool. The agent calls `joy` commands to read, create, and manage items.
+This already works today via skill definitions (e.g. the `/joy` Claude Code
+skill). `joy ai setup tool` formalizes this by generating the appropriate
+config files for the detected AI tool.
 
-Each project configures exactly one tool via `joy ai setup`. The tool can be set with a specific model or `auto` (tool's default). Joy is the **dispatcher**, not the **runtime** -- it prepares context (item description, relevant files, branch name), invokes the configured tool, and tracks the outcome (branch, commits, cost).
+No own agent runtime, no API calls, no cost tracking needed. The AI tool
+handles everything -- Joy just provides the product management interface.
 
-### AI Workflows
+### Agent mode (MS-05): Joy dispatches to AI
 
-**Estimation:** Joy sends the item description, codebase context, and dependencies to the configured AI tool. The response estimates effort in hours and cost in currency.
+Joy actively dispatches work to external AI tools and tracks results:
 
-**Planning:** Given an epic description, Joy sends context to the AI tool and receives a proposed breakdown into stories, tasks, and dependencies. Human reviews and approves via `joy add` with the proposed items.
+| Tool | Config ID | Command |
+|------|-----------|---------|
+| Claude Code (Anthropic) | `claude-code` | `claude` |
+| Mistral Vibe (Mistral) | `mistral-vibe` | `vibe` |
+| GitHub Copilot (GitHub) | `github-copilot` | `copilot` |
+| Qwen Code (Alibaba) | `qwen-code` | `qwen` |
 
-**Implementation:** Joy prepares the context (item YAML, relevant code paths, branch name), invokes the configured AI tool (e.g. `claude`, `vibe`), and monitors the result. Joy tracks the job, its status, and its cost. The tool handles the actual code generation, branching, and committing.
+Each project configures one tool via `joy ai setup agent`. Joy is the
+**dispatcher**, not the **runtime** -- it prepares context, invokes the
+tool, and tracks the outcome.
 
-**Review:** Joy sends an implementation diff and the item's acceptance criteria to the AI tool. The response is a structured review with pass/fail and comments.
-
-**Status Intelligence:** Joy analyzes git log, branch activity, and code changes to suggest status updates. "JOY-002A has 15 commits on branch `feat/payment` -- suggest moving to `review`?"
+**Workflows:**
+- **Estimation:** AI estimates effort and cost from item context
+- **Planning:** AI proposes epic breakdown into stories and tasks
+- **Implementation:** AI generates code, Joy tracks the job
+- **Review:** AI reviews implementation against acceptance criteria
+- **Status Intelligence:** Joy suggests status updates from git activity
 
 ### Agent Configuration
-
-Each project uses one AI tool, configured with a fixed model or `auto` (tool picks its default). There is no separate LLM config -- the tool handles model selection.
 
 ```yaml
 # .joy/config.yaml (ai section)
 ai:
+  mode: agent                  # tool | agent
   tool: claude-code            # claude-code | mistral-vibe | github-copilot | qwen-code
   command: claude              # CLI command to invoke
   model: auto                  # model name or "auto" (tool default)
@@ -379,17 +405,7 @@ ai:
   currency: EUR
 ```
 
-API keys are stored separately in `credentials.yaml` (see [Architecture.md](./Architecture.md#credentials)):
-
-```yaml
-# .joy/credentials.yaml or ~/.config/joy/credentials.yaml
-ai:
-  api_key: sk-ant-...
-```
-
-`joy ai setup` detects installed tools, lets the user pick one, and writes the tool config to `config.yaml` and the API key to `credentials.yaml`. Switching tools is a single `joy ai setup` call.
-
-### Cost Tracking
+### Cost Tracking (agent mode)
 
 Every AI job logs its cost:
 
@@ -445,53 +461,58 @@ The hosted portal at joyint.com is the managed service. It runs the same open-so
 
 Joy is built using itself from the earliest possible moment.
 
-### Phase 0 — Minimal Viable Joy (Week 1-2)
+### MS-01 — Core CLI (complete since v0.5.0)
 
-Implement the absolute minimum to manage Joy's own development:
+The CLI is the foundation. All core commands are implemented and Joy manages
+its own backlog since v0.5.0:
 
-1. `joy init` — create `.joy/` structure
-2. `joy add` — create items (interactive)
-3. `joy ls` — list items
-4. `joy status` — change status
-5. `joy` — basic overview
+- `joy init`, `joy add`, `joy ls`, `joy show`, `joy edit`, `joy rm`
+- `joy status`, `joy start`, `joy submit`, `joy close`, `joy reopen`
+- `joy assign`, `joy comment`, `joy deps`, `joy milestone`, `joy log`
+- `joy roadmap`, `joy find`, `joy board`, `joy project`, `joy tutorial`
+- Semantic ANSI colors, emoji indicators, compact table formatting
+- Structured event log, shell completions
 
-At this point, Joy manages its own backlog. Every subsequent feature is an item in Joy.
+### MS-02 — AI tool mode
 
-### Phase 1 — Core CLI (Week 3-6)
+Joy as a tool/skill for external AI agents. The CLI is already usable by
+AI agents (e.g. Claude Code via `/joy` skill). This phase formalizes it:
 
-- `joy edit`, `joy rm`, `joy show`
-- `joy assign`, `joy comment`
-- `joy start`, `joy submit`, `joy close` (status shortcuts)
-- `joy deps` — dependency management
-- `joy milestone` — milestone management
-- `joy log` — change history
-- Filtering and tree views for `joy ls`
+- `joy ai setup tool` — generate config files for external AI agents
+  (skill definitions, MCP tool specs, or equivalent for each tool)
+- Standardized instructions that work across AI tools
+- No own agent runtime — the external tool calls `joy` commands
 
-### Phase 2a — AI Estimation & Review (Week 7-9)
+### MS-03 — Sync and Server
 
-- `joy ai setup` — tool and model configuration
-- `joy ai estimate` — effort and cost estimation
-- `joy ai review` — automated code review
-
-### Phase 2b — AI Planning & Implementation (Week 10-13)
-
-- `joy ai plan` — epic breakdown
-- `joy ai implement` — dispatch to configured AI tool (Claude Code, Mistral Vibe)
-- Cost tracking and job logging
-
-### Phase 3 — TUI, Web UI & Sync (Week 14-19)
-
-- `joy app` — ratatui-based TUI with board view
-- `joy serve` — HTTP server with REST API and embedded web UI
-- SolidJS web frontend (board, item management, roadmap)
+- `joy serve` — HTTP server with REST API
 - `joy sync` — push/pull to server (HTTPS, no encryption in v1)
 - `joy clone` — clone remote project
+- OAuth authentication (GitHub, Gitea)
 
-### Phase 4 — Native App & Portal (Week 20-24)
+### MS-04 — Web UI and Portal
 
-- Tauri shell wrapping the web frontend for desktop and mobile
-- Offline support, OS integration, push notifications
+- SolidJS web frontend (board, item management, roadmap)
+- Embedded in `joy serve`
+- Tauri native app (desktop and mobile)
 - joyint.com deployment (managed hosting)
+
+### MS-05 — AI agent mode
+
+Joy dispatches work to AI APIs and tracks results:
+
+- `joy ai setup agent` — configure AI tool and model
+- `joy ai estimate` — effort and cost estimation
+- `joy ai plan` — break epic into items
+- `joy ai implement` — dispatch to configured AI tool
+- `joy ai review` — automated code review
+- `joy ai status` — monitor jobs, track costs
+- Job logging and cost tracking
+
+### MS-06 — TUI
+
+- `joy app` — ratatui-based terminal UI
+- Board view, item detail panel, dependency graph
 
 ---
 

@@ -7,6 +7,7 @@ parent: JOY-0026
 deps:
 - JOY-0026
 - JOY-0028
+milestone: JOY-MS-04
 created: '2026-03-10T00:19:05.742068049Z'
-updated: '2026-03-10T06:52:11.618863294Z'
+updated: '2026-03-11T18:24:40.788009023Z'
 description: Deferred to v2. Web Crypto API for client-side encryption/decryption. Same as CLI (AES-256-GCM).

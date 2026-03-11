@@ -3,7 +3,7 @@ title: AI Integration
 type: epic
 status: new
 priority: high
-milestone: MS-02
+milestone: JOY-MS-02
 created: '2026-03-10T00:19:05.685238645Z'
-updated: '2026-03-10T00:19:05.685238645Z'
+updated: '2026-03-11T18:21:49.442788743Z'
 description: Integrate external AI tools as first-class collaborators. Joy dispatches work to the configured tool and tracks results, costs, and status.
