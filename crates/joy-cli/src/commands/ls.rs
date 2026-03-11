@@ -37,6 +37,10 @@ pub struct LsArgs {
     #[arg(long)]
     milestone: Option<String>,
 
+    /// Filter by tag
+    #[arg(long)]
+    tag: Option<String>,
+
     /// Show only blocked items
     #[arg(long)]
     blocked: bool,
@@ -67,6 +71,7 @@ impl LsArgs {
             priority: None,
             mine: false,
             milestone: None,
+            tag: None,
             blocked: false,
             all,
             tree: true,
@@ -207,6 +212,12 @@ pub fn run(args: LsArgs) -> Result<()> {
 
             if let Some(ref ms) = args.milestone {
                 if effective_milestone(item, &all_items) != Some(ms.as_str()) {
+                    return false;
+                }
+            }
+
+            if let Some(ref tag) = args.tag {
+                if !item.tags.iter().any(|t| t == tag) {
                     return false;
                 }
             }

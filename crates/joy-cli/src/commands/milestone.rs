@@ -31,6 +31,10 @@ enum MilestoneCommand {
     Rm(RmArgs),
     /// Link an item to a milestone
     Link(LinkArgs),
+    /// Modify a milestone
+    Edit(EditArgs),
+    /// Unlink an item from its milestone
+    Unlink(UnlinkArgs),
 }
 
 #[derive(Args)]
@@ -43,6 +47,24 @@ struct AddArgs {
     date: Option<String>,
 
     /// Description
+    #[arg(short, long)]
+    description: Option<String>,
+}
+
+#[derive(Args)]
+struct EditArgs {
+    /// Milestone ID (e.g. MS-01)
+    id: String,
+
+    /// New title
+    #[arg(short, long)]
+    title: Option<String>,
+
+    /// New target date (YYYY-MM-DD, use "none" to remove)
+    #[arg(long)]
+    date: Option<String>,
+
+    /// New description (use "none" to remove)
     #[arg(short, long)]
     description: Option<String>,
 }
@@ -72,13 +94,21 @@ struct LinkArgs {
     ms_id: String,
 }
 
+#[derive(Args)]
+struct UnlinkArgs {
+    /// Item ID to unlink from its milestone
+    item_id: String,
+}
+
 pub fn run(args: MilestoneArgs) -> Result<()> {
     match args.command {
         MilestoneCommand::Add(a) => run_add(a),
         MilestoneCommand::Ls => run_ls(),
         MilestoneCommand::Show(a) => run_show(a),
         MilestoneCommand::Rm(a) => run_rm(a),
+        MilestoneCommand::Edit(a) => run_edit(a),
         MilestoneCommand::Link(a) => run_link(a),
+        MilestoneCommand::Unlink(a) => run_unlink(a),
     }
 }
 
@@ -284,6 +314,58 @@ fn run_rm(args: RmArgs) -> Result<()> {
     Ok(())
 }
 
+fn run_edit(args: EditArgs) -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+
+    let mut ms = milestones::load_milestone(&root, &args.id)?;
+    let mut changed = false;
+
+    if let Some(title) = args.title {
+        ms.title = title;
+        changed = true;
+    }
+
+    if let Some(ref date_str) = args.date {
+        if date_str == "none" {
+            ms.date = None;
+        } else {
+            ms.date = Some(
+                NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+                    .map_err(|_| anyhow::anyhow!("invalid date format, use YYYY-MM-DD"))?,
+            );
+        }
+        changed = true;
+    }
+
+    if let Some(ref desc) = args.description {
+        ms.description = if desc == "none" {
+            None
+        } else {
+            Some(desc.clone())
+        };
+        changed = true;
+    }
+
+    if !changed {
+        println!("Nothing to change. Use flags like --title, --date, --description.");
+        return Ok(());
+    }
+
+    milestones::save_milestone(&root, &ms)?;
+
+    joy_core::event_log::log_event(
+        &root,
+        joy_core::event_log::EventType::MilestoneUpdated,
+        &ms.id,
+        Some(&ms.title),
+    );
+
+    println!("Updated {} {}", color::id(&ms.id), ms.title);
+
+    Ok(())
+}
+
 fn run_link(args: LinkArgs) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
@@ -309,6 +391,40 @@ fn run_link(args: LinkArgs) -> Result<()> {
         color::id(&ms.id),
         ms.title
     );
+
+    Ok(())
+}
+
+fn run_unlink(args: UnlinkArgs) -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+
+    let mut item = items::load_item(&root, &args.item_id)?;
+
+    match &item.milestone {
+        Some(ms_id) => {
+            let old_ms_id = ms_id.clone();
+            item.milestone = None;
+            item.updated = chrono::Utc::now();
+            items::update_item(&root, &item)?;
+
+            joy_core::event_log::log_event(
+                &root,
+                joy_core::event_log::EventType::MilestoneUnlinked,
+                &item.id,
+                Some(&old_ms_id),
+            );
+
+            println!(
+                "Unlinked {} from {}",
+                color::id(&item.id),
+                color::id(&old_ms_id)
+            );
+        }
+        None => {
+            println!("{} is not linked to any milestone.", color::id(&item.id));
+        }
+    }
 
     Ok(())
 }

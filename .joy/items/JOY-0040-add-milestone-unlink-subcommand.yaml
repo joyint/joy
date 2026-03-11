@@ -1,9 +1,9 @@
 id: JOY-0040
 title: Add milestone unlink subcommand
 type: task
-status: new
+status: closed
 priority: low
 parent: JOY-0035
 created: '2026-03-11T14:03:40.332325134Z'
-updated: '2026-03-11T14:03:40.332325134Z'
+updated: '2026-03-11T17:39:55.984936518Z'
 description: There is a 'joy milestone link' command but no 'joy milestone unlink'. Users must use 'joy edit ITEM --milestone none' which is not discoverable. Add 'joy milestone unlink ITEM_ID MS_ID' for symmetry.

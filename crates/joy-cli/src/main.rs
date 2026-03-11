@@ -66,6 +66,8 @@ enum Commands {
     Submit(ShortcutArgs),
     /// Shortcut: set item status to closed
     Close(ShortcutArgs),
+    /// Shortcut: set item status back to open
+    Reopen(ShortcutArgs),
 }
 
 #[derive(clap::Args)]
@@ -115,6 +117,10 @@ fn main() -> anyhow::Result<()> {
         Some(Commands::Close(args)) => commands::status::run(commands::status::StatusArgs::new(
             args.id,
             "closed".to_string(),
+        )),
+        Some(Commands::Reopen(args)) => commands::status::run(commands::status::StatusArgs::new(
+            args.id,
+            "open".to_string(),
         )),
         None => commands::board::run(),
     }

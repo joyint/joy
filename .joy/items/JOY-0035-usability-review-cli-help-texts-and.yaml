@@ -5,7 +5,7 @@ status: new
 priority: high
 milestone: JOY-MS-01
 created: '2026-03-11T14:02:38.490826029Z'
-updated: '2026-03-11T14:05:11.657029703Z'
+updated: '2026-03-11T17:39:48.643499542Z'
 description: 'Systematic usability review of all joy CLI commands, executed from examples/demo-project. Covers: completeness of help texts, discoverability of features, consistency of options and flags, error messages, and end-to-end workflow testing (init, add, edit, status, assign, comment, deps, milestone, log, rm, shortcuts). All commands tested as a first-time user guided only by --help output.'
 comments:
 - author: horst.schwarz@joydev.com

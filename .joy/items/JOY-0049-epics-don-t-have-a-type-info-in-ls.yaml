@@ -4,7 +4,7 @@ type: bug
 status: closed
 priority: medium
 created: '2026-03-11T16:02:13.753495505Z'
-updated: '2026-03-11T16:07:29.430567447Z'
+updated: '2026-03-11T17:38:21.003424075Z'
 description: All other items have a [emoji item-name] description when shown with ls or other commands. Epics not yet, to be extended, using the emoji 🎁
 comments:
 - author: horst.schwarz@joydev.com

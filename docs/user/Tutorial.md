@@ -115,6 +115,17 @@ MISSION 3: SURVEYING THE TERRAIN (ls, show)
         joy ls --status open             Only open items
         joy ls --mine                    Assigned to you
         joy ls --blocked                 Items with unfinished dependencies
+        joy ls --tag ui                  Items tagged with "ui"
+
+    Tags are free-text labels for cross-cutting categories that don't fit
+    into type, status, or priority -- things like "ui", "backend", "security",
+    or "tech-debt". Set them when creating or editing items:
+
+        joy add task "Fix layout" --tags "ui,urgent"
+        joy edit CB-0004 --tags "ui,search"
+
+    Tags are comma-separated. Using --tags replaces all existing tags.
+    Use --tags "" to clear them.
 
     Show extra columns:
 
@@ -339,6 +350,7 @@ REFERENCE
     joy edit <ID>                   Modify an item
     joy status <ID> <STATUS>        Change item status
     joy start/submit/close <ID>     Status shortcuts
+    joy reopen <ID>                 Reopen a closed/deferred item
     joy rm <ID>                     Delete an item
     joy assign <ID> [EMAIL]         Assign item to person
     joy comment <ID> <TEXT>         Add comment to item
