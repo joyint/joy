@@ -1,9 +1,0 @@
-id: IT-0031
-title: joy log shows 'No changes found' for uncommitted changes
-type: bug
-status: new
-priority: high
-parent: IT-0030
-created: '2026-03-11T14:03:19.112840811Z'
-updated: '2026-03-11T14:03:19.112840811Z'
-description: joy log --item IT-xxxx shows 'No changes found' immediately after making changes (add, edit, status, assign, comment). The log is git-commit-based but this is not documented. Either clarify in help text that it tracks git history only, or add live change tracking.

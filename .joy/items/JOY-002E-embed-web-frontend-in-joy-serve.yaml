@@ -1,0 +1,12 @@
+id: JOY-002E
+title: Embed web frontend in joy serve
+type: task
+status: new
+priority: high
+parent: JOY-0006
+deps:
+- JOY-0023
+- JOY-0028
+created: '2026-03-10T00:19:05.743247565Z'
+updated: '2026-03-10T00:19:05.743247565Z'
+description: Embed built web assets into joy-cli binary. joy serve serves API and web UI on same port.

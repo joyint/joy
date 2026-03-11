@@ -1,0 +1,9 @@
+id: JOY-0007
+title: 'joy init: project initialization'
+type: task
+status: closed
+priority: critical
+parent: JOY-0001
+created: '2026-03-10T00:19:05.689547374Z'
+updated: '2026-03-10T00:19:05.689547374Z'
+description: Create .joy/ directory structure with config.yaml and project.yaml. Detect existing Git repo or initialize one.

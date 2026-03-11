@@ -1,0 +1,11 @@
+id: JOY-0021
+title: 'TUI: item detail panel'
+type: story
+status: new
+priority: medium
+parent: JOY-0004
+deps:
+- JOY-0020
+created: '2026-03-10T00:19:05.728014500Z'
+updated: '2026-03-10T00:19:05.728014500Z'
+description: Show full item details in a side panel or overlay. Edit status and priority inline.

@@ -297,7 +297,7 @@ sync:
   token: eyJ...
 ```
 
-IDs are not stored in config. The next available ID is derived at runtime by scanning existing filenames (e.g. all files in `.joy/items/`) and incrementing the highest found value. This eliminates redundancy and avoids sync conflicts on a shared counter. Valid ranges: EP-0001 to EP-FFFF, IT-0001 to IT-FFFF, MS-01 to MS-FF, JOB-0001 to JOB-FFFF.
+IDs are not stored in config. The next available ID is derived at runtime by scanning existing filenames (e.g. all files in `.joy/items/`) and incrementing the highest found value. This eliminates redundancy and avoids sync conflicts on a shared counter. IDs use the project acronym as prefix: ACRONYM-0001 to ACRONYM-FFFF for items (all types share one number space), ACRONYM-MS-01 to ACRONYM-MS-FF for milestones.
 
 ### Project Roles and Status Rules (`.joy/project.yaml`)
 

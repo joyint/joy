@@ -1,0 +1,12 @@
+id: JOY-0016
+title: Output format configuration in config.yaml
+type: task
+status: new
+priority: medium
+epic: JOY-0002
+deps:
+- JOY-0014
+- JOY-0015
+created: '2026-03-10T00:16:16.411420868Z'
+updated: '2026-03-10T00:16:16.411420868Z'
+description: Persist output preferences in .joy/config.yaml. CLI flags override config. Env vars override flags.

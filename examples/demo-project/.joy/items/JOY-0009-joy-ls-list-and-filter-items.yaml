@@ -1,0 +1,11 @@
+id: JOY-0009
+title: 'joy ls: list and filter items'
+type: story
+status: closed
+priority: critical
+epic: JOY-0001
+deps:
+- JOY-0007
+created: '2026-03-10T00:16:16.390779650Z'
+updated: '2026-03-10T00:16:16.390779650Z'
+description: 'List all active items by default. Support filters: --epic, --type, --status, --priority, --mine, --blocked. Support --tree.'

@@ -1,0 +1,9 @@
+id: JOY-0006
+title: Web UI and Portal
+type: epic
+status: new
+priority: medium
+milestone: MS-03
+created: '2026-03-10T00:16:16.386802668Z'
+updated: '2026-03-10T00:16:16.386802668Z'
+description: SolidJS web frontend in web/ (MIT). Embedded in joy serve. Board view, item management, roadmap, AI job dispatch.

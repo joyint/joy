@@ -86,7 +86,8 @@ fn run_add(args: AddArgs) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
-    let id = milestones::next_id(&root)?;
+    let acronym = store::load_acronym(&root)?;
+    let id = milestones::next_id(&root, &acronym)?;
     let mut ms = Milestone::new(id.clone(), args.title);
 
     if let Some(ref date_str) = args.date {

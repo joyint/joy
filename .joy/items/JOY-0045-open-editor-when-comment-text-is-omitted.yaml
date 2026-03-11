@@ -1,0 +1,8 @@
+id: JOY-0045
+title: Open editor when comment text is omitted
+type: task
+status: new
+priority: medium
+created: '2026-03-11T14:35:48.833092779Z'
+updated: '2026-03-11T14:35:48.833092779Z'
+description: 'When ''joy comment <ID>'' is called without TEXT, open the configured editor for input. Editor resolution order: (1) --editor flag, (2) editor field in config, (3) $VISUAL, (4) $EDITOR, (5) error with hint. Empty file = abort. Add ''editor'' field to Config with suggested values in default config comment. Supported editors: nvim, vim, vi, nano, hx, code --wait.'

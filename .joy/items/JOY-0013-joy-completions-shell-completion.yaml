@@ -1,0 +1,11 @@
+id: JOY-0013
+title: 'joy completions: shell completion generation'
+type: task
+status: closed
+priority: medium
+parent: JOY-0001
+deps:
+- JOY-0007
+created: '2026-03-10T00:19:05.706573426Z'
+updated: '2026-03-10T23:06:36.942041389Z'
+description: Generate completions for bash, zsh, fish, PowerShell, elvish via clap_complete.

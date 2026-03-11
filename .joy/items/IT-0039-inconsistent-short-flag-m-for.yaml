@@ -1,9 +1,0 @@
-id: IT-0039
-title: Inconsistent short flag -m for --milestone between add and edit
-type: bug
-status: new
-priority: low
-parent: IT-0030
-created: '2026-03-11T14:03:37.567529819Z'
-updated: '2026-03-11T14:03:37.567529819Z'
-description: joy add has '-m, --milestone' but joy edit only has '--milestone' without the -m short form. Should be consistent across commands.

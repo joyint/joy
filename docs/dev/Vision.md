@@ -38,12 +38,12 @@ A Joy project is initialized in any directory (typically a Git repo root). It cr
 ├── credentials.yaml         # Project-level secrets (gitignored)
 ├── project.yaml             # Project metadata
 ├── items/
-│   ├── EP-0001-auth-system.yaml
-│   ├── IT-0001-login-page.yaml
-│   ├── IT-0002-umlaut-crash.yaml
+│   ├── JOY-0001-auth-system.yaml
+│   ├── JOY-0002-login-page.yaml
+│   ├── JOY-0003-umlaut-crash.yaml
 │   └── ...
 ├── milestones/
-│   ├── MS-01-beta-release.yaml
+│   ├── JOY-MS-01-beta-release.yaml
 │   └── ...
 ├── ai/
 │   ├── agents/              # Agent role definitions
@@ -66,18 +66,18 @@ AI agents use a synthetic identity with the `agent:` prefix (e.g. `agent:impleme
 Everything is an **Item**. An Item has a `type` that determines its semantics, but the data structure is uniform. This keeps the CLI surface small and the mental model simple.
 
 ```yaml
-# .joy/items/IT-002A-payment-integration.yaml
-id: IT-002A
+# .joy/items/JOY-002A-payment-integration.yaml
+id: JOY-002A
 title: Payment Integration
 type: story           # epic | story | task | bug | rework | decision | idea
 status: new           # new | open | in-progress | review | closed | deferred
 priority: high        # low | medium | high | critical
-parent: EP-0001       # parent item (null for top-level items)
+parent: JOY-0001       # parent item (null for top-level items)
 assignee: null        # e-mail address or agent:role@joy
 deps:
-  - IT-0017           # must be completed before this item
-  - IT-0026
-milestone: MS-01    # optional milestone association
+  - JOY-0017           # must be completed before this item
+  - JOY-0026
+milestone: JOY-MS-01    # optional milestone association
 tags:
   - backend
   - payments
@@ -109,8 +109,8 @@ Items form a generic parent-child hierarchy via the `parent` field. Any item can
 ### Milestones
 
 ```yaml
-# .joy/milestones/MS-01-beta-release.yaml
-id: MS-01
+# .joy/milestones/JOY-MS-01-beta-release.yaml
+id: JOY-MS-01
 title: Beta Release
 date: 2026-06-01
 description: "First public beta with core features."
@@ -181,7 +181,7 @@ joy project                             # View/edit project info (interactive)
 
 joy log                                 # Chronological change history
   joy log --since 7d
-  joy log --item IT-002A
+  joy log --item JOY-002A
   joy log --limit 50                    # max entries (default: 20)
 ```
 
@@ -189,44 +189,44 @@ joy log                                 # Chronological change history
 
 ```sh
 joy add <TYPE> <TITLE> [OPTIONS]         # Create new item
-  joy add story "Login Page" --parent EP-0001 --priority high
+  joy add story "Login Page" --parent JOY-0001 --priority high
   joy add bug "Crash bei Umlauten"
   joy add epic "Auth System"
 
 joy edit [id]                           # Edit item
-  joy edit IT-002A --title "Payment v2" --priority critical
+  joy edit JOY-002A --title "Payment v2" --priority critical
 
 joy rm [id]                             # Delete item (with confirmation)
-  joy rm IT-002A
-  joy rm IT-002A --force                # skip confirmation
-  joy rm EP-0001 --recursive             # item + all descendants
-  joy rm -rf EP-0001                     # same as --recursive --force
+  joy rm JOY-002A
+  joy rm JOY-002A --force                # skip confirmation
+  joy rm JOY-0001 --recursive             # item + all descendants
+  joy rm -rf JOY-0001                     # same as --recursive --force
 
 joy ls                                  # List and filter items
   joy ls                                # active items (excludes closed and deferred)
   joy ls --all                          # all items including closed and deferred
-  joy ls --parent EP-0001                # items of a parent (and descendants)
+  joy ls --parent JOY-0001                # items of a parent (and descendants)
   joy ls --type bug                     # only bugs
   joy ls --status in-progress           # by status
   joy ls --blocked                      # items with open deps
   joy ls --priority critical            # by priority
   joy ls --mine                         # assigned to me
-  joy ls --milestone MS-01              # by milestone (includes inherited)
+  joy ls --milestone JOY-MS-01              # by milestone (includes inherited)
   joy ls --tree                         # hierarchical tree view
   joy ls --tree --group milestone       # tree grouped by milestone
   joy ls --show milestone,assignee      # extra columns (milestone, assignee, parent)
 
 joy show [id]                           # Detail view
-  joy show IT-002A                      # all info, deps, history, comments
+  joy show JOY-002A                      # all info, deps, history, comments
 ```
 
 ### Status
 
 ```sh
 joy status [id] [state]                 # Change status
-  joy status IT-002A in-progress
-  joy status IT-002A closed             # warns if dependents still open
-  joy status EP-0001 closed              # warns if child items still open
+  joy status JOY-002A in-progress
+  joy status JOY-002A closed             # warns if dependents still open
+  joy status JOY-0001 closed              # warns if child items still open
   # Adding children to a closed parent triggers a warning
 
 
@@ -240,25 +240,25 @@ joy close [id]                          # alias for: joy status [id] closed
 
 ```sh
 joy assign [id] [email]                 # Assign item to a person or agent
-  joy assign IT-002A orchidee@joyint.com
-  joy assign IT-002A --unassign         # remove assignment
+  joy assign JOY-002A orchidee@joyint.com
+  joy assign JOY-002A --unassign         # remove assignment
 ```
 
 ### Comments
 
 ```sh
 joy comment [id] [text]                 # Add a comment to an item
-  joy comment IT-002A "Looks good, ready to merge."
+  joy comment JOY-002A "Looks good, ready to merge."
 ```
 
 ### Dependencies
 
 ```sh
 joy deps [id]                           # Show dependencies
-  joy deps IT-002A                      # list
-  joy deps IT-002A --tree               # tree view
-  joy deps IT-002A --add IT-0017        # add dependency
-  joy deps IT-002A --rm IT-0017         # remove dependency
+  joy deps JOY-002A                      # list
+  joy deps JOY-002A --tree               # tree view
+  joy deps JOY-002A --add JOY-0017        # add dependency
+  joy deps JOY-002A --rm JOY-0017         # remove dependency
 ```
 
 ### Milestones
@@ -273,7 +273,7 @@ joy milestone rm [id]                   # Delete milestone
 joy milestone show [id]                 # Detail: items, progress, risks
 
 joy milestone link [item-id] [ms-id]    # Assign item to milestone
-  joy milestone link IT-002A MS-01
+  joy milestone link JOY-002A JOY-MS-01
 ```
 
 ### Sync & Collaboration
@@ -296,18 +296,18 @@ joy ai setup [tool]                     # Configure AI tool and model
   joy ai setup mistral-vibe --model devstral-small
 
 joy ai estimate [id]                    # Estimate effort and cost
-  joy ai estimate IT-002A
-  joy ai estimate EP-0001                # estimate all items in epic
+  joy ai estimate JOY-002A
+  joy ai estimate JOY-0001                # estimate all items in epic
 
 joy ai plan [id]                        # Break epic into items
-  joy ai plan EP-0001
+  joy ai plan JOY-0001
 
 joy ai implement [id]                   # AI agent implements item
-  joy ai implement IT-002A
-  joy ai implement IT-002A --budget 5.00
+  joy ai implement JOY-002A
+  joy ai implement JOY-002A --budget 5.00
 
 joy ai review [id]                      # AI reviews implementation
-  joy ai review IT-002A
+  joy ai review JOY-002A
 
 joy ai status                           # Show running AI jobs
   joy ai status --history               # include completed jobs
@@ -363,7 +363,7 @@ Each project configures exactly one tool via `joy ai setup`. The tool can be set
 
 **Review:** Joy sends an implementation diff and the item's acceptance criteria to the AI tool. The response is a structured review with pass/fail and comments.
 
-**Status Intelligence:** Joy analyzes git log, branch activity, and code changes to suggest status updates. "IT-002A has 15 commits on branch `feat/payment` -- suggest moving to `review`?"
+**Status Intelligence:** Joy analyzes git log, branch activity, and code changes to suggest status updates. "JOY-002A has 15 commits on branch `feat/payment` -- suggest moving to `review`?"
 
 ### Agent Configuration
 
@@ -394,9 +394,9 @@ ai:
 Every AI job logs its cost:
 
 ```yaml
-# .joy/ai/jobs/JOB-000F.yaml
-id: JOB-000F
-item: IT-002A
+# .joy/ai/jobs/JOY-JOB-000F.yaml
+id: JOY-JOB-000F
+item: JOY-002A
 type: implement
 tool: claude-code
 status: completed
@@ -407,7 +407,7 @@ tokens_out: 12800
 cost: 0.42
 currency: EUR
 result:
-  branch: feat/IT-002A-payment-integration
+  branch: feat/JOY-002A-payment-integration
   commits: 3
   files_changed: 7
 ```

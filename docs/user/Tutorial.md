@@ -20,14 +20,14 @@ TL;DR
     mkdir cookbox && cd cookbox && git init
     joy init
     joy add epic "Recipe Management"
-    joy add story "Add a recipe" --parent EP-0001 --priority high
-    joy add task "Set up database" --parent EP-0001 --priority critical
-    joy start IT-0002
-    joy deps IT-0001 --add IT-0002
+    joy add story "Add a recipe" --parent CB-0001 --priority high
+    joy add task "Set up database" --parent CB-0001 --priority critical
+    joy start CB-0003
+    joy deps CB-0002 --add CB-0003
     joy milestone add "MVP" --date 2026-04-01
-    joy milestone link IT-0001 MS-01
-    joy submit IT-0002
-    joy close IT-0002
+    joy milestone link CB-0002 CB-MS-01
+    joy submit CB-0003
+    joy close CB-0003
     joy
 
     That's the whole loop. Read on for the details.
@@ -69,15 +69,15 @@ MISSION 2: BUILDING YOUR ARSENAL (add)
 
         joy add epic "Recipe Management"
 
-    Joy assigns ID EP-0001 and creates .joy/items/EP-0001-recipe-management.yaml.
+    Joy assigns ID CB-0001 and creates .joy/items/CB-0001-recipe-management.yaml.
 
     Now break it down. MacGyver doesn't try to defuse the whole bomb at
     once -- he works one wire at a time:
 
-        joy add story "Add a recipe" --parent EP-0001 --priority high
-        joy add story "Edit a recipe" --parent EP-0001 --priority high
-        joy add story "List recipes with filters" --parent EP-0001
-        joy add task "Set up SQLite database" --parent EP-0001 --priority critical
+        joy add story "Add a recipe" --parent CB-0001 --priority high
+        joy add story "Edit a recipe" --parent CB-0001 --priority high
+        joy add story "List recipes with filters" --parent CB-0001
+        joy add task "Set up SQLite database" --parent CB-0001 --priority critical
 
     Item types and when to use them:
 
@@ -101,16 +101,16 @@ MISSION 3: SURVEYING THE TERRAIN (ls, show)
     Output:
 
         ID       Type   Priority  Status  Title
-        IT-0001  story  high      new     Add a recipe
-        IT-0002  story  high      new     Edit a recipe
-        IT-0003  story  medium    new     List recipes with filters
-        IT-0004  task   critical  new     Set up SQLite database
+        CB-0002  story  high      new     Add a recipe
+        CB-0003  story  high      new     Edit a recipe
+        CB-0004  story  medium    new     List recipes with filters
+        CB-0005  task   critical  new     Set up SQLite database
 
     Filter to find exactly what you need:
 
         joy ls --type story              Only stories
         joy ls --priority critical       Only critical items
-        joy ls --parent EP-0001          Children of an epic
+        joy ls --parent CB-0001          Children of an epic
         joy ls --status open             Only open items
         joy ls --mine                    Assigned to you
         joy ls --blocked                 Items with unfinished dependencies
@@ -125,7 +125,7 @@ MISSION 3: SURVEYING THE TERRAIN (ls, show)
 
     Inspect a single item in detail:
 
-        joy show IT-0001
+        joy show CB-0002
 
     This displays all fields, dependencies, comments, and history.
 
@@ -135,19 +135,19 @@ MISSION 4: WIRING THE CIRCUIT (deps)
     project, dependencies are those wires. You need the database before you
     can add recipes.
 
-        joy deps IT-0001 --add IT-0004
+        joy deps CB-0002 --add CB-0005
 
-    This means: IT-0001 (Add a recipe) depends on IT-0004 (Set up SQLite
-    database). IT-0004 must be completed first.
+    This means: CB-0002 (Add a recipe) depends on CB-0005 (Set up SQLite
+    database). CB-0005 must be completed first.
 
     View the dependency chain:
 
-        joy deps IT-0001
-        joy deps IT-0001 --tree
+        joy deps CB-0002
+        joy deps CB-0002 --tree
 
     Remove a dependency:
 
-        joy deps IT-0001 --rm IT-0004
+        joy deps CB-0002 --rm CB-0005
 
     Joy detects circular dependencies and refuses to create them. No
     infinite loops on MacGyver's watch.
@@ -162,10 +162,10 @@ MISSION 5: INTO THE FIELD (status, start, submit, close)
 
     Move items through the pipeline:
 
-        joy status IT-0004 open          Approve for work
-        joy start IT-0004                Shortcut: set to in-progress
-        joy submit IT-0004               Shortcut: set to review
-        joy close IT-0004                Shortcut: set to closed
+        joy status CB-0005 open          Approve for work
+        joy start CB-0005                Shortcut: set to in-progress
+        joy submit CB-0005               Shortcut: set to review
+        joy close CB-0005                Shortcut: set to closed
 
     If an item depends on something unfinished, Joy warns you but does not
     block. MacGyver doesn't always follow the manual either -- but he knows
@@ -173,15 +173,15 @@ MISSION 5: INTO THE FIELD (status, start, submit, close)
 
     Assign work to yourself (uses your git email):
 
-        joy assign IT-0004
+        joy assign CB-0005
 
     Or to someone else:
 
-        joy assign IT-0004 pete@phoenix.org
+        joy assign CB-0005 pete@phoenix.org
 
     Add a comment before closing, like a field report:
 
-        joy comment IT-0004 "Schema looks good, all migrations pass."
+        joy comment CB-0005 "Schema looks good, all migrations pass."
 
 MISSION 6: SETTING THE DEADLINE (milestone)
 
@@ -191,21 +191,21 @@ MISSION 6: SETTING THE DEADLINE (milestone)
 
     Link items to the milestone:
 
-        joy milestone link IT-0001 MS-01
-        joy milestone link IT-0002 MS-01
-        joy milestone link IT-0004 MS-01
+        joy milestone link CB-0002 CB-MS-01
+        joy milestone link CB-0003 CB-MS-01
+        joy milestone link CB-0005 CB-MS-01
 
     Check progress:
 
-        joy milestone show MS-01
+        joy milestone show CB-MS-01
         joy milestone ls
 
-    Children inherit their parent's milestone automatically. If EP-0001 is
-    linked to MS-01, all its children are too -- unless they override it.
+    Children inherit their parent's milestone automatically. If CB-0001 is
+    linked to CB-MS-01, all its children are too -- unless they override it.
 
     Remove a milestone:
 
-        joy milestone rm MS-01
+        joy milestone rm CB-MS-01
 
 MISSION 7: READING THE BLACK BOX (log, edit, rm)
 
@@ -214,18 +214,18 @@ MISSION 7: READING THE BLACK BOX (log, edit, rm)
 
         joy log                          Recent changes
         joy log --since 7d               Last 7 days
-        joy log --item IT-0004           Changes to a specific item
+        joy log --item CB-0005           Changes to a specific item
 
     Need to adjust something? Edit on the fly:
 
-        joy edit IT-0001 --priority critical
-        joy edit IT-0001 --title "Add and validate a recipe"
-        joy edit IT-0001 --milestone MS-01
+        joy edit CB-0002 --priority critical
+        joy edit CB-0002 --title "Add and validate a recipe"
+        joy edit CB-0002 --milestone CB-MS-01
 
     Made something by mistake? Remove it:
 
-        joy rm IT-0005                   Delete (asks for confirmation)
-        joy rm EP-0001 -rf               Delete epic and all children
+        joy rm CB-0006                   Delete (asks for confirmation)
+        joy rm CB-0001 -rf               Delete epic and all children
 
 MISSION 8: CALLING IN AIR SUPPORT (ai)
 
@@ -239,20 +239,20 @@ MISSION 8: CALLING IN AIR SUPPORT (ai)
 
     Estimate effort:
 
-        joy ai estimate IT-0003
+        joy ai estimate CB-0004
 
     Break an epic into detailed items:
 
-        joy ai plan EP-0001
+        joy ai plan CB-0001
 
     Dispatch implementation to AI:
 
-        joy ai implement IT-0001
-        joy ai implement IT-0001 --budget 5.00
+        joy ai implement CB-0002
+        joy ai implement CB-0002 --budget 5.00
 
     Review the result:
 
-        joy ai review IT-0001
+        joy ai review CB-0002
 
     Track costs:
 

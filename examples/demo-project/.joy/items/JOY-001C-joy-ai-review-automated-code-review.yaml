@@ -1,0 +1,11 @@
+id: JOY-001C
+title: 'joy ai review: automated code review'
+type: story
+status: new
+priority: medium
+epic: JOY-0003
+deps:
+- JOY-0018
+created: '2026-03-10T00:16:16.418425925Z'
+updated: '2026-03-10T00:16:16.418425925Z'
+description: AI reviews implementation against acceptance criteria and conventions. Structured pass/fail output.

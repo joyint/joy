@@ -1,0 +1,12 @@
+id: JOY-002D
+title: 'Web: encryption key handling in browser (v2)'
+type: task
+status: new
+priority: low
+epic: JOY-0006
+deps:
+- JOY-0026
+- JOY-0028
+created: '2026-03-10T00:16:16.438220440Z'
+updated: '2026-03-10T00:16:16.438220440Z'
+description: Deferred to v2. Web Crypto API for client-side encryption/decryption. Same as CLI (AES-256-GCM).

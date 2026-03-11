@@ -1,0 +1,11 @@
+id: JOY-002B
+title: 'Web: visual roadmap and dependency graph'
+type: story
+status: new
+priority: medium
+parent: JOY-0006
+deps:
+- JOY-0029
+created: '2026-03-10T00:19:05.739859930Z'
+updated: '2026-03-10T00:19:05.739859930Z'
+description: Timeline view with milestones and epic progress. Interactive dependency graph.

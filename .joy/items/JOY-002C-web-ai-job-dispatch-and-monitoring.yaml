@@ -1,0 +1,12 @@
+id: JOY-002C
+title: 'Web: AI job dispatch and monitoring'
+type: story
+status: new
+priority: medium
+parent: JOY-0006
+deps:
+- JOY-0028
+- JOY-001D
+created: '2026-03-10T00:19:05.740966893Z'
+updated: '2026-03-10T00:19:05.740966893Z'
+description: Dispatch AI jobs from the web UI. Monitor progress in real time. Review and approve AI work.

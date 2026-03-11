@@ -1,9 +1,0 @@
-id: EP-0004
-title: TUI
-type: epic
-status: new
-priority: medium
-milestone: MS-02
-created: '2026-03-10T00:19:05.686333807Z'
-updated: '2026-03-10T00:19:05.686333807Z'
-description: Ratatui-based terminal UI launched via joy app. Board view, item detail, dependency graph.

@@ -1,0 +1,9 @@
+id: JOY-003F
+title: Add milestone edit subcommand
+type: task
+status: new
+priority: medium
+parent: JOY-0035
+created: '2026-03-11T14:03:40.212240039Z'
+updated: '2026-03-11T14:03:40.212240039Z'
+description: Milestones can be created (add), viewed (show/ls), deleted (rm), and linked (link), but there is no way to modify a milestone's title, date, or description after creation.

@@ -1,0 +1,11 @@
+id: JOY-000B
+title: 'joy: board overview'
+type: story
+status: closed
+priority: critical
+epic: JOY-0001
+deps:
+- JOY-0009
+created: '2026-03-10T00:16:16.393074487Z'
+updated: '2026-03-10T00:16:16.393074487Z'
+description: Running joy without arguments shows a compact project overview. Group items by status. Show counts per status.

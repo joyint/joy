@@ -1,0 +1,11 @@
+id: JOY-0031
+title: 'Status shortcuts: start, submit, close'
+type: task
+status: closed
+priority: low
+parent: JOY-000A
+deps:
+- JOY-000A
+created: '2026-03-10T00:19:05.710064590Z'
+updated: '2026-03-10T23:06:35.729504090Z'
+description: 'Convenience aliases: joy start, joy submit, joy close for common status transitions.'

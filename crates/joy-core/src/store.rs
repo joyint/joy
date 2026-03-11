@@ -71,6 +71,17 @@ pub fn read_yaml<T: DeserializeOwned>(path: &Path) -> Result<T, JoyError> {
     serde_yml::from_str(&content).map_err(JoyError::Yaml)
 }
 
+/// Load the project acronym from project.yaml.
+pub fn load_acronym(root: &Path) -> Result<String, crate::error::JoyError> {
+    let project_path = joy_dir(root).join(PROJECT_FILE);
+    let project: crate::model::project::Project = read_yaml(&project_path)?;
+    project.acronym.ok_or_else(|| {
+        crate::error::JoyError::Other(
+            "project acronym not set -- run: joy project --acronym <ACRONYM>".to_string(),
+        )
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

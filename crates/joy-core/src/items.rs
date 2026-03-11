@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use crate::error::JoyError;
-use crate::model::item::{item_filename, Item, ItemType};
+use crate::model::item::{item_filename, Item};
 use crate::store;
 
 /// Load all items from the .joy/items/ directory.
@@ -47,13 +47,10 @@ pub fn save_item(root: &Path, item: &Item) -> Result<(), JoyError> {
 }
 
 /// Generate the next item ID by scanning existing files.
-/// Returns "IT-0001" for the first item, or increments the highest found.
-/// For epics, returns "EP-XXXX".
-pub fn next_id(root: &Path, item_type: &ItemType) -> Result<String, JoyError> {
-    let prefix = match item_type {
-        ItemType::Epic => "EP",
-        _ => "IT",
-    };
+/// Returns "ACRONYM-0001" for the first item, increments the highest found.
+/// All items share one number space regardless of type.
+pub fn next_id(root: &Path, acronym: &str) -> Result<String, JoyError> {
+    let prefix = acronym;
 
     let items_dir = store::joy_dir(root).join(store::ITEMS_DIR);
     if !items_dir.is_dir() {
@@ -70,7 +67,6 @@ pub fn next_id(root: &Path, item_type: &ItemType) -> Result<String, JoyError> {
     for entry in entries.filter_map(|e| e.ok()) {
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        // Match files starting with the prefix (e.g. "IT-" or "EP-")
         if let Some(hex_part) = name.strip_prefix(&format!("{prefix}-")) {
             if let Some(hex_str) = hex_part.get(..4) {
                 if let Ok(num) = u16::from_str_radix(hex_str, 16) {
@@ -194,7 +190,7 @@ pub fn update_item(root: &Path, item: &Item) -> Result<(), JoyError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::item::Priority;
+    use crate::model::item::{ItemType, Priority};
     use tempfile::tempdir;
 
     fn setup_project(dir: &Path) {
@@ -206,14 +202,7 @@ mod tests {
     fn next_id_first_item() {
         let dir = tempdir().unwrap();
         setup_project(dir.path());
-        assert_eq!(next_id(dir.path(), &ItemType::Task).unwrap(), "IT-0001");
-    }
-
-    #[test]
-    fn next_id_first_epic() {
-        let dir = tempdir().unwrap();
-        setup_project(dir.path());
-        assert_eq!(next_id(dir.path(), &ItemType::Epic).unwrap(), "EP-0001");
+        assert_eq!(next_id(dir.path(), "JOY").unwrap(), "JOY-0001");
     }
 
     #[test]
@@ -222,14 +211,14 @@ mod tests {
         setup_project(dir.path());
 
         let item = Item::new(
-            "IT-0001".into(),
+            "JOY-0001".into(),
             "First".into(),
             ItemType::Task,
             Priority::Low,
         );
         save_item(dir.path(), &item).unwrap();
 
-        assert_eq!(next_id(dir.path(), &ItemType::Task).unwrap(), "IT-0002");
+        assert_eq!(next_id(dir.path(), "JOY").unwrap(), "JOY-0002");
     }
 
     #[test]
@@ -238,7 +227,7 @@ mod tests {
         setup_project(dir.path());
 
         let item1 = Item::new(
-            "IT-0001".into(),
+            "JOY-0001".into(),
             "First".into(),
             ItemType::Task,
             Priority::Low,
@@ -246,14 +235,14 @@ mod tests {
         save_item(dir.path(), &item1).unwrap();
 
         let item3 = Item::new(
-            "IT-0003".into(),
+            "JOY-0003".into(),
             "Third".into(),
             ItemType::Task,
             Priority::Low,
         );
         save_item(dir.path(), &item3).unwrap();
 
-        assert_eq!(next_id(dir.path(), &ItemType::Task).unwrap(), "IT-0004");
+        assert_eq!(next_id(dir.path(), "JOY").unwrap(), "JOY-0004");
     }
 
     #[test]
@@ -270,7 +259,7 @@ mod tests {
         setup_project(dir.path());
 
         let item = Item::new(
-            "IT-0001".into(),
+            "JOY-0001".into(),
             "Test item".into(),
             ItemType::Story,
             Priority::High,
@@ -279,7 +268,7 @@ mod tests {
 
         let items = load_items(dir.path()).unwrap();
         assert_eq!(items.len(), 1);
-        assert_eq!(items[0].id, "IT-0001");
+        assert_eq!(items[0].id, "JOY-0001");
         assert_eq!(items[0].title, "Test item");
     }
 
@@ -289,7 +278,7 @@ mod tests {
         setup_project(dir.path());
 
         let item2 = Item::new(
-            "IT-0002".into(),
+            "JOY-0002".into(),
             "Second".into(),
             ItemType::Task,
             Priority::Low,
@@ -297,7 +286,7 @@ mod tests {
         save_item(dir.path(), &item2).unwrap();
 
         let item1 = Item::new(
-            "IT-0001".into(),
+            "JOY-0001".into(),
             "First".into(),
             ItemType::Task,
             Priority::Low,
@@ -305,7 +294,7 @@ mod tests {
         save_item(dir.path(), &item1).unwrap();
 
         let items = load_items(dir.path()).unwrap();
-        assert_eq!(items[0].id, "IT-0001");
-        assert_eq!(items[1].id, "IT-0002");
+        assert_eq!(items[0].id, "JOY-0001");
+        assert_eq!(items[1].id, "JOY-0002");
     }
 }

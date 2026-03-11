@@ -1,9 +1,0 @@
-id: IT-0012
-title: 'joy ai setup: tool and model configuration'
-type: story
-status: new
-priority: high
-parent: EP-0003
-created: '2026-03-10T00:19:05.718022366Z'
-updated: '2026-03-10T00:19:05.718022366Z'
-description: Configure one AI tool per project. Detect installed CLI tools. Write config to .joy/config.yaml.

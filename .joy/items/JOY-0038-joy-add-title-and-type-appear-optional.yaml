@@ -1,0 +1,13 @@
+id: JOY-0038
+title: 'joy add: --title and --type appear optional but are required'
+type: bug
+status: closed
+priority: medium
+parent: JOY-0035
+created: '2026-03-11T14:03:23.799972495Z'
+updated: '2026-03-11T14:28:30.467374271Z'
+description: In joy add --help, both --title and --type are listed under Options with no indication they are mandatory. Running without them gives an error. They should either be Arguments or marked as required in the help text.
+comments:
+- author: horst.schwarz@joydev.com
+  date: '2026-03-11T14:24:32.913699131Z'
+  text: 'Solution: Change ''joy add'' to accept TYPE and TITLE as positional arguments: ''joy add <TYPE> <TITLE> [OPTIONS]''. Examples: ''joy add bug "Login broken"'', ''joy add task "Refactor store" --priority high''. Keep --title and --type as optional flag alternatives (if positional args are provided, flags are not required). This aligns with the existing CLI pattern where mandatory args are positional (e.g. ''joy status <ID> <STATUS>'').'

@@ -50,12 +50,17 @@ fn parse_since(s: &str) -> Result<String> {
     }
 }
 
-/// Extract item ID from a .joy/items/ filename like ".joy/items/IT-000A-some-title.yaml".
+/// Extract item ID from a .joy/items/ filename like ".joy/items/JOY-000A-some-title.yaml".
+/// ID format: ACRONYM-XXXX where ACRONYM is 2-4 uppercase letters and XXXX is 4 hex digits.
 fn extract_item_id(path: &str) -> Option<String> {
     let filename = path.rsplit('/').next()?;
-    // Item filenames start with the ID pattern: XX-XXXX
-    let parts: Vec<&str> = filename.splitn(3, '-').collect();
-    if parts.len() >= 2 && parts[1].len() == 4 {
+    let stem = filename
+        .strip_suffix(".yaml")
+        .or_else(|| filename.strip_suffix(".yml"))?;
+    // Find the last dash before the slug: ACRONYM-XXXX-slug
+    // The hex part is always 4 chars, so find XXXX by scanning dashes
+    let parts: Vec<&str> = stem.splitn(3, '-').collect();
+    if parts.len() >= 2 && parts[1].len() == 4 && parts[1].chars().all(|c| c.is_ascii_hexdigit()) {
         Some(format!("{}-{}", parts[0], parts[1]))
     } else {
         None
@@ -224,21 +229,21 @@ mod tests {
     #[test]
     fn extract_id_from_filename() {
         assert_eq!(
-            extract_item_id(".joy/items/IT-000A-some-title.yaml"),
-            Some("IT-000A".to_string())
+            extract_item_id(".joy/items/JOY-000A-some-title.yaml"),
+            Some("JOY-000A".to_string())
         );
         assert_eq!(
-            extract_item_id(".joy/items/EP-0001-epic-name.yaml"),
-            Some("EP-0001".to_string())
+            extract_item_id(".joy/items/CB-0001-epic-name.yaml"),
+            Some("CB-0001".to_string())
         );
     }
 
     #[test]
     fn parse_log_output() {
-        let output = "abcdef1234567890abcdef1234567890abcdef00|horst@joydev.com|2026-03-10T12:00:00+01:00|feat: add item types\n.joy/items/IT-0001-do-stuff.yaml\n.joy/items/IT-0002-other.yaml\n";
+        let output = "abcdef1234567890abcdef1234567890abcdef00|horst@joydev.com|2026-03-10T12:00:00+01:00|feat: add item types\n.joy/items/JOY-0001-do-stuff.yaml\n.joy/items/JOY-0002-other.yaml\n";
         let entries = parse_git_log(output);
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].item_ids, vec!["IT-0001", "IT-0002"]);
+        assert_eq!(entries[0].item_ids, vec!["JOY-0001", "JOY-0002"]);
         assert_eq!(entries[0].email, "horst@joydev.com");
     }
 }

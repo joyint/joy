@@ -1,0 +1,13 @@
+id: JOY-0044
+title: Document status workflow and allowed transitions
+type: rework
+status: closed
+priority: medium
+parent: JOY-0035
+created: '2026-03-11T14:03:53.388478163Z'
+updated: '2026-03-11T15:00:49.889356178Z'
+description: The allowed statuses (new, open, in-progress, review, closed, deferred) are listed but the valid transitions and workflow are not documented. Can you go from closed back to open? Is there a defined flow? Should be explained in help or a dedicated command.
+comments:
+- author: horst.schwarz@joydev.com
+  date: '2026-03-11T15:00:19.342688611Z'
+  text: 'Solution: Add after_help to status, start, submit, close commands documenting the workflow. Key points: (1) all transitions are allowed by default, no enforced flow (2) typical flow: new -> open -> in-progress -> review -> closed (3) deferred can be entered/left from any state (4) Joy warns but does not block on: closing with open children, starting with open deps (5) auto-closes parent when all children are closed (6) custom rules via project.yaml (see tutorial).'

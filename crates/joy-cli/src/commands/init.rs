@@ -12,8 +12,9 @@ Creates a .joy/ directory in the current folder with:
   items/         Item storage (YAML files)
   project.yaml   Project metadata (name, acronym)
 
-If no git repository exists, one is initialized.
-Name and acronym default to the directory name if not specified.")]
+The acronym is used as prefix for all item and milestone IDs
+(e.g. JOY-0001, JOY-MS-01). It defaults to the project name if omitted.
+If no git repository exists, one is initialized.")]
 pub struct InitArgs {
     /// Project name (defaults to directory name)
     #[arg(long)]

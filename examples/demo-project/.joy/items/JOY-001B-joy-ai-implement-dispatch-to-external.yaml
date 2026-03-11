@@ -1,0 +1,11 @@
+id: JOY-001B
+title: 'joy ai implement: dispatch to external agent'
+type: story
+status: new
+priority: high
+epic: JOY-0003
+deps:
+- JOY-0018
+created: '2026-03-10T00:16:16.417306818Z'
+updated: '2026-03-10T00:16:16.417306818Z'
+description: Prepare context. Invoke configured AI tool. Track job in .joy/ai/jobs/. Support --budget flag.

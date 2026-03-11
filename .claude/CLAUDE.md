@@ -44,6 +44,6 @@ Do not edit `.joy/items/*.yaml` files directly. Do not add items to `docs/dev/Ba
 - Keep communication short and to the point
 - No emoji in documentation, commit messages, or code comments
 - Use Mermaid for all diagrams, never ASCII art
-- IDs are hexadecimal: EP-0001 to EP-FFFF, IT-0001 to IT-FFFF, MS-01 to MS-FF, JOB-0001 to JOB-FFFF
+- IDs use the project acronym as prefix: ACRONYM-0001 to ACRONYM-FFFF for items, ACRONYM-MS-01 to ACRONYM-MS-FF for milestones (hex)
 - Single source of truth: if something is defined in one document, reference it from others, do not duplicate the definition
 - Before implementing a backlog item, comment the planned solution into the task (in the same language as the task title/description). Confirm with the user, then implement.

@@ -47,10 +47,12 @@ pub fn save_milestone(root: &Path, ms: &Milestone) -> Result<(), JoyError> {
 }
 
 /// Generate the next milestone ID by scanning existing files.
-pub fn next_id(root: &Path) -> Result<String, JoyError> {
+/// Returns "ACRONYM-MS-01" for the first milestone.
+pub fn next_id(root: &Path, acronym: &str) -> Result<String, JoyError> {
+    let prefix = format!("{acronym}-MS-");
     let ms_dir = store::joy_dir(root).join(store::MILESTONES_DIR);
     if !ms_dir.is_dir() {
-        return Ok("MS-01".to_string());
+        return Ok(format!("{prefix}01"));
     }
 
     let mut max_num: u8 = 0;
@@ -63,7 +65,7 @@ pub fn next_id(root: &Path) -> Result<String, JoyError> {
     for entry in entries.filter_map(|e| e.ok()) {
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if let Some(hex_part) = name.strip_prefix("MS-") {
+        if let Some(hex_part) = name.strip_prefix(&prefix) {
             if let Some(hex_str) = hex_part.get(..2) {
                 if let Ok(num) = u8::from_str_radix(hex_str, 16) {
                     max_num = max_num.max(num);
@@ -74,8 +76,8 @@ pub fn next_id(root: &Path) -> Result<String, JoyError> {
 
     let next = max_num
         .checked_add(1)
-        .ok_or_else(|| JoyError::Other("MS ID space exhausted (max MS-FF)".to_string()))?;
-    Ok(format!("MS-{next:02X}"))
+        .ok_or_else(|| JoyError::Other(format!("{prefix} ID space exhausted (max {prefix}FF)")))?;
+    Ok(format!("{prefix}{next:02X}"))
 }
 
 /// Find the file path for a milestone by its ID.
@@ -124,7 +126,7 @@ mod tests {
     fn next_id_first() {
         let dir = tempdir().unwrap();
         setup_project(dir.path());
-        assert_eq!(next_id(dir.path()).unwrap(), "MS-01");
+        assert_eq!(next_id(dir.path(), "JOY").unwrap(), "JOY-MS-01");
     }
 
     #[test]
@@ -132,10 +134,10 @@ mod tests {
         let dir = tempdir().unwrap();
         setup_project(dir.path());
 
-        let ms = Milestone::new("MS-01".into(), "Beta".into());
+        let ms = Milestone::new("JOY-MS-01".into(), "Beta".into());
         save_milestone(dir.path(), &ms).unwrap();
 
-        let loaded = load_milestone(dir.path(), "MS-01").unwrap();
+        let loaded = load_milestone(dir.path(), "JOY-MS-01").unwrap();
         assert_eq!(loaded.title, "Beta");
     }
 
@@ -144,10 +146,10 @@ mod tests {
         let dir = tempdir().unwrap();
         setup_project(dir.path());
 
-        let ms = Milestone::new("MS-01".into(), "First".into());
+        let ms = Milestone::new("JOY-MS-01".into(), "First".into());
         save_milestone(dir.path(), &ms).unwrap();
 
-        assert_eq!(next_id(dir.path()).unwrap(), "MS-02");
+        assert_eq!(next_id(dir.path(), "JOY").unwrap(), "JOY-MS-02");
     }
 
     #[test]
@@ -155,10 +157,10 @@ mod tests {
         let dir = tempdir().unwrap();
         setup_project(dir.path());
 
-        let ms = Milestone::new("MS-01".into(), "Beta".into());
+        let ms = Milestone::new("JOY-MS-01".into(), "Beta".into());
         save_milestone(dir.path(), &ms).unwrap();
-        delete_milestone(dir.path(), "MS-01").unwrap();
+        delete_milestone(dir.path(), "JOY-MS-01").unwrap();
 
-        assert!(load_milestone(dir.path(), "MS-01").is_err());
+        assert!(load_milestone(dir.path(), "JOY-MS-01").is_err());
     }
 }

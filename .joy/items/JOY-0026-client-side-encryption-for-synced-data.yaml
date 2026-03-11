@@ -1,0 +1,11 @@
+id: JOY-0026
+title: Client-side encryption for synced data (v2)
+type: story
+status: new
+priority: low
+parent: JOY-0005
+deps:
+- JOY-0024
+created: '2026-03-10T00:19:05.734303483Z'
+updated: '2026-03-10T00:19:05.734303483Z'
+description: Deferred to v2. AES-256-GCM key per project. Encrypt item content before push.

@@ -1,0 +1,11 @@
+id: JOY-001E
+title: AI cost tracking and job logging
+type: task
+status: new
+priority: high
+epic: JOY-0003
+deps:
+- JOY-001B
+created: '2026-03-10T00:16:16.420676412Z'
+updated: '2026-03-10T00:16:16.420676412Z'
+description: Every AI job writes a JOB-ID.yaml with item, type, provider, model, status, tokens, cost, result.

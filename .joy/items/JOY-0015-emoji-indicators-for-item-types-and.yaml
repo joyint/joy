@@ -1,0 +1,9 @@
+id: JOY-0015
+title: Emoji indicators for item types and status
+type: story
+status: closed
+priority: medium
+parent: JOY-0002
+created: '2026-03-10T00:19:05.713613185Z'
+updated: '2026-03-10T23:52:12.611755916Z'
+description: Use emoji as visual indicators for type and status. Text fallback. Deactivation via --no-emoji.

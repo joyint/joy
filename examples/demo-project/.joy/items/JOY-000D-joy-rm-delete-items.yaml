@@ -1,0 +1,11 @@
+id: JOY-000D
+title: 'joy rm: delete items'
+type: story
+status: new
+priority: critical
+epic: JOY-0001
+deps:
+- JOY-0008
+created: '2026-03-10T00:16:16.395278757Z'
+updated: '2026-03-10T00:16:31.309143313Z'
+description: Delete items with confirmation prompt. Support --force and --cascade on epics.

@@ -90,4 +90,4 @@ When the user asks about the project state, read `.joy/` files directly if neede
 - When creating multiple items, always go one by one with user confirmation.
 - Be concise. Joy is for developers who value speed.
 - If the user's request is ambiguous, ask a short clarifying question rather than guessing.
-- IDs are hexadecimal (EP-0001, IT-0001, MS-01). Reference them precisely.
+- IDs use the project acronym as prefix (e.g. JOY-0001, JOY-MS-01). Reference them precisely.

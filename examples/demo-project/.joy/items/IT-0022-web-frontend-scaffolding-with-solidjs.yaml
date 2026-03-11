@@ -1,9 +1,0 @@
-id: IT-0022
-title: Web frontend scaffolding with SolidJS
-type: task
-status: new
-priority: high
-epic: EP-0006
-created: '2026-03-10T00:16:16.432484241Z'
-updated: '2026-03-10T00:16:16.432484241Z'
-description: Set up web/ project with SolidJS + TypeScript + Vite + Tailwind. API client for REST API.

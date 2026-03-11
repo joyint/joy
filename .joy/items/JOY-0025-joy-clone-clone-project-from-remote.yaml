@@ -1,0 +1,11 @@
+id: JOY-0025
+title: 'joy clone: clone project from remote'
+type: story
+status: new
+priority: medium
+parent: JOY-0005
+deps:
+- JOY-0023
+created: '2026-03-10T00:19:05.733166820Z'
+updated: '2026-03-10T00:19:05.733166820Z'
+description: Clone a project from a remote server URL. Download all items, milestones, config.

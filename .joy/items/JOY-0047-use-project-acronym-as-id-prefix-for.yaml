@@ -1,0 +1,13 @@
+id: JOY-0047
+title: Use project acronym as ID prefix for items and milestones
+type: task
+status: closed
+priority: high
+parent: JOY-0042
+created: '2026-03-11T15:07:05.008902268Z'
+updated: '2026-03-11T15:54:09.076811006Z'
+description: 'Make acronym required at init. Use it as prefix for all IDs: items become ACRONYM-XXXX (e.g. JOY-0001), milestones become ACRONYM-MS-XX (e.g. JOY-MS-01). Drop EP/IT distinction -- type lives in YAML. Affects: init (acronym required), ID generation, ID parsing, filenames, all cross-references (parent, deps, milestone links), migration of existing items, tests, snapshots, docs, tutorial.'
+comments:
+- author: horst.schwarz@joydev.com
+  date: '2026-03-11T15:36:52.339123758Z'
+  text: 'Solution: (1) Make acronym required at init, store in project.yaml. (2) Change ID generation: items use ACRONYM-XXXX (hex), milestones use ACRONYM-MS-XX (hex). Drop EP-/IT- distinction. (3) Load acronym from project.yaml for all ID-generating operations. (4) Update file naming, cross-references, tests, snapshots, docs. (5) Add joy migrate command or auto-migrate existing items on first access.'

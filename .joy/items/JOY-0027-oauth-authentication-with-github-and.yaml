@@ -1,0 +1,11 @@
+id: JOY-0027
+title: OAuth authentication with GitHub and Gitea
+type: task
+status: new
+priority: high
+parent: JOY-0023
+deps:
+- JOY-0023
+created: '2026-03-10T00:19:05.735404900Z'
+updated: '2026-03-10T06:52:11.402049933Z'
+description: OAuth 2.0 authentication for sync. E-mail as user identity. Server issues JWTs after OAuth login.

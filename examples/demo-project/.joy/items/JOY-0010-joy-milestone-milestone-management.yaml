@@ -1,0 +1,11 @@
+id: JOY-0010
+title: 'joy milestone: milestone management'
+type: story
+status: new
+priority: medium
+epic: JOY-0001
+deps:
+- JOY-0008
+created: '2026-03-10T00:16:16.400176401Z'
+updated: '2026-03-10T00:16:16.400176401Z'
+description: Create, list, show, remove milestones. Link items to milestones. Show progress and risks.

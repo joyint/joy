@@ -19,9 +19,9 @@ cargo install joyint                                # install
 cd my-project && joy init                           # initialize
 
 joy add story "User login" --priority high                  # plan
-joy add task "OAuth flow" --parent EP-0001
-joy start IT-0001                                   # work
-joy submit IT-0001                                  # review
+joy add task "OAuth flow" --parent MY-0001
+joy start MY-0002                                   # work
+joy submit MY-0002                                  # review
 
 joy ai setup claude-code                            # connect AI
 joy ai estimate IT-0002                             # estimate effort

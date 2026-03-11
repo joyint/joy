@@ -12,10 +12,8 @@ use joy_core::store;
 #[command(
     override_usage = "joy add [TYPE] [TITLE] [OPTIONS]",
     after_help = "\
-Item IDs are auto-generated in hexadecimal:
-  EP-0001 to EP-FFFF   Epics
-  IT-0001 to IT-FFFF   All other item types (story, task, bug, ...)
-  MS-01 to MS-FF        Milestones (see joy milestone)
+Item IDs use the project acronym as prefix and are auto-generated:
+  ACRONYM-0001 to ACRONYM-FFFF (e.g. JOY-0001, JOY-00AF)
 
 Use --id to assign a specific ID manually."
 )]
@@ -113,7 +111,10 @@ pub fn run(args: AddArgs) -> Result<()> {
             }
             id
         }
-        None => items::next_id(&root, &item_type)?,
+        None => {
+            let acronym = joy_core::store::load_acronym(&root)?;
+            items::next_id(&root, &acronym)?
+        }
     };
 
     let mut item = Item::new(id.clone(), title.clone(), item_type, priority);
