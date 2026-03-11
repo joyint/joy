@@ -30,3 +30,7 @@
 2026-03-11T17:56:05.542Z JOY-004E comment.added "Limit applies only to joy (board view), not to joy ls. Show max 10 items per status group, with a hint like '(+N more, use joy --all)' when truncated." [horst.schwarz@joydev.com]
 2026-03-11T17:56:10.694Z JOY-004E item.status_changed "new -> in-progress" [horst.schwarz@joydev.com]
 2026-03-11T17:58:05.351Z JOY-004E item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
+2026-03-11T18:03:24.721Z JOY-003D comment.added "Implement as joy find <QUERY>. Case-insensitive substring match across title and description. Output as table like joy ls. No regex for now." [horst.schwarz@joydev.com]
+2026-03-11T18:03:25.166Z JOY-003D item.status_changed "new -> in-progress" [horst.schwarz@joydev.com]
+2026-03-11T18:05:15.725Z JOY-003D item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
+2026-03-11T18:05:15.735Z JOY-0035 item.status_changed "new -> closed (all children closed)" [horst.schwarz@joydev.com]

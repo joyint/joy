@@ -1,9 +1,13 @@
 id: JOY-003D
 title: Add fulltext search command (joy search / joy find)
 type: idea
-status: new
+status: closed
 priority: medium
 parent: JOY-0035
 created: '2026-03-11T14:03:33.553443165Z'
-updated: '2026-03-11T14:03:33.553443165Z'
+updated: '2026-03-11T18:05:15.724180402Z'
 description: There is no way to search items by text content across titles and descriptions. A 'joy search' or 'joy find' command would be valuable for larger projects.
+comments:
+- author: horst.schwarz@joydev.com
+  date: '2026-03-11T18:03:24.719230410Z'
+  text: Implement as joy find <QUERY>. Case-insensitive substring match across title and description. Output as table like joy ls. No regex for now.

@@ -68,6 +68,8 @@ enum Commands {
     Close(ShortcutArgs),
     /// Shortcut: set item status back to open
     Reopen(ShortcutArgs),
+    /// Search items by text
+    Find(commands::find::FindArgs),
     /// Show the board (default when no command given)
     Board(BoardArgs),
 }
@@ -131,6 +133,7 @@ fn main() -> anyhow::Result<()> {
             args.id,
             "open".to_string(),
         )),
+        Some(Commands::Find(args)) => commands::find::run(args),
         Some(Commands::Board(args)) => commands::board::run(args),
         None => commands::board::run(BoardArgs { all: false }),
     }

@@ -8,6 +8,7 @@ pub mod comment;
 pub mod completions;
 pub mod deps;
 pub mod edit;
+pub mod find;
 pub mod init;
 pub mod log;
 pub mod ls;
