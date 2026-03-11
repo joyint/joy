@@ -7,8 +7,21 @@ mod commands;
 use clap::{CommandFactory, Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "joy", version, about = "Terminal-native product management")]
-struct Cli {
+#[command(
+    name = "joy",
+    version,
+    about = "Terminal-native product management",
+    after_help = "\
+Quick start:
+  joy init                              Set up a new project
+  joy add task \"Fix login bug\"          Create an item
+  joy ls                                List all items
+  joy start IT-0001                     Start working on it
+  joy                                   Show the board
+
+Run 'joy tutorial' for the full guide."
+)]
+pub(crate) struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -43,6 +56,8 @@ enum Commands {
     Log(commands::log::LogArgs),
     /// Generate shell completions
     Completions(commands::completions::CompletionsArgs),
+    /// Read the Joy tutorial
+    Tutorial,
     /// Shortcut: set item status to in-progress
     Start(ShortcutArgs),
     /// Shortcut: set item status to review
@@ -78,6 +93,7 @@ fn main() -> anyhow::Result<()> {
         Some(Commands::Assign(args)) => commands::assign::run(args),
         Some(Commands::Log(args)) => commands::log::run(args),
         Some(Commands::Completions(args)) => commands::completions::run(args, &mut Cli::command()),
+        Some(Commands::Tutorial) => commands::tutorial::run(),
         Some(Commands::Start(args)) => commands::status::run(commands::status::StatusArgs::new(
             args.id,
             "in-progress".to_string(),

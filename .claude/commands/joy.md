@@ -29,7 +29,7 @@ When the user describes features, ideas, problems, or requirements in prose:
 
 2. Present a short numbered list of proposed items (title, type, priority) and ask if the structure looks right.
 
-3. Create items one by one. For each item show title, type, priority, parent, description, and dependencies. Ask "Create this item? (y/n/edit)" before running `joy add`. Use `joy add --title "..." --type ... [--parent ...] [--priority ...] [--description "..."] [--milestone ...]`.
+3. Create items one by one. For each item show title, type, priority, parent, description, and dependencies. Ask "Create this item? (y/n/edit)" before running `joy add`. Use `joy add <TYPE> <TITLE> [--parent ...] [--priority ...] [--description "..."] [--milestone ...]`. Type and title are positional arguments; `--type` and `--title` flags also work as alternatives.
 
 4. After all items are processed, run `joy ls` to show the result.
 
@@ -62,9 +62,10 @@ Rules for item creation:
 ### Status tracking during implementation
 
 When the user asks to implement a backlog item:
-1. Before starting work, run `joy start <ID>` to set the item to in-progress
-2. After completing the implementation, run `joy close <ID>` to mark it done
-3. If implementation is blocked or deferred, update the status accordingly
+1. Comment the planned solution into the task using `joy comment <ID> "..."` (same language as task title/description). Confirm with the user before proceeding.
+2. Before starting work, run `joy start <ID>` to set the item to in-progress
+3. After completing the implementation, run `joy close <ID>` to mark it done
+4. If implementation is blocked or deferred, update the status accordingly
 
 ### Editing and organizing
 

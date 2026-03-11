@@ -1,9 +1,13 @@
 id: IT-0035
 title: 'joy comment --help: unclear what happens when TEXT is omitted'
 type: rework
-status: new
+status: closed
 priority: low
 parent: IT-0030
 created: '2026-03-11T14:03:31.199009024Z'
-updated: '2026-03-11T14:03:31.199009024Z'
+updated: '2026-03-11T14:36:46.060533883Z'
 description: The help shows [TEXT] as optional but doesn't explain the behavior when omitted. Does it open an editor? Does it fail? Should document this.
+comments:
+- author: horst.schwarz@joydev.com
+  date: '2026-03-11T14:36:06.635689584Z'
+  text: 'Solution: Improve help text to clarify that TEXT is required (editor support planned in IT-0040). Add after_help explaining usage with examples.'

@@ -12,6 +12,20 @@ use joy_core::store;
 use crate::color;
 
 #[derive(Args)]
+#[command(after_help = "\
+Workflow:
+  new -> open -> in-progress -> review -> closed
+                   \\                |
+                    +-> deferred <--+
+
+  All transitions are allowed by default. Joy warns but does not block.
+  Shortcuts: joy start (in-progress), joy submit (review), joy close (closed).
+
+Behavior:
+  - Closing an item with open children prints a warning
+  - Starting an item with open dependencies prints a warning
+  - When all children of a parent are closed, the parent auto-closes
+  - Custom rules can restrict transitions (see joy tutorial, Mission 9)")]
 pub struct StatusArgs {
     /// Item ID (e.g. IT-0001)
     id: String,

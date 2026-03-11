@@ -9,13 +9,31 @@ use joy_core::model::item::{Item, ItemType, Priority, Status};
 use joy_core::store;
 
 #[derive(Args)]
+#[command(
+    override_usage = "joy add [TYPE] [TITLE] [OPTIONS]",
+    after_help = "\
+Item IDs are auto-generated in hexadecimal:
+  EP-0001 to EP-FFFF   Epics
+  IT-0001 to IT-FFFF   All other item types (story, task, bug, ...)
+  MS-01 to MS-FF        Milestones (see joy milestone)
+
+Use --id to assign a specific ID manually."
+)]
 pub struct AddArgs {
+    /// Item type: epic, story, task, bug, rework, decision, idea
+    #[arg(index = 1, value_name = "TYPE")]
+    pos_type: Option<String>,
+
     /// Item title
-    #[arg(short, long)]
+    #[arg(index = 2, value_name = "TITLE")]
+    pos_title: Option<String>,
+
+    /// Item title (alternative to positional)
+    #[arg(short, long, hide = true)]
     title: Option<String>,
 
-    /// Item type: epic, story, task, bug, rework, decision, idea
-    #[arg(short = 'T', long = "type")]
+    /// Item type (alternative to positional): epic, story, task, bug, rework, decision, idea
+    #[arg(short = 'T', long = "type", hide = true)]
     item_type: Option<String>,
 
     /// Priority: low, medium, high, critical
@@ -52,22 +70,36 @@ pub struct AddArgs {
 }
 
 pub fn run(args: AddArgs) -> Result<()> {
+    // Show help when called without any arguments
+    if args.pos_type.is_none()
+        && args.pos_title.is_none()
+        && args.title.is_none()
+        && args.item_type.is_none()
+    {
+        use clap::CommandFactory;
+        // Build a throwaway Cli just to extract the add subcommand help
+        let mut cmd = crate::Cli::command();
+        let sub = cmd.find_subcommand_mut("add").unwrap();
+        sub.print_help()?;
+        std::process::exit(0);
+    }
+
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
-    let title = match args.title {
-        Some(t) => t,
-        None => {
-            bail!("--title is required (interactive mode not yet implemented)");
-        }
-    };
+    let type_str = args
+        .item_type
+        .or(args.pos_type)
+        .ok_or_else(|| anyhow::anyhow!("type is required: joy add <TYPE> <TITLE> or --type"))?;
 
-    let item_type: ItemType = match args.item_type {
-        Some(ref t) => t.parse().map_err(|e: String| anyhow::anyhow!("{}", e))?,
-        None => {
-            bail!("--type is required (interactive mode not yet implemented)");
-        }
-    };
+    let title = args
+        .title
+        .or(args.pos_title)
+        .ok_or_else(|| anyhow::anyhow!("title is required: joy add <TYPE> \"<TITLE>\""))?;
+
+    let item_type: ItemType = type_str
+        .parse()
+        .map_err(|e: String| anyhow::anyhow!("{}", e))?;
 
     let priority: Priority = args
         .priority

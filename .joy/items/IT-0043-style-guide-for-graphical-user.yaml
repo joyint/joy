@@ -1,0 +1,8 @@
+id: IT-0043
+title: Style guide for graphical user interfaces
+type: task
+status: new
+priority: medium
+created: '2026-03-11T15:23:00.876821191Z'
+updated: '2026-03-11T15:34:15.667919025Z'
+description: 'The App and Web UI shall have a uniform style with a responsive layout. The layout shall be static while the colors shall be defined as a theme, so that it can be choosen between dark and light theme. Here a few initial requirements: the UI shall be very clean and spacy (enough padding and margin to keep everything very readiblw). The text size shall be medium and easily changible with e.g. ctrl+/- or two-finger-zoom on touch devices. The overall look shall have a kind of military style, with dark olive green accents on light gray resp. light olive green accents on very dark gray background. The font shall be JetBrains Mono Nerd with the same icons as used in the terminal. As less borders as possible, and if necessary only very thin. No shadows, no 3D. Buttons in the same green as the accent colors, dark red for errors in the light theme, light red in the dark theme, and the typical colors like yellow for warnings, always in a dark manner for the dark theme and vice versa. Use a vivid coral (#FF4040) for ''joy'' as text logo (bold, not too big), and for selected special accents.'

@@ -188,10 +188,10 @@ joy log                                 # Chronological change history
 ### Items
 
 ```sh
-joy add                                 # Create new item
-  joy add --title "Login Page" --type story --parent EP-0001 --priority high
-  joy add --title "Crash bei Umlauten" --type bug
-  joy add --title "Auth System" --type epic
+joy add <TYPE> <TITLE> [OPTIONS]         # Create new item
+  joy add story "Login Page" --parent EP-0001 --priority high
+  joy add bug "Crash bei Umlauten"
+  joy add epic "Auth System"
 
 joy edit [id]                           # Edit item
   joy edit IT-002A --title "Payment v2" --priority critical
@@ -330,6 +330,10 @@ joy completions [shell]                 # Generate shell completions
   joy completions bash
   joy completions zsh
   joy completions fish
+```
+
+```sh
+joy tutorial                            # Read the tutorial in a pager
 ```
 
 ---

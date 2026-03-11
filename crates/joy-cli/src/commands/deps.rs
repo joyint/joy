@@ -11,15 +11,23 @@ use joy_core::store;
 use crate::color;
 
 #[derive(Args)]
+#[command(after_help = "\
+Direction: <ID> depends on <ADD/RM>, i.e. ADD/RM must be completed first.
+
+Examples:
+  joy deps IT-0002 --add IT-0001   IT-0002 depends on IT-0001
+  joy deps IT-0002 --rm IT-0001    Remove that dependency
+  joy deps IT-0002                 List dependencies of IT-0002
+  joy deps IT-0002 --tree          Show full dependency tree")]
 pub struct DepsArgs {
     /// Item ID (e.g. IT-0001)
     id: String,
 
-    /// Add a dependency
+    /// Add dependency: <ID> will depend on this item
     #[arg(long)]
     add: Option<String>,
 
-    /// Remove a dependency
+    /// Remove dependency: <ID> will no longer depend on this item
     #[arg(long)]
     rm: Option<String>,
 

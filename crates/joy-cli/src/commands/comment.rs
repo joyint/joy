@@ -12,18 +12,22 @@ use joy_core::store;
 use crate::color;
 
 #[derive(Args)]
+#[command(after_help = "\
+Examples:
+  joy comment IT-0001 \"Looks good, merging now\"
+  joy comment EP-0002 \"Blocked by external API changes\"")]
 pub struct CommentArgs {
     /// Item ID (e.g. IT-0001)
     id: String,
 
-    /// Comment text
+    /// Comment text (required)
     text: Option<String>,
 }
 
 pub fn run(args: CommentArgs) -> Result<()> {
     let text = match args.text {
         Some(t) => t,
-        None => anyhow::bail!("text is required (interactive mode not yet implemented)"),
+        None => anyhow::bail!("text is required: joy comment <ID> \"your comment\""),
     };
 
     let cwd = std::env::current_dir()?;

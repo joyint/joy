@@ -16,3 +16,4 @@ pub mod project;
 pub mod rm;
 pub mod show;
 pub mod status;
+pub mod tutorial;

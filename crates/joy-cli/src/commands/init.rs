@@ -7,12 +7,19 @@ use clap::Args;
 use joy_core::init::{self, InitOptions};
 
 #[derive(Args)]
+#[command(after_help = "\
+Creates a .joy/ directory in the current folder with:
+  items/         Item storage (YAML files)
+  project.yaml   Project metadata (name, acronym)
+
+If no git repository exists, one is initialized.
+Name and acronym default to the directory name if not specified.")]
 pub struct InitArgs {
-    /// Project name
+    /// Project name (defaults to directory name)
     #[arg(long)]
     name: Option<String>,
 
-    /// Project acronym (2-4 uppercase letters)
+    /// Project acronym (2-4 uppercase letters, derived from name if omitted)
     #[arg(long)]
     acronym: Option<String>,
 }
@@ -35,10 +42,10 @@ pub fn run(args: InitArgs) -> Result<()> {
     }
     println!();
     println!("Get started:");
-    println!("  joy add       Create an item");
-    println!("  joy ls        List items");
-    println!("  joy status    Change item status");
-    println!("  joy           Board overview");
+    println!("  joy add <TYPE> <TITLE>   Create an item");
+    println!("  joy ls                   List items");
+    println!("  joy status <ID> <STATUS> Change item status");
+    println!("  joy                      Board overview");
 
     Ok(())
 }

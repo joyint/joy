@@ -1,0 +1,9 @@
+id: IT-0042
+title: Use project acronym as ID prefix for items and milestones
+type: task
+status: new
+priority: high
+parent: IT-003D
+created: '2026-03-11T15:07:05.008902268Z'
+updated: '2026-03-11T15:07:05.008902268Z'
+description: 'Make acronym required at init. Use it as prefix for all IDs: items become ACRONYM-XXXX (e.g. JOY-0001), milestones become ACRONYM-MS-XX (e.g. JOY-MS-01). Drop EP/IT distinction -- type lives in YAML. Affects: init (acronym required), ID generation, ID parsing, filenames, all cross-references (parent, deps, milestone links), migration of existing items, tests, snapshots, docs, tutorial.'

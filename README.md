@@ -18,8 +18,8 @@ Fast, file-based, AI-powered -- for developers who think project management shou
 cargo install joyint                                # install
 cd my-project && joy init                           # initialize
 
-joy add --title "User login" --type story --priority high   # plan
-joy add --title "OAuth flow" --type task --parent EP-0001
+joy add story "User login" --priority high                  # plan
+joy add task "OAuth flow" --parent EP-0001
 joy start IT-0001                                   # work
 joy submit IT-0001                                  # review
 

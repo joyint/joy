@@ -1,309 +1,330 @@
-# Joy -- Tutorial
+JOY(tutorial)                    Joy User Manual                    JOY(tutorial)
 
-This tutorial walks through Joy's core workflow using a small example project: a personal recipe manager called **Cookbox**.
+NAME
+    joy tutorial -- a field guide to terminal-native product management
 
----
+SYNOPSIS
+    joy init, joy add, joy ls, joy status, joy deps, joy milestone, joy ai
 
-## 1. Initialize a project
+DESCRIPTION
+    Joy is a terminal-native, git-native product management tool. Everything
+    lives in plain YAML inside your repo. No server, no browser, no context
+    switch. You plan, track, and ship from the same terminal where you code.
 
-```sh
-mkdir cookbox && cd cookbox
-git init
-joy init --name "Cookbox"
-```
+    This tutorial walks you through a complete project setup, told through the
+    lens of everyone's favorite improviser. Because product management, like
+    defusing a bomb with a paperclip, is all about using the right tool at
+    the right moment.
 
-This creates a `.joy/` directory inside the repo:
+TL;DR
+    mkdir cookbox && cd cookbox && git init
+    joy init
+    joy add epic "Recipe Management"
+    joy add story "Add a recipe" --parent EP-0001 --priority high
+    joy add task "Set up database" --parent EP-0001 --priority critical
+    joy start IT-0002
+    joy deps IT-0001 --add IT-0002
+    joy milestone add "MVP" --date 2026-04-01
+    joy milestone link IT-0001 MS-01
+    joy submit IT-0002
+    joy close IT-0002
+    joy
 
-```
-.joy/
-├── config.yaml
-├── project.yaml
-├── items/
-├── milestones/
-├── ai/
-└── log/
-```
+    That's the whole loop. Read on for the details.
 
-Everything Joy knows about your project lives here. It is plain YAML, versioned with Git.
+MISSION 1: SETTING UP BASE CAMP (init)
 
----
+    Every mission starts with preparation. MacGyver never walks into a
+    building without checking the exits first. You never start coding
+    without setting up your project.
 
-## 2. Add items
+    Create a fresh project:
 
-Create an epic to group related work, then add stories and tasks beneath it:
+        mkdir cookbox && cd cookbox
+        git init
+        joy init
 
-```sh
-joy add --title "Recipe Management" --type epic
-```
+    Joy creates a .joy/ directory inside your repo:
 
-Joy assigns ID `EP-0001` and creates `.joy/items/EP-0001-recipe-management.yaml`.
+        .joy/
+        +-- project.yaml       Project name, acronym, settings
+        +-- config.yaml        Local configuration
+        +-- items/             All your items live here (YAML files)
+        +-- milestones/        Milestone definitions
 
-```sh
-joy add --title "Add a recipe" --type story --parent EP-0001 --priority high
-joy add --title "Edit a recipe" --type story --parent EP-0001 --priority high
-joy add --title "List recipes with filters" --type story --parent EP-0001 --priority medium
-joy add --title "Set up SQLite database" --type task --parent EP-0001 --priority critical
-```
+    Everything is plain text, versioned with git. No database, no cloud
+    dependency. If your hard drive survives, your project plan survives.
+    MacGyver would approve.
 
-Items are created with status `new`.
+    You can also name your project explicitly:
 
----
+        joy init --name "Cookbox" --acronym CB
 
-## 3. View the backlog
+MISSION 2: BUILDING YOUR ARSENAL (add)
 
-```sh
-joy ls
-```
+    A Swiss Army knife is only useful if you actually open it. Time to
+    create some work items.
 
-```
-ID       Type   Priority  Status  Title
-IT-0001  story  high      new     Add a recipe
-IT-0002  story  high      new     Edit a recipe
-IT-0003  story  medium    new     List recipes with filters
-IT-0004  task   critical  new     Set up SQLite database
-```
+    Start with an epic -- the big picture:
 
-Filter by type, status, priority, or parent:
+        joy add epic "Recipe Management"
 
-```sh
-joy ls --type story
-joy ls --priority critical
-joy ls --parent EP-0001
-```
+    Joy assigns ID EP-0001 and creates .joy/items/EP-0001-recipe-management.yaml.
 
-See the full project overview (board-style):
+    Now break it down. MacGyver doesn't try to defuse the whole bomb at
+    once -- he works one wire at a time:
 
-```sh
-joy
-```
+        joy add story "Add a recipe" --parent EP-0001 --priority high
+        joy add story "Edit a recipe" --parent EP-0001 --priority high
+        joy add story "List recipes with filters" --parent EP-0001
+        joy add task "Set up SQLite database" --parent EP-0001 --priority critical
 
----
+    Item types and when to use them:
 
-## 4. Work on items
+        epic       Large initiative grouping multiple items
+        story      User-facing functionality ("As a user, I can...")
+        task       Technical work, not directly visible to users
+        bug        Something is broken
+        rework     Refactoring or improvement of existing code
+        decision   Architecture or product decision to document
+        idea       Not yet refined -- just capture it before it escapes
 
-Move items through the workflow:
+    All items start with status "new". Priorities: critical, high, medium
+    (default), low.
 
-```sh
-joy status IT-0004 open          # approve for work
-joy start IT-0004                # shortcut for: joy status IT-0004 in-progress
-```
+MISSION 3: SURVEYING THE TERRAIN (ls, show)
 
-Assign the task to yourself:
+    Before MacGyver acts, he observes. Get the lay of the land:
 
-```sh
-joy assign IT-0004 orchidee@joyint.com
-```
+        joy ls
 
-The database task should be done before recipes can be added. Add a dependency:
+    Output:
 
-```sh
-joy deps IT-0001 --add IT-0004
-```
+        ID       Type   Priority  Status  Title
+        IT-0001  story  high      new     Add a recipe
+        IT-0002  story  high      new     Edit a recipe
+        IT-0003  story  medium    new     List recipes with filters
+        IT-0004  task   critical  new     Set up SQLite database
 
-Now starting IT-0001 while IT-0004 is still open triggers a warning:
+    Filter to find exactly what you need:
 
-```sh
-joy status IT-0001 open
-joy status IT-0001 in-progress
-# warning: IT-0001 depends on IT-0004 (in-progress)
-```
+        joy ls --type story              Only stories
+        joy ls --priority critical       Only critical items
+        joy ls --parent EP-0001          Children of an epic
+        joy ls --status open             Only open items
+        joy ls --mine                    Assigned to you
+        joy ls --blocked                 Items with unfinished dependencies
 
-Joy warns but does not block. You decide.
+    Show extra columns:
 
----
+        joy ls -s milestone,assignee     Add milestone and assignee columns
 
-## 5. Submit and close
+    See the full board (items grouped by status):
 
-When work is done, move through review to closed:
+        joy
 
-```sh
-joy submit IT-0004               # shortcut for: joy status IT-0004 review
-joy close IT-0004                # shortcut for: joy status IT-0004 closed
-```
+    Inspect a single item in detail:
 
-Add a comment before closing:
+        joy show IT-0001
 
-```sh
-joy comment IT-0004 "Database schema looks good, all migrations pass."
-```
+    This displays all fields, dependencies, comments, and history.
 
-Check what is still open:
+MISSION 4: WIRING THE CIRCUIT (deps)
 
-```sh
-joy ls --status open
-joy ls --blocked
-```
+    MacGyver knows: if you cut the wrong wire, everything blows up. In a
+    project, dependencies are those wires. You need the database before you
+    can add recipes.
 
----
+        joy deps IT-0001 --add IT-0004
 
-## 6. Use milestones
+    This means: IT-0001 (Add a recipe) depends on IT-0004 (Set up SQLite
+    database). IT-0004 must be completed first.
 
-Group items into time-boxed goals:
+    View the dependency chain:
 
-```sh
-joy milestone add "MVP" --date 2026-04-01
-joy milestone link IT-0001 MS-01
-joy milestone link IT-0002 MS-01
-joy milestone link IT-0004 MS-01
-```
+        joy deps IT-0001
+        joy deps IT-0001 --tree
 
-See milestone progress:
+    Remove a dependency:
 
-```sh
-joy milestone show MS-01
-```
+        joy deps IT-0001 --rm IT-0004
 
----
+    Joy detects circular dependencies and refuses to create them. No
+    infinite loops on MacGyver's watch.
 
-## 7. View details and history
+MISSION 5: INTO THE FIELD (status, start, submit, close)
 
-Inspect a single item in full detail:
+    Time to get your hands dirty. The status workflow:
 
-```sh
-joy show IT-0001
-```
+        new --> open --> in-progress --> review --> closed
+                  \                        |
+                   +-----> deferred <------+
 
-This displays all fields, dependencies, comments, and change history.
+    Move items through the pipeline:
 
-See the project changelog:
+        joy status IT-0004 open          Approve for work
+        joy start IT-0004                Shortcut: set to in-progress
+        joy submit IT-0004               Shortcut: set to review
+        joy close IT-0004                Shortcut: set to closed
 
-```sh
-joy log
-joy log --since 7d
-joy log --item IT-0004
-```
+    If an item depends on something unfinished, Joy warns you but does not
+    block. MacGyver doesn't always follow the manual either -- but he knows
+    the risks.
 
----
+    Assign work to yourself (uses your git email):
 
-## 8. Adjust the process
+        joy assign IT-0004
 
-Joy has one workflow with adjustable strictness. By default every status transition is open to everyone. You control strictness by adding rules.
+    Or to someone else:
 
-### No rules (solo / prototype)
+        joy assign IT-0004 pete@phoenix.org
 
-Out of the box, anyone (including AI agents) can move items to any status. No ceremony.
+    Add a comment before closing, like a field report:
 
-### Add a triage gate
+        joy comment IT-0004 "Schema looks good, all migrations pass."
 
-You want new items to be reviewed before they enter the backlog. Edit `.joy/project.yaml`:
+MISSION 6: SETTING THE DEADLINE (milestone)
 
-```yaml
-roles:
-  approver: [orchidee@joyint.com]
+    Every mission has a countdown. Milestones are yours.
 
-status_rules:
-  new -> open:
-    requires_role: approver
-```
+        joy milestone add "MVP" --date 2026-04-01
 
-Now only `orchidee@joyint.com` can approve items. Joy matches this against `git config user.email` locally and against the OAuth-provided e-mail on the server. Everyone else can still create items (`new`) and work on approved ones.
+    Link items to the milestone:
 
-### Add an acceptance gate
+        joy milestone link IT-0001 MS-01
+        joy milestone link IT-0002 MS-01
+        joy milestone link IT-0004 MS-01
 
-You also want only approvers to close items, and only when CI is green:
+    Check progress:
 
-```yaml
-roles:
-  approver: [orchidee@joyint.com]
+        joy milestone show MS-01
+        joy milestone ls
 
-status_rules:
-  new -> open:
-    requires_role: approver
-  review -> closed:
-    requires_role: approver
-    requires_ci: true
-    allow_ai: false
-```
+    Children inherit their parent's milestone automatically. If EP-0001 is
+    linked to MS-01, all its children are too -- unless they override it.
 
-`allow_ai: false` means AI agents cannot close items, even if they could otherwise act as the assigned role.
+    Remove a milestone:
 
-### Remove rules
+        joy milestone rm MS-01
 
-To loosen the process, remove rules from `status_rules`. Delete the entire section to go back to zero ceremony. There are no templates, no modes, no workflow engine. Just rules you add or remove.
+MISSION 7: READING THE BLACK BOX (log, edit, rm)
 
----
+    After every mission, MacGyver reviews what happened. Joy keeps a
+    changelog based on git history:
 
-## 9. AI assistance
+        joy log                          Recent changes
+        joy log --since 7d               Last 7 days
+        joy log --item IT-0004           Changes to a specific item
 
-Set up an AI tool:
+    Need to adjust something? Edit on the fly:
 
-```sh
-joy ai setup claude-code
-joy ai setup mistral-vibe --model devstral-small
-```
+        joy edit IT-0001 --priority critical
+        joy edit IT-0001 --title "Add and validate a recipe"
+        joy edit IT-0001 --milestone MS-01
 
-Joy detects installed CLI tools and configures the chosen one with a model (or `auto` for the tool's default).
+    Made something by mistake? Remove it:
 
-Estimate effort for an item:
+        joy rm IT-0005                   Delete (asks for confirmation)
+        joy rm EP-0001 -rf               Delete epic and all children
 
-```sh
-joy ai estimate IT-0003
-```
+MISSION 8: CALLING IN AIR SUPPORT (ai)
 
-Break an epic into detailed items:
+    Even MacGyver accepts help sometimes. Joy integrates with AI tools for
+    estimation, planning, and implementation.
 
-```sh
-joy ai plan EP-0001
-```
+    Set up an AI tool:
 
-Dispatch an implementation to the configured AI tool:
+        joy ai setup claude-code
+        joy ai setup mistral-vibe --model devstral-small
 
-```sh
-joy ai implement IT-0001
-joy ai implement IT-0001 --budget 5.00
-```
+    Estimate effort:
 
-Joy prepares the context (item description, relevant code, branch name), invokes the tool, and tracks the result.
+        joy ai estimate IT-0003
 
-Review the result:
+    Break an epic into detailed items:
 
-```sh
-joy ai review IT-0001
-```
+        joy ai plan EP-0001
 
-Track costs:
+    Dispatch implementation to AI:
 
-```sh
-joy ai status --costs
-```
+        joy ai implement IT-0001
+        joy ai implement IT-0001 --budget 5.00
 
-AI agents are tracked as team members. Their work goes through the same workflow, the same status transitions, and the same rules.
+    Review the result:
 
----
+        joy ai review IT-0001
 
-## 10. Sync (optional)
+    Track costs:
 
-For collaboration, add a remote:
+        joy ai status --costs
 
-```sh
-joy sync --push                # push to joyint.com or self-hosted server
-joy sync --pull                # pull changes from others
-joy clone joyint.com/orchidee/cookbox  # clone a remote project
-```
+    AI agents are tracked as team members. Their work goes through the same
+    workflow, the same status transitions, and the same rules. No special
+    treatment.
 
-In v1, sync uses HTTPS with authenticated connections. End-to-end encryption for item content is planned for v2.
+MISSION 9: ADJUSTING THE RULES (project, config)
 
----
+    Joy starts with zero ceremony. No gates, no approvals, no bureaucracy.
+    Add rules only when you need them.
 
-## Summary
+    View project metadata:
 
-| Command            | What it does                        |
-| ------------------ | ----------------------------------- |
-| `joy init`         | Initialize a project                |
-| `joy add`          | Create an item                      |
-| `joy ls`           | List and filter items               |
-| `joy`              | Project overview                    |
-| `joy status`       | Change item status                  |
-| `joy start/submit/close` | Status shortcuts              |
-| `joy assign`       | Assign item to person or agent      |
-| `joy comment`      | Add comment to item                 |
-| `joy show`         | Item detail view                    |
-| `joy edit`         | Modify an item                      |
-| `joy rm`           | Delete an item                      |
-| `joy deps`         | Manage dependencies                 |
-| `joy milestone`    | Manage milestones                   |
-| `joy log`          | Change history                      |
-| `joy project`      | View/edit project info              |
-| `joy completions`  | Generate shell completions          |
+        joy project
 
-For developer documentation see [docs/dev/](../dev/).
+    Edit it:
+
+        joy project --name "Cookbox Pro" --description "Recipe management for pros"
+
+    To add workflow rules, edit .joy/project.yaml:
+
+        roles:
+          approver: [orchidee@joyint.com]
+
+        status_rules:
+          new -> open:
+            requires_role: approver
+          review -> closed:
+            requires_role: approver
+            requires_ci: true
+            allow_ai: false
+
+    Remove rules to go back to zero ceremony. There are no templates, no
+    modes, no workflow engine. Just rules you add or remove.
+
+MISSION 10: SYNCING WITH HQ (sync)
+
+    For collaboration, sync your project with a remote:
+
+        joy sync --push                  Push to joyint.com or self-hosted
+        joy sync --pull                  Pull changes from others
+        joy clone joyint.com/orchidee/cookbox
+
+    In v1, sync uses HTTPS with authenticated connections.
+
+REFERENCE
+
+    Command                         What it does
+    -------                         ------------
+    joy init                        Initialize a project
+    joy add <TYPE> <TITLE>          Create an item
+    joy ls                          List and filter items
+    joy                             Board overview
+    joy show <ID>                   Item detail view
+    joy edit <ID>                   Modify an item
+    joy status <ID> <STATUS>        Change item status
+    joy start/submit/close <ID>     Status shortcuts
+    joy rm <ID>                     Delete an item
+    joy assign <ID> [EMAIL]         Assign item to person
+    joy comment <ID> <TEXT>         Add comment to item
+    joy deps <ID>                   Manage dependencies
+    joy milestone                   Manage milestones
+    joy log                         Change history
+    joy project                     View/edit project info
+    joy ai                          AI assistance
+    joy completions <SHELL>         Generate shell completions
+    joy tutorial                    You are here
+
+    "Any problem can be solved with a little ingenuity." -- MacGyver
+
+SEE ALSO
+    joy --help, joy <command> --help, docs/dev/Vision.md
