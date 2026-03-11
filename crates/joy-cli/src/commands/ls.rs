@@ -59,7 +59,7 @@ pub struct LsArgs {
 }
 
 impl LsArgs {
-    pub fn roadmap() -> Self {
+    pub fn roadmap(all: bool) -> Self {
         Self {
             parent: None,
             item_type: None,
@@ -68,7 +68,7 @@ impl LsArgs {
             mine: false,
             milestone: None,
             blocked: false,
-            all: false,
+            all,
             tree: true,
             show: Vec::new(),
             group: "milestone".to_string(),
@@ -468,18 +468,26 @@ fn print_tree_node(item: &Item, all_items: &[&Item], prefix: &str, is_last: bool
         .filter(|i| i.parent.as_deref() == Some(&item.id))
         .collect();
 
-    let type_emoji = color::item_type_indicator(&item.item_type);
-    let status_emoji = color::status_indicator(&item.status);
-    println!(
-        "{}{} {} [{}{}] [{}{}]",
-        tree_chrome,
-        color::id(&item.id),
-        item.title,
-        type_emoji,
-        color::item_type(&item.item_type),
-        status_emoji,
-        color::status(&item.status)
-    );
+    if !item.is_active() {
+        println!(
+            "{}{}",
+            tree_chrome,
+            color::inactive(&format!("{} {} [{}]", item.id, item.title, item.status))
+        );
+    } else {
+        let type_emoji = color::item_type_indicator(&item.item_type);
+        let status_emoji = color::status_indicator(&item.status);
+        println!(
+            "{}{} {} [{}{}] [{}{}]",
+            tree_chrome,
+            color::id(&item.id),
+            item.title,
+            type_emoji,
+            color::item_type(&item.item_type),
+            status_emoji,
+            color::status(&item.status)
+        );
+    }
 
     for (ci, child) in children.iter().enumerate() {
         let child_is_last = ci == children.len() - 1;
@@ -622,18 +630,26 @@ fn print_ms_tree_node(item: &Item, group: &[&&Item], prefix: &str, is_last: bool
         .filter(|i| i.parent.as_deref() == Some(&item.id))
         .collect();
 
-    let type_emoji = color::item_type_indicator(&item.item_type);
-    let status_emoji = color::status_indicator(&item.status);
-    println!(
-        "{}{} {} [{}{}] [{}{}]",
-        tree_chrome,
-        color::id(&item.id),
-        item.title,
-        type_emoji,
-        color::item_type(&item.item_type),
-        status_emoji,
-        color::status(&item.status)
-    );
+    if !item.is_active() {
+        println!(
+            "{}{}",
+            tree_chrome,
+            color::inactive(&format!("{} {} [{}]", item.id, item.title, item.status))
+        );
+    } else {
+        let type_emoji = color::item_type_indicator(&item.item_type);
+        let status_emoji = color::status_indicator(&item.status);
+        println!(
+            "{}{} {} [{}{}] [{}{}]",
+            tree_chrome,
+            color::id(&item.id),
+            item.title,
+            type_emoji,
+            color::item_type(&item.item_type),
+            status_emoji,
+            color::status(&item.status)
+        );
+    }
 
     for (ci, child) in children.iter().enumerate() {
         let child_is_last = ci == children.len() - 1;

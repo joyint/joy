@@ -76,17 +76,19 @@ fn is_enabled() -> bool {
     })
 }
 
-// ANSI sequences using only the basic 8 colors (0-7).
-// These map to the terminal's color theme, so they adapt to light/dark modes.
+// Semantic color constants mapped to ANSI color codes.
+// These map to the terminal's color theme (e.g. omarchy themes),
+// so they adapt automatically to any color scheme.
 const RESET: &str = "\x1b[0m";
 const BOLD: &str = "\x1b[1m";
-const DIM: &str = "\x1b[2m";
-const RED: &str = "\x1b[31m";
-const GREEN: &str = "\x1b[32m";
-const YELLOW: &str = "\x1b[33m";
-const BLUE: &str = "\x1b[34m";
-const MAGENTA: &str = "\x1b[35m";
-const CYAN: &str = "\x1b[36m";
+const DANGER: &str = "\x1b[31m"; // ANSI 1 -- errors, bugs, critical
+const INFO: &str = "\x1b[36m"; // ANSI 6 -- review, ideas
+const WARNING: &str = "\x1b[33m"; // ANSI 3 -- in-progress, medium priority
+const PRIMARY: &str = "\x1b[34m"; // ANSI 4 -- open status
+const ACCENT: &str = "\x1b[35m"; // ANSI 5 -- epics, user, blocked
+const INACTIVE: &str = "\x1b[38;5;8m"; // ANSI 8 -- closed items in tree
+const SECONDARY: &str = "\x1b[32m"; // ANSI 2 -- IDs, labels, timestamps
+const SUCCESS: &str = "\x1b[38;5;10m"; // ANSI 10 -- closed status
 
 fn wrap(code: &str, text: &str) -> String {
     if is_enabled() {
@@ -105,27 +107,27 @@ fn wrap2(code1: &str, code2: &str, text: &str) -> String {
 }
 
 pub fn id(text: &str) -> String {
-    wrap(DIM, text)
+    wrap(SECONDARY, text)
 }
 
 pub fn status(s: &Status) -> String {
     let text = s.to_string();
     match s {
         Status::New => text,
-        Status::Open => wrap(BLUE, &text),
-        Status::InProgress => wrap(YELLOW, &text),
-        Status::Review => wrap(CYAN, &text),
-        Status::Closed => wrap(GREEN, &text),
-        Status::Deferred => wrap(DIM, &text),
+        Status::Open => wrap(PRIMARY, &text),
+        Status::InProgress => wrap(WARNING, &text),
+        Status::Review => wrap(INFO, &text),
+        Status::Closed => wrap(SUCCESS, &text),
+        Status::Deferred => wrap(SECONDARY, &text),
     }
 }
 
 pub fn priority(p: &Priority) -> String {
     let text = p.to_string();
     match p {
-        Priority::Critical => wrap2(BOLD, RED, &text),
-        Priority::High => wrap(RED, &text),
-        Priority::Medium => wrap(YELLOW, &text),
+        Priority::Critical => wrap2(BOLD, DANGER, &text),
+        Priority::High => wrap(DANGER, &text),
+        Priority::Medium => wrap(WARNING, &text),
         Priority::Low => text,
     }
 }
@@ -133,23 +135,30 @@ pub fn priority(p: &Priority) -> String {
 pub fn item_type(t: &ItemType) -> String {
     let text = t.to_string();
     match t {
-        ItemType::Epic => wrap(MAGENTA, &text),
-        ItemType::Bug => wrap(RED, &text),
-        ItemType::Idea => wrap(CYAN, &text),
-        _ => wrap(DIM, &text),
+        ItemType::Epic => wrap(ACCENT, &text),
+        ItemType::Story => wrap(PRIMARY, &text),
+        ItemType::Bug => wrap(DANGER, &text),
+        ItemType::Rework => wrap(WARNING, &text),
+        ItemType::Idea => wrap(INFO, &text),
+        ItemType::Decision => wrap(INFO, &text),
+        ItemType::Task => wrap(SECONDARY, &text),
     }
 }
 
 pub fn user(text: &str) -> String {
-    wrap(MAGENTA, text)
+    wrap(ACCENT, text)
 }
 
 pub fn blocked(text: &str) -> String {
-    wrap(MAGENTA, text)
+    wrap(ACCENT, text)
 }
 
 pub fn label(text: &str) -> String {
-    wrap(DIM, text)
+    wrap(SECONDARY, text)
+}
+
+pub fn inactive(text: &str) -> String {
+    wrap(INACTIVE, text)
 }
 
 pub fn heading(text: &str) -> String {
@@ -159,10 +168,10 @@ pub fn heading(text: &str) -> String {
 pub fn status_heading(s: &Status, text: &str) -> String {
     match s {
         Status::New => wrap(BOLD, text),
-        Status::Open => wrap2(BOLD, BLUE, text),
-        Status::InProgress => wrap2(BOLD, YELLOW, text),
-        Status::Review => wrap2(BOLD, CYAN, text),
-        Status::Closed => wrap2(BOLD, GREEN, text),
-        Status::Deferred => wrap(DIM, text),
+        Status::Open => wrap2(BOLD, PRIMARY, text),
+        Status::InProgress => wrap2(BOLD, WARNING, text),
+        Status::Review => wrap2(BOLD, INFO, text),
+        Status::Closed => wrap2(BOLD, SUCCESS, text),
+        Status::Deferred => wrap(SECONDARY, text),
     }
 }
