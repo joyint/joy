@@ -104,6 +104,13 @@ pub fn run(args: StatusArgs) -> Result<()> {
     item.updated = Utc::now();
     items::update_item(&root, &item)?;
 
+    joy_core::event_log::log_event(
+        &root,
+        joy_core::event_log::EventType::ItemStatusChanged,
+        &item.id,
+        Some(&format!("{old_status} -> {new_status}")),
+    );
+
     println!(
         "{} {} -> {}",
         color::id(&item.id),
@@ -125,6 +132,12 @@ pub fn run(args: StatusArgs) -> Result<()> {
                     parent.status = Status::Closed;
                     parent.updated = Utc::now();
                     items::update_item(&root, &parent)?;
+                    joy_core::event_log::log_event(
+                        &root,
+                        joy_core::event_log::EventType::ItemStatusChanged,
+                        &parent.id,
+                        Some(&format!("{parent_old} -> closed (all children closed)")),
+                    );
                     println!(
                         "{} {} -> {} (all children closed)",
                         color::id(&parent.id),

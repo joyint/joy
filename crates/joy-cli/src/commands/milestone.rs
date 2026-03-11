@@ -100,6 +100,14 @@ fn run_add(args: AddArgs) -> Result<()> {
     ms.description = args.description;
 
     milestones::save_milestone(&root, &ms)?;
+
+    joy_core::event_log::log_event(
+        &root,
+        joy_core::event_log::EventType::MilestoneCreated,
+        &id,
+        Some(&ms.title),
+    );
+
     println!("Created {} {}", color::id(&id), ms.title);
     if let Some(date) = ms.date {
         println!("  Date: {date}");
@@ -263,6 +271,14 @@ fn run_rm(args: RmArgs) -> Result<()> {
     }
 
     milestones::delete_milestone(&root, &args.id)?;
+
+    joy_core::event_log::log_event(
+        &root,
+        joy_core::event_log::EventType::MilestoneDeleted,
+        &ms.id,
+        Some(&ms.title),
+    );
+
     println!("Deleted {} {}", color::id(&ms.id), ms.title);
 
     Ok(())
@@ -279,6 +295,13 @@ fn run_link(args: LinkArgs) -> Result<()> {
     item.milestone = Some(args.ms_id.clone());
     item.updated = chrono::Utc::now();
     items::update_item(&root, &item)?;
+
+    joy_core::event_log::log_event(
+        &root,
+        joy_core::event_log::EventType::MilestoneLinked,
+        &item.id,
+        Some(&ms.id),
+    );
 
     println!(
         "Linked {} to {} {}",

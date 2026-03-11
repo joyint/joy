@@ -36,6 +36,7 @@ pub fn run(args: CommentArgs) -> Result<()> {
     let mut item = items::load_item(&root, &args.id)?;
 
     let author = get_git_email()?;
+    let log_text = text.clone();
     let comment = Comment {
         author,
         date: Utc::now(),
@@ -45,6 +46,13 @@ pub fn run(args: CommentArgs) -> Result<()> {
     item.comments.push(comment);
     item.updated = Utc::now();
     items::update_item(&root, &item)?;
+
+    joy_core::event_log::log_event(
+        &root,
+        joy_core::event_log::EventType::CommentAdded,
+        &item.id,
+        Some(&log_text),
+    );
 
     println!("Added comment to {} {}", color::id(&item.id), item.title);
 

@@ -1,0 +1,3 @@
+2026-03-11T16:39:54.957Z JOY-004B comment.added "Log format updated: removed acronym, ID before event type, tab after event type for alignment" [horst.schwarz@joydev.com]
+2026-03-11T16:40:02.085Z JOY-004B item.updated "Structured event log with joy log and joy commit" [horst.schwarz@joydev.com]
+2026-03-11T16:40:02.526Z JOY-004C dep.added "JOY-004B" [horst.schwarz@joydev.com]

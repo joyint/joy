@@ -2,15 +2,27 @@
 // SPDX-License-Identifier: MIT
 
 use anyhow::Result;
+use chrono::{DateTime, Local, Utc};
 use clap::Args;
 
+use joy_core::event_log;
 use joy_core::store;
 
 use crate::color;
 
 #[derive(Args)]
+#[command(after_help = "\
+Shows the event log from .joy/log/ (one file per day, append-only).
+Events are recorded automatically by all joy commands.
+Timestamps are displayed in your local timezone.
+
+Examples:
+  joy log                     Show last 20 events
+  joy log --limit 50          Show last 50 events
+  joy log --item JOY-0001     Filter by item ID
+  joy log --since 7d          Show events from last 7 days")]
 pub struct LogArgs {
-    /// Filter by item ID (e.g. IT-0001)
+    /// Filter by item ID (e.g. JOY-0001)
     #[arg(long)]
     item: Option<String>,
 
@@ -23,47 +35,31 @@ pub struct LogArgs {
     limit: usize,
 }
 
-/// A parsed commit from git log output.
-struct LogEntry {
-    hash: String,
-    email: String,
-    date: String,
-    subject: String,
-    item_ids: Vec<String>,
-}
-
-/// Parse a duration shorthand like "7d", "2w", "30d" into a git --since value.
+/// Parse a duration shorthand like "7d", "2w" into a YYYY-MM-DD date string.
 fn parse_since(s: &str) -> Result<String> {
     let s = s.trim();
-    if let Some(days) = s.strip_suffix('d') {
-        let n: u64 = days
-            .parse()
-            .map_err(|_| anyhow::anyhow!("invalid duration: {s}"))?;
-        Ok(format!("{n} days ago"))
-    } else if let Some(weeks) = s.strip_suffix('w') {
-        let n: u64 = weeks
-            .parse()
-            .map_err(|_| anyhow::anyhow!("invalid duration: {s}"))?;
-        Ok(format!("{n} weeks ago"))
+    let days = if let Some(d) = s.strip_suffix('d') {
+        d.parse::<i64>()
+            .map_err(|_| anyhow::anyhow!("invalid duration: {s}"))?
+    } else if let Some(w) = s.strip_suffix('w') {
+        w.parse::<i64>()
+            .map_err(|_| anyhow::anyhow!("invalid duration: {s}"))?
+            * 7
     } else {
         anyhow::bail!("invalid duration format: {s} (use e.g. 7d, 2w)")
-    }
+    };
+
+    let since_date = Utc::now() - chrono::Duration::days(days);
+    Ok(since_date.format("%Y-%m-%d").to_string())
 }
 
-/// Extract item ID from a .joy/items/ filename like ".joy/items/JOY-000A-some-title.yaml".
-/// ID format: ACRONYM-XXXX where ACRONYM is 2-4 uppercase letters and XXXX is 4 hex digits.
-fn extract_item_id(path: &str) -> Option<String> {
-    let filename = path.rsplit('/').next()?;
-    let stem = filename
-        .strip_suffix(".yaml")
-        .or_else(|| filename.strip_suffix(".yml"))?;
-    // Find the last dash before the slug: ACRONYM-XXXX-slug
-    // The hex part is always 4 chars, so find XXXX by scanning dashes
-    let parts: Vec<&str> = stem.splitn(3, '-').collect();
-    if parts.len() >= 2 && parts[1].len() == 4 && parts[1].chars().all(|c| c.is_ascii_hexdigit()) {
-        Some(format!("{}-{}", parts[0], parts[1]))
+/// Convert a UTC ISO 8601 timestamp to local timezone display format.
+fn format_local_time(utc_str: &str) -> String {
+    if let Ok(utc_dt) = utc_str.parse::<DateTime<Utc>>() {
+        let local_dt: DateTime<Local> = utc_dt.into();
+        local_dt.format("%Y-%m-%d %H:%M:%S%.3f (%Z)").to_string()
     } else {
-        None
+        utc_str.to_string()
     }
 }
 
@@ -71,138 +67,35 @@ pub fn run(args: LogArgs) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
-    // Build git log command
-    let mut cmd = std::process::Command::new("git");
-    cmd.current_dir(&root);
-    cmd.args(["log", "--pretty=format:%H|%ae|%aI|%s", "--name-only"]);
+    let since = args.since.as_deref().map(parse_since).transpose()?;
 
-    if let Some(ref since) = args.since {
-        let since_val = parse_since(since)?;
-        cmd.arg(format!("--since={since_val}"));
-    }
-
-    cmd.arg(format!("-{}", args.limit));
-
-    // Path filter
-    cmd.arg("--");
-    if let Some(ref item_id) = args.item {
-        // Find the specific item file via glob
-        let items_dir = root.join(".joy").join("items");
-        let mut found = false;
-        if items_dir.is_dir() {
-            for entry in std::fs::read_dir(&items_dir)? {
-                let entry = entry?;
-                let name = entry.file_name();
-                let name_str = name.to_string_lossy();
-                if name_str.starts_with(&format!("{}-", item_id)) && name_str.ends_with(".yaml") {
-                    cmd.arg(format!(".joy/items/{name_str}"));
-                    found = true;
-                    break;
-                }
-            }
-        }
-        if !found {
-            anyhow::bail!("no item file found for {item_id}");
-        }
-    } else {
-        cmd.arg(".joy/items/");
-    }
-
-    let output = cmd
-        .output()
-        .map_err(|_| anyhow::anyhow!("failed to run git log"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("git log failed: {stderr}");
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let entries = parse_git_log(&stdout);
+    let entries =
+        event_log::read_events(&root, since.as_deref(), args.item.as_deref(), args.limit)?;
 
     if entries.is_empty() {
-        println!("No changes found.");
+        println!("No events found.");
         return Ok(());
     }
 
     for entry in &entries {
-        // Date: take just YYYY-MM-DD from ISO 8601
-        let date = if entry.date.len() >= 10 {
-            &entry.date[..10]
-        } else {
-            &entry.date
-        };
-
-        let short_hash = if entry.hash.len() >= 7 {
-            &entry.hash[..7]
-        } else {
-            &entry.hash
-        };
-
-        let ids_str = entry
-            .item_ids
-            .iter()
-            .map(|id| color::id(id))
-            .collect::<Vec<_>>()
-            .join(", ");
+        let local_time = format_local_time(&entry.timestamp);
+        let details_str = entry
+            .details
+            .as_ref()
+            .map(|d| format!(" \"{d}\""))
+            .unwrap_or_default();
 
         println!(
-            "{}  {}  {}  {}",
-            color::label(date),
-            color::id(short_hash),
-            color::label(&entry.email),
-            entry.subject
+            "{} - {} - {} - {} [{}]",
+            color::label(&local_time),
+            color::id(&entry.target),
+            color::label(&entry.event_type),
+            details_str.trim_start(),
+            entry.user,
         );
-        if !entry.item_ids.is_empty() {
-            println!("  {ids_str}");
-        }
     }
 
     Ok(())
-}
-
-/// Parse git log output (format: %H|%ae|%aI|%s followed by name-only lines).
-fn parse_git_log(output: &str) -> Vec<LogEntry> {
-    let mut entries = Vec::new();
-    let mut current: Option<LogEntry> = None;
-
-    for line in output.lines() {
-        if line.is_empty() {
-            continue;
-        }
-
-        // Try to parse as a commit line (contains | separators)
-        let parts: Vec<&str> = line.splitn(4, '|').collect();
-        if parts.len() == 4
-            && parts[0].len() == 40
-            && parts[0].chars().all(|c| c.is_ascii_hexdigit())
-        {
-            // Save previous entry
-            if let Some(entry) = current.take() {
-                entries.push(entry);
-            }
-            current = Some(LogEntry {
-                hash: parts[0].to_string(),
-                email: parts[1].to_string(),
-                date: parts[2].to_string(),
-                subject: parts[3].to_string(),
-                item_ids: Vec::new(),
-            });
-        } else if let Some(ref mut entry) = current {
-            // This is a filename line
-            if let Some(id) = extract_item_id(line) {
-                if !entry.item_ids.contains(&id) {
-                    entry.item_ids.push(id);
-                }
-            }
-        }
-    }
-
-    if let Some(entry) = current {
-        entries.push(entry);
-    }
-
-    entries
 }
 
 #[cfg(test)]
@@ -211,13 +104,14 @@ mod tests {
 
     #[test]
     fn parse_since_days() {
-        assert_eq!(parse_since("7d").unwrap(), "7 days ago");
-        assert_eq!(parse_since("30d").unwrap(), "30 days ago");
+        let result = parse_since("7d").unwrap();
+        assert_eq!(result.len(), 10); // YYYY-MM-DD
     }
 
     #[test]
     fn parse_since_weeks() {
-        assert_eq!(parse_since("2w").unwrap(), "2 weeks ago");
+        let result = parse_since("2w").unwrap();
+        assert_eq!(result.len(), 10);
     }
 
     #[test]
@@ -227,23 +121,15 @@ mod tests {
     }
 
     #[test]
-    fn extract_id_from_filename() {
-        assert_eq!(
-            extract_item_id(".joy/items/JOY-000A-some-title.yaml"),
-            Some("JOY-000A".to_string())
-        );
-        assert_eq!(
-            extract_item_id(".joy/items/CB-0001-epic-name.yaml"),
-            Some("CB-0001".to_string())
-        );
+    fn format_local_time_valid() {
+        let result = format_local_time("2026-03-11T16:14:32.320Z");
+        assert!(result.contains("2026-03-11"));
+        assert!(result.contains("32.320"));
     }
 
     #[test]
-    fn parse_log_output() {
-        let output = "abcdef1234567890abcdef1234567890abcdef00|horst@joydev.com|2026-03-10T12:00:00+01:00|feat: add item types\n.joy/items/JOY-0001-do-stuff.yaml\n.joy/items/JOY-0002-other.yaml\n";
-        let entries = parse_git_log(output);
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].item_ids, vec!["JOY-0001", "JOY-0002"]);
-        assert_eq!(entries[0].email, "horst@joydev.com");
+    fn format_local_time_invalid() {
+        let result = format_local_time("not-a-date");
+        assert_eq!(result, "not-a-date");
     }
 }

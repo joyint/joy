@@ -38,6 +38,12 @@ pub fn run(args: AssignArgs) -> Result<()> {
         let old = item.assignee.take().unwrap();
         item.updated = Utc::now();
         items::update_item(&root, &item)?;
+        joy_core::event_log::log_event(
+            &root,
+            joy_core::event_log::EventType::ItemUnassigned,
+            &item.id,
+            Some(&old),
+        );
         println!("Unassigned {} from {}", color::id(&item.id), old);
         return Ok(());
     }
@@ -55,6 +61,13 @@ pub fn run(args: AssignArgs) -> Result<()> {
     item.assignee = Some(email.clone());
     item.updated = Utc::now();
     items::update_item(&root, &item)?;
+
+    joy_core::event_log::log_event(
+        &root,
+        joy_core::event_log::EventType::ItemAssigned,
+        &item.id,
+        Some(&email),
+    );
 
     println!(
         "Assigned {} {} to {}",

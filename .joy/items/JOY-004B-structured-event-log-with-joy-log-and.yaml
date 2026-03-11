@@ -1,0 +1,26 @@
+id: JOY-004B
+title: Structured event log with joy log and joy commit
+type: story
+status: closed
+priority: high
+created: '2026-03-11T16:17:51.288912080Z'
+updated: '2026-03-11T16:40:02.082510135Z'
+description: |-
+  Replace git-based joy log with a local structured event log. Every joy command appends to .joy/log/YYYY-MM-DD.log (one file per day, append-only, committed to git). Millisecond timestamps make merge conflicts practically impossible. Format: ISO-timestamp ACRONYM event.type TARGET [details] [user@email]. Event types: item.created, item.status_changed, dep.added, comment.added, milestone.linked, etc. joy log shows these entries with filters (--item, --since, --limit).
+
+  Todos:
+  - [x] Event log module in joy-core: append_event() writes to .joy/log/YYYY-MM-DD.log
+  - [x] Integrate event logging into all commands: add, edit, status, deps, comment, assign, milestone, rm, start, submit, close
+  - [x] Rewrite joy log to read from .joy/log/ instead of git log (local timezone display)
+  - [x] Remove old git-based log implementation
+  - [x] Create separate item for future joy commit command: JOY-004C
+comments:
+- author: horst.schwarz@joydev.com
+  date: '2026-03-11T16:24:26.101275285Z'
+  text: 'Solution: New event_log module in joy-core. append_event() writes UTC ISO 8601 timestamps to .joy/log/YYYY-MM-DD.log. joy log reads from these files and converts to local timezone for display. Format in file: 2026-03-11T16:14:32.320Z ACRONYM event.type TARGET "details" [user@email]. Display format: 2026-03-11 17:14:32.320 (CET) - ACRONYM - event.type TARGET "details" [user@email]. Uses chrono crate for timezone conversion.'
+- author: horst.schwarz@joydev.com
+  date: '2026-03-11T16:31:40.077361779Z'
+  text: test comment for log
+- author: horst.schwarz@joydev.com
+  date: '2026-03-11T16:39:54.954910187Z'
+  text: 'Log format updated: removed acronym, ID before event type, tab after event type for alignment'

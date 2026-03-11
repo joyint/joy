@@ -450,33 +450,18 @@ fn print_tree_node(item: &Item, all_items: &[&Item], prefix: &str, is_last: bool
         .filter(|i| i.parent.as_deref() == Some(&item.id))
         .collect();
 
-    let has_children = !children.is_empty();
-
+    let type_emoji = color::item_type_indicator(&item.item_type);
     let status_emoji = color::status_indicator(&item.status);
-    if has_children {
-        // Parent items: show like epics (no type tag)
-        println!(
-            "{}{} {} [{}{}]",
-            tree_chrome,
-            color::id(&item.id),
-            item.title,
-            status_emoji,
-            color::status(&item.status)
-        );
-    } else {
-        // Leaf items: show type tag
-        let type_emoji = color::item_type_indicator(&item.item_type);
-        println!(
-            "{}{} {} [{}{}] [{}{}]",
-            tree_chrome,
-            color::id(&item.id),
-            item.title,
-            type_emoji,
-            color::item_type(&item.item_type),
-            status_emoji,
-            color::status(&item.status)
-        );
-    }
+    println!(
+        "{}{} {} [{}{}] [{}{}]",
+        tree_chrome,
+        color::id(&item.id),
+        item.title,
+        type_emoji,
+        color::item_type(&item.item_type),
+        status_emoji,
+        color::status(&item.status)
+    );
 
     for (ci, child) in children.iter().enumerate() {
         let child_is_last = ci == children.len() - 1;
@@ -619,31 +604,18 @@ fn print_ms_tree_node(item: &Item, group: &[&&Item], prefix: &str, is_last: bool
         .filter(|i| i.parent.as_deref() == Some(&item.id))
         .collect();
 
-    let has_children = !children.is_empty();
-
+    let type_emoji = color::item_type_indicator(&item.item_type);
     let status_emoji = color::status_indicator(&item.status);
-    if has_children {
-        println!(
-            "{}{} {} [{}{}]",
-            tree_chrome,
-            color::id(&item.id),
-            item.title,
-            status_emoji,
-            color::status(&item.status)
-        );
-    } else {
-        let type_emoji = color::item_type_indicator(&item.item_type);
-        println!(
-            "{}{} {} [{}{}] [{}{}]",
-            tree_chrome,
-            color::id(&item.id),
-            item.title,
-            type_emoji,
-            color::item_type(&item.item_type),
-            status_emoji,
-            color::status(&item.status)
-        );
-    }
+    println!(
+        "{}{} {} [{}{}] [{}{}]",
+        tree_chrome,
+        color::id(&item.id),
+        item.title,
+        type_emoji,
+        color::item_type(&item.item_type),
+        status_emoji,
+        color::status(&item.status)
+    );
 
     for (ci, child) in children.iter().enumerate() {
         let child_is_last = ci == children.len() - 1;

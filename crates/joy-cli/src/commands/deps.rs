@@ -100,6 +100,13 @@ fn add_dep(root: &std::path::Path, item_id: &str, dep_id: &str) -> Result<()> {
     item.updated = Utc::now();
     items::update_item(root, &item)?;
 
+    joy_core::event_log::log_event(
+        root,
+        joy_core::event_log::EventType::DepAdded,
+        item_id,
+        Some(dep_id),
+    );
+
     println!(
         "{} now depends on {}",
         color::id(item_id),
@@ -124,6 +131,13 @@ fn rm_dep(root: &std::path::Path, item_id: &str, dep_id: &str) -> Result<()> {
     item.deps.retain(|d| d != dep_id);
     item.updated = Utc::now();
     items::update_item(root, &item)?;
+
+    joy_core::event_log::log_event(
+        root,
+        joy_core::event_log::EventType::DepRemoved,
+        item_id,
+        Some(dep_id),
+    );
 
     println!(
         "Removed dependency {} from {}",

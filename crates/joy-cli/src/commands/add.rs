@@ -147,6 +147,13 @@ pub fn run(args: AddArgs) -> Result<()> {
 
     items::save_item(&root, &item)?;
 
+    joy_core::event_log::log_event(
+        &root,
+        joy_core::event_log::EventType::ItemCreated,
+        &id,
+        Some(&title),
+    );
+
     println!("Created {} {}", id, title);
 
     Ok(())

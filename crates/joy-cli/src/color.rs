@@ -42,7 +42,7 @@ pub fn item_type_indicator(t: &ItemType) -> &'static str {
         return "";
     }
     match t {
-        ItemType::Epic => "\u{1f4cb} ",
+        ItemType::Epic => "\u{1f381} ",
         ItemType::Story => "\u{1f4d6} ",
         ItemType::Task => "\u{1f527} ",
         ItemType::Bug => "\u{1f41e} ",

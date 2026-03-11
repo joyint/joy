@@ -31,7 +31,7 @@ The backlog lives in `.joy/items/`. Use the `joy` CLI to query and manage it:
 - `joy milestone` -- manage milestones (add, ls, show, rm, link)
 - `joy assign <ID> [email]` -- assign/unassign items
 - `joy comment <ID> <text>` -- add comments
-- `joy log` -- change history from git log (`--item`, `--since`, `--limit`)
+- `joy log` -- event log from .joy/log/ (`--item`, `--since`, `--limit`)
 - `joy completions <shell>` -- generate shell completions
 - `joy tutorial` -- read the tutorial in a pager
 
@@ -47,3 +47,4 @@ Do not edit `.joy/items/*.yaml` files directly. Do not add items to `docs/dev/Ba
 - IDs use the project acronym as prefix: ACRONYM-0001 to ACRONYM-FFFF for items, ACRONYM-MS-01 to ACRONYM-MS-FF for milestones (hex)
 - Single source of truth: if something is defined in one document, reference it from others, do not duplicate the definition
 - Before implementing a backlog item, comment the planned solution into the task (in the same language as the task title/description). Confirm with the user, then implement.
+- Use "todo" (not "task") for checklist items inside item descriptions (e.g. `- [ ] some todo`), to avoid confusion with the "task" item type. Check off todos as they are completed.

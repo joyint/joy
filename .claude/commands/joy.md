@@ -91,3 +91,4 @@ When the user asks about the project state, read `.joy/` files directly if neede
 - Be concise. Joy is for developers who value speed.
 - If the user's request is ambiguous, ask a short clarifying question rather than guessing.
 - IDs use the project acronym as prefix (e.g. JOY-0001, JOY-MS-01). Reference them precisely.
+- Use "todo" (not "task") for checklist items inside item descriptions (e.g. `- [ ] some todo`), to avoid confusion with the "task" item type. Check off todos as they are completed.

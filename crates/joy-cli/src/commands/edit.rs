@@ -134,6 +134,13 @@ pub fn run(args: EditArgs) -> Result<()> {
     item.updated = Utc::now();
     items::update_item(&root, &item)?;
 
+    joy_core::event_log::log_event(
+        &root,
+        joy_core::event_log::EventType::ItemUpdated,
+        &item.id,
+        Some(&item.title),
+    );
+
     println!("Updated {} {}", item.id, item.title);
 
     Ok(())

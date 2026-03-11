@@ -64,6 +64,12 @@ pub fn run(args: RmArgs) -> Result<()> {
     for id in &to_delete {
         let deleted = items::delete_item(&root, id)?;
         let updated = items::remove_references(&root, id)?;
+        joy_core::event_log::log_event(
+            &root,
+            joy_core::event_log::EventType::ItemDeleted,
+            id,
+            Some(&deleted.title),
+        );
         println!("Deleted {} {}", color::id(id), deleted.title);
         for ref_id in &updated {
             println!("  Removed dependency from {}", color::id(ref_id));

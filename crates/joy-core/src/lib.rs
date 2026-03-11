@@ -4,6 +4,7 @@
 #![deny(clippy::all)]
 
 pub mod error;
+pub mod event_log;
 pub mod init;
 pub mod items;
 pub mod milestones;
