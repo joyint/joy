@@ -33,6 +33,10 @@ pub struct LogArgs {
     /// Maximum number of entries to show
     #[arg(long, default_value = "20")]
     limit: usize,
+
+    /// Show all entries (no limit)
+    #[arg(short, long)]
+    all: bool,
 }
 
 /// Parse a duration shorthand like "7d", "2w" into a YYYY-MM-DD date string.
@@ -69,15 +73,25 @@ pub fn run(args: LogArgs) -> Result<()> {
 
     let since = args.since.as_deref().map(parse_since).transpose()?;
 
+    let effective_limit = if args.all { usize::MAX } else { args.limit };
+    // Request one extra to detect if there are more entries
+    let fetch_limit = effective_limit.saturating_add(1);
     let entries =
-        event_log::read_events(&root, since.as_deref(), args.item.as_deref(), args.limit)?;
+        event_log::read_events(&root, since.as_deref(), args.item.as_deref(), fetch_limit)?;
 
     if entries.is_empty() {
         println!("No events found.");
         return Ok(());
     }
 
-    for entry in &entries {
+    let has_more = !args.all && entries.len() > effective_limit;
+    let display_entries = if has_more {
+        &entries[..effective_limit]
+    } else {
+        &entries
+    };
+
+    for entry in display_entries {
         let local_time = format_local_time(&entry.timestamp);
         let details_str = entry
             .details
@@ -92,6 +106,13 @@ pub fn run(args: LogArgs) -> Result<()> {
             color::label(&entry.event_type),
             details_str.trim_start(),
             color::user(&entry.user),
+        );
+    }
+
+    if has_more {
+        println!(
+            "{}",
+            color::label("(more entries available, use --all or --limit)")
         );
     }
 
