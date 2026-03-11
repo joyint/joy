@@ -1,0 +1,9 @@
+id: IT-0034
+title: joy init --help lacks explanation of what gets created
+type: rework
+status: new
+priority: medium
+parent: IT-0030
+created: '2026-03-11T14:03:27.102075076Z'
+updated: '2026-03-11T14:03:27.102075076Z'
+description: The init help says 'Initialize a new Joy project' but does not explain what directory structure is created (.joy/ folder), what files are generated, or how it interacts with an existing git repository.

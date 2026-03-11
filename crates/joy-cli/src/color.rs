@@ -45,7 +45,7 @@ pub fn item_type_indicator(t: &ItemType) -> &'static str {
         ItemType::Epic => "\u{1f4cb} ",
         ItemType::Story => "\u{1f4d6} ",
         ItemType::Task => "\u{1f527} ",
-        ItemType::Bug => "\u{1f41b} ",
+        ItemType::Bug => "\u{1f41e} ",
         ItemType::Rework => "\u{267b}\u{fe0f} ",
         ItemType::Decision => "\u{1f4a1} ",
         ItemType::Idea => "\u{2728} ",

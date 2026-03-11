@@ -1,0 +1,9 @@
+id: IT-0036
+title: 'joy deps --help: missing explanation of dependency direction'
+type: rework
+status: new
+priority: medium
+parent: IT-0030
+created: '2026-03-11T14:03:31.282787852Z'
+updated: '2026-03-11T14:03:31.282787852Z'
+description: The help for 'joy deps --add' does not explain the semantics. Running 'joy deps --add DEP_ID ITEM_ID' - which item depends on which? The output clarifies it after the fact but the help should explain upfront, e.g. 'ITEM depends on ADD'.

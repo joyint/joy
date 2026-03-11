@@ -1,0 +1,9 @@
+id: IT-003E
+title: Add quick-start example to joy --help
+type: rework
+status: new
+priority: medium
+parent: IT-0030
+created: '2026-03-11T14:03:53.251919466Z'
+updated: '2026-03-11T14:03:53.251919466Z'
+description: 'The main help only shows a command list. A brief example like ''Get started: joy init --name MyProject --acronym MP && joy add -t First_task -T task'' would help first-time users.'

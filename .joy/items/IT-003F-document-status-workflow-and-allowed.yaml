@@ -1,0 +1,9 @@
+id: IT-003F
+title: Document status workflow and allowed transitions
+type: rework
+status: new
+priority: medium
+parent: IT-0030
+created: '2026-03-11T14:03:53.388478163Z'
+updated: '2026-03-11T14:03:53.388478163Z'
+description: The allowed statuses (new, open, in-progress, review, closed, deferred) are listed but the valid transitions and workflow are not documented. Can you go from closed back to open? Is there a defined flow? Should be explained in help or a dedicated command.

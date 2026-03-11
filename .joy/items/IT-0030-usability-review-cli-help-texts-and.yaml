@@ -1,0 +1,42 @@
+id: IT-0030
+title: 'Usability review: CLI help texts and workflow'
+type: task
+status: new
+priority: high
+milestone: MS-01
+created: '2026-03-11T14:02:38.490826029Z'
+updated: '2026-03-11T14:05:11.657029703Z'
+description: 'Systematic usability review of all joy CLI commands, executed from examples/demo-project. Covers: completeness of help texts, discoverability of features, consistency of options and flags, error messages, and end-to-end workflow testing (init, add, edit, status, assign, comment, deps, milestone, log, rm, shortcuts). All commands tested as a first-time user guided only by --help output.'
+comments:
+- author: horst.schwarz@joydev.com
+  date: '2026-03-11T14:03:12.679848875Z'
+  text: |-
+    USABILITY REVIEW RESULTS
+
+    WHAT WORKS WELL:
+    - Clear command structure: add, ls, show, edit, status, rm are intuitive and consistent
+    - Help available on every command with useful descriptions
+    - Shortcuts (start, submit, close) are practical and well-documented
+    - Emoji indicators for types and status make output highly readable
+    - Tree view and milestone grouping work well
+    - Dependency tree (joy deps --tree) shows clear chains
+    - Error messages are clear and actionable
+    - Extra columns (-s milestone,assignee) are flexible and useful
+    - Parent/child hierarchy works smoothly with --parent filter
+
+    ISSUES FOUND:
+    - joy log --item shows 'No changes found' right after making changes (log is git-based, not live)
+    - joy project --description '' leaves empty 'Description:' line instead of hiding it
+    - joy add requires --title and --type but help shows them as optional Options, not required
+    - joy init --help doesn't explain what gets created
+    - joy comment help shows [TEXT] as optional without explaining what happens when omitted
+    - joy deps --help doesn't explain dependency direction semantics
+    - No --tag filter on joy ls despite tags being settable
+    - No fulltext search command
+    - Short flag -m for --milestone exists on add but not on edit (inconsistent)
+    - No milestone edit subcommand (can create, show, delete, link, but not modify)
+    - No milestone unlink subcommand (must use joy edit --milestone none)
+    - No reopen shortcut (start/submit/close exist but no way back)
+    - Item ID prefix scheme (EP- vs IT-) not documented
+    - No quick-start example in main --help
+    - Status workflow transitions not documented

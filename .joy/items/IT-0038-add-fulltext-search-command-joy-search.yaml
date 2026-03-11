@@ -1,0 +1,9 @@
+id: IT-0038
+title: Add fulltext search command (joy search / joy find)
+type: idea
+status: new
+priority: medium
+parent: IT-0030
+created: '2026-03-11T14:03:33.553443165Z'
+updated: '2026-03-11T14:03:33.553443165Z'
+description: There is no way to search items by text content across titles and descriptions. A 'joy search' or 'joy find' command would be valuable for larger projects.

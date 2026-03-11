@@ -1,0 +1,9 @@
+id: IT-0032
+title: joy project shows empty Description line when description is cleared
+type: bug
+status: new
+priority: low
+parent: IT-0030
+created: '2026-03-11T14:03:23.652538032Z'
+updated: '2026-03-11T14:03:23.652538032Z'
+description: 'Running joy project --description '''' results in ''Description: '' with empty value displayed. Should either hide the line entirely or not allow setting an empty string.'

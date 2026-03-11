@@ -1,0 +1,9 @@
+id: IT-003D
+title: Document item ID prefix scheme (EP- vs IT-)
+type: rework
+status: new
+priority: low
+parent: IT-0030
+created: '2026-03-11T14:03:45.767511757Z'
+updated: '2026-03-11T14:03:45.767511757Z'
+description: Item IDs use EP- prefix for epics and IT- for everything else, but this is not documented anywhere in --help output. New users don't understand the naming convention.

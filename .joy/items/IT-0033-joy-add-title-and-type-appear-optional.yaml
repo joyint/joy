@@ -1,0 +1,9 @@
+id: IT-0033
+title: 'joy add: --title and --type appear optional but are required'
+type: bug
+status: new
+priority: medium
+parent: IT-0030
+created: '2026-03-11T14:03:23.799972495Z'
+updated: '2026-03-11T14:03:23.799972495Z'
+description: In joy add --help, both --title and --type are listed under Options with no indication they are mandatory. Running without them gives an error. They should either be Arguments or marked as required in the help text.
