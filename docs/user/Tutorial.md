@@ -4,7 +4,8 @@ NAME
     joy tutorial -- a field guide to terminal-native product management
 
 SYNOPSIS
-    joy init, joy add, joy ls, joy status, joy deps, joy milestone, joy ai
+    joy init, joy add, joy ls, joy status, joy deps, joy milestone, joy log,
+    joy roadmap, joy ai
 
 DESCRIPTION
     Joy is a terminal-native, git-native product management tool. Everything
@@ -207,14 +208,39 @@ MISSION 6: SETTING THE DEADLINE (milestone)
 
         joy milestone rm CB-MS-01
 
-MISSION 7: READING THE BLACK BOX (log, edit, rm)
+MISSION 7: READING THE BLACK BOX (log, roadmap, edit, rm)
 
-    After every mission, MacGyver reviews what happened. Joy keeps a
-    changelog based on git history:
+    MacGyver always reviews the flight recorder after a mission. Joy has
+    one too -- a structured event log that records every action automatically.
 
-        joy log                          Recent changes
+        joy log                          Last 20 events
         joy log --since 7d               Last 7 days
-        joy log --item CB-0005           Changes to a specific item
+        joy log --item CB-0005           Events for a specific item
+        joy log --limit 50               Show more entries
+
+    Every joy command leaves a trace in .joy/log/ -- one file per day,
+    append-only, timestamped to the millisecond:
+
+        2026-03-11T16:14:32.320Z CB-0005 item.created "Set up SQLite database" [mac@phoenix.org]
+        2026-03-11T16:15:01.440Z CB-0005 item.status_changed "new -> in-progress" [mac@phoenix.org]
+        2026-03-11T16:42:18.100Z CB-0005 comment.added "Schema looks good" [pete@phoenix.org]
+        2026-03-11T16:45:30.200Z CB-0002 dep.added "CB-0005" [mac@phoenix.org]
+
+    These logs are committed to git with your project. Every team member's
+    actions are recorded. Think of it as a built-in audit trail -- who did
+    what, when, and to which item. No separate tracking tool needed.
+
+    The display converts UTC timestamps to your local timezone:
+
+        2026-03-11 17:14:32.320 (+01:00) - CB-0005 - item.created - "Set up SQLite database" [mac@phoenix.org]
+
+    For the big picture, use the roadmap -- a tree view grouped by milestone:
+
+        joy roadmap
+
+    It shows your milestones with their items nested underneath, progress
+    counts, and the full hierarchy. One glance, and you know where the
+    mission stands. MacGyver calls it situational awareness.
 
     Need to adjust something? Edit on the fly:
 
@@ -318,7 +344,8 @@ REFERENCE
     joy comment <ID> <TEXT>         Add comment to item
     joy deps <ID>                   Manage dependencies
     joy milestone                   Manage milestones
-    joy log                         Change history
+    joy log                         Event log (audit trail)
+    joy roadmap                     Milestone roadmap (tree view)
     joy project                     View/edit project info
     joy ai                          AI assistance
     joy completions <SHELL>         Generate shell completions

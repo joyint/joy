@@ -58,6 +58,8 @@ enum Commands {
     Completions(commands::completions::CompletionsArgs),
     /// Read the Joy tutorial
     Tutorial,
+    /// Show milestone roadmap (alias for ls --tree --group milestone)
+    Roadmap,
     /// Shortcut: set item status to in-progress
     Start(ShortcutArgs),
     /// Shortcut: set item status to review
@@ -94,6 +96,7 @@ fn main() -> anyhow::Result<()> {
         Some(Commands::Log(args)) => commands::log::run(args),
         Some(Commands::Completions(args)) => commands::completions::run(args, &mut Cli::command()),
         Some(Commands::Tutorial) => commands::tutorial::run(),
+        Some(Commands::Roadmap) => commands::ls::run(commands::ls::LsArgs::roadmap()),
         Some(Commands::Start(args)) => commands::status::run(commands::status::StatusArgs::new(
             args.id,
             "in-progress".to_string(),

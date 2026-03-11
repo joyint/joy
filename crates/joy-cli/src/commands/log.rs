@@ -91,7 +91,7 @@ pub fn run(args: LogArgs) -> Result<()> {
             color::id(&entry.target),
             color::label(&entry.event_type),
             details_str.trim_start(),
-            entry.user,
+            color::user(&entry.user),
         );
     }
 

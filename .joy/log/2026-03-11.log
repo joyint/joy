@@ -1,3 +1,7 @@
 2026-03-11T16:39:54.957Z JOY-004B comment.added "Log format updated: removed acronym, ID before event type, tab after event type for alignment" [horst.schwarz@joydev.com]
 2026-03-11T16:40:02.085Z JOY-004B item.updated "Structured event log with joy log and joy commit" [horst.schwarz@joydev.com]
 2026-03-11T16:40:02.526Z JOY-004C dep.added "JOY-004B" [horst.schwarz@joydev.com]
+2026-03-11T16:45:39.980Z JOY-004D item.created "joy roadmap as alias for joy ls --tree --group milestone" [horst.schwarz@joydev.com]
+2026-03-11T16:46:59.015Z JOY-004D comment.added "Add Roadmap command as alias for ls --tree --group milestone. Register in main.rs as new Commands variant that delegates to ls::run() with pre-filled args." [horst.schwarz@joydev.com]
+2026-03-11T16:47:07.112Z JOY-004D item.status_changed "new -> in-progress" [horst.schwarz@joydev.com]
+2026-03-11T16:48:03.045Z JOY-004D item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]

@@ -140,6 +140,10 @@ pub fn item_type(t: &ItemType) -> String {
     }
 }
 
+pub fn user(text: &str) -> String {
+    wrap(MAGENTA, text)
+}
+
 pub fn blocked(text: &str) -> String {
     wrap(MAGENTA, text)
 }

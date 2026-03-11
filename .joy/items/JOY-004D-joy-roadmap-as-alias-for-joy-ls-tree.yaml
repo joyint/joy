@@ -1,0 +1,11 @@
+id: JOY-004D
+title: joy roadmap as alias for joy ls --tree --group milestone
+type: idea
+status: closed
+priority: medium
+created: '2026-03-11T16:45:39.976261021Z'
+updated: '2026-03-11T16:48:03.043454564Z'
+comments:
+- author: horst.schwarz@joydev.com
+  date: '2026-03-11T16:46:59.013519870Z'
+  text: Add Roadmap command as alias for ls --tree --group milestone. Register in main.rs as new Commands variant that delegates to ls::run() with pre-filled args.

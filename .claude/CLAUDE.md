@@ -32,6 +32,7 @@ The backlog lives in `.joy/items/`. Use the `joy` CLI to query and manage it:
 - `joy assign <ID> [email]` -- assign/unassign items
 - `joy comment <ID> <text>` -- add comments
 - `joy log` -- event log from .joy/log/ (`--item`, `--since`, `--limit`)
+- `joy roadmap` -- milestone roadmap (alias for `ls --tree --group milestone`)
 - `joy completions <shell>` -- generate shell completions
 - `joy tutorial` -- read the tutorial in a pager
 

@@ -58,6 +58,24 @@ pub struct LsArgs {
     group: String,
 }
 
+impl LsArgs {
+    pub fn roadmap() -> Self {
+        Self {
+            parent: None,
+            item_type: None,
+            status: None,
+            priority: None,
+            mine: false,
+            milestone: None,
+            blocked: false,
+            all: false,
+            tree: true,
+            show: Vec::new(),
+            group: "milestone".to_string(),
+        }
+    }
+}
+
 /// Resolve the effective milestone for an item: its own, or inherited from ancestors.
 pub fn effective_milestone<'a>(item: &'a Item, all_items: &'a [Item]) -> Option<&'a str> {
     if let Some(ref ms) = item.milestone {
