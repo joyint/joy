@@ -36,7 +36,7 @@ The backlog lives in `.joy/items/`. Use the `joy` CLI to query and manage it:
 - `joy completions <shell>` -- generate shell completions
 - `joy tutorial` -- read the tutorial in a pager
 
-Do not edit `.joy/items/*.yaml` files directly. Do not add items to `docs/dev/Backlog.md` (deprecated).
+Do not edit `.joy/items/*.yaml` files directly. The backlog is managed entirely with Joy since v0.5.0.
 
 ## Rules
 

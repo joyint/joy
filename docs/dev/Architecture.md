@@ -111,7 +111,7 @@ joy/
 │       ├── Vision.md
 │       ├── Architecture.md
 │       ├── CONTRIBUTING.md
-│       ├── Backlog.md          # Initial backlog, imported into .joy/ on Phase 0
+│       ├── (Backlog.md removed in v0.5.0 -- managed with Joy itself)
 │       └── adr/                # Architecture Decision Records
 │           ├── ADR-001-yaml-over-sqlite.md
 │           ├── ADR-002-single-binary.md
