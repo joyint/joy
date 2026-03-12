@@ -61,11 +61,15 @@ Rules for item creation:
 
 ### Status tracking during implementation
 
+CRITICAL: Always manage item status when implementing backlog items. Forgetting this breaks the project tracking.
+
 When the user asks to implement a backlog item:
 1. Comment the planned solution into the task using `joy comment <ID> "..."` (same language as task title/description). Confirm with the user before proceeding.
-2. Before starting work, run `joy start <ID>` to set the item to in-progress
-3. After completing the implementation, run `joy close <ID>` to mark it done
+2. Run `joy start <ID>` BEFORE writing any code
+3. Run `joy close <ID>` AFTER the implementation is complete (committed)
 4. If implementation is blocked or deferred, update the status accordingly
+
+Never skip steps 2 and 3. They are not optional.
 
 ### Editing and organizing
 

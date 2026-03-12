@@ -42,3 +42,4 @@ Implementation todos:
 - [ ] Implement joy release command
 - [ ] Update Vision.md and Tutorial.md" [horst.schwarz@joydev.com]
 2026-03-12T06:00:10.228Z JOY-0058 item.status_changed "new -> in-progress" [horst.schwarz@joydev.com]
+2026-03-12T06:37:16.019Z JOY-0058 item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
