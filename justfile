@@ -66,13 +66,26 @@ doctor:
 install:
     just cli install && just app install
 
-# Bump version, commit, tag, and push a release
-release version:
+# Bump version, commit, tag, and push a release (auto-bumps minor if no version given)
+release version="":
     #!/usr/bin/env bash
     set -euo pipefail
-    v="{{version}}"
-    # Strip leading 'v' for Cargo.toml (e.g. v0.5.1 -> 0.5.1)
-    semver="${v#v}"
+    if [ -n "{{version}}" ]; then
+        v="{{version}}"
+        semver="${v#v}"
+    else
+        # Auto-detect: read current version, bump minor
+        current=$(grep '^version = ' crates/joy-cli/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+        major=$(echo "$current" | cut -d. -f1)
+        minor=$(echo "$current" | cut -d. -f2)
+        patch=$(echo "$current" | cut -d. -f3)
+        semver="${major}.$((minor + 1)).0"
+        read -rp "Release v${semver}? [y/N] " confirm
+        if [[ "$confirm" != [yY] ]]; then
+            echo "Aborted."
+            exit 0
+        fi
+    fi
     tag="v${semver}"
 
     # Ensure clean working tree
