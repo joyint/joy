@@ -66,6 +66,35 @@ doctor:
 install:
     just cli install && just app install
 
-# Tag and push a release
-release tag:
-    git tag {{tag}} && git push origin {{tag}}
+# Bump version, commit, tag, and push a release
+release version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    v="{{version}}"
+    # Strip leading 'v' for Cargo.toml (e.g. v0.5.1 -> 0.5.1)
+    semver="${v#v}"
+    tag="v${semver}"
+
+    # Ensure clean working tree
+    if [ -n "$(git status --porcelain)" ]; then
+        echo "Error: working tree is not clean. Commit or stash changes first."
+        exit 1
+    fi
+
+    # Detect current version from root Cargo.toml workspace members
+    for f in crates/joy-cli/Cargo.toml crates/joy-core/Cargo.toml crates/joy-ai/Cargo.toml app/src-tauri/Cargo.toml; do
+        if [ -f "$f" ]; then
+            sed -i "s/^version = \".*\"/version = \"${semver}\"/" "$f"
+            echo "  bumped $f -> ${semver}"
+        fi
+    done
+
+    # Update lock file
+    cargo generate-lockfile 2>/dev/null || cargo check 2>/dev/null
+
+    # Commit, tag, push
+    git add -A
+    git commit -m "bump to ${tag}"
+    git tag "${tag}"
+    git push && git push origin "${tag}"
+    echo "Released ${tag}"
