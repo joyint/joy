@@ -136,12 +136,15 @@ pub fn run(args: AddArgs) -> Result<()> {
             .map_err(|e: String| anyhow::anyhow!("{}", e))?;
     }
 
-    // Warn if parent is closed
+    // Validate parent exists as an item
     if let Some(ref parent_id) = item.parent {
-        if let Ok(parent) = items::load_item(&root, parent_id) {
-            if !parent.is_active() {
-                eprintln!("Warning: parent {} is {}.", parent_id, parent.status);
+        match items::load_item(&root, parent_id) {
+            Ok(parent) => {
+                if !parent.is_active() {
+                    eprintln!("Warning: parent {} is {}.", parent_id, parent.status);
+                }
             }
+            Err(_) => bail!("parent {} is not a valid item ID.", parent_id),
         }
     }
 

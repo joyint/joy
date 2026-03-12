@@ -1,0 +1,11 @@
+id: JOY-0051
+title: 'joy ai setup tool: Claude Code + Qwen Code (SKILL.md)'
+type: task
+status: new
+priority: high
+parent: JOY-0018
+deps:
+- JOY-0050
+created: '2026-03-11T18:34:25.107856275Z'
+updated: '2026-03-11T18:39:32.344378758Z'
+description: Generate SKILL.md file (new skills format) with Joy instructions. Cross-compatible with Claude Code and Qwen Code. Detect existing config and merge. References shared instructions document.

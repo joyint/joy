@@ -1,0 +1,8 @@
+id: JOY-0058
+title: Git version tags for joy
+type: idea
+status: new
+priority: medium
+created: '2026-03-12T05:45:11.440691630Z'
+updated: '2026-03-12T05:45:11.440691630Z'
+description: Joy could read Git version tags and allow them as dedicated field for items. First, as a kind of release management (e.g. joy release v0.4.1 which shows the list of assigned items), but second and maybe much more important for bug assignement.

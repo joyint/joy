@@ -7,5 +7,5 @@ parent: JOY-0018
 deps:
 - JOY-0050
 created: '2026-03-11T18:34:25.977300765Z'
-updated: '2026-03-11T18:34:38.938169480Z'
-description: Generate project instructions for Mistral Vibe (vibe CLI). Detect installed vibe command. References shared instructions document.
+updated: '2026-03-11T18:39:33.573715439Z'
+description: Generate local slash-command skill for Mistral Vibe 2.0. No marketplace available -- local config only. References shared instructions document.

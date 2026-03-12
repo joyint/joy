@@ -70,13 +70,16 @@ pub fn run(args: EditArgs) -> Result<()> {
         if parent == "none" {
             item.parent = None;
         } else {
-            if let Ok(parent_item) = items::load_item(&root, parent) {
-                if !parent_item.is_active() {
-                    eprintln!("Warning: parent {} is {}.", parent, parent_item.status);
+            match items::load_item(&root, parent) {
+                Ok(parent_item) => {
+                    if !parent_item.is_active() {
+                        eprintln!("Warning: parent {} is {}.", parent, parent_item.status);
+                    }
                 }
+                Err(_) => anyhow::bail!("parent {} is not a valid item ID.", parent),
             }
             item.parent = Some(parent.clone());
-        };
+        }
         changed = true;
     }
 

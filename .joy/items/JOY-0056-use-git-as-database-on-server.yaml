@@ -1,0 +1,9 @@
+id: JOY-0056
+title: Use Git as database on server
+type: idea
+status: new
+priority: medium
+parent: JOY-MS-03
+milestone: JOY-MS-03
+created: '2026-03-12T05:33:44.603379958Z'
+updated: '2026-03-12T05:45:22.474651648Z'
