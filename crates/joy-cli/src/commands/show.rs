@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 use anyhow::Result;
+use chrono::{DateTime, Local};
 use clap::Args;
 
 use joy_core::items;
@@ -93,13 +94,20 @@ pub fn run(args: ShowArgs) -> Result<()> {
 
     if !item.comments.is_empty() {
         println!("\n{}:", color::heading("Comments"));
-        for comment in &item.comments {
+        for (i, comment) in item.comments.iter().enumerate() {
+            if i > 0 {
+                println!();
+            }
+            let local_dt: DateTime<Local> = comment.date.with_timezone(&Local);
+            let date_str = local_dt.format("%Y-%m-%d %H:%M").to_string();
             println!(
-                "  {} {}: {}",
-                color::heading(&comment.author),
-                color::label(&comment.date.format("(%Y-%m-%d %H:%M)").to_string()),
-                comment.text
+                "{} [{}]",
+                color::label(&date_str),
+                color::user(&comment.author),
             );
+            for line in comment.text.lines() {
+                println!("  {line}");
+            }
         }
     }
 
