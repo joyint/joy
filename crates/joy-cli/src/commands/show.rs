@@ -106,7 +106,7 @@ pub fn run(args: ShowArgs) -> Result<()> {
                 color::user(&comment.author),
             );
             for line in comment.text.lines() {
-                println!("  {line}");
+                println!("{line}");
             }
         }
     }
