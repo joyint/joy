@@ -12,6 +12,7 @@ use joy_core::store;
 #[derive(Args)]
 pub struct EditArgs {
     /// Item ID (e.g. IT-0001)
+    #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_item_id))]
     id: String,
 
     /// New title

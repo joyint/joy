@@ -52,3 +52,29 @@ Implementation todos:
 - [x] Add --version flag to joy add, joy edit, joy ls
 - [x] Implement joy release command
 - [x] Update Vision.md, Tutorial.md, Architecture.md, CLAUDE.md" [horst.schwarz@joydev.com]
+2026-03-12T06:49:27.210Z JOY-004A comment.added "Bewertung und Lösungsansatz:
+
+Drei Stufen möglich:
+1. Statische Completion (haben wir schon via clap)
+2. Dynamische ID-Completion: Tab scannt .joy/items/ und .joy/milestones/ und schlägt IDs vor. Sweet Spot -- 90% des Nutzens, ~1-2 Tage Aufwand.
+3. Fuzzy-Match mit Titeln (z.B. cra<TAB> -> JOY-003F). Deutlich komplexer, später.
+
+Umsetzung Stufe 2:
+- clap_complete mit custom completer für ID-Argumente
+- Completer liest .joy/items/ und .joy/milestones/ Dateinamen, extrahiert IDs
+- Shell-Setup über joy completions <shell> (bash/zsh/fish)
+
+Todos:
+- [ ] Custom completer implementieren der IDs aus .joy/ liest
+- [ ] In alle Commands mit ID-Argument einbinden
+- [ ] joy completions Output anpassen falls nötig
+- [ ] Testen mit bash und zsh" [horst.schwarz@joydev.com]
+2026-03-12T06:49:41.295Z JOY-004A item.status_changed "new -> in-progress" [horst.schwarz@joydev.com]
+2026-03-12T06:51:56.799Z JOY-0059 item.created "Interaktive ID-Auswahl mit fzf" [horst.schwarz@joydev.com]
+2026-03-12T06:59:51.870Z JOY-004A comment.added "Umsetzung abgeschlossen:
+- [x] Custom completer implementieren der IDs aus .joy/ liest
+- [x] In alle Commands mit ID-Argument einbinden
+- [x] joy completions Output anpassen falls noetig (nicht noetig, CompleteEnv laeuft parallel)
+- [x] Testen mit bash und zsh (bash getestet, zsh analog)
+
+Dynamische Completion via CompleteEnv + ArgValueCompleter. Aktivierung: source <(COMPLETE=bash joy) in .bashrc." [horst.schwarz@joydev.com]

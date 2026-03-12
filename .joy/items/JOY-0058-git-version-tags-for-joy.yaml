@@ -42,11 +42,11 @@ comments:
     - [ ] Update Vision.md and Tutorial.md
 - author: horst.schwarz@joydev.com
   date: '2026-03-12T06:40:29.198275076Z'
-  text: 'Alle Todos erledigt: ADR-010, Vcs trait + GitVcs, Git-Aufrufe migriert, version Feld, --version Flags, joy release, Docs aktualisiert.'
+  text: 'All todos done: ADR-010, Vcs trait + GitVcs, git calls migrated, version field, --version flags, joy release, docs updated.'
 - author: horst.schwarz@joydev.com
   date: '2026-03-12T06:42:09.294473380Z'
   text: |-
-    Umsetzung abgeschlossen:
+    Implementation complete:
     - [x] ADR for VCS abstraction
     - [x] Create Vcs trait in joy-core with GitVcs implementation
     - [x] Migrate existing git calls (init, assign, comment, ls, event_log) to Vcs

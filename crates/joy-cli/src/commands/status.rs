@@ -28,6 +28,7 @@ Behavior:
   - Custom rules can restrict transitions (see joy tutorial, Mission 9)")]
 pub struct StatusArgs {
     /// Item ID (e.g. IT-0001)
+    #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_item_id))]
     id: String,
 
     /// New status: new, open, in-progress, review, closed, deferred

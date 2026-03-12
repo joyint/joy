@@ -54,6 +54,7 @@ struct AddArgs {
 #[derive(Args)]
 struct EditArgs {
     /// Milestone ID (e.g. MS-01)
+    #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_item_id))]
     id: String,
 
     /// New title
@@ -72,12 +73,14 @@ struct EditArgs {
 #[derive(Args)]
 struct ShowArgs {
     /// Milestone ID (e.g. MS-01)
+    #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_item_id))]
     id: String,
 }
 
 #[derive(Args)]
 struct RmArgs {
     /// Milestone ID (e.g. MS-01)
+    #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_item_id))]
     id: String,
 
     /// Skip confirmation
@@ -88,15 +91,18 @@ struct RmArgs {
 #[derive(Args)]
 struct LinkArgs {
     /// Item ID to link
+    #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_item_id))]
     item_id: String,
 
     /// Milestone ID to link to
+    #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_item_id))]
     ms_id: String,
 }
 
 #[derive(Args)]
 struct UnlinkArgs {
     /// Item ID to unlink from its milestone
+    #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_item_id))]
     item_id: String,
 }
 

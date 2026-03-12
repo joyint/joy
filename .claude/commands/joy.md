@@ -34,6 +34,7 @@ When the user describes features, ideas, problems, or requirements in prose:
 4. After all items are processed, run `joy ls` to show the result.
 
 Rules for item creation:
+- All titles, descriptions, and comments must be in English
 - Titles are short and actionable (max 60 characters)
 - Descriptions are concrete enough to start working (2-4 sentences)
 - Do not over-decompose -- a 1-2 day story is fine as one item
@@ -64,7 +65,7 @@ Rules for item creation:
 CRITICAL: Always manage item status when implementing backlog items. Forgetting this breaks the project tracking.
 
 When the user asks to implement a backlog item:
-1. Comment the planned solution into the task using `joy comment <ID> "..."` (same language as task title/description). Confirm with the user before proceeding.
+1. Comment the planned solution into the task using `joy comment <ID> "..."` (always in English, regardless of conversation language). Confirm with the user before proceeding.
 2. Run `joy start <ID>` BEFORE writing any code
 3. After implementation is committed, add a comment with the todo list showing `[x]` for completed items
 4. Run `joy close <ID>` AFTER the implementation is complete (committed)

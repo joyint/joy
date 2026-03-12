@@ -348,6 +348,23 @@ MISSION 9: ADJUSTING THE RULES (project, config)
     Remove rules to go back to zero ceremony. There are no templates, no
     modes, no workflow engine. Just rules you add or remove.
 
+BONUS MISSION: SHELL COMPLETIONS
+
+    Joy supports tab completion for commands, flags, and item IDs. Add one
+    line to your shell config:
+
+        Bash:  source <(COMPLETE=bash joy)        # ~/.bashrc
+        Zsh:   source <(COMPLETE=zsh joy)         # ~/.zshrc
+        Fish:  source (COMPLETE=fish joy | psub)  # config.fish
+
+    After reloading your shell, try:
+
+        joy show JOY-<TAB>               Completes item and milestone IDs
+        joy sta<TAB>                     Completes subcommands
+        joy ls --ty<TAB>                 Completes flags
+
+    MacGyver would say: why type when the machine can do it for you?
+
 MISSION 10: SYNCING WITH HQ (sync)
 
     For collaboration, sync your project with a remote:

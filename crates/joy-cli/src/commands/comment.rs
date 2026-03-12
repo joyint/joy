@@ -19,6 +19,7 @@ Examples:
   joy comment EP-0002 \"Blocked by external API changes\"")]
 pub struct CommentArgs {
     /// Item ID (e.g. IT-0001)
+    #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_item_id))]
     id: String,
 
     /// Comment text (required)

@@ -14,6 +14,7 @@ use crate::color;
 #[derive(Args)]
 pub struct AssignArgs {
     /// Item ID (e.g. IT-0001)
+    #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_item_id))]
     id: String,
 
     /// Email address or agent identity (e.g. agent:implementer@joy).

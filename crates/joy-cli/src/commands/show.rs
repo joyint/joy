@@ -12,6 +12,7 @@ use crate::color;
 #[derive(Args)]
 pub struct ShowArgs {
     /// Item ID (e.g. IT-0001)
+    #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_item_id))]
     id: String,
 }
 

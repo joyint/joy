@@ -12,7 +12,7 @@ path = "src/main.rs"
 joy-core = { path = "../joy-core" }
 joy-ai = { path = "../joy-ai" }
 clap = { workspace = true }
-clap_complete = "4.5"
+clap_complete = { version = "4.5", features = ["unstable-dynamic"] }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 serde = { workspace = true }

@@ -6,6 +6,18 @@ use clap_complete::{generate, Shell};
 use std::io;
 
 #[derive(clap::Args)]
+#[command(after_help = "\
+Dynamic completions (recommended, includes item/milestone ID completion):
+
+  Bash:  source <(COMPLETE=bash joy)     # add to ~/.bashrc
+  Zsh:   source <(COMPLETE=zsh joy)      # add to ~/.zshrc
+  Fish:  source (COMPLETE=fish joy | psub)  # add to config.fish
+
+Static completions (subcommands and flags only, no ID completion):
+
+  eval \"$(joy completions bash)\"
+  eval \"$(joy completions zsh)\"
+  joy completions fish | source")]
 pub struct CompletionsArgs {
     /// Target shell (bash, zsh, fish, powershell, elvish)
     shell: String,

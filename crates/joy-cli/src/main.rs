@@ -3,6 +3,7 @@
 
 mod color;
 mod commands;
+mod complete;
 
 use clap::{CommandFactory, Parser, Subcommand};
 
@@ -93,10 +94,13 @@ struct RoadmapArgs {
 #[derive(clap::Args)]
 struct ShortcutArgs {
     /// Item ID (e.g. IT-0001)
+    #[arg(add = clap_complete::engine::ArgValueCompleter::new(complete::complete_item_id))]
     id: String,
 }
 
 fn main() -> anyhow::Result<()> {
+    clap_complete::CompleteEnv::with_factory(Cli::command).complete();
+
     let config = joy_core::store::load_config();
     color::init(&config.output);
 

@@ -21,6 +21,7 @@ Examples:
   joy deps IT-0002 --tree          Show full dependency tree")]
 pub struct DepsArgs {
     /// Item ID (e.g. IT-0001)
+    #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_item_id))]
     id: String,
 
     /// Add dependency: <ID> will depend on this item
