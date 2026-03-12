@@ -79,7 +79,7 @@ release version="":
         major=$(echo "$current" | cut -d. -f1)
         minor=$(echo "$current" | cut -d. -f2)
         patch=$(echo "$current" | cut -d. -f3)
-        semver="${major}.$((minor + 1)).0"
+        semver="${major}.${minor}.$((patch + 1))"
         read -rp "Release v${semver}? [y/N] " confirm
         if [[ "$confirm" != [yY] ]]; then
             echo "Aborted."
