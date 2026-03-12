@@ -20,7 +20,7 @@ These documents are the source of truth. Do not redefine or contradict anything 
 The backlog lives in `.joy/items/`. Use the `joy` CLI to query and manage it:
 
 - `joy` -- board overview (items grouped by status)
-- `joy ls` -- list items with filters (`--type`, `--status`, `--parent`, `--priority`, `--blocked`, `--milestone`, `--mine`)
+- `joy ls` -- list items with filters (`--type`, `--status`, `--parent`, `--priority`, `--blocked`, `--milestone`, `--mine`, `--version`, `--tag`)
 - `joy show <ID>` -- item details with dependencies
 - `joy add <TYPE> <TITLE> [OPTIONS]` -- create new items (type and title also available as --type/--title flags)
 - `joy edit <ID>` -- modify items
@@ -32,6 +32,7 @@ The backlog lives in `.joy/items/`. Use the `joy` CLI to query and manage it:
 - `joy assign <ID> [email]` -- assign/unassign items
 - `joy comment <ID> <text>` -- add comments
 - `joy log` -- event log from .joy/log/ (`--item`, `--since`, `--limit`)
+- `joy release [VERSION]` -- release notes for a version (items by version tag)
 - `joy roadmap` -- milestone roadmap (alias for `ls --tree --group milestone`)
 - `joy completions <shell>` -- generate shell completions
 - `joy tutorial` -- read the tutorial in a pager

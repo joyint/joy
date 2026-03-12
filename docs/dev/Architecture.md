@@ -258,6 +258,7 @@ Significant architectural decisions are documented as individual files in `docs/
 - [ADR-007: Yarn over npm](./adr/ADR-007-yarn-over-npm.md)
 - [ADR-008: Open Core Licensing Model](./adr/ADR-008-open-core-licensing.md)
 - [ADR-009: E-mail as user identity with OAuth authentication](./adr/ADR-009-email-identity-oauth.md)
+- [ADR-010: VCS abstraction layer](./adr/ADR-010-vcs-abstraction.md)
 
 ---
 

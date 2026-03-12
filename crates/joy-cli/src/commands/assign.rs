@@ -7,6 +7,7 @@ use clap::Args;
 
 use joy_core::items;
 use joy_core::store;
+use joy_core::vcs::Vcs;
 
 use crate::color;
 
@@ -50,7 +51,9 @@ pub fn run(args: AssignArgs) -> Result<()> {
 
     let email = match args.email {
         Some(e) => e,
-        None => get_git_email()?,
+        None => joy_core::vcs::default_vcs()
+            .user_email()
+            .map_err(|e| anyhow::anyhow!("{e}. Provide email explicitly."))?,
     };
 
     // Basic validation: must contain @ or be an agent: identity
@@ -77,22 +80,4 @@ pub fn run(args: AssignArgs) -> Result<()> {
     );
 
     Ok(())
-}
-
-fn get_git_email() -> Result<String> {
-    let output = std::process::Command::new("git")
-        .args(["config", "user.email"])
-        .output()
-        .map_err(|_| anyhow::anyhow!("failed to run git config user.email"))?;
-
-    if !output.status.success() {
-        anyhow::bail!("git config user.email not set. Provide email explicitly.");
-    }
-
-    let email = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if email.is_empty() {
-        anyhow::bail!("git config user.email is empty. Provide email explicitly.");
-    }
-
-    Ok(email)
 }

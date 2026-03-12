@@ -11,3 +11,34 @@
 2026-03-12T05:43:27.518Z JOY-0057 item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
 2026-03-12T05:45:11.444Z JOY-0058 item.created "Git version tags for joy" [horst.schwarz@joydev.com]
 2026-03-12T05:45:22.476Z JOY-0056 item.updated "Use Git as database on server" [horst.schwarz@joydev.com]
+2026-03-12T06:00:05.034Z JOY-0058 comment.added "Analysis and solution plan:
+
+Git is already used in joy init (repo detection) and joy assign (git config user.email). Reading git tags is consistent with this approach.
+
+Data model:
+- Add optional `version` field to Item (string, e.g. "v0.5.0")
+- For bugs: version = "found in this version"
+- On joy close: automatically set version to current git tag (latest reachable tag)
+- New `fixed_in` not needed initially -- the version where an item was closed can be derived from the log
+
+Commands:
+- joy release [VERSION] -- show items closed since previous tag, grouped by type
+- joy release (no arg) -- detect latest git tag automatically
+- joy edit <ID> --version v0.5.0 -- manually set version
+- joy ls --version v0.5.0 -- filter by version
+- joy add bug "..." --version v0.5.0 -- set version on creation
+
+Architecture:
+- ADR for VCS abstraction: all git operations behind a trait in joy-core (e.g. VcsProvider) so other VCS can be supported later
+- Consolidate existing git calls (init repo check, user email) into same abstraction
+- If no git tags exist, skip automatic version detection silently -- no errors, no assumptions
+
+Implementation todos:
+- [ ] ADR for VCS abstraction
+- [ ] Create VcsProvider trait in joy-core with git implementation
+- [ ] Migrate existing git calls (init, assign) to VcsProvider
+- [ ] Add version field to Item model
+- [ ] Add --version flag to joy add, joy edit, joy ls
+- [ ] Implement joy release command
+- [ ] Update Vision.md and Tutorial.md" [horst.schwarz@joydev.com]
+2026-03-12T06:00:10.228Z JOY-0058 item.status_changed "new -> in-progress" [horst.schwarz@joydev.com]

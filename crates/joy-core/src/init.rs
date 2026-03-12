@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use crate::error::JoyError;
 use crate::model::config::Config;
 use crate::model::project::{derive_acronym, Project};
 use crate::store;
+use crate::vcs::{default_vcs, Vcs};
 
 pub struct InitOptions {
     pub root: PathBuf,
@@ -31,10 +31,11 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
     }
 
     // Detect or initialize git
-    let git_existed = is_git_repo(root);
+    let vcs = default_vcs();
+    let git_existed = vcs.is_repo(root);
     let mut git_initialized = false;
     if !git_existed {
-        run_git_init(root)?;
+        vcs.init_repo(root)?;
         git_initialized = true;
     }
 
@@ -78,32 +79,6 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
         git_initialized,
         git_existed,
     })
-}
-
-fn is_git_repo(root: &Path) -> bool {
-    Command::new("git")
-        .args(["rev-parse", "--git-dir"])
-        .current_dir(root)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
-
-fn run_git_init(root: &Path) -> Result<(), JoyError> {
-    let status = Command::new("git")
-        .args(["init"])
-        .current_dir(root)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map_err(|e| JoyError::Git(format!("failed to run git init: {e}")))?;
-
-    if !status.success() {
-        return Err(JoyError::Git("git init failed".into()));
-    }
-    Ok(())
 }
 
 fn ensure_gitignore(root: &Path) -> Result<(), JoyError> {

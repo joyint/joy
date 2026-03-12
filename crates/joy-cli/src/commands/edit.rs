@@ -45,6 +45,10 @@ pub struct EditArgs {
     /// Set assignee email (use "none" to remove)
     #[arg(short, long)]
     assignee: Option<String>,
+
+    /// Set version tag (use "none" to remove)
+    #[arg(short = 'v', long)]
+    version: Option<String>,
 }
 
 pub fn run(args: EditArgs) -> Result<()> {
@@ -122,6 +126,15 @@ pub fn run(args: EditArgs) -> Result<()> {
             }
             item.deps = new_deps;
         }
+        changed = true;
+    }
+
+    if let Some(ref version) = args.version {
+        item.version = if version == "none" {
+            None
+        } else {
+            Some(version.clone())
+        };
         changed = true;
     }
 

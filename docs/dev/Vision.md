@@ -199,11 +199,13 @@ joy board                               # Board overview (same as bare joy)
 ```sh
 joy add <TYPE> <TITLE> [OPTIONS]         # Create new item
   joy add story "Login Page" --parent JOY-0001 --priority high
-  joy add bug "Crash bei Umlauten"
+  joy add bug "Crash bei Umlauten" --version v0.5.0
   joy add epic "Auth System"
 
 joy edit [id]                           # Edit item
   joy edit JOY-002A --title "Payment v2" --priority critical
+  joy edit JOY-002A --version v0.5.0    # set version tag
+  joy edit JOY-002A --version none      # remove version tag
 
 joy rm [id]                             # Delete item (with confirmation)
   joy rm JOY-002A
@@ -224,6 +226,7 @@ joy ls                                  # List and filter items
   joy ls --tree                         # hierarchical tree view
   joy ls --tree --group milestone       # tree grouped by milestone
   joy ls --tag backend                  # by tag
+  joy ls --version v0.5.0               # by version tag
   joy ls --show milestone,assignee      # extra columns (milestone, assignee, parent)
 
 joy show [id]                           # Detail view
@@ -246,6 +249,16 @@ joy submit [id]                         # alias for: joy status [id] review
 joy close [id]                          # alias for: joy status [id] closed
 joy reopen [id]                         # alias for: joy status [id] open
 ```
+
+### Release
+
+```sh
+joy release                             # Show items for latest git tag
+  joy release v0.5.0                    # Show items tagged with v0.5.0
+```
+
+Version tags link items to git releases. Use `--version` on `joy add` or `joy edit` to tag items.
+If no git tags exist, `joy release` without arguments shows a usage hint (no automatism).
 
 ### Assignment
 

@@ -65,6 +65,10 @@ pub struct AddArgs {
     /// Initial status: new, open, in-progress, review, closed, deferred
     #[arg(short, long)]
     status: Option<String>,
+
+    /// Version tag (e.g. v0.5.0)
+    #[arg(short = 'v', long)]
+    version: Option<String>,
 }
 
 pub fn run(args: AddArgs) -> Result<()> {
@@ -129,6 +133,8 @@ pub fn run(args: AddArgs) -> Result<()> {
         .deps
         .map(|d| d.split(',').map(|s| s.trim().to_string()).collect())
         .unwrap_or_default();
+
+    item.version = args.version;
 
     if let Some(ref s) = args.status {
         item.status = s

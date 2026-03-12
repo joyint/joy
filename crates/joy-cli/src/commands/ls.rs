@@ -8,6 +8,7 @@ use joy_core::items;
 use joy_core::milestones;
 use joy_core::model::item::{Item, ItemType, Priority, Status};
 use joy_core::store;
+use joy_core::vcs::Vcs;
 
 use crate::color;
 
@@ -41,6 +42,10 @@ pub struct LsArgs {
     #[arg(long)]
     tag: Option<String>,
 
+    /// Filter by version tag
+    #[arg(short = 'v', long)]
+    version: Option<String>,
+
     /// Show only blocked items
     #[arg(long)]
     blocked: bool,
@@ -72,6 +77,7 @@ impl LsArgs {
             mine: false,
             milestone: None,
             tag: None,
+            version: None,
             blocked: false,
             all,
             tree: true,
@@ -151,8 +157,12 @@ pub fn run(args: LsArgs) -> Result<()> {
         return Ok(());
     }
 
-    let my_email = if args.mine {
-        Some(get_git_email()?)
+    let my_email: Option<String> = if args.mine {
+        Some(
+            joy_core::vcs::default_vcs()
+                .user_email()
+                .map_err(|e| anyhow::anyhow!("{e}"))?,
+        )
     } else {
         None
     };
@@ -218,6 +228,12 @@ pub fn run(args: LsArgs) -> Result<()> {
 
             if let Some(ref tag) = args.tag {
                 if !item.tags.iter().any(|t| t == tag) {
+                    return false;
+                }
+            }
+
+            if let Some(ref version) = args.version {
+                if item.version.as_deref() != Some(version.as_str()) {
                     return false;
                 }
             }
@@ -666,15 +682,4 @@ fn print_ms_tree_node(item: &Item, group: &[&&Item], prefix: &str, is_last: bool
         let child_is_last = ci == children.len() - 1;
         print_ms_tree_node(child, group, &child_prefix, child_is_last);
     }
-}
-
-fn get_git_email() -> Result<String> {
-    let output = std::process::Command::new("git")
-        .args(["config", "user.email"])
-        .output()?;
-    let email = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if email.is_empty() {
-        anyhow::bail!("git config user.email is not set");
-    }
-    Ok(email)
 }

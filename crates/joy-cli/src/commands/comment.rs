@@ -8,6 +8,7 @@ use clap::Args;
 use joy_core::items;
 use joy_core::model::item::Comment;
 use joy_core::store;
+use joy_core::vcs::Vcs;
 
 use crate::color;
 
@@ -35,7 +36,9 @@ pub fn run(args: CommentArgs) -> Result<()> {
 
     let mut item = items::load_item(&root, &args.id)?;
 
-    let author = get_git_email()?;
+    let author = joy_core::vcs::default_vcs()
+        .user_email()
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
     let log_text = text.clone();
     let comment = Comment {
         author,
@@ -57,22 +60,4 @@ pub fn run(args: CommentArgs) -> Result<()> {
     println!("Added comment to {} {}", color::id(&item.id), item.title);
 
     Ok(())
-}
-
-fn get_git_email() -> Result<String> {
-    let output = std::process::Command::new("git")
-        .args(["config", "user.email"])
-        .output()
-        .map_err(|_| anyhow::anyhow!("failed to run git config user.email"))?;
-
-    if !output.status.success() {
-        anyhow::bail!("git config user.email not set.");
-    }
-
-    let email = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if email.is_empty() {
-        anyhow::bail!("git config user.email is empty.");
-    }
-
-    Ok(email)
 }

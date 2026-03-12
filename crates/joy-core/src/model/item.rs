@@ -22,6 +22,8 @@ pub struct Item {
     pub milestone: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
     pub created: DateTime<Utc>,
     pub updated: DateTime<Utc>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -84,6 +86,7 @@ impl Item {
             deps: Vec::new(),
             milestone: None,
             tags: Vec::new(),
+            version: None,
             created: now,
             updated: now,
             description: None,

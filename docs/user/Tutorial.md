@@ -253,6 +253,26 @@ MISSION 7: READING THE BLACK BOX (log, roadmap, edit, rm)
     counts, and the full hierarchy. One glance, and you know where the
     mission stands. MacGyver calls it situational awareness.
 
+    When you ship a version, use release notes to see what went into it:
+
+        joy release v1.0.0               Items tagged with v1.0.0
+        joy release                      Auto-detect latest git tag
+
+    Version tags are especially useful for bugs. Tag a bug with the version
+    where it was found, and use the release view to see all known issues:
+
+        joy add bug "Crash on empty input" --version v0.9.0
+        joy release v0.9.0
+
+    The release view groups items by type so you see features, fixes, and
+    known bugs at a glance. Use joy ls --version to filter at any time:
+
+        joy ls --version v0.9.0              All items for a version
+        joy ls --type bug --version v0.9.0   Bugs found in v0.9.0
+
+    If no git tags exist, joy release simply asks for a version argument.
+    No assumptions, no automatism. A good field report beats a good memory.
+
     Need to adjust something? Edit on the fly:
 
         joy edit CB-0002 --priority critical
@@ -357,6 +377,7 @@ REFERENCE
     joy deps <ID>                   Manage dependencies
     joy milestone                   Manage milestones
     joy log                         Event log (audit trail)
+    joy release [VERSION]           Release notes for a version
     joy roadmap                     Milestone roadmap (tree view)
     joy project                     View/edit project info
     joy ai                          AI assistance

@@ -54,6 +54,9 @@ pub fn run(args: ShowArgs) -> Result<()> {
     if !item.tags.is_empty() {
         println!("{} {}", color::label("Tags:    "), item.tags.join(", "));
     }
+    if let Some(ref version) = item.version {
+        println!("{} {}", color::label("Version: "), version);
+    }
 
     if !item.deps.is_empty() {
         println!("\n{}:", color::heading("Dependencies"));

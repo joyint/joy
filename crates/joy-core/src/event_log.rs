@@ -10,6 +10,7 @@ use chrono::Utc;
 
 use crate::error::JoyError;
 use crate::store;
+use crate::vcs::Vcs;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EventType {
@@ -254,16 +255,7 @@ fn parse_log_line(line: &str) -> Option<LogEntry> {
 
 /// Get git user.email for the current user.
 pub fn get_git_email() -> Result<String, JoyError> {
-    let output = std::process::Command::new("git")
-        .args(["config", "user.email"])
-        .output()
-        .map_err(|_| JoyError::Git("failed to run git config".to_string()))?;
-
-    if !output.status.success() {
-        return Err(JoyError::Git("git user.email not configured".to_string()));
-    }
-
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    crate::vcs::default_vcs().user_email()
 }
 
 /// Convenience: append an event, loading git email automatically.

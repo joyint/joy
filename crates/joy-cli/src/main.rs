@@ -70,6 +70,8 @@ enum Commands {
     Reopen(ShortcutArgs),
     /// Search items by text
     Find(commands::find::FindArgs),
+    /// Show release notes for a version
+    Release(commands::release::ReleaseArgs),
     /// Show the board (default when no command given)
     Board(BoardArgs),
 }
@@ -134,6 +136,7 @@ fn main() -> anyhow::Result<()> {
             "open".to_string(),
         )),
         Some(Commands::Find(args)) => commands::find::run(args),
+        Some(Commands::Release(args)) => commands::release::run(args),
         Some(Commands::Board(args)) => commands::board::run(args),
         None => commands::board::run(BoardArgs { all: false }),
     }
