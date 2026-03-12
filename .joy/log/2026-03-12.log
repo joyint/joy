@@ -81,3 +81,90 @@ Dynamische Completion via CompleteEnv + ArgValueCompleter. Aktivierung: source <
 2026-03-12T07:36:12.532Z JOY-004A item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
 2026-03-12T07:40:32.461Z JOY-005A item.created "Configuration of default language" [horst.schwarz@joydev.com]
 2026-03-12T07:41:39.137Z JOY-005A item.updated "Configuration of default language" [horst.schwarz@joydev.com]
+2026-03-12T20:44:50.824Z JOY-005B item.created "Jo: Personal Todo Tool als gemeinsame Plattform mit Joy" [horst.schwarz@joydev.com]
+2026-03-12T20:54:27.430Z JOY-005B comment.added "Pragmatische Alternative: Vikunja als Backend nutzen, Custom-Frontend (SolidJS + Tauri) auf die Vikunja-API bauen. Damit sofort funktionierendes Backend mit Sync, Reminders, Recurring Tasks. Nur das Frontend muss gebaut werden. Gleiche Tech wie Joy (SolidJS, Tauri, Tailwind). Spaeter kann das Backend optional durch ein eigenes ersetzt werden. Loest das konkrete Problem (Todoist ersetzen) ohne Joy zu blockieren." [horst.schwarz@joydev.com]
+2026-03-12T21:03:33.317Z JOY-005B comment.added "Verfeinerter Architektur-Ansatz: Shared Data Model statt getrennte Datenmodelle.
+
+Herleitung: Die urspruengliche Idee sah getrennte Datenmodelle vor (joy-core und jo-core). Die Frage war, ob ein Joy-Item nicht auch Start-/Endtermin und Erinnerungen haben kann -- dann koennte Jo einfach ein vereinfachtes Frontend auf dasselbe Item-Modell sein.
+
+Gegenargumente wurden geprueft:
+- Status-Modell (new/open/in-progress/review/closed vs. offen/erledigt): Loesbar durch Mapping im Frontend, Jo nutzt nur new+closed
+- Schema-Rauschen (leere PM-Felder in Todos): Akzeptabel, YAML-Felder die null sind stoeren nicht
+- ID-Aesthetik (hex-IDs fuer Todos): Loesbar im Frontend
+- Recurring Tasks: Das staerkste Gegenargument -- gelöst durch Extension-Modell (siehe unten)
+
+Loesung -- Item-Extension statt getrenntes Modell:
+
+joy-core::Item (shared)
+- id, title, status, priority, parent, tags
+- description, comments, created, updated
+- due_date, reminder (nuetzlich fuer beide Produkte)
+
+jo-core::Todo (extends Item via serde flatten)
+- alles von Item
+- recurrence (interval, day, etc.)
+
+Vorteile:
+- joy-core bleibt schlank, null Zeilen Recurring-Logik
+- jo-core haengt von joy-core ab und ergaenzt nur Jo-spezifische Felder
+- due_date und reminder kommen ins Basis-Item (sind auch fuer PM-Deadlines sinnvoll)
+- Ein Backend, ein Sync, eine API -- der Server transportiert YAML ohne alle Felder verstehen zu muessen
+- Unbekannte Felder werden durchgereicht, nicht validiert (passt zum Prinzip 'Text files are the API')
+- Zwei separate Apps (jo und joy), aber ein gemeinsamer Core und eine gemeinsame Plattform
+
+Entscheidung Sync-Server: Felder die der Server nicht kennt werden akzeptiert und durchgereicht (kein striktes Schema). Pragmatischer als den Server beide Crates kennen zu lassen." [horst.schwarz@joydev.com]
+2026-03-12T21:08:10.431Z JOY-005C item.created "Git-Remote als Sync-Backend statt Custom Server" [horst.schwarz@joydev.com]
+2026-03-12T21:08:16.913Z JOY-005C dep.added "JOY-005B" [horst.schwarz@joydev.com]
+2026-03-12T21:13:51.177Z JOY-005C comment.added "Lizenzstrategie: Open Core mit klarer Trennlinie.
+
+Open Source (MIT) -- schafft Vertrauen und Adoption:
+- joy-core / jo-core (Datenmodell, YAML I/O)
+- joy-cli / jo-cli
+- Das Dateiformat (.joy/ YAML-Dateien im Git-Repo)
+- Entwickler koennen alles lokal nutzen ohne je einen Cent zu zahlen
+- Kein Lock-in: Daten sind Textdateien im eigenen Git-Repo
+
+Kommerziell / Closed Source -- finanziert die Entwicklung:
+- Thin API Server (Git-Gateway fuer Mobile/Web Apps)
+- Notification Service (Reminders, Push Notifications)
+- Web-App Frontend
+- Mobile Apps (iOS, Android)
+- joyint.com Managed Hosting
+
+Begruendung: Wer zahlt, zahlt fuer Bequemlichkeit -- Apps, Sync zwischen Geraeten, Reminders am Handy. Genau das was Todoist auch verkauft, nur ohne Lock-in. Kein kuenstliches Feature-Gating im CLI, keine proprietaeren Datenformate.
+
+Vorbild: GitLab (CE vs. EE), Bitwarden, Grafana. Kein Entwickler nimmt uebel dass die iOS-App nicht MIT-lizenziert ist. Was Entwickler uebel nehmen ist kuenstliches Feature-Gating oder proprietaere Datenformate -- und genau das passiert hier nicht.
+
+Passt zum bestehenden ADR-008 (Open Core Licensing), erweitert ihn aber: Nicht nur die Tauri-App ist kommerziell, sondern die gesamte Server- und App-Infrastruktur die ueber den reinen Git-Sync hinausgeht." [horst.schwarz@joydev.com]
+2026-03-12T21:17:28.651Z JOY-005C comment.added "End-to-End Verschluesselung: Nutzerdaten 100% unlesbar fuer den Server.
+
+Ansatz: Client-seitige Verschluesselung (AES-256-GCM) vor dem Git Push. Der Schluessel bleibt immer auf dem Device des Users. joyint.com speichert nur verschluesselte Blobs und hat den Schluessel nie -- kann die Daten nicht lesen, selbst bei einem Hack.
+
+Ablauf:
+- CLI: Verschluesselt vor git push, entschluesselt nach git pull
+- Mobile/Web App: Bekommt verschluesselte Daten via API, entschluesselt client-seitig (Web Crypto API im Browser, native Crypto auf iOS)
+- Der Server ist reiner Dumb Storage fuer verschluesselte Git-Objekte
+
+Problem Notifications: Der Server muss wissen wann er erinnern soll, kann aber verschluesselte Due Dates nicht lesen.
+
+Loesung -- Cleartext-Metadaten (wie in ADR-006 geplant):
+Unverschluesselt: due_date, reminder, id, status, updated (noetig fuer Sync und Notifications)
+Verschluesselt: title, description, comments, tags (der eigentliche Inhalt)
+
+Der Server weiss 'Item X hat einen Reminder um 14:00' -- aber nicht was das Item ist oder heisst. Reicht fuer Notifications.
+
+Differenzierungsmerkmal gegenueber Todoist: Todoist kann alle Nutzerdaten lesen. Bei joyint.com ist das technisch unmoeglich. Starkes Argument fuer Entwickler und Teams mit sensiblen Projekten." [horst.schwarz@joydev.com]
+2026-03-12T21:21:03.964Z JOY-005D item.created "Kommentardarstellung in joy show verbessern" [horst.schwarz@joydev.com]
+2026-03-12T21:21:21.534Z JOY-005D comment.added "Plan:
+- [ ] Kommentardatum in Localtime konvertieren (wie in log.rs mit format_local_time)
+- [ ] Format: Datum zuerst (nicht eingerueckt), dann Username, dann Text (eingerueckt)
+- [ ] Leerzeile zwischen Kommentaren
+- [ ] Mehrzeilige Kommentare korrekt einruecken" [horst.schwarz@joydev.com]
+2026-03-12T21:21:39.498Z JOY-005D item.status_changed "new -> in-progress" [horst.schwarz@joydev.com]
+2026-03-12T21:22:21.596Z JOY-005D item.updated "Improve comment display in joy show" [horst.schwarz@joydev.com]
+2026-03-12T21:22:58.177Z JOY-005D comment.added "Todos done:
+- [x] Convert comment date to localtime (using chrono DateTime<Local>)
+- [x] Format: date first (not indented), then username in brackets, then indented text
+- [x] Blank line between comments
+- [x] Multi-line comments correctly indented" [horst.schwarz@joydev.com]
+2026-03-12T21:22:58.180Z JOY-005D item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]

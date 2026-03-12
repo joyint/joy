@@ -1,0 +1,25 @@
+id: JOY-005D
+title: Improve comment display in joy show
+type: rework
+status: closed
+priority: medium
+created: '2026-03-12T21:21:03.963042960Z'
+updated: '2026-03-12T21:22:58.179908225Z'
+description: 'Redesign comment rendering in joy show: date (localtime) first, then username, then indented text. Similar format to joy log. Date not indented, blank line between comments. Clear block-wise visual separation.'
+comments:
+- author: horst.schwarz@joydev.com
+  date: '2026-03-12T21:21:21.533606237Z'
+  text: |-
+    Plan:
+    - [ ] Kommentardatum in Localtime konvertieren (wie in log.rs mit format_local_time)
+    - [ ] Format: Datum zuerst (nicht eingerueckt), dann Username, dann Text (eingerueckt)
+    - [ ] Leerzeile zwischen Kommentaren
+    - [ ] Mehrzeilige Kommentare korrekt einruecken
+- author: horst.schwarz@joydev.com
+  date: '2026-03-12T21:22:58.176414594Z'
+  text: |-
+    Todos done:
+    - [x] Convert comment date to localtime (using chrono DateTime<Local>)
+    - [x] Format: date first (not indented), then username in brackets, then indented text
+    - [x] Blank line between comments
+    - [x] Multi-line comments correctly indented

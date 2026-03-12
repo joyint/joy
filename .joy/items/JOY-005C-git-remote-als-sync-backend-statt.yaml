@@ -1,0 +1,87 @@
+id: JOY-005C
+title: Git-Remote als Sync-Backend statt Custom Server
+type: idea
+status: new
+priority: medium
+deps:
+- JOY-005B
+created: '2026-03-12T21:08:10.430528950Z'
+updated: '2026-03-12T21:17:28.650564099Z'
+description: |-
+  Idee: Statt einen eigenen Sync-Server mit Custom-Protokoll zu bauen, Git selbst als Sync-Backend nutzen. Die Daten liegen bereits als YAML-Dateien im Git-Repo -- warum nicht einfach git push/pull als Sync-Mechanismus verwenden?
+
+  Kontext: Haengt zusammen mit JOY-005B (Jo: Personal Todo Tool als gemeinsame Plattform mit Joy). Wenn Joy und Jo dieselbe Datenbasis teilen (YAML-Items in .joy/), koennte Git als gemeinsames Sync-Backend fuer beide Produkte dienen.
+
+  Was das sofort loest:
+  - Kein Custom-Sync-Protokoll noetig. Push/Pull = git push/pull.
+  - Kein eigener Server zu bauen. Jeder Git-Host funktioniert: GitHub, Gitea, eigener Server.
+  - History gratis via git log statt eigenem Audit-Log.
+  - Conflict Detection gratis -- Git merkt wenn zwei Leute dasselbe Item aendern.
+  - Self-Hosting = Gitea installieren, kein Joy-Server noetig.
+  - joyint.com waere Managed Git Hosting mit huebschem Frontend. Massiv weniger Infrastruktur.
+  - ADR-004 (Portal as Source of Truth) bleibt erfuellt -- der Git-Remote ist die Source of Truth.
+
+  Offene Probleme:
+  1. Mobile App: Kein git pull auf iOS moeglich. Die App braucht eine API, also doch einen Server -- zumindest eine duenne REST-Schicht die serverseitig Git-Operationen ausfuehrt.
+  2. Reminders/Notifications: Git ist passiv. Ein separater Prozess muss das Repo ueberwachen und Push-Notifications ausloesen.
+  3. Merge-Konflikte: Gleichzeitige Edits am selben Item fuehren zu YAML-Merge-Conflicts. Fuer Entwickler loesbar, fuer App-UX eine Katastrophe.
+  4. Latenz: Git push/pull ist nicht real-time. Fuer PM ok, fuer Todo-Sync zwischen Geraeten (Handy abhaken, am Laptop sehen) moeglicherweise zu langsam.
+
+  Loesungsvorschlag -- Hybridmodell:
+
+  CLI (joy/jo) ---- git push/pull ----> Git Remote
+  Mobile/Web App ---- REST API ----> Thin API Server ---- git commit/push ----> Git Remote
+  Notification Service <-- watches repo -- Git Remote
+
+  - CLI-User syncen direkt per Git. Kein Server noetig.
+  - App-User gehen ueber eine duenne API die serverseitig Git-Operationen macht.
+  - Notification Service ueberwacht das Repo auf faellige Reminders.
+  - joyint.com ist genau diese Kombination: Git-Hosting + duenne API + Notifications.
+
+  Kernvorteil: Der Server ist kein vollstaendiger Application Server mit eigener Datenbank, sondern nur ein Gateway zu Git + ein Cron fuer Notifications. Massiv weniger Komplexitaet als ein eigener Sync-Server mit Custom-Protokoll.
+comments:
+- author: horst.schwarz@joydev.com
+  date: '2026-03-12T21:13:51.176618924Z'
+  text: |-
+    Lizenzstrategie: Open Core mit klarer Trennlinie.
+
+    Open Source (MIT) -- schafft Vertrauen und Adoption:
+    - joy-core / jo-core (Datenmodell, YAML I/O)
+    - joy-cli / jo-cli
+    - Das Dateiformat (.joy/ YAML-Dateien im Git-Repo)
+    - Entwickler koennen alles lokal nutzen ohne je einen Cent zu zahlen
+    - Kein Lock-in: Daten sind Textdateien im eigenen Git-Repo
+
+    Kommerziell / Closed Source -- finanziert die Entwicklung:
+    - Thin API Server (Git-Gateway fuer Mobile/Web Apps)
+    - Notification Service (Reminders, Push Notifications)
+    - Web-App Frontend
+    - Mobile Apps (iOS, Android)
+    - joyint.com Managed Hosting
+
+    Begruendung: Wer zahlt, zahlt fuer Bequemlichkeit -- Apps, Sync zwischen Geraeten, Reminders am Handy. Genau das was Todoist auch verkauft, nur ohne Lock-in. Kein kuenstliches Feature-Gating im CLI, keine proprietaeren Datenformate.
+
+    Vorbild: GitLab (CE vs. EE), Bitwarden, Grafana. Kein Entwickler nimmt uebel dass die iOS-App nicht MIT-lizenziert ist. Was Entwickler uebel nehmen ist kuenstliches Feature-Gating oder proprietaere Datenformate -- und genau das passiert hier nicht.
+
+    Passt zum bestehenden ADR-008 (Open Core Licensing), erweitert ihn aber: Nicht nur die Tauri-App ist kommerziell, sondern die gesamte Server- und App-Infrastruktur die ueber den reinen Git-Sync hinausgeht.
+- author: horst.schwarz@joydev.com
+  date: '2026-03-12T21:17:28.650563776Z'
+  text: |-
+    End-to-End Verschluesselung: Nutzerdaten 100% unlesbar fuer den Server.
+
+    Ansatz: Client-seitige Verschluesselung (AES-256-GCM) vor dem Git Push. Der Schluessel bleibt immer auf dem Device des Users. joyint.com speichert nur verschluesselte Blobs und hat den Schluessel nie -- kann die Daten nicht lesen, selbst bei einem Hack.
+
+    Ablauf:
+    - CLI: Verschluesselt vor git push, entschluesselt nach git pull
+    - Mobile/Web App: Bekommt verschluesselte Daten via API, entschluesselt client-seitig (Web Crypto API im Browser, native Crypto auf iOS)
+    - Der Server ist reiner Dumb Storage fuer verschluesselte Git-Objekte
+
+    Problem Notifications: Der Server muss wissen wann er erinnern soll, kann aber verschluesselte Due Dates nicht lesen.
+
+    Loesung -- Cleartext-Metadaten (wie in ADR-006 geplant):
+    Unverschluesselt: due_date, reminder, id, status, updated (noetig fuer Sync und Notifications)
+    Verschluesselt: title, description, comments, tags (der eigentliche Inhalt)
+
+    Der Server weiss 'Item X hat einen Reminder um 14:00' -- aber nicht was das Item ist oder heisst. Reicht fuer Notifications.
+
+    Differenzierungsmerkmal gegenueber Todoist: Todoist kann alle Nutzerdaten lesen. Bei joyint.com ist das technisch unmoeglich. Starkes Argument fuer Entwickler und Teams mit sensiblen Projekten.
