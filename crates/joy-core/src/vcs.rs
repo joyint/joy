@@ -124,9 +124,9 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore] // requires git user.email configured (not available in CI)
     fn git_vcs_user_email() {
         let vcs = GitVcs;
-        // Should work in any dev environment with git configured
         let result = vcs.user_email();
         assert!(result.is_ok());
         assert!(!result.unwrap().is_empty());
@@ -140,10 +140,10 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // requires full clone with tags (CI uses shallow clone)
     fn git_vcs_version_tags() {
         let vcs = GitVcs;
         let tags = vcs.version_tags(Path::new(".")).unwrap();
-        // We have at least v0.5.0
         assert!(!tags.is_empty());
     }
 }
