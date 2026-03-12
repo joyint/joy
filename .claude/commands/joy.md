@@ -66,10 +66,11 @@ CRITICAL: Always manage item status when implementing backlog items. Forgetting 
 When the user asks to implement a backlog item:
 1. Comment the planned solution into the task using `joy comment <ID> "..."` (same language as task title/description). Confirm with the user before proceeding.
 2. Run `joy start <ID>` BEFORE writing any code
-3. Run `joy close <ID>` AFTER the implementation is complete (committed)
-4. If implementation is blocked or deferred, update the status accordingly
+3. After implementation is committed, add a comment with the todo list showing `[x]` for completed items
+4. Run `joy close <ID>` AFTER the implementation is complete (committed)
+5. If implementation is blocked or deferred, update the status accordingly
 
-Never skip steps 2 and 3. They are not optional.
+Never skip steps 2-4. They are not optional.
 
 ### Editing and organizing
 

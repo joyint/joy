@@ -43,3 +43,12 @@ Implementation todos:
 - [ ] Update Vision.md and Tutorial.md" [horst.schwarz@joydev.com]
 2026-03-12T06:00:10.228Z JOY-0058 item.status_changed "new -> in-progress" [horst.schwarz@joydev.com]
 2026-03-12T06:37:16.019Z JOY-0058 item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
+2026-03-12T06:40:29.200Z JOY-0058 comment.added "Alle Todos erledigt: ADR-010, Vcs trait + GitVcs, Git-Aufrufe migriert, version Feld, --version Flags, joy release, Docs aktualisiert." [horst.schwarz@joydev.com]
+2026-03-12T06:42:09.296Z JOY-0058 comment.added "Umsetzung abgeschlossen:
+- [x] ADR for VCS abstraction
+- [x] Create Vcs trait in joy-core with GitVcs implementation
+- [x] Migrate existing git calls (init, assign, comment, ls, event_log) to Vcs
+- [x] Add version field to Item model
+- [x] Add --version flag to joy add, joy edit, joy ls
+- [x] Implement joy release command
+- [x] Update Vision.md, Tutorial.md, Architecture.md, CLAUDE.md" [horst.schwarz@joydev.com]

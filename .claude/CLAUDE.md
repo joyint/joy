@@ -50,4 +50,4 @@ Do not edit `.joy/items/*.yaml` files directly. The backlog is managed entirely 
 - Single source of truth: if something is defined in one document, reference it from others, do not duplicate the definition
 - Before implementing a backlog item, comment the planned solution into the task (in the same language as the task title/description). Confirm with the user, then implement.
 - When implementing a backlog item: run `joy start <ID>` before coding, run `joy close <ID>` after committing. Never skip status tracking.
-- Use "todo" (not "task") for checklist items inside item descriptions (e.g. `- [ ] some todo`), to avoid confusion with the "task" item type. Check off todos as they are completed.
+- Use "todo" (not "task") for checklist items inside item descriptions (e.g. `- [ ] some todo`), to avoid confusion with the "task" item type. When all todos are done, add a new comment with the full list showing `[x]` for each completed todo.
