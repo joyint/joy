@@ -1,10 +1,10 @@
 # Joy CLI
 
-# List available recipes
+# List recipes
 default:
     @just --list
 
-# Run CLI in dev mode (all features)
+# Dev mode (all features)
 dev:
     cargo run --features full --
 
@@ -12,17 +12,22 @@ dev:
 build:
     cargo build --release --features full
 
-# Install joy binary to ~/.local/bin/
+# Install to ~/.local/bin/
 install:
     cargo build --release -p joyint && mkdir -p ~/.local/bin && cp ../../target/release/joy ~/.local/bin/joy
 
-# Check installed tools
+# Check tools
 doctor:
     @echo "=== CLI ==="
     @command -v cargo >/dev/null && echo "  cargo: $(cargo --version)" || echo "  cargo: MISSING"
     @cargo --list 2>/dev/null | grep -q insta && echo "  cargo-insta: ok" || echo "  cargo-insta: MISSING (cargo install cargo-insta)"
     @cargo --list 2>/dev/null | grep -q 'llvm-cov' && echo "  cargo-llvm-cov: ok" || echo "  cargo-llvm-cov: MISSING (optional, cargo install cargo-llvm-cov)"
     @cargo --list 2>/dev/null | grep -q watch && echo "  cargo-watch: ok" || echo "  cargo-watch: MISSING (optional, cargo install cargo-watch)"
+
+# Set Cargo.toml version
+version semver:
+    sed -i 's/^version = ".*"/version = "{{semver}}"/' Cargo.toml
+    @echo "  joy-cli -> {{semver}}"
 
 # Generate shell completions
 completions:

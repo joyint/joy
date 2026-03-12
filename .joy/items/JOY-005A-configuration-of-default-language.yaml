@@ -1,0 +1,9 @@
+id: JOY-005A
+title: Configuration of default language
+type: idea
+status: new
+priority: medium
+milestone: JOY-MS-02
+created: '2026-03-12T07:40:32.460333274Z'
+updated: '2026-03-12T07:41:39.136645883Z'
+description: It shall be possible to define the default project language. This is helpful for interacting with AI with chats in mother tongue and joy texts in another language.

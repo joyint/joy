@@ -2,13 +2,13 @@
 # See docs/dev/CONTRIBUTING.md for full documentation
 
 mod app
-mod cli 'crates/joy-cli/justfile'
+mod crates
 
-# List available recipes
+# List recipes
 default:
     @just --list
 
-# Run all tests (Rust + App)
+# Run all tests
 test:
     cargo test --workspace && just app test
 
@@ -24,49 +24,49 @@ test-int:
 test-snap:
     cargo insta test --workspace
 
-# Update snapshot tests
+# Update snapshots
 test-snap-update:
     cargo insta test --workspace --review
 
-# Test coverage report (HTML)
+# Coverage report (HTML)
 test-coverage:
     cargo llvm-cov --workspace --html
 
-# Re-run tests on file change
+# Re-run tests on change
 test-watch:
     cargo watch -x 'test --workspace'
 
-# Format all code (Rust + App)
+# Format all code
 fmt:
     cargo fmt --all && just app fmt
 
-# Check formatting without changes
+# Check formatting
 fmt-check:
     cargo fmt --all -- --check && just app fmt-check
 
-# Lint all code (Rust + App)
+# Lint all code
 lint:
     cargo clippy --workspace -- -D warnings && just app lint
 
-# Run fmt-check, lint, and test
+# Run fmt-check, lint, test
 check:
     just fmt-check && just lint && just test
 
-# Check installed tools and dependencies
+# Check tools and deps
 doctor:
     @echo "=== Root ==="
     @command -v cargo >/dev/null && echo "  cargo: $(cargo --version)" || echo "  cargo: MISSING"
     @command -v rustfmt >/dev/null && echo "  rustfmt: $(rustfmt --version)" || echo "  rustfmt: MISSING"
     @command -v clippy-driver >/dev/null && echo "  clippy: $(clippy-driver --version)" || echo "  clippy: MISSING"
     @command -v git >/dev/null && echo "  git: $(git --version)" || echo "  git: MISSING"
-    @just cli doctor
+    @just crates cli doctor
     @just app doctor
 
 # Install all components
 install:
-    just cli install && just app install
+    just crates cli install && just app install
 
-# Bump version, commit, tag, and push a release (auto-bumps minor if no version given)
+# Release (auto patch bump)
 release version="":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -74,7 +74,6 @@ release version="":
         v="{{version}}"
         semver="${v#v}"
     else
-        # Auto-detect: read current version, bump minor
         current=$(grep '^version = ' crates/joy-cli/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
         major=$(echo "$current" | cut -d. -f1)
         minor=$(echo "$current" | cut -d. -f2)
@@ -88,24 +87,15 @@ release version="":
     fi
     tag="v${semver}"
 
-    # Ensure clean working tree
     if [ -n "$(git status --porcelain)" ]; then
-        echo "Error: working tree is not clean. Commit or stash changes first."
+        echo "Error: working tree is not clean."
         exit 1
     fi
 
-    # Detect current version from root Cargo.toml workspace members
-    for f in crates/joy-cli/Cargo.toml crates/joy-core/Cargo.toml crates/joy-ai/Cargo.toml app/src-tauri/Cargo.toml; do
-        if [ -f "$f" ]; then
-            sed -i "s/^version = \".*\"/version = \"${semver}\"/" "$f"
-            echo "  bumped $f -> ${semver}"
-        fi
-    done
-
-    # Update lock file
+    just crates version "${semver}"
+    just app version "${semver}"
     cargo generate-lockfile 2>/dev/null || cargo check 2>/dev/null
 
-    # Commit, tag, push
     git add -A
     git commit -m "bump to ${tag}"
     git tag "${tag}"

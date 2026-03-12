@@ -1,0 +1,11 @@
+# Joy Crates
+
+mod cli 'joy-cli/justfile'
+mod core 'joy-core/justfile'
+mod ai 'joy-ai/justfile'
+
+# Set version in all crates
+version semver:
+    just cli version {{semver}}
+    just core version {{semver}}
+    just ai version {{semver}}

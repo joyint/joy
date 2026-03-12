@@ -1,10 +1,18 @@
 # Joy App -- Tauri + SolidJS
 
-# List available recipes
+mod tauri 'src-tauri/justfile'
+
+# List recipes
 default:
     @just --list
 
-# Check installed tools
+# Set version (package.json + Tauri)
+version semver:
+    sed -i 's/"version": ".*"/"version": "{{semver}}"/' package.json
+    just tauri version {{semver}}
+    @echo "  app/package.json -> {{semver}}"
+
+# Check tools
 doctor:
     @echo "=== App ==="
     @command -v node >/dev/null && echo "  node: $(node --version)" || echo "  node: MISSING"
@@ -15,19 +23,19 @@ doctor:
 dev:
     yarn tauri dev
 
-# Tauri production build
+# Production build
 build:
     yarn tauri build
 
-# Install Node dependencies
+# Install Node deps
 install:
     yarn install
 
-# Run TypeScript tests
+# Run tests
 test:
     yarn test
 
-# Format with Prettier
+# Format (Prettier)
 fmt:
     yarn prettier --write .
 
@@ -35,6 +43,6 @@ fmt:
 fmt-check:
     yarn prettier --check .
 
-# Lint with ESLint
+# Lint (ESLint)
 lint:
     yarn eslint .
