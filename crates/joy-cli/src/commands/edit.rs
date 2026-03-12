@@ -76,7 +76,12 @@ pub fn run(args: EditArgs) -> Result<()> {
                         eprintln!("Warning: parent {} is {}.", parent, parent_item.status);
                     }
                 }
-                Err(_) => anyhow::bail!("parent {} is not a valid item ID.", parent),
+                Err(_) => {
+                    if parent.contains("-MS-") {
+                        anyhow::bail!("{} is a milestone, not an item. Use `joy milestone link {} {}` instead.", parent, item.id, parent);
+                    }
+                    anyhow::bail!("parent {} is not a valid item ID.", parent);
+                }
             }
             item.parent = Some(parent.clone());
         }

@@ -144,7 +144,16 @@ pub fn run(args: AddArgs) -> Result<()> {
                     eprintln!("Warning: parent {} is {}.", parent_id, parent.status);
                 }
             }
-            Err(_) => bail!("parent {} is not a valid item ID.", parent_id),
+            Err(_) => {
+                if parent_id.contains("-MS-") {
+                    bail!(
+                        "{} is a milestone, not an item. Use `joy milestone link <ID> {}` instead.",
+                        parent_id,
+                        parent_id
+                    );
+                }
+                bail!("parent {} is not a valid item ID.", parent_id);
+            }
         }
     }
 
