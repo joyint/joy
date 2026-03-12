@@ -78,3 +78,4 @@ Todos:
 - [x] Testen mit bash und zsh (bash getestet, zsh analog)
 
 Dynamische Completion via CompleteEnv + ArgValueCompleter. Aktivierung: source <(COMPLETE=bash joy) in .bashrc." [horst.schwarz@joydev.com]
+2026-03-12T07:36:12.532Z JOY-004A item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
