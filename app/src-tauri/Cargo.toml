@@ -1,6 +1,6 @@
 [package]
 name = "joy-app"
-version = "0.5.3"
+version = "0.5.4"
 edition = "2021"
 license = "LicenseRef-Commercial"
 
