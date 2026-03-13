@@ -597,11 +597,29 @@ fn print_tree_by_milestone(
         if !first {
             println!();
         }
-        println!("{}", color::label("(no milestone)"));
+        let no_ms_total: Vec<_> = all_items
+            .iter()
+            .filter(|i| effective_milestone(i, all_items).is_none())
+            .collect();
+        let no_ms_closed = no_ms_total.iter().filter(|i| !i.is_active()).count();
+        println!(
+            "{} [{}/{}]",
+            color::label("(no milestone)"),
+            no_ms_closed,
+            no_ms_total.len()
+        );
         print_parent_grouped_children(&no_milestone);
     }
 
-    println!("\n{}", color::label(&format!("{} item(s)", items.len())));
+    let total_closed = all_items.iter().filter(|i| !i.is_active()).count();
+    println!(
+        "\n{}",
+        color::label(&format!(
+            "{}/{} item(s) closed",
+            total_closed,
+            all_items.len()
+        ))
+    );
 }
 
 fn print_milestone_group(
