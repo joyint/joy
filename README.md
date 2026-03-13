@@ -38,7 +38,7 @@ Early development. Joy is built and managed with itself (dogfooding). 🐕
 | Document | Purpose |
 |---|---|
 | [Tutorial](docs/user/Tutorial.md) | Getting started with an example project |
-| [Vision](docs/dev/Vision.md) | Product vision, data model, CLI commands, AI integration |
+| [Vision](docs/dev/vision/README.md) | Product vision, data model, CLI commands, AI integration |
 | [Architecture](docs/dev/Architecture.md) | Tech stack, repo structure, security, ADRs |
 | [Contributing](docs/dev/CONTRIBUTING.md) | Coding conventions, testing, CI/CD, commit messages |
 | Backlog | Managed with Joy itself since v0.5.0. Run `joy ls` or `joy roadmap` |

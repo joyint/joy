@@ -2,7 +2,7 @@
 
 This document defines the technical foundation for the Joy project. It covers technology choices, repository structure, coding standards, testing strategy, and build/release pipeline.
 
-For product vision, data model, and CLI design see [Vision.md](./Vision.md).
+For product vision, data model, and CLI design see the [vision documents](./vision/README.md).
 
 ---
 
@@ -116,7 +116,12 @@ joy/
 │   ├── user/
 │   │   └── Tutorial.md         # Getting started walkthrough
 │   └── dev/
-│       ├── Vision.md
+│       ├── Vision.md           # Redirect to vision/
+│       ├── vision/
+│       │   ├── README.md       # Shared vision, data model, dispatch
+│       │   ├── joy.md          # Joy PM CLI
+│       │   ├── jot.md          # Jot personal todo CLI
+│       │   └── joyint-com.md   # joyint.com platform
 │       ├── Architecture.md
 │       ├── CONTRIBUTING.md
 │       ├── (Backlog.md removed in v0.5.0 -- managed with Joy itself)
@@ -333,9 +338,9 @@ status_rules:
     allow_ai: false           # AI agents cannot close items
 ```
 
-Role members are identified by e-mail address, matching `git config user.email` locally and the OAuth-provided e-mail on the server. See [Vision.md](./Vision.md#user-identity) for the identity model.
+Role members are identified by e-mail address, matching `git config user.email` locally and the OAuth-provided e-mail on the server. See [vision/README.md](./vision/README.md#user-identity) for the identity model.
 
-Status rules are optional. Without them, all transitions are unrestricted. Each rule can combine `requires_role` (list of role names from `roles`), `requires_ci` (branch protection check), and `allow_ai` (whether AI agents may perform this transition). See [Vision.md](./Vision.md#status-rules) for the workflow context.
+Status rules are optional. Without them, all transitions are unrestricted. Each rule can combine `requires_role` (list of role names from `roles`), `requires_ci` (branch protection check), and `allow_ai` (whether AI agents may perform this transition). See [vision/joy.md](./vision/joy.md#status-rules) for the workflow context.
 
 ---
 

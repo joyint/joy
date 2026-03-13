@@ -5,7 +5,7 @@ status: new
 priority: medium
 milestone: JOY-MS-02
 created: '2026-03-12T20:44:50.823464063Z'
-updated: '2026-03-13T21:23:06.981328324Z'
+updated: '2026-03-13T21:52:46.338979095Z'
 description: 'Jot is a personal todo CLI sharing joy-core as its foundation. jot-core extends Item via serde flatten with recurrence (RRULE), due_date and reminder are on the base Item. CLI commands: jot add, jot done, jot ls, jot show. Stores todos as YAML in .jot/ directory, syncs via Git. Crates: jot-core (MIT), jot-cli (MIT).'
 comments:
 - author: horst.schwarz@joydev.com
@@ -70,3 +70,6 @@ comments:
     Limitierung: Parent-Child (RELATED-TO) wird von CalDAV-Clients inkonsistent unterstuetzt. Fuer verschachtelte Projekte muss die WebUI herhalten.
 
     Native App kann spaeter folgen wenn der CalDAV-Ansatz validiert ist.
+- author: horst.schwarz@joydev.com
+  date: '2026-03-13T21:52:46.338972942Z'
+  text: 'Dispatch concept documented in docs/dev/vision/README.md. Joy status gates trigger Jot todo creation in the target user''s repo via joyint.com dispatch service. The source field on the Jot todo links back to the Joy origin item (e.g. source: joy:JOY-002A). When the dispatched Jot todo is completed, joyint.com signals the Joy project that the gate is satisfied. Same mechanism for human reviewers (via CalDAV / jot ls) and AI agents (via jot ls --mine). Neither tool needs to understand the other''s full data model -- the source field and the dispatch service are the only coupling points.'

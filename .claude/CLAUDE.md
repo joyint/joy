@@ -10,7 +10,7 @@ Joy is a terminal-native product management tool. Binary: `joy`. Package: `joyin
 
 Before making any changes, read and follow the rules in these documents:
 
-- `docs/dev/Vision.md` -- product vision, data model, CLI commands
+- `docs/dev/vision/` -- product vision (README.md, joy.md, jot.md, joyint-com.md)
 - `docs/dev/Architecture.md` -- tech stack, repo structure, security, ADRs
 - `docs/dev/CONTRIBUTING.md` -- coding conventions, testing, CI/CD, commit messages
 These documents are the source of truth. Do not redefine or contradict anything from them.
