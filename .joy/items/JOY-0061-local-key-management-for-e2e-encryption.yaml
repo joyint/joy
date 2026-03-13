@@ -5,5 +5,9 @@ status: new
 priority: medium
 milestone: JOY-MS-03
 created: '2026-03-13T20:14:35.528756359Z'
-updated: '2026-03-13T20:14:35.528756359Z'
+updated: '2026-03-13T22:39:52.786859109Z'
 description: Implement local key management as foundation for E2E encryption. Key generation (joy key init), storage in OS keyring with fallback to ~/.config/joy/keys/, per-project keys. Prerequisite for private item visibility and encrypted sync to joyint.com.
+comments:
+- author: horst.schwarz@joydev.com
+  date: '2026-03-13T22:39:52.786855259Z'
+  text: 'Real-world use case for encrypted items: BusinessModel.md and Competition.md are too commercially sensitive to store unencrypted in a shared repo. These would be the first candidates for private, encrypted items in Joy. This validates the visibility/encryption feature chain (JOY-005E -> JOY-0062 -> JOY-0063 -> JOY-0064).'
