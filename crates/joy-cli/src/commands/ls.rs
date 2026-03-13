@@ -495,14 +495,17 @@ fn print_tree_node(item: &Item, all_items: &[&Item], prefix: &str, is_last: bool
         .filter(|i| i.parent.as_deref() == Some(&item.id))
         .collect();
 
+    let type_emoji = color::item_type_indicator(&item.item_type);
     if !item.is_active() {
         println!(
             "{}{}",
             tree_chrome,
-            color::inactive(&format!("{} {} [{}]", item.id, item.title, item.status))
+            color::inactive(&format!(
+                "{} {} [{}{}] [{}]",
+                item.id, item.title, type_emoji, item.item_type, item.status
+            ))
         );
     } else {
-        let type_emoji = color::item_type_indicator(&item.item_type);
         let status_emoji = color::status_indicator(&item.status);
         println!(
             "{}{} {} [{}{}] [{}{}]",
@@ -657,14 +660,17 @@ fn print_ms_tree_node(item: &Item, group: &[&&Item], prefix: &str, is_last: bool
         .filter(|i| i.parent.as_deref() == Some(&item.id))
         .collect();
 
+    let type_emoji = color::item_type_indicator(&item.item_type);
     if !item.is_active() {
         println!(
             "{}{}",
             tree_chrome,
-            color::inactive(&format!("{} {} [{}]", item.id, item.title, item.status))
+            color::inactive(&format!(
+                "{} {} [{}{}] [{}]",
+                item.id, item.title, type_emoji, item.item_type, item.status
+            ))
         );
     } else {
-        let type_emoji = color::item_type_indicator(&item.item_type);
         let status_emoji = color::status_indicator(&item.status);
         println!(
             "{}{} {} [{}{}] [{}{}]",
