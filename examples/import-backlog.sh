@@ -215,7 +215,7 @@ add --id IT-0020 -t "Client-side encryption for synced data (v2)" -T story -p lo
     --epic EP-0005 --deps IT-001E \
     -d "Deferred to v2. AES-256-GCM key per project. Encrypt item content before push."
 
-add --id IT-0021 -t "OAuth authentication with GitHub and Gitea" -T task -p high \
+add --id IT-0021 -t "OAuth authentication with GitHub, GitLab, and Gitea" -T task -p high \
     --epic EP-0005 --deps IT-001D \
     -d "OAuth 2.0 authentication for sync. E-mail as user identity. Server issues JWTs after OAuth login."
 

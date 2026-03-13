@@ -1,5 +1,5 @@
 id: JOY-0027
-title: OAuth authentication with GitHub and Gitea
+title: OAuth authentication with GitHub, GitLab, and Gitea
 type: task
 status: new
 priority: high

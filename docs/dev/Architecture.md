@@ -250,9 +250,10 @@ Project-local values override global defaults. File permissions for `credentials
 | Provider | Priority | Notes |
 | -------- | -------- | ----- |
 | GitHub   | P0       | Primary provider, covers most of the target audience |
+| GitLab   | P0       | Widely adopted in enterprises, strong API (REST + GraphQL) |
 | Gitea    | P0       | Self-hosted Git, aligns with self-hosted Joy servers |
 
-The server issues JWTs after OAuth login. Tokens are stored in OS keychain where available (via `keyring` crate), fallback to `credentials.yaml` (global or project-local). Additional OAuth providers (GitLab, Google, Microsoft) can be added later without migration -- the e-mail address is the identity, not the provider.
+The server issues JWTs after OAuth login. Tokens are stored in OS keychain where available (via `keyring` crate), fallback to `credentials.yaml` (global or project-local). Additional OAuth providers (Google, Microsoft) can be added later without migration -- the e-mail address is the identity, not the provider.
 
 ### End-to-End Encryption
 

@@ -26,7 +26,7 @@ The server is a gateway to Git plus a cron for notifications. Not an application
 Users choose where their data lives:
 
 1. **joyint.com** -- Git hosting included, E2E-encrypted
-2. **GitHub / Gitea** -- data stays in the user's own Git account, joyint.com provides services (WebUI, CalDAV, Notifications) on top
+2. **GitHub / GitLab / Gitea** -- data stays in the user's own Git account, joyint.com provides services (WebUI, CalDAV, Notifications) on top
 
 Both options deliver the same services. BYOG lowers the trust barrier: "We don't even want your data -- we just provide the service."
 

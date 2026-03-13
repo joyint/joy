@@ -20,7 +20,7 @@ Git is the sync backend. There is no custom sync protocol and no application dat
 
 The server is a gateway to Git plus a cron for notifications. Not an application server with its own state.
 
-**Bring Your Own Git (BYOG):** Users choose where their data lives -- on joyint.com (Git hosting included) or on their own GitHub/Gitea. Both options get the same services (WebUI, CalDAV, Notifications). This lowers the trust barrier and storage costs.
+**Bring Your Own Git (BYOG):** Users choose where their data lives -- on joyint.com (Git hosting included) or on their own GitHub/GitLab/Gitea. Both options get the same services (WebUI, CalDAV, Notifications). This lowers the trust barrier and storage costs.
 
 Last-write-wins with conflict detection remains the merge strategy. PM data (status, priorities, assignments) does not merge well with three-way merge. Git's file-level conflict markers are sufficient for the rare case of concurrent edits to the same item.
 

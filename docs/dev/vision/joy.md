@@ -386,7 +386,7 @@ AI agents (e.g. Claude Code via `/joy` skill). This phase formalizes it:
 - `joy serve` -- HTTP server (REST API, Git gateway, CalDAV)
 - `joy sync` -- push/pull via Git remote
 - `joy clone` -- clone remote project
-- OAuth authentication (GitHub, Gitea)
+- OAuth authentication (GitHub, GitLab, Gitea)
 - E2E encryption (AES-256-GCM, always active on joyint.com)
 - Local key management (`joy key init`)
 

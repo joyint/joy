@@ -9,7 +9,7 @@ deps:
 milestone: JOY-MS-03
 created: '2026-03-12T21:08:10.430528950Z'
 updated: '2026-03-13T21:23:08.781952986Z'
-description: 'Use Git as the sync backend instead of a custom sync protocol with a database. CLI users sync via git push/pull. WebUI and CalDAV users go through a thin REST API that executes Git operations server-side. joyint.com is Git hosting plus thin gateway plus cron for notifications. BYOG: users keep data on GitHub/Gitea, joyint.com provides services on top. Supersedes the original portal-as-source-of-truth approach (ADR-004 revised).'
+description: 'Use Git as the sync backend instead of a custom sync protocol with a database. CLI users sync via git push/pull. WebUI and CalDAV users go through a thin REST API that executes Git operations server-side. joyint.com is Git hosting plus thin gateway plus cron for notifications. BYOG: users keep data on GitHub/GitLab/Gitea, joyint.com provides services on top. Supersedes the original portal-as-source-of-truth approach (ADR-004 revised).'
 comments:
 - author: horst.schwarz@joydev.com
   date: '2026-03-12T21:13:51.176618924Z'

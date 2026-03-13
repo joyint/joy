@@ -1,0 +1,9 @@
+id: JOY-006C
+title: GitLab Projects sync on joyint.com
+type: idea
+status: new
+priority: low
+milestone: JOY-MS-04
+created: '2026-03-13T22:27:07.259045631Z'
+updated: '2026-03-13T22:27:07.259045631Z'
+description: 'Bidirectional sync between Joy items and GitLab Issues/Boards/Epics on joyint.com. Same use cases as GitHub (JOY-006A) and Gitea (JOY-006B) sync: migration, mirror mode, hybrid workflow. GitLab has Issues, Boards, Milestones, Epics (Premium), Labels, and a comprehensive REST + GraphQL API. Especially relevant for enterprise customers where GitLab is widely adopted. Commercially licensed as a joyint.com platform feature.'
