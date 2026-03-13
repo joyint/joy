@@ -6,7 +6,7 @@ priority: medium
 created: '2026-03-12T20:44:50.823464063Z'
 updated: '2026-03-13T21:01:18.276388055Z'
 description: |-
-  Idee: Den Kern der Joy-Infrastruktur so gestalten, dass ein einfaches Personal Todo Tool (jo) und das Product Management Tool (joy) auf einer gemeinsamen Plattform aufbauen.
+  Idee: Den Kern der Joy-Infrastruktur so gestalten, dass ein einfaches Personal Todo Tool (jot) und das Product Management Tool (joy) auf einer gemeinsamen Plattform aufbauen.
 
   Motivation: Todoist ist teuer, Vikunja ist haesslich. Ein eigenes Todo-Tool mit iOS-App, Reminders und Web-App koennte als technische Basis fuer Joy dienen und gleichzeitig ein eigenstaendiges Produkt sein.
 
@@ -22,15 +22,15 @@ description: |-
   - joy-core: Items, Milestones, Deps, Workflows
   - joy-cli: CLI + TUI
 
-  jo/ (Todo Tool)
-  - jo-core: Todos, Listen, Due Dates, Recurring Tasks
-  - jo-cli: CLI
+  jot/ (Todo Tool)
+  - jot-core: Todos, Listen, Due Dates, Recurring Tasks
+  - jot-cli: CLI
 
   Zwei Produkte, eine Plattform. Der User sieht in der App entweder seine Todos oder sein PM-Board (oder beides). Sync-Infrastruktur, Tauri-App, Web-Framework, Auth -- alles geteilt. Jedes Produkt hat sein eigenes schlankes Datenmodell ohne Kompromisse.
 
   Kommerziell: Todo-Tool als kostenloser/guenstiger Einstieg, PM-Teil als Pro-Produkt. Geteilte Plattform amortisiert Entwicklungskosten ueber beide Produkte.
 
-  Kritischer Punkt: Lohnt sich nur wenn die Plattform-Schicht (Sync, App, Web) sowieso fuer Joy gebaut wird. Dann ist jo nur ein zweites Frontend + Datenmodell auf derselben Infrastruktur.
+  Kritischer Punkt: Lohnt sich nur wenn die Plattform-Schicht (Sync, App, Web) sowieso fuer Joy gebaut wird. Dann ist jot nur ein zweites Frontend + Datenmodell auf derselben Infrastruktur.
 comments:
 - author: horst.schwarz@joydev.com
   date: '2026-03-12T20:54:27.429435300Z'
@@ -40,10 +40,10 @@ comments:
   text: |-
     Verfeinerter Architektur-Ansatz: Shared Data Model statt getrennte Datenmodelle.
 
-    Herleitung: Die urspruengliche Idee sah getrennte Datenmodelle vor (joy-core und jo-core). Die Frage war, ob ein Joy-Item nicht auch Start-/Endtermin und Erinnerungen haben kann -- dann koennte Jo einfach ein vereinfachtes Frontend auf dasselbe Item-Modell sein.
+    Herleitung: Die urspruengliche Idee sah getrennte Datenmodelle vor (joy-core und jot-core). Die Frage war, ob ein Joy-Item nicht auch Start-/Endtermin und Erinnerungen haben kann -- dann koennte Jot einfach ein vereinfachtes Frontend auf dasselbe Item-Modell sein.
 
     Gegenargumente wurden geprueft:
-    - Status-Modell (new/open/in-progress/review/closed vs. offen/erledigt): Loesbar durch Mapping im Frontend, Jo nutzt nur new+closed
+    - Status-Modell (new/open/in-progress/review/closed vs. offen/erledigt): Loesbar durch Mapping im Frontend, Jot nutzt nur new+closed
     - Schema-Rauschen (leere PM-Felder in Todos): Akzeptabel, YAML-Felder die null sind stoeren nicht
     - ID-Aesthetik (hex-IDs fuer Todos): Loesbar im Frontend
     - Recurring Tasks: Das staerkste Gegenargument -- gelöst durch Extension-Modell (siehe unten)
@@ -55,17 +55,17 @@ comments:
     - description, comments, created, updated
     - due_date, reminder (nuetzlich fuer beide Produkte)
 
-    jo-core::Todo (extends Item via serde flatten)
+    jot-core::Todo (extends Item via serde flatten)
     - alles von Item
     - recurrence (interval, day, etc.)
 
     Vorteile:
     - joy-core bleibt schlank, null Zeilen Recurring-Logik
-    - jo-core haengt von joy-core ab und ergaenzt nur Jo-spezifische Felder
+    - jot-core haengt von joy-core ab und ergaenzt nur Jot-spezifische Felder
     - due_date und reminder kommen ins Basis-Item (sind auch fuer PM-Deadlines sinnvoll)
     - Ein Backend, ein Sync, eine API -- der Server transportiert YAML ohne alle Felder verstehen zu muessen
     - Unbekannte Felder werden durchgereicht, nicht validiert (passt zum Prinzip 'Text files are the API')
-    - Zwei separate Apps (jo und joy), aber ein gemeinsamer Core und eine gemeinsame Plattform
+    - Zwei separate Apps (jot und joy), aber ein gemeinsamer Core und eine gemeinsame Plattform
 
     Entscheidung Sync-Server: Felder die der Server nicht kennt werden akzeptiert und durchgereicht (kein striktes Schema). Pragmatischer als den Server beide Crates kennen zu lassen.
 - author: horst.schwarz@joydev.com
@@ -76,18 +76,18 @@ comments:
     Ansatz: CalDAV-Server auf joyint.com bildet Git-gehostete YAML-Tasks als VTODO ab. User nutzen Apple Reminders, Google Calendar oder jeden anderen CalDAV-Client als Frontend.
 
     Architektur:
-    jo CLI ---- git push ----> joyint.com (Git + WebUI + CalDAV-Server)
+    jot CLI ---- git push ----> joyint.com (Git + WebUI + CalDAV-Server)
     Apple Reminders <-- CalDAV --> joyint.com
     Google Calendar <-- CalDAV --> joyint.com
 
     Was gebaut wird:
-    1. jo CLI (faellt aus joy-core ab, due_date + reminder ins Basis-Item)
+    1. jot CLI (faellt aus joy-core ab, due_date + reminder ins Basis-Item)
     2. CalDAV-Server (YAML <-> VTODO Mapping, ein Crate)
     3. WebUI auf joyint.com (wird fuer Joy sowieso gebraucht)
 
     Was wegfaellt: Native iOS/Android-App, Push-Notification-Infrastruktur (APNs/FCM), App Store Gebuehren und Reviews, Device-Testing. Ca. 60-70% weniger Aufwand.
 
-    VTODO deckt Jo-Anforderungen ab: Title, Description, Due Date, Priority, Status, Reminders (VALARM), Recurring Tasks (RRULE), Tags. PM-Features (deps, milestones, workflow) bleiben Joy-exklusiv.
+    VTODO deckt Jot-Anforderungen ab: Title, Description, Due Date, Priority, Status, Reminders (VALARM), Recurring Tasks (RRULE), Tags. PM-Features (deps, milestones, workflow) bleiben Joy-exklusiv.
 
     Zwei-Wege-Sync: CalDAV ist bidirektional. Todo in Apple Reminders abhaken -> CalDAV PATCH -> git commit. Fuer Personal Tool (ein User, mehrere Geraete) ist Conflict-Resolution handhabbar.
 

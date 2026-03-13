@@ -8,4 +8,4 @@ deps:
 - JOY-0062
 created: '2026-03-13T20:11:29.684624341Z'
 updated: '2026-03-13T20:14:47.685756212Z'
-description: 'Add visibility: public as a server-side feature on joyint.com. Public items are mirrored to a read-only feedback board per project. External users (invited or open) can upvote items and leave comments. Items stay in Git for the team but are projected to the web UI for public interaction. First use case: let Jo/Joy early-access users shape the product.'
+description: 'Add visibility: public as a server-side feature on joyint.com. Public items are mirrored to a read-only feedback board per project. External users (invited or open) can upvote items and leave comments. Items stay in Git for the team but are projected to the web UI for public interaction. First use case: let Jot/Joy early-access users shape the product.'

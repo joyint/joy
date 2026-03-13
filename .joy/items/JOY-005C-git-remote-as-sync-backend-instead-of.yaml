@@ -11,7 +11,7 @@ updated: '2026-03-13T21:01:37.643394416Z'
 description: |-
   Idee: Statt einen eigenen Sync-Server mit Custom-Protokoll zu bauen, Git selbst als Sync-Backend nutzen. Die Daten liegen bereits als YAML-Dateien im Git-Repo -- warum nicht einfach git push/pull als Sync-Mechanismus verwenden?
 
-  Kontext: Haengt zusammen mit JOY-005B (Jo: Personal Todo Tool als gemeinsame Plattform mit Joy). Wenn Joy und Jo dieselbe Datenbasis teilen (YAML-Items in .joy/), koennte Git als gemeinsames Sync-Backend fuer beide Produkte dienen.
+  Kontext: Haengt zusammen mit JOY-005B (Jot: Personal Todo Tool auf shared joy-core). Wenn Joy und Jot dieselbe Datenbasis teilen (YAML-Items in .joy/), koennte Git als gemeinsames Sync-Backend fuer beide Produkte dienen.
 
   Was das sofort loest:
   - Kein Custom-Sync-Protokoll noetig. Push/Pull = git push/pull.
@@ -30,7 +30,7 @@ description: |-
 
   Loesungsvorschlag -- Hybridmodell:
 
-  CLI (joy/jo) ---- git push/pull ----> Git Remote
+  CLI (joy/jot) ---- git push/pull ----> Git Remote
   Mobile/Web App ---- REST API ----> Thin API Server ---- git commit/push ----> Git Remote
   Notification Service <-- watches repo -- Git Remote
 
@@ -47,8 +47,8 @@ comments:
     Lizenzstrategie: Open Core mit klarer Trennlinie.
 
     Open Source (MIT) -- schafft Vertrauen und Adoption:
-    - joy-core / jo-core (Datenmodell, YAML I/O)
-    - joy-cli / jo-cli
+    - joy-core / jot-core (Datenmodell, YAML I/O)
+    - joy-cli / jot-cli
     - Das Dateiformat (.joy/ YAML-Dateien im Git-Repo)
     - Entwickler koennen alles lokal nutzen ohne je einen Cent zu zahlen
     - Kein Lock-in: Daten sind Textdateien im eigenen Git-Repo
