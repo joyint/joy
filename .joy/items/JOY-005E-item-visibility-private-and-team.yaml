@@ -1,0 +1,10 @@
+id: JOY-005E
+title: 'Item visibility: private and team access control'
+type: idea
+status: new
+priority: medium
+deps:
+- JOY-0061
+created: '2026-03-13T20:11:24.247088029Z'
+updated: '2026-03-13T20:14:46.364382635Z'
+description: 'Add a visibility field to items with two levels: private (encrypted, only creator can read) and team (all project members, current default). Private items are stored as encrypted YAML files -- only the creator holds the key. Builds on the planned E2E encryption infrastructure. No server dependency, works purely in Git.'

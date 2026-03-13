@@ -1,0 +1,9 @@
+id: JOY-0061
+title: Local key management for E2E encryption
+type: idea
+status: new
+priority: medium
+milestone: JOY-MS-03
+created: '2026-03-13T20:14:35.528756359Z'
+updated: '2026-03-13T20:14:35.528756359Z'
+description: Implement local key management as foundation for E2E encryption. Key generation (joy key init), storage in OS keyring with fallback to ~/.config/joy/keys/, per-project keys. Prerequisite for private item visibility and encrypted sync to joyint.com.

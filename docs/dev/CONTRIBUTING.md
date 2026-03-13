@@ -89,28 +89,21 @@ graph LR
 
 Every source file must start with a license header. The header uses the [SPDX](https://spdx.dev/learn/handling-license-info/) format for machine-readable license identification.
 
-**Rust files** (all crates):
+**MIT files** (`joy-core`, `jot-core`, `joy-cli`, `jot-cli`, `joy-ai`):
 
 ```rust
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 ```
 
-**TypeScript/JavaScript files** (`web/src`):
-
-```typescript
-// Copyright (c) 2026 Joydev GmbH (joydev.com)
-// SPDX-License-Identifier: MIT
-```
-
-**Tauri native shell files** (`app/src-tauri`):
+**Commercial files** (`web/`, `app/`, `server/`):
 
 ```rust
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: LicenseRef-Commercial
 ```
 
-The header goes on the first line of the file, before any `#![...]` attributes, imports, or code. One blank line separates the header from the rest of the file. All Rust crates and the web frontend are MIT. Only the Tauri native shell (`app/`) is commercially licensed.
+The header goes on the first line of the file, before any `#![...]` attributes, imports, or code. One blank line separates the header from the rest of the file. Core and CLI crates (`joy-core`, `jot-core`, `joy-cli`, `jot-cli`, `joy-ai`) are MIT. Server components (`server/`), web frontend (`web/`), and native app (`app/`) are commercially licensed. See [ADR-008](./adr/ADR-008-open-core-licensing.md).
 
 ---
 

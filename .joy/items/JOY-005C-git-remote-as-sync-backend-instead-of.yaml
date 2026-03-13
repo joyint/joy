@@ -1,12 +1,13 @@
 id: JOY-005C
-title: Git-Remote als Sync-Backend statt Custom Server
+title: Git remote as sync backend instead of custom server
 type: idea
 status: new
 priority: medium
 deps:
 - JOY-005B
+- JOY-0056
 created: '2026-03-12T21:08:10.430528950Z'
-updated: '2026-03-12T21:17:28.650564099Z'
+updated: '2026-03-13T21:01:37.643394416Z'
 description: |-
   Idee: Statt einen eigenen Sync-Server mit Custom-Protokoll zu bauen, Git selbst als Sync-Backend nutzen. Die Daten liegen bereits als YAML-Dateien im Git-Repo -- warum nicht einfach git push/pull als Sync-Mechanismus verwenden?
 

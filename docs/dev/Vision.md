@@ -4,19 +4,21 @@
 
 Joy is a terminal-native product management tool that lives inside your Git repository. It replaces heavyweight tools like Jira with a fast, file-based workflow that developers actually enjoy using.
 
-Joy is built for small, ambitious teams — and for solo founders who use AI agents as their development team.
+Joy is built for teams of all sizes -- from solo founders with AI agent teams, through small development teams, to enterprises in regulated industries that need AI governance, audit trails, and compliance for AI-assisted development.
+
+Joy shares its core data model (`joy-core`) with **Jot**, a personal todo tool. Jot extends the base Item with recurring tasks, due dates, and reminders. Both tools use the same YAML format, the same Git-based sync, and the same platform (joyint.com).
 
 ## Naming & Distribution
 
 The user-facing command is `joy`. Packages are published as `joyint` (or `joyint-cli`) on crates.io, npm, and other registries to avoid naming collisions. The `.joy/` directory in repos and the `joy` binary name are the consistent brand touchpoints.
 
-The portal and sync service run under **joyint.com**. Self-hosting is fully supported.
+The portal and sync service run under **joyint.com**. Self-hosting is supported with a commercial license for server components (see [ADR-008](./adr/ADR-008-open-core-licensing.md)).
 
 ## Core Principles
 
-**Git-native.** All data lives in `.joy/` inside your repo. YAML files, versioned with Git, no external service required to start. Your product management history is part of your code history. When you sync, the portal acts as the conflict resolver (see [ADR-004](./Architecture.md#architecture-decision-records-adrs)) -- but your local `.joy/` directory is always yours, always readable, always complete.
+**Git-native.** All data lives in `.joy/` inside your repo. YAML files, versioned with Git, no external service required to start. Your product management history is part of your code history. Git is the sync backend (see [ADR-004](./adr/ADR-004-portal-source-of-truth.md)) -- your local `.joy/` directory is always yours, always readable, always complete.
 
-**Terminal-first, not terminal-only.** The CLI is the primary interface. A TUI provides visual overview. A portal (joyint.com or self-hosted) enables access from any device — browser, desktop app, mobile app — plus collaboration and AI agent orchestration.
+**Terminal-first, not terminal-only.** The CLI is the primary interface. A TUI provides visual overview. A portal (joyint.com or self-hosted) enables access from any device -- browser, desktop app, mobile access via CalDAV -- plus collaboration and AI agent orchestration.
 
 **Dogfooding.** Joy is built and managed with Joy. Every feature goes through Joy's own workflow before it's shipped.
 
@@ -81,6 +83,8 @@ milestone: JOY-MS-01    # optional milestone association
 tags:
   - backend
   - payments
+due_date: 2026-04-15                # optional due date
+reminder: 2026-04-14T09:00:00Z      # optional reminder (used by Jot and CalDAV)
 created: 2026-03-09T10:00:00Z
 updated: 2026-03-09T10:00:00Z
 description: |
@@ -454,28 +458,53 @@ Aggregated cost views available via `joy ai status --costs` per item, epic, mile
 
 ---
 
-## Sync & Portal
+## Sync & Platform
 
-### Sync Model
+### Git as Sync Backend
 
-Joy uses a **portal-as-source-of-truth** model for sync. The portal (joyint.com or self-hosted) maintains the canonical state. CLI instances push and pull changes.
+Joy uses Git as its sync backend. There is no custom sync protocol and no application database. See [ADR-004](./adr/ADR-004-portal-source-of-truth.md) for the architectural rationale.
 
-This is deliberately *not* distributed like Git. Product management data (status changes, assignments, priorities) does not merge well. Last-write-wins with conflict detection is simpler and more predictable than three-way merge.
+- **CLI users** sync via `git push` / `git pull` -- no server needed
+- **WebUI and CalDAV users** go through a thin REST API on joyint.com that executes Git operations server-side
+- **Notification service** watches the Git repo for due dates and status changes
 
-**v1:** Sync operates over HTTPS without content encryption. Projects should use private repositories and authenticated server connections. **v2** will add client-side end-to-end encryption (AES-256-GCM) for item content before transmission, with cleartext metadata for server-side dashboards. See [ADR-006](./adr/ADR-006-client-side-encryption.md) for the planned design.
+The server is a gateway to Git plus a cron for notifications. Not an application server with its own state. Last-write-wins with conflict detection handles the rare case of concurrent edits.
 
-### Portal & App
+### Bring Your Own Git (BYOG)
 
-`joy serve` starts the API server and serves the web UI. Self-hosting gives you the full experience -- same codebase, same features.
+Users choose where their data lives:
 
-1. **Web UI** — Board, roadmap, dependency graph, item management. Served by `joy serve`, built with SolidJS. Fully open source (MIT).
-2. **Sync Hub** — Central server for multi-device and multi-user sync. End-to-end encryption planned for v2.
-3. **AI Command Center** — Dispatch AI jobs from anywhere. Monitor agent progress. Review and approve AI work.
-4. **Native App** — Desktop (macOS, Linux, Windows) and mobile (iOS, Android) via Tauri. Shares the web frontend, adds offline support, OS integration, push notifications. Commercially licensed.
+1. **joyint.com** -- Git hosting included, E2E-encrypted
+2. **GitHub / Gitea** -- data stays in the user's own Git account, joyint.com provides services (WebUI, CalDAV, Notifications) on top
+
+Both options deliver the same services. BYOG lowers the trust barrier: "We don't even want your data -- we just provide the service."
+
+### E2E Encryption
+
+All data on joyint.com is E2E-encrypted (AES-256-GCM). The key stays on the client device. See [ADR-006](./adr/ADR-006-client-side-encryption.md) for details.
+
+**Encrypted:** title, description, comments -- everything that constitutes item content. **Cleartext metadata:** id, status, priority, due_date, timestamps -- needed for notifications and CalDAV scheduling.
+
+CLI decrypts locally. WebUI decrypts client-side (Web Crypto API). CalDAV requires explicit opt-in from the user to allow server-side decryption for VTODO delivery.
+
+### CalDAV as Mobile Bridge
+
+Instead of building native mobile apps for Jot, joyint.com runs a CalDAV server that exposes Git-hosted tasks as VTODO resources. Apple Reminders, Google Calendar, and Thunderbird work as Jot frontends -- including Siri, Apple Watch, and widgets. No App Store, no 30% fee, no device testing.
+
+VTODO covers Jot's requirements: title, description, due date, priority, status, reminders (VALARM), recurring tasks (RRULE), tags. For nested projects, the WebUI is needed -- CalDAV clients handle RELATED-TO inconsistently.
+
+### Platform Components
+
+1. **Web UI** -- Board, roadmap, dependency graph, item management. Built with SolidJS. Commercially licensed.
+2. **API Server** -- REST API, Git gateway, OAuth authentication. Commercially licensed.
+3. **CalDAV Server** -- VTODO bridge for Jot tasks to Apple Reminders / Google Calendar. Commercially licensed.
+4. **Notification Service** -- Due dates, status changes, mentions. Commercially licensed.
+5. **AI Command Center** -- Dispatch AI jobs, monitor agent progress, review and approve AI work.
+6. **Native App** -- Desktop (macOS, Linux, Windows) and mobile (iOS, Android) via Tauri. Commercially licensed.
 
 ### joyint.com
 
-The hosted portal at joyint.com is the managed service. It runs the same open-source code but adds operational value: hosting, uptime, backups, scaling, support SLAs, and managed AI quota. Joy is a complete, honestly open product. joyint.com sells convenience, not artificially locked features.
+The hosted platform at joyint.com provides Git hosting, WebUI, CalDAV, notifications, and collaboration as a managed service. Self-hosting requires a commercial license for server components (see [ADR-008](./adr/ADR-008-open-core-licensing.md)). The CLI tools and data format are always free and open (MIT).
 
 ---
 
@@ -507,17 +536,21 @@ AI agents (e.g. Claude Code via `/joy` skill). This phase formalizes it:
 
 ### MS-03 — Sync and Server
 
-- `joy serve` — HTTP server with REST API
-- `joy sync` — push/pull to server (HTTPS, no encryption in v1)
-- `joy clone` — clone remote project
+- `joy serve` -- HTTP server (REST API, Git gateway, CalDAV)
+- `joy sync` -- push/pull via Git remote
+- `joy clone` -- clone remote project
 - OAuth authentication (GitHub, Gitea)
+- E2E encryption (AES-256-GCM, always active on joyint.com)
+- Local key management (`joy key init`)
 
 ### MS-04 — Web UI and Portal
 
-- SolidJS web frontend (board, item management, roadmap)
+- SolidJS web frontend (board, item management, roadmap) for Joy and Jot
 - Embedded in `joy serve`
-- Tauri native app (desktop and mobile)
+- CalDAV server for Jot (VTODO bridge to Apple Reminders, Google Calendar)
+- Notification service (due dates, status changes, mentions)
 - joyint.com deployment (managed hosting)
+- Tauri native app (desktop and mobile)
 
 ### MS-05 — AI agent mode
 

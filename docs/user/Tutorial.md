@@ -373,7 +373,7 @@ MISSION 10: SYNCING WITH HQ (sync)
         joy sync --pull                  Pull changes from others
         joy clone joyint.com/orchidee/cookbox
 
-    In v1, sync uses HTTPS with authenticated connections.
+    Sync uses Git as the backend. Data on joyint.com is E2E-encrypted.
 
 REFERENCE
 

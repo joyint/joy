@@ -2,7 +2,7 @@
 
 **Terminal-native product management that lives in your Git repo.**
 
-Fast, file-based, AI-powered -- for developers who think project management should live where the code lives.
+Fast, file-based, AI-powered -- for developers who think project management should live where the code lives. Part of the Joyint family alongside **[Jot](https://github.com/joyint/jot)**, a personal todo tool sharing the same core.
 
 |  | Feature |
 |---|---|
@@ -49,11 +49,11 @@ We believe great tools should be open. Joy is built to support **joyful developm
 
 | | What | License |
 |---|---|---|
-| 🛠️ | CLI, TUI, server, AI dispatch | MIT |
-| 🌐 | Web UI | MIT |
+| 🛠️ | CLI tools (`joy`, `jot`), core libraries, AI dispatch | MIT |
+| 🌐 | Server, Web UI, CalDAV, notifications | Commercial |
 | 📱 | Native app (desktop, mobile) | Commercial |
-| ☁️ | [joyint.com](https://joyint.com) hosted service | SaaS |
+| ☁️ | [joyint.com](https://joyint.com) managed platform | SaaS |
 
-Self-hosting gives you the **full experience** -- same code, same features, no artificial limits. [joyint.com](https://joyint.com) is there for teams who prefer managed hosting, support, and convenience.
+The CLI tools are free and work completely without a server. [joyint.com](https://joyint.com) adds sync, WebUI, CalDAV, and collaboration for teams. Self-hosting server components requires a commercial license.
 
-See [LICENSE](./LICENSE) and [app/LICENSE](./app/LICENSE) for details.
+See [LICENSE](./LICENSE), [ADR-008](docs/dev/adr/ADR-008-open-core-licensing.md), and [app/LICENSE](./app/LICENSE) for details.

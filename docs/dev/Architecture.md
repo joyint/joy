@@ -59,30 +59,38 @@ flowchart LR
 
 ### Shared Logic
 
-The Rust core library (`joy-core`) is shared between CLI, TUI, server, and Tauri backend. This ensures consistent behavior across all interfaces.
+The Rust core library (`joy-core`) is the shared foundation for both Joy and Jot. It provides the base data model (Item), YAML I/O, status logic, dependency management, and Git integration. `jot-core` extends joy-core with todo-specific features (recurring tasks, RRULE). This ensures consistent behavior across all interfaces while keeping Joy free of Jot-specific code.
 
-The SolidJS web frontend lives in `web/` and is shared between `joy serve` (embedded as static files) and the Tauri native app (which wraps it). This means self-hosted and native users get the same UI.
+The SolidJS web frontend lives in `web/` and serves both Joy and Jot on joyint.com. The Tauri native app wraps the same frontend for desktop and mobile.
 
 ```mermaid
 graph TD
     CORE[joy-core<br/>data model, YAML I/O, status logic,<br/>deps, validation, ID generation, git]
 
-    CLI[joy-cli<br/>commands - clap<br/>tui - ratatui<br/>server - axum + embedded web UI]
+    JOTCORE[jot-core<br/>extends Item with recurrence,<br/>RRULE, todo-specific logic]
+    CLI[joy-cli<br/>commands - clap<br/>tui - ratatui]
+    JOTCLI[jot-cli<br/>personal todo CLI]
     AI[joy-ai<br/>AI tool dispatch,<br/>job tracking]
-    WEB[web/<br/>SolidJS frontend<br/>MIT]
+    SERVER[server/<br/>axum REST API, Git gateway,<br/>CalDAV, notifications<br/>Commercial]
+    WEB[web/<br/>SolidJS frontend<br/>Commercial]
     APP[app/<br/>Tauri native shell<br/>Commercial]
 
+    CORE --> JOTCORE
     CORE --> CLI
+    CORE --> JOTCLI
+    JOTCORE --> JOTCLI
     AI --> CLI
     AI --> APP
+    CORE --> SERVER
+    JOTCORE --> SERVER
     CORE --> APP
-    WEB --> CLI
+    WEB --> SERVER
     WEB --> APP
 ```
 
 `joy-ai` is a library crate used by both `joy-cli` and `joy-app`.
 
-Note: There is no separate server binary. `joy serve` is a subcommand of the `joy` CLI binary. It serves the REST API and the web UI. It can run in the foreground or as a background daemon (`joy serve --daemon`). The axum server and embedded web assets are compiled into the main binary behind the `server` feature flag to keep the default binary lean.
+Note: There is no separate server binary. `joy serve` is a subcommand of the `joy` CLI binary. It serves the REST API (Git gateway), CalDAV, and the web UI. It can run in the foreground or as a background daemon (`joy serve --daemon`). The server components are compiled into the main binary behind the `server` feature flag to keep the default binary lean. Server components are commercially licensed (see [ADR-008](./adr/ADR-008-open-core-licensing.md)).
 
 Multiple CLI instances can run simultaneously — each reads/writes individual YAML files. File-level locking in `joy-core` prevents concurrent writes to the same item. The server serializes writes when running.
 
@@ -92,7 +100,7 @@ Multiple CLI instances can run simultaneously — each reads/writes individual Y
 
 GitHub organization: [github.com/joyint](https://github.com/joyint)
 
-Main repository: `joyint/joy` (monorepo). Separate repos only for truly independent concerns: `joyint/homebrew-tap` (Homebrew formula), `joyint/joyint.com` (portal deployment/infra, if separate from app code).
+Main repository: `joyint/joy` (monorepo, includes `jot-core` and `jot-cli`). Separate repos only for truly independent concerns: `joyint/homebrew-tap` (Homebrew formula), `joyint/joyint.com` (portal deployment/infra, if separate from app code).
 
 ### Structure
 
@@ -102,7 +110,7 @@ Monorepo with Cargo workspace for Rust crates and a separate directory for the T
 joy/
 ├── Cargo.toml                  # Workspace root
 ├── Cargo.lock
-├── LICENSE                      # MIT license (everything except app/)
+├── LICENSE                      # MIT license (core + CLI crates)
 ├── .joy/                       # Joy manages itself (dogfooding)
 ├── docs/
 │   ├── user/
@@ -117,7 +125,7 @@ joy/
 │           ├── ADR-002-single-binary.md
 │           └── ...
 ├── crates/
-│   ├── joy-core/               # Shared library: data model, YAML I/O, logic
+│   ├── joy-core/               # Shared library: data model, YAML I/O, logic (MIT)
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
@@ -127,18 +135,24 @@ joy/
 │   │       ├── milestones.rs   # Milestone CRUD, ID generation
 │   │       ├── init.rs         # Project initialization
 │   │       └── error.rs        # Error types (thiserror)
-│   ├── joy-cli/                # CLI binary (clap) -- includes TUI and server
+│   ├── jot-core/               # Todo extension: recurrence, RRULE (MIT)
+│   │   ├── Cargo.toml          # Depends on joy-core
+│   │   └── src/
+│   ├── joy-cli/                # PM CLI binary (clap) -- includes TUI and server (MIT/Commercial)
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── main.rs
 │   │       ├── commands/       # One module per command (add, ls, status, rm, deps, ...)
 │   │       ├── color.rs        # Semantic terminal colors
 │   │       ├── tui/            # ratatui views (behind feature flag, planned)
-│   │       └── server/         # axum server for `joy serve` (behind feature flag, planned)
-│   └── joy-ai/                 # AI tool dispatch, job tracking
+│   │       └── server/         # axum server, CalDAV, notifications (behind feature flag, commercial)
+│   ├── jot-cli/                # Personal todo CLI binary (MIT)
+│   │   ├── Cargo.toml          # Depends on jot-core
+│   │   └── src/
+│   └── joy-ai/                 # AI tool dispatch, job tracking (MIT)
 │       ├── Cargo.toml
 │       └── src/
-├── web/                        # SolidJS web frontend [MIT]
+├── web/                        # SolidJS web frontend [Commercial]
 │   ├── package.json
 │   ├── yarn.lock
 │   ├── tsconfig.json
@@ -176,7 +190,9 @@ joy/
 resolver = "2"
 members = [
     "crates/joy-core",
+    "crates/jot-core",
     "crates/joy-cli",
+    "crates/jot-cli",
     "crates/joy-ai",
     "app/src-tauri",
 ]
@@ -201,7 +217,7 @@ server = ["dep:axum", "dep:tower-http"]
 full = ["tui", "server"]
 ```
 
-All Rust crates and the web frontend are MIT-licensed. Only the Tauri native shell (`app/`) is proprietary (see [ADR-008](./adr/ADR-008-open-core-licensing.md)). `cargo install joyint --features full` produces a fully MIT binary including server and embedded web UI.
+**Licensing:** Core crates (`joy-core`, `jot-core`), CLI tools (`joy-cli`, `jot-cli`), AI dispatch (`joy-ai`), and documentation are MIT. Server components (REST API, CalDAV, notifications), the web frontend (`web/`), and native apps (`app/`) are commercially licensed by Joydev GmbH. See [ADR-008](./adr/ADR-008-open-core-licensing.md) for rationale.
 
 ---
 
@@ -233,11 +249,11 @@ Project-local values override global defaults. File permissions for `credentials
 
 The server issues JWTs after OAuth login. Tokens are stored in OS keychain where available (via `keyring` crate), fallback to `credentials.yaml` (global or project-local). Additional OAuth providers (GitLab, Google, Microsoft) can be added later without migration -- the e-mail address is the identity, not the provider.
 
-### End-to-End Encryption (v2)
+### End-to-End Encryption
 
-End-to-end encryption is planned for v2. In v1, sync operates over HTTPS without content encryption. Projects should use private repositories and authenticated server connections.
+All data on joyint.com is E2E-encrypted (AES-256-GCM). The key stays on the client device. Server stores only encrypted blobs plus cleartext metadata (id, status, priority, due_date, timestamps) needed for notifications and CalDAV scheduling.
 
-The v2 design is documented in [ADR-006](./adr/ADR-006-client-side-encryption.md): AES-256-GCM per project, key stored in `~/.config/joy/keys/{project-id}.key`, cleartext metadata for server-side dashboards, Web Crypto API for browser compatibility.
+Design details in [ADR-006](./adr/ADR-006-client-side-encryption.md): per-project key in OS keychain (`keyring` crate) with fallback to `~/.config/joy/keys/{project-id}.key`, Web Crypto API for browser-side decryption, CalDAV requires explicit opt-in for server-side decryption.
 
 ### Agent Sandboxing
 
@@ -252,7 +268,7 @@ Significant architectural decisions are documented as individual files in `docs/
 - [ADR-001: YAML over SQLite for data storage](./adr/ADR-001-yaml-over-sqlite.md)
 - [ADR-002: Single binary with feature flags](./adr/ADR-002-single-binary.md)
 - [ADR-003: Tauri for multi-platform app](./adr/ADR-003-tauri-multi-platform.md)
-- [ADR-004: Portal as source of truth for sync](./adr/ADR-004-portal-source-of-truth.md)
+- [ADR-004: Git as sync backend](./adr/ADR-004-portal-source-of-truth.md)
 - [ADR-005: Package name `joyint`, binary name `joy`](./adr/ADR-005-package-name-joyint.md)
 - [ADR-006: Client-side encryption with cleartext metadata](./adr/ADR-006-client-side-encryption.md)
 - [ADR-007: Yarn over npm](./adr/ADR-007-yarn-over-npm.md)
