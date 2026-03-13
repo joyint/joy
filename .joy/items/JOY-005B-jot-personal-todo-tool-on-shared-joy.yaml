@@ -1,36 +1,12 @@
 id: JOY-005B
 title: 'Jot: Personal todo tool on shared joy-core base'
-type: idea
+type: story
 status: new
 priority: medium
+milestone: JOY-MS-02
 created: '2026-03-12T20:44:50.823464063Z'
-updated: '2026-03-13T21:01:18.276388055Z'
-description: |-
-  Idee: Den Kern der Joy-Infrastruktur so gestalten, dass ein einfaches Personal Todo Tool (jot) und das Product Management Tool (joy) auf einer gemeinsamen Plattform aufbauen.
-
-  Motivation: Todoist ist teuer, Vikunja ist haesslich. Ein eigenes Todo-Tool mit iOS-App, Reminders und Web-App koennte als technische Basis fuer Joy dienen und gleichzeitig ein eigenstaendiges Produkt sein.
-
-  Architektur -- Plattform teilen, Datenmodell trennen:
-
-  joy-platform/ (shared)
-  - joy-sync: Sync-Server, Auth, API
-  - joy-web: SolidJS UI-Komponenten, Design System
-  - joy-app: Tauri Shell (iOS, Desktop)
-  - joy-notify: Push Notifications, Reminders
-
-  joy/ (PM Tool)
-  - joy-core: Items, Milestones, Deps, Workflows
-  - joy-cli: CLI + TUI
-
-  jot/ (Todo Tool)
-  - jot-core: Todos, Listen, Due Dates, Recurring Tasks
-  - jot-cli: CLI
-
-  Zwei Produkte, eine Plattform. Der User sieht in der App entweder seine Todos oder sein PM-Board (oder beides). Sync-Infrastruktur, Tauri-App, Web-Framework, Auth -- alles geteilt. Jedes Produkt hat sein eigenes schlankes Datenmodell ohne Kompromisse.
-
-  Kommerziell: Todo-Tool als kostenloser/guenstiger Einstieg, PM-Teil als Pro-Produkt. Geteilte Plattform amortisiert Entwicklungskosten ueber beide Produkte.
-
-  Kritischer Punkt: Lohnt sich nur wenn die Plattform-Schicht (Sync, App, Web) sowieso fuer Joy gebaut wird. Dann ist jot nur ein zweites Frontend + Datenmodell auf derselben Infrastruktur.
+updated: '2026-03-13T21:23:06.981328324Z'
+description: 'Jot is a personal todo CLI sharing joy-core as its foundation. jot-core extends Item via serde flatten with recurrence (RRULE), due_date and reminder are on the base Item. CLI commands: jot add, jot done, jot ls, jot show. Stores todos as YAML in .jot/ directory, syncs via Git. Crates: jot-core (MIT), jot-cli (MIT).'
 comments:
 - author: horst.schwarz@joydev.com
   date: '2026-03-12T20:54:27.429435300Z'

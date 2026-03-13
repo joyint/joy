@@ -1,0 +1,11 @@
+id: JOY-0024
+title: 'joy sync: push and pull via Git'
+type: story
+status: new
+priority: high
+parent: JOY-0005
+deps:
+- JOY-0023
+created: '2026-03-10T00:19:05.731925202Z'
+updated: '2026-03-13T21:22:30.657368420Z'
+description: 'Sync via git push/pull to a configured remote. CLI users sync directly via Git -- no server needed. Support --push, --pull, --auto flags. For BYOG (Bring Your Own Git): users can sync to GitHub, Gitea, or joyint.com. joyint.com users get Git hosting included.'

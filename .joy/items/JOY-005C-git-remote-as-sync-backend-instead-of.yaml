@@ -1,45 +1,15 @@
 id: JOY-005C
 title: Git remote as sync backend instead of custom server
-type: idea
+type: decision
 status: new
 priority: medium
 deps:
 - JOY-005B
 - JOY-0056
+milestone: JOY-MS-03
 created: '2026-03-12T21:08:10.430528950Z'
-updated: '2026-03-13T21:01:37.643394416Z'
-description: |-
-  Idee: Statt einen eigenen Sync-Server mit Custom-Protokoll zu bauen, Git selbst als Sync-Backend nutzen. Die Daten liegen bereits als YAML-Dateien im Git-Repo -- warum nicht einfach git push/pull als Sync-Mechanismus verwenden?
-
-  Kontext: Haengt zusammen mit JOY-005B (Jot: Personal Todo Tool auf shared joy-core). Wenn Joy und Jot dieselbe Datenbasis teilen (YAML-Items in .joy/), koennte Git als gemeinsames Sync-Backend fuer beide Produkte dienen.
-
-  Was das sofort loest:
-  - Kein Custom-Sync-Protokoll noetig. Push/Pull = git push/pull.
-  - Kein eigener Server zu bauen. Jeder Git-Host funktioniert: GitHub, Gitea, eigener Server.
-  - History gratis via git log statt eigenem Audit-Log.
-  - Conflict Detection gratis -- Git merkt wenn zwei Leute dasselbe Item aendern.
-  - Self-Hosting = Gitea installieren, kein Joy-Server noetig.
-  - joyint.com waere Managed Git Hosting mit huebschem Frontend. Massiv weniger Infrastruktur.
-  - ADR-004 (Portal as Source of Truth) bleibt erfuellt -- der Git-Remote ist die Source of Truth.
-
-  Offene Probleme:
-  1. Mobile App: Kein git pull auf iOS moeglich. Die App braucht eine API, also doch einen Server -- zumindest eine duenne REST-Schicht die serverseitig Git-Operationen ausfuehrt.
-  2. Reminders/Notifications: Git ist passiv. Ein separater Prozess muss das Repo ueberwachen und Push-Notifications ausloesen.
-  3. Merge-Konflikte: Gleichzeitige Edits am selben Item fuehren zu YAML-Merge-Conflicts. Fuer Entwickler loesbar, fuer App-UX eine Katastrophe.
-  4. Latenz: Git push/pull ist nicht real-time. Fuer PM ok, fuer Todo-Sync zwischen Geraeten (Handy abhaken, am Laptop sehen) moeglicherweise zu langsam.
-
-  Loesungsvorschlag -- Hybridmodell:
-
-  CLI (joy/jot) ---- git push/pull ----> Git Remote
-  Mobile/Web App ---- REST API ----> Thin API Server ---- git commit/push ----> Git Remote
-  Notification Service <-- watches repo -- Git Remote
-
-  - CLI-User syncen direkt per Git. Kein Server noetig.
-  - App-User gehen ueber eine duenne API die serverseitig Git-Operationen macht.
-  - Notification Service ueberwacht das Repo auf faellige Reminders.
-  - joyint.com ist genau diese Kombination: Git-Hosting + duenne API + Notifications.
-
-  Kernvorteil: Der Server ist kein vollstaendiger Application Server mit eigener Datenbank, sondern nur ein Gateway zu Git + ein Cron fuer Notifications. Massiv weniger Komplexitaet als ein eigener Sync-Server mit Custom-Protokoll.
+updated: '2026-03-13T21:23:08.781952986Z'
+description: 'Use Git as the sync backend instead of a custom sync protocol with a database. CLI users sync via git push/pull. WebUI and CalDAV users go through a thin REST API that executes Git operations server-side. joyint.com is Git hosting plus thin gateway plus cron for notifications. BYOG: users keep data on GitHub/Gitea, joyint.com provides services on top. Supersedes the original portal-as-source-of-truth approach (ADR-004 revised).'
 comments:
 - author: horst.schwarz@joydev.com
   date: '2026-03-12T21:13:51.176618924Z'

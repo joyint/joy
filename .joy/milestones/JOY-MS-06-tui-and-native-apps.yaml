@@ -1,0 +1,3 @@
+id: JOY-MS-06
+title: TUI and Native Apps
+description: Ratatui-based terminal UI (board, detail panel, dependency graph) and Tauri native apps (desktop and mobile).

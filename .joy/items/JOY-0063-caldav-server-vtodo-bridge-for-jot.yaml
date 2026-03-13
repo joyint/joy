@@ -1,0 +1,10 @@
+id: JOY-0063
+title: 'CalDAV server: VTODO bridge for Jot'
+type: task
+status: new
+priority: high
+parent: JOY-0023
+milestone: JOY-MS-04
+created: '2026-03-13T21:23:16.768785455Z'
+updated: '2026-03-13T21:23:16.768785455Z'
+description: CalDAV/WebCAL server endpoint on joyint.com mapping Git-hosted YAML tasks to VTODO resources. Bidirectional sync with Apple Reminders, Google Calendar, Thunderbird. VALARM for reminders, RRULE for recurring tasks, VTODO status mapping. Requires explicit E2E opt-in from user for server-side decryption (jot key share).
