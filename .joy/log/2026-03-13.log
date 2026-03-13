@@ -46,3 +46,8 @@ Native App kann spaeter folgen wenn der CalDAV-Ansatz validiert ist." [horst.sch
 2026-03-13T21:23:22.257Z JOY-0065 item.created "Enterprise features: SSO, audit dashboards, compliance" [horst.schwarz@joydev.com]
 2026-03-13T21:23:27.756Z JOY-MS-06 milestone.updated "TUI and Native Apps" [horst.schwarz@joydev.com]
 2026-03-13T21:23:58.150Z JOY-MS-06 milestone.updated "TUI and Native Apps" [horst.schwarz@joydev.com]
+2026-03-13T21:25:30.189Z JOY-0066 item.created "milestone edit leaves orphan file when title changes" [horst.schwarz@joydev.com]
+2026-03-13T21:25:31.631Z JOY-0067 item.created "Support --type flag in joy edit" [horst.schwarz@joydev.com]
+2026-03-13T21:26:03.877Z JOY-0066 item.updated "milestone edit leaves orphan file when title changes" [horst.schwarz@joydev.com]
+2026-03-13T21:27:08.191Z JOY-0066 item.updated "milestone edit leaves orphan file when title changes" [horst.schwarz@joydev.com]
+2026-03-13T21:27:45.054Z JOY-0066 item.status_changed "new -> in-progress" [horst.schwarz@joydev.com]

@@ -46,6 +46,20 @@ pub fn save_milestone(root: &Path, ms: &Milestone) -> Result<(), JoyError> {
     store::write_yaml(&path, ms)
 }
 
+/// Update a milestone in place (overwrites its file).
+/// Removes the old file if the filename changed (e.g. title was edited).
+pub fn update_milestone(root: &Path, ms: &Milestone) -> Result<(), JoyError> {
+    let old_path = find_milestone_file(root, &ms.id)?;
+    save_milestone(root, ms)?;
+    let new_path = store::joy_dir(root)
+        .join(store::MILESTONES_DIR)
+        .join(milestone_filename(&ms.id, &ms.title));
+    if old_path != new_path {
+        let _ = std::fs::remove_file(&old_path);
+    }
+    Ok(())
+}
+
 /// Generate the next milestone ID by scanning existing files.
 /// Returns "ACRONYM-MS-01" for the first milestone.
 pub fn next_id(root: &Path, acronym: &str) -> Result<String, JoyError> {
@@ -150,6 +164,29 @@ mod tests {
         save_milestone(dir.path(), &ms).unwrap();
 
         assert_eq!(next_id(dir.path(), "JOY").unwrap(), "JOY-MS-02");
+    }
+
+    #[test]
+    fn update_removes_old_file_on_title_change() {
+        let dir = tempdir().unwrap();
+        setup_project(dir.path());
+
+        let mut ms = Milestone::new("JOY-MS-01".into(), "Beta".into());
+        save_milestone(dir.path(), &ms).unwrap();
+
+        let old_path = find_milestone_file(dir.path(), "JOY-MS-01").unwrap();
+        assert!(old_path.exists());
+
+        ms.title = "Beta Release".into();
+        update_milestone(dir.path(), &ms).unwrap();
+
+        let new_path = find_milestone_file(dir.path(), "JOY-MS-01").unwrap();
+        assert!(new_path.exists());
+        assert!(!old_path.exists());
+        assert_ne!(old_path, new_path);
+
+        let loaded = load_milestone(dir.path(), "JOY-MS-01").unwrap();
+        assert_eq!(loaded.title, "Beta Release");
     }
 
     #[test]

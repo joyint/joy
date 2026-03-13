@@ -358,7 +358,7 @@ fn run_edit(args: EditArgs) -> Result<()> {
         return Ok(());
     }
 
-    milestones::save_milestone(&root, &ms)?;
+    milestones::update_milestone(&root, &ms)?;
 
     joy_core::event_log::log_event(
         &root,

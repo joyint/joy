@@ -1,0 +1,9 @@
+id: JOY-0066
+title: milestone edit leaves orphan file when title changes
+type: bug
+status: in-progress
+priority: high
+version: v0.5.2
+created: '2026-03-13T21:25:30.188230586Z'
+updated: '2026-03-13T21:27:45.050359404Z'
+description: 'When joy milestone edit changes the title, the slug-based filename changes. save_milestone() writes a new file but never removes the old one, resulting in duplicate milestone files with the same ID. Fix: add update_milestone() to milestones.rs (analogous to update_item in items.rs) that detects filename change and removes the old file. joy edit for items already handles this correctly via update_item().'

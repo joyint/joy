@@ -1,0 +1,8 @@
+id: JOY-0067
+title: Support --type flag in joy edit
+type: task
+status: new
+priority: medium
+created: '2026-03-13T21:25:31.630356422Z'
+updated: '2026-03-13T21:25:31.630356422Z'
+description: Allow changing an item's type via joy edit --type. Currently type changes require direct YAML editing. The type field should be editable like title, priority, and other fields.
