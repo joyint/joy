@@ -1,9 +1,0 @@
-id: JOY-003C
-title: Add --tag filter to joy ls
-type: task
-status: closed
-priority: medium
-parent: JOY-0035
-created: '2026-03-11T14:03:32.109448527Z'
-updated: '2026-03-11T17:48:59.902362437Z'
-description: Tags can be set on items (--tags ui,urgent) but joy ls has no --tag filter option. This makes tags much less useful for organization and querying.

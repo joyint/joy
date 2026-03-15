@@ -1,9 +1,0 @@
-id: JOY-0041
-title: Add reopen shortcut command
-type: task
-status: closed
-priority: low
-parent: JOY-0035
-created: '2026-03-11T14:03:41.647942595Z'
-updated: '2026-03-11T17:38:21.449531114Z'
-description: Shortcuts exist for start (in-progress), submit (review), close (closed), but there is no shortcut to reopen a closed/deferred item. A 'joy reopen' shortcut setting status back to 'open' would complete the workflow.

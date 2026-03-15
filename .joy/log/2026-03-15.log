@@ -1,8 +1,0 @@
-2026-03-15T12:17:54.117Z JOY-006D item.created "Umbrella repo pattern for multi-repo planning" [horst.schwarz@joydev.com]
-2026-03-15T12:17:59.482Z JOY-006E item.created "joy init --umbrella for multi-repo planning projects" [horst.schwarz@joydev.com]
-2026-03-15T12:18:05.010Z JOY-006F item.created "joy project link: register sub-repos in umbrella project" [horst.schwarz@joydev.com]
-2026-03-15T12:18:10.265Z JOY-0070 item.created "joy ls --repo: filter items by sub-repo in umbrella" [horst.schwarz@joydev.com]
-2026-03-15T12:18:14.906Z JOY-006E dep.added "JOY-006D" [horst.schwarz@joydev.com]
-2026-03-15T12:18:15.120Z JOY-006F dep.added "JOY-006E" [horst.schwarz@joydev.com]
-2026-03-15T12:18:15.339Z JOY-0070 dep.added "JOY-006F" [horst.schwarz@joydev.com]
-2026-03-15T14:05:49.095Z JOY-0071 item.created "joy ai setup generates .claude and CONTRIBUTING.md" [horst.schwarz@joydev.com]

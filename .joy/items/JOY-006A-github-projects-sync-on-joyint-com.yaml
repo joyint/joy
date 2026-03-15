@@ -1,9 +1,0 @@
-id: JOY-006A
-title: GitHub Projects sync on joyint.com
-type: idea
-status: new
-priority: low
-milestone: JOY-MS-04
-created: '2026-03-13T22:23:36.942758302Z'
-updated: '2026-03-13T22:23:36.942758302Z'
-description: 'Bidirectional sync between Joy items and GitHub Projects/Issues on joyint.com. Use cases: (1) Migration from GitHub Projects to Joy with initial import. (2) Mirror mode where Joy is source of truth but GitHub Projects reflects status for external stakeholders (open source, customers). (3) Hybrid workflow where developers use Joy CLI and PMs use GitHub Projects. Natural fit for BYOG users with repos on GitHub. Commercially licensed as a joyint.com platform feature.'

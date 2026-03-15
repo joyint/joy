@@ -2,9 +2,7 @@
 
 This document covers the essentials for contributing to Joy. For the full contributing guide (shared across all Joyint repositories), see the [umbrella CONTRIBUTING.md](https://github.com/joyint/project/blob/main/CONTRIBUTING.md).
 
-For product vision and data model see the [vision documents](./vision/README.md). For technology choices and architecture see [Architecture.md](./Architecture.md).
-
-The product backlog lives in `.joy/items/` and is managed with the `joy` CLI. Run `joy` for a board overview, `joy ls` to list items, `joy show <ID>` for details.
+For product vision, architecture, and ADRs see the [umbrella docs](https://github.com/joyint/project/tree/main/docs/dev).
 
 ---
 
@@ -52,7 +50,7 @@ All source files start with an SPDX license header:
 // SPDX-License-Identifier: MIT
 ```
 
-See [ADR-008](./adr/ADR-008-open-core-licensing.md) for licensing details.
+See [ADR-008](https://github.com/joyint/project/blob/main/docs/dev/adr/ADR-008-open-core-licensing.md) for licensing details.
 
 ### Task Runner
 

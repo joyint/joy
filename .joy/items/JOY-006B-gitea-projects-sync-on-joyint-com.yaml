@@ -1,9 +1,0 @@
-id: JOY-006B
-title: Gitea Projects sync on joyint.com
-type: idea
-status: new
-priority: low
-milestone: JOY-MS-04
-created: '2026-03-13T22:25:12.848682164Z'
-updated: '2026-03-13T22:25:12.848682164Z'
-description: 'Bidirectional sync between Joy items and Gitea Projects/Issues on joyint.com. Same use cases as GitHub Projects sync (JOY-006A): migration, mirror mode, hybrid workflow. Gitea has Projects (Kanban boards at repo/org/user level), issues with milestones, labels, due dates, dependencies, and a REST API at /api/v1/. Especially relevant since BYOG explicitly positions Gitea as an alternative to GitHub. Commercially licensed as a joyint.com platform feature.'

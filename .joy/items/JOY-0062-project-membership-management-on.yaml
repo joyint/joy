@@ -1,9 +1,0 @@
-id: JOY-0062
-title: Project membership management on joyint.com
-type: idea
-status: new
-priority: medium
-milestone: JOY-MS-04
-created: '2026-03-13T20:14:39.947854969Z'
-updated: '2026-03-13T20:14:39.947854969Z'
-description: 'Manage project members and roles on joyint.com. Invite users by email, assign roles (member, admin, external). Server uses membership to enforce visibility levels: team items visible to members, public items visible to invited externals or everyone. Foundation for the public feedback board and role-based access control beyond Git repo permissions.'

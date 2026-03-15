@@ -1,8 +1,0 @@
-id: JOY-004F
-title: 'Comment management: edit and delete comments'
-type: idea
-status: new
-priority: medium
-created: '2026-03-11T18:27:57.152178320Z'
-updated: '2026-03-11T18:27:57.152178320Z'
-description: 'joy comment currently only supports adding. Missing operations: edit (joy comment edit <ID> <INDEX> <TEXT>) and delete (joy comment rm <ID> <INDEX>). Index-based addressing since comments have no IDs. Needed when a comment has errors or is no longer relevant.'

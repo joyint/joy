@@ -1,9 +1,0 @@
-id: JOY-0023
-title: 'joy serve: Git gateway with REST API and CalDAV'
-type: story
-status: new
-priority: high
-parent: JOY-0005
-created: '2026-03-10T00:19:05.730702030Z'
-updated: '2026-03-13T21:22:27.918719503Z'
-description: Axum-based server behind the server feature flag. Acts as a thin gateway to Git -- not an application server with its own database. REST API for CRUD operations (executes git operations server-side). CalDAV endpoint for Jot VTODO sync. OAuth authentication (GitHub, GitLab, Gitea). Support --daemon for background mode.

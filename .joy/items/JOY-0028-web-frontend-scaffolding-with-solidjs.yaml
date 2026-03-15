@@ -1,9 +1,0 @@
-id: JOY-0028
-title: Web frontend scaffolding with SolidJS
-type: task
-status: new
-priority: high
-parent: JOY-0006
-created: '2026-03-10T00:19:05.736512452Z'
-updated: '2026-03-10T00:19:05.736512452Z'
-description: Set up web/ project with SolidJS + TypeScript + Vite + Tailwind. API client for REST API.
