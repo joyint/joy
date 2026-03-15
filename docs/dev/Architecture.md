@@ -107,7 +107,7 @@ The Joyint ecosystem uses separate repos per product/license, unified by a priva
 | Repo | License | Content |
 |------|---------|---------|
 | `joyint/joy` | MIT | joy-core, joy-cli, jot-core, jot-cli |
-| `joyint/server` | Commercial | API server, CalDAV, notifications |
+| `joyint/platform` | Commercial | API server, CalDAV, notifications, dispatch |
 | `joyint/app` | Commercial | Tauri native app (desktop + mobile) |
 | `joyint/project` | Private | Umbrella: `.joy/` (acronym JI), business docs, submodules |
 | `joyint/homebrew-tap` | MIT | Homebrew formula |
