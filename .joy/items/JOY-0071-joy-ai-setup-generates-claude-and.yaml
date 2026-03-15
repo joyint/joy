@@ -1,0 +1,8 @@
+id: JOY-0071
+title: joy ai setup generates .claude and CONTRIBUTING.md
+type: idea
+status: new
+priority: medium
+created: '2026-03-15T14:05:49.092731258Z'
+updated: '2026-03-15T14:05:49.092731258Z'
+description: 'The joy ai setup command scaffolds AI assistant integration for a Joy project. It generates .claude/CLAUDE.md (from project context: acronym, milestones, item types), .claude/skills/joy/SKILL.md (standard joy skill definition), and optionally CONTRIBUTING.md if none exists. Updates existing files when re-run. This enables any Joy project to work seamlessly with Claude Code out of the box.'
