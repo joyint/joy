@@ -20,7 +20,7 @@ joy close MY-0002
 
 - **Git-native** -- all data in `.joy/` as YAML, versioned with your code
 - **AI-powered** -- estimate, plan, implement, review via pluggable AI tools
-- **Single binary** -- CLI, TUI, and server in one Rust binary
+- **Single binary** -- one small Rust binary, no runtime dependencies
 - **Offline-first** -- no server needed, sync when you want
 
 ## Documentation
