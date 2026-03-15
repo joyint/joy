@@ -1,0 +1,10 @@
+id: JOY-006F
+title: 'joy project link: register sub-repos in umbrella project'
+type: idea
+status: new
+priority: low
+deps:
+- JOY-006E
+created: '2026-03-15T12:18:05.009310829Z'
+updated: '2026-03-15T12:18:15.119315387Z'
+description: 'Link a sub-repo (git submodule) to the umbrella project. Registers it so Joy can track which items belong to which repo. Usage: joy project link joy/ --remote github.com/joyint/joy.git. Enables filtering items by sub-repo and cross-repo dependency tracking.'

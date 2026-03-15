@@ -100,11 +100,25 @@ Multiple CLI instances can run simultaneously — each reads/writes individual Y
 
 GitHub organization: [github.com/joyint](https://github.com/joyint)
 
-Main repository: `joyint/joy` (monorepo, includes `jot-core` and `jot-cli`). Separate repos only for truly independent concerns: `joyint/homebrew-tap` (Homebrew formula), `joyint/joyint.com` (portal deployment/infra, if separate from app code).
+### Multi-Repo with Umbrella
 
-### Structure
+The Joyint ecosystem uses separate repos per product/license, unified by a private umbrella repo for cross-repo planning:
 
-Monorepo with Cargo workspace for Rust crates and a separate directory for the Tauri/SolidJS frontend. This is the target structure -- directories and files are created as the corresponding features are implemented.
+| Repo | License | Content |
+|------|---------|---------|
+| `joyint/joy` | MIT | joy-core, joy-cli, jot-core, jot-cli |
+| `joyint/server` | Commercial | API server, CalDAV, notifications |
+| `joyint/app` | Commercial | Tauri native app (desktop + mobile) |
+| `joyint/project` | Private | Umbrella: `.joy/` (acronym JI), business docs, submodules |
+| `joyint/homebrew-tap` | MIT | Homebrew formula |
+
+The umbrella repo (`joyint/project`) links all product repos as git submodules and contains a `.joy/` project for strategic items (cross-repo milestones, business decisions). Product repos keep their own `.joy/` for repo-specific work (bugs, technical tasks). This pattern enables private planning over public repos without encryption.
+
+**Umbrella pattern for other Joy users:** Any project can adopt this pattern. A private umbrella repo with git submodules lets you keep planning private while code repos stay public. Joy commands for managing this are planned (see joy.git backlog: `joy init --umbrella`, `joy project link`).
+
+### joy.git Structure
+
+Monorepo with Cargo workspace for Rust crates. This is the target structure -- directories and files are created as the corresponding features are implemented.
 
 ```
 joy/

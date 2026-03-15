@@ -1,0 +1,8 @@
+id: JOY-006D
+title: Umbrella repo pattern for multi-repo planning
+type: decision
+status: new
+priority: high
+created: '2026-03-15T12:17:54.116618855Z'
+updated: '2026-03-15T12:17:54.116618855Z'
+description: 'Use a private umbrella repo (joyint/project.git) with git submodules to centralize cross-repo planning. Each product gets its own repo (joy.git, jot.git, server.git, app.git) with own license, CI, and releases. The umbrella has a .joy/ project (acronym JI) for strategic items, milestones, and business docs. Product repos keep their own .joy/ for repo-specific work. This solves three problems: (1) clean license separation (MIT vs commercial), (2) private planning without encryption (private repo), (3) cross-repo milestone tracking. Also useful as a general Joy pattern for users who want open source code with private planning.'
