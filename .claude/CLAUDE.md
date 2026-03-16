@@ -1,20 +1,34 @@
 # CLAUDE.md
 
-This file provides context for Claude Code sessions working on joy.git standalone. For full ecosystem context (backlog, vision, architecture, ADRs), use the umbrella repo [joyint/project](https://github.com/joyint/project).
-
 ## Project
 
-Joy is a terminal-native product management tool. Binary: `joy`. Package: `joyint`. Repo: [joyint/joy](https://github.com/joyint/joy).
+Joy is a terminal-native, git-native product management tool. The `joy` binary provides CLI, TUI, and server functionality.
+
+This repository (`joyint/joy`) contains:
+
+| Crate | Purpose | License |
+|-------|---------|---------|
+| `joy-core` | Shared library: data model, YAML I/O, status logic, deps, git | MIT |
+| `joy-cli` | PM CLI binary (clap), includes TUI (ratatui) and server (axum) | MIT |
+| `joy-ai` | AI tool dispatch, job tracking | MIT |
+
+Joy shares `joy-core` with [Jot](https://github.com/joyint/jot) (personal todo CLI). Jot depends on joy-core as an external crate.
 
 ## Required Reading
 
-- `docs/dev/CONTRIBUTING.md` -- joy-specific coding conventions and quick reference
+Before making any changes, read and follow the rules in these documents:
 
-Cross-project documentation (vision, architecture, ADRs) lives in [joyint/project](https://github.com/joyint/project/tree/main/docs/dev).
+- `CONTRIBUTING.md` -- coding conventions, testing, CI/CD, commit messages
+- `docs/dev/Vision.md` -- product vision, data model, CLI design, AI integration
+- `docs/dev/Architecture.md` -- tech stack, repo structure, Cargo workspace, security
+
+For cross-project architecture, ADRs, and business docs see the [umbrella repository](https://github.com/joyint/project).
 
 ## Rules
 
 - Do not reference Claude, Anthropic, or AI assistants in code comments, git commits, documentation, or any generated content. No exceptions.
 - No emoji in documentation, commit messages, or code comments
 - Use Mermaid for all diagrams, never ASCII art
-- All item titles, descriptions, and comments in English
+- Fix root causes, not symptoms -- no workarounds or temporary feature flags
+- No `unwrap()` or `expect()` in library code (joy-core, joy-ai)
+- Run `cargo fmt --all` and `cargo clippy --workspace -- -D warnings` before committing
