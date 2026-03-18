@@ -498,7 +498,7 @@ This keeps Joy focused on orchestration and Jot focused on execution. The `sourc
 
 Joy is built using itself from the earliest possible moment.
 
-### MS-01 -- Core CLI (complete since v0.5.0)
+### MS-01 -- Core CLI (complete, 2026-03)
 
 The CLI is the foundation. All core commands are implemented and Joy manages its own backlog since v0.5.0:
 
@@ -509,7 +509,7 @@ The CLI is the foundation. All core commands are implemented and Joy manages its
 - Semantic ANSI colors, emoji indicators, compact table formatting
 - Structured event log, shell completions
 
-### MS-02 -- AI tool mode
+### MS-02 -- AI tool mode (2026-04)
 
 Joy as a tool/skill for external AI agents:
 
@@ -517,7 +517,7 @@ Joy as a tool/skill for external AI agents:
 - Standardized instructions that work across AI tools
 - No own agent runtime -- the external tool calls `joy` commands
 
-### MS-03 -- Sync and Server
+### MS-03 -- Sync and Server (2026-04)
 
 - `joy serve` -- HTTP server (REST API, Git gateway, CalDAV)
 - `joy sync` -- push/pull via Git remote
@@ -525,7 +525,7 @@ Joy as a tool/skill for external AI agents:
 - OAuth authentication (GitHub, GitLab, Gitea)
 - E2E encryption (AES-256-GCM, always active on joyint.com)
 
-### MS-04 -- Web UI and Portal
+### MS-04 -- Web UI and Portal (2026-05)
 
 - SolidJS web frontend (board, item management, roadmap) for Joy and Jot
 - CalDAV server for Jot (VTODO bridge to Apple Reminders, Google Calendar)
@@ -533,7 +533,7 @@ Joy as a tool/skill for external AI agents:
 - joyint.com deployment (managed hosting)
 - Tauri native app (desktop and mobile)
 
-### MS-05 -- AI agent mode
+### MS-05 -- AI agent mode (2026-06)
 
 Joy dispatches work to AI APIs and tracks results:
 
@@ -541,10 +541,15 @@ Joy dispatches work to AI APIs and tracks results:
 - `joy ai estimate`, `joy ai plan`, `joy ai implement`, `joy ai review`
 - Job logging and cost tracking
 
-### MS-06 -- TUI
+### MS-06 -- TUI (2026-07)
 
 - `joy app` -- ratatui-based terminal UI
 - Board view, item detail panel, dependency graph
+
+### MS-07 -- Initial JOYC Integration (2026-08)
+
+- First minimal integration of the IOTA-based AI settlement layer
+- Cost settlement on-chain for AI jobs
 
 ---
 
