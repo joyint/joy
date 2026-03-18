@@ -365,6 +365,42 @@ Supported tools for tool mode:
 
 No own agent runtime, no API calls, no cost tracking needed. The AI tool handles everything -- Joy just provides the product management interface.
 
+### Interaction modes
+
+AI agents in Joy operate in one of two interaction modes, configurable per agent role in the project config:
+
+**Interactive (default for tool mode):** The AI analyzes context, proposes options, and waits for human confirmation before acting. Best for decisions with lasting impact -- architecture, planning, vision, backlog structuring, reviews. The human steers, the AI accelerates.
+
+**Autonomous (default for agent mode):** The AI executes independently within predefined rules. Governance gates (`allow_ai`, `requires_role`, budget limits) serve as control points instead of continuous dialog. Best for repetitive tasks -- implementation, testing, estimation.
+
+The interaction level is configured per agent role in `.joy/config.yaml` on a scale from 1 (fully autonomous) to 5 (fully interactive):
+
+| Level | Behavior | Example roles |
+|-------|----------|---------------|
+| 1 | Fully autonomous, only governance gates as checkpoints | - |
+| 2 | Autonomous, confirms before irreversible actions | tester, estimator |
+| 3 | Balanced: proposes approach, proceeds after confirmation | implementer |
+| 4 | Interactive: proposes options with rationale, waits for decision | reviewer, planner |
+| 5 | Fully interactive: question-by-question, co-creation mode | architect, product planner |
+
+```yaml
+agents:
+  architect:
+    interaction-level: 5        # co-creation, every decision discussed
+  reviewer:
+    interaction-level: 4        # proposes, waits for decision
+  planner:
+    interaction-level: 4
+  implementer:
+    interaction-level: 3        # proposes approach, then executes
+  tester:
+    interaction-level: 2        # autonomous, confirms destructive actions
+  estimator:
+    interaction-level: 2
+```
+
+Teams adjust levels per role as needed. A solo founder might run the architect at 5 and the implementer at 2. A mature team with established conventions might lower everything by one level.
+
 ### Agent mode (MS-05): Joy dispatches to AI
 
 Joy actively dispatches work to external AI tools and tracks results:
