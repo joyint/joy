@@ -68,7 +68,10 @@ pub fn read_yaml<T: DeserializeOwned>(path: &Path) -> Result<T, JoyError> {
         path: path.to_path_buf(),
         source: e,
     })?;
-    serde_yml::from_str(&content).map_err(JoyError::Yaml)
+    serde_yml::from_str(&content).map_err(|e| JoyError::YamlParse {
+        path: path.to_path_buf(),
+        source: e,
+    })
 }
 
 /// Load the project acronym from project.yaml.
