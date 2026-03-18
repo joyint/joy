@@ -562,9 +562,6 @@ fn print_tree_by_milestone(
     for ms in ms_list {
         let children = groups.remove(&ms.id);
         let (closed, total) = milestone_counts(&ms.id, all_items);
-        if total == 0 {
-            continue;
-        }
         if !first {
             println!();
         }
