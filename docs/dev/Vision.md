@@ -329,11 +329,9 @@ joy clone [url]                         # Clone project from remote
 
 ```sh
 joy app                                 # TUI (default)
-
-joy serve                               # Start server (for remote sync + web UI)
-  joy serve --config server.yaml
-  joy serve --daemon                    # Run as background process
 ```
+
+The server (`joyint-server`) is a separate binary in the [platform](https://github.com/joyint/platform) repository. See [ADR-002](https://github.com/joyint/project/blob/main/docs/dev/adr/ADR-002-single-binary.md) for the rationale.
 
 ### Shell Completions and Help
 
@@ -519,7 +517,6 @@ Joy as a tool/skill for external AI agents:
 
 ### Sync and Server
 
-- `joy serve` -- HTTP server (REST API, Git gateway, CalDAV)
 - `joy sync` -- push/pull via Git remote
 - `joy clone` -- clone remote project
 - OAuth authentication (GitHub, GitLab, Gitea)
