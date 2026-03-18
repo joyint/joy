@@ -66,24 +66,20 @@ doctor:
 install:
     just crates cli install && just app install
 
-# Release (auto patch bump)
+# Release (auto patch bump from latest git tag)
 release version="":
     #!/usr/bin/env bash
     set -euo pipefail
-    if [ -n "{{version}}" ]; then
-        v="{{version}}"
+    v="{{version}}"
+    if [ -n "$v" ]; then
         semver="${v#v}"
     else
-        current=$(grep '^version = ' crates/joy-cli/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+        current=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+        current="${current#v}"
         major=$(echo "$current" | cut -d. -f1)
         minor=$(echo "$current" | cut -d. -f2)
         patch=$(echo "$current" | cut -d. -f3)
         semver="${major}.${minor}.$((patch + 1))"
-        read -rp "Release v${semver}? [y/N] " confirm
-        if [[ "$confirm" != [yY] ]]; then
-            echo "Aborted."
-            exit 0
-        fi
     fi
     tag="v${semver}"
 
