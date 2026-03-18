@@ -38,6 +38,12 @@ pub enum JoyError {
         source: std::io::Error,
     },
 
+    #[error("{path}: {source}")]
+    YamlParse {
+        path: PathBuf,
+        source: serde_yml::Error,
+    },
+
     #[error("YAML error: {0}")]
     Yaml(#[from] serde_yml::Error),
 
