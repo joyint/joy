@@ -545,3 +545,9 @@ Joy dispatches work to AI APIs and tracks results:
 
 - `joy app` -- ratatui-based terminal UI
 - Board view, item detail panel, dependency graph
+
+---
+
+## Related
+
+For business context (pricing, licensing, competitive landscape) see [BusinessModel.md](https://github.com/joyint/project/blob/main/docs/BusinessModel.md) and [Competition.md](https://github.com/joyint/project/blob/main/docs/Competition.md) in the umbrella repository. These documents are part of the internal planning for the Joyint product ecosystem at Joydev GmbH.
