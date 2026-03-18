@@ -474,6 +474,39 @@ sequenceDiagram
 
 This keeps Joy focused on orchestration and Jot focused on execution. The `source` field and the dispatch service on joyint.com are the only coupling points.
 
+### Dispatch Error Handling
+
+The dispatch mechanism handles four error scenarios:
+
+**1. Dispatch creation fails** (target Jot repo unreachable, auth expired, repo does not exist):
+- Retry with exponential backoff (3 attempts over 15 minutes)
+- On permanent failure: comment on the Joy item ("Dispatch to bob@example.com failed"), notification to item owner
+- Joy item stays in current status (gate not satisfied)
+- Special case: if the target user has no Jot repo, send an invitation link ("Set up your Jot account to receive tasks from this project")
+
+**2. Duplicate detection on retries:**
+- The `source` field (e.g., `joy:acme/product:JOY-002A`) serves as the deduplication key
+- Before creating a todo, the dispatch service checks if an open todo with the same `source` already exists in the target Jot repo
+- If yes: no new todo, confirm the existing one
+
+**3. AI agent timeout (stalled dispatch):**
+- AI dispatch items have a configurable timeout (default: 1 hour, configurable per item or project)
+- On timeout: Jot todo marked as `stalled`, Joy item transitions to `stalled` status, notification to item owner
+- No automatic retry -- AI jobs can be expensive, the human decides
+- Item owner uses `joy reopen` to return to the previous active status and re-dispatch
+
+**4. Callback failure** (agent completes todo, but Joy repo is unreachable):
+- Same retry mechanism as dispatch creation (exponential backoff, 3 attempts)
+- On permanent failure: Jot todo is correctly marked done, but Joy gate remains open. Notification to item owner ("Bob completed the review but the gate could not be updated")
+- Item owner can satisfy the gate manually (`joy close`)
+- Reconciliation: the dispatch service tracks pending callbacks and delivers them when the Joy repo becomes reachable again
+
+### The `stalled` Status
+
+Items that fail dispatch or agent timeout enter the `stalled` status. This is set automatically by the dispatch service, never manually. `joy reopen` returns the item to its previous active status.
+
+`stalled` is immediately visible in the board and can be filtered with `joy ls --stalled`. It signals: something is stuck, a human needs to decide.
+
 ---
 
 ## Design Philosophy
