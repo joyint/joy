@@ -498,7 +498,7 @@ This keeps Joy focused on orchestration and Jot focused on execution. The `sourc
 
 Joy is built using itself from the earliest possible moment.
 
-### MS-01 -- Core CLI (complete, 2026-03)
+### Core CLI (complete)
 
 The CLI is the foundation. All core commands are implemented and Joy manages its own backlog since v0.5.0:
 
@@ -509,7 +509,7 @@ The CLI is the foundation. All core commands are implemented and Joy manages its
 - Semantic ANSI colors, emoji indicators, compact table formatting
 - Structured event log, shell completions
 
-### MS-02 -- AI tool mode (2026-04)
+### AI tool mode
 
 Joy as a tool/skill for external AI agents:
 
@@ -517,7 +517,7 @@ Joy as a tool/skill for external AI agents:
 - Standardized instructions that work across AI tools
 - No own agent runtime -- the external tool calls `joy` commands
 
-### MS-03 -- Sync and Server (2026-04)
+### Sync and Server
 
 - `joy serve` -- HTTP server (REST API, Git gateway, CalDAV)
 - `joy sync` -- push/pull via Git remote
@@ -525,7 +525,7 @@ Joy as a tool/skill for external AI agents:
 - OAuth authentication (GitHub, GitLab, Gitea)
 - E2E encryption (AES-256-GCM, always active on joyint.com)
 
-### MS-04 -- Web UI and Portal (2026-05)
+### Web UI and Portal
 
 - SolidJS web frontend (board, item management, roadmap) for Joy and Jot
 - CalDAV server for Jot (VTODO bridge to Apple Reminders, Google Calendar)
@@ -533,7 +533,7 @@ Joy as a tool/skill for external AI agents:
 - joyint.com deployment (managed hosting)
 - Tauri native app (desktop and mobile)
 
-### MS-05 -- AI agent mode (2026-06)
+### AI agent mode
 
 Joy dispatches work to AI APIs and tracks results:
 
@@ -541,18 +541,13 @@ Joy dispatches work to AI APIs and tracks results:
 - `joy ai estimate`, `joy ai plan`, `joy ai implement`, `joy ai review`
 - Job logging and cost tracking
 
-### MS-06 -- TUI (2026-07)
+### TUI
 
 - `joy app` -- ratatui-based terminal UI
 - Board view, item detail panel, dependency graph
-
-### MS-07 -- Initial JOYC Integration (2026-08)
-
-- First minimal integration of the IOTA-based AI settlement layer
-- Cost settlement on-chain for AI jobs
 
 ---
 
 ## Related
 
-For business context (pricing, licensing, competitive landscape) see [BusinessModel.md](https://github.com/joyint/project/blob/main/docs/BusinessModel.md) and [Competition.md](https://github.com/joyint/project/blob/main/docs/Competition.md) in the umbrella repository. These documents are part of the internal planning for the Joyint product ecosystem at Joydev GmbH.
+For roadmap, milestones, and timeline see the [umbrella repository](https://github.com/joyint/project). For business context (pricing, licensing, competitive landscape) see [BusinessModel.md](https://github.com/joyint/project/blob/main/docs/BusinessModel.md) and [Competition.md](https://github.com/joyint/project/blob/main/docs/Competition.md). These documents are part of the internal planning for the Joyint product ecosystem at Joydev GmbH.
