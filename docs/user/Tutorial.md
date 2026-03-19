@@ -404,4 +404,4 @@ REFERENCE
     "Any problem can be solved with a little ingenuity." -- MacGyver
 
 SEE ALSO
-    joy --help, joy <command> --help, docs/dev/vision/README.md
+    joy --help, joy <command> --help, docs/dev/Vision.md
