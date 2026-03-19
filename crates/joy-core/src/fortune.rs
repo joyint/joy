@@ -12,7 +12,7 @@ const TECH_YAML: &str = include_str!("../data/fortunes/tech.yaml");
 const SCIENCE_YAML: &str = include_str!("../data/fortunes/science.yaml");
 const HUMOR_YAML: &str = include_str!("../data/fortunes/humor.yaml");
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Category {
     Tech,
