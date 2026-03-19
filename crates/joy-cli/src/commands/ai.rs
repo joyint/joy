@@ -146,8 +146,8 @@ fn configure_tools(root: &Path) -> anyhow::Result<()> {
         }
         found_any = true;
     }
-    if which("qwen-code") {
-        print!("  Qwen Code (qwen-code) ... found. Configure? [Y/n] ");
+    if which("qwen") || which("qwen-code") {
+        print!("  Qwen Code (qwen) ... found. Configure? [Y/n] ");
         if confirm_default_yes()? {
             configure_qwen(root)?;
         }
@@ -160,10 +160,17 @@ fn configure_tools(root: &Path) -> anyhow::Result<()> {
         }
         found_any = true;
     }
+    if which("copilot") || which("gh") {
+        print!("  GitHub Copilot (copilot) ... found. Configure? [Y/n] ");
+        if confirm_default_yes()? {
+            configure_copilot(root)?;
+        }
+        found_any = true;
+    }
 
     if !found_any {
         println!("  No supported AI tools detected.");
-        println!("  Supported: Claude Code (claude), Qwen Code (qwen-code), Mistral Vibe (vibe)");
+        println!("  Supported: Claude Code (claude), Qwen Code (qwen), Mistral Vibe (vibe), GitHub Copilot (copilot/gh)");
         println!("  Install one and re-run `joy ai setup`.");
         println!();
         println!("  The .joy/ai/ templates are installed regardless and can be");
@@ -272,6 +279,24 @@ fn configure_vibe(root: &Path) -> anyhow::Result<()> {
     fs::create_dir_all(&skill_dir)?;
     fs::write(skill_dir.join("SKILL.md"), SKILL_TEMPLATE)?;
     println!("    .vibe/skills/joy/SKILL.md ... installed");
+
+    Ok(())
+}
+
+fn configure_copilot(root: &Path) -> anyhow::Result<()> {
+    let github_dir = root.join(".github");
+    fs::create_dir_all(&github_dir)?;
+
+    // Update or create copilot-instructions.md with joy block
+    let instructions_md = github_dir.join("copilot-instructions.md");
+    update_with_joy_block(
+        &instructions_md,
+        "## Joy Integration\n\n\
+         This project uses [Joy](https://github.com/joyint/joy) for product management.\n\
+         Read [.joy/ai/instructions.md](../.joy/ai/instructions.md) for AI collaboration rules.\n\n\
+         Use Joy CLI commands for backlog work. Do not edit `.joy/items/*.yaml` files directly.",
+    )?;
+    println!("    .github/copilot-instructions.md ... joy block updated");
 
     Ok(())
 }
