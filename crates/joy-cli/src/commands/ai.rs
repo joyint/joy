@@ -7,6 +7,9 @@ use std::path::Path;
 
 const INSTRUCTIONS_TEMPLATE: &str = include_str!("../../../../data/ai/instructions.md");
 const SKILL_TEMPLATE: &str = include_str!("../../../../data/ai/skills/joy/SKILL.md");
+const VISION_TEMPLATE: &str = include_str!("../../../../data/ai/templates/Vision.md");
+const ARCHITECTURE_TEMPLATE: &str = include_str!("../../../../data/ai/templates/Architecture.md");
+const CONTRIBUTING_TEMPLATE: &str = include_str!("../../../../data/ai/templates/CONTRIBUTING.md");
 
 const JOY_BLOCK_START: &str = "<!-- joy:start -->";
 const JOY_BLOCK_END: &str = "<!-- joy:end -->";
@@ -52,34 +55,58 @@ fn check_docs(root: &Path) -> anyhow::Result<()> {
     println!("Checking project documentation...");
 
     let docs = [
-        ("docs/dev/Vision.md", "product goals and design decisions"),
-        ("docs/dev/Architecture.md", "technical stack and structure"),
-        ("CONTRIBUTING.md", "coding conventions and commit messages"),
+        (
+            "docs/dev/Vision.md",
+            "product goals and design decisions",
+            VISION_TEMPLATE,
+        ),
+        (
+            "docs/dev/Architecture.md",
+            "technical stack and structure",
+            ARCHITECTURE_TEMPLATE,
+        ),
+        (
+            "CONTRIBUTING.md",
+            "coding conventions and commit messages",
+            CONTRIBUTING_TEMPLATE,
+        ),
     ];
 
     let mut all_found = true;
-    for (path, purpose) in &docs {
+    for (path, purpose, template) in &docs {
         let full = root.join(path);
         if full.is_file() {
             println!("  {} ... found", path);
         } else {
             println!("  {} ... MISSING", path);
-            println!(
-                "  A {} document helps AI tools understand your {}.",
-                path.rsplit('/').next().unwrap_or(path),
-                purpose
+            let name = path.rsplit('/').next().unwrap_or(path);
+            print!(
+                "  {} helps AI understand your {}. Create template? [y/N] ",
+                name, purpose
             );
+            std::io::stdout().flush()?;
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+            if input.trim().eq_ignore_ascii_case("y") {
+                if let Some(parent) = full.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                fs::write(&full, template)?;
+                println!(
+                    "  Created {} (template -- your AI tool will help fill it in)",
+                    path
+                );
+            }
             all_found = false;
         }
     }
 
     if all_found {
-        println!("  All documentation present.\n");
+        println!("  All documentation present.");
     } else {
-        println!(
-            "\n  Tip: Create missing documents to improve AI collaboration quality.\n  The AI will review them on first use and may suggest improvements.\n"
-        );
+        println!("\n  Tip: Your AI tool will offer to fill in empty templates on first use.");
     }
+    println!();
 
     Ok(())
 }
