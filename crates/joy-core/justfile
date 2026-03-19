@@ -1,6 +1,0 @@
-# Joy Core
-
-# Set Cargo.toml version
-version semver:
-    sed -i 's/^version = ".*"/version = "{{semver}}"/' Cargo.toml
-    @echo "  joy-core -> {{semver}}"
