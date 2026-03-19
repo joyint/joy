@@ -85,9 +85,17 @@ These documents are the source of truth. Do not contradict them.
 
 ## First session
 
-If key documents (Vision.md, Architecture.md, CONTRIBUTING.md) are empty
-or contain only template headings, read `.joy/ai/instructions/setup.md`
-for checklists to fill them in together with the user.
+At the start of your first session in a project, ALWAYS do these checks
+before anything else:
+
+1. Read `docs/dev/Vision.md`, `docs/dev/Architecture.md`, and `CONTRIBUTING.md`
+2. If any of these files are missing, empty, or contain only template
+   headings (HTML comments like `<!-- ... -->`), tell the user and offer
+   to fill them in together
+3. Read `.joy/ai/instructions/setup.md` for the checklists to guide the
+   conversation
+
+Do not wait for the user to ask. This check is mandatory on first session.
 
 ## Commit messages
 
