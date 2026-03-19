@@ -92,8 +92,8 @@ source: null                         # optional: dispatch source (e.g. "joy:PROJ
 created: 2026-03-09T10:00:00Z
 updated: 2026-03-09T10:00:00Z
 description: |
-  Integrate Stripe for payment processing.
-  Must support EUR and USD.
+  Integrate Mollie for payment processing.
+  Must support SEPA and card payments.
 comments:
   - author: orchidee@joyint.com
     date: 2026-03-09T10:30:00Z
