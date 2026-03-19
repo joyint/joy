@@ -2,7 +2,6 @@
 # See docs/dev/CONTRIBUTING.md for full documentation
 
 mod app
-mod crates
 
 # List recipes
 default:
@@ -54,17 +53,20 @@ check:
 
 # Check tools and deps
 doctor:
-    @echo "=== Root ==="
+    @echo "=== Joy ==="
     @command -v cargo >/dev/null && echo "  cargo: $(cargo --version)" || echo "  cargo: MISSING"
     @command -v rustfmt >/dev/null && echo "  rustfmt: $(rustfmt --version)" || echo "  rustfmt: MISSING"
     @command -v clippy-driver >/dev/null && echo "  clippy: $(clippy-driver --version)" || echo "  clippy: MISSING"
     @command -v git >/dev/null && echo "  git: $(git --version)" || echo "  git: MISSING"
-    @just crates cli doctor
+    @cargo --list 2>/dev/null | grep -q insta && echo "  cargo-insta: ok" || echo "  cargo-insta: MISSING (cargo install cargo-insta)"
+    @cargo --list 2>/dev/null | grep -q 'llvm-cov' && echo "  cargo-llvm-cov: ok" || echo "  cargo-llvm-cov: MISSING (optional, cargo install cargo-llvm-cov)"
+    @cargo --list 2>/dev/null | grep -q watch && echo "  cargo-watch: ok" || echo "  cargo-watch: MISSING (optional, cargo install cargo-watch)"
     @just app doctor
 
-# Install all components
+# Install to ~/.local/bin/
 install:
-    just crates cli install && just app install
+    cargo build --release -p joyint && mkdir -p ~/.local/bin && cp target/release/joy ~/.local/bin/joy
+    just app install
 
 # Release (auto patch bump from latest git tag)
 release version="":
@@ -88,7 +90,13 @@ release version="":
         exit 1
     fi
 
-    just crates version "${semver}"
+    # Update version in all Cargo.toml files
+    for f in $(find crates -name Cargo.toml); do
+        if grep -q '^version = ' "$f"; then
+            sed -i "s/^version = \".*\"/version = \"${semver}\"/" "$f"
+            echo "  ${f} -> ${semver}"
+        fi
+    done
     just app version "${semver}"
     cargo generate-lockfile 2>/dev/null || cargo check 2>/dev/null
 
