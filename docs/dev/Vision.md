@@ -489,7 +489,7 @@ Aggregated cost views available via `joy ai status --costs` per item, epic, mile
 
 ## Dispatch: Bridging Joy and Jot
 
-Joy and Jot use **separate item pools** (`.joy/` and `.jot/`), but the dispatch mechanism on joyint.com bridges them. When a Joy item reaches a status gate that requires human or AI action, joyint.com creates a corresponding Jot todo in the target user's repository.
+Joy and Jot use **separate item pools** (`.joy/` and `.jot/`), but the dispatch mechanism on joyint.com bridges them. When a Joy item reaches a status gate that requires human or AI action, joyint.com creates a corresponding Jot task in the target user's repository.
 
 ```mermaid
 sequenceDiagram
@@ -504,9 +504,9 @@ sequenceDiagram
     S->>J: Callback -> review gate satisfied
 ```
 
-- **Human dispatch:** Joy status gates create Jot todos for reviewers, testers, or approvers.
-- **AI dispatch:** Joy creates Jot todos for AI agents (`agent:implementer@joy`). The agent picks up todos via `jot ls --mine`, executes work, and marks them done.
-- **Callback:** When a dispatched Jot todo is completed, joyint.com signals back to the Joy project that the gate is satisfied.
+- **Human dispatch:** Joy status gates create Jot tasks for reviewers, testers, or approvers.
+- **AI dispatch:** Joy creates Jot tasks for AI agents (`agent:implementer@joy`). The agent picks up todos via `jot ls --mine`, executes work, and marks them done.
+- **Callback:** When a dispatched Jot task is completed, joyint.com signals back to the Joy project that the gate is satisfied.
 
 This keeps Joy focused on orchestration and Jot focused on execution. The `source` field and the dispatch service on joyint.com are the only coupling points.
 
@@ -527,13 +527,13 @@ The dispatch mechanism handles four error scenarios:
 
 **3. AI agent timeout (stalled dispatch):**
 - AI dispatch items have a configurable timeout (default: 1 hour, configurable per item or project)
-- On timeout: Jot todo marked as `stalled`, Joy item transitions to `stalled` status, notification to item owner
+- On timeout: Jot task marked as `stalled`, Joy item transitions to `stalled` status, notification to item owner
 - No automatic retry -- AI jobs can be expensive, the human decides
 - Item owner uses `joy reopen` to return to the previous active status and re-dispatch
 
 **4. Callback failure** (agent completes todo, but Joy repo is unreachable):
 - Same retry mechanism as dispatch creation (exponential backoff, 3 attempts)
-- On permanent failure: Jot todo is correctly marked done, but Joy gate remains open. Notification to item owner ("Bob completed the review but the gate could not be updated")
+- On permanent failure: Jot task is correctly marked done, but Joy gate remains open. Notification to item owner ("Bob completed the review but the gate could not be updated")
 - Item owner can satisfy the gate manually (`joy close`)
 - Reconciliation: the dispatch service tracks pending callbacks and delivers them when the Joy repo becomes reachable again
 
