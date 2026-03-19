@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
+use crate::fortune::Category;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -24,6 +25,14 @@ pub struct SyncConfig {
 pub struct OutputConfig {
     pub color: ColorMode,
     pub emoji: bool,
+    #[serde(default = "default_fortune")]
+    pub fortune: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fortune_category: Option<Category>,
+}
+
+fn default_fortune() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -59,6 +68,8 @@ impl Default for OutputConfig {
         Self {
             color: ColorMode::Auto,
             emoji: true,
+            fortune: true,
+            fortune_category: None,
         }
     }
 }

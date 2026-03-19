@@ -5,6 +5,8 @@ mod color;
 mod commands;
 mod complete;
 
+use std::io::IsTerminal;
+
 use clap::{CommandFactory, Parser, Subcommand};
 
 #[derive(Parser)]
@@ -105,8 +107,12 @@ fn main() -> anyhow::Result<()> {
     color::init(&config.output);
 
     let cli = Cli::parse();
+    let show_fortune = matches!(
+        &cli.command,
+        None | Some(Commands::Ls(_)) | Some(Commands::Roadmap(_)) | Some(Commands::Show(_))
+    );
 
-    match cli.command {
+    let result = match cli.command {
         Some(Commands::Init(args)) => commands::init::run(args),
         Some(Commands::Add(args)) => commands::add::run(args),
         Some(Commands::Ls(args)) => commands::ls::run(args),
@@ -143,5 +149,14 @@ fn main() -> anyhow::Result<()> {
         Some(Commands::Release(args)) => commands::release::run(args),
         Some(Commands::Board(args)) => commands::board::run(args),
         None => commands::board::run(BoardArgs { all: false }),
+    };
+
+    if show_fortune && result.is_ok() && config.output.fortune && std::io::stdout().is_terminal() {
+        if let Some(text) = joy_core::fortune::fortune(config.output.fortune_category.as_ref(), 0.2)
+        {
+            eprintln!("\n\x1b[2m{text}\x1b[0m");
+        }
     }
+
+    result
 }
