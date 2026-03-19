@@ -64,8 +64,8 @@ doctor:
 install:
     cargo build --release -p joyint && mkdir -p ~/.local/bin && cp target/release/joy ~/.local/bin/joy
 
-# Release (patch bump, tag, push)
-release confirm="ask":
+# Release (bump: patch, minor, or major)
+release bump="patch" confirm="ask":
     #!/usr/bin/env bash
     set -euo pipefail
     if git describe --tags --exact-match HEAD >/dev/null 2>&1; then
@@ -81,7 +81,12 @@ release confirm="ask":
     major=$(echo "$current" | cut -d. -f1)
     minor=$(echo "$current" | cut -d. -f2)
     patch=$(echo "$current" | cut -d. -f3)
-    semver="${major}.${minor}.$((patch + 1))"
+    case "{{bump}}" in
+        major) semver="$((major + 1)).0.0" ;;
+        minor) semver="${major}.$((minor + 1)).0" ;;
+        patch) semver="${major}.${minor}.$((patch + 1))" ;;
+        *) echo "Error: bump must be patch, minor, or major"; exit 1 ;;
+    esac
     tag="v${semver}"
     if [ "{{confirm}}" = "ask" ]; then
         read -rp "Release ${tag}? [Y/n] " c
