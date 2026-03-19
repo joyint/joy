@@ -27,6 +27,10 @@ pub struct EditArgs {
     #[arg(long)]
     parent: Option<String>,
 
+    /// Size (1-7, use "none" to remove)
+    #[arg(short, long)]
+    size: Option<String>,
+
     /// New description
     #[arg(short, long)]
     description: Option<String>,
@@ -68,6 +72,21 @@ pub fn run(args: EditArgs) -> Result<()> {
         item.priority = p
             .parse::<Priority>()
             .map_err(|e: String| anyhow::anyhow!("{}", e))?;
+        changed = true;
+    }
+
+    if let Some(ref size_str) = args.size {
+        if size_str == "none" {
+            item.size = None;
+        } else {
+            let s: u8 = size_str
+                .parse()
+                .map_err(|_| anyhow::anyhow!("size must be 1-7 or 'none'"))?;
+            if !(1..=7).contains(&s) {
+                anyhow::bail!("size must be between 1 and 7");
+            }
+            item.size = Some(s);
+        }
         changed = true;
     }
 

@@ -36,6 +36,7 @@ Use these Joy CLI commands for all product management operations:
 
 Item types: `epic`, `story`, `task`, `bug`, `rework`, `decision`, `idea`.
 Priority levels: `critical`, `high`, `medium`, `low`.
+Size scale (1-7): 1=trivial, 2=small, 3=medium, 4=large, 5=major, 6=heavy, 7=massive.
 
 ## Rules
 
@@ -55,7 +56,7 @@ Priority levels: `critical`, `high`, `medium`, `low`.
 
 ### Creating items
 
-Analyze the user's input and break it into Joy items. Present a numbered list (title, type, priority) for confirmation before creating. Create epics first when there are 3+ related items. Do not over-decompose -- a 1-2 day story is fine as one item.
+Analyze the user's input and break it into Joy items. Present a numbered list (title, type, priority, size) for confirmation before creating. Suggest a size (1-7) based on the scope of each item. Use `--size` when creating: `joy add task "Fix login" --size 2`. Create epics first when there are 3+ related items. Do not over-decompose -- a 1-2 day story is fine as one item.
 
 ### Implementing items
 

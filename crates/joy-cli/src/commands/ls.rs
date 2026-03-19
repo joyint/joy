@@ -315,8 +315,7 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
     let term_width = terminal_width();
 
     // Fixed column widths (including trailing space as separator)
-    // ID(10) + sp + TYPE(12) + sp + STATUS(13) + sp + PRIORITY(10) + sp + TITLE
-    // = 4 separators (spaces) + 45 chars of fixed columns = 49 before extras
+    // ID(10) + sp + TYPE(12) + sp + STATUS(13) + sp + PRIORITY(10) + sp + SIZE(4) + sp + TITLE
     let fixed_width: usize = 10
         + 1
         + 12
@@ -324,6 +323,8 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
         + 13
         + 1
         + 10
+        + 1
+        + 4
         + 1
         + if extras.parent { 10 + 1 } else { 0 }
         + if extras.milestone { 8 + 1 } else { 0 }
@@ -338,11 +339,12 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
 
     // Build header
     let mut header = format!(
-        "{:<10} {:<12} {:<13} {:<10}",
+        "{:<10} {:<12} {:<13} {:<10} {:<4}",
         color::heading("ID"),
         color::heading("TYPE"),
         color::heading("STATUS"),
         color::heading("PRIORITY"),
+        color::heading("SIZE"),
     );
     if extras.parent {
         header.push_str(&format!(" {:<10}", color::heading("PARENT")));
@@ -389,12 +391,19 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
         let type_raw = format!("{}{}", type_emoji, item.item_type);
         let status_raw = format!("{}{}", status_emoji, item.status);
 
+        let size_str = color::size_indicator(item.size);
+        let size_raw = item
+            .size
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| " ".to_string());
+
         let mut line = format!(
-            "{} {} {} {}",
+            "{} {} {} {} {}",
             pad_colored(&id_str, &item.id, 10),
             pad_colored(&type_str, &type_raw, 12),
             pad_colored(&status_str, &status_raw, 13),
             pad_colored(&priority_str, &item.priority.to_string(), 10),
+            pad_colored(&size_str, &size_raw, 4),
         );
 
         if extras.parent {

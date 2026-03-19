@@ -175,3 +175,39 @@ pub fn status_heading(s: &Status, text: &str) -> String {
         Status::Deferred => wrap(SECONDARY, text),
     }
 }
+
+/// Format a size value (1-7) as a colored block character.
+/// Always shown, regardless of emoji setting.
+/// Colors: 1-2 green, 3-4 yellow, 5 orange, 6-7 red.
+pub fn size_indicator(size: Option<u8>) -> String {
+    const GREEN: &str = "\x1b[32m";
+    const YELLOW: &str = "\x1b[33m";
+    const ORANGE: &str = "\x1b[38;5;208m";
+    const RED: &str = "\x1b[31m";
+    const RESET: &str = "\x1b[0m";
+
+    let blocks = ['▁', '▂', '▃', '▄', '▅', '▆', '▇'];
+
+    match size {
+        Some(s) if (1..=7).contains(&s) => {
+            let block = blocks[(s - 1) as usize];
+            let color = match s {
+                1 | 2 => GREEN,
+                3 | 4 => YELLOW,
+                5 => ORANGE,
+                6 | 7 => RED,
+                _ => "",
+            };
+            if is_color_enabled() {
+                format!("{color}{block}{RESET}")
+            } else {
+                format!("{}", s)
+            }
+        }
+        _ => " ".to_string(),
+    }
+}
+
+fn is_color_enabled() -> bool {
+    *ENABLED.get().unwrap_or(&false)
+}
