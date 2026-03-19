@@ -1,15 +1,13 @@
 # Joy -- Task Runner
 # See docs/dev/CONTRIBUTING.md for full documentation
 
-mod app
-
 # List recipes
 default:
     @just --list
 
 # Run all tests
 test:
-    cargo test --workspace && just app test
+    cargo test --workspace
 
 # Rust unit tests only
 test-unit:
@@ -37,15 +35,15 @@ test-watch:
 
 # Format all code
 fmt:
-    cargo fmt --all && just app fmt
+    cargo fmt --all
 
 # Check formatting
 fmt-check:
-    cargo fmt --all -- --check && just app fmt-check
+    cargo fmt --all -- --check
 
 # Lint all code
 lint:
-    cargo clippy --workspace -- -D warnings && just app lint
+    cargo clippy --workspace -- -D warnings
 
 # Run fmt-check, lint, test
 check:
@@ -61,12 +59,10 @@ doctor:
     @cargo --list 2>/dev/null | grep -q insta && echo "  cargo-insta: ok" || echo "  cargo-insta: MISSING (cargo install cargo-insta)"
     @cargo --list 2>/dev/null | grep -q 'llvm-cov' && echo "  cargo-llvm-cov: ok" || echo "  cargo-llvm-cov: MISSING (optional, cargo install cargo-llvm-cov)"
     @cargo --list 2>/dev/null | grep -q watch && echo "  cargo-watch: ok" || echo "  cargo-watch: MISSING (optional, cargo install cargo-watch)"
-    @just app doctor
 
 # Install to ~/.local/bin/
 install:
     cargo build --release -p joyint && mkdir -p ~/.local/bin && cp target/release/joy ~/.local/bin/joy
-    just app install
 
 # Release (auto patch bump from latest git tag)
 release version="":
@@ -97,7 +93,6 @@ release version="":
             echo "  ${f} -> ${semver}"
         fi
     done
-    just app version "${semver}"
     cargo generate-lockfile 2>/dev/null || cargo check 2>/dev/null
 
     git add -A

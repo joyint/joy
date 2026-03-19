@@ -1,6 +1,0 @@
-# Joy App -- Tauri Backend
-
-# Set Cargo.toml version
-version semver:
-    sed -i 's/^version = ".*"/version = "{{semver}}"/' Cargo.toml
-    @echo "  app/src-tauri -> {{semver}}"
