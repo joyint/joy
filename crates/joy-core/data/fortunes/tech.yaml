@@ -1,0 +1,113 @@
+category: tech
+description: Programming wisdom and software engineering quotes
+entries:
+- text: "Premature optimization is the root of all evil."
+  author: Donald Knuth
+- text: "Simplicity is prerequisite for reliability."
+  author: Edsger W. Dijkstra
+- text: "Programs must be written for people to read, and only incidentally for machines to execute."
+  author: Harold Abelson
+- text: "The best way to predict the future is to implement it."
+  author: David Heinemeier Hansson
+- text: "Make it work, make it right, make it fast."
+  author: Kent Beck
+- text: "Any fool can write code that a computer can understand. Good programmers write code that humans can understand."
+  author: Martin Fowler
+- text: "First, solve the problem. Then, write the code."
+  author: John Johnson
+- text: "Code is like humor. When you have to explain it, it's bad."
+  author: Cory House
+- text: "The most dangerous phrase in the language is: We've always done it this way."
+  author: Grace Hopper
+- text: "Perfection is achieved not when there is nothing more to add, but when there is nothing left to take away."
+  author: Antoine de Saint-Exupery
+- text: "Measuring programming progress by lines of code is like measuring aircraft building progress by weight."
+  author: Bill Gates
+- text: "Walking on water and developing software from a specification are easy if both are frozen."
+  author: Edward V. Berard
+- text: "The computer was born to solve problems that did not exist before."
+  author: Bill Gates
+- text: "Software is a great combination between artistry and engineering."
+  author: Bill Gates
+- text: "The function of good software is to make the complex appear to be simple."
+  author: Grady Booch
+- text: "There are only two hard things in Computer Science: cache invalidation and naming things."
+  author: Phil Karlton
+- text: "It's not a bug -- it's an undocumented feature."
+  author: Anonymous
+- text: "The best error message is the one that never shows up."
+  author: Thomas Fuchs
+- text: "A program that produces incorrect results twice as fast is infinitely slower."
+  author: John Ousterhout
+- text: "Deleted code is debugged code."
+  author: Jeff Sickel
+- text: "The cheapest, fastest, and most reliable components are those that aren't there."
+  author: Gordon Bell
+- text: "Debugging is twice as hard as writing the code in the first place."
+  author: Brian Kernighan
+- text: "UNIX is simple. It just takes a genius to understand its simplicity."
+  author: Dennis Ritchie
+- text: "Talk is cheap. Show me the code."
+  author: Linus Torvalds
+- text: "Good code is its own best documentation."
+  author: Steve McConnell
+- text: "Programming is not about typing, it's about thinking."
+  author: Rich Hickey
+- text: "Weeks of coding can save you hours of planning."
+  author: Anonymous
+- text: "Complexity is the enemy of execution."
+  author: Tony Hsieh
+- text: "The art of programming is the art of organizing complexity."
+  author: Edsger W. Dijkstra
+- text: "The only way to go fast is to go well."
+  author: Robert C. Martin
+- text: "Software and cathedrals are much the same -- first we build them, then we pray."
+  author: Sam Redwine
+- text: "If debugging is the process of removing bugs, then programming must be the process of putting them in."
+  author: Edsger W. Dijkstra
+- text: "Sometimes it pays to stay in bed on Monday, rather than spending the rest of the week debugging Monday's code."
+  author: Dan Salomon
+- text: "No code runs faster than no code."
+  author: Kevlin Henney
+- text: "A language that doesn't affect the way you think about programming is not worth knowing."
+  author: Alan Perlis
+- text: "The best thing about a boolean is even if you are wrong, you are only off by a bit."
+  author: Anonymous
+- text: "One of my most productive days was throwing away 1000 lines of code."
+  author: Ken Thompson
+- text: "In theory, there is no difference between theory and practice. But in practice, there is."
+  author: Jan L. A. van de Snepscheut
+- text: "Any sufficiently advanced technology is indistinguishable from magic."
+  author: Arthur C. Clarke
+- text: "Shipping is a feature. A really important feature."
+  author: Joel Spolsky
+- text: "The purpose of software engineering is to control complexity, not to create it."
+  author: Pamela Zave
+- text: "Without requirements or design, programming is the art of adding bugs to an empty text file."
+  author: Louis Srygley
+- text: "Before software can be reusable it first has to be usable."
+  author: Ralph Johnson
+- text: "When in doubt, use brute force."
+  author: Ken Thompson
+- text: "Computers are good at following instructions, but not at reading your mind."
+  author: Donald Knuth
+- text: "The most important property of a program is whether it accomplishes the intention of its user."
+  author: C.A.R. Hoare
+- text: "Every great developer you know got there by solving problems they were unqualified to solve until they actually did it."
+  author: Patrick McKenzie
+- text: "Give someone a program, you frustrate them for a day; teach them how to program, you frustrate them for a lifetime."
+  author: David Leinweber
+- text: "It works on my machine."
+  author: Every Developer
+- text: "Optimism is an occupational hazard of programming; feedback is the treatment."
+  author: Kent Beck
+- text: "The value of a prototype is in the education it gives you, not in the code itself."
+  author: Alan Cooper
+- text: "Write shy code -- modules that don't reveal anything unnecessary and don't rely on anything unnecessary."
+  author: Andy Hunt
+- text: "Duplication is far cheaper than the wrong abstraction."
+  author: Sandi Metz
+- text: "If you think good architecture is expensive, try bad architecture."
+  author: Brian Foote
+- text: "The most disastrous thing that you can ever learn is your first programming language."
+  author: Alan Kay

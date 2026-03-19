@@ -5,6 +5,7 @@
 
 pub mod error;
 pub mod event_log;
+pub mod fortune;
 pub mod init;
 pub mod items;
 pub mod milestones;
