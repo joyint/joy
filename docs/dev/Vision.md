@@ -352,7 +352,7 @@ Joy supports two modes of AI integration:
 
 ### Tool mode (MS-02): Joy as a tool for AI agents
 
-External AI agents use Joy's CLI as a tool. The agent calls `joy` commands to read, create, and manage items. This already works today via skill definitions (e.g. the `/joy` Claude Code skill). `joy ai setup tool` formalizes this by generating the appropriate config files for the detected AI tool.
+External AI agents use Joy's CLI as a tool. The agent calls `joy` commands to read, create, and manage items. `joy ai setup` checks project documentation, installs AI instructions and skills into `.joy/ai/`, detects installed AI tools, and generates the appropriate config files with permissions.
 
 Supported tools for tool mode:
 
@@ -424,10 +424,8 @@ Each project configures one tool via `joy ai setup agent`. Joy is the **dispatch
 ### AI Commands
 
 ```sh
-joy ai setup tool                       # Generate config for external AI agent (MS-02)
-joy ai setup agent [tool]               # Configure Joy as AI dispatcher (MS-05)
-  joy ai setup agent claude-code
-  joy ai setup agent mistral-vibe --model devstral-small
+joy ai setup                            # Set up AI tool integration (MS-02)
+joy config                              # Show current configuration
 
 joy ai estimate [id]                    # Estimate effort and cost
   joy ai estimate JOY-002A
@@ -580,8 +578,9 @@ The CLI is the foundation. All core commands are implemented and Joy manages its
 
 Joy as a tool/skill for external AI agents:
 
-- `joy ai setup tool` -- generate config files for external AI agents
-- Standardized instructions that work across AI tools
+- `joy ai setup` -- check docs, install AI instructions/skills, configure detected tools
+- `joy config` -- show current configuration
+- Standardized instructions and skills that work across AI tools (Claude Code, Qwen Code, Mistral Vibe)
 - No own agent runtime -- the external tool calls `joy` commands
 
 ### Sync and Server
