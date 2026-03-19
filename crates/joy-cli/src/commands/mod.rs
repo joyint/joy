@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 pub mod add;
+pub mod ai;
 pub mod assign;
 pub mod board;
 pub mod comment;
