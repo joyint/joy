@@ -18,7 +18,8 @@ Before doing anything:
 1. Run `joy config` to check if a Joy project exists. If it fails, tell the user to run `joy init` first and stop.
 2. Run `joy config get agents.default.interaction-level` to read the interaction level. If the key does not exist, default to 3.
 3. Briefly confirm: "Working in interactive mode (level 3). Want to change that for this session?"
-4. Then proceed to the first session check below.
+4. STOP and wait for the user's response before doing anything else. Do not proceed until they reply.
+5. Then proceed to the first session check below.
 
 ## First session check
 
