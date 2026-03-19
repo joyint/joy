@@ -64,29 +64,29 @@ doctor:
 install:
     cargo build --release -p joyint && mkdir -p ~/.local/bin && cp target/release/joy ~/.local/bin/joy
 
-# Release (auto patch bump from latest git tag)
-release version="":
+# Release (patch bump, tag, push)
+release confirm="ask":
     #!/usr/bin/env bash
     set -euo pipefail
-    v="{{version}}"
-    if [ -n "$v" ]; then
-        semver="${v#v}"
-    else
-        current=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-        current="${current#v}"
-        major=$(echo "$current" | cut -d. -f1)
-        minor=$(echo "$current" | cut -d. -f2)
-        patch=$(echo "$current" | cut -d. -f3)
-        semver="${major}.${minor}.$((patch + 1))"
+    if git describe --tags --exact-match HEAD >/dev/null 2>&1; then
+        echo "No changes since last tag, skipping."
+        exit 0
     fi
-    tag="v${semver}"
-
     if [ -n "$(git status --porcelain)" ]; then
         echo "Error: working tree is not clean."
         exit 1
     fi
-
-    # Update version in all Cargo.toml files
+    current=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+    current="${current#v}"
+    major=$(echo "$current" | cut -d. -f1)
+    minor=$(echo "$current" | cut -d. -f2)
+    patch=$(echo "$current" | cut -d. -f3)
+    semver="${major}.${minor}.$((patch + 1))"
+    tag="v${semver}"
+    if [ "{{confirm}}" = "ask" ]; then
+        read -rp "Release ${tag}? [Y/n] " c
+        if [[ "$c" == [nN] ]]; then echo "Aborted."; exit 0; fi
+    fi
     for f in $(find crates -name Cargo.toml); do
         if grep -q '^version = ' "$f"; then
             sed -i "s/^version = \".*\"/version = \"${semver}\"/" "$f"
@@ -94,7 +94,6 @@ release version="":
         fi
     done
     cargo generate-lockfile 2>/dev/null || cargo check 2>/dev/null
-
     git add -A
     git commit -m "bump to ${tag}"
     git tag "${tag}"
