@@ -286,38 +286,32 @@ MISSION 7: READING THE BLACK BOX (log, roadmap, edit, rm)
 
 MISSION 8: CALLING IN AIR SUPPORT (ai)
 
-    Even MacGyver accepts help sometimes. Joy integrates with AI tools for
-    estimation, planning, and implementation.
+    Even MacGyver accepts help sometimes. Joy integrates with AI coding
+    tools so they can manage your backlog alongside you.
 
-    Set up an AI tool:
+    Set up AI integration for your project:
 
-        joy ai setup claude-code
-        joy ai setup mistral-vibe --model devstral-small
+        joy ai setup
 
-    Estimate effort:
+    This does three things:
+    1. Checks if your project has Vision.md, Architecture.md, CONTRIBUTING.md
+       (offers to create templates if missing)
+    2. Installs AI instructions and skills into .joy/ai/
+    3. Detects your AI tool (Claude Code, Qwen Code, Mistral Vibe) and
+       configures it with the right permissions and references
 
-        joy ai estimate CB-0004
+    After setup, your AI tool knows how to use Joy commands, follows your
+    project conventions, and will offer to help fill in empty documents
+    on first use.
 
-    Break an epic into detailed items:
+    Run it again after a Joy update to get the latest instructions:
 
-        joy ai plan CB-0001
+        joy ai setup
 
-    Dispatch implementation to AI:
+    Joy-owned files are updated, your custom rules are preserved.
 
-        joy ai implement CB-0002
-        joy ai implement CB-0002 --budget 5.00
-
-    Review the result:
-
-        joy ai review CB-0002
-
-    Track costs:
-
-        joy ai status --costs
-
-    AI agents are tracked as team members. Their work goes through the same
-    workflow, the same status transitions, and the same rules. No special
-    treatment.
+    Future missions: AI agents that estimate, plan, implement, and review.
+    Stay tuned for joy ai estimate, joy ai plan, joy ai implement.
 
 MISSION 9: ADJUSTING THE RULES (project, config)
 
@@ -331,6 +325,13 @@ MISSION 9: ADJUSTING THE RULES (project, config)
     Edit it:
 
         joy project --name "Cookbox Pro" --description "Recipe management for pros"
+
+    View current configuration:
+
+        joy config
+
+    The config lives in .joy/config.yaml and controls output settings,
+    AI integration, and future features like sync and automation.
 
     To add workflow rules, edit .joy/project.yaml:
 
@@ -397,7 +398,8 @@ REFERENCE
     joy release [VERSION]           Release notes for a version
     joy roadmap                     Milestone roadmap (tree view)
     joy project                     View/edit project info
-    joy ai                          AI assistance
+    joy config                      Show current configuration
+    joy ai setup                    Set up AI tool integration
     joy completions <SHELL>         Generate shell completions
     joy tutorial                    You are here
 
