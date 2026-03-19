@@ -56,8 +56,10 @@ fn get_value(config_path: &std::path::Path, key: &str) -> anyhow::Result<()> {
     let content = fs::read_to_string(config_path)?;
     let value: serde_json::Value = serde_yml::from_str(&content)?;
 
-    let result = navigate(&value, key)
-        .ok_or_else(|| anyhow::anyhow!("key '{}' not found in config", key))?;
+    let Some(result) = navigate(&value, key) else {
+        // Exit silently with code 1 -- callers check the exit code
+        std::process::exit(1);
+    };
 
     match result {
         serde_json::Value::String(s) => println!("{s}"),
