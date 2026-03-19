@@ -194,6 +194,48 @@ fn configure_claude(root: &Path) -> anyhow::Result<()> {
     fs::write(skill_dir.join("SKILL.md"), SKILL_TEMPLATE)?;
     println!("    .claude/skills/joy/SKILL.md ... installed");
 
+    // Permissions -- allow joy and jot commands without prompting
+    update_claude_permissions(root)?;
+
+    Ok(())
+}
+
+fn update_claude_permissions(root: &Path) -> anyhow::Result<()> {
+    let settings_path = root.join(".claude/settings.json");
+    let joy_permission = "Bash(joy:*)";
+    let jot_permission = "Bash(jot:*)";
+
+    let mut settings: serde_json::Value = if settings_path.is_file() {
+        let content = fs::read_to_string(&settings_path)?;
+        serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    // Ensure permissions.allow array exists and contains joy/jot
+    let permissions = settings
+        .as_object_mut()
+        .unwrap()
+        .entry("permissions")
+        .or_insert_with(|| serde_json::json!({}));
+    let allow = permissions
+        .as_object_mut()
+        .unwrap()
+        .entry("allow")
+        .or_insert_with(|| serde_json::json!([]));
+
+    let allow_arr = allow.as_array_mut().unwrap();
+
+    for perm in [joy_permission, jot_permission] {
+        if !allow_arr.iter().any(|v| v.as_str() == Some(perm)) {
+            allow_arr.push(serde_json::json!(perm));
+        }
+    }
+
+    let json = serde_json::to_string_pretty(&settings)?;
+    fs::write(&settings_path, format!("{json}\n"))?;
+    println!("    .claude/settings.json ... joy/jot permissions added");
+
     Ok(())
 }
 
