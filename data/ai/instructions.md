@@ -31,13 +31,15 @@ Use these Joy CLI commands for all product management operations:
 | `joy close <ID>` | Set status to closed |
 | `joy roadmap` | Show milestone roadmap with progress |
 | `joy milestone show <ID>` | Show milestone details and risks |
+| `joy config` | Show current project configuration |
+| `joy project` | Show project metadata |
 
 Item types: `epic`, `story`, `task`, `bug`, `rework`, `decision`, `idea`.
 Priority levels: `critical`, `high`, `medium`, `low`.
 
 ## Rules
 
-**Always use the Joy CLI.** Do not read or write `.joy/items/*.yaml` files directly. If a Joy command does not exist for an operation, ask the user or suggest a new command -- do not work around it by editing YAML.
+**Always use the Joy CLI.** Never read or write files in `.joy/` directly -- not items, not config, not milestones. Use `joy ls`, `joy show`, `joy config`, etc. If a Joy command does not exist for an operation, ask the user or suggest a new command -- do not work around it by editing YAML.
 
 **Track status.** Run `joy start <ID>` before coding, `joy close <ID>` after committing. Never skip status tracking.
 

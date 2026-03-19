@@ -13,7 +13,7 @@ The user provides a natural language request related to product management. This
 
 ## Prerequisites
 
-Before doing anything, check if a Joy project exists by looking for a `.joy/` directory in the current working directory or its parents. If none exists, tell the user to run `joy init` first and stop.
+Before doing anything, run `joy config` to check if a Joy project exists and see its configuration. If it fails, tell the user to run `joy init` first and stop.
 
 ## Capabilities
 
@@ -74,7 +74,7 @@ Never skip steps 3 and 6.
 
 ## General rules
 
-- Always use the `joy` CLI. Do not write `.joy/items/*.yaml` files directly.
+- Always use the `joy` CLI. Never read or write files in `.joy/` directly.
 - All item titles, descriptions, and comments must be in English
 - Be concise. Joy is for developers who value speed.
 - Reference IDs precisely (e.g. JI-0001, JI-MS-01)
