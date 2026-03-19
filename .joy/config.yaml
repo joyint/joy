@@ -1,4 +1,8 @@
-version: 1
+agents:
+  architect:
+    interaction-level: 5
 output:
   color: auto
   emoji: true
+  fortune: false
+version: 1
