@@ -15,6 +15,21 @@ The user provides a natural language request related to product management. This
 
 Before doing anything, run `joy config` to check if a Joy project exists and see its configuration. If it fails, tell the user to run `joy init` first and stop.
 
+## First session check
+
+After confirming the project exists, check if the key documents have real content:
+
+1. Read `docs/dev/Vision.md` -- if it only contains HTML comments (`<!-- ... -->`) or template headings without content, it needs to be filled in
+2. Read `docs/dev/Architecture.md` -- same check
+3. Read `CONTRIBUTING.md` -- same check
+
+If any document is empty or template-only, tell the user:
+"I noticed your [Vision/Architecture/Contributing] document is still a template. Want me to help fill it in? I'll ask you a few questions and write the answers into the document."
+
+If the user agrees, read `.joy/ai/instructions/setup.md` for the checklists and work through them one question at a time.
+
+Do this check BEFORE showing the "What would you like to do?" prompt. This is the highest priority action on first use.
+
 ## Capabilities
 
 ### Viewing and navigating
