@@ -6,6 +6,7 @@ use std::io::Write;
 use std::path::Path;
 
 const INSTRUCTIONS_TEMPLATE: &str = include_str!("../../../../data/ai/instructions.md");
+const SETUP_INSTRUCTIONS: &str = include_str!("../../../../data/ai/instructions/setup.md");
 const SKILL_TEMPLATE: &str = include_str!("../../../../data/ai/skills/joy/SKILL.md");
 const VISION_TEMPLATE: &str = include_str!("../../../../data/ai/templates/Vision.md");
 const ARCHITECTURE_TEMPLATE: &str = include_str!("../../../../data/ai/templates/Architecture.md");
@@ -38,13 +39,8 @@ fn setup() -> anyhow::Result<()> {
 
     println!("Setting up AI integration...\n");
 
-    // Phase 1: Check documentation
     check_docs(&root)?;
-
-    // Phase 2: Copy AI templates
     copy_templates(&root)?;
-
-    // Phase 3: Detect and configure AI tools
     configure_tools(&root)?;
 
     println!("\nDone. AI tools can now use Joy in this project.");
@@ -117,14 +113,21 @@ fn copy_templates(root: &Path) -> anyhow::Result<()> {
     let ai_dir = root.join(".joy/ai");
     fs::create_dir_all(&ai_dir)?;
 
+    // instructions.md -- always update (Joy-owned)
     let instructions_path = ai_dir.join("instructions.md");
     fs::write(&instructions_path, INSTRUCTIONS_TEMPLATE)?;
     println!("  .joy/ai/instructions.md ... installed");
 
+    // instructions/setup.md -- always update (Joy-owned)
+    let setup_dir = ai_dir.join("instructions");
+    fs::create_dir_all(&setup_dir)?;
+    fs::write(setup_dir.join("setup.md"), SETUP_INSTRUCTIONS)?;
+    println!("  .joy/ai/instructions/setup.md ... installed");
+
+    // skills/joy/SKILL.md -- always update (Joy-owned)
     let skill_dir = ai_dir.join("skills/joy");
     fs::create_dir_all(&skill_dir)?;
-    let skill_path = skill_dir.join("SKILL.md");
-    fs::write(&skill_path, SKILL_TEMPLATE)?;
+    fs::write(skill_dir.join("SKILL.md"), SKILL_TEMPLATE)?;
     println!("  .joy/ai/skills/joy/SKILL.md ... installed");
 
     println!();
@@ -137,18 +140,24 @@ fn configure_tools(root: &Path) -> anyhow::Result<()> {
     let mut found_any = false;
 
     if which("claude") {
-        println!("  Claude Code (claude) ... found");
-        configure_claude(root)?;
+        print!("  Claude Code (claude) ... found. Configure? [Y/n] ");
+        if confirm_default_yes()? {
+            configure_claude(root)?;
+        }
         found_any = true;
     }
     if which("qwen-code") {
-        println!("  Qwen Code (qwen-code) ... found");
-        configure_qwen(root)?;
+        print!("  Qwen Code (qwen-code) ... found. Configure? [Y/n] ");
+        if confirm_default_yes()? {
+            configure_qwen(root)?;
+        }
         found_any = true;
     }
     if which("vibe") {
-        println!("  Mistral Vibe (vibe) ... found");
-        configure_vibe(root)?;
+        print!("  Mistral Vibe (vibe) ... found. Configure? [Y/n] ");
+        if confirm_default_yes()? {
+            configure_vibe(root)?;
+        }
         found_any = true;
     }
 
@@ -168,7 +177,7 @@ fn configure_claude(root: &Path) -> anyhow::Result<()> {
     let claude_dir = root.join(".claude");
     fs::create_dir_all(&claude_dir)?;
 
-    // Update or create CLAUDE.md with joy block
+    // Update or create CLAUDE.md with joy block (preserves user content)
     let claude_md = claude_dir.join("CLAUDE.md");
     update_with_joy_block(
         &claude_md,
@@ -177,9 +186,9 @@ fn configure_claude(root: &Path) -> anyhow::Result<()> {
          Read [.joy/ai/instructions.md](../.joy/ai/instructions.md) for AI collaboration rules.\n\n\
          Use the `/joy` skill for backlog work. Do not edit `.joy/items/*.yaml` files directly.",
     )?;
-    println!("    .claude/CLAUDE.md ... updated");
+    println!("    .claude/CLAUDE.md ... joy block updated");
 
-    // Copy skill
+    // Skill -- always update (Joy-owned)
     let skill_dir = claude_dir.join("skills/joy");
     fs::create_dir_all(&skill_dir)?;
     fs::write(skill_dir.join("SKILL.md"), SKILL_TEMPLATE)?;
@@ -192,7 +201,7 @@ fn configure_qwen(root: &Path) -> anyhow::Result<()> {
     let qwen_dir = root.join(".qwen");
     fs::create_dir_all(&qwen_dir)?;
 
-    // Update or create QWEN.md with joy block
+    // Update or create QWEN.md with joy block (preserves user content)
     let qwen_md = root.join("QWEN.md");
     update_with_joy_block(
         &qwen_md,
@@ -201,9 +210,9 @@ fn configure_qwen(root: &Path) -> anyhow::Result<()> {
          Read [.joy/ai/instructions.md](.joy/ai/instructions.md) for AI collaboration rules.\n\n\
          Use the `/joy` skill for backlog work. Do not edit `.joy/items/*.yaml` files directly.",
     )?;
-    println!("    QWEN.md ... updated");
+    println!("    QWEN.md ... joy block updated");
 
-    // Copy skill
+    // Skill -- always update (Joy-owned)
     let skill_dir = qwen_dir.join("skills/joy");
     fs::create_dir_all(&skill_dir)?;
     fs::write(skill_dir.join("SKILL.md"), SKILL_TEMPLATE)?;
@@ -216,7 +225,7 @@ fn configure_vibe(root: &Path) -> anyhow::Result<()> {
     let vibe_dir = root.join(".vibe");
     fs::create_dir_all(&vibe_dir)?;
 
-    // Copy skill to vibe skills directory
+    // Skill -- always update (Joy-owned)
     let skill_dir = vibe_dir.join("skills/joy");
     fs::create_dir_all(&skill_dir)?;
     fs::write(skill_dir.join("SKILL.md"), SKILL_TEMPLATE)?;
@@ -231,7 +240,7 @@ fn update_with_joy_block(path: &Path, content: &str) -> anyhow::Result<()> {
     if path.is_file() {
         let existing = fs::read_to_string(path)?;
         if existing.contains(JOY_BLOCK_START) && existing.contains(JOY_BLOCK_END) {
-            // Replace existing block
+            // Replace existing joy block, preserve everything else
             let start = existing.find(JOY_BLOCK_START).unwrap();
             let end = existing.find(JOY_BLOCK_END).unwrap() + JOY_BLOCK_END.len();
             let mut updated = String::new();
@@ -240,16 +249,24 @@ fn update_with_joy_block(path: &Path, content: &str) -> anyhow::Result<()> {
             updated.push_str(&existing[end..]);
             fs::write(path, updated)?;
         } else {
-            // Append block
+            // Append joy block to existing file
             let mut file = fs::OpenOptions::new().append(true).open(path)?;
             writeln!(file, "\n{}", block)?;
         }
     } else {
-        // Create new file
+        // Create new file with joy block
         fs::write(path, format!("{}\n", block))?;
     }
 
     Ok(())
+}
+
+fn confirm_default_yes() -> anyhow::Result<bool> {
+    std::io::stdout().flush()?;
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+    let trimmed = input.trim();
+    Ok(trimmed.is_empty() || trimmed.eq_ignore_ascii_case("y"))
 }
 
 fn which(binary: &str) -> bool {
