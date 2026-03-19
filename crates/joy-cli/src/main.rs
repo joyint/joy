@@ -77,6 +77,8 @@ enum Commands {
     Release(commands::release::ReleaseArgs),
     /// Show the board (default when no command given)
     Board(BoardArgs),
+    /// Show current configuration
+    Config,
     /// AI tool integration
     Ai(commands::ai::AiArgs),
 }
@@ -150,6 +152,7 @@ fn main() -> anyhow::Result<()> {
         Some(Commands::Find(args)) => commands::find::run(args),
         Some(Commands::Release(args)) => commands::release::run(args),
         Some(Commands::Board(args)) => commands::board::run(args),
+        Some(Commands::Config) => commands::config::run(),
         Some(Commands::Ai(args)) => commands::ai::run(args),
         None => commands::board::run(BoardArgs { all: false }),
     };
