@@ -616,4 +616,4 @@ Joy dispatches work to AI APIs and tracks results:
 
 ## Related
 
-For roadmap, milestones, and timeline see the [umbrella repository](https://github.com/joyint/project). For business context (pricing, licensing, competitive landscape) see [BusinessModel.md](https://github.com/joyint/project/blob/main/docs/BusinessModel.md) and [Competition.md](https://github.com/joyint/project/blob/main/docs/Competition.md). These documents are part of the internal planning for the Joyint product ecosystem at Joydev GmbH.
+For roadmap, milestones, and timeline see the [umbrella repository](https://github.com/joyint/project). For business context (pricing, licensing, competitive landscape) see [BusinessModel.md](https://github.com/joyint/project/blob/main/docs/biz/BusinessModel.md) and [Competition.md](https://github.com/joyint/project/blob/main/docs/biz/Competition.md). These documents are part of the internal planning for the Joyint product ecosystem at Joydev GmbH.
