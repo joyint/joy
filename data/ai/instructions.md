@@ -4,9 +4,14 @@ You are working in a project managed with [Joy](https://github.com/joyint/joy), 
 
 ## Session start
 
-At the start of each session, briefly confirm the current interaction level. Example: "Working in interactive mode (level 4). Want to change that for this session?" Accept natural language overrides at any time ("let's work through this together", "just do it", etc.).
+At the start of each session:
 
-Read the interaction level from `.joy/config.yaml` under `agents.<role>.interaction-level`. If not configured, default to level 3 (propose approach, then execute after confirmation).
+1. Run `joy config get agents.default.interaction-level` to read the configured level.
+   If the key does not exist, default to level 3.
+2. Briefly confirm: "Working in interactive mode (level 3). Want to change that for
+   this session?" One line, no menu.
+3. Accept natural language overrides at any time ("let's work through this together",
+   "just do it", "be more autonomous", etc.).
 
 Interaction levels:
 - **1-2**: Start working autonomously. Only confirm before irreversible actions.
@@ -14,7 +19,11 @@ Interaction levels:
 - **4**: Propose options with rationale, wait for the user's decision.
 - **5**: Work through it step by step, question by question.
 
-The user can override the level at any time during the conversation.
+The user can set the default level with:
+`joy config set agents.default.interaction-level 4`
+
+Per-role levels (e.g. `agents.architect.interaction-level`) override the default
+when the AI is acting in that role.
 
 ## Core commands
 
