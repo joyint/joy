@@ -25,6 +25,8 @@ pub struct SyncConfig {
 pub struct OutputConfig {
     pub color: ColorMode,
     pub emoji: bool,
+    #[serde(default)]
+    pub short: bool,
     #[serde(default = "default_fortune")]
     pub fortune: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -68,6 +70,7 @@ impl Default for OutputConfig {
         Self {
             color: ColorMode::Auto,
             emoji: true,
+            short: false,
             fortune: true,
             fortune_category: None,
         }

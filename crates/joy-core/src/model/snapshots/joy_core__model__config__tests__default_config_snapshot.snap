@@ -6,4 +6,5 @@ version: 1
 output:
   color: auto
   emoji: true
+  short: false
   fortune: true
