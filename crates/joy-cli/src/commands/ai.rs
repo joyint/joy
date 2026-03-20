@@ -341,7 +341,9 @@ fn configure_copilot(root: &Path) -> anyhow::Result<()> {
     )?;
     println!("    .github/copilot-instructions.md ... joy block updated");
 
-    println!("    Note: Copilot does not support persistent per-command permissions in config files.");
+    println!(
+        "    Note: Copilot does not support persistent per-command permissions in config files."
+    );
     println!("    Use CLI flags to allow joy: gh copilot --allow-tool='shell(joy:*)'");
 
     Ok(())
