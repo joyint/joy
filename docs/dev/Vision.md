@@ -76,7 +76,7 @@ id: JOY-002A
 title: Payment Integration
 type: story           # epic | story | task | bug | rework | decision | idea
 status: new           # new | open | in-progress | review | closed | deferred
-priority: high        # low | medium | high | critical
+priority: high        # low | medium | high | critical | extreme
 parent: JOY-0001       # parent item (null for top-level items)
 assignee: null        # e-mail address or agent:role@joy
 deps:

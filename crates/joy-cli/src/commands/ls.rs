@@ -26,7 +26,7 @@ pub struct LsArgs {
     #[arg(long)]
     status: Option<String>,
 
-    /// Filter by priority: low, medium, high, critical
+    /// Filter by priority: low, medium, high, critical, extreme
     #[arg(long)]
     priority: Option<String>,
 
@@ -314,21 +314,74 @@ fn truncate_title(s: &str, max_len: usize) -> String {
 fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
     let term_width = terminal_width();
 
-    // Fixed column widths (including trailing space as separator)
-    // ID(10) + sp + TYPE(12) + sp + STATUS(13) + sp + PRIORITY(10) + sp + SIZE(4) + sp + TITLE
-    let fixed_width: usize = 10
+    // Pass 1: compute dynamic column widths from data
+    let col_raw = |header: &str, f: &dyn Fn(&Item) -> String| -> usize {
+        items
+            .iter()
+            .map(|i| display_width(&f(i)))
+            .max()
+            .unwrap_or(0)
+            .max(display_width(header))
+    };
+
+    let w_id = col_raw("ID", &|i| i.id.clone());
+    let w_type = col_raw("TYPE", &|i| {
+        format!(
+            "{}{}",
+            color::item_type_indicator(&i.item_type),
+            i.item_type
+        )
+    });
+    let w_status = col_raw("STATUS", &|i| {
+        format!("{}{}", color::status_indicator(&i.status), i.status)
+    });
+    let w_prio = col_raw("PRIORITY", &|i| {
+        format!("{}{}", color::priority_indicator(&i.priority), i.priority)
+    });
+    let w_size = col_raw("SIZE", &|i| {
+        i.size.map(|s| s.to_string()).unwrap_or_else(|| " ".into())
+    });
+
+    let w_parent = if extras.parent {
+        col_raw("PARENT", &|i| {
+            i.parent.as_deref().unwrap_or("-").to_string()
+        })
+    } else {
+        0
+    };
+    let w_ms = if extras.milestone {
+        col_raw("MS", &|i| match i.milestone.as_deref() {
+            Some(ms) => ms.to_string(),
+            None => match effective_milestone(i, all_items) {
+                Some(ms) => format!("{ms}*"),
+                None => "-".to_string(),
+            },
+        })
+    } else {
+        0
+    };
+    let w_assignee = if extras.assignee {
+        col_raw("ASSIGNEE", &|i| {
+            i.assignee.as_deref().unwrap_or("-").to_string()
+        })
+    } else {
+        0
+    };
+
+    // Total fixed width (each column + 1 space separator)
+    let fixed_width = w_id
         + 1
-        + 12
+        + w_type
         + 1
-        + 13
+        + w_status
         + 1
-        + 10
+        + w_prio
         + 1
-        + 4
+        + w_size
         + 1
-        + if extras.parent { 10 + 1 } else { 0 }
-        + if extras.milestone { 8 + 1 } else { 0 }
-        + if extras.assignee { 24 + 1 } else { 0 };
+        + if extras.parent { w_parent + 1 } else { 0 }
+        + if extras.milestone { w_ms + 1 } else { 0 }
+        + if extras.assignee { w_assignee + 1 } else { 0 };
 
     let min_title_width = 20;
     let title_width = if term_width > fixed_width {
@@ -337,23 +390,32 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
         min_title_width
     };
 
-    // Build header
+    // Pass 2: print header
     let mut header = format!(
-        "{:<10} {:<12} {:<13} {:<10} {:<4}",
-        color::heading("ID"),
-        color::heading("TYPE"),
-        color::heading("STATUS"),
-        color::heading("PRIORITY"),
-        color::heading("SIZE"),
+        "{} {} {} {} {}",
+        pad_colored(&color::heading("ID"), "ID", w_id),
+        pad_colored(&color::heading("TYPE"), "TYPE", w_type),
+        pad_colored(&color::heading("STATUS"), "STATUS", w_status),
+        pad_colored(&color::heading("PRIORITY"), "PRIORITY", w_prio),
+        pad_colored(&color::heading("SIZE"), "SIZE", w_size),
     );
     if extras.parent {
-        header.push_str(&format!(" {:<10}", color::heading("PARENT")));
+        header.push_str(&format!(
+            " {}",
+            pad_colored(&color::heading("PARENT"), "PARENT", w_parent)
+        ));
     }
     if extras.milestone {
-        header.push_str(&format!(" {:<8}", color::heading("MS")));
+        header.push_str(&format!(
+            " {}",
+            pad_colored(&color::heading("MS"), "MS", w_ms)
+        ));
     }
     if extras.assignee {
-        header.push_str(&format!(" {:<24}", color::heading("ASSIGNEE")));
+        header.push_str(&format!(
+            " {}",
+            pad_colored(&color::heading("ASSIGNEE"), "ASSIGNEE", w_assignee)
+        ));
     }
     header.push_str(&format!(" {}", color::heading("TITLE")));
     println!("{header}");
@@ -361,6 +423,7 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
     let sep_len = term_width.min(fixed_width + title_width);
     println!("{}", color::label(&"-".repeat(sep_len)));
 
+    // Pass 2: print rows
     for item in items {
         let blocked_str = if item.is_blocked_by(all_items) {
             " [blocked]".to_string()
@@ -368,11 +431,9 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
             String::new()
         };
 
-        // Build the raw title with blocked suffix, then truncate
         let raw_title = format!("{}{}", item.title, blocked_str);
         let display_title = truncate_title(&raw_title, title_width);
 
-        // Re-apply color to blocked suffix if present and not truncated
         let colored_title = if !blocked_str.is_empty() && display_title.ends_with("[blocked]") {
             let prefix_len = display_title.len() - "[blocked]".len();
             let prefix = &display_title[..prefix_len];
@@ -386,10 +447,12 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
         let type_str = format!("{}{}", type_emoji, color::item_type(&item.item_type));
         let status_emoji = color::status_indicator(&item.status);
         let status_str = format!("{}{}", status_emoji, color::status(&item.status));
-        let priority_str = color::priority(&item.priority);
+        let priority_emoji = color::priority_indicator(&item.priority);
+        let priority_str = format!("{}{}", priority_emoji, color::priority(&item.priority));
 
         let type_raw = format!("{}{}", type_emoji, item.item_type);
         let status_raw = format!("{}{}", status_emoji, item.status);
+        let priority_raw = format!("{}{}", priority_emoji, item.priority);
 
         let size_str = color::size_indicator(item.size);
         let size_raw = item
@@ -399,18 +462,18 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
 
         let mut line = format!(
             "{} {} {} {} {}",
-            pad_colored(&id_str, &item.id, 10),
-            pad_colored(&type_str, &type_raw, 12),
-            pad_colored(&status_str, &status_raw, 13),
-            pad_colored(&priority_str, &item.priority.to_string(), 10),
-            pad_colored(&size_str, &size_raw, 4),
+            pad_colored(&id_str, &item.id, w_id),
+            pad_colored(&type_str, &type_raw, w_type),
+            pad_colored(&status_str, &status_raw, w_status),
+            pad_colored(&priority_str, &priority_raw, w_prio),
+            pad_colored(&size_str, &size_raw, w_size),
         );
 
         if extras.parent {
             let parent_val = item.parent.as_deref().unwrap_or("-");
             line.push_str(&format!(
                 " {}",
-                pad_colored(&color::id(parent_val), parent_val, 10)
+                pad_colored(&color::id(parent_val), parent_val, w_parent)
             ));
         }
         if extras.milestone {
@@ -428,17 +491,15 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
             };
             line.push_str(&format!(
                 " {}",
-                pad_colored(&color::id(&display), &display, 8)
+                pad_colored(&color::id(&display), &display, w_ms)
             ));
         }
         if extras.assignee {
             let assignee_val = item.assignee.as_deref().unwrap_or("-");
-            let truncated = if assignee_val.len() > 24 {
-                format!("{}...", &assignee_val[..21])
-            } else {
-                assignee_val.to_string()
-            };
-            line.push_str(&format!(" {:<24}", truncated));
+            line.push_str(&format!(
+                " {}",
+                pad_colored(assignee_val, assignee_val, w_assignee)
+            ));
         }
 
         line.push_str(&format!(" {}", colored_title));

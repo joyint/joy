@@ -19,7 +19,7 @@ pub struct EditArgs {
     #[arg(short, long)]
     title: Option<String>,
 
-    /// New priority: low, medium, high, critical
+    /// New priority: low, medium, high, critical, extreme
     #[arg(short, long)]
     priority: Option<String>,
 
