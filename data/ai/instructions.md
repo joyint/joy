@@ -55,7 +55,7 @@ Size scale (1-7): 1=trivial, 2=small, 3=medium, 4=large, 5=major, 6=heavy, 7=mas
 
 **Comment your plan.** Before implementing a backlog item, comment the planned solution into the item using `joy comment`. Confirm with the user before proceeding.
 
-**English only.** All item titles, descriptions, and comments must be in English, regardless of the conversation language.
+**Use the project language.** Run `joy project` to read the configured language (default: `en`). This language strictly governs all written artifacts: Joy item titles, descriptions, comments, commit messages, and documentation. Never deviate from it, even if the conversation switches to another language. For interactive communication, start in the project language but follow the user's lead if they switch.
 
 **Titles are short.** Max 60 characters, actionable ("Add X", "Fix Y", not "X should be added").
 

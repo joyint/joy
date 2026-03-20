@@ -96,6 +96,6 @@ Never skip steps 3 and 6.
 ## General rules
 
 - Always use the `joy` CLI. Never read or write files in `.joy/` directly.
-- All item titles, descriptions, and comments must be in English
+- All written artifacts (titles, descriptions, comments, docs) must use the project language from `joy project` -- never deviate, even if the conversation is in another language
 - Be concise. Joy is for developers who value speed.
 - Reference IDs precisely (e.g. JI-0001, JI-MS-01)
