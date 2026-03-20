@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
+use std::collections::BTreeMap;
+
 use crate::fortune::Category;
 use serde::{Deserialize, Serialize};
 
@@ -13,6 +15,34 @@ pub struct Config {
     pub output: OutputConfig,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ai: Option<AiConfig>,
+    #[serde(default)]
+    pub agents: AgentsConfig,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct AgentsConfig {
+    #[serde(default)]
+    pub default: AgentRoleConfig,
+    #[serde(flatten)]
+    pub roles: BTreeMap<String, AgentRoleConfig>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AgentRoleConfig {
+    #[serde(rename = "interaction-level", default = "default_interaction_level")]
+    pub interaction_level: u8,
+}
+
+impl Default for AgentRoleConfig {
+    fn default() -> Self {
+        Self {
+            interaction_level: default_interaction_level(),
+        }
+    }
+}
+
+fn default_interaction_level() -> u8 {
+    3
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -61,6 +91,7 @@ impl Default for Config {
             sync: None,
             output: OutputConfig::default(),
             ai: None,
+            agents: AgentsConfig::default(),
         }
     }
 }
