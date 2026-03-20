@@ -48,10 +48,11 @@ MISSION 1: SETTING UP BASE CAMP (init)
     Joy creates a .joy/ directory inside your repo:
 
         .joy/
-        +-- project.yaml       Project name, acronym, settings
-        +-- config.yaml        Local configuration
-        +-- items/             All your items live here (YAML files)
-        +-- milestones/        Milestone definitions
+        +-- project.yaml           Project name, acronym, settings
+        +-- config.defaults.yaml   Project defaults (committed)
+        +-- config.yaml            Personal overrides (gitignored)
+        +-- items/                 All your items live here (YAML files)
+        +-- milestones/            Milestone definitions
 
     Everything is plain text, versioned with git. No database, no cloud
     dependency. If your hard drive survives, your project plan survives.
@@ -330,8 +331,15 @@ MISSION 9: ADJUSTING THE RULES (project, config)
 
         joy config
 
-    The config lives in .joy/config.yaml and controls output settings,
-    AI integration, and future features like sync and automation.
+    Joy uses layered configuration:
+
+        .joy/config.defaults.yaml   Project defaults (committed, shared)
+        ~/.config/joy/config.yaml   Personal global settings (all projects)
+        .joy/config.yaml            Personal project overrides (gitignored)
+
+    Each layer overrides the one below. joy config set writes to your
+    personal .joy/config.yaml -- your preferences never affect teammates.
+    Project defaults in config.defaults.yaml set the shared baseline.
 
     To add workflow rules, edit .joy/project.yaml:
 
