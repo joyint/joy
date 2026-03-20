@@ -1,0 +1,51 @@
+id: JOY-000F
+title: 'Config layering: separate project and personal settings'
+type: story
+status: in-progress
+priority: high
+size: 5
+created: '2026-03-20T19:45:12.942915720Z'
+updated: '2026-03-20T19:56:02.475229494Z'
+comments:
+- author: horst.schwarz@joydev.com
+  date: '2026-03-20T19:45:25.306267958Z'
+  text: |-
+    Problem: joy config set writes to .joy/config.yaml which is committed to Git. Personal preferences (output.short, output.emoji, output.fortune) end up affecting all team members. A developer changed short=true in the jot repo and it would have been pushed to everyone.
+
+    Prior art:
+    - git: .git/config (local, not pushed) vs ~/.gitconfig (global)
+    - env files: .env (committed) vs .env.local (gitignored)
+
+    Options discussed:
+    1. .joy/config.local.yaml -- gitignored, personal overrides. joy init adds it to .gitignore automatically.
+    2. joy config set --global -- writes to ~/.config/joy/config.yaml instead of project config
+    3. Key categorization -- some keys are inherently personal (output.*), some are project-wide (project.prefix, agents.*). joy config set could warn or auto-route based on category.
+
+    Fallback chain should be: .joy/config.local.yaml > .joy/config.yaml > ~/.config/joy/config.yaml > code defaults.
+
+    Related to JOY-000A (config defaults) and JOY-0002 (joy project get/set). This story covers the layering concept, the others cover specific aspects.
+- author: horst.schwarz@joydev.com
+  date: '2026-03-20T19:55:44.437046732Z'
+  text: |-
+    Final concept:
+
+    Four config layers, highest priority first:
+    1. .joy/config.yaml -- personal per-project settings, gitignored. Created by joy config set on first use.
+    2. ~/.config/joy/config.yaml -- personal global settings, cross-project. joy config set writes here if it exists and no .joy/ directory is present.
+    3. .joy/config.defaults.yaml -- committed project defaults, optional. Team can set shared baseline (e.g. interaction level). Whoever changes this knows what they are doing.
+    4. Code defaults -- hardcoded in joy binary, always present.
+
+    Fallback: 1 > 2 > 3 > 4. Only the delta is stored at each level.
+
+    Changes needed:
+    - joy init: add .joy/config.yaml to .gitignore
+    - joy config set: write to .joy/config.yaml (create if missing). If ~/.config/joy/config.yaml exists and no .joy/ dir, write there.
+    - joy config get: merge all layers, return resolved value
+    - joy config: show resolved config with indication of source per value (optional, nice to have)
+    - Rename current committed .joy/config.yaml to .joy/config.defaults.yaml in existing projects (migration)
+
+    What stays unchanged:
+    - .joy/project.yaml -- committed, project-wide. Managed by joy project set/get (JOY-0002).
+    - No /etc/joy/ level -- not needed until system packages exist.
+
+    Supersedes earlier discussion about --global/--local flags and config.local.yaml.

@@ -112,6 +112,13 @@ struct ShortcutArgs {
 fn main() -> anyhow::Result<()> {
     clap_complete::CompleteEnv::with_factory(Cli::command).complete();
 
+    // Auto-migrate old single-file config to layered scheme
+    if let Some(root) =
+        joy_core::store::find_project_root(&std::env::current_dir().unwrap_or_default())
+    {
+        let _ = joy_core::store::migrate_config_if_needed(&root);
+    }
+
     let mut config = joy_core::store::load_config();
     let cli = Cli::parse();
 

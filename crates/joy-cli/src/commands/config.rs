@@ -37,24 +37,23 @@ pub fn run(args: ConfigArgs) -> anyhow::Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd)
         .ok_or_else(|| anyhow::anyhow!("No Joy project found (run `joy init` first)"))?;
-    let config_path = store::joy_dir(&root).join(store::CONFIG_FILE);
 
     match args.command {
-        None => show_all(&config_path),
-        Some(ConfigCommand::Get(a)) => get_value(&config_path, &a.key),
-        Some(ConfigCommand::Set(a)) => set_value(&config_path, &a.key, &a.value),
+        None => show_all(),
+        Some(ConfigCommand::Get(a)) => get_value(&a.key),
+        Some(ConfigCommand::Set(a)) => set_value(&root, &a.key, &a.value),
     }
 }
 
-fn show_all(config_path: &std::path::Path) -> anyhow::Result<()> {
-    let content = fs::read_to_string(config_path)?;
-    print!("{content}");
+fn show_all() -> anyhow::Result<()> {
+    let value = store::load_config_value();
+    let yaml = serde_yml::to_string(&value)?;
+    print!("{yaml}");
     Ok(())
 }
 
-fn get_value(config_path: &std::path::Path, key: &str) -> anyhow::Result<()> {
-    let content = fs::read_to_string(config_path)?;
-    let value: serde_json::Value = serde_yml::from_str(&content)?;
+fn get_value(key: &str) -> anyhow::Result<()> {
+    let value = store::load_config_value();
 
     let Some(result) = navigate(&value, key) else {
         // Exit silently with code 1 -- callers check the exit code
@@ -75,15 +74,22 @@ fn get_value(config_path: &std::path::Path, key: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn set_value(config_path: &std::path::Path, key: &str, raw_value: &str) -> anyhow::Result<()> {
-    let content = fs::read_to_string(config_path)?;
-    let mut value: serde_json::Value = serde_yml::from_str(&content)?;
+fn set_value(root: &std::path::Path, key: &str, raw_value: &str) -> anyhow::Result<()> {
+    let local_path = store::local_config_path(root);
+
+    // Read existing local override file, or start with empty object
+    let mut value: serde_json::Value = if local_path.is_file() {
+        let content = fs::read_to_string(&local_path)?;
+        serde_yml::from_str(&content)?
+    } else {
+        serde_json::json!({})
+    };
 
     let parsed = parse_value(raw_value);
     set_nested(&mut value, key, parsed)?;
 
     let yaml = serde_yml::to_string(&value)?;
-    fs::write(config_path, yaml)?;
+    fs::write(&local_path, yaml)?;
 
     println!("{} = {}", key, raw_value);
     Ok(())
