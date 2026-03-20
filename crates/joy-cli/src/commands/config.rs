@@ -47,7 +47,7 @@ pub fn run(args: ConfigArgs) -> anyhow::Result<()> {
 
 fn show_all() -> anyhow::Result<()> {
     let value = store::load_config_value();
-    let yaml = serde_yml::to_string(&value)?;
+    let yaml = serde_yaml_ng::to_string(&value)?;
     print!("{yaml}");
     Ok(())
 }
@@ -66,7 +66,7 @@ fn get_value(key: &str) -> anyhow::Result<()> {
         serde_json::Value::Number(n) => println!("{n}"),
         serde_json::Value::Null => println!("null"),
         other => {
-            let yaml = serde_yml::to_string(&other)?;
+            let yaml = serde_yaml_ng::to_string(&other)?;
             print!("{yaml}");
         }
     }
@@ -80,7 +80,7 @@ fn set_value(root: &std::path::Path, key: &str, raw_value: &str) -> anyhow::Resu
     // Read existing local override file, or start with empty object
     let mut value: serde_json::Value = if local_path.is_file() {
         let content = fs::read_to_string(&local_path)?;
-        serde_yml::from_str(&content)?
+        serde_yaml_ng::from_str(&content)?
     } else {
         serde_json::json!({})
     };
@@ -88,7 +88,7 @@ fn set_value(root: &std::path::Path, key: &str, raw_value: &str) -> anyhow::Resu
     let parsed = parse_value(raw_value);
     set_nested(&mut value, key, parsed)?;
 
-    let yaml = serde_yml::to_string(&value)?;
+    let yaml = serde_yaml_ng::to_string(&value)?;
     fs::write(&local_path, yaml)?;
 
     println!("{} = {}", key, raw_value);

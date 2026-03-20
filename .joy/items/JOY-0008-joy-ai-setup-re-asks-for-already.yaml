@@ -4,9 +4,9 @@ type: bug
 status: new
 priority: medium
 size: 2
-created: '2026-03-20T17:06:31.657193623Z'
-updated: '2026-03-20T17:06:37.467995451Z'
+created: 2026-03-20T17:06:31.657193623Z
+updated: 2026-03-20T17:06:37.467995451Z
 comments:
 - author: horst.schwarz@joydev.com
-  date: '2026-03-20T17:06:37.467994750Z'
+  date: 2026-03-20T17:06:37.467994750Z
   text: 'On re-run, joy ai setup asks ''Configure? [Y/n]'' again for tools that are already set up. Expected: show ''configured'' and silently update joy-owned files (skills, permissions). Only prompt for newly detected, unconfigured tools. A --force flag could override to reconfigure everything.'

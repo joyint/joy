@@ -115,15 +115,15 @@ mod tests {
     #[test]
     fn default_config_roundtrip() {
         let config = Config::default();
-        let yaml = serde_yml::to_string(&config).unwrap();
-        let parsed: Config = serde_yml::from_str(&yaml).unwrap();
+        let yaml = serde_yaml_ng::to_string(&config).unwrap();
+        let parsed: Config = serde_yaml_ng::from_str(&yaml).unwrap();
         assert_eq!(config, parsed);
     }
 
     #[test]
     fn default_config_snapshot() {
         let config = Config::default();
-        let yaml = serde_yml::to_string(&config).unwrap();
+        let yaml = serde_yaml_ng::to_string(&config).unwrap();
         insta::assert_snapshot!(yaml);
     }
 }

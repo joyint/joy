@@ -3,9 +3,9 @@ title: Automated validation for CLI-testable steps in milestone checklists
 type: idea
 status: new
 priority: low
-created: '2026-03-20T17:11:22.428525727Z'
-updated: '2026-03-20T17:13:17.259353893Z'
+created: 2026-03-20T17:11:22.428525727Z
+updated: 2026-03-20T17:13:17.259353893Z
 comments:
 - author: horst.schwarz@joydev.com
-  date: '2026-03-20T17:13:17.259353365Z'
+  date: 2026-03-20T17:13:17.259353365Z
   text: 'Needs careful consideration. Manual validation is highly valuable because: (1) the tester experiences the product end-to-end as a real user, (2) unexpected issues surface that no checklist anticipates (we found multiple bugs and UX improvements during our first manual validation run), (3) it forces the responsible person to actually use their own solution. Automation should only cover the mechanical parts (does the command run, does the file exist) and never replace the manual walkthrough. The goal is to reduce tedium, not to skip the experience.'

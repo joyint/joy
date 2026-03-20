@@ -41,11 +41,11 @@ pub enum JoyError {
     #[error("{path}: {source}")]
     YamlParse {
         path: PathBuf,
-        source: serde_yml::Error,
+        source: serde_yaml_ng::Error,
     },
 
     #[error("YAML error: {0}")]
-    Yaml(#[from] serde_yml::Error),
+    Yaml(#[from] serde_yaml_ng::Error),
 
     #[error("git error: {0}")]
     Git(String),

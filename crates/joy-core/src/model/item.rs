@@ -258,8 +258,8 @@ mod tests {
         item.description = Some("Implement the login page.".into());
         item.tags = vec!["frontend".into()];
 
-        let yaml = serde_yml::to_string(&item).unwrap();
-        let parsed: Item = serde_yml::from_str(&yaml).unwrap();
+        let yaml = serde_yaml_ng::to_string(&item).unwrap();
+        let parsed: Item = serde_yaml_ng::from_str(&yaml).unwrap();
         assert_eq!(item, parsed);
     }
 
@@ -282,7 +282,7 @@ mod tests {
         item.description =
             Some("Integrate Stripe for payment processing.\nMust support EUR and USD.\n".into());
 
-        let yaml = serde_yml::to_string(&item).unwrap();
+        let yaml = serde_yaml_ng::to_string(&item).unwrap();
         insta::assert_snapshot!(yaml);
     }
 

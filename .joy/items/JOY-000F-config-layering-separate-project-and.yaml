@@ -4,11 +4,11 @@ type: story
 status: closed
 priority: high
 size: 5
-created: '2026-03-20T19:45:12.942915720Z'
-updated: '2026-03-20T20:02:08.601153556Z'
+created: 2026-03-20T19:45:12.942915720Z
+updated: 2026-03-20T20:02:08.601153556Z
 comments:
 - author: horst.schwarz@joydev.com
-  date: '2026-03-20T19:45:25.306267958Z'
+  date: 2026-03-20T19:45:25.306267958Z
   text: |-
     Problem: joy config set writes to .joy/config.yaml which is committed to Git. Personal preferences (output.short, output.emoji, output.fortune) end up affecting all team members. A developer changed short=true in the jot repo and it would have been pushed to everyone.
 
@@ -25,7 +25,7 @@ comments:
 
     Related to JOY-000A (config defaults) and JOY-0002 (joy project get/set). This story covers the layering concept, the others cover specific aspects.
 - author: horst.schwarz@joydev.com
-  date: '2026-03-20T19:55:44.437046732Z'
+  date: 2026-03-20T19:55:44.437046732Z
   text: |-
     Final concept:
 
@@ -50,5 +50,5 @@ comments:
 
     Supersedes earlier discussion about --global/--local flags and config.local.yaml.
 - author: horst.schwarz@joydev.com
-  date: '2026-03-20T20:02:08.596853076Z'
+  date: 2026-03-20T20:02:08.596853076Z
   text: Implemented. Config layering with four levels, auto-migration for existing projects, joy config set writes delta to gitignored .joy/config.yaml.
