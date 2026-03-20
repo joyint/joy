@@ -267,6 +267,46 @@ fn configure_qwen(root: &Path) -> anyhow::Result<()> {
     fs::write(skill_dir.join("SKILL.md"), SKILL_TEMPLATE)?;
     println!("    .qwen/skills/joy/SKILL.md ... installed");
 
+    // Permissions -- allow joy and jot commands without prompting
+    update_qwen_permissions(root)?;
+
+    Ok(())
+}
+
+fn update_qwen_permissions(root: &Path) -> anyhow::Result<()> {
+    let settings_path = root.join(".qwen/settings.json");
+
+    let mut settings: serde_json::Value = if settings_path.is_file() {
+        let content = fs::read_to_string(&settings_path)?;
+        serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    // Ensure tools.allowed array exists and contains joy/jot
+    let tools = settings
+        .as_object_mut()
+        .unwrap()
+        .entry("tools")
+        .or_insert_with(|| serde_json::json!({}));
+    let allowed = tools
+        .as_object_mut()
+        .unwrap()
+        .entry("allowed")
+        .or_insert_with(|| serde_json::json!([]));
+
+    let allowed_arr = allowed.as_array_mut().unwrap();
+
+    for perm in ["run_shell_command(joy)", "run_shell_command(jot)"] {
+        if !allowed_arr.iter().any(|v| v.as_str() == Some(perm)) {
+            allowed_arr.push(serde_json::json!(perm));
+        }
+    }
+
+    let json = serde_json::to_string_pretty(&settings)?;
+    fs::write(&settings_path, format!("{json}\n"))?;
+    println!("    .qwen/settings.json ... joy/jot permissions added");
+
     Ok(())
 }
 
@@ -279,6 +319,9 @@ fn configure_vibe(root: &Path) -> anyhow::Result<()> {
     fs::create_dir_all(&skill_dir)?;
     fs::write(skill_dir.join("SKILL.md"), SKILL_TEMPLATE)?;
     println!("    .vibe/skills/joy/SKILL.md ... installed");
+
+    println!("    Note: Vibe does not support per-command permissions.");
+    println!("    To auto-allow all shell commands: set [tools.bash] permission = \"always\" in .vibe/config.toml");
 
     Ok(())
 }
@@ -297,6 +340,9 @@ fn configure_copilot(root: &Path) -> anyhow::Result<()> {
          Use Joy CLI commands for backlog work. Do not edit `.joy/items/*.yaml` files directly.",
     )?;
     println!("    .github/copilot-instructions.md ... joy block updated");
+
+    println!("    Note: Copilot does not support persistent per-command permissions in config files.");
+    println!("    Use CLI flags to allow joy: gh copilot --allow-tool='shell(joy:*)'");
 
     Ok(())
 }
