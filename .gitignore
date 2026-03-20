@@ -26,3 +26,4 @@ Thumbs.db
 .vibe/
 QWEN.md
 .github/copilot-instructions.md
+.joy/config.yaml

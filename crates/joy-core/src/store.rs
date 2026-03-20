@@ -160,53 +160,6 @@ pub fn load_config_value() -> serde_json::Value {
     merged
 }
 
-/// Migrate old single-file config to the layered scheme.
-///
-/// If `.joy/config.yaml` exists but `.joy/config.defaults.yaml` does not,
-/// rename the former to the latter.
-pub fn migrate_config_if_needed(root: &Path) -> Result<(), JoyError> {
-    let local = local_config_path(root);
-    let defaults = defaults_config_path(root);
-
-    if local.is_file() && !defaults.is_file() {
-        std::fs::rename(&local, &defaults).map_err(|e| JoyError::WriteFile {
-            path: defaults,
-            source: e,
-        })?;
-        // Ensure .joy/config.yaml is gitignored after migration
-        ensure_gitignore_entry(root, ".joy/config.yaml")?;
-    }
-    Ok(())
-}
-
-/// Add a single entry to .gitignore if not already present.
-fn ensure_gitignore_entry(root: &Path, entry: &str) -> Result<(), JoyError> {
-    let gitignore_path = root.join(".gitignore");
-    let mut content = if gitignore_path.is_file() {
-        std::fs::read_to_string(&gitignore_path).map_err(|e| JoyError::ReadFile {
-            path: gitignore_path.clone(),
-            source: e,
-        })?
-    } else {
-        String::new()
-    };
-
-    if content.lines().any(|line| line.trim() == entry) {
-        return Ok(());
-    }
-
-    if !content.is_empty() && !content.ends_with('\n') {
-        content.push('\n');
-    }
-    content.push_str(entry);
-    content.push('\n');
-
-    std::fs::write(&gitignore_path, &content).map_err(|e| JoyError::WriteFile {
-        path: gitignore_path,
-        source: e,
-    })
-}
-
 pub fn read_yaml<T: DeserializeOwned>(path: &Path) -> Result<T, JoyError> {
     let content = std::fs::read_to_string(path).map_err(|e| JoyError::ReadFile {
         path: path.to_path_buf(),
@@ -288,33 +241,5 @@ mod tests {
         let overlay = serde_json::json!({"a": [3]});
         deep_merge(&mut base, &overlay);
         assert_eq!(base, serde_json::json!({"a": [3]}));
-    }
-
-    #[test]
-    fn migrate_renames_config() {
-        let dir = tempdir().unwrap();
-        let joy = dir.path().join(JOY_DIR);
-        std::fs::create_dir_all(&joy).unwrap();
-        std::fs::write(joy.join(CONFIG_FILE), "version: 1\n").unwrap();
-
-        migrate_config_if_needed(dir.path()).unwrap();
-
-        assert!(!joy.join(CONFIG_FILE).is_file());
-        assert!(joy.join(CONFIG_DEFAULTS_FILE).is_file());
-    }
-
-    #[test]
-    fn migrate_noop_when_defaults_exists() {
-        let dir = tempdir().unwrap();
-        let joy = dir.path().join(JOY_DIR);
-        std::fs::create_dir_all(&joy).unwrap();
-        std::fs::write(joy.join(CONFIG_FILE), "version: 1\n").unwrap();
-        std::fs::write(joy.join(CONFIG_DEFAULTS_FILE), "version: 1\n").unwrap();
-
-        migrate_config_if_needed(dir.path()).unwrap();
-
-        // Both files should still exist
-        assert!(joy.join(CONFIG_FILE).is_file());
-        assert!(joy.join(CONFIG_DEFAULTS_FILE).is_file());
     }
 }

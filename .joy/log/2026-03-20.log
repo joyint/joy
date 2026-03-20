@@ -58,3 +58,5 @@ What stays unchanged:
 
 Supersedes earlier discussion about --global/--local flags and config.local.yaml." [horst.schwarz@joydev.com]
 2026-03-20T19:56:02.476Z JOY-000F item.status_changed "new -> in-progress" [horst.schwarz@joydev.com]
+2026-03-20T20:02:08.599Z JOY-000F comment.added "Implemented. Config layering with four levels, auto-migration for existing projects, joy config set writes delta to gitignored .joy/config.yaml." [horst.schwarz@joydev.com]
+2026-03-20T20:02:08.602Z JOY-000F item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
