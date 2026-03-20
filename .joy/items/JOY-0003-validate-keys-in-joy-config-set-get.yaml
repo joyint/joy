@@ -1,8 +1,15 @@
 id: JOY-0003
 title: Validate keys in joy config set/get, reject unknown
 type: task
-status: new
-priority: medium
+status: closed
+priority: low
 size: 2
 created: 2026-03-20T16:33:31.209691409Z
-updated: 2026-03-20T16:33:31.209691409Z
+updated: 2026-03-20T20:44:55.771299394Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-20T20:42:00.173079925Z
+  text: With config layering (JOY-000F), config.yaml is personal and gitignored. Unknown keys only affect the user who sets them. AI tools read specific keys, not the full config. Risk via config.defaults.yaml (committed) exists but is a code review concern. Lowered to low priority.
+- author: horst.schwarz@joydev.com
+  date: 2026-03-20T20:44:55.767400881Z
+  text: Closed in favor of a broader prompt injection idea. Key validation alone does not address the real concern -- any Joy data (items, comments, config) could contain manipulative text for AI tools.
