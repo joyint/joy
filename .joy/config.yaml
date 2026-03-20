@@ -4,5 +4,6 @@ agents:
 output:
   color: auto
   emoji: true
-  fortune: false
+  fortune: true
+  short: false
 version: 1
