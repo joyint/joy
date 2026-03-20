@@ -8,3 +8,6 @@ output:
   emoji: true
   short: false
   fortune: true
+agents:
+  default:
+    interaction-level: 3
