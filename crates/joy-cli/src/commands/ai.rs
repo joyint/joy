@@ -141,32 +141,56 @@ fn configure_tools(root: &Path) -> anyhow::Result<()> {
     let mut found_any = false;
 
     if which("claude") {
-        print!("  Claude Code (claude) ... found. Configure? [Y/n] ");
-        if confirm_default_yes()? {
-            configure_claude(root)?;
-        }
         found_any = true;
+        if is_tool_configured(root, "claude") {
+            print!("  Claude Code (claude) ... configured.");
+            configure_claude(root)?;
+            println!();
+        } else {
+            print!("  Claude Code (claude) ... found. Configure? [Y/n] ");
+            if confirm_default_yes()? {
+                configure_claude(root)?;
+            }
+        }
     }
     if which("qwen") || which("qwen-code") {
-        print!("  Qwen Code (qwen) ... found. Configure? [Y/n] ");
-        if confirm_default_yes()? {
-            configure_qwen(root)?;
-        }
         found_any = true;
+        if is_tool_configured(root, "qwen") {
+            print!("  Qwen Code (qwen) ... configured.");
+            configure_qwen(root)?;
+            println!();
+        } else {
+            print!("  Qwen Code (qwen) ... found. Configure? [Y/n] ");
+            if confirm_default_yes()? {
+                configure_qwen(root)?;
+            }
+        }
     }
     if which("vibe") {
-        print!("  Mistral Vibe (vibe) ... found. Configure? [Y/n] ");
-        if confirm_default_yes()? {
-            configure_vibe(root)?;
-        }
         found_any = true;
+        if is_tool_configured(root, "vibe") {
+            print!("  Mistral Vibe (vibe) ... configured.");
+            configure_vibe(root)?;
+            println!();
+        } else {
+            print!("  Mistral Vibe (vibe) ... found. Configure? [Y/n] ");
+            if confirm_default_yes()? {
+                configure_vibe(root)?;
+            }
+        }
     }
     if which("copilot") || which("gh") {
-        print!("  GitHub Copilot (copilot) ... found. Configure? [Y/n] ");
-        if confirm_default_yes()? {
-            configure_copilot(root)?;
-        }
         found_any = true;
+        if is_tool_configured(root, "copilot") {
+            print!("  GitHub Copilot (copilot) ... configured.");
+            configure_copilot(root)?;
+            println!();
+        } else {
+            print!("  GitHub Copilot (copilot) ... found. Configure? [Y/n] ");
+            if confirm_default_yes()? {
+                configure_copilot(root)?;
+            }
+        }
     }
 
     if !found_any {
@@ -393,4 +417,14 @@ fn which(binary: &str) -> bool {
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
+}
+
+fn is_tool_configured(root: &Path, tool: &str) -> bool {
+    match tool {
+        "claude" => root.join(".claude/CLAUDE.md").is_file(),
+        "qwen" => root.join("QWEN.md").is_file(),
+        "vibe" => root.join(".vibe/skills/joy/SKILL.md").is_file(),
+        "copilot" => root.join(".github/copilot-instructions.md").is_file(),
+        _ => false,
+    }
 }
