@@ -62,8 +62,8 @@ mod tests {
     #[test]
     fn project_roundtrip() {
         let project = Project::new("Test Project".into(), Some("TP".into()));
-        let yaml = serde_yml::to_string(&project).unwrap();
-        let parsed: Project = serde_yml::from_str(&yaml).unwrap();
+        let yaml = serde_yaml_ng::to_string(&project).unwrap();
+        let parsed: Project = serde_yaml_ng::from_str(&yaml).unwrap();
         assert_eq!(project, parsed);
     }
 

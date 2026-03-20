@@ -4,12 +4,12 @@ type: bug
 status: new
 priority: medium
 size: 2
-created: '2026-03-20T18:56:52.257223402Z'
-updated: '2026-03-20T18:58:34.582245399Z'
+created: 2026-03-20T18:56:52.257223402Z
+updated: 2026-03-20T18:58:34.582245399Z
 comments:
 - author: horst.schwarz@joydev.com
-  date: '2026-03-20T18:56:59.605734240Z'
+  date: 2026-03-20T18:56:59.605734240Z
   text: 'The AI instructions say ''all titles, descriptions, and comments must be in English'' but some tools (especially Vibe/Devstral) interpret this as ''respond in English''. The instructions need to clearly distinguish: (1) Joy data (titles, descriptions, comments) must be in the project language (project.language setting), (2) conversation with the user should be in the user''s language (auto-detected from their input). Claude Code and Copilot handle this correctly by default, Vibe responds entirely in English even when the user writes in German.'
 - author: horst.schwarz@joydev.com
-  date: '2026-03-20T18:58:34.582244530Z'
+  date: 2026-03-20T18:58:34.582244530Z
   text: 'Confirmed by Vibe: it explicitly follows the project language setting (Language: en) for conversation, not just for Joy data. When asked, Vibe explains: ''Das Joy Projekt ist auf Englisch eingestellt (Language: en). Ich folge dieser Einstellung fuer Konsistenz.'' This confirms the instructions need to explicitly separate project data language from conversation language.'

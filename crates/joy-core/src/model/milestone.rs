@@ -44,8 +44,8 @@ mod tests {
             description: Some("First public beta.".into()),
         };
 
-        let yaml = serde_yml::to_string(&ms).unwrap();
-        let parsed: Milestone = serde_yml::from_str(&yaml).unwrap();
+        let yaml = serde_yaml_ng::to_string(&ms).unwrap();
+        let parsed: Milestone = serde_yaml_ng::from_str(&yaml).unwrap();
         assert_eq!(ms, parsed);
     }
 

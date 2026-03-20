@@ -4,9 +4,9 @@ type: rework
 status: new
 priority: medium
 size: 2
-created: '2026-03-20T16:42:20.972419709Z'
-updated: '2026-03-20T16:43:48.188263446Z'
+created: 2026-03-20T16:42:20.972419709Z
+updated: 2026-03-20T16:43:48.188263446Z
 comments:
 - author: horst.schwarz@joydev.com
-  date: '2026-03-20T16:42:28.396044969Z'
+  date: 2026-03-20T16:42:28.396044969Z
   text: 'Many flags in joy ls (and likely other commands) lack short forms: --tree, --status, --priority, --mine, --blocked, --milestone, --tag, --parent. Clap supports POSIX-style flag bundling automatically, so -St for --short --tree would work once short flags exist. Decision needed: which flags get short forms? Two approaches discussed: (1) boolean flags get short forms, value flags stay long-only; (2) frequently used flags get short forms regardless of type. Resolve --show/-s vs --status/-s conflict (--status is more common, consider reassigning).'

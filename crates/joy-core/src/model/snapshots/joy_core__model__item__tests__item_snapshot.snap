@@ -15,8 +15,8 @@ milestone: MS-01
 tags:
 - backend
 - payments
-created: '2026-03-09T10:00:00Z'
-updated: '2026-03-09T10:00:00Z'
+created: 2026-03-09T10:00:00Z
+updated: 2026-03-09T10:00:00Z
 description: |
   Integrate Stripe for payment processing.
   Must support EUR and USD.

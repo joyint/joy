@@ -1,0 +1,18 @@
+id: JOY-0010
+title: Rethink tutorial format for readability
+type: rework
+status: new
+priority: medium
+size: 3
+created: 2026-03-20T20:19:40.615497171Z
+updated: 2026-03-20T20:19:48.627952406Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-20T20:19:48.627951796Z
+  text: 'Current tutorial uses a man-page-inspired plaintext format. Issues: (1) renders
+    poorly on GitHub (no markdown formatting), (2) not pleasant in a text editor,
+    (3) lacks color/highlighting even in terminal compared to modern colored man pages.
+    Consider: Markdown for GitHub/editor readability, or a proper man page with troff/mdoc
+    for terminal rendering, or both (Markdown source, generate man page from it).
+    The tutorial is shown via ''joy tutorial'' so the CLI could render Markdown with
+    terminal formatting.'

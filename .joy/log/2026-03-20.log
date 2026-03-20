@@ -60,3 +60,7 @@ Supersedes earlier discussion about --global/--local flags and config.local.yaml
 2026-03-20T19:56:02.476Z JOY-000F item.status_changed "new -> in-progress" [horst.schwarz@joydev.com]
 2026-03-20T20:02:08.599Z JOY-000F comment.added "Implemented. Config layering with four levels, auto-migration for existing projects, joy config set writes delta to gitignored .joy/config.yaml." [horst.schwarz@joydev.com]
 2026-03-20T20:02:08.602Z JOY-000F item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
+2026-03-20T20:19:40.616Z JOY-0010 item.created "Rethink tutorial format for readability" [horst.schwarz@joydev.com]
+2026-03-20T20:19:48.629Z JOY-0010 comment.added "Current tutorial uses a man-page-inspired plaintext format. Issues: (1) renders poorly on GitHub (no markdown formatting), (2) not pleasant in a text editor, (3) lacks color/highlighting even in terminal compared to modern colored man pages. Consider: Markdown for GitHub/editor readability, or a proper man page with troff/mdoc for terminal rendering, or both (Markdown source, generate man page from it). The tutorial is shown via 'joy tutorial' so the CLI could render Markdown with terminal formatting." [horst.schwarz@joydev.com]
+2026-03-20T20:27:07.100Z JOY-000A item.status_changed "new -> closed" [horst.schwarz@joydev.com]
+2026-03-20T20:29:28.829Z JOY-000E item.status_changed "new -> in-progress" [horst.schwarz@joydev.com]

@@ -79,7 +79,7 @@ fn load_entries(category: &Category) -> Vec<FortuneEntry> {
 }
 
 fn parse_entries(yaml: &str) -> Vec<FortuneEntry> {
-    serde_yml::from_str::<FortuneFile>(yaml)
+    serde_yaml_ng::from_str::<FortuneFile>(yaml)
         .map(|f| f.entries)
         .unwrap_or_default()
 }

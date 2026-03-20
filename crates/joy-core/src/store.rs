@@ -44,7 +44,7 @@ pub fn find_project_root(start: &Path) -> Option<PathBuf> {
 }
 
 pub fn write_yaml<T: Serialize>(path: &Path, value: &T) -> Result<(), JoyError> {
-    let yaml = serde_yml::to_string(value)?;
+    let yaml = serde_yaml_ng::to_string(value)?;
     std::fs::write(path, yaml).map_err(|e| JoyError::WriteFile {
         path: path.to_path_buf(),
         source: e,
@@ -96,7 +96,7 @@ fn deep_merge(base: &mut serde_json::Value, overlay: &serde_json::Value) {
 /// Read a YAML file as a serde_json::Value, returning None if the file does not exist.
 fn read_yaml_value(path: &Path) -> Option<serde_json::Value> {
     let content = std::fs::read_to_string(path).ok()?;
-    serde_yml::from_str(&content).ok()
+    serde_yaml_ng::from_str(&content).ok()
 }
 
 /// Load project config by merging four layers (code defaults < project defaults
@@ -165,7 +165,7 @@ pub fn read_yaml<T: DeserializeOwned>(path: &Path) -> Result<T, JoyError> {
         path: path.to_path_buf(),
         source: e,
     })?;
-    serde_yml::from_str(&content).map_err(|e| JoyError::YamlParse {
+    serde_yaml_ng::from_str(&content).map_err(|e| JoyError::YamlParse {
         path: path.to_path_buf(),
         source: e,
     })
