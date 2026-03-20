@@ -51,14 +51,22 @@ check:
 
 # Check tools and deps
 doctor:
-    @echo "=== Joy ==="
-    @command -v cargo >/dev/null && echo "  cargo: $(cargo --version)" || echo "  cargo: MISSING"
-    @command -v rustfmt >/dev/null && echo "  rustfmt: $(rustfmt --version)" || echo "  rustfmt: MISSING"
-    @command -v clippy-driver >/dev/null && echo "  clippy: $(clippy-driver --version)" || echo "  clippy: MISSING"
-    @command -v git >/dev/null && echo "  git: $(git --version)" || echo "  git: MISSING"
-    @cargo --list 2>/dev/null | grep -q insta && echo "  cargo-insta: ok" || echo "  cargo-insta: MISSING (cargo install cargo-insta)"
-    @cargo --list 2>/dev/null | grep -q 'llvm-cov' && echo "  cargo-llvm-cov: ok" || echo "  cargo-llvm-cov: MISSING (optional, cargo install cargo-llvm-cov)"
-    @cargo --list 2>/dev/null | grep -q watch && echo "  cargo-watch: ok" || echo "  cargo-watch: MISSING (optional, cargo install cargo-watch)"
+    #!/usr/bin/env bash
+    red=$'\033[31m' orange=$'\033[38;5;208m' reset=$'\033[0m'
+    ok()   { local v; v=$("$1" --version 2>/dev/null) && echo "  $2: $v" || echo "  $2: ok"; }
+    miss() { printf "  %s%s: MISSING%s\n" "$red" "$1" "$reset"; }
+    opt()  { printf "  %s%s: MISSING (optional, %s)%s\n" "$orange" "$1" "$2" "$reset"; }
+    command -v cargo         >/dev/null && ok cargo cargo           || miss cargo
+    command -v rustfmt       >/dev/null && ok rustfmt rustfmt       || miss rustfmt
+    command -v clippy-driver >/dev/null && ok clippy-driver clippy  || miss clippy
+    command -v git           >/dev/null && ok git git               || miss git
+    cargo --list 2>/dev/null | grep -q insta    && echo "  cargo-insta: ok"    || miss "cargo-insta"
+    cargo --list 2>/dev/null | grep -q 'llvm-cov' && echo "  cargo-llvm-cov: ok" || opt "cargo-llvm-cov" "cargo install cargo-llvm-cov"
+    cargo --list 2>/dev/null | grep -q watch    && echo "  cargo-watch: ok"    || opt "cargo-watch" "cargo install cargo-watch"
+
+# Install cargo tools for development
+setup:
+    cargo install cargo-insta
 
 # Install to ~/.local/bin/
 install:
