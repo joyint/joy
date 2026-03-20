@@ -122,9 +122,23 @@ pub fn status(s: &Status) -> String {
     }
 }
 
+pub fn priority_indicator(p: &Priority) -> &'static str {
+    if !is_emoji_enabled() {
+        return "";
+    }
+    match p {
+        Priority::Low => "\u{1f7e2} ",
+        Priority::Medium => "\u{1f7e1} ",
+        Priority::High => "\u{1f534} ",
+        Priority::Critical => "\u{1f6a8} ",
+        Priority::Extreme => "\u{1f525} ",
+    }
+}
+
 pub fn priority(p: &Priority) -> String {
     let text = p.to_string();
     match p {
+        Priority::Extreme => wrap2(BOLD, DANGER, &text),
         Priority::Critical => wrap2(BOLD, DANGER, &text),
         Priority::High => wrap(DANGER, &text),
         Priority::Medium => wrap(WARNING, &text),

@@ -39,8 +39,9 @@ pub fn run(args: ShowArgs) -> Result<()> {
         color::status(&item.status)
     );
     println!(
-        "{} {}",
+        "{} {}{}",
         color::label("Priority:"),
+        color::priority_indicator(&item.priority),
         color::priority(&item.priority)
     );
 

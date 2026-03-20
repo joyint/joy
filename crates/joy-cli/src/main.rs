@@ -13,6 +13,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 #[command(
     name = "joy",
     version,
+    infer_subcommands = true,
     about = "Terminal-native product management",
     after_help = "\
 Quick start:

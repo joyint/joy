@@ -34,7 +34,7 @@ pub struct AddArgs {
     #[arg(short = 'T', long = "type", hide = true)]
     item_type: Option<String>,
 
-    /// Priority: low, medium, high, critical
+    /// Priority: low, medium, high, critical, extreme
     #[arg(short, long, default_value = "medium")]
     priority: String,
 

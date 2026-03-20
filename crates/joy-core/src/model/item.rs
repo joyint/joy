@@ -65,6 +65,7 @@ pub enum Priority {
     Medium,
     High,
     Critical,
+    Extreme,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -147,6 +148,7 @@ impl std::fmt::Display for Priority {
             Priority::Medium => write!(f, "medium"),
             Priority::High => write!(f, "high"),
             Priority::Critical => write!(f, "critical"),
+            Priority::Extreme => write!(f, "extreme"),
         }
     }
 }
@@ -190,6 +192,7 @@ impl std::str::FromStr for Priority {
             "medium" => Ok(Priority::Medium),
             "high" => Ok(Priority::High),
             "critical" => Ok(Priority::Critical),
+            "extreme" => Ok(Priority::Extreme),
             _ => Err(format!("unknown priority: {s}")),
         }
     }

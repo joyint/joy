@@ -90,8 +90,8 @@ MISSION 2: BUILDING YOUR ARSENAL (add)
         decision   Architecture or product decision to document
         idea       Not yet refined -- just capture it before it escapes
 
-    All items start with status "new". Priorities: critical, high, medium
-    (default), low.
+    All items start with status "new". Priorities: extreme, critical, high,
+    medium (default), low.
 
 MISSION 3: SURVEYING THE TERRAIN (ls, show)
 
