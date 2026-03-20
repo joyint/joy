@@ -77,13 +77,14 @@ fn check_docs(root: &Path) -> anyhow::Result<()> {
             println!("  {} ... MISSING", path);
             let name = path.rsplit('/').next().unwrap_or(path);
             print!(
-                "  {} helps AI understand your {}. Create template? [y/N] ",
+                "  {} helps AI understand your {}. Create template? [Y/n] ",
                 name, purpose
             );
             std::io::stdout().flush()?;
             let mut input = String::new();
             std::io::stdin().read_line(&mut input)?;
-            if input.trim().eq_ignore_ascii_case("y") {
+            let trimmed = input.trim();
+            if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("y") {
                 if let Some(parent) = full.parent() {
                     fs::create_dir_all(parent)?;
                 }
