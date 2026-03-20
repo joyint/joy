@@ -1,11 +1,11 @@
 id: JOY-000E
 title: Replace serde_yml (unmaintained, unsound) with alternative
 type: bug
-status: new
+status: closed
 priority: high
 size: 3
 created: 2026-03-20T19:43:13.057177863Z
-updated: 2026-03-20T19:43:19.224799171Z
+updated: 2026-03-20T20:37:14.140594974Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-20T19:43:19.224798694Z

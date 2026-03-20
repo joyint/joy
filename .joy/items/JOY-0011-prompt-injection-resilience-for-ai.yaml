@@ -1,0 +1,11 @@
+id: JOY-0011
+title: Prompt injection resilience for AI-facing Joy data
+type: idea
+status: new
+priority: medium
+created: 2026-03-20T20:45:01.276513907Z
+updated: 2026-03-20T20:45:13.867511336Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-20T20:45:13.867510882Z
+  text: 'AI tools read Joy data via CLI output (joy config, joy show, joy ls). Any text field -- item titles, descriptions, comments, config values -- could contain instructions that manipulate AI behavior. This is not Joy-specific (all tools feeding text to LLMs face this), but Joy should consider what it can do on its side. Possible approaches: (1) sanitize output when consumed by AI tools (detect agent context), (2) separate trusted (project owner) from untrusted (contributor) data, (3) document the risk and recommend code review for config.defaults.yaml and item content. Originated from JOY-0003 discussion.'

@@ -1,11 +1,11 @@
 id: JOY-000D
 title: 'joy ai setup: template creation defaults to N instead of Y'
 type: bug
-status: new
+status: closed
 priority: medium
 size: 1
 created: 2026-03-20T19:04:39.841298855Z
-updated: 2026-03-20T19:04:45.821014285Z
+updated: 2026-03-20T20:48:27.343265925Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-20T19:04:45.821013704Z

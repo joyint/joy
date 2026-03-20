@@ -1,8 +1,12 @@
 id: JOY-0001
 title: Hint about joy ai setup in joy init output
 type: task
-status: new
+status: closed
 priority: medium
 size: 2
 created: 2026-03-20T16:23:23.750800794Z
-updated: 2026-03-20T16:23:23.750800794Z
+updated: 2026-03-20T20:47:33.442678983Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-20T20:47:33.439553581Z
+  text: Already implemented -- joy init shows 'Using AI tools? Run joy ai setup to configure integration.' at the end.
