@@ -47,6 +47,8 @@ pub fn run(args: InitArgs) -> Result<()> {
     println!("  joy ls                   List items");
     println!("  joy status <ID> <STATUS> Change item status");
     println!("  joy                      Board overview");
+    println!();
+    println!("Using AI tools? Run 'joy ai setup' to configure integration.");
 
     Ok(())
 }

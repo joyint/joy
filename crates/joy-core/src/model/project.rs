@@ -11,7 +11,13 @@ pub struct Project {
     pub acronym: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(default = "default_language")]
+    pub language: String,
     pub created: DateTime<Utc>,
+}
+
+fn default_language() -> String {
+    "en".to_string()
 }
 
 impl Project {
@@ -20,6 +26,7 @@ impl Project {
             name,
             acronym,
             description: None,
+            language: default_language(),
             created: Utc::now(),
         }
     }

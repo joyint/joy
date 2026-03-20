@@ -18,6 +18,10 @@ pub struct ProjectArgs {
     /// Set the project description
     #[arg(long)]
     description: Option<String>,
+
+    /// Set the project language (e.g. en, de, fr)
+    #[arg(long)]
+    language: Option<String>,
 }
 
 pub fn run(args: ProjectArgs) -> Result<()> {
@@ -27,7 +31,7 @@ pub fn run(args: ProjectArgs) -> Result<()> {
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
     let mut project: Project = store::read_yaml(&project_path)?;
 
-    let is_edit = args.name.is_some() || args.description.is_some();
+    let is_edit = args.name.is_some() || args.description.is_some() || args.language.is_some();
 
     if is_edit {
         if let Some(name) = args.name {
@@ -39,6 +43,9 @@ pub fn run(args: ProjectArgs) -> Result<()> {
             } else {
                 Some(description)
             };
+        }
+        if let Some(language) = args.language {
+            project.language = language;
         }
         store::write_yaml(&project_path, &project)?;
         println!("Project updated.");
@@ -53,6 +60,7 @@ pub fn run(args: ProjectArgs) -> Result<()> {
     if let Some(ref description) = project.description {
         println!("{} {}", color::label("Description:"), description);
     }
+    println!("{} {}", color::label("Language:   "), project.language);
     println!(
         "{} {}",
         color::label("Created:    "),
