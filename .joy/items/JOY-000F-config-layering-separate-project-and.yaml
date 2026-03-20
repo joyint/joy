@@ -1,11 +1,11 @@
 id: JOY-000F
 title: 'Config layering: separate project and personal settings'
 type: story
-status: in-progress
+status: closed
 priority: high
 size: 5
 created: '2026-03-20T19:45:12.942915720Z'
-updated: '2026-03-20T19:56:02.475229494Z'
+updated: '2026-03-20T20:02:08.601153556Z'
 comments:
 - author: horst.schwarz@joydev.com
   date: '2026-03-20T19:45:25.306267958Z'
@@ -49,3 +49,6 @@ comments:
     - No /etc/joy/ level -- not needed until system packages exist.
 
     Supersedes earlier discussion about --global/--local flags and config.local.yaml.
+- author: horst.schwarz@joydev.com
+  date: '2026-03-20T20:02:08.596853076Z'
+  text: Implemented. Config layering with four levels, auto-migration for existing projects, joy config set writes delta to gitignored .joy/config.yaml.
