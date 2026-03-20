@@ -26,24 +26,12 @@ pub fn run(args: ShowArgs) -> Result<()> {
 
     println!("{} {}", color::id(&item.id), color::heading(&item.title));
     println!("{}", color::label(&"-".repeat(60)));
-    println!(
-        "{} {}{}",
-        color::label("Type:    "),
-        color::item_type_indicator(&item.item_type),
-        color::item_type(&item.item_type)
-    );
-    println!(
-        "{} {}{}",
-        color::label("Status:  "),
-        color::status_indicator(&item.status),
-        color::status(&item.status)
-    );
-    println!(
-        "{} {}{}",
-        color::label("Priority:"),
-        color::priority_indicator(&item.priority),
-        color::priority(&item.priority)
-    );
+    let (_, type_display) = color::item_type_display(&item.item_type);
+    let (_, status_display) = color::status_display(&item.status);
+    let (_, priority_display) = color::priority_display(&item.priority);
+    println!("{} {}", color::label("Type:    "), type_display);
+    println!("{} {}", color::label("Status:  "), status_display);
+    println!("{} {}", color::label("Priority:"), priority_display);
 
     if let Some(ref parent) = item.parent {
         println!("{} {}", color::label("Parent:  "), color::id(parent));

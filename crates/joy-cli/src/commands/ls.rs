@@ -325,19 +325,9 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
     };
 
     let w_id = col_raw("ID", &|i| i.id.clone());
-    let w_type = col_raw("TYPE", &|i| {
-        format!(
-            "{}{}",
-            color::item_type_indicator(&i.item_type),
-            i.item_type
-        )
-    });
-    let w_status = col_raw("STATUS", &|i| {
-        format!("{}{}", color::status_indicator(&i.status), i.status)
-    });
-    let w_prio = col_raw("PRIORITY", &|i| {
-        format!("{}{}", color::priority_indicator(&i.priority), i.priority)
-    });
+    let w_type = col_raw("TYPE", &|i| color::item_type_display(&i.item_type).0);
+    let w_status = col_raw("STATUS", &|i| color::status_display(&i.status).0);
+    let w_prio = col_raw("PRIO", &|i| color::priority_display(&i.priority).0);
     let w_size = col_raw("SIZE", &|i| {
         i.size.map(|s| s.to_string()).unwrap_or_else(|| " ".into())
     });
@@ -396,7 +386,7 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
         pad_colored(&color::heading("ID"), "ID", w_id),
         pad_colored(&color::heading("TYPE"), "TYPE", w_type),
         pad_colored(&color::heading("STATUS"), "STATUS", w_status),
-        pad_colored(&color::heading("PRIORITY"), "PRIORITY", w_prio),
+        pad_colored(&color::heading("PRIO"), "PRIO", w_prio),
         pad_colored(&color::heading("SIZE"), "SIZE", w_size),
     );
     if extras.parent {
@@ -443,16 +433,9 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
         };
 
         let id_str = color::id(&item.id);
-        let type_emoji = color::item_type_indicator(&item.item_type);
-        let type_str = format!("{}{}", type_emoji, color::item_type(&item.item_type));
-        let status_emoji = color::status_indicator(&item.status);
-        let status_str = format!("{}{}", status_emoji, color::status(&item.status));
-        let priority_emoji = color::priority_indicator(&item.priority);
-        let priority_str = format!("{}{}", priority_emoji, color::priority(&item.priority));
-
-        let type_raw = format!("{}{}", type_emoji, item.item_type);
-        let status_raw = format!("{}{}", status_emoji, item.status);
-        let priority_raw = format!("{}{}", priority_emoji, item.priority);
+        let (type_raw, type_str) = color::item_type_display(&item.item_type);
+        let (status_raw, status_str) = color::status_display(&item.status);
+        let (priority_raw, priority_str) = color::priority_display(&item.priority);
 
         let size_str = color::size_indicator(item.size);
         let size_raw = item
@@ -565,27 +548,28 @@ fn print_tree_node(item: &Item, all_items: &[&Item], prefix: &str, is_last: bool
         .filter(|i| i.parent.as_deref() == Some(&item.id))
         .collect();
 
-    let type_emoji = color::item_type_indicator(&item.item_type);
+    let (type_raw, type_colored) = color::item_type_display(&item.item_type);
+    let (prio_raw, prio_colored) = color::priority_display(&item.priority);
     if !item.is_active() {
+        let (status_raw, _) = color::status_display(&item.status);
         println!(
             "{}{}",
             tree_chrome,
             color::inactive(&format!(
-                "{} {} [{}{}] [{}]",
-                item.id, item.title, type_emoji, item.item_type, item.status
+                "{} {} [{}] [{}] [{}]",
+                item.id, item.title, type_raw, status_raw, prio_raw
             ))
         );
     } else {
-        let status_emoji = color::status_indicator(&item.status);
+        let (_, status_colored) = color::status_display(&item.status);
         println!(
-            "{}{} {} [{}{}] [{}{}]",
+            "{}{} {} [{}] [{}] [{}]",
             tree_chrome,
             color::id(&item.id),
             item.title,
-            type_emoji,
-            color::item_type(&item.item_type),
-            status_emoji,
-            color::status(&item.status)
+            type_colored,
+            status_colored,
+            prio_colored
         );
     }
 
@@ -745,27 +729,28 @@ fn print_ms_tree_node(item: &Item, group: &[&&Item], prefix: &str, is_last: bool
         .filter(|i| i.parent.as_deref() == Some(&item.id))
         .collect();
 
-    let type_emoji = color::item_type_indicator(&item.item_type);
+    let (type_raw, type_colored) = color::item_type_display(&item.item_type);
+    let (prio_raw, prio_colored) = color::priority_display(&item.priority);
     if !item.is_active() {
+        let (status_raw, _) = color::status_display(&item.status);
         println!(
             "{}{}",
             tree_chrome,
             color::inactive(&format!(
-                "{} {} [{}{}] [{}]",
-                item.id, item.title, type_emoji, item.item_type, item.status
+                "{} {} [{}] [{}] [{}]",
+                item.id, item.title, type_raw, status_raw, prio_raw
             ))
         );
     } else {
-        let status_emoji = color::status_indicator(&item.status);
+        let (_, status_colored) = color::status_display(&item.status);
         println!(
-            "{}{} {} [{}{}] [{}{}]",
+            "{}{} {} [{}] [{}] [{}]",
             tree_chrome,
             color::id(&item.id),
             item.title,
-            type_emoji,
-            color::item_type(&item.item_type),
-            status_emoji,
-            color::status(&item.status)
+            type_colored,
+            status_colored,
+            prio_colored
         );
     }
 

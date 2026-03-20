@@ -26,6 +26,10 @@ Quick start:
 Run 'joy tutorial' for the full guide."
 )]
 pub(crate) struct Cli {
+    /// Compact output: emoji-only or abbreviations (config: output.short)
+    #[arg(global = true, short = 'S', long)]
+    short: bool,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -108,10 +112,13 @@ struct ShortcutArgs {
 fn main() -> anyhow::Result<()> {
     clap_complete::CompleteEnv::with_factory(Cli::command).complete();
 
-    let config = joy_core::store::load_config();
-    color::init(&config.output);
-
+    let mut config = joy_core::store::load_config();
     let cli = Cli::parse();
+
+    if cli.short {
+        config.output.short = true;
+    }
+    color::init(&config.output);
     let show_fortune = matches!(
         &cli.command,
         None | Some(Commands::Ls(_)) | Some(Commands::Roadmap(_)) | Some(Commands::Show(_))

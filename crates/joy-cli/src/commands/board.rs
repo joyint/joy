@@ -58,9 +58,14 @@ pub fn run(args: crate::BoardArgs) -> Result<()> {
             closed = count;
         }
 
+        let status_prefix = if color::is_short() {
+            String::new()
+        } else {
+            color::status_indicator(status).to_string()
+        };
         println!(
             "--- {}{} ({}) ---",
-            color::status_indicator(status),
+            status_prefix,
             color::status_heading(status, label),
             count
         );
@@ -75,11 +80,12 @@ pub fn run(args: crate::BoardArgs) -> Result<()> {
             } else {
                 String::new()
             };
+            let (_, prio_display) = color::priority_display(&item.priority);
             println!(
                 "  {} {} [{}]{}",
                 color::id(&item.id),
                 item.title,
-                color::priority(&item.priority),
+                prio_display,
                 blocked_str
             );
         }

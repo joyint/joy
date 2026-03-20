@@ -9,6 +9,7 @@ use joy_core::model::item::{ItemType, Priority, Status};
 
 static ENABLED: OnceLock<bool> = OnceLock::new();
 static EMOJI_ENABLED: OnceLock<bool> = OnceLock::new();
+static SHORT_MODE: OnceLock<bool> = OnceLock::new();
 
 /// Initialize color and emoji support from config. Call once at startup.
 pub fn init(output: &OutputConfig) {
@@ -31,10 +32,17 @@ pub fn init(output: &OutputConfig) {
         output.emoji
     };
     let _ = EMOJI_ENABLED.set(emoji_enabled);
+
+    let short = std::env::var_os("JOY_SHORT").is_some() || output.short;
+    let _ = SHORT_MODE.set(short);
 }
 
 fn is_emoji_enabled() -> bool {
     *EMOJI_ENABLED.get_or_init(|| false)
+}
+
+pub fn is_short() -> bool {
+    *SHORT_MODE.get_or_init(|| false)
 }
 
 pub fn item_type_indicator(t: &ItemType) -> &'static str {
@@ -132,6 +140,126 @@ pub fn priority_indicator(p: &Priority) -> &'static str {
         Priority::High => "\u{1f534} ",
         Priority::Critical => "\u{1f6a8} ",
         Priority::Extreme => "\u{1f525} ",
+    }
+}
+
+/// Combined indicator + label for item type. In short mode: emoji only or abbreviation.
+pub fn item_type_display(t: &ItemType) -> (String, String) {
+    if is_short() {
+        if is_emoji_enabled() {
+            let emoji = item_type_indicator(t).trim();
+            (emoji.to_string(), emoji.to_string())
+        } else {
+            let abbr = item_type_short(t);
+            (abbr.to_string(), item_type_colored_short(t))
+        }
+    } else {
+        let raw = format!("{}{}", item_type_indicator(t), t);
+        let colored = format!("{}{}", item_type_indicator(t), item_type(t));
+        (raw, colored)
+    }
+}
+
+/// Combined indicator + label for status. In short mode: emoji only or abbreviation.
+pub fn status_display(s: &Status) -> (String, String) {
+    if is_short() {
+        if is_emoji_enabled() {
+            let emoji = status_indicator(s).trim();
+            (emoji.to_string(), emoji.to_string())
+        } else {
+            let abbr = status_short(s);
+            (abbr.to_string(), status_colored_short(s))
+        }
+    } else {
+        let raw = format!("{}{}", status_indicator(s), s);
+        let colored = format!("{}{}", status_indicator(s), status(s));
+        (raw, colored)
+    }
+}
+
+/// Combined indicator + label for priority. In short mode: emoji only or abbreviation.
+pub fn priority_display(p: &Priority) -> (String, String) {
+    if is_short() {
+        if is_emoji_enabled() {
+            let emoji = priority_indicator(p).trim();
+            (emoji.to_string(), emoji.to_string())
+        } else {
+            let abbr = priority_short(p);
+            (abbr.to_string(), priority_colored_short(p))
+        }
+    } else {
+        let raw = format!("{}{}", priority_indicator(p), p);
+        let colored = format!("{}{}", priority_indicator(p), priority(p));
+        (raw, colored)
+    }
+}
+
+fn item_type_colored_short(t: &ItemType) -> String {
+    let text = item_type_short(t);
+    match t {
+        ItemType::Epic => wrap(ACCENT, text),
+        ItemType::Story => wrap(PRIMARY, text),
+        ItemType::Bug => wrap(DANGER, text),
+        ItemType::Rework => wrap(WARNING, text),
+        ItemType::Idea => wrap(INFO, text),
+        ItemType::Decision => wrap(INFO, text),
+        ItemType::Task => wrap(SECONDARY, text),
+    }
+}
+
+fn status_colored_short(s: &Status) -> String {
+    let text = status_short(s);
+    match s {
+        Status::New => text.to_string(),
+        Status::Open => wrap(PRIMARY, text),
+        Status::InProgress => wrap(WARNING, text),
+        Status::Review => wrap(INFO, text),
+        Status::Closed => wrap(SUCCESS, text),
+        Status::Deferred => wrap(SECONDARY, text),
+    }
+}
+
+fn priority_colored_short(p: &Priority) -> String {
+    let text = priority_short(p);
+    match p {
+        Priority::Extreme => wrap2(BOLD, DANGER, text),
+        Priority::Critical => wrap2(BOLD, DANGER, text),
+        Priority::High => wrap(DANGER, text),
+        Priority::Medium => wrap(WARNING, text),
+        Priority::Low => text.to_string(),
+    }
+}
+
+pub fn item_type_short(t: &ItemType) -> &'static str {
+    match t {
+        ItemType::Epic => "epc",
+        ItemType::Story => "str",
+        ItemType::Task => "tsk",
+        ItemType::Bug => "bug",
+        ItemType::Rework => "rwk",
+        ItemType::Decision => "dec",
+        ItemType::Idea => "ide",
+    }
+}
+
+pub fn status_short(s: &Status) -> &'static str {
+    match s {
+        Status::New => "new",
+        Status::Open => "opn",
+        Status::InProgress => "wip",
+        Status::Review => "rev",
+        Status::Closed => "don",
+        Status::Deferred => "def",
+    }
+}
+
+pub fn priority_short(p: &Priority) -> &'static str {
+    match p {
+        Priority::Low => "low",
+        Priority::Medium => "med",
+        Priority::High => "hi",
+        Priority::Critical => "crt",
+        Priority::Extreme => "ext",
     }
 }
 
