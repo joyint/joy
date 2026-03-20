@@ -1,0 +1,12 @@
+id: JOY-0012
+title: Agent role definitions for AI tools
+type: epic
+status: new
+priority: medium
+size: 5
+created: 2026-03-20T21:02:31.070606074Z
+updated: 2026-03-20T21:02:53.015938775Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-20T21:02:53.015937883Z
+  text: 'Define agent roles that AI coding tools can assume when working with Joy. Each role has a specific interaction level, permissions, and behavioral rules. Roles are configured in joy config (agents.<role>.interaction-level) and defined as tool-specific agent files. Reference implementation: https://github.com/joydev-horst/magna-aip-a3/tree/main/.claude/agents -- working Claude Code agents with role-specific prompts. joy ai setup should generate these agent definitions alongside skills and instructions.'
