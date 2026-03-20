@@ -1,0 +1,12 @@
+id: JOY-000E
+title: Replace serde_yml (unmaintained, unsound) with alternative
+type: bug
+status: new
+priority: high
+size: 3
+created: '2026-03-20T19:43:13.057177863Z'
+updated: '2026-03-20T19:43:19.224799171Z'
+comments:
+- author: horst.schwarz@joydev.com
+  date: '2026-03-20T19:43:19.224798694Z'
+  text: 'GitHub Dependabot flagged serde_yml and its dependency libyml as unmaintained and unsound (1 high, 1 medium). Affects both joy-core and jot-core. Candidates: serde_yaml_ng (maintained fork), serde_yaml (original, check status). Must be replaced in joy-core first, then jot-core follows via dependency update.'

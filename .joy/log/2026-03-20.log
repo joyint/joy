@@ -18,3 +18,43 @@
 2026-03-20T17:22:08.192Z JOY-000A comment.added "Three parts: (1) joy init writes config.yaml with all known default values, not a minimal file. (2) joy config get uses fallback chain: config file -> environment -> code default. Never returns exit 1 for known keys. (3) On tool update (any joy command), automatically append new config keys with their defaults to existing config.yaml. No explicit refresh command needed -- users would forget it. This also fixes the UX issue where AI tools see 'Error: Exit code 1' when querying unset but known config keys." [horst.schwarz@joydev.com]
 2026-03-20T17:35:21.683Z JOY-000B item.created "AI does not suggest size when creating items via skill" [horst.schwarz@joydev.com]
 2026-03-20T17:35:27.419Z JOY-000B comment.added "The Joy skill prompt instructs the AI to suggest a size (1-7) for new items, but in practice the AI skips it. The skill planning section mentions size but the item creation section does not explicitly remind the AI to include --size in the joy add call. Fix: add explicit size guidance to the 'Planning and creating items' section of the skill." [horst.schwarz@joydev.com]
+2026-03-20T19:43:13.058Z JOY-000E item.created "Replace serde_yml (unmaintained, unsound) with alternative" [horst.schwarz@joydev.com]
+2026-03-20T19:43:19.225Z JOY-000E comment.added "GitHub Dependabot flagged serde_yml and its dependency libyml as unmaintained and unsound (1 high, 1 medium). Affects both joy-core and jot-core. Candidates: serde_yaml_ng (maintained fork), serde_yaml (original, check status). Must be replaced in joy-core first, then jot-core follows via dependency update." [horst.schwarz@joydev.com]
+2026-03-20T19:45:12.944Z JOY-000F item.created "Config layering: separate project and personal settings" [horst.schwarz@joydev.com]
+2026-03-20T19:45:25.307Z JOY-000F comment.added "Problem: joy config set writes to .joy/config.yaml which is committed to Git. Personal preferences (output.short, output.emoji, output.fortune) end up affecting all team members. A developer changed short=true in the jot repo and it would have been pushed to everyone.
+
+Prior art:
+- git: .git/config (local, not pushed) vs ~/.gitconfig (global)
+- env files: .env (committed) vs .env.local (gitignored)
+
+Options discussed:
+1. .joy/config.local.yaml -- gitignored, personal overrides. joy init adds it to .gitignore automatically.
+2. joy config set --global -- writes to ~/.config/joy/config.yaml instead of project config
+3. Key categorization -- some keys are inherently personal (output.*), some are project-wide (project.prefix, agents.*). joy config set could warn or auto-route based on category.
+
+Fallback chain should be: .joy/config.local.yaml > .joy/config.yaml > ~/.config/joy/config.yaml > code defaults.
+
+Related to JOY-000A (config defaults) and JOY-0002 (joy project get/set). This story covers the layering concept, the others cover specific aspects." [horst.schwarz@joydev.com]
+2026-03-20T19:55:44.438Z JOY-000F comment.added "Final concept:
+
+Four config layers, highest priority first:
+1. .joy/config.yaml -- personal per-project settings, gitignored. Created by joy config set on first use.
+2. ~/.config/joy/config.yaml -- personal global settings, cross-project. joy config set writes here if it exists and no .joy/ directory is present.
+3. .joy/config.defaults.yaml -- committed project defaults, optional. Team can set shared baseline (e.g. interaction level). Whoever changes this knows what they are doing.
+4. Code defaults -- hardcoded in joy binary, always present.
+
+Fallback: 1 > 2 > 3 > 4. Only the delta is stored at each level.
+
+Changes needed:
+- joy init: add .joy/config.yaml to .gitignore
+- joy config set: write to .joy/config.yaml (create if missing). If ~/.config/joy/config.yaml exists and no .joy/ dir, write there.
+- joy config get: merge all layers, return resolved value
+- joy config: show resolved config with indication of source per value (optional, nice to have)
+- Rename current committed .joy/config.yaml to .joy/config.defaults.yaml in existing projects (migration)
+
+What stays unchanged:
+- .joy/project.yaml -- committed, project-wide. Managed by joy project set/get (JOY-0002).
+- No /etc/joy/ level -- not needed until system packages exist.
+
+Supersedes earlier discussion about --global/--local flags and config.local.yaml." [horst.schwarz@joydev.com]
+2026-03-20T19:56:02.476Z JOY-000F item.status_changed "new -> in-progress" [horst.schwarz@joydev.com]
