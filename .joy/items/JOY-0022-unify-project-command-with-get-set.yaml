@@ -1,0 +1,9 @@
+id: JOY-0022
+title: Unify project command with get/set subcommands
+type: rework
+status: in-progress
+priority: medium
+effort: 2
+created: 2026-03-21T18:10:03.326670608Z
+updated: 2026-03-21T18:10:07.211915325Z
+description: Add joy project get/set subcommands (e.g. joy project get name, joy project set language de) parallel to joy config get/set. Keep --name/--language/--description flags as shortcuts. Add auto-completion for project keys. Bare joy project still shows all metadata.
