@@ -22,12 +22,14 @@ enum ConfigCommand {
 #[derive(clap::Args)]
 struct GetArgs {
     /// Dotted key path (e.g. output.emoji, agents.architect.interaction-level)
+    #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_config_key))]
     key: String,
 }
 
 #[derive(clap::Args)]
 struct SetArgs {
     /// Dotted key path
+    #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_config_key))]
     key: String,
     /// Value to set (string, number, or boolean)
     value: String,

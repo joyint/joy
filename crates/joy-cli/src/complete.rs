@@ -77,6 +77,52 @@ fn extract_id(filename: &OsStr) -> Option<String> {
     }
 }
 
+/// Known config keys from the Config struct.
+const STATIC_CONFIG_KEYS: &[&str] = &[
+    "version",
+    "output.color",
+    "output.emoji",
+    "output.short",
+    "output.fortune",
+    "output.fortune-category",
+    "sync.remote",
+    "sync.auto",
+    "ai.tool",
+    "ai.command",
+    "ai.model",
+    "ai.max_cost_per_job",
+    "ai.currency",
+    "agents.default.interaction-level",
+];
+
+/// Complete config keys for `joy config get/set`.
+pub fn complete_config_key(current: &OsStr) -> Vec<CompletionCandidate> {
+    let Some(prefix) = current.to_str() else {
+        return Vec::new();
+    };
+
+    let mut candidates: Vec<CompletionCandidate> = STATIC_CONFIG_KEYS
+        .iter()
+        .filter(|k| k.starts_with(prefix))
+        .map(|k| CompletionCandidate::new(*k))
+        .collect();
+
+    // Add dynamic agent role keys from current config
+    let config_value = store::load_config_value();
+    if let Some(agents) = config_value.get("agents").and_then(|a| a.as_object()) {
+        for role in agents.keys() {
+            if role != "default" {
+                let key = format!("agents.{role}.interaction-level");
+                if key.starts_with(prefix) {
+                    candidates.push(CompletionCandidate::new(key));
+                }
+            }
+        }
+    }
+
+    candidates
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
