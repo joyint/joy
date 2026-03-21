@@ -42,6 +42,7 @@ fn setup() -> anyhow::Result<()> {
     check_docs(&root)?;
     copy_templates(&root)?;
     configure_tools(&root)?;
+    check_nested_projects(&root)?;
 
     println!("\nDone. AI tools can now use Joy in this project.");
     Ok(())
@@ -417,6 +418,81 @@ fn which(binary: &str) -> bool {
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
+}
+
+/// Scan subdirectories (max 2 levels) for nested Joy projects that lack AI tool config.
+fn check_nested_projects(root: &Path) -> anyhow::Result<()> {
+    let mut unconfigured: Vec<String> = Vec::new();
+
+    // Collect installed tools to check against
+    let tools: Vec<&str> = ["claude", "qwen", "vibe", "copilot"]
+        .iter()
+        .copied()
+        .filter(|t| {
+            which(t) || (*t == "qwen" && which("qwen-code")) || (*t == "copilot" && which("gh"))
+        })
+        .collect();
+
+    if tools.is_empty() {
+        return Ok(());
+    }
+
+    // Scan 2 levels deep for .joy/project.yaml
+    for entry in fs::read_dir(root)?.filter_map(|e| e.ok()) {
+        let path = entry.path();
+        if !path.is_dir()
+            || path
+                .file_name()
+                .is_some_and(|n| n.to_str().is_some_and(|s| s.starts_with('.')))
+        {
+            continue;
+        }
+        check_nested_at(&path, root, &tools, &mut unconfigured);
+        // Level 2
+        if let Ok(sub_entries) = fs::read_dir(&path) {
+            for sub_entry in sub_entries.filter_map(|e| e.ok()) {
+                let sub_path = sub_entry.path();
+                if !sub_path.is_dir()
+                    || sub_path
+                        .file_name()
+                        .is_some_and(|n| n.to_str().is_some_and(|s| s.starts_with('.')))
+                {
+                    continue;
+                }
+                check_nested_at(&sub_path, root, &tools, &mut unconfigured);
+            }
+        }
+    }
+
+    if !unconfigured.is_empty() {
+        println!("\nNested Joy projects without AI tool config:");
+        for path in &unconfigured {
+            println!("  {}/", path);
+        }
+        println!(
+            "  AI tool permissions are per-project and not inherited from parent directories."
+        );
+        println!("  Run `joy ai setup` in each nested project to configure AI tools there.");
+    }
+
+    Ok(())
+}
+
+fn check_nested_at(dir: &Path, root: &Path, tools: &[&str], unconfigured: &mut Vec<String>) {
+    let project_yaml = dir.join(".joy/project.yaml");
+    if !project_yaml.is_file() {
+        return;
+    }
+    // At least one installed tool must be unconfigured here
+    let any_configured = tools.iter().any(|t| is_tool_configured(dir, t));
+    if !any_configured {
+        let relative = dir
+            .strip_prefix(root)
+            .unwrap_or(dir)
+            .to_string_lossy()
+            .to_string();
+        unconfigured.push(relative);
+    }
 }
 
 fn is_tool_configured(root: &Path, tool: &str) -> bool {

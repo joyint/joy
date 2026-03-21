@@ -311,6 +311,11 @@ MISSION 8: CALLING IN AIR SUPPORT (ai)
 
     Joy-owned files are updated, your custom rules are preserved.
 
+    If your project contains nested Joy projects (submodules, monorepo),
+    run joy ai setup in each one separately. AI tool permissions are
+    per-project and not inherited from parent directories. Joy will warn
+    you about unconfigured nested projects during setup.
+
     Future missions: AI agents that estimate, plan, implement, and review.
     Stay tuned for joy ai estimate, joy ai plan, joy ai implement.
 
