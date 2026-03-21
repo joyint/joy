@@ -1,0 +1,8 @@
+id: JOY-0023
+title: No Git commit without Joy item reference
+type: idea
+status: new
+priority: medium
+created: 2026-03-21T18:13:13.509172238Z
+updated: 2026-03-21T18:13:13.509172238Z
+description: A pre-commit hook could be installed with git init, which checks always if the commit message containes at least one Joy item name with the project acronym in it. This in order to be sure that nothing is commited without plan and process traces in Joy. We should thing how we could make this check as strong as possible.

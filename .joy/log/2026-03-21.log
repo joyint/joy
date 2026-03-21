@@ -38,3 +38,20 @@
 2026-03-21T18:06:49.491Z JOY-0021 item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
 2026-03-21T18:10:03.327Z JOY-0022 item.created "Unify project command with get/set subcommands" [horst.schwarz@joydev.com]
 2026-03-21T18:10:07.212Z JOY-0022 item.status_changed "new -> in-progress" [horst.schwarz@joydev.com]
+2026-03-21T18:11:12.366Z JOY-0022 comment.added "[x] joy project get/set with known keys (name, acronym, description, language, created). [x] acronym and created are read-only. [x] Auto-completion for project keys. [x] Existing --name/--description/--language flags preserved as shortcuts." [horst.schwarz@joydev.com]
+2026-03-21T18:11:12.369Z JOY-0022 item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
+2026-03-21T18:13:13.511Z JOY-0023 item.created "No Git commit without Joy item reference" [horst.schwarz@joydev.com]
+2026-03-21T21:33:00.258Z JOY-0012 comment.added "JoyProcess vision document created: docs/dev/vision/JoyProcess.md. Defines the capability model (conceive, plan, design, implement, test, review, document), type-to-capability mapping, member config with per-capability cost and interaction level limits, job tracking, and implementation layers. This document is the conceptual foundation for the agent role definitions epic and all its children." [horst.schwarz@joydev.com]
+2026-03-21T21:33:08.716Z JOY-0012 comment.added "Critical review (items to derive from this):
+
+> Das Modell hat eine natuerliche Progression. Solo-Entwickler mit capabilities: all merkt nichts vom Prozess. Team fuegt Members hinzu, Capabilities werden sichtbar. Enterprise fuegt Gates hinzu, Capabilities werden erzwungen. Kein Bruch, kein Umkonfigurieren. Das ist selten -- die meisten Tools haben einen Einzelplatz-Modus und einen Team-Modus die sich fundamental unterscheiden.
+
+> Capabilities statt Roles loest ein echtes Problem. Die meisten PM-Tools (und auch unser eigener erster Entwurf heute Morgen) denken in Rollen -- statisch, an Personen gebunden, organisatorisch. Capabilities sind dynamisch, an Arbeit gebunden, kombinierbar. Das passt zu der Realitaet wie Software-Teams tatsaechlich arbeiten.
+
+> Die Kritik die ich sehe:
+
+> 1. Die Type-to-Capability Tabelle ist unsere groesste Hypothese. Dass ein Bug immer implement+review braucht und ein Epic immer conceive+plan -- das ist eine Meinung die wir noch nicht validiert haben. Wir haben sie heute am Schreibtisch definiert, nicht aus Daten abgeleitet. Sobald reale Projekte Joy nutzen, wird sich zeigen ob diese Zuordnungen stimmen. Wir sollten bereit sein sie anzupassen -- auch wenn sie fest in Joy sind, heisst das nicht dass sie sich nie aendern duerfen. Es heisst nur dass der Nutzer sie nicht aendert.
+
+> 2. Interaction Levels sind abstrakt. Level 3 vs. Level 4 -- wird ein Entwickler im Alltag den Unterschied spueren und bewusst waehlen? Oder werden die meisten einfach den Default lassen und sich wundern wenn die AI zu viel fragt oder zu wenig fragt? Die Levels muessen sich im Gebrauch beweisen, nicht im Dokument.
+
+> 3. Jobs fuer Menschen sind optional, also werden sie nicht genutzt. Wenn joy start automatisch einen Job erstellt, gut. Wenn es Extra-Aufwand ist, wird es niemand tun. Das muss reibungslos sein." [horst.schwarz@joydev.com]
