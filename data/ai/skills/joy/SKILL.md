@@ -54,11 +54,11 @@ Do this check BEFORE showing the "What would you like to do?" prompt. This is th
 When the user describes features, ideas, problems, or requirements:
 
 1. Break it down into Joy items using types: `epic`, `story`, `task`, `bug`, `rework`, `decision`, `idea`
-2. Present a short numbered list (title, type, priority) and ask if it looks right
-3. Create items one by one with `joy add`. Ask "Create this item? (y/n/edit)" before each
+2. Present a short numbered list (title, type, priority, effort) and ask if it looks right. Suggest an effort (1-7) for each item based on scope.
+3. Create items one by one with `joy add --effort <N>`. Ask "Create this item? (y/n/edit)" before each
 4. After all items are processed, run `joy ls` to show the result
 
-Rules: titles in English, max 60 characters, actionable. Do not over-decompose.
+Rules: titles in the project language (from `joy project`), max 60 characters, actionable. Do not over-decompose.
 
 ### Status changes
 
@@ -97,5 +97,6 @@ Never skip steps 3 and 6.
 
 - Always use the `joy` CLI. Never read or write files in `.joy/` directly.
 - All written artifacts (titles, descriptions, comments, docs) must use the project language from `joy project` -- never deviate, even if the conversation is in another language
+- For interactive communication (responses, explanations, questions), follow the user's language -- if they write in German, respond in German. The project language only governs written artifacts, not conversation.
 - Be concise. Joy is for developers who value speed.
 - Reference IDs precisely (e.g. JI-0001, JI-MS-01)

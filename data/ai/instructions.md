@@ -45,7 +45,7 @@ Use these Joy CLI commands for all product management operations:
 
 Item types: `epic`, `story`, `task`, `bug`, `rework`, `decision`, `idea`.
 Priority levels: `critical`, `high`, `medium`, `low`.
-Size scale (1-7): 1=trivial, 2=small, 3=medium, 4=large, 5=major, 6=heavy, 7=massive.
+Effort scale (1-7): 1=trivial, 2=small, 3=medium, 4=large, 5=major, 6=heavy, 7=massive.
 
 ## Rules
 
@@ -55,7 +55,7 @@ Size scale (1-7): 1=trivial, 2=small, 3=medium, 4=large, 5=major, 6=heavy, 7=mas
 
 **Comment your plan.** Before implementing a backlog item, comment the planned solution into the item using `joy comment`. Confirm with the user before proceeding.
 
-**Use the project language.** Run `joy project` to read the configured language (default: `en`). This language strictly governs all written artifacts: Joy item titles, descriptions, comments, commit messages, and documentation. Never deviate from it, even if the conversation switches to another language. For interactive communication, start in the project language but follow the user's lead if they switch.
+**Use the project language for artifacts only.** Run `joy project` to read the configured language (default: `en`). This language strictly governs all written artifacts: Joy item titles, descriptions, comments, commit messages, and documentation. Never deviate from it, even if the conversation is in another language. **Conversation language is separate.** For interactive communication (responses, explanations, questions), detect and follow the user's language. If the user writes in German, respond in German. The project language setting does NOT apply to conversation -- only to artifacts that are persisted in the project.
 
 **Titles are short.** Max 60 characters, actionable ("Add X", "Fix Y", not "X should be added").
 
@@ -65,7 +65,7 @@ Size scale (1-7): 1=trivial, 2=small, 3=medium, 4=large, 5=major, 6=heavy, 7=mas
 
 ### Creating items
 
-Analyze the user's input and break it into Joy items. Present a numbered list (title, type, priority, size) for confirmation before creating. Suggest a size (1-7) based on the scope of each item. Use `--size` when creating: `joy add task "Fix login" --size 2`. Create epics first when there are 3+ related items. Do not over-decompose -- a 1-2 day story is fine as one item.
+Analyze the user's input and break it into Joy items. Present a numbered list (title, type, priority, effort) for confirmation before creating. Suggest an effort (1-7) based on the scope of each item. Use `--effort` when creating: `joy add task "Fix login" --effort 2`. Create epics first when there are 3+ related items. Do not over-decompose -- a 1-2 day story is fine as one item.
 
 ### Implementing items
 

@@ -1,0 +1,9 @@
+id: JOY-001C
+title: AI self-update check at session start
+type: story
+status: new
+priority: medium
+effort: 5
+created: 2026-03-21T14:58:50.469541338Z
+updated: 2026-03-21T14:58:50.469541338Z
+description: 'Add joy ai check --tool <TOOL> [--yes] command. Embedded template hashes are computed at compile time (build script or const fn). At runtime, hashes installed files and compares. If current: prints ''Up to date'' and exits 0. If outdated: updates the specified tool, prints a changelog of what changed, and returns distinct exit code so the AI can reload instructions and review the changelog. Each change to AI templates must include a changelog entry (enforce via ADR). Add instruction to AI templates to run this check at session start.'

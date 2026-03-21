@@ -237,7 +237,7 @@ joy ls                                  # List and filter items
   joy ls --tree --group milestone       # tree grouped by milestone
   joy ls --tag backend                  # by tag
   joy ls --version v0.5.0               # by version tag
-  joy ls --show milestone,assignee      # extra columns (milestone, assignee, parent)
+  joy ls --columns milestone,assignee   # extra columns (milestone, assignee, parent)
 
 joy show [id]                           # Detail view
   joy show JOY-002A                      # all info, deps, history, comments

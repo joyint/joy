@@ -27,9 +27,9 @@ pub struct EditArgs {
     #[arg(long)]
     parent: Option<String>,
 
-    /// Size (1-7, use "none" to remove)
+    /// Effort (1-7, use "none" to remove)
     #[arg(short, long)]
-    size: Option<String>,
+    effort: Option<String>,
 
     /// New description
     #[arg(short, long)]
@@ -48,7 +48,7 @@ pub struct EditArgs {
     deps: Option<String>,
 
     /// Set assignee email (use "none" to remove)
-    #[arg(short, long)]
+    #[arg(short = 'A', long)]
     assignee: Option<String>,
 
     /// Set version tag (use "none" to remove)
@@ -75,17 +75,17 @@ pub fn run(args: EditArgs) -> Result<()> {
         changed = true;
     }
 
-    if let Some(ref size_str) = args.size {
-        if size_str == "none" {
-            item.size = None;
+    if let Some(ref effort_str) = args.effort {
+        if effort_str == "none" {
+            item.effort = None;
         } else {
-            let s: u8 = size_str
+            let e: u8 = effort_str
                 .parse()
-                .map_err(|_| anyhow::anyhow!("size must be 1-7 or 'none'"))?;
-            if !(1..=7).contains(&s) {
-                anyhow::bail!("size must be between 1 and 7");
+                .map_err(|_| anyhow::anyhow!("effort must be 1-7 or 'none'"))?;
+            if !(1..=7).contains(&e) {
+                anyhow::bail!("effort must be between 1 and 7");
             }
-            item.size = Some(s);
+            item.effort = Some(e);
         }
         changed = true;
     }

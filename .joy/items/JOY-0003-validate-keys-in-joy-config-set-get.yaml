@@ -3,7 +3,7 @@ title: Validate keys in joy config set/get, reject unknown
 type: task
 status: closed
 priority: low
-size: 2
+effort: 2
 created: 2026-03-20T16:33:31.209691409Z
 updated: 2026-03-20T20:44:55.771299394Z
 comments:

@@ -1,11 +1,11 @@
 id: JOY-000C
 title: AI instructions conflate data language and conversation language
 type: bug
-status: new
+status: closed
 priority: medium
-size: 2
+effort: 2
 created: 2026-03-20T18:56:52.257223402Z
-updated: 2026-03-20T18:58:34.582245399Z
+updated: 2026-03-21T15:09:03.425300582Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-20T18:56:59.605734240Z
@@ -13,3 +13,9 @@ comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-20T18:58:34.582244530Z
   text: 'Confirmed by Vibe: it explicitly follows the project language setting (Language: en) for conversation, not just for Joy data. When asked, Vibe explains: ''Das Joy Projekt ist auf Englisch eingestellt (Language: en). Ich folge dieser Einstellung fuer Konsistenz.'' This confirms the instructions need to explicitly separate project data language from conversation language.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-21T15:08:31.783428181Z
+  text: 'Plan: Fix both source files in data/ai/. (1) instructions.md line 58 already separates data vs conversation language well. (2) skills/joy/SKILL.md line 99 says ''All written artifacts must use the project language'' but has no explicit rule about conversation language. Fix: add a clear sentence that conversation language follows the user''s language, not the project language. Also update line 61 which says ''titles in English'' -- should reference project language instead of hardcoding English.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-21T15:09:00.735695671Z
+  text: '[x] Fixed data/ai/skills/joy/SKILL.md: added explicit conversation language rule, changed hardcoded ''English'' to project language reference. [x] Fixed data/ai/instructions.md: made the separation between artifact language and conversation language much more explicit with bold heading and clear examples.'
