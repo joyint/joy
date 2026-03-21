@@ -59,7 +59,11 @@ pub struct OutputConfig {
     pub short: bool,
     #[serde(default = "default_fortune")]
     pub fortune: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "fortune-category",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub fortune_category: Option<Category>,
 }
 
@@ -106,6 +110,97 @@ impl Default for OutputConfig {
             fortune_category: None,
         }
     }
+}
+
+/// Return a human-readable hint for a config key, listing allowed values when
+/// the field is an enum or constrained type. Derived from the Config struct
+/// rather than a hand-maintained map.
+pub fn field_hint(key: &str) -> Option<String> {
+    let defaults = serde_json::to_value(Config::default()).ok()?;
+    // Try navigating with the original key; if not found (e.g. optional fields
+    // omitted by skip_serializing_if), fall back to probing directly.
+    let current = navigate_json(&defaults, key);
+
+    // Probe for enum variants regardless of whether the field is in defaults
+    let candidates = probe_string_field(key);
+    if !candidates.is_empty() {
+        return Some(format!("allowed values: {}", candidates.join(", ")));
+    }
+
+    if let Some(current) = current {
+        return match current {
+            serde_json::Value::Bool(_) => Some("expected: true or false".to_string()),
+            serde_json::Value::Number(_) => Some("expected: a number".to_string()),
+            serde_json::Value::String(_) => Some("expected: a string".to_string()),
+            _ => None,
+        };
+    }
+
+    None
+}
+
+fn navigate_json<'a>(value: &'a serde_json::Value, key: &str) -> Option<&'a serde_json::Value> {
+    let mut current = value;
+    for part in key.split('.') {
+        // Try as-is first, then with hyphens/underscores swapped (YAML uses
+        // hyphens, serde_json serializes Rust field names with underscores).
+        current = current
+            .get(part)
+            .or_else(|| current.get(part.replace('-', "_")))
+            .or_else(|| current.get(part.replace('_', "-")))?;
+    }
+    Some(current)
+}
+
+/// Try setting a config field to various string values to discover which ones
+/// the schema accepts -- this reveals enum variants without hard-coding them.
+/// Validates via YAML round-trip to correctly handle hyphen/underscore key
+/// variants and optional fields.
+fn probe_string_field(key: &str) -> Vec<String> {
+    const PROBES: &[&str] = &[
+        "auto", "always", "never", "none", "true", "false", "yes", "no", "on", "off", "list",
+        "board", "calendar", "all", "tech", "science", "humor", "low", "medium", "high",
+        "critical",
+    ];
+
+    let mut accepted = Vec::new();
+    for &candidate in PROBES {
+        // Build a minimal YAML snippet with the candidate value and try
+        // deserializing as Config. This uses the same path as load_config,
+        // so hyphen/underscore handling matches real behavior.
+        let yaml = build_yaml_for_key(key, candidate);
+        let defaults_yaml = serde_yaml_ng::to_string(&Config::default()).unwrap_or_default();
+        let Ok(mut base): Result<serde_json::Value, _> = serde_yaml_ng::from_str(&defaults_yaml)
+        else {
+            continue;
+        };
+        let Ok(overlay): Result<serde_json::Value, _> = serde_yaml_ng::from_str(&yaml) else {
+            continue;
+        };
+        crate::store::deep_merge_value(&mut base, &overlay);
+        if serde_json::from_value::<Config>(base).is_ok() {
+            accepted.push(candidate.to_string());
+        }
+    }
+    accepted
+}
+
+/// Build a nested YAML string from a dotted key and value.
+/// e.g. "output.color" + "auto" -> "output:\n  color: auto\n"
+fn build_yaml_for_key(key: &str, value: &str) -> String {
+    let parts: Vec<&str> = key.split('.').collect();
+    let mut yaml = String::new();
+    for (i, part) in parts.iter().enumerate() {
+        for _ in 0..i {
+            yaml.push_str("  ");
+        }
+        if i == parts.len() - 1 {
+            yaml.push_str(&format!("{part}: {value}\n"));
+        } else {
+            yaml.push_str(&format!("{part}:\n"));
+        }
+    }
+    yaml
 }
 
 #[cfg(test)]

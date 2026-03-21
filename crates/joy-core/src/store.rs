@@ -79,6 +79,11 @@ fn dirs_path_home() -> Option<PathBuf> {
 
 /// Recursively merge `overlay` into `base`. Object keys are merged; all other
 /// types are replaced.
+/// Recursively merge `overlay` into `base` (public for use by config validation).
+pub fn deep_merge_value(base: &mut serde_json::Value, overlay: &serde_json::Value) {
+    deep_merge(base, overlay);
+}
+
 fn deep_merge(base: &mut serde_json::Value, overlay: &serde_json::Value) {
     if let (Some(base_map), Some(overlay_map)) = (base.as_object_mut(), overlay.as_object()) {
         for (key, value) in overlay_map {
@@ -96,7 +101,12 @@ fn deep_merge(base: &mut serde_json::Value, overlay: &serde_json::Value) {
 /// Read a YAML file as a serde_json::Value, returning None if the file does not exist.
 fn read_yaml_value(path: &Path) -> Option<serde_json::Value> {
     let content = std::fs::read_to_string(path).ok()?;
-    serde_yaml_ng::from_str(&content).ok()
+    let value: serde_json::Value = serde_yaml_ng::from_str(&content).ok()?;
+    // Empty YAML files deserialize as null -- treat them as absent
+    if value.is_null() {
+        return None;
+    }
+    Some(value)
 }
 
 /// Load project config by merging four layers (code defaults < project defaults
@@ -130,7 +140,13 @@ pub fn load_config() -> crate::model::Config {
         deep_merge(&mut merged, &local);
     }
 
-    serde_json::from_value(merged).unwrap_or_default()
+    match serde_json::from_value(merged) {
+        Ok(config) => config,
+        Err(e) => {
+            eprintln!("Warning: config has invalid values, using defaults: {e}");
+            crate::model::Config::default()
+        }
+    }
 }
 
 /// Load the merged config as a serde_json::Value (preserves arbitrary keys).
@@ -169,6 +185,12 @@ pub fn read_yaml<T: DeserializeOwned>(path: &Path) -> Result<T, JoyError> {
         path: path.to_path_buf(),
         source: e,
     })
+}
+
+/// Load the full project metadata from project.yaml.
+pub fn load_project(root: &Path) -> Result<crate::model::project::Project, crate::error::JoyError> {
+    let project_path = joy_dir(root).join(PROJECT_FILE);
+    read_yaml(&project_path)
 }
 
 /// Load the project acronym from project.yaml.
@@ -241,5 +263,21 @@ mod tests {
         let overlay = serde_json::json!({"a": [3]});
         deep_merge(&mut base, &overlay);
         assert_eq!(base, serde_json::json!({"a": [3]}));
+    }
+
+    #[test]
+    fn read_yaml_value_returns_none_for_empty_file() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("empty.yaml");
+        std::fs::write(&path, "").unwrap();
+        assert!(read_yaml_value(&path).is_none());
+    }
+
+    #[test]
+    fn read_yaml_value_returns_none_for_whitespace_only() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("blank.yaml");
+        std::fs::write(&path, "  \n\n").unwrap();
+        assert!(read_yaml_value(&path).is_none());
     }
 }
