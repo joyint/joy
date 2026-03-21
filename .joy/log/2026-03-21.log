@@ -34,3 +34,7 @@
 2026-03-21T18:01:09.236Z JOY-001D item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
 2026-03-21T18:04:24.806Z JOY-0021 comment.added "Plan: Add shell completions for joy config get/set and joy project keys. (1) For config: collect known keys from the Config struct (dotted paths like output.color, output.emoji, agents.default.interaction-level). (2) For project: collect known keys from the Project struct (name, acronym, description, language). (3) Wire up clap_complete ArgValueCompleter for the key arguments. Check how item ID completion is already done for reference." [horst.schwarz@joydev.com]
 2026-03-21T18:04:28.617Z JOY-0021 item.status_changed "new -> in-progress" [horst.schwarz@joydev.com]
+2026-03-21T18:06:48.984Z JOY-0021 comment.added "[x] Static completion for all known config keys (output.*, sync.*, ai.*, agents.default.interaction-level). [x] Dynamic completion for custom agent role keys from current config. [x] Wired up for both config get and config set." [horst.schwarz@joydev.com]
+2026-03-21T18:06:49.491Z JOY-0021 item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
+2026-03-21T18:10:03.327Z JOY-0022 item.created "Unify project command with get/set subcommands" [horst.schwarz@joydev.com]
+2026-03-21T18:10:07.212Z JOY-0022 item.status_changed "new -> in-progress" [horst.schwarz@joydev.com]
