@@ -194,7 +194,7 @@ pub fn priority_display(p: &Priority) -> (String, String) {
     }
 }
 
-fn item_type_colored_short(t: &ItemType) -> String {
+pub fn item_type_colored_short(t: &ItemType) -> String {
     let text = item_type_short(t);
     match t {
         ItemType::Epic => wrap(ACCENT, text),
@@ -219,7 +219,7 @@ fn status_colored_short(s: &Status) -> String {
     }
 }
 
-fn priority_colored_short(p: &Priority) -> String {
+pub fn priority_colored_short(p: &Priority) -> String {
     let text = priority_short(p);
     match p {
         Priority::Extreme => wrap2(BOLD, DANGER, text),
@@ -257,7 +257,7 @@ pub fn priority_short(p: &Priority) -> &'static str {
     match p {
         Priority::Low => "low",
         Priority::Medium => "med",
-        Priority::High => "hi",
+        Priority::High => "hig",
         Priority::Critical => "crt",
         Priority::Extreme => "ext",
     }

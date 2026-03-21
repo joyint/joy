@@ -1,0 +1,14 @@
+id: JOY-001F
+title: config set accepts invalid values, load_config silently falls back to defaults
+type: bug
+status: closed
+priority: high
+created: 2026-03-21T16:49:19.689691119Z
+updated: 2026-03-21T16:50:32.086881807Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-21T16:49:25.800011499Z
+  text: 'Two related issues: (1) config set accepts any value without schema validation -- e.g. ''joy config set output.color false'' stores a boolean, but ColorMode expects auto/always/never. (2) load_config in store.rs uses unwrap_or_default on deserialization, silently returning the full default config when any field has an invalid type. Combined effect: setting one field to an invalid value resets the entire config to defaults without warning.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-21T16:50:32.084498968Z
+  text: 'Fixed: (A) load_config now warns to stderr instead of silently falling back to defaults. (B) config set validates the merged config against the Config struct before writing -- rejects invalid values with a clear error message.'
