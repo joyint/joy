@@ -220,6 +220,7 @@ ADRs are maintained in the [umbrella repository](https://github.com/joyint/proje
 - [ADR-005: Package name `joyint`, binary name `joy`](https://github.com/joyint/project/blob/main/docs/dev/adr/ADR-005-package-name-joyint.md)
 - [ADR-008: Open Core Licensing Model](https://github.com/joyint/project/blob/main/docs/dev/adr/ADR-008-open-core-licensing.md)
 - [ADR-010: VCS abstraction layer](https://github.com/joyint/project/blob/main/docs/dev/adr/ADR-010-vcs-abstraction.md)
+- [ADR-014: .joy/ directory versioning policy](https://github.com/joyint/project/blob/main/docs/dev/adr/ADR-014-joy-directory-versioning-policy.md)
 
 ---
 
