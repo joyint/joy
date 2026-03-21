@@ -1,12 +1,18 @@
 id: JOY-000B
 title: AI does not suggest size when creating items via skill
 type: bug
-status: new
+status: closed
 priority: medium
-size: 2
+effort: 2
 created: 2026-03-20T17:35:21.682590767Z
-updated: 2026-03-20T17:35:27.418290558Z
+updated: 2026-03-21T15:08:22.377660518Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-20T17:35:27.418290Z
   text: 'The Joy skill prompt instructs the AI to suggest a size (1-7) for new items, but in practice the AI skips it. The skill planning section mentions size but the item creation section does not explicitly remind the AI to include --size in the joy add call. Fix: add explicit size guidance to the ''Planning and creating items'' section of the skill.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-21T14:59:03.831603813Z
+  text: 'Plan: Add size to the skill SKILL.md in two places: (1) step 2 of planning -- include size in the numbered list alongside title/type/priority, (2) step 3 -- mention --size in the joy add example. Both in data/ai/skills/joy/SKILL.md (source) and the installed copy will update via joy ai setup.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-21T15:08:18.588263162Z
+  text: '[x] Added size to step 2 (numbered list) and --size to step 3 (joy add call) in data/ai/skills/joy/SKILL.md. The instructions.md source already had correct size guidance.'

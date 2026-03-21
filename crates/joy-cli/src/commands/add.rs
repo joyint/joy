@@ -42,9 +42,9 @@ pub struct AddArgs {
     #[arg(long)]
     parent: Option<String>,
 
-    /// Size (1-7): 1=trivial, 2=small, 3=medium, 4=large, 5=major, 6=heavy, 7=massive
+    /// Effort (1-7): 1=trivial, 2=small, 3=medium, 4=large, 5=major, 6=heavy, 7=massive
     #[arg(short, long)]
-    size: Option<u8>,
+    effort: Option<u8>,
 
     /// Description
     #[arg(short, long)]
@@ -139,11 +139,11 @@ pub fn run(args: AddArgs) -> Result<()> {
         .unwrap_or_default();
 
     item.version = args.version;
-    if let Some(s) = args.size {
-        if !(1..=7).contains(&s) {
-            bail!("size must be between 1 and 7");
+    if let Some(e) = args.effort {
+        if !(1..=7).contains(&e) {
+            bail!("effort must be between 1 and 7");
         }
-        item.size = Some(s);
+        item.effort = Some(e);
     }
 
     if let Some(ref s) = args.status {

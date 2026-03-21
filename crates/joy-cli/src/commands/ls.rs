@@ -23,19 +23,19 @@ pub struct LsArgs {
     item_type: Option<String>,
 
     /// Filter by status: new, open, in-progress, review, closed, deferred
-    #[arg(long)]
+    #[arg(short, long)]
     status: Option<String>,
 
     /// Filter by priority: low, medium, high, critical, extreme
-    #[arg(long)]
+    #[arg(short, long)]
     priority: Option<String>,
 
     /// Show only items assigned to me (git config user.email)
-    #[arg(long)]
+    #[arg(short = 'M', long)]
     mine: bool,
 
     /// Filter by milestone ID (includes items inheriting from parent)
-    #[arg(long)]
+    #[arg(short, long)]
     milestone: Option<String>,
 
     /// Filter by tag
@@ -47,7 +47,7 @@ pub struct LsArgs {
     version: Option<String>,
 
     /// Show only blocked items
-    #[arg(long)]
+    #[arg(short, long)]
     blocked: bool,
 
     /// Show all items (including closed and deferred)
@@ -60,10 +60,10 @@ pub struct LsArgs {
 
     /// Extra columns to show (comma-separated: milestone, assignee, parent)
     #[arg(short, long, value_delimiter = ',')]
-    show: Vec<String>,
+    columns: Vec<String>,
 
     /// Group tree view by: parent (default), milestone
-    #[arg(long, default_value = "parent")]
+    #[arg(short, long, default_value = "parent")]
     group: String,
 }
 
@@ -81,7 +81,7 @@ impl LsArgs {
             blocked: false,
             all,
             tree: true,
-            show: Vec::new(),
+            columns: Vec::new(),
             group: "milestone".to_string(),
         }
     }
@@ -137,11 +137,11 @@ struct ExtraColumns {
 }
 
 impl ExtraColumns {
-    fn from_args(show: &[String]) -> Self {
+    fn from_args(columns: &[String]) -> Self {
         Self {
-            milestone: show.iter().any(|s| s == "milestone" || s == "ms"),
-            assignee: show.iter().any(|s| s == "assignee"),
-            parent: show.iter().any(|s| s == "parent"),
+            milestone: columns.iter().any(|s| s == "milestone" || s == "ms"),
+            assignee: columns.iter().any(|s| s == "assignee"),
+            parent: columns.iter().any(|s| s == "parent"),
         }
     }
 }
@@ -257,7 +257,7 @@ pub fn run(args: LsArgs) -> Result<()> {
         return Ok(());
     }
 
-    let extras = ExtraColumns::from_args(&args.show);
+    let extras = ExtraColumns::from_args(&args.columns);
 
     if args.tree {
         match args.group.as_str() {
@@ -328,8 +328,10 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
     let w_type = col_raw("TYPE", &|i| color::item_type_display(&i.item_type).0);
     let w_status = col_raw("STATUS", &|i| color::status_display(&i.status).0);
     let w_prio = col_raw("PRIO", &|i| color::priority_display(&i.priority).0);
-    let w_size = col_raw("SIZE", &|i| {
-        i.size.map(|s| s.to_string()).unwrap_or_else(|| " ".into())
+    let w_eff = col_raw("EFF", &|i| {
+        i.effort
+            .map(|e| e.to_string())
+            .unwrap_or_else(|| " ".into())
     });
 
     let w_parent = if extras.parent {
@@ -367,7 +369,7 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
         + 1
         + w_prio
         + 1
-        + w_size
+        + w_eff
         + 1
         + if extras.parent { w_parent + 1 } else { 0 }
         + if extras.milestone { w_ms + 1 } else { 0 }
@@ -387,7 +389,7 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
         pad_colored(&color::heading("TYPE"), "TYPE", w_type),
         pad_colored(&color::heading("STATUS"), "STATUS", w_status),
         pad_colored(&color::heading("PRIO"), "PRIO", w_prio),
-        pad_colored(&color::heading("SIZE"), "SIZE", w_size),
+        pad_colored(&color::heading("EFF"), "EFF", w_eff),
     );
     if extras.parent {
         header.push_str(&format!(
@@ -437,10 +439,10 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
         let (status_raw, status_str) = color::status_display(&item.status);
         let (priority_raw, priority_str) = color::priority_display(&item.priority);
 
-        let size_str = color::size_indicator(item.size);
-        let size_raw = item
-            .size
-            .map(|s| s.to_string())
+        let eff_str = color::effort_indicator(item.effort);
+        let eff_raw = item
+            .effort
+            .map(|e| e.to_string())
             .unwrap_or_else(|| " ".to_string());
 
         let mut line = format!(
@@ -449,7 +451,7 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
             pad_colored(&type_str, &type_raw, w_type),
             pad_colored(&status_str, &status_raw, w_status),
             pad_colored(&priority_str, &priority_raw, w_prio),
-            pad_colored(&size_str, &size_raw, w_size),
+            pad_colored(&eff_str, &eff_raw, w_eff),
         );
 
         if extras.parent {

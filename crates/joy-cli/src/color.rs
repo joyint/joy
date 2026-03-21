@@ -318,10 +318,10 @@ pub fn status_heading(s: &Status, text: &str) -> String {
     }
 }
 
-/// Format a size value (1-7) as a colored block character.
+/// Format an effort value (1-7) as a colored block character.
 /// Always shown, regardless of emoji setting.
 /// Colors: 1-2 green, 3-4 yellow, 5 orange, 6-7 red.
-pub fn size_indicator(size: Option<u8>) -> String {
+pub fn effort_indicator(effort: Option<u8>) -> String {
     const GREEN: &str = "\x1b[32m";
     const YELLOW: &str = "\x1b[33m";
     const ORANGE: &str = "\x1b[38;5;208m";
@@ -330,7 +330,7 @@ pub fn size_indicator(size: Option<u8>) -> String {
 
     let blocks = ['▁', '▂', '▃', '▄', '▅', '▆', '▇'];
 
-    match size {
+    match effort {
         Some(s) if (1..=7).contains(&s) => {
             let block = blocks[(s - 1) as usize];
             let color = match s {

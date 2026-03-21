@@ -4,6 +4,6 @@ type: task
 status: new
 priority: high
 parent: JOY-0012
-size: 3
+effort: 3
 created: 2026-03-20T21:02:44.749010399Z
 updated: 2026-03-20T21:02:44.749010399Z
