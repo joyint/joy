@@ -1,0 +1,13 @@
+id: JOY-0020
+title: Reverse sort flag (-r/--reverse) for board and ls
+type: story
+status: in-progress
+priority: medium
+effort: 2
+created: 2026-03-21T17:24:41.353143984Z
+updated: 2026-03-21T17:24:56.233705031Z
+description: 'Add -r/--reverse flag. Board: default newest first, -r for oldest first. ls: default oldest first (ID ascending), -r for newest first. Consistent across both commands.'
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-21T17:24:46.950702022Z
+  text: 'Plan: (1) Board: reverse items per column (newest first by default). (2) Add -r/--reverse to BoardArgs and LsArgs. (3) Board with -r: oldest first. (4) ls with -r: newest first (reverse ID order). (5) Check if -r conflicts with rm --recursive -- no, rm is a different subcommand.'

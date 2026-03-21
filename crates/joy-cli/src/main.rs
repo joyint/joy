@@ -34,6 +34,10 @@ pub(crate) struct Cli {
     #[arg(short, long)]
     all: bool,
 
+    /// Reverse sort order
+    #[arg(short, long)]
+    reverse: bool,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -97,6 +101,10 @@ pub(crate) struct BoardArgs {
     /// Show all items (no limit per status group)
     #[arg(short, long)]
     pub all: bool,
+
+    /// Reverse sort order (oldest first instead of newest first)
+    #[arg(short, long)]
+    pub reverse: bool,
 }
 
 #[derive(clap::Args)]
@@ -173,7 +181,10 @@ fn main() -> anyhow::Result<()> {
         Some(Commands::Board(args)) => commands::board::run(args),
         Some(Commands::Config(_)) => unreachable!("handled above"),
         Some(Commands::Ai(args)) => commands::ai::run(args),
-        None => commands::board::run(BoardArgs { all: cli.all }),
+        None => commands::board::run(BoardArgs {
+            all: cli.all,
+            reverse: cli.reverse,
+        }),
     };
 
     if show_fortune && result.is_ok() && config.output.fortune && std::io::stdout().is_terminal() {

@@ -20,3 +20,8 @@
 2026-03-21T16:49:37.491Z JOY-001F item.status_changed "new -> in-progress" [horst.schwarz@joydev.com]
 2026-03-21T16:50:32.085Z JOY-001F comment.added "Fixed: (A) load_config now warns to stderr instead of silently falling back to defaults. (B) config set validates the merged config against the Config struct before writing -- rejects invalid values with a clear error message." [horst.schwarz@joydev.com]
 2026-03-21T16:50:32.087Z JOY-001F item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
+2026-03-21T17:24:31.808Z JOY-001E comment.added "[x] Kanban board with header/footer, adaptive columns (wide/medium/narrow). [x] Height-aware with +N more overflow. [x] Empty status columns as thin placeholders. [x] joy --all / joy -a support. [x] Compact emoji-only indicators in wide mode, no icons in medium/narrow. [x] Consistent header/footer formatting." [horst.schwarz@joydev.com]
+2026-03-21T17:24:35.497Z JOY-001E item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
+2026-03-21T17:24:41.353Z JOY-0020 item.created "Reverse sort flag (-r/--reverse) for board and ls" [horst.schwarz@joydev.com]
+2026-03-21T17:24:46.951Z JOY-0020 comment.added "Plan: (1) Board: reverse items per column (newest first by default). (2) Add -r/--reverse to BoardArgs and LsArgs. (3) Board with -r: oldest first. (4) ls with -r: newest first (reverse ID order). (5) Check if -r conflicts with rm --recursive -- no, rm is a different subcommand." [horst.schwarz@joydev.com]
+2026-03-21T17:24:56.234Z JOY-0020 item.status_changed "new -> in-progress" [horst.schwarz@joydev.com]
