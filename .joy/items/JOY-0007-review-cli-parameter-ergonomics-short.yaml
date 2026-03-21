@@ -1,11 +1,11 @@
 id: JOY-0007
 title: Review CLI parameter ergonomics (short flags, bundling)
 type: rework
-status: in-progress
+status: closed
 priority: medium
 effort: 2
 created: 2026-03-20T16:42:20.972419709Z
-updated: 2026-03-21T15:25:29.136481372Z
+updated: 2026-03-21T15:46:36.818776086Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-20T16:42:28.396044969Z
@@ -13,3 +13,6 @@ comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-21T15:25:25.571300300Z
   text: 'Plan: Comprehensive CLI flag ergonomics rework. (1) Rename --size to --effort (-e) everywhere (CLI, data model, YAML field, docs, instructions). (2) Rename --show to --columns (-c) in ls. (3) Fix -s to always mean --status. (4) Fix -a to always mean --all, -A for --assignee. (5) Add new short flags: -b (blocked), -g (group), -m (milestone), -M (mine), -p (priority) in ls. (6) --tree stays long-only to avoid conflict with -t (title). (7) Bump semver for breaking changes.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-21T15:46:33.923878527Z
+  text: '[x] Renamed --size to --effort (-e) everywhere (CLI, data model, YAML, AI instructions). [x] Renamed --show to --columns (-c) in ls. [x] Fixed -s to always mean --status. [x] Fixed -a to always mean --all, -A for --assignee in edit. [x] Added short flags in ls: -s, -p, -m, -M, -b, -g. [x] --tree stays long-only. [x] Updated all YAML items (joy + umbrella). [x] Updated .gitignore in all repos to include .joy/ai/. [x] Released as v0.3.0.'

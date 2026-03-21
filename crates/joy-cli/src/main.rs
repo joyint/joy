@@ -30,6 +30,10 @@ pub(crate) struct Cli {
     #[arg(global = true, short = 'S', long)]
     short: bool,
 
+    /// Show all items on the board (no limit per column)
+    #[arg(short, long)]
+    all: bool,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -169,7 +173,7 @@ fn main() -> anyhow::Result<()> {
         Some(Commands::Board(args)) => commands::board::run(args),
         Some(Commands::Config(_)) => unreachable!("handled above"),
         Some(Commands::Ai(args)) => commands::ai::run(args),
-        None => commands::board::run(BoardArgs { all: false }),
+        None => commands::board::run(BoardArgs { all: cli.all }),
     };
 
     if show_fortune && result.is_ok() && config.output.fortune && std::io::stdout().is_terminal() {
