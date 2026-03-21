@@ -1,13 +1,16 @@
 id: JOY-001D
 title: joy ai setup does not configure nested projects
 type: bug
-status: in-progress
+status: closed
 priority: medium
 effort: 3
 created: 2026-03-21T15:05:07.356742370Z
-updated: 2026-03-21T17:58:33.678161595Z
+updated: 2026-03-21T18:01:09.235635152Z
 description: 'When a Joy project lives inside another project (submodule, monorepo, or simply a nested directory), running joy ai setup only in the parent is not sufficient. AI tool permissions (e.g. .claude/settings.json) are per-project and not inherited from parent directories. Users working from the nested project directory get no joy/jot permissions. Fix: joy ai setup must detect this situation and either run setup in nested projects too, or at minimum warn the user. Tutorial Mission 8 and umbrella Architecture.md need documentation of this behavior.'
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-21T17:58:30.074505782Z
   text: 'Plan: (1) After running setup in the current project, scan subdirectories (max 2 levels deep) for .joy/project.yaml. For each found nested project, check if the current AI tool''s config exists there. If not, print a warning with the path and suggest running joy ai setup there. (2) Add a note to Tutorial Mission 8 about nested projects. (3) Add a note to umbrella Architecture.md about per-project AI config.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-21T18:01:08.434265612Z
+  text: '[x] Scan subdirectories (2 levels) for nested Joy projects after setup. [x] Warn if any nested project lacks AI tool config. [x] Tutorial Mission 8 updated with nested project note. [x] Umbrella Architecture.md updated.'
