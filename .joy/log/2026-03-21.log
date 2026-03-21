@@ -27,3 +27,6 @@
 2026-03-21T17:24:56.234Z JOY-0020 item.status_changed "new -> in-progress" [horst.schwarz@joydev.com]
 2026-03-21T17:26:48.135Z JOY-0020 comment.added "[x] Board default: newest first per column. [x] -r/--reverse on board, ls, and top-level joy. [x] ls -r shows newest first." [horst.schwarz@joydev.com]
 2026-03-21T17:26:48.354Z JOY-0020 item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
+2026-03-21T17:50:52.065Z JOY-0021 item.created "Auto-completion for config/project set/get" [horst.schwarz@joydev.com]
+2026-03-21T17:58:30.075Z JOY-001D comment.added "Plan: (1) After running setup in the current project, scan subdirectories (max 2 levels deep) for .joy/project.yaml. For each found nested project, check if the current AI tool's config exists there. If not, print a warning with the path and suggest running joy ai setup there. (2) Add a note to Tutorial Mission 8 about nested projects. (3) Add a note to umbrella Architecture.md about per-project AI config." [horst.schwarz@joydev.com]
+2026-03-21T17:58:33.679Z JOY-001D item.status_changed "new -> in-progress" [horst.schwarz@joydev.com]

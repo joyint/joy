@@ -1,0 +1,8 @@
+id: JOY-0021
+title: Auto-completion for config/project set/get
+type: idea
+status: new
+priority: medium
+created: 2026-03-21T17:50:52.063168638Z
+updated: 2026-03-21T17:50:52.063168638Z
+description: The user shall be able to find joy config and joy project entries with get and set by using auto-completion as known for the commands and items in joy
