@@ -65,6 +65,10 @@ pub struct LsArgs {
     /// Group tree view by: parent (default), milestone
     #[arg(short, long, default_value = "parent")]
     group: String,
+
+    /// Reverse sort order (newest first instead of oldest first)
+    #[arg(short, long)]
+    reverse: bool,
 }
 
 impl LsArgs {
@@ -83,6 +87,7 @@ impl LsArgs {
             tree: true,
             columns: Vec::new(),
             group: "milestone".to_string(),
+            reverse: false,
         }
     }
 }
@@ -185,7 +190,7 @@ pub fn run(args: LsArgs) -> Result<()> {
         .map(|p| p.parse().map_err(|e: String| anyhow::anyhow!("{}", e)))
         .transpose()?;
 
-    let filtered: Vec<&Item> = all_items
+    let mut filtered: Vec<&Item> = all_items
         .iter()
         .filter(|item| {
             // By default, exclude closed and deferred
@@ -255,6 +260,10 @@ pub fn run(args: LsArgs) -> Result<()> {
     if filtered.is_empty() {
         println!("No matching items.");
         return Ok(());
+    }
+
+    if args.reverse {
+        filtered.reverse();
     }
 
     let extras = ExtraColumns::from_args(&args.columns);

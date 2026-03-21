@@ -1,13 +1,16 @@
 id: JOY-001E
 title: Kanban-style board view as default for joy command
 type: rework
-status: in-progress
+status: closed
 priority: high
 effort: 5
 created: 2026-03-21T16:18:13.515244559Z
-updated: 2026-03-21T16:18:28.655507714Z
+updated: 2026-03-21T17:24:35.496737157Z
 description: 'Replace the current basic board view with a proper Kanban board. Header row with project info (name, age, last change, item count). Status columns with adaptive item rendering (wide/medium/narrow based on terminal width). Empty status columns shown as thin placeholders. Height-aware: fits terminal minus 2-3 lines, overflow shown as ''...'', --all for full view. Footer with summary counts. Border style matches joy ls separator.'
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-21T16:18:22.006085266Z
   text: 'Plan: Rewrite crates/joy-cli/src/commands/board.rs. (1) Header: project name from project.yaml, created date from oldest item or project init, last change from event log, total item count. (2) Columns: one per status that has items, empty stati as 1-char thin column. Distribute terminal width proportionally by item count. (3) Items: adaptive layout -- wide (>30 cols): ID+emojis+title one line; medium (20-30): ID+emojis line 1, title line 2; narrow (<20): ID line 1, emojis line 2. No blank lines between items in wide mode. (4) Height: terminal height - 3, truncate with ''...'' per column, --all disables limit. (5) Footer: summary line (open/in-progress/closed/blocked counts). (6) Borders: dashed lines matching joy ls style.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-21T17:24:31.807721664Z
+  text: '[x] Kanban board with header/footer, adaptive columns (wide/medium/narrow). [x] Height-aware with +N more overflow. [x] Empty status columns as thin placeholders. [x] joy --all / joy -a support. [x] Compact emoji-only indicators in wide mode, no icons in medium/narrow. [x] Consistent header/footer formatting.'
