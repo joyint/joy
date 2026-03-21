@@ -392,36 +392,38 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
     };
 
     // Pass 2: print header
+    let sep_len = term_width.min(fixed_width + title_width);
+    println!("{}", color::label(&"-".repeat(sep_len)));
+
     let mut header = format!(
         "{} {} {} {} {}",
-        pad_colored(&color::heading("ID"), "ID", w_id),
-        pad_colored(&color::heading("TYPE"), "TYPE", w_type),
-        pad_colored(&color::heading("STATUS"), "STATUS", w_status),
-        pad_colored(&color::heading("PRIO"), "PRIO", w_prio),
-        pad_colored(&color::heading("EFF"), "EFF", w_eff),
+        pad_colored(&color::label("ID"), "ID", w_id),
+        pad_colored(&color::label("TYPE"), "TYPE", w_type),
+        pad_colored(&color::label("STATUS"), "STATUS", w_status),
+        pad_colored(&color::label("PRIO"), "PRIO", w_prio),
+        pad_colored(&color::label("EFF"), "EFF", w_eff),
     );
     if extras.parent {
         header.push_str(&format!(
             " {}",
-            pad_colored(&color::heading("PARENT"), "PARENT", w_parent)
+            pad_colored(&color::label("PARENT"), "PARENT", w_parent)
         ));
     }
     if extras.milestone {
         header.push_str(&format!(
             " {}",
-            pad_colored(&color::heading("MS"), "MS", w_ms)
+            pad_colored(&color::label("MS"), "MS", w_ms)
         ));
     }
     if extras.assignee {
         header.push_str(&format!(
             " {}",
-            pad_colored(&color::heading("ASSIGNEE"), "ASSIGNEE", w_assignee)
+            pad_colored(&color::label("ASSIGNEE"), "ASSIGNEE", w_assignee)
         ));
     }
-    header.push_str(&format!(" {}", color::heading("TITLE")));
+    header.push_str(&format!(" {}", color::label("TITLE")));
     println!("{header}");
 
-    let sep_len = term_width.min(fixed_width + title_width);
     println!("{}", color::label(&"-".repeat(sep_len)));
 
     // Pass 2: print rows

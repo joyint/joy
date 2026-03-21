@@ -25,3 +25,5 @@
 2026-03-21T17:24:41.353Z JOY-0020 item.created "Reverse sort flag (-r/--reverse) for board and ls" [horst.schwarz@joydev.com]
 2026-03-21T17:24:46.951Z JOY-0020 comment.added "Plan: (1) Board: reverse items per column (newest first by default). (2) Add -r/--reverse to BoardArgs and LsArgs. (3) Board with -r: oldest first. (4) ls with -r: newest first (reverse ID order). (5) Check if -r conflicts with rm --recursive -- no, rm is a different subcommand." [horst.schwarz@joydev.com]
 2026-03-21T17:24:56.234Z JOY-0020 item.status_changed "new -> in-progress" [horst.schwarz@joydev.com]
+2026-03-21T17:26:48.135Z JOY-0020 comment.added "[x] Board default: newest first per column. [x] -r/--reverse on board, ls, and top-level joy. [x] ls -r shows newest first." [horst.schwarz@joydev.com]
+2026-03-21T17:26:48.354Z JOY-0020 item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]

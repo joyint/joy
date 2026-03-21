@@ -19,7 +19,6 @@ const STATUS_ORDER: &[(Status, &str)] = &[
     (Status::Deferred, "DEFERRED"),
 ];
 
-const THIN_COL_WIDTH: usize = 1;
 const MIN_COL_WIDTH: usize = 12;
 const COL_GAP: usize = 1;
 
@@ -83,8 +82,6 @@ pub fn run(args: crate::BoardArgs) -> Result<()> {
     // Build column layout: active columns get equal share, empty stati get thin placeholder
     let mut layout: Vec<ColLayout> = Vec::new();
     let active_count = columns.len();
-    let mut empty_count = 0;
-
     {
         let mut active_idx = 0;
         for (status, _) in STATUS_ORDER {
@@ -92,18 +89,31 @@ pub fn run(args: crate::BoardArgs) -> Result<()> {
                 layout.push(ColLayout::Active(active_idx));
                 active_idx += 1;
             } else {
-                layout.push(ColLayout::Empty);
-                empty_count += 1;
+                layout.push(ColLayout::Empty(status.clone()));
             }
         }
     }
 
-    let thin_total = empty_count * (THIN_COL_WIDTH + COL_GAP);
-    let gaps_between_active = active_count.saturating_sub(1);
-    let available = term_width
-        .saturating_sub(thin_total)
-        .saturating_sub(gaps_between_active * COL_GAP);
-    let col_width = (available / active_count).max(MIN_COL_WIDTH);
+    // Calculate widths: each slot gets a width, gaps between all slots
+    let total_slots = layout.len();
+    let total_gaps = if total_slots > 1 {
+        (total_slots - 1) * COL_GAP
+    } else {
+        0
+    };
+    let thin_total: usize = layout
+        .iter()
+        .filter_map(|slot| match slot {
+            ColLayout::Empty(status) => Some(thin_indicator_width(status)),
+            _ => None,
+        })
+        .sum();
+    let available_for_active = term_width.saturating_sub(total_gaps + thin_total);
+    let col_width = if active_count > 0 {
+        (available_for_active / active_count).max(MIN_COL_WIDTH)
+    } else {
+        MIN_COL_WIDTH
+    };
 
     // Determine display mode based on column width
     let mode = if col_width >= 30 {
@@ -172,8 +182,22 @@ pub fn run(args: crate::BoardArgs) -> Result<()> {
                     col_header.push_str(&" ".repeat(col_width - w));
                 }
             }
-            ColLayout::Empty => {
-                col_header.push_str(&color::label("."));
+            ColLayout::Empty(status) => {
+                let indicator = color::status_indicator(status);
+                if indicator.is_empty() {
+                    // No emoji: use first letter of status
+                    let first = match status {
+                        Status::New => "N",
+                        Status::Open => "O",
+                        Status::InProgress => "W",
+                        Status::Review => "R",
+                        Status::Closed => "C",
+                        Status::Deferred => "D",
+                    };
+                    col_header.push_str(&color::inactive(first));
+                } else {
+                    col_header.push_str(&color::inactive(indicator.trim()));
+                }
             }
         }
     }
@@ -306,8 +330,9 @@ pub fn run(args: crate::BoardArgs) -> Result<()> {
                         line.push_str(&" ".repeat(col_width));
                     }
                 }
-                ColLayout::Empty => {
-                    line.push(' ');
+                ColLayout::Empty(status) => {
+                    let w = thin_indicator_width(status);
+                    line.push_str(&" ".repeat(w));
                 }
             }
         }
@@ -339,7 +364,7 @@ struct Column<'a> {
 
 enum ColLayout {
     Active(usize),
-    Empty,
+    Empty(Status),
 }
 
 #[derive(Clone, Copy)]
@@ -347,6 +372,16 @@ enum DisplayMode {
     Wide,
     Medium,
     Narrow,
+}
+
+/// Get the display width of a thin (empty) column indicator.
+fn thin_indicator_width(status: &Status) -> usize {
+    let indicator = color::status_indicator(status);
+    if indicator.is_empty() {
+        1 // single letter fallback
+    } else {
+        display_width(indicator.trim())
+    }
 }
 
 fn terminal_width() -> usize {
