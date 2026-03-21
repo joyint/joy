@@ -112,8 +112,15 @@ struct ShortcutArgs {
 fn main() -> anyhow::Result<()> {
     clap_complete::CompleteEnv::with_factory(Cli::command).complete();
 
-    let mut config = joy_core::store::load_config();
     let cli = Cli::parse();
+
+    // Config subcommand handles its own validation, run it before load_config
+    // to avoid duplicate warnings for invalid config state.
+    if let Some(Commands::Config(args)) = cli.command {
+        return commands::config::run(args);
+    }
+
+    let mut config = joy_core::store::load_config();
 
     if cli.short {
         config.output.short = true;
@@ -160,7 +167,7 @@ fn main() -> anyhow::Result<()> {
         Some(Commands::Find(args)) => commands::find::run(args),
         Some(Commands::Release(args)) => commands::release::run(args),
         Some(Commands::Board(args)) => commands::board::run(args),
-        Some(Commands::Config(args)) => commands::config::run(args),
+        Some(Commands::Config(_)) => unreachable!("handled above"),
         Some(Commands::Ai(args)) => commands::ai::run(args),
         None => commands::board::run(BoardArgs { all: false }),
     };

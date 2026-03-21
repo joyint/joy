@@ -80,7 +80,12 @@ fn set_value(root: &std::path::Path, key: &str, raw_value: &str) -> anyhow::Resu
     // Read existing local override file, or start with empty object
     let mut value: serde_json::Value = if local_path.is_file() {
         let content = fs::read_to_string(&local_path)?;
-        serde_yaml_ng::from_str(&content)?
+        let parsed: serde_json::Value = serde_yaml_ng::from_str(&content)?;
+        if parsed.is_null() {
+            serde_json::json!({})
+        } else {
+            parsed
+        }
     } else {
         serde_json::json!({})
     };
@@ -88,7 +93,20 @@ fn set_value(root: &std::path::Path, key: &str, raw_value: &str) -> anyhow::Resu
     let parsed = parse_value(raw_value);
     set_nested(&mut value, key, parsed)?;
 
+    // Validate by round-tripping through YAML (same path as load_config),
+    // which correctly handles hyphen/underscore key variants.
     let yaml = serde_yaml_ng::to_string(&value)?;
+    let defaults_yaml = serde_yaml_ng::to_string(&joy_core::model::Config::default())?;
+    let mut merged: serde_json::Value = serde_yaml_ng::from_str(&defaults_yaml)?;
+    let overlay: serde_json::Value = serde_yaml_ng::from_str(&yaml)?;
+    store::deep_merge_value(&mut merged, &overlay);
+    if serde_json::from_value::<joy_core::model::Config>(merged).is_err() {
+        if let Some(hint) = joy_core::model::config::field_hint(key) {
+            anyhow::bail!("'{raw_value}' is not valid for '{key}'\n  {hint}");
+        }
+        anyhow::bail!("'{raw_value}' is not a valid value for '{key}'");
+    }
+
     fs::write(&local_path, yaml)?;
 
     println!("{} = {}", key, raw_value);
