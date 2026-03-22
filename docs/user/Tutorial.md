@@ -306,25 +306,38 @@ MISSION 7: READING THE BLACK BOX (log, roadmap, edit, rm)
     counts, and the full hierarchy. One glance, and you know where the
     mission stands. MacGyver calls it situational awareness.
 
-    When you ship a version, use release notes to see what went into it:
+    When you ship a version, create a release:
 
-        joy release v1.0.0               Items tagged with v1.0.0
-        joy release                      Auto-detect latest git tag
+        joy release create patch             Next patch version (default)
+        joy release create minor             Next minor version
+        joy release create major             Next major version
+        joy release create patch --title "Bug fixes"
 
-    Version tags are especially useful for bugs. Tag a bug with the version
-    where it was found, and use the release view to see all known issues:
+    Joy collects all items closed since the last release from the event
+    log, groups them by type, lists contributors, and writes a release
+    snapshot to .joy/releases/CB-v1.0.1.yaml. It shows a preview and
+    asks for confirmation before writing.
+
+    Preview what the next release would contain without creating it:
+
+        joy release show                     Preview from event log
+        joy release show v1.0.0              Show an existing release
+        joy release ls                       List all releases
+
+    If you reopen a released item, Joy warns you:
+
+        joy reopen CB-0005
+        warning: CB-0005 is included in release v1.0.0
+          = note: reopening a released item means the fix was incomplete
+          = help: consider creating a new bug item instead
+          Reopen anyway? [y/N]
+
+    Version tags on items are still useful for tracking bugs. Tag a bug
+    with the version where it was found:
 
         joy add bug "Crash on empty input" --version v0.9.0
-        joy release v0.9.0
-
-    The release view groups items by type so you see features, fixes, and
-    known bugs at a glance. Use joy ls --version to filter at any time:
-
         joy ls --version v0.9.0              All items for a version
         joy ls --type bug --version v0.9.0   Bugs found in v0.9.0
-
-    If no git tags exist, joy release simply asks for a version argument.
-    No assumptions, no automatism. A good field report beats a good memory.
 
     Need to adjust something? Edit on the fly:
 
@@ -460,7 +473,9 @@ REFERENCE
     joy deps <ID>                   Manage dependencies
     joy milestone                   Manage milestones
     joy log                         Event log (audit trail)
-    joy release [VERSION]           Release notes for a version
+    joy release create <BUMP>       Create a release (patch/minor/major)
+    joy release show [VERSION]      Show a release or preview the next
+    joy release ls                  List all releases
     joy roadmap                     Milestone roadmap (tree view)
     joy project                     View/edit project info
     joy config                      Show current configuration
