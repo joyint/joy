@@ -385,8 +385,10 @@ pub struct ActorStats {
     pub items: usize,
 }
 
-/// Collect unique actors from events after a cutoff, with event and item counts.
-pub fn actors_since(root: &Path, cutoff: Option<&str>) -> Result<Vec<ActorStats>, JoyError> {
+/// Collect actor stats for a specific set of item IDs.
+/// Only counts events whose target matches one of the given item IDs.
+pub fn actors_for_items(root: &Path, item_ids: &[String]) -> Result<Vec<ActorStats>, JoyError> {
+    let id_set: std::collections::HashSet<&str> = item_ids.iter().map(|s| s.as_str()).collect();
     let events = read_all_events(root)?;
     let mut event_counts: std::collections::HashMap<String, usize> =
         std::collections::HashMap::new();
@@ -394,10 +396,8 @@ pub fn actors_since(root: &Path, cutoff: Option<&str>) -> Result<Vec<ActorStats>
         std::collections::HashMap::new();
 
     for entry in &events {
-        if let Some(cutoff) = cutoff {
-            if entry.timestamp.as_str() <= cutoff {
-                continue;
-            }
+        if !id_set.contains(entry.target.as_str()) {
+            continue;
         }
         if entry.event_type.starts_with("item.") || entry.event_type.starts_with("comment.") {
             *event_counts.entry(entry.user.clone()).or_default() += 1;
