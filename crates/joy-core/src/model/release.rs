@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Contributor {
     pub id: String,
+    pub events: usize,
     pub items: usize,
 }
 
@@ -167,6 +168,7 @@ mod tests {
             previous: Some("v0.3.1".into()),
             contributors: vec![Contributor {
                 id: "human:test@x.com".into(),
+                events: 12,
                 items: 3,
             }],
             items: ReleaseItems {
