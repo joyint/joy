@@ -155,8 +155,11 @@ release bump="patch":
             *) echo "Error: bump must be patch, minor, or major"; exit 1 ;;
         esac
     fi
-    # Run checks before proceeding with the release
-    just check
+    # Run checks (quiet unless they fail)
+    if ! just check > /dev/null 2>&1; then
+        echo "Checks failed. Run 'just check' for details."
+        exit 1
+    fi
     semver="${tag#v}"
     # Cargo version bump (if crates exist)
     if [ -d "crates" ]; then
