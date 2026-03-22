@@ -1,9 +1,16 @@
 id: JOY-001C
 title: AI self-update check at session start
 type: story
-status: new
+status: closed
 priority: medium
 effort: 5
 created: 2026-03-21T14:58:50.469541338Z
-updated: 2026-03-21T14:58:50.469541338Z
+updated: 2026-03-22T14:53:17.179992527Z
 description: 'Add joy ai check --tool <TOOL> [--yes] command. Embedded template hashes are computed at compile time (build script or const fn). At runtime, hashes installed files and compares. If current: prints ''Up to date'' and exits 0. If outdated: updates the specified tool, prints a changelog of what changed, and returns distinct exit code so the AI can reload instructions and review the changelog. Each change to AI templates must include a changelog entry (enforce via ADR). Add instruction to AI templates to run this check at session start.'
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-22T14:42:32.599814148Z
+  text: 'Plan: Add joy ai check subcommand. (1) Compute SHA-256 hashes of the three embedded templates (instructions.md, setup.md, SKILL.md) at compile time via include_str\!. (2) At runtime, hash the installed files in .joy/ai/ and compare. (3) If all match: print ''Up to date.'' and exit 0. (4) If any differ or missing: run the existing copy_templates() logic to update, print what changed, and exit 2 so the AI tool can detect and reload. (5) Add instruction to AI templates: run joy ai check at session start.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-22T14:53:14.775602002Z
+  text: '[x] joy ai check compares installed .joy/ai/ templates against embedded versions via SHA-256. Exit 0 = up to date, exit 2 = outdated with list and hint to run joy ai setup. [x] joy ai setup now uses the same diff logic: only writes changed templates, shows up to date / updated per file. [x] instructions.md and SKILL.md updated: joy ai check is now step 1 of session start.'

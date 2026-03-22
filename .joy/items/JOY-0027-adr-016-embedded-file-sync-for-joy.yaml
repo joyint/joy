@@ -1,0 +1,12 @@
+id: JOY-0027
+title: 'ADR-016: Embedded file sync for Joy-owned assets'
+type: decision
+status: closed
+priority: medium
+effort: 1
+created: 2026-03-22T15:49:24.793589291Z
+updated: 2026-03-22T15:49:55.095641367Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-22T15:49:55.087903170Z
+  text: '[x] ADR-016 created: documents the embedded file sync pattern, core module API, file registries (HOOK_FILES, AI_FILES), three operations (check/sync/install), hash comparison strategy, and how to add new embedded files.'

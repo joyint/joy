@@ -1,12 +1,15 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
+use std::io::Write;
+
 use anyhow::Result;
 use chrono::Utc;
 use clap::Args;
 
 use joy_core::items;
 use joy_core::model::item::Status;
+use joy_core::releases;
 use joy_core::store;
 
 use crate::color;
@@ -52,6 +55,35 @@ pub fn run(args: StatusArgs) -> Result<()> {
 
     let mut item = items::load_item(&root, &args.id)?;
     let old_status = item.status.clone();
+
+    // Warn when reopening a released item
+    if matches!(old_status, Status::Closed | Status::Deferred)
+        && !matches!(new_status, Status::Closed | Status::Deferred)
+    {
+        if let Ok(Some(release_version)) = releases::item_in_release(&root, &item.id) {
+            eprintln!(
+                "\nwarning: {} is included in release {}",
+                color::id(&item.id),
+                release_version
+            );
+            eprintln!("  |");
+            eprintln!(
+                "  = note: reopening a released item means the fix was incomplete"
+            );
+            eprintln!(
+                "  = help: consider creating a new bug item instead"
+            );
+            eprint!("\n  Reopen anyway? [y/N] ");
+            std::io::stderr().flush()?;
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+            let trimmed = input.trim();
+            if !trimmed.eq_ignore_ascii_case("y") {
+                println!("Aborted.");
+                return Ok(());
+            }
+        }
+    }
 
     // Warn when closing an item that has open children
     if matches!(new_status, Status::Closed) {

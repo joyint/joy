@@ -1,0 +1,12 @@
+id: JOY-0028
+title: Document joy init onboarding and commit-msg hook in README and Tutorial
+type: task
+status: closed
+priority: high
+effort: 2
+created: 2026-03-22T15:52:49.176341558Z
+updated: 2026-03-22T15:53:35.922396851Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-22T15:53:35.914844161Z
+  text: '[x] README.md: added ''Joining an existing project'' section explaining joy init onboarding mode. [x] Tutorial Mission 1: added ''Joining an existing project'' subsection and hook mention. [x] Tutorial Mission 7: added ''Commit-msg hook: closing the loop'' section with full error output example, [no-item] bypass, multi-repo rules, and CI hint. [x] Reference table: updated joy init description, added joy ai check.'

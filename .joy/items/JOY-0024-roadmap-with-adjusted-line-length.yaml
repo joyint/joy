@@ -1,0 +1,18 @@
+id: JOY-0024
+title: Roadmap with adjusted line length
+type: idea
+status: closed
+priority: medium
+created: 2026-03-22T14:29:58.359631283Z
+updated: 2026-03-22T14:59:22.146037007Z
+description: The roadmap shall show only one line per entry. The algorithm could use the terminal size to determine the max length and shorten the title of the entry so that always all other infos are shown. It should work in all modes, with and without emojis
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-22T14:55:59.816449860Z
+  text: 'Plan: Both tree renderers (print_tree_node for parent grouping, print_ms_tree_node for milestone grouping) print titles without terminal width awareness. truncate_title() already exists in ls.rs but is only used in print_table(). Fix: compute available title space as terminal_width minus prefix_width minus metadata brackets (ID + [type] + [status] + [prio]) and truncate the title. Same approach for both active and inactive items.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-22T14:57:19.070818134Z
+  text: '[x] Both tree renderers (print_tree_node, print_ms_tree_node) now truncate titles based on terminal width. Shared tree_title_width() computes available space by subtracting prefix, connector, ID, and metadata brackets from terminal width. Uses existing truncate_title() with ''...'' suffix. Works in both emoji and no-emoji modes.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-22T14:59:22.146036210Z
+  text: '[x] Follow-up fix: bracket width calculation was off by 1 per bracket (counted 2 chars for '' [X]'' instead of 3). Also applies to joy ls --tree, not just roadmap.'

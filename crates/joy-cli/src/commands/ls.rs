@@ -69,6 +69,10 @@ pub struct LsArgs {
     /// Reverse sort order (newest first instead of oldest first)
     #[arg(short, long)]
     reverse: bool,
+
+    /// Compact output: emoji-only or abbreviations
+    #[arg(short = 'S', long)]
+    pub short: bool,
 }
 
 impl LsArgs {
@@ -88,6 +92,7 @@ impl LsArgs {
             columns: Vec::new(),
             group: "milestone".to_string(),
             reverse: false,
+            short: false,
         }
     }
 }
@@ -536,6 +541,25 @@ fn print_tree_by_parent(items: &[&Item]) {
     println!("\n{}", color::label(&format!("{} item(s)", items.len())));
 }
 
+/// Compute the available title width for a tree row, given the prefix and item metadata.
+fn tree_title_width(prefix: &str, connector: &str, item: &Item) -> usize {
+    let term_width = terminal_width();
+    let (type_raw, _) = color::item_type_display(&item.item_type);
+    let (status_raw, _) = color::status_display(&item.status);
+    let (prio_raw, _) = color::priority_display(&item.priority);
+
+    // Fixed parts: prefix + connector + "ID " + " [type] [status] [prio]"
+    let chrome_width = display_width(prefix)
+        + display_width(connector)
+        + display_width(&item.id)
+        + 1 // space after ID
+        + 3 + display_width(&type_raw)   // " [type]"
+        + 3 + display_width(&status_raw) // " [status]"
+        + 3 + display_width(&prio_raw); // " [prio]"
+
+    term_width.saturating_sub(chrome_width)
+}
+
 fn print_tree_node(item: &Item, all_items: &[&Item], prefix: &str, is_last: bool) {
     let connector = if prefix.is_empty() {
         String::new() // Root level: no connector
@@ -561,6 +585,9 @@ fn print_tree_node(item: &Item, all_items: &[&Item], prefix: &str, is_last: bool
         .filter(|i| i.parent.as_deref() == Some(&item.id))
         .collect();
 
+    let title_width = tree_title_width(prefix, &connector, item);
+    let title = truncate_title(&item.title, title_width);
+
     let (type_raw, type_colored) = color::item_type_display(&item.item_type);
     let (prio_raw, prio_colored) = color::priority_display(&item.priority);
     if !item.is_active() {
@@ -570,7 +597,7 @@ fn print_tree_node(item: &Item, all_items: &[&Item], prefix: &str, is_last: bool
             tree_chrome,
             color::inactive(&format!(
                 "{} {} [{}] [{}] [{}]",
-                item.id, item.title, type_raw, status_raw, prio_raw
+                item.id, title, type_raw, status_raw, prio_raw
             ))
         );
     } else {
@@ -579,7 +606,7 @@ fn print_tree_node(item: &Item, all_items: &[&Item], prefix: &str, is_last: bool
             "{}{} {} [{}] [{}] [{}]",
             tree_chrome,
             color::id(&item.id),
-            item.title,
+            title,
             type_colored,
             status_colored,
             prio_colored
@@ -742,6 +769,9 @@ fn print_ms_tree_node(item: &Item, group: &[&&Item], prefix: &str, is_last: bool
         .filter(|i| i.parent.as_deref() == Some(&item.id))
         .collect();
 
+    let title_width = tree_title_width(prefix, connector, item);
+    let title = truncate_title(&item.title, title_width);
+
     let (type_raw, type_colored) = color::item_type_display(&item.item_type);
     let (prio_raw, prio_colored) = color::priority_display(&item.priority);
     if !item.is_active() {
@@ -751,7 +781,7 @@ fn print_ms_tree_node(item: &Item, group: &[&&Item], prefix: &str, is_last: bool
             tree_chrome,
             color::inactive(&format!(
                 "{} {} [{}] [{}] [{}]",
-                item.id, item.title, type_raw, status_raw, prio_raw
+                item.id, title, type_raw, status_raw, prio_raw
             ))
         );
     } else {
@@ -760,7 +790,7 @@ fn print_ms_tree_node(item: &Item, group: &[&&Item], prefix: &str, is_last: bool
             "{}{} {} [{}] [{}] [{}]",
             tree_chrome,
             color::id(&item.id),
-            item.title,
+            title,
             type_colored,
             status_colored,
             prio_colored

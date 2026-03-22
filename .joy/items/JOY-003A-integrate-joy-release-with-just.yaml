@@ -1,0 +1,19 @@
+id: JOY-003A
+title: Integrate joy release with just release recipe
+type: task
+status: closed
+priority: medium
+parent: JOY-0035
+deps:
+- JOY-0037
+effort: 1
+created: 2026-03-22T16:58:37.466524442Z
+updated: 2026-03-22T18:06:17.833564494Z
+description: 'Update the just release recipe to call joy release create before tagging and pushing. Flow: joy release create <bump> writes the release YAML and logs the event, then just handles Cargo.toml version bumps, git tag, and push. Joy owns .joy/, just owns the build toolchain.'
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-22T18:05:21.131888883Z
+  text: 'Plan: (1) Update joy justfile release recipe: check for .joy/ and if present run joy release create <bump> first. joy release create now has the confirmation prompt so just waits for that. Only if confirmed (exit 0): proceed with Cargo.toml bump, git add, commit with [no-item], tag, push. (2) Each subproject justfile is self-contained -- the .joy check lives there, never in the umbrella. (3) Umbrella release-all as separate item (iterates submodules, calls their just release).'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-22T18:06:17.825852488Z
+  text: '[x] just release recipe updated: checks for .joy/project.yaml and joy binary, if present runs joy release create <bump> first (with its own confirmation prompt). Reads version from generated YAML. Falls back to git-tag-based versioning for non-Joy projects. Cargo.toml bump only if crates/ exists. Commit message uses [no-item] tag. [x] Created JI-00C6 for umbrella release-all orchestration.'

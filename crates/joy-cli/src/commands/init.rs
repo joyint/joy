@@ -4,6 +4,7 @@
 use anyhow::Result;
 use clap::Args;
 
+use joy_core::error::JoyError;
 use joy_core::init::{self, InitOptions};
 
 #[derive(Args)]
@@ -14,7 +15,10 @@ Creates a .joy/ directory in the current folder with:
 
 The acronym is used as prefix for all item and milestone IDs
 (e.g. JOY-0001, JOY-MS-01). It defaults to the project name if omitted.
-If no git repository exists, one is initialized.")]
+If no git repository exists, one is initialized.
+
+If the project is already initialized, sets up your local environment
+(git hooks, etc.) without modifying project data.")]
 pub struct InitArgs {
     /// Project name (defaults to directory name)
     #[arg(long)]
@@ -28,27 +32,43 @@ pub struct InitArgs {
 pub fn run(args: InitArgs) -> Result<()> {
     let root = std::env::current_dir()?;
     let options = InitOptions {
-        root,
+        root: root.clone(),
         name: args.name,
         acronym: args.acronym,
     };
-    let result = init::init(options)?;
 
-    println!(
-        "Initialized Joy project in {}",
-        result.project_dir.display()
-    );
-    if result.git_initialized {
-        println!("Initialized new Git repository.");
+    match init::init(options) {
+        Ok(result) => {
+            println!(
+                "Initialized Joy project in {}",
+                result.project_dir.display()
+            );
+            if result.git_initialized {
+                println!("Initialized new Git repository.");
+            }
+            println!("Commit-msg hook installed.");
+            println!();
+            println!("Get started:");
+            println!("  joy add <TYPE> <TITLE>   Create an item");
+            println!("  joy ls                   List items");
+            println!("  joy status <ID> <STATUS> Change item status");
+            println!("  joy                      Board overview");
+            println!();
+            println!("Using AI tools? Run 'joy ai setup' to configure integration.");
+        }
+        Err(JoyError::AlreadyInitialized(_)) => {
+            println!("Project already initialized. Setting up local environment...");
+            let result = init::onboard(&root)?;
+            if result.hooks_already_set {
+                println!("  Commit-msg hook ... up to date");
+            } else {
+                println!("  Commit-msg hook ... installed");
+            }
+            println!();
+            println!("Local environment ready.");
+        }
+        Err(e) => return Err(e.into()),
     }
-    println!();
-    println!("Get started:");
-    println!("  joy add <TYPE> <TITLE>   Create an item");
-    println!("  joy ls                   List items");
-    println!("  joy status <ID> <STATUS> Change item status");
-    println!("  joy                      Board overview");
-    println!();
-    println!("Using AI tools? Run 'joy ai setup' to configure integration.");
 
     Ok(())
 }

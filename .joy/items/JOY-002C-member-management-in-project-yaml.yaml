@@ -1,0 +1,12 @@
+id: JOY-002C
+title: Member management in project.yaml
+type: story
+status: new
+priority: high
+parent: JOY-0029
+deps:
+- JOY-002A
+effort: 5
+created: 2026-03-22T16:18:55.855236465Z
+updated: 2026-03-22T16:18:58.804529326Z
+description: 'Add members section to project.yaml schema with two blocks: humans (email + capabilities list or ''all'') and agents (tool ID + default-model + per-capability config with model, max-interaction-level, max-cost-per-job). Addressing format: human:email and agent:tool@joy everywhere (project.yaml, assignments, logs, jobs). joy init registers the project creator as human member with capabilities: all.'

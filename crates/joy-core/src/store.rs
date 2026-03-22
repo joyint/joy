@@ -18,7 +18,8 @@ pub const MILESTONES_DIR: &str = "milestones";
 pub const AI_DIR: &str = "ai";
 pub const AI_AGENTS_DIR: &str = "ai/agents";
 pub const AI_JOBS_DIR: &str = "ai/jobs";
-pub const LOG_DIR: &str = "log";
+pub const LOG_DIR: &str = "logs";
+pub const RELEASES_DIR: &str = "releases";
 
 pub fn joy_dir(root: &Path) -> PathBuf {
     root.join(JOY_DIR)

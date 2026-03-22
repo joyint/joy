@@ -1,0 +1,9 @@
+id: JOY-0034
+title: CI Actions for commit lint (GitHub, GitLab, Gitea)
+type: idea
+status: new
+priority: low
+effort: 2
+created: 2026-03-22T16:20:15.044234297Z
+updated: 2026-03-22T16:20:15.044234297Z
+description: Wrapper around just lint-commits for each CI platform. GitHub Actions, GitLab CI job, and Gitea Actions each have different PR/MR branch semantics. Each needs a platform-specific wrapper that determines the base branch and calls just lint-commits. Originated from JOY-0023.

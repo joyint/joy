@@ -1,0 +1,12 @@
+id: JOY-002D
+title: Register AI agents as members in joy ai setup
+type: task
+status: new
+priority: medium
+parent: JOY-0029
+deps:
+- JOY-002C
+effort: 2
+created: 2026-03-22T16:19:04.990409636Z
+updated: 2026-03-22T16:19:14.721779531Z
+description: When joy ai setup detects and configures an AI tool, it also adds the tool as an agent member in project.yaml under members.agents. Uses the tool identifier (e.g. claude@joy, qwen@joy). Detects the current model if possible and sets it as default-model. Does not overwrite existing agent config on re-run.
