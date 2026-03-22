@@ -116,7 +116,7 @@ install:
     cargo build --release -p joyint && mkdir -p ~/.local/bin && cp target/release/joy ~/.local/bin/joy
 
 # Release (bump: patch, minor, or major)
-release bump="patch":
+release bump="patch": check
     #!/usr/bin/env bash
     set -euo pipefail
     if git describe --tags --exact-match HEAD >/dev/null 2>&1; then
