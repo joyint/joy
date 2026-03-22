@@ -1,0 +1,12 @@
+id: JOY-0045
+title: 'Forge: Gitea implementation'
+type: idea
+status: new
+priority: low
+parent: JOY-003F
+deps:
+- JOY-0042
+effort: 2
+created: 2026-03-22T22:08:20.225942026Z
+updated: 2026-03-22T22:08:34.180038554Z
+description: Gitea implementation of the Forge trait. Releases API, auto-detect from known Gitea instances or API probe.

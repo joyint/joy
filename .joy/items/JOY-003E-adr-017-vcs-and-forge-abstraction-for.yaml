@@ -1,0 +1,12 @@
+id: JOY-003E
+title: 'ADR-017: VCS and forge abstraction for release automation'
+type: decision
+status: closed
+priority: high
+effort: 1
+created: 2026-03-22T22:06:52.562449365Z
+updated: 2026-03-22T22:07:30.044433007Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-22T22:07:30.036850162Z
+  text: '[x] ADR-017 created: two-layer VCS/forge abstraction. Git write operations via git2/gix crate. Forge trait for GitHub/GitLab/Gitea with auto-detection. Structured version bumping via TOML/JSON/YAML parsing. joy release create --full replaces all justfile bash scripts.'

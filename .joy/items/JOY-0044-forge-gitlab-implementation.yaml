@@ -1,0 +1,12 @@
+id: JOY-0044
+title: 'Forge: GitLab implementation'
+type: idea
+status: new
+priority: low
+parent: JOY-003F
+deps:
+- JOY-0042
+effort: 2
+created: 2026-03-22T22:08:20.221122055Z
+updated: 2026-03-22T22:08:34.171431784Z
+description: GitLab implementation of the Forge trait. Releases API, auto-detect from gitlab in remote URL.
