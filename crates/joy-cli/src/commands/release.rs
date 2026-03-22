@@ -109,7 +109,7 @@ fn create(args: CreateArgs) -> Result<()> {
 
     if closed_ids.is_empty() {
         println!("No items closed since last release. Nothing to release.");
-        return Ok(());
+        std::process::exit(1);
     }
 
     // Load item data and group by type
