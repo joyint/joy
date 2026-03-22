@@ -156,6 +156,7 @@ release bump="patch":
         esac
     fi
     # Run checks (quiet unless they fail)
+    echo "Checking (format, lint, test)..."
     if ! just check > /dev/null 2>&1; then
         echo "Checks failed. Run 'just check' for details."
         exit 1
