@@ -46,8 +46,7 @@ lint:
     cargo clippy --workspace -- -D warnings
 
 # Run fmt-check, lint, test
-check:
-    just fmt-check && just lint && just test
+check: fmt-check lint test
 
 # Lint commit messages for Joy item references (default: main..HEAD)
 lint-commits base="main":
