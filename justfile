@@ -116,7 +116,7 @@ install:
     cargo build --release -p joyint && mkdir -p ~/.local/bin && cp target/release/joy ~/.local/bin/joy
 
 # Release (bump: patch, minor, or major)
-release bump="patch": check
+release bump="patch":
     #!/usr/bin/env bash
     set -euo pipefail
     if git describe --tags --exact-match HEAD >/dev/null 2>&1; then
@@ -151,6 +151,8 @@ release bump="patch": check
             *) echo "Error: bump must be patch, minor, or major"; exit 1 ;;
         esac
     fi
+    # Run checks before proceeding with the release
+    just check
     semver="${tag#v}"
     # Cargo version bump (if crates exist)
     if [ -d "crates" ]; then
