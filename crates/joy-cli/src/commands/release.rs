@@ -163,12 +163,12 @@ fn create(args: CreateArgs) -> Result<()> {
     } else {
         String::new()
     };
-    print!("\nCreate release {}?{} [Y/n] ", version, hint);
+    print!("\nCreate release {}?{} [y/N] ", version, hint);
     std::io::stdout().flush()?;
     let mut input = String::new();
     std::io::stdin().read_line(&mut input)?;
     let trimmed = input.trim();
-    if !trimmed.is_empty() && !trimmed.eq_ignore_ascii_case("y") {
+    if !trimmed.eq_ignore_ascii_case("y") {
         println!("Aborted.");
         return Ok(());
     }
