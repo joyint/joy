@@ -171,9 +171,16 @@ release bump="patch": check
         read -rp "Create GitHub Release? [y/N] " gh_confirm
         if [[ "$gh_confirm" == [yY] ]]; then
             if [ -f ".joy/project.yaml" ] && command -v joy >/dev/null 2>&1; then
-                joy release show "${tag}" | gh release create "${tag}" --title "${tag}" --notes-file -
+                # Read title from release YAML if available
+                gh_title=$(grep '^title:' .joy/releases/*-"${tag}".yaml 2>/dev/null | head -1 | sed 's/^title:[[:space:]]*//' | tr -d "'\"")
+                if [ -n "$gh_title" ]; then
+                    gh_title="${tag} -- ${gh_title}"
+                else
+                    gh_title="${tag}"
+                fi
+                joy release show "${tag}" | gh release create "${tag}" --title "${gh_title}" --notes-file -
             else
-                gh release create "${tag}" --title "${tag}" --generate-notes
+                gh release create "${tag}" --generate-notes
             fi
             echo "GitHub Release created."
         fi
