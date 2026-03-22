@@ -105,6 +105,7 @@ doctor:
     cargo --list 2>/dev/null | grep -q insta    && echo "  cargo-insta: ok"    || miss "cargo-insta"
     cargo --list 2>/dev/null | grep -q 'llvm-cov' && echo "  cargo-llvm-cov: ok" || opt "cargo-llvm-cov" "cargo install cargo-llvm-cov"
     cargo --list 2>/dev/null | grep -q watch    && echo "  cargo-watch: ok"    || opt "cargo-watch" "cargo install cargo-watch"
+    command -v gh            >/dev/null && ok gh "gh (GitHub CLI)" || opt "gh" "https://cli.github.com"
 
 # Install cargo tools for development
 setup:
@@ -165,3 +166,15 @@ release bump="patch": check
     fi
     git push --quiet && git push --quiet origin "${tag}"
     echo "Released ${tag}"
+    # Optional GitHub Release
+    if command -v gh >/dev/null 2>&1; then
+        read -rp "Create GitHub Release? [y/N] " gh_confirm
+        if [[ "$gh_confirm" == [yY] ]]; then
+            if [ -f ".joy/project.yaml" ] && command -v joy >/dev/null 2>&1; then
+                joy release show "${tag}" | gh release create "${tag}" --title "${tag}" --notes-file -
+            else
+                gh release create "${tag}" --title "${tag}" --generate-notes
+            fi
+            echo "GitHub Release created."
+        fi
+    fi
