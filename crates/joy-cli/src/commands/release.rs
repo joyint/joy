@@ -136,7 +136,11 @@ fn create(args: CreateArgs) -> Result<()> {
     let actors = event_log::actors_since(&root, cutoff.as_deref())?;
     let contributors: Vec<Contributor> = actors
         .into_iter()
-        .map(|(id, count)| Contributor { id, items: count })
+        .map(|a| Contributor {
+            id: a.id,
+            events: a.events,
+            items: a.items,
+        })
         .collect();
 
     let title_for_log = args.title.clone();
@@ -225,8 +229,8 @@ fn show(args: ShowArgs) -> Result<()> {
             let actors = event_log::actors_since(&root, cutoff.as_deref())?;
             if !actors.is_empty() {
                 println!("\n{}", color::label("Contributors:"));
-                for (actor, count) in &actors {
-                    println!("  {} ({} events)", actor, count);
+                for a in &actors {
+                    println!("  {} ({} events on {} items)", a.id, a.events, a.items);
                 }
             }
         }
@@ -320,7 +324,7 @@ fn print_release(release: &Release) {
     if !release.contributors.is_empty() {
         println!("{}", color::label("Contributors:"));
         for c in &release.contributors {
-            println!("  {} ({} items)", c.id, c.items);
+            println!("  {} ({} events on {} items)", c.id, c.events, c.items);
         }
         println!();
     }

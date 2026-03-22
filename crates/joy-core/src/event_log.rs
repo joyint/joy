@@ -378,10 +378,20 @@ pub fn closed_item_ids_since(root: &Path, cutoff: Option<&str>) -> Result<Vec<St
     Ok(results)
 }
 
-/// Collect unique actors from events after a cutoff, with event counts.
-pub fn actors_since(root: &Path, cutoff: Option<&str>) -> Result<Vec<(String, usize)>, JoyError> {
+/// Actor statistics: event count and unique item count.
+pub struct ActorStats {
+    pub id: String,
+    pub events: usize,
+    pub items: usize,
+}
+
+/// Collect unique actors from events after a cutoff, with event and item counts.
+pub fn actors_since(root: &Path, cutoff: Option<&str>) -> Result<Vec<ActorStats>, JoyError> {
     let events = read_all_events(root)?;
-    let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut event_counts: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
+    let mut item_sets: std::collections::HashMap<String, std::collections::HashSet<String>> =
+        std::collections::HashMap::new();
 
     for entry in &events {
         if let Some(cutoff) = cutoff {
@@ -389,14 +399,23 @@ pub fn actors_since(root: &Path, cutoff: Option<&str>) -> Result<Vec<(String, us
                 continue;
             }
         }
-        // Only count item-related events for contributor stats
         if entry.event_type.starts_with("item.") || entry.event_type.starts_with("comment.") {
-            *counts.entry(entry.user.clone()).or_default() += 1;
+            *event_counts.entry(entry.user.clone()).or_default() += 1;
+            item_sets
+                .entry(entry.user.clone())
+                .or_default()
+                .insert(entry.target.clone());
         }
     }
 
-    let mut result: Vec<_> = counts.into_iter().collect();
-    result.sort_by(|a, b| b.1.cmp(&a.1));
+    let mut result: Vec<ActorStats> = event_counts
+        .into_iter()
+        .map(|(id, events)| {
+            let items = item_sets.get(&id).map(|s| s.len()).unwrap_or(0);
+            ActorStats { id, events, items }
+        })
+        .collect();
+    result.sort_by(|a, b| b.events.cmp(&a.events));
     Ok(result)
 }
 
