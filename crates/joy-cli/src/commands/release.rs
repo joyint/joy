@@ -132,8 +132,8 @@ fn create(args: CreateArgs) -> Result<()> {
         }
     }
 
-    // Build contributor list from event log actors
-    let actors = event_log::actors_since(&root, cutoff.as_deref())?;
+    // Build contributor list from events on the release items only
+    let actors = event_log::actors_for_items(&root, &closed_ids)?;
     let contributors: Vec<Contributor> = actors
         .into_iter()
         .map(|a| Contributor {
@@ -226,7 +226,7 @@ fn show(args: ShowArgs) -> Result<()> {
             let all_items = items::load_items(&root)?;
             print_items_grouped(&closed_ids, &all_items);
 
-            let actors = event_log::actors_since(&root, cutoff.as_deref())?;
+            let actors = event_log::actors_for_items(&root, &closed_ids)?;
             if !actors.is_empty() {
                 println!("\n{}", color::label("Contributors:"));
                 for a in &actors {
