@@ -8,7 +8,7 @@ use chrono::Utc;
 
 use joy_core::event_log;
 use joy_core::items;
-use joy_core::model::item::ItemType;
+use joy_core::model::item::{self, ItemType};
 use joy_core::model::release::{Bump, Contributor, Release, ReleaseItem, ReleaseItems};
 use joy_core::releases;
 use joy_core::store;
@@ -54,6 +54,10 @@ struct CreateArgs {
 struct ShowArgs {
     /// Version to show (omit for next-release preview)
     version: Option<String>,
+
+    /// Output as Markdown (for git tags and GitHub Releases)
+    #[arg(long)]
+    markdown: bool,
 }
 
 pub fn run(args: ReleaseArgs) -> Result<()> {
@@ -200,7 +204,11 @@ fn show(args: ShowArgs) -> Result<()> {
     match args.version {
         Some(version) => {
             let release = releases::load_release(&root, acronym, &version)?;
-            print_release(&release);
+            if args.markdown {
+                print_release_markdown(&release);
+            } else {
+                print_release(&release);
+            }
         }
         None => {
             // Preview: show what the next release would contain
@@ -396,5 +404,69 @@ fn print_items_grouped(item_ids: &[String], all_items: &[joy_core::model::item::
                 truncate(&item.title, title_max)
             );
         }
+    }
+}
+
+fn item_link(ri: &ReleaseItem) -> String {
+    let filename = item::item_filename(&ri.id, &ri.title);
+    format!("[{}](.joy/items/{})", ri.id, filename)
+}
+
+fn print_release_markdown(release: &Release) {
+    let title_str = release
+        .title
+        .as_deref()
+        .map(|t| format!(" -- {t}"))
+        .unwrap_or_default();
+    println!("# {}{}", release.version, title_str);
+    println!();
+    println!("**Date:** {}", release.date);
+
+    if let Some(ref prev) = release.previous {
+        println!("**Previous:** {prev}");
+    }
+
+    if let Some(ref desc) = release.description {
+        println!();
+        println!("{desc}");
+    }
+
+    if !release.contributors.is_empty() {
+        println!();
+        println!("## Contributors");
+        println!();
+        for c in &release.contributors {
+            println!("- {} ({} events on {} items)", c.id, c.events, c.items);
+        }
+    }
+
+    let type_groups: &[(&str, &[ReleaseItem])] = &[
+        ("Epics", &release.items.epics),
+        ("Stories", &release.items.stories),
+        ("Tasks", &release.items.tasks),
+        ("Bugs", &release.items.bugs),
+        ("Reworks", &release.items.reworks),
+        ("Decisions", &release.items.decisions),
+        ("Ideas", &release.items.ideas),
+    ];
+
+    let total: usize = type_groups.iter().map(|(_, items)| items.len()).sum();
+
+    for (label, items) in type_groups {
+        if items.is_empty() {
+            continue;
+        }
+        println!();
+        println!("## {label}");
+        println!();
+        for ri in *items {
+            println!("- {} {}", item_link(ri), ri.title);
+        }
+    }
+
+    if total > 0 {
+        println!();
+        println!("---");
+        println!("*{} item(s)*", total);
     }
 }
