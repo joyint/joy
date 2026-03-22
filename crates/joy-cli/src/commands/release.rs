@@ -108,8 +108,8 @@ fn create(args: CreateArgs) -> Result<()> {
     let closed_ids = event_log::closed_item_ids_since(&root, cutoff.as_deref())?;
 
     if closed_ids.is_empty() {
-        println!("No items closed since last release. Nothing to release.");
-        std::process::exit(1);
+        println!("No items closed since last release.");
+        return Ok(());
     }
 
     // Load item data and group by type
