@@ -135,13 +135,13 @@ release bump="patch":
     fi
     # Joy release (if this is a Joy project)
     if [ -f ".joy/project.yaml" ] && command -v joy >/dev/null 2>&1; then
-        prev_release=$(ls -1 .joy/releases/*.yaml 2>/dev/null | wc -l)
+        prev_release=$( (ls -1 .joy/releases/*.yaml 2>/dev/null || true) | wc -l)
         joy release create "{{bump}}"
-        new_release=$(ls -1 .joy/releases/*.yaml 2>/dev/null | wc -l)
+        new_release=$( (ls -1 .joy/releases/*.yaml 2>/dev/null || true) | wc -l)
         if [ "$new_release" -le "$prev_release" ]; then
             exit 0
         fi
-        tag=$(ls -1 .joy/releases/*.yaml 2>/dev/null | sort | tail -1 | sed 's/.*-\(v[0-9].*\)\.yaml/\1/')
+        tag=$( (ls -1 .joy/releases/*.yaml 2>/dev/null || true) | sort | tail -1 | sed 's/.*-\(v[0-9].*\)\.yaml/\1/')
     else
         current=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
         current="${current#v}"
