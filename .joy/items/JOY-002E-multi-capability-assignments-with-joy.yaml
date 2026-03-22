@@ -1,0 +1,12 @@
+id: JOY-002E
+title: Multi-capability assignments with joy assign
+type: story
+status: new
+priority: medium
+parent: JOY-0029
+deps:
+- JOY-002C
+effort: 3
+created: 2026-03-22T16:19:20.287104537Z
+updated: 2026-03-22T16:19:23.876126475Z
+description: 'Extend joy assign to support capability-based assignments: joy assign JOY-001E --as implement agent:claude@joy. Items track assignees as a list of member:capabilities pairs. Joy suggests assignments based on member capabilities and cost limits. Replaces the current single-assignee model.'

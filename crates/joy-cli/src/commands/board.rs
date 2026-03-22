@@ -141,7 +141,7 @@ pub fn run(args: crate::BoardArgs) -> Result<()> {
         .and_then(|events| events.into_iter().next());
     let last_str = match &last_change {
         Some(e) => {
-            let date = &e.timestamp[..10];
+            let date = e.timestamp.get(..10).unwrap_or(&e.timestamp);
             let user = e.user.split('@').next().unwrap_or(&e.user);
             format!("{} {}", date, user)
         }

@@ -1,0 +1,19 @@
+id: JOY-0037
+title: joy release create with auto-versioning
+type: story
+status: closed
+priority: high
+parent: JOY-0035
+deps:
+- JOY-0036
+effort: 3
+created: 2026-03-22T16:58:11.358935655Z
+updated: 2026-03-22T17:31:03.375140432Z
+description: joy release create patch/minor/major computes next version from last release, collects items closed since the last release.created event in the log, groups by type, builds contributor list from event log actors, shows preview, writes YAML to .joy/releases/, and logs release.created event. Optional --title, --description, --version (for explicit version like v1.0.0-alpha.1).
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-22T17:26:48.124498164Z
+  text: 'Plan: (1) Add release subcommand to CLI with create, show, ls. (2) create takes bump argument (patch/minor/major) + optional --title, --description, --version. (3) Reads last release.created event from log to determine cutoff timestamp. If no release exists, uses the earliest log entry. (4) Collects all item.status_changed events with ''-> closed'' after cutoff. (5) Loads those items, groups by type, builds contributor list from event actors. (6) Shows preview, writes YAML, logs release.created event.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-22T17:31:03.366653478Z
+  text: '[x] joy release create patch/minor/major with auto-versioning from latest Joy release or git tag fallback. Optional --title, --description, --version. [x] Collects closed items since last release.created event via event log. Groups by type, builds contributor list. [x] joy release show vX.Y.Z reads YAML, joy release show (no arg) computes live preview. [x] joy release ls lists all releases. [x] Logs release.created event. [x] Refactored from old version-tag-based release command to subcommand pattern (create/show/ls).'

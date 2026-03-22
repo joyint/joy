@@ -1,0 +1,19 @@
+id: JOY-0039
+title: Reopen warning for released items
+type: task
+status: closed
+priority: medium
+parent: JOY-0035
+deps:
+- JOY-0036
+effort: 1
+created: 2026-03-22T16:58:30.000538110Z
+updated: 2026-03-22T17:54:50.815401882Z
+description: 'When joy reopen is called on an item that appears in a release YAML, show a warning: ''JOY-XXXX is included in release vX.Y.Z. Reopening means the fix was incomplete. Consider creating a new item instead. Reopen anyway? [y/N]''. No hard block, just a conscious decision. Reopened and re-closed items appear in the next release.'
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-22T17:54:05.375531048Z
+  text: 'Plan: In the reopen command path (status.rs), after loading the item check if it appears in any release via releases::item_in_release(). If found, show warning with release version and suggest creating a new item instead. Ask for confirmation [y/N] (default No). If denied, abort.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-22T17:54:50.806414783Z
+  text: '[x] Reopen check in status.rs: when transitioning from closed/deferred to an active status, checks releases::item_in_release(). If found, shows warning in ADR-015 format with release version, suggests creating a new item, asks for confirmation [y/N] (default No). Aborts if denied.'

@@ -1,0 +1,16 @@
+id: JOY-0038
+title: joy release show for display and preview
+type: story
+status: closed
+priority: medium
+parent: JOY-0035
+deps:
+- JOY-0036
+effort: 2
+created: 2026-03-22T16:58:20.514045054Z
+updated: 2026-03-22T17:40:15.610796708Z
+description: joy release show vX.Y.Z reads the release YAML and formats it (version, title, date, contributors with stats, items grouped by type). joy release show (without version) computes a live preview from the event log showing what the next release would contain. joy release ls lists all releases.
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-22T17:40:15.601787663Z
+  text: '[x] joy release show vX.Y.Z reads YAML and displays formatted output. [x] joy release show (no arg) computes live preview from event log. [x] joy release ls lists all releases with version, date, item count, title. [x] All display functions truncate titles to terminal width. Already implemented as part of JOY-0037.'

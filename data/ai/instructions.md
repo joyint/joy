@@ -6,11 +6,14 @@ You are working in a project managed with [Joy](https://github.com/joyint/joy), 
 
 At the start of each session:
 
-1. Run `joy config get agents.default.interaction-level` to read the configured level.
+1. Run `joy ai check` to verify your AI instructions are current. If it exits with
+   code 2, tell the user which templates are outdated and suggest `joy ai setup`.
+   Do not proceed with outdated instructions.
+2. Run `joy config get agents.default.interaction-level` to read the configured level.
    If the key does not exist, default to level 3.
-2. Briefly confirm: "Working in interactive mode (level 3). Want to change that for
+3. Briefly confirm: "Working in interactive mode (level 3). Want to change that for
    this session?" One line, no menu.
-3. Accept natural language overrides at any time ("let's work through this together",
+4. Accept natural language overrides at any time ("let's work through this together",
    "just do it", "be more autonomous", etc.).
 
 Interaction levels:
@@ -51,9 +54,11 @@ Effort scale (1-7): 1=trivial, 2=small, 3=medium, 4=large, 5=major, 6=heavy, 7=m
 
 **Always use the Joy CLI.** Never read or write files in `.joy/` directly -- not items, not config, not milestones. Use `joy ls`, `joy show`, `joy config`, etc. If a Joy command does not exist for an operation, ask the user or suggest a new command -- do not work around it by editing YAML.
 
+**Every code change needs a Joy item.** If you discover a bug, identify a rework need, or make any change to the codebase, create a Joy item for it BEFORE implementing the fix. This is non-negotiable -- the event log is the project's audit trail. Ad-hoc fixes without items are invisible to governance and compliance.
+
 **Track status.** Run `joy start <ID>` before coding, `joy close <ID>` after committing. Never skip status tracking.
 
-**Comment your plan.** Before implementing a backlog item, comment the planned solution into the item using `joy comment`. Confirm with the user before proceeding.
+**Comment everything.** Before implementing, comment the planned solution: `joy comment <ID> "Plan: ..."`. After implementing, comment the result: `joy comment <ID> "[x] what was done"`. This applies to ALL items -- planned work, discovered bugs, and ad-hoc fixes alike. The comments are the audit record of what was decided and why.
 
 **Use the project language for artifacts only.** Run `joy project` to read the configured language (default: `en`). This language strictly governs all written artifacts: Joy item titles, descriptions, comments, commit messages, and documentation. Never deviate from it, even if the conversation is in another language. **Conversation language is separate.** For interactive communication (responses, explanations, questions), detect and follow the user's language. If the user writes in German, respond in German. The project language setting does NOT apply to conversation -- only to artifacts that are persisted in the project.
 
@@ -114,3 +119,8 @@ Do not wait for the user to ask. This check is mandatory on first session.
 Use conventional commits: `type(scope): description`
 Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`
 No emoji in commit messages.
+
+**Every commit must reference a Joy item ID** (e.g. `JOY-0001`). A commit-msg hook
+enforces this. For infrastructure commits without an item, use `[no-item]` in the
+message. In multi-repo setups, each subproject needs its own items -- a commit in the
+Joy repo references `JOY-XXXX`, a commit in the umbrella references `JI-XXXX`.

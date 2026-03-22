@@ -1,0 +1,13 @@
+id: JOY-0025
+title: Multiline comment details in event log cause board panic
+type: bug
+status: closed
+priority: critical
+effort: 3
+created: 2026-03-22T14:34:49.989212968Z
+updated: 2026-03-22T14:34:58.802708259Z
+description: 'append_event() writes multiline comment text unescaped into the line-based .joy/log/ format. Lines like ''>'' from embedded quotes are parsed as standalone log entries by parse_log_line(), producing LogEntry values with invalid timestamps. board.rs:144 then panics on &e.timestamp[..10] (''byte index 10 is out of bounds of >'') because the garbage timestamp is too short. Root cause: no escaping on write, no structural validation on read.'
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-22T14:34:56.404814162Z
+  text: 'Fixed: three-part fix. (1) append_event() now escapes newlines (\n) and backslashes (\\) in the details field before writing, keeping the log strictly one-entry-per-line. (2) parse_log_line() rejects lines that do not start with a digit (fast path) and validates the timestamp is ISO 8601 before returning a LogEntry. Added unescape_details() for reading escaped content back. (3) board.rs uses .get(..10) instead of [..10] for defensive timestamp extraction. Migrated all 6 affected log files (umbrella + joy subproject) to escaped format. Added 4 new tests: escape_roundtrip, multiline_details_roundtrip, reject_non_timestamp_lines, timestamp_validation. Documented error output conventions in ADR-015.'

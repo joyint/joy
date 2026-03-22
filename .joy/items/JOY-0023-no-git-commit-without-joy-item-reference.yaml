@@ -1,8 +1,18 @@
 id: JOY-0023
 title: No Git commit without Joy item reference
 type: idea
-status: new
+status: closed
 priority: medium
 created: 2026-03-21T18:13:13.509172238Z
-updated: 2026-03-21T18:13:13.509172238Z
+updated: 2026-03-22T15:40:00.440929394Z
 description: A pre-commit hook could be installed with git init, which checks always if the commit message containes at least one Joy item name with the project acronym in it. This in order to be sure that nothing is commited without plan and process traces in Joy. We should thing how we could make this check as strong as possible.
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-22T15:24:32.038149205Z
+  text: 'Plan: (1) Create .joy/hooks/commit-msg hook that validates commit messages contain at least one item ID matching the project acronym (from project.yaml). Pattern: ACRONYM-XXXX (hex). (2) Merge commits are exempt (detect via MERGE_HEAD). (3) Error output follows ADR-015 rustc diagnostic format, including a note about --no-verify with audit policy warning. (4) joy init in onboarding mode (project already exists) sets core.hooksPath to .joy/hooks and prints setup confirmation. (5) Hook script is versioniert in .joy/hooks/ so it distributes via git. (6) Document in CONTRIBUTING.md: every commit must reference an item, subprojects need their own items (model A). (7) Update AI instructions: when working across umbrella and subprojects, create items in each affected project.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-22T15:35:52.448758755Z
+  text: 'Plan update: (1) Hook and CI both accept two valid patterns: item ID (ACRONYM-XXXX) or [no-item] tag. No --no-verify recommendation. (2) [no-item] is the documented bypass, visible in git history, auditable. (3) Hook error message points to [no-item] instead of --no-verify. (4) just lint-commits uses the same logic. (5) GitHub/GitLab/Gitea Actions: defer to separate item. The CI recipe (just lint-commits) will need a wrapper per platform (GitHub Action, GitLab CI job, Gitea Action) since each has different PR/MR branch semantics.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-22T15:40:00.434352505Z
+  text: '[x] commit-msg hook in .joy/hooks/ validates item ID (ACRONYM-XXXX) or [no-item] tag. Merge commits exempt. Error output in ADR-015 format. [x] joy init onboarding mode: detects existing project, installs hook and sets core.hooksPath. Idempotent on re-run. [x] just lint-commits checks all commits in a branch range (default main..HEAD), same logic as hook. Ready for CI integration. [x] CONTRIBUTING.md updated with item-per-commit policy and multi-repo rules. [x] AI instructions updated. Note: CI Actions (GitHub/GitLab/Gitea) deferred -- each platform needs a wrapper around just lint-commits with platform-specific branch semantics.'

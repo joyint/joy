@@ -1,0 +1,17 @@
+id: JOY-0036
+title: Release data model and YAML storage
+type: story
+status: closed
+priority: high
+parent: JOY-0035
+effort: 3
+created: 2026-03-22T16:58:02.925292452Z
+updated: 2026-03-22T17:14:55.375617705Z
+description: 'Define Release struct in joy-core: version (semver), title (optional), description (optional), date, previous version, contributors list (human:/agent: with item count), items grouped by type (each with ID and title). Stored in .joy/releases/ACRONYM-vX.Y.Z.yaml. Supports semver including pre-release tags (v1.0.0-alpha.1). Add release.created event type to event log.'
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-22T17:12:35.325283313Z
+  text: 'Plan: (1) Add Release struct to joy-core::model with version, title (optional), description (optional), date, previous (optional), contributors vec, and items grouped by type. (2) Add RELEASES_DIR constant to store.rs. (3) Add release.created event type to event_log. (4) Add releases module to joy-core for load/save/list operations. (5) Filename format: ACRONYM-vX.Y.Z.yaml.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-22T17:14:55.348295644Z
+  text: '[x] Release struct in joy-core::model::release with version, title, description, date, previous, contributors (id + item count), items grouped by type (7 groups matching item types). Bump enum with FromStr. bump_version() for semver calculation. [x] releases module in joy-core with save_release, load_release, load_releases (sorted newest first), latest_version, item_in_release. [x] RELEASES_DIR constant in store.rs, releases/ added to joy init directory structure. [x] release.created event type in event_log. [x] 12 new tests.'

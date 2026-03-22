@@ -10,6 +10,7 @@ serde_yaml_ng = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 chrono = { workspace = true }
+sha2 = "0.10.9"
 
 [dev-dependencies]
 insta = { version = "1.41", features = ["yaml"] }

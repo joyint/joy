@@ -3,11 +3,18 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::embedded::{self, EmbeddedFile};
 use crate::error::JoyError;
 use crate::model::config::Config;
 use crate::model::project::{derive_acronym, Project};
 use crate::store;
 use crate::vcs::{default_vcs, Vcs};
+
+pub const HOOK_FILES: &[EmbeddedFile] = &[EmbeddedFile {
+    content: include_str!("../../../data/hooks/commit-msg"),
+    target: "hooks/commit-msg",
+    executable: true,
+}];
 
 pub struct InitOptions {
     pub root: PathBuf,
@@ -20,6 +27,11 @@ pub struct InitResult {
     pub project_dir: PathBuf,
     pub git_initialized: bool,
     pub git_existed: bool,
+}
+
+pub struct OnboardResult {
+    pub hooks_installed: bool,
+    pub hooks_already_set: bool,
 }
 
 pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
@@ -43,6 +55,7 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
     let dirs = [
         store::ITEMS_DIR,
         store::MILESTONES_DIR,
+        store::RELEASES_DIR,
         store::AI_AGENTS_DIR,
         store::AI_JOBS_DIR,
         store::LOG_DIR,
@@ -74,10 +87,38 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
     // Ensure .joy/credentials.yaml is in .gitignore
     ensure_gitignore(root)?;
 
+    // Install hooks
+    install_hooks(root)?;
+
     Ok(InitResult {
         project_dir: joy_dir,
         git_initialized,
         git_existed,
+    })
+}
+
+/// Onboard an existing project: set up local environment (hooks, etc.).
+pub fn onboard(root: &Path) -> Result<OnboardResult, JoyError> {
+    install_hooks(root)
+}
+
+/// Sync hook files and set core.hooksPath.
+fn install_hooks(root: &Path) -> Result<OnboardResult, JoyError> {
+    let actions = embedded::sync_files(root, HOOK_FILES)?;
+    let hooks_installed = actions.iter().any(|a| a.action != "up to date");
+
+    // Set core.hooksPath if not already pointing to .joy/hooks
+    let vcs = default_vcs();
+    let current = vcs.config_get(root, "core.hooksPath").unwrap_or_default();
+    let already_set = current == ".joy/hooks";
+
+    if !already_set {
+        vcs.config_set(root, "core.hooksPath", ".joy/hooks")?;
+    }
+
+    Ok(OnboardResult {
+        hooks_installed,
+        hooks_already_set: already_set,
     })
 }
 
@@ -145,7 +186,7 @@ mod tests {
         assert!(result.project_dir.join("milestones").is_dir());
         assert!(result.project_dir.join("ai/agents").is_dir());
         assert!(result.project_dir.join("ai/jobs").is_dir());
-        assert!(result.project_dir.join("log").is_dir());
+        assert!(result.project_dir.join("logs").is_dir());
         assert!(result.project_dir.join("config.defaults.yaml").is_file());
         assert!(result.project_dir.join("project.yaml").is_file());
     }

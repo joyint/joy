@@ -114,6 +114,39 @@ impl Vcs for GitVcs {
     }
 }
 
+impl GitVcs {
+    /// Get a git config value (local scope).
+    pub fn config_get(&self, root: &Path, key: &str) -> Result<String, JoyError> {
+        let output = Command::new("git")
+            .args(["config", "--local", key])
+            .current_dir(root)
+            .output()
+            .map_err(|e| JoyError::Git(format!("failed to run git config: {e}")))?;
+
+        if !output.status.success() {
+            return Err(JoyError::Git(format!("git config key not set: {key}")));
+        }
+
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+
+    /// Set a git config value (local scope).
+    pub fn config_set(&self, root: &Path, key: &str, value: &str) -> Result<(), JoyError> {
+        let status = Command::new("git")
+            .args(["config", "--local", key, value])
+            .current_dir(root)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map_err(|e| JoyError::Git(format!("failed to run git config: {e}")))?;
+
+        if !status.success() {
+            return Err(JoyError::Git(format!("failed to set git config {key}")));
+        }
+        Ok(())
+    }
+}
+
 /// Default VCS provider. Returns the Git implementation.
 pub fn default_vcs() -> GitVcs {
     GitVcs

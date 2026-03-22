@@ -28,6 +28,7 @@ pub enum EventType {
     MilestoneDeleted,
     MilestoneLinked,
     MilestoneUnlinked,
+    ReleaseCreated,
 }
 
 impl fmt::Display for EventType {
@@ -47,6 +48,7 @@ impl fmt::Display for EventType {
             Self::MilestoneDeleted => "milestone.deleted",
             Self::MilestoneLinked => "milestone.linked",
             Self::MilestoneUnlinked => "milestone.unlinked",
+            Self::ReleaseCreated => "release.created",
         };
         write!(f, "{s}")
     }
@@ -69,6 +71,7 @@ impl EventType {
             "milestone.deleted" => Some(Self::MilestoneDeleted),
             "milestone.linked" => Some(Self::MilestoneLinked),
             "milestone.unlinked" => Some(Self::MilestoneUnlinked),
+            "release.created" => Some(Self::ReleaseCreated),
             _ => None,
         }
     }
@@ -96,12 +99,15 @@ pub fn append_event(root: &Path, event: &Event) -> Result<(), JoyError> {
     let log_file = log_dir.join(format!("{date_str}.log"));
 
     let line = match &event.details {
-        Some(details) => format!(
-            "{timestamp} {target} {event_type} \"{details}\" [{user}]\n",
-            event_type = event.event_type,
-            target = event.target,
-            user = event.user,
-        ),
+        Some(details) => {
+            let escaped = escape_details(details);
+            format!(
+                "{timestamp} {target} {event_type} \"{escaped}\" [{user}]\n",
+                event_type = event.event_type,
+                target = event.target,
+                user = event.user,
+            )
+        }
         None => format!(
             "{timestamp} {target} {event_type} [{user}]\n",
             event_type = event.event_type,
@@ -207,6 +213,38 @@ pub fn read_events(
     Ok(entries)
 }
 
+/// Escape newlines and backslashes in details for single-line log format.
+fn escape_details(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('\n', "\\n")
+}
+
+/// Unescape details read from log files.
+fn unescape_details(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('n') => result.push('\n'),
+                Some('\\') => result.push('\\'),
+                Some(other) => {
+                    result.push('\\');
+                    result.push(other);
+                }
+                None => result.push('\\'),
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
+/// Validate that a string looks like an ISO 8601 timestamp (starts with YYYY-).
+fn is_valid_timestamp(s: &str) -> bool {
+    s.len() >= 20 && s.as_bytes()[4] == b'-' && s.as_bytes()[7] == b'-' && s.as_bytes()[10] == b'T'
+}
+
 /// Parse a single log line into a LogEntry.
 fn parse_log_line(line: &str) -> Option<LogEntry> {
     let line = line.trim();
@@ -214,7 +252,12 @@ fn parse_log_line(line: &str) -> Option<LogEntry> {
         return None;
     }
 
-    // Format: TIMESTAMP ACRONYM EVENT_TYPE TARGET ["DETAILS"] [USER]
+    // Fast reject: valid lines always start with a digit (timestamp year)
+    if !line.as_bytes().first().is_some_and(|b| b.is_ascii_digit()) {
+        return None;
+    }
+
+    // Format: TIMESTAMP TARGET EVENT_TYPE ["DETAILS"] [USER]
     // Extract user from trailing [user]
     let user_start = line.rfind('[')?;
     let user_end = line.rfind(']')?;
@@ -228,7 +271,7 @@ fn parse_log_line(line: &str) -> Option<LogEntry> {
     let (rest, details) = if let Some(dq_start) = rest.rfind('"') {
         let before_last = &rest[..dq_start];
         if let Some(dq_open) = before_last.rfind('"') {
-            let details = rest[dq_open + 1..dq_start].to_string();
+            let details = unescape_details(&rest[dq_open + 1..dq_start]);
             let rest = rest[..dq_open].trim();
             (rest, Some(details))
         } else {
@@ -244,6 +287,11 @@ fn parse_log_line(line: &str) -> Option<LogEntry> {
         return None;
     }
 
+    // Validate timestamp format
+    if !is_valid_timestamp(parts[0]) {
+        return None;
+    }
+
     Some(LogEntry {
         timestamp: parts[0].to_string(),
         target: parts[1].to_string(),
@@ -251,6 +299,105 @@ fn parse_log_line(line: &str) -> Option<LogEntry> {
         details,
         user,
     })
+}
+
+/// Read all events (oldest first, no limit). Used for release computation.
+pub fn read_all_events(root: &Path) -> Result<Vec<LogEntry>, JoyError> {
+    let log_dir = store::joy_dir(root).join(store::LOG_DIR);
+    if !log_dir.is_dir() {
+        return Ok(Vec::new());
+    }
+
+    let mut log_files: Vec<_> = fs::read_dir(&log_dir)
+        .map_err(|e| JoyError::ReadFile {
+            path: log_dir.clone(),
+            source: e,
+        })?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "log"))
+        .collect();
+
+    // Sort ascending by filename (oldest day first)
+    log_files.sort_by_key(|e| e.file_name());
+
+    let mut entries = Vec::new();
+    for file_entry in &log_files {
+        let content = fs::read_to_string(file_entry.path()).map_err(|e| JoyError::ReadFile {
+            path: file_entry.path(),
+            source: e,
+        })?;
+        for line in content.lines() {
+            if let Some(entry) = parse_log_line(line) {
+                entries.push(entry);
+            }
+        }
+    }
+
+    Ok(entries)
+}
+
+/// Find the timestamp of the last release.created event, if any.
+pub fn last_release_timestamp(root: &Path) -> Result<Option<String>, JoyError> {
+    let events = read_all_events(root)?;
+    let last = events
+        .iter()
+        .rev()
+        .find(|e| e.event_type == "release.created");
+    Ok(last.map(|e| e.timestamp.clone()))
+}
+
+/// Collect unique item IDs that were closed after a given timestamp.
+/// If cutoff is None, returns all items ever closed.
+/// Returns deduplicated item IDs (an item closed multiple times appears once).
+pub fn closed_item_ids_since(root: &Path, cutoff: Option<&str>) -> Result<Vec<String>, JoyError> {
+    let events = read_all_events(root)?;
+    let mut seen = std::collections::HashSet::new();
+    let mut results: Vec<String> = Vec::new();
+
+    for entry in &events {
+        if entry.event_type != "item.status_changed" {
+            continue;
+        }
+        let is_close = entry
+            .details
+            .as_deref()
+            .is_some_and(|d| d.contains("-> closed"));
+        if !is_close {
+            continue;
+        }
+        if let Some(cutoff) = cutoff {
+            if entry.timestamp.as_str() <= cutoff {
+                continue;
+            }
+        }
+        if seen.insert(entry.target.clone()) {
+            results.push(entry.target.clone());
+        }
+    }
+
+    Ok(results)
+}
+
+/// Collect unique actors from events after a cutoff, with event counts.
+pub fn actors_since(root: &Path, cutoff: Option<&str>) -> Result<Vec<(String, usize)>, JoyError> {
+    let events = read_all_events(root)?;
+    let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+
+    for entry in &events {
+        if let Some(cutoff) = cutoff {
+            if entry.timestamp.as_str() <= cutoff {
+                continue;
+            }
+        }
+        // Only count item-related events for contributor stats
+        if entry.event_type.starts_with("item.") || entry.event_type.starts_with("comment.") {
+            *counts.entry(entry.user.clone()).or_default() += 1;
+        }
+    }
+
+    let mut result: Vec<_> = counts.into_iter().collect();
+    result.sort_by(|a, b| b.1.cmp(&a.1));
+    Ok(result)
 }
 
 /// Get git user.email for the current user.
@@ -279,7 +426,7 @@ mod tests {
     use tempfile::tempdir;
 
     fn setup_project(dir: &Path) {
-        let log_dir = dir.join(".joy").join("log");
+        let log_dir = dir.join(".joy").join("logs");
         fs::create_dir_all(log_dir).unwrap();
     }
 
@@ -360,5 +507,54 @@ mod tests {
         setup_project(dir.path());
         let entries = read_events(dir.path(), None, None, 100).unwrap();
         assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn escape_roundtrip() {
+        assert_eq!(escape_details("simple"), "simple");
+        assert_eq!(escape_details("line1\nline2"), "line1\\nline2");
+        assert_eq!(escape_details("back\\slash"), "back\\\\slash");
+        assert_eq!(escape_details("both\nand\\"), "both\\nand\\\\");
+
+        assert_eq!(unescape_details("simple"), "simple");
+        assert_eq!(unescape_details("line1\\nline2"), "line1\nline2");
+        assert_eq!(unescape_details("back\\\\slash"), "back\\slash");
+        assert_eq!(unescape_details("both\\nand\\\\"), "both\nand\\");
+    }
+
+    #[test]
+    fn multiline_details_roundtrip() {
+        let dir = tempdir().unwrap();
+        setup_project(dir.path());
+
+        let multiline = "First line\nSecond line\nThird with \\backslash";
+        let event = Event {
+            event_type: EventType::CommentAdded,
+            target: "JOY-0001".to_string(),
+            details: Some(multiline.to_string()),
+            user: "test@example.com".to_string(),
+        };
+        append_event(dir.path(), &event).unwrap();
+
+        let entries = read_events(dir.path(), None, None, 100).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].details.as_deref(), Some(multiline));
+    }
+
+    #[test]
+    fn reject_non_timestamp_lines() {
+        assert!(parse_log_line(">").is_none());
+        assert!(parse_log_line("> some text [user@x.com]").is_none());
+        assert!(parse_log_line("Apple Reminders <-- CalDAV --> joyint.com").is_none());
+        assert!(parse_log_line("").is_none());
+        assert!(parse_log_line("   ").is_none());
+    }
+
+    #[test]
+    fn timestamp_validation() {
+        assert!(is_valid_timestamp("2026-03-11T16:14:32.320Z"));
+        assert!(!is_valid_timestamp(">"));
+        assert!(!is_valid_timestamp("not-a-timestamp"));
+        assert!(!is_valid_timestamp("2026"));
     }
 }

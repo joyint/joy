@@ -62,6 +62,27 @@ MISSION 1: SETTING UP BASE CAMP (init)
 
         joy init --name "Cookbox" --acronym CB
 
+    Joy also installs a commit-msg hook that enforces item references in
+    every commit message. This is part of the audit trail -- every code
+    change must link to a Joy item. More on this in Mission 7.
+
+    JOINING AN EXISTING PROJECT
+
+    If you clone a repo that already uses Joy, run the same command:
+
+        git clone https://github.com/example/cookbox.git
+        cd cookbox
+        joy init
+
+    Joy detects the existing project and switches to onboarding mode:
+    it installs the commit-msg hook and sets up your local environment
+    without touching project data. Think of it as registering for the
+    mission instead of creating a new one.
+
+    After onboarding, set up AI tool integration if you use one:
+
+        joy ai setup
+
 MISSION 2: BUILDING YOUR ARSENAL (add)
 
     A Swiss Army knife is only useful if you actually open it. Time to
@@ -230,7 +251,7 @@ MISSION 7: READING THE BLACK BOX (log, roadmap, edit, rm)
         joy log --item CB-0005           Events for a specific item
         joy log --limit 50               Show more entries
 
-    Every joy command leaves a trace in .joy/log/ -- one file per day,
+    Every joy command leaves a trace in .joy/logs/ -- one file per day,
     append-only, timestamped to the millisecond:
 
         2026-03-11T16:14:32.320Z CB-0005 item.created "Set up SQLite database" [mac@phoenix.org]
@@ -241,6 +262,37 @@ MISSION 7: READING THE BLACK BOX (log, roadmap, edit, rm)
     These logs are committed to git with your project. Every team member's
     actions are recorded. Think of it as a built-in audit trail -- who did
     what, when, and to which item. No separate tracking tool needed.
+
+    COMMIT-MSG HOOK: CLOSING THE LOOP
+
+    Joy installs a commit-msg hook (via joy init) that enforces every
+    commit message references at least one item ID:
+
+        git commit -m "feat(db): add migration CB-0005"     # OK
+        git commit -m "fix typo"                            # REJECTED
+
+    The hook reads the project acronym from .joy/project.yaml and checks
+    for the pattern CB-XXXX. If the commit has no item reference, you get:
+
+        error: commit message must reference a Joy item
+          |
+          | fix typo
+          | ^ no CB-XXXX item ID found
+          |
+          = help: add an item ID to your commit message (e.g. CB-0001)
+          = note: use [no-item] tag for infrastructure commits without a Joy item
+
+    For commits that genuinely have no item (CI config, dependency bumps),
+    use the [no-item] tag. It is visible in git history and auditable:
+
+        git commit -m "chore: bump dependencies [no-item]"  # OK
+
+    In multi-repo setups (umbrella with submodules), each subproject has
+    its own acronym. A commit in the Joy repo needs a JOY-XXXX reference,
+    a commit in the umbrella needs a JI-XXXX reference. Cross-project work
+    requires items in each affected project.
+
+    CI can enforce the same rule with: just lint-commits
 
     The display converts UTC timestamps to your local timezone:
 
@@ -393,7 +445,7 @@ REFERENCE
 
     Command                         What it does
     -------                         ------------
-    joy init                        Initialize a project
+    joy init                        Initialize or onboard into a project
     joy add <TYPE> <TITLE>          Create an item
     joy ls                          List and filter items
     joy                             Board overview
@@ -413,6 +465,7 @@ REFERENCE
     joy project                     View/edit project info
     joy config                      Show current configuration
     joy ai setup                    Set up AI tool integration
+    joy ai check                    Check if AI instructions are current
     joy completions <SHELL>         Generate shell completions
     joy tutorial                    You are here
 

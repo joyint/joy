@@ -5,6 +5,8 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 
+use joy_core::embedded::{self, EmbeddedFile, FileStatus};
+
 const INSTRUCTIONS_TEMPLATE: &str = include_str!("../../../../data/ai/instructions.md");
 const SETUP_INSTRUCTIONS: &str = include_str!("../../../../data/ai/instructions/setup.md");
 const SKILL_TEMPLATE: &str = include_str!("../../../../data/ai/skills/joy/SKILL.md");
@@ -25,11 +27,14 @@ pub struct AiArgs {
 enum AiCommand {
     /// Set up AI tool integration for this project
     Setup,
+    /// Check if AI templates are up to date, update if needed
+    Check,
 }
 
 pub fn run(args: AiArgs) -> anyhow::Result<()> {
     match args.command {
         AiCommand::Setup => setup(),
+        AiCommand::Check => check(),
     }
 }
 
@@ -109,28 +114,59 @@ fn check_docs(root: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
+const AI_FILES: &[EmbeddedFile] = &[
+    EmbeddedFile {
+        content: INSTRUCTIONS_TEMPLATE,
+        target: "ai/instructions.md",
+        executable: false,
+    },
+    EmbeddedFile {
+        content: SETUP_INSTRUCTIONS,
+        target: "ai/instructions/setup.md",
+        executable: false,
+    },
+    EmbeddedFile {
+        content: SKILL_TEMPLATE,
+        target: "ai/skills/joy/SKILL.md",
+        executable: false,
+    },
+];
+
+fn check() -> anyhow::Result<()> {
+    let root = joy_core::store::find_project_root(&std::env::current_dir()?)
+        .ok_or_else(|| anyhow::anyhow!("No Joy project found (run `joy init` first)"))?;
+
+    let diffs = embedded::diff_files(&root, AI_FILES)?;
+    let issues: Vec<_> = diffs
+        .iter()
+        .filter(|(_, s)| *s != FileStatus::UpToDate)
+        .collect();
+
+    if issues.is_empty() {
+        println!("Up to date.");
+        std::process::exit(0);
+    }
+
+    for (path, status) in &issues {
+        let label = match status {
+            FileStatus::Outdated => "outdated",
+            FileStatus::Missing => "missing",
+            FileStatus::UpToDate => unreachable!(),
+        };
+        println!("  {}: .joy/{}", label, path);
+    }
+    println!("\nRun `joy ai setup` to update.");
+    std::process::exit(2);
+}
+
 fn copy_templates(root: &Path) -> anyhow::Result<()> {
     println!("Installing AI templates...");
 
-    let ai_dir = root.join(".joy/ai");
-    fs::create_dir_all(&ai_dir)?;
+    let actions = embedded::sync_files(root, AI_FILES)?;
 
-    // instructions.md -- always update (Joy-owned)
-    let instructions_path = ai_dir.join("instructions.md");
-    fs::write(&instructions_path, INSTRUCTIONS_TEMPLATE)?;
-    println!("  .joy/ai/instructions.md ... installed");
-
-    // instructions/setup.md -- always update (Joy-owned)
-    let setup_dir = ai_dir.join("instructions");
-    fs::create_dir_all(&setup_dir)?;
-    fs::write(setup_dir.join("setup.md"), SETUP_INSTRUCTIONS)?;
-    println!("  .joy/ai/instructions/setup.md ... installed");
-
-    // skills/joy/SKILL.md -- always update (Joy-owned)
-    let skill_dir = ai_dir.join("skills/joy");
-    fs::create_dir_all(&skill_dir)?;
-    fs::write(skill_dir.join("SKILL.md"), SKILL_TEMPLATE)?;
-    println!("  .joy/ai/skills/joy/SKILL.md ... installed");
+    for action in &actions {
+        println!("  .joy/{} ... {}", action.target, action.action);
+    }
 
     println!();
     Ok(())

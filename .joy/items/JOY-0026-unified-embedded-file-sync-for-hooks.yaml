@@ -1,0 +1,16 @@
+id: JOY-0026
+title: Unified embedded file sync for hooks, AI templates, and future assets
+type: rework
+status: closed
+priority: high
+effort: 3
+created: 2026-03-22T15:45:18.775127141Z
+updated: 2026-03-22T15:48:05.419303266Z
+description: Extract the duplicated hash-check-and-sync logic from ai.rs and init.rs into a joy-core module. Move commit-msg hook from include_str! in init.rs to data/hooks/commit-msg. Introduce EmbeddedFile registry with target path, executable flag, and hash-based diff/sync. joy ai check/setup and joy init onboarding both use the same core mechanism. Enables a future joy check command that validates all embedded files at once.
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-22T15:45:26.244932991Z
+  text: 'Plan: (1) Create joy-core::embedded module with EmbeddedFile struct (source content, target relative path, executable flag) and two functions: diff_files() returns Vec of (path, status) and sync_files() writes changed files and returns Vec of (path, action). Both use SHA-256 comparison. (2) Move commit-msg hook to data/hooks/commit-msg, reference via include_str! in the registry. (3) Define two registries: HOOK_FILES and AI_FILES as const arrays of EmbeddedFile. (4) Refactor ai.rs to use sync_files/diff_files from core instead of its own diff_templates/sync logic. (5) Refactor init.rs onboard() to use sync_files from core. (6) Remove sha2 dependency from joy-cli, add to joy-core.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-22T15:48:05.411723485Z
+  text: '[x] Created joy-core::embedded module with EmbeddedFile, diff_files(), sync_files(), all_up_to_date(). SHA-256 hash comparison, executable flag support. 4 tests. [x] Moved commit-msg hook to data/hooks/commit-msg, referenced via include_str! in HOOK_FILES registry. [x] Refactored ai.rs: replaced custom TEMPLATES/sha256_hex/diff_templates/sync logic with AI_FILES registry using embedded::diff_files/sync_files. [x] Refactored init.rs: install_hooks() uses embedded::sync_files(root, HOOK_FILES). [x] Removed sha2 from joy-cli, added to joy-core. Both ai check/setup and init onboarding use the same core mechanism.'

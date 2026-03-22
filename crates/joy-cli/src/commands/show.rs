@@ -15,6 +15,10 @@ pub struct ShowArgs {
     /// Item ID (e.g. IT-0001)
     #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_item_id))]
     id: String,
+
+    /// Compact output: emoji-only or abbreviations
+    #[arg(short = 'S', long)]
+    pub short: bool,
 }
 
 pub fn run(args: ShowArgs) -> Result<()> {

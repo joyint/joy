@@ -16,10 +16,11 @@ The user provides a natural language request related to product management. This
 Before doing anything:
 
 1. Run `joy config` to check if a Joy project exists. If it fails, tell the user to run `joy init` first and stop.
-2. Run `joy config get agents.default.interaction-level` to read the interaction level. If the key does not exist, default to 3.
-3. Briefly confirm: "Working in interactive mode (level 3). Want to change that for this session?"
-4. STOP and wait for the user's response before doing anything else. Do not proceed until they reply.
-5. Then proceed to the first session check below.
+2. Run `joy ai check` to verify AI instructions are current. If it exits with code 2, tell the user which templates are outdated and suggest `joy ai setup`. Do not proceed with outdated instructions.
+3. Run `joy config get agents.default.interaction-level` to read the interaction level. If the key does not exist, default to 3.
+4. Briefly confirm: "Working in interactive mode (level 3). Want to change that for this session?"
+5. STOP and wait for the user's response before doing anything else. Do not proceed until they reply.
+6. Then proceed to the first session check below.
 
 ## First session check
 
@@ -85,7 +86,16 @@ When asked to implement a backlog item:
 5. Comment the result with completed todos
 6. Run `joy close <ID>` AFTER the implementation is committed
 
-Never skip steps 3 and 6.
+Never skip steps 1, 3, 5, or 6. Every step produces audit trail entries.
+
+### Discovered bugs and ad-hoc fixes
+
+If you discover a bug or need to make any code change that is not already tracked:
+1. Create a Joy item FIRST: `joy add bug "..." --priority <P> --effort <N>`
+2. Comment the root cause and planned fix
+3. Then follow the implementing items workflow above
+
+Never fix code without a Joy item. The event log is the project's audit trail -- untracked changes are invisible to governance and compliance.
 
 ### Questions and analysis
 

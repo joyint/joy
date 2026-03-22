@@ -1,0 +1,12 @@
+id: JOY-002B
+title: Display capability status in joy show
+type: story
+status: new
+priority: medium
+parent: JOY-0029
+deps:
+- JOY-002A
+effort: 2
+created: 2026-03-22T16:18:44.842450977Z
+updated: 2026-03-22T16:18:48.126471752Z
+description: joy show displays which capabilities an item requires (from type defaults), which are optional, who is assigned to each, and the effective interaction level. Shows actionable hints for unassigned required capabilities.

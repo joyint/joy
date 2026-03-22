@@ -1,0 +1,10 @@
+id: JOY-002A
+title: Capability model in joy-core
+type: story
+status: new
+priority: high
+parent: JOY-0029
+effort: 3
+created: 2026-03-22T16:18:39.086624871Z
+updated: 2026-03-22T16:18:39.086624871Z
+description: Define the 7 fixed capabilities (conceive, plan, design, implement, test, review, document) in joy-core. Add type-to-capability mapping (required/optional per item type). Capabilities are not configurable -- they are a fixed vocabulary shared across all Joy projects.

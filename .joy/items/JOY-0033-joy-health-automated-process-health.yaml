@@ -1,0 +1,10 @@
+id: JOY-0033
+title: 'joy health: automated process health check'
+type: idea
+status: new
+priority: low
+parent: JOY-0029
+effort: 3
+created: 2026-03-22T16:20:09.057965524Z
+updated: 2026-03-22T16:20:09.057965524Z
+description: 'Analyze process data from git history, event logs, and jobs. Report: cycle times per status, unassigned required capabilities, stale items, gate compliance rate, AI cost trends. No external tooling needed -- all data lives in git.'

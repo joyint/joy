@@ -1,0 +1,13 @@
+id: JOY-003C
+title: Global --short flag appears on subcommands where it has no effect
+type: bug
+status: closed
+priority: medium
+effort: 2
+created: 2026-03-22T17:42:35.106857478Z
+updated: 2026-03-22T17:46:34.384395980Z
+description: 'The -S/--short flag was defined as global=true on the top-level CLI struct, causing it to appear in --help for every subcommand -- including those where it has no effect (release, init, comment, deps, etc.). Fix: remove global=true, add -S only to subcommands where it changes output: board, ls, show, roadmap. Reviewed all subcommands to verify only relevant options appear in each help text.'
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-22T17:46:34.375994885Z
+  text: '[x] Removed global=true from --short flag. Added -S/--short to BoardArgs, LsArgs, ShowArgs, RoadmapArgs. Extracted short_override in main() from the specific subcommand args. Verified all subcommands: only board, ls, show, roadmap show -S in help. All others clean.'

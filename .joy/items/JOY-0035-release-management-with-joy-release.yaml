@@ -1,0 +1,9 @@
+id: JOY-0035
+title: Release management with joy release
+type: epic
+status: closed
+priority: high
+effort: 5
+created: 2026-03-22T16:57:56.847918838Z
+updated: 2026-03-22T18:06:17.839473235Z
+description: Implement joy release as a first-class concept. Releases are generated from the event log (items closed since last release.created event), stored as versioned YAML snapshots in .joy/releases/, and provide the bridge between Joy items and Git version tags. Releases list contributors (human:/agent:) with item counts and group items by type.

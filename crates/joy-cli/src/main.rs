@@ -26,10 +26,6 @@ Quick start:
 Run 'joy tutorial' for the full guide."
 )]
 pub(crate) struct Cli {
-    /// Compact output: emoji-only or abbreviations (config: output.short)
-    #[arg(global = true, short = 'S', long)]
-    short: bool,
-
     /// Show all items on the board (no limit per column)
     #[arg(short, long)]
     all: bool,
@@ -98,6 +94,10 @@ enum Commands {
 
 #[derive(clap::Args)]
 pub(crate) struct BoardArgs {
+    /// Compact output: emoji-only or abbreviations
+    #[arg(short = 'S', long)]
+    pub short: bool,
+
     /// Show all items (no limit per status group)
     #[arg(short, long)]
     pub all: bool,
@@ -112,6 +112,10 @@ struct RoadmapArgs {
     /// Show all items (including closed and deferred)
     #[arg(short, long)]
     all: bool,
+
+    /// Compact output: emoji-only or abbreviations
+    #[arg(short = 'S', long)]
+    short: bool,
 }
 
 #[derive(clap::Args)]
@@ -134,7 +138,16 @@ fn main() -> anyhow::Result<()> {
 
     let mut config = joy_core::store::load_config();
 
-    if cli.short {
+    // Extract --short from subcommands that support it
+    let short_override = match &cli.command {
+        None => false, // default board uses cli-level args handled below
+        Some(Commands::Board(a)) => a.short,
+        Some(Commands::Ls(a)) => a.short,
+        Some(Commands::Show(a)) => a.short,
+        Some(Commands::Roadmap(a)) => a.short,
+        _ => false,
+    };
+    if short_override {
         config.output.short = true;
     }
     color::init(&config.output);
@@ -182,6 +195,7 @@ fn main() -> anyhow::Result<()> {
         Some(Commands::Config(_)) => unreachable!("handled above"),
         Some(Commands::Ai(args)) => commands::ai::run(args),
         None => commands::board::run(BoardArgs {
+            short: false,
             all: cli.all,
             reverse: cli.reverse,
         }),
