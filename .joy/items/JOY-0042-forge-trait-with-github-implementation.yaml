@@ -1,0 +1,12 @@
+id: JOY-0042
+title: Forge trait with GitHub implementation
+type: story
+status: new
+priority: medium
+parent: JOY-003F
+deps:
+- JOY-0040
+effort: 3
+created: 2026-03-22T22:08:00.946360675Z
+updated: 2026-03-22T22:08:34.136701031Z
+description: 'Forge trait with create_release(tag, title, notes) method. GitHub implementation via octocrab crate or gh CLI fallback. Auto-detect GitHub from git remote URL. Optional forge: field in project.yaml to override. Feature-flagged dependency so non-GitHub users don''t pull octocrab.'

@@ -1,0 +1,14 @@
+id: JOY-0043
+title: joy release create --full end-to-end flow
+type: story
+status: new
+priority: high
+parent: JOY-003F
+deps:
+- JOY-0040
+- JOY-0041
+- JOY-0042
+effort: 3
+created: 2026-03-22T22:08:13.888441970Z
+updated: 2026-03-22T22:08:34.163213920Z
+description: 'Wire everything together: joy release create <bump> --full performs version bump, git add, commit with [no-item], annotated tag with markdown notes, push, optional forge release with confirmation. Replaces all justfile release bash scripts with a one-liner.'
