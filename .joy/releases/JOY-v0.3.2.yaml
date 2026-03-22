@@ -1,0 +1,77 @@
+version: v0.3.2
+date: 2026-03-22
+previous: v0.3.1
+contributors:
+- id: horst.schwarz@joydev.com
+  events: 143
+  items: 31
+items:
+  epics:
+  - id: JOY-0035
+    title: Release management with joy release
+  stories:
+  - id: JOY-000F
+    title: 'Config layering: separate project and personal settings'
+  - id: JOY-000A
+    title: 'Config defaults: init with all values, code fallback, auto-update on new keys'
+  - id: JOY-0020
+    title: Reverse sort flag (-r/--reverse) for board and ls
+  - id: JOY-001C
+    title: AI self-update check at session start
+  - id: JOY-0036
+    title: Release data model and YAML storage
+  - id: JOY-0037
+    title: joy release create with auto-versioning
+  - id: JOY-0038
+    title: joy release show for display and preview
+  - id: JOY-003D
+    title: Markdown output for joy release show with repo links
+  tasks:
+  - id: JOY-0003
+    title: Validate keys in joy config set/get, reject unknown
+  - id: JOY-0001
+    title: Hint about joy ai setup in joy init output
+  - id: JOY-0028
+    title: Document joy init onboarding and commit-msg hook in README and Tutorial
+  - id: JOY-0039
+    title: Reopen warning for released items
+  - id: JOY-003A
+    title: Integrate joy release with just release recipe
+  bugs:
+  - id: JOY-000E
+    title: Replace serde_yml (unmaintained, unsound) with alternative
+  - id: JOY-000D
+    title: 'joy ai setup: template creation defaults to N instead of Y'
+  - id: JOY-0008
+    title: joy ai setup re-asks for already configured AI tools
+  - id: JOY-000B
+    title: AI does not suggest size when creating items via skill
+  - id: JOY-000C
+    title: AI instructions conflate data language and conversation language
+  - id: JOY-001F
+    title: config set accepts invalid values, load_config silently falls back to defaults
+  - id: JOY-001D
+    title: joy ai setup does not configure nested projects
+  - id: JOY-0025
+    title: Multiline comment details in event log cause board panic
+  - id: JOY-003C
+    title: Global --short flag appears on subcommands where it has no effect
+  reworks:
+  - id: JOY-0007
+    title: Review CLI parameter ergonomics (short flags, bundling)
+  - id: JOY-001E
+    title: Kanban-style board view as default for joy command
+  - id: JOY-0022
+    title: Unify project command with get/set subcommands
+  - id: JOY-0026
+    title: Unified embedded file sync for hooks, AI templates, and future assets
+  decisions:
+  - id: JOY-0027
+    title: 'ADR-016: Embedded file sync for Joy-owned assets'
+  ideas:
+  - id: JOY-0021
+    title: Auto-completion for config/project set/get
+  - id: JOY-0024
+    title: Roadmap with adjusted line length
+  - id: JOY-0023
+    title: No Git commit without Joy item reference
