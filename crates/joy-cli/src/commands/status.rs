@@ -67,12 +67,8 @@ pub fn run(args: StatusArgs) -> Result<()> {
                 release_version
             );
             eprintln!("  |");
-            eprintln!(
-                "  = note: reopening a released item means the fix was incomplete"
-            );
-            eprintln!(
-                "  = help: consider creating a new bug item instead"
-            );
+            eprintln!("  = note: reopening a released item means the fix was incomplete");
+            eprintln!("  = help: consider creating a new bug item instead");
             eprint!("\n  Reopen anyway? [y/N] ");
             std::io::stderr().flush()?;
             let mut input = String::new();
