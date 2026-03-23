@@ -1,0 +1,22 @@
+version: v0.3.3
+date: 2026-03-23
+previous: v0.3.2
+contributors:
+- id: horst.schwarz@joydev.com
+  events: 32
+  items: 6
+items:
+  stories:
+  - id: JOY-0040
+    title: Git write operations in vcs::git (add, commit, tag, push)
+  - id: JOY-0041
+    title: Structured version bumping from project.yaml config
+  - id: JOY-0042
+    title: Forge trait with GitHub implementation
+  - id: JOY-0043
+    title: joy release create --full end-to-end flow
+  decisions:
+  - id: JOY-003E
+    title: 'ADR-017: VCS and forge abstraction for release automation'
+  - id: JOY-0048
+    title: ForgeSync vision document for Joy CLI
