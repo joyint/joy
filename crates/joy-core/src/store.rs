@@ -150,6 +150,30 @@ pub fn load_config() -> crate::model::Config {
     }
 }
 
+/// Load only the user-set config values (personal local + global, no defaults).
+/// Returns an empty object if no personal config exists.
+pub fn load_personal_config_value() -> serde_json::Value {
+    let cwd = match std::env::current_dir() {
+        Ok(p) => p,
+        Err(_) => return serde_json::json!({}),
+    };
+    let root = match find_project_root(&cwd) {
+        Some(r) => r,
+        None => return serde_json::json!({}),
+    };
+
+    let mut merged = serde_json::json!({});
+
+    if let Some(global) = read_yaml_value(&global_config_path()) {
+        deep_merge(&mut merged, &global);
+    }
+    if let Some(local) = read_yaml_value(&local_config_path(&root)) {
+        deep_merge(&mut merged, &local);
+    }
+
+    merged
+}
+
 /// Load the merged config as a serde_json::Value (preserves arbitrary keys).
 pub fn load_config_value() -> serde_json::Value {
     let cwd = match std::env::current_dir() {

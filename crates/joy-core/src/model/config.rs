@@ -29,20 +29,44 @@ pub struct AgentsConfig {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AgentRoleConfig {
-    #[serde(rename = "interaction-level", default = "default_interaction_level")]
-    pub interaction_level: u8,
+    #[serde(default)]
+    pub mode: InteractionLevel,
 }
 
 impl Default for AgentRoleConfig {
     fn default() -> Self {
         Self {
-            interaction_level: default_interaction_level(),
+            mode: InteractionLevel::default(),
         }
     }
 }
 
-fn default_interaction_level() -> u8 {
-    3
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum InteractionLevel {
+    Autonomous,
+    Supervised,
+    Collaborative,
+    Interactive,
+    Pairing,
+}
+
+impl Default for InteractionLevel {
+    fn default() -> Self {
+        Self::Collaborative
+    }
+}
+
+impl std::fmt::Display for InteractionLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Autonomous => write!(f, "autonomous"),
+            Self::Supervised => write!(f, "supervised"),
+            Self::Collaborative => write!(f, "collaborative"),
+            Self::Interactive => write!(f, "interactive"),
+            Self::Pairing => write!(f, "pairing"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -160,7 +184,7 @@ fn probe_string_field(key: &str) -> Vec<String> {
     const PROBES: &[&str] = &[
         "auto", "always", "never", "none", "true", "false", "yes", "no", "on", "off", "list",
         "board", "calendar", "all", "tech", "science", "humor", "low", "medium", "high",
-        "critical",
+        "critical", "autonomous", "supervised", "collaborative", "interactive", "pairing",
     ];
 
     let mut accepted = Vec::new();

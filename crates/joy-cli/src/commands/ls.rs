@@ -277,7 +277,10 @@ pub fn run(args: LsArgs) -> Result<()> {
         match args.group.as_str() {
             "milestone" | "ms" => {
                 let ms_list = milestones::load_milestones(&root)?;
-                print_tree_by_milestone(&filtered, &ms_list, &all_items);
+                let project = store::read_yaml::<joy_core::model::Project>(
+                    &store::joy_dir(&root).join(store::PROJECT_FILE),
+                )?;
+                print_tree_by_milestone(&filtered, &ms_list, &all_items, &project);
             }
             "parent" => print_tree_by_parent(&filtered),
             other => anyhow::bail!("unknown group: {other} (use: parent, milestone)"),
@@ -507,7 +510,9 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
         println!("{line}");
     }
 
-    println!("\n{}", color::label(&format!("{} item(s)", items.len())));
+    let w = terminal_width();
+    println!("{}", color::label(&"-".repeat(w)));
+    println!("{}", color::label(&format!("{} item(s)", items.len())));
 }
 
 fn display_width(s: &str) -> usize {
@@ -522,6 +527,9 @@ fn pad_colored(colored: &str, raw: &str, width: usize) -> String {
 // -- Tree by parent hierarchy (recursive) --
 
 fn print_tree_by_parent(items: &[&Item]) {
+    let w = terminal_width();
+    println!("{}", color::header("Tree"));
+
     let item_ids: std::collections::HashSet<&str> = items.iter().map(|i| i.id.as_str()).collect();
 
     // Root items: no parent, or parent not in the filtered set
@@ -538,7 +546,8 @@ fn print_tree_by_parent(items: &[&Item]) {
         print_tree_node(root, items, "", is_last);
     }
 
-    println!("\n{}", color::label(&format!("{} item(s)", items.len())));
+    println!("{}", color::label(&"-".repeat(w)));
+    println!("{}", color::label(&format!("{} item(s)", items.len())));
 }
 
 /// Compute the available title width for a tree row, given the prefix and item metadata.
@@ -635,8 +644,23 @@ fn print_tree_by_milestone(
     items: &[&Item],
     ms_list: &[joy_core::model::Milestone],
     all_items: &[Item],
+    project: &joy_core::model::Project,
 ) {
     use std::collections::{BTreeMap, HashSet};
+
+    // Header (matches board style)
+    let total = all_items.len();
+    let closed = all_items.iter().filter(|i| !i.is_active()).count();
+    let ms_count = ms_list.len();
+    let header_info = format!(
+        "{} · {} milestones · {}/{} items closed",
+        project.name, ms_count, closed, total
+    );
+    let w = terminal_width();
+    let sep = color::label(&"-".repeat(w));
+    println!("{}", sep);
+    println!("{}", color::label(&header_info));
+    println!("{}", sep);
 
     // Collect all milestone IDs using effective milestone (own or inherited from parent)
     let mut groups: BTreeMap<String, Vec<&&Item>> = BTreeMap::new();
@@ -702,15 +726,25 @@ fn print_tree_by_milestone(
         print_parent_grouped_children(&no_milestone);
     }
 
-    let total_closed = all_items.iter().filter(|i| !i.is_active()).count();
-    println!(
-        "\n{}",
-        color::label(&format!(
-            "{}/{} item(s) closed",
-            total_closed,
-            all_items.len()
-        ))
-    );
+    // Footer with statistics (matches board style)
+    let new = all_items.iter().filter(|i| i.status == Status::New).count();
+    let open = all_items.iter().filter(|i| i.status == Status::Open).count();
+    let wip = all_items.iter().filter(|i| i.status == Status::InProgress).count();
+    let review = all_items.iter().filter(|i| i.status == Status::Review).count();
+    let deferred = all_items.iter().filter(|i| i.status == Status::Deferred).count();
+    let blocked_count = all_items.iter().filter(|i| i.is_blocked_by(all_items)).count();
+
+    let mut stats = Vec::new();
+    if new > 0 { stats.push(format!("{new} new")); }
+    if open > 0 { stats.push(format!("{open} open")); }
+    if wip > 0 { stats.push(format!("{wip} in-progress")); }
+    if review > 0 { stats.push(format!("{review} review")); }
+    if closed > 0 { stats.push(format!("{closed} closed")); }
+    if deferred > 0 { stats.push(format!("{deferred} deferred")); }
+    if blocked_count > 0 { stats.push(format!("{blocked_count} blocked")); }
+
+    println!("{}", sep);
+    println!("{}", color::label(&stats.join(" · ")));
 }
 
 fn print_milestone_group(
@@ -727,7 +761,7 @@ fn print_milestone_group(
     println!(
         "{} {}{} [{}/{}]",
         color::id(id),
-        color::heading(title_str),
+        color::label(title_str),
         color::label(&date_str),
         closed,
         total

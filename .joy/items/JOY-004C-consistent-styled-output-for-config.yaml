@@ -1,0 +1,15 @@
+id: JOY-004C
+title: Consistent styled output for config, project, and ai setup
+type: rework
+status: closed
+priority: high
+effort: 3
+created: 2026-03-23T21:07:19.787464519Z
+updated: 2026-03-23T21:14:37.124966485Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-23T21:08:22.908086460Z
+  text: 'Plan: (1) Add shared layout helpers to color.rs: terminal_width(), header(title), separator(), footer(message), section(title), check_mark(), cross_mark(), indent(). (2) Refactor joy project to use new helpers with full terminal width. (3) Refactor joy config to use styled output with section headings and colored key-value pairs. (4) Refactor joy ai setup with clear visual sections, check marks, indented details, and a footer summary. (5) All respect output.color config.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-23T21:14:37.114742136Z
+  text: '[x] Added shared layout helpers to color.rs: terminal_width(), header(), separator(), footer(), section(), key_value(), check_mark(), cross_mark(), warn_mark(), success(), warning(), danger(), info(). [x] joy project uses header() with full terminal width, key_value() for aligned fields. [x] joy config uses header(), section() per group, key_value() with colored booleans and inactive nulls. [x] joy ai setup uses header(), section() per phase (Documentation, Templates, AI Tools, Nested Projects), check/warn marks, quiet mode for up-to-date tools, footer with tool count. [x] joy ai check uses colored status labels. [x] All commands respect output.color config.'

@@ -28,8 +28,10 @@ pub fn run(args: ShowArgs) -> Result<()> {
     let item = items::load_item(&root, &args.id)?;
     let all_items = items::load_items(&root)?;
 
-    println!("{} {}", color::id(&item.id), color::heading(&item.title));
-    println!("{}", color::label(&"-".repeat(60)));
+    let w = color::terminal_width();
+    println!("{}", color::label(&"-".repeat(w)));
+    println!("{} {}", color::id(&item.id), color::label(&item.title));
+    println!("{}", color::label(&"-".repeat(w)));
     let (_, type_display) = color::item_type_display(&item.item_type);
     let (_, status_display) = color::status_display(&item.status);
     let (_, priority_display) = color::priority_display(&item.priority);
@@ -54,7 +56,7 @@ pub fn run(args: ShowArgs) -> Result<()> {
     }
 
     if !item.deps.is_empty() {
-        println!("\n{}:", color::heading("Dependencies"));
+        println!("\n{}:", color::label("Dependencies"));
         for dep_id in &item.deps {
             let dep_info = all_items
                 .iter()
@@ -86,7 +88,7 @@ pub fn run(args: ShowArgs) -> Result<()> {
     }
 
     if !item.comments.is_empty() {
-        println!("\n{}:", color::heading("Comments"));
+        println!("\n{}:", color::label("Comments"));
         for (i, comment) in item.comments.iter().enumerate() {
             if i > 0 {
                 println!();
@@ -104,13 +106,11 @@ pub fn run(args: ShowArgs) -> Result<()> {
         }
     }
 
+    println!("{}", color::label(&"-".repeat(w)));
     println!(
-        "\n{} {}",
+        "{} {}  {} {}",
         color::label("Created:"),
-        color::label(&item.created.format("%Y-%m-%d %H:%M").to_string())
-    );
-    println!(
-        "{} {}",
+        color::label(&item.created.format("%Y-%m-%d %H:%M").to_string()),
         color::label("Updated:"),
         color::label(&item.updated.format("%Y-%m-%d %H:%M").to_string())
     );

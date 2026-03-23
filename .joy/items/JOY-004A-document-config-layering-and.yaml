@@ -1,0 +1,12 @@
+id: JOY-004A
+title: Document config layering and governance for end users
+type: task
+status: new
+priority: medium
+effort: 3
+created: 2026-03-23T20:35:30.324518495Z
+updated: 2026-03-23T20:35:35.993613930Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-23T20:35:35.993613250Z
+  text: 'Topics to cover: (1) Config cascade (config.yaml > global > defaults > code) with concrete examples. (2) project.yaml governance as separate axis that caps the resolved config value. (3) joy config output showing value source and capping. (4) Effective interaction level display in joy show. Consider a dedicated Config Reference page or a section in the Tutorial.'

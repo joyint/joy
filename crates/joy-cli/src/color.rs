@@ -303,6 +303,7 @@ pub fn inactive(text: &str) -> String {
     wrap(INACTIVE, text)
 }
 
+#[allow(dead_code)]
 pub fn heading(text: &str) -> String {
     wrap(BOLD, text)
 }
@@ -352,4 +353,100 @@ pub fn effort_indicator(effort: Option<u8>) -> String {
 
 fn is_color_enabled() -> bool {
     *ENABLED.get().unwrap_or(&false)
+}
+
+// ---------------------------------------------------------------------------
+// Layout helpers -- shared across all commands for consistent output
+// ---------------------------------------------------------------------------
+
+/// Detect terminal width, falling back to 80 columns.
+pub fn terminal_width() -> usize {
+    #[cfg(feature = "tui")]
+    {
+        if let Ok((cols, _)) = crossterm::terminal::size() {
+            return cols as usize;
+        }
+    }
+    std::env::var("COLUMNS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(80)
+}
+
+/// Full-width header: separator, title, separator (matches joy ls).
+pub fn header(title: &str) -> String {
+    let w = terminal_width();
+    let line = label(&"-".repeat(w));
+    format!("{}\n{}\n{}", line, label(title), line)
+}
+
+/// Full-width separator line.
+#[allow(dead_code)]
+pub fn separator() -> String {
+    label(&"-".repeat(terminal_width()))
+}
+
+/// Full-width footer: separator line with a summary message.
+pub fn footer(message: &str) -> String {
+    let w = terminal_width();
+    format!("{}\n{}", label(&"-".repeat(w)), label(message))
+}
+
+/// Section heading: secondary-colored with a short underline.
+pub fn section(title: &str) -> String {
+    let underline = "-".repeat(title.len());
+    format!("{}\n{}", label(title), inactive(&underline))
+}
+
+/// Key-value pair with aligned label (padded to width).
+pub fn key_value(key: &str, value: &str, label_width: usize) -> String {
+    format!("{:<width$} {}", label(key), value, width = label_width)
+}
+
+/// Success check mark (respects emoji setting).
+pub fn check_mark() -> &'static str {
+    if is_emoji_enabled() {
+        "\u{2714} "
+    } else {
+        "[ok] "
+    }
+}
+
+/// Failure cross mark (respects emoji setting).
+pub fn cross_mark() -> &'static str {
+    if is_emoji_enabled() {
+        "\u{2718} "
+    } else {
+        "[!!] "
+    }
+}
+
+/// Warning indicator (respects emoji setting).
+pub fn warn_mark() -> &'static str {
+    if is_emoji_enabled() {
+        "\u{26a0}\u{fe0f} "
+    } else {
+        "[!] "
+    }
+}
+
+/// Wrap text in success color (green).
+pub fn success(text: &str) -> String {
+    wrap(SUCCESS, text)
+}
+
+/// Wrap text in warning color (yellow).
+pub fn warning(text: &str) -> String {
+    wrap(WARNING, text)
+}
+
+/// Wrap text in danger color (red).
+pub fn danger(text: &str) -> String {
+    wrap(DANGER, text)
+}
+
+/// Wrap text in info color (cyan).
+#[allow(dead_code)]
+pub fn info(text: &str) -> String {
+    wrap(INFO, text)
 }

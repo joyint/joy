@@ -1,0 +1,12 @@
+id: JOY-004F
+title: Inconsistent header format between ls and project/config/ai
+type: bug
+status: closed
+priority: high
+effort: 1
+created: 2026-03-23T21:33:43.953568879Z
+updated: 2026-03-23T21:34:45.022207370Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-23T21:34:45.013257145Z
+  text: '[x] Changed header() from Unicode box drawing to ASCII dashes, matching joy ls format. [x] Header now has separator above and below title. [x] Section underlines and footer also use dashes. [x] All commands (config, project, ai setup) now match joy ls header style.'

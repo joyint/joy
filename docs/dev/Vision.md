@@ -376,33 +376,33 @@ AI agents in Joy operate in one of two interaction modes, configurable per agent
 
 **Autonomous (default for agent mode):** The AI executes independently within predefined rules. Governance gates (`allow_ai`, `requires_role`, budget limits) serve as control points instead of continuous dialog. Best for repetitive tasks -- implementation, testing, estimation.
 
-The interaction level is configured per agent role in `.joy/config.yaml` on a scale from 1 (fully autonomous) to 5 (fully interactive):
+The mode is configured per agent role in `.joy/config.yaml` using named levels:
 
 | Level | Behavior | Example roles |
 |-------|----------|---------------|
-| 1 | Fully autonomous, only governance gates as checkpoints | - |
-| 2 | Autonomous, confirms before irreversible actions | tester, estimator |
-| 3 | Balanced: proposes approach, proceeds after confirmation | implementer |
-| 4 | Interactive: proposes options with rationale, waits for decision | reviewer, planner |
-| 5 | Fully interactive: question-by-question, co-creation mode | architect, product planner |
+| autonomous | Work independently, only governance gates as checkpoints | - |
+| supervised | Work independently, confirm before irreversible actions | tester, estimator |
+| collaborative | Propose approach, proceed after confirmation | implementer |
+| interactive | Present options with rationale, wait for decision | reviewer, planner |
+| pairing | Question-by-question, co-creation mode | architect, product planner |
 
 ```yaml
 agents:
   architect:
-    interaction-level: 5        # co-creation, every decision discussed
+    mode: pairing        # co-creation, every decision discussed
   reviewer:
-    interaction-level: 4        # proposes, waits for decision
+    mode: interactive    # proposes, waits for decision
   planner:
-    interaction-level: 4
+    mode: interactive
   implementer:
-    interaction-level: 3        # proposes approach, then executes
+    mode: collaborative  # proposes approach, then executes
   tester:
-    interaction-level: 2        # autonomous, confirms destructive actions
+    mode: supervised     # autonomous, confirms destructive actions
   estimator:
-    interaction-level: 2
+    mode: supervised
 ```
 
-Teams adjust levels per role as needed. A solo founder might run the architect at 5 and the implementer at 2. A mature team with established conventions might lower everything by one level.
+Teams adjust levels per role as needed. A solo founder might run the architect at `pairing` and the implementer at `supervised`. A mature team with established conventions might lower everything by one level.
 
 ### Agent mode (MS-05): Joy dispatches to AI
 
