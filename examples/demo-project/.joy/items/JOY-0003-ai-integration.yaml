@@ -1,9 +1,0 @@
-id: JOY-0003
-title: AI Integration
-type: epic
-status: new
-priority: high
-milestone: MS-02
-created: '2026-03-10T00:16:16.382252138Z'
-updated: '2026-03-10T00:16:16.382252138Z'
-description: Integrate external AI tools as first-class collaborators. Joy dispatches work to the configured tool and tracks results, costs, and status.
