@@ -123,11 +123,21 @@ release bump="patch":
         echo "No changes since last tag, skipping."
         exit 0
     fi
-    # Auto-commit pending Joy data (items, logs) before release
+    # Auto-commit pending Joy data and lockfiles before release
+    changed=false
     if git status --porcelain .joy/ 2>/dev/null | grep -q .; then
         git add .joy/
-        git commit --quiet -m "chore: update Joy items and logs [no-item]"
-        echo "Committed pending Joy data."
+        changed=true
+    fi
+    for lockfile in Cargo.lock package-lock.json yarn.lock; do
+        if git status --porcelain "$lockfile" 2>/dev/null | grep -q .; then
+            git add "$lockfile"
+            changed=true
+        fi
+    done
+    if [ "$changed" = true ]; then
+        git commit --quiet -m "chore: update Joy data and lockfiles [no-item]"
+        echo "Committed pending changes."
     fi
     if [ -n "$(git status --porcelain)" ]; then
         echo "Error: working tree is not clean."
