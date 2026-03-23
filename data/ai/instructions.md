@@ -60,6 +60,8 @@ Effort scale (1-7): 1=trivial, 2=small, 3=medium, 4=large, 5=major, 6=heavy, 7=m
 
 **Comment everything.** Before implementing, comment the planned solution: `joy comment <ID> "Plan: ..."`. After implementing, comment the result: `joy comment <ID> "[x] what was done"`. This applies to ALL items -- planned work, discovered bugs, and ad-hoc fixes alike. The comments are the audit record of what was decided and why.
 
+**Confirm before changing Joy data.** At interaction level 3 and above, never create, edit, or close Joy items during or after a discussion without explicitly confirming with the user first. Ask "Shall I update the items now?" or equivalent and wait for approval. Discussions shape decisions -- but the decision to persist them must be the user's.
+
 **Use the project language for artifacts only.** Run `joy project` to read the configured language (default: `en`). This language strictly governs all written artifacts: Joy item titles, descriptions, comments, commit messages, and documentation. Never deviate from it, even if the conversation is in another language. **Conversation language is separate.** For interactive communication (responses, explanations, questions), detect and follow the user's language. If the user writes in German, respond in German. The project language setting does NOT apply to conversation -- only to artifacts that are persisted in the project.
 
 **Titles are short.** Max 60 characters, actionable ("Add X", "Fix Y", not "X should be added").
