@@ -12,9 +12,11 @@ use joy_core::model::item::{self, ItemType};
 use joy_core::model::release::{Bump, Contributor, Release, ReleaseItem, ReleaseItems};
 use joy_core::releases;
 use joy_core::store;
-use joy_core::vcs::Vcs;
+use joy_core::vcs::{self, Vcs};
 
 use crate::color;
+use crate::forge;
+use crate::version_bump;
 
 #[derive(clap::Args)]
 pub struct ReleaseArgs {
@@ -48,6 +50,10 @@ struct CreateArgs {
     /// Explicit version (overrides bump argument)
     #[arg(long)]
     version: Option<String>,
+
+    /// Full release: bump versions, git commit/tag/push, forge release
+    #[arg(long)]
+    full: bool,
 }
 
 #[derive(clap::Args)]
@@ -192,6 +198,11 @@ fn create(args: CreateArgs) -> Result<()> {
         title_for_log.as_deref(),
     );
 
+    // --full: version bump, git commit/tag/push, forge release
+    if args.full {
+        full_release(&root, &version, &release, &project)?;
+    }
+
     Ok(())
 }
 
@@ -285,6 +296,146 @@ fn ls() -> Result<()> {
     );
 
     Ok(())
+}
+
+fn full_release(
+    root: &std::path::Path,
+    version: &str,
+    release: &Release,
+    project: &joy_core::model::project::Project,
+) -> Result<()> {
+    let git = vcs::default_vcs();
+
+    // Check git version
+    git.check_version()?;
+
+    // Version bump (if version-files configured)
+    let version_files = read_version_files(root);
+    let semver = version.strip_prefix('v').unwrap_or(version);
+    if !version_files.is_empty() {
+        let results = version_bump::bump_all(root, &version_files, semver)?;
+        for r in &results {
+            let rel_path = r.path.strip_prefix(root).unwrap_or(&r.path);
+            println!("  {} -> {}", rel_path.display(), r.new_version);
+        }
+    }
+
+    // Git: add, commit, tag, push
+    git.add_all(root)?;
+    git.commit(root, &format!("bump to {version} [no-item]"))?;
+
+    // Annotated tag with markdown release notes
+    let markdown_notes = render_release_markdown(release);
+    git.tag_annotated(root, version, &markdown_notes)?;
+
+    let remote = git.default_remote(root)?;
+    git.push(root, &remote)?;
+    git.push_tag(root, &remote, version)?;
+    println!("Released {version}");
+
+    // Forge release (optional, with confirmation)
+    let forge_impl = forge::from_config(project.forge.as_deref());
+    if project.forge.is_some() && project.forge.as_deref() != Some("none") {
+        print!("Create forge release? [y/N] ");
+        std::io::stdout().flush()?;
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        if input.trim().eq_ignore_ascii_case("y") {
+            let title = release
+                .title
+                .as_deref()
+                .map(|t| format!("{version} -- {t}"))
+                .unwrap_or_else(|| version.to_string());
+            match forge_impl.create_release(root, version, &title, &markdown_notes)? {
+                Some(url) => println!("Forge release created: {url}"),
+                None => println!("Forge release skipped."),
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Read release.version-files from project.yaml as raw YAML.
+fn read_version_files(root: &std::path::Path) -> Vec<version_bump::VersionFile> {
+    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
+    let content = match std::fs::read_to_string(&project_path) {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
+    let doc: serde_json::Value = match serde_yaml_ng::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+    let files = match doc.get("release").and_then(|r| r.get("version-files")) {
+        Some(serde_json::Value::Array(arr)) => arr,
+        _ => return Vec::new(),
+    };
+    files
+        .iter()
+        .filter_map(|entry| {
+            let path = entry.get("path")?.as_str()?;
+            let key = entry.get("key")?.as_str()?;
+            Some(version_bump::VersionFile {
+                path: path.to_string(),
+                key: key.to_string(),
+            })
+        })
+        .collect()
+}
+
+/// Render release as markdown string (for tag body and forge notes).
+fn render_release_markdown(release: &Release) -> String {
+    let mut out = String::new();
+    let title_str = release
+        .title
+        .as_deref()
+        .map(|t| format!(" -- {t}"))
+        .unwrap_or_default();
+    out.push_str(&format!("# {}{}\n\n", release.version, title_str));
+    out.push_str(&format!("**Date:** {}\n", release.date));
+    if let Some(ref prev) = release.previous {
+        out.push_str(&format!("**Previous:** {prev}\n"));
+    }
+    if let Some(ref desc) = release.description {
+        out.push_str(&format!("\n{desc}\n"));
+    }
+    if !release.contributors.is_empty() {
+        out.push_str("\n## Contributors\n\n");
+        for c in &release.contributors {
+            out.push_str(&format!(
+                "- {} ({} events on {} items)\n",
+                c.id, c.events, c.items
+            ));
+        }
+    }
+    let type_groups: &[(&str, &[ReleaseItem])] = &[
+        ("Epics", &release.items.epics),
+        ("Stories", &release.items.stories),
+        ("Tasks", &release.items.tasks),
+        ("Bugs", &release.items.bugs),
+        ("Reworks", &release.items.reworks),
+        ("Decisions", &release.items.decisions),
+        ("Ideas", &release.items.ideas),
+    ];
+    let total: usize = type_groups.iter().map(|(_, items)| items.len()).sum();
+    for (label, items) in type_groups {
+        if items.is_empty() {
+            continue;
+        }
+        out.push_str(&format!("\n## {label}\n\n"));
+        for ri in *items {
+            let filename = item::item_filename(&ri.id, &ri.title);
+            out.push_str(&format!(
+                "- [{}](.joy/items/{}) {}\n",
+                ri.id, filename, ri.title
+            ));
+        }
+    }
+    if total > 0 {
+        out.push_str(&format!("\n---\n*{total} item(s)*\n"));
+    }
+    out
 }
 
 fn terminal_width() -> usize {
