@@ -320,6 +320,19 @@ fn full_release(
         }
     }
 
+    // Regenerate Cargo.lock after version bump
+    if root.join("Cargo.lock").is_file() {
+        let status = std::process::Command::new("cargo")
+            .args(["generate-lockfile"])
+            .current_dir(root)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+        if status.is_err() || !status.unwrap().success() {
+            eprintln!("Warning: failed to update Cargo.lock");
+        }
+    }
+
     // Git: add, commit, tag, push
     git.add_all(root)?;
     git.commit(root, &format!("bump to {version} [no-item]"))?;

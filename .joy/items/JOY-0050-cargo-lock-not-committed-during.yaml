@@ -1,0 +1,8 @@
+id: JOY-0050
+title: Cargo.lock not committed during release version bump
+type: bug
+status: in-progress
+priority: high
+effort: 1
+created: 2026-03-23T22:38:58.475645324Z
+updated: 2026-03-23T22:38:58.498497695Z
