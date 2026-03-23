@@ -90,9 +90,9 @@ pub fn run(args: StatusArgs) -> Result<()> {
             .collect();
         if !open_children.is_empty() {
             eprintln!(
-                "Warning: {} has {} open child item(s):",
+                "Warning: {} has {}:",
                 color::id(&item.id),
-                open_children.len()
+                color::plural(open_children.len(), "open child item")
             );
             for child in &open_children {
                 eprintln!(

@@ -193,7 +193,10 @@ fn run_ls() -> Result<()> {
     }
 
     println!("{}", color::label(&"-".repeat(w)));
-    println!("{}", color::label(&format!("{} milestone(s)", milestones.len())));
+    println!(
+        "{}",
+        color::label(&color::plural(milestones.len(), "milestone"))
+    );
 
     Ok(())
 }
@@ -236,9 +239,9 @@ fn run_show(args: ShowArgs) -> Result<()> {
 
     if !blocked.is_empty() {
         println!(
-            "\n{} ({} blocked item(s)):",
+            "\n{} ({} blocked):",
             color::blocked("Risks"),
-            blocked.len()
+            color::plural(blocked.len(), "item")
         );
         for item in &blocked {
             println!(

@@ -40,9 +40,9 @@ pub fn run(args: RmArgs) -> Result<()> {
     if !args.force {
         if args.recursive {
             eprintln!(
-                "Delete {} and {} child item(s)?",
+                "Delete {} and {}?",
                 color::id(&item.id),
-                to_delete.len() - 1
+                color::plural(to_delete.len() - 1, "child item")
             );
         } else {
             eprintln!(

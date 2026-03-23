@@ -73,7 +73,10 @@ fn setup() -> anyhow::Result<()> {
     let tool_count = configure_tools(&root)?;
     check_nested_projects(&root)?;
 
-    let msg = format!("AI integration complete -- {} tool(s) configured", tool_count);
+    let msg = format!(
+        "AI integration complete -- {} tool(s) configured",
+        tool_count
+    );
     println!("{}", color::footer(&msg));
     Ok(())
 }
@@ -194,7 +197,11 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
         ("Claude Code", "claude", &[".claude/"]),
         ("Qwen Code", "qwen", &[".qwen/"]),
         ("Mistral Vibe", "vibe", &[".vibe/"]),
-        ("GitHub Copilot", "copilot", &[".github/copilot-instructions.md"]),
+        (
+            "GitHub Copilot",
+            "copilot",
+            &[".github/copilot-instructions.md"],
+        ),
     ];
 
     let tools: Vec<_> = if let Some(ref filter) = args.tool {
@@ -253,9 +260,14 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
         println!("  {}{:<24} removed", color::check_mark(), name);
     }
 
-    let count = tools.iter().filter(|(_, _, paths)| {
-        paths.iter().any(|p| to_remove.iter().any(|(_, tp)| tp == p))
-    }).count();
+    let count = tools
+        .iter()
+        .filter(|(_, _, paths)| {
+            paths
+                .iter()
+                .any(|p| to_remove.iter().any(|(_, tp)| tp == p))
+        })
+        .count();
     println!("{}", color::footer(&format!("{} tool(s) reset", count)));
     Ok(())
 }
@@ -273,23 +285,50 @@ fn copy_templates(root: &Path) -> anyhow::Result<()> {
         } else {
             action.action.to_string()
         };
-        println!("  {}{:<32} {}", color::check_mark(), format!(".joy/{}", action.target), status);
+        println!(
+            "  {}{:<32} {}",
+            color::check_mark(),
+            format!(".joy/{}", action.target),
+            status
+        );
     }
 
     println!();
     Ok(())
 }
 
+type ToolEntry = (
+    &'static str,
+    &'static str,
+    fn(bool) -> bool,
+    fn(&Path) -> anyhow::Result<()>,
+);
+
 fn configure_tools(root: &Path) -> anyhow::Result<usize> {
     println!("{}", color::section("AI Tools"));
 
     let mut tool_count = 0;
 
-    let tools: &[(&str, &str, fn(bool) -> bool, fn(&Path) -> anyhow::Result<()>)] = &[
-        ("Claude Code", "claude", |_| which("claude"), configure_claude),
-        ("Qwen Code", "qwen", |_| which("qwen") || which("qwen-code"), configure_qwen),
+    let tools: &[ToolEntry] = &[
+        (
+            "Claude Code",
+            "claude",
+            |_| which("claude"),
+            configure_claude,
+        ),
+        (
+            "Qwen Code",
+            "qwen",
+            |_| which("qwen") || which("qwen-code"),
+            configure_qwen,
+        ),
         ("Mistral Vibe", "vibe", |_| which("vibe"), configure_vibe),
-        ("GitHub Copilot", "copilot", |_| which("copilot") || which("gh"), configure_copilot),
+        (
+            "GitHub Copilot",
+            "copilot",
+            |_| which("copilot") || which("gh"),
+            configure_copilot,
+        ),
     ];
 
     for (name, id, detect, configure) in tools {
@@ -303,7 +342,12 @@ fn configure_tools(root: &Path) -> anyhow::Result<usize> {
             QUIET.store(true, std::sync::atomic::Ordering::Relaxed);
             configure(root)?;
             QUIET.store(false, std::sync::atomic::Ordering::Relaxed);
-            println!("  {}{:<24} {}", color::check_mark(), name, color::inactive("up to date"));
+            println!(
+                "  {}{:<24} {}",
+                color::check_mark(),
+                name,
+                color::inactive("up to date")
+            );
         } else {
             print!("  {}{:<24} configure? [Y/n] ", color::warn_mark(), name);
             if confirm_default_yes()? {
@@ -314,10 +358,19 @@ fn configure_tools(root: &Path) -> anyhow::Result<usize> {
 
     if tool_count == 0 {
         println!("  {}No supported AI tools detected.", color::warn_mark());
-        println!("  {}", color::inactive("Supported: Claude Code, Qwen Code, Mistral Vibe, GitHub Copilot"));
-        println!("  {}", color::inactive("Install one and re-run `joy ai setup`."));
+        println!(
+            "  {}",
+            color::inactive("Supported: Claude Code, Qwen Code, Mistral Vibe, GitHub Copilot")
+        );
+        println!(
+            "  {}",
+            color::inactive("Install one and re-run `joy ai setup`.")
+        );
         println!();
-        println!("  {}", color::inactive("Templates in .joy/ai/ can be referenced manually from any AI tool."));
+        println!(
+            "  {}",
+            color::inactive("Templates in .joy/ai/ can be referenced manually from any AI tool.")
+        );
     }
 
     println!();
@@ -464,7 +517,10 @@ fn configure_vibe(root: &Path) -> anyhow::Result<()> {
     fs::create_dir_all(&skill_dir)?;
     fs::write(skill_dir.join("SKILL.md"), SKILL_TEMPLATE)?;
     qprintln!("    {}.vibe/skills/joy/SKILL.md", color::check_mark());
-    qprintln!("    {}", color::inactive("Note: set [tools.bash] permission = \"always\" in .vibe/config.toml"));
+    qprintln!(
+        "    {}",
+        color::inactive("Note: set [tools.bash] permission = \"always\" in .vibe/config.toml")
+    );
 
     Ok(())
 }
@@ -482,7 +538,10 @@ fn configure_copilot(root: &Path) -> anyhow::Result<()> {
          Use Joy CLI commands for backlog work. Do not edit `.joy/items/*.yaml` files directly.",
     )?;
     qprintln!("    {}.github/copilot-instructions.md", color::check_mark());
-    qprintln!("    {}", color::inactive("Note: use gh copilot --allow-tool='shell(joy:*)' for permissions"));
+    qprintln!(
+        "    {}",
+        color::inactive("Note: use gh copilot --allow-tool='shell(joy:*)' for permissions")
+    );
 
     Ok(())
 }
@@ -581,7 +640,10 @@ fn check_nested_projects(root: &Path) -> anyhow::Result<()> {
         for path in &unconfigured {
             println!("  {}{}/", color::warn_mark(), path);
         }
-        println!("  {}", color::inactive("Permissions are per-project. Run `joy ai setup` in each."));
+        println!(
+            "  {}",
+            color::inactive("Permissions are per-project. Run `joy ai setup` in each.")
+        );
         println!();
     }
 
