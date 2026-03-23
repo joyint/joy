@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 
 use crate::embedded::{self, EmbeddedFile};
 use crate::error::JoyError;
-use crate::model::config::Config;
 use crate::model::project::{derive_acronym, Project};
 use crate::store;
 use crate::vcs::{default_vcs, Vcs};
@@ -14,6 +13,12 @@ pub const HOOK_FILES: &[EmbeddedFile] = &[EmbeddedFile {
     content: include_str!("../../../data/hooks/commit-msg"),
     target: "hooks/commit-msg",
     executable: true,
+}];
+
+pub const CONFIG_FILES: &[EmbeddedFile] = &[EmbeddedFile {
+    content: include_str!("../../../data/config.defaults.yaml"),
+    target: "config.defaults.yaml",
+    executable: false,
 }];
 
 pub struct InitOptions {
@@ -77,9 +82,8 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
     });
     let acronym = options.acronym.unwrap_or_else(|| derive_acronym(&name));
 
-    // Write config and project files
-    let config = Config::default();
-    store::write_yaml(&joy_dir.join(store::CONFIG_DEFAULTS_FILE), &config)?;
+    // Write config defaults (embedded file) and project metadata
+    embedded::sync_files(root, CONFIG_FILES)?;
 
     let project = Project::new(name, Some(acronym));
     store::write_yaml(&joy_dir.join(store::PROJECT_FILE), &project)?;
@@ -99,6 +103,7 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
 
 /// Onboard an existing project: set up local environment (hooks, etc.).
 pub fn onboard(root: &Path) -> Result<OnboardResult, JoyError> {
+    embedded::sync_files(root, CONFIG_FILES)?;
     install_hooks(root)
 }
 

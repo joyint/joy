@@ -1,9 +1,16 @@
 id: JOY-003B
 title: Treat config.defaults.yaml as embedded file
 type: rework
-status: new
+status: closed
 priority: medium
 effort: 2
 created: 2026-03-22T17:26:07.316561297Z
-updated: 2026-03-22T17:26:07.316561297Z
+updated: 2026-03-23T19:58:56.513337870Z
 description: Move config defaults from Config::default() serialization to a static data/config.defaults.yaml template. Register as EmbeddedFile in the sync mechanism so joy init and joy ai check/setup can detect outdated defaults and update them. project.yaml stays struct-generated (user-owned, project-specific data).
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-23T19:55:38.871472481Z
+  text: 'Plan: (1) Create data/config.defaults.yaml from current Config::default() output. (2) Register as EmbeddedFile in HOOK_FILES or a new CONFIG_FILES registry. (3) Remove Config::default() serialization from init.rs, use embedded sync instead. (4) joy init and onboarding install it via sync_files.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-23T19:58:56.504485150Z
+  text: '[x] Created data/config.defaults.yaml as static template. Registered as CONFIG_FILES in init.rs embedded registry. init() and onboard() use embedded::sync_files instead of Config::default() serialization. Removed Config import from init.rs.'
