@@ -68,3 +68,4 @@
 2026-03-23T21:34:52.745Z JOY-004E item.status_changed "new -> in-progress" [horst.schwarz@joydev.com]
 2026-03-23T21:36:38.351Z JOY-004E comment.added "[x] Added joy ai reset subcommand. Shows what will be removed, asks for confirmation (default No). Removes .claude/, .qwen/, .vibe/, .github/copilot-instructions.md. Does not touch .joy/ai/ templates. [x] --tool flag to reset only a specific tool (claude, qwen, vibe, copilot). [x] Consistent styled output with header, check/cross marks, footer." [horst.schwarz@joydev.com]
 2026-03-23T21:36:38.362Z JOY-004E item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
+2026-03-23T22:34:29.206Z v0.3.4 release.created [horst.schwarz@joydev.com]

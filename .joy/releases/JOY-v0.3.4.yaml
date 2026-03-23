@@ -1,0 +1,28 @@
+version: v0.3.4
+date: 2026-03-23
+previous: v0.3.3
+contributors:
+- id: horst.schwarz@joydev.com
+  events: 41
+  items: 8
+items:
+  tasks:
+  - id: JOY-004E
+    title: 'joy ai reset: remove AI tool configurations'
+  bugs:
+  - id: JOY-004D
+    title: QWEN.md in project root instead of .qwen/QWEN.md
+  - id: JOY-004F
+    title: Inconsistent header format between ls and project/config/ai
+  reworks:
+  - id: JOY-003B
+    title: Treat config.defaults.yaml as embedded file
+  - id: JOY-0049
+    title: Move fortunes from joy-core/data to data/fortunes
+  - id: JOY-004B
+    title: Rename interaction-level to mode in config and docs
+  - id: JOY-004C
+    title: Consistent styled output for config, project, and ai setup
+  decisions:
+  - id: JOY-0047
+    title: 'Rethink interaction levels: named levels instead of numbers'
