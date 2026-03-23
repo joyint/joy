@@ -1,0 +1,13 @@
+id: JOY-0049
+title: Move fortunes from joy-core/data to data/fortunes
+type: rework
+status: closed
+priority: low
+effort: 1
+created: 2026-03-23T19:58:12.064328160Z
+updated: 2026-03-23T19:58:56.528217102Z
+description: Move fortune YAML files from crates/joy-core/data/fortunes/ to data/fortunes/ for consistency with ADR-016. All embedded data lives under data/ at the repo root.
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-23T19:58:56.519371656Z
+  text: '[x] Moved fortune YAML files from crates/joy-core/data/fortunes/ to data/fortunes/. Updated include_str! paths in fortune.rs.'
