@@ -1,9 +1,0 @@
-id: JOY-0014
-title: Semantic color scheme for terminal output
-type: story
-status: new
-priority: high
-epic: JOY-0002
-created: '2026-03-10T00:16:16.409263407Z'
-updated: '2026-03-10T00:16:16.409263407Z'
-description: Implement color scheme using console/owo-colors. Semantic mapping for status, priority, IDs. Respect NO_COLOR.
