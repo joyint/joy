@@ -115,6 +115,23 @@ setup:
 install:
     cargo build --release -p joyint && mkdir -p ~/.local/bin && cp target/release/joy ~/.local/bin/joy
 
+# Auto-commit known generated files (.joy/, lockfiles)
+[private]
+auto-commit:
+    #!/usr/bin/env bash
+    files=(.joy/ Cargo.lock package-lock.json yarn.lock)
+    staged=false
+    for f in "${files[@]}"; do
+        if git status --porcelain "$f" 2>/dev/null | grep -q .; then
+            git add "$f"
+            staged=true
+        fi
+    done
+    if [ "$staged" = true ]; then
+        git commit --quiet -m "chore: update generated files [no-item]"
+        echo "Committed pending changes."
+    fi
+
 # Release (bump: patch, minor, or major)
 release bump="patch":
     #!/usr/bin/env bash
@@ -123,42 +140,24 @@ release bump="patch":
         echo "No changes since last tag, skipping."
         exit 0
     fi
-    # Auto-commit pending Joy data and lockfiles before release
-    changed=false
-    if git status --porcelain .joy/ 2>/dev/null | grep -q .; then
-        git add .joy/
-        changed=true
+    just auto-commit
+    # Check if there is something to release before running checks
+    if ! command -v joy >/dev/null 2>&1 || ! [ -f ".joy/project.yaml" ]; then
+        echo "No Joy project found. Use joy init to set up."
+        exit 1
     fi
-    for lockfile in Cargo.lock package-lock.json yarn.lock; do
-        if git status --porcelain "$lockfile" 2>/dev/null | grep -q .; then
-            git add "$lockfile"
-            changed=true
-        fi
-    done
-    if [ "$changed" = true ]; then
-        git commit --quiet -m "chore: update Joy data and lockfiles [no-item]"
-        echo "Committed pending changes."
+    if ! joy release show 2>/dev/null | grep -q "item(s)"; then
+        echo "No items closed since last release."
+        exit 0
     fi
     if [ -n "$(git status --porcelain)" ]; then
         echo "Error: working tree is not clean."
         exit 1
     fi
-    # Run checks (quiet unless they fail)
     echo "Checking (format, lint, test)..."
     if ! just check > /dev/null 2>&1; then
         echo "Checks failed. Run 'just check' for details."
         exit 1
     fi
-    # Re-commit any lockfiles changed by the check
-    for lockfile in Cargo.lock package-lock.json yarn.lock; do
-        if git status --porcelain "$lockfile" 2>/dev/null | grep -q .; then
-            git add "$lockfile" && git commit --quiet -m "chore: update lockfile after check [no-item]"
-        fi
-    done
-    # Joy handles the full release flow
-    if [ -f ".joy/project.yaml" ] && command -v joy >/dev/null 2>&1; then
-        joy release create "{{bump}}" --full
-    else
-        echo "No Joy project found. Use joy init to set up."
-        exit 1
-    fi
+    just auto-commit
+    joy release create "{{bump}}" --full
