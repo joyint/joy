@@ -1,0 +1,8 @@
+id: JOY-0046
+title: Allow textual shortcuts in filters
+type: idea
+status: new
+priority: medium
+created: 2026-03-23T05:51:46.715841828Z
+updated: 2026-03-23T05:51:46.715841828Z
+description: '''joy ls -s wip'' shall be possible and also supported with autocomplete together with the full text alternative'

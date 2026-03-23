@@ -1,10 +1,17 @@
 id: JOY-0040
 title: Git write operations in vcs::git (add, commit, tag, push)
 type: story
-status: new
+status: closed
 priority: high
 parent: JOY-003F
 effort: 5
 created: 2026-03-22T22:07:43.568829849Z
-updated: 2026-03-22T22:07:43.568829849Z
-description: 'Extend the existing Vcs trait with write operations: add (stage files), commit (with message), tag (annotated with body), push (branch + tags). Implement via git2 or gix crate -- evaluate both, prefer gix if push support is mature enough. Remove shell calls from existing VCS code. Cross-platform, no bash dependency.'
+updated: 2026-03-23T05:50:33.775692757Z
+description: 'Extend the VCS trait with write operations: add (stage files), commit (with message), tag (annotated with body), push (branch + tags). Continue using std::process::Command (no git2/gix crate). Add version check: verify git is installed and meets minimum version (2.x). Clear error messages if git is missing or too old. Also add forge detection: check for gh CLI, parse git remote URL to determine forge type (github/gitlab/gitea). All errors follow ADR-015 diagnostic format.'
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-23T05:48:43.897801600Z
+  text: 'Plan: (1) Add git_version() to check git is installed and parse version. Minimum: 2.0. (2) Add write operations to GitVcs: add(paths), commit(message), tag_annotated(name, body), push(remote, branch), push_tag(remote, tag). (3) Add forge detection: parse_forge_from_remote(url) returns GitHub/GitLab/Gitea/Unknown. Check gh CLI availability with version. (4) All errors use JoyError with context (which command failed, what the output was).'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-23T05:50:33.769865529Z
+  text: '[x] Refactored vcs.rs: shared git_output/git_run helpers with robust error handling (NotFound detection, stderr in error messages). [x] Git version check: parse_git_version(), check_version() with minimum 2.0. [x] Write operations: add, add_all, commit, tag, tag_annotated, push, push_tag, push_with_tags, default_remote, remote_url, is_clean, head_is_tagged. [x] Forge detection: parse_forge_from_url() for GitHub/GitLab/Gitea/Unknown, detect_forge() from remote. [x] gh CLI: gh_version(), has_gh(), gh_create_release(). [x] 10 new tests (version parsing, forge detection, version check, clean check).'

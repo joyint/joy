@@ -1,0 +1,9 @@
+id: JOY-0047
+title: 'Rethink interaction levels: named levels instead of numbers'
+type: decision
+status: new
+priority: high
+effort: 3
+created: 2026-03-23T06:00:14.961554322Z
+updated: 2026-03-23T06:00:14.961554322Z
+description: 'Evaluate replacing numeric interaction levels (1-5) with named levels (e.g. autonomous, normal, intensive). Current numbers are abstract and hard to remember for both humans and AI agents. Define each level clearly: what the agent does autonomously, when it asks, when it waits. Document per level when Joy data (items, comments, status) may be changed without confirmation. Consider impact on project.yaml schema, AI instructions, JoyProcess vision, and config commands.'

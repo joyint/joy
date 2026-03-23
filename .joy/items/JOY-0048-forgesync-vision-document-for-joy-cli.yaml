@@ -1,0 +1,16 @@
+id: JOY-0048
+title: ForgeSync vision document for Joy CLI
+type: decision
+status: closed
+priority: high
+effort: 2
+created: 2026-03-23T06:34:23.766097415Z
+updated: 2026-03-23T06:39:08.268067567Z
+description: 'Create docs/dev/vision/ForgeSync.md covering CLI perspective: forge: config in project.yaml (github, joyint, github@joyint, gitlab, gitea, none), joy sync push/pull flow, offline-first design, conflict resolution always local, joy init forge detection and proposal. Companion to JP-0001 in the platform project.'
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-23T06:36:21.531305602Z
+  text: 'Plan: Create docs/dev/vision/ForgeSync.md. Sections: (1) forge: config format and semantics (github, joyint, github@joyint, none), (2) joy sync push/pull flow per forge type, (3) offline-first: no live sync, explicit push/pull only, (4) conflict resolution always local, (5) joy init forge detection from remote URL with user confirmation, (6) forge: none behavior.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-23T06:39:08.262097491Z
+  text: '[x] Created docs/dev/vision/ForgeSync.md: forge config format (github, joyint, github@joyint, none), sync push/pull flows per forge type, offline-first design, conflict resolution always local, forge detection at joy init, tool requirements. Referenced from umbrella Vision.md.'
