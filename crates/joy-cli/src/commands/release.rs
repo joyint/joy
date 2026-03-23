@@ -234,13 +234,8 @@ fn show(args: ShowArgs) -> Result<()> {
             let previous = releases::latest_version(&root)?;
             let prev_str = previous.as_deref().unwrap_or("(none)");
 
-            println!(
-                "{} (preview, {} since {})",
-                color::heading("Next release"),
-                closed_ids.len(),
-                prev_str
-            );
-            println!("{}", color::label(&"-".repeat(60)));
+            let header_text = format!("Next release (preview, {} since {})", closed_ids.len(), prev_str);
+            println!("{}", color::header(&header_text));
 
             let all_items = items::load_items(&root)?;
             print_items_grouped(&closed_ids, &all_items);
@@ -269,7 +264,7 @@ fn ls() -> Result<()> {
         return Ok(());
     }
 
-    println!("{}", color::label(&"-".repeat(60)));
+    println!("{}", color::label(&"-".repeat(color::terminal_width())));
     println!(
         "{:<12} {:<12} {:>6}  {}",
         color::label("VERSION"),
@@ -277,7 +272,7 @@ fn ls() -> Result<()> {
         color::label("ITEMS"),
         color::label("TITLE"),
     );
-    println!("{}", color::label(&"-".repeat(60)));
+    println!("{}", color::label(&"-".repeat(color::terminal_width())));
 
     for release in &all_releases {
         let title = release.title.as_deref().unwrap_or("");
@@ -290,8 +285,9 @@ fn ls() -> Result<()> {
         );
     }
 
+    println!("{}", color::label(&"-".repeat(color::terminal_width())));
     println!(
-        "\n{}",
+        "{}",
         color::label(&format!("{} release(s)", all_releases.len()))
     );
 
@@ -438,18 +434,6 @@ fn render_release_markdown(release: &Release) -> String {
     out
 }
 
-fn terminal_width() -> usize {
-    #[cfg(feature = "tui")]
-    {
-        if let Ok((cols, _)) = crossterm::terminal::size() {
-            return cols as usize;
-        }
-    }
-    std::env::var("COLUMNS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(80)
-}
 
 fn truncate(s: &str, max: usize) -> String {
     if s.len() <= max {
@@ -462,19 +446,14 @@ fn truncate(s: &str, max: usize) -> String {
 }
 
 fn print_release(release: &Release) {
-    let term_w = terminal_width();
+    let w = color::terminal_width();
     let title_str = release
         .title
         .as_deref()
         .map(|t| format!(" -- {t}"))
         .unwrap_or_default();
-    println!(
-        "{}{} ({})",
-        color::heading(&release.version),
-        title_str,
-        release.date
-    );
-    println!("{}", color::label(&"-".repeat(term_w.min(60))));
+    let header_text = format!("{}{} ({})", release.version, title_str, release.date);
+    println!("{}", color::header(&header_text));
 
     if let Some(ref desc) = release.description {
         println!("{desc}\n");
@@ -489,7 +468,7 @@ fn print_release(release: &Release) {
     }
 
     // Item ID (e.g. "JOY-0025") = ~8 chars + "  " prefix = 10, leave rest for title
-    let title_max = term_w.saturating_sub(12);
+    let title_max = w.saturating_sub(12);
 
     let type_groups: &[(&str, &[ReleaseItem])] = &[
         ("Epics", &release.items.epics),
@@ -518,13 +497,20 @@ fn print_release(release: &Release) {
     }
 
     if total > 0 {
-        println!("\n{}", color::label(&format!("{} item(s)", total)));
+        let mut stats: Vec<String> = Vec::new();
+        for (label, items) in type_groups {
+            if !items.is_empty() {
+                stats.push(format!("{} {}", items.len(), label.to_lowercase()));
+            }
+        }
+        println!("{}", color::label(&"-".repeat(w)));
+        println!("{}", color::label(&format!("{total} items · {}", stats.join(" · "))));
     }
 }
 
 fn print_items_grouped(item_ids: &[String], all_items: &[joy_core::model::item::Item]) {
-    let term_w = terminal_width();
-    let title_max = term_w.saturating_sub(12);
+    let w = color::terminal_width();
+    let title_max = w.saturating_sub(12);
 
     let type_order = [
         (ItemType::Epic, "Epics"),

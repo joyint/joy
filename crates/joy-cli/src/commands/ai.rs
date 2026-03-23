@@ -4,8 +4,21 @@
 use std::fs;
 use std::io::Write;
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
 
 use joy_core::embedded::{self, EmbeddedFile, FileStatus};
+
+use crate::color;
+
+static QUIET: AtomicBool = AtomicBool::new(false);
+
+macro_rules! qprintln {
+    ($($arg:tt)*) => {
+        if !QUIET.load(std::sync::atomic::Ordering::Relaxed) {
+            println!($($arg)*);
+        }
+    };
+}
 
 const INSTRUCTIONS_TEMPLATE: &str = include_str!("../../../../data/ai/instructions.md");
 const SETUP_INSTRUCTIONS: &str = include_str!("../../../../data/ai/instructions/setup.md");
@@ -29,12 +42,22 @@ enum AiCommand {
     Setup,
     /// Check if AI templates are up to date, update if needed
     Check,
+    /// Remove AI tool configurations from this project
+    Reset(ResetArgs),
+}
+
+#[derive(clap::Args)]
+struct ResetArgs {
+    /// Only reset a specific tool (claude, qwen, vibe, copilot)
+    #[arg(long)]
+    tool: Option<String>,
 }
 
 pub fn run(args: AiArgs) -> anyhow::Result<()> {
     match args.command {
         AiCommand::Setup => setup(),
         AiCommand::Check => check(),
+        AiCommand::Reset(a) => reset(a),
     }
 }
 
@@ -42,19 +65,21 @@ fn setup() -> anyhow::Result<()> {
     let root = joy_core::store::find_project_root(&std::env::current_dir()?)
         .ok_or_else(|| anyhow::anyhow!("No Joy project found (run `joy init` first)"))?;
 
-    println!("Setting up AI integration...\n");
+    println!("{}", color::header("AI Setup"));
+    println!();
 
     check_docs(&root)?;
     copy_templates(&root)?;
-    configure_tools(&root)?;
+    let tool_count = configure_tools(&root)?;
     check_nested_projects(&root)?;
 
-    println!("\nDone. AI tools can now use Joy in this project.");
+    let msg = format!("AI integration complete -- {} tool(s) configured", tool_count);
+    println!("{}", color::footer(&msg));
     Ok(())
 }
 
 fn check_docs(root: &Path) -> anyhow::Result<()> {
-    println!("Checking project documentation...");
+    println!("{}", color::section("Documentation"));
 
     let docs = [
         (
@@ -78,12 +103,12 @@ fn check_docs(root: &Path) -> anyhow::Result<()> {
     for (path, purpose, template) in &docs {
         let full = root.join(path);
         if full.is_file() {
-            println!("  {} ... found", path);
+            println!("  {}{}", color::check_mark(), path);
         } else {
-            println!("  {} ... MISSING", path);
+            println!("  {}{}", color::cross_mark(), color::warning(path));
             let name = path.rsplit('/').next().unwrap_or(path);
             print!(
-                "  {} helps AI understand your {}. Create template? [Y/n] ",
+                "    {} helps AI understand your {}. Create template? [Y/n] ",
                 name, purpose
             );
             std::io::stdout().flush()?;
@@ -96,7 +121,8 @@ fn check_docs(root: &Path) -> anyhow::Result<()> {
                 }
                 fs::write(&full, template)?;
                 println!(
-                    "  Created {} (template -- your AI tool will help fill it in)",
+                    "    {}Created {} (template -- your AI tool will help fill it in)",
+                    color::check_mark(),
                     path
                 );
             }
@@ -104,10 +130,11 @@ fn check_docs(root: &Path) -> anyhow::Result<()> {
         }
     }
 
-    if all_found {
-        println!("  All documentation present.");
-    } else {
-        println!("\n  Tip: Your AI tool will offer to fill in empty templates on first use.");
+    if !all_found {
+        println!(
+            "\n  {}Your AI tool will offer to fill in empty templates on first use.",
+            color::warn_mark()
+        );
     }
     println!();
 
@@ -143,110 +170,164 @@ fn check() -> anyhow::Result<()> {
         .collect();
 
     if issues.is_empty() {
-        println!("Up to date.");
+        println!("{}AI templates up to date.", color::check_mark());
         std::process::exit(0);
     }
 
     for (path, status) in &issues {
         let label = match status {
-            FileStatus::Outdated => "outdated",
-            FileStatus::Missing => "missing",
+            FileStatus::Outdated => color::warning("outdated"),
+            FileStatus::Missing => color::danger("missing"),
             FileStatus::UpToDate => unreachable!(),
         };
-        println!("  {}: .joy/{}", label, path);
+        println!("  {} .joy/{}", label, path);
     }
-    println!("\nRun `joy ai setup` to update.");
+    println!("\nRun {} to update.", color::label("joy ai setup"));
     std::process::exit(2);
 }
 
+fn reset(args: ResetArgs) -> anyhow::Result<()> {
+    let root = joy_core::store::find_project_root(&std::env::current_dir()?)
+        .ok_or_else(|| anyhow::anyhow!("No Joy project found (run `joy init` first)"))?;
+
+    let all_tools: &[(&str, &str, &[&str])] = &[
+        ("Claude Code", "claude", &[".claude/"]),
+        ("Qwen Code", "qwen", &[".qwen/"]),
+        ("Mistral Vibe", "vibe", &[".vibe/"]),
+        ("GitHub Copilot", "copilot", &[".github/copilot-instructions.md"]),
+    ];
+
+    let tools: Vec<_> = if let Some(ref filter) = args.tool {
+        let found = all_tools.iter().find(|(_, id, _)| id == filter);
+        match found {
+            Some(t) => vec![*t],
+            None => {
+                let valid: Vec<_> = all_tools.iter().map(|(_, id, _)| *id).collect();
+                anyhow::bail!("unknown tool: {filter}\nknown tools: {}", valid.join(", "));
+            }
+        }
+    } else {
+        all_tools.to_vec()
+    };
+
+    // Collect what exists
+    let mut to_remove: Vec<(&str, &str)> = Vec::new();
+    for (name, _, paths) in &tools {
+        for path in *paths {
+            let full = root.join(path);
+            if full.exists() {
+                to_remove.push((name, path));
+            }
+        }
+    }
+
+    if to_remove.is_empty() {
+        println!("{}No AI tool configurations found.", color::check_mark());
+        return Ok(());
+    }
+
+    println!("{}", color::header("AI Reset"));
+    println!();
+    println!("Will remove:");
+    for (name, path) in &to_remove {
+        println!("  {}{:<24} {}", color::cross_mark(), name, path);
+    }
+    println!();
+    print!("Proceed? [y/N] ");
+    std::io::stdout().flush()?;
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+    let trimmed = input.trim();
+    if !trimmed.eq_ignore_ascii_case("y") {
+        println!("Aborted.");
+        return Ok(());
+    }
+
+    for (name, path) in &to_remove {
+        let full = root.join(path);
+        if full.is_dir() {
+            fs::remove_dir_all(&full)?;
+        } else {
+            fs::remove_file(&full)?;
+        }
+        println!("  {}{:<24} removed", color::check_mark(), name);
+    }
+
+    let count = tools.iter().filter(|(_, _, paths)| {
+        paths.iter().any(|p| to_remove.iter().any(|(_, tp)| tp == p))
+    }).count();
+    println!("{}", color::footer(&format!("{} tool(s) reset", count)));
+    Ok(())
+}
+
 fn copy_templates(root: &Path) -> anyhow::Result<()> {
-    println!("Installing AI templates...");
+    println!("{}", color::section("Templates"));
 
     let actions = embedded::sync_files(root, AI_FILES)?;
 
     for action in &actions {
-        println!("  .joy/{} ... {}", action.target, action.action);
+        let status = if action.action == "up to date" {
+            color::inactive(action.action)
+        } else if action.action == "installed" || action.action == "updated" {
+            color::success(action.action)
+        } else {
+            action.action.to_string()
+        };
+        println!("  {}{:<32} {}", color::check_mark(), format!(".joy/{}", action.target), status);
     }
 
     println!();
     Ok(())
 }
 
-fn configure_tools(root: &Path) -> anyhow::Result<()> {
-    println!("Detecting AI tools...");
+fn configure_tools(root: &Path) -> anyhow::Result<usize> {
+    println!("{}", color::section("AI Tools"));
 
-    let mut found_any = false;
+    let mut tool_count = 0;
 
-    if which("claude") {
-        found_any = true;
-        if is_tool_configured(root, "claude") {
-            print!("  Claude Code (claude) ... configured.");
-            configure_claude(root)?;
-            println!();
-        } else {
-            print!("  Claude Code (claude) ... found. Configure? [Y/n] ");
-            if confirm_default_yes()? {
-                configure_claude(root)?;
-            }
+    let tools: &[(&str, &str, fn(bool) -> bool, fn(&Path) -> anyhow::Result<()>)] = &[
+        ("Claude Code", "claude", |_| which("claude"), configure_claude),
+        ("Qwen Code", "qwen", |_| which("qwen") || which("qwen-code"), configure_qwen),
+        ("Mistral Vibe", "vibe", |_| which("vibe"), configure_vibe),
+        ("GitHub Copilot", "copilot", |_| which("copilot") || which("gh"), configure_copilot),
+    ];
+
+    for (name, id, detect, configure) in tools {
+        if !detect(false) {
+            continue;
         }
-    }
-    if which("qwen") || which("qwen-code") {
-        found_any = true;
-        if is_tool_configured(root, "qwen") {
-            print!("  Qwen Code (qwen) ... configured.");
-            configure_qwen(root)?;
-            println!();
+        tool_count += 1;
+        let already = is_tool_configured(root, id);
+        if already {
+            // Silently update files, then show single status line
+            QUIET.store(true, std::sync::atomic::Ordering::Relaxed);
+            configure(root)?;
+            QUIET.store(false, std::sync::atomic::Ordering::Relaxed);
+            println!("  {}{:<24} {}", color::check_mark(), name, color::inactive("up to date"));
         } else {
-            print!("  Qwen Code (qwen) ... found. Configure? [Y/n] ");
+            print!("  {}{:<24} configure? [Y/n] ", color::warn_mark(), name);
             if confirm_default_yes()? {
-                configure_qwen(root)?;
-            }
-        }
-    }
-    if which("vibe") {
-        found_any = true;
-        if is_tool_configured(root, "vibe") {
-            print!("  Mistral Vibe (vibe) ... configured.");
-            configure_vibe(root)?;
-            println!();
-        } else {
-            print!("  Mistral Vibe (vibe) ... found. Configure? [Y/n] ");
-            if confirm_default_yes()? {
-                configure_vibe(root)?;
-            }
-        }
-    }
-    if which("copilot") || which("gh") {
-        found_any = true;
-        if is_tool_configured(root, "copilot") {
-            print!("  GitHub Copilot (copilot) ... configured.");
-            configure_copilot(root)?;
-            println!();
-        } else {
-            print!("  GitHub Copilot (copilot) ... found. Configure? [Y/n] ");
-            if confirm_default_yes()? {
-                configure_copilot(root)?;
+                configure(root)?;
             }
         }
     }
 
-    if !found_any {
-        println!("  No supported AI tools detected.");
-        println!("  Supported: Claude Code (claude), Qwen Code (qwen), Mistral Vibe (vibe), GitHub Copilot (copilot/gh)");
-        println!("  Install one and re-run `joy ai setup`.");
+    if tool_count == 0 {
+        println!("  {}No supported AI tools detected.", color::warn_mark());
+        println!("  {}", color::inactive("Supported: Claude Code, Qwen Code, Mistral Vibe, GitHub Copilot"));
+        println!("  {}", color::inactive("Install one and re-run `joy ai setup`."));
         println!();
-        println!("  The .joy/ai/ templates are installed regardless and can be");
-        println!("  referenced manually from any AI tool's configuration.");
+        println!("  {}", color::inactive("Templates in .joy/ai/ can be referenced manually from any AI tool."));
     }
 
-    Ok(())
+    println!();
+    Ok(tool_count)
 }
 
 fn configure_claude(root: &Path) -> anyhow::Result<()> {
     let claude_dir = root.join(".claude");
     fs::create_dir_all(&claude_dir)?;
 
-    // Update or create CLAUDE.md with joy block (preserves user content)
     let claude_md = claude_dir.join("CLAUDE.md");
     update_with_joy_block(
         &claude_md,
@@ -255,15 +336,13 @@ fn configure_claude(root: &Path) -> anyhow::Result<()> {
          Read [.joy/ai/instructions.md](../.joy/ai/instructions.md) for AI collaboration rules.\n\n\
          Use the `/joy` skill for backlog work. Do not edit `.joy/items/*.yaml` files directly.",
     )?;
-    println!("    .claude/CLAUDE.md ... joy block updated");
+    qprintln!("    {}.claude/CLAUDE.md", color::check_mark());
 
-    // Skill -- always update (Joy-owned)
     let skill_dir = claude_dir.join("skills/joy");
     fs::create_dir_all(&skill_dir)?;
     fs::write(skill_dir.join("SKILL.md"), SKILL_TEMPLATE)?;
-    println!("    .claude/skills/joy/SKILL.md ... installed");
+    qprintln!("    {}.claude/skills/joy/SKILL.md", color::check_mark());
 
-    // Permissions -- allow joy and jot commands without prompting
     update_claude_permissions(root)?;
 
     Ok(())
@@ -281,7 +360,6 @@ fn update_claude_permissions(root: &Path) -> anyhow::Result<()> {
         serde_json::json!({})
     };
 
-    // Ensure permissions.allow array exists and contains joy/jot
     let permissions = settings
         .as_object_mut()
         .unwrap()
@@ -303,7 +381,7 @@ fn update_claude_permissions(root: &Path) -> anyhow::Result<()> {
 
     let json = serde_json::to_string_pretty(&settings)?;
     fs::write(&settings_path, format!("{json}\n"))?;
-    println!("    .claude/settings.json ... joy/jot permissions added");
+    qprintln!("    {}.claude/settings.json", color::check_mark());
 
     Ok(())
 }
@@ -312,24 +390,30 @@ fn configure_qwen(root: &Path) -> anyhow::Result<()> {
     let qwen_dir = root.join(".qwen");
     fs::create_dir_all(&qwen_dir)?;
 
-    // Update or create QWEN.md with joy block (preserves user content)
-    let qwen_md = root.join("QWEN.md");
+    // Migrate: move root QWEN.md to .qwen/QWEN.md if it has a joy block
+    let old_qwen_md = root.join("QWEN.md");
+    let qwen_md = qwen_dir.join("QWEN.md");
+    if old_qwen_md.is_file() && !qwen_md.is_file() {
+        let content = fs::read_to_string(&old_qwen_md)?;
+        if content.contains(JOY_BLOCK_START) {
+            fs::rename(&old_qwen_md, &qwen_md)?;
+        }
+    }
+
     update_with_joy_block(
         &qwen_md,
         "## Joy Integration\n\n\
          This project uses [Joy](https://github.com/joyint/joy) for product management.\n\
-         Read [.joy/ai/instructions.md](.joy/ai/instructions.md) for AI collaboration rules.\n\n\
+         Read [.joy/ai/instructions.md](../.joy/ai/instructions.md) for AI collaboration rules.\n\n\
          Use the `/joy` skill for backlog work. Do not edit `.joy/items/*.yaml` files directly.",
     )?;
-    println!("    QWEN.md ... joy block updated");
+    qprintln!("    {}.qwen/QWEN.md", color::check_mark());
 
-    // Skill -- always update (Joy-owned)
     let skill_dir = qwen_dir.join("skills/joy");
     fs::create_dir_all(&skill_dir)?;
     fs::write(skill_dir.join("SKILL.md"), SKILL_TEMPLATE)?;
-    println!("    .qwen/skills/joy/SKILL.md ... installed");
+    qprintln!("    {}.qwen/skills/joy/SKILL.md", color::check_mark());
 
-    // Permissions -- allow joy and jot commands without prompting
     update_qwen_permissions(root)?;
 
     Ok(())
@@ -367,7 +451,7 @@ fn update_qwen_permissions(root: &Path) -> anyhow::Result<()> {
 
     let json = serde_json::to_string_pretty(&settings)?;
     fs::write(&settings_path, format!("{json}\n"))?;
-    println!("    .qwen/settings.json ... joy/jot permissions added");
+    qprintln!("    {}.qwen/settings.json", color::check_mark());
 
     Ok(())
 }
@@ -376,14 +460,11 @@ fn configure_vibe(root: &Path) -> anyhow::Result<()> {
     let vibe_dir = root.join(".vibe");
     fs::create_dir_all(&vibe_dir)?;
 
-    // Skill -- always update (Joy-owned)
     let skill_dir = vibe_dir.join("skills/joy");
     fs::create_dir_all(&skill_dir)?;
     fs::write(skill_dir.join("SKILL.md"), SKILL_TEMPLATE)?;
-    println!("    .vibe/skills/joy/SKILL.md ... installed");
-
-    println!("    Note: Vibe does not support per-command permissions.");
-    println!("    To auto-allow all shell commands: set [tools.bash] permission = \"always\" in .vibe/config.toml");
+    qprintln!("    {}.vibe/skills/joy/SKILL.md", color::check_mark());
+    qprintln!("    {}", color::inactive("Note: set [tools.bash] permission = \"always\" in .vibe/config.toml"));
 
     Ok(())
 }
@@ -392,7 +473,6 @@ fn configure_copilot(root: &Path) -> anyhow::Result<()> {
     let github_dir = root.join(".github");
     fs::create_dir_all(&github_dir)?;
 
-    // Update or create copilot-instructions.md with joy block
     let instructions_md = github_dir.join("copilot-instructions.md");
     update_with_joy_block(
         &instructions_md,
@@ -401,12 +481,8 @@ fn configure_copilot(root: &Path) -> anyhow::Result<()> {
          Read [.joy/ai/instructions.md](../.joy/ai/instructions.md) for AI collaboration rules.\n\n\
          Use Joy CLI commands for backlog work. Do not edit `.joy/items/*.yaml` files directly.",
     )?;
-    println!("    .github/copilot-instructions.md ... joy block updated");
-
-    println!(
-        "    Note: Copilot does not support persistent per-command permissions in config files."
-    );
-    println!("    Use CLI flags to allow joy: gh copilot --allow-tool='shell(joy:*)'");
+    qprintln!("    {}.github/copilot-instructions.md", color::check_mark());
+    qprintln!("    {}", color::inactive("Note: use gh copilot --allow-tool='shell(joy:*)' for permissions"));
 
     Ok(())
 }
@@ -501,14 +577,12 @@ fn check_nested_projects(root: &Path) -> anyhow::Result<()> {
     }
 
     if !unconfigured.is_empty() {
-        println!("\nNested Joy projects without AI tool config:");
+        println!("{}", color::section("Nested Projects"));
         for path in &unconfigured {
-            println!("  {}/", path);
+            println!("  {}{}/", color::warn_mark(), path);
         }
-        println!(
-            "  AI tool permissions are per-project and not inherited from parent directories."
-        );
-        println!("  Run `joy ai setup` in each nested project to configure AI tools there.");
+        println!("  {}", color::inactive("Permissions are per-project. Run `joy ai setup` in each."));
+        println!();
     }
 
     Ok(())
@@ -534,7 +608,7 @@ fn check_nested_at(dir: &Path, root: &Path, tools: &[&str], unconfigured: &mut V
 fn is_tool_configured(root: &Path, tool: &str) -> bool {
     match tool {
         "claude" => root.join(".claude/CLAUDE.md").is_file(),
-        "qwen" => root.join("QWEN.md").is_file(),
+        "qwen" => root.join(".qwen/QWEN.md").is_file(),
         "vibe" => root.join(".vibe/skills/joy/SKILL.md").is_file(),
         "copilot" => root.join(".github/copilot-instructions.md").is_file(),
         _ => false,

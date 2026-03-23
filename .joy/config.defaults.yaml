@@ -1,6 +1,6 @@
 agents:
   architect:
-    interaction-level: 5
+    mode: pairing
 output:
   color: auto
   emoji: true

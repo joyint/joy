@@ -20,6 +20,18 @@ For product vision and data model see [docs/dev/Vision.md](docs/dev/Vision.md). 
 
 **Fix root causes, not symptoms.** Do not add workarounds, feature flags, or conditional logic for temporary problems. If something is missing, create it. If something is broken, fix it. The codebase should always reflect the intended state, not the current gaps.
 
+### CLI Output Style
+
+Follow the CLI output conventions defined in the [umbrella CONTRIBUTING.md](https://github.com/joyint/project/blob/main/CONTRIBUTING.md#cli-output-style). All shared helpers live in `crates/joy-cli/src/color.rs`:
+
+- `header(title)` -- full-width header (line/title/line)
+- `footer(message)` -- full-width footer (line/message)
+- `section(title)` -- sub-section heading with underline
+- `key_value(key, value, width)` -- aligned label-value pair
+- `check_mark()`, `warn_mark()`, `cross_mark()` -- status indicators
+- `label()`, `success()`, `warning()`, `danger()`, `inactive()` -- semantic colors
+- `terminal_width()` -- use this, never hardcode widths
+
 ### Rust
 
 **Edition:** 2021 (or latest stable)

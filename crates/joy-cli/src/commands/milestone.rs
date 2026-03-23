@@ -164,6 +164,9 @@ fn run_ls() -> Result<()> {
         return Ok(());
     }
 
+    let w = color::terminal_width();
+    println!("{}", color::header("Milestones"));
+
     for ms in &milestones {
         let linked: Vec<_> = all_items
             .iter()
@@ -189,6 +192,9 @@ fn run_ls() -> Result<()> {
         );
     }
 
+    println!("{}", color::label(&"-".repeat(w)));
+    println!("{}", color::label(&format!("{} milestone(s)", milestones.len())));
+
     Ok(())
 }
 
@@ -203,7 +209,10 @@ fn run_show(args: ShowArgs) -> Result<()> {
         .filter(|i| effective_milestone(i, &all_items) == Some(&ms.id))
         .collect();
 
-    println!("{} {}", color::id(&ms.id), color::heading(&ms.title));
+    let w = color::terminal_width();
+    println!("{}", color::label(&"-".repeat(w)));
+    println!("{} {}", color::id(&ms.id), color::label(&ms.title));
+    println!("{}", color::label(&"-".repeat(w)));
 
     if let Some(date) = ms.date {
         println!("{} {date}", color::label("Date:"));
@@ -255,7 +264,7 @@ fn run_show(args: ShowArgs) -> Result<()> {
     }
 
     if !linked.is_empty() {
-        println!("\n{}:", color::heading("Items"));
+        println!("\n{}:", color::label("Items"));
         for item in &linked {
             let blocked_marker = if item.is_blocked_by(&all_items) {
                 format!(" {}", color::blocked("[blocked]"))
@@ -271,6 +280,15 @@ fn run_show(args: ShowArgs) -> Result<()> {
             );
         }
     }
+
+    // Footer
+    let mut stats = Vec::new();
+    stats.push(format!("{closed}/{total} closed"));
+    if !blocked.is_empty() {
+        stats.push(format!("{} blocked", blocked.len()));
+    }
+    println!("{}", color::label(&"-".repeat(w)));
+    println!("{}", color::label(&stats.join(" · ")));
 
     Ok(())
 }

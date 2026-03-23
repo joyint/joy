@@ -1,9 +1,13 @@
 id: JOY-0034
 title: CI Actions for commit lint (GitHub, GitLab, Gitea)
 type: idea
-status: new
+status: deferred
 priority: low
 effort: 2
 created: 2026-03-22T16:20:15.044234297Z
-updated: 2026-03-22T16:20:15.044234297Z
+updated: 2026-03-23T20:17:12.556510393Z
 description: Wrapper around just lint-commits for each CI platform. GitHub Actions, GitLab CI job, and Gitea Actions each have different PR/MR branch semantics. Each needs a platform-specific wrapper that determines the base branch and calls just lint-commits. Originated from JOY-0023.
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-23T20:17:03.822323451Z
+  text: 'Rejected for now. The commit-msg hook covers the local case, and a CI Action requires Joy or platform-specific scripting in the CI runner. Revisit after Joy is published on crates.io and teams use it for collaborative projects. The core use case remains valid: team members who skip joy init or use --no-verify need a server-side safety net.'

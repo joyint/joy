@@ -9,23 +9,24 @@ At the start of each session:
 1. Run `joy ai check` to verify your AI instructions are current. If it exits with
    code 2, tell the user which templates are outdated and suggest `joy ai setup`.
    Do not proceed with outdated instructions.
-2. Run `joy config get agents.default.interaction-level` to read the configured level.
-   If the key does not exist, default to level 3.
-3. Briefly confirm: "Working in interactive mode (level 3). Want to change that for
-   this session?" One line, no menu.
+2. Run `joy config get agents.default.mode` to read the configured level.
+   If the key does not exist, default to `collaborative`.
+3. Briefly confirm: "Working in collaborative mode. Want to change that for this
+   session?" One line, no menu.
 4. Accept natural language overrides at any time ("let's work through this together",
    "just do it", "be more autonomous", etc.).
 
 Interaction levels:
-- **1-2**: Start working autonomously. Only confirm before irreversible actions.
-- **3**: Propose your approach, proceed after confirmation.
-- **4**: Propose options with rationale, wait for the user's decision.
-- **5**: Work through it step by step, question by question.
+- **autonomous**: Work independently. Only stop at governance gates.
+- **supervised**: Work independently but confirm before irreversible actions (status changes, deleting items, pushing code).
+- **collaborative**: Propose your approach, proceed after confirmation.
+- **interactive**: Present options with rationale, wait for the user's decision before acting.
+- **pairing**: Work through it step by step, question by question. Co-creation mode.
 
 The user can set the default level with:
-`joy config set agents.default.interaction-level 4`
+`joy config set agents.default.mode interactive`
 
-Per-role levels (e.g. `agents.architect.interaction-level`) override the default
+Per-role levels (e.g. `agents.architect.mode`) override the default
 when the AI is acting in that role.
 
 ## Core commands
@@ -60,7 +61,7 @@ Effort scale (1-7): 1=trivial, 2=small, 3=medium, 4=large, 5=major, 6=heavy, 7=m
 
 **Comment everything.** Before implementing, comment the planned solution: `joy comment <ID> "Plan: ..."`. After implementing, comment the result: `joy comment <ID> "[x] what was done"`. This applies to ALL items -- planned work, discovered bugs, and ad-hoc fixes alike. The comments are the audit record of what was decided and why.
 
-**Confirm before changing Joy data.** At interaction level 3 and above, never create, edit, or close Joy items during or after a discussion without explicitly confirming with the user first. Ask "Shall I update the items now?" or equivalent and wait for approval. Discussions shape decisions -- but the decision to persist them must be the user's.
+**Confirm before changing Joy data.** At mode `collaborative` and above, never create, edit, or close Joy items during or after a discussion without explicitly confirming with the user first. Ask "Shall I update the items now?" or equivalent and wait for approval. Discussions shape decisions -- but the decision to persist them must be the user's.
 
 **Use the project language for artifacts only.** Run `joy project` to read the configured language (default: `en`). This language strictly governs all written artifacts: Joy item titles, descriptions, comments, commit messages, and documentation. Never deviate from it, even if the conversation is in another language. **Conversation language is separate.** For interactive communication (responses, explanations, questions), detect and follow the user's language. If the user writes in German, respond in German. The project language setting does NOT apply to conversation -- only to artifacts that are persisted in the project.
 

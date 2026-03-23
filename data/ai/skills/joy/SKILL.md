@@ -17,8 +17,8 @@ Before doing anything:
 
 1. Run `joy config` to check if a Joy project exists. If it fails, tell the user to run `joy init` first and stop.
 2. Run `joy ai check` to verify AI instructions are current. If it exits with code 2, tell the user which templates are outdated and suggest `joy ai setup`. Do not proceed with outdated instructions.
-3. Run `joy config get agents.default.interaction-level` to read the interaction level. If the key does not exist, default to 3.
-4. Briefly confirm: "Working in interactive mode (level 3). Want to change that for this session?"
+3. Run `joy config get agents.default.mode` to read the mode. If the key does not exist, default to `collaborative`.
+4. Briefly confirm: "Working in collaborative mode. Want to change that for this session?"
 5. STOP and wait for the user's response before doing anything else. Do not proceed until they reply.
 6. Then proceed to the first session check below.
 

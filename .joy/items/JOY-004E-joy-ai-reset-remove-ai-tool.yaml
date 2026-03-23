@@ -1,0 +1,15 @@
+id: JOY-004E
+title: 'joy ai reset: remove AI tool configurations'
+type: task
+status: closed
+priority: high
+effort: 2
+created: 2026-03-23T21:33:43.948574942Z
+updated: 2026-03-23T21:36:38.360250349Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-23T21:34:52.734784719Z
+  text: 'Plan: Add joy ai reset subcommand. Detects configured AI tools, shows what will be removed, asks for confirmation, then removes tool-specific directories and files (.claude/, .qwen/, .vibe/skills/joy/, .github/copilot-instructions.md). Does NOT remove .joy/ai/ templates (those are Joy-owned). Optional --tool flag to reset only a specific tool.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-23T21:36:38.349457836Z
+  text: '[x] Added joy ai reset subcommand. Shows what will be removed, asks for confirmation (default No). Removes .claude/, .qwen/, .vibe/, .github/copilot-instructions.md. Does not touch .joy/ai/ templates. [x] --tool flag to reset only a specific tool (claude, qwen, vibe, copilot). [x] Consistent styled output with header, check/cross marks, footer.'

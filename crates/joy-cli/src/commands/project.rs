@@ -142,21 +142,25 @@ fn set_value(project: &mut Project, key: &str, value: &str) -> Result<()> {
 }
 
 fn show_project(project: &Project) {
-    println!("{}", color::heading(&project.name));
-    println!("{}", color::label(&"-".repeat(60)));
+    println!("{}", color::header(&project.name));
 
+    let w = 12;
     if let Some(ref acronym) = project.acronym {
-        println!("{} {}", color::label("Acronym:    "), acronym);
+        println!("{}", color::key_value("Acronym:", acronym, w));
     }
     if let Some(ref description) = project.description {
-        println!("{} {}", color::label("Description:"), description);
+        println!("{}", color::key_value("Description:", description, w));
     }
-    println!("{} {}", color::label("Language:   "), project.language);
+    println!("{}", color::key_value("Language:", &project.language, w));
     println!(
-        "{} {}",
-        color::label("Created:    "),
-        color::label(&project.created.format("%Y-%m-%d %H:%M").to_string())
+        "{}",
+        color::key_value(
+            "Created:",
+            &project.created.format("%Y-%m-%d %H:%M").to_string(),
+            w
+        )
     );
+    println!("{}", color::label(&"-".repeat(color::terminal_width())));
 }
 
 fn complete_project_key(

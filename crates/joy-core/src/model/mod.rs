@@ -7,7 +7,7 @@ pub mod milestone;
 pub mod project;
 pub mod release;
 
-pub use config::{ColorMode, Config, OutputConfig};
+pub use config::{ColorMode, Config, InteractionLevel, OutputConfig};
 pub use item::{Comment, Item, ItemType, Priority, Status};
 pub use milestone::Milestone;
 pub use project::Project;

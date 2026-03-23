@@ -1,9 +1,25 @@
 id: JOY-0047
 title: 'Rethink interaction levels: named levels instead of numbers'
 type: decision
-status: new
+status: closed
 priority: high
 effort: 3
 created: 2026-03-23T06:00:14.961554322Z
-updated: 2026-03-23T06:00:14.961554322Z
+updated: 2026-03-23T21:14:53.788397625Z
 description: 'Evaluate replacing numeric interaction levels (1-5) with named levels (e.g. autonomous, normal, intensive). Current numbers are abstract and hard to remember for both humans and AI agents. Define each level clearly: what the agent does autonomously, when it asks, when it waits. Document per level when Joy data (items, comments, status) may be changed without confirmation. Consider impact on project.yaml schema, AI instructions, JoyProcess vision, and config commands.'
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-23T20:38:48.216078402Z
+  text: 'Decision: Replace numeric levels 1-5 with named levels. Mapping: 1=autonomous, 2=supervised, 3=collaborative, 4=interactive, 5=pairing. Names form a clear progression from agent-driven to human-driven. Internally the ordering is preserved for min/max comparisons (autonomous < supervised < ... < pairing). Config, project.yaml, and AI instructions will use these names. Numeric input may be accepted as shorthand but named levels are canonical.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-23T20:40:57.439830387Z
+  text: 'Implementation note: Named levels must be prominently documented in AI instructions (.joy/ai/instructions.md). The level descriptions are among the most important parts of the AI collaboration rules -- they define HOW the agent works with the human. We will finalize the wording for each level together before writing the instructions.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-23T20:43:31.085718321Z
+  text: 'Plan: (1) New enum InteractionLevel in config.rs: Autonomous, Supervised, Collaborative, Interactive, Pairing -- serde lowercase, derive Ord for min/max. (2) AgentRoleConfig changes interaction_level from u8 to InteractionLevel, default Collaborative. (3) No backwards compat needed -- no external users yet. (4) Update config.defaults.yaml and snapshot. (5) Completions: probe_string_field should auto-discover names. (6) AI instructions: update level descriptions with named levels -- wording to be finalized with user. (7) Vision.md example config with named levels.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-23T20:47:50.232408981Z
+  text: '[x] InteractionLevel enum in config.rs: Autonomous, Supervised, Collaborative, Interactive, Pairing with Ord, Display, serde lowercase. [x] AgentRoleConfig uses InteractionLevel instead of u8, default Collaborative. [x] Enum exported from model::mod.rs. [x] Probe list updated for field_hint auto-discovery. [x] config.defaults.yaml updated. [x] Snapshot updated. [x] AI instructions (data/ai/instructions.md) updated with named levels. [x] Joy skill (data/ai/skills/joy/SKILL.md) updated. [x] Vision.md level table and example config updated. [x] JoyProcess.md level table, project.yaml examples, and joy show example updated. Remaining: finalize level descriptions in AI instructions with user (done inline), update .joy/config.yaml in active projects.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-23T21:14:53.764039604Z
+  text: '[x] InteractionLevel enum: Autonomous, Supervised, Collaborative, Interactive, Pairing. [x] Renamed to mode everywhere (JOY-004B). [x] AI instructions updated with named level descriptions, finalized with user. [x] All docs (Vision, JoyProcess, WhitePapers) updated. [x] Config defaults and all deployed files updated. [x] Styled output for config/project/ai-setup (JOY-004C).'

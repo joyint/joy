@@ -1,0 +1,15 @@
+id: JOY-004D
+title: QWEN.md in project root instead of .qwen/QWEN.md
+type: bug
+status: closed
+priority: high
+effort: 1
+created: 2026-03-23T21:27:37.030141017Z
+updated: 2026-03-23T21:29:17.397462459Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-23T21:27:43.476839141Z
+  text: 'Plan: (1) Move QWEN.md creation from root to .qwen/QWEN.md in configure_qwen. (2) Update is_tool_configured to check .qwen/QWEN.md. (3) Add migration: if root QWEN.md exists with joy block, move it to .qwen/QWEN.md.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-23T21:29:17.387660291Z
+  text: '[x] Moved QWEN.md from project root to .qwen/QWEN.md. [x] Updated is_tool_configured to check .qwen/QWEN.md. [x] Migration: if root QWEN.md with joy block exists and .qwen/QWEN.md does not, moves it automatically. [x] Fixed relative path in joy block to ../.joy/ai/instructions.md. [x] rm -rf .qwen now correctly de-configures Qwen.'

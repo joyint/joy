@@ -92,7 +92,7 @@ const STATIC_CONFIG_KEYS: &[&str] = &[
     "ai.model",
     "ai.max_cost_per_job",
     "ai.currency",
-    "agents.default.interaction-level",
+    "agents.default.mode",
 ];
 
 /// Complete config keys for `joy config get/set`.
@@ -112,7 +112,7 @@ pub fn complete_config_key(current: &OsStr) -> Vec<CompletionCandidate> {
     if let Some(agents) = config_value.get("agents").and_then(|a| a.as_object()) {
         for role in agents.keys() {
             if role != "default" {
-                let key = format!("agents.{role}.interaction-level");
+                let key = format!("agents.{role}.mode");
                 if key.starts_with(prefix) {
                     candidates.push(CompletionCandidate::new(key));
                 }

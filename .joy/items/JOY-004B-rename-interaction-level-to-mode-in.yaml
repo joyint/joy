@@ -1,0 +1,15 @@
+id: JOY-004B
+title: Rename interaction-level to mode in config and docs
+type: rework
+status: closed
+priority: high
+effort: 2
+created: 2026-03-23T20:51:20.109514042Z
+updated: 2026-03-23T21:00:04.043959794Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-23T20:51:26.090545057Z
+  text: 'Plan: Rename interaction-level to mode everywhere. (1) config.rs: serde rename, field name. (2) complete.rs: static key. (3) config.defaults.yaml. (4) Snapshot. (5) data/ai/instructions.md. (6) data/ai/skills/joy/SKILL.md. (7) docs/dev/Vision.md. (8) Umbrella: docs/dev/vision/JoyProcess.md. (9) .joy/config.yaml in joy and umbrella projects.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-23T20:59:58.123673478Z
+  text: '[x] config.rs: field renamed to mode, serde no longer needs rename attribute. [x] complete.rs: static key agents.default.mode, dynamic keys agents.{role}.mode. [x] commands/config.rs: doc comment updated. [x] Snapshot updated. [x] data/config.defaults.yaml: mode: collaborative. [x] data/ai/instructions.md: all references renamed. [x] data/ai/skills/joy/SKILL.md: renamed. [x] docs/dev/Vision.md: renamed. [x] Umbrella: JoyProcess.md (max-mode, section heading, prose), Vision.md, README.md. [x] WhitePaper.de.md and WhitePaper.en.md: max-mode, named levels, prose. [x] Validation test templates updated. [x] All deployed AI files (.joy/ai/, .claude/, .qwen/, .vibe/) updated. [x] config.defaults.yaml in umbrella, jot, joyc, platform, app. [x] joy/.joy/config.yaml and config.defaults.yaml.'
