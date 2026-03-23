@@ -149,6 +149,12 @@ release bump="patch":
         echo "Checks failed. Run 'just check' for details."
         exit 1
     fi
+    # Re-commit any lockfiles changed by the check
+    for lockfile in Cargo.lock package-lock.json yarn.lock; do
+        if git status --porcelain "$lockfile" 2>/dev/null | grep -q .; then
+            git add "$lockfile" && git commit --quiet -m "chore: update lockfile after check [no-item]"
+        fi
+    done
     # Joy handles the full release flow
     if [ -f ".joy/project.yaml" ] && command -v joy >/dev/null 2>&1; then
         joy release create "{{bump}}" --full
