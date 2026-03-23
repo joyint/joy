@@ -157,13 +157,13 @@ impl std::str::FromStr for ItemType {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "epic" => Ok(ItemType::Epic),
-            "story" => Ok(ItemType::Story),
-            "task" => Ok(ItemType::Task),
+            "epic" | "epc" => Ok(ItemType::Epic),
+            "story" | "str" => Ok(ItemType::Story),
+            "task" | "tsk" => Ok(ItemType::Task),
             "bug" => Ok(ItemType::Bug),
-            "rework" => Ok(ItemType::Rework),
-            "decision" => Ok(ItemType::Decision),
-            "idea" => Ok(ItemType::Idea),
+            "rework" | "rwk" => Ok(ItemType::Rework),
+            "decision" | "dec" => Ok(ItemType::Decision),
+            "idea" | "ide" => Ok(ItemType::Idea),
             _ => Err(format!("unknown item type: {s}")),
         }
     }
@@ -174,11 +174,11 @@ impl std::str::FromStr for Status {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "new" => Ok(Status::New),
-            "open" => Ok(Status::Open),
-            "in-progress" => Ok(Status::InProgress),
-            "review" => Ok(Status::Review),
-            "closed" => Ok(Status::Closed),
-            "deferred" => Ok(Status::Deferred),
+            "open" | "opn" => Ok(Status::Open),
+            "in-progress" | "wip" => Ok(Status::InProgress),
+            "review" | "rev" => Ok(Status::Review),
+            "closed" | "don" => Ok(Status::Closed),
+            "deferred" | "def" => Ok(Status::Deferred),
             _ => Err(format!("unknown status: {s}")),
         }
     }
@@ -189,10 +189,10 @@ impl std::str::FromStr for Priority {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "low" => Ok(Priority::Low),
-            "medium" => Ok(Priority::Medium),
-            "high" => Ok(Priority::High),
-            "critical" => Ok(Priority::Critical),
-            "extreme" => Ok(Priority::Extreme),
+            "medium" | "med" => Ok(Priority::Medium),
+            "high" | "hig" => Ok(Priority::High),
+            "critical" | "crt" => Ok(Priority::Critical),
+            "extreme" | "ext" => Ok(Priority::Extreme),
             _ => Err(format!("unknown priority: {s}")),
         }
     }

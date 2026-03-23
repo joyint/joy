@@ -71,3 +71,8 @@
 2026-03-23T22:34:29.206Z v0.3.4 release.created [horst.schwarz@joydev.com]
 2026-03-23T22:38:58.480Z JOY-0050 item.created "Cargo.lock not committed during release version bump" [horst.schwarz@joydev.com]
 2026-03-23T22:38:58.503Z JOY-0050 item.status_changed "new -> in-progress" [horst.schwarz@joydev.com]
+2026-03-23T22:40:50.291Z JOY-0050 item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
+2026-03-23T22:44:38.072Z JOY-0046 comment.added "Plan: Add short aliases to FromStr for Status, ItemType, and Priority in joy-core item.rs. Uses the same abbreviations as color::*_short() (new, opn, wip, rev, don, def / epc, str, tsk, bug, rwk, dec, ide / low, med, hig, crt, ext). Works everywhere that parses these types (joy ls filters, joy add, joy edit). Shell completions to offer both forms." [horst.schwarz@joydev.com]
+2026-03-23T22:44:38.082Z JOY-0046 item.status_changed "new -> in-progress" [horst.schwarz@joydev.com]
+2026-03-23T22:46:12.322Z JOY-0046 comment.added "[x] Short aliases added to FromStr: Status (opn, wip, rev, don, def), ItemType (epc, str, tsk, rwk, dec, ide), Priority (med, hig, crt, ext). Works in all commands that parse these types (ls, add, edit). Same abbreviations as color::*_short() for consistency." [horst.schwarz@joydev.com]
+2026-03-23T22:46:12.332Z JOY-0046 item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]

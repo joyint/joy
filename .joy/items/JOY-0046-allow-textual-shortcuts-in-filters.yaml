@@ -1,8 +1,15 @@
 id: JOY-0046
 title: Allow textual shortcuts in filters
 type: idea
-status: new
+status: closed
 priority: medium
 created: 2026-03-23T05:51:46.715841828Z
-updated: 2026-03-23T05:51:46.715841828Z
+updated: 2026-03-23T22:46:12.330681383Z
 description: '''joy ls -s wip'' shall be possible and also supported with autocomplete together with the full text alternative'
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-23T22:44:38.069647031Z
+  text: 'Plan: Add short aliases to FromStr for Status, ItemType, and Priority in joy-core item.rs. Uses the same abbreviations as color::*_short() (new, opn, wip, rev, don, def / epc, str, tsk, bug, rwk, dec, ide / low, med, hig, crt, ext). Works everywhere that parses these types (joy ls filters, joy add, joy edit). Shell completions to offer both forms.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-23T22:46:12.320730446Z
+  text: '[x] Short aliases added to FromStr: Status (opn, wip, rev, don, def), ItemType (epc, str, tsk, rwk, dec, ide), Priority (med, hig, crt, ext). Works in all commands that parse these types (ls, add, edit). Same abbreviations as color::*_short() for consistency.'
