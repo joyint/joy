@@ -1,12 +1,19 @@
 id: JOY-0041
 title: Structured version bumping from project.yaml config
 type: story
-status: new
+status: closed
 priority: high
 parent: JOY-003F
 deps:
 - JOY-0040
 effort: 3
 created: 2026-03-22T22:07:54.122249868Z
-updated: 2026-03-22T22:08:34.128700268Z
+updated: 2026-03-23T07:16:02.542314325Z
 description: 'Read release.version-files from project.yaml. For each entry: parse file by extension (TOML/JSON/YAML), update the specified key to the new version, write back. No regex, no search-replace. Glob support for paths (e.g. crates/*/Cargo.toml). Error if file format unknown or key not found.'
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-23T07:10:25.703666329Z
+  text: 'Plan: (1) Add release.version-files list to project.yaml schema. Each entry has path (glob) and key (dotted). (2) Implement version_bump module in joy-core: parse file by extension (.toml → TOML, .json → JSON, .yaml/.yml → YAML), update the specific key, write back. (3) Glob expansion for paths like crates/*/Cargo.toml. (4) Error if file not found, format unknown, or key missing.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-23T07:16:02.532610135Z
+  text: '[x] version_bump module in joy-cli with bump_all(root, files, version). Parses TOML (via toml_edit, preserves formatting), JSON (serde_json), YAML (serde_yaml_ng). Dotted key navigation (e.g. package.version). Glob expansion for paths (crates/*/Cargo.toml). Clear errors for missing keys, unsupported formats, missing files. 7 tests covering all formats, nested keys, globs, and error cases.'

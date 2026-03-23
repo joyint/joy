@@ -1,7 +1,7 @@
 id: JOY-0043
 title: joy release create --full end-to-end flow
 type: story
-status: new
+status: in-progress
 priority: high
 parent: JOY-003F
 deps:
@@ -10,5 +10,9 @@ deps:
 - JOY-0042
 effort: 3
 created: 2026-03-22T22:08:13.888441970Z
-updated: 2026-03-23T05:55:21.798317380Z
+updated: 2026-03-23T07:20:58.339597173Z
 description: 'Wire everything together: joy release create <bump> --full reads forge from project.yaml, performs version bump (JOY-0041), git add/commit/tag/push via VCS (JOY-0040), optional forge release with confirmation. Replaces all justfile release bash scripts with a one-liner. joy init detects forge from remote URL and proposes it to user during setup/onboarding.'
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-23T07:20:58.329588202Z
+  text: 'Plan: (1) Add --full flag to CreateArgs in release.rs. (2) When --full: after joy release YAML is created, read release.version-files from project.yaml and bump versions (version_bump::bump_all). (3) Git ops via vcs: add_all, commit with [no-item], tag_annotated with markdown notes, push_with_tags. (4) Forge release via forge::from_config if user confirms. (5) All checks upfront: git version, clean tree, forge auth.'

@@ -1,12 +1,19 @@
 id: JOY-0042
 title: Forge trait with GitHub implementation
 type: story
-status: new
+status: closed
 priority: medium
 parent: JOY-003F
 deps:
 - JOY-0040
 effort: 3
 created: 2026-03-22T22:08:00.946360675Z
-updated: 2026-03-23T05:55:10.274434411Z
+updated: 2026-03-23T07:20:46.083616041Z
 description: 'Forge trait with create_release(tag, title, notes) method. Implementations: GitHub (via gh CLI), Joyint (via platform API, later). Auto-detection from git remote URL at joy init time, stored as forge: field in project.yaml. joy init proposes detected forge to user. Forge is read from project.yaml at release time, not auto-detected. GitLab and Gitea as separate items. Add forge: to project.yaml schema and parse_forge_from_url for joyint.com detection.'
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-23T07:18:26.538925824Z
+  text: 'Plan: (1) Add forge: field to Project struct in model/project.rs. (2) Create forge module in joy-cli with Forge trait (create_release) and GitHubForge implementation wrapping the existing gh_create_release from vcs.rs. (3) forge_from_config() reads forge: from project.yaml, returns the right implementation. (4) GitHub impl checks gh availability and auth status before creating release.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-23T07:20:46.073801378Z
+  text: '[x] Added forge: field (optional String) to Project struct. [x] ForgeRelease trait with create_release(root, tag, title, notes). [x] GitHubForge: wraps vcs::gh_create_release, checks gh availability and auth status before creating. [x] NoForge: no-op for forge: none or unset. [x] from_config(): parses forge value, returns appropriate implementation. Unsupported forges (gitlab, gitea, *@joyint) fall back to NoForge with warning. [x] 4 tests.'

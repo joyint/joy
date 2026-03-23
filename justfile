@@ -133,71 +133,16 @@ release bump="patch":
         echo "Error: working tree is not clean."
         exit 1
     fi
-    # Joy release (if this is a Joy project)
-    if [ -f ".joy/project.yaml" ] && command -v joy >/dev/null 2>&1; then
-        prev_release=$( (ls -1 .joy/releases/*.yaml 2>/dev/null || true) | wc -l)
-        joy release create "{{bump}}"
-        new_release=$( (ls -1 .joy/releases/*.yaml 2>/dev/null || true) | wc -l)
-        if [ "$new_release" -le "$prev_release" ]; then
-            exit 0
-        fi
-        tag=$( (ls -1 .joy/releases/*.yaml 2>/dev/null || true) | sort | tail -1 | sed 's/.*-\(v[0-9].*\)\.yaml/\1/')
-    else
-        current=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-        current="${current#v}"
-        major=$(echo "$current" | cut -d. -f1)
-        minor=$(echo "$current" | cut -d. -f2)
-        patch=$(echo "$current" | cut -d. -f3)
-        case "{{bump}}" in
-            major) tag="v$((major + 1)).0.0" ;;
-            minor) tag="v${major}.$((minor + 1)).0" ;;
-            patch) tag="v${major}.${minor}.$((patch + 1))" ;;
-            *) echo "Error: bump must be patch, minor, or major"; exit 1 ;;
-        esac
-    fi
     # Run checks (quiet unless they fail)
     echo "Checking (format, lint, test)..."
     if ! just check > /dev/null 2>&1; then
         echo "Checks failed. Run 'just check' for details."
         exit 1
     fi
-    semver="${tag#v}"
-    # Cargo version bump (if crates exist)
-    if [ -d "crates" ]; then
-        for f in $(find crates -name Cargo.toml); do
-            if grep -q '^version = ' "$f"; then
-                sed -i "s/^version = \".*\"/version = \"${semver}\"/" "$f"
-                echo "  ${f} -> ${semver}"
-            fi
-        done
-        cargo generate-lockfile 2>/dev/null || cargo check 2>/dev/null
-    fi
-    git add -A
-    git commit --quiet -m "bump to ${tag} [no-item]"
-    # Annotated tag with release notes (shown as GitHub Release body)
+    # Joy handles the full release flow
     if [ -f ".joy/project.yaml" ] && command -v joy >/dev/null 2>&1; then
-        joy release show --markdown "${tag}" | git tag -a "${tag}" -F -
+        joy release create "{{bump}}" --full
     else
-        git tag "${tag}"
-    fi
-    git push --quiet && git push --quiet origin "${tag}"
-    echo "Released ${tag}"
-    # Optional GitHub Release
-    if command -v gh >/dev/null 2>&1; then
-        read -rp "Create GitHub Release? [y/N] " gh_confirm
-        if [[ "$gh_confirm" == [yY] ]]; then
-            if [ -f ".joy/project.yaml" ] && command -v joy >/dev/null 2>&1; then
-                # Read title from release YAML if available
-                gh_title=$(grep '^title:' .joy/releases/*-"${tag}".yaml 2>/dev/null | head -1 | sed 's/^title:[[:space:]]*//' | tr -d "'\"" || true)
-                if [ -n "$gh_title" ]; then
-                    gh_title="${tag} -- ${gh_title}"
-                else
-                    gh_title="${tag}"
-                fi
-                joy release show --markdown "${tag}" | gh release create "${tag}" --title "${gh_title}" --notes-file -
-            else
-                gh release create "${tag}" --generate-notes
-            fi
-            echo "GitHub Release created."
-        fi
+        echo "No Joy project found. Use joy init to set up."
+        exit 1
     fi
