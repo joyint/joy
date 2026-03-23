@@ -512,7 +512,7 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
 
     let w = terminal_width();
     println!("{}", color::label(&"-".repeat(w)));
-    println!("{}", color::label(&format!("{} item(s)", items.len())));
+    println!("{}", color::label(&color::plural(items.len(), "item")));
 }
 
 fn display_width(s: &str) -> usize {
@@ -547,7 +547,7 @@ fn print_tree_by_parent(items: &[&Item]) {
     }
 
     println!("{}", color::label(&"-".repeat(w)));
-    println!("{}", color::label(&format!("{} item(s)", items.len())));
+    println!("{}", color::label(&color::plural(items.len(), "item")));
 }
 
 /// Compute the available title width for a tree row, given the prefix and item metadata.
@@ -728,20 +728,49 @@ fn print_tree_by_milestone(
 
     // Footer with statistics (matches board style)
     let new = all_items.iter().filter(|i| i.status == Status::New).count();
-    let open = all_items.iter().filter(|i| i.status == Status::Open).count();
-    let wip = all_items.iter().filter(|i| i.status == Status::InProgress).count();
-    let review = all_items.iter().filter(|i| i.status == Status::Review).count();
-    let deferred = all_items.iter().filter(|i| i.status == Status::Deferred).count();
-    let blocked_count = all_items.iter().filter(|i| i.is_blocked_by(all_items)).count();
+    let open = all_items
+        .iter()
+        .filter(|i| i.status == Status::Open)
+        .count();
+    let wip = all_items
+        .iter()
+        .filter(|i| i.status == Status::InProgress)
+        .count();
+    let review = all_items
+        .iter()
+        .filter(|i| i.status == Status::Review)
+        .count();
+    let deferred = all_items
+        .iter()
+        .filter(|i| i.status == Status::Deferred)
+        .count();
+    let blocked_count = all_items
+        .iter()
+        .filter(|i| i.is_blocked_by(all_items))
+        .count();
 
     let mut stats = Vec::new();
-    if new > 0 { stats.push(format!("{new} new")); }
-    if open > 0 { stats.push(format!("{open} open")); }
-    if wip > 0 { stats.push(format!("{wip} in-progress")); }
-    if review > 0 { stats.push(format!("{review} review")); }
-    if closed > 0 { stats.push(format!("{closed} closed")); }
-    if deferred > 0 { stats.push(format!("{deferred} deferred")); }
-    if blocked_count > 0 { stats.push(format!("{blocked_count} blocked")); }
+    if new > 0 {
+        stats.push(format!("{new} new"));
+    }
+    if open > 0 {
+        stats.push(format!("{open} open"));
+    }
+    if wip > 0 {
+        stats.push(format!("{wip} in-progress"));
+    }
+    if review > 0 {
+        stats.push(format!("{review} review"));
+    }
+    if closed > 0 {
+        stats.push(format!("{closed} closed"));
+    }
+    if deferred > 0 {
+        stats.push(format!("{deferred} deferred"));
+    }
+    if blocked_count > 0 {
+        stats.push(format!("{blocked_count} blocked"));
+    }
 
     println!("{}", sep);
     println!("{}", color::label(&stats.join(" · ")));

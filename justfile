@@ -146,7 +146,7 @@ release bump="patch":
         echo "No Joy project found. Use joy init to set up."
         exit 1
     fi
-    if ! joy release show 2>/dev/null | grep -q "items"; then
+    if ! joy release show >/dev/null 2>&1; then
         echo "No items closed since last release."
         exit 0
     fi

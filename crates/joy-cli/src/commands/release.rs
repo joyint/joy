@@ -228,13 +228,17 @@ fn show(args: ShowArgs) -> Result<()> {
 
             if closed_ids.is_empty() {
                 println!("No items closed since last release.");
-                return Ok(());
+                std::process::exit(1);
             }
 
             let previous = releases::latest_version(&root)?;
             let prev_str = previous.as_deref().unwrap_or("(none)");
 
-            let header_text = format!("Next release (preview, {} since {})", closed_ids.len(), prev_str);
+            let header_text = format!(
+                "Next release (preview, {} since {})",
+                closed_ids.len(),
+                prev_str
+            );
             println!("{}", color::header(&header_text));
 
             let all_items = items::load_items(&root)?;
@@ -288,7 +292,7 @@ fn ls() -> Result<()> {
     println!("{}", color::label(&"-".repeat(color::terminal_width())));
     println!(
         "{}",
-        color::label(&format!("{} release(s)", all_releases.len()))
+        color::label(&color::plural(all_releases.len(), "release"))
     );
 
     Ok(())
@@ -429,11 +433,10 @@ fn render_release_markdown(release: &Release) -> String {
         }
     }
     if total > 0 {
-        out.push_str(&format!("\n---\n*{total} item(s)*\n"));
+        out.push_str(&format!("\n---\n*{}*\n", color::plural(total, "item")));
     }
     out
 }
-
 
 fn truncate(s: &str, max: usize) -> String {
     if s.len() <= max {
@@ -500,11 +503,20 @@ fn print_release(release: &Release) {
         let mut stats: Vec<String> = Vec::new();
         for (label, items) in type_groups {
             if !items.is_empty() {
-                stats.push(format!("{} {}", items.len(), label.to_lowercase()));
+                // label is already plural ("Stories"), derive singular by trimming "s"
+                let singular = label.trim_end_matches('s').to_lowercase();
+                stats.push(color::plural(items.len(), &singular));
             }
         }
         println!("{}", color::label(&"-".repeat(w)));
-        println!("{}", color::label(&format!("{total} items · {}", stats.join(" · "))));
+        println!(
+            "{}",
+            color::label(&format!(
+                "{} · {}",
+                color::plural(total, "item"),
+                stats.join(" · ")
+            ))
+        );
     }
 }
 
@@ -604,6 +616,6 @@ fn print_release_markdown(release: &Release) {
     if total > 0 {
         println!();
         println!("---");
-        println!("*{} item(s)*", total);
+        println!("*{}*", color::plural(total, "item"));
     }
 }

@@ -450,3 +450,13 @@ pub fn danger(text: &str) -> String {
 pub fn info(text: &str) -> String {
     wrap(INFO, text)
 }
+
+/// Pluralize: "1 item" vs "3 items". Handles regular plurals (append "s")
+/// and custom forms ("1 cherry" / "3 cherries").
+pub fn plural(count: usize, singular: &str) -> String {
+    if count == 1 {
+        format!("{count} {singular}")
+    } else {
+        format!("{count} {singular}s")
+    }
+}

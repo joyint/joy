@@ -107,7 +107,13 @@ fn format_kv(key: &str, val: &serde_json::Value, width: usize, is_default: bool)
     } else {
         String::new()
     };
-    format!("{:<w$} {}{}", color::label(key), formatted, suffix, w = width)
+    format!(
+        "{:<w$} {}{}",
+        color::label(key),
+        formatted,
+        suffix,
+        w = width
+    )
 }
 
 fn format_value(val: &serde_json::Value, is_default: bool) -> String {

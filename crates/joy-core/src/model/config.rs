@@ -27,34 +27,21 @@ pub struct AgentsConfig {
     pub roles: BTreeMap<String, AgentRoleConfig>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct AgentRoleConfig {
     #[serde(default)]
     pub mode: InteractionLevel,
 }
 
-impl Default for AgentRoleConfig {
-    fn default() -> Self {
-        Self {
-            mode: InteractionLevel::default(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum InteractionLevel {
     Autonomous,
     Supervised,
+    #[default]
     Collaborative,
     Interactive,
     Pairing,
-}
-
-impl Default for InteractionLevel {
-    fn default() -> Self {
-        Self::Collaborative
-    }
 }
 
 impl std::fmt::Display for InteractionLevel {
@@ -182,9 +169,32 @@ fn navigate_json<'a>(value: &'a serde_json::Value, key: &str) -> Option<&'a serd
 /// variants and optional fields.
 fn probe_string_field(key: &str) -> Vec<String> {
     const PROBES: &[&str] = &[
-        "auto", "always", "never", "none", "true", "false", "yes", "no", "on", "off", "list",
-        "board", "calendar", "all", "tech", "science", "humor", "low", "medium", "high",
-        "critical", "autonomous", "supervised", "collaborative", "interactive", "pairing",
+        "auto",
+        "always",
+        "never",
+        "none",
+        "true",
+        "false",
+        "yes",
+        "no",
+        "on",
+        "off",
+        "list",
+        "board",
+        "calendar",
+        "all",
+        "tech",
+        "science",
+        "humor",
+        "low",
+        "medium",
+        "high",
+        "critical",
+        "autonomous",
+        "supervised",
+        "collaborative",
+        "interactive",
+        "pairing",
     ];
 
     let mut accepted = Vec::new();

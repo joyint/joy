@@ -155,7 +155,7 @@ pub fn run(args: crate::BoardArgs) -> Result<()> {
     if !last_str.is_empty() {
         header_parts.push(last_str);
     }
-    header_parts.push(format!("{total_items} items"));
+    header_parts.push(color::plural(total_items, "item"));
     println!("{}", color::label(&header_parts.join(" · ")));
 
     println!("{sep}");
