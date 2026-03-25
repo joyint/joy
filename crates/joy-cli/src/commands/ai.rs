@@ -299,7 +299,31 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
     }
 
     if to_remove.is_empty() {
-        println!("{}No AI tool configurations found.", color::check_mark());
+        // No files to remove, but check for orphaned members
+        let project_path = joy_core::store::joy_dir(&root).join(joy_core::store::PROJECT_FILE);
+        if let Ok(mut project) =
+            joy_core::store::read_yaml::<joy_core::model::Project>(&project_path)
+        {
+            let mut cleaned = false;
+            for (_, id, _) in &tools {
+                let member_id = format!("ai:{id}@joy");
+                if project.members.remove(&member_id).is_some() {
+                    println!(
+                        "  {}{:<24} orphaned member removed",
+                        color::check_mark(),
+                        member_id
+                    );
+                    cleaned = true;
+                }
+            }
+            if cleaned {
+                joy_core::store::write_yaml(&project_path, &project)?;
+            } else {
+                println!("{}No AI tool configurations found.", color::check_mark());
+            }
+        } else {
+            println!("{}No AI tool configurations found.", color::check_mark());
+        }
         return Ok(());
     }
 
@@ -434,6 +458,7 @@ fn configure_tools(root: &Path) -> anyhow::Result<usize> {
         tool_count += 1;
         let already = is_tool_configured(root, id);
         let member_id = format!("ai:{id}@joy");
+        let mut configured = false;
         if already {
             // Silently update files, then show single status line
             QUIET.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -445,16 +470,17 @@ fn configure_tools(root: &Path) -> anyhow::Result<usize> {
                 name,
                 color::inactive("up to date")
             );
+            configured = true;
         } else {
             print!("  {}{:<24} configure? [Y/n] ", color::warn_mark(), name);
             if confirm_default_yes()? {
                 configure(root, &member_id)?;
+                configured = true;
             }
         }
 
-        // Register as AI member if not already present
-        let member_id = format!("ai:{id}@joy");
-        if !project.members.contains_key(&member_id) {
+        // Register as AI member only if tool was actually configured
+        if configured && !project.members.contains_key(&member_id) {
             project.members.insert(
                 member_id.clone(),
                 joy_core::model::project::Member {
