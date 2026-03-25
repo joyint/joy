@@ -1,0 +1,38 @@
+version: v0.3.5
+date: 2026-03-25
+previous: v0.3.4
+contributors:
+- id: horst.schwarz@joydev.com
+  events: 67
+  items: 13
+items:
+  stories:
+  - id: JOY-002A
+    title: Capability model in joy-core
+  - id: JOY-002B
+    title: Display capability status in joy show
+  - id: JOY-002C
+    title: Member management in project.yaml
+  - id: JOY-002E
+    title: Multi-capability assignments with joy assign
+  - id: JOY-0057
+    title: Auto-assign current user on joy start
+  - id: JOY-0058
+    title: Create embedded capability files in data/capabilities/
+  - id: JOY-0059
+    title: Enforce management capabilities in CLI commands
+  tasks:
+  - id: JOY-0053
+    title: Update Joy Vision.md AI Integration section for capability files
+  - id: JOY-002D
+    title: Register AI members in joy ai setup
+  - id: JOY-0052
+    title: Update AI instructions and skills for capability model
+  bugs:
+  - id: JOY-0050
+    title: Cargo.lock not committed during release version bump
+  - id: JOY-005B
+    title: joy ai reset does not remove AI members from project.yaml
+  ideas:
+  - id: JOY-0046
+    title: Allow textual shortcuts in filters
