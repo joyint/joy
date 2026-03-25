@@ -1,7 +1,7 @@
 id: JOY-005B
 title: joy ai reset does not remove AI members from project.yaml
 type: bug
-status: in-progress
+status: closed
 priority: high
 assignees:
 - member: horst.schwarz@joydev.com
@@ -10,4 +10,8 @@ capabilities:
 - review
 effort: 1
 created: 2026-03-25T21:46:49.158948981Z
-updated: 2026-03-25T21:46:53.501413596Z
+updated: 2026-03-25T21:49:15.442194473Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-25T21:49:15.438206503Z
+  text: Done. joy ai reset now removes the ai:tool@joy member from project.yaml when removing a tool config. Also cleaned up incorrectly added non-Claude members from joy, jot, and judge.
