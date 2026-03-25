@@ -1,0 +1,13 @@
+id: JOY-005B
+title: joy ai reset does not remove AI members from project.yaml
+type: bug
+status: in-progress
+priority: high
+assignees:
+- member: horst.schwarz@joydev.com
+capabilities:
+- implement
+- review
+effort: 1
+created: 2026-03-25T21:46:49.158948981Z
+updated: 2026-03-25T21:46:53.501413596Z

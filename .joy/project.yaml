@@ -15,39 +15,6 @@ members:
       document: {}
       create: {}
       assign: {}
-  ai:copilot@joy:
-    capabilities:
-      conceive: {}
-      plan: {}
-      design: {}
-      implement: {}
-      test: {}
-      review: {}
-      document: {}
-      create: {}
-      assign: {}
-  ai:qwen@joy:
-    capabilities:
-      conceive: {}
-      plan: {}
-      design: {}
-      implement: {}
-      test: {}
-      review: {}
-      document: {}
-      create: {}
-      assign: {}
-  ai:vibe@joy:
-    capabilities:
-      conceive: {}
-      plan: {}
-      design: {}
-      implement: {}
-      test: {}
-      review: {}
-      document: {}
-      create: {}
-      assign: {}
   horst.schwarz@joydev.com:
     capabilities: all
 created: 2026-03-09T23:57:36.761964460Z

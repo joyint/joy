@@ -330,6 +330,27 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
         println!("  {}{:<24} removed", color::check_mark(), name);
     }
 
+    // Remove AI members from project.yaml for reset tools
+    let project_path = joy_core::store::joy_dir(&root).join(joy_core::store::PROJECT_FILE);
+    if let Ok(mut project) = joy_core::store::read_yaml::<joy_core::model::Project>(&project_path) {
+        let mut project_changed = false;
+        for (_, id, paths) in &tools {
+            let was_removed = paths
+                .iter()
+                .any(|p| to_remove.iter().any(|(_, tp)| tp == p));
+            if was_removed {
+                let member_id = format!("ai:{id}@joy");
+                if project.members.remove(&member_id).is_some() {
+                    println!("  {}{:<24} member removed", color::check_mark(), member_id);
+                    project_changed = true;
+                }
+            }
+        }
+        if project_changed {
+            joy_core::store::write_yaml(&project_path, &project)?;
+        }
+    }
+
     let count = tools
         .iter()
         .filter(|(_, _, paths)| {
