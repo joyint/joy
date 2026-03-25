@@ -1,0 +1,23 @@
+id: JOY-0058
+title: Create embedded capability files in data/capabilities/
+type: story
+status: closed
+priority: critical
+parent: JOY-0029
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created: 2026-03-25T20:23:02.086430838Z
+updated: 2026-03-25T20:32:15.506498525Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-25T20:23:11.696216006Z
+  text: 'Create data/ai/capabilities/*.md for all capabilities (conceive, plan, design, implement, test, review, document). Each file contains: human-readable description, constraints table, YAML block with agent permissions. Deployed to .joy/ai/capabilities/ via joy ai setup using embedded file mechanism. Referenced from instructions.md. Used by joy ai setup to generate tool-specific agent files. This is the core deliverable of ADR-018 that was missed during JOY-0052.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-25T20:24:14.066189298Z
+  text: 'Correction: data/capabilities/ not data/ai/capabilities/. These are project-wide capability definitions for humans and AI alike. Deployed to .joy/capabilities/ via joy ai setup. Referenced from instructions.md and readable by anyone.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-25T20:32:15.502424797Z
+  text: Done. Created data/capabilities/*.md for all 11 capabilities (7 work + 4 management per ADR-020). Deployed to .joy/capabilities/ via joy ai setup embedded file mechanism. Instructions.md updated to reference .joy/capabilities/. All doc references corrected from .joy/ai/capabilities/ to .joy/capabilities/. ADR-020 written for management capabilities. JoyProcess.md updated with full capability table.

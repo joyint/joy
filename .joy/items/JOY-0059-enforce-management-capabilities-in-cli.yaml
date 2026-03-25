@@ -1,0 +1,22 @@
+id: JOY-0059
+title: Enforce management capabilities in CLI commands
+type: story
+status: closed
+priority: high
+parent: JOY-0029
+assignees:
+- member: horst.schwarz@joydev.com
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created: 2026-03-25T20:32:21.403357563Z
+updated: 2026-03-25T21:08:27.853375349Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-25T20:32:28.498478453Z
+  text: 'Check current user''s management capabilities before executing: joy add (requires create), joy assign/edit --assignees (requires assign), joy project member add/rm (requires manage), joy rm (requires delete). Without gates: warning. With gates (JOY-0030): block. Lookup: git email -> project.yaml members -> capabilities.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-25T21:08:27.849342808Z
+  text: Done. Capability check in joy add (create), joy assign (assign), joy edit --assignee (assign), joy rm (delete), joy project member add/rm (manage). Warning printed when user lacks capability. No block without gates -- consistent with Joy philosophy. Central check_capability function in joy-core/capabilities.rs reads git email and project.yaml. All 110 tests pass, clippy clean.

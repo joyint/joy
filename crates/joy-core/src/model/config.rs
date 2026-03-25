@@ -16,7 +16,25 @@ pub struct Config {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ai: Option<AiConfig>,
     #[serde(default)]
+    pub workflow: WorkflowConfig,
+    #[serde(default)]
     pub agents: AgentsConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WorkflowConfig {
+    #[serde(rename = "auto-assign", default = "default_true")]
+    pub auto_assign: bool,
+}
+
+impl Default for WorkflowConfig {
+    fn default() -> Self {
+        Self { auto_assign: true }
+    }
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -106,6 +124,7 @@ impl Default for Config {
             sync: None,
             output: OutputConfig::default(),
             ai: None,
+            workflow: WorkflowConfig::default(),
             agents: AgentsConfig::default(),
         }
     }

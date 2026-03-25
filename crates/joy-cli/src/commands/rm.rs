@@ -28,6 +28,8 @@ pub fn run(args: RmArgs) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
+    joy_core::capabilities::warn_unless_capable(&root, joy_core::model::item::Capability::Delete);
+
     let item = items::load_item(&root, &args.id)?;
 
     let mut to_delete = vec![item.id.clone()];

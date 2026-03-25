@@ -1,0 +1,3 @@
+{% set type = "rework" %}
+{% set capabilities = "[implement, review]" %}
+{% include "_base.yaml" %}

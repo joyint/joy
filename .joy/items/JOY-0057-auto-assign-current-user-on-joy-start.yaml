@@ -1,0 +1,20 @@
+id: JOY-0057
+title: Auto-assign current user on joy start
+type: story
+status: closed
+priority: high
+parent: JOY-0029
+capabilities:
+- plan
+- implement
+- review
+effort: 2
+created: 2026-03-25T20:02:40.488550771Z
+updated: 2026-03-25T20:04:58.255609894Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-25T20:02:47.471520083Z
+  text: 'When joy start is called without an assignee, auto-assign the current user (from git email or AI identity). Print info that auto-assignment happened and who was assigned. Warn if user lacks capabilities for the item (no block without gates). Config option auto-assign: true (default) in config.yaml. When false, joy start refuses without assignee and prints how to assign. Required for governance audit trail -- every started item must have an assignee.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-25T20:04:58.251653181Z
+  text: 'Done. Auto-assign on joy start when no assignees present. Uses git user.email. Prints info message. Warns if member lacks item capabilities. Config option workflow.auto-assign: true (default). When false, joy start refuses without assignee and shows how to assign. All 110 tests pass, clippy clean.'

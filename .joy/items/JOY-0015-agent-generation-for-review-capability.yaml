@@ -1,0 +1,13 @@
+id: JOY-0015
+title: Agent generation for review capability
+type: story
+status: new
+priority: medium
+parent: JOY-0012
+effort: 3
+created: 2026-03-20T21:02:44.744919922Z
+updated: 2026-03-25T17:43:27.464037768Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-25T17:43:17.549269997Z
+  text: 'Reframed per ADR-018: This story now covers generating a review-capability agent file from .joy/ai/capabilities/review.md. The agent file provides read-only tool permissions and the system prompt for review activities. No longer a role-based ''Reviewer agent''.'

@@ -1,0 +1,3 @@
+{% set type = "decision" %}
+{% set capabilities = "[conceive]" %}
+{% include "_base.yaml" %}

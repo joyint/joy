@@ -1,0 +1,13 @@
+id: JOY-0013
+title: Agent generation for plan capability
+type: story
+status: new
+priority: medium
+parent: JOY-0012
+effort: 3
+created: 2026-03-20T21:02:44.738900820Z
+updated: 2026-03-25T17:43:26.151440651Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-25T17:43:15.191902391Z
+  text: 'Reframed per ADR-018: This story now covers generating a plan-capability agent file from .joy/ai/capabilities/plan.md. The agent file provides tool permissions (read, search, item creation) and the system prompt for planning activities. No longer a role-based ''Architect agent''.'

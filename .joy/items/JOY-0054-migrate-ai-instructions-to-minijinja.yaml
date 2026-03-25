@@ -1,0 +1,12 @@
+id: JOY-0054
+title: Migrate AI instructions to MiniJinja templates
+type: rework
+status: new
+priority: medium
+effort: 2
+created: 2026-03-25T18:42:31.423564942Z
+updated: 2026-03-25T18:42:49.114628297Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-25T18:42:49.114626216Z
+  text: Candidate from ADR-019. data/ai/instructions.md contains project-specific values (acronym, language, interaction levels) that could use MiniJinja variables instead of static text.

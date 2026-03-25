@@ -1,0 +1,12 @@
+id: JOY-0055
+title: Migrate AI skill to MiniJinja templates
+type: rework
+status: new
+priority: medium
+effort: 2
+created: 2026-03-25T18:42:31.723930171Z
+updated: 2026-03-25T18:42:49.117344644Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-25T18:42:49.117344261Z
+  text: Candidate from ADR-019. data/ai/skills/joy/SKILL.md references project context that could use MiniJinja variables.

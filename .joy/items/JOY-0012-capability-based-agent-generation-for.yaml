@@ -1,11 +1,11 @@
 id: JOY-0012
-title: Agent role definitions for AI tools
+title: Capability-based agent generation for AI tools
 type: epic
 status: new
 priority: medium
 effort: 5
 created: 2026-03-20T21:02:31.070606074Z
-updated: 2026-03-21T21:33:08.715801121Z
+updated: 2026-03-25T17:43:36.515719390Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-20T21:02:53.015937883Z
@@ -29,3 +29,6 @@ comments:
     > 2. Interaction Levels sind abstrakt. Level 3 vs. Level 4 -- wird ein Entwickler im Alltag den Unterschied spueren und bewusst waehlen? Oder werden die meisten einfach den Default lassen und sich wundern wenn die AI zu viel fragt oder zu wenig fragt? Die Levels muessen sich im Gebrauch beweisen, nicht im Dokument.
 
     > 3. Jobs fuer Menschen sind optional, also werden sie nicht genutzt. Wenn joy start automatisch einen Job erstellt, gut. Wenn es Extra-Aufwand ist, wird es niemand tun. Das muss reibungslos sein.
+- author: horst.schwarz@joydev.com
+  date: 2026-03-25T17:43:35.992229825Z
+  text: 'Reframed per ADR-018: This epic now covers capability-based agent generation, not role-based agent definitions. joy ai setup generates tool-specific agent files from .joy/ai/capabilities/*.md YAML blocks. Children 0013-0016 rewritten to capability-based stories. Children 0018-001B generate from capability data.'

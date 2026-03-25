@@ -1,0 +1,12 @@
+id: JOY-0056
+title: Migrate AI doc scaffolds to MiniJinja templates
+type: rework
+status: new
+priority: low
+effort: 1
+created: 2026-03-25T18:42:42.934958150Z
+updated: 2026-03-25T18:42:49.119752758Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-25T18:42:49.119752445Z
+  text: Candidate from ADR-019. data/ai/templates/*.md (Vision, Architecture, Contributing scaffolds) could use project name as variable. Low priority -- currently static and functional.

@@ -1,10 +1,39 @@
 id: JOY-002A
 title: Capability model in joy-core
 type: story
-status: new
+status: closed
 priority: high
 parent: JOY-0029
 effort: 3
 created: 2026-03-22T16:18:39.086624871Z
-updated: 2026-03-22T16:18:39.086624871Z
+updated: 2026-03-25T18:52:17.146431899Z
 description: Define the 7 fixed capabilities (conceive, plan, design, implement, test, review, document) in joy-core. Add type-to-capability mapping (required/optional per item type). Capabilities are not configurable -- they are a fixed vocabulary shared across all Joy projects.
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-25T18:06:36.983164630Z
+  text: |-
+    Design decisions from planning session 2026-03-25:
+
+    1. Capabilities are always written into the item YAML at creation time. No implicit resolution from type defaults at runtime. This makes items self-describing and stable across Joy version changes.
+
+    2. Item templates live in data/items/*.yaml (embedded in the binary, same mechanism as other data/ files). Each template defines required and optional capabilities for that type. joy add reads the template and writes required capabilities into the new item.
+
+    3. The item has a flat capabilities list -- no required/optional split. Optional capabilities only exist in the template as suggestions for joy add (e.g. joy add story --capabilities plan,design,implement,review adds design beyond the default).
+
+    Example template (data/items/story.yaml):
+      type: story
+      capabilities:
+        required: [plan, implement, review]
+        optional: [design, test, document]
+
+    Example created item:
+      capabilities: [plan, implement, review]
+- author: horst.schwarz@joydev.com
+  date: 2026-03-25T18:10:09.784359136Z
+  text: 'Update: optional capabilities removed from templates. Templates only contain default capabilities as a flat list. No required/optional split. Users override with joy edit --capabilities when needed. Example template data/items/story.yaml: capabilities: [plan, implement, review]'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-25T18:13:19.128242108Z
+  text: 'Plan: Capability enum in model/, item templates in data/items/*.yaml, capabilities field on Item struct (optional, backfilled on next edit), joy add reads templates, joy edit --capabilities for overrides. Starting implementation.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-25T18:52:17.142646259Z
+  text: Done. Capability enum (7 values) in model/item.rs with Display, FromStr, serde. Item templates in data/items/ using MiniJinja with _base.yaml shared structure. templates.rs renders items from templates. capabilities field on Item (Vec<Capability>, backward-compatible via serde default). joy add uses templates, supports --capabilities override. joy edit supports --capabilities. ADR-019 for MiniJinja. All 110 tests pass, clippy clean.

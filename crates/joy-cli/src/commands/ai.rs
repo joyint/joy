@@ -26,6 +26,20 @@ const SKILL_TEMPLATE: &str = include_str!("../../../../data/ai/skills/joy/SKILL.
 const VISION_TEMPLATE: &str = include_str!("../../../../data/ai/templates/Vision.md");
 const ARCHITECTURE_TEMPLATE: &str = include_str!("../../../../data/ai/templates/Architecture.md");
 const CONTRIBUTING_TEMPLATE: &str = include_str!("../../../../data/ai/templates/CONTRIBUTING.md");
+const JOY_BLOCK_TEMPLATE: &str = include_str!("../../../../data/ai/joy-block.md");
+
+// Capability definitions
+const CAP_CONCEIVE: &str = include_str!("../../../../data/capabilities/conceive.md");
+const CAP_PLAN: &str = include_str!("../../../../data/capabilities/plan.md");
+const CAP_DESIGN: &str = include_str!("../../../../data/capabilities/design.md");
+const CAP_IMPLEMENT: &str = include_str!("../../../../data/capabilities/implement.md");
+const CAP_TEST: &str = include_str!("../../../../data/capabilities/test.md");
+const CAP_REVIEW: &str = include_str!("../../../../data/capabilities/review.md");
+const CAP_DOCUMENT: &str = include_str!("../../../../data/capabilities/document.md");
+const CAP_CREATE: &str = include_str!("../../../../data/capabilities/create.md");
+const CAP_ASSIGN: &str = include_str!("../../../../data/capabilities/assign.md");
+const CAP_MANAGE: &str = include_str!("../../../../data/capabilities/manage.md");
+const CAP_DELETE: &str = include_str!("../../../../data/capabilities/delete.md");
 
 const JOY_BLOCK_START: &str = "<!-- joy:start -->";
 const JOY_BLOCK_END: &str = "<!-- joy:end -->";
@@ -158,6 +172,62 @@ const AI_FILES: &[EmbeddedFile] = &[
     EmbeddedFile {
         content: SKILL_TEMPLATE,
         target: "ai/skills/joy/SKILL.md",
+        executable: false,
+    },
+    // Capability definitions
+    EmbeddedFile {
+        content: CAP_CONCEIVE,
+        target: "capabilities/conceive.md",
+        executable: false,
+    },
+    EmbeddedFile {
+        content: CAP_PLAN,
+        target: "capabilities/plan.md",
+        executable: false,
+    },
+    EmbeddedFile {
+        content: CAP_DESIGN,
+        target: "capabilities/design.md",
+        executable: false,
+    },
+    EmbeddedFile {
+        content: CAP_IMPLEMENT,
+        target: "capabilities/implement.md",
+        executable: false,
+    },
+    EmbeddedFile {
+        content: CAP_TEST,
+        target: "capabilities/test.md",
+        executable: false,
+    },
+    EmbeddedFile {
+        content: CAP_REVIEW,
+        target: "capabilities/review.md",
+        executable: false,
+    },
+    EmbeddedFile {
+        content: CAP_DOCUMENT,
+        target: "capabilities/document.md",
+        executable: false,
+    },
+    EmbeddedFile {
+        content: CAP_CREATE,
+        target: "capabilities/create.md",
+        executable: false,
+    },
+    EmbeddedFile {
+        content: CAP_ASSIGN,
+        target: "capabilities/assign.md",
+        executable: false,
+    },
+    EmbeddedFile {
+        content: CAP_MANAGE,
+        target: "capabilities/manage.md",
+        executable: false,
+    },
+    EmbeddedFile {
+        content: CAP_DELETE,
+        target: "capabilities/delete.md",
         executable: false,
     },
 ];
@@ -301,7 +371,7 @@ type ToolEntry = (
     &'static str,
     &'static str,
     fn(bool) -> bool,
-    fn(&Path) -> anyhow::Result<()>,
+    fn(&Path, &str) -> anyhow::Result<()>,
 );
 
 fn configure_tools(root: &Path) -> anyhow::Result<usize> {
@@ -331,16 +401,22 @@ fn configure_tools(root: &Path) -> anyhow::Result<usize> {
         ),
     ];
 
+    // Load project for member registration
+    let project_path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
+    let mut project: joy_core::model::Project = joy_core::store::read_yaml(&project_path)?;
+    let mut project_changed = false;
+
     for (name, id, detect, configure) in tools {
         if !detect(false) {
             continue;
         }
         tool_count += 1;
         let already = is_tool_configured(root, id);
+        let member_id = format!("ai:{id}@joy");
         if already {
             // Silently update files, then show single status line
             QUIET.store(true, std::sync::atomic::Ordering::Relaxed);
-            configure(root)?;
+            configure(root, &member_id)?;
             QUIET.store(false, std::sync::atomic::Ordering::Relaxed);
             println!(
                 "  {}{:<24} {}",
@@ -351,9 +427,51 @@ fn configure_tools(root: &Path) -> anyhow::Result<usize> {
         } else {
             print!("  {}{:<24} configure? [Y/n] ", color::warn_mark(), name);
             if confirm_default_yes()? {
-                configure(root)?;
+                configure(root, &member_id)?;
             }
         }
+
+        // Register as AI member if not already present
+        let member_id = format!("ai:{id}@joy");
+        if !project.members.contains_key(&member_id) {
+            project.members.insert(
+                member_id.clone(),
+                joy_core::model::project::Member {
+                    capabilities: joy_core::model::project::MemberCapabilities::Specific({
+                        use joy_core::model::item::Capability;
+                        use joy_core::model::project::CapabilityConfig;
+                        let mut map = std::collections::BTreeMap::new();
+                        // AI members get all work capabilities + create and assign,
+                        // but NOT manage or delete
+                        for cap in [
+                            Capability::Conceive,
+                            Capability::Plan,
+                            Capability::Design,
+                            Capability::Implement,
+                            Capability::Test,
+                            Capability::Review,
+                            Capability::Document,
+                            Capability::Create,
+                            Capability::Assign,
+                        ] {
+                            map.insert(cap, CapabilityConfig::default());
+                        }
+                        map
+                    }),
+                },
+            );
+            project_changed = true;
+            println!(
+                "  {}{:<24} {}",
+                color::check_mark(),
+                member_id,
+                color::success("registered as member")
+            );
+        }
+    }
+
+    if project_changed {
+        joy_core::store::write_yaml(&project_path, &project)?;
     }
 
     if tool_count == 0 {
@@ -377,18 +495,23 @@ fn configure_tools(root: &Path) -> anyhow::Result<usize> {
     Ok(tool_count)
 }
 
-fn configure_claude(root: &Path) -> anyhow::Result<()> {
+fn render_joy_block(member_id: &str, has_skill: bool) -> anyhow::Result<String> {
+    let mut env = minijinja::Environment::new();
+    env.add_template("block", JOY_BLOCK_TEMPLATE)?;
+    let tmpl = env.get_template("block")?;
+    let rendered = tmpl.render(minijinja::context! {
+        member_id => member_id,
+        has_skill => has_skill,
+    })?;
+    Ok(rendered.trim().to_string())
+}
+
+fn configure_claude(root: &Path, member_id: &str) -> anyhow::Result<()> {
     let claude_dir = root.join(".claude");
     fs::create_dir_all(&claude_dir)?;
 
     let claude_md = claude_dir.join("CLAUDE.md");
-    update_with_joy_block(
-        &claude_md,
-        "## Joy Integration\n\n\
-         This project uses [Joy](https://github.com/joyint/joy) for product management.\n\
-         Read [.joy/ai/instructions.md](../.joy/ai/instructions.md) for AI collaboration rules.\n\n\
-         Use the `/joy` skill for backlog work. Do not edit `.joy/items/*.yaml` files directly.",
-    )?;
+    update_with_joy_block(&claude_md, &render_joy_block(member_id, true)?)?;
     qprintln!("    {}.claude/CLAUDE.md", color::check_mark());
 
     let skill_dir = claude_dir.join("skills/joy");
@@ -439,7 +562,7 @@ fn update_claude_permissions(root: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn configure_qwen(root: &Path) -> anyhow::Result<()> {
+fn configure_qwen(root: &Path, member_id: &str) -> anyhow::Result<()> {
     let qwen_dir = root.join(".qwen");
     fs::create_dir_all(&qwen_dir)?;
 
@@ -453,13 +576,7 @@ fn configure_qwen(root: &Path) -> anyhow::Result<()> {
         }
     }
 
-    update_with_joy_block(
-        &qwen_md,
-        "## Joy Integration\n\n\
-         This project uses [Joy](https://github.com/joyint/joy) for product management.\n\
-         Read [.joy/ai/instructions.md](../.joy/ai/instructions.md) for AI collaboration rules.\n\n\
-         Use the `/joy` skill for backlog work. Do not edit `.joy/items/*.yaml` files directly.",
-    )?;
+    update_with_joy_block(&qwen_md, &render_joy_block(member_id, true)?)?;
     qprintln!("    {}.qwen/QWEN.md", color::check_mark());
 
     let skill_dir = qwen_dir.join("skills/joy");
@@ -509,7 +626,7 @@ fn update_qwen_permissions(root: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn configure_vibe(root: &Path) -> anyhow::Result<()> {
+fn configure_vibe(root: &Path, _member_id: &str) -> anyhow::Result<()> {
     let vibe_dir = root.join(".vibe");
     fs::create_dir_all(&vibe_dir)?;
 
@@ -525,18 +642,12 @@ fn configure_vibe(root: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn configure_copilot(root: &Path) -> anyhow::Result<()> {
+fn configure_copilot(root: &Path, member_id: &str) -> anyhow::Result<()> {
     let github_dir = root.join(".github");
     fs::create_dir_all(&github_dir)?;
 
     let instructions_md = github_dir.join("copilot-instructions.md");
-    update_with_joy_block(
-        &instructions_md,
-        "## Joy Integration\n\n\
-         This project uses [Joy](https://github.com/joyint/joy) for product management.\n\
-         Read [.joy/ai/instructions.md](../.joy/ai/instructions.md) for AI collaboration rules.\n\n\
-         Use Joy CLI commands for backlog work. Do not edit `.joy/items/*.yaml` files directly.",
-    )?;
+    update_with_joy_block(&instructions_md, &render_joy_block(member_id, false)?)?;
     qprintln!("    {}.github/copilot-instructions.md", color::check_mark());
     qprintln!(
         "    {}",

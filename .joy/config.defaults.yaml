@@ -1,9 +1,9 @@
-agents:
-  architect:
-    mode: pairing
+version: 1
 output:
   color: auto
   emoji: true
-  fortune: true
   short: false
-version: 1
+  fortune: true
+agents:
+  default:
+    mode: collaborative

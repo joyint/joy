@@ -1,0 +1,22 @@
+id: JOY-0052
+title: Update AI instructions and skills for capability model
+type: task
+status: closed
+priority: medium
+parent: JOY-0029
+effort: 3
+created: 2026-03-25T16:49:17.394927693Z
+updated: 2026-03-25T19:40:40.468825101Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-25T16:49:25.939245120Z
+  text: 'Update .joy/ai/ for the capability model: instructions.md (capabilities, modes, gate rules), agent definitions (capability assignments, mode limits), skills (new commands like joy assign --as, job lifecycle), setup templates (member/capability config questions in joy ai setup). Depends on all technical items being implemented first.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-25T17:43:46.688800846Z
+  text: 'Scope clarification per ADR-018: This task covers instructions.md and skills only, NOT agent definitions. Agent files are generated from capability data and covered by JOY-0012. This task updates: (1) instructions.md to reference .joy/ai/capabilities/, (2) skills to support new commands (joy assign --as, job lifecycle), (3) setup templates for member/capability config.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-25T19:38:28.131875956Z
+  text: 'Plan: (1) joy ai setup writes identity line into tool-specific files (CLAUDE.md, QWEN.md, etc.) in the Joy block. (2) instructions.md gets a section telling the AI to read capabilities from project.yaml under its member ID, and to verify the entry exists at session start. No MiniJinja needed -- identity is a simple string from the tool ID.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-25T19:40:40.464802986Z
+  text: 'Done. instructions.md updated with Identity/Capabilities section: AI reads member ID from tool config, verifies entry via joy project member show, respects capabilities and limits from project.yaml. Tool-specific files (CLAUDE.md, QWEN.md, copilot-instructions.md) now include ''Your Joy member ID: ai:tool@joy'' in the Joy block. Session-start routine includes member entry verification. All 110 tests pass, clippy clean.'

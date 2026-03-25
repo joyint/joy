@@ -1,0 +1,13 @@
+id: JOY-0014
+title: Agent generation for implement capability
+type: story
+status: new
+priority: medium
+parent: JOY-0012
+effort: 3
+created: 2026-03-20T21:02:44.741848356Z
+updated: 2026-03-25T17:43:26.704523729Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-25T17:43:16.519037981Z
+  text: 'Reframed per ADR-018: This story now covers generating an implement-capability agent file from .joy/ai/capabilities/implement.md. The agent file provides tool permissions (read, write, edit, bash) and the system prompt for implementation activities. No longer a role-based ''Implementer agent''.'

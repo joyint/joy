@@ -249,7 +249,7 @@ pub fn run(args: LsArgs) -> Result<()> {
             }
 
             if let Some(ref email) = my_email {
-                if item.assignee.as_deref() != Some(email.as_str()) {
+                if !item.assignees.iter().any(|a| a.member == *email) {
                     return false;
                 }
             }
@@ -371,7 +371,15 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
     };
     let w_assignee = if extras.assignee {
         col_raw("ASSIGNEE", &|i| {
-            i.assignee.as_deref().unwrap_or("-").to_string()
+            if i.assignees.is_empty() {
+                "-".to_string()
+            } else {
+                i.assignees
+                    .iter()
+                    .map(|a| a.member.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            }
         })
     } else {
         0
@@ -499,7 +507,16 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
             ));
         }
         if extras.assignee {
-            let assignee_val = item.assignee.as_deref().unwrap_or("-");
+            let assignee_val = if item.assignees.is_empty() {
+                "-".to_string()
+            } else {
+                item.assignees
+                    .iter()
+                    .map(|a| a.member.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            let assignee_val = assignee_val.as_str();
             line.push_str(&format!(
                 " {}",
                 pad_colored(assignee_val, assignee_val, w_assignee)

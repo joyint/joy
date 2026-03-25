@@ -1,0 +1,19 @@
+id: JOY-002D
+title: Register AI members in joy ai setup
+type: task
+status: closed
+priority: medium
+parent: JOY-0029
+deps:
+- JOY-002C
+effort: 2
+created: 2026-03-22T16:19:04.990409636Z
+updated: 2026-03-25T19:31:22.650053206Z
+description: When joy ai setup detects and configures an AI tool, it also adds the tool as an agent member in project.yaml under members.agents. Uses the tool identifier (e.g. claude@joy, qwen@joy). Detects the current model if possible and sets it as default-model. Does not overwrite existing agent config on re-run.
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-25T19:08:10.109957664Z
+  text: 'Updated per planning session: AI identity prefix is ai: (not agent:). Members dict is flat (not members.agents). Tool is registered as ai:claude@joy, ai:qwen@joy etc.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-25T19:31:22.646054243Z
+  text: 'Done. joy ai setup registers detected AI tools as members in project.yaml with ai:tool@joy format and capabilities: all. Does not overwrite existing member config on re-run. Tested with all 4 tools (claude, qwen, vibe, copilot).'

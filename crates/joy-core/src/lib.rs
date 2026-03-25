@@ -3,6 +3,7 @@
 
 #![deny(clippy::all)]
 
+pub mod capabilities;
 pub mod embedded;
 pub mod error;
 pub mod event_log;
@@ -13,4 +14,5 @@ pub mod milestones;
 pub mod model;
 pub mod releases;
 pub mod store;
+pub mod templates;
 pub mod vcs;

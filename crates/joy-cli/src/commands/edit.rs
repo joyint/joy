@@ -6,7 +6,7 @@ use chrono::Utc;
 use clap::Args;
 
 use joy_core::items;
-use joy_core::model::item::Priority;
+use joy_core::model::item::{Capability, Priority};
 use joy_core::store;
 
 #[derive(Args)]
@@ -47,13 +47,17 @@ pub struct EditArgs {
     #[arg(long)]
     deps: Option<String>,
 
-    /// Set assignee email (use "none" to remove)
+    /// Set assignee (use "none" to clear all). Use `joy assign` for capability-based assignments.
     #[arg(short = 'A', long)]
     assignee: Option<String>,
 
     /// Set version tag (use "none" to remove)
     #[arg(short = 'v', long)]
     version: Option<String>,
+
+    /// Capabilities (comma-separated, replaces existing)
+    #[arg(short = 'c', long)]
+    capabilities: Option<String>,
 }
 
 pub fn run(args: EditArgs) -> Result<()> {
@@ -158,12 +162,36 @@ pub fn run(args: EditArgs) -> Result<()> {
         changed = true;
     }
 
-    if let Some(ref assignee) = args.assignee {
-        item.assignee = if assignee == "none" {
-            None
+    if let Some(ref caps) = args.capabilities {
+        if caps.is_empty() {
+            item.capabilities = Vec::new();
         } else {
-            Some(assignee.clone())
-        };
+            item.capabilities = caps
+                .split(',')
+                .map(|s| {
+                    s.trim()
+                        .parse::<Capability>()
+                        .map_err(|e| anyhow::anyhow!("{}", e))
+                })
+                .collect::<Result<Vec<_>>>()?;
+        }
+        changed = true;
+    }
+
+    if let Some(ref assignee) = args.assignee {
+        joy_core::capabilities::warn_unless_capable(
+            &root,
+            joy_core::model::item::Capability::Assign,
+        );
+        if assignee == "none" {
+            item.assignees.clear();
+        } else {
+            // Simple single-assignee via edit: replaces all assignees
+            item.assignees = vec![joy_core::model::item::Assignee {
+                member: assignee.clone(),
+                capabilities: Vec::new(),
+            }];
+        }
         changed = true;
     }
 

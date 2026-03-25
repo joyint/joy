@@ -67,7 +67,7 @@ A user's identity in Joy is their **e-mail address**. This is the stable identif
 
 Locally, the e-mail is read from `git config user.email` -- no separate login required for CLI usage. On the server, users authenticate via OAuth (GitHub, GitLab, Gitea, or other supported providers). The server matches the OAuth-provided e-mail against the project's role definitions.
 
-AI agents use a synthetic identity with the `agent:` prefix (e.g. `agent:implementer@joy`). This distinguishes agent actions from human actions in the change log and enables `allow_ai` rules in status transitions.
+AI members use a synthetic identity with the `ai:` prefix (e.g. `ai:claude@joy`). This distinguishes AI actions from human actions in the change log and enables `allow_ai` rules in status transitions.
 
 ### Items
 
@@ -81,7 +81,8 @@ type: story           # epic | story | task | bug | rework | decision | idea
 status: new           # new | open | in-progress | review | closed | deferred
 priority: high        # low | medium | high | critical | extreme
 parent: JOY-0001       # parent item (null for top-level items)
-assignee: null        # e-mail address or agent:role@joy
+assignee: null        # e-mail address or ai:tool@joy
+capabilities: [plan, implement, review]   # from type defaults, editable per item
 deps:
   - JOY-0017           # must be completed before this item
   - JOY-0026
@@ -368,41 +369,53 @@ Supported tools for tool mode:
 
 No own agent runtime, no API calls, no cost tracking needed. The AI tool handles everything -- Joy just provides the product management interface.
 
+### Capability files
+
+Joy ships embedded capability files deployed to `.joy/ai/capabilities/` via `joy ai setup`. Each file describes one of Joy's seven fixed capabilities (conceive, plan, design, implement, test, review, document) with human-readable descriptions, a constraints table, and a machine-parseable YAML block defining permissions and applicable tools.
+
+For AI tools that support agent definitions (Claude Code, GitHub Copilot, Mistral Vibe), `joy ai setup` generates tool-specific agent files from the capability YAML blocks. Agent files use the actor-form of the capability name (review -> reviewer, implement -> implementer). They are generated artifacts, not manually maintained. See [ADR-018](https://github.com/joyint/project/blob/main/docs/dev/adr/ADR-018-capabilities-over-roles.md) for the full rationale.
+
 ### Interaction modes
 
-AI agents in Joy operate in one of two interaction modes, configurable per agent role in the project config:
+AI agents in Joy operate at one of five interaction levels, configurable per member per capability in `project.yaml`:
 
-**Interactive (default for tool mode):** The AI analyzes context, proposes options, and waits for human confirmation before acting. Best for decisions with lasting impact -- architecture, planning, vision, backlog structuring, reviews. The human steers, the AI accelerates.
+| Level | Behavior | Example capabilities |
+|-------|----------|---------------------|
+| autonomous | Work independently, only governance gates as checkpoints | -- |
+| supervised | Work independently, confirm before irreversible actions | test, implement (routine) |
+| collaborative | Propose approach, proceed after confirmation | implement |
+| interactive | Present options with rationale, wait for decision | review, plan |
+| pairing | Question-by-question, co-creation mode | conceive, design |
 
-**Autonomous (default for agent mode):** The AI executes independently within predefined rules. Governance gates (`allow_ai`, `requires_role`, budget limits) serve as control points instead of continuous dialog. Best for repetitive tasks -- implementation, testing, estimation.
+The effective mode for a specific job is determined by three layers:
 
-The mode is configured per agent role in `.joy/config.yaml` using named levels:
-
-| Level | Behavior | Example roles |
-|-------|----------|---------------|
-| autonomous | Work independently, only governance gates as checkpoints | - |
-| supervised | Work independently, confirm before irreversible actions | tester, estimator |
-| collaborative | Propose approach, proceed after confirmation | implementer |
-| interactive | Present options with rationale, wait for decision | reviewer, planner |
-| pairing | Question-by-question, co-creation mode | architect, product planner |
+1. **Joy defaults** (`config.defaults.yaml`): sensible starting points per capability
+2. **Project max** (`project.yaml`): upper bound per member per capability -- cannot be exceeded
+3. **Item override**: can lower the level for a specific item, but never raise it above the project max
 
 ```yaml
-agents:
-  architect:
-    mode: pairing        # co-creation, every decision discussed
-  reviewer:
-    mode: interactive    # proposes, waits for decision
-  planner:
-    mode: interactive
-  implementer:
-    mode: collaborative  # proposes approach, then executes
-  tester:
-    mode: supervised     # autonomous, confirms destructive actions
-  estimator:
-    mode: supervised
+# .joy/project.yaml (members section)
+members:
+  horst.schwarz@joydev.com:
+    capabilities: all
+
+  ai:claude@joy:
+    capabilities:
+      conceive:
+        max-mode: pairing
+        max-cost-per-job: 10.00
+      plan:
+        max-mode: interactive
+        max-cost-per-job: 5.00
+      implement:
+        max-mode: collaborative
+        max-cost-per-job: 3.00
+      review:
+        max-mode: interactive
+        max-cost-per-job: 5.00
 ```
 
-Teams adjust levels per role as needed. A solo founder might run the architect at `pairing` and the implementer at `supervised`. A mature team with established conventions might lower everything by one level.
+Teams adjust levels per member and capability as needed. A solo founder uses `capabilities: all` with no limits. A team restricts AI agents to specific capabilities with cost budgets. The same capability can have different modes for different members.
 
 ### Agent mode (MS-05): Joy dispatches to AI
 
@@ -469,7 +482,7 @@ Every AI job logs its cost:
 # .joy/jobs/JOY-JOB-000F.yaml
 id: JOY-JOB-000F
 item: JOY-002A
-type: implement
+capability: implement
 tool: claude-code
 status: completed
 started: 2026-03-09T14:00:00Z
@@ -506,7 +519,7 @@ sequenceDiagram
 ```
 
 - **Human dispatch:** Joy status gates create Jot tasks for reviewers, testers, or approvers.
-- **AI dispatch:** Joy creates Jot tasks for AI agents (`agent:implementer@joy`). The agent picks up todos via `jot ls --mine`, executes work, and marks them done.
+- **AI dispatch:** Joy creates Jot tasks for AI members (`ai:implementer@joy`). The AI picks up todos via `jot ls --mine`, executes work, and marks them done.
 - **Callback:** When a dispatched Jot task is completed, joyint.com signals back to the Joy project that the gate is satisfied.
 
 This keeps Joy focused on orchestration and Jot focused on execution. The `source` field and the dispatch service on joyint.com are the only coupling points.

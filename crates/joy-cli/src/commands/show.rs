@@ -42,8 +42,20 @@ pub fn run(args: ShowArgs) -> Result<()> {
     if let Some(ref parent) = item.parent {
         println!("{} {}", color::label("Parent:  "), color::id(parent));
     }
-    if let Some(ref assignee) = item.assignee {
-        println!("{} {}", color::label("Assignee:"), assignee);
+    if !item.assignees.is_empty() {
+        if item.assignees.len() == 1 && item.assignees[0].capabilities.is_empty() {
+            println!("{} {}", color::label("Assignee:"), item.assignees[0].member);
+        } else {
+            println!("{}:", color::label("Assignees"));
+            for a in &item.assignees {
+                if a.capabilities.is_empty() {
+                    println!("  {}", a.member);
+                } else {
+                    let caps: Vec<String> = a.capabilities.iter().map(|c| c.to_string()).collect();
+                    println!("  {}  {}", a.member, caps.join(", "));
+                }
+            }
+        }
     }
     if let Some(ref milestone) = item.milestone {
         println!("{} {}", color::label("Milestone:"), color::id(milestone));
@@ -53,6 +65,10 @@ pub fn run(args: ShowArgs) -> Result<()> {
     }
     if let Some(ref version) = item.version {
         println!("{} {}", color::label("Version: "), version);
+    }
+    if !item.capabilities.is_empty() {
+        let caps: Vec<String> = item.capabilities.iter().map(|c| c.to_string()).collect();
+        println!("{} {}", color::label("Capabilities:"), caps.join(", "));
     }
 
     if !item.deps.is_empty() {
