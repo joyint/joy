@@ -86,3 +86,4 @@
 2026-03-25T21:46:53.502Z JOY-005B item.status_changed "new -> in-progress" [horst.schwarz@joydev.com]
 2026-03-25T21:49:15.438Z JOY-005B comment.added "Done. joy ai reset now removes the ai:tool@joy member from project.yaml when removing a tool config. Also cleaned up incorrectly added non-Claude members from joy, jot, and judge." [horst.schwarz@joydev.com]
 2026-03-25T21:49:15.442Z JOY-005B item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
+2026-03-25T22:35:40.403Z v0.3.5 release.created [horst.schwarz@joydev.com]
