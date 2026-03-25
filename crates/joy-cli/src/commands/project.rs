@@ -317,7 +317,10 @@ fn print_members_table(members: &std::collections::BTreeMap<String, Member>) {
 
     if table_width <= term_width {
         // Wide: capability matrix
-        print!("  {}", color::inactive(&format!("{:<w$}", "Member", w = w_member)));
+        print!(
+            "  {}",
+            color::inactive(&format!("{:<w$}", "Member", w = w_member))
+        );
         for (hdr, _) in cap_headers {
             print!(" {}", color::inactive(&format!("{:<3}", hdr)));
         }
