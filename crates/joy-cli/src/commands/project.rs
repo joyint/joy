@@ -5,7 +5,7 @@ use anyhow::{bail, Result};
 use clap::Args;
 
 use joy_core::model::item::Capability;
-use joy_core::model::project::{is_ai_member, CapabilityConfig, Member, MemberCapabilities};
+use joy_core::model::project::{CapabilityConfig, Member, MemberCapabilities};
 use joy_core::model::Project;
 use joy_core::store;
 
@@ -207,17 +207,7 @@ fn show_project(project: &Project) {
     );
     if !project.members.is_empty() {
         println!("\n{}:", color::label("Members"));
-        for (id, member) in &project.members {
-            let kind = if is_ai_member(id) { "ai" } else { "human" };
-            let caps = match &member.capabilities {
-                MemberCapabilities::All => "all".to_string(),
-                MemberCapabilities::Specific(map) => {
-                    let names: Vec<String> = map.keys().map(|c| c.to_string()).collect();
-                    names.join(", ")
-                }
-            };
-            println!("  {} ({}) -- {}", color::id(id), kind, caps);
-        }
+        print_members_table(&project.members);
     }
     println!("{}", color::label(&"-".repeat(color::terminal_width())));
 }
@@ -234,17 +224,7 @@ fn run_member(
             if project.members.is_empty() {
                 println!("No members configured.");
             } else {
-                for (id, member) in &project.members {
-                    let kind = if is_ai_member(id) { "ai" } else { "human" };
-                    let caps = match &member.capabilities {
-                        MemberCapabilities::All => "all".to_string(),
-                        MemberCapabilities::Specific(map) => {
-                            let names: Vec<String> = map.keys().map(|c| c.to_string()).collect();
-                            names.join(", ")
-                        }
-                    };
-                    println!("  {} ({}) -- {}", color::id(id), kind, caps);
-                }
+                print_members_table(&project.members);
             }
         }
         Some(MemberCommand::Show(a)) => {
@@ -252,8 +232,7 @@ fn run_member(
                 .members
                 .get(&a.id)
                 .ok_or_else(|| anyhow::anyhow!("member not found: {}", a.id))?;
-            let kind = if is_ai_member(&a.id) { "ai" } else { "human" };
-            println!("{} ({})", color::id(&a.id), kind);
+            println!("{}", color::id(&a.id));
             match &member.capabilities {
                 MemberCapabilities::All => {
                     println!("  Capabilities: all");
@@ -312,6 +291,66 @@ fn run_member(
         }
     }
     Ok(())
+}
+
+fn print_members_table(members: &std::collections::BTreeMap<String, Member>) {
+    use joy_core::model::item::Capability;
+
+    let cap_headers: &[(&str, Capability)] = &[
+        ("con", Capability::Conceive),
+        ("pln", Capability::Plan),
+        ("des", Capability::Design),
+        ("imp", Capability::Implement),
+        ("tst", Capability::Test),
+        ("rev", Capability::Review),
+        ("doc", Capability::Document),
+        ("crt", Capability::Create),
+        ("asg", Capability::Assign),
+        ("mng", Capability::Manage),
+        ("del", Capability::Delete),
+    ];
+
+    // Table needs: member column + 4 chars per capability column (3 + space) + padding
+    let w_member = members.keys().map(|k| k.len()).max().unwrap_or(6).max(6);
+    let table_width = 2 + w_member + 1 + cap_headers.len() * 4;
+    let term_width = color::terminal_width();
+
+    if table_width <= term_width {
+        // Wide: capability matrix
+        print!("  {}", color::inactive(&format!("{:<w$}", "Member", w = w_member)));
+        for (hdr, _) in cap_headers {
+            print!(" {}", color::inactive(&format!("{:<3}", hdr)));
+        }
+        println!();
+
+        for (id, member) in members {
+            print!("  {:<w$}", id, w = w_member);
+            for (_, cap) in cap_headers {
+                let has = match &member.capabilities {
+                    MemberCapabilities::All => true,
+                    MemberCapabilities::Specific(map) => map.contains_key(cap),
+                };
+                if has {
+                    print!("  x ");
+                } else {
+                    print!("    ");
+                }
+            }
+            println!();
+        }
+    } else {
+        // Narrow: comma-separated
+        for (id, member) in members {
+            let caps = match &member.capabilities {
+                MemberCapabilities::All => "all".to_string(),
+                MemberCapabilities::Specific(map) => {
+                    let names: Vec<String> = map.keys().map(|c| c.to_string()).collect();
+                    names.join(", ")
+                }
+            };
+            println!("  {}  {}", id, caps);
+        }
+    }
 }
 
 fn complete_project_key(
