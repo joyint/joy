@@ -1,0 +1,13 @@
+id: JOY-0051
+title: Update human-facing docs for capability model
+type: task
+status: new
+priority: medium
+parent: JOY-0029
+effort: 3
+created: 2026-03-25T16:49:04.757869544Z
+updated: 2026-03-25T16:49:09.470421031Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-25T16:49:09.470420305Z
+  text: 'Update Tutorial and CONTRIBUTING.md for the new capability model: capabilities, members, modes, gates, jobs. Cover the full range from solo (no gates) to enterprise (full enforcement). Depends on all technical items being implemented first.'

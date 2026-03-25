@@ -1,0 +1,13 @@
+id: JOY-0016
+title: Agent generation for remaining capabilities
+type: story
+status: new
+priority: medium
+parent: JOY-0012
+effort: 3
+created: 2026-03-20T21:02:44.747097375Z
+updated: 2026-03-25T17:43:27.782875188Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-25T17:43:19.664003248Z
+  text: 'Reframed per ADR-018: This story now covers generating capability agent files for conceive, design, test, and document from their respective .joy/ai/capabilities/ files. Grouped here because these are less complex than plan/implement/review. No longer a role-based ''Planner agent''.'

@@ -5,8 +5,9 @@ use anyhow::{bail, Result};
 use clap::Args;
 
 use joy_core::items;
-use joy_core::model::item::{Item, ItemType, Priority, Status};
+use joy_core::model::item::{Capability, ItemType, Priority, Status};
 use joy_core::store;
+use joy_core::templates;
 
 #[derive(Args)]
 #[command(
@@ -73,6 +74,10 @@ pub struct AddArgs {
     /// Version tag (e.g. v0.5.0)
     #[arg(short = 'v', long)]
     version: Option<String>,
+
+    /// Capabilities (comma-separated, overrides type defaults)
+    #[arg(short = 'c', long)]
+    capabilities: Option<String>,
 }
 
 pub fn run(args: AddArgs) -> Result<()> {
@@ -92,6 +97,8 @@ pub fn run(args: AddArgs) -> Result<()> {
 
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+
+    joy_core::capabilities::warn_unless_capable(&root, Capability::Create);
 
     let type_str = args
         .item_type
@@ -125,7 +132,9 @@ pub fn run(args: AddArgs) -> Result<()> {
         }
     };
 
-    let mut item = Item::new(id.clone(), title.clone(), item_type, priority);
+    let mut item = templates::render_item(&item_type, &id, &title)?;
+
+    item.priority = priority;
     item.parent = args.parent;
     item.description = args.description;
     item.milestone = args.milestone;
@@ -137,6 +146,17 @@ pub fn run(args: AddArgs) -> Result<()> {
         .deps
         .map(|d| d.split(',').map(|s| s.trim().to_string()).collect())
         .unwrap_or_default();
+
+    if let Some(ref caps) = args.capabilities {
+        item.capabilities = caps
+            .split(',')
+            .map(|s| {
+                s.trim()
+                    .parse::<Capability>()
+                    .map_err(|e| anyhow::anyhow!("{}", e))
+            })
+            .collect::<Result<Vec<_>>>()?;
+    }
 
     item.version = args.version;
     if let Some(e) = args.effort {

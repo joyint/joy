@@ -14,14 +14,16 @@ pub struct Item {
     pub priority: Priority,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub assignee: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub assignees: Vec<Assignee>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub deps: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub milestone: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub capabilities: Vec<Capability>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort: Option<u8>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -44,6 +46,49 @@ pub enum ItemType {
     Rework,
     Decision,
     Idea,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Capability {
+    // Work capabilities
+    Conceive,
+    Plan,
+    Design,
+    Implement,
+    Test,
+    Review,
+    Document,
+    // Management capabilities
+    Create,
+    Assign,
+    Manage,
+    Delete,
+}
+
+impl Capability {
+    /// All capabilities in canonical order.
+    pub const ALL: &[Capability] = &[
+        Capability::Conceive,
+        Capability::Plan,
+        Capability::Design,
+        Capability::Implement,
+        Capability::Test,
+        Capability::Review,
+        Capability::Document,
+        Capability::Create,
+        Capability::Assign,
+        Capability::Manage,
+        Capability::Delete,
+    ];
+
+    /// Whether this is a management capability (controls CLI permissions).
+    pub fn is_management(&self) -> bool {
+        matches!(
+            self,
+            Capability::Create | Capability::Assign | Capability::Manage | Capability::Delete
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -69,6 +114,13 @@ pub enum Priority {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Assignee {
+    pub member: String,
+    #[serde(rename = "as", default, skip_serializing_if = "Vec::is_empty")]
+    pub capabilities: Vec<Capability>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Comment {
     pub author: String,
     pub date: DateTime<Utc>,
@@ -76,7 +128,13 @@ pub struct Comment {
 }
 
 impl Item {
-    pub fn new(id: String, title: String, item_type: ItemType, priority: Priority) -> Self {
+    pub fn new(
+        id: String,
+        title: String,
+        item_type: ItemType,
+        priority: Priority,
+        capabilities: Vec<Capability>,
+    ) -> Self {
         let now = Utc::now();
         Self {
             id,
@@ -85,10 +143,11 @@ impl Item {
             status: Status::New,
             priority,
             parent: None,
-            assignee: None,
+            assignees: Vec::new(),
             deps: Vec::new(),
             milestone: None,
             tags: Vec::new(),
+            capabilities,
             effort: None,
             version: None,
             created: now,
@@ -111,6 +170,44 @@ impl Item {
         items
             .iter()
             .any(|dep| self.deps.contains(&dep.id) && dep.is_active())
+    }
+}
+
+impl std::fmt::Display for Capability {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Capability::Conceive => write!(f, "conceive"),
+            Capability::Plan => write!(f, "plan"),
+            Capability::Design => write!(f, "design"),
+            Capability::Implement => write!(f, "implement"),
+            Capability::Test => write!(f, "test"),
+            Capability::Review => write!(f, "review"),
+            Capability::Document => write!(f, "document"),
+            Capability::Create => write!(f, "create"),
+            Capability::Assign => write!(f, "assign"),
+            Capability::Manage => write!(f, "manage"),
+            Capability::Delete => write!(f, "delete"),
+        }
+    }
+}
+
+impl std::str::FromStr for Capability {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "conceive" | "con" => Ok(Capability::Conceive),
+            "plan" | "pln" => Ok(Capability::Plan),
+            "design" | "des" => Ok(Capability::Design),
+            "implement" | "imp" => Ok(Capability::Implement),
+            "test" | "tst" => Ok(Capability::Test),
+            "review" | "rev" => Ok(Capability::Review),
+            "document" | "doc" => Ok(Capability::Document),
+            "create" | "crt" => Ok(Capability::Create),
+            "assign" | "asg" => Ok(Capability::Assign),
+            "manage" | "mng" => Ok(Capability::Manage),
+            "delete" | "del" => Ok(Capability::Delete),
+            _ => Err(format!("unknown capability: {s}")),
+        }
     }
 }
 
@@ -253,6 +350,7 @@ mod tests {
             "Login page".into(),
             ItemType::Story,
             Priority::High,
+            vec![Capability::Plan, Capability::Implement, Capability::Review],
         );
         item.parent = Some("EP-0001".into());
         item.description = Some("Implement the login page.".into());
@@ -272,6 +370,7 @@ mod tests {
             "Payment Integration".into(),
             ItemType::Story,
             Priority::High,
+            vec![Capability::Plan, Capability::Implement, Capability::Review],
         );
         item.created = fixed;
         item.updated = fixed;
@@ -318,6 +417,7 @@ mod tests {
             "Test".into(),
             ItemType::Task,
             Priority::Low,
+            vec![Capability::Implement],
         );
         assert!(item.is_active());
         item.status = Status::Closed;

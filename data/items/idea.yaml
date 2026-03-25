@@ -1,0 +1,3 @@
+{% set type = "idea" %}
+{% set capabilities = "[]" %}
+{% include "_base.yaml" %}

@@ -15,6 +15,10 @@ milestone: MS-01
 tags:
 - backend
 - payments
+capabilities:
+- plan
+- implement
+- review
 created: 2026-03-09T10:00:00Z
 updated: 2026-03-09T10:00:00Z
 description: |

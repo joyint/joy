@@ -9,5 +9,9 @@ deps:
 - JOY-002A
 effort: 5
 created: 2026-03-22T16:19:52.733952156Z
-updated: 2026-03-22T16:19:55.675535101Z
+updated: 2026-03-25T18:06:43.119306258Z
 description: 'Job data model in joy-core, stored in .joy/jobs/ as YAML. A Job tracks: assignee (human: or agent:), item, capability, started/completed timestamps, and for agents: tokens_in, tokens_out, cost, currency. joy start auto-creates a job for the current user. joy close completes the job. Multiple jobs per item (one per capability, or multiple iterations). Jobs are the auditable record of who did what, when, and at what cost.'
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-25T18:06:43.119305452Z
+  text: 'Confirmed in planning session 2026-03-25: Jobs are separate files in .joy/jobs/, never embedded in item YAML. joy show displays them in a visually separated footer section. This keeps one source of truth per fact: item data in the item file, job data in job files.'

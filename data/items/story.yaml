@@ -1,0 +1,3 @@
+{% set type = "story" %}
+{% set capabilities = "[plan, implement, review]" %}
+{% include "_base.yaml" %}

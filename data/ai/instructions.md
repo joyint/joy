@@ -26,8 +26,50 @@ Interaction levels:
 The user can set the default level with:
 `joy config set agents.default.mode interactive`
 
-Per-role levels (e.g. `agents.architect.mode`) override the default
-when the AI is acting in that role.
+Per-capability levels in `project.yaml` override the default when
+working on a specific capability.
+
+## Identity and capabilities
+
+Your member ID is defined in the tool-specific configuration file
+(e.g. CLAUDE.md, QWEN.md). At the start of each session:
+
+1. Read your member ID from the tool configuration.
+2. Run `joy project member show <YOUR-ID>` to verify your member entry
+   exists and to read your current capabilities and limits.
+3. If your member entry does not exist, tell the user and suggest
+   `joy ai setup` or `joy project member add <YOUR-ID>`.
+
+Respect the capabilities and limits configured for your member ID:
+- Only work on capabilities assigned to you. If asked to do something
+  outside your capabilities, inform the user.
+- Respect `max-mode` limits. If your max-mode for a capability is
+  `collaborative`, do not work autonomously on that capability even
+  if the session mode is set lower.
+- Respect `max-cost-per-job` limits when they apply.
+
+If your member has `capabilities: all`, you have no restrictions.
+
+**Capability warnings are mandatory stops.** If a Joy command prints a
+capability warning (e.g. "does not have 'create' capability"), you MUST
+stop and ask the user whether to proceed. Never ignore or suppress
+capability warnings. They indicate that the action exceeds your
+configured permissions and may be rejected by Joy Judge.
+
+## Capabilities
+
+Joy defines seven fixed capabilities that describe activities in the
+development lifecycle: `conceive`, `plan`, `design`, `implement`,
+`test`, `review`, `document`.
+
+Each item has a list of capabilities (visible via `joy show <ID>`).
+When working on an item, identify which capability you are exercising
+and act within its boundaries.
+
+Capability-specific rules are defined in `.joy/capabilities/`. Read them
+to understand the permissions and constraints for each capability.
+Management capabilities (`create`, `assign`, `manage`, `delete`) control
+which Joy CLI commands you may use.
 
 ## Core commands
 

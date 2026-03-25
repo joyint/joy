@@ -1,9 +1,11 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use clap::Args;
 
+use joy_core::model::item::Capability;
+use joy_core::model::project::{is_ai_member, CapabilityConfig, Member, MemberCapabilities};
 use joy_core::model::Project;
 use joy_core::store;
 
@@ -35,6 +37,8 @@ enum ProjectCommand {
     Get(GetArgs),
     /// Set a project value by key (name, description, language)
     Set(SetArgs),
+    /// Manage project members
+    Member(MemberArgs),
 }
 
 #[derive(clap::Args)]
@@ -53,6 +57,44 @@ struct SetArgs {
     value: String,
 }
 
+#[derive(clap::Args)]
+struct MemberArgs {
+    #[command(subcommand)]
+    command: Option<MemberCommand>,
+}
+
+#[derive(clap::Subcommand)]
+enum MemberCommand {
+    /// Show member details
+    Show(MemberShowArgs),
+    /// Add a project member
+    Add(MemberAddArgs),
+    /// Remove a project member
+    Rm(MemberRmArgs),
+}
+
+#[derive(clap::Args)]
+struct MemberShowArgs {
+    /// Member ID (email or ai:tool@joy)
+    id: String,
+}
+
+#[derive(clap::Args)]
+struct MemberAddArgs {
+    /// Member ID (email or ai:tool@joy)
+    id: String,
+
+    /// Capabilities (comma-separated, default: all)
+    #[arg(short = 'c', long)]
+    capabilities: Option<String>,
+}
+
+#[derive(clap::Args)]
+struct MemberRmArgs {
+    /// Member ID (email or ai:tool@joy)
+    id: String,
+}
+
 pub fn run(args: ProjectArgs) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
@@ -69,6 +111,9 @@ pub fn run(args: ProjectArgs) -> Result<()> {
             store::write_yaml(&project_path, &project)?;
             println!("{} = {}", a.key, a.value);
             return Ok(());
+        }
+        Some(ProjectCommand::Member(a)) => {
+            return run_member(a, &mut project, &project_path, &root);
         }
         None => {}
     }
@@ -160,7 +205,113 @@ fn show_project(project: &Project) {
             w
         )
     );
+    if !project.members.is_empty() {
+        println!("\n{}:", color::label("Members"));
+        for (id, member) in &project.members {
+            let kind = if is_ai_member(id) { "ai" } else { "human" };
+            let caps = match &member.capabilities {
+                MemberCapabilities::All => "all".to_string(),
+                MemberCapabilities::Specific(map) => {
+                    let names: Vec<String> = map.keys().map(|c| c.to_string()).collect();
+                    names.join(", ")
+                }
+            };
+            println!("  {} ({}) -- {}", color::id(id), kind, caps);
+        }
+    }
     println!("{}", color::label(&"-".repeat(color::terminal_width())));
+}
+
+fn run_member(
+    args: MemberArgs,
+    project: &mut Project,
+    project_path: &std::path::Path,
+    root: &std::path::Path,
+) -> Result<()> {
+    match args.command {
+        None => {
+            // List members
+            if project.members.is_empty() {
+                println!("No members configured.");
+            } else {
+                for (id, member) in &project.members {
+                    let kind = if is_ai_member(id) { "ai" } else { "human" };
+                    let caps = match &member.capabilities {
+                        MemberCapabilities::All => "all".to_string(),
+                        MemberCapabilities::Specific(map) => {
+                            let names: Vec<String> = map.keys().map(|c| c.to_string()).collect();
+                            names.join(", ")
+                        }
+                    };
+                    println!("  {} ({}) -- {}", color::id(id), kind, caps);
+                }
+            }
+        }
+        Some(MemberCommand::Show(a)) => {
+            let member = project
+                .members
+                .get(&a.id)
+                .ok_or_else(|| anyhow::anyhow!("member not found: {}", a.id))?;
+            let kind = if is_ai_member(&a.id) { "ai" } else { "human" };
+            println!("{} ({})", color::id(&a.id), kind);
+            match &member.capabilities {
+                MemberCapabilities::All => {
+                    println!("  Capabilities: all");
+                }
+                MemberCapabilities::Specific(map) => {
+                    println!("  Capabilities:");
+                    for (cap, config) in map {
+                        let mut details = Vec::new();
+                        if let Some(ref mode) = config.max_mode {
+                            details.push(format!("max-mode: {mode}"));
+                        }
+                        if let Some(cost) = config.max_cost_per_job {
+                            details.push(format!("max-cost-per-job: {cost:.2}"));
+                        }
+                        if details.is_empty() {
+                            println!("    {cap}");
+                        } else {
+                            println!("    {} ({})", cap, details.join(", "));
+                        }
+                    }
+                }
+            }
+        }
+        Some(MemberCommand::Add(a)) => {
+            joy_core::capabilities::warn_unless_capable(root, Capability::Manage);
+            if project.members.contains_key(&a.id) {
+                bail!("member {} already exists", a.id);
+            }
+            let capabilities = match a.capabilities {
+                None => MemberCapabilities::All,
+                Some(ref caps_str) => {
+                    let mut map = std::collections::BTreeMap::new();
+                    for s in caps_str.split(',') {
+                        let cap: Capability = s
+                            .trim()
+                            .parse()
+                            .map_err(|e: String| anyhow::anyhow!("{}", e))?;
+                        map.insert(cap, CapabilityConfig::default());
+                    }
+                    MemberCapabilities::Specific(map)
+                }
+            };
+            project
+                .members
+                .insert(a.id.clone(), Member { capabilities });
+            store::write_yaml(project_path, project)?;
+            println!("Added member {}", a.id);
+        }
+        Some(MemberCommand::Rm(a)) => {
+            joy_core::capabilities::warn_unless_capable(root, Capability::Manage);
+            if project.members.remove(&a.id).is_none() {
+                bail!("member not found: {}", a.id);
+            }
+            store::write_yaml(project_path, project)?;
+            println!("Removed member {}", a.id);
+        }
+    }
+    Ok(())
 }
 
 fn complete_project_key(

@@ -8,6 +8,8 @@ output:
   emoji: true
   short: false
   fortune: true
+workflow:
+  auto-assign: true
 agents:
   default:
     mode: collaborative

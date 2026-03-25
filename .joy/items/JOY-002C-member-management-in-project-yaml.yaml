@@ -1,12 +1,22 @@
 id: JOY-002C
 title: Member management in project.yaml
 type: story
-status: new
+status: closed
 priority: high
 parent: JOY-0029
 deps:
 - JOY-002A
 effort: 5
 created: 2026-03-22T16:18:55.855236465Z
-updated: 2026-03-22T16:18:58.804529326Z
+updated: 2026-03-25T19:24:39.708934199Z
 description: 'Add members section to project.yaml schema with two blocks: humans (email + capabilities list or ''all'') and agents (tool ID + default-model + per-capability config with model, max-interaction-level, max-cost-per-job). Addressing format: human:email and agent:tool@joy everywhere (project.yaml, assignments, logs, jobs). joy init registers the project creator as human member with capabilities: all.'
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-25T19:07:55.926682145Z
+  text: 'Updated per planning session: flat members dict (not split humans/agents). AI identity prefix changed from agent: to ai: (see ADR-018 discussion). No human: prefix needed -- email is unique. Format: email for humans, ai:tool@joy for AI members.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-25T19:08:50.062421344Z
+  text: 'Plan: Add Member struct and MemberCapabilities enum to model/project.rs. Members field on Project struct (HashMap<String, Member>). CapabilityConfig with optional max_mode and max_cost_per_job. joy init registers creator with capabilities: all. Parsing ai: prefix to detect AI members.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-25T19:24:39.704996456Z
+  text: 'Done. Member struct with MemberCapabilities enum (All | Specific map) in model/project.rs. CapabilityConfig with optional max_mode and max_cost_per_job. Members field on Project (BTreeMap). AI identity prefix changed from agent: to ai:. joy init registers creator with capabilities: all. CLI: joy project member (list), joy project member show/add/rm. joy project displays members overview. Custom serde for MemberCapabilities handles ''all'' string and capability maps. All 110 tests pass, clippy clean.'

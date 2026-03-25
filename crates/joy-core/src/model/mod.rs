@@ -8,7 +8,7 @@ pub mod project;
 pub mod release;
 
 pub use config::{ColorMode, Config, InteractionLevel, OutputConfig};
-pub use item::{Comment, Item, ItemType, Priority, Status};
+pub use item::{Assignee, Capability, Comment, Item, ItemType, Priority, Status};
 pub use milestone::Milestone;
-pub use project::Project;
+pub use project::{CapabilityConfig, Member, MemberCapabilities, Project};
 pub use release::{Bump, Release};

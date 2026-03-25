@@ -1,8 +1,13 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
+use std::collections::BTreeMap;
+
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+use super::config::InteractionLevel;
+use super::item::Capability;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Project {
@@ -15,7 +20,74 @@ pub struct Project {
     pub language: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub forge: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub members: BTreeMap<String, Member>,
     pub created: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Member {
+    pub capabilities: MemberCapabilities,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum MemberCapabilities {
+    All,
+    Specific(BTreeMap<Capability, CapabilityConfig>),
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct CapabilityConfig {
+    #[serde(rename = "max-mode", default, skip_serializing_if = "Option::is_none")]
+    pub max_mode: Option<InteractionLevel>,
+    #[serde(
+        rename = "max-cost-per-job",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub max_cost_per_job: Option<f64>,
+}
+
+// Custom serde for MemberCapabilities: "all" string or map of capabilities
+impl Serialize for MemberCapabilities {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            MemberCapabilities::All => serializer.serialize_str("all"),
+            MemberCapabilities::Specific(map) => map.serialize(serializer),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for MemberCapabilities {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = serde_yaml_ng::Value::deserialize(deserializer)?;
+        match &value {
+            serde_yaml_ng::Value::String(s) if s == "all" => Ok(MemberCapabilities::All),
+            serde_yaml_ng::Value::Mapping(_) => {
+                let map: BTreeMap<Capability, CapabilityConfig> =
+                    serde_yaml_ng::from_value(value).map_err(serde::de::Error::custom)?;
+                Ok(MemberCapabilities::Specific(map))
+            }
+            _ => Err(serde::de::Error::custom(
+                "expected \"all\" or a map of capabilities",
+            )),
+        }
+    }
+}
+
+impl Member {
+    /// Check whether this member has a specific capability.
+    pub fn has_capability(&self, cap: &Capability) -> bool {
+        match &self.capabilities {
+            MemberCapabilities::All => true,
+            MemberCapabilities::Specific(map) => map.contains_key(cap),
+        }
+    }
+}
+
+/// Check whether a member ID represents an AI member.
+pub fn is_ai_member(id: &str) -> bool {
+    id.starts_with("ai:")
 }
 
 fn default_language() -> String {
@@ -30,6 +102,7 @@ impl Project {
             description: None,
             language: default_language(),
             forge: None,
+            members: BTreeMap::new(),
             created: Utc::now(),
         }
     }

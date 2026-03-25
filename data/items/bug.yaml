@@ -1,0 +1,3 @@
+{% set type = "bug" %}
+{% set capabilities = "[implement, review]" %}
+{% include "_base.yaml" %}

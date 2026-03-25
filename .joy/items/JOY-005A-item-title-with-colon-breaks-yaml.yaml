@@ -1,0 +1,11 @@
+id: JOY-005A
+title: Item title with colon breaks YAML template rendering
+type: bug
+status: new
+priority: high
+capabilities:
+- implement
+- review
+effort: 2
+created: 2026-03-25T21:02:58.045288997Z
+updated: 2026-03-25T21:02:58.045288997Z

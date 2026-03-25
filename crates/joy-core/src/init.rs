@@ -85,7 +85,20 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
     // Write config defaults (embedded file) and project metadata
     embedded::sync_files(root, CONFIG_FILES)?;
 
-    let project = Project::new(name, Some(acronym));
+    let mut project = Project::new(name, Some(acronym));
+
+    // Register the project creator as a member with all capabilities
+    if let Ok(email) = vcs.user_email() {
+        if !email.is_empty() {
+            project.members.insert(
+                email,
+                crate::model::project::Member {
+                    capabilities: crate::model::project::MemberCapabilities::All,
+                },
+            );
+        }
+    }
+
     store::write_yaml(&joy_dir.join(store::PROJECT_FILE), &project)?;
 
     // Ensure .joy/credentials.yaml is in .gitignore

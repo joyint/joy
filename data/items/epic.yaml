@@ -1,0 +1,3 @@
+{% set type = "epic" %}
+{% set capabilities = "[conceive, plan]" %}
+{% include "_base.yaml" %}

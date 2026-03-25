@@ -215,6 +215,7 @@ mod tests {
             "First".into(),
             ItemType::Task,
             Priority::Low,
+            vec![],
         );
         save_item(dir.path(), &item).unwrap();
 
@@ -231,6 +232,7 @@ mod tests {
             "First".into(),
             ItemType::Task,
             Priority::Low,
+            vec![],
         );
         save_item(dir.path(), &item1).unwrap();
 
@@ -239,6 +241,7 @@ mod tests {
             "Third".into(),
             ItemType::Task,
             Priority::Low,
+            vec![],
         );
         save_item(dir.path(), &item3).unwrap();
 
@@ -263,6 +266,7 @@ mod tests {
             "Test item".into(),
             ItemType::Story,
             Priority::High,
+            vec![],
         );
         save_item(dir.path(), &item).unwrap();
 
@@ -282,6 +286,7 @@ mod tests {
             "Second".into(),
             ItemType::Task,
             Priority::Low,
+            vec![],
         );
         save_item(dir.path(), &item2).unwrap();
 
@@ -290,6 +295,7 @@ mod tests {
             "First".into(),
             ItemType::Task,
             Priority::Low,
+            vec![],
         );
         save_item(dir.path(), &item1).unwrap();
 

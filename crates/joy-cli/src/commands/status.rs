@@ -8,9 +8,10 @@ use chrono::Utc;
 use clap::Args;
 
 use joy_core::items;
-use joy_core::model::item::Status;
+use joy_core::model::item::{Assignee, Status};
 use joy_core::releases;
 use joy_core::store;
+use joy_core::vcs::Vcs;
 
 use crate::color;
 
@@ -126,6 +127,51 @@ pub fn run(args: StatusArgs) -> Result<()> {
                     color::status(&dep.status)
                 );
             }
+        }
+    }
+
+    // Auto-assign on start if no assignees
+    if matches!(new_status, Status::InProgress) && item.assignees.is_empty() {
+        let config = store::load_config();
+        if config.workflow.auto_assign {
+            let email = joy_core::vcs::default_vcs()
+                .user_email()
+                .map_err(|e| anyhow::anyhow!("{e}. Assign manually with `joy assign`."))?;
+            item.assignees.push(Assignee {
+                member: email.clone(),
+                capabilities: Vec::new(),
+            });
+            eprintln!("Auto-assigned {} to {}", color::id(&item.id), email);
+
+            // Warn if member lacks item capabilities
+            let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
+            if let Ok(project) = store::read_yaml::<joy_core::model::Project>(&project_path) {
+                if let Some(member) = project.members.get(&email) {
+                    if !matches!(
+                        member.capabilities,
+                        joy_core::model::project::MemberCapabilities::All
+                    ) {
+                        if let joy_core::model::project::MemberCapabilities::Specific(ref caps) =
+                            member.capabilities
+                        {
+                            for item_cap in &item.capabilities {
+                                if !caps.contains_key(item_cap) {
+                                    eprintln!(
+                                        "Warning: {} does not have capability '{}'",
+                                        email, item_cap
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            anyhow::bail!(
+                "no assignee on {}. Assign first:\n  joy assign {} <MEMBER>",
+                item.id,
+                item.id
+            );
         }
     }
 

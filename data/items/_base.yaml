@@ -1,0 +1,17 @@
+id: {{ id }}
+title: {{ title }}
+type: {{ type }}
+status: new
+priority: medium
+parent: null
+assignees: []
+deps: []
+milestone: null
+tags: []
+capabilities: {{ capabilities }}
+effort: null
+version: null
+created: {{ now }}
+updated: {{ now }}
+description: null
+comments: []
