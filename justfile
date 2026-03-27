@@ -29,9 +29,13 @@ test-snap:
 test-snap-update:
     cargo insta test --workspace --review --locked
 
-# Coverage report (HTML)
+# Coverage report (terminal summary)
 test-coverage:
-    cargo llvm-cov --workspace --html --locked
+    cargo llvm-cov --workspace --locked
+
+# Coverage report (HTML, opens in browser)
+test-coverage-html:
+    cargo llvm-cov --workspace --html --locked --open
 
 # Re-run tests on change
 test-watch:
