@@ -4,6 +4,21 @@ A field guide to terminal-native product management.
 
 This tutorial walks you through a complete project setup, told through the lens of everyone's favorite improviser. Because product management, like defusing a bomb with a paperclip, is all about using the right tool at the right moment.
 
+## Contents
+
+- [TL;DR](#tldr)
+- [Mission 1: Setting Up Base Camp](#mission-1-setting-up-base-camp-init) -- `init`
+- [Mission 2: Building Your Arsenal](#mission-2-building-your-arsenal-add) -- `add`
+- [Mission 3: Surveying the Terrain](#mission-3-surveying-the-terrain-ls-show-find) -- `ls`, `show`, `find`
+- [Mission 4: Wiring the Circuit](#mission-4-wiring-the-circuit-deps) -- `deps`
+- [Mission 5: Into the Field](#mission-5-into-the-field-status-start-submit-close) -- `status`, `start`, `submit`, `close`
+- [Mission 6: Setting the Deadline](#mission-6-setting-the-deadline-milestone) -- `milestone`
+- [Mission 7: Reading the Black Box](#mission-7-reading-the-black-box-log-release) -- `log`, `release`
+- [Mission 8: Calling in Air Support](#mission-8-calling-in-air-support-ai) -- `ai`
+- [Mission 9: Adjusting the Rules](#mission-9-adjusting-the-rules-project-config) -- `project`, `config`
+- [Bonus: Shell Completions](#bonus-shell-completions)
+- [Command Reference](#command-reference)
+
 ## TL;DR
 
 ```sh
