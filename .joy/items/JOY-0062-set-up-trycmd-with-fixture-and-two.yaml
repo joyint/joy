@@ -1,11 +1,20 @@
 id: JOY-0062
 title: Set up trycmd with fixture and two example tests
 type: task
-status: new
+status: closed
 priority: medium
 parent: JOY-0061
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 2
 created: 2026-03-27T17:01:43.219145656Z
-updated: 2026-03-27T17:01:43.219145656Z
+updated: 2026-03-27T19:45:49.205296481Z
+comments:
+- author: ai:claude@joy
+  date: 2026-03-27T19:43:33.750631020Z
+  text: 'Plan: 1) Add trycmd dev-dependency to joy-cli Cargo.toml. 2) Create tests/cmd/ directory with two example tests: joy --version and joy --help. 3) Create .toml test definition + .stdout expected output files.'
+- author: ai:claude@joy
+  date: 2026-03-27T19:45:49.199113133Z
+  text: 'Done. trycmd 0.15 added as dev-dependency. Test runner in tests/cmd.rs, test cases in tests/cmd/*.toml. Two example tests: version output and help output (with ... wildcard). Both pass.'

@@ -1,14 +1,16 @@
 id: JOY-0061
 title: Integration test infrastructure with bats and trycmd
 type: epic
-status: new
+status: closed
 priority: high
+assignees:
+- member: ai:claude@joy
 capabilities:
 - conceive
 - plan
 effort: 5
 created: 2026-03-27T17:01:01.255162043Z
-updated: 2026-03-27T17:01:14.802428082Z
+updated: 2026-03-27T19:52:54.547138573Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-27T17:01:14.802426594Z

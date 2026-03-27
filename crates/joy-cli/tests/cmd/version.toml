@@ -1,0 +1,4 @@
+bin.name = "joy"
+args = ["--version"]
+status.code = 0
+stdout = "joy 0.3.5\n"
