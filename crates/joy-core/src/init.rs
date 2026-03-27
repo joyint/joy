@@ -144,27 +144,16 @@ const GITIGNORE_BLOCK_START: &str = "### joy:start -- managed by joy, do not edi
 const GITIGNORE_BLOCK_END: &str = "### joy:end";
 
 const GITIGNORE_BLOCK: &str = "\
-# Joy -- managed by joy init
-.joy/config.yaml
-.joy/credentials.yaml
-
-# Joy -- managed by joy ai setup
-.joy/ai/
-.joy/hooks/
-.joy/capabilities/
-
-# Claude Code -- managed by joy ai setup
-.claude/
-
-# Qwen Code -- managed by joy ai setup
-.qwen/
-
-# Mistral Vibe -- managed by joy ai setup
-.vibe/
-
-# GitHub Copilot -- managed by joy ai setup
-.github/copilot-instructions.md
-.github/copilot/";
+.joy/config.yaml        # personal config
+.joy/credentials.yaml   # secrets
+.joy/ai/                # AI instructions
+.joy/hooks/             # git hooks
+.joy/capabilities/      # capability definitions
+.claude/                # Claude Code
+.qwen/                  # Qwen Code
+.vibe/                  # Mistral Vibe
+.github/copilot-instructions.md  # GitHub Copilot
+.github/copilot/        # GitHub Copilot";
 
 fn ensure_gitignore(root: &Path) -> Result<(), JoyError> {
     let gitignore_path = root.join(".gitignore");
