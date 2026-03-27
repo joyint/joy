@@ -205,6 +205,17 @@ fn create(args: CreateArgs) -> Result<()> {
     // --full: version bump, git commit/tag/push, forge release
     if args.full {
         full_release(&root, &version, &release, &project)?;
+    } else {
+        let title_summary = release
+            .title
+            .as_deref()
+            .map(|t| format!(" {t}"))
+            .unwrap_or_default();
+        joy_core::git_ops::auto_git_post_command(
+            &root,
+            &format!("release create {version}{title_summary}"),
+            &log_user,
+        );
     }
 
     Ok(())

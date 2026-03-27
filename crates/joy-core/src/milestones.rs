@@ -42,8 +42,11 @@ pub fn load_milestones(root: &Path) -> Result<Vec<Milestone>, JoyError> {
 pub fn save_milestone(root: &Path, ms: &Milestone) -> Result<(), JoyError> {
     let ms_dir = store::joy_dir(root).join(store::MILESTONES_DIR);
     let filename = milestone_filename(&ms.id, &ms.title);
-    let path = ms_dir.join(filename);
-    store::write_yaml(&path, ms)
+    let path = ms_dir.join(&filename);
+    store::write_yaml(&path, ms)?;
+    let rel = format!("{}/{}/{}", store::JOY_DIR, store::MILESTONES_DIR, filename);
+    crate::git_ops::auto_git_add(root, &[&rel]);
+    Ok(())
 }
 
 /// Update a milestone in place (overwrites its file).
@@ -56,6 +59,12 @@ pub fn update_milestone(root: &Path, ms: &Milestone) -> Result<(), JoyError> {
         .join(milestone_filename(&ms.id, &ms.title));
     if old_path != new_path {
         let _ = std::fs::remove_file(&old_path);
+        let old_rel = old_path
+            .strip_prefix(root)
+            .unwrap_or(&old_path)
+            .to_string_lossy()
+            .to_string();
+        crate::git_ops::auto_git_add(root, &[&old_rel]);
     }
     Ok(())
 }
@@ -123,7 +132,14 @@ pub fn load_milestone(root: &Path, id: &str) -> Result<Milestone, JoyError> {
 /// Delete a milestone file.
 pub fn delete_milestone(root: &Path, id: &str) -> Result<(), JoyError> {
     let path = find_milestone_file(root, id)?;
-    std::fs::remove_file(&path).map_err(|e| JoyError::WriteFile { path, source: e })
+    let rel = path
+        .strip_prefix(root)
+        .unwrap_or(&path)
+        .to_string_lossy()
+        .to_string();
+    std::fs::remove_file(&path).map_err(|e| JoyError::WriteFile { path, source: e })?;
+    crate::git_ops::auto_git_add(root, &[&rel]);
+    Ok(())
 }
 
 #[cfg(test)]

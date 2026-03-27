@@ -217,5 +217,11 @@ pub fn run(args: EditArgs) -> Result<()> {
 
     println!("Updated {} {}", item.id, item.title);
 
+    joy_core::git_ops::auto_git_post_command(
+        &root,
+        &format!("edit {} {}", item.id, item.title),
+        &log_user,
+    );
+
     Ok(())
 }

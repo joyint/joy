@@ -209,6 +209,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
     );
 
     // Auto-close parent when all children are closed
+    // (must run before auto_git_post_command so auto-close changes are included)
     if let (Status::Closed, Some(ref parent_id)) = (&new_status, &item.parent) {
         let all_items = items::load_items(&root)?;
         let has_open_siblings = all_items
@@ -239,6 +240,12 @@ pub fn run(args: StatusArgs) -> Result<()> {
             }
         }
     }
+
+    joy_core::git_ops::auto_git_post_command(
+        &root,
+        &format!("status {} {old_status} -> {new_status}", item.id),
+        &log_user,
+    );
 
     Ok(())
 }

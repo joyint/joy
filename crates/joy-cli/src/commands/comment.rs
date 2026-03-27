@@ -65,5 +65,11 @@ pub fn run(args: CommentArgs) -> Result<()> {
 
     println!("Added comment to {} {}", color::id(&item.id), item.title);
 
+    joy_core::git_ops::auto_git_post_command(
+        &root,
+        &format!("comment {} {}", item.id, item.title),
+        &id.log_user(),
+    );
+
     Ok(())
 }

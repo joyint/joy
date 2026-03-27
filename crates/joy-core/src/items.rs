@@ -42,8 +42,11 @@ pub fn load_items(root: &Path) -> Result<Vec<Item>, JoyError> {
 pub fn save_item(root: &Path, item: &Item) -> Result<(), JoyError> {
     let items_dir = store::joy_dir(root).join(store::ITEMS_DIR);
     let filename = item_filename(&item.id, &item.title);
-    let path = items_dir.join(filename);
-    store::write_yaml(&path, item)
+    let path = items_dir.join(&filename);
+    store::write_yaml(&path, item)?;
+    let rel = format!("{}/{}/{}", store::JOY_DIR, store::ITEMS_DIR, filename);
+    crate::git_ops::auto_git_add(root, &[&rel]);
+    Ok(())
 }
 
 /// Generate the next item ID by scanning existing files.
@@ -112,7 +115,13 @@ pub fn load_item(root: &Path, id: &str) -> Result<Item, JoyError> {
 pub fn delete_item(root: &Path, id: &str) -> Result<Item, JoyError> {
     let path = find_item_file(root, id)?;
     let item: Item = store::read_yaml(&path)?;
+    let rel = path
+        .strip_prefix(root)
+        .unwrap_or(&path)
+        .to_string_lossy()
+        .to_string();
     std::fs::remove_file(&path).map_err(|e| JoyError::WriteFile { path, source: e })?;
+    crate::git_ops::auto_git_add(root, &[&rel]);
     Ok(item)
 }
 
@@ -183,6 +192,12 @@ pub fn update_item(root: &Path, item: &Item) -> Result<(), JoyError> {
         .join(item_filename(&item.id, &item.title));
     if old_path != new_path {
         let _ = std::fs::remove_file(&old_path);
+        let old_rel = old_path
+            .strip_prefix(root)
+            .unwrap_or(&old_path)
+            .to_string_lossy()
+            .to_string();
+        crate::git_ops::auto_git_add(root, &[&old_rel]);
     }
     Ok(())
 }

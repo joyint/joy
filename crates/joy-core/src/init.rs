@@ -100,6 +100,9 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
     }
 
     store::write_yaml(&joy_dir.join(store::PROJECT_FILE), &project)?;
+    let project_rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+    let defaults_rel = format!("{}/{}", store::JOY_DIR, store::CONFIG_DEFAULTS_FILE);
+    crate::git_ops::auto_git_add(root, &[&project_rel, &defaults_rel]);
 
     // Ensure .joy/credentials.yaml is in .gitignore
     ensure_gitignore(root)?;
@@ -195,7 +198,9 @@ pub fn update_gitignore_block(root: &Path, entries: &[(&str, &str)]) -> Result<(
     std::fs::write(&gitignore_path, &content).map_err(|e| JoyError::WriteFile {
         path: gitignore_path,
         source: e,
-    })
+    })?;
+    crate::git_ops::auto_git_add(root, &[".gitignore"]);
+    Ok(())
 }
 
 fn ensure_gitignore(root: &Path) -> Result<(), JoyError> {

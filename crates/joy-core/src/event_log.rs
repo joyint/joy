@@ -127,9 +127,12 @@ pub fn append_event(root: &Path, event: &Event) -> Result<(), JoyError> {
 
     file.write_all(line.as_bytes())
         .map_err(|e| JoyError::WriteFile {
-            path: log_file,
+            path: log_file.clone(),
             source: e,
-        })
+        })?;
+    let rel = format!("{}/{}/{}.log", store::JOY_DIR, store::LOG_DIR, date_str);
+    crate::git_ops::auto_git_add(root, &[&rel]);
+    Ok(())
 }
 
 /// A parsed log entry for display.

@@ -110,7 +110,17 @@ pub fn run(args: ProjectArgs) -> Result<()> {
             joy_core::capabilities::warn_unless_capable(&root, Capability::Manage);
             set_value(&mut project, &a.key, &a.value)?;
             store::write_yaml(&project_path, &project)?;
+            let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+            joy_core::git_ops::auto_git_add(&root, &[&rel]);
             println!("{} = {}", a.key, a.value);
+            let log_user = joy_core::identity::resolve_identity(&root)
+                .map(|id| id.log_user())
+                .unwrap_or_default();
+            joy_core::git_ops::auto_git_post_command(
+                &root,
+                &format!("project set {} {}", a.key, a.value),
+                &log_user,
+            );
             return Ok(());
         }
         Some(ProjectCommand::Member(a)) => {
@@ -138,7 +148,13 @@ pub fn run(args: ProjectArgs) -> Result<()> {
             project.language = language;
         }
         store::write_yaml(&project_path, &project)?;
+        let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+        joy_core::git_ops::auto_git_add(&root, &[&rel]);
         println!("Project updated.");
+        let log_user = joy_core::identity::resolve_identity(&root)
+            .map(|id| id.log_user())
+            .unwrap_or_default();
+        joy_core::git_ops::auto_git_post_command(&root, "project edit", &log_user);
     }
 
     show_project(&project);
@@ -281,7 +297,17 @@ fn run_member(
                 .members
                 .insert(a.id.clone(), Member { capabilities });
             store::write_yaml(project_path, project)?;
+            let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+            joy_core::git_ops::auto_git_add(root, &[&rel]);
             println!("Added member {}", a.id);
+            let log_user = joy_core::identity::resolve_identity(root)
+                .map(|id| id.log_user())
+                .unwrap_or_default();
+            joy_core::git_ops::auto_git_post_command(
+                root,
+                &format!("project member add {}", a.id),
+                &log_user,
+            );
         }
         Some(MemberCommand::Rm(a)) => {
             joy_core::capabilities::warn_unless_capable(root, Capability::Manage);
@@ -289,7 +315,17 @@ fn run_member(
                 bail!("member not found: {}", a.id);
             }
             store::write_yaml(project_path, project)?;
+            let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+            joy_core::git_ops::auto_git_add(root, &[&rel]);
             println!("Removed member {}", a.id);
+            let log_user = joy_core::identity::resolve_identity(root)
+                .map(|id| id.log_user())
+                .unwrap_or_default();
+            joy_core::git_ops::auto_git_post_command(
+                root,
+                &format!("project member rm {}", a.id),
+                &log_user,
+            );
         }
     }
     Ok(())

@@ -119,6 +119,12 @@ fn add_dep(root: &std::path::Path, item_id: &str, dep_id: &str) -> Result<()> {
         color::id(dep_id)
     );
 
+    joy_core::git_ops::auto_git_post_command(
+        root,
+        &format!("deps {item_id} add {dep_id}"),
+        &log_user,
+    );
+
     Ok(())
 }
 
@@ -153,6 +159,12 @@ fn rm_dep(root: &std::path::Path, item_id: &str, dep_id: &str) -> Result<()> {
         "Removed dependency {} from {}",
         color::id(dep_id),
         color::id(item_id)
+    );
+
+    joy_core::git_ops::auto_git_post_command(
+        root,
+        &format!("deps {item_id} rm {dep_id}"),
+        &log_user,
     );
 
     Ok(())
