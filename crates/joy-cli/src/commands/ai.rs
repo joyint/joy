@@ -433,6 +433,27 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
         }
     }
 
+    // If no AI tools remain, clean up .joy/ai/ and .joy/capabilities/
+    let any_remaining = all_tools
+        .iter()
+        .any(|(_, id, _)| is_tool_configured(&root, id));
+    if !any_remaining {
+        let joy_dir = joy_core::store::joy_dir(&root);
+        for dir in ["ai", "capabilities"] {
+            let path = joy_dir.join(dir);
+            if path.is_dir() {
+                fs::remove_dir_all(&path)?;
+                println!(
+                    "  {}{:<24} removed (no tools remaining)",
+                    color::check_mark(),
+                    format!(".joy/{dir}/")
+                );
+            }
+        }
+        // Update gitignore to remove tool entries
+        joy_core::init::update_gitignore_block(&root, joy_core::init::GITIGNORE_BASE_ENTRIES)?;
+    }
+
     let count = tools
         .iter()
         .filter(|(_, _, paths)| {
@@ -441,7 +462,10 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
                 .any(|p| to_remove.iter().any(|(_, tp)| tp == p))
         })
         .count();
-    println!("{}", color::footer(&format!("{} tool(s) reset", count)));
+    println!(
+        "{}",
+        color::footer(&format!("{} reset", color::plural(count, "tool")))
+    );
     Ok(())
 }
 
