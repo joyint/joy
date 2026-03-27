@@ -45,10 +45,11 @@ pub fn render_item(item_type: &ItemType, id: &str, title: &str) -> Result<Item, 
         .get_template(name)
         .map_err(|e| JoyError::Template(e.to_string()))?;
 
+    let escaped_title = title.replace('\\', "\\\\").replace('"', "\\\"");
     let yaml = tmpl
         .render(minijinja::context! {
             id => id,
-            title => title,
+            title => escaped_title,
             now => &now,
         })
         .map_err(|e| JoyError::Template(e.to_string()))?;
@@ -77,6 +78,21 @@ mod tests {
         let item = render_item(&ItemType::Idea, "JOY-0002", "Wild thought").unwrap();
         assert_eq!(item.item_type, ItemType::Idea);
         assert!(item.capabilities.is_empty());
+    }
+
+    #[test]
+    fn render_title_with_colon() {
+        let item =
+            render_item(&ItemType::Bug, "JOY-005A", "Fix: crash on startup").unwrap();
+        assert_eq!(item.title, "Fix: crash on startup");
+    }
+
+    #[test]
+    fn render_title_with_special_yaml_chars() {
+        let item =
+            render_item(&ItemType::Task, "JOY-0099", r#"Handle "quotes" & {braces} [brackets]"#)
+                .unwrap();
+        assert_eq!(item.title, r#"Handle "quotes" & {braces} [brackets]"#);
     }
 
     #[test]
