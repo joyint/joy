@@ -1,0 +1,18 @@
+id: JOY-0051
+title: Permission pattern uses deprecated colon syntax
+type: bug
+status: closed
+priority: critical
+effort: 2
+created: 2026-03-27T05:41:39.569287458Z
+updated: 2026-03-27T05:47:52.346396177Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-27T05:41:50.572831149Z
+  text: 'Plan: (1) Fix joy ai setup to generate ''Bash(joy *)'' instead of ''Bash(joy:*)'' for Claude Code permissions. (2) Check and fix Qwen, Copilot, Vibe permission syntax against their current docs. (3) Fix all deployed settings.json in umbrella and submodules. (4) Update existing settings: migrate colon syntax to space syntax.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-27T05:45:34.405933247Z
+  text: 'Research: Permission syntax per AI tool. Claude Code: ''Bash(joy *)'' with space, colon syntax deprecated. Qwen Code: ''run_shell_command(joy)'' -- correct as-is. GitHub Copilot: ''shell(joy:*)'' with colon -- correct for Copilot. Plus new option: .github/copilot/settings.json with allowTools array. Mistral Vibe: no per-command permissions, only tool-level ([tools.bash] permission = always). Only Claude Code needs fixing.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-27T05:47:43.684213450Z
+  text: '[x] Claude Code: changed permission from ''Bash(joy:*)'' to ''Bash(joy *)''. Migration: joy ai setup detects old colon syntax and replaces it. [x] Copilot: now generates .github/copilot/settings.json with allowTools instead of just a CLI hint. [x] Qwen and Vibe: confirmed correct, no changes needed. [x] Fixed deployed settings.json in joy and umbrella projects.'
