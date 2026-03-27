@@ -76,6 +76,11 @@ pub fn run(args: AssignArgs) -> Result<()> {
             &id.log_user(),
         );
         println!("Unassigned {} from {}", member, color::id(&item.id));
+        joy_core::git_ops::auto_git_post_command(
+            &root,
+            &format!("unassign {} {}", item.id, member),
+            &id.log_user(),
+        );
         return Ok(());
     }
 
@@ -125,6 +130,12 @@ pub fn run(args: AssignArgs) -> Result<()> {
             cap_names.join(", ")
         );
     }
+
+    joy_core::git_ops::auto_git_post_command(
+        &root,
+        &format!("assign {} {}", item.id, member),
+        &id.log_user(),
+    );
 
     Ok(())
 }

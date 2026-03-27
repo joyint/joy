@@ -6,6 +6,7 @@ output:
   fortune: true
 workflow:
   auto-assign: true
+  auto-git: add
 agents:
   default:
     mode: collaborative

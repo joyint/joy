@@ -213,5 +213,11 @@ pub fn run(args: AddArgs) -> Result<()> {
 
     println!("Created {} {}", id, title);
 
+    joy_core::git_ops::auto_git_post_command(
+        &root,
+        &format!("add {id} {title}"),
+        &identity.log_user(),
+    );
+
     Ok(())
 }

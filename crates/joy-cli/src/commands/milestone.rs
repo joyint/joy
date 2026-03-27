@@ -154,6 +154,12 @@ fn run_add(args: AddArgs) -> Result<()> {
         println!("  Date: {date}");
     }
 
+    joy_core::git_ops::auto_git_post_command(
+        &root,
+        &format!("milestone add {id} {}", ms.title),
+        &log_user,
+    );
+
     Ok(())
 }
 
@@ -347,6 +353,12 @@ fn run_rm(args: RmArgs) -> Result<()> {
 
     println!("Deleted {} {}", color::id(&ms.id), ms.title);
 
+    joy_core::git_ops::auto_git_post_command(
+        &root,
+        &format!("milestone rm {} {}", ms.id, ms.title),
+        &log_user,
+    );
+
     Ok(())
 }
 
@@ -403,6 +415,12 @@ fn run_edit(args: EditArgs) -> Result<()> {
 
     println!("Updated {} {}", color::id(&ms.id), ms.title);
 
+    joy_core::git_ops::auto_git_post_command(
+        &root,
+        &format!("milestone edit {} {}", ms.id, ms.title),
+        &log_user,
+    );
+
     Ok(())
 }
 
@@ -436,6 +454,12 @@ fn run_link(args: LinkArgs) -> Result<()> {
         ms.title
     );
 
+    joy_core::git_ops::auto_git_post_command(
+        &root,
+        &format!("milestone link {} {}", item.id, ms.id),
+        &log_user,
+    );
+
     Ok(())
 }
 
@@ -467,6 +491,12 @@ fn run_unlink(args: UnlinkArgs) -> Result<()> {
                 "Unlinked {} from {}",
                 color::id(&item.id),
                 color::id(&old_ms_id)
+            );
+
+            joy_core::git_ops::auto_git_post_command(
+                &root,
+                &format!("milestone unlink {} {}", item.id, old_ms_id),
+                &log_user,
             );
         }
         None => {

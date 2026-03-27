@@ -55,6 +55,10 @@ pub fn run(args: InitArgs) -> Result<()> {
             println!("  joy                      Board overview");
             println!();
             println!("Using AI tools? Run 'joy ai setup' to configure integration.");
+            let log_user = joy_core::identity::resolve_identity(&root)
+                .map(|id| id.log_user())
+                .unwrap_or_default();
+            joy_core::git_ops::auto_git_post_command(&root, "init", &log_user);
         }
         Err(JoyError::AlreadyInitialized(_)) => {
             println!("Project already initialized. Setting up local environment...");

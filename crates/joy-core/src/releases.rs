@@ -17,8 +17,11 @@ pub fn save_release(root: &Path, acronym: &str, release: &Release) -> Result<(),
     })?;
 
     let filename = format!("{}-{}.yaml", acronym, release.version);
-    let path = releases_dir.join(filename);
-    store::write_yaml(&path, release)
+    let path = releases_dir.join(&filename);
+    store::write_yaml(&path, release)?;
+    let rel = format!("{}/{}/{}", store::JOY_DIR, store::RELEASES_DIR, filename);
+    crate::git_ops::auto_git_add(root, &[&rel]);
+    Ok(())
 }
 
 /// Load a specific release by version.

@@ -70,6 +70,8 @@ pub fn run(args: RmArgs) -> Result<()> {
         delegated_by: None,
     });
     let log_user = resolved.log_user();
+    let summary_title = item.title.clone();
+    let summary_id = item.id.clone();
     for id in &to_delete {
         let deleted = items::delete_item(&root, id)?;
         let updated = items::remove_references(&root, id)?;
@@ -85,6 +87,12 @@ pub fn run(args: RmArgs) -> Result<()> {
             println!("  Removed dependency from {}", color::id(ref_id));
         }
     }
+
+    joy_core::git_ops::auto_git_post_command(
+        &root,
+        &format!("rm {summary_id} {summary_title}"),
+        &log_user,
+    );
 
     Ok(())
 }

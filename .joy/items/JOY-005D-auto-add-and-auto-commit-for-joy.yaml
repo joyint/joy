@@ -1,15 +1,17 @@
 id: JOY-005D
 title: Auto-add and auto-commit for Joy-managed files
 type: story
-status: new
+status: closed
 priority: medium
+assignees:
+- member: ai:claude@joy
 capabilities:
 - plan
 - implement
 - review
 effort: 5
 created: 2026-03-27T09:59:15.948852096Z
-updated: 2026-03-27T10:01:53.051625937Z
+updated: 2026-03-27T21:18:15.145247275Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-27T09:59:44.686414121Z
@@ -33,3 +35,59 @@ comments:
       auto-git: add    # off | add | commit | push
 
     Each level implies the previous: push = add + commit + push. Default: add (safe, low-friction). Off for users who want full manual control.
+- author: ai:claude@joy
+  date: 2026-03-27T20:59:51.724473915Z
+  text: |-
+    Plan:
+
+    1. Add AutoGit enum to model/config.rs: Off | Add | Commit | Push (default: Add)
+       - Add auto-git field to WorkflowConfig
+       - Each level implies the previous (Push = Add + Commit + Push)
+       - Add to PROBES list in probe_string_field for config hints
+       - Update config.defaults.yaml with auto-git: add
+
+    2. Add git_ops module in joy-core with:
+       - git_add_files(root, paths): stages specific files
+       - git_commit(root, message): creates commit
+       - git_push(root): pushes to default remote
+       - auto_git_add(root, paths): reads config, stages if level >= Add
+       - auto_git_post_command(root, summary, item_id): reads config, commits if level >= Commit, pushes if level >= Push
+
+    3. Instrument write helpers in joy-core to call auto_git_add:
+       - items::save_item / update_item / delete_item -> git add the item file
+       - milestones::save_milestone / update_milestone / delete_milestone -> git add
+       - releases::save_release -> git add
+       - event_log::append_event -> git add the log file
+       - init::update_gitignore_block -> git add .gitignore
+       - store::write_yaml for project.yaml, config.defaults.yaml -> git add
+
+    4. Instrument CLI main.rs:
+       - After command handler returns Ok, call auto_git_post_command with command summary
+       - Message format: "joy: <command summary> <item-id>"
+       - Skip for read-only commands (ls, show, log, find, board, roadmap, config get, completions, tutorial, ai check)
+
+    5. Tests:
+       - Unit test AutoGit enum serde roundtrip
+       - Unit test auto_git_add with a temp git repo
+       - Unit test auto_git_post_command commit/push
+       - Update config snapshot test
+
+    Approach: git add happens per-file in write helpers (decentralized). Commit/push happens once per command in main.rs (centralized). Config is read once per command. Write helpers get root passed already, they just need to additionally call git add.
+
+    Key decision: write helpers should not fail the command if git add fails. Use best-effort (eprintln warning, continue). Same for commit/push.
+- author: ai:claude@joy
+  date: 2026-03-27T21:18:00.064449729Z
+  text: |-
+    Done. Implementation:
+
+    1. model/config.rs: AutoGit enum (Off/Add/Commit/Push) with default Add, added to WorkflowConfig as auto-git field. PROBES updated for config hints.
+
+    2. git_ops.rs: New module with auto_git_add(root, paths) and auto_git_post_command(root, summary, identity). Best-effort: warnings on failure, never aborts.
+
+    3. Write helpers instrumented: save_item, update_item, delete_item, save_milestone, update_milestone, delete_milestone, save_release, append_event, update_gitignore_block, init (project.yaml + config.defaults.yaml).
+
+    4. CLI commands instrumented with auto_git_post_command: add, status (incl. start/submit/close/reopen), edit, rm, comment, deps (add/rm), assign/unassign, milestone (add/edit/rm/link/unlink), release create (non-full only), project (set/edit/member add/rm), init.
+
+    5. Commit message format: "joy: <command summary>\n\nCo-Authored-By: <identity>"
+
+    6. config.defaults.yaml and snapshot updated. All 96+19 tests pass, clippy clean.

@@ -25,11 +25,42 @@ pub struct Config {
 pub struct WorkflowConfig {
     #[serde(rename = "auto-assign", default = "default_true")]
     pub auto_assign: bool,
+    #[serde(rename = "auto-git", default)]
+    pub auto_git: AutoGit,
 }
 
 impl Default for WorkflowConfig {
     fn default() -> Self {
-        Self { auto_assign: true }
+        Self {
+            auto_assign: true,
+            auto_git: AutoGit::default(),
+        }
+    }
+}
+
+/// Controls automatic git operations after Joy writes versioned files.
+/// Each level implies the previous: Push = Add + Commit + Push.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AutoGit {
+    Off,
+    #[default]
+    Add,
+    Commit,
+    Push,
+}
+
+impl AutoGit {
+    pub fn should_add(self) -> bool {
+        matches!(self, Self::Add | Self::Commit | Self::Push)
+    }
+
+    pub fn should_commit(self) -> bool {
+        matches!(self, Self::Commit | Self::Push)
+    }
+
+    pub fn should_push(self) -> bool {
+        matches!(self, Self::Push)
     }
 }
 
@@ -197,6 +228,9 @@ fn probe_string_field(key: &str) -> Vec<String> {
         "yes",
         "no",
         "on",
+        "add",
+        "commit",
+        "push",
         "off",
         "list",
         "board",
