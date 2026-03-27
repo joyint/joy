@@ -1,0 +1,21 @@
+id: JOY-007C
+title: Update tutorial content for current Joy features and identity system
+type: rework
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy
+created: 2026-03-27T20:45:30.230550990Z
+updated: 2026-03-27T20:48:09.785239562Z
+comments:
+- author: ai:claude@joy
+  date: 2026-03-27T20:45:50.823023284Z
+  text: 'Content was carried over 1:1 from the old man-page format. Needs updates for: (1) --author flag and JOY_AUTHOR in AI section, (2) delegated-by in event log examples, (3) created_by field mention, (4) testing strategy (just test), (5) Mission 9 still references manual YAML editing for workflow rules which is outdated, (6) Mission 10 (sync) references unimplemented commands. Review all missions for accuracy with current CLI.'
+- author: ai:claude@joy
+  date: 2026-03-27T20:48:09.779781960Z
+  text: 'Done. Updated all missions for current features: effort scale, find command, --author flag, AI identity with delegated-by, auto-close parents, manage restrictions for AI, reopen command. Removed Mission 10 (sync not implemented). Rewrote Mission 9 with config layering details (covers JOY-004A).'

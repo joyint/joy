@@ -41,11 +41,12 @@ Joy creates a `.joy/` directory inside your repo:
 
 ```
 .joy/
-├── project.yaml           Project name, acronym, settings
+├── project.yaml           Project name, acronym, members, settings
 ├── config.defaults.yaml   Project defaults (committed)
 ├── config.yaml            Personal overrides (gitignored)
 ├── items/                 All your items live here (YAML files)
-└── milestones/            Milestone definitions
+├── milestones/            Milestone definitions
+└── logs/                  Event log (audit trail)
 ```
 
 Everything is plain text, versioned with git. No database, no cloud dependency. If your hard drive survives, your project plan survives. MacGyver would approve.
@@ -96,8 +97,12 @@ Now break it down. MacGyver doesn't try to defuse the whole bomb at once -- he w
 joy add story "Add a recipe" --parent CB-0001 --priority high
 joy add story "Edit a recipe" --parent CB-0001 --priority high
 joy add story "List recipes with filters" --parent CB-0001
-joy add task "Set up SQLite database" --parent CB-0001 --priority critical
+joy add task "Set up SQLite database" --parent CB-0001 --priority critical --effort 3
 ```
+
+### Effort
+
+Estimate work with `--effort` on a 1-7 scale: 1=trivial, 2=small, 3=medium, 4=large, 5=major, 6=heavy, 7=massive. It's optional but helps with planning.
 
 ### Item Types
 
@@ -115,22 +120,12 @@ All items start with status `new`. Priorities: `extreme`, `critical`, `high`, `m
 
 ---
 
-## Mission 3: Surveying the Terrain (`ls`, `show`)
+## Mission 3: Surveying the Terrain (`ls`, `show`, `find`)
 
 Before MacGyver acts, he observes. Get the lay of the land:
 
 ```sh
 joy ls
-```
-
-Output:
-
-```
-ID       Type   Priority  Status  Title
-CB-0002  story  high      new     Add a recipe
-CB-0003  story  high      new     Edit a recipe
-CB-0004  story  medium    new     List recipes with filters
-CB-0005  task   critical  new     Set up SQLite database
 ```
 
 Filter to find exactly what you need:
@@ -145,9 +140,15 @@ joy ls --blocked                 # Items with unfinished dependencies
 joy ls --tag ui                  # Items tagged with "ui"
 ```
 
+Search by text across all items:
+
+```sh
+joy find "database"              # Search titles and descriptions
+```
+
 ### Tags
 
-Tags are free-text labels for cross-cutting categories that don't fit into type, status, or priority -- things like `ui`, `backend`, `security`, or `tech-debt`. Set them when creating or editing items:
+Tags are free-text labels for cross-cutting categories -- things like `ui`, `backend`, `security`, or `tech-debt`:
 
 ```sh
 joy add task "Fix layout" --tags "ui,urgent"
@@ -156,12 +157,12 @@ joy edit CB-0004 --tags "ui,search"
 
 Tags are comma-separated. Using `--tags` replaces all existing tags. Use `--tags ""` to clear them.
 
-### Extra Columns and Detail View
+### Views
 
 ```sh
-joy ls -s milestone,assignee     # Add milestone and assignee columns
 joy                              # Board view (items grouped by status)
-joy show CB-0002                 # Full detail view
+joy ls --tree                    # Hierarchy view (parent/child tree)
+joy show CB-0002                 # Full detail view with comments
 ```
 
 ---
@@ -203,9 +204,10 @@ joy status CB-0005 open          # Approve for work
 joy start CB-0005                # Shortcut: set to in-progress
 joy submit CB-0005               # Shortcut: set to review
 joy close CB-0005                # Shortcut: set to closed
+joy reopen CB-0005               # Reopen a closed/deferred item
 ```
 
-If an item depends on something unfinished, Joy warns you but does not block. MacGyver doesn't always follow the manual either -- but he knows the risks.
+If an item depends on something unfinished, Joy warns you but does not block. When all children of an epic are closed, the epic auto-closes.
 
 ### Assignments and Comments
 
@@ -214,6 +216,8 @@ joy assign CB-0005               # Assign to yourself (git email)
 joy assign CB-0005 pete@phoenix.org  # Assign to someone else
 joy comment CB-0005 "Schema looks good, all migrations pass."
 ```
+
+When starting an item (`joy start`), Joy auto-assigns it to you if no one is assigned yet.
 
 ---
 
@@ -236,15 +240,16 @@ joy milestone link CB-0005 CB-MS-01
 Check progress:
 
 ```sh
-joy milestone show CB-MS-01
-joy milestone ls
+joy milestone show CB-MS-01      # Progress, risks, blocked items
+joy milestone ls                 # All milestones with counts
+joy roadmap                      # Full roadmap tree view
 ```
 
 Children inherit their parent's milestone automatically. If `CB-0001` is linked to `CB-MS-01`, all its children are too -- unless they override it.
 
 ---
 
-## Mission 7: Reading the Black Box (`log`, `roadmap`, `release`)
+## Mission 7: Reading the Black Box (`log`, `release`)
 
 MacGyver always reviews the flight recorder after a mission. Joy has one too -- a structured event log that records every action automatically.
 
@@ -261,10 +266,10 @@ Every joy command leaves a trace in `.joy/logs/` -- one file per day, append-onl
 2026-03-11T16:14:32.320Z CB-0005 item.created "Set up SQLite database" [mac@phoenix.org]
 2026-03-11T16:15:01.440Z CB-0005 item.status_changed "new -> in-progress" [mac@phoenix.org]
 2026-03-11T16:42:18.100Z CB-0005 comment.added "Schema looks good" [pete@phoenix.org]
-2026-03-11T16:45:30.200Z CB-0002 dep.added "CB-0005" [mac@phoenix.org]
+2026-03-11T17:00:00.000Z CB-0005 comment.added "AI review complete" [ai:claude@joy delegated-by:mac@phoenix.org]
 ```
 
-These logs are committed to git with your project. Every team member's actions are recorded -- a built-in audit trail.
+These logs are committed to git with your project. Every team member's actions are recorded -- a built-in audit trail. When an AI tool acts on behalf of a human, the log shows both identities via `delegated-by`.
 
 ### Commit-Msg Hook
 
@@ -281,17 +286,9 @@ The hook reads the project acronym from `.joy/project.yaml` and checks for the p
 git commit -m "chore: bump dependencies [no-item]"  # OK
 ```
 
-In multi-repo setups (umbrella with submodules), each subproject has its own acronym. A commit in the Joy repo needs a `JOY-XXXX` reference, a commit in the umbrella needs a `JI-XXXX` reference.
+In multi-repo setups (umbrella with submodules), each subproject has its own acronym. CI can enforce the same rule with: `just lint-commits`
 
-CI can enforce the same rule with: `just lint-commits`
-
-### Roadmap and Releases
-
-For the big picture, use the roadmap -- a tree view grouped by milestone:
-
-```sh
-joy roadmap
-```
+### Releases
 
 When you ship a version, create a release:
 
@@ -299,7 +296,6 @@ When you ship a version, create a release:
 joy release create patch             # Next patch version (default)
 joy release create minor             # Next minor version
 joy release create major             # Next major version
-joy release create patch --title "Bug fixes"
 ```
 
 Joy collects all items closed since the last release, groups them by type, lists contributors, and writes a release snapshot to `.joy/releases/`. Preview without creating:
@@ -337,13 +333,38 @@ This does three things:
 
 After setup, your AI tool knows how to use Joy commands, follows your project conventions, and will offer to help fill in empty documents on first use.
 
-Run it again after a Joy update to get the latest instructions:
+### AI Identity
+
+AI tools are registered as project members with an `ai:` prefix:
 
 ```sh
-joy ai setup
+joy project member add ai:claude@joy
 ```
 
-Joy-owned files are updated, your custom rules are preserved. If your project contains nested Joy projects (submodules, monorepo), run `joy ai setup` in each one separately.
+When an AI tool uses Joy commands, it identifies itself with the `--author` flag:
+
+```sh
+joy comment CB-0005 "Review complete" --author ai:claude@joy
+joy add bug "Crash on empty input" --author ai:claude@joy
+```
+
+The event log traces accountability back to the human who started the session:
+
+```
+[ai:claude@joy delegated-by:mac@phoenix.org]
+```
+
+AI members have the same capabilities as human members, with one exception: **AI members cannot perform manage actions** (adding members, changing capabilities, modifying project settings). Management stays with humans.
+
+If your project has AI members and you run a Joy command without `--author`, Joy shows a warning reminding you to set your identity explicitly.
+
+### Keeping Instructions Current
+
+Run `joy ai setup` again after a Joy update to get the latest instructions. Joy-owned files are updated, your custom rules are preserved. Run `joy ai check` at any time to verify:
+
+```sh
+joy ai check                     # Are AI instructions up to date?
+```
 
 ---
 
@@ -351,21 +372,66 @@ Joy-owned files are updated, your custom rules are preserved. If your project co
 
 Joy starts with zero ceremony. No gates, no approvals, no bureaucracy. Add rules only when you need them.
 
+### Project Metadata
+
 ```sh
-joy project                      # View project metadata
-joy project set name "Cookbox Pro"
-joy project set description "Recipe management for pros"
+joy project                      # View project metadata and members
+joy project get language          # Get a specific value
+joy project set name "Cookbox Pro"   # Set a value (requires manage)
+joy project set language de       # Change project language
 ```
 
-Joy uses layered configuration:
+Settable keys: `name`, `description`, `language`. Read-only: `acronym`, `created`.
+
+### Members and Capabilities
+
+Joy tracks project members and their capabilities. Members are added automatically during `joy init` (from `git config user.email`) or manually:
+
+```sh
+joy project member add pete@phoenix.org
+joy project member add ai:claude@joy --capabilities "implement,review"
+joy project member show pete@phoenix.org
+joy project member rm pete@phoenix.org
+```
+
+Joy defines eleven capabilities across two groups:
+
+**Lifecycle capabilities** (what you can do on items): `conceive`, `plan`, `design`, `implement`, `test`, `review`, `document`
+
+**Management capabilities** (project-level operations): `create`, `assign`, `manage`, `delete`
+
+By default, members have `capabilities: all`. Restrict them when needed -- especially for AI members where you want to control what they can do autonomously.
+
+### Configuration Layering
+
+Joy uses layered configuration where each layer overrides the one below:
 
 ```
-.joy/config.defaults.yaml   Project defaults (committed, shared)
-~/.config/joy/config.yaml   Personal global settings (all projects)
-.joy/config.yaml            Personal project overrides (gitignored)
+Layer 4: .joy/config.yaml            Your personal project overrides (gitignored)
+Layer 3: ~/.config/joy/config.yaml   Your global settings (all projects)
+Layer 2: .joy/config.defaults.yaml   Project defaults (committed, shared)
+Layer 1: Code defaults               Built-in fallbacks
 ```
 
-Each layer overrides the one below. `joy config set` writes to your personal `.joy/config.yaml` -- your preferences never affect teammates. Project defaults in `config.defaults.yaml` set the shared baseline.
+View the resolved configuration:
+
+```sh
+joy config                       # Show all resolved values with sources
+joy config get workflow.auto-assign  # Get a specific value
+joy config set output.emoji true     # Set a personal override
+```
+
+`joy config set` always writes to your personal `.joy/config.yaml` -- your preferences never affect teammates. Project defaults in `config.defaults.yaml` set the shared baseline that the whole team inherits.
+
+Key settings:
+
+| Setting | Default | What it does |
+|---------|---------|-------------|
+| `workflow.auto-assign` | `true` | Auto-assign items on `joy start` |
+| `output.color` | `auto` | Color mode: `auto`, `always`, `never` |
+| `output.emoji` | `false` | Show emoji indicators in output |
+| `output.short` | `true` | Compact list output (abbreviations) |
+| `output.fortune` | `true` | Show occasional quotes in output |
 
 ---
 
@@ -384,10 +450,10 @@ source <(COMPLETE=zsh joy)
 source (COMPLETE=fish joy | psub)
 ```
 
-After reloading your shell, try:
+After reloading your shell:
 
 ```sh
-joy show JOY-<TAB>               # Completes item and milestone IDs
+joy show CB-<TAB>                # Completes item and milestone IDs
 joy sta<TAB>                     # Completes subcommands
 joy ls --ty<TAB>                 # Completes flags
 ```
@@ -406,6 +472,7 @@ MacGyver would say: why type when the machine can do it for you?
 | `joy` | Board overview |
 | `joy show <ID>` | Item detail view |
 | `joy edit <ID>` | Modify an item |
+| `joy find <TEXT>` | Search items by text |
 | `joy status <ID> <STATUS>` | Change item status |
 | `joy start/submit/close <ID>` | Status shortcuts |
 | `joy reopen <ID>` | Reopen a closed/deferred item |
@@ -414,16 +481,18 @@ MacGyver would say: why type when the machine can do it for you?
 | `joy comment <ID> <TEXT>` | Add comment to item |
 | `joy deps <ID>` | Manage dependencies |
 | `joy milestone` | Manage milestones |
+| `joy roadmap` | Milestone roadmap (tree view) |
 | `joy log` | Event log (audit trail) |
 | `joy release create <BUMP>` | Create a release (patch/minor/major) |
 | `joy release show [VERSION]` | Show a release or preview the next |
 | `joy release ls` | List all releases |
-| `joy roadmap` | Milestone roadmap (tree view) |
-| `joy project` | View/edit project info |
-| `joy config` | Show current configuration |
+| `joy project` | View/edit project info and members |
+| `joy config` | Show or modify configuration |
 | `joy ai setup` | Set up AI tool integration |
 | `joy ai check` | Check if AI instructions are current |
 | `joy tutorial` | You are here |
+
+Most write commands accept `--author <MEMBER>` to attribute the action to a specific identity.
 
 > "Any problem can be solved with a little ingenuity." -- MacGyver
 
