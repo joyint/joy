@@ -19,3 +19,6 @@
 2026-03-27T16:07:26.765Z JOY-005F item.status_changed "new -> in-progress" [horst.schwarz@joydev.com]
 2026-03-27T16:08:54.316Z JOY-005F comment.added "[x] joy ai check shows full status: templates (up to date/outdated/missing) and AI tools (configured/installed not configured/not installed). Read-only, changes nothing. Exit code 2 if templates need update, 0 otherwise." [horst.schwarz@joydev.com]
 2026-03-27T16:08:54.323Z JOY-005F item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
+2026-03-27T16:55:40.530Z JOY-0060 item.created "Inline comments in .gitignore break ignore patterns" [horst.schwarz@joydev.com]
+2026-03-27T16:55:47.521Z JOY-0060 comment.added "Root cause: git .gitignore does not support inline comments. A '#' in the middle of a line is treated as part of the pattern. Fix: move comments to lines above the entries, or remove them entirely since the joy:start/joy:end block is already self-documenting." [horst.schwarz@joydev.com]
+2026-03-27T16:58:36.886Z JOY-0060 item.status_changed "new -> closed" [horst.schwarz@joydev.com]
