@@ -69,3 +69,62 @@ load setup
     run env JOY_AUTHOR=ai:test@joy joy project member add someone@example.com
     [[ "$output" == *"cannot perform manage"* ]]
 }
+
+@test "--author flag works on add command" {
+    joy init --name "Test Project"
+    joy project member add ai:test@joy
+    run joy add task "Created by AI" --author ai:test@joy
+    [ "$status" -eq 0 ]
+    # Event log should show AI as creator with delegated-by
+    grep -q "ai:test@joy delegated-by:test@example.com" .joy/logs/*.log
+}
+
+@test "--author flag works on status command" {
+    joy init --name "Test Project"
+    joy project member add ai:test@joy
+    joy add task "Status test"
+    ITEM_ID=$(joy ls 2>/dev/null | grep "Status test" | awk '{print $1}')
+    run joy status "$ITEM_ID" in-progress --author ai:test@joy
+    [ "$status" -eq 0 ]
+    grep -q "ai:test@joy delegated-by:test@example.com" .joy/logs/*.log
+}
+
+@test "--author flag works on assign command" {
+    joy init --name "Test Project"
+    joy project member add ai:test@joy
+    joy add task "Assign test"
+    ITEM_ID=$(joy ls 2>/dev/null | grep "Assign test" | awk '{print $1}')
+    run joy assign "$ITEM_ID" --author ai:test@joy
+    [ "$status" -eq 0 ]
+    # AI should be assigned
+    grep -q "member: ai:test@joy" .joy/items/*.yaml
+}
+
+@test "--author shows delegated-by in event log" {
+    joy init --name "Test Project"
+    joy project member add ai:test@joy
+    joy add task "Delegation test"
+    ITEM_ID=$(joy ls 2>/dev/null | grep "Delegation test" | awk '{print $1}')
+    joy comment "$ITEM_ID" "Via flag" --author ai:test@joy
+    grep -q "ai:test@joy delegated-by:test@example.com" .joy/logs/*.log
+}
+
+@test "no warning on read-only commands with AI members" {
+    joy init --name "Test Project"
+    joy project member add ai:test@joy
+    joy add task "Read-only test"
+    # joy ls is read-only, should not warn
+    run joy ls
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"AI members"* ]]
+}
+
+@test "no warning on joy show with AI members" {
+    joy init --name "Test Project"
+    joy project member add ai:test@joy
+    joy add task "Show test"
+    ITEM_ID=$(joy ls 2>/dev/null | grep "Show test" | awk '{print $1}')
+    run joy show "$ITEM_ID"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"AI members"* ]]
+}
