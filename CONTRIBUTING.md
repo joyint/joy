@@ -132,6 +132,8 @@ Run `just test` before closing any implementation item. All three layers (unit, 
 
 When adding new CLI commands or flags, write the tests as part of the implementation, not as a follow-up item. Tests are not optional extras -- they are part of "done".
 
+When closing a **bug** item, add a comment that references the test covering the fix (e.g. "Tested by `render_title_with_colon` in templates.rs and `joy add sets created_by field` in basic.bats"). This ensures the fix is traceable and regression-protected.
+
 ### Coverage Target
 
 Aim for >80% line coverage on core libraries. No hard enforcement -- coverage is a signal, not a goal.
