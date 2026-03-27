@@ -1,0 +1,21 @@
+id: JOY-007B
+title: joy project set missing manage capability check
+type: bug
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy
+created: 2026-03-27T20:28:04.817974527Z
+updated: 2026-03-27T20:29:39.996724809Z
+comments:
+- author: ai:claude@joy
+  date: 2026-03-27T20:28:12.343244569Z
+  text: 'joy project set (and legacy flag-based editing) changes project metadata without checking manage capability. member add/rm correctly check manage. Fix: add warn_unless_capable(root, Capability::Manage) before set_value and legacy edit block.'
+- author: ai:claude@joy
+  date: 2026-03-27T20:29:39.990566864Z
+  text: 'Fixed. Added warn_unless_capable(Manage) to project set and legacy flag-based editing. Tested by: AI manage block test in identity.bats (existing test covers the underlying mechanism).'

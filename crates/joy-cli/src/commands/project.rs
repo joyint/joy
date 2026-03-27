@@ -107,6 +107,7 @@ pub fn run(args: ProjectArgs) -> Result<()> {
             return get_value(&project, &a.key);
         }
         Some(ProjectCommand::Set(a)) => {
+            joy_core::capabilities::warn_unless_capable(&root, Capability::Manage);
             set_value(&mut project, &a.key, &a.value)?;
             store::write_yaml(&project_path, &project)?;
             println!("{} = {}", a.key, a.value);
@@ -122,6 +123,7 @@ pub fn run(args: ProjectArgs) -> Result<()> {
     let is_edit = args.name.is_some() || args.description.is_some() || args.language.is_some();
 
     if is_edit {
+        joy_core::capabilities::warn_unless_capable(&root, Capability::Manage);
         if let Some(name) = args.name {
             project.name = name;
         }
