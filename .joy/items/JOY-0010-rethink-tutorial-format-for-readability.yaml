@@ -1,18 +1,20 @@
 id: JOY-0010
 title: Rethink tutorial format for readability
 type: rework
-status: new
+status: closed
 priority: medium
+assignees:
+- member: ai:claude@joy
 effort: 3
 created: 2026-03-20T20:19:40.615497171Z
-updated: 2026-03-20T20:19:48.627952406Z
+updated: 2026-03-27T20:43:42.415504905Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-20T20:19:48.627951796Z
-  text: 'Current tutorial uses a man-page-inspired plaintext format. Issues: (1) renders
-    poorly on GitHub (no markdown formatting), (2) not pleasant in a text editor,
-    (3) lacks color/highlighting even in terminal compared to modern colored man pages.
-    Consider: Markdown for GitHub/editor readability, or a proper man page with troff/mdoc
-    for terminal rendering, or both (Markdown source, generate man page from it).
-    The tutorial is shown via ''joy tutorial'' so the CLI could render Markdown with
-    terminal formatting.'
+  text: 'Current tutorial uses a man-page-inspired plaintext format. Issues: (1) renders poorly on GitHub (no markdown formatting), (2) not pleasant in a text editor, (3) lacks color/highlighting even in terminal compared to modern colored man pages. Consider: Markdown for GitHub/editor readability, or a proper man page with troff/mdoc for terminal rendering, or both (Markdown source, generate man page from it). The tutorial is shown via ''joy tutorial'' so the CLI could render Markdown with terminal formatting.'
+- author: ai:claude@joy
+  date: 2026-03-27T20:39:04.876795021Z
+  text: 'Plan: 1) Convert current tutorial from plaintext to docs/tutorial.md. 2) Add termimad dependency. 3) Render markdown in joy tutorial with color, terminal width, and pagination. 4) Content improvements in a follow-up.'
+- author: ai:claude@joy
+  date: 2026-03-27T20:43:42.408519554Z
+  text: Done. Tutorial converted from man-page plaintext to Markdown (docs/user/Tutorial.md). Rendered via termimad with terminal-width-aware formatting and color. Paged through less -R. Same source file renders natively on GitHub. Content unchanged -- improvements in a follow-up.

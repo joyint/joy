@@ -1,8 +1,12 @@
 id: JOY-0002
 title: joy project get/set for project metadata
 type: story
-status: new
+status: closed
 priority: medium
 effort: 3
 created: 2026-03-20T16:33:31.207867878Z
-updated: 2026-03-20T16:33:31.207867878Z
+updated: 2026-03-27T20:27:56.699551927Z
+comments:
+- author: ai:claude@joy
+  date: 2026-03-27T20:27:56.657035527Z
+  text: get/set already implemented. Closing as done. Found missing manage capability check on project set -- creating separate bug.
