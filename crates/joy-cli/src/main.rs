@@ -127,6 +127,23 @@ struct ShortcutArgs {
     id: String,
 }
 
+/// Warn (yellow) when the project has AI members but no JOY_AUTHOR override is set.
+pub(crate) fn warn_ai_members(root: &std::path::Path, id: &joy_core::identity::Identity) {
+    if id.delegated_by.is_none()
+        && !joy_core::model::project::is_ai_member(&id.member)
+        && std::env::var("JOY_AUTHOR").is_err()
+        && joy_core::identity::has_ai_members(root)
+    {
+        eprintln!(
+            "{} This project has AI members but no identity override is set.\n  \
+             Actions are attributed to {} (git config).\n  \
+             Set JOY_AUTHOR or use --author for explicit identity.",
+            color::warn_mark(),
+            id.member
+        );
+    }
+}
+
 fn main() -> anyhow::Result<()> {
     clap_complete::CompleteEnv::with_factory(Cli::command).complete();
 

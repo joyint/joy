@@ -439,6 +439,25 @@ pub fn log_event(root: &Path, event_type: EventType, target: &str, details: Opti
     let _ = append_event(root, &event);
 }
 
+/// Like `log_event`, but uses a pre-resolved identity string.
+/// This allows the caller to pass the `Identity::log_user()` value
+/// which may include `delegated-by:` for AI members.
+pub fn log_event_as(
+    root: &Path,
+    event_type: EventType,
+    target: &str,
+    details: Option<&str>,
+    user: &str,
+) {
+    let event = Event {
+        event_type,
+        target: target.to_string(),
+        details: details.map(|s| s.to_string()),
+        user: user.to_string(),
+    };
+    let _ = append_event(root, &event);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

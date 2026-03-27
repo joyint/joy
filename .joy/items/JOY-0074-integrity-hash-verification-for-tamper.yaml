@@ -1,0 +1,15 @@
+id: JOY-0074
+title: Integrity hash verification for tamper detection without Crypt
+type: story
+status: new
+priority: medium
+parent: JOY-006B
+deps:
+- JOY-006E
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created: 2026-03-27T18:38:54.178174575Z
+updated: 2026-03-27T18:38:58.640474474Z

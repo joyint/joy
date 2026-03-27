@@ -5,10 +5,10 @@ use anyhow::{bail, Result};
 use chrono::Utc;
 use clap::Args;
 
+use joy_core::identity;
 use joy_core::items;
 use joy_core::model::item::{Assignee, Capability};
 use joy_core::store;
-use joy_core::vcs::Vcs;
 
 use crate::color;
 
@@ -40,9 +40,12 @@ pub fn run(args: AssignArgs) -> Result<()> {
 
     let member = match args.member {
         Some(m) => m,
-        None => joy_core::vcs::default_vcs()
-            .user_email()
-            .map_err(|e| anyhow::anyhow!("{e}. Provide member ID explicitly."))?,
+        None => {
+            let id = identity::resolve_identity(&root)
+                .map_err(|e| anyhow::anyhow!("{e}. Provide member ID explicitly."))?;
+            crate::warn_ai_members(&root, &id);
+            id.member
+        }
     };
 
     // Validate format

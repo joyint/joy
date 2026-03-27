@@ -5,10 +5,10 @@ use anyhow::Result;
 use chrono::Utc;
 use clap::Args;
 
+use joy_core::identity;
 use joy_core::items;
 use joy_core::model::item::Comment;
 use joy_core::store;
-use joy_core::vcs::Vcs;
 
 use crate::color;
 
@@ -37,12 +37,12 @@ pub fn run(args: CommentArgs) -> Result<()> {
 
     let mut item = items::load_item(&root, &args.id)?;
 
-    let author = joy_core::vcs::default_vcs()
-        .user_email()
+    let id = identity::resolve_identity(&root)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
+    crate::warn_ai_members(&root, &id);
     let log_text = text.clone();
     let comment = Comment {
-        author,
+        author: id.member.clone(),
         date: Utc::now(),
         text,
     };
@@ -51,11 +51,12 @@ pub fn run(args: CommentArgs) -> Result<()> {
     item.updated = Utc::now();
     items::update_item(&root, &item)?;
 
-    joy_core::event_log::log_event(
+    joy_core::event_log::log_event_as(
         &root,
         joy_core::event_log::EventType::CommentAdded,
         &item.id,
         Some(&log_text),
+        &id.log_user(),
     );
 
     println!("Added comment to {} {}", color::id(&item.id), item.title);
