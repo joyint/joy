@@ -54,8 +54,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
         .parse()
         .map_err(|e: String| anyhow::anyhow!("{}", e))?;
 
-    let resolved = identity::resolve_identity(&root)
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let resolved = identity::resolve_identity(&root).map_err(|e| anyhow::anyhow!("{e}"))?;
     crate::warn_ai_members(&root, &resolved);
 
     let mut item = items::load_item(&root, &args.id)?;
@@ -142,7 +141,11 @@ pub fn run(args: StatusArgs) -> Result<()> {
                 member: resolved.member.clone(),
                 capabilities: Vec::new(),
             });
-            eprintln!("Auto-assigned {} to {}", color::id(&item.id), resolved.member);
+            eprintln!(
+                "Auto-assigned {} to {}",
+                color::id(&item.id),
+                resolved.member
+            );
 
             // Warn if member lacks item capabilities
             let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);

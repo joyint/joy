@@ -10,4 +10,8 @@ capabilities:
 - implement
 effort: 1
 created: 2026-03-27T18:50:47.090121722Z
-updated: 2026-03-27T18:50:52.292284289Z
+updated: 2026-03-27T19:09:52.714227284Z
+comments:
+- author: ai:claude@joy
+  date: 2026-03-27T19:09:52.714227004Z
+  text: 'Co-Authored-By in git commits stays as-is (ai:claude@joy without delegated-by). Delegation is implicit: git Author = human (delegator), Co-Authored-By = AI. This differs from event logs where delegated-by is explicit because logs have no separate Author header. Document this distinction in the AI instructions.'
