@@ -1,0 +1,14 @@
+id: JOY-006A
+title: Remove JOY_AUTHOR and --author after Auth is implemented
+type: rework
+status: new
+priority: low
+parent: JOY-0066
+deps:
+- JOY-006E
+capabilities:
+- implement
+- review
+effort: 1
+created: 2026-03-27T18:25:10.292204034Z
+updated: 2026-03-27T18:27:26.881558004Z

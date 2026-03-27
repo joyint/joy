@@ -7,11 +7,11 @@ use anyhow::Result;
 use chrono::Utc;
 use clap::Args;
 
+use joy_core::identity;
 use joy_core::items;
 use joy_core::model::item::{Assignee, Status};
 use joy_core::releases;
 use joy_core::store;
-use joy_core::vcs::Vcs;
 
 use crate::color;
 
@@ -53,6 +53,10 @@ pub fn run(args: StatusArgs) -> Result<()> {
         .status
         .parse()
         .map_err(|e: String| anyhow::anyhow!("{}", e))?;
+
+    let resolved = identity::resolve_identity(&root)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    crate::warn_ai_members(&root, &resolved);
 
     let mut item = items::load_item(&root, &args.id)?;
     let old_status = item.status.clone();
@@ -134,19 +138,16 @@ pub fn run(args: StatusArgs) -> Result<()> {
     if matches!(new_status, Status::InProgress) && item.assignees.is_empty() {
         let config = store::load_config();
         if config.workflow.auto_assign {
-            let email = joy_core::vcs::default_vcs()
-                .user_email()
-                .map_err(|e| anyhow::anyhow!("{e}. Assign manually with `joy assign`."))?;
             item.assignees.push(Assignee {
-                member: email.clone(),
+                member: resolved.member.clone(),
                 capabilities: Vec::new(),
             });
-            eprintln!("Auto-assigned {} to {}", color::id(&item.id), email);
+            eprintln!("Auto-assigned {} to {}", color::id(&item.id), resolved.member);
 
             // Warn if member lacks item capabilities
             let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
             if let Ok(project) = store::read_yaml::<joy_core::model::Project>(&project_path) {
-                if let Some(member) = project.members.get(&email) {
+                if let Some(member) = project.members.get(&resolved.member) {
                     if !matches!(
                         member.capabilities,
                         joy_core::model::project::MemberCapabilities::All
@@ -158,7 +159,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
                                 if !caps.contains_key(item_cap) {
                                     eprintln!(
                                         "Warning: {} does not have capability '{}'",
-                                        email, item_cap
+                                        resolved.member, item_cap
                                     );
                                 }
                             }
@@ -179,11 +180,13 @@ pub fn run(args: StatusArgs) -> Result<()> {
     item.updated = Utc::now();
     items::update_item(&root, &item)?;
 
-    joy_core::event_log::log_event(
+    let log_user = resolved.log_user();
+    joy_core::event_log::log_event_as(
         &root,
         joy_core::event_log::EventType::ItemStatusChanged,
         &item.id,
         Some(&format!("{old_status} -> {new_status}")),
+        &log_user,
     );
 
     println!(
@@ -207,11 +210,12 @@ pub fn run(args: StatusArgs) -> Result<()> {
                     parent.status = Status::Closed;
                     parent.updated = Utc::now();
                     items::update_item(&root, &parent)?;
-                    joy_core::event_log::log_event(
+                    joy_core::event_log::log_event_as(
                         &root,
                         joy_core::event_log::EventType::ItemStatusChanged,
                         &parent.id,
                         Some(&format!("{parent_old} -> closed (all children closed)")),
+                        &log_user,
                     );
                     println!(
                         "{} {} -> {} (all children closed)",

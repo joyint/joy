@@ -1,0 +1,42 @@
+id: JOY-0067
+title: Resolve identity from JOY_AUTHOR env var with member validation
+type: story
+status: closed
+priority: high
+parent: JOY-0066
+assignees:
+- member: horst.schwarz@joydev.com
+deps:
+- JOY-0066
+capabilities:
+- plan
+- implement
+- review
+effort: 2
+created: 2026-03-27T18:25:06.441663257Z
+updated: 2026-03-27T19:05:47.686870582Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-27T18:54:00.811558634Z
+  text: 'When AI members exist and no JOY_AUTHOR/--author is set, show a yellow warning on write operations: ''This project has AI members but no identity override is set. Actions are attributed to <git-email> (git config). Set JOY_AUTHOR or use --author for explicit identity.'' Warning color: yellow (not red), to distinguish from errors.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-27T18:54:16.024169310Z
+  text: 'Plan: 1) Add resolve_identity() to joy-core that checks JOY_AUTHOR env var, validates against project members, falls back to git email. 2) If JOY_AUTHOR is an ai:* member, return both the AI identity and the git email as delegator. 3) Warn (yellow) on write ops when AI members exist but no override is set. 4) Replace direct vcs::user_email() calls in commands with resolve_identity().'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-27T19:02:48.947174789Z
+  text: Implementation complete. Manual test with JOY_AUTHOR=ai:claude@joy.
+- author: horst.schwarz@joydev.com
+  date: 2026-03-27T19:03:55.331781199Z
+  text: Verifying delegated-by in event log
+- author: horst.schwarz@joydev.com
+  date: 2026-03-27T19:04:43.578108196Z
+  text: Testing delegated-by after forced rebuild
+- author: ai:claude@joy
+  date: 2026-03-27T19:05:22.316581895Z
+  text: Testing delegated-by after install to correct path
+- author: horst.schwarz@joydev.com
+  date: 2026-03-27T19:05:28.433567469Z
+  text: Test without JOY_AUTHOR - should show yellow warning
+- author: ai:claude@joy
+  date: 2026-03-27T19:05:47.680897358Z
+  text: Implementation verified. JOY_AUTHOR resolves to AI identity with delegated-by in event log. Yellow warning when AI members exist but no override set. Invalid members rejected.

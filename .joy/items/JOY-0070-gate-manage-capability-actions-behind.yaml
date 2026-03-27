@@ -1,0 +1,15 @@
+id: JOY-0070
+title: Gate manage-capability actions behind authentication
+type: story
+status: new
+priority: medium
+parent: JOY-006B
+deps:
+- JOY-006E
+capabilities:
+- plan
+- implement
+- review
+effort: 2
+created: 2026-03-27T18:25:29.262328001Z
+updated: 2026-03-27T18:27:26.892548090Z

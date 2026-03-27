@@ -1,0 +1,17 @@
+id: JOY-0076
+title: Block manage-capability actions for AI member identities
+type: task
+status: new
+priority: high
+parent: JOY-0066
+deps:
+- JOY-0067
+capabilities:
+- implement
+effort: 2
+created: 2026-03-27T18:50:47.085616216Z
+updated: 2026-03-27T18:50:58.152172575Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-27T18:50:58.152171285Z
+  text: When resolved identity is an ai:* member, refuse actions that require manage capability. AI members must not add/remove members, change capabilities, or perform other manage-level operations. This applies regardless of what capabilities are listed in project.yaml.

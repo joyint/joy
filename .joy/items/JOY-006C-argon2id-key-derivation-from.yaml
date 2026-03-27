@@ -1,0 +1,13 @@
+id: JOY-006C
+title: Argon2id key derivation from passphrase and project salt
+type: story
+status: new
+priority: high
+parent: JOY-006B
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created: 2026-03-27T18:25:29.247625995Z
+updated: 2026-03-27T18:27:26.884295955Z

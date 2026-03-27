@@ -1,0 +1,11 @@
+id: JOY-0064
+title: Wire bats and trycmd into justfile recipes
+type: task
+status: new
+priority: medium
+parent: JOY-0061
+capabilities:
+- implement
+effort: 1
+created: 2026-03-27T17:01:43.229101751Z
+updated: 2026-03-27T17:01:43.229101751Z

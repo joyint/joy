@@ -1,0 +1,34 @@
+id: JOY-0061
+title: Integration test infrastructure with bats and trycmd
+type: epic
+status: new
+priority: high
+capabilities:
+- conceive
+- plan
+effort: 5
+created: 2026-03-27T17:01:01.255162043Z
+updated: 2026-03-27T17:01:14.802428082Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-27T17:01:14.802426594Z
+  text: |-
+    Two-layer testing strategy for Joy CLI:
+
+    Layer 1 -- bats (behavior): dynamic fixtures via joy CLI, tests flows and logic.
+    Layer 2 -- trycmd (snapshots): static fixtures, tests exact output stability.
+
+    When to use which:
+    - New CLI command or flag: bats test for behavior
+    - Output formatting change: trycmd snapshot
+    - Customer journey / multi-step flow: bats
+    - Exit code contract: bats
+    - Both when a command has important output AND behavioral logic
+
+    Directory structure:
+      tests/cmd/           -- trycmd tests (.toml + .stdout + fixtures/)
+      tests/integration/   -- bats tests (.bats + setup.bash)
+
+    Justfile recipes: test-cmd (trycmd), test-int (bats), test (all)
+
+    AI rule: every new CLI command or flag must have at least one bats test. Output-critical commands also get a trycmd snapshot.

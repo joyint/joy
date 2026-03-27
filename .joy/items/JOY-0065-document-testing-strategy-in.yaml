@@ -1,0 +1,11 @@
+id: JOY-0065
+title: Document testing strategy in CONTRIBUTING.md
+type: task
+status: new
+priority: medium
+parent: JOY-0061
+capabilities:
+- implement
+effort: 1
+created: 2026-03-27T17:01:43.231940988Z
+updated: 2026-03-27T17:01:43.231940988Z

@@ -1,0 +1,15 @@
+id: JOY-0068
+title: Add --author flag to comment, assign, and status commands
+type: story
+status: new
+priority: high
+parent: JOY-0066
+deps:
+- JOY-0067
+capabilities:
+- plan
+- implement
+- review
+effort: 2
+created: 2026-03-27T18:25:06.445801818Z
+updated: 2026-03-27T18:27:26.876763575Z

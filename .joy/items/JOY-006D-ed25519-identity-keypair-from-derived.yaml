@@ -1,0 +1,15 @@
+id: JOY-006D
+title: Ed25519 identity keypair from derived key material
+type: story
+status: new
+priority: high
+parent: JOY-006B
+deps:
+- JOY-006C
+capabilities:
+- plan
+- implement
+- review
+effort: 2
+created: 2026-03-27T18:25:29.251157765Z
+updated: 2026-03-27T18:27:26.886883669Z
