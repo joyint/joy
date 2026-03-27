@@ -7,31 +7,31 @@ default:
 
 # Run all tests
 test:
-    cargo test --workspace
+    cargo test --workspace --locked
 
 # Rust unit tests only
 test-unit:
-    cargo test --workspace --lib
+    cargo test --workspace --lib --locked
 
 # Integration tests only
 test-int:
-    cargo test --workspace --test '*'
+    cargo test --workspace --test '*' --locked
 
 # Snapshot tests (insta)
 test-snap:
-    cargo insta test --workspace
+    cargo insta test --workspace --locked
 
 # Update snapshots
 test-snap-update:
-    cargo insta test --workspace --review
+    cargo insta test --workspace --review --locked
 
 # Coverage report (HTML)
 test-coverage:
-    cargo llvm-cov --workspace --html
+    cargo llvm-cov --workspace --html --locked
 
 # Re-run tests on change
 test-watch:
-    cargo watch -x 'test --workspace'
+    cargo watch -x 'test --workspace --locked'
 
 # Format all code
 fmt:
@@ -43,7 +43,7 @@ fmt-check:
 
 # Lint all code
 lint:
-    cargo clippy --workspace -- -D warnings
+    cargo clippy --workspace --locked -- -D warnings
 
 # Run fmt-check, lint, test
 check: fmt-check lint test
@@ -113,7 +113,7 @@ setup:
 
 # Install to ~/.local/bin/
 install:
-    cargo build --release -p joyint && mkdir -p ~/.local/bin && cp target/release/joy ~/.local/bin/joy
+    cargo build --release --locked -p joyint && mkdir -p ~/.local/bin && cp target/release/joy ~/.local/bin/joy
 
 # Auto-commit known generated files (.joy/, lockfiles)
 [private]
@@ -154,6 +154,9 @@ release bump="patch":
         echo "Error: working tree is not clean."
         exit 1
     fi
+    echo "Updating dependencies..."
+    cargo update
+    just auto-commit
     echo "Checking (format, lint, test)..."
     if ! just check > /dev/null 2>&1; then
         echo "Checks failed. Run 'just check' for details."
