@@ -157,8 +157,9 @@ pub fn update_gitignore_block(root: &Path, entries: &[(&str, &str)]) -> Result<(
     let gitignore_path = root.join(".gitignore");
 
     let mut lines = String::new();
-    for (path, comment) in entries {
-        lines.push_str(&format!("{:<34} # {}\n", path, comment));
+    for (path, _comment) in entries {
+        lines.push_str(path);
+        lines.push('\n');
     }
     let block = format!(
         "{}\n{}{}",

@@ -1,0 +1,15 @@
+id: JOY-0060
+title: Inline comments in .gitignore break ignore patterns
+type: bug
+status: closed
+priority: critical
+capabilities:
+- implement
+- review
+effort: 1
+created: 2026-03-27T16:55:40.529498961Z
+updated: 2026-03-27T16:58:36.885325103Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-27T16:55:47.520565338Z
+  text: 'Root cause: git .gitignore does not support inline comments. A ''#'' in the middle of a line is treated as part of the pattern. Fix: move comments to lines above the entries, or remove them entirely since the joy:start/joy:end block is already self-documenting.'

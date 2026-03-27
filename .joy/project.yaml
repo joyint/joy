@@ -26,6 +26,17 @@ members:
       document: {}
       create: {}
       assign: {}
+  ai:qwen@joy:
+    capabilities:
+      conceive: {}
+      plan: {}
+      design: {}
+      implement: {}
+      test: {}
+      review: {}
+      document: {}
+      create: {}
+      assign: {}
   ai:vibe@joy:
     capabilities:
       conceive: {}
