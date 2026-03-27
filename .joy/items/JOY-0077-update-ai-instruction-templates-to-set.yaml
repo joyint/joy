@@ -1,17 +1,25 @@
 id: JOY-0077
 title: Update AI instruction templates to set JOY_AUTHOR
 type: task
-status: new
+status: closed
 priority: medium
 parent: JOY-0066
+assignees:
+- member: ai:claude@joy
 deps:
 - JOY-0068
 capabilities:
 - implement
 effort: 1
 created: 2026-03-27T18:50:47.090121722Z
-updated: 2026-03-27T19:09:52.714227284Z
+updated: 2026-03-27T19:40:33.915089741Z
 comments:
 - author: ai:claude@joy
   date: 2026-03-27T19:09:52.714227004Z
   text: 'Co-Authored-By in git commits stays as-is (ai:claude@joy without delegated-by). Delegation is implicit: git Author = human (delegator), Co-Authored-By = AI. This differs from event logs where delegated-by is explicit because logs have no separate Author header. Document this distinction in the AI instructions.'
+- author: ai:claude@joy
+  date: 2026-03-27T19:27:13.220914666Z
+  text: AI tools should set JOY_AUTHOR as a process-level environment variable at session start (export JOY_AUTHOR=ai:claude@joy), not as a per-command prefix. Per-command prefix triggers repeated permission prompts in AI tool harnesses. For Claude Code this could be configured as a hook or in settings.
+- author: ai:claude@joy
+  date: 2026-03-27T19:40:33.908360221Z
+  text: Done. Added 'Identity attribution' section to data/ai/instructions.md. Explains --author flag usage, JOY_AUTHOR fallback, delegated-by semantics, and git Co-Authored-By distinction.

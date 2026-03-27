@@ -5,6 +5,7 @@ use anyhow::Result;
 use chrono::NaiveDate;
 use clap::{Args, Subcommand};
 
+use joy_core::identity;
 use joy_core::items;
 use joy_core::milestones;
 use joy_core::model::milestone::Milestone;
@@ -137,11 +138,15 @@ fn run_add(args: AddArgs) -> Result<()> {
 
     milestones::save_milestone(&root, &ms)?;
 
-    joy_core::event_log::log_event(
+    let log_user = identity::resolve_identity(&root)
+        .map(|id| id.log_user())
+        .unwrap_or_default();
+    joy_core::event_log::log_event_as(
         &root,
         joy_core::event_log::EventType::MilestoneCreated,
         &id,
         Some(&ms.title),
+        &log_user,
     );
 
     println!("Created {} {}", color::id(&id), ms.title);
@@ -329,11 +334,15 @@ fn run_rm(args: RmArgs) -> Result<()> {
 
     milestones::delete_milestone(&root, &args.id)?;
 
-    joy_core::event_log::log_event(
+    let log_user = identity::resolve_identity(&root)
+        .map(|id| id.log_user())
+        .unwrap_or_default();
+    joy_core::event_log::log_event_as(
         &root,
         joy_core::event_log::EventType::MilestoneDeleted,
         &ms.id,
         Some(&ms.title),
+        &log_user,
     );
 
     println!("Deleted {} {}", color::id(&ms.id), ms.title);
@@ -381,11 +390,15 @@ fn run_edit(args: EditArgs) -> Result<()> {
 
     milestones::update_milestone(&root, &ms)?;
 
-    joy_core::event_log::log_event(
+    let log_user = identity::resolve_identity(&root)
+        .map(|id| id.log_user())
+        .unwrap_or_default();
+    joy_core::event_log::log_event_as(
         &root,
         joy_core::event_log::EventType::MilestoneUpdated,
         &ms.id,
         Some(&ms.title),
+        &log_user,
     );
 
     println!("Updated {} {}", color::id(&ms.id), ms.title);
@@ -405,11 +418,15 @@ fn run_link(args: LinkArgs) -> Result<()> {
     item.updated = chrono::Utc::now();
     items::update_item(&root, &item)?;
 
-    joy_core::event_log::log_event(
+    let log_user = identity::resolve_identity(&root)
+        .map(|id| id.log_user())
+        .unwrap_or_default();
+    joy_core::event_log::log_event_as(
         &root,
         joy_core::event_log::EventType::MilestoneLinked,
         &item.id,
         Some(&ms.id),
+        &log_user,
     );
 
     println!(
@@ -435,11 +452,15 @@ fn run_unlink(args: UnlinkArgs) -> Result<()> {
             item.updated = chrono::Utc::now();
             items::update_item(&root, &item)?;
 
-            joy_core::event_log::log_event(
+            let log_user = identity::resolve_identity(&root)
+                .map(|id| id.log_user())
+                .unwrap_or_default();
+            joy_core::event_log::log_event_as(
                 &root,
                 joy_core::event_log::EventType::MilestoneUnlinked,
                 &item.id,
                 Some(&old_ms_id),
+                &log_user,
             );
 
             println!(

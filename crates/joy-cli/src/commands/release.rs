@@ -191,11 +191,15 @@ fn create(args: CreateArgs) -> Result<()> {
     );
 
     // Log event
-    event_log::log_event(
+    let log_user = joy_core::identity::resolve_identity(&root)
+        .map(|id| id.log_user())
+        .unwrap_or_default();
+    event_log::log_event_as(
         &root,
         event_log::EventType::ReleaseCreated,
         &version,
         title_for_log.as_deref(),
+        &log_user,
     );
 
     // --full: version bump, git commit/tag/push, forge release

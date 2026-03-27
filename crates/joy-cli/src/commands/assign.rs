@@ -28,6 +28,10 @@ pub struct AssignArgs {
     /// Remove a member's assignment
     #[arg(long)]
     unassign: bool,
+
+    /// Override identity (email or ai:tool@joy). Takes priority over JOY_AUTHOR.
+    #[arg(long)]
+    author: Option<String>,
 }
 
 pub fn run(args: AssignArgs) -> Result<()> {
@@ -41,7 +45,7 @@ pub fn run(args: AssignArgs) -> Result<()> {
     let member = match args.member {
         Some(m) => m,
         None => {
-            let id = identity::resolve_identity(&root)
+            let id = identity::resolve_identity_with(&root, args.author.as_deref())
                 .map_err(|e| anyhow::anyhow!("{e}. Provide member ID explicitly."))?;
             crate::warn_ai_members(&root, &id);
             id.member
@@ -62,11 +66,14 @@ pub fn run(args: AssignArgs) -> Result<()> {
         }
         item.updated = Utc::now();
         items::update_item(&root, &item)?;
-        joy_core::event_log::log_event(
+        let id = identity::resolve_identity_with(&root, args.author.as_deref())
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        joy_core::event_log::log_event_as(
             &root,
             joy_core::event_log::EventType::ItemUnassigned,
             &item.id,
             Some(&member),
+            &id.log_user(),
         );
         println!("Unassigned {} from {}", member, color::id(&item.id));
         return Ok(());
@@ -97,11 +104,14 @@ pub fn run(args: AssignArgs) -> Result<()> {
     item.updated = Utc::now();
     items::update_item(&root, &item)?;
 
-    joy_core::event_log::log_event(
+    let id = identity::resolve_identity_with(&root, args.author.as_deref())
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    joy_core::event_log::log_event_as(
         &root,
         joy_core::event_log::EventType::ItemAssigned,
         &item.id,
         Some(&member),
+        &id.log_user(),
     );
 
     if caps.is_empty() {

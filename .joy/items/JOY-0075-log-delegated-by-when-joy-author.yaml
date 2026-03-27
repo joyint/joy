@@ -1,7 +1,7 @@
 id: JOY-0075
 title: Log delegated-by when JOY_AUTHOR resolves to an AI member
 type: task
-status: new
+status: closed
 priority: high
 parent: JOY-0066
 deps:
@@ -10,8 +10,11 @@ capabilities:
 - implement
 effort: 2
 created: 2026-03-27T18:50:47.081469410Z
-updated: 2026-03-27T18:50:58.147800414Z
+updated: 2026-03-27T19:38:42.782216080Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-27T18:50:58.147799305Z
   text: 'When JOY_AUTHOR is an ai:* member, event log entries should include the git user as delegator: [ai:claude@joy delegated-by:horst@joydev.com]. The git user email is always available as fallback context.'
+- author: ai:claude@joy
+  date: 2026-03-27T19:38:42.774295823Z
+  text: 'All log_event calls in CLI commands migrated to log_event_as with resolved identity. Covers: add, comment, assign, status, edit, rm, deps, milestone (add/rm/edit/link/unlink), release.'

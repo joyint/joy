@@ -1,0 +1,16 @@
+id: JOY-0079
+title: Add created_by field to item model, set on joy add
+type: task
+status: new
+priority: medium
+deps:
+- JOY-0067
+capabilities:
+- implement
+effort: 2
+created: 2026-03-27T19:24:29.037716659Z
+updated: 2026-03-27T19:24:44.315334649Z
+comments:
+- author: ai:claude@joy
+  date: 2026-03-27T19:24:44.310466088Z
+  text: Add optional created_by field to Item struct. Set to resolved identity (via JOY_AUTHOR or git email) during joy add. Existing items without the field remain valid (serde default None). Makes creator visible without event log lookup, consistent with comment author field.

@@ -5,6 +5,7 @@ use anyhow::Result;
 use chrono::Utc;
 use clap::Args;
 
+use joy_core::identity;
 use joy_core::items;
 use joy_core::model::item::{Capability, Priority};
 use joy_core::store;
@@ -203,11 +204,15 @@ pub fn run(args: EditArgs) -> Result<()> {
     item.updated = Utc::now();
     items::update_item(&root, &item)?;
 
-    joy_core::event_log::log_event(
+    let log_user = identity::resolve_identity(&root)
+        .map(|id| id.log_user())
+        .unwrap_or_default();
+    joy_core::event_log::log_event_as(
         &root,
         joy_core::event_log::EventType::ItemUpdated,
         &item.id,
         Some(&item.title),
+        &log_user,
     );
 
     println!("Updated {} {}", item.id, item.title);

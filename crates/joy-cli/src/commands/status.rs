@@ -37,11 +37,19 @@ pub struct StatusArgs {
 
     /// New status: new, open, in-progress, review, closed, deferred
     status: String,
+
+    /// Override identity (email or ai:tool@joy). Takes priority over JOY_AUTHOR.
+    #[arg(long)]
+    author: Option<String>,
 }
 
 impl StatusArgs {
     pub fn new(id: String, status: String) -> Self {
-        Self { id, status }
+        Self {
+            id,
+            status,
+            author: None,
+        }
     }
 }
 
@@ -54,7 +62,8 @@ pub fn run(args: StatusArgs) -> Result<()> {
         .parse()
         .map_err(|e: String| anyhow::anyhow!("{}", e))?;
 
-    let resolved = identity::resolve_identity(&root).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let resolved = identity::resolve_identity_with(&root, args.author.as_deref())
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
     crate::warn_ai_members(&root, &resolved);
 
     let mut item = items::load_item(&root, &args.id)?;
