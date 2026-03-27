@@ -1,11 +1,17 @@
 id: JOY-0065
 title: Document testing strategy in CONTRIBUTING.md
 type: task
-status: new
+status: closed
 priority: medium
 parent: JOY-0061
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 1
 created: 2026-03-27T17:01:43.231940988Z
-updated: 2026-03-27T17:01:43.231940988Z
+updated: 2026-03-27T19:52:54.543727174Z
+comments:
+- author: ai:claude@joy
+  date: 2026-03-27T19:52:54.538073814Z
+  text: Done. Updated CONTRIBUTING.md testing strategy section with three-layer model (unit/snapshot/integration), when-to-use-which table, and updated just recipes.

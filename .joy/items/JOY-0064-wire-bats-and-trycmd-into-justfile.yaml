@@ -1,11 +1,17 @@
 id: JOY-0064
 title: Wire bats and trycmd into justfile recipes
 type: task
-status: new
+status: closed
 priority: medium
 parent: JOY-0061
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 1
 created: 2026-03-27T17:01:43.229101751Z
-updated: 2026-03-27T17:01:43.229101751Z
+updated: 2026-03-27T19:52:18.850027283Z
+comments:
+- author: ai:claude@joy
+  date: 2026-03-27T19:52:18.843158343Z
+  text: Done. just test now runs test-unit, test-cmd, test-int. Removed old cargo-based test-int recipe.

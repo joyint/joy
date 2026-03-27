@@ -89,24 +89,39 @@ The header goes on the first line of the file, before any `#![...]` attributes, 
 - Dependency cycle detection
 - ID generation and collision prevention
 
-**Integration tests** (`tests/` directory):
+**Snapshot tests** (`crates/joy-cli/tests/cmd/`):
 
-- CLI command execution against real `.joy/` directories
-- Full workflows: init, add, status, deps, ls
+- CLI output is snapshot-tested with `trycmd`
+- Each test is a `.toml` file defining command, args, expected stdout, and exit code
+- Use `...` wildcard for output that varies (timestamps, versions)
+- When to use: output formatting changes, exit code contracts
 
-**Snapshot tests** (for CLI output):
+**Integration tests** (`tests/integration/`):
 
-- CLI output is snapshot-tested with `insta`
-- Ensures formatting changes are intentional
-- Both color and no-color variants
+- End-to-end CLI behavior tested with `bats`
+- Each test creates a temporary project via `setup.bash` (temp dir, git init, joy init)
+- Tests run the real `joy` binary against real `.joy/` directories
+- When to use: new CLI commands/flags, multi-step workflows, customer journeys
+
+**When to use which:**
+
+| Scenario | Layer |
+|----------|-------|
+| New CLI command or flag | Integration test (bats) |
+| Output formatting change | Snapshot test (trycmd) |
+| Multi-step flow / customer journey | Integration test (bats) |
+| Exit code contract | Snapshot test (trycmd) |
+| Data model logic | Unit test (Rust) |
+
+Every new CLI command or flag must have at least one integration test. Output-critical commands also get a snapshot test.
 
 ### Test Commands
 
 ```sh
-just test              # Run all tests
+just test              # Run all tests (unit + snapshot + integration)
 just test-unit         # Rust unit tests only
-just test-int          # Integration tests only
-just test-snap         # Snapshot tests (update with just test-snap-update)
+just test-cmd          # Snapshot tests (trycmd)
+just test-int          # Integration tests (bats)
 just test-coverage     # With coverage report
 just test-watch        # Re-run on file change
 ```

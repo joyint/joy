@@ -1,11 +1,20 @@
 id: JOY-0063
 title: Set up bats with helpers and two example tests
 type: task
-status: new
+status: closed
 priority: medium
 parent: JOY-0061
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 2
 created: 2026-03-27T17:01:43.225384027Z
-updated: 2026-03-27T17:01:43.225384027Z
+updated: 2026-03-27T19:50:37.104772234Z
+comments:
+- author: ai:claude@joy
+  date: 2026-03-27T19:46:05.658240465Z
+  text: 'Plan: 1) Create tests/integration/ directory. 2) Create setup.bash helper with temp project creation. 3) Two example tests: joy init creates project, joy add creates item.'
+- author: ai:claude@joy
+  date: 2026-03-27T19:50:37.098564864Z
+  text: 'Done. tests/integration/setup.bash helper (temp project, debug binary). tests/integration/basic.bats with 4 tests: init, add, ls, comment. All pass. bats added to just doctor (required in joy, optional in jot/platform).'

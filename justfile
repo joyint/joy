@@ -5,17 +5,21 @@
 default:
     @just --list
 
-# Run all tests
-test:
-    cargo test --workspace --locked
+# Run all tests (unit + snapshot + integration)
+test: test-unit test-cmd test-int
 
 # Rust unit tests only
 test-unit:
     cargo test --workspace --lib --locked
 
-# Integration tests only
+# Snapshot tests (trycmd)
+test-cmd:
+    cargo test --locked -p joyint --test cmd
+
+# Integration tests (bats)
 test-int:
-    cargo test --workspace --test '*' --locked
+    cargo build -p joyint --locked
+    bats tests/integration/*.bats
 
 # Snapshot tests (insta)
 test-snap:
@@ -105,6 +109,7 @@ doctor:
     cargo --list 2>/dev/null | grep -q insta    && echo "  cargo-insta: ok"    || miss "cargo-insta"
     cargo --list 2>/dev/null | grep -q 'llvm-cov' && echo "  cargo-llvm-cov: ok" || opt "cargo-llvm-cov" "cargo install cargo-llvm-cov"
     cargo --list 2>/dev/null | grep -q watch    && echo "  cargo-watch: ok"    || opt "cargo-watch" "cargo install cargo-watch"
+    command -v bats          >/dev/null && ok bats bats             || miss "bats (pacman -S bats)"
     command -v gh            >/dev/null && ok gh "gh (GitHub CLI)" || opt "gh" "https://cli.github.com"
 
 # Install cargo tools for development
