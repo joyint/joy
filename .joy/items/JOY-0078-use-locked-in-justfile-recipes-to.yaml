@@ -1,0 +1,16 @@
+id: JOY-0078
+title: Use --locked in justfile recipes to prevent silent Cargo.lock changes
+type: task
+status: in-progress
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 1
+created: 2026-03-27T19:18:40.844267710Z
+updated: 2026-03-27T19:19:15.308387189Z
+comments:
+- author: ai:claude@joy
+  date: 2026-03-27T19:19:15.302025009Z
+  text: 'Path dependencies across submodules (jot/platform depend on joy-core via path) cause Cargo.lock cascades. Fix: use --locked for all build/install/test recipes, use cargo update explicitly in release recipe. Apply to joy, jot, and platform justfiles.'
