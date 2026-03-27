@@ -416,7 +416,7 @@ type ToolEntry = (
     &'static str,
     &'static str,
     fn(bool) -> bool,
-    fn(&Path, &str) -> anyhow::Result<()>,
+    fn(&Path, &str) -> anyhow::Result<bool>,
 );
 
 fn configure_tools(root: &Path) -> anyhow::Result<usize> {
@@ -460,16 +460,15 @@ fn configure_tools(root: &Path) -> anyhow::Result<usize> {
         let member_id = format!("ai:{id}@joy");
         let mut configured = false;
         if already {
-            // Silently update files, then show single status line
             QUIET.store(true, std::sync::atomic::Ordering::Relaxed);
-            configure(root, &member_id)?;
+            let changed = configure(root, &member_id)?;
             QUIET.store(false, std::sync::atomic::Ordering::Relaxed);
-            println!(
-                "  {}{:<24} {}",
-                color::check_mark(),
-                name,
+            let status = if changed {
+                color::success("updated")
+            } else {
                 color::inactive("up to date")
-            );
+            };
+            println!("  {}{:<24} {}", color::check_mark(), name, status);
             configured = true;
         } else {
             print!("  {}{:<24} configure? [Y/n] ", color::warn_mark(), name);
@@ -553,28 +552,32 @@ fn render_joy_block(member_id: &str, has_skill: bool) -> anyhow::Result<String> 
     Ok(rendered.trim().to_string())
 }
 
-fn configure_claude(root: &Path, member_id: &str) -> anyhow::Result<()> {
+fn configure_claude(root: &Path, member_id: &str) -> anyhow::Result<bool> {
     let claude_dir = root.join(".claude");
     fs::create_dir_all(&claude_dir)?;
+    let mut changed = false;
 
     let claude_md = claude_dir.join("CLAUDE.md");
-    update_with_joy_block(&claude_md, &render_joy_block(member_id, true)?)?;
+    changed |= update_with_joy_block(&claude_md, &render_joy_block(member_id, true)?)?;
     qprintln!("    {}.claude/CLAUDE.md", color::check_mark());
 
-    let skill_dir = claude_dir.join("skills/joy");
-    fs::create_dir_all(&skill_dir)?;
-    fs::write(skill_dir.join("SKILL.md"), SKILL_TEMPLATE)?;
+    let skill_path = claude_dir.join("skills/joy/SKILL.md");
+    changed |= write_if_changed(&skill_path, SKILL_TEMPLATE)?;
     qprintln!("    {}.claude/skills/joy/SKILL.md", color::check_mark());
 
-    update_claude_permissions(root)?;
+    changed |= update_claude_permissions(root)?;
 
-    Ok(())
+    Ok(changed)
 }
 
-fn update_claude_permissions(root: &Path) -> anyhow::Result<()> {
+fn update_claude_permissions(root: &Path) -> anyhow::Result<bool> {
     let settings_path = root.join(".claude/settings.json");
-    let joy_permission = "Bash(joy:*)";
-    let jot_permission = "Bash(jot:*)";
+    let joy_permission = "Bash(joy *)";
+    let jot_permission = "Bash(jot *)";
+    let deprecated: &[(&str, &str)] = &[
+        ("Bash(joy:*)", "Bash(joy *)"),
+        ("Bash(jot:*)", "Bash(jot *)"),
+    ];
 
     let mut settings: serde_json::Value = if settings_path.is_file() {
         let content = fs::read_to_string(&settings_path)?;
@@ -596,6 +599,13 @@ fn update_claude_permissions(root: &Path) -> anyhow::Result<()> {
 
     let allow_arr = allow.as_array_mut().unwrap();
 
+    // Migrate deprecated colon syntax to space syntax
+    for (old, new) in deprecated {
+        if let Some(pos) = allow_arr.iter().position(|v| v.as_str() == Some(old)) {
+            allow_arr[pos] = serde_json::json!(new);
+        }
+    }
+
     for perm in [joy_permission, jot_permission] {
         if !allow_arr.iter().any(|v| v.as_str() == Some(perm)) {
             allow_arr.push(serde_json::json!(perm));
@@ -603,15 +613,16 @@ fn update_claude_permissions(root: &Path) -> anyhow::Result<()> {
     }
 
     let json = serde_json::to_string_pretty(&settings)?;
-    fs::write(&settings_path, format!("{json}\n"))?;
+    let changed = write_if_changed(&settings_path, &format!("{json}\n"))?;
     qprintln!("    {}.claude/settings.json", color::check_mark());
 
-    Ok(())
+    Ok(changed)
 }
 
-fn configure_qwen(root: &Path, member_id: &str) -> anyhow::Result<()> {
+fn configure_qwen(root: &Path, member_id: &str) -> anyhow::Result<bool> {
     let qwen_dir = root.join(".qwen");
     fs::create_dir_all(&qwen_dir)?;
+    let mut changed = false;
 
     // Migrate: move root QWEN.md to .qwen/QWEN.md if it has a joy block
     let old_qwen_md = root.join("QWEN.md");
@@ -620,23 +631,23 @@ fn configure_qwen(root: &Path, member_id: &str) -> anyhow::Result<()> {
         let content = fs::read_to_string(&old_qwen_md)?;
         if content.contains(JOY_BLOCK_START) {
             fs::rename(&old_qwen_md, &qwen_md)?;
+            changed = true;
         }
     }
 
-    update_with_joy_block(&qwen_md, &render_joy_block(member_id, true)?)?;
+    changed |= update_with_joy_block(&qwen_md, &render_joy_block(member_id, true)?)?;
     qprintln!("    {}.qwen/QWEN.md", color::check_mark());
 
-    let skill_dir = qwen_dir.join("skills/joy");
-    fs::create_dir_all(&skill_dir)?;
-    fs::write(skill_dir.join("SKILL.md"), SKILL_TEMPLATE)?;
+    let skill_path = qwen_dir.join("skills/joy/SKILL.md");
+    changed |= write_if_changed(&skill_path, SKILL_TEMPLATE)?;
     qprintln!("    {}.qwen/skills/joy/SKILL.md", color::check_mark());
 
-    update_qwen_permissions(root)?;
+    changed |= update_qwen_permissions(root)?;
 
-    Ok(())
+    Ok(changed)
 }
 
-fn update_qwen_permissions(root: &Path) -> anyhow::Result<()> {
+fn update_qwen_permissions(root: &Path) -> anyhow::Result<bool> {
     let settings_path = root.join(".qwen/settings.json");
 
     let mut settings: serde_json::Value = if settings_path.is_file() {
@@ -667,68 +678,117 @@ fn update_qwen_permissions(root: &Path) -> anyhow::Result<()> {
     }
 
     let json = serde_json::to_string_pretty(&settings)?;
-    fs::write(&settings_path, format!("{json}\n"))?;
+    let changed = write_if_changed(&settings_path, &format!("{json}\n"))?;
     qprintln!("    {}.qwen/settings.json", color::check_mark());
 
-    Ok(())
+    Ok(changed)
 }
 
-fn configure_vibe(root: &Path, _member_id: &str) -> anyhow::Result<()> {
+fn configure_vibe(root: &Path, _member_id: &str) -> anyhow::Result<bool> {
     let vibe_dir = root.join(".vibe");
     fs::create_dir_all(&vibe_dir)?;
 
-    let skill_dir = vibe_dir.join("skills/joy");
-    fs::create_dir_all(&skill_dir)?;
-    fs::write(skill_dir.join("SKILL.md"), SKILL_TEMPLATE)?;
+    let skill_path = vibe_dir.join("skills/joy/SKILL.md");
+    let changed = write_if_changed(&skill_path, SKILL_TEMPLATE)?;
     qprintln!("    {}.vibe/skills/joy/SKILL.md", color::check_mark());
     qprintln!(
         "    {}",
         color::inactive("Note: set [tools.bash] permission = \"always\" in .vibe/config.toml")
     );
 
-    Ok(())
+    Ok(changed)
 }
 
-fn configure_copilot(root: &Path, member_id: &str) -> anyhow::Result<()> {
+fn configure_copilot(root: &Path, member_id: &str) -> anyhow::Result<bool> {
     let github_dir = root.join(".github");
     fs::create_dir_all(&github_dir)?;
+    let mut changed = false;
 
     let instructions_md = github_dir.join("copilot-instructions.md");
-    update_with_joy_block(&instructions_md, &render_joy_block(member_id, false)?)?;
+    changed |= update_with_joy_block(&instructions_md, &render_joy_block(member_id, false)?)?;
     qprintln!("    {}.github/copilot-instructions.md", color::check_mark());
-    qprintln!(
-        "    {}",
-        color::inactive("Note: use gh copilot --allow-tool='shell(joy:*)' for permissions")
-    );
 
-    Ok(())
+    changed |= update_copilot_permissions(root)?;
+
+    Ok(changed)
 }
 
-fn update_with_joy_block(path: &Path, content: &str) -> anyhow::Result<()> {
-    let block = format!("{}\n{}\n{}", JOY_BLOCK_START, content, JOY_BLOCK_END);
+fn update_copilot_permissions(root: &Path) -> anyhow::Result<bool> {
+    let copilot_dir = root.join(".github/copilot");
+    fs::create_dir_all(&copilot_dir)?;
+    let settings_path = copilot_dir.join("settings.json");
+
+    let mut settings: serde_json::Value = if settings_path.is_file() {
+        let content = fs::read_to_string(&settings_path)?;
+        serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    let allow = settings
+        .as_object_mut()
+        .unwrap()
+        .entry("allowTools")
+        .or_insert_with(|| serde_json::json!([]));
+
+    let allow_arr = allow.as_array_mut().unwrap();
+
+    for perm in ["shell(joy:*)", "shell(jot:*)"] {
+        if !allow_arr.iter().any(|v| v.as_str() == Some(perm)) {
+            allow_arr.push(serde_json::json!(perm));
+        }
+    }
+
+    let json = serde_json::to_string_pretty(&settings)?;
+    let changed = write_if_changed(&settings_path, &format!("{json}\n"))?;
+    qprintln!("    {}.github/copilot/settings.json", color::check_mark());
+
+    Ok(changed)
+}
+
+/// Write content to a file only if it differs (hash comparison).
+/// Returns true if the file was changed.
+fn write_if_changed(path: &Path, content: &str) -> anyhow::Result<bool> {
+    use std::hash::{DefaultHasher, Hash, Hasher};
 
     if path.is_file() {
         let existing = fs::read_to_string(path)?;
+        let mut h1 = DefaultHasher::new();
+        existing.hash(&mut h1);
+        let mut h2 = DefaultHasher::new();
+        content.hash(&mut h2);
+        if h1.finish() == h2.finish() {
+            return Ok(false);
+        }
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(path, content)?;
+    Ok(true)
+}
+
+fn update_with_joy_block(path: &Path, content: &str) -> anyhow::Result<bool> {
+    let block = format!("{}\n{}\n{}", JOY_BLOCK_START, content, JOY_BLOCK_END);
+
+    let new_content = if path.is_file() {
+        let existing = fs::read_to_string(path)?;
         if existing.contains(JOY_BLOCK_START) && existing.contains(JOY_BLOCK_END) {
-            // Replace existing joy block, preserve everything else
             let start = existing.find(JOY_BLOCK_START).unwrap();
             let end = existing.find(JOY_BLOCK_END).unwrap() + JOY_BLOCK_END.len();
             let mut updated = String::new();
             updated.push_str(&existing[..start]);
             updated.push_str(&block);
             updated.push_str(&existing[end..]);
-            fs::write(path, updated)?;
+            updated
         } else {
-            // Append joy block to existing file
-            let mut file = fs::OpenOptions::new().append(true).open(path)?;
-            writeln!(file, "\n{}", block)?;
+            format!("{}\n\n{}", existing.trim_end(), block)
         }
     } else {
-        // Create new file with joy block
-        fs::write(path, format!("{}\n", block))?;
-    }
+        format!("{}\n", block)
+    };
 
-    Ok(())
+    write_if_changed(path, &new_content)
 }
 
 fn confirm_default_yes() -> anyhow::Result<bool> {
