@@ -1,0 +1,17 @@
+id: JOY-005E
+title: joy ai setup gitignore excludes unconfigured AI tools
+type: bug
+status: closed
+priority: high
+assignees:
+- member: horst.schwarz@joydev.com
+capabilities:
+- implement
+- review
+effort: 2
+created: 2026-03-27T10:02:59.663447304Z
+updated: 2026-03-27T16:07:19.003930703Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-27T16:07:13.449481059Z
+  text: '[x] ensure_gitignore in init.rs writes only Joy base entries (config, credentials, ai, hooks, capabilities). [x] joy ai setup extends the gitignore block with entries for each actually configured tool. [x] update_gitignore_block is a public API in joy-core for atomic block replacement. [x] TOOL_GITIGNORE_ENTRIES maps tool IDs to their gitignore paths. [x] Unconfigured tools are not gitignored.'

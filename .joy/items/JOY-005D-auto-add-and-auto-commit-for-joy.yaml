@@ -1,0 +1,35 @@
+id: JOY-005D
+title: Auto-add and auto-commit for Joy-managed files
+type: story
+status: new
+priority: medium
+capabilities:
+- plan
+- implement
+- review
+effort: 5
+created: 2026-03-27T09:59:15.948852096Z
+updated: 2026-03-27T10:01:53.051625937Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-27T09:59:44.686414121Z
+  text: |-
+    Config keys in workflow section:
+    - auto-add: true|false (default true) -- git add after writing versioned files
+    - auto-commit: true|false (default false) -- git commit after each Joy operation
+    - auto-push: true|false (default false) -- git push after auto-commit
+
+    Applies to all versioned Joy files: items, logs, milestones, releases, project.yaml, config.defaults.yaml, .gitignore. Does NOT apply to gitignored files (config.yaml, credentials.yaml, .joy/ai/, tool configs).
+
+    Implementation: joy-core write helpers (write_yaml, ensure_gitignore, etc.) check config and call git add. Auto-commit wraps the CLI command execution -- one commit per joy command, not per file. Message format: 'joy: <command summary> <item-id>'.
+
+    Progression: auto-add is safe and low-friction (default on). Auto-commit is opt-in for solo developers who want zero-ceremony. Auto-push is opt-in for teams who want instant sync.
+- author: horst.schwarz@joydev.com
+  date: 2026-03-27T10:01:53.051624313Z
+  text: |-
+    Revised: single config key instead of three booleans.
+
+    workflow:
+      auto-git: add    # off | add | commit | push
+
+    Each level implies the previous: push = add + commit + push. Default: add (safe, low-friction). Off for users who want full manual control.
