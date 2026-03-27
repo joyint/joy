@@ -1,0 +1,64 @@
+version: v0.3.6
+date: 2026-03-27
+previous: v0.3.5
+contributors:
+- id: horst.schwarz@joydev.com
+  events: 70
+  items: 22
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 64
+  items: 18
+items:
+  epics:
+  - id: JOY-0061
+    title: Integration test infrastructure with bats and trycmd
+  stories:
+  - id: JOY-005F
+    title: joy ai check shows full status like ai setup
+  - id: JOY-0067
+    title: Resolve identity from JOY_AUTHOR env var with member validation
+  - id: JOY-0068
+    title: Add --author flag to comment, assign, and status commands
+  - id: JOY-0002
+    title: joy project get/set for project metadata
+  - id: JOY-005D
+    title: Auto-add and auto-commit for Joy-managed files
+  tasks:
+  - id: JOY-0078
+    title: Use --locked in justfile recipes to prevent silent Cargo.lock changes
+  - id: JOY-0075
+    title: Log delegated-by when JOY_AUTHOR resolves to an AI member
+  - id: JOY-0076
+    title: Block manage-capability actions for AI member identities
+  - id: JOY-0077
+    title: Update AI instruction templates to set JOY_AUTHOR
+  - id: JOY-0062
+    title: Set up trycmd with fixture and two example tests
+  - id: JOY-0063
+    title: Set up bats with helpers and two example tests
+  - id: JOY-0064
+    title: Wire bats and trycmd into justfile recipes
+  - id: JOY-0065
+    title: Document testing strategy in CONTRIBUTING.md
+  - id: JOY-0079
+    title: Add created_by field to item model, set on joy add
+  - id: JOY-004A
+    title: Document config layering and governance for end users
+  bugs:
+  - id: JOY-0051
+    title: Permission pattern uses deprecated colon syntax
+  - id: JOY-005E
+    title: joy ai setup gitignore excludes unconfigured AI tools
+  - id: JOY-0060
+    title: Inline comments in .gitignore break ignore patterns
+  - id: JOY-005A
+    title: Item title with colon breaks YAML template rendering
+  - id: JOY-007B
+    title: joy project set missing manage capability check
+  reworks:
+  - id: JOY-005C
+    title: Organize .gitignore with tool-specific blocks
+  - id: JOY-0010
+    title: Rethink tutorial format for readability
+  - id: JOY-007C
+    title: Update tutorial content for current Joy features and identity system
