@@ -1,9 +1,11 @@
 id: JOY-0068
 title: Add --author flag to comment, assign, and status commands
 type: story
-status: new
+status: closed
 priority: high
 parent: JOY-0066
+assignees:
+- member: horst.schwarz@joydev.com
 deps:
 - JOY-0067
 capabilities:
@@ -12,4 +14,14 @@ capabilities:
 - review
 effort: 2
 created: 2026-03-27T18:25:06.445801818Z
-updated: 2026-03-27T18:27:26.876763575Z
+updated: 2026-03-27T19:33:38.629596580Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-27T19:29:14.165407216Z
+  text: 'Plan: add --author <MEMBER> flag to comment, assign, and status commands. When set, use it instead of JOY_AUTHOR env var. Same validation and delegated-by logic as JOY_AUTHOR. Priority: --author flag > JOY_AUTHOR env var > git email.'
+- author: ai:claude@joy
+  date: 2026-03-27T19:33:26.994095269Z
+  text: Testing --author flag
+- author: ai:claude@joy
+  date: 2026-03-27T19:33:33.707645605Z
+  text: 'Done. --author flag added to comment, assign, status, and add commands. Priority: --author > JOY_AUTHOR > git email. All tests pass.'

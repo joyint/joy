@@ -4,6 +4,7 @@
 use anyhow::Result;
 use clap::Args;
 
+use joy_core::identity;
 use joy_core::items;
 use joy_core::store;
 
@@ -64,14 +65,20 @@ pub fn run(args: RmArgs) -> Result<()> {
         }
     }
 
+    let resolved = identity::resolve_identity(&root).unwrap_or(identity::Identity {
+        member: "unknown".into(),
+        delegated_by: None,
+    });
+    let log_user = resolved.log_user();
     for id in &to_delete {
         let deleted = items::delete_item(&root, id)?;
         let updated = items::remove_references(&root, id)?;
-        joy_core::event_log::log_event(
+        joy_core::event_log::log_event_as(
             &root,
             joy_core::event_log::EventType::ItemDeleted,
             id,
             Some(&deleted.title),
+            &log_user,
         );
         println!("Deleted {} {}", color::id(id), deleted.title);
         for ref_id in &updated {

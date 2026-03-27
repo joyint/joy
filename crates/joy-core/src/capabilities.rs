@@ -5,11 +5,12 @@ use std::path::Path;
 
 use crate::identity;
 use crate::model::item::Capability;
-use crate::model::project::Project;
+use crate::model::project::{is_ai_member, Project};
 use crate::store;
 
 /// Check whether the current user has a management capability.
 /// Prints a warning to stderr if denied or not registered.
+/// Blocks AI members from manage-level actions entirely.
 /// Returns true if allowed, false if denied.
 pub fn warn_unless_capable(root: &Path, required: Capability) -> bool {
     let member_id = match identity::resolve_identity(root) {
@@ -18,6 +19,15 @@ pub fn warn_unless_capable(root: &Path, required: Capability) -> bool {
     };
     if member_id.is_empty() {
         return true;
+    }
+
+    // AI members are never allowed to perform manage actions
+    if is_ai_member(&member_id) && required == Capability::Manage {
+        eprintln!(
+            "Error: AI member {} cannot perform manage actions.",
+            member_id
+        );
+        return false;
     }
 
     let project_path = store::joy_dir(root).join(store::PROJECT_FILE);

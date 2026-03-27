@@ -4,8 +4,9 @@
 //! Identity resolution for Joy CLI operations.
 //!
 //! Resolves the acting user's identity by checking (in order):
-//! 1. `JOY_AUTHOR` environment variable
-//! 2. `git config user.email` (fallback)
+//! 1. `--author` CLI flag (if provided)
+//! 2. `JOY_AUTHOR` environment variable
+//! 3. `git config user.email` (fallback)
 //!
 //! When the resolved identity is an AI member (`ai:*`), the git email
 //! is captured as the delegating human (`delegated_by`).
@@ -39,15 +40,28 @@ impl Identity {
 
 /// Resolve the acting identity for the current operation.
 ///
-/// Checks `JOY_AUTHOR` first, falls back to `git config user.email`.
-/// If `JOY_AUTHOR` is an AI member, the git email is used as `delegated_by`.
+/// Priority: `author_override` (--author flag) > `JOY_AUTHOR` env var > git email.
+/// If the resolved identity is an AI member, the git email is used as `delegated_by`.
 /// Validates that the identity is a registered project member (if members exist).
 pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
+    resolve_identity_with(root, None)
+}
+
+/// Like `resolve_identity`, but accepts an explicit `--author` override.
+pub fn resolve_identity_with(
+    root: &Path,
+    author_override: Option<&str>,
+) -> Result<Identity, JoyError> {
     let git_email = crate::vcs::default_vcs().user_email()?;
     let project = load_project_optional(root);
 
-    match std::env::var("JOY_AUTHOR") {
-        Ok(author) if !author.is_empty() => {
+    // Priority: --author flag > JOY_AUTHOR env var > git email
+    let override_author = author_override
+        .map(|s| s.to_string())
+        .or_else(|| std::env::var("JOY_AUTHOR").ok().filter(|s| !s.is_empty()));
+
+    match override_author {
+        Some(author) => {
             validate_member(&author, &project)?;
             let delegated_by = if is_ai_member(&author) {
                 Some(git_email)
@@ -59,7 +73,7 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
                 delegated_by,
             })
         }
-        _ => Ok(Identity {
+        None => Ok(Identity {
             member: git_email,
             delegated_by: None,
         }),
@@ -89,7 +103,7 @@ fn validate_member(member: &str, project: &Option<Project>) -> Result<(), JoyErr
     }
     if !project.members.contains_key(member) {
         return Err(JoyError::Other(format!(
-            "JOY_AUTHOR '{}' is not a registered project member. \
+            "'{}' is not a registered project member. \
              Use `joy member add {}` to register.",
             member, member
         )));

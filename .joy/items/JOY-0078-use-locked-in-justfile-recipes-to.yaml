@@ -1,7 +1,7 @@
 id: JOY-0078
 title: Use --locked in justfile recipes to prevent silent Cargo.lock changes
 type: task
-status: in-progress
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -9,7 +9,7 @@ capabilities:
 - implement
 effort: 1
 created: 2026-03-27T19:18:40.844267710Z
-updated: 2026-03-27T19:19:15.308387189Z
+updated: 2026-03-27T19:21:50.330875047Z
 comments:
 - author: ai:claude@joy
   date: 2026-03-27T19:19:15.302025009Z

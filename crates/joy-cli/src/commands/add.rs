@@ -78,6 +78,10 @@ pub struct AddArgs {
     /// Capabilities (comma-separated, overrides type defaults)
     #[arg(short = 'c', long)]
     capabilities: Option<String>,
+
+    /// Override identity (email or ai:tool@joy). Takes priority over JOY_AUTHOR.
+    #[arg(long)]
+    author: Option<String>,
 }
 
 pub fn run(args: AddArgs) -> Result<()> {
@@ -195,11 +199,15 @@ pub fn run(args: AddArgs) -> Result<()> {
 
     items::save_item(&root, &item)?;
 
-    joy_core::event_log::log_event(
+    let identity = joy_core::identity::resolve_identity_with(&root, args.author.as_deref())
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    crate::warn_ai_members(&root, &identity);
+    joy_core::event_log::log_event_as(
         &root,
         joy_core::event_log::EventType::ItemCreated,
         &id,
         Some(&title),
+        &identity.log_user(),
     );
 
     println!("Created {} {}", id, title);

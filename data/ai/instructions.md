@@ -40,6 +40,30 @@ Your member ID is defined in the tool-specific configuration file
 3. If your member entry does not exist, tell the user and suggest
    `joy ai setup` or `joy project member add <YOUR-ID>`.
 
+### Identity attribution
+
+Use the `--author` flag with your member ID on all Joy write commands:
+
+```
+joy comment <ID> "text" --author <YOUR-ID>
+joy add task "title" --author <YOUR-ID>
+joy status <ID> closed --author <YOUR-ID>
+joy assign <ID> --author <YOUR-ID>
+```
+
+This ensures your actions are attributed to your AI identity in the
+event log, not to the human's git email. The event log will record
+delegated-by to trace accountability back to the human who started
+the session.
+
+If `--author` is not available (older Joy version), set the
+`JOY_AUTHOR` environment variable as a process-level export at
+session start instead. Do NOT set it as a per-command prefix.
+
+Git commits use a different pattern: the human is the git Author,
+and your member ID goes in `Co-Authored-By`. This is already
+configured in your tool-specific file (e.g. CLAUDE.md).
+
 Respect the capabilities and limits configured for your member ID:
 - Only work on capabilities assigned to you. If asked to do something
   outside your capabilities, inform the user.

@@ -5,6 +5,7 @@ use anyhow::Result;
 use chrono::Utc;
 use clap::Args;
 
+use joy_core::identity;
 use joy_core::items;
 use joy_core::store;
 
@@ -101,11 +102,15 @@ fn add_dep(root: &std::path::Path, item_id: &str, dep_id: &str) -> Result<()> {
     item.updated = Utc::now();
     items::update_item(root, &item)?;
 
-    joy_core::event_log::log_event(
+    let log_user = identity::resolve_identity(root)
+        .map(|id| id.log_user())
+        .unwrap_or_default();
+    joy_core::event_log::log_event_as(
         root,
         joy_core::event_log::EventType::DepAdded,
         item_id,
         Some(dep_id),
+        &log_user,
     );
 
     println!(
@@ -133,11 +138,15 @@ fn rm_dep(root: &std::path::Path, item_id: &str, dep_id: &str) -> Result<()> {
     item.updated = Utc::now();
     items::update_item(root, &item)?;
 
-    joy_core::event_log::log_event(
+    let log_user = identity::resolve_identity(root)
+        .map(|id| id.log_user())
+        .unwrap_or_default();
+    joy_core::event_log::log_event_as(
         root,
         joy_core::event_log::EventType::DepRemoved,
         item_id,
         Some(dep_id),
+        &log_user,
     );
 
     println!(

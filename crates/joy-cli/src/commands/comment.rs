@@ -24,6 +24,10 @@ pub struct CommentArgs {
 
     /// Comment text (required)
     text: Option<String>,
+
+    /// Override identity (email or ai:tool@joy). Takes priority over JOY_AUTHOR.
+    #[arg(long)]
+    author: Option<String>,
 }
 
 pub fn run(args: CommentArgs) -> Result<()> {
@@ -37,7 +41,8 @@ pub fn run(args: CommentArgs) -> Result<()> {
 
     let mut item = items::load_item(&root, &args.id)?;
 
-    let id = identity::resolve_identity(&root).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let id = identity::resolve_identity_with(&root, args.author.as_deref())
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
     crate::warn_ai_members(&root, &id);
     let log_text = text.clone();
     let comment = Comment {
