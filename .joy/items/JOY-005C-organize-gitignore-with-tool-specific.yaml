@@ -1,0 +1,17 @@
+id: JOY-005C
+title: Organize .gitignore with tool-specific blocks
+type: rework
+status: closed
+priority: medium
+assignees:
+- member: horst.schwarz@joydev.com
+capabilities:
+- implement
+- review
+effort: 1
+created: 2026-03-27T09:31:39.462426043Z
+updated: 2026-03-27T09:41:35.998320123Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-27T09:41:30.290586464Z
+  text: '[x] .gitignore with joy:start/joy:end block structure. [x] ensure_gitignore in init.rs uses block replacement (atomic update). [x] Added .github/copilot/, .joy/capabilities/, .joy/hooks/. Removed obsolete root QWEN.md. [x] Version bump 0.3.4 -> 0.3.5 in all Cargo.toml. [x] Added release.version-files to project.yaml for automatic bumping.'
