@@ -123,13 +123,24 @@ pub fn run(args: ShowArgs) -> Result<()> {
     }
 
     println!("{}", color::label(&"-".repeat(w)));
-    println!(
-        "{} {}  {} {}",
-        color::label("Created:"),
-        color::label(&item.created.format("%Y-%m-%d %H:%M").to_string()),
-        color::label("Updated:"),
-        color::label(&item.updated.format("%Y-%m-%d %H:%M").to_string())
-    );
+    let created_info = match &item.created_by {
+        Some(by) => format!(
+            "{} {} by {}  {} {}",
+            color::label("Created:"),
+            color::label(&item.created.format("%Y-%m-%d %H:%M").to_string()),
+            color::user(by),
+            color::label("Updated:"),
+            color::label(&item.updated.format("%Y-%m-%d %H:%M").to_string())
+        ),
+        None => format!(
+            "{} {}  {} {}",
+            color::label("Created:"),
+            color::label(&item.created.format("%Y-%m-%d %H:%M").to_string()),
+            color::label("Updated:"),
+            color::label(&item.updated.format("%Y-%m-%d %H:%M").to_string())
+        ),
+    };
+    println!("{created_info}");
 
     Ok(())
 }

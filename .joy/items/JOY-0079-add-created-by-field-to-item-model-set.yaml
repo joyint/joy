@@ -1,16 +1,24 @@
 id: JOY-0079
 title: Add created_by field to item model, set on joy add
 type: task
-status: new
+status: closed
 priority: medium
+assignees:
+- member: ai:claude@joy
 deps:
 - JOY-0067
 capabilities:
 - implement
 effort: 2
 created: 2026-03-27T19:24:29.037716659Z
-updated: 2026-03-27T19:24:44.315334649Z
+updated: 2026-03-27T20:16:14.202703646Z
 comments:
 - author: ai:claude@joy
   date: 2026-03-27T19:24:44.310466088Z
   text: Add optional created_by field to Item struct. Set to resolved identity (via JOY_AUTHOR or git email) during joy add. Existing items without the field remain valid (serde default None). Makes creator visible without event log lookup, consistent with comment author field.
+- author: ai:claude@joy
+  date: 2026-03-27T20:13:45.767237875Z
+  text: 'Plan: 1) Add optional created_by field to Item struct (serde default None for backwards compat). 2) Set it in joy add via resolve_identity_with. 3) Show it in joy show. 4) Unit test for roundtrip. 5) Integration test.'
+- author: ai:claude@joy
+  date: 2026-03-27T20:16:14.197232084Z
+  text: 'Done. Optional created_by field on Item (serde default None, backwards compatible). Set via resolve_identity in joy add. Shown in joy show as ''Created: date by member''. Unit tests pass (snapshot unchanged since None is skipped). Integration test confirms field is written.'

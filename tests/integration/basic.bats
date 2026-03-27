@@ -29,6 +29,13 @@ load setup
     [[ "$output" == *"Second item"* ]]
 }
 
+@test "joy add sets created_by field" {
+    joy init --name "Test Project"
+    joy project member add ai:test@joy
+    joy add task "Created by AI" --author ai:test@joy
+    grep -q "created_by: ai:test@joy" .joy/items/*.yaml
+}
+
 @test "joy comment adds a comment" {
     joy init --name "Test Project"
     joy add task "Commentable item"

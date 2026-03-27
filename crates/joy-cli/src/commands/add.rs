@@ -197,11 +197,12 @@ pub fn run(args: AddArgs) -> Result<()> {
         }
     }
 
-    items::save_item(&root, &item)?;
-
     let identity = joy_core::identity::resolve_identity_with(&root, args.author.as_deref())
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     crate::warn_ai_members(&root, &identity);
+    item.created_by = Some(identity.member.clone());
+
+    items::save_item(&root, &item)?;
     joy_core::event_log::log_event_as(
         &root,
         joy_core::event_log::EventType::ItemCreated,

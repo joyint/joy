@@ -28,6 +28,8 @@ pub struct Item {
     pub effort: Option<u8>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_by: Option<String>,
     pub created: DateTime<Utc>,
     pub updated: DateTime<Utc>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -150,6 +152,7 @@ impl Item {
             capabilities,
             effort: None,
             version: None,
+            created_by: None,
             created: now,
             updated: now,
             description: None,
