@@ -1,12 +1,15 @@
 id: JOY-0054
 title: Migrate AI instructions to MiniJinja templates
 type: rework
-status: new
+status: deferred
 priority: medium
 effort: 2
 created: 2026-03-25T18:42:31.423564942Z
-updated: 2026-03-25T18:42:49.114628297Z
+updated: 2026-03-27T20:25:13.978267822Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-25T18:42:49.114626216Z
   text: Candidate from ADR-019. data/ai/instructions.md contains project-specific values (acronym, language, interaction levels) that could use MiniJinja variables instead of static text.
+- author: ai:claude@joy
+  date: 2026-03-27T20:25:13.965956459Z
+  text: Won't fix. instructions.md uses CLI references (joy project, joy config) for project-specific values at runtime. This is better than static rendering because values stay current without re-sync. No MiniJinja variables needed.

@@ -1,12 +1,15 @@
 id: JOY-0056
 title: Migrate AI doc scaffolds to MiniJinja templates
 type: rework
-status: new
+status: deferred
 priority: low
 effort: 1
 created: 2026-03-25T18:42:42.934958150Z
-updated: 2026-03-25T18:42:49.119752758Z
+updated: 2026-03-27T20:25:34.797250580Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-25T18:42:49.119752445Z
   text: Candidate from ADR-019. data/ai/templates/*.md (Vision, Architecture, Contributing scaffolds) could use project name as variable. Low priority -- currently static and functional.
+- author: ai:claude@joy
+  date: 2026-03-27T20:25:34.794934532Z
+  text: Won't fix. Doc scaffolds are intentionally generic. Only gain would be project name in headings -- minimal value for the added complexity. Can revisit if scaffolds grow more project-specific content.
