@@ -369,6 +369,22 @@ Supported tools for tool mode:
 
 No own agent runtime, no API calls, no cost tracking needed. The AI tool handles everything -- Joy just provides the product management interface.
 
+### AI file lifecycle
+
+Files managed by Joy fall into two lifecycle groups:
+
+**Permanent** -- created by `joy init`, persist regardless of AI tool configuration:
+- `.joy/hooks/` (commit-msg hook for item ID enforcement)
+- `.joy/project.yaml` (project metadata, members)
+- `.joy/config.defaults.yaml` (shared config baseline)
+
+**AI-bound** -- created by `joy ai setup`, removed when the last AI tool is reset via `joy ai reset`:
+- `.joy/ai/` (instructions, skills, setup guides)
+- `.joy/capabilities/` (capability definition files)
+- Tool-specific directories (`.claude/`, `.qwen/`, `.vibe/`, `.github/copilot*`)
+
+When adding new AI-related files, decide which group they belong to. If the file is only useful when at least one AI tool is configured, it belongs to the AI-bound group. The `.gitignore` block is also updated dynamically -- only configured tools get gitignore entries.
+
 ### Capability files
 
 Joy ships embedded capability files deployed to `.joy/ai/capabilities/` via `joy ai setup`. Each file describes one of Joy's seven fixed capabilities (conceive, plan, design, implement, test, review, document) with human-readable descriptions, a constraints table, and a machine-parseable YAML block defining permissions and applicable tools.
