@@ -126,6 +126,12 @@ just test-coverage     # With coverage report
 just test-watch        # Re-run on file change
 ```
 
+### Before closing an item
+
+Run `just test` before closing any implementation item. All three layers (unit, snapshot, integration) must pass. If a test fails, fix it before closing -- do not close items with broken tests.
+
+When adding new CLI commands or flags, write the tests as part of the implementation, not as a follow-up item. Tests are not optional extras -- they are part of "done".
+
 ### Coverage Target
 
 Aim for >80% line coverage on core libraries. No hard enforcement -- coverage is a signal, not a goal.
