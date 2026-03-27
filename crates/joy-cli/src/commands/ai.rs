@@ -84,12 +84,13 @@ fn setup() -> anyhow::Result<()> {
 
     check_docs(&root)?;
     copy_templates(&root)?;
-    let tool_count = configure_tools(&root)?;
+    let configured_tools = configure_tools(&root)?;
+    update_gitignore(&root, &configured_tools)?;
     check_nested_projects(&root)?;
 
     let msg = format!(
-        "AI integration complete -- {} tool(s) configured",
-        tool_count
+        "AI integration complete -- {}",
+        color::plural(configured_tools.len(), "tool")
     );
     println!("{}", color::footer(&msg));
     Ok(())
@@ -236,27 +237,84 @@ fn check() -> anyhow::Result<()> {
     let root = joy_core::store::find_project_root(&std::env::current_dir()?)
         .ok_or_else(|| anyhow::anyhow!("No Joy project found (run `joy init` first)"))?;
 
+    println!("{}", color::header("AI Status"));
+    println!();
+
+    // Templates
+    println!("{}", color::section("Templates"));
     let diffs = embedded::diff_files(&root, AI_FILES)?;
-    let issues: Vec<_> = diffs
-        .iter()
-        .filter(|(_, s)| *s != FileStatus::UpToDate)
-        .collect();
-
-    if issues.is_empty() {
-        println!("{}AI templates up to date.", color::check_mark());
-        std::process::exit(0);
-    }
-
-    for (path, status) in &issues {
-        let label = match status {
-            FileStatus::Outdated => color::warning("outdated"),
-            FileStatus::Missing => color::danger("missing"),
-            FileStatus::UpToDate => unreachable!(),
+    let mut has_issues = false;
+    for (path, status) in &diffs {
+        let (mark, label) = match status {
+            FileStatus::UpToDate => (color::check_mark(), color::inactive("up to date")),
+            FileStatus::Outdated => {
+                has_issues = true;
+                (color::warn_mark(), color::warning("outdated"))
+            }
+            FileStatus::Missing => {
+                has_issues = true;
+                (color::cross_mark(), color::danger("missing"))
+            }
         };
-        println!("  {} .joy/{}", label, path);
+        println!("  {}{:<34} {}", mark, format!(".joy/{}", path), label);
     }
-    println!("\nRun {} to update.", color::label("joy ai setup"));
-    std::process::exit(2);
+    println!();
+
+    // AI Tools
+    println!("{}", color::section("AI Tools"));
+    let tool_checks: &[(&str, &str)] = &[
+        ("Claude Code", "claude"),
+        ("Qwen Code", "qwen"),
+        ("Mistral Vibe", "vibe"),
+        ("GitHub Copilot", "copilot"),
+    ];
+
+    let mut configured_count = 0;
+    for (name, id) in tool_checks {
+        let installed = match *id {
+            "claude" => which("claude"),
+            "qwen" => which("qwen") || which("qwen-code"),
+            "vibe" => which("vibe"),
+            "copilot" => which("copilot") || which("gh"),
+            _ => false,
+        };
+        let configured = is_tool_configured(&root, id);
+        let (mark, status) = if configured {
+            configured_count += 1;
+            (
+                color::check_mark().to_string(),
+                color::success("configured"),
+            )
+        } else if installed {
+            (
+                color::warn_mark().to_string(),
+                color::warning("installed, not configured"),
+            )
+        } else {
+            ("  ".to_string(), color::inactive("not installed"))
+        };
+        println!("  {}{:<24} {}", mark, name, status);
+    }
+
+    println!();
+    let msg = format!(
+        "{} · {}",
+        if has_issues {
+            format!(
+                "templates need update -- run {}",
+                color::label("joy ai setup")
+            )
+        } else {
+            "templates up to date".to_string()
+        },
+        color::plural(configured_count, "tool")
+    );
+    println!("{}", color::footer(&msg));
+
+    if has_issues {
+        std::process::exit(2);
+    }
+    Ok(())
 }
 
 fn reset(args: ResetArgs) -> anyhow::Result<()> {
@@ -419,10 +477,11 @@ type ToolEntry = (
     fn(&Path, &str) -> anyhow::Result<bool>,
 );
 
-fn configure_tools(root: &Path) -> anyhow::Result<usize> {
+/// Returns the list of configured tool IDs.
+fn configure_tools(root: &Path) -> anyhow::Result<Vec<&'static str>> {
     println!("{}", color::section("AI Tools"));
 
-    let mut tool_count = 0;
+    let mut configured_tools: Vec<&'static str> = Vec::new();
 
     let tools: &[ToolEntry] = &[
         (
@@ -455,7 +514,6 @@ fn configure_tools(root: &Path) -> anyhow::Result<usize> {
         if !detect(false) {
             continue;
         }
-        tool_count += 1;
         let already = is_tool_configured(root, id);
         let member_id = format!("ai:{id}@joy");
         let mut configured = false;
@@ -470,11 +528,13 @@ fn configure_tools(root: &Path) -> anyhow::Result<usize> {
             };
             println!("  {}{:<24} {}", color::check_mark(), name, status);
             configured = true;
+            configured_tools.push(*id);
         } else {
             print!("  {}{:<24} configure? [Y/n] ", color::warn_mark(), name);
             if confirm_default_yes()? {
                 configure(root, &member_id)?;
                 configured = true;
+                configured_tools.push(*id);
             }
         }
 
@@ -520,7 +580,7 @@ fn configure_tools(root: &Path) -> anyhow::Result<usize> {
         joy_core::store::write_yaml(&project_path, &project)?;
     }
 
-    if tool_count == 0 {
+    if configured_tools.is_empty() {
         println!("  {}No supported AI tools detected.", color::warn_mark());
         println!(
             "  {}",
@@ -538,7 +598,7 @@ fn configure_tools(root: &Path) -> anyhow::Result<usize> {
     }
 
     println!();
-    Ok(tool_count)
+    Ok(configured_tools)
 }
 
 fn render_joy_block(member_id: &str, has_skill: bool) -> anyhow::Result<String> {
@@ -807,6 +867,35 @@ fn which(binary: &str) -> bool {
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
+}
+
+/// Gitignore entries per AI tool.
+const TOOL_GITIGNORE_ENTRIES: &[(&str, &[(&str, &str)])] = &[
+    ("claude", &[(".claude/", "Claude Code")]),
+    ("qwen", &[(".qwen/", "Qwen Code")]),
+    ("vibe", &[(".vibe/", "Mistral Vibe")]),
+    (
+        "copilot",
+        &[
+            (".github/copilot-instructions.md", "GitHub Copilot"),
+            (".github/copilot/", "GitHub Copilot"),
+        ],
+    ),
+];
+
+fn update_gitignore(root: &Path, configured_tools: &[&str]) -> anyhow::Result<()> {
+    use joy_core::init::GITIGNORE_BASE_ENTRIES;
+
+    let mut entries: Vec<(&str, &str)> = GITIGNORE_BASE_ENTRIES.to_vec();
+
+    for (tool_id, tool_entries) in TOOL_GITIGNORE_ENTRIES {
+        if configured_tools.contains(tool_id) {
+            entries.extend_from_slice(tool_entries);
+        }
+    }
+
+    joy_core::init::update_gitignore_block(root, &entries)?;
+    Ok(())
 }
 
 /// Scan subdirectories (max 2 levels) for nested Joy projects that lack AI tool config.

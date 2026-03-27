@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Joy commit-msg hook -- validates that commit messages reference a Joy item.
+# Installed via: git config core.hooksPath .joy/hooks
+# See ADR-015 for error output format.
+
+set -euo pipefail
+
+MSG_FILE="$1"
+MSG=$(cat "$MSG_FILE")
+
+# Allow merge commits
+if [ -f "$(git rev-parse --git-dir)/MERGE_HEAD" ] 2>/dev/null; then
+    exit 0
+fi
+
+# Allow [no-item] bypass
+if echo "$MSG" | grep -qF '[no-item]'; then
+    exit 0
+fi
+
+# Read project acronym from .joy/project.yaml
+PROJECT_FILE=""
+ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+if [ -f "$ROOT/.joy/project.yaml" ]; then
+    PROJECT_FILE="$ROOT/.joy/project.yaml"
+fi
+
+if [ -z "$PROJECT_FILE" ]; then
+    # No Joy project found, skip validation
+    exit 0
+fi
+
+ACRONYM=$(grep -E '^acronym:' "$PROJECT_FILE" | head -1 | sed 's/^acronym:[[:space:]]*//' | tr -d '"' | tr -d "'")
+
+if [ -z "$ACRONYM" ]; then
+    exit 0
+fi
+
+# Check for item ID pattern: ACRONYM-XXXX (hex)
+PATTERN="${ACRONYM}-[0-9A-Fa-f]{4}"
+
+if echo "$MSG" | grep -qE "$PATTERN"; then
+    exit 0
+fi
+
+# Error output (ADR-015 diagnostic format)
+echo "" >&2
+echo "error: commit message must reference a Joy item" >&2
+echo "  |" >&2
+echo "  | $(echo "$MSG" | head -1)" >&2
+echo "  | ^ no ${ACRONYM}-XXXX item ID found" >&2
+echo "  |" >&2
+echo "  = help: add an item ID to your commit message (e.g. ${ACRONYM}-0001)" >&2
+echo "  = note: use [no-item] tag for infrastructure commits without a Joy item" >&2
+echo "" >&2
+exit 1

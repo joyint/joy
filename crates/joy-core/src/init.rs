@@ -140,26 +140,29 @@ fn install_hooks(root: &Path) -> Result<OnboardResult, JoyError> {
     })
 }
 
-const GITIGNORE_BLOCK_START: &str = "### joy:start -- managed by joy, do not edit manually";
-const GITIGNORE_BLOCK_END: &str = "### joy:end";
+pub const GITIGNORE_BLOCK_START: &str = "### joy:start -- managed by joy, do not edit manually";
+pub const GITIGNORE_BLOCK_END: &str = "### joy:end";
 
-const GITIGNORE_BLOCK: &str = "\
-.joy/config.yaml                  # personal config
-.joy/credentials.yaml             # secrets
-.joy/ai/                          # AI instructions
-.joy/hooks/                       # git hooks
-.joy/capabilities/                # capability definitions
-.claude/                          # Claude Code
-.qwen/                            # Qwen Code
-.vibe/                            # Mistral Vibe
-.github/copilot-instructions.md   # GitHub Copilot
-.github/copilot/                  # GitHub Copilot";
+pub const GITIGNORE_BASE_ENTRIES: &[(&str, &str)] = &[
+    (".joy/config.yaml", "personal config"),
+    (".joy/credentials.yaml", "secrets"),
+    (".joy/ai/", "AI instructions"),
+    (".joy/hooks/", "git hooks"),
+    (".joy/capabilities/", "capability definitions"),
+];
 
-fn ensure_gitignore(root: &Path) -> Result<(), JoyError> {
+/// Update the joy-managed block in .gitignore with the given entries.
+/// Each entry is (path, comment). Replaces the block if it exists, appends otherwise.
+pub fn update_gitignore_block(root: &Path, entries: &[(&str, &str)]) -> Result<(), JoyError> {
     let gitignore_path = root.join(".gitignore");
+
+    let mut lines = String::new();
+    for (path, comment) in entries {
+        lines.push_str(&format!("{:<34} # {}\n", path, comment));
+    }
     let block = format!(
-        "{}\n{}\n{}",
-        GITIGNORE_BLOCK_START, GITIGNORE_BLOCK, GITIGNORE_BLOCK_END
+        "{}\n{}{}",
+        GITIGNORE_BLOCK_START, lines, GITIGNORE_BLOCK_END
     );
 
     let content = if gitignore_path.is_file() {
@@ -169,7 +172,6 @@ fn ensure_gitignore(root: &Path) -> Result<(), JoyError> {
                 source: e,
             })?;
         if existing.contains(GITIGNORE_BLOCK_START) && existing.contains(GITIGNORE_BLOCK_END) {
-            // Replace existing block
             let start = existing.find(GITIGNORE_BLOCK_START).unwrap();
             let end = existing.find(GITIGNORE_BLOCK_END).unwrap() + GITIGNORE_BLOCK_END.len();
             let mut updated = String::new();
@@ -178,7 +180,6 @@ fn ensure_gitignore(root: &Path) -> Result<(), JoyError> {
             updated.push_str(&existing[end..]);
             updated
         } else {
-            // Append block
             let trimmed = existing.trim_end();
             if trimmed.is_empty() {
                 format!("{}\n", block)
@@ -194,6 +195,10 @@ fn ensure_gitignore(root: &Path) -> Result<(), JoyError> {
         path: gitignore_path,
         source: e,
     })
+}
+
+fn ensure_gitignore(root: &Path) -> Result<(), JoyError> {
+    update_gitignore_block(root, GITIGNORE_BASE_ENTRIES)
 }
 
 #[cfg(test)]

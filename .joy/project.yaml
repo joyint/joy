@@ -26,17 +26,6 @@ members:
       document: {}
       create: {}
       assign: {}
-  ai:qwen@joy:
-    capabilities:
-      conceive: {}
-      plan: {}
-      design: {}
-      implement: {}
-      test: {}
-      review: {}
-      document: {}
-      create: {}
-      assign: {}
   ai:vibe@joy:
     capabilities:
       conceive: {}
@@ -50,12 +39,4 @@ members:
       assign: {}
   horst.schwarz@joydev.com:
     capabilities: all
-release:
-  version-files:
-    - file: crates/joy-core/Cargo.toml
-      key: package.version
-    - file: crates/joy-cli/Cargo.toml
-      key: package.version
-    - file: crates/joy-ai/Cargo.toml
-      key: package.version
 created: 2026-03-09T23:57:36.761964460Z

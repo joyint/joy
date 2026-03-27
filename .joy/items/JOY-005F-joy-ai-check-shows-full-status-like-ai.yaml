@@ -1,0 +1,18 @@
+id: JOY-005F
+title: joy ai check shows full status like ai setup
+type: story
+status: closed
+priority: medium
+assignees:
+- member: horst.schwarz@joydev.com
+capabilities:
+- plan
+- implement
+- review
+effort: 2
+created: 2026-03-27T10:03:12.360021746Z
+updated: 2026-03-27T16:08:54.321990774Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-27T16:08:54.315251Z
+  text: '[x] joy ai check shows full status: templates (up to date/outdated/missing) and AI tools (configured/installed not configured/not installed). Read-only, changes nothing. Exit code 2 if templates need update, 0 otherwise.'
