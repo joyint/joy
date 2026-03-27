@@ -1,5 +1,5 @@
 id: {{ id }}
-title: {{ title }}
+title: "{{ title }}"
 type: {{ type }}
 status: new
 priority: medium

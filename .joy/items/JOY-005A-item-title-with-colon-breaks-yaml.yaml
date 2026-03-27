@@ -1,11 +1,23 @@
 id: JOY-005A
 title: Item title with colon breaks YAML template rendering
 type: bug
-status: new
+status: closed
 priority: high
+assignees:
+- member: horst.schwarz@joydev.com
 capabilities:
 - implement
 - review
 effort: 2
 created: 2026-03-25T21:02:58.045288997Z
-updated: 2026-03-25T21:02:58.045288997Z
+updated: 2026-03-27T17:10:45.833044594Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-27T17:06:53.153705522Z
+  text: 'Root cause: _base.yaml template inserts {{ title }} unquoted. A colon in the title produces invalid YAML (e.g. title: Fix: crash). Plan: quote the title field in _base.yaml as title: "{{ title }}" and add a test with colon in title.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-27T17:08:28.688053468Z
+  text: 'Fix: quoted title in _base.yaml template, added backslash/double-quote escaping in render_item(). Two new tests: colon in title, special YAML chars in title. All 112 tests pass.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-27T17:10:45.833044122Z
+  text: 'Verified: escaping is only transient during template rendering. Saved YAML files are written by serde_yaml_ng which handles quoting independently. No escape artifacts on disk.'
