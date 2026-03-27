@@ -116,9 +116,6 @@ mod tests {
             member: "ai:claude@joy".into(),
             delegated_by: Some("horst@joydev.com".into()),
         };
-        assert_eq!(
-            id.log_user(),
-            "ai:claude@joy delegated-by:horst@joydev.com"
-        );
+        assert_eq!(id.log_user(), "ai:claude@joy delegated-by:horst@joydev.com");
     }
 }

@@ -101,3 +101,4 @@
 2026-03-27T19:05:28.433Z JOY-0067 comment.added "Test without JOY_AUTHOR - should show yellow warning" [horst.schwarz@joydev.com]
 2026-03-27T19:05:47.681Z JOY-0067 comment.added "Implementation verified. JOY_AUTHOR resolves to AI identity with delegated-by in event log. Yellow warning when AI members exist but no override set. Invalid members rejected." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-03-27T19:05:47.687Z JOY-0067 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-03-27T19:09:52.714Z JOY-0077 comment.added "Co-Authored-By in git commits stays as-is (ai:claude@joy without delegated-by). Delegation is implicit: git Author = human (delegator), Co-Authored-By = AI. This differs from event logs where delegated-by is explicit because logs have no separate Author header. Document this distinction in the AI instructions." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

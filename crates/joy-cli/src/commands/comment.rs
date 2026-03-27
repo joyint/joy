@@ -37,8 +37,7 @@ pub fn run(args: CommentArgs) -> Result<()> {
 
     let mut item = items::load_item(&root, &args.id)?;
 
-    let id = identity::resolve_identity(&root)
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let id = identity::resolve_identity(&root).map_err(|e| anyhow::anyhow!("{e}"))?;
     crate::warn_ai_members(&root, &id);
     let log_text = text.clone();
     let comment = Comment {
