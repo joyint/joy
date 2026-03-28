@@ -120,3 +120,7 @@
 2026-03-28T23:10:34.894Z JOY-0030 item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
 2026-03-28T23:12:27.634Z JOY-0071 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-03-28T23:15:06.039Z JOY-006A item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-03-28T23:50:05.501Z JOY-0071 comment.added "Progressive auth activation implemented: identity resolution now reads from active session (human or AI), falling back to git email for projects without auth. AI sessions are detected without requiring public_key on the AI member (ADR-023). All CLI commands use Context pattern." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-03-28T23:50:05.512Z JOY-006A comment.added "Removed --author flag from all commands. Identity is now session-based. Context pattern replaces individual guard::enforce + resolve_identity calls. All BATS tests rewritten to use token-based AI auth." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-03-28T23:50:34.265Z JOY-0071 item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
+2026-03-28T23:50:34.284Z JOY-006A item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]

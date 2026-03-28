@@ -1,7 +1,7 @@
 id: JOY-006A
 title: Remove JOY_AUTHOR and --author after Auth is implemented
 type: rework
-status: in-progress
+status: closed
 priority: low
 parent: JOY-0066
 assignees:
@@ -13,8 +13,11 @@ capabilities:
 - review
 effort: 1
 created: 2026-03-27T18:25:10.292204034Z
-updated: 2026-03-28T23:15:06.036770220Z
+updated: 2026-03-28T23:50:34.282347498Z
 comments:
 - author: ai:claude@joy
   date: 2026-03-28T09:48:24.333990104Z
   text: 'Note: until this item is implemented, AI agents must use --author flag instead of JOY_AUTHOR env var. Using the env var breaks shell permission matching for the joy command. See JOY-007D.'
+- author: ai:claude@joy
+  date: 2026-03-28T23:50:05.509959321Z
+  text: Removed --author flag from all commands. Identity is now session-based. Context pattern replaces individual guard::enforce + resolve_identity calls. All BATS tests rewritten to use token-based AI auth.
