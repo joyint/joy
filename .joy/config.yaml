@@ -1,8 +1,0 @@
-agents:
-  architect:
-    mode: pairing
-  default:
-    mode: collaborative
-output:
-  emoji: false
-  short: true
