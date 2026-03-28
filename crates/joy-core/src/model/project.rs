@@ -34,6 +34,17 @@ pub struct Member {
     pub salt: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub otp_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub ai_tokens: BTreeMap<String, AiTokenEntry>,
+}
+
+/// A registered AI delegation token entry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AiTokenEntry {
+    /// Public key of the one-time token keypair (hex-encoded Ed25519).
+    pub token_key: String,
+    /// When this token was created.
+    pub created: chrono::DateTime<chrono::Utc>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -89,6 +100,7 @@ impl Member {
             public_key: None,
             salt: None,
             otp_hash: None,
+            ai_tokens: BTreeMap::new(),
         }
     }
 

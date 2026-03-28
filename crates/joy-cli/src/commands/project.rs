@@ -398,7 +398,7 @@ fn print_members_table(
     let auth_statuses: Vec<(&str, String)> = members
         .iter()
         .map(|(id, member)| {
-            let auth = member_auth_status(id, member, &project_id, use_emoji);
+            let auth = member_auth_status(id, member, members, &project_id, use_emoji);
             (id.as_str(), auth)
         })
         .collect();
@@ -569,25 +569,55 @@ fn truncate(s: &str, max: usize) -> String {
 }
 
 /// Determine auth status string for a member.
-fn member_auth_status(id: &str, member: &Member, project_id: &str, use_emoji: bool) -> String {
+fn member_auth_status(
+    id: &str,
+    member: &Member,
+    all_members: &std::collections::BTreeMap<String, Member>,
+    project_id: &str,
+    use_emoji: bool,
+) -> String {
     use joy_core::model::project::is_ai_member;
 
-    let has_key = member.public_key.is_some();
-    let has_session = if has_key {
-        if let Some(pk_hex) = member.public_key.as_ref() {
-            if let Ok(pk) = joy_core::auth::sign::PublicKey::from_hex(pk_hex) {
-                joy_core::auth::session::load_session(project_id, id)
-                    .ok()
-                    .flatten()
-                    .and_then(|token| {
-                        joy_core::auth::session::validate_session(&token, &pk, project_id)
-                            .ok()
-                            .filter(|claims| claims.member == id)
-                    })
-                    .is_some()
-            } else {
-                false
-            }
+    let is_ai = is_ai_member(id);
+
+    // For humans: has passphrase key?
+    // For AI: has any human registered an ai_tokens entry for this AI?
+    let has_auth = if is_ai {
+        all_members.values().any(|m| m.ai_tokens.contains_key(id))
+    } else {
+        member.public_key.is_some()
+    };
+
+    // Session check: for humans, validate against their public_key.
+    // For AI, just check if a session file exists and is not expired.
+    let has_session = if !has_auth {
+        false
+    } else if is_ai {
+        // AI sessions: check if session file exists (no key validation needed,
+        // token was validated at joy auth time)
+        joy_core::auth::session::load_session(project_id, id)
+            .ok()
+            .flatten()
+            .and_then(|sess| {
+                // Just check expiry
+                if sess.claims.expires > chrono::Utc::now() && sess.claims.member == id {
+                    Some(())
+                } else {
+                    None
+                }
+            })
+            .is_some()
+    } else if let Some(pk_hex) = member.public_key.as_ref() {
+        if let Ok(pk) = joy_core::auth::sign::PublicKey::from_hex(pk_hex) {
+            joy_core::auth::session::load_session(project_id, id)
+                .ok()
+                .flatten()
+                .and_then(|token| {
+                    joy_core::auth::session::validate_session(&token, &pk, project_id)
+                        .ok()
+                        .filter(|claims| claims.member == id)
+                })
+                .is_some()
         } else {
             false
         }
@@ -596,9 +626,9 @@ fn member_auth_status(id: &str, member: &Member, project_id: &str, use_emoji: bo
     };
 
     if use_emoji {
-        if !has_key {
+        if !has_auth {
             "· ·".to_string()
-        } else if is_ai_member(id) {
+        } else if is_ai {
             if has_session {
                 "✓ 🎟️".to_string()
             } else {
@@ -609,10 +639,10 @@ fn member_auth_status(id: &str, member: &Member, project_id: &str, use_emoji: bo
         } else {
             "· 🔐".to_string()
         }
-    } else if !has_key {
+    } else if !has_auth {
         "--".to_string()
     } else {
-        let kind = if is_ai_member(id) { "tok" } else { "key" };
+        let kind = if is_ai { "tok" } else { "key" };
         if has_session {
             color::warning(&format!("{kind}+s"))
         } else {

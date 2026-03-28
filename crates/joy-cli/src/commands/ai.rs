@@ -436,6 +436,10 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
                     if let Ok(project_id) = joy_core::auth::session::project_id(&root) {
                         let _ = joy_core::auth::session::remove_session(&project_id, &member_id);
                     }
+                    // Remove all ai_tokens entries for this AI member from all human members
+                    for (_, m) in project.members.iter_mut() {
+                        m.ai_tokens.remove(&member_id);
+                    }
                 }
             }
         }

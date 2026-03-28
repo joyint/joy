@@ -15,6 +15,7 @@ members:
       document: {}
       create: {}
       assign: {}
+    public_key: b7d5d0a9e613b66158acfe450994fab8aaf896ad990984c18391262084205681
   ai:copilot@joy:
     capabilities:
       conceive: {}

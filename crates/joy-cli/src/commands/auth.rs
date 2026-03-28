@@ -218,10 +218,10 @@ fn auth_with_token(
     project_id: &str,
     token_str: &str,
 ) -> Result<()> {
-    // Decode and validate the delegation token
+    // Decode the delegation token
     let delegation = token::decode_token(token_str)?;
 
-    // Look up the delegating human's public key to verify signature
+    // Look up the delegating human
     let human = &delegation.claims.delegated_by;
     let human_member = project
         .members
@@ -232,8 +232,20 @@ fn auth_with_token(
     })?;
     let human_pk = sign::PublicKey::from_hex(human_pk_hex)?;
 
-    // Validate token signature, project, and expiry
-    let claims = token::validate_token(&delegation, &human_pk, project_id)?;
+    // Look up the ai_tokens entry for this AI member under the delegator
+    let ai_member_id = &delegation.claims.ai_member;
+    let token_entry = human_member.ai_tokens.get(ai_member_id).ok_or_else(|| {
+        anyhow::anyhow!(
+            "No token registered for {} by {}. Create one with `joy auth create-token {}`.",
+            ai_member_id,
+            human,
+            ai_member_id
+        )
+    })?;
+    let token_pk = sign::PublicKey::from_hex(&token_entry.token_key)?;
+
+    // Validate dual signatures + project + expiry
+    let claims = token::validate_token(&delegation, &human_pk, &token_pk, project_id)?;
 
     // Verify the AI member is registered
     if !project.members.contains_key(&claims.ai_member) {
@@ -243,19 +255,8 @@ fn auth_with_token(
         );
     }
 
-    // Create a session for the AI member
+    // Create a local session — no project.yaml changes needed
     let session_keypair = sign::IdentityKeypair::from_token_seed(token_str, project_id);
-
-    // Store the session public key on the AI member so session validation works
-    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-    let mut project_mut: joy_core::model::project::Project = store::read_yaml(&project_path)?;
-    if let Some(ai_member) = project_mut.members.get_mut(&claims.ai_member) {
-        ai_member.public_key = Some(session_keypair.public_key().to_hex());
-    }
-    store::write_yaml_preserve(&project_path, &project_mut)?;
-    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-    joy_core::git_ops::auto_git_add(root, &[&rel]);
-
     let session_token =
         session::create_session(&session_keypair, &claims.ai_member, project_id, None);
     session::save_session(project_id, &session_token)?;
@@ -462,8 +463,25 @@ fn run_create_token(args: CreateTokenArgs, passphrase_flag: Option<&str>) -> Res
     // Create token
     let project_id = session::project_id(&root)?;
     let ttl = args.ttl.map(chrono::Duration::hours);
-    let delegation = token::create_token(&keypair, &args.member, &email, &project_id, ttl);
-    let encoded = token::encode_token(&delegation);
+    let result = token::create_token(&keypair, &args.member, &email, &project_id, ttl);
+
+    // Store token_key in delegator's ai_tokens
+    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
+    let mut project_mut: joy_core::model::project::Project = store::read_yaml(&project_path)?;
+    if let Some(m) = project_mut.members.get_mut(&email) {
+        m.ai_tokens.insert(
+            args.member.clone(),
+            joy_core::model::project::AiTokenEntry {
+                token_key: result.token_public_key.clone(),
+                created: chrono::Utc::now(),
+            },
+        );
+    }
+    store::write_yaml_preserve(&project_path, &project_mut)?;
+    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+    joy_core::git_ops::auto_git_add(&root, &[&rel]);
+
+    let encoded = token::encode_token(&result.token);
 
     println!("Delegation token for {}:", args.member);
     println!();

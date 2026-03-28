@@ -1,0 +1,54 @@
+id: JOY-008D
+title: Token auth overwrites AI member public_key causing multi-user conflicts
+type: bug
+status: closed
+priority: critical
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy
+created: 2026-03-28T21:55:18.091524239Z
+updated: 2026-03-28T22:09:33.181093504Z
+comments:
+- author: ai:claude@joy
+  date: 2026-03-28T21:56:16.852187827Z
+  text: |-
+    Bug: joy auth --token writes a derived public_key on the AI member in project.yaml. When a second user authenticates with a different token, the key gets overwritten and the first user's token becomes invalid.
+
+    Fix: redesign token system with per-delegator token entries.
+
+    Design (documented in Auth.md):
+    Each human member gets an ai_tokens map in their project.yaml config:
+
+      bob@team.com:
+        ai_tokens:
+          ai:claude@joy:
+            token_key: <random_pk>   # unique per create-token call
+            created: <timestamp>
+
+    Token creation: generates a one-time keypair, stores public key in ai_tokens, signs token with BOTH the human's key (authorization) and the token_key (binding).
+
+    Token validation: checks both signatures -- human key (is this person authorized?) AND token_key (does this match a registered token entry?).
+
+    Revoke: delete the ai_tokens entry -> token_key gone -> old token invalid. New create-token generates new token_key -> old tokens don't match.
+
+    Multi-user safe: each human has their own ai_tokens section, no conflicts.
+
+    ADR to be written. Auth.md to be updated.
+- author: ai:claude@joy
+  date: 2026-03-28T22:09:33.165934157Z
+  text: |-
+    Fixed with per-delegator token system (ADR-023):
+
+    - Token carries dual Ed25519 signatures: delegator key + one-time token_key
+    - Token entries stored per human member in ai_tokens map in project.yaml
+    - No public_key written on AI members (no multi-user conflicts)
+    - joy ai reset removes ai_tokens entries from all members (global revocation)
+    - joy project shows token status for AI members (checks ai_tokens across all members)
+    - Session validation for AI: checks local session file only (no project.yaml key needed)
+
+    ADR-023 written. Auth.md updated. 9 new token unit tests (dual sig, wrong keys, revocation).
+    143 unit tests + 86 integration tests green.
