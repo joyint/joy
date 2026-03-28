@@ -93,6 +93,13 @@ fn session_dir() -> Result<PathBuf, JoyError> {
     Ok(config_dir.join("joy").join("sessions"))
 }
 
+/// Session filename: `{project_id}--{member}.json`
+/// The `@` in member IDs is replaced with `_at_` for filesystem safety.
+fn session_filename(project_id: &str, member: &str) -> String {
+    let safe_member = member.replace('@', "_at_");
+    format!("{project_id}--{safe_member}.json")
+}
+
 /// Save a session token to disk.
 pub fn save_session(project_id: &str, token: &SessionToken) -> Result<(), JoyError> {
     let dir = session_dir()?;
@@ -100,7 +107,7 @@ pub fn save_session(project_id: &str, token: &SessionToken) -> Result<(), JoyErr
         path: dir.clone(),
         source: e,
     })?;
-    let path = dir.join(format!("{project_id}.json"));
+    let path = dir.join(session_filename(project_id, &token.claims.member));
     let json = serde_json::to_string_pretty(token).expect("session serialize");
     std::fs::write(&path, json).map_err(|e| JoyError::WriteFile {
         path: path.clone(),
@@ -108,10 +115,10 @@ pub fn save_session(project_id: &str, token: &SessionToken) -> Result<(), JoyErr
     })
 }
 
-/// Load a session token from disk, if it exists.
-pub fn load_session(project_id: &str) -> Result<Option<SessionToken>, JoyError> {
+/// Load a session token from disk for a specific member, if it exists.
+pub fn load_session(project_id: &str, member: &str) -> Result<Option<SessionToken>, JoyError> {
     let dir = session_dir()?;
-    let path = dir.join(format!("{project_id}.json"));
+    let path = dir.join(session_filename(project_id, member));
     if !path.exists() {
         return Ok(None);
     }
@@ -124,10 +131,10 @@ pub fn load_session(project_id: &str) -> Result<Option<SessionToken>, JoyError> 
     Ok(Some(token))
 }
 
-/// Remove a session token from disk.
-pub fn remove_session(project_id: &str) -> Result<(), JoyError> {
+/// Remove a session token from disk for a specific member.
+pub fn remove_session(project_id: &str, member: &str) -> Result<(), JoyError> {
     let dir = session_dir()?;
-    let path = dir.join(format!("{project_id}.json"));
+    let path = dir.join(session_filename(project_id, member));
     if path.exists() {
         std::fs::remove_file(&path).map_err(|e| JoyError::WriteFile { path, source: e })?;
     }
@@ -216,12 +223,12 @@ mod tests {
         unsafe { std::env::set_var("XDG_CONFIG_HOME", dir.path()) };
 
         save_session("TST", &token).unwrap();
-        let loaded = load_session("TST").unwrap().unwrap();
+        let loaded = load_session("TST", "test@example.com").unwrap().unwrap();
         let claims = validate_session(&loaded, &pk, "TST").unwrap();
         assert_eq!(claims.member, "test@example.com");
 
-        remove_session("TST").unwrap();
-        assert!(load_session("TST").unwrap().is_none());
+        remove_session("TST", "test@example.com").unwrap();
+        assert!(load_session("TST", "test@example.com").unwrap().is_none());
 
         // SAFETY: test cleanup
         unsafe { std::env::remove_var("XDG_CONFIG_HOME") };

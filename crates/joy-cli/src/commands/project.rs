@@ -567,7 +567,7 @@ fn member_auth_status(id: &str, member: &Member, project_id: &str, use_emoji: bo
     let has_session = if has_key {
         if let Some(pk_hex) = member.public_key.as_ref() {
             if let Ok(pk) = joy_core::auth::sign::PublicKey::from_hex(pk_hex) {
-                joy_core::auth::session::load_session(project_id)
+                joy_core::auth::session::load_session(project_id, id)
                     .ok()
                     .flatten()
                     .and_then(|token| {

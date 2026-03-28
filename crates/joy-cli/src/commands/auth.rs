@@ -299,7 +299,7 @@ fn run_status() -> Result<()> {
     }
 
     // Check session
-    match session::load_session(&project_id)? {
+    match session::load_session(&project_id, &email)? {
         Some(sess) => {
             let public_key_hex = member.unwrap().public_key.as_ref().unwrap();
             let public_key = sign::PublicKey::from_hex(public_key_hex)?;
@@ -390,7 +390,7 @@ fn run_reset(args: ResetArgs, passphrase_flag: Option<&str>) -> Result<()> {
     // Remove own session if resetting self
     let project_id = session::project_id(&root)?;
     if !resetting_other {
-        session::remove_session(&project_id)?;
+        session::remove_session(&project_id, target)?;
     }
 
     println!("Authentication reset for {}.", target);

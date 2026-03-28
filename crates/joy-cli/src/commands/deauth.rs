@@ -4,6 +4,7 @@
 use anyhow::Result;
 use joy_core::auth::session;
 use joy_core::store;
+use joy_core::vcs::Vcs;
 
 /// `joy deauth` — end the current session.
 pub fn run() -> Result<()> {
@@ -11,7 +12,8 @@ pub fn run() -> Result<()> {
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
     let project_id = session::project_id(&root)?;
-    session::remove_session(&project_id)?;
+    let member = joy_core::vcs::default_vcs().user_email()?;
+    session::remove_session(&project_id, &member)?;
 
     println!("Session ended.");
 
