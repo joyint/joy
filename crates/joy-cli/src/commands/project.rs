@@ -455,21 +455,31 @@ fn print_members_table(
                     MemberCapabilities::Specific(map) => map.contains_key(cap),
                 };
                 if has {
-                    print!("  x ");
+                    if cap.is_management() {
+                        print!("  {} ", color::warning("x"));
+                    } else {
+                        print!("  x ");
+                    }
                 } else {
                     print!("    ");
                 }
             }
         } else {
             let caps = match &member.capabilities {
-                MemberCapabilities::All => " all".to_string(),
+                MemberCapabilities::All => format!(" {}", color::warning("all")),
                 MemberCapabilities::Specific(map) => {
-                    let abbrevs: Vec<&str> = cap_headers
+                    let parts: Vec<String> = cap_headers
                         .iter()
                         .filter(|(_, cap)| map.contains_key(cap))
-                        .map(|(hdr, _)| *hdr)
+                        .map(|(hdr, cap)| {
+                            if cap.is_management() {
+                                color::warning(hdr)
+                            } else {
+                                hdr.to_string()
+                            }
+                        })
                         .collect();
-                    format!(" {}", abbrevs.join(" "))
+                    format!(" {}", parts.join(" "))
                 }
             };
             print!("{caps}");
