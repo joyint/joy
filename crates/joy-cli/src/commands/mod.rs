@@ -4,10 +4,12 @@
 pub mod add;
 pub mod ai;
 pub mod assign;
+pub mod auth;
 pub mod board;
 pub mod comment;
 pub mod completions;
 pub mod config;
+pub mod deauth;
 pub mod deps;
 pub mod edit;
 pub mod find;

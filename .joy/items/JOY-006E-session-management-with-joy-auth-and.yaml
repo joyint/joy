@@ -1,9 +1,11 @@
 id: JOY-006E
 title: Session management with joy auth and joy deauth
 type: story
-status: new
+status: closed
 priority: high
 parent: JOY-006B
+assignees:
+- member: ai:claude@joy
 deps:
 - JOY-006D
 capabilities:
@@ -12,4 +14,25 @@ capabilities:
 - review
 effort: 3
 created: 2026-03-27T18:25:29.255225793Z
-updated: 2026-03-27T18:27:26.888870568Z
+updated: 2026-03-28T16:36:16.885311986Z
+comments:
+- author: ai:claude@joy
+  date: 2026-03-28T16:36:16.846797821Z
+  text: |-
+    Session management implemented:
+
+    Core (auth/session.rs):
+    - SessionClaims: member, project_id, created, expires
+    - SessionToken: claims + Ed25519 signature (hex)
+    - create_session, validate_session, save/load/remove_session
+    - Session files: ~/.config/joy/sessions/<project-id>.json
+    - Default TTL: 24h
+    - 5 unit tests (create/validate, expired, wrong project, tampered, save/load roundtrip)
+
+    CLI:
+    - joy auth init -- generate salt, prompt passphrase, derive keypair, register public key, create session
+    - joy auth -- enter passphrase, verify against registered public key, create session
+    - joy auth status -- show session state (active/expired/none)
+    - joy deauth -- end session (remove session file)
+
+    Dependencies: rpassword added to joy-cli for passphrase prompts.
