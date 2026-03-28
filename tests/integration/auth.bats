@@ -305,6 +305,39 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 }
 
 # ============================================================
+# write_yaml_preserve (JOY-008B)
+# ============================================================
+
+@test "project.yaml extra fields survive auth init" {
+    joy init --name "Auth Test"
+    # Add a custom field not in the Project struct
+    echo 'release:' >> .joy/project.yaml
+    echo '  version-files:' >> .joy/project.yaml
+    echo '  - path: Cargo.toml' >> .joy/project.yaml
+    echo '    key: package.version' >> .joy/project.yaml
+    # Auth init modifies project.yaml (adds public_key, salt)
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    # The release config must survive
+    grep -q "version-files" .joy/project.yaml
+    grep -q "Cargo.toml" .joy/project.yaml
+}
+
+@test "project.yaml extra fields survive member add" {
+    joy init --name "Auth Test"
+    echo 'custom_field: preserved' >> .joy/project.yaml
+    joy project member add dev@example.com
+    grep -q "custom_field: preserved" .joy/project.yaml
+}
+
+@test "project.yaml extra fields survive auth reset" {
+    joy init --name "Auth Test"
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    echo 'custom_field: preserved' >> .joy/project.yaml
+    joy auth reset --passphrase "$TEST_PASSPHRASE"
+    grep -q "custom_field: preserved" .joy/project.yaml
+}
+
+# ============================================================
 # Full auth flow
 # ============================================================
 

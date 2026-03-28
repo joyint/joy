@@ -87,17 +87,22 @@ pub fn validate_session(
     Ok(token.claims.clone())
 }
 
-/// Directory for session files: `~/.config/joy/sessions/`
+/// Directory for session files: `~/.local/state/joy/sessions/`
 fn session_dir() -> Result<PathBuf, JoyError> {
-    let config_dir = dirs_config_dir()?;
-    Ok(config_dir.join("joy").join("sessions"))
+    let state_dir = dirs_state_dir()?;
+    Ok(state_dir.join("joy").join("sessions"))
 }
 
-/// Session filename: `{project_id}--{member}.json`
-/// The `@` in member IDs is replaced with `_at_` for filesystem safety.
+/// Session filename: SHA-256 hash of project_id + member.
+/// Deterministic but not human-readable (privacy).
 fn session_filename(project_id: &str, member: &str) -> String {
-    let safe_member = member.replace('@', "_at_");
-    format!("{project_id}--{safe_member}.json")
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(project_id.as_bytes());
+    hasher.update(b":");
+    hasher.update(member.as_bytes());
+    let hash = hasher.finalize();
+    format!("{}.json", hex::encode(&hash[..12]))
 }
 
 /// Save a session token to disk.
@@ -149,16 +154,16 @@ pub fn project_id(root: &Path) -> Result<String, JoyError> {
         .unwrap_or_else(|| project.name.to_lowercase().replace(' ', "-")))
 }
 
-fn dirs_config_dir() -> Result<PathBuf, JoyError> {
-    // Use XDG_CONFIG_HOME or ~/.config
-    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
+fn dirs_state_dir() -> Result<PathBuf, JoyError> {
+    // Use XDG_STATE_HOME or ~/.local/state
+    if let Ok(xdg) = std::env::var("XDG_STATE_HOME") {
         return Ok(PathBuf::from(xdg));
     }
     if let Ok(home) = std::env::var("HOME") {
-        return Ok(PathBuf::from(home).join(".config"));
+        return Ok(PathBuf::from(home).join(".local").join("state"));
     }
     Err(JoyError::AuthFailed(
-        "cannot determine config directory".into(),
+        "cannot determine state directory".into(),
     ))
 }
 
@@ -220,7 +225,7 @@ mod tests {
         let dir = tempdir().unwrap();
         // Override session dir via env
         // SAFETY: test is single-threaded, setting env var for session dir override
-        unsafe { std::env::set_var("XDG_CONFIG_HOME", dir.path()) };
+        unsafe { std::env::set_var("XDG_STATE_HOME", dir.path()) };
 
         save_session("TST", &token).unwrap();
         let loaded = load_session("TST", "test@example.com").unwrap().unwrap();
@@ -231,6 +236,6 @@ mod tests {
         assert!(load_session("TST", "test@example.com").unwrap().is_none());
 
         // SAFETY: test cleanup
-        unsafe { std::env::remove_var("XDG_CONFIG_HOME") };
+        unsafe { std::env::remove_var("XDG_STATE_HOME") };
     }
 }

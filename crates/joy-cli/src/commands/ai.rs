@@ -379,7 +379,7 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
                 }
             }
             if cleaned {
-                joy_core::store::write_yaml(&project_path, &project)?;
+                joy_core::store::write_yaml_preserve(&project_path, &project)?;
             } else {
                 println!("{}No AI tool configurations found.", color::check_mark());
             }
@@ -440,7 +440,7 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
             }
         }
         if project_changed {
-            joy_core::store::write_yaml(&project_path, &project)?;
+            joy_core::store::write_yaml_preserve(&project_path, &project)?;
         }
     }
 
@@ -612,7 +612,7 @@ fn configure_tools(root: &Path) -> anyhow::Result<Vec<&'static str>> {
     }
 
     if project_changed {
-        joy_core::store::write_yaml(&project_path, &project)?;
+        joy_core::store::write_yaml_preserve(&project_path, &project)?;
     }
 
     if configured_tools.is_empty() {

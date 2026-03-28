@@ -52,6 +52,48 @@ pub fn write_yaml<T: Serialize>(path: &Path, value: &T) -> Result<(), JoyError> 
     })
 }
 
+/// Write YAML while preserving top-level fields not in the struct.
+/// Reads the existing file, takes all modeled fields from the struct,
+/// and preserves any top-level keys that the struct doesn't know about.
+pub fn write_yaml_preserve<T: Serialize>(path: &Path, value: &T) -> Result<(), JoyError> {
+    use serde_yaml_ng::Value;
+
+    let new_value: Value = serde_yaml_ng::to_value(value)?;
+
+    let merged = if path.is_file() {
+        let existing_str = std::fs::read_to_string(path).map_err(|e| JoyError::ReadFile {
+            path: path.to_path_buf(),
+            source: e,
+        })?;
+        if let Ok(existing) = serde_yaml_ng::from_str::<Value>(&existing_str) {
+            if let (Value::Mapping(existing_map), Value::Mapping(new_map)) = (existing, &new_value)
+            {
+                // Start with the struct's values (authoritative for modeled fields)
+                let mut result = new_map.clone();
+                // Add back any top-level keys from the original that the struct doesn't have
+                for (key, val) in existing_map {
+                    if !result.contains_key(&key) {
+                        result.insert(key, val);
+                    }
+                }
+                Value::Mapping(result)
+            } else {
+                new_value
+            }
+        } else {
+            new_value
+        }
+    } else {
+        new_value
+    };
+
+    let yaml = serde_yaml_ng::to_string(&merged)?;
+    std::fs::write(path, yaml).map_err(|e| JoyError::WriteFile {
+        path: path.to_path_buf(),
+        source: e,
+    })
+}
+
 /// Returns the path to the personal global config: ~/.config/joy/config.yaml
 pub fn global_config_path() -> PathBuf {
     let config_dir = std::env::var("XDG_CONFIG_HOME")
