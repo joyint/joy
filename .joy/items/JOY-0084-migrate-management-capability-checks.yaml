@@ -1,9 +1,11 @@
 id: JOY-0084
 title: Migrate management capability checks into Guard
 type: story
-status: new
+status: closed
 priority: medium
 parent: JOY-0080
+assignees:
+- member: ai:claude@joy
 deps:
 - JOY-0081
 capabilities:
@@ -13,4 +15,8 @@ capabilities:
 effort: 1
 created_by: ai:claude@joy
 created: 2026-03-28T10:35:42.443066598Z
-updated: 2026-03-28T10:35:52.691514453Z
+updated: 2026-03-28T11:40:37.510400960Z
+comments:
+- author: ai:claude@joy
+  date: 2026-03-28T11:40:37.486804518Z
+  text: 'Management capability checks hardened: missing management capabilities (Create, Assign, Manage, Delete) now return Deny instead of Warn. Work capabilities (Implement, Review, Plan, etc.) remain as Warn. This means unauthorized users are blocked from project management, member changes, item deletion, and releases -- not just warned.'

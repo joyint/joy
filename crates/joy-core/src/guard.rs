@@ -167,6 +167,12 @@ impl Guard {
         // Check if the member has the required capability
         if member.has_capability(&required) {
             Verdict::Allow
+        } else if required.is_management() {
+            // Management actions are hard-denied (not just warned)
+            Verdict::Deny(format!(
+                "{} does not have '{}' capability",
+                identity.member, required
+            ))
         } else {
             Verdict::Warn(format!(
                 "{} does not have '{}' capability. \
@@ -269,16 +275,16 @@ mod tests {
             Verdict::Allow
         );
 
-        // Lacks Delete -> Warn
+        // Lacks Delete -> Deny (management capability)
         assert!(matches!(
             guard.check(&Action::DeleteItem, &id),
-            Verdict::Warn(_)
+            Verdict::Deny(_)
         ));
 
-        // Lacks Manage -> Warn
+        // Lacks Manage -> Deny (management actions are hard-denied)
         assert!(matches!(
             guard.check(&Action::ManageProject, &id),
-            Verdict::Warn(_)
+            Verdict::Deny(_)
         ));
 
         // Lacks Review -> ChangeStatus to Closed = Warn
@@ -511,10 +517,10 @@ mod tests {
         // === Managing project ===
         // Lead can manage
         assert_eq!(guard.check(&Action::ManageProject, &lead), Verdict::Allow);
-        // Dev lacks Manage -> Warn
+        // Dev lacks Manage -> Deny (management actions are hard-denied)
         assert!(matches!(
             guard.check(&Action::ManageProject, &dev),
-            Verdict::Warn(_)
+            Verdict::Deny(_)
         ));
         // AI cannot manage -> Deny
         assert!(matches!(
