@@ -78,6 +78,8 @@ pub fn run(args: DepsArgs) -> Result<()> {
 }
 
 fn add_dep(root: &std::path::Path, item_id: &str, dep_id: &str) -> Result<()> {
+    joy_core::guard::enforce(root, &joy_core::guard::Action::UpdateItem, item_id)?;
+
     // Verify dep exists
     let _ = items::load_item(root, dep_id)?;
 
@@ -129,6 +131,8 @@ fn add_dep(root: &std::path::Path, item_id: &str, dep_id: &str) -> Result<()> {
 }
 
 fn rm_dep(root: &std::path::Path, item_id: &str, dep_id: &str) -> Result<()> {
+    joy_core::guard::enforce(root, &joy_core::guard::Action::UpdateItem, item_id)?;
+
     let mut item = items::load_item(root, item_id)?;
 
     if !item.deps.contains(&dep_id.to_string()) {

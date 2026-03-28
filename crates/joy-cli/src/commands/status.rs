@@ -69,6 +69,16 @@ pub fn run(args: StatusArgs) -> Result<()> {
     let mut item = items::load_item(&root, &args.id)?;
     let old_status = item.status.clone();
 
+    joy_core::guard::enforce_as(
+        &root,
+        &joy_core::guard::Action::ChangeStatus {
+            from: old_status.clone(),
+            to: new_status.clone(),
+        },
+        &item.id,
+        &resolved,
+    )?;
+
     // Warn when reopening a released item
     if matches!(old_status, Status::Closed | Status::Deferred)
         && !matches!(new_status, Status::Closed | Status::Deferred)

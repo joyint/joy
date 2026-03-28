@@ -115,6 +115,35 @@ impl Verdict {
     }
 }
 
+/// One-shot guard check: load project, resolve identity, check, enforce.
+/// Combines all steps into a single call for commands without --author flag.
+pub fn enforce(root: &Path, action: &Action, target: &str) -> Result<(), JoyError> {
+    let identity = crate::identity::resolve_identity(root).unwrap_or(Identity {
+        member: "unknown".into(),
+        delegated_by: None,
+    });
+    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
+    let project: Project = store::read_yaml(&project_path)?;
+    Guard::new(&project)
+        .check(action, &identity)
+        .enforce(root, target, &identity)
+}
+
+/// One-shot guard check with a pre-resolved identity.
+/// For commands that already resolved identity via --author flag.
+pub fn enforce_as(
+    root: &Path,
+    action: &Action,
+    target: &str,
+    identity: &Identity,
+) -> Result<(), JoyError> {
+    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
+    let project: Project = store::read_yaml(&project_path)?;
+    Guard::new(&project)
+        .check(action, identity)
+        .enforce(root, target, identity)
+}
+
 /// Centralized runtime validation for the Trust Model.
 pub struct Guard {
     members: BTreeMap<String, Member>,

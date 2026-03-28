@@ -38,8 +38,6 @@ pub fn run(args: AssignArgs) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
-    joy_core::capabilities::warn_unless_capable(&root, Capability::Assign);
-
     let mut item = items::load_item(&root, &args.id)?;
 
     let member = match args.member {
@@ -51,6 +49,18 @@ pub fn run(args: AssignArgs) -> Result<()> {
             id.member
         }
     };
+
+    // Guard check
+    {
+        let acting_id = identity::resolve_identity_with(&root, args.author.as_deref())
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        joy_core::guard::enforce_as(
+            &root,
+            &joy_core::guard::Action::AssignItem,
+            &item.id,
+            &acting_id,
+        )?;
+    }
 
     // Validate format
     if !member.contains('@') && !member.starts_with("ai:") {

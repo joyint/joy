@@ -1,9 +1,11 @@
 id: JOY-0086
 title: Wire all CLI write commands through Guard
 type: story
-status: new
+status: closed
 priority: high
 parent: JOY-0080
+assignees:
+- member: ai:claude@joy
 deps:
 - JOY-0082
 - JOY-0083
@@ -15,4 +17,25 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy
 created: 2026-03-28T10:35:42.508681457Z
-updated: 2026-03-28T10:35:52.844687613Z
+updated: 2026-03-28T11:54:58.798203505Z
+comments:
+- author: ai:claude@joy
+  date: 2026-03-28T11:54:58.773804827Z
+  text: |-
+    All CLI write commands wired through Guard:
+
+    Commands updated (10 files):
+    - add.rs, comment.rs, status.rs, assign.rs (with --author -> enforce_as)
+    - edit.rs, rm.rs, deps.rs, milestone.rs, release.rs, project.rs (enforce)
+
+    Convenience functions added to guard.rs:
+    - enforce(root, action, target) -- one-shot for commands without --author
+    - enforce_as(root, action, target, identity) -- for commands with --author
+
+    All warn_unless_capable() calls replaced. capabilities.rs still exists but
+    is no longer called from any CLI command.
+
+    Integration tests: 26 BATS tests covering all guard scenarios:
+    - Solo (no restrictions), AI acceptance gate, AI manage block
+    - Developer capability checks, event log verification
+    - Unregistered member, all write commands, shortcuts

@@ -123,6 +123,12 @@ fn run_add(args: AddArgs) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
+    joy_core::guard::enforce(
+        &root,
+        &joy_core::guard::Action::ManageMilestone,
+        "milestone",
+    )?;
+
     let acronym = store::load_acronym(&root)?;
     let id = milestones::next_id(&root, &acronym)?;
     let mut ms = Milestone::new(id.clone(), args.title);
@@ -311,6 +317,8 @@ fn run_rm(args: RmArgs) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
+    joy_core::guard::enforce(&root, &joy_core::guard::Action::ManageMilestone, &args.id)?;
+
     let ms = milestones::load_milestone(&root, &args.id)?;
 
     if !args.force {
@@ -365,6 +373,8 @@ fn run_rm(args: RmArgs) -> Result<()> {
 fn run_edit(args: EditArgs) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+
+    joy_core::guard::enforce(&root, &joy_core::guard::Action::ManageMilestone, &args.id)?;
 
     let mut ms = milestones::load_milestone(&root, &args.id)?;
     let mut changed = false;
@@ -428,6 +438,12 @@ fn run_link(args: LinkArgs) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
+    joy_core::guard::enforce(
+        &root,
+        &joy_core::guard::Action::ManageMilestone,
+        &args.item_id,
+    )?;
+
     // Verify milestone exists
     let ms = milestones::load_milestone(&root, &args.ms_id)?;
 
@@ -466,6 +482,12 @@ fn run_link(args: LinkArgs) -> Result<()> {
 fn run_unlink(args: UnlinkArgs) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+
+    joy_core::guard::enforce(
+        &root,
+        &joy_core::guard::Action::ManageMilestone,
+        &args.item_id,
+    )?;
 
     let mut item = items::load_item(&root, &args.item_id)?;
 
