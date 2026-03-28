@@ -27,6 +27,10 @@ pub struct ProjectArgs {
     #[arg(long)]
     language: Option<String>,
 
+    /// Override identity (email or ai:tool@joy).
+    #[arg(long)]
+    author: Option<String>,
+
     #[command(subcommand)]
     command: Option<ProjectCommand>,
 }
@@ -107,7 +111,12 @@ pub fn run(args: ProjectArgs) -> Result<()> {
             return get_value(&project, &a.key);
         }
         Some(ProjectCommand::Set(a)) => {
-            joy_core::guard::enforce(&root, &joy_core::guard::Action::ManageProject, "project")?;
+            joy_core::guard::enforce(
+                &root,
+                &joy_core::guard::Action::ManageProject,
+                "project",
+                args.author.as_deref(),
+            )?;
             set_value(&mut project, &a.key, &a.value)?;
             store::write_yaml(&project_path, &project)?;
             let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
@@ -124,7 +133,13 @@ pub fn run(args: ProjectArgs) -> Result<()> {
             return Ok(());
         }
         Some(ProjectCommand::Member(a)) => {
-            return run_member(a, &mut project, &project_path, &root);
+            return run_member(
+                a,
+                &mut project,
+                &project_path,
+                &root,
+                args.author.as_deref(),
+            );
         }
         None => {}
     }
@@ -133,7 +148,12 @@ pub fn run(args: ProjectArgs) -> Result<()> {
     let is_edit = args.name.is_some() || args.description.is_some() || args.language.is_some();
 
     if is_edit {
-        joy_core::guard::enforce(&root, &joy_core::guard::Action::ManageProject, "project")?;
+        joy_core::guard::enforce(
+            &root,
+            &joy_core::guard::Action::ManageProject,
+            "project",
+            args.author.as_deref(),
+        )?;
         if let Some(name) = args.name {
             project.name = name;
         }
@@ -235,6 +255,7 @@ fn run_member(
     project: &mut Project,
     project_path: &std::path::Path,
     root: &std::path::Path,
+    author: Option<&str>,
 ) -> Result<()> {
     match args.command {
         None => {
@@ -275,7 +296,12 @@ fn run_member(
             }
         }
         Some(MemberCommand::Add(a)) => {
-            joy_core::guard::enforce(root, &joy_core::guard::Action::ManageProject, "project")?;
+            joy_core::guard::enforce(
+                root,
+                &joy_core::guard::Action::ManageProject,
+                "project",
+                author,
+            )?;
             if project.members.contains_key(&a.id) {
                 bail!("member {} already exists", a.id);
             }
@@ -310,7 +336,12 @@ fn run_member(
             );
         }
         Some(MemberCommand::Rm(a)) => {
-            joy_core::guard::enforce(root, &joy_core::guard::Action::ManageProject, "project")?;
+            joy_core::guard::enforce(
+                root,
+                &joy_core::guard::Action::ManageProject,
+                "project",
+                author,
+            )?;
             if project.members.remove(&a.id).is_none() {
                 bail!("member not found: {}", a.id);
             }

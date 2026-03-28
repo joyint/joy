@@ -127,6 +127,7 @@ fn run_add(args: AddArgs) -> Result<()> {
         &root,
         &joy_core::guard::Action::ManageMilestone,
         "milestone",
+        None,
     )?;
 
     let acronym = store::load_acronym(&root)?;
@@ -317,7 +318,12 @@ fn run_rm(args: RmArgs) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
-    joy_core::guard::enforce(&root, &joy_core::guard::Action::ManageMilestone, &args.id)?;
+    joy_core::guard::enforce(
+        &root,
+        &joy_core::guard::Action::ManageMilestone,
+        &args.id,
+        None,
+    )?;
 
     let ms = milestones::load_milestone(&root, &args.id)?;
 
@@ -374,7 +380,12 @@ fn run_edit(args: EditArgs) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
-    joy_core::guard::enforce(&root, &joy_core::guard::Action::ManageMilestone, &args.id)?;
+    joy_core::guard::enforce(
+        &root,
+        &joy_core::guard::Action::ManageMilestone,
+        &args.id,
+        None,
+    )?;
 
     let mut ms = milestones::load_milestone(&root, &args.id)?;
     let mut changed = false;
@@ -442,6 +453,7 @@ fn run_link(args: LinkArgs) -> Result<()> {
         &root,
         &joy_core::guard::Action::ManageMilestone,
         &args.item_id,
+        None,
     )?;
 
     // Verify milestone exists
@@ -487,6 +499,7 @@ fn run_unlink(args: UnlinkArgs) -> Result<()> {
         &root,
         &joy_core::guard::Action::ManageMilestone,
         &args.item_id,
+        None,
     )?;
 
     let mut item = items::load_item(&root, &args.item_id)?;

@@ -79,7 +79,7 @@ pub struct AddArgs {
     #[arg(short = 'c', long)]
     capabilities: Option<String>,
 
-    /// Override identity (email or ai:tool@joy). Takes priority over JOY_AUTHOR.
+    /// Override identity (email or ai:tool@joy).
     #[arg(long)]
     author: Option<String>,
 }
@@ -199,7 +199,12 @@ pub fn run(args: AddArgs) -> Result<()> {
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     crate::warn_ai_members(&root, &identity);
 
-    joy_core::guard::enforce_as(&root, &joy_core::guard::Action::CreateItem, &id, &identity)?;
+    joy_core::guard::enforce(
+        &root,
+        &joy_core::guard::Action::CreateItem,
+        &id,
+        args.author.as_deref(),
+    )?;
 
     item.created_by = Some(identity.member.clone());
 

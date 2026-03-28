@@ -125,19 +125,22 @@ struct ShortcutArgs {
     /// Item ID (e.g. IT-0001)
     #[arg(add = clap_complete::engine::ArgValueCompleter::new(complete::complete_item_id))]
     id: String,
+
+    /// Override identity (email or ai:tool@joy).
+    #[arg(long)]
+    author: Option<String>,
 }
 
-/// Warn (yellow) when the project has AI members but no JOY_AUTHOR override is set.
+/// Warn (yellow) when the project has AI members but no --author override is set.
 pub(crate) fn warn_ai_members(root: &std::path::Path, id: &joy_core::identity::Identity) {
     if id.delegated_by.is_none()
         && !joy_core::model::project::is_ai_member(&id.member)
-        && std::env::var("JOY_AUTHOR").is_err()
         && joy_core::identity::has_ai_members(root)
     {
         eprintln!(
             "{} This project has AI members but no identity override is set.\n  \
              Actions are attributed to {} (git config).\n  \
-             Set JOY_AUTHOR or use --author for explicit identity.",
+             Use --author for explicit identity.",
             color::warn_mark(),
             id.member
         );
@@ -175,50 +178,51 @@ fn main() -> anyhow::Result<()> {
         None | Some(Commands::Ls(_)) | Some(Commands::Roadmap(_)) | Some(Commands::Show(_))
     );
 
-    let result = match cli.command {
-        Some(Commands::Init(args)) => commands::init::run(args),
-        Some(Commands::Add(args)) => commands::add::run(args),
-        Some(Commands::Ls(args)) => commands::ls::run(args),
-        Some(Commands::Show(args)) => commands::show::run(args),
-        Some(Commands::Edit(args)) => commands::edit::run(args),
-        Some(Commands::Status(args)) => commands::status::run(args),
-        Some(Commands::Rm(args)) => commands::rm::run(args),
-        Some(Commands::Comment(args)) => commands::comment::run(args),
-        Some(Commands::Deps(args)) => commands::deps::run(args),
-        Some(Commands::Milestone(args)) => commands::milestone::run(args),
-        Some(Commands::Project(args)) => commands::project::run(args),
-        Some(Commands::Assign(args)) => commands::assign::run(args),
-        Some(Commands::Log(args)) => commands::log::run(args),
-        Some(Commands::Completions(args)) => commands::completions::run(args, &mut Cli::command()),
-        Some(Commands::Tutorial) => commands::tutorial::run(),
-        Some(Commands::Roadmap(args)) => commands::ls::run(commands::ls::LsArgs::roadmap(args.all)),
-        Some(Commands::Start(args)) => commands::status::run(commands::status::StatusArgs::new(
-            args.id,
-            "in-progress".to_string(),
-        )),
-        Some(Commands::Submit(args)) => commands::status::run(commands::status::StatusArgs::new(
-            args.id,
-            "review".to_string(),
-        )),
-        Some(Commands::Close(args)) => commands::status::run(commands::status::StatusArgs::new(
-            args.id,
-            "closed".to_string(),
-        )),
-        Some(Commands::Reopen(args)) => commands::status::run(commands::status::StatusArgs::new(
-            args.id,
-            "open".to_string(),
-        )),
-        Some(Commands::Find(args)) => commands::find::run(args),
-        Some(Commands::Release(args)) => commands::release::run(args),
-        Some(Commands::Board(args)) => commands::board::run(args),
-        Some(Commands::Config(_)) => unreachable!("handled above"),
-        Some(Commands::Ai(args)) => commands::ai::run(args),
-        None => commands::board::run(BoardArgs {
-            short: false,
-            all: cli.all,
-            reverse: cli.reverse,
-        }),
-    };
+    let result =
+        match cli.command {
+            Some(Commands::Init(args)) => commands::init::run(args),
+            Some(Commands::Add(args)) => commands::add::run(args),
+            Some(Commands::Ls(args)) => commands::ls::run(args),
+            Some(Commands::Show(args)) => commands::show::run(args),
+            Some(Commands::Edit(args)) => commands::edit::run(args),
+            Some(Commands::Status(args)) => commands::status::run(args),
+            Some(Commands::Rm(args)) => commands::rm::run(args),
+            Some(Commands::Comment(args)) => commands::comment::run(args),
+            Some(Commands::Deps(args)) => commands::deps::run(args),
+            Some(Commands::Milestone(args)) => commands::milestone::run(args),
+            Some(Commands::Project(args)) => commands::project::run(args),
+            Some(Commands::Assign(args)) => commands::assign::run(args),
+            Some(Commands::Log(args)) => commands::log::run(args),
+            Some(Commands::Completions(args)) => {
+                commands::completions::run(args, &mut Cli::command())
+            }
+            Some(Commands::Tutorial) => commands::tutorial::run(),
+            Some(Commands::Roadmap(args)) => {
+                commands::ls::run(commands::ls::LsArgs::roadmap(args.all))
+            }
+            Some(Commands::Start(args)) => commands::status::run(
+                commands::status::StatusArgs::new(args.id, "in-progress".to_string(), args.author),
+            ),
+            Some(Commands::Submit(args)) => commands::status::run(
+                commands::status::StatusArgs::new(args.id, "review".to_string(), args.author),
+            ),
+            Some(Commands::Close(args)) => commands::status::run(
+                commands::status::StatusArgs::new(args.id, "closed".to_string(), args.author),
+            ),
+            Some(Commands::Reopen(args)) => commands::status::run(
+                commands::status::StatusArgs::new(args.id, "open".to_string(), args.author),
+            ),
+            Some(Commands::Find(args)) => commands::find::run(args),
+            Some(Commands::Release(args)) => commands::release::run(args),
+            Some(Commands::Board(args)) => commands::board::run(args),
+            Some(Commands::Config(_)) => unreachable!("handled above"),
+            Some(Commands::Ai(args)) => commands::ai::run(args),
+            None => commands::board::run(BoardArgs {
+                short: false,
+                all: cli.all,
+                reverse: cli.reverse,
+            }),
+        };
 
     if show_fortune && result.is_ok() && config.output.fortune && std::io::stdout().is_terminal() {
         if let Some(text) = joy_core::fortune::fortune(config.output.fortune_category.as_ref(), 0.2)

@@ -29,7 +29,7 @@ pub struct AssignArgs {
     #[arg(long)]
     unassign: bool,
 
-    /// Override identity (email or ai:tool@joy). Takes priority over JOY_AUTHOR.
+    /// Override identity (email or ai:tool@joy).
     #[arg(long)]
     author: Option<String>,
 }
@@ -50,17 +50,12 @@ pub fn run(args: AssignArgs) -> Result<()> {
         }
     };
 
-    // Guard check
-    {
-        let acting_id = identity::resolve_identity_with(&root, args.author.as_deref())
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
-        joy_core::guard::enforce_as(
-            &root,
-            &joy_core::guard::Action::AssignItem,
-            &item.id,
-            &acting_id,
-        )?;
-    }
+    joy_core::guard::enforce(
+        &root,
+        &joy_core::guard::Action::AssignItem,
+        &item.id,
+        args.author.as_deref(),
+    )?;
 
     // Validate format
     if !member.contains('@') && !member.starts_with("ai:") {

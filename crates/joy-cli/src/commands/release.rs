@@ -78,7 +78,12 @@ fn create(args: CreateArgs) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
-    joy_core::guard::enforce(&root, &joy_core::guard::Action::CreateRelease, "release")?;
+    joy_core::guard::enforce(
+        &root,
+        &joy_core::guard::Action::CreateRelease,
+        "release",
+        None,
+    )?;
 
     let project = store::load_project(&root)?;
     let acronym = project.acronym.as_deref().unwrap_or("JOY");
