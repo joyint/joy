@@ -82,6 +82,52 @@ setup_team_project() {
 }
 
 # ============================================================
+# Scenario 2b: Configurable gates (JOY-0030)
+# ============================================================
+
+@test "AI blocked by allow_ai gate on review->closed" {
+    setup_team_project
+    # Add gate config
+    cat >> .joy/project.yaml << 'EOF'
+status_rules:
+  review -> closed:
+    allow_ai: false
+EOF
+    joy status "$ITEM_ID" in-progress --author ai:test@joy
+    joy status "$ITEM_ID" review --author ai:test@joy
+    run joy status "$ITEM_ID" closed --author ai:test@joy
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"gate"* ]]
+    [[ "$output" == *"allow_ai"* ]]
+}
+
+@test "human not blocked by allow_ai gate" {
+    setup_team_project
+    cat >> .joy/project.yaml << 'EOF'
+status_rules:
+  review -> closed:
+    allow_ai: false
+EOF
+    joy status "$ITEM_ID" in-progress
+    joy status "$ITEM_ID" review
+    run joy close "$ITEM_ID"
+    [ "$status" -eq 0 ]
+}
+
+@test "AI allowed on transitions without gate config" {
+    setup_team_project
+    cat >> .joy/project.yaml << 'EOF'
+status_rules:
+  new -> open:
+    allow_ai: false
+EOF
+    # new->open is gated, but in-progress->review is not
+    joy status "$ITEM_ID" in-progress --author ai:test@joy
+    run joy status "$ITEM_ID" review --author ai:test@joy
+    [ "$status" -eq 0 ]
+}
+
+# ============================================================
 # Scenario 3b: Last manager protection (JOY-008C)
 # ============================================================
 

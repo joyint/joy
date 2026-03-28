@@ -247,6 +247,10 @@ fn show_project(project: &Project, root: &std::path::Path) {
         println!("\n{}:", color::label("Members"));
         print_members_table(&project.members, root);
     }
+
+    // Workflow visualization with gates
+    show_workflow(root);
+
     println!("{}", color::label(&"-".repeat(color::terminal_width())));
 }
 
@@ -534,6 +538,92 @@ fn caps_chmod(
         format!("{}/{}", work, color::warning(&mgmt))
     } else {
         format!("{}/----", work)
+    }
+}
+
+/// Show the workflow visualization with gate markers.
+fn show_workflow(root: &std::path::Path) {
+    let guard = joy_core::guard::Guard::load(root).ok();
+    let empty_gates = std::collections::BTreeMap::new();
+    let gates = guard.as_ref().map(|g| g.gates()).unwrap_or(&empty_gates);
+    let use_emoji = color::use_emoji();
+
+    println!("\n{}:", color::label("Workflow"));
+
+    // Gate marker for a transition
+    let gate_marker = |from: &str, to: &str| -> bool {
+        let key = format!("{from} -> {to}");
+        gates.get(&key).map(|g| !g.allow_ai).unwrap_or(false)
+    };
+
+    let gated_arrow = |from: &str, to: &str| -> String {
+        if gate_marker(from, to) {
+            if use_emoji {
+                "─⛔─>".to_string()
+            } else {
+                color::warning("-X->")
+            }
+        } else {
+            "──>".to_string()
+        }
+    };
+
+    let term_width = color::terminal_width();
+
+    if term_width >= 72 {
+        // Wide: horizontal flow
+        let a1 = gated_arrow("new", "open");
+        let a2 = gated_arrow("open", "in-progress");
+        let a3 = gated_arrow("in-progress", "review");
+        let a4 = gated_arrow("review", "closed");
+
+        println!(
+            "  new {} open {} in-progress {} review {} closed",
+            a1, a2, a3, a4
+        );
+        println!("   │                                  │");
+        println!("   └──> deferred <────────────────────┘");
+    } else {
+        // Narrow: vertical
+        let arr = |from: &str, to: &str| -> String {
+            if gate_marker(from, to) {
+                if use_emoji {
+                    "⛔".to_string()
+                } else {
+                    color::warning("X")
+                }
+            } else {
+                "│".to_string()
+            }
+        };
+        println!("  new");
+        println!("  {} open", arr("new", "open"));
+        println!("  │   {} in-progress", arr("open", "in-progress"));
+        println!("  │   │   {} review", arr("in-progress", "review"));
+        println!("  │   │   │   {} closed", arr("review", "closed"));
+        println!("  │   └──> deferred");
+        println!("  └──> deferred");
+    }
+
+    // Gate list
+    if gates.is_empty() {
+        println!("\n  {}", color::inactive("Gates: none configured"));
+    } else {
+        println!("\n  {}:", color::label("Gates"));
+        for (key, gate) in gates {
+            let mut rules = Vec::new();
+            if !gate.allow_ai {
+                rules.push("allow_ai: false");
+            }
+            if !rules.is_empty() {
+                println!(
+                    "    {} {:<24} {}",
+                    color::warn_mark(),
+                    color::warning(key),
+                    rules.join(", ")
+                );
+            }
+        }
     }
 }
 
