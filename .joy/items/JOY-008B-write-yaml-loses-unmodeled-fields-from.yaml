@@ -1,0 +1,30 @@
+id: JOY-008B
+title: write_yaml loses unmodeled fields from project.yaml (release config)
+type: bug
+status: new
+priority: critical
+capabilities:
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy
+created: 2026-03-28T20:47:41.855232582Z
+updated: 2026-03-28T20:48:06.661742029Z
+comments:
+- author: ai:claude@joy
+  date: 2026-03-28T20:48:06.661741552Z
+  text: |-
+    store::write_yaml serializes the Project struct back to YAML, but the Project struct does not model all fields in project.yaml. The release.version-files config is stored as raw YAML but not in the Project struct, so it gets silently dropped on write.
+
+    This affected us when joy auth --token wrote the AI member's public_key -- the entire project.yaml was re-serialized, losing release.version-files.
+
+    Root cause: any command that reads project.yaml into Project struct and writes it back will lose unmodeled fields.
+
+    Fix options:
+    1. Add release config to Project struct (models it properly)
+    2. Use YAML-aware merge instead of full re-serialization (preserve unknown keys)
+    3. Read-modify-write at YAML level instead of struct level
+
+    Option 2 or 3 is more robust. Option 1 is simpler but requires adding every new config key to the struct.
+
+    Integration test needed: write project with extra YAML fields, call a command that modifies project.yaml, verify extra fields survived.
