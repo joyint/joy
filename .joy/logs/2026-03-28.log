@@ -58,3 +58,4 @@
 2026-03-28T12:29:57.372Z JOY-0088 guard.denied "AI member ai:claude@joy cannot close items (acceptance gate)" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-03-28T12:30:02.952Z JOY-0088 guard.denied "AI member ai:claude@joy cannot close items (acceptance gate)" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-03-28T12:30:12.094Z JOY-0088 item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
+2026-03-28T12:32:32.696Z v0.4.0 release.created [horst.schwarz@joydev.com]
