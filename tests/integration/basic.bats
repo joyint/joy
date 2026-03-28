@@ -30,9 +30,9 @@ load setup
 }
 
 @test "joy add sets created_by field" {
-    joy init --name "Test Project"
-    joy project member add ai:test@joy
-    joy add task "Created by AI" --author ai:test@joy
+    setup_human_auth
+    setup_ai_session ai:test@joy
+    joy add task "Created by AI"
     grep -q "created_by: ai:test@joy" .joy/items/*.yaml
 }
 

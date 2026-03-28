@@ -1,7 +1,7 @@
 id: JOY-0071
 title: Progressive auth activation when AI member is added
 type: story
-status: in-progress
+status: closed
 priority: medium
 parent: JOY-006B
 assignees:
@@ -14,4 +14,8 @@ capabilities:
 - review
 effort: 2
 created: 2026-03-27T18:25:29.265033652Z
-updated: 2026-03-28T23:12:27.631067671Z
+updated: 2026-03-28T23:50:34.262674544Z
+comments:
+- author: ai:claude@joy
+  date: 2026-03-28T23:50:05.497904504Z
+  text: 'Progressive auth activation implemented: identity resolution now reads from active session (human or AI), falling back to git email for projects without auth. AI sessions are detected without requiring public_key on the AI member (ADR-023). All CLI commands use Context pattern.'

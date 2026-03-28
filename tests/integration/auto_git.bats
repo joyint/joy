@@ -117,11 +117,11 @@ load setup
 }
 
 @test "auto-git commit: AI identity in Co-Authored-By" {
-    joy init --name "Auto Git Test"
+    setup_human_auth
     git add -A && git commit -m "init [no-item]" --quiet
     joy config set workflow.auto-git commit
-    joy project member add ai:test@joy
-    joy add task "AI commit" --author ai:test@joy
+    setup_ai_session ai:test@joy
+    joy add task "AI commit"
     last_body=$(git log -1 --format=%b)
     [[ "$last_body" == *"Co-Authored-By: ai:test@joy"* ]]
 }

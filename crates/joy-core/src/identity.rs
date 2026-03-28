@@ -126,25 +126,36 @@ fn check_session(root: &Path, member: &str, project: &Option<Project>) -> bool {
     let Some(project) = project else {
         return false;
     };
-    let Some(m) = project.members.get(member) else {
-        return false;
-    };
-    let Some(ref pk_hex) = m.public_key else {
-        return false; // no auth initialized for this member
-    };
-    let Ok(pk) = crate::auth::sign::PublicKey::from_hex(pk_hex) else {
+    if !project.members.contains_key(member) {
         return false;
     };
     let Ok(project_id) = crate::auth::session::project_id(root) else {
         return false;
     };
-    let Ok(Some(token)) = crate::auth::session::load_session(&project_id, member) else {
+    let Ok(Some(sess)) = crate::auth::session::load_session(&project_id, member) else {
         return false;
     };
-    // Session must be for this member and valid
-    crate::auth::session::validate_session(&token, &pk, &project_id)
-        .map(|claims| claims.member == member)
-        .unwrap_or(false)
+
+    // Check expiry and member match
+    if sess.claims.expires <= chrono::Utc::now() || sess.claims.member != member {
+        return false;
+    }
+
+    // For human members: validate session signature against public key
+    if !is_ai_member(member) {
+        let m = project.members.get(member).unwrap();
+        let Some(ref pk_hex) = m.public_key else {
+            return false;
+        };
+        let Ok(pk) = crate::auth::sign::PublicKey::from_hex(pk_hex) else {
+            return false;
+        };
+        return crate::auth::session::validate_session(&sess, &pk, &project_id).is_ok();
+    }
+
+    // For AI members: session existence + not expired is sufficient
+    // (token was validated at joy auth --token time)
+    true
 }
 
 fn load_project_optional(root: &Path) -> Option<Project> {

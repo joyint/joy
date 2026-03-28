@@ -6,8 +6,7 @@ load setup
 
 # --- Helper: set up a project with lead, developer, and AI agent ---
 setup_team_project() {
-    joy init --name "Guard Test"
-    # Lead: all capabilities (created by init, is git user test@example.com)
+    setup_human_auth
     joy project member add dev@example.com --capabilities "implement,test,create"
     joy project member add ai:test@joy --capabilities "implement,review,create"
     joy add task "Test item"
@@ -36,22 +35,25 @@ setup_team_project() {
 
 @test "AI member can close items without gate config" {
     setup_team_project
-    joy status "$ITEM_ID" in-progress --author ai:test@joy
-    joy status "$ITEM_ID" review --author ai:test@joy
-    run joy status "$ITEM_ID" closed --author ai:test@joy
+    setup_ai_session ai:test@joy
+    joy status "$ITEM_ID" in-progress
+    joy status "$ITEM_ID" review
+    run joy status "$ITEM_ID" closed
     [ "$status" -eq 0 ]
 }
 
 @test "AI member can submit for review" {
     setup_team_project
-    joy status "$ITEM_ID" in-progress --author ai:test@joy
-    run joy status "$ITEM_ID" review --author ai:test@joy
+    setup_ai_session ai:test@joy
+    joy status "$ITEM_ID" in-progress
+    run joy status "$ITEM_ID" review
     [ "$status" -eq 0 ]
 }
 
 @test "AI member can start work" {
     setup_team_project
-    run joy status "$ITEM_ID" in-progress --author ai:test@joy
+    setup_ai_session ai:test@joy
+    run joy status "$ITEM_ID" in-progress
     [ "$status" -eq 0 ]
 }
 
@@ -69,14 +71,16 @@ setup_team_project() {
 
 @test "AI member cannot add project members" {
     setup_team_project
-    run joy project --author ai:test@joy member add someone@example.com
+    setup_ai_session ai:test@joy
+    run joy project member add someone@example.com
     [ "$status" -ne 0 ]
     [[ "$output" == *"cannot perform manage"* ]]
 }
 
 @test "AI member cannot set project properties" {
     setup_team_project
-    run joy project --author ai:test@joy set description "AI edited"
+    setup_ai_session ai:test@joy
+    run joy project set description "AI edited"
     [ "$status" -ne 0 ]
     [[ "$output" == *"manage"* ]]
 }
@@ -93,9 +97,10 @@ status_rules:
   review -> closed:
     allow_ai: false
 EOF
-    joy status "$ITEM_ID" in-progress --author ai:test@joy
-    joy status "$ITEM_ID" review --author ai:test@joy
-    run joy status "$ITEM_ID" closed --author ai:test@joy
+    setup_ai_session ai:test@joy
+    joy status "$ITEM_ID" in-progress
+    joy status "$ITEM_ID" review
+    run joy status "$ITEM_ID" closed
     [ "$status" -ne 0 ]
     [[ "$output" == *"gate"* ]]
     [[ "$output" == *"allow_ai"* ]]
@@ -122,8 +127,9 @@ status_rules:
     allow_ai: false
 EOF
     # new->open is gated, but in-progress->review is not
-    joy status "$ITEM_ID" in-progress --author ai:test@joy
-    run joy status "$ITEM_ID" review --author ai:test@joy
+    setup_ai_session ai:test@joy
+    joy status "$ITEM_ID" in-progress
+    run joy status "$ITEM_ID" review
     [ "$status" -eq 0 ]
 }
 
@@ -140,7 +146,7 @@ EOF
 }
 
 @test "can remove a manager when another manager exists" {
-    joy init --name "Guard Test"
+    setup_human_auth
     joy project member add backup@example.com
     # Now two members with capabilities: all
     run joy project member rm backup@example.com
@@ -204,7 +210,8 @@ EOF
 @test "denied action produces guard.denied event in log" {
     setup_team_project
     # AI trying to manage (always denied) should produce guard.denied event
-    run joy project --author ai:test@joy set description "AI edit"
+    setup_ai_session ai:test@joy
+    run joy project set description "AI edit"
     [ "$status" -ne 0 ]
     grep -q "guard.denied" .joy/logs/*.log
 }
@@ -226,9 +233,11 @@ EOF
 
 @test "unregistered member cannot perform actions" {
     setup_team_project
-    run joy comment "$ITEM_ID" "Stranger comment" --author stranger@example.com
+    git config user.email stranger@example.com
+    run joy comment "$ITEM_ID" "Stranger comment"
     [ "$status" -ne 0 ]
     [[ "$output" == *"not a registered project member"* ]]
+    git config user.email test@example.com
 }
 
 # ============================================================
@@ -276,26 +285,29 @@ EOF
 }
 
 # ============================================================
-# Scenario 9: Shortcuts use guard through status with --author
+# Scenario 9: Shortcuts use guard through status with AI session
 # ============================================================
 
-@test "joy start shortcut is guarded with --author" {
+@test "joy start shortcut is guarded for AI session" {
     setup_team_project
-    run joy start "$ITEM_ID" --author ai:test@joy
+    setup_ai_session ai:test@joy
+    run joy start "$ITEM_ID"
     [ "$status" -eq 0 ]
 }
 
-@test "joy submit shortcut is guarded with --author" {
+@test "joy submit shortcut is guarded for AI session" {
     setup_team_project
-    joy start "$ITEM_ID" --author ai:test@joy
-    run joy submit "$ITEM_ID" --author ai:test@joy
+    setup_ai_session ai:test@joy
+    joy start "$ITEM_ID"
+    run joy submit "$ITEM_ID"
     [ "$status" -eq 0 ]
 }
 
 @test "joy close shortcut works for AI without gate config" {
     setup_team_project
-    joy start "$ITEM_ID" --author ai:test@joy
-    joy submit "$ITEM_ID" --author ai:test@joy
-    run joy close "$ITEM_ID" --author ai:test@joy
+    setup_ai_session ai:test@joy
+    joy start "$ITEM_ID"
+    joy submit "$ITEM_ID"
+    run joy close "$ITEM_ID"
     [ "$status" -eq 0 ]
 }
