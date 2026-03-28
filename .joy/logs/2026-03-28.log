@@ -39,3 +39,6 @@
 2026-03-28T11:38:10.041Z JOY-0083 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-03-28T11:38:54.574Z JOY-0083 comment.added "Made Action::required_capability() public as the authoritative source for action-to-capability mapping. Added exhaustive test covering all 8 base actions, all 6 status transitions, and StartJob delegation. This mapping is now the single source of truth that CLI commands will use via Guard." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-03-28T11:38:54.602Z JOY-0083 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-03-28T11:39:35.667Z JOY-0084 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-03-28T11:40:37.491Z JOY-0084 comment.added "Management capability checks hardened: missing management capabilities (Create, Assign, Manage, Delete) now return Deny instead of Warn. Work capabilities (Implement, Review, Plan, etc.) remain as Warn. This means unauthorized users are blocked from project management, member changes, item deletion, and releases -- not just warned." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-03-28T11:40:37.516Z JOY-0084 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
