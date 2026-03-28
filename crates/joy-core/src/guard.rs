@@ -441,6 +441,87 @@ mod tests {
         ));
     }
 
+    /// Integration test: realistic team with lead, developer, and AI agent.
+    /// Verifies the full gate enforcement across a typical workflow.
+    #[test]
+    fn team_workflow_gate_enforcement() {
+        let project = project_with_members(vec![
+            // Lead: full access
+            ("lead@example.com", MemberCapabilities::All),
+            // Developer: can implement, test, create, but not review or manage
+            (
+                "dev@example.com",
+                specific_caps(&[Capability::Implement, Capability::Test, Capability::Create]),
+            ),
+            // AI agent: can implement, review, create
+            (
+                "ai:claude@joy",
+                specific_caps(&[
+                    Capability::Implement,
+                    Capability::Review,
+                    Capability::Create,
+                ]),
+            ),
+        ]);
+        let guard = Guard::new(&project);
+
+        let lead = identity("lead@example.com");
+        let dev = identity("dev@example.com");
+        let ai = ai_identity("ai:claude@joy", "lead@example.com");
+
+        // === Creating items ===
+        // All three can create (all have Create)
+        assert_eq!(guard.check(&Action::CreateItem, &lead), Verdict::Allow);
+        assert_eq!(guard.check(&Action::CreateItem, &dev), Verdict::Allow);
+        assert_eq!(guard.check(&Action::CreateItem, &ai), Verdict::Allow);
+
+        // === Starting work (-> InProgress needs Implement) ===
+        let start = Action::ChangeStatus {
+            from: Status::Open,
+            to: Status::InProgress,
+        };
+        assert_eq!(guard.check(&start, &lead), Verdict::Allow);
+        assert_eq!(guard.check(&start, &dev), Verdict::Allow);
+        assert_eq!(guard.check(&start, &ai), Verdict::Allow);
+
+        // === Submitting for review (-> Review needs Review) ===
+        let submit = Action::ChangeStatus {
+            from: Status::InProgress,
+            to: Status::Review,
+        };
+        assert_eq!(guard.check(&submit, &lead), Verdict::Allow);
+        // Dev lacks Review -> Warn
+        assert!(matches!(guard.check(&submit, &dev), Verdict::Warn(_)));
+        // AI has Review -> Allow
+        assert_eq!(guard.check(&submit, &ai), Verdict::Allow);
+
+        // === Closing items (-> Closed needs Review + acceptance gate) ===
+        let close = Action::ChangeStatus {
+            from: Status::Review,
+            to: Status::Closed,
+        };
+        // Lead can close (capabilities: all)
+        assert_eq!(guard.check(&close, &lead), Verdict::Allow);
+        // Dev lacks Review -> Warn
+        assert!(matches!(guard.check(&close, &dev), Verdict::Warn(_)));
+        // AI has Review but CANNOT close (acceptance gate) -> Deny
+        assert!(matches!(guard.check(&close, &ai), Verdict::Deny(_)));
+
+        // === Managing project ===
+        // Lead can manage
+        assert_eq!(guard.check(&Action::ManageProject, &lead), Verdict::Allow);
+        // Dev lacks Manage -> Warn
+        assert!(matches!(
+            guard.check(&Action::ManageProject, &dev),
+            Verdict::Warn(_)
+        ));
+        // AI cannot manage -> Deny
+        assert!(matches!(
+            guard.check(&Action::ManageProject, &ai),
+            Verdict::Deny(_)
+        ));
+    }
+
     #[test]
     fn verdict_enforce_allow() {
         assert!(Verdict::Allow.enforce().is_ok());
