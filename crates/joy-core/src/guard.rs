@@ -115,15 +115,9 @@ impl Verdict {
     }
 }
 
-/// One-shot guard check: resolve identity, load project, check, enforce.
-/// `author` is the optional `--author` CLI flag value.
-pub fn enforce(
-    root: &Path,
-    action: &Action,
-    target: &str,
-    author: Option<&str>,
-) -> Result<(), JoyError> {
-    let identity = crate::identity::resolve_identity_with(root, author).unwrap_or(Identity {
+/// One-shot guard check: resolve identity from session, check, enforce.
+pub fn enforce(root: &Path, action: &Action, target: &str) -> Result<(), JoyError> {
+    let identity = crate::identity::resolve_identity(root).unwrap_or(Identity {
         member: "unknown".into(),
         delegated_by: None,
         authenticated: false,

@@ -5,10 +5,10 @@ use anyhow::{bail, Result};
 use chrono::Utc;
 use clap::Args;
 
-use joy_core::identity;
+use joy_core::context::Context;
+use joy_core::guard::Action;
 use joy_core::items;
 use joy_core::model::item::{Assignee, Capability};
-use joy_core::store;
 
 use crate::color;
 
@@ -28,34 +28,19 @@ pub struct AssignArgs {
     /// Remove a member's assignment
     #[arg(long)]
     unassign: bool,
-
-    /// Override identity (email or ai:tool@joy).
-    #[arg(long)]
-    author: Option<String>,
 }
 
 pub fn run(args: AssignArgs) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+    let ctx = Context::load()?;
 
-    let mut item = items::load_item(&root, &args.id)?;
+    let mut item = items::load_item(&ctx.root, &args.id)?;
 
     let member = match args.member {
         Some(m) => m,
-        None => {
-            let id = identity::resolve_identity_with(&root, args.author.as_deref())
-                .map_err(|e| anyhow::anyhow!("{e}. Provide member ID explicitly."))?;
-            crate::warn_ai_members(&root, &id);
-            id.member
-        }
+        None => ctx.identity.member.clone(),
     };
 
-    joy_core::guard::enforce(
-        &root,
-        &joy_core::guard::Action::AssignItem,
-        &item.id,
-        args.author.as_deref(),
-    )?;
+    ctx.enforce(&Action::AssignItem, &item.id)?;
 
     // Validate format
     if !member.contains('@') && !member.starts_with("ai:") {
@@ -70,21 +55,19 @@ pub fn run(args: AssignArgs) -> Result<()> {
             return Ok(());
         }
         item.updated = Utc::now();
-        items::update_item(&root, &item)?;
-        let id = identity::resolve_identity_with(&root, args.author.as_deref())
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        items::update_item(&ctx.root, &item)?;
         joy_core::event_log::log_event_as(
-            &root,
+            &ctx.root,
             joy_core::event_log::EventType::ItemUnassigned,
             &item.id,
             Some(&member),
-            &id.log_user(),
+            &ctx.log_user(),
         );
         println!("Unassigned {} from {}", member, color::id(&item.id));
         joy_core::git_ops::auto_git_post_command(
-            &root,
+            &ctx.root,
             &format!("unassign {} {}", item.id, member),
-            &id.log_user(),
+            &ctx.log_user(),
         );
         return Ok(());
     }
@@ -112,16 +95,14 @@ pub fn run(args: AssignArgs) -> Result<()> {
     }
 
     item.updated = Utc::now();
-    items::update_item(&root, &item)?;
+    items::update_item(&ctx.root, &item)?;
 
-    let id = identity::resolve_identity_with(&root, args.author.as_deref())
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
     joy_core::event_log::log_event_as(
-        &root,
+        &ctx.root,
         joy_core::event_log::EventType::ItemAssigned,
         &item.id,
         Some(&member),
-        &id.log_user(),
+        &ctx.log_user(),
     );
 
     if caps.is_empty() {
@@ -137,9 +118,9 @@ pub fn run(args: AssignArgs) -> Result<()> {
     }
 
     joy_core::git_ops::auto_git_post_command(
-        &root,
+        &ctx.root,
         &format!("assign {} {}", item.id, member),
-        &id.log_user(),
+        &ctx.log_user(),
     );
 
     Ok(())

@@ -6,7 +6,9 @@ use std::io::Write;
 use anyhow::Result;
 use chrono::Utc;
 
+use joy_core::context::Context;
 use joy_core::event_log;
+use joy_core::guard::Action;
 use joy_core::items;
 use joy_core::model::item::{self, ItemType};
 use joy_core::model::release::{Bump, Contributor, Release, ReleaseItem, ReleaseItems};
@@ -75,23 +77,17 @@ pub fn run(args: ReleaseArgs) -> Result<()> {
 }
 
 fn create(args: CreateArgs) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+    let ctx = Context::load()?;
 
-    joy_core::guard::enforce(
-        &root,
-        &joy_core::guard::Action::CreateRelease,
-        "release",
-        None,
-    )?;
+    ctx.enforce(&Action::CreateRelease, "release")?;
 
-    let project = store::load_project(&root)?;
+    let project = store::load_project(&ctx.root)?;
     let acronym = project.acronym.as_deref().unwrap_or("JOY");
 
     // Determine version: Joy releases first, then git tags as fallback
-    let previous = releases::latest_version(&root)?.or_else(|| {
+    let previous = releases::latest_version(&ctx.root)?.or_else(|| {
         joy_core::vcs::default_vcs()
-            .latest_version_tag(&root)
+            .latest_version_tag(&ctx.root)
             .ok()
             .flatten()
     });
@@ -111,15 +107,15 @@ fn create(args: CreateArgs) -> Result<()> {
     };
 
     // Check if release already exists
-    if releases::load_release(&root, acronym, &version).is_ok() {
+    if releases::load_release(&ctx.root, acronym, &version).is_ok() {
         anyhow::bail!("Release {} already exists", version);
     }
 
     // Find cutoff from last release event
-    let cutoff = event_log::last_release_timestamp(&root)?;
+    let cutoff = event_log::last_release_timestamp(&ctx.root)?;
 
     // Collect closed items since cutoff
-    let closed_ids = event_log::closed_item_ids_since(&root, cutoff.as_deref())?;
+    let closed_ids = event_log::closed_item_ids_since(&ctx.root, cutoff.as_deref())?;
 
     if closed_ids.is_empty() {
         println!("No items closed since last release.");
@@ -127,7 +123,7 @@ fn create(args: CreateArgs) -> Result<()> {
     }
 
     // Load item data and group by type
-    let all_items = items::load_items(&root)?;
+    let all_items = items::load_items(&ctx.root)?;
     let mut release_items = ReleaseItems::default();
 
     for id in &closed_ids {
@@ -151,7 +147,7 @@ fn create(args: CreateArgs) -> Result<()> {
     }
 
     // Build contributor list from events on the release items only
-    let actors = event_log::actors_for_items(&root, &closed_ids)?;
+    let actors = event_log::actors_for_items(&ctx.root, &closed_ids)?;
     let contributors: Vec<Contributor> = actors
         .into_iter()
         .map(|a| Contributor {
@@ -192,18 +188,16 @@ fn create(args: CreateArgs) -> Result<()> {
     }
 
     // Write YAML
-    releases::save_release(&root, acronym, &release)?;
+    releases::save_release(&ctx.root, acronym, &release)?;
     println!(
         "Release saved to .joy/releases/{}-{}.yaml",
         acronym, version
     );
 
     // Log event
-    let log_user = joy_core::identity::resolve_identity(&root)
-        .map(|id| id.log_user())
-        .unwrap_or_default();
+    let log_user = ctx.log_user();
     event_log::log_event_as(
-        &root,
+        &ctx.root,
         event_log::EventType::ReleaseCreated,
         &version,
         title_for_log.as_deref(),
@@ -212,7 +206,7 @@ fn create(args: CreateArgs) -> Result<()> {
 
     // --full: version bump, git commit/tag/push, forge release
     if args.full {
-        full_release(&root, &version, &release, &project)?;
+        full_release(&ctx.root, &version, &release, &project)?;
     } else {
         let title_summary = release
             .title
@@ -220,7 +214,7 @@ fn create(args: CreateArgs) -> Result<()> {
             .map(|t| format!(" {t}"))
             .unwrap_or_default();
         joy_core::git_ops::auto_git_post_command(
-            &root,
+            &ctx.root,
             &format!("release create {version}{title_summary}"),
             &log_user,
         );
@@ -230,14 +224,13 @@ fn create(args: CreateArgs) -> Result<()> {
 }
 
 fn show(args: ShowArgs) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
-    let project = store::load_project(&root)?;
+    let ctx = Context::load()?;
+    let project = store::load_project(&ctx.root)?;
     let acronym = project.acronym.as_deref().unwrap_or("JOY");
 
     match args.version {
         Some(version) => {
-            let release = releases::load_release(&root, acronym, &version)?;
+            let release = releases::load_release(&ctx.root, acronym, &version)?;
             if args.markdown {
                 print_release_markdown(&release);
             } else {
@@ -246,15 +239,15 @@ fn show(args: ShowArgs) -> Result<()> {
         }
         None => {
             // Preview: show what the next release would contain
-            let cutoff = event_log::last_release_timestamp(&root)?;
-            let closed_ids = event_log::closed_item_ids_since(&root, cutoff.as_deref())?;
+            let cutoff = event_log::last_release_timestamp(&ctx.root)?;
+            let closed_ids = event_log::closed_item_ids_since(&ctx.root, cutoff.as_deref())?;
 
             if closed_ids.is_empty() {
                 println!("No items closed since last release.");
                 std::process::exit(1);
             }
 
-            let previous = releases::latest_version(&root)?;
+            let previous = releases::latest_version(&ctx.root)?;
             let prev_str = previous.as_deref().unwrap_or("(none)");
 
             let header_text = format!(
@@ -264,10 +257,10 @@ fn show(args: ShowArgs) -> Result<()> {
             );
             println!("{}", color::header(&header_text));
 
-            let all_items = items::load_items(&root)?;
+            let all_items = items::load_items(&ctx.root)?;
             print_items_grouped(&closed_ids, &all_items);
 
-            let actors = event_log::actors_for_items(&root, &closed_ids)?;
+            let actors = event_log::actors_for_items(&ctx.root, &closed_ids)?;
             if !actors.is_empty() {
                 println!("\n{}", color::label("Contributors:"));
                 for a in &actors {
@@ -281,10 +274,9 @@ fn show(args: ShowArgs) -> Result<()> {
 }
 
 fn ls() -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+    let ctx = Context::load()?;
 
-    let all_releases = releases::load_releases(&root)?;
+    let all_releases = releases::load_releases(&ctx.root)?;
 
     if all_releases.is_empty() {
         println!("No releases yet. Create one with: joy release create patch");
