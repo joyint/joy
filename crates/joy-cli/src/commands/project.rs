@@ -438,16 +438,37 @@ fn print_members_table(
             println!();
         }
     } else {
-        // Narrow: compact with auth
+        // Narrow: two-line per member
+        print!(
+            "  {}",
+            color::inactive(&format!("{:<w$}", "Member", w = w_member))
+        );
+        print!(
+            " {}",
+            color::inactive(&format!("{:<w$}", "Auth", w = w_auth))
+        );
+        println!(" {}", color::inactive("Caps"));
+
         for ((id, member), (_, auth)) in members.iter().zip(auth_statuses.iter()) {
             let caps = match &member.capabilities {
                 MemberCapabilities::All => "all".to_string(),
                 MemberCapabilities::Specific(map) => {
-                    let names: Vec<String> = map.keys().map(|c| c.to_string()).collect();
-                    names.join(", ")
+                    let abbrevs: Vec<&str> = cap_headers
+                        .iter()
+                        .filter(|(_, cap)| map.contains_key(cap))
+                        .map(|(hdr, _)| *hdr)
+                        .collect();
+                    abbrevs.join(" ")
                 }
             };
-            println!("  {} {} {}", id, auth, caps);
+            println!(
+                "  {:<w$} {:<wa$} {}",
+                id,
+                auth,
+                caps,
+                w = w_member,
+                wa = w_auth
+            );
         }
     }
 }
