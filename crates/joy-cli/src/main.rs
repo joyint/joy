@@ -92,6 +92,10 @@ enum Commands {
     Config(commands::config::ConfigArgs),
     /// AI tool integration
     Ai(commands::ai::AiArgs),
+    /// Authenticate (enter passphrase to start a session)
+    Auth(commands::auth::AuthArgs),
+    /// End the current session
+    Deauth,
 }
 
 #[derive(clap::Args)]
@@ -217,6 +221,8 @@ fn main() -> anyhow::Result<()> {
             Some(Commands::Board(args)) => commands::board::run(args),
             Some(Commands::Config(_)) => unreachable!("handled above"),
             Some(Commands::Ai(args)) => commands::ai::run(args),
+            Some(Commands::Auth(args)) => commands::auth::run(args),
+            Some(Commands::Deauth) => commands::deauth::run(),
             None => commands::board::run(BoardArgs {
                 short: false,
                 all: cli.all,

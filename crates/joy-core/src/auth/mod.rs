@@ -14,4 +14,5 @@
 //! ```
 
 pub mod derive;
+pub mod session;
 pub mod sign;
