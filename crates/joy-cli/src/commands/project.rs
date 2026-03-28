@@ -118,7 +118,7 @@ pub fn run(args: ProjectArgs) -> Result<()> {
                 args.author.as_deref(),
             )?;
             set_value(&mut project, &a.key, &a.value)?;
-            store::write_yaml(&project_path, &project)?;
+            store::write_yaml_preserve(&project_path, &project)?;
             let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
             joy_core::git_ops::auto_git_add(&root, &[&rel]);
             println!("{} = {}", a.key, a.value);
@@ -167,7 +167,7 @@ pub fn run(args: ProjectArgs) -> Result<()> {
         if let Some(language) = args.language {
             project.language = language;
         }
-        store::write_yaml(&project_path, &project)?;
+        store::write_yaml_preserve(&project_path, &project)?;
         let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
         joy_core::git_ops::auto_git_add(&root, &[&rel]);
         println!("Project updated.");
@@ -322,7 +322,7 @@ fn run_member(
             project
                 .members
                 .insert(a.id.clone(), Member::new(capabilities));
-            store::write_yaml(project_path, project)?;
+            store::write_yaml_preserve(project_path, project)?;
             let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
             joy_core::git_ops::auto_git_add(root, &[&rel]);
             println!("Added member {}", a.id);
@@ -345,7 +345,7 @@ fn run_member(
             if project.members.remove(&a.id).is_none() {
                 bail!("member not found: {}", a.id);
             }
-            store::write_yaml(project_path, project)?;
+            store::write_yaml_preserve(project_path, project)?;
             let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
             joy_core::git_ops::auto_git_add(root, &[&rel]);
             println!("Removed member {}", a.id);

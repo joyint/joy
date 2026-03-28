@@ -130,7 +130,7 @@ fn run_init(passphrase_flag: Option<&str>) -> Result<()> {
     m.salt = Some(salt.to_hex());
     m.public_key = Some(public_key.to_hex());
 
-    store::write_yaml(&project_path, &project)?;
+    store::write_yaml_preserve(&project_path, &project)?;
     let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
     joy_core::git_ops::auto_git_add(&root, &[&rel]);
 
@@ -252,7 +252,7 @@ fn auth_with_token(
     if let Some(ai_member) = project_mut.members.get_mut(&claims.ai_member) {
         ai_member.public_key = Some(session_keypair.public_key().to_hex());
     }
-    store::write_yaml(&project_path, &project_mut)?;
+    store::write_yaml_preserve(&project_path, &project_mut)?;
     let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
     joy_core::git_ops::auto_git_add(root, &[&rel]);
 
@@ -383,7 +383,7 @@ fn run_reset(args: ResetArgs, passphrase_flag: Option<&str>) -> Result<()> {
     m.salt = None;
     m.otp_hash = None;
 
-    store::write_yaml(&project_path, &project)?;
+    store::write_yaml_preserve(&project_path, &project)?;
     let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
     joy_core::git_ops::auto_git_add(&root, &[&rel]);
 

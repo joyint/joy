@@ -1,15 +1,17 @@
 id: JOY-008B
 title: write_yaml loses unmodeled fields from project.yaml (release config)
 type: bug
-status: new
+status: closed
 priority: critical
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 - review
 effort: 3
 created_by: ai:claude@joy
 created: 2026-03-28T20:47:41.855232582Z
-updated: 2026-03-28T20:48:06.661742029Z
+updated: 2026-03-28T21:09:08.319035416Z
 comments:
 - author: ai:claude@joy
   date: 2026-03-28T20:48:06.661741552Z
@@ -28,3 +30,6 @@ comments:
     Option 2 or 3 is more robust. Option 1 is simpler but requires adding every new config key to the struct.
 
     Integration test needed: write project with extra YAML fields, call a command that modifies project.yaml, verify extra fields survived.
+- author: ai:claude@joy
+  date: 2026-03-28T21:09:08.304064709Z
+  text: "Fixed with three changes:\n\n1. write_yaml_preserve() in store.rs: preserves top-level YAML keys not modeled in the struct. Uses the struct's values as authoritative, then adds back any unknown keys from the original file. All project.yaml writes now use this function.\n\n2. Session path: ~/.local/state/joy/sessions/ instead of ~/.config/joy/sessions/ (XDG_STATE_HOME compliant -- sessions are runtime state, not user config)\n\n3. Session filename: SHA-256 hash of project_id:member (first 12 bytes, hex) instead of human-readable names. Privacy-safe, deterministic.\n\n3 new integration tests:\n- project.yaml extra fields survive auth init\n- project.yaml extra fields survive member add  \n- project.yaml extra fields survive auth reset\n\n84 total integration tests green."
