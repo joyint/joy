@@ -1,9 +1,11 @@
 id: JOY-0081
 title: 'Guard module foundation: types, Guard struct, Verdict enum'
 type: story
-status: new
+status: closed
 priority: high
 parent: JOY-0080
+assignees:
+- member: ai:claude@joy
 capabilities:
 - plan
 - implement
@@ -11,4 +13,17 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy
 created: 2026-03-28T10:35:36.384327582Z
-updated: 2026-03-28T10:35:36.384327582Z
+updated: 2026-03-28T11:34:26.736987415Z
+comments:
+- author: ai:claude@joy
+  date: 2026-03-28T11:34:26.707060547Z
+  text: |-
+    Implemented guard module foundation:
+    - Guard struct with new(project) and load(root) constructors
+    - Action enum: CreateItem, UpdateItem, DeleteItem, ChangeStatus, AssignItem, AddComment, ManageProject, ManageMilestone, CreateRelease, StartJob
+    - Verdict enum: Allow, Deny(reason), Warn(reason) with enforce() -> Result
+    - Action -> Capability mapping including status transition rules
+    - Zero-overhead for solo: capabilities: all returns Allow without mapping
+    - AI member hard block on Manage actions
+    - JoyError::GuardDenied variant added
+    - 9 unit tests, all passing. 105 total joy-core tests green.

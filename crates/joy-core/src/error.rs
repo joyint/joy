@@ -53,6 +53,9 @@ pub enum JoyError {
     #[error("template error: {0}")]
     Template(String),
 
+    #[error("guard denied: {0}")]
+    GuardDenied(String),
+
     #[error("{0}")]
     Other(String),
 }
