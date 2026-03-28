@@ -11,6 +11,11 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 chrono = { workspace = true }
 sha2 = "0.10.9"
+argon2 = "0.5"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+zeroize = { version = "1", features = ["derive"] }
+rand = "0.8"
+hex = "0.4"
 minijinja = { workspace = true }
 
 [dev-dependencies]

@@ -266,9 +266,7 @@ mod tests {
     fn project_with_members(members: Vec<(&str, MemberCapabilities)>) -> Project {
         let mut project = Project::new("Test".into(), Some("TST".into()));
         for (name, caps) in members {
-            project
-                .members
-                .insert(name.into(), Member { capabilities: caps });
+            project.members.insert(name.into(), Member::new(caps));
         }
         project
     }

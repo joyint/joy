@@ -1,9 +1,11 @@
 id: JOY-006D
 title: Ed25519 identity keypair from derived key material
 type: story
-status: new
+status: closed
 priority: high
 parent: JOY-006B
+assignees:
+- member: ai:claude@joy
 deps:
 - JOY-006C
 capabilities:
@@ -12,4 +14,14 @@ capabilities:
 - review
 effort: 2
 created: 2026-03-27T18:25:29.251157765Z
-updated: 2026-03-27T18:27:26.886883669Z
+updated: 2026-03-28T16:31:24.853968410Z
+comments:
+- author: ai:claude@joy
+  date: 2026-03-28T16:31:24.819916494Z
+  text: |-
+    Ed25519 identity keypair implemented in auth/sign.rs:
+    - IdentityKeypair: from DerivedKey (32-byte seed), sign, zeroed on drop
+    - PublicKey: verify, hex roundtrip, stored in project.yaml per member
+    - Member model extended: public_key, salt, otp_hash (all Option, backward compatible)
+    - Member::new() constructor for clean initialization
+    - 5 unit tests (deterministic, sign/verify roundtrip, wrong message, wrong key, hex roundtrip)

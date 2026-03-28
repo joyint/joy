@@ -1,13 +1,25 @@
 id: JOY-006C
 title: Argon2id key derivation from passphrase and project salt
 type: story
-status: new
+status: closed
 priority: high
 parent: JOY-006B
+assignees:
+- member: ai:claude@joy
 capabilities:
 - plan
 - implement
 - review
 effort: 3
 created: 2026-03-27T18:25:29.247625995Z
-updated: 2026-03-27T18:27:26.884295955Z
+updated: 2026-03-28T16:31:17.950551028Z
+comments:
+- author: ai:claude@joy
+  date: 2026-03-28T16:31:17.914258414Z
+  text: |-
+    Argon2id key derivation implemented in auth/derive.rs:
+    - Salt: 32-byte random, hex serializable, zeroed on drop
+    - DerivedKey: 32-byte Argon2id output, zeroed on drop
+    - Params: m_cost=65536 (64 MiB), t_cost=3, p_cost=4
+    - Passphrase validation: minimum 6 whitespace-separated words
+    - 7 unit tests (salt random, hex roundtrip, deterministic, different salt/passphrase, validation)

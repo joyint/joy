@@ -566,8 +566,8 @@ fn configure_tools(root: &Path) -> anyhow::Result<Vec<&'static str>> {
         if configured && !project.members.contains_key(&member_id) {
             project.members.insert(
                 member_id.clone(),
-                joy_core::model::project::Member {
-                    capabilities: joy_core::model::project::MemberCapabilities::Specific({
+                joy_core::model::project::Member::new(
+                    joy_core::model::project::MemberCapabilities::Specific({
                         use joy_core::model::item::Capability;
                         use joy_core::model::project::CapabilityConfig;
                         let mut map = std::collections::BTreeMap::new();
@@ -588,7 +588,7 @@ fn configure_tools(root: &Path) -> anyhow::Result<Vec<&'static str>> {
                         }
                         map
                     }),
-                },
+                ),
             );
             project_changed = true;
             println!(

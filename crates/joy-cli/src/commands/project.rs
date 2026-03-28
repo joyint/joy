@@ -321,7 +321,7 @@ fn run_member(
             };
             project
                 .members
-                .insert(a.id.clone(), Member { capabilities });
+                .insert(a.id.clone(), Member::new(capabilities));
             store::write_yaml(project_path, project)?;
             let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
             joy_core::git_ops::auto_git_add(root, &[&rel]);

@@ -53,6 +53,12 @@ pub enum JoyError {
     #[error("template error: {0}")]
     Template(String),
 
+    #[error("authentication failed: {0}")]
+    AuthFailed(String),
+
+    #[error("passphrase too short (minimum 6 words)")]
+    PassphraseTooShort,
+
     #[error("guard denied: {0}")]
     GuardDenied(String),
 
