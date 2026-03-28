@@ -9,6 +9,7 @@ pub mod error;
 pub mod event_log;
 pub mod fortune;
 pub mod git_ops;
+pub mod guard;
 pub mod identity;
 pub mod init;
 pub mod items;
