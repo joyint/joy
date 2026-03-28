@@ -38,6 +38,13 @@ impl IdentityKeypair {
         Self { signing_key }
     }
 
+    /// Generate a random keypair (for one-time token keys).
+    pub fn from_random() -> Self {
+        use rand::rngs::OsRng;
+        let signing_key = SigningKey::generate(&mut OsRng);
+        Self { signing_key }
+    }
+
     /// Derive a deterministic keypair from arbitrary data (e.g. token + project ID).
     /// Uses SHA-256 to produce a 32-byte seed.
     pub fn from_token_seed(token: &str, project_id: &str) -> Self {

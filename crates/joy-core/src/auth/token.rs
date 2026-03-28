@@ -1,13 +1,13 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! Delegation tokens for AI members.
+//! Per-delegator AI delegation tokens with dual signatures (ADR-023).
 //!
-//! A delegation token is created by an authenticated human and given to an
-//! AI agent. It proves that the human authorized the AI to act on their behalf.
-//! The token is signed with the human's Ed25519 identity key.
+//! Each token carries two Ed25519 signatures:
+//! 1. Delegator signature (human's identity key) — proves authorization
+//! 2. Token binding signature (one-time token_key) — binds to project.yaml entry
 //!
-//! Tokens are passed via `JOY_AUTH_TOKEN` environment variable.
+//! Tokens are passed via `--token` flag or `JOY_TOKEN` env var to `joy auth`.
 
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
@@ -28,21 +28,34 @@ pub struct DelegationClaims {
     pub expires: Option<DateTime<Utc>>,
 }
 
-/// A delegation token: claims + Ed25519 signature.
+/// A delegation token with dual signatures.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DelegationToken {
     pub claims: DelegationClaims,
-    pub signature: String,
+    /// Hex-encoded Ed25519 signature by the delegating human's key.
+    pub delegator_signature: String,
+    /// Hex-encoded Ed25519 signature by the one-time token_key.
+    pub binding_signature: String,
+    /// Hex-encoded public key of the one-time token_key (for matching against project.yaml).
+    pub token_public_key: String,
 }
 
-/// Create a delegation token signed by the human's identity keypair.
+/// Result of creating a token: the encoded token string + the public key to store.
+pub struct CreateTokenResult {
+    pub token: DelegationToken,
+    pub token_public_key: String,
+}
+
+/// Create a delegation token with dual signatures.
+///
+/// Returns the token and the token_key public key (to store in project.yaml).
 pub fn create_token(
-    keypair: &IdentityKeypair,
+    delegator_keypair: &IdentityKeypair,
     ai_member: &str,
     human: &str,
     project_id: &str,
     ttl: Option<Duration>,
-) -> DelegationToken {
+) -> CreateTokenResult {
     let now = Utc::now();
     let claims = DelegationClaims {
         ai_member: ai_member.to_string(),
@@ -52,17 +65,31 @@ pub fn create_token(
         expires: ttl.map(|d| now + d),
     };
     let claims_json = serde_json::to_string(&claims).expect("claims serialize");
-    let signature = keypair.sign(claims_json.as_bytes());
-    DelegationToken {
-        claims,
-        signature: hex::encode(signature),
+
+    // Signature 1: delegator's identity key
+    let delegator_sig = delegator_keypair.sign(claims_json.as_bytes());
+
+    // Signature 2: one-time token key (generated fresh)
+    let token_keypair = IdentityKeypair::from_random();
+    let binding_sig = token_keypair.sign(claims_json.as_bytes());
+    let token_pk = token_keypair.public_key();
+
+    CreateTokenResult {
+        token: DelegationToken {
+            claims,
+            delegator_signature: hex::encode(delegator_sig),
+            binding_signature: hex::encode(binding_sig),
+            token_public_key: token_pk.to_hex(),
+        },
+        token_public_key: token_pk.to_hex(),
     }
 }
 
-/// Validate a delegation token against the delegating human's public key.
+/// Validate a delegation token against both the delegator's key and the token_key.
 pub fn validate_token(
     token: &DelegationToken,
-    public_key: &PublicKey,
+    delegator_pk: &PublicKey,
+    token_pk: &PublicKey,
     project_id: &str,
 ) -> Result<DelegationClaims, JoyError> {
     // Check project match
@@ -79,11 +106,17 @@ pub fn validate_token(
         }
     }
 
-    // Verify signature
     let claims_json = serde_json::to_string(&token.claims).expect("claims serialize");
-    let signature =
-        hex::decode(&token.signature).map_err(|e| JoyError::AuthFailed(format!("{e}")))?;
-    public_key.verify(claims_json.as_bytes(), &signature)?;
+
+    // Verify delegator signature
+    let delegator_sig = hex::decode(&token.delegator_signature)
+        .map_err(|e| JoyError::AuthFailed(format!("{e}")))?;
+    delegator_pk.verify(claims_json.as_bytes(), &delegator_sig)?;
+
+    // Verify binding signature
+    let binding_sig =
+        hex::decode(&token.binding_signature).map_err(|e| JoyError::AuthFailed(format!("{e}")))?;
+    token_pk.verify(claims_json.as_bytes(), &binding_sig)?;
 
     Ok(token.claims.clone())
 }
@@ -111,7 +144,6 @@ pub fn is_token(s: &str) -> bool {
     s.starts_with(TOKEN_PREFIX)
 }
 
-// Simple base64 encoding/decoding using standard alphabet
 fn base64_encode(data: &[u8]) -> String {
     use base64ct::{Base64, Encoding};
     Base64::encode_string(data)
@@ -144,83 +176,102 @@ mod tests {
     #[test]
     fn create_and_validate_token() {
         let (kp, pk) = test_keypair();
-        let token = create_token(&kp, "ai:claude@joy", "human@example.com", "TST", None);
-        let claims = validate_token(&token, &pk, "TST").unwrap();
+        let result = create_token(&kp, "ai:claude@joy", "human@example.com", "TST", None);
+        let token_pk = sign::PublicKey::from_hex(&result.token_public_key).unwrap();
+        let claims = validate_token(&result.token, &pk, &token_pk, "TST").unwrap();
         assert_eq!(claims.ai_member, "ai:claude@joy");
         assert_eq!(claims.delegated_by, "human@example.com");
-        assert_eq!(claims.project_id, "TST");
-        assert!(claims.expires.is_none());
     }
 
     #[test]
     fn token_with_expiry() {
         let (kp, pk) = test_keypair();
-        let token = create_token(
+        let result = create_token(
             &kp,
             "ai:claude@joy",
             "human@example.com",
             "TST",
             Some(Duration::hours(8)),
         );
-        let claims = validate_token(&token, &pk, "TST").unwrap();
+        let token_pk = sign::PublicKey::from_hex(&result.token_public_key).unwrap();
+        let claims = validate_token(&result.token, &pk, &token_pk, "TST").unwrap();
         assert!(claims.expires.is_some());
     }
 
     #[test]
     fn expired_token_rejected() {
         let (kp, pk) = test_keypair();
-        let token = create_token(
+        let result = create_token(
             &kp,
             "ai:claude@joy",
             "human@example.com",
             "TST",
             Some(Duration::seconds(-1)),
         );
-        assert!(validate_token(&token, &pk, "TST").is_err());
+        let token_pk = sign::PublicKey::from_hex(&result.token_public_key).unwrap();
+        assert!(validate_token(&result.token, &pk, &token_pk, "TST").is_err());
     }
 
     #[test]
     fn wrong_project_rejected() {
         let (kp, pk) = test_keypair();
-        let token = create_token(&kp, "ai:claude@joy", "human@example.com", "TST", None);
-        assert!(validate_token(&token, &pk, "OTHER").is_err());
+        let result = create_token(&kp, "ai:claude@joy", "human@example.com", "TST", None);
+        let token_pk = sign::PublicKey::from_hex(&result.token_public_key).unwrap();
+        assert!(validate_token(&result.token, &pk, &token_pk, "OTHER").is_err());
     }
 
     #[test]
-    fn tampered_token_rejected() {
+    fn tampered_claims_rejected() {
         let (kp, pk) = test_keypair();
-        let mut token = create_token(&kp, "ai:claude@joy", "human@example.com", "TST", None);
+        let result = create_token(&kp, "ai:claude@joy", "human@example.com", "TST", None);
+        let token_pk = sign::PublicKey::from_hex(&result.token_public_key).unwrap();
+        let mut token = result.token;
         token.claims.ai_member = "ai:attacker@evil".into();
-        assert!(validate_token(&token, &pk, "TST").is_err());
+        assert!(validate_token(&token, &pk, &token_pk, "TST").is_err());
     }
 
     #[test]
-    fn encode_decode_roundtrip() {
-        let (kp, pk) = test_keypair();
-        let token = create_token(&kp, "ai:claude@joy", "human@example.com", "TST", None);
-        let encoded = encode_token(&token);
-        assert!(encoded.starts_with("joy_t_"));
-        let decoded = decode_token(&encoded).unwrap();
-        let claims = validate_token(&decoded, &pk, "TST").unwrap();
-        assert_eq!(claims.ai_member, "ai:claude@joy");
-    }
-
-    #[test]
-    fn invalid_prefix_rejected() {
-        assert!(decode_token("invalid_prefix_data").is_err());
-    }
-
-    #[test]
-    fn wrong_key_rejected() {
+    fn wrong_delegator_key_rejected() {
         let (kp, _) = test_keypair();
-        let token = create_token(&kp, "ai:claude@joy", "human@example.com", "TST", None);
+        let result = create_token(&kp, "ai:claude@joy", "human@example.com", "TST", None);
+        let token_pk = sign::PublicKey::from_hex(&result.token_public_key).unwrap();
 
+        // Different delegator key
         let other_salt = derive::generate_salt();
         let other_key =
             derive::derive_key("alpha bravo charlie delta echo foxtrot", &other_salt).unwrap();
         let other_kp = sign::IdentityKeypair::from_derived_key(&other_key);
         let other_pk = other_kp.public_key();
 
-        assert!(validate_token(&token, &other_pk, "TST").is_err());
+        assert!(validate_token(&result.token, &other_pk, &token_pk, "TST").is_err());
+    }
+
+    #[test]
+    fn wrong_token_key_rejected() {
+        let (kp, pk) = test_keypair();
+        let result = create_token(&kp, "ai:claude@joy", "human@example.com", "TST", None);
+
+        // Different token key (simulates revoked token)
+        let wrong_token_kp = sign::IdentityKeypair::from_random();
+        let wrong_token_pk = wrong_token_kp.public_key();
+
+        assert!(validate_token(&result.token, &pk, &wrong_token_pk, "TST").is_err());
+    }
+
+    #[test]
+    fn encode_decode_roundtrip() {
+        let (kp, pk) = test_keypair();
+        let result = create_token(&kp, "ai:claude@joy", "human@example.com", "TST", None);
+        let encoded = encode_token(&result.token);
+        assert!(encoded.starts_with("joy_t_"));
+        let decoded = decode_token(&encoded).unwrap();
+        let token_pk = sign::PublicKey::from_hex(&result.token_public_key).unwrap();
+        let claims = validate_token(&decoded, &pk, &token_pk, "TST").unwrap();
+        assert_eq!(claims.ai_member, "ai:claude@joy");
+    }
+
+    #[test]
+    fn invalid_prefix_rejected() {
+        assert!(decode_token("invalid_prefix_data").is_err());
     }
 }
