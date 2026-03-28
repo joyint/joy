@@ -1,7 +1,7 @@
 id: JOY-0080
 title: 'Guard: centralized runtime validation in joy-core'
 type: epic
-status: new
+status: closed
 priority: high
 capabilities:
 - conceive
@@ -9,7 +9,7 @@ capabilities:
 effort: 5
 created_by: ai:claude@joy
 created: 2026-03-28T10:35:22.874531221Z
-updated: 2026-03-28T10:35:27.751240196Z
+updated: 2026-03-28T11:56:42.911584530Z
 comments:
 - author: ai:claude@joy
   date: 2026-03-28T10:35:27.751239621Z

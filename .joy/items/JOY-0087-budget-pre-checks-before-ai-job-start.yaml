@@ -1,9 +1,11 @@
 id: JOY-0087
 title: Budget pre-checks before AI job start
 type: story
-status: new
+status: closed
 priority: medium
 parent: JOY-0080
+assignees:
+- member: ai:claude@joy
 deps:
 - JOY-0081
 - JOY-0085
@@ -14,4 +16,14 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy
 created: 2026-03-28T10:35:42.543922793Z
-updated: 2026-03-28T10:35:57.037549831Z
+updated: 2026-03-28T11:56:42.863503866Z
+comments:
+- author: ai:claude@joy
+  date: 2026-03-28T11:56:42.803520675Z
+  text: |-
+    Budget pre-checks implemented in Guard::check() for StartJob actions:
+    - If member has max_cost_per_job configured and estimated_cost exceeds it -> Deny
+    - At or below limit -> Allow
+    - No limit configured -> Allow (no restriction)
+    - No estimated cost provided -> Allow (can't pre-check unknown costs)
+    - 4 new unit tests: within_limit, over_limit, no_limit, no_estimate
