@@ -175,6 +175,55 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 }
 
 # ============================================================
+# joy auth create-token
+# ============================================================
+
+@test "joy auth create-token generates token for AI member" {
+    joy init --name "Auth Test"
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy project member add ai:test@joy
+    run joy auth create-token ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"joy_t_"* ]]
+    [[ "$output" == *"Delegation token for ai:test@joy"* ]]
+}
+
+@test "joy auth create-token rejects non-AI member" {
+    joy init --name "Auth Test"
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy project member add dev@example.com
+    run joy auth create-token dev@example.com --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"not an AI member"* ]]
+}
+
+@test "joy auth create-token rejects unregistered AI member" {
+    joy init --name "Auth Test"
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    run joy auth create-token ai:unknown@joy --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"not a registered project member"* ]]
+}
+
+@test "joy auth create-token rejects wrong passphrase" {
+    joy init --name "Auth Test"
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy project member add ai:test@joy
+    run joy auth create-token ai:test@joy --passphrase "wrong wrong wrong wrong wrong wrong"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"incorrect passphrase"* ]]
+}
+
+@test "joy auth create-token with TTL" {
+    joy init --name "Auth Test"
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy project member add ai:test@joy
+    run joy auth create-token ai:test@joy --passphrase "$TEST_PASSPHRASE" --ttl 8
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"expires in 8 hours"* ]]
+}
+
+# ============================================================
 # Full auth flow
 # ============================================================
 
