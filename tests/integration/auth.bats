@@ -226,6 +226,47 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 }
 
 # ============================================================
+# joy ai reset cleans up auth (JOY-0089)
+# ============================================================
+
+@test "joy ai reset removes AI member and its auth data" {
+    joy init --name "Auth Test"
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    # Manually create tool directory and register AI member
+    mkdir -p .claude
+    echo "# test" > .claude/CLAUDE.md
+    joy project member add ai:claude@joy
+    # Create a delegation token and authenticate as AI
+    TOKEN=$(joy auth create-token ai:claude@joy --passphrase "$TEST_PASSPHRASE" | sed -n 's/^  \(joy_t_.*\)/\1/p')
+    joy auth --token "$TOKEN"
+    # Verify AI member exists with public_key (set by token auth)
+    grep -q "ai:claude@joy" .joy/project.yaml
+    grep -q "public_key" .joy/project.yaml
+    # Reset the AI tool
+    joy ai reset --tool claude --force
+    # AI member should be removed from project.yaml
+    ! grep -q "ai:claude@joy" .joy/project.yaml
+}
+
+@test "joy ai reset removes all AI members when resetting all tools" {
+    joy init --name "Auth Test"
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy project member add ai:claude@joy
+    joy project member add ai:qwen@joy
+    # Verify both exist
+    grep -q "ai:claude@joy" .joy/project.yaml
+    grep -q "ai:qwen@joy" .joy/project.yaml
+    # Create tool directories so reset has something to remove
+    mkdir -p .claude .qwen
+    touch .claude/CLAUDE.md .qwen/QWEN.md
+    # Reset all
+    joy ai reset --force
+    # Both AI members should be removed
+    ! grep -q "ai:claude@joy" .joy/project.yaml
+    ! grep -q "ai:qwen@joy" .joy/project.yaml
+}
+
+# ============================================================
 # Full auth flow
 # ============================================================
 

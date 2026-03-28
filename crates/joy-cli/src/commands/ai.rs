@@ -65,6 +65,10 @@ struct ResetArgs {
     /// Only reset a specific tool (claude, qwen, vibe, copilot)
     #[arg(long)]
     tool: Option<String>,
+
+    /// Skip confirmation prompt
+    #[arg(long, short)]
+    force: bool,
 }
 
 pub fn run(args: AiArgs) -> anyhow::Result<()> {
@@ -391,15 +395,18 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
     for (name, path) in &to_remove {
         println!("  {}{:<24} {}", color::cross_mark(), name, path);
     }
-    println!();
-    print!("Proceed? [y/N] ");
-    std::io::stdout().flush()?;
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input)?;
-    let trimmed = input.trim();
-    if !trimmed.eq_ignore_ascii_case("y") {
-        println!("Aborted.");
-        return Ok(());
+
+    if !args.force {
+        println!();
+        print!("Proceed? [y/N] ");
+        std::io::stdout().flush()?;
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        let trimmed = input.trim();
+        if !trimmed.eq_ignore_ascii_case("y") {
+            println!("Aborted.");
+            return Ok(());
+        }
     }
 
     for (name, path) in &to_remove {
@@ -425,6 +432,10 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
                 if project.members.remove(&member_id).is_some() {
                     println!("  {}{:<24} member removed", color::check_mark(), member_id);
                     project_changed = true;
+                    // Remove AI member's session if one exists
+                    if let Ok(project_id) = joy_core::auth::session::project_id(&root) {
+                        let _ = joy_core::auth::session::remove_session(&project_id);
+                    }
                 }
             }
         }
