@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 use anyhow::Result;
+use chrono::Utc;
 use clap::{Args, Subcommand};
 
 use joy_core::auth::{derive, session, sign};
@@ -14,6 +15,11 @@ use crate::color;
 pub struct AuthArgs {
     #[command(subcommand)]
     command: Option<AuthCommand>,
+
+    /// Passphrase (non-interactive, for scripts and tests).
+    /// If not set, prompts interactively.
+    #[arg(long, global = true)]
+    passphrase: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -26,14 +32,22 @@ enum AuthCommand {
 
 pub fn run(args: AuthArgs) -> Result<()> {
     match args.command {
-        Some(AuthCommand::Init) => run_init(),
+        Some(AuthCommand::Init) => run_init(args.passphrase.as_deref()),
         Some(AuthCommand::Status) => run_status(),
-        None => run_auth(),
+        None => run_auth(args.passphrase.as_deref()),
+    }
+}
+
+/// Read passphrase from flag or prompt interactively.
+fn read_passphrase(flag: Option<&str>, prompt: &str) -> Result<String> {
+    match flag {
+        Some(p) => Ok(p.to_string()),
+        None => Ok(rpassword::prompt_password(prompt)?),
     }
 }
 
 /// `joy auth init` — first-time setup for the current member.
-fn run_init() -> Result<()> {
+fn run_init(passphrase_flag: Option<&str>) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
@@ -58,16 +72,20 @@ fn run_init() -> Result<()> {
         );
     }
 
-    // Prompt for passphrase
-    eprintln!("Setting up authentication for {}.", color::id(&email));
-    eprintln!("Choose a passphrase (minimum 6 words, e.g. Diceware):");
-    let passphrase = rpassword::prompt_password("  Passphrase: ")?;
+    // Get passphrase
+    if passphrase_flag.is_none() {
+        eprintln!("Setting up authentication for {}.", color::id(&email));
+        eprintln!("Choose a passphrase (minimum 6 words, e.g. Diceware):");
+    }
+    let passphrase = read_passphrase(passphrase_flag, "  Passphrase: ")?;
     derive::validate_passphrase(&passphrase)?;
 
-    // Confirm passphrase
-    let confirm = rpassword::prompt_password("  Confirm:    ")?;
-    if passphrase != confirm {
-        anyhow::bail!("passphrases do not match");
+    // Confirm (only in interactive mode)
+    if passphrase_flag.is_none() {
+        let confirm = rpassword::prompt_password("  Confirm:    ")?;
+        if passphrase != confirm {
+            anyhow::bail!("passphrases do not match");
+        }
     }
 
     // Derive keypair
@@ -99,7 +117,7 @@ fn run_init() -> Result<()> {
 }
 
 /// `joy auth` — authenticate by entering passphrase.
-fn run_auth() -> Result<()> {
+fn run_auth(passphrase_flag: Option<&str>) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
@@ -128,8 +146,8 @@ fn run_auth() -> Result<()> {
     let public_key = sign::PublicKey::from_hex(public_key_hex)?;
     let salt = derive::Salt::from_hex(salt_hex)?;
 
-    // Prompt for passphrase
-    let passphrase = rpassword::prompt_password("Passphrase: ")?;
+    // Get passphrase
+    let passphrase = read_passphrase(passphrase_flag, "Passphrase: ")?;
 
     // Derive key and verify
     let key = derive::derive_key(&passphrase, &salt)?;
@@ -193,5 +211,3 @@ fn run_status() -> Result<()> {
 
     Ok(())
 }
-
-use chrono::Utc;
