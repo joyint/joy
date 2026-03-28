@@ -1,7 +1,7 @@
 id: JOY-0030
 title: Transition gates in project.yaml
 type: story
-status: in-progress
+status: closed
 priority: medium
 parent: JOY-0029
 assignees:
@@ -11,5 +11,28 @@ deps:
 - JOY-002C
 effort: 3
 created: 2026-03-22T16:19:42.715366798Z
-updated: 2026-03-28T22:48:37.450459309Z
+updated: 2026-03-28T23:10:34.892728944Z
 description: 'Opt-in gates on status transitions: requires_capability (transition needs assigned member with capability), requires_ci (CI must pass), allow_ai (can an agent fulfil this gate). Gates are configured per transition in project.yaml. Without gates, all transitions are allowed (current behavior). Gates are the strictness dial from solo (no gates) to enterprise (full enforcement).'
+comments:
+- author: ai:claude@joy
+  date: 2026-03-28T23:10:34.875954330Z
+  text: |-
+    Configurable transition gates implemented:
+
+    Config in project.yaml (preserved by write_yaml_preserve):
+      status_rules:
+        review -> closed:
+          allow_ai: false
+
+    Guard enforcement: Guard::load() reads status_rules as raw YAML. On ChangeStatus for AI members, checks if transition has allow_ai: false gate.
+
+    enforce() now uses Guard::load() instead of Guard::new() -- ensures gates are always loaded.
+
+    joy project workflow visualization:
+    - Wide (72+ cols): horizontal ASCII flow with gate symbols (emoji: ⛔, text: -X->)
+    - Narrow: vertical stack
+    - Gate list below with warning markers
+    - No gates: dimmed 'Gates: none configured'
+
+    2 new unit tests: gate_blocks_ai, no_gates_allows_all
+    3 new integration tests: AI blocked by gate, human not blocked, AI allowed without gate

@@ -128,31 +128,52 @@ pub fn enforce(
         delegated_by: None,
         authenticated: false,
     });
-    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-    let project: Project = store::read_yaml(&project_path)?;
-    Guard::new(&project)
+    Guard::load(root)?
         .check(action, &identity)
         .enforce(root, target, &identity)
+}
+
+/// Configuration for a single transition gate.
+#[derive(Debug, Clone)]
+pub struct GateConfig {
+    /// Whether AI members are allowed to perform this transition.
+    pub allow_ai: bool,
 }
 
 /// Centralized runtime validation for the Trust Model.
 pub struct Guard {
     members: BTreeMap<String, Member>,
+    gates: BTreeMap<String, GateConfig>,
 }
 
 impl Guard {
-    /// Create a Guard from a loaded project.
+    /// Create a Guard from a loaded project (no gates).
     pub fn new(project: &Project) -> Self {
         Self {
             members: project.members.clone(),
+            gates: BTreeMap::new(),
         }
     }
 
-    /// Load project.yaml and create a Guard.
+    /// Create a Guard with gates.
+    pub fn with_gates(project: &Project, gates: BTreeMap<String, GateConfig>) -> Self {
+        Self {
+            members: project.members.clone(),
+            gates,
+        }
+    }
+
+    /// Load project.yaml and create a Guard, including gate config.
     pub fn load(root: &Path) -> Result<Self, JoyError> {
         let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
         let project: Project = store::read_yaml(&project_path)?;
-        Ok(Self::new(&project))
+        let gates = load_gates(&project_path)?;
+        Ok(Self::with_gates(&project, gates))
+    }
+
+    /// Get the configured gates (for display in joy project).
+    pub fn gates(&self) -> &BTreeMap<String, GateConfig> {
+        &self.gates
     }
 
     /// Check whether an action is allowed for the given identity.
@@ -186,7 +207,17 @@ impl Guard {
             }
 
             // Configurable gates (e.g. allow_ai: false on review->closed)
-            // are checked below via project gate config, not hardcoded here.
+            if let Action::ChangeStatus { from, to } = action {
+                let key = format!("{} -> {}", status_str(from), status_str(to));
+                if let Some(gate) = self.gates.get(&key) {
+                    if !gate.allow_ai {
+                        return Verdict::Deny(format!(
+                            "AI member {} blocked by gate on {} (allow_ai: false)",
+                            identity.member, key
+                        ));
+                    }
+                }
+            }
         }
 
         // Auth enforcement: manage actions require authentication when auth is active
@@ -259,6 +290,46 @@ impl Guard {
             .unwrap_or(false);
         is_manager && manager_count <= 1
     }
+}
+
+/// Convert Status to the string used in gate config keys.
+pub fn status_str(s: &Status) -> &'static str {
+    match s {
+        Status::New => "new",
+        Status::Open => "open",
+        Status::InProgress => "in-progress",
+        Status::Review => "review",
+        Status::Closed => "closed",
+        Status::Deferred => "deferred",
+    }
+}
+
+/// Load gate config from project.yaml status_rules section.
+fn load_gates(project_path: &Path) -> Result<BTreeMap<String, GateConfig>, JoyError> {
+    let content = std::fs::read_to_string(project_path).map_err(|e| JoyError::ReadFile {
+        path: project_path.to_path_buf(),
+        source: e,
+    })?;
+    let doc: serde_json::Value = serde_yaml_ng::from_str(&content).map_err(JoyError::Yaml)?;
+
+    let mut gates = BTreeMap::new();
+
+    let Some(rules) = doc.get("status_rules") else {
+        return Ok(gates);
+    };
+    let Some(rules_obj) = rules.as_object() else {
+        return Ok(gates);
+    };
+
+    for (key, value) in rules_obj {
+        let allow_ai = value
+            .get("allow_ai")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        gates.insert(key.clone(), GateConfig { allow_ai });
+    }
+
+    Ok(gates)
 }
 
 #[cfg(test)]
@@ -426,6 +497,87 @@ mod tests {
             guard.check(&Action::CreateRelease, &id),
             Verdict::Deny(_)
         ));
+    }
+
+    #[test]
+    fn gate_blocks_ai_on_configured_transition() {
+        let project = project_with_members(vec![
+            ("dev@example.com", MemberCapabilities::All),
+            (
+                "ai:claude@joy",
+                specific_caps(&[
+                    Capability::Implement,
+                    Capability::Review,
+                    Capability::Create,
+                ]),
+            ),
+        ]);
+        let mut gates = BTreeMap::new();
+        gates.insert(
+            "review -> closed".to_string(),
+            GateConfig { allow_ai: false },
+        );
+        let guard = Guard::with_gates(&project, gates);
+        let ai = ai_identity("ai:claude@joy", "dev@example.com");
+        let human = identity("dev@example.com");
+
+        // AI blocked by gate
+        assert!(matches!(
+            guard.check(
+                &Action::ChangeStatus {
+                    from: Status::Review,
+                    to: Status::Closed
+                },
+                &ai
+            ),
+            Verdict::Deny(_)
+        ));
+
+        // Human not blocked
+        assert_eq!(
+            guard.check(
+                &Action::ChangeStatus {
+                    from: Status::Review,
+                    to: Status::Closed
+                },
+                &human
+            ),
+            Verdict::Allow
+        );
+
+        // AI can still do other transitions
+        assert_eq!(
+            guard.check(
+                &Action::ChangeStatus {
+                    from: Status::InProgress,
+                    to: Status::Review
+                },
+                &ai
+            ),
+            Verdict::Allow
+        );
+    }
+
+    #[test]
+    fn no_gates_allows_all_transitions() {
+        let project = project_with_members(vec![(
+            "ai:claude@joy",
+            specific_caps(&[Capability::Review, Capability::Create]),
+        )]);
+        let guard = Guard::new(&project); // no gates
+        let ai = ai_identity("ai:claude@joy", "dev@example.com");
+
+        // Without gates, AI with Review can close
+        assert_eq!(
+            guard.check(
+                &Action::ChangeStatus {
+                    from: Status::Review,
+                    to: Status::Closed
+                },
+                &ai
+            ),
+            Verdict::Allow
+        );
     }
 
     #[test]
