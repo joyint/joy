@@ -22,6 +22,10 @@ pub struct SessionClaims {
     pub project_id: String,
     pub created: DateTime<Utc>,
     pub expires: DateTime<Utc>,
+    /// For AI sessions: the token_key that was used to create this session.
+    /// Used to invalidate sessions when the token is revoked/replaced.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token_key: Option<String>,
 }
 
 /// A session token: claims + Ed25519 signature.
@@ -42,6 +46,33 @@ pub fn create_session(
     project_id: &str,
     ttl: Option<Duration>,
 ) -> SessionToken {
+    create_session_with_token_key(keypair, member, project_id, ttl, None)
+}
+
+/// Create a session for an AI member, binding it to a specific token_key.
+pub fn create_session_for_ai(
+    keypair: &IdentityKeypair,
+    member: &str,
+    project_id: &str,
+    ttl: Option<Duration>,
+    token_key: &str,
+) -> SessionToken {
+    create_session_with_token_key(
+        keypair,
+        member,
+        project_id,
+        ttl,
+        Some(token_key.to_string()),
+    )
+}
+
+fn create_session_with_token_key(
+    keypair: &IdentityKeypair,
+    member: &str,
+    project_id: &str,
+    ttl: Option<Duration>,
+    token_key: Option<String>,
+) -> SessionToken {
     let now = Utc::now();
     let ttl = ttl.unwrap_or_else(|| Duration::hours(DEFAULT_TTL_HOURS));
     let claims = SessionClaims {
@@ -49,6 +80,7 @@ pub fn create_session(
         project_id: project_id.to_string(),
         created: now,
         expires: now + ttl,
+        token_key,
     };
     let claims_json = serde_json::to_string(&claims).expect("claims serialize");
     let signature = keypair.sign(claims_json.as_bytes());

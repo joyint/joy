@@ -52,6 +52,11 @@ members:
     capabilities: all
     public_key: 05ae823757c1d3d0db5f2f66c7f55642b2258f15776a6b2f029142bfa9b5f73d
     salt: 3da1d77fe4dcbd9c1ee917dc49451f500c7d46cdc6e93cb9bf61f466282985ea
+    ai_tokens:
+      ai:claude@joy:
+        token_key: 3791f91d96edd664c5f71aac39ca0f06d6f94f4e403cf0e56ee31373558a32f4
+        created: 2026-03-28T22:16:55.962019555Z
+created: 2026-03-09T23:57:36.761964460Z
 release:
   version-files:
   - path: crates/joy-core/Cargo.toml
@@ -60,4 +65,3 @@ release:
     key: package.version
   - path: crates/joy-ai/Cargo.toml
     key: package.version
-created: 2026-03-09T23:57:36.761964460Z

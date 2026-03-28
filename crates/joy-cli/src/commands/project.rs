@@ -593,17 +593,31 @@ fn member_auth_status(
     let has_session = if !has_auth {
         false
     } else if is_ai {
-        // AI sessions: check if session file exists (no key validation needed,
-        // token was validated at joy auth time)
+        // AI sessions: check session exists, not expired, and token_key matches
+        // a current ai_tokens entry (invalidates sessions from revoked tokens)
+        let current_token_keys: Vec<&str> = all_members
+            .values()
+            .filter_map(|m| m.ai_tokens.get(id))
+            .map(|entry| entry.token_key.as_str())
+            .collect();
         joy_core::auth::session::load_session(project_id, id)
             .ok()
             .flatten()
             .and_then(|sess| {
-                // Just check expiry
-                if sess.claims.expires > chrono::Utc::now() && sess.claims.member == id {
-                    Some(())
-                } else {
-                    None
+                if sess.claims.expires <= chrono::Utc::now() || sess.claims.member != id {
+                    // Expired or wrong member — clean up
+                    let _ = joy_core::auth::session::remove_session(project_id, id);
+                    return None;
+                }
+                // Check token_key matches a current entry
+                match &sess.claims.token_key {
+                    Some(tk) if current_token_keys.contains(&tk.as_str()) => Some(()),
+                    Some(_) => {
+                        // Token was revoked/replaced — clean up stale session
+                        let _ = joy_core::auth::session::remove_session(project_id, id);
+                        None
+                    }
+                    None => None, // Old session format without token_key
                 }
             })
             .is_some()
