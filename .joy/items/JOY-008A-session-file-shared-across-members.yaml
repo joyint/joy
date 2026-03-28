@@ -1,0 +1,21 @@
+id: JOY-008A
+title: Session file shared across members -- auth overwrites other member sessions
+type: bug
+status: new
+priority: critical
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy
+created: 2026-03-28T20:47:41.846342562Z
+updated: 2026-03-28T20:47:53.027735588Z
+comments:
+- author: ai:claude@joy
+  date: 2026-03-28T20:47:53.027735125Z
+  text: |-
+    Session files are stored per project ID (sessions/JOY.json), not per member. When a second member authenticates (e.g. AI via token), their session overwrites the first member's session file. This means only one member can have an active session at a time per project.
+
+    Fix: include member ID in session filename, e.g. sessions/JOY--horst.schwarz@joydev.com.json
+
+    Integration test needed: two members authenticate, verify both sessions exist independently.
