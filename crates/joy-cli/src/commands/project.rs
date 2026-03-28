@@ -404,6 +404,11 @@ fn print_members_table(
     let max_member = members.keys().map(|k| k.len()).max().unwrap_or(6).max(6);
     let term_width = color::terminal_width();
 
+    // chmod-style capability string: cpditrw/camd (12 chars) or "all" (3 chars)
+    // Work: conceive plan design implement test review write(doc)
+    // Mgmt: create assign manage delete
+    let chmod_width = 12; // "cpditrw/camd"
+
     // Fixed columns: "  " prefix + " " auth gap + " " caps gap
     let fixed = 2 + 1 + w_auth + 1;
 
@@ -411,17 +416,13 @@ fn print_members_table(
     let caps_wide = cap_headers.len() * 4;
     let w_member_wide = term_width.saturating_sub(fixed + caps_wide);
 
-    // Try narrow mode (abbreviated): needs ~3-4 chars per cap
-    let caps_narrow_str = "con pln des imp tst rev doc crt asg mng del"; // 43 chars
-    let w_member_narrow = term_width.saturating_sub(fixed + caps_narrow_str.len());
+    // Compact mode (chmod-style): needs 12 chars for caps
+    let w_member_compact = term_width.saturating_sub(fixed + chmod_width);
 
-    let (w_member, wide_mode) = if w_member_wide >= 8 {
+    let (w_member, wide_mode) = if w_member_wide >= 12 {
         (w_member_wide.min(max_member), true)
-    } else if w_member_narrow >= 8 {
-        (w_member_narrow.min(max_member), false)
     } else {
-        // Ultra-narrow: give member at least 8 chars
-        (8_usize.min(max_member), false)
+        (w_member_compact.min(max_member).max(8), false)
     };
 
     // Header
@@ -435,6 +436,7 @@ fn print_members_table(
             print!(" {}", color::inactive(&format!("{:<3}", hdr)));
         }
     } else {
+        // chmod-style header
         print!(" {}", color::inactive("Caps"));
     }
     println!();
@@ -462,26 +464,67 @@ fn print_members_table(
                 }
             }
         } else {
-            let caps = match &member.capabilities {
-                MemberCapabilities::All => format!(" {}", color::warning("all")),
-                MemberCapabilities::Specific(map) => {
-                    let parts: Vec<String> = cap_headers
-                        .iter()
-                        .filter(|(_, cap)| map.contains_key(cap))
-                        .map(|(hdr, cap)| {
-                            if cap.is_management() {
-                                color::warning(hdr)
-                            } else {
-                                hdr.to_string()
-                            }
-                        })
-                        .collect();
-                    format!(" {}", parts.join(" "))
-                }
-            };
-            print!("{caps}");
+            // chmod-style: cpditrw/camd
+            print!(" {}", caps_chmod(member, cap_headers));
         }
         println!();
+    }
+}
+
+/// Render capabilities in chmod-style: `cpditrw/camd`
+/// Work caps: conceive(c) plan(p) design(d) implement(i) test(t) review(r) write/doc(w)
+/// Mgmt caps: create(c) assign(a) manage(m) delete(d)
+/// Missing caps shown as `-`. `all` renders as colored "all".
+fn caps_chmod(
+    member: &Member,
+    _cap_headers: &[(&str, joy_core::model::item::Capability)],
+) -> String {
+    use joy_core::model::item::Capability;
+
+    if member.capabilities == MemberCapabilities::All {
+        return color::warning("all");
+    }
+
+    // Single-char labels for each capability in order
+    let chars: &[(char, &Capability)] = &[
+        ('c', &Capability::Conceive),
+        ('p', &Capability::Plan),
+        ('d', &Capability::Design),
+        ('i', &Capability::Implement),
+        ('t', &Capability::Test),
+        ('r', &Capability::Review),
+        ('w', &Capability::Document),
+    ];
+    let mgmt_chars: &[(char, &Capability)] = &[
+        ('c', &Capability::Create),
+        ('a', &Capability::Assign),
+        ('m', &Capability::Manage),
+        ('d', &Capability::Delete),
+    ];
+
+    let has = |cap: &Capability| -> bool {
+        match &member.capabilities {
+            MemberCapabilities::All => true,
+            MemberCapabilities::Specific(map) => map.contains_key(cap),
+        }
+    };
+
+    let work: String = chars
+        .iter()
+        .map(|(ch, cap)| if has(cap) { *ch } else { '-' })
+        .collect();
+
+    let mgmt: String = mgmt_chars
+        .iter()
+        .map(|(ch, cap)| if has(cap) { *ch } else { '-' })
+        .collect();
+
+    // Color the management part if any management caps are present
+    let has_mgmt = mgmt.chars().any(|c| c != '-');
+    if has_mgmt {
+        format!("{}/{}", work, color::warning(&mgmt))
+    } else {
+        format!("{}/----", work)
     }
 }
 
