@@ -121,7 +121,7 @@ load setup
     git add -A && git commit -m "init [no-item]" --quiet
     joy config set workflow.auto-git commit
     joy project member add ai:test@joy
-    JOY_AUTHOR=ai:test@joy joy add task "AI commit"
+    joy add task "AI commit" --author ai:test@joy
     last_body=$(git log -1 --format=%b)
     [[ "$last_body" == *"Co-Authored-By: ai:test@joy"* ]]
 }

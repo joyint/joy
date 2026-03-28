@@ -115,10 +115,15 @@ impl Verdict {
     }
 }
 
-/// One-shot guard check: load project, resolve identity, check, enforce.
-/// Combines all steps into a single call for commands without --author flag.
-pub fn enforce(root: &Path, action: &Action, target: &str) -> Result<(), JoyError> {
-    let identity = crate::identity::resolve_identity(root).unwrap_or(Identity {
+/// One-shot guard check: resolve identity, load project, check, enforce.
+/// `author` is the optional `--author` CLI flag value.
+pub fn enforce(
+    root: &Path,
+    action: &Action,
+    target: &str,
+    author: Option<&str>,
+) -> Result<(), JoyError> {
+    let identity = crate::identity::resolve_identity_with(root, author).unwrap_or(Identity {
         member: "unknown".into(),
         delegated_by: None,
     });
@@ -127,21 +132,6 @@ pub fn enforce(root: &Path, action: &Action, target: &str) -> Result<(), JoyErro
     Guard::new(&project)
         .check(action, &identity)
         .enforce(root, target, &identity)
-}
-
-/// One-shot guard check with a pre-resolved identity.
-/// For commands that already resolved identity via --author flag.
-pub fn enforce_as(
-    root: &Path,
-    action: &Action,
-    target: &str,
-    identity: &Identity,
-) -> Result<(), JoyError> {
-    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-    let project: Project = store::read_yaml(&project_path)?;
-    Guard::new(&project)
-        .check(action, identity)
-        .enforce(root, target, identity)
 }
 
 /// Centralized runtime validation for the Trust Model.
@@ -182,23 +172,19 @@ impl Guard {
             }
         };
 
-        // Fast path: capabilities: all allows everything
-        if member.capabilities == MemberCapabilities::All {
-            return Verdict::Allow;
-        }
-
-        let required = action.required_capability();
-
-        // AI members are never allowed to perform manage actions
-        if is_ai_member(&identity.member) && required == Capability::Manage {
-            return Verdict::Deny(format!(
-                "AI member {} cannot perform manage actions",
-                identity.member
-            ));
-        }
-
-        // Gate: AI members cannot close items (acceptance gate)
+        // AI-specific gates apply regardless of capabilities (even capabilities: all)
         if is_ai_member(&identity.member) {
+            let required = action.required_capability();
+
+            // AI members are never allowed to perform manage actions
+            if required == Capability::Manage {
+                return Verdict::Deny(format!(
+                    "AI member {} cannot perform manage actions",
+                    identity.member
+                ));
+            }
+
+            // Gate: AI members cannot close items (acceptance gate)
             if let Action::ChangeStatus {
                 to: Status::Closed, ..
             } = action
@@ -209,6 +195,13 @@ impl Guard {
                 ));
             }
         }
+
+        // Fast path: capabilities: all allows everything
+        if member.capabilities == MemberCapabilities::All {
+            return Verdict::Allow;
+        }
+
+        let required = action.required_capability();
 
         // Check if the member has the required capability
         if member.has_capability(&required) {

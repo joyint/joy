@@ -38,18 +38,14 @@ pub struct StatusArgs {
     /// New status: new, open, in-progress, review, closed, deferred
     status: String,
 
-    /// Override identity (email or ai:tool@joy). Takes priority over JOY_AUTHOR.
+    /// Override identity (email or ai:tool@joy).
     #[arg(long)]
     author: Option<String>,
 }
 
 impl StatusArgs {
-    pub fn new(id: String, status: String) -> Self {
-        Self {
-            id,
-            status,
-            author: None,
-        }
+    pub fn new(id: String, status: String, author: Option<String>) -> Self {
+        Self { id, status, author }
     }
 }
 
@@ -69,14 +65,14 @@ pub fn run(args: StatusArgs) -> Result<()> {
     let mut item = items::load_item(&root, &args.id)?;
     let old_status = item.status.clone();
 
-    joy_core::guard::enforce_as(
+    joy_core::guard::enforce(
         &root,
         &joy_core::guard::Action::ChangeStatus {
             from: old_status.clone(),
             to: new_status.clone(),
         },
         &item.id,
-        &resolved,
+        args.author.as_deref(),
     )?;
 
     // Warn when reopening a released item

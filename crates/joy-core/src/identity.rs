@@ -5,8 +5,7 @@
 //!
 //! Resolves the acting user's identity by checking (in order):
 //! 1. `--author` CLI flag (if provided)
-//! 2. `JOY_AUTHOR` environment variable
-//! 3. `git config user.email` (fallback)
+//! 2. `git config user.email` (fallback)
 //!
 //! When the resolved identity is an AI member (`ai:*`), the git email
 //! is captured as the delegating human (`delegated_by`).
@@ -40,7 +39,7 @@ impl Identity {
 
 /// Resolve the acting identity for the current operation.
 ///
-/// Priority: `author_override` (--author flag) > `JOY_AUTHOR` env var > git email.
+/// Priority: `author_override` (--author flag) > git email.
 /// If the resolved identity is an AI member, the git email is used as `delegated_by`.
 /// Validates that the identity is a registered project member (if members exist).
 pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
@@ -55,10 +54,8 @@ pub fn resolve_identity_with(
     let git_email = crate::vcs::default_vcs().user_email()?;
     let project = load_project_optional(root);
 
-    // Priority: --author flag > JOY_AUTHOR env var > git email
-    let override_author = author_override
-        .map(|s| s.to_string())
-        .or_else(|| std::env::var("JOY_AUTHOR").ok().filter(|s| !s.is_empty()));
+    // Priority: --author flag > git email
+    let override_author = author_override.map(|s| s.to_string());
 
     match override_author {
         Some(author) => {

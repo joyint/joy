@@ -25,7 +25,7 @@ pub struct CommentArgs {
     /// Comment text (required)
     text: Option<String>,
 
-    /// Override identity (email or ai:tool@joy). Takes priority over JOY_AUTHOR.
+    /// Override identity (email or ai:tool@joy).
     #[arg(long)]
     author: Option<String>,
 }
@@ -45,7 +45,12 @@ pub fn run(args: CommentArgs) -> Result<()> {
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     crate::warn_ai_members(&root, &id);
 
-    joy_core::guard::enforce_as(&root, &joy_core::guard::Action::AddComment, &item.id, &id)?;
+    joy_core::guard::enforce(
+        &root,
+        &joy_core::guard::Action::AddComment,
+        &item.id,
+        args.author.as_deref(),
+    )?;
 
     let log_text = text.clone();
     let comment = Comment {

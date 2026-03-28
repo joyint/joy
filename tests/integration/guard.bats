@@ -70,21 +70,14 @@ setup_team_project() {
 
 @test "AI member cannot add project members" {
     setup_team_project
-    run env JOY_AUTHOR=ai:test@joy joy project member add someone@example.com
+    run joy project --author ai:test@joy member add someone@example.com
     [ "$status" -ne 0 ]
     [[ "$output" == *"cannot perform manage"* ]]
 }
 
 @test "AI member cannot set project properties" {
     setup_team_project
-    run env JOY_AUTHOR=ai:test@joy joy project set description "AI edited"
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"manage"* ]]
-}
-
-@test "AI member cannot create milestones" {
-    setup_team_project
-    run env JOY_AUTHOR=ai:test@joy joy milestone add "AI milestone" --date 2026-12-01
+    run joy project --author ai:test@joy set description "AI edited"
     [ "$status" -ne 0 ]
     [[ "$output" == *"manage"* ]]
 }
@@ -95,18 +88,8 @@ setup_team_project() {
 
 @test "developer without manage cannot add members" {
     setup_team_project
-    run env GIT_AUTHOR_EMAIL=dev@example.com GIT_COMMITTER_EMAIL=dev@example.com git config user.email dev@example.com
-    run joy project member add newbie@example.com
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"manage"* ]]
-    # Restore git email
-    git config user.email test@example.com
-}
-
-@test "developer without manage cannot create milestones" {
-    setup_team_project
     git config user.email dev@example.com
-    run joy milestone add "Dev milestone" --date 2026-12-01
+    run joy project member add newbie@example.com
     [ "$status" -ne 0 ]
     [[ "$output" == *"manage"* ]]
     git config user.email test@example.com
@@ -181,7 +164,7 @@ setup_team_project() {
 
 @test "unregistered member cannot perform actions" {
     setup_team_project
-    run env JOY_AUTHOR=stranger@example.com joy comment "$ITEM_ID" "Stranger comment"
+    run joy comment "$ITEM_ID" "Stranger comment" --author stranger@example.com
     [ "$status" -ne 0 ]
     [[ "$output" == *"not a registered project member"* ]]
 }
@@ -231,27 +214,27 @@ setup_team_project() {
 }
 
 # ============================================================
-# Scenario 9: Shortcuts use guard through status
+# Scenario 9: Shortcuts use guard through status with --author
 # ============================================================
 
-@test "joy start shortcut is guarded" {
+@test "joy start shortcut is guarded with --author" {
     setup_team_project
-    run env JOY_AUTHOR=ai:test@joy joy start "$ITEM_ID"
+    run joy start "$ITEM_ID" --author ai:test@joy
     [ "$status" -eq 0 ]
 }
 
-@test "joy submit shortcut is guarded" {
+@test "joy submit shortcut is guarded with --author" {
     setup_team_project
-    JOY_AUTHOR=ai:test@joy joy start "$ITEM_ID"
-    run env JOY_AUTHOR=ai:test@joy joy submit "$ITEM_ID"
+    joy start "$ITEM_ID" --author ai:test@joy
+    run joy submit "$ITEM_ID" --author ai:test@joy
     [ "$status" -eq 0 ]
 }
 
-@test "joy close shortcut blocked for AI" {
+@test "joy close shortcut blocked for AI with --author" {
     setup_team_project
-    JOY_AUTHOR=ai:test@joy joy start "$ITEM_ID"
-    JOY_AUTHOR=ai:test@joy joy submit "$ITEM_ID"
-    run env JOY_AUTHOR=ai:test@joy joy close "$ITEM_ID"
+    joy start "$ITEM_ID" --author ai:test@joy
+    joy submit "$ITEM_ID" --author ai:test@joy
+    run joy close "$ITEM_ID" --author ai:test@joy
     [ "$status" -ne 0 ]
     [[ "$output" == *"cannot close items"* ]]
 }

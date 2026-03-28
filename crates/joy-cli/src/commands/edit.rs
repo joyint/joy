@@ -203,7 +203,7 @@ pub fn run(args: EditArgs) -> Result<()> {
     } else {
         joy_core::guard::Action::UpdateItem
     };
-    joy_core::guard::enforce(&root, &action, &item.id)?;
+    joy_core::guard::enforce(&root, &action, &item.id, None)?;
 
     item.updated = Utc::now();
     items::update_item(&root, &item)?;

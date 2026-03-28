@@ -31,7 +31,7 @@ pub fn run(args: RmArgs) -> Result<()> {
 
     let item = items::load_item(&root, &args.id)?;
 
-    joy_core::guard::enforce(&root, &joy_core::guard::Action::DeleteItem, &item.id)?;
+    joy_core::guard::enforce(&root, &joy_core::guard::Action::DeleteItem, &item.id, None)?;
 
     let resolved = identity::resolve_identity(&root).unwrap_or(identity::Identity {
         member: "unknown".into(),
