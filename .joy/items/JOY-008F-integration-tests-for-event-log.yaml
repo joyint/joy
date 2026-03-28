@@ -1,0 +1,13 @@
+id: JOY-008F
+title: Integration tests for event log traceability
+type: task
+status: closed
+priority: high
+assignees:
+- member: horst.schwarz@joydev.com
+capabilities:
+- implement
+effort: 2
+created_by: horst.schwarz@joydev.com
+created: 2026-03-28T23:51:44.114015809Z
+updated: 2026-03-28T23:55:39.571141219Z
