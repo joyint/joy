@@ -1,0 +1,24 @@
+id: JOY-008C
+title: Prevent removal of last member with manage capability
+type: bug
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy
+created: 2026-03-28T21:09:52.984494757Z
+updated: 2026-03-28T21:17:18.163811387Z
+comments:
+- author: ai:claude@joy
+  date: 2026-03-28T21:17:18.152319847Z
+  text: |-
+    Fixed: Guard.is_last_manager() checks if removing a member would leave zero human managers. AI members are excluded from the count (they can never have manage capability).
+
+    Integrated into joy project member rm -- blocks removal with clear error message.
+
+    4 unit tests: solo (blocked), with backup (allowed), AI not counted, non-manager member.
+    2 integration tests: last manager blocked, second manager removable.

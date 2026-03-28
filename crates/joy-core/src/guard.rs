@@ -252,6 +252,21 @@ impl Guard {
             ))
         }
     }
+
+    /// Check if removing a member would leave no one with manage capability.
+    pub fn is_last_manager(&self, member_id: &str) -> bool {
+        let manager_count = self
+            .members
+            .iter()
+            .filter(|(id, m)| m.has_capability(&Capability::Manage) && !is_ai_member(id))
+            .count();
+        let is_manager = self
+            .members
+            .get(member_id)
+            .map(|m| m.has_capability(&Capability::Manage))
+            .unwrap_or(false);
+        is_manager && manager_count <= 1
+    }
 }
 
 #[cfg(test)]
@@ -807,6 +822,51 @@ mod tests {
             ),
             Verdict::Allow
         );
+    }
+
+    #[test]
+    fn is_last_manager_solo() {
+        let project = project_with_members(vec![("lead@example.com", MemberCapabilities::All)]);
+        let guard = Guard::new(&project);
+        assert!(guard.is_last_manager("lead@example.com"));
+    }
+
+    #[test]
+    fn is_last_manager_with_backup() {
+        let project = project_with_members(vec![
+            ("lead@example.com", MemberCapabilities::All),
+            ("backup@example.com", MemberCapabilities::All),
+        ]);
+        let guard = Guard::new(&project);
+        assert!(!guard.is_last_manager("lead@example.com"));
+        assert!(!guard.is_last_manager("backup@example.com"));
+    }
+
+    #[test]
+    fn is_last_manager_ai_not_counted() {
+        let project = project_with_members(vec![
+            ("lead@example.com", MemberCapabilities::All),
+            ("ai:claude@joy", MemberCapabilities::All),
+        ]);
+        let guard = Guard::new(&project);
+        // AI members don't count as managers (Guard blocks AI from manage)
+        assert!(guard.is_last_manager("lead@example.com"));
+    }
+
+    #[test]
+    fn is_last_manager_non_manager_member() {
+        let project = project_with_members(vec![
+            ("lead@example.com", MemberCapabilities::All),
+            (
+                "dev@example.com",
+                specific_caps(&[Capability::Implement, Capability::Create]),
+            ),
+        ]);
+        let guard = Guard::new(&project);
+        // lead is the only manager
+        assert!(guard.is_last_manager("lead@example.com"));
+        // dev is not a manager
+        assert!(!guard.is_last_manager("dev@example.com"));
     }
 
     #[test]
