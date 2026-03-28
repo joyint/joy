@@ -29,6 +29,8 @@ pub enum EventType {
     MilestoneLinked,
     MilestoneUnlinked,
     ReleaseCreated,
+    GuardDenied,
+    GuardWarned,
 }
 
 impl fmt::Display for EventType {
@@ -49,6 +51,8 @@ impl fmt::Display for EventType {
             Self::MilestoneLinked => "milestone.linked",
             Self::MilestoneUnlinked => "milestone.unlinked",
             Self::ReleaseCreated => "release.created",
+            Self::GuardDenied => "guard.denied",
+            Self::GuardWarned => "guard.warned",
         };
         write!(f, "{s}")
     }
@@ -72,6 +76,8 @@ impl EventType {
             "milestone.linked" => Some(Self::MilestoneLinked),
             "milestone.unlinked" => Some(Self::MilestoneUnlinked),
             "release.created" => Some(Self::ReleaseCreated),
+            "guard.denied" => Some(Self::GuardDenied),
+            "guard.warned" => Some(Self::GuardWarned),
             _ => None,
         }
     }

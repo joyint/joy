@@ -1,9 +1,11 @@
 id: JOY-0085
 title: Structured enforcement events in event log
 type: story
-status: new
+status: closed
 priority: high
 parent: JOY-0080
+assignees:
+- member: ai:claude@joy
 deps:
 - JOY-0081
 capabilities:
@@ -13,4 +15,15 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy
 created: 2026-03-28T10:35:42.471336217Z
-updated: 2026-03-28T10:35:52.715870843Z
+updated: 2026-03-28T11:42:57.737705022Z
+comments:
+- author: ai:claude@joy
+  date: 2026-03-28T11:42:57.715011966Z
+  text: |-
+    Structured enforcement events implemented:
+    - Added GuardDenied and GuardWarned to EventType enum (event_log.rs)
+    - Verdict::enforce() now takes root, target, identity and logs events before returning
+    - Deny verdicts produce guard.denied events in the log
+    - Warn verdicts produce guard.warned events in the log
+    - Allow verdicts produce no events
+    - 2 new tests verify event log integration (deny + warn)
