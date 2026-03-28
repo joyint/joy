@@ -28,12 +28,21 @@ enum AuthCommand {
     Init,
     /// Show current session status
     Status,
+    /// Reset authentication (remove public key, salt, and session)
+    Reset(ResetArgs),
+}
+
+#[derive(Args)]
+struct ResetArgs {
+    /// Member to reset (default: yourself). Requires manage capability.
+    member: Option<String>,
 }
 
 pub fn run(args: AuthArgs) -> Result<()> {
     match args.command {
         Some(AuthCommand::Init) => run_init(args.passphrase.as_deref()),
         Some(AuthCommand::Status) => run_status(),
+        Some(AuthCommand::Reset(a)) => run_reset(a, args.passphrase.as_deref()),
         None => run_auth(args.passphrase.as_deref()),
     }
 }
@@ -208,6 +217,87 @@ fn run_status() -> Result<()> {
             println!("No active session. Run `joy auth` to authenticate.");
         }
     }
+
+    Ok(())
+}
+
+/// `joy auth reset [member]` — reset authentication for yourself or another member.
+fn run_reset(args: ResetArgs, passphrase_flag: Option<&str>) -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+
+    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
+    let mut project: joy_core::model::project::Project = store::read_yaml(&project_path)?;
+    let email = joy_core::vcs::default_vcs().user_email()?;
+
+    let target = args.member.as_deref().unwrap_or(&email);
+    let resetting_other = target != email;
+
+    // Verify the acting user's identity via passphrase
+    let acting_member = project
+        .members
+        .get(&email)
+        .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member.", email))?;
+
+    if acting_member.public_key.is_none() {
+        anyhow::bail!(
+            "Authentication not initialized for {}. Run `joy auth init`.",
+            email
+        );
+    }
+
+    // Authenticate the acting user
+    let salt_hex = acting_member.salt.as_ref().unwrap();
+    let public_key_hex = acting_member.public_key.as_ref().unwrap();
+    let salt = derive::Salt::from_hex(salt_hex)?;
+    let public_key = sign::PublicKey::from_hex(public_key_hex)?;
+
+    let passphrase = read_passphrase(passphrase_flag, "Passphrase: ")?;
+    let key = derive::derive_key(&passphrase, &salt)?;
+    let keypair = sign::IdentityKeypair::from_derived_key(&key);
+    if keypair.public_key() != public_key {
+        anyhow::bail!("incorrect passphrase");
+    }
+
+    // If resetting another member, check manage capability
+    if resetting_other {
+        joy_core::guard::enforce(
+            &root,
+            &joy_core::guard::Action::ManageProject,
+            "project",
+            None,
+        )?;
+    }
+
+    // Verify target member exists
+    if !project.members.contains_key(target) {
+        anyhow::bail!("member not found: {}", target);
+    }
+
+    // Reset target member's auth fields
+    let m = project.members.get_mut(target).unwrap();
+    m.public_key = None;
+    m.salt = None;
+    m.otp_hash = None;
+
+    store::write_yaml(&project_path, &project)?;
+    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+    joy_core::git_ops::auto_git_add(&root, &[&rel]);
+
+    // Remove own session if resetting self
+    let project_id = session::project_id(&root)?;
+    if !resetting_other {
+        session::remove_session(&project_id)?;
+    }
+
+    println!("Authentication reset for {}.", target);
+    if resetting_other {
+        println!("They can re-initialize with `joy auth init`.");
+    } else {
+        println!("Run `joy auth init` to set up again.");
+    }
+
+    joy_core::git_ops::auto_git_post_command(&root, &format!("auth reset {}", target), &email);
 
     Ok(())
 }

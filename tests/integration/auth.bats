@@ -120,6 +120,61 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 }
 
 # ============================================================
+# joy auth reset
+# ============================================================
+
+@test "joy auth reset clears own auth and session" {
+    joy init --name "Auth Test"
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    run joy auth reset --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Authentication reset"* ]]
+    # public_key should be gone
+    ! grep -q "public_key:" .joy/project.yaml
+    # Can re-initialize
+    run joy auth init --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+}
+
+@test "joy auth reset rejects wrong passphrase" {
+    joy init --name "Auth Test"
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    run joy auth reset --passphrase "wrong wrong wrong wrong wrong wrong"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"incorrect passphrase"* ]]
+    # public_key should still be there
+    grep -q "public_key:" .joy/project.yaml
+}
+
+@test "joy auth reset other member requires manage capability" {
+    joy init --name "Auth Test"
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy project member add dev@example.com --capabilities "implement,create"
+    # Dev cannot reset others (no manage capability)
+    git config user.email dev@example.com
+    joy auth init --passphrase "alpha bravo charlie delta echo foxtrot"
+    run joy auth reset test@example.com --passphrase "alpha bravo charlie delta echo foxtrot"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"manage"* ]]
+    git config user.email test@example.com
+}
+
+@test "joy auth reset other member as manage user" {
+    joy init --name "Auth Test"
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy project member add dev@example.com
+    # Dev initializes auth
+    git config user.email dev@example.com
+    joy auth init --passphrase "alpha bravo charlie delta echo foxtrot"
+    git config user.email test@example.com
+    # Lead (manage user) resets dev
+    run joy auth reset dev@example.com --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Authentication reset for dev@example.com"* ]]
+    [[ "$output" == *"re-initialize"* ]]
+}
+
+# ============================================================
 # Full auth flow
 # ============================================================
 
