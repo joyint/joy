@@ -1,9 +1,11 @@
 id: JOY-0082
 title: Migrate gate enforcement into Guard
 type: story
-status: new
+status: closed
 priority: high
 parent: JOY-0080
+assignees:
+- member: ai:claude@joy
 deps:
 - JOY-0081
 capabilities:
@@ -13,4 +15,14 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy
 created: 2026-03-28T10:35:42.408383035Z
-updated: 2026-03-28T10:35:52.643591186Z
+updated: 2026-03-28T11:36:38.035515119Z
+comments:
+- author: ai:claude@joy
+  date: 2026-03-28T11:36:38.011417933Z
+  text: |-
+    Gate enforcement added to Guard:
+    - AI members cannot close items (acceptance gate) -- Deny verdict regardless of capabilities
+    - AI can still submit for review, start work, etc.
+    - Humans with capabilities: all unaffected
+    - Gate check runs before capability check (higher priority)
+    - 1 new test: ai_member_cannot_close_items (tests AI deny, AI review allow, human close allow)

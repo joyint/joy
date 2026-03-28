@@ -150,6 +150,19 @@ impl Guard {
             ));
         }
 
+        // Gate: AI members cannot close items (acceptance gate)
+        if is_ai_member(&identity.member) {
+            if let Action::ChangeStatus {
+                to: Status::Closed, ..
+            } = action
+            {
+                return Verdict::Deny(format!(
+                    "AI member {} cannot close items (acceptance gate)",
+                    identity.member
+                ));
+            }
+        }
+
         // Check if the member has the required capability
         if member.has_capability(&required) {
             Verdict::Allow
@@ -324,6 +337,60 @@ mod tests {
             guard.check(&Action::CreateRelease, &id),
             Verdict::Deny(_)
         ));
+    }
+
+    #[test]
+    fn ai_member_cannot_close_items() {
+        let project = project_with_members(vec![
+            ("dev@example.com", MemberCapabilities::All),
+            (
+                "ai:claude@joy",
+                specific_caps(&[
+                    Capability::Implement,
+                    Capability::Review,
+                    Capability::Create,
+                ]),
+            ),
+        ]);
+        let guard = Guard::new(&project);
+        let ai = ai_identity("ai:claude@joy", "dev@example.com");
+        let human = identity("dev@example.com");
+
+        // AI cannot close items even with Review capability (acceptance gate)
+        assert!(matches!(
+            guard.check(
+                &Action::ChangeStatus {
+                    from: Status::Review,
+                    to: Status::Closed
+                },
+                &ai
+            ),
+            Verdict::Deny(_)
+        ));
+
+        // AI can still submit for review
+        assert_eq!(
+            guard.check(
+                &Action::ChangeStatus {
+                    from: Status::InProgress,
+                    to: Status::Review
+                },
+                &ai
+            ),
+            Verdict::Allow
+        );
+
+        // Human can close items
+        assert_eq!(
+            guard.check(
+                &Action::ChangeStatus {
+                    from: Status::Review,
+                    to: Status::Closed
+                },
+                &human
+            ),
+            Verdict::Allow
+        );
     }
 
     #[test]
