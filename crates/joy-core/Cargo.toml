@@ -19,6 +19,9 @@ hex = "0.4"
 base64ct = { version = "1", features = ["alloc"] }
 minijinja = { workspace = true }
 
+[features]
+fast-kdf = []   # Use minimal Argon2id params (for testing only, NOT secure)
+
 [dev-dependencies]
 insta = { version = "1.41", features = ["yaml"] }
 tempfile = "3"
