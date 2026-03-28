@@ -177,7 +177,7 @@ pub fn run(args: ProjectArgs) -> Result<()> {
         joy_core::git_ops::auto_git_post_command(&root, "project edit", &log_user);
     }
 
-    show_project(&project);
+    show_project(&project, &root);
     Ok(())
 }
 
@@ -224,7 +224,7 @@ fn set_value(project: &mut Project, key: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
-fn show_project(project: &Project) {
+fn show_project(project: &Project, root: &std::path::Path) {
     println!("{}", color::header(&project.name));
 
     let w = 12;
@@ -245,7 +245,7 @@ fn show_project(project: &Project) {
     );
     if !project.members.is_empty() {
         println!("\n{}:", color::label("Members"));
-        print_members_table(&project.members);
+        print_members_table(&project.members, root);
     }
     println!("{}", color::label(&"-".repeat(color::terminal_width())));
 }
@@ -263,7 +263,7 @@ fn run_member(
             if project.members.is_empty() {
                 println!("No members configured.");
             } else {
-                print_members_table(&project.members);
+                print_members_table(&project.members, root);
             }
         }
         Some(MemberCommand::Show(a)) => {
@@ -362,7 +362,10 @@ fn run_member(
     Ok(())
 }
 
-fn print_members_table(members: &std::collections::BTreeMap<String, Member>) {
+fn print_members_table(
+    members: &std::collections::BTreeMap<String, Member>,
+    root: &std::path::Path,
+) {
     use joy_core::model::item::Capability;
 
     let cap_headers: &[(&str, Capability)] = &[
@@ -379,24 +382,48 @@ fn print_members_table(members: &std::collections::BTreeMap<String, Member>) {
         ("del", Capability::Delete),
     ];
 
-    // Table needs: member column + 4 chars per capability column (3 + space) + padding
+    let use_emoji = color::use_emoji();
+
+    // Resolve auth status for each member
+    let project_id = joy_core::auth::session::project_id(root).unwrap_or_default();
+    let auth_statuses: Vec<(&str, String)> = members
+        .iter()
+        .map(|(id, member)| {
+            let auth = member_auth_status(id, member, &project_id, use_emoji);
+            (id.as_str(), auth)
+        })
+        .collect();
+
+    let w_auth = auth_statuses
+        .iter()
+        .map(|(_, a)| a.len())
+        .max()
+        .unwrap_or(4)
+        .max(4);
+
+    // Table needs: member column + auth column + capability columns
     let w_member = members.keys().map(|k| k.len()).max().unwrap_or(6).max(6);
-    let table_width = 2 + w_member + 1 + cap_headers.len() * 4;
+    let table_width = 2 + w_member + 1 + w_auth + 1 + cap_headers.len() * 4;
     let term_width = color::terminal_width();
 
     if table_width <= term_width {
-        // Wide: capability matrix
+        // Wide: capability matrix with auth column
         print!(
             "  {}",
             color::inactive(&format!("{:<w$}", "Member", w = w_member))
+        );
+        print!(
+            " {}",
+            color::inactive(&format!("{:<w$}", "Auth", w = w_auth))
         );
         for (hdr, _) in cap_headers {
             print!(" {}", color::inactive(&format!("{:<3}", hdr)));
         }
         println!();
 
-        for (id, member) in members {
+        for ((id, member), (_, auth)) in members.iter().zip(auth_statuses.iter()) {
             print!("  {:<w$}", id, w = w_member);
+            print!(" {:<w$}", auth, w = w_auth);
             for (_, cap) in cap_headers {
                 let has = match &member.capabilities {
                     MemberCapabilities::All => true,
@@ -411,8 +438,8 @@ fn print_members_table(members: &std::collections::BTreeMap<String, Member>) {
             println!();
         }
     } else {
-        // Narrow: comma-separated
-        for (id, member) in members {
+        // Narrow: compact with auth
+        for ((id, member), (_, auth)) in members.iter().zip(auth_statuses.iter()) {
             let caps = match &member.capabilities {
                 MemberCapabilities::All => "all".to_string(),
                 MemberCapabilities::Specific(map) => {
@@ -420,7 +447,60 @@ fn print_members_table(members: &std::collections::BTreeMap<String, Member>) {
                     names.join(", ")
                 }
             };
-            println!("  {}  {}", id, caps);
+            println!("  {} {} {}", id, auth, caps);
+        }
+    }
+}
+
+/// Determine auth status string for a member.
+fn member_auth_status(id: &str, member: &Member, project_id: &str, use_emoji: bool) -> String {
+    use joy_core::model::project::is_ai_member;
+
+    let has_key = member.public_key.is_some();
+    let has_session = if has_key {
+        if let Some(pk_hex) = member.public_key.as_ref() {
+            if let Ok(pk) = joy_core::auth::sign::PublicKey::from_hex(pk_hex) {
+                joy_core::auth::session::load_session(project_id)
+                    .ok()
+                    .flatten()
+                    .and_then(|token| {
+                        joy_core::auth::session::validate_session(&token, &pk, project_id)
+                            .ok()
+                            .filter(|claims| claims.member == id)
+                    })
+                    .is_some()
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    if use_emoji {
+        let check = if has_key { "✓" } else { "·" };
+        let kind = if !has_key {
+            "·".to_string()
+        } else if is_ai_member(id) {
+            "🎫".to_string()
+        } else {
+            "🔑".to_string()
+        };
+        format!("{} {}", check, kind)
+    } else {
+        let kind = if !has_key {
+            "--"
+        } else if is_ai_member(id) {
+            "tok"
+        } else {
+            "key"
+        };
+        if has_session {
+            format!("{}+s", kind)
+        } else {
+            kind.to_string()
         }
     }
 }
