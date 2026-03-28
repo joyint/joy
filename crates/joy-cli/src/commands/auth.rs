@@ -5,7 +5,7 @@ use anyhow::Result;
 use chrono::Utc;
 use clap::{Args, Subcommand};
 
-use joy_core::auth::{derive, session, sign};
+use joy_core::auth::{derive, session, sign, token};
 use joy_core::store;
 use joy_core::vcs::Vcs;
 
@@ -17,9 +17,12 @@ pub struct AuthArgs {
     command: Option<AuthCommand>,
 
     /// Passphrase (non-interactive, for scripts and tests).
-    /// If not set, prompts interactively.
     #[arg(long, global = true)]
     passphrase: Option<String>,
+
+    /// Delegation token for AI authentication (alternative to JOY_TOKEN env var).
+    #[arg(long, global = true)]
+    token: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -56,8 +59,14 @@ pub fn run(args: AuthArgs) -> Result<()> {
         Some(AuthCommand::Status) => run_status(),
         Some(AuthCommand::Reset(a)) => run_reset(a, args.passphrase.as_deref()),
         Some(AuthCommand::CreateToken(a)) => run_create_token(a, args.passphrase.as_deref()),
-        None => run_auth(args.passphrase.as_deref()),
+        None => run_auth(args.passphrase.as_deref(), args.token.as_deref()),
     }
+}
+
+/// Resolve token from --token flag or JOY_TOKEN env var.
+fn resolve_token(flag: Option<&str>) -> Option<String> {
+    flag.map(|s| s.to_string())
+        .or_else(|| std::env::var("JOY_TOKEN").ok().filter(|s| !s.is_empty()))
 }
 
 /// Read passphrase from flag or prompt interactively.
@@ -127,8 +136,8 @@ fn run_init(passphrase_flag: Option<&str>) -> Result<()> {
 
     // Create initial session
     let project_id = session::project_id(&root)?;
-    let token = session::create_session(&keypair, &email, &project_id, None);
-    session::save_session(&project_id, &token)?;
+    let session_token = session::create_session(&keypair, &email, &project_id, None);
+    session::save_session(&project_id, &session_token)?;
 
     println!("Authentication initialized for {}.", email);
     println!("Public key registered. Session active (24h).");
@@ -138,15 +147,33 @@ fn run_init(passphrase_flag: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-/// `joy auth` — authenticate by entering passphrase.
-fn run_auth(passphrase_flag: Option<&str>) -> Result<()> {
+/// `joy auth` — authenticate by passphrase (human) or delegation token (AI).
+fn run_auth(passphrase_flag: Option<&str>, token_flag: Option<&str>) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
     let project = store::load_project(&root)?;
-    let email = joy_core::vcs::default_vcs().user_email()?;
+    let project_id = session::project_id(&root)?;
 
-    let member = project.members.get(&email).ok_or_else(|| {
+    // Check for delegation token (--token flag or JOY_TOKEN env var)
+    if let Some(token_str) = resolve_token(token_flag) {
+        return auth_with_token(&root, &project, &project_id, &token_str);
+    }
+
+    // Human authentication via passphrase
+    let email = joy_core::vcs::default_vcs().user_email()?;
+    auth_with_passphrase(&root, &project, &project_id, &email, passphrase_flag)
+}
+
+/// Authenticate a human member via passphrase.
+fn auth_with_passphrase(
+    _root: &std::path::Path,
+    project: &joy_core::model::project::Project,
+    project_id: &str,
+    email: &str,
+    passphrase_flag: Option<&str>,
+) -> Result<()> {
+    let member = project.members.get(email).ok_or_else(|| {
         anyhow::anyhow!(
             "{} is not a registered project member. Run `joy project member add {}`.",
             email,
@@ -168,10 +195,7 @@ fn run_auth(passphrase_flag: Option<&str>) -> Result<()> {
     let public_key = sign::PublicKey::from_hex(public_key_hex)?;
     let salt = derive::Salt::from_hex(salt_hex)?;
 
-    // Get passphrase
     let passphrase = read_passphrase(passphrase_flag, "Passphrase: ")?;
-
-    // Derive key and verify
     let key = derive::derive_key(&passphrase, &salt)?;
     let keypair = sign::IdentityKeypair::from_derived_key(&key);
 
@@ -179,12 +203,78 @@ fn run_auth(passphrase_flag: Option<&str>) -> Result<()> {
         anyhow::bail!("incorrect passphrase");
     }
 
-    // Create session
-    let project_id = session::project_id(&root)?;
-    let token = session::create_session(&keypair, &email, &project_id, None);
-    session::save_session(&project_id, &token)?;
+    let session_token = session::create_session(&keypair, email, project_id, None);
+    session::save_session(project_id, &session_token)?;
 
     println!("Authenticated as {}. Session active (24h).", email);
+
+    Ok(())
+}
+
+/// Authenticate an AI member via delegation token.
+fn auth_with_token(
+    root: &std::path::Path,
+    project: &joy_core::model::project::Project,
+    project_id: &str,
+    token_str: &str,
+) -> Result<()> {
+    // Decode and validate the delegation token
+    let delegation = token::decode_token(token_str)?;
+
+    // Look up the delegating human's public key to verify signature
+    let human = &delegation.claims.delegated_by;
+    let human_member = project
+        .members
+        .get(human)
+        .ok_or_else(|| anyhow::anyhow!("Delegating member {} is not registered.", human))?;
+    let human_pk_hex = human_member.public_key.as_ref().ok_or_else(|| {
+        anyhow::anyhow!("Delegating member {} has no public key registered.", human)
+    })?;
+    let human_pk = sign::PublicKey::from_hex(human_pk_hex)?;
+
+    // Validate token signature, project, and expiry
+    let claims = token::validate_token(&delegation, &human_pk, project_id)?;
+
+    // Verify the AI member is registered
+    if !project.members.contains_key(&claims.ai_member) {
+        anyhow::bail!(
+            "AI member {} is not registered in this project.",
+            claims.ai_member
+        );
+    }
+
+    // Create a session for the AI member
+    let session_keypair = sign::IdentityKeypair::from_token_seed(token_str, project_id);
+
+    // Store the session public key on the AI member so session validation works
+    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
+    let mut project_mut: joy_core::model::project::Project = store::read_yaml(&project_path)?;
+    if let Some(ai_member) = project_mut.members.get_mut(&claims.ai_member) {
+        ai_member.public_key = Some(session_keypair.public_key().to_hex());
+    }
+    store::write_yaml(&project_path, &project_mut)?;
+    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+    joy_core::git_ops::auto_git_add(root, &[&rel]);
+
+    let session_token =
+        session::create_session(&session_keypair, &claims.ai_member, project_id, None);
+    session::save_session(project_id, &session_token)?;
+
+    println!(
+        "Authenticated as {} (delegated by {}). Session active (24h).",
+        claims.ai_member, claims.delegated_by
+    );
+
+    joy_core::event_log::log_event_as(
+        root,
+        joy_core::event_log::EventType::AuthSessionCreated,
+        "auth",
+        Some(&format!(
+            "session created for {} via delegation token",
+            claims.ai_member
+        )),
+        &format!("{} delegated-by:{}", claims.ai_member, claims.delegated_by),
+    );
 
     Ok(())
 }
@@ -210,10 +300,10 @@ fn run_status() -> Result<()> {
 
     // Check session
     match session::load_session(&project_id)? {
-        Some(token) => {
+        Some(sess) => {
             let public_key_hex = member.unwrap().public_key.as_ref().unwrap();
             let public_key = sign::PublicKey::from_hex(public_key_hex)?;
-            match session::validate_session(&token, &public_key, &project_id) {
+            match session::validate_session(&sess, &public_key, &project_id) {
                 Ok(claims) => {
                     let remaining = claims.expires - Utc::now();
                     let hours = remaining.num_hours();
@@ -317,7 +407,6 @@ fn run_reset(args: ResetArgs, passphrase_flag: Option<&str>) -> Result<()> {
 
 /// `joy auth create-token <ai-member>` — create a delegation token.
 fn run_create_token(args: CreateTokenArgs, passphrase_flag: Option<&str>) -> Result<()> {
-    use joy_core::auth::token;
     use joy_core::model::project::is_ai_member;
 
     let cwd = std::env::current_dir()?;
@@ -380,8 +469,12 @@ fn run_create_token(args: CreateTokenArgs, passphrase_flag: Option<&str>) -> Res
     println!();
     println!("  {}", encoded);
     println!();
-    println!("Pass this token to the AI agent via --token flag:");
-    println!("  joy <command> --token {}", encoded);
+    println!("The AI agent authenticates with:");
+    println!("  export JOY_TOKEN={}", encoded);
+    println!("  joy auth");
+    println!();
+    println!("Or in a single command:");
+    println!("  joy auth --token {}", encoded);
     if let Some(hours) = args.ttl {
         println!("Token expires in {hours} hours.");
     } else {
