@@ -41,6 +41,11 @@ fn is_emoji_enabled() -> bool {
     *EMOJI_ENABLED.get_or_init(|| false)
 }
 
+/// Whether emoji output is enabled (for use in other modules).
+pub fn use_emoji() -> bool {
+    is_emoji_enabled()
+}
+
 pub fn is_short() -> bool {
     *SHORT_MODE.get_or_init(|| false)
 }
