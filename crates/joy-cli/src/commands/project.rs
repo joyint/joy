@@ -527,27 +527,27 @@ fn member_auth_status(id: &str, member: &Member, project_id: &str, use_emoji: bo
     };
 
     if use_emoji {
-        let check = if has_key { "✓" } else { "·" };
-        let kind = if !has_key {
-            "·".to_string()
+        if !has_key {
+            "· ·".to_string()
         } else if is_ai_member(id) {
-            "🎫".to_string()
+            if has_session {
+                "✓ 🎟️".to_string()
+            } else {
+                "· 🎟️".to_string()
+            }
+        } else if has_session {
+            "✓ 🔐".to_string()
         } else {
-            "🔑".to_string()
-        };
-        format!("{} {}", check, kind)
+            "· 🔐".to_string()
+        }
+    } else if !has_key {
+        "--".to_string()
     } else {
-        let kind = if !has_key {
-            "--"
-        } else if is_ai_member(id) {
-            "tok"
-        } else {
-            "key"
-        };
+        let kind = if is_ai_member(id) { "tok" } else { "key" };
         if has_session {
-            format!("{}+s", kind)
+            color::warning(&format!("{kind}+s"))
         } else {
-            kind.to_string()
+            color::warning(kind)
         }
     }
 }
