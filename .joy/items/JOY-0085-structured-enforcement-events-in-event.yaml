@@ -1,0 +1,16 @@
+id: JOY-0085
+title: Structured enforcement events in event log
+type: story
+status: new
+priority: high
+parent: JOY-0080
+deps:
+- JOY-0081
+capabilities:
+- plan
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy
+created: 2026-03-28T10:35:42.471336217Z
+updated: 2026-03-28T10:35:52.715870843Z

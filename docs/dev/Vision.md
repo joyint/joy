@@ -352,6 +352,22 @@ joy tutorial                            # Read the tutorial in a pager
 
 ## AI Integration
 
+### AI Governance: The Five Pillars
+
+Joy's AI Governance is built on five pillars, each answering a distinct question:
+
+| Pillar | Question | Today | Tomorrow |
+|--------|----------|-------|----------|
+| **Trustship** | Who do I trust? | Auth, Identity, Delegation, Capabilities | Generated agent definitions |
+| **Guardianship** | What do I protect against? | Gates, `allow_ai`, input validation | Guard (runtime protection, prompt injection resilience, sandbox) |
+| **Orchestration** | How do I steer work? | Jobs, Modes, Dispatch | joy-executor, BYOE |
+| **Traceability** | What happened? | Event Log, Audit Trail | Judge (post-hoc audit, compliance reports, anomaly detection) |
+| **Settlement** | What did it cost? | Cost Tracking, Budgets | JOYC (on-chain settlement) |
+
+Together these pillars form the **Trust Model** -- the concrete configuration of identity, capabilities, gates, and agent definitions that governs how humans and AI agents collaborate in a project. Trustship establishes who is acting. Guardianship enforces boundaries at runtime. Orchestration steers work distribution. Traceability records what happened. Settlement accounts for the cost.
+
+The Trust Model scales naturally: implicit trust (solo) -> explicit trust (team) -> verified trust (enterprise). Each level builds on the previous one without reconfiguration.
+
 Joy supports two modes of AI integration:
 
 ### Tool mode (MS-02): Joy as a tool for AI agents

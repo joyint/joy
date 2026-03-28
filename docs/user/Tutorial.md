@@ -348,6 +348,14 @@ This does three things:
 
 After setup, your AI tool knows how to use Joy commands, follows your project conventions, and will offer to help fill in empty documents on first use.
 
+### The Trust Model
+
+Joy's AI Governance is built on five pillars: **Trustship** (who do I trust?), **Guardianship** (what do I protect against?), **Orchestration** (how do I steer work?), **Traceability** (what happened?), and **Settlement** (what did it cost?).
+
+Together they form the Trust Model -- the configuration that governs how humans and AI agents collaborate. It scales naturally: a solo developer has implicit trust (one member, all capabilities, no gates). A team adds explicit trust (members with specific capabilities). An enterprise adds verified trust (gates, cost limits, audit trails). Same workflow, growing accountability.
+
+The rest of this mission covers the parts you can use today: identity (Trustship), the event log (Traceability), and capabilities (Trustship). Gates (Guardianship), cost tracking (Settlement), and AI dispatch (Orchestration) are covered in the [Vision](../dev/Vision.md#ai-governance-the-five-pillars).
+
 ### AI Identity
 
 AI tools are registered as project members with an `ai:` prefix:
@@ -511,4 +519,4 @@ Most write commands accept `--author <MEMBER>` to attribute the action to a spec
 
 > "Any problem can be solved with a little ingenuity." -- MacGyver
 
-See also: `joy --help`, `joy <command> --help`, `docs/dev/Vision.md`
+See also: `joy --help`, `joy <command> --help`, `docs/dev/vision/`

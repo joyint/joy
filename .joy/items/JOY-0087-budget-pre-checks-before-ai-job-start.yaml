@@ -1,0 +1,17 @@
+id: JOY-0087
+title: Budget pre-checks before AI job start
+type: story
+status: new
+priority: medium
+parent: JOY-0080
+deps:
+- JOY-0081
+- JOY-0085
+capabilities:
+- plan
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy
+created: 2026-03-28T10:35:42.543922793Z
+updated: 2026-03-28T10:35:57.037549831Z

@@ -26,8 +26,8 @@ Before doing anything:
 
 After confirming the project exists, check if the key documents have real content:
 
-1. Read `docs/dev/Vision.md` -- if it only contains HTML comments (`<!-- ... -->`) or template headings without content, it needs to be filled in
-2. Read `docs/dev/Architecture.md` -- same check
+1. Read `docs/dev/vision/` -- if it only contains HTML comments (`<!-- ... -->`) or template headings without content, it needs to be filled in
+2. Read `docs/dev/architecture/` -- same check
 3. Read `CONTRIBUTING.md` -- same check
 
 If any document is empty or template-only, tell the user:

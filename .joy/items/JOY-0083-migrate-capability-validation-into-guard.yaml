@@ -1,0 +1,16 @@
+id: JOY-0083
+title: Migrate capability validation into Guard
+type: story
+status: new
+priority: high
+parent: JOY-0080
+deps:
+- JOY-0081
+capabilities:
+- plan
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy
+created: 2026-03-28T10:35:42.424539928Z
+updated: 2026-03-28T10:35:52.667394520Z
