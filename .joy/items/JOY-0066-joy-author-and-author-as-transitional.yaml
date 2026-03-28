@@ -1,7 +1,7 @@
 id: JOY-0066
 title: JOY_AUTHOR and --author as transitional identity override
 type: epic
-status: in-progress
+status: closed
 priority: high
 assignees:
 - member: horst.schwarz@joydev.com
@@ -10,8 +10,11 @@ capabilities:
 - plan
 effort: 3
 created: 2026-03-27T18:25:01.934347964Z
-updated: 2026-03-27T18:54:10.471845601Z
+updated: 2026-03-28T12:34:21.286926835Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-27T18:25:41.721060911Z
   text: 'Transitional mechanism: JOY_AUTHOR env var and --author CLI flag allow AI tools to identify themselves before Auth is implemented. Values validated against project.yaml members. Automatically disabled when joy auth init has been run. See docs/dev/vision/Auth.md.'
+- author: ai:claude@joy
+  date: 2026-03-28T12:34:21.193822403Z
+  text: 'Epic complete. JOY_AUTHOR was removed entirely (JOY-0088), --author is the sole identity override. All children done: JOY-0067 (identity resolution), JOY-0068 (--author flag), JOY-0075 (delegated-by), JOY-0077 (AI instructions), JOY-0069 (obsolete).'
