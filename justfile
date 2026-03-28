@@ -10,36 +10,36 @@ test: test-unit test-cmd test-int
 
 # Rust unit tests only
 test-unit:
-    cargo test --workspace --lib --locked
+    cargo test --workspace --lib
 
 # Snapshot tests (trycmd)
 test-cmd:
-    cargo test --locked -p joyint --test cmd
+    cargo test -p joyint --test cmd
 
 # Integration tests (bats)
 test-int:
-    cargo build -p joyint --locked
+    cargo build -p joyint
     bats tests/integration/*.bats
 
 # Snapshot tests (insta)
 test-snap:
-    cargo insta test --workspace --locked
+    cargo insta test --workspace
 
 # Update snapshots
 test-snap-update:
-    cargo insta test --workspace --review --locked
+    cargo insta test --workspace --review
 
 # Coverage report (terminal summary)
 test-coverage:
-    cargo llvm-cov --workspace --locked
+    cargo llvm-cov --workspace
 
 # Coverage report (HTML, opens in browser)
 test-coverage-html:
-    cargo llvm-cov --workspace --html --locked --open
+    cargo llvm-cov --workspace --html --open
 
 # Re-run tests on change
 test-watch:
-    cargo watch -x 'test --workspace --locked'
+    cargo watch -x 'test --workspace'
 
 # Format all code
 fmt:
@@ -51,7 +51,7 @@ fmt-check:
 
 # Lint all code
 lint:
-    cargo clippy --workspace --locked -- -D warnings
+    cargo clippy --workspace -- -D warnings
 
 # Run fmt-check, lint, test
 check: fmt-check lint test
@@ -122,7 +122,7 @@ setup:
 
 # Install to ~/.local/bin/
 install:
-    cargo build --release --locked -p joyint && mkdir -p ~/.local/bin && cp target/release/joy ~/.local/bin/joy
+    cargo build --release -p joyint && mkdir -p ~/.local/bin && cp target/release/joy ~/.local/bin/joy
 
 # Auto-commit known generated files (.joy/, lockfiles)
 [private]
