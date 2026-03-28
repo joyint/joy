@@ -396,7 +396,7 @@ fn print_members_table(
 
     let w_auth = auth_statuses
         .iter()
-        .map(|(_, a)| a.len())
+        .map(|(_, a)| display_width(a))
         .max()
         .unwrap_or(4)
         .max(4);
@@ -429,10 +429,7 @@ fn print_members_table(
         "  {}",
         color::inactive(&format!("{:<w$}", "Member", w = w_member))
     );
-    print!(
-        " {}",
-        color::inactive(&format!("{:<w$}", "Auth", w = w_auth))
-    );
+    print!(" {}", color::inactive(&pad_right("Auth", w_auth)));
     if wide_mode {
         for (hdr, _) in cap_headers {
             print!(" {}", color::inactive(&format!("{:<3}", hdr)));
@@ -446,7 +443,7 @@ fn print_members_table(
     for ((id, member), (_, auth)) in members.iter().zip(auth_statuses.iter()) {
         let display_id = truncate(id, w_member);
         print!("  {:<w$}", display_id, w = w_member);
-        print!(" {:<w$}", auth, w = w_auth);
+        print!(" {}", pad_right(auth, w_auth));
 
         if wide_mode {
             for (_, cap) in cap_headers {
@@ -485,6 +482,26 @@ fn print_members_table(
             print!("{caps}");
         }
         println!();
+    }
+}
+
+/// Display width of a string (accounts for Unicode and ANSI escapes).
+fn display_width(s: &str) -> usize {
+    // Strip ANSI escape codes before measuring
+    let stripped = s
+        .replace("\x1b[33m", "")
+        .replace("\x1b[0m", "")
+        .replace("\x1b[38;5;208m", "");
+    unicode_width::UnicodeWidthStr::width(stripped.as_str())
+}
+
+/// Pad a string to a target display width with spaces.
+fn pad_right(s: &str, target: usize) -> String {
+    let w = display_width(s);
+    if w >= target {
+        s.to_string()
+    } else {
+        format!("{}{}", s, " ".repeat(target - w))
     }
 }
 
