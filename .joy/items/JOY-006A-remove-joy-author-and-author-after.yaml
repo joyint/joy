@@ -11,4 +11,8 @@ capabilities:
 - review
 effort: 1
 created: 2026-03-27T18:25:10.292204034Z
-updated: 2026-03-27T18:27:26.881558004Z
+updated: 2026-03-28T09:48:24.333990678Z
+comments:
+- author: ai:claude@joy
+  date: 2026-03-28T09:48:24.333990104Z
+  text: 'Note: until this item is implemented, AI agents must use --author flag instead of JOY_AUTHOR env var. Using the env var breaks shell permission matching for the joy command. See JOY-007D.'

@@ -1,8 +1,12 @@
 id: JOY-0004
 title: Rename item IDs when project acronym changes
 type: idea
-status: new
+status: closed
 priority: medium
 parent: JOY-0002
 created: 2026-03-20T16:33:31.211282780Z
-updated: 2026-03-20T16:35:16.840373892Z
+updated: 2026-03-28T10:05:43.576151918Z
+comments:
+- author: ai:claude@joy
+  date: 2026-03-28T10:05:32.660451272Z
+  text: Closing as wontfix. The acronym is already read-only in project set, preventing accidental changes. If someone manually edits project.yaml, mixed ID prefixes (old and new) coexist without issues -- item lookup is ID-based, not acronym-based. New items get the new prefix, old items keep theirs, and all references (parent, deps) continue to work. The only downside is cosmetic inconsistency, which does not justify the complexity of a full migration (renaming files, rewriting all ID references, updating event log).

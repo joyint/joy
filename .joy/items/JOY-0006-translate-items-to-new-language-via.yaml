@@ -1,8 +1,12 @@
 id: JOY-0006
 title: Translate items to new language via translation API
 type: idea
-status: new
+status: closed
 priority: low
 parent: JOY-0002
 created: 2026-03-20T16:33:31.214517973Z
-updated: 2026-03-20T16:35:16.843799828Z
+updated: 2026-03-28T09:45:53.210015035Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-28T09:45:33.595367064Z
+  text: Closing as wontfix. Too much effort for too little value at this stage. Can be revisited with a new item if demand grows in the future.

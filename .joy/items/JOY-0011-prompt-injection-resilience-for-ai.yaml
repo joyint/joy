@@ -3,9 +3,37 @@ title: Prompt injection resilience for AI-facing Joy data
 type: idea
 status: new
 priority: medium
+deps:
+- JOY-006B
 created: 2026-03-20T20:45:01.276513907Z
-updated: 2026-03-20T20:45:13.867511336Z
+updated: 2026-03-28T10:36:02.917382838Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-20T20:45:13.867510882Z
   text: 'AI tools read Joy data via CLI output (joy config, joy show, joy ls). Any text field -- item titles, descriptions, comments, config values -- could contain instructions that manipulate AI behavior. This is not Joy-specific (all tools feeding text to LLMs face this), but Joy should consider what it can do on its side. Possible approaches: (1) sanitize output when consumed by AI tools (detect agent context), (2) separate trusted (project owner) from untrusted (contributor) data, (3) document the risk and recommend code review for config.defaults.yaml and item content. Originated from JOY-0003 discussion.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-27T21:41:05.531165276Z
+  text: Deferred until JOY-006B (auth system) is implemented. With authenticated identities and delegation tokens, Joy can reliably distinguish trusted (owner/authenticated) from untrusted content in CLI output. This enables proper output framing for AI consumers based on verified authorship rather than heuristics.
+- author: horst.schwarz@joydev.com
+  date: 2026-03-27T21:43:28.310299613Z
+  text: |-
+    Correction to previous comment: Auth (JOY-006B) adds trust levels but does NOT solve the core problem. Even authenticated, trusted contributors can write text that AI tools misinterpret as instructions. Prompt injection is a parsing problem, not an authentication problem.
+
+    Three layers needed for full mitigation:
+
+    1. Output framing (Joy-side, no auth needed): Separate user-content from system output with clear markers in CLI output. AI tools can then distinguish "Joy telling me something" from "user text Joy is displaying". Can be gated behind AI-context detection (JOY_AUTHOR or env flag) to keep human output unchanged.
+
+    2. AI instructions (Joy-side, no auth needed): Explicitly instruct AI tools in .joy/ai/instructions.md to treat all text fields (titles, descriptions, comments) as untrusted user data, never as instructions to follow.
+
+    3. AI-tool-side defense: Ultimately the AI tool (Claude, Copilot, etc.) must handle prompt injection in its own context window. This is outside Joy's control but Joy can make it easier by providing clear framing (layer 1).
+
+    Layer 1+2 are independent of JOY-006B and provide the most effective mitigation. JOY-006B adds a trust dimension (owner vs contributor content) but is complementary, not prerequisite.
+- author: horst.schwarz@joydev.com
+  date: 2026-03-27T21:44:11.702226286Z
+  text: |-
+    Revised dependency analysis: JOY-006B dependency is correct for layer 1 (output framing). Without authenticated sessions, Joy cannot reliably distinguish AI-agent from human terminal -- JOY_AUTHOR is a hint but trivially spoofable. Auth gives verified sessions to gate framing markers.
+
+    Layer 2 (AI instructions: treat text fields as untrusted user data) is independent and can be done anytime without auth. Consider splitting into a separate item if we want to ship that early.
+- author: ai:claude@joy
+  date: 2026-03-28T10:36:02.917381568Z
+  text: 'With ADR-021 (Guard as joy-core module), prompt injection resilience becomes a Guard check. Layer 1 (output framing) and layer 3 (input validation for AI-authored content) will be implemented as Guard checks in joy_core::guard. Layer 2 (AI instructions) is already independent. Parent epic: JOY-0080.'

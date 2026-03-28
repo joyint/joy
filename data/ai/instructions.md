@@ -56,10 +56,6 @@ event log, not to the human's git email. The event log will record
 delegated-by to trace accountability back to the human who started
 the session.
 
-If `--author` is not available (older Joy version), set the
-`JOY_AUTHOR` environment variable as a process-level export at
-session start instead. Do NOT set it as a per-command prefix.
-
 Git commits use a different pattern: the human is the git Author,
 and your member ID goes in `Co-Authored-By`. This is already
 configured in your tool-specific file (e.g. CLAUDE.md).
@@ -163,8 +159,8 @@ Prioritize milestone items over unlinked items.
 ## Project context
 
 Before starting work, read these documents if they exist:
-- `docs/dev/Vision.md` -- product goals and design decisions
-- `docs/dev/Architecture.md` -- technical stack and structure
+- `docs/dev/vision/` -- product goals and design decisions
+- `docs/dev/architecture/` -- technical stack and structure
 - `CONTRIBUTING.md` -- coding conventions and commit messages
 
 These documents are the source of truth. Do not contradict them.
@@ -174,7 +170,7 @@ These documents are the source of truth. Do not contradict them.
 At the start of your first session in a project, ALWAYS do these checks
 before anything else:
 
-1. Read `docs/dev/Vision.md`, `docs/dev/Architecture.md`, and `CONTRIBUTING.md`
+1. Read `docs/dev/vision/`, `docs/dev/architecture/`, and `CONTRIBUTING.md`
 2. If any of these files are missing, empty, or contain only template
    headings (HTML comments like `<!-- ... -->`), tell the user and offer
    to fill them in together

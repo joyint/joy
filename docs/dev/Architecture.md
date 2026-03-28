@@ -158,9 +158,13 @@ Project-local values override global defaults. File permissions for `credentials
 
 All data on joyint.com is E2E-encrypted (AES-256-GCM). The key stays on the client device. Server stores only encrypted blobs plus cleartext metadata (id, status, priority, due_date, timestamps) needed for notifications and CalDAV scheduling. See [ADR-006](https://github.com/joyint/project/blob/main/docs/dev/adr/ADR-006-client-side-encryption.md) for design details.
 
+### AI Governance: The Five Pillars
+
+Joy's AI Governance is an architecture built on five pillars: **Trustship** (who do I trust?), **Guardianship** (what do I protect against?), **Orchestration** (how do I steer work?), **Traceability** (what happened?), and **Settlement** (what did it cost?). Together they form the **Trust Model** -- see [Vision.md](./Vision.md#ai-governance-the-five-pillars) for the full breakdown.
+
 ### Agent Sandboxing
 
-AI agents executing code operate in controlled environments. Joy tracks what each agent is allowed to do (create branch, commit, push) -- no implicit permissions.
+AI agents executing code operate in controlled environments (Guardianship pillar). Joy tracks what each agent is allowed to do (create branch, commit, push) -- no implicit permissions.
 
 ---
 

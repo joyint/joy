@@ -1,8 +1,12 @@
 id: JOY-0005
 title: Translate items to new language via AI agent
 type: idea
-status: new
+status: closed
 priority: medium
 parent: JOY-0002
 created: 2026-03-20T16:33:31.212928786Z
-updated: 2026-03-20T16:35:16.842176350Z
+updated: 2026-03-28T09:45:49.681621125Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-28T09:45:32.919093446Z
+  text: Closing as wontfix. Too much effort for too little value at this stage. Can be revisited with a new item if demand grows in the future.

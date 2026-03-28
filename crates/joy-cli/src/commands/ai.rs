@@ -101,12 +101,12 @@ fn check_docs(root: &Path) -> anyhow::Result<()> {
 
     let docs = [
         (
-            "docs/dev/Vision.md",
+            "docs/dev/vision/README.md",
             "product goals and design decisions",
             VISION_TEMPLATE,
         ),
         (
-            "docs/dev/Architecture.md",
+            "docs/dev/architecture/README.md",
             "technical stack and structure",
             ARCHITECTURE_TEMPLATE,
         ),

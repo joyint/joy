@@ -1,0 +1,45 @@
+id: JOY-007F
+title: Guard as joy-core module for centralized runtime validation
+type: decision
+status: closed
+priority: high
+capabilities:
+- conceive
+effort: 2
+created_by: ai:claude@joy
+created: 2026-03-28T10:33:14.929371389Z
+updated: 2026-03-28T10:34:41.538132330Z
+comments:
+- author: ai:claude@joy
+  date: 2026-03-28T10:33:24.489312164Z
+  text: |-
+    Guard is Joy's centralized runtime validation layer (Guardianship pillar of AI Governance). It intercepts all write operations and enforces the Trust Model at execution time.
+
+    Architectural decision: Guard lives as a joy-core::guard module, not as a separate subproject. Rationale:
+    - Guard enforces Joy's process model (capabilities, gates, members) -- no Joy, no Guard
+    - All consumers (joy-cli, platform/server, app) already depend on joy-core
+    - Jot does not need Guard (no capabilities, no AI members, no gates)
+    - Judge (separate repo) communicates with Guard via event log format, not shared code
+    - Avoids cross-repo coordination overhead with no benefit
+
+    Design principles:
+    - Passthrough for simple setups (solo, no AI members) -- zero overhead
+    - Progressive activation as members and gates are added (dimmers, not switches)
+    - Single validation point for all write operations
+    - Produces structured enforcement events in the event log (for Judge to consume)
+
+    Existing checks to consolidate into Guard:
+    - Gate enforcement (allow_ai, requires_role, requires_ci) -- currently in status command
+    - Capability validation -- currently in add/comment commands
+    - Member permission checks -- scattered across commands
+
+    New checks Guard enables:
+    - Prompt injection resilience (JOY-0011)
+    - Budget pre-checks before job start
+    - Sandbox enforcement for AI agents
+    - Input validation for AI-authored content
+
+    ADR-021 to be created.
+- author: ai:claude@joy
+  date: 2026-03-28T10:34:37.661284588Z
+  text: 'ADR-021 created: docs/dev/adr/ADR-021-guard-as-joy-core-module.md. Covers progressive activation, existing checks to consolidate, new checks enabled, event log integration for Judge, and the conceptual Rust API.'
