@@ -31,6 +31,7 @@ pub enum EventType {
     ReleaseCreated,
     GuardDenied,
     GuardWarned,
+    AuthSessionCreated,
 }
 
 impl fmt::Display for EventType {
@@ -53,6 +54,7 @@ impl fmt::Display for EventType {
             Self::ReleaseCreated => "release.created",
             Self::GuardDenied => "guard.denied",
             Self::GuardWarned => "guard.warned",
+            Self::AuthSessionCreated => "auth.session_created",
         };
         write!(f, "{s}")
     }
@@ -78,6 +80,7 @@ impl EventType {
             "release.created" => Some(Self::ReleaseCreated),
             "guard.denied" => Some(Self::GuardDenied),
             "guard.warned" => Some(Self::GuardWarned),
+            "auth.session_created" => Some(Self::AuthSessionCreated),
             _ => None,
         }
     }

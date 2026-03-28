@@ -126,6 +126,7 @@ pub fn enforce(
     let identity = crate::identity::resolve_identity_with(root, author).unwrap_or(Identity {
         member: "unknown".into(),
         delegated_by: None,
+        authenticated: false,
     });
     let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
     let project: Project = store::read_yaml(&project_path)?;
@@ -196,6 +197,18 @@ impl Guard {
             }
         }
 
+        // Auth enforcement: manage actions require authentication when auth is active
+        let auth_active = self.members.values().any(|m| m.public_key.is_some());
+        if auth_active {
+            let required = action.required_capability();
+            if required == Capability::Manage && !identity.authenticated {
+                return Verdict::Deny(format!(
+                    "{} must authenticate to perform manage actions. Run `joy auth`.",
+                    identity.member
+                ));
+            }
+        }
+
         // Fast path: capabilities: all allows everything
         if member.capabilities == MemberCapabilities::All {
             return Verdict::Allow;
@@ -253,6 +266,7 @@ mod tests {
         Identity {
             member: member.into(),
             delegated_by: None,
+            authenticated: false,
         }
     }
 
@@ -260,6 +274,7 @@ mod tests {
         Identity {
             member: member.into(),
             delegated_by: Some(delegated_by.into()),
+            authenticated: false,
         }
     }
 

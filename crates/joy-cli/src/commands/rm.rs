@@ -36,6 +36,7 @@ pub fn run(args: RmArgs) -> Result<()> {
     let resolved = identity::resolve_identity(&root).unwrap_or(identity::Identity {
         member: "unknown".into(),
         delegated_by: None,
+        authenticated: false,
     });
 
     let mut to_delete = vec![item.id.clone()];

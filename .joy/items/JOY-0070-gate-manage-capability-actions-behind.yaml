@@ -1,9 +1,11 @@
 id: JOY-0070
 title: Gate manage-capability actions behind authentication
 type: story
-status: new
+status: closed
 priority: medium
 parent: JOY-006B
+assignees:
+- member: ai:claude@joy
 deps:
 - JOY-006E
 capabilities:
@@ -12,4 +14,29 @@ capabilities:
 - review
 effort: 2
 created: 2026-03-27T18:25:29.262328001Z
-updated: 2026-03-27T18:27:26.892548090Z
+updated: 2026-03-28T18:41:50.838469877Z
+comments:
+- author: ai:claude@joy
+  date: 2026-03-28T18:41:50.802405712Z
+  text: |-
+    Gate manage actions behind authentication implemented:
+
+    Identity:
+    - authenticated field added to Identity struct
+    - resolve_identity_with() checks for active session and sets authenticated=true
+    - check_session() validates session against member's public key
+
+    Guard:
+    - Manage actions (ManageProject, ManageMilestone, CreateRelease) require authentication
+      when auth is active (any member has public_key set)
+    - Unauthenticated manage attempts -> Deny with 'must authenticate' message
+
+    Token-based auth flow (joy auth with --token or JOY_TOKEN):
+    - joy auth reads --token flag or JOY_TOKEN env var
+    - Decodes delegation token, validates against delegating human's public key
+    - Creates session for AI member (deterministic keypair from token seed)
+    - Logs auth.session_created event
+
+    New EventType: AuthSessionCreated
+
+    77 integration tests, all passing.

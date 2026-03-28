@@ -27,6 +27,30 @@ impl IdentityKeypair {
         Self { signing_key }
     }
 
+    /// Create a keypair from a raw Ed25519 signing key.
+    pub fn from_signing_key(key: SigningKey) -> Self {
+        Self { signing_key: key }
+    }
+
+    /// Create a keypair from a 32-byte seed (e.g. for token-derived sessions).
+    pub fn from_seed(seed: &[u8; 32]) -> Self {
+        let signing_key = SigningKey::from_bytes(seed);
+        Self { signing_key }
+    }
+
+    /// Derive a deterministic keypair from arbitrary data (e.g. token + project ID).
+    /// Uses SHA-256 to produce a 32-byte seed.
+    pub fn from_token_seed(token: &str, project_id: &str) -> Self {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(token.as_bytes());
+        hasher.update(project_id.as_bytes());
+        let hash = hasher.finalize();
+        let mut seed = [0u8; 32];
+        seed.copy_from_slice(&hash);
+        Self::from_seed(&seed)
+    }
+
     /// Get the public key for this keypair.
     pub fn public_key(&self) -> PublicKey {
         PublicKey(self.signing_key.verifying_key())

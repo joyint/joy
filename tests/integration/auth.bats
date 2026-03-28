@@ -167,6 +167,8 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     git config user.email dev@example.com
     joy auth init --passphrase "alpha bravo charlie delta echo foxtrot"
     git config user.email test@example.com
+    # Re-authenticate as lead (dev's auth init overwrote the session)
+    joy auth --passphrase "$TEST_PASSPHRASE"
     # Lead (manage user) resets dev
     run joy auth reset dev@example.com --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]

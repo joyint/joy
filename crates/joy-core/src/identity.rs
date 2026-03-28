@@ -24,6 +24,8 @@ pub struct Identity {
     pub member: String,
     /// If the member is an AI, the human who delegated the action.
     pub delegated_by: Option<String>,
+    /// Whether this identity was cryptographically authenticated (session or token).
+    pub authenticated: bool,
 }
 
 impl Identity {
@@ -57,24 +59,27 @@ pub fn resolve_identity_with(
     // Priority: --author flag > git email
     let override_author = author_override.map(|s| s.to_string());
 
-    match override_author {
+    let (member, delegated_by) = match override_author {
         Some(author) => {
             validate_member(&author, &project)?;
-            let delegated_by = if is_ai_member(&author) {
+            let delegated = if is_ai_member(&author) {
                 Some(git_email)
             } else {
                 None
             };
-            Ok(Identity {
-                member: author,
-                delegated_by,
-            })
+            (author, delegated)
         }
-        None => Ok(Identity {
-            member: git_email,
-            delegated_by: None,
-        }),
-    }
+        None => (git_email, None),
+    };
+
+    // Check for active session to determine authentication status
+    let authenticated = check_session(root, &member, &project);
+
+    Ok(Identity {
+        member,
+        delegated_by,
+        authenticated,
+    })
 }
 
 /// Check whether the project has any AI members.
@@ -84,6 +89,32 @@ pub fn has_ai_members(root: &Path) -> bool {
         Some(p) => p.members.keys().any(|k| is_ai_member(k)),
         None => false,
     }
+}
+
+/// Check if the member has an active, valid session.
+fn check_session(root: &Path, member: &str, project: &Option<Project>) -> bool {
+    let Some(project) = project else {
+        return false;
+    };
+    let Some(m) = project.members.get(member) else {
+        return false;
+    };
+    let Some(ref pk_hex) = m.public_key else {
+        return false; // no auth initialized for this member
+    };
+    let Ok(pk) = crate::auth::sign::PublicKey::from_hex(pk_hex) else {
+        return false;
+    };
+    let Ok(project_id) = crate::auth::session::project_id(root) else {
+        return false;
+    };
+    let Ok(Some(token)) = crate::auth::session::load_session(&project_id) else {
+        return false;
+    };
+    // Session must be for this member and valid
+    crate::auth::session::validate_session(&token, &pk, &project_id)
+        .map(|claims| claims.member == member)
+        .unwrap_or(false)
 }
 
 fn load_project_optional(root: &Path) -> Option<Project> {
@@ -117,6 +148,7 @@ mod tests {
         let id = Identity {
             member: "alice@example.com".into(),
             delegated_by: None,
+            authenticated: false,
         };
         assert_eq!(id.log_user(), "alice@example.com");
     }
@@ -126,6 +158,7 @@ mod tests {
         let id = Identity {
             member: "ai:claude@joy".into(),
             delegated_by: Some("horst@joydev.com".into()),
+            authenticated: false,
         };
         assert_eq!(id.log_user(), "ai:claude@joy delegated-by:horst@joydev.com");
     }
