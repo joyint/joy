@@ -1,0 +1,30 @@
+version: v0.4.1
+date: 2026-03-28
+previous: v0.4.0
+contributors:
+- id: horst.schwarz@joydev.com
+  events: 23
+  items: 8
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 15
+  items: 8
+items:
+  epics:
+  - id: JOY-0066
+    title: JOY_AUTHOR and --author as transitional identity override
+  stories:
+  - id: JOY-0069
+    title: Disable JOY_AUTHOR when joy auth is initialized
+  - id: JOY-006C
+    title: Argon2id key derivation from passphrase and project salt
+  - id: JOY-006D
+    title: Ed25519 identity keypair from derived key material
+  - id: JOY-006E
+    title: Session management with joy auth and joy deauth
+  - id: JOY-006F
+    title: Delegation token creation and validation for AI members
+  - id: JOY-0070
+    title: Gate manage-capability actions behind authentication
+  bugs:
+  - id: JOY-007D
+    title: AI instructions use JOY_AUTHOR env var instead of --author flag
