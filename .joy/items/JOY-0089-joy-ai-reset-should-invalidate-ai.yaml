@@ -1,14 +1,16 @@
 id: JOY-0089
 title: joy ai reset should invalidate AI member tokens and sessions
 type: task
-status: new
+status: closed
 priority: medium
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 1
 created_by: ai:claude@joy
 created: 2026-03-28T19:11:47.787754378Z
-updated: 2026-03-28T19:15:51.990876028Z
+updated: 2026-03-28T19:31:09.641163530Z
 comments:
 - author: ai:claude@joy
   date: 2026-03-28T19:15:42.045828210Z
@@ -22,3 +24,11 @@ comments:
 - author: ai:claude@joy
   date: 2026-03-28T19:15:51.990875728Z
   text: 'Integration test needed: joy ai setup -> joy auth create-token -> joy ai reset -> verify token is invalid and session removed.'
+- author: ai:claude@joy
+  date: 2026-03-28T19:31:09.628865205Z
+  text: |-
+    Implemented:
+    - joy ai reset now removes AI member's session when removing the member
+    - Added --force flag to joy ai reset for non-interactive use
+    - 2 integration tests: single tool reset with auth data, all-tools reset
+    - Token extraction tested end-to-end: create-token -> auth with token -> ai reset -> verify cleanup
