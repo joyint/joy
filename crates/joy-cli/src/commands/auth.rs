@@ -257,8 +257,13 @@ fn auth_with_token(
 
     // Create a local session — no project.yaml changes needed
     let session_keypair = sign::IdentityKeypair::from_token_seed(token_str, project_id);
-    let session_token =
-        session::create_session(&session_keypair, &claims.ai_member, project_id, None);
+    let session_token = session::create_session_for_ai(
+        &session_keypair,
+        &claims.ai_member,
+        project_id,
+        None,
+        &token_entry.token_key,
+    );
     session::save_session(project_id, &session_token)?;
 
     println!(
