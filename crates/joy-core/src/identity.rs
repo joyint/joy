@@ -108,7 +108,7 @@ fn check_session(root: &Path, member: &str, project: &Option<Project>) -> bool {
     let Ok(project_id) = crate::auth::session::project_id(root) else {
         return false;
     };
-    let Ok(Some(token)) = crate::auth::session::load_session(&project_id) else {
+    let Ok(Some(token)) = crate::auth::session::load_session(&project_id, member) else {
         return false;
     };
     // Session must be for this member and valid

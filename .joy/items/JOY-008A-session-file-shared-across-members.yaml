@@ -1,15 +1,17 @@
 id: JOY-008A
 title: Session file shared across members -- auth overwrites other member sessions
 type: bug
-status: new
+status: closed
 priority: critical
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 - review
 effort: 2
 created_by: ai:claude@joy
 created: 2026-03-28T20:47:41.846342562Z
-updated: 2026-03-28T20:47:53.027735588Z
+updated: 2026-03-28T20:57:12.061459715Z
 comments:
 - author: ai:claude@joy
   date: 2026-03-28T20:47:53.027735125Z
@@ -19,3 +21,17 @@ comments:
     Fix: include member ID in session filename, e.g. sessions/JOY--horst.schwarz@joydev.com.json
 
     Integration test needed: two members authenticate, verify both sessions exist independently.
+- author: ai:claude@joy
+  date: 2026-03-28T20:57:12.046941537Z
+  text: |-
+    Fixed: session files now per member, not per project.
+
+    Filename: sessions/{project_id}--{member}.json (@ replaced with _at_)
+    Example: JOY--horst.schwarz_at_joydev.com.json
+
+    load_session and remove_session now take member as second parameter.
+    All callers updated: identity.rs, auth.rs, deauth.rs, ai.rs, project.rs.
+
+    2 new integration tests:
+    - two members can have independent sessions
+    - deauth only removes own session

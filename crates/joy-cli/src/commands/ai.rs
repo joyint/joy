@@ -434,7 +434,7 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
                     project_changed = true;
                     // Remove AI member's session if one exists
                     if let Ok(project_id) = joy_core::auth::session::project_id(&root) {
-                        let _ = joy_core::auth::session::remove_session(&project_id);
+                        let _ = joy_core::auth::session::remove_session(&project_id, &member_id);
                     }
                 }
             }

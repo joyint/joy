@@ -226,6 +226,44 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 }
 
 # ============================================================
+# Session isolation per member (JOY-008A)
+# ============================================================
+
+@test "two members can have independent sessions" {
+    joy init --name "Auth Test"
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy project member add dev@example.com
+    # Dev initializes auth
+    git config user.email dev@example.com
+    joy auth init --passphrase "alpha bravo charlie delta echo foxtrot"
+    # Both should have active sessions
+    run joy auth status
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Authenticated as dev@example.com"* ]]
+    # Switch back to lead
+    git config user.email test@example.com
+    run joy auth status
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Authenticated as test@example.com"* ]]
+}
+
+@test "deauth only removes own session" {
+    joy init --name "Auth Test"
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy project member add dev@example.com
+    git config user.email dev@example.com
+    joy auth init --passphrase "alpha bravo charlie delta echo foxtrot"
+    # Dev deauths
+    joy deauth
+    run joy auth status
+    [[ "$output" == *"No active session"* ]]
+    # Lead still has session
+    git config user.email test@example.com
+    run joy auth status
+    [[ "$output" == *"Authenticated as test@example.com"* ]]
+}
+
+# ============================================================
 # joy ai reset cleans up auth (JOY-0089)
 # ============================================================
 
