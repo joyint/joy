@@ -10,15 +10,15 @@ test: test-unit test-cmd test-int
 
 # Rust unit tests only
 test-unit:
-    cargo test --workspace --lib
+    cargo test --workspace --lib --features fast-kdf
 
 # Snapshot tests (trycmd)
 test-cmd:
-    cargo test -p joyint --test cmd
+    cargo test -p joyint --test cmd --features fast-kdf
 
 # Integration tests (bats)
 test-int:
-    cargo build -p joyint
+    cargo build -p joyint --features fast-kdf
     bats tests/integration/*.bats
 
 # Snapshot tests (insta)
@@ -51,7 +51,7 @@ fmt-check:
 
 # Lint all code
 lint:
-    cargo clippy --workspace -- -D warnings
+    cargo clippy --workspace --features fast-kdf -- -D warnings
 
 # Run fmt-check, lint, test
 check: fmt-check lint test
