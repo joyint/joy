@@ -4,9 +4,9 @@
 use anyhow::Result;
 use clap::Args;
 
-use joy_core::identity;
+use joy_core::context::Context;
+use joy_core::guard::Action;
 use joy_core::items;
-use joy_core::store;
 
 use crate::color;
 
@@ -26,23 +26,16 @@ pub struct RmArgs {
 }
 
 pub fn run(args: RmArgs) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+    let ctx = Context::load()?;
 
-    let item = items::load_item(&root, &args.id)?;
+    let item = items::load_item(&ctx.root, &args.id)?;
 
-    joy_core::guard::enforce(&root, &joy_core::guard::Action::DeleteItem, &item.id, None)?;
-
-    let resolved = identity::resolve_identity(&root).unwrap_or(identity::Identity {
-        member: "unknown".into(),
-        delegated_by: None,
-        authenticated: false,
-    });
+    ctx.enforce(&Action::DeleteItem, &item.id)?;
 
     let mut to_delete = vec![item.id.clone()];
 
     if args.recursive {
-        let all_items = items::load_items(&root)?;
+        let all_items = items::load_items(&ctx.root)?;
         collect_descendants(&all_items, &item.id, &mut to_delete);
     }
 
@@ -71,14 +64,14 @@ pub fn run(args: RmArgs) -> Result<()> {
         }
     }
 
-    let log_user = resolved.log_user();
+    let log_user = ctx.log_user();
     let summary_title = item.title.clone();
     let summary_id = item.id.clone();
     for id in &to_delete {
-        let deleted = items::delete_item(&root, id)?;
-        let updated = items::remove_references(&root, id)?;
+        let deleted = items::delete_item(&ctx.root, id)?;
+        let updated = items::remove_references(&ctx.root, id)?;
         joy_core::event_log::log_event_as(
-            &root,
+            &ctx.root,
             joy_core::event_log::EventType::ItemDeleted,
             id,
             Some(&deleted.title),
@@ -91,7 +84,7 @@ pub fn run(args: RmArgs) -> Result<()> {
     }
 
     joy_core::git_ops::auto_git_post_command(
-        &root,
+        &ctx.root,
         &format!("rm {summary_id} {summary_title}"),
         &log_user,
     );

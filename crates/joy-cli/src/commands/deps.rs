@@ -5,9 +5,9 @@ use anyhow::Result;
 use chrono::Utc;
 use clap::Args;
 
-use joy_core::identity;
+use joy_core::context::Context;
+use joy_core::guard::Action;
 use joy_core::items;
-use joy_core::store;
 
 use crate::color;
 
@@ -39,20 +39,19 @@ pub struct DepsArgs {
 }
 
 pub fn run(args: DepsArgs) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+    let ctx = Context::load()?;
 
     if let Some(ref dep_id) = args.add {
-        return add_dep(&root, &args.id, dep_id);
+        return add_dep(&ctx, &args.id, dep_id);
     }
 
     if let Some(ref dep_id) = args.rm {
-        return rm_dep(&root, &args.id, dep_id);
+        return rm_dep(&ctx, &args.id, dep_id);
     }
 
     // Show dependencies
-    let item = items::load_item(&root, &args.id)?;
-    let all_items = items::load_items(&root)?;
+    let item = items::load_item(&ctx.root, &args.id)?;
+    let all_items = items::load_items(&ctx.root)?;
 
     if item.deps.is_empty() {
         println!("{} has no dependencies.", color::id(&item.id));
@@ -77,13 +76,13 @@ pub fn run(args: DepsArgs) -> Result<()> {
     Ok(())
 }
 
-fn add_dep(root: &std::path::Path, item_id: &str, dep_id: &str) -> Result<()> {
-    joy_core::guard::enforce(root, &joy_core::guard::Action::UpdateItem, item_id, None)?;
+fn add_dep(ctx: &Context, item_id: &str, dep_id: &str) -> Result<()> {
+    ctx.enforce(&Action::UpdateItem, item_id)?;
 
     // Verify dep exists
-    let _ = items::load_item(root, dep_id)?;
+    let _ = items::load_item(&ctx.root, dep_id)?;
 
-    let mut item = items::load_item(root, item_id)?;
+    let mut item = items::load_item(&ctx.root, item_id)?;
 
     if item.deps.contains(&dep_id.to_string()) {
         println!(
@@ -95,20 +94,18 @@ fn add_dep(root: &std::path::Path, item_id: &str, dep_id: &str) -> Result<()> {
     }
 
     // Check for cycles
-    if let Some(cycle) = items::detect_cycle(root, item_id, dep_id)? {
+    if let Some(cycle) = items::detect_cycle(&ctx.root, item_id, dep_id)? {
         let path: Vec<String> = cycle.iter().map(|id| color::id(id)).collect();
         anyhow::bail!("circular dependency detected: {}", path.join(" -> "));
     }
 
     item.deps.push(dep_id.to_string());
     item.updated = Utc::now();
-    items::update_item(root, &item)?;
+    items::update_item(&ctx.root, &item)?;
 
-    let log_user = identity::resolve_identity(root)
-        .map(|id| id.log_user())
-        .unwrap_or_default();
+    let log_user = ctx.log_user();
     joy_core::event_log::log_event_as(
-        root,
+        &ctx.root,
         joy_core::event_log::EventType::DepAdded,
         item_id,
         Some(dep_id),
@@ -122,7 +119,7 @@ fn add_dep(root: &std::path::Path, item_id: &str, dep_id: &str) -> Result<()> {
     );
 
     joy_core::git_ops::auto_git_post_command(
-        root,
+        &ctx.root,
         &format!("deps {item_id} add {dep_id}"),
         &log_user,
     );
@@ -130,10 +127,10 @@ fn add_dep(root: &std::path::Path, item_id: &str, dep_id: &str) -> Result<()> {
     Ok(())
 }
 
-fn rm_dep(root: &std::path::Path, item_id: &str, dep_id: &str) -> Result<()> {
-    joy_core::guard::enforce(root, &joy_core::guard::Action::UpdateItem, item_id, None)?;
+fn rm_dep(ctx: &Context, item_id: &str, dep_id: &str) -> Result<()> {
+    ctx.enforce(&Action::UpdateItem, item_id)?;
 
-    let mut item = items::load_item(root, item_id)?;
+    let mut item = items::load_item(&ctx.root, item_id)?;
 
     if !item.deps.contains(&dep_id.to_string()) {
         println!(
@@ -146,13 +143,11 @@ fn rm_dep(root: &std::path::Path, item_id: &str, dep_id: &str) -> Result<()> {
 
     item.deps.retain(|d| d != dep_id);
     item.updated = Utc::now();
-    items::update_item(root, &item)?;
+    items::update_item(&ctx.root, &item)?;
 
-    let log_user = identity::resolve_identity(root)
-        .map(|id| id.log_user())
-        .unwrap_or_default();
+    let log_user = ctx.log_user();
     joy_core::event_log::log_event_as(
-        root,
+        &ctx.root,
         joy_core::event_log::EventType::DepRemoved,
         item_id,
         Some(dep_id),
@@ -166,7 +161,7 @@ fn rm_dep(root: &std::path::Path, item_id: &str, dep_id: &str) -> Result<()> {
     );
 
     joy_core::git_ops::auto_git_post_command(
-        root,
+        &ctx.root,
         &format!("deps {item_id} rm {dep_id}"),
         &log_user,
     );

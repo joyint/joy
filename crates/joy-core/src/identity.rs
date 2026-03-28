@@ -3,12 +3,12 @@
 
 //! Identity resolution for Joy CLI operations.
 //!
-//! Resolves the acting user's identity by checking (in order):
-//! 1. `--author` CLI flag (if provided)
-//! 2. `git config user.email` (fallback)
+//! Resolves the acting user's identity from:
+//! 1. Active session (if one exists for any member)
+//! 2. `git config user.email` (fallback for projects without auth)
 //!
-//! When the resolved identity is an AI member (`ai:*`), the git email
-//! is captured as the delegating human (`delegated_by`).
+//! AI members authenticate via `joy auth --token`, which creates a
+//! session. There is no self-declared identity override.
 
 use std::path::Path;
 
@@ -41,44 +41,74 @@ impl Identity {
 
 /// Resolve the acting identity for the current operation.
 ///
-/// Priority: `author_override` (--author flag) > git email.
-/// If the resolved identity is an AI member, the git email is used as `delegated_by`.
-/// Validates that the identity is a registered project member (if members exist).
+/// Priority: active session > git email.
+/// If a session exists, the identity comes from the session member.
+/// If no session, falls back to git email (for projects without auth).
 pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
-    resolve_identity_with(root, None)
-}
-
-/// Like `resolve_identity`, but accepts an explicit `--author` override.
-pub fn resolve_identity_with(
-    root: &Path,
-    author_override: Option<&str>,
-) -> Result<Identity, JoyError> {
     let git_email = crate::vcs::default_vcs().user_email()?;
     let project = load_project_optional(root);
 
-    // Priority: --author flag > git email
-    let override_author = author_override.map(|s| s.to_string());
+    // Try to find an active session for the git user first,
+    // then check if any AI session is active on this machine
+    let project_id = crate::auth::session::project_id(root).ok();
 
-    let (member, delegated_by) = match override_author {
-        Some(author) => {
-            validate_member(&author, &project)?;
-            let delegated = if is_ai_member(&author) {
-                Some(git_email)
+    if let Some(ref pid) = project_id {
+        // Check git user's session
+        if let Some(session_identity) = session_identity(root, &git_email, pid, &project) {
+            return Ok(session_identity);
+        }
+
+        // Check if there's an active AI session (for when AI tools call joy)
+        if let Some(ref proj) = project {
+            for member_id in proj.members.keys() {
+                if is_ai_member(member_id) {
+                    if let Some(session_identity) = session_identity(root, member_id, pid, &project)
+                    {
+                        return Ok(session_identity);
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback: git email, not authenticated
+    Ok(Identity {
+        member: git_email,
+        delegated_by: None,
+        authenticated: false,
+    })
+}
+
+/// Try to build an Identity from an active session for a member.
+fn session_identity(
+    root: &Path,
+    member: &str,
+    project_id: &str,
+    project: &Option<Project>,
+) -> Option<Identity> {
+    if !check_session(root, member, project) {
+        return None;
+    }
+
+    // Read the session to get delegated_by info
+    let delegated_by = crate::auth::session::load_session(project_id, member)
+        .ok()
+        .flatten()
+        .and_then(|_sess| {
+            // AI sessions have delegated_by from the token auth event
+            if is_ai_member(member) {
+                // The delegating human is tracked in the event log,
+                // but for identity resolution we just mark it as delegated
+                crate::vcs::default_vcs().user_email().ok()
             } else {
                 None
-            };
-            (author, delegated)
-        }
-        None => (git_email, None),
-    };
+            }
+        });
 
-    // Check for active session to determine authentication status
-    let authenticated = check_session(root, &member, &project);
-
-    Ok(Identity {
-        member,
+    Some(Identity {
+        member: member.to_string(),
         delegated_by,
-        authenticated,
+        authenticated: true,
     })
 }
 
@@ -122,6 +152,7 @@ fn load_project_optional(root: &Path) -> Option<Project> {
     store::read_yaml(&project_path).ok()
 }
 
+#[allow(dead_code)]
 fn validate_member(member: &str, project: &Option<Project>) -> Result<(), JoyError> {
     let Some(project) = project else {
         return Ok(());

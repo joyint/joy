@@ -5,10 +5,10 @@ use anyhow::Result;
 use chrono::Utc;
 use clap::Args;
 
-use joy_core::identity;
+use joy_core::context::Context;
+use joy_core::guard::Action;
 use joy_core::items;
 use joy_core::model::item::{Capability, Priority};
-use joy_core::store;
 
 #[derive(Args)]
 pub struct EditArgs {
@@ -62,10 +62,9 @@ pub struct EditArgs {
 }
 
 pub fn run(args: EditArgs) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+    let ctx = Context::load()?;
 
-    let mut item = items::load_item(&root, &args.id)?;
+    let mut item = items::load_item(&ctx.root, &args.id)?;
     let mut changed = false;
 
     if let Some(title) = args.title {
@@ -99,7 +98,7 @@ pub fn run(args: EditArgs) -> Result<()> {
         if parent == "none" {
             item.parent = None;
         } else {
-            match items::load_item(&root, parent) {
+            match items::load_item(&ctx.root, parent) {
                 Ok(parent_item) => {
                     if !parent_item.is_active() {
                         eprintln!("Warning: parent {} is {}.", parent, parent_item.status);
@@ -145,7 +144,7 @@ pub fn run(args: EditArgs) -> Result<()> {
         } else {
             let new_deps: Vec<String> = deps.split(',').map(|s| s.trim().to_string()).collect();
             for dep_id in &new_deps {
-                if let Some(cycle) = items::detect_cycle(&root, &item.id, dep_id)? {
+                if let Some(cycle) = items::detect_cycle(&ctx.root, &item.id, dep_id)? {
                     anyhow::bail!("circular dependency: {}", cycle.join(" -> "));
                 }
             }
@@ -199,20 +198,18 @@ pub fn run(args: EditArgs) -> Result<()> {
 
     // Guard check: AssignItem if assignee changed, UpdateItem otherwise
     let action = if args.assignee.is_some() {
-        joy_core::guard::Action::AssignItem
+        Action::AssignItem
     } else {
-        joy_core::guard::Action::UpdateItem
+        Action::UpdateItem
     };
-    joy_core::guard::enforce(&root, &action, &item.id, None)?;
+    ctx.enforce(&action, &item.id)?;
 
     item.updated = Utc::now();
-    items::update_item(&root, &item)?;
+    items::update_item(&ctx.root, &item)?;
 
-    let log_user = identity::resolve_identity(&root)
-        .map(|id| id.log_user())
-        .unwrap_or_default();
+    let log_user = ctx.log_user();
     joy_core::event_log::log_event_as(
-        &root,
+        &ctx.root,
         joy_core::event_log::EventType::ItemUpdated,
         &item.id,
         Some(&item.title),
@@ -222,7 +219,7 @@ pub fn run(args: EditArgs) -> Result<()> {
     println!("Updated {} {}", item.id, item.title);
 
     joy_core::git_ops::auto_git_post_command(
-        &root,
+        &ctx.root,
         &format!("edit {} {}", item.id, item.title),
         &log_user,
     );

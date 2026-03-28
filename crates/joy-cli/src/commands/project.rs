@@ -4,6 +4,8 @@
 use anyhow::{bail, Result};
 use clap::Args;
 
+use joy_core::context::Context;
+use joy_core::guard::Action;
 use joy_core::model::item::Capability;
 use joy_core::model::project::{CapabilityConfig, Member, MemberCapabilities};
 use joy_core::model::Project;
@@ -26,10 +28,6 @@ pub struct ProjectArgs {
     /// Set the project language (e.g. en, de, fr)
     #[arg(long)]
     language: Option<String>,
-
-    /// Override identity (email or ai:tool@joy).
-    #[arg(long)]
-    author: Option<String>,
 
     #[command(subcommand)]
     command: Option<ProjectCommand>,
@@ -100,10 +98,9 @@ struct MemberRmArgs {
 }
 
 pub fn run(args: ProjectArgs) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+    let ctx = Context::load()?;
 
-    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
+    let project_path = store::joy_dir(&ctx.root).join(store::PROJECT_FILE);
     let mut project: Project = store::read_yaml(&project_path)?;
 
     match args.command {
@@ -111,35 +108,22 @@ pub fn run(args: ProjectArgs) -> Result<()> {
             return get_value(&project, &a.key);
         }
         Some(ProjectCommand::Set(a)) => {
-            joy_core::guard::enforce(
-                &root,
-                &joy_core::guard::Action::ManageProject,
-                "project",
-                args.author.as_deref(),
-            )?;
+            ctx.enforce(&Action::ManageProject, "project")?;
             set_value(&mut project, &a.key, &a.value)?;
             store::write_yaml_preserve(&project_path, &project)?;
             let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-            joy_core::git_ops::auto_git_add(&root, &[&rel]);
+            joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
             println!("{} = {}", a.key, a.value);
-            let log_user = joy_core::identity::resolve_identity(&root)
-                .map(|id| id.log_user())
-                .unwrap_or_default();
+            let log_user = ctx.log_user();
             joy_core::git_ops::auto_git_post_command(
-                &root,
+                &ctx.root,
                 &format!("project set {} {}", a.key, a.value),
                 &log_user,
             );
             return Ok(());
         }
         Some(ProjectCommand::Member(a)) => {
-            return run_member(
-                a,
-                &mut project,
-                &project_path,
-                &root,
-                args.author.as_deref(),
-            );
+            return run_member(a, &mut project, &project_path, &ctx);
         }
         None => {}
     }
@@ -148,12 +132,7 @@ pub fn run(args: ProjectArgs) -> Result<()> {
     let is_edit = args.name.is_some() || args.description.is_some() || args.language.is_some();
 
     if is_edit {
-        joy_core::guard::enforce(
-            &root,
-            &joy_core::guard::Action::ManageProject,
-            "project",
-            args.author.as_deref(),
-        )?;
+        ctx.enforce(&Action::ManageProject, "project")?;
         if let Some(name) = args.name {
             project.name = name;
         }
@@ -169,15 +148,13 @@ pub fn run(args: ProjectArgs) -> Result<()> {
         }
         store::write_yaml_preserve(&project_path, &project)?;
         let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-        joy_core::git_ops::auto_git_add(&root, &[&rel]);
+        joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
         println!("Project updated.");
-        let log_user = joy_core::identity::resolve_identity(&root)
-            .map(|id| id.log_user())
-            .unwrap_or_default();
-        joy_core::git_ops::auto_git_post_command(&root, "project edit", &log_user);
+        let log_user = ctx.log_user();
+        joy_core::git_ops::auto_git_post_command(&ctx.root, "project edit", &log_user);
     }
 
-    show_project(&project, &root);
+    show_project(&project, &ctx.root);
     Ok(())
 }
 
@@ -258,8 +235,7 @@ fn run_member(
     args: MemberArgs,
     project: &mut Project,
     project_path: &std::path::Path,
-    root: &std::path::Path,
-    author: Option<&str>,
+    ctx: &Context,
 ) -> Result<()> {
     match args.command {
         None => {
@@ -267,7 +243,7 @@ fn run_member(
             if project.members.is_empty() {
                 println!("No members configured.");
             } else {
-                print_members_table(&project.members, root);
+                print_members_table(&project.members, &ctx.root);
             }
         }
         Some(MemberCommand::Show(a)) => {
@@ -300,12 +276,7 @@ fn run_member(
             }
         }
         Some(MemberCommand::Add(a)) => {
-            joy_core::guard::enforce(
-                root,
-                &joy_core::guard::Action::ManageProject,
-                "project",
-                author,
-            )?;
+            ctx.enforce(&Action::ManageProject, "project")?;
             if project.members.contains_key(&a.id) {
                 bail!("member {} already exists", a.id);
             }
@@ -328,24 +299,17 @@ fn run_member(
                 .insert(a.id.clone(), Member::new(capabilities));
             store::write_yaml_preserve(project_path, project)?;
             let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-            joy_core::git_ops::auto_git_add(root, &[&rel]);
+            joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
             println!("Added member {}", a.id);
-            let log_user = joy_core::identity::resolve_identity(root)
-                .map(|id| id.log_user())
-                .unwrap_or_default();
+            let log_user = ctx.log_user();
             joy_core::git_ops::auto_git_post_command(
-                root,
+                &ctx.root,
                 &format!("project member add {}", a.id),
                 &log_user,
             );
         }
         Some(MemberCommand::Rm(a)) => {
-            joy_core::guard::enforce(
-                root,
-                &joy_core::guard::Action::ManageProject,
-                "project",
-                author,
-            )?;
+            ctx.enforce(&Action::ManageProject, "project")?;
             // Prevent removing the last member with manage capability
             let guard = joy_core::guard::Guard::new(project);
             if guard.is_last_manager(&a.id) {
@@ -360,13 +324,11 @@ fn run_member(
             }
             store::write_yaml_preserve(project_path, project)?;
             let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-            joy_core::git_ops::auto_git_add(root, &[&rel]);
+            joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
             println!("Removed member {}", a.id);
-            let log_user = joy_core::identity::resolve_identity(root)
-                .map(|id| id.log_user())
-                .unwrap_or_default();
+            let log_user = ctx.log_user();
             joy_core::git_ops::auto_git_post_command(
-                root,
+                &ctx.root,
                 &format!("project member rm {}", a.id),
                 &log_user,
             );

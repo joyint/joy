@@ -1,9 +1,11 @@
 id: JOY-0071
 title: Progressive auth activation when AI member is added
 type: story
-status: new
+status: in-progress
 priority: medium
 parent: JOY-006B
+assignees:
+- member: ai:claude@joy
 deps:
 - JOY-0070
 capabilities:
@@ -12,4 +14,4 @@ capabilities:
 - review
 effort: 2
 created: 2026-03-27T18:25:29.265033652Z
-updated: 2026-03-27T18:27:26.894216700Z
+updated: 2026-03-28T23:12:27.631067671Z

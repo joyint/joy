@@ -7,7 +7,8 @@ use anyhow::Result;
 use chrono::Utc;
 use clap::Args;
 
-use joy_core::identity;
+use joy_core::context::Context;
+use joy_core::guard::Action;
 use joy_core::items;
 use joy_core::model::item::{Assignee, Status};
 use joy_core::releases;
@@ -37,49 +38,38 @@ pub struct StatusArgs {
 
     /// New status: new, open, in-progress, review, closed, deferred
     status: String,
-
-    /// Override identity (email or ai:tool@joy).
-    #[arg(long)]
-    author: Option<String>,
 }
 
 impl StatusArgs {
-    pub fn new(id: String, status: String, author: Option<String>) -> Self {
-        Self { id, status, author }
+    pub fn new(id: String, status: String) -> Self {
+        Self { id, status }
     }
 }
 
 pub fn run(args: StatusArgs) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+    let ctx = Context::load()?;
 
     let new_status: Status = args
         .status
         .parse()
         .map_err(|e: String| anyhow::anyhow!("{}", e))?;
 
-    let resolved = identity::resolve_identity_with(&root, args.author.as_deref())
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
-    crate::warn_ai_members(&root, &resolved);
-
-    let mut item = items::load_item(&root, &args.id)?;
+    let mut item = items::load_item(&ctx.root, &args.id)?;
     let old_status = item.status.clone();
 
-    joy_core::guard::enforce(
-        &root,
-        &joy_core::guard::Action::ChangeStatus {
+    ctx.enforce(
+        &Action::ChangeStatus {
             from: old_status.clone(),
             to: new_status.clone(),
         },
         &item.id,
-        args.author.as_deref(),
     )?;
 
     // Warn when reopening a released item
     if matches!(old_status, Status::Closed | Status::Deferred)
         && !matches!(new_status, Status::Closed | Status::Deferred)
     {
-        if let Ok(Some(release_version)) = releases::item_in_release(&root, &item.id) {
+        if let Ok(Some(release_version)) = releases::item_in_release(&ctx.root, &item.id) {
             eprintln!(
                 "\nwarning: {} is included in release {}",
                 color::id(&item.id),
@@ -102,7 +92,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
 
     // Warn when closing an item that has open children
     if matches!(new_status, Status::Closed) {
-        let all_items = items::load_items(&root)?;
+        let all_items = items::load_items(&ctx.root)?;
         let open_children: Vec<_> = all_items
             .iter()
             .filter(|i| i.parent.as_deref() == Some(&item.id) && i.is_active())
@@ -126,7 +116,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
 
     // Warn when starting an item with open dependencies
     if matches!(new_status, Status::InProgress) {
-        let all_items = items::load_items(&root)?;
+        let all_items = items::load_items(&ctx.root)?;
         let open_deps: Vec<_> = all_items
             .iter()
             .filter(|i| item.deps.contains(&i.id) && i.is_active())
@@ -153,19 +143,19 @@ pub fn run(args: StatusArgs) -> Result<()> {
         let config = store::load_config();
         if config.workflow.auto_assign {
             item.assignees.push(Assignee {
-                member: resolved.member.clone(),
+                member: ctx.identity.member.clone(),
                 capabilities: Vec::new(),
             });
             eprintln!(
                 "Auto-assigned {} to {}",
                 color::id(&item.id),
-                resolved.member
+                ctx.identity.member
             );
 
             // Warn if member lacks item capabilities
-            let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
+            let project_path = store::joy_dir(&ctx.root).join(store::PROJECT_FILE);
             if let Ok(project) = store::read_yaml::<joy_core::model::Project>(&project_path) {
-                if let Some(member) = project.members.get(&resolved.member) {
+                if let Some(member) = project.members.get(&ctx.identity.member) {
                     if !matches!(
                         member.capabilities,
                         joy_core::model::project::MemberCapabilities::All
@@ -177,7 +167,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
                                 if !caps.contains_key(item_cap) {
                                     eprintln!(
                                         "Warning: {} does not have capability '{}'",
-                                        resolved.member, item_cap
+                                        ctx.identity.member, item_cap
                                     );
                                 }
                             }
@@ -196,11 +186,11 @@ pub fn run(args: StatusArgs) -> Result<()> {
 
     item.status = new_status.clone();
     item.updated = Utc::now();
-    items::update_item(&root, &item)?;
+    items::update_item(&ctx.root, &item)?;
 
-    let log_user = resolved.log_user();
+    let log_user = ctx.log_user();
     joy_core::event_log::log_event_as(
-        &root,
+        &ctx.root,
         joy_core::event_log::EventType::ItemStatusChanged,
         &item.id,
         Some(&format!("{old_status} -> {new_status}")),
@@ -217,20 +207,20 @@ pub fn run(args: StatusArgs) -> Result<()> {
     // Auto-close parent when all children are closed
     // (must run before auto_git_post_command so auto-close changes are included)
     if let (Status::Closed, Some(ref parent_id)) = (&new_status, &item.parent) {
-        let all_items = items::load_items(&root)?;
+        let all_items = items::load_items(&ctx.root)?;
         let has_open_siblings = all_items
             .iter()
             .any(|i| i.parent.as_deref() == Some(parent_id) && i.is_active());
 
         if !has_open_siblings {
-            if let Ok(mut parent) = items::load_item(&root, parent_id) {
+            if let Ok(mut parent) = items::load_item(&ctx.root, parent_id) {
                 if parent.is_active() {
                     let parent_old = parent.status.clone();
                     parent.status = Status::Closed;
                     parent.updated = Utc::now();
-                    items::update_item(&root, &parent)?;
+                    items::update_item(&ctx.root, &parent)?;
                     joy_core::event_log::log_event_as(
-                        &root,
+                        &ctx.root,
                         joy_core::event_log::EventType::ItemStatusChanged,
                         &parent.id,
                         Some(&format!("{parent_old} -> closed (all children closed)")),
@@ -248,7 +238,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
     }
 
     joy_core::git_ops::auto_git_post_command(
-        &root,
+        &ctx.root,
         &format!("status {} {old_status} -> {new_status}", item.id),
         &log_user,
     );

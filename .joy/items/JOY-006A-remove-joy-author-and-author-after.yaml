@@ -1,9 +1,11 @@
 id: JOY-006A
 title: Remove JOY_AUTHOR and --author after Auth is implemented
 type: rework
-status: new
+status: in-progress
 priority: low
 parent: JOY-0066
+assignees:
+- member: ai:claude@joy
 deps:
 - JOY-006E
 capabilities:
@@ -11,7 +13,7 @@ capabilities:
 - review
 effort: 1
 created: 2026-03-27T18:25:10.292204034Z
-updated: 2026-03-28T09:48:24.333990678Z
+updated: 2026-03-28T23:15:06.036770220Z
 comments:
 - author: ai:claude@joy
   date: 2026-03-28T09:48:24.333990104Z

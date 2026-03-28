@@ -5,7 +5,8 @@ use anyhow::Result;
 use chrono::NaiveDate;
 use clap::{Args, Subcommand};
 
-use joy_core::identity;
+use joy_core::context::Context;
+use joy_core::guard::Action;
 use joy_core::items;
 use joy_core::milestones;
 use joy_core::model::milestone::Milestone;
@@ -120,18 +121,12 @@ pub fn run(args: MilestoneArgs) -> Result<()> {
 }
 
 fn run_add(args: AddArgs) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+    let ctx = Context::load()?;
 
-    joy_core::guard::enforce(
-        &root,
-        &joy_core::guard::Action::ManageMilestone,
-        "milestone",
-        None,
-    )?;
+    ctx.enforce(&Action::ManageMilestone, "milestone")?;
 
-    let acronym = store::load_acronym(&root)?;
-    let id = milestones::next_id(&root, &acronym)?;
+    let acronym = store::load_acronym(&ctx.root)?;
+    let id = milestones::next_id(&ctx.root, &acronym)?;
     let mut ms = Milestone::new(id.clone(), args.title);
 
     if let Some(ref date_str) = args.date {
@@ -143,13 +138,11 @@ fn run_add(args: AddArgs) -> Result<()> {
 
     ms.description = args.description;
 
-    milestones::save_milestone(&root, &ms)?;
+    milestones::save_milestone(&ctx.root, &ms)?;
 
-    let log_user = identity::resolve_identity(&root)
-        .map(|id| id.log_user())
-        .unwrap_or_default();
+    let log_user = ctx.log_user();
     joy_core::event_log::log_event_as(
-        &root,
+        &ctx.root,
         joy_core::event_log::EventType::MilestoneCreated,
         &id,
         Some(&ms.title),
@@ -162,7 +155,7 @@ fn run_add(args: AddArgs) -> Result<()> {
     }
 
     joy_core::git_ops::auto_git_post_command(
-        &root,
+        &ctx.root,
         &format!("milestone add {id} {}", ms.title),
         &log_user,
     );
@@ -171,11 +164,10 @@ fn run_add(args: AddArgs) -> Result<()> {
 }
 
 fn run_ls() -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+    let ctx = Context::load()?;
 
-    let milestones = milestones::load_milestones(&root)?;
-    let all_items = items::load_items(&root)?;
+    let milestones = milestones::load_milestones(&ctx.root)?;
+    let all_items = items::load_items(&ctx.root)?;
 
     if milestones.is_empty() {
         println!("No milestones.");
@@ -220,11 +212,10 @@ fn run_ls() -> Result<()> {
 }
 
 fn run_show(args: ShowArgs) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+    let ctx = Context::load()?;
 
-    let ms = milestones::load_milestone(&root, &args.id)?;
-    let all_items = items::load_items(&root)?;
+    let ms = milestones::load_milestone(&ctx.root, &args.id)?;
+    let all_items = items::load_items(&ctx.root)?;
     let linked: Vec<_> = all_items
         .iter()
         .filter(|i| effective_milestone(i, &all_items) == Some(&ms.id))
@@ -315,17 +306,11 @@ fn run_show(args: ShowArgs) -> Result<()> {
 }
 
 fn run_rm(args: RmArgs) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+    let ctx = Context::load()?;
 
-    joy_core::guard::enforce(
-        &root,
-        &joy_core::guard::Action::ManageMilestone,
-        &args.id,
-        None,
-    )?;
+    ctx.enforce(&Action::ManageMilestone, &args.id)?;
 
-    let ms = milestones::load_milestone(&root, &args.id)?;
+    let ms = milestones::load_milestone(&ctx.root, &args.id)?;
 
     if !args.force {
         eprint!(
@@ -342,23 +327,21 @@ fn run_rm(args: RmArgs) -> Result<()> {
     }
 
     // Remove milestone references from items
-    let all_items = items::load_items(&root)?;
+    let all_items = items::load_items(&ctx.root)?;
     for mut item in all_items {
         if item.milestone.as_deref() == Some(&ms.id) {
             item.milestone = None;
             item.updated = chrono::Utc::now();
-            items::update_item(&root, &item)?;
+            items::update_item(&ctx.root, &item)?;
             println!("  Unlinked {}", color::id(&item.id));
         }
     }
 
-    milestones::delete_milestone(&root, &args.id)?;
+    milestones::delete_milestone(&ctx.root, &args.id)?;
 
-    let log_user = identity::resolve_identity(&root)
-        .map(|id| id.log_user())
-        .unwrap_or_default();
+    let log_user = ctx.log_user();
     joy_core::event_log::log_event_as(
-        &root,
+        &ctx.root,
         joy_core::event_log::EventType::MilestoneDeleted,
         &ms.id,
         Some(&ms.title),
@@ -368,7 +351,7 @@ fn run_rm(args: RmArgs) -> Result<()> {
     println!("Deleted {} {}", color::id(&ms.id), ms.title);
 
     joy_core::git_ops::auto_git_post_command(
-        &root,
+        &ctx.root,
         &format!("milestone rm {} {}", ms.id, ms.title),
         &log_user,
     );
@@ -377,17 +360,11 @@ fn run_rm(args: RmArgs) -> Result<()> {
 }
 
 fn run_edit(args: EditArgs) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+    let ctx = Context::load()?;
 
-    joy_core::guard::enforce(
-        &root,
-        &joy_core::guard::Action::ManageMilestone,
-        &args.id,
-        None,
-    )?;
+    ctx.enforce(&Action::ManageMilestone, &args.id)?;
 
-    let mut ms = milestones::load_milestone(&root, &args.id)?;
+    let mut ms = milestones::load_milestone(&ctx.root, &args.id)?;
     let mut changed = false;
 
     if let Some(title) = args.title {
@@ -421,13 +398,11 @@ fn run_edit(args: EditArgs) -> Result<()> {
         return Ok(());
     }
 
-    milestones::update_milestone(&root, &ms)?;
+    milestones::update_milestone(&ctx.root, &ms)?;
 
-    let log_user = identity::resolve_identity(&root)
-        .map(|id| id.log_user())
-        .unwrap_or_default();
+    let log_user = ctx.log_user();
     joy_core::event_log::log_event_as(
-        &root,
+        &ctx.root,
         joy_core::event_log::EventType::MilestoneUpdated,
         &ms.id,
         Some(&ms.title),
@@ -437,7 +412,7 @@ fn run_edit(args: EditArgs) -> Result<()> {
     println!("Updated {} {}", color::id(&ms.id), ms.title);
 
     joy_core::git_ops::auto_git_post_command(
-        &root,
+        &ctx.root,
         &format!("milestone edit {} {}", ms.id, ms.title),
         &log_user,
     );
@@ -446,29 +421,21 @@ fn run_edit(args: EditArgs) -> Result<()> {
 }
 
 fn run_link(args: LinkArgs) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+    let ctx = Context::load()?;
 
-    joy_core::guard::enforce(
-        &root,
-        &joy_core::guard::Action::ManageMilestone,
-        &args.item_id,
-        None,
-    )?;
+    ctx.enforce(&Action::ManageMilestone, &args.item_id)?;
 
     // Verify milestone exists
-    let ms = milestones::load_milestone(&root, &args.ms_id)?;
+    let ms = milestones::load_milestone(&ctx.root, &args.ms_id)?;
 
-    let mut item = items::load_item(&root, &args.item_id)?;
+    let mut item = items::load_item(&ctx.root, &args.item_id)?;
     item.milestone = Some(args.ms_id.clone());
     item.updated = chrono::Utc::now();
-    items::update_item(&root, &item)?;
+    items::update_item(&ctx.root, &item)?;
 
-    let log_user = identity::resolve_identity(&root)
-        .map(|id| id.log_user())
-        .unwrap_or_default();
+    let log_user = ctx.log_user();
     joy_core::event_log::log_event_as(
-        &root,
+        &ctx.root,
         joy_core::event_log::EventType::MilestoneLinked,
         &item.id,
         Some(&ms.id),
@@ -483,7 +450,7 @@ fn run_link(args: LinkArgs) -> Result<()> {
     );
 
     joy_core::git_ops::auto_git_post_command(
-        &root,
+        &ctx.root,
         &format!("milestone link {} {}", item.id, ms.id),
         &log_user,
     );
@@ -492,30 +459,22 @@ fn run_link(args: LinkArgs) -> Result<()> {
 }
 
 fn run_unlink(args: UnlinkArgs) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+    let ctx = Context::load()?;
 
-    joy_core::guard::enforce(
-        &root,
-        &joy_core::guard::Action::ManageMilestone,
-        &args.item_id,
-        None,
-    )?;
+    ctx.enforce(&Action::ManageMilestone, &args.item_id)?;
 
-    let mut item = items::load_item(&root, &args.item_id)?;
+    let mut item = items::load_item(&ctx.root, &args.item_id)?;
 
     match &item.milestone {
         Some(ms_id) => {
             let old_ms_id = ms_id.clone();
             item.milestone = None;
             item.updated = chrono::Utc::now();
-            items::update_item(&root, &item)?;
+            items::update_item(&ctx.root, &item)?;
 
-            let log_user = identity::resolve_identity(&root)
-                .map(|id| id.log_user())
-                .unwrap_or_default();
+            let log_user = ctx.log_user();
             joy_core::event_log::log_event_as(
-                &root,
+                &ctx.root,
                 joy_core::event_log::EventType::MilestoneUnlinked,
                 &item.id,
                 Some(&old_ms_id),
@@ -529,7 +488,7 @@ fn run_unlink(args: UnlinkArgs) -> Result<()> {
             );
 
             joy_core::git_ops::auto_git_post_command(
-                &root,
+                &ctx.root,
                 &format!("milestone unlink {} {}", item.id, old_ms_id),
                 &log_user,
             );

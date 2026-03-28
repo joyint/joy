@@ -4,6 +4,8 @@
 use anyhow::{bail, Result};
 use clap::Args;
 
+use joy_core::context::Context;
+use joy_core::guard::Action;
 use joy_core::items;
 use joy_core::model::item::{Capability, ItemType, Priority, Status};
 use joy_core::store;
@@ -78,10 +80,6 @@ pub struct AddArgs {
     /// Capabilities (comma-separated, overrides type defaults)
     #[arg(short = 'c', long)]
     capabilities: Option<String>,
-
-    /// Override identity (email or ai:tool@joy).
-    #[arg(long)]
-    author: Option<String>,
 }
 
 pub fn run(args: AddArgs) -> Result<()> {
@@ -99,8 +97,7 @@ pub fn run(args: AddArgs) -> Result<()> {
         std::process::exit(0);
     }
 
-    let cwd = std::env::current_dir()?;
-    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+    let ctx = Context::load()?;
 
     let type_str = args
         .item_type
@@ -123,14 +120,14 @@ pub fn run(args: AddArgs) -> Result<()> {
 
     let id = match args.id {
         Some(id) => {
-            if items::find_item_file(&root, &id).is_ok() {
+            if items::find_item_file(&ctx.root, &id).is_ok() {
                 bail!("item {} already exists", id);
             }
             id
         }
         None => {
-            let acronym = joy_core::store::load_acronym(&root)?;
-            items::next_id(&root, &acronym)?
+            let acronym = store::load_acronym(&ctx.root)?;
+            items::next_id(&ctx.root, &acronym)?
         }
     };
 
@@ -176,7 +173,7 @@ pub fn run(args: AddArgs) -> Result<()> {
 
     // Validate parent exists as an item
     if let Some(ref parent_id) = item.parent {
-        match items::load_item(&root, parent_id) {
+        match items::load_item(&ctx.root, parent_id) {
             Ok(parent) => {
                 if !parent.is_active() {
                     eprintln!("Warning: parent {} is {}.", parent_id, parent.status);
@@ -195,34 +192,25 @@ pub fn run(args: AddArgs) -> Result<()> {
         }
     }
 
-    let identity = joy_core::identity::resolve_identity_with(&root, args.author.as_deref())
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
-    crate::warn_ai_members(&root, &identity);
+    ctx.enforce(&Action::CreateItem, &id)?;
 
-    joy_core::guard::enforce(
-        &root,
-        &joy_core::guard::Action::CreateItem,
-        &id,
-        args.author.as_deref(),
-    )?;
+    item.created_by = Some(ctx.identity.member.clone());
 
-    item.created_by = Some(identity.member.clone());
-
-    items::save_item(&root, &item)?;
+    items::save_item(&ctx.root, &item)?;
     joy_core::event_log::log_event_as(
-        &root,
+        &ctx.root,
         joy_core::event_log::EventType::ItemCreated,
         &id,
         Some(&title),
-        &identity.log_user(),
+        &ctx.log_user(),
     );
 
     println!("Created {} {}", id, title);
 
     joy_core::git_ops::auto_git_post_command(
-        &root,
+        &ctx.root,
         &format!("add {id} {title}"),
-        &identity.log_user(),
+        &ctx.log_user(),
     );
 
     Ok(())

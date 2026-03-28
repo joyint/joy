@@ -5,10 +5,10 @@ use anyhow::Result;
 use chrono::Utc;
 use clap::Args;
 
-use joy_core::identity;
+use joy_core::context::Context;
+use joy_core::guard::Action;
 use joy_core::items;
 use joy_core::model::item::Comment;
-use joy_core::store;
 
 use crate::color;
 
@@ -24,10 +24,6 @@ pub struct CommentArgs {
 
     /// Comment text (required)
     text: Option<String>,
-
-    /// Override identity (email or ai:tool@joy).
-    #[arg(long)]
-    author: Option<String>,
 }
 
 pub fn run(args: CommentArgs) -> Result<()> {
@@ -36,47 +32,37 @@ pub fn run(args: CommentArgs) -> Result<()> {
         None => anyhow::bail!("text is required: joy comment <ID> \"your comment\""),
     };
 
-    let cwd = std::env::current_dir()?;
-    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+    let ctx = Context::load()?;
 
-    let mut item = items::load_item(&root, &args.id)?;
+    let mut item = items::load_item(&ctx.root, &args.id)?;
 
-    let id = identity::resolve_identity_with(&root, args.author.as_deref())
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
-    crate::warn_ai_members(&root, &id);
-
-    joy_core::guard::enforce(
-        &root,
-        &joy_core::guard::Action::AddComment,
-        &item.id,
-        args.author.as_deref(),
-    )?;
+    ctx.enforce(&Action::AddComment, &item.id)?;
 
     let log_text = text.clone();
     let comment = Comment {
-        author: id.member.clone(),
+        author: ctx.identity.member.clone(),
         date: Utc::now(),
         text,
     };
 
     item.comments.push(comment);
     item.updated = Utc::now();
-    items::update_item(&root, &item)?;
+    items::update_item(&ctx.root, &item)?;
 
     joy_core::event_log::log_event_as(
-        &root,
+        &ctx.root,
         joy_core::event_log::EventType::CommentAdded,
         &item.id,
         Some(&log_text),
-        &id.log_user(),
+        &ctx.log_user(),
     );
 
     println!("Added comment to {} {}", color::id(&item.id), item.title);
 
     joy_core::git_ops::auto_git_post_command(
-        &root,
+        &ctx.root,
         &format!("comment {} {}", item.id, item.title),
-        &id.log_user(),
+        &ctx.log_user(),
     );
 
     Ok(())

@@ -370,12 +370,7 @@ fn run_reset(args: ResetArgs, passphrase_flag: Option<&str>) -> Result<()> {
 
     // If resetting another member, check manage capability
     if resetting_other {
-        joy_core::guard::enforce(
-            &root,
-            &joy_core::guard::Action::ManageProject,
-            "project",
-            None,
-        )?;
+        joy_core::guard::enforce(&root, &joy_core::guard::Action::ManageProject, "project")?;
     }
 
     // Verify target member exists
@@ -434,12 +429,7 @@ fn run_create_token(args: CreateTokenArgs, passphrase_flag: Option<&str>) -> Res
     }
 
     // Guard: requires manage capability
-    joy_core::guard::enforce(
-        &root,
-        &joy_core::guard::Action::ManageProject,
-        "project",
-        None,
-    )?;
+    joy_core::guard::enforce(&root, &joy_core::guard::Action::ManageProject, "project")?;
 
     // Authenticate the acting human
     let member = project

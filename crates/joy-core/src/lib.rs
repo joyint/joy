@@ -5,6 +5,7 @@
 
 pub mod auth;
 pub mod capabilities;
+pub mod context;
 pub mod embedded;
 pub mod error;
 pub mod event_log;
