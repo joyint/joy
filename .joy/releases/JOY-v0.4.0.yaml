@@ -1,0 +1,42 @@
+version: v0.4.0
+date: 2026-03-28
+previous: v0.3.6
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 42
+  items: 13
+- id: horst.schwarz@joydev.com
+  events: 9
+  items: 4
+items:
+  epics:
+  - id: JOY-0080
+    title: 'Guard: centralized runtime validation in joy-core'
+  stories:
+  - id: JOY-0081
+    title: 'Guard module foundation: types, Guard struct, Verdict enum'
+  - id: JOY-0082
+    title: Migrate gate enforcement into Guard
+  - id: JOY-0083
+    title: Migrate capability validation into Guard
+  - id: JOY-0084
+    title: Migrate management capability checks into Guard
+  - id: JOY-0085
+    title: Structured enforcement events in event log
+  - id: JOY-0086
+    title: Wire all CLI write commands through Guard
+  - id: JOY-0087
+    title: Budget pre-checks before AI job start
+  bugs:
+  - id: JOY-0088
+    title: Remove JOY_AUTHOR env var, use --author everywhere
+  decisions:
+  - id: JOY-007F
+    title: Guard as joy-core module for centralized runtime validation
+  ideas:
+  - id: JOY-0005
+    title: Translate items to new language via AI agent
+  - id: JOY-0006
+    title: Translate items to new language via translation API
+  - id: JOY-0004
+    title: Rename item IDs when project acronym changes
