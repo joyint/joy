@@ -92,9 +92,7 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
         if !email.is_empty() {
             project.members.insert(
                 email,
-                crate::model::project::Member {
-                    capabilities: crate::model::project::MemberCapabilities::All,
-                },
+                crate::model::project::Member::new(crate::model::project::MemberCapabilities::All),
             );
         }
     }

@@ -28,6 +28,12 @@ pub struct Project {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Member {
     pub capabilities: MemberCapabilities,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub public_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub salt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub otp_hash: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -76,6 +82,16 @@ impl<'de> Deserialize<'de> for MemberCapabilities {
 }
 
 impl Member {
+    /// Create a member with the given capabilities and no auth fields.
+    pub fn new(capabilities: MemberCapabilities) -> Self {
+        Self {
+            capabilities,
+            public_key: None,
+            salt: None,
+            otp_hash: None,
+        }
+    }
+
     /// Check whether this member has a specific capability.
     pub fn has_capability(&self, cap: &Capability) -> bool {
         match &self.capabilities {

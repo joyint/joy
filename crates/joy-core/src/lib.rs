@@ -3,6 +3,7 @@
 
 #![deny(clippy::all)]
 
+pub mod auth;
 pub mod capabilities;
 pub mod embedded;
 pub mod error;
