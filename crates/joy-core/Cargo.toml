@@ -16,6 +16,7 @@ ed25519-dalek = { version = "2", features = ["rand_core"] }
 zeroize = { version = "1", features = ["derive"] }
 rand = "0.8"
 hex = "0.4"
+base64ct = { version = "1", features = ["alloc"] }
 minijinja = { workspace = true }
 
 [dev-dependencies]

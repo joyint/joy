@@ -1,9 +1,11 @@
 id: JOY-006F
 title: Delegation token creation and validation for AI members
 type: story
-status: new
+status: closed
 priority: high
 parent: JOY-006B
+assignees:
+- member: ai:claude@joy
 deps:
 - JOY-006E
 capabilities:
@@ -12,4 +14,26 @@ capabilities:
 - review
 effort: 3
 created: 2026-03-27T18:25:29.259179173Z
-updated: 2026-03-27T18:27:26.890738008Z
+updated: 2026-03-28T17:16:08.698981175Z
+comments:
+- author: ai:claude@joy
+  date: 2026-03-28T17:16:08.670443485Z
+  text: |-
+    Delegation token system implemented:
+
+    Core (auth/token.rs):
+    - DelegationClaims: ai_member, delegated_by, project_id, created, expires
+    - DelegationToken: claims + Ed25519 signature
+    - create_token, validate_token, encode/decode (joy_t_<base64> format)
+    - is_token() helper for prefix detection
+    - 8 unit tests (create/validate, expiry, wrong project, tampered, encode/decode, wrong key)
+
+    CLI (joy auth create-token):
+    - joy auth create-token <ai-member> [--ttl <hours>] [--passphrase <pw>]
+    - Requires manage capability + authenticated session
+    - Validates AI member prefix (ai:*) and registration
+    - Outputs token string for --token flag usage
+    - 5 integration tests
+
+    Token is passed to AI agents via --token flag (not env var).
+    Dependencies: base64ct added for portable encoding.

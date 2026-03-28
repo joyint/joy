@@ -30,6 +30,8 @@ enum AuthCommand {
     Status,
     /// Reset authentication (remove public key, salt, and session)
     Reset(ResetArgs),
+    /// Create a delegation token for an AI member
+    CreateToken(CreateTokenArgs),
 }
 
 #[derive(Args)]
@@ -38,11 +40,22 @@ struct ResetArgs {
     member: Option<String>,
 }
 
+#[derive(Args)]
+struct CreateTokenArgs {
+    /// AI member ID (e.g. ai:claude@joy)
+    member: String,
+
+    /// Token expiry in hours (default: no expiry)
+    #[arg(long)]
+    ttl: Option<i64>,
+}
+
 pub fn run(args: AuthArgs) -> Result<()> {
     match args.command {
         Some(AuthCommand::Init) => run_init(args.passphrase.as_deref()),
         Some(AuthCommand::Status) => run_status(),
         Some(AuthCommand::Reset(a)) => run_reset(a, args.passphrase.as_deref()),
+        Some(AuthCommand::CreateToken(a)) => run_create_token(a, args.passphrase.as_deref()),
         None => run_auth(args.passphrase.as_deref()),
     }
 }
@@ -298,6 +311,82 @@ fn run_reset(args: ResetArgs, passphrase_flag: Option<&str>) -> Result<()> {
     }
 
     joy_core::git_ops::auto_git_post_command(&root, &format!("auth reset {}", target), &email);
+
+    Ok(())
+}
+
+/// `joy auth create-token <ai-member>` — create a delegation token.
+fn run_create_token(args: CreateTokenArgs, passphrase_flag: Option<&str>) -> Result<()> {
+    use joy_core::auth::token;
+    use joy_core::model::project::is_ai_member;
+
+    let cwd = std::env::current_dir()?;
+    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+
+    let project = store::load_project(&root)?;
+    let email = joy_core::vcs::default_vcs().user_email()?;
+
+    // Validate AI member
+    if !is_ai_member(&args.member) {
+        anyhow::bail!("{} is not an AI member (must start with ai:)", args.member);
+    }
+    if !project.members.contains_key(&args.member) {
+        anyhow::bail!(
+            "{} is not a registered project member. Run `joy project member add {}`.",
+            args.member,
+            args.member
+        );
+    }
+
+    // Guard: requires manage capability
+    joy_core::guard::enforce(
+        &root,
+        &joy_core::guard::Action::ManageProject,
+        "project",
+        None,
+    )?;
+
+    // Authenticate the acting human
+    let member = project
+        .members
+        .get(&email)
+        .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member.", email))?;
+    if member.public_key.is_none() {
+        anyhow::bail!(
+            "Authentication not initialized for {}. Run `joy auth init`.",
+            email
+        );
+    }
+
+    let salt_hex = member.salt.as_ref().unwrap();
+    let public_key_hex = member.public_key.as_ref().unwrap();
+    let salt = derive::Salt::from_hex(salt_hex)?;
+    let public_key = sign::PublicKey::from_hex(public_key_hex)?;
+
+    let passphrase = read_passphrase(passphrase_flag, "Passphrase: ")?;
+    let key = derive::derive_key(&passphrase, &salt)?;
+    let keypair = sign::IdentityKeypair::from_derived_key(&key);
+    if keypair.public_key() != public_key {
+        anyhow::bail!("incorrect passphrase");
+    }
+
+    // Create token
+    let project_id = session::project_id(&root)?;
+    let ttl = args.ttl.map(chrono::Duration::hours);
+    let delegation = token::create_token(&keypair, &args.member, &email, &project_id, ttl);
+    let encoded = token::encode_token(&delegation);
+
+    println!("Delegation token for {}:", args.member);
+    println!();
+    println!("  {}", encoded);
+    println!();
+    println!("Pass this token to the AI agent via --token flag:");
+    println!("  joy <command> --token {}", encoded);
+    if let Some(hours) = args.ttl {
+        println!("Token expires in {hours} hours.");
+    } else {
+        println!("Token does not expire. Revoke by resetting the AI member's auth.");
+    }
 
     Ok(())
 }
