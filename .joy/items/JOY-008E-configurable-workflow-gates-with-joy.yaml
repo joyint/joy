@@ -1,0 +1,38 @@
+id: JOY-008E
+title: Configurable workflow gates with joy project visualization
+type: story
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy
+created: 2026-03-28T22:40:30.452309765Z
+updated: 2026-03-28T22:48:11.512938080Z
+comments:
+- author: ai:claude@joy
+  date: 2026-03-28T22:45:29.753478171Z
+  text: |-
+    Configurable gates in project.yaml (dimmers, not switches):
+
+    gates:
+      review -> closed:
+        allow_ai: false
+        requires_role: approver
+
+    Without explicit gate config = no restrictions (default for solo projects).
+
+    joy project displays the workflow with gate status:
+    - Wide terminal: ASCII flow diagram with gates inline
+    - Narrow terminal: vertical stack with gate markers
+    - Inactive gates: dimmed/grey
+    - Active gates: warning color
+
+    Replaces the hardcoded AI acceptance gate from JOY-0082.
+- author: ai:claude@joy
+  date: 2026-03-28T22:48:11.490096346Z
+  text: Duplicate of JOY-0030. Closing.

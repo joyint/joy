@@ -1,13 +1,15 @@
 id: JOY-0030
 title: Transition gates in project.yaml
 type: story
-status: new
+status: in-progress
 priority: medium
 parent: JOY-0029
+assignees:
+- member: ai:claude@joy
 deps:
 - JOY-002A
 - JOY-002C
 effort: 3
 created: 2026-03-22T16:19:42.715366798Z
-updated: 2026-03-22T16:19:46.010774586Z
+updated: 2026-03-28T22:48:37.450459309Z
 description: 'Opt-in gates on status transitions: requires_capability (transition needs assigned member with capability), requires_ci (CI must pass), allow_ai (can an agent fulfil this gate). Gates are configured per transition in project.yaml. Without gates, all transitions are allowed (current behavior). Gates are the strictness dial from solo (no gates) to enterprise (full enforcement).'
