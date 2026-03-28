@@ -342,6 +342,15 @@ fn run_member(
                 "project",
                 author,
             )?;
+            // Prevent removing the last member with manage capability
+            let guard = joy_core::guard::Guard::new(project);
+            if guard.is_last_manager(&a.id) {
+                bail!(
+                    "cannot remove {}: last member with manage capability. \
+                     Add another manage-capable member first.",
+                    a.id
+                );
+            }
             if project.members.remove(&a.id).is_none() {
                 bail!("member not found: {}", a.id);
             }

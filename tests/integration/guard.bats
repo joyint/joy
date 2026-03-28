@@ -83,6 +83,26 @@ setup_team_project() {
 }
 
 # ============================================================
+# Scenario 3b: Last manager protection (JOY-008C)
+# ============================================================
+
+@test "cannot remove the last member with manage capability" {
+    setup_team_project
+    # test@example.com is the only member with all (=manage) capabilities
+    run joy project member rm test@example.com
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"last member with manage"* ]]
+}
+
+@test "can remove a manager when another manager exists" {
+    joy init --name "Guard Test"
+    joy project member add backup@example.com
+    # Now two members with capabilities: all
+    run joy project member rm backup@example.com
+    [ "$status" -eq 0 ]
+}
+
+# ============================================================
 # Scenario 4: Developer without manage capability
 # ============================================================
 
