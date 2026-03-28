@@ -401,29 +401,54 @@ fn print_members_table(
         .unwrap_or(4)
         .max(4);
 
-    // Table needs: member column + auth column + capability columns
-    let w_member = members.keys().map(|k| k.len()).max().unwrap_or(6).max(6);
-    let table_width = 2 + w_member + 1 + w_auth + 1 + cap_headers.len() * 4;
+    let max_member = members.keys().map(|k| k.len()).max().unwrap_or(6).max(6);
     let term_width = color::terminal_width();
 
-    if table_width <= term_width {
-        // Wide: capability matrix with auth column
-        print!(
-            "  {}",
-            color::inactive(&format!("{:<w$}", "Member", w = w_member))
-        );
-        print!(
-            " {}",
-            color::inactive(&format!("{:<w$}", "Auth", w = w_auth))
-        );
+    // Fixed columns: "  " prefix + " " auth gap + " " caps gap
+    let fixed = 2 + 1 + w_auth + 1;
+
+    // Try wide mode (x-matrix): needs 4 chars per cap column
+    let caps_wide = cap_headers.len() * 4;
+    let w_member_wide = term_width.saturating_sub(fixed + caps_wide);
+
+    // Try narrow mode (abbreviated): needs ~3-4 chars per cap
+    let caps_narrow_str = "con pln des imp tst rev doc crt asg mng del"; // 43 chars
+    let w_member_narrow = term_width.saturating_sub(fixed + caps_narrow_str.len());
+
+    let (w_member, wide_mode) = if w_member_wide >= 8 {
+        (w_member_wide.min(max_member), true)
+    } else if w_member_narrow >= 8 {
+        (w_member_narrow.min(max_member), false)
+    } else {
+        // Ultra-narrow: give member at least 8 chars
+        (8_usize.min(max_member), false)
+    };
+
+    // Header
+    print!(
+        "  {}",
+        color::inactive(&format!("{:<w$}", "Member", w = w_member))
+    );
+    print!(
+        " {}",
+        color::inactive(&format!("{:<w$}", "Auth", w = w_auth))
+    );
+    if wide_mode {
         for (hdr, _) in cap_headers {
             print!(" {}", color::inactive(&format!("{:<3}", hdr)));
         }
-        println!();
+    } else {
+        print!(" {}", color::inactive("Caps"));
+    }
+    println!();
 
-        for ((id, member), (_, auth)) in members.iter().zip(auth_statuses.iter()) {
-            print!("  {:<w$}", id, w = w_member);
-            print!(" {:<w$}", auth, w = w_auth);
+    // Rows
+    for ((id, member), (_, auth)) in members.iter().zip(auth_statuses.iter()) {
+        let display_id = truncate(id, w_member);
+        print!("  {:<w$}", display_id, w = w_member);
+        print!(" {:<w$}", auth, w = w_auth);
+
+        if wide_mode {
             for (_, cap) in cap_headers {
                 let has = match &member.capabilities {
                     MemberCapabilities::All => true,
@@ -435,41 +460,32 @@ fn print_members_table(
                     print!("    ");
                 }
             }
-            println!();
-        }
-    } else {
-        // Narrow: two-line per member
-        print!(
-            "  {}",
-            color::inactive(&format!("{:<w$}", "Member", w = w_member))
-        );
-        print!(
-            " {}",
-            color::inactive(&format!("{:<w$}", "Auth", w = w_auth))
-        );
-        println!(" {}", color::inactive("Caps"));
-
-        for ((id, member), (_, auth)) in members.iter().zip(auth_statuses.iter()) {
+        } else {
             let caps = match &member.capabilities {
-                MemberCapabilities::All => "all".to_string(),
+                MemberCapabilities::All => " all".to_string(),
                 MemberCapabilities::Specific(map) => {
                     let abbrevs: Vec<&str> = cap_headers
                         .iter()
                         .filter(|(_, cap)| map.contains_key(cap))
                         .map(|(hdr, _)| *hdr)
                         .collect();
-                    abbrevs.join(" ")
+                    format!(" {}", abbrevs.join(" "))
                 }
             };
-            println!(
-                "  {:<w$} {:<wa$} {}",
-                id,
-                auth,
-                caps,
-                w = w_member,
-                wa = w_auth
-            );
+            print!("{caps}");
         }
+        println!();
+    }
+}
+
+/// Truncate a string to max width, adding `…` if shortened.
+fn truncate(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        s.to_string()
+    } else if max <= 1 {
+        "…".to_string()
+    } else {
+        format!("{}…", &s[..max - 1])
     }
 }
 
