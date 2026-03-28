@@ -1,7 +1,7 @@
 id: JOY-0069
 title: Disable JOY_AUTHOR when joy auth is initialized
 type: story
-status: new
+status: closed
 priority: medium
 parent: JOY-0066
 deps:
@@ -12,4 +12,8 @@ capabilities:
 - review
 effort: 1
 created: 2026-03-27T18:25:06.448927527Z
-updated: 2026-03-27T18:27:26.878863635Z
+updated: 2026-03-28T12:34:21.227051904Z
+comments:
+- author: ai:claude@joy
+  date: 2026-03-28T12:34:21.184409402Z
+  text: Obsolete. JOY_AUTHOR env var was completely removed in JOY-0088. There is nothing left to disable.

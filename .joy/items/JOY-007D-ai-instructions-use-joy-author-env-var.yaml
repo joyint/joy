@@ -1,7 +1,7 @@
 id: JOY-007D
 title: AI instructions use JOY_AUTHOR env var instead of --author flag
 type: bug
-status: new
+status: closed
 priority: high
 capabilities:
 - implement
@@ -9,8 +9,11 @@ capabilities:
 effort: 1
 created_by: ai:claude@joy
 created: 2026-03-28T09:48:15.959190370Z
-updated: 2026-03-28T09:48:22.946226321Z
+updated: 2026-03-28T12:33:37.347956830Z
 comments:
 - author: ai:claude@joy
   date: 2026-03-28T09:48:22.946224688Z
   text: 'AI agents currently prefix joy commands with JOY_AUTHOR env var (e.g. JOY_AUTHOR="ai:claude@joy" joy close ...). This breaks the shell permission model because the allowed command is "joy", not "JOY_AUTHOR=... joy". Fix: update AI instructions and skill to use --author flag instead (e.g. joy close JOY-0005 --author ai:claude@joy).'
+- author: ai:claude@joy
+  date: 2026-03-28T12:33:37.310363535Z
+  text: Superseded by JOY-0088 which removed JOY_AUTHOR entirely. The env var no longer exists in the codebase -- --author is the only identity override mechanism.
