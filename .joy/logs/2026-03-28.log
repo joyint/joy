@@ -124,3 +124,6 @@
 2026-03-28T23:50:05.512Z JOY-006A comment.added "Removed --author flag from all commands. Identity is now session-based. Context pattern replaces individual guard::enforce + resolve_identity calls. All BATS tests rewritten to use token-based AI auth." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-03-28T23:50:34.265Z JOY-0071 item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
 2026-03-28T23:50:34.284Z JOY-006A item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
+2026-03-28T23:51:44.120Z JOY-008F item.created "Integration tests for event log traceability" [horst.schwarz@joydev.com]
+2026-03-28T23:51:55.780Z JOY-008F item.status_changed "new -> in-progress" [horst.schwarz@joydev.com]
+2026-03-28T23:55:39.583Z JOY-008F item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
