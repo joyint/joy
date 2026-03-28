@@ -84,16 +84,33 @@ impl Verdict {
         matches!(self, Verdict::Deny(_))
     }
 
-    /// Convert this verdict into a Result, printing warnings to stderr.
+    /// Convert this verdict into a Result, logging enforcement events.
     /// Deny becomes an error; Allow and Warn succeed.
-    pub fn enforce(self) -> Result<(), JoyError> {
+    /// `target` is the item/milestone ID or "project" for management actions.
+    pub fn enforce(self, root: &Path, target: &str, identity: &Identity) -> Result<(), JoyError> {
         match self {
             Verdict::Allow => Ok(()),
             Verdict::Warn(reason) => {
+                crate::event_log::log_event_as(
+                    root,
+                    crate::event_log::EventType::GuardWarned,
+                    target,
+                    Some(&reason),
+                    &identity.log_user(),
+                );
                 eprintln!("Warning: {reason}");
                 Ok(())
             }
-            Verdict::Deny(reason) => Err(JoyError::GuardDenied(reason)),
+            Verdict::Deny(reason) => {
+                crate::event_log::log_event_as(
+                    root,
+                    crate::event_log::EventType::GuardDenied,
+                    target,
+                    Some(&reason),
+                    &identity.log_user(),
+                );
+                Err(JoyError::GuardDenied(reason))
+            }
         }
     }
 }
@@ -186,6 +203,10 @@ impl Guard {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn setup_log_dir(dir: &Path) {
+        std::fs::create_dir_all(dir.join(".joy").join("logs")).unwrap();
+    }
 
     fn identity(member: &str) -> Identity {
         Identity {
@@ -578,13 +599,40 @@ mod tests {
 
     #[test]
     fn verdict_enforce_allow() {
-        assert!(Verdict::Allow.enforce().is_ok());
+        let dir = tempfile::tempdir().unwrap();
+        setup_log_dir(dir.path());
+        let id = identity("dev@example.com");
+        assert!(Verdict::Allow.enforce(dir.path(), "TST-0001", &id).is_ok());
     }
 
     #[test]
-    fn verdict_enforce_deny() {
-        let result = Verdict::Deny("blocked".into()).enforce();
+    fn verdict_enforce_deny_logs_event() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_log_dir(dir.path());
+        let id = identity("dev@example.com");
+        let result = Verdict::Deny("blocked".into()).enforce(dir.path(), "TST-0001", &id);
         assert!(result.is_err());
+        // Verify event was logged
+        let events = crate::event_log::read_events(dir.path(), None, None, 100).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, "guard.denied");
+        assert_eq!(events[0].target, "TST-0001");
+        assert_eq!(events[0].details.as_deref(), Some("blocked"));
+    }
+
+    #[test]
+    fn verdict_enforce_warn_logs_event() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_log_dir(dir.path());
+        let id = identity("dev@example.com");
+        let result = Verdict::Warn("caution".into()).enforce(dir.path(), "TST-0001", &id);
+        assert!(result.is_ok());
+        // Verify event was logged
+        let events = crate::event_log::read_events(dir.path(), None, None, 100).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, "guard.warned");
+        assert_eq!(events[0].target, "TST-0001");
+        assert_eq!(events[0].details.as_deref(), Some("caution"));
     }
 
     #[test]
