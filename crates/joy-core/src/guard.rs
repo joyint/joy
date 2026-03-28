@@ -43,7 +43,8 @@ pub enum Action {
 
 impl Action {
     /// Map this action to the capability required to perform it.
-    fn required_capability(&self) -> Capability {
+    /// This is the authoritative source for the action-to-capability mapping.
+    pub fn required_capability(&self) -> Capability {
         match self {
             Action::CreateItem => Capability::Create,
             Action::UpdateItem => Capability::Create,
@@ -520,6 +521,53 @@ mod tests {
             guard.check(&Action::ManageProject, &ai),
             Verdict::Deny(_)
         ));
+    }
+
+    #[test]
+    fn required_capability_mapping_is_complete() {
+        // Verify every action maps to the expected capability
+        assert_eq!(Action::CreateItem.required_capability(), Capability::Create);
+        assert_eq!(Action::UpdateItem.required_capability(), Capability::Create);
+        assert_eq!(Action::DeleteItem.required_capability(), Capability::Delete);
+        assert_eq!(Action::AssignItem.required_capability(), Capability::Assign);
+        assert_eq!(Action::AddComment.required_capability(), Capability::Create);
+        assert_eq!(
+            Action::ManageProject.required_capability(),
+            Capability::Manage
+        );
+        assert_eq!(
+            Action::ManageMilestone.required_capability(),
+            Capability::Manage
+        );
+        assert_eq!(
+            Action::CreateRelease.required_capability(),
+            Capability::Manage
+        );
+
+        // Status transitions
+        let cs = |to: Status| Action::ChangeStatus {
+            from: Status::New,
+            to,
+        };
+        assert_eq!(
+            cs(Status::InProgress).required_capability(),
+            Capability::Implement
+        );
+        assert_eq!(cs(Status::Review).required_capability(), Capability::Review);
+        assert_eq!(cs(Status::Closed).required_capability(), Capability::Review);
+        assert_eq!(cs(Status::Deferred).required_capability(), Capability::Plan);
+        assert_eq!(cs(Status::Open).required_capability(), Capability::Plan);
+        assert_eq!(cs(Status::New).required_capability(), Capability::Create);
+
+        // StartJob delegates to its capability
+        assert_eq!(
+            Action::StartJob {
+                capability: Capability::Implement,
+                estimated_cost: None
+            }
+            .required_capability(),
+            Capability::Implement
+        );
     }
 
     #[test]
