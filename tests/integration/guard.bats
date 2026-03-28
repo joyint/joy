@@ -34,13 +34,12 @@ setup_team_project() {
 # Scenario 2: AI member blocked from closing items
 # ============================================================
 
-@test "AI member cannot close items (acceptance gate)" {
+@test "AI member can close items without gate config" {
     setup_team_project
     joy status "$ITEM_ID" in-progress --author ai:test@joy
     joy status "$ITEM_ID" review --author ai:test@joy
     run joy status "$ITEM_ID" closed --author ai:test@joy
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"cannot close items"* ]]
+    [ "$status" -eq 0 ]
 }
 
 @test "AI member can submit for review" {
@@ -158,12 +157,9 @@ setup_team_project() {
 
 @test "denied action produces guard.denied event in log" {
     setup_team_project
-    joy status "$ITEM_ID" in-progress --author ai:test@joy
-    joy status "$ITEM_ID" review --author ai:test@joy
-    run joy status "$ITEM_ID" closed --author ai:test@joy
-    # Should fail
+    # AI trying to manage (always denied) should produce guard.denied event
+    run joy project --author ai:test@joy set description "AI edit"
     [ "$status" -ne 0 ]
-    # Event log should contain guard.denied
     grep -q "guard.denied" .joy/logs/*.log
 }
 
@@ -250,11 +246,10 @@ setup_team_project() {
     [ "$status" -eq 0 ]
 }
 
-@test "joy close shortcut blocked for AI with --author" {
+@test "joy close shortcut works for AI without gate config" {
     setup_team_project
     joy start "$ITEM_ID" --author ai:test@joy
     joy submit "$ITEM_ID" --author ai:test@joy
     run joy close "$ITEM_ID" --author ai:test@joy
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"cannot close items"* ]]
+    [ "$status" -eq 0 ]
 }

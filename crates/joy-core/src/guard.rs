@@ -173,7 +173,7 @@ impl Guard {
             }
         };
 
-        // AI-specific gates apply regardless of capabilities (even capabilities: all)
+        // AI-specific restrictions apply regardless of capabilities (even capabilities: all)
         if is_ai_member(&identity.member) {
             let required = action.required_capability();
 
@@ -185,16 +185,8 @@ impl Guard {
                 ));
             }
 
-            // Gate: AI members cannot close items (acceptance gate)
-            if let Action::ChangeStatus {
-                to: Status::Closed, ..
-            } = action
-            {
-                return Verdict::Deny(format!(
-                    "AI member {} cannot close items (acceptance gate)",
-                    identity.member
-                ));
-            }
+            // Configurable gates (e.g. allow_ai: false on review->closed)
+            // are checked below via project gate config, not hardcoded here.
         }
 
         // Auth enforcement: manage actions require authentication when auth is active
@@ -437,7 +429,7 @@ mod tests {
     }
 
     #[test]
-    fn ai_member_cannot_close_items() {
+    fn ai_member_can_close_without_gate() {
         let project = project_with_members(vec![
             ("dev@example.com", MemberCapabilities::All),
             (
@@ -453,8 +445,8 @@ mod tests {
         let ai = ai_identity("ai:claude@joy", "dev@example.com");
         let human = identity("dev@example.com");
 
-        // AI cannot close items even with Review capability (acceptance gate)
-        assert!(matches!(
+        // Without gate config, AI with Review capability CAN close items
+        assert_eq!(
             guard.check(
                 &Action::ChangeStatus {
                     from: Status::Review,
@@ -462,10 +454,10 @@ mod tests {
                 },
                 &ai
             ),
-            Verdict::Deny(_)
-        ));
+            Verdict::Allow
+        );
 
-        // AI can still submit for review
+        // AI can submit for review
         assert_eq!(
             guard.check(
                 &Action::ChangeStatus {
@@ -601,8 +593,8 @@ mod tests {
         assert_eq!(guard.check(&close, &lead), Verdict::Allow);
         // Dev lacks Review -> Warn
         assert!(matches!(guard.check(&close, &dev), Verdict::Warn(_)));
-        // AI has Review but CANNOT close (acceptance gate) -> Deny
-        assert!(matches!(guard.check(&close, &ai), Verdict::Deny(_)));
+        // Without gate config, AI with Review CAN close
+        assert_eq!(guard.check(&close, &ai), Verdict::Allow);
 
         // === Managing project ===
         // Lead can manage
