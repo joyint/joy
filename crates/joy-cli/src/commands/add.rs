@@ -102,8 +102,6 @@ pub fn run(args: AddArgs) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
-    joy_core::capabilities::warn_unless_capable(&root, Capability::Create);
-
     let type_str = args
         .item_type
         .or(args.pos_type)
@@ -200,6 +198,9 @@ pub fn run(args: AddArgs) -> Result<()> {
     let identity = joy_core::identity::resolve_identity_with(&root, args.author.as_deref())
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     crate::warn_ai_members(&root, &identity);
+
+    joy_core::guard::enforce_as(&root, &joy_core::guard::Action::CreateItem, &id, &identity)?;
+
     item.created_by = Some(identity.member.clone());
 
     items::save_item(&root, &item)?;

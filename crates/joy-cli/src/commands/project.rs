@@ -107,7 +107,7 @@ pub fn run(args: ProjectArgs) -> Result<()> {
             return get_value(&project, &a.key);
         }
         Some(ProjectCommand::Set(a)) => {
-            joy_core::capabilities::warn_unless_capable(&root, Capability::Manage);
+            joy_core::guard::enforce(&root, &joy_core::guard::Action::ManageProject, "project")?;
             set_value(&mut project, &a.key, &a.value)?;
             store::write_yaml(&project_path, &project)?;
             let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
@@ -133,7 +133,7 @@ pub fn run(args: ProjectArgs) -> Result<()> {
     let is_edit = args.name.is_some() || args.description.is_some() || args.language.is_some();
 
     if is_edit {
-        joy_core::capabilities::warn_unless_capable(&root, Capability::Manage);
+        joy_core::guard::enforce(&root, &joy_core::guard::Action::ManageProject, "project")?;
         if let Some(name) = args.name {
             project.name = name;
         }
@@ -275,7 +275,7 @@ fn run_member(
             }
         }
         Some(MemberCommand::Add(a)) => {
-            joy_core::capabilities::warn_unless_capable(root, Capability::Manage);
+            joy_core::guard::enforce(root, &joy_core::guard::Action::ManageProject, "project")?;
             if project.members.contains_key(&a.id) {
                 bail!("member {} already exists", a.id);
             }
@@ -310,7 +310,7 @@ fn run_member(
             );
         }
         Some(MemberCommand::Rm(a)) => {
-            joy_core::capabilities::warn_unless_capable(root, Capability::Manage);
+            joy_core::guard::enforce(root, &joy_core::guard::Action::ManageProject, "project")?;
             if project.members.remove(&a.id).is_none() {
                 bail!("member not found: {}", a.id);
             }

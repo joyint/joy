@@ -44,6 +44,9 @@ pub fn run(args: CommentArgs) -> Result<()> {
     let id = identity::resolve_identity_with(&root, args.author.as_deref())
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     crate::warn_ai_members(&root, &id);
+
+    joy_core::guard::enforce_as(&root, &joy_core::guard::Action::AddComment, &item.id, &id)?;
+
     let log_text = text.clone();
     let comment = Comment {
         author: id.member.clone(),

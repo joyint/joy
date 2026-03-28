@@ -180,10 +180,6 @@ pub fn run(args: EditArgs) -> Result<()> {
     }
 
     if let Some(ref assignee) = args.assignee {
-        joy_core::capabilities::warn_unless_capable(
-            &root,
-            joy_core::model::item::Capability::Assign,
-        );
         if assignee == "none" {
             item.assignees.clear();
         } else {
@@ -200,6 +196,14 @@ pub fn run(args: EditArgs) -> Result<()> {
         println!("Nothing to change. Use flags like --title, --priority, --parent, etc.");
         return Ok(());
     }
+
+    // Guard check: AssignItem if assignee changed, UpdateItem otherwise
+    let action = if args.assignee.is_some() {
+        joy_core::guard::Action::AssignItem
+    } else {
+        joy_core::guard::Action::UpdateItem
+    };
+    joy_core::guard::enforce(&root, &action, &item.id)?;
 
     item.updated = Utc::now();
     items::update_item(&root, &item)?;
