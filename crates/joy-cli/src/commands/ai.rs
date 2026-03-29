@@ -23,8 +23,9 @@ macro_rules! qprintln {
 const INSTRUCTIONS_TEMPLATE: &str = include_str!("../../../../data/ai/instructions.md");
 const SETUP_INSTRUCTIONS: &str = include_str!("../../../../data/ai/instructions/setup.md");
 const SKILL_TEMPLATE: &str = include_str!("../../../../data/ai/skills/joy/SKILL.md");
-const VISION_TEMPLATE: &str = include_str!("../../../../data/ai/templates/Vision.md");
-const ARCHITECTURE_TEMPLATE: &str = include_str!("../../../../data/ai/templates/Architecture.md");
+const VISION_TEMPLATE: &str = include_str!("../../../../data/ai/templates/vision/README.md");
+const ARCHITECTURE_TEMPLATE: &str =
+    include_str!("../../../../data/ai/templates/architecture/README.md");
 const CONTRIBUTING_TEMPLATE: &str = include_str!("../../../../data/ai/templates/CONTRIBUTING.md");
 const JOY_BLOCK_TEMPLATE: &str = include_str!("../../../../data/ai/joy-block.md");
 
