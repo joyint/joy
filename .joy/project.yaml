@@ -54,8 +54,8 @@ members:
     salt: 3da1d77fe4dcbd9c1ee917dc49451f500c7d46cdc6e93cb9bf61f466282985ea
     ai_tokens:
       ai:claude@joy:
-        token_key: 8032103b35febd85a34422d6b5bdb31849bb7f8efdedb4f59d10c0dcf96d5574
-        created: 2026-03-28T22:26:17.367034222Z
+        token_key: 696a729ce180c1437df92e6c68fa4bd0fe54b731e5e5bd3c5c9bdad34acd9eb0
+        created: 2026-03-28T23:59:08.960229052Z
 created: 2026-03-09T23:57:36.761964460Z
 release:
   version-files:

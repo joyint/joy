@@ -40,21 +40,34 @@ Your member ID is defined in the tool-specific configuration file
 3. If your member entry does not exist, tell the user and suggest
    `joy ai setup` or `joy project member add <YOUR-ID>`.
 
-### Identity attribution
+### Identity and authentication
 
-Use the `--author` flag with your member ID on all Joy write commands:
+Your identity is determined by your active session. Before running
+any Joy write commands, you must authenticate:
+
+1. Check if `JOY_TOKEN` environment variable is set.
+2. If set, authenticate: `joy auth --token "$JOY_TOKEN"`
+3. If not set, ask the user to provide a delegation token:
+   "I need a delegation token to authenticate with Joy.
+   Please run `joy auth create-token <YOUR-MEMBER-ID>` and
+   share the token with me."
+4. Once you have the token, authenticate: `joy auth --token <token>`
+
+After authentication, all Joy commands automatically use your AI
+identity from the session. No additional flags are needed:
 
 ```
-joy comment <ID> "text" --author <YOUR-ID>
-joy add task "title" --author <YOUR-ID>
-joy status <ID> closed --author <YOUR-ID>
-joy assign <ID> --author <YOUR-ID>
+joy comment <ID> "text"
+joy add task "title"
+joy status <ID> closed
+joy assign <ID>
 ```
 
-This ensures your actions are attributed to your AI identity in the
-event log, not to the human's git email. The event log will record
-delegated-by to trace accountability back to the human who started
-the session.
+The event log records your AI identity with `delegated-by` to trace
+accountability back to the human who created the token.
+
+Sessions expire after 24 hours. If a command fails with an auth error,
+re-authenticate with your token.
 
 Git commits use a different pattern: the human is the git Author,
 and your member ID goes in `Co-Authored-By`. This is already
