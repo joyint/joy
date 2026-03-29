@@ -186,6 +186,41 @@ EOF
     [ "$status" -eq 0 ]
 }
 
+@test "two AIs with different capabilities enforced correctly" {
+    setup_human_auth
+    # Claude: can implement and create, but NOT delete
+    joy project member add ai:claude@joy --capabilities "implement,create"
+    # Copilot: can review and create, but NOT implement
+    joy project member add ai:copilot@joy --capabilities "review,create"
+    TOKEN_CLAUDE=$(joy auth create-token ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
+        | sed -n 's/^  \(joy_t_.*\)/\1/p')
+    TOKEN_COPILOT=$(joy auth create-token ai:copilot@joy --passphrase "$TEST_PASSPHRASE" \
+        | sed -n 's/^  \(joy_t_.*\)/\1/p')
+    joy auth --token "$TOKEN_CLAUDE"
+    joy auth --token "$TOKEN_COPILOT"
+    # Both can create items
+    JOY_TOKEN="$TOKEN_CLAUDE" joy add task "Claude item"
+    JOY_TOKEN="$TOKEN_COPILOT" joy add task "Copilot item"
+    CLAUDE_ID=$(joy ls 2>/dev/null | grep "Claude item" | awk '{print $1}')
+    COPILOT_ID=$(joy ls 2>/dev/null | grep "Copilot item" | awk '{print $1}')
+    # Claude can start work (implement), Copilot cannot (warn)
+    run env JOY_TOKEN="$TOKEN_CLAUDE" joy status "$CLAUDE_ID" in-progress
+    [ "$status" -eq 0 ]
+    run env JOY_TOKEN="$TOKEN_COPILOT" joy status "$COPILOT_ID" in-progress
+    # Copilot lacks implement -> warn (still succeeds, but warning logged)
+    [ "$status" -eq 0 ]
+    grep -q "guard.warned.*ai:copilot@joy.*implement" .joy/logs/*.log
+    # Claude cannot close (lacks review), Copilot can close (has review)
+    JOY_TOKEN="$TOKEN_CLAUDE" joy status "$CLAUDE_ID" review
+    JOY_TOKEN="$TOKEN_COPILOT" joy status "$COPILOT_ID" review
+    run env JOY_TOKEN="$TOKEN_COPILOT" joy status "$COPILOT_ID" closed
+    [ "$status" -eq 0 ]
+    # Claude closing warns (lacks review)
+    run env JOY_TOKEN="$TOKEN_CLAUDE" joy status "$CLAUDE_ID" closed
+    [ "$status" -eq 0 ]
+    grep -q "guard.warned.*ai:claude@joy.*review" .joy/logs/*.log
+}
+
 # ============================================================
 # Dep and milestone events
 # ============================================================
