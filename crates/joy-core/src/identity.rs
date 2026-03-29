@@ -47,27 +47,26 @@ impl Identity {
 pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
     let git_email = crate::vcs::default_vcs().user_email()?;
     let project = load_project_optional(root);
-
-    // Try to find an active session for the git user first,
-    // then check if any AI session is active on this machine
     let project_id = crate::auth::session::project_id(root).ok();
 
-    if let Some(ref pid) = project_id {
-        // Check git user's session
-        if let Some(session_identity) = session_identity(root, &git_email, pid, &project) {
-            return Ok(session_identity);
-        }
-
-        // Check if there's an active AI session (for when AI tools call joy)
-        if let Some(ref proj) = project {
-            for member_id in proj.members.keys() {
-                if is_ai_member(member_id) {
-                    if let Some(session_identity) = session_identity(root, member_id, pid, &project)
-                    {
-                        return Ok(session_identity);
-                    }
+    // JOY_TOKEN indicates the caller is an AI agent.
+    // Decode the token to find the specific AI member ID.
+    if let Some(token_str) = std::env::var("JOY_TOKEN").ok().filter(|s| !s.is_empty()) {
+        if let Ok(token) = crate::auth::token::decode_token(&token_str) {
+            let ai_member = &token.claims.ai_member;
+            if let Some(ref pid) = project_id {
+                if let Some(id) = session_identity(root, ai_member, pid, &project) {
+                    return Ok(id);
                 }
             }
+        }
+        // JOY_TOKEN set but no valid AI session — fall through to human
+    }
+
+    // Human: find session by git email
+    if let Some(ref pid) = project_id {
+        if let Some(session_identity) = session_identity(root, &git_email, pid, &project) {
+            return Ok(session_identity);
         }
     }
 

@@ -44,19 +44,18 @@ setup_ai_session() {
     joy project member add "$ai_member" 2>/dev/null || true
     AI_TOKEN=$(joy auth create-token "$ai_member" --passphrase "$TEST_PASSPHRASE" \
         | sed -n 's/^  \(joy_t_.*\)/\1/p')
-    # Deauth human so AI session is picked up
-    joy deauth
-    # Auth as AI
+    # Auth as AI (creates session)
     joy auth --token "$AI_TOKEN"
+    # Set JOY_TOKEN so resolve_identity picks up the AI session
+    export JOY_TOKEN="$AI_TOKEN"
 }
 
 # Switch back to human identity.
 switch_to_human() {
-    joy auth --passphrase "$TEST_PASSPHRASE"
+    unset JOY_TOKEN
 }
 
 # Switch to AI identity (requires AI_TOKEN set by setup_ai_session).
 switch_to_ai() {
-    joy deauth
-    joy auth --token "$AI_TOKEN"
+    export JOY_TOKEN="$AI_TOKEN"
 }
