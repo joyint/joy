@@ -290,40 +290,39 @@ fn run_status() -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
-    let project = store::load_project(&root)?;
-    let email = joy_core::vcs::default_vcs().user_email()?;
-    let project_id = session::project_id(&root)?;
+    let identity =
+        joy_core::identity::resolve_identity(&root).map_err(|e| anyhow::anyhow!("{e}"))?;
 
-    // Check if auth is initialized for this member
-    let member = project.members.get(&email);
-    let has_auth = member.is_some_and(|m| m.public_key.is_some());
-
-    if !has_auth {
-        println!("Authentication not initialized for {}.", email);
-        println!("Run `joy auth init` to set up.");
-        return Ok(());
-    }
-
-    // Check session
-    match session::load_session(&project_id, &email)? {
-        Some(sess) => {
-            let public_key_hex = member.unwrap().public_key.as_ref().unwrap();
-            let public_key = sign::PublicKey::from_hex(public_key_hex)?;
-            match session::validate_session(&sess, &public_key, &project_id) {
-                Ok(claims) => {
-                    let remaining = claims.expires - Utc::now();
-                    let hours = remaining.num_hours();
-                    let minutes = remaining.num_minutes() % 60;
-                    println!("Authenticated as {}.", claims.member);
-                    println!("Session expires in {}h {}m.", hours, minutes);
-                }
-                Err(_) => {
-                    println!("Session expired. Run `joy auth` to re-authenticate.");
-                }
+    if identity.authenticated {
+        let project_id = session::project_id(&root)?;
+        if let Ok(Some(sess)) = session::load_session(&project_id, &identity.member) {
+            let remaining = sess.claims.expires - Utc::now();
+            let hours = remaining.num_hours();
+            let minutes = remaining.num_minutes() % 60;
+            println!("Authenticated as {}.", identity.member);
+            if let Some(ref delegated_by) = identity.delegated_by {
+                println!("Delegated by {}.", delegated_by);
             }
+            println!("Session expires in {}h {}m.", hours, minutes);
+        } else {
+            println!(
+                "Authenticated as {} (session file missing).",
+                identity.member
+            );
         }
-        None => {
-            println!("No active session. Run `joy auth` to authenticate.");
+    } else {
+        // Check if auth is initialized for this member
+        let project = store::load_project(&root)?;
+        let member = project.members.get(&identity.member);
+        let has_auth = member.is_some_and(|m| m.public_key.is_some());
+        if has_auth {
+            println!(
+                "No active session for {}. Run `joy auth` to authenticate.",
+                identity.member
+            );
+        } else {
+            println!("Authentication not initialized for {}.", identity.member);
+            println!("Run `joy auth init` to set up.");
         }
     }
 
