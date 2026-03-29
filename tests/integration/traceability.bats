@@ -124,6 +124,69 @@ EOF
 }
 
 # ============================================================
+# Multi-identity coexistence
+# ============================================================
+
+@test "three identities coexist with correct auth status" {
+    setup_human_auth
+    joy project member add ai:claude@joy
+    joy project member add ai:copilot@joy
+    # Create and auth both AI members
+    TOKEN_CLAUDE=$(joy auth create-token ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
+        | sed -n 's/^  \(joy_t_.*\)/\1/p')
+    TOKEN_COPILOT=$(joy auth create-token ai:copilot@joy --passphrase "$TEST_PASSPHRASE" \
+        | sed -n 's/^  \(joy_t_.*\)/\1/p')
+    joy auth --token "$TOKEN_CLAUDE"
+    joy auth --token "$TOKEN_COPILOT"
+    # Human status
+    run joy auth status
+    [[ "$output" == *"test@example.com"* ]]
+    # Claude status
+    run env JOY_TOKEN="$TOKEN_CLAUDE" joy auth status
+    [[ "$output" == *"ai:claude@joy"* ]]
+    # Copilot status
+    run env JOY_TOKEN="$TOKEN_COPILOT" joy auth status
+    [[ "$output" == *"ai:copilot@joy"* ]]
+}
+
+@test "three identities produce correct event log entries" {
+    setup_human_auth
+    joy project member add ai:claude@joy
+    joy project member add ai:copilot@joy
+    TOKEN_CLAUDE=$(joy auth create-token ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
+        | sed -n 's/^  \(joy_t_.*\)/\1/p')
+    TOKEN_COPILOT=$(joy auth create-token ai:copilot@joy --passphrase "$TEST_PASSPHRASE" \
+        | sed -n 's/^  \(joy_t_.*\)/\1/p')
+    joy auth --token "$TOKEN_CLAUDE"
+    joy auth --token "$TOKEN_COPILOT"
+    # Human creates an item
+    joy add task "Human task"
+    # Claude creates an item
+    JOY_TOKEN="$TOKEN_CLAUDE" joy add task "Claude task"
+    # Copilot creates an item
+    JOY_TOKEN="$TOKEN_COPILOT" joy add task "Copilot task"
+    # Verify all three identities in log
+    grep -q "item.created.*Human task.*test@example.com" .joy/logs/*.log
+    grep -q "item.created.*Claude task.*ai:claude@joy delegated-by:test@example.com" .joy/logs/*.log
+    grep -q "item.created.*Copilot task.*ai:copilot@joy delegated-by:test@example.com" .joy/logs/*.log
+}
+
+@test "AI guard enforcement uses correct identity per token" {
+    setup_human_auth
+    joy project member add ai:claude@joy --capabilities "implement,create"
+    TOKEN_CLAUDE=$(joy auth create-token ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
+        | sed -n 's/^  \(joy_t_.*\)/\1/p')
+    joy auth --token "$TOKEN_CLAUDE"
+    # Claude cannot manage (no manage capability)
+    run env JOY_TOKEN="$TOKEN_CLAUDE" joy project set description "Claude edit"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"manage"* ]]
+    # Human can manage
+    run joy project set description "Human edit"
+    [ "$status" -eq 0 ]
+}
+
+# ============================================================
 # Dep and milestone events
 # ============================================================
 
