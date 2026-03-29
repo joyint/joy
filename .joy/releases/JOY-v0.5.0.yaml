@@ -1,0 +1,35 @@
+version: v0.5.0
+date: 2026-03-29
+previous: v0.4.1
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 32
+  items: 9
+- id: horst.schwarz@joydev.com
+  events: 17
+  items: 10
+items:
+  stories:
+  - id: JOY-008E
+    title: Configurable workflow gates with joy project visualization
+  - id: JOY-0030
+    title: Transition gates in project.yaml
+  - id: JOY-0071
+    title: Progressive auth activation when AI member is added
+  tasks:
+  - id: JOY-0089
+    title: joy ai reset should invalidate AI member tokens and sessions
+  - id: JOY-008F
+    title: Integration tests for event log traceability
+  bugs:
+  - id: JOY-008A
+    title: Session file shared across members -- auth overwrites other member sessions
+  - id: JOY-008B
+    title: write_yaml loses unmodeled fields from project.yaml (release config)
+  - id: JOY-008C
+    title: Prevent removal of last member with manage capability
+  - id: JOY-008D
+    title: Token auth overwrites AI member public_key causing multi-user conflicts
+  reworks:
+  - id: JOY-006A
+    title: Remove JOY_AUTHOR and --author after Auth is implemented
