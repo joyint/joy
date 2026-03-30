@@ -1,0 +1,19 @@
+id: JOY-009C
+title: joy milestone add fails when .joy/milestones/ does not exist
+type: bug
+status: closed
+priority: high
+capabilities:
+- implement
+- review
+effort: 1
+created_by: horst.schwarz@joydev.com
+created: 2026-03-30T19:46:57.046096070Z
+updated: 2026-03-30T19:48:20.235333708Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T19:47:03.376250961Z
+  text: 'joy milestone add crashes with ''No such file or directory'' when .joy/milestones/ does not exist. The command should create the directory automatically, like joy add does for .joy/items/. Fix: add fs::create_dir_all before writing the milestone YAML file.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T19:48:20.217836354Z
+  text: '[x] Added create_dir_all before writing milestone YAML in save_milestone().'

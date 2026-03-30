@@ -1,0 +1,12 @@
+id: JOY-009D
+title: Reject commits referencing items not in-progress
+type: idea
+status: new
+priority: medium
+created_by: horst.schwarz@joydev.com
+created: 2026-03-30T19:52:04.773150175Z
+updated: 2026-03-30T19:52:04.801164390Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T19:52:04.801164142Z
+  text: 'The commit-msg hook already validates that a Joy item ID is present. It could additionally check that the referenced item is in in-progress or review status, rejecting commits against new/open/closed/deferred items. This would enforce joy start before any code change. Needs careful consideration: what about [no-item] commits, multi-item references, and the developer experience when the hook rejects unexpectedly.'

@@ -3,12 +3,13 @@ title: Passphrase-derived identity and AI delegation tokens
 type: epic
 status: new
 priority: high
+milestone: JOY-MS-01
 capabilities:
 - conceive
 - plan
 effort: 7
 created: 2026-03-27T18:25:16.637011826Z
-updated: 2026-03-27T18:25:41.723664439Z
+updated: 2026-03-30T19:50:04.142586725Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-27T18:25:41.723664182Z

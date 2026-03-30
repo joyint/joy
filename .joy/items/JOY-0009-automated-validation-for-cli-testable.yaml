@@ -3,8 +3,9 @@ title: Automated validation for CLI-testable steps in milestone checklists
 type: idea
 status: new
 priority: low
+milestone: JOY-MS-03
 created: 2026-03-20T17:11:22.428525727Z
-updated: 2026-03-20T17:13:17.259353893Z
+updated: 2026-03-30T19:49:08.688870456Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-20T17:13:17.259353365Z

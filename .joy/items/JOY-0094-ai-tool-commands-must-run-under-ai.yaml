@@ -3,12 +3,13 @@ title: AI tool commands must run under AI member identity
 type: decision
 status: new
 priority: high
+milestone: JOY-MS-01
 capabilities:
 - conceive
 effort: 3
 created_by: horst.schwarz@joydev.com
 created: 2026-03-30T06:51:14.612450620Z
-updated: 2026-03-30T06:51:22.562032485Z
+updated: 2026-03-30T19:48:56.688143322Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-30T06:51:22.562032038Z
@@ -20,3 +21,6 @@ comments:
     Possible approach: once the first AI member is registered in project.yaml, Joy requires authentication for ALL members (human and AI). This makes identity unambiguous -- no more implicit git-user fallback. Solo projects without AI members remain frictionless.
 
     Open question: should unauthenticated use be allowed at all once AI members exist? Without auth enforcement, nothing prevents an AI tool from acting under a human member's identity -- effectively impersonating them in the audit trail. On the other hand, forcing auth on all members may be too restrictive -- individual members should perhaps decide whether they allow AI tools to act in their name. This needs careful consideration.
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T19:41:40.593112270Z
+  text: 'Decision: When joy ai setup registers the first AI member, auth becomes mandatory for the project. joy ai setup triggers joy auth init if not yet initialized. Guard rejects unauthenticated commands when AI members exist in project.yaml -- no fallback to git-user identity. This enforces audit trail integrity: every action is attributed to an authenticated member, human or AI. Solo projects without AI members remain frictionless. ADR to be written before implementation.'

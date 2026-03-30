@@ -6,10 +6,11 @@ priority: medium
 parent: JOY-006B
 deps:
 - JOY-006E
+milestone: JOY-MS-03
 capabilities:
 - plan
 - implement
 - review
 effort: 3
 created: 2026-03-27T18:38:54.178174575Z
-updated: 2026-03-27T18:38:58.640474474Z
+updated: 2026-03-30T19:49:08.680756105Z

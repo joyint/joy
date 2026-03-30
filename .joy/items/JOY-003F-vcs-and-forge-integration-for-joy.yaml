@@ -3,7 +3,8 @@ title: VCS and forge integration for joy release --full
 type: epic
 status: new
 priority: high
+milestone: JOY-MS-03
 effort: 7
 created: 2026-03-22T22:07:37.073845981Z
-updated: 2026-03-22T22:07:37.073845981Z
+updated: 2026-03-30T19:49:08.665795370Z
 description: 'Implement ADR-017: Git write operations and forge abstraction in joy-core. Enables joy release create --full to perform the entire release flow in Rust, eliminating platform-dependent bash scripts from justfiles.'

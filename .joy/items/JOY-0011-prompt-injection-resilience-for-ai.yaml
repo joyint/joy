@@ -5,8 +5,9 @@ status: new
 priority: medium
 deps:
 - JOY-006B
+milestone: JOY-MS-02
 created: 2026-03-20T20:45:01.276513907Z
-updated: 2026-03-28T10:36:02.917382838Z
+updated: 2026-03-30T19:49:01.983142019Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-20T20:45:13.867510882Z

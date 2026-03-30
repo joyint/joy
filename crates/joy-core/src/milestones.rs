@@ -41,6 +41,10 @@ pub fn load_milestones(root: &Path) -> Result<Vec<Milestone>, JoyError> {
 /// Save a milestone to .joy/milestones/{ID}-{slug}.yaml.
 pub fn save_milestone(root: &Path, ms: &Milestone) -> Result<(), JoyError> {
     let ms_dir = store::joy_dir(root).join(store::MILESTONES_DIR);
+    std::fs::create_dir_all(&ms_dir).map_err(|e| JoyError::CreateDir {
+        path: ms_dir.clone(),
+        source: e,
+    })?;
     let filename = milestone_filename(&ms.id, &ms.title);
     let path = ms_dir.join(&filename);
     store::write_yaml(&path, ms)?;
