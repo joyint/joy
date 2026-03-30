@@ -616,23 +616,40 @@ fn print_tree_node(item: &Item, all_items: &[&Item], prefix: &str, is_last: bool
 
     let (type_raw, type_colored) = color::item_type_display(&item.item_type);
     let (prio_raw, prio_colored) = color::priority_display(&item.priority);
+
+    // Right-align attributes: calculate how much space the left side uses,
+    // then pad to push attributes to the right terminal edge.
+    let left_raw = format!("{}{}{} {}", prefix, connector, item.id, title);
+    let left_width = display_width(&left_raw);
+    let attr_raw = format!(
+        " [{}] [{}] [{}]",
+        type_raw,
+        color::status_display(&item.status).0,
+        prio_raw
+    );
+    let attr_width = display_width(&attr_raw);
+    let term_width = terminal_width();
+    let padding = term_width.saturating_sub(left_width + attr_width);
+    let spacer = " ".repeat(padding);
+
     if !item.is_active() {
         let (status_raw, _) = color::status_display(&item.status);
         println!(
             "{}{}",
             tree_chrome,
             color::inactive(&format!(
-                "{} {} [{}] [{}] [{}]",
-                item.id, title, type_raw, status_raw, prio_raw
+                "{} {}{} [{}] [{}] [{}]",
+                item.id, title, spacer, type_raw, status_raw, prio_raw
             ))
         );
     } else {
         let (_, status_colored) = color::status_display(&item.status);
         println!(
-            "{}{} {} [{}] [{}] [{}]",
+            "{}{} {}{} [{}] [{}] [{}]",
             tree_chrome,
             color::id(&item.id),
             title,
+            spacer,
             type_colored,
             status_colored,
             prio_colored
@@ -854,23 +871,39 @@ fn print_ms_tree_node(item: &Item, group: &[&&Item], prefix: &str, is_last: bool
 
     let (type_raw, type_colored) = color::item_type_display(&item.item_type);
     let (prio_raw, prio_colored) = color::priority_display(&item.priority);
+
+    // Right-align attributes
+    let left_raw = format!("{}{}{} {}", prefix, connector, item.id, title);
+    let left_width = display_width(&left_raw);
+    let attr_raw = format!(
+        " [{}] [{}] [{}]",
+        type_raw,
+        color::status_display(&item.status).0,
+        prio_raw
+    );
+    let attr_width = display_width(&attr_raw);
+    let term_width = terminal_width();
+    let padding = term_width.saturating_sub(left_width + attr_width);
+    let spacer = " ".repeat(padding);
+
     if !item.is_active() {
         let (status_raw, _) = color::status_display(&item.status);
         println!(
             "{}{}",
             tree_chrome,
             color::inactive(&format!(
-                "{} {} [{}] [{}] [{}]",
-                item.id, title, type_raw, status_raw, prio_raw
+                "{} {}{} [{}] [{}] [{}]",
+                item.id, title, spacer, type_raw, status_raw, prio_raw
             ))
         );
     } else {
         let (_, status_colored) = color::status_display(&item.status);
         println!(
-            "{}{} {} [{}] [{}] [{}]",
+            "{}{} {}{} [{}] [{}] [{}]",
             tree_chrome,
             color::id(&item.id),
             title,
+            spacer,
             type_colored,
             status_colored,
             prio_colored
