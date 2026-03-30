@@ -1,0 +1,19 @@
+version: v0.6.0
+date: 2026-03-30
+previous: v0.5.0
+contributors:
+- id: horst.schwarz@joydev.com
+  events: 22
+  items: 4
+items:
+  stories:
+  - id: JOY-0090
+    title: Extend /joy skill with workflow and gate awareness (ADR-024)
+  tasks:
+  - id: JOY-0091
+    title: Implement data/templates split and migrate AI generator
+  - id: JOY-0092
+    title: Replace hash-based AI file check with version comparison
+  bugs:
+  - id: JOY-0095
+    title: joy ai setup does not clean stale files on update
