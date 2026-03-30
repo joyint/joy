@@ -65,6 +65,110 @@ pub struct CapabilityConfig {
     pub max_cost_per_job: Option<f64>,
 }
 
+// ---------------------------------------------------------------------------
+// Mode defaults (from project.defaults.yaml, overridable in project.yaml)
+// ---------------------------------------------------------------------------
+
+/// Interaction mode defaults: a global default plus optional per-capability overrides.
+/// Deserializes from flat YAML like: `{ default: collaborative, implement: autonomous }`.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct ModeDefaults {
+    /// Fallback mode when no per-capability mode is set.
+    #[serde(default)]
+    pub default: InteractionLevel,
+    /// Per-capability mode overrides (flattened into the same map).
+    #[serde(flatten, default)]
+    pub capabilities: BTreeMap<Capability, InteractionLevel>,
+}
+
+/// Default capabilities granted to AI members by joy ai setup.
+/// Loaded from `ai-defaults.capabilities` in project.defaults.yaml.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct AiDefaults {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub capabilities: Vec<Capability>,
+}
+
+/// Source of a resolved interaction mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModeSource {
+    /// From project.defaults.yaml (Joy's recommendation).
+    Default,
+    /// From project.yaml agents.defaults override.
+    Project,
+    /// From config.yaml personal preference.
+    Personal,
+    /// From item-level override (future).
+    Item,
+    /// Clamped by max-mode from project.yaml member config.
+    ProjectMax,
+}
+
+impl std::fmt::Display for ModeSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Default => write!(f, "default"),
+            Self::Project => write!(f, "project"),
+            Self::Personal => write!(f, "personal"),
+            Self::Item => write!(f, "item"),
+            Self::ProjectMax => write!(f, "project max"),
+        }
+    }
+}
+
+/// Resolve the effective interaction mode for a given capability.
+///
+/// Resolution order (later wins):
+/// 1. Effective defaults global mode (project.defaults.yaml merged with project.yaml)
+/// 2. Effective defaults per-capability mode
+/// 3. Personal config preference
+///
+/// All clamped by max-mode from the member's CapabilityConfig.
+pub fn resolve_mode(
+    capability: &Capability,
+    raw_defaults: &ModeDefaults,
+    effective_defaults: &ModeDefaults,
+    personal_mode: Option<InteractionLevel>,
+    member_cap_config: Option<&CapabilityConfig>,
+) -> (InteractionLevel, ModeSource) {
+    // 1. Global fallback from effective defaults
+    let mut mode = effective_defaults.default;
+    let mut source = if effective_defaults.default != raw_defaults.default {
+        ModeSource::Project
+    } else {
+        ModeSource::Default
+    };
+
+    // 2. Per-capability default
+    if let Some(&cap_mode) = effective_defaults.capabilities.get(capability) {
+        mode = cap_mode;
+        let from_raw = raw_defaults.capabilities.get(capability) == Some(&cap_mode);
+        source = if from_raw {
+            ModeSource::Default
+        } else {
+            ModeSource::Project
+        };
+    }
+
+    // 3. Personal preference
+    if let Some(personal) = personal_mode {
+        mode = personal;
+        source = ModeSource::Personal;
+    }
+
+    // 4. Clamp by max-mode (minimum interactivity required)
+    if let Some(cap_config) = member_cap_config {
+        if let Some(max) = cap_config.max_mode {
+            if mode < max {
+                mode = max;
+                source = ModeSource::ProjectMax;
+            }
+        }
+    }
+
+    (mode, source)
+}
+
 // Custom serde for MemberCapabilities: "all" string or map of capabilities
 impl Serialize for MemberCapabilities {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -189,5 +293,292 @@ mod tests {
     #[test]
     fn derive_acronym_single_long_word() {
         assert_eq!(derive_acronym("Platform"), "PLA");
+    }
+
+    // -----------------------------------------------------------------------
+    // ModeDefaults deserialization tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn mode_defaults_flat_yaml_roundtrip() {
+        let yaml = r#"
+default: interactive
+implement: collaborative
+review: pairing
+"#;
+        let parsed: ModeDefaults = serde_yaml_ng::from_str(yaml).unwrap();
+        assert_eq!(parsed.default, InteractionLevel::Interactive);
+        assert_eq!(
+            parsed.capabilities[&Capability::Implement],
+            InteractionLevel::Collaborative
+        );
+        assert_eq!(
+            parsed.capabilities[&Capability::Review],
+            InteractionLevel::Pairing
+        );
+    }
+
+    #[test]
+    fn mode_defaults_empty_yaml() {
+        let yaml = "{}";
+        let parsed: ModeDefaults = serde_yaml_ng::from_str(yaml).unwrap();
+        assert_eq!(parsed.default, InteractionLevel::Collaborative);
+        assert!(parsed.capabilities.is_empty());
+    }
+
+    #[test]
+    fn mode_defaults_only_default() {
+        let yaml = "default: pairing";
+        let parsed: ModeDefaults = serde_yaml_ng::from_str(yaml).unwrap();
+        assert_eq!(parsed.default, InteractionLevel::Pairing);
+        assert!(parsed.capabilities.is_empty());
+    }
+
+    #[test]
+    fn ai_defaults_yaml_roundtrip() {
+        let yaml = r#"
+capabilities:
+  - implement
+  - review
+"#;
+        let parsed: AiDefaults = serde_yaml_ng::from_str(yaml).unwrap();
+        assert_eq!(parsed.capabilities.len(), 2);
+        assert_eq!(parsed.capabilities[0], Capability::Implement);
+    }
+
+    // -----------------------------------------------------------------------
+    // resolve_mode tests
+    // -----------------------------------------------------------------------
+
+    fn defaults_with_mode(mode: InteractionLevel) -> ModeDefaults {
+        ModeDefaults {
+            default: mode,
+            ..Default::default()
+        }
+    }
+
+    fn defaults_with_cap_mode(cap: Capability, mode: InteractionLevel) -> ModeDefaults {
+        let mut d = ModeDefaults::default();
+        d.capabilities.insert(cap, mode);
+        d
+    }
+
+    #[test]
+    fn resolve_mode_uses_global_default() {
+        let raw = defaults_with_mode(InteractionLevel::Collaborative);
+        let effective = raw.clone();
+        let (mode, source) = resolve_mode(&Capability::Implement, &raw, &effective, None, None);
+        assert_eq!(mode, InteractionLevel::Collaborative);
+        assert_eq!(source, ModeSource::Default);
+    }
+
+    #[test]
+    fn resolve_mode_uses_per_capability_default() {
+        let raw = defaults_with_cap_mode(Capability::Review, InteractionLevel::Interactive);
+        let effective = raw.clone();
+        let (mode, source) = resolve_mode(&Capability::Review, &raw, &effective, None, None);
+        assert_eq!(mode, InteractionLevel::Interactive);
+        assert_eq!(source, ModeSource::Default);
+    }
+
+    #[test]
+    fn resolve_mode_project_override_detected() {
+        let raw = defaults_with_cap_mode(Capability::Implement, InteractionLevel::Collaborative);
+        let effective =
+            defaults_with_cap_mode(Capability::Implement, InteractionLevel::Interactive);
+        let (mode, source) = resolve_mode(&Capability::Implement, &raw, &effective, None, None);
+        assert_eq!(mode, InteractionLevel::Interactive);
+        assert_eq!(source, ModeSource::Project);
+    }
+
+    #[test]
+    fn resolve_mode_personal_overrides_default() {
+        let raw = defaults_with_mode(InteractionLevel::Collaborative);
+        let effective = raw.clone();
+        let (mode, source) = resolve_mode(
+            &Capability::Implement,
+            &raw,
+            &effective,
+            Some(InteractionLevel::Pairing),
+            None,
+        );
+        assert_eq!(mode, InteractionLevel::Pairing);
+        assert_eq!(source, ModeSource::Personal);
+    }
+
+    #[test]
+    fn resolve_mode_max_mode_clamps_upward() {
+        let raw = defaults_with_mode(InteractionLevel::Autonomous);
+        let effective = raw.clone();
+        let cap_config = CapabilityConfig {
+            max_mode: Some(InteractionLevel::Supervised),
+            ..Default::default()
+        };
+        let (mode, source) = resolve_mode(
+            &Capability::Implement,
+            &raw,
+            &effective,
+            None,
+            Some(&cap_config),
+        );
+        assert_eq!(mode, InteractionLevel::Supervised);
+        assert_eq!(source, ModeSource::ProjectMax);
+    }
+
+    #[test]
+    fn resolve_mode_max_mode_does_not_lower() {
+        let raw = defaults_with_mode(InteractionLevel::Pairing);
+        let effective = raw.clone();
+        let cap_config = CapabilityConfig {
+            max_mode: Some(InteractionLevel::Supervised),
+            ..Default::default()
+        };
+        let (mode, source) = resolve_mode(
+            &Capability::Implement,
+            &raw,
+            &effective,
+            None,
+            Some(&cap_config),
+        );
+        // Pairing > Supervised, so no clamping
+        assert_eq!(mode, InteractionLevel::Pairing);
+        assert_eq!(source, ModeSource::Default);
+    }
+
+    #[test]
+    fn resolve_mode_personal_clamped_by_max() {
+        let raw = defaults_with_mode(InteractionLevel::Collaborative);
+        let effective = raw.clone();
+        let cap_config = CapabilityConfig {
+            max_mode: Some(InteractionLevel::Interactive),
+            ..Default::default()
+        };
+        let (mode, source) = resolve_mode(
+            &Capability::Implement,
+            &raw,
+            &effective,
+            Some(InteractionLevel::Autonomous),
+            Some(&cap_config),
+        );
+        // Personal is Autonomous but max is Interactive, clamp up
+        assert_eq!(mode, InteractionLevel::Interactive);
+        assert_eq!(source, ModeSource::ProjectMax);
+    }
+
+    // -----------------------------------------------------------------------
+    // Item mode serialization
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn item_mode_field_roundtrip() {
+        use crate::model::item::{Item, ItemType, Priority};
+
+        let mut item = Item::new(
+            "TST-0001".into(),
+            "Test".into(),
+            ItemType::Task,
+            Priority::Medium,
+            vec![],
+        );
+        item.mode = Some(InteractionLevel::Pairing);
+
+        let yaml = serde_yaml_ng::to_string(&item).unwrap();
+        assert!(yaml.contains("mode: pairing"), "mode field not serialized");
+
+        let parsed: Item = serde_yaml_ng::from_str(&yaml).unwrap();
+        assert_eq!(parsed.mode, Some(InteractionLevel::Pairing));
+    }
+
+    #[test]
+    fn item_mode_field_absent_when_none() {
+        use crate::model::item::{Item, ItemType, Priority};
+
+        let item = Item::new(
+            "TST-0002".into(),
+            "Test".into(),
+            ItemType::Task,
+            Priority::Medium,
+            vec![],
+        );
+        assert_eq!(item.mode, None);
+
+        let yaml = serde_yaml_ng::to_string(&item).unwrap();
+        assert!(
+            !yaml.contains("mode:"),
+            "mode field should not appear when None"
+        );
+    }
+
+    #[test]
+    fn item_mode_deserialized_from_existing_yaml() {
+        let yaml = r#"
+id: TST-0003
+title: Test
+type: task
+status: new
+priority: medium
+mode: interactive
+created: "2026-01-01T00:00:00+00:00"
+updated: "2026-01-01T00:00:00+00:00"
+"#;
+        let item: crate::model::item::Item = serde_yaml_ng::from_str(yaml).unwrap();
+        assert_eq!(item.mode, Some(InteractionLevel::Interactive));
+    }
+
+    // -----------------------------------------------------------------------
+    // Full four-layer resolution scenario
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn resolve_mode_full_scenario() {
+        // Joy default: implement = collaborative
+        let raw = defaults_with_cap_mode(Capability::Implement, InteractionLevel::Collaborative);
+        // Project override: implement = interactive
+        let effective =
+            defaults_with_cap_mode(Capability::Implement, InteractionLevel::Interactive);
+        // Personal preference: autonomous
+        let personal = Some(InteractionLevel::Autonomous);
+        // Project max-mode: supervised (minimum interactivity)
+        let cap_config = CapabilityConfig {
+            max_mode: Some(InteractionLevel::Supervised),
+            ..Default::default()
+        };
+
+        let (mode, source) = resolve_mode(
+            &Capability::Implement,
+            &raw,
+            &effective,
+            personal,
+            Some(&cap_config),
+        );
+
+        // Personal (autonomous) < max (supervised), so clamped up to supervised
+        assert_eq!(mode, InteractionLevel::Supervised);
+        assert_eq!(source, ModeSource::ProjectMax);
+    }
+
+    #[test]
+    fn resolve_mode_all_layers_no_clamping() {
+        // Joy default: implement = collaborative
+        let raw = defaults_with_cap_mode(Capability::Implement, InteractionLevel::Collaborative);
+        // Project override: implement = interactive
+        let effective =
+            defaults_with_cap_mode(Capability::Implement, InteractionLevel::Interactive);
+        // Personal preference: pairing (more interactive than project)
+        let personal = Some(InteractionLevel::Pairing);
+        // No max-mode
+        let cap_config = CapabilityConfig::default();
+
+        let (mode, source) = resolve_mode(
+            &Capability::Implement,
+            &raw,
+            &effective,
+            personal,
+            Some(&cap_config),
+        );
+
+        // Personal wins, no clamping
+        assert_eq!(mode, InteractionLevel::Pairing);
+        assert_eq!(source, ModeSource::Personal);
     }
 }

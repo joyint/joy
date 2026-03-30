@@ -229,6 +229,14 @@ fn show_project(project: &Project, root: &std::path::Path) {
     show_workflow(root);
 
     println!("{}", color::label(&"-".repeat(color::terminal_width())));
+
+    // Hint about member modes if AI members exist
+    if project.members.keys().any(|id| id.starts_with("ai:")) {
+        println!(
+            "{}",
+            color::label("Use `joy project member show <ID>` to see interaction modes")
+        );
+    }
 }
 
 fn run_member(
@@ -251,29 +259,91 @@ fn run_member(
                 .members
                 .get(&a.id)
                 .ok_or_else(|| anyhow::anyhow!("member not found: {}", a.id))?;
-            println!("{}", color::id(&a.id));
-            match &member.capabilities {
-                MemberCapabilities::All => {
-                    println!("  Capabilities: all");
-                }
-                MemberCapabilities::Specific(map) => {
-                    println!("  Capabilities:");
-                    for (cap, config) in map {
-                        let mut details = Vec::new();
-                        if let Some(ref mode) = config.max_mode {
-                            details.push(format!("max-mode: {mode}"));
-                        }
-                        if let Some(cost) = config.max_cost_per_job {
-                            details.push(format!("max-cost-per-job: {cost:.2}"));
-                        }
-                        if details.is_empty() {
-                            println!("    {cap}");
-                        } else {
-                            println!("    {} ({})", cap, details.join(", "));
+
+            let w = color::terminal_width();
+            let wide = w >= 60;
+
+            println!("{}", color::header(&a.id));
+
+            // Load defaults for mode resolution
+            let raw_defaults = joy_core::store::load_raw_mode_defaults(&ctx.root);
+            let effective_defaults = joy_core::store::load_mode_defaults(&ctx.root);
+            let config = joy_core::store::load_config();
+            let personal_mode =
+                if config.modes.default != joy_core::model::config::InteractionLevel::default() {
+                    Some(config.modes.default)
+                } else {
+                    None
+                };
+
+            // Build capability list with has/denied and mode info
+            let all_caps = joy_core::model::item::Capability::ALL;
+            let is_all = matches!(&member.capabilities, MemberCapabilities::All);
+            let specific_map = match &member.capabilities {
+                MemberCapabilities::Specific(map) => Some(map),
+                _ => None,
+            };
+
+            for cap in all_caps {
+                let has = is_all || specific_map.is_some_and(|m| m.contains_key(cap));
+                let mark = if has { "x" } else { "-" };
+                let cap_label = if wide {
+                    format!("{cap}")
+                } else {
+                    let s = format!("{cap}");
+                    s[..3].to_string()
+                };
+
+                if has && cap.is_work_capability() {
+                    let cap_config = specific_map.and_then(|m| m.get(cap));
+                    let (mode, source) = joy_core::model::project::resolve_mode(
+                        cap,
+                        &raw_defaults,
+                        &effective_defaults,
+                        personal_mode,
+                        cap_config,
+                    );
+                    let mode_text = format!("{mode} [{source}]");
+                    let mut line = if wide {
+                        format!(
+                            "  {:<12} {}   {}",
+                            cap_label,
+                            mark,
+                            color::inactive(&mode_text)
+                        )
+                    } else {
+                        format!(
+                            "  {:<5} {}   {}",
+                            cap_label,
+                            mark,
+                            color::inactive(&mode_text)
+                        )
+                    };
+                    // Show max-mode hint if clamped
+                    if source == joy_core::model::project::ModeSource::ProjectMax {
+                        if let Some(personal) = personal_mode {
+                            line.push_str(&color::inactive(&format!(
+                                "  (your preference: {personal})"
+                            )));
                         }
                     }
+                    // Show max-mode from cap config
+                    if let Some(cc) = cap_config {
+                        if let Some(ref max) = cc.max_mode {
+                            if source != joy_core::model::project::ModeSource::ProjectMax {
+                                line.push_str(&color::inactive(&format!("  max: {max}")));
+                            }
+                        }
+                    }
+                    println!("{line}");
+                } else if wide {
+                    println!("  {:<12} {}", cap_label, mark);
+                } else {
+                    println!("  {:<5} {}", cap_label, mark);
                 }
             }
+
+            println!("{}", color::label(&"-".repeat(w)));
         }
         Some(MemberCommand::Add(a)) => {
             ctx.enforce(&Action::ManageProject, "project")?;

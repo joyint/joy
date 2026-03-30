@@ -56,6 +56,9 @@ members:
       ai:claude@joy:
         token_key: 696a729ce180c1437df92e6c68fa4bd0fe54b731e5e5bd3c5c9bdad34acd9eb0
         created: 2026-03-28T23:59:08.960229052Z
+      ai:copilot@joy:
+        token_key: 17757bb1e03d0c734cb8c40e371f436bc180a927db89eb791e62cfe6b21893c4
+        created: 2026-03-30T11:50:38.014392942Z
 created: 2026-03-09T23:57:36.761964460Z
 release:
   version-files:

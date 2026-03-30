@@ -6,5 +6,9 @@ priority: low
 parent: JOY-0029
 effort: 3
 created: 2026-03-22T16:20:09.057965524Z
-updated: 2026-03-22T16:20:09.057965524Z
+updated: 2026-03-30T16:45:30.139249826Z
 description: 'Analyze process data from git history, event logs, and jobs. Report: cycle times per status, unassigned required capabilities, stale items, gate compliance rate, AI cost trends. No external tooling needed -- all data lives in git.'
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T16:45:30.139248838Z
+  text: Could this be again a standalone binary which is triggered similar to Judge on commit/push locally or on server side? Could it be the Joy Nurse? Or should it be part of Joy itself or of the Judge maybe? Dear AI tool, let's discuss this before implementing this feature!

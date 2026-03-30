@@ -1,0 +1,16 @@
+id: JOY-0099
+title: Update tutorial and AI instructions for interaction levels
+type: task
+status: new
+priority: medium
+parent: JOY-0096
+capabilities:
+- implement
+effort: 2
+created_by: horst.schwarz@joydev.com
+created: 2026-03-30T16:39:49.567389012Z
+updated: 2026-03-30T16:39:55.342608009Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T16:39:55.342607487Z
+  text: 'Tutorial documents how to configure interaction levels at each layer (project defaults, project overrides, personal preference, item override). AI instructions only need to say: read effective mode from joy project member show and work accordingly. Resolution logic stays in the CLI, not in the prompt. CONTRIBUTING.md is not affected -- it is tool-agnostic.'

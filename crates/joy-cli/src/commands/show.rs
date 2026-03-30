@@ -71,6 +71,41 @@ pub fn run(args: ShowArgs) -> Result<()> {
         println!("{} {}", color::label("Capabilities:"), caps.join(", "));
     }
 
+    // Show item-level mode override (only if explicitly set on the item)
+    if let Some(ref mode) = item.mode {
+        // Check if clamped by max-mode of first assignee
+        let clamped = item.assignees.first().and_then(|a| {
+            let project = joy_core::store::load_project(&root).ok()?;
+            let member = project.members.get(&a.member)?;
+            match &member.capabilities {
+                joy_core::model::project::MemberCapabilities::Specific(map) => {
+                    // Find the capability for the current status
+                    item.capabilities.iter().find_map(|cap| {
+                        let config = map.get(cap)?;
+                        let max = config.max_mode?;
+                        if mode < &max {
+                            Some((max, *mode))
+                        } else {
+                            None
+                        }
+                    })
+                }
+                _ => None,
+            }
+        });
+
+        if let Some((effective, original)) = clamped {
+            println!(
+                "{} {} {}",
+                color::label("Mode:"),
+                effective,
+                color::inactive(&format!("[project max, item: {original}]"))
+            );
+        } else {
+            println!("{} {}", color::label("Mode:"), mode);
+        }
+    }
+
     if !item.deps.is_empty() {
         println!("\n{}:", color::label("Dependencies"));
         for dep_id in &item.deps {

@@ -92,7 +92,7 @@ const STATIC_CONFIG_KEYS: &[&str] = &[
     "ai.model",
     "ai.max_cost_per_job",
     "ai.currency",
-    "agents.default.mode",
+    "modes.default",
 ];
 
 /// Complete config keys for `joy config get/set`.

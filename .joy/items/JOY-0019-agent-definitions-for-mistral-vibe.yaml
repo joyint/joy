@@ -1,13 +1,16 @@
 id: JOY-0019
 title: Agent definitions for Mistral Vibe (.vibe/agents/)
 type: task
-status: new
+status: closed
 priority: medium
 parent: JOY-0012
 effort: 2
 created: 2026-03-20T21:02:44.754460291Z
-updated: 2026-03-30T05:35:45.075207001Z
+updated: 2026-03-30T07:59:53.237195724Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-30T05:35:45.075206860Z
   text: 'ADR-024: Agent source is now data/ai/agents/*.yaml + templates/ai/tools/mistral-vibe/agents/*.toml. Output goes to .vibe/agents/*.toml. Tool-specific fields (safety, agent_type) live in the template, not in agent data.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T07:59:53.193867926Z
+  text: Implemented in JOY-0090. Agent files generated into tool directory by joy ai setup. Released in v0.6.0.

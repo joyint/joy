@@ -1,13 +1,16 @@
 id: JOY-001B
 title: Agent instructions for Qwen Code
 type: task
-status: new
+status: closed
 priority: medium
 parent: JOY-0012
 effort: 2
 created: 2026-03-20T21:02:44.759310466Z
-updated: 2026-03-30T05:35:47.154539704Z
+updated: 2026-03-30T07:59:53.464159385Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-30T05:35:47.154539441Z
   text: 'ADR-024: Agent source is now data/ai/agents/*.yaml + templates/ai/tools/qwen-code/agents/*.md. Output goes to .qwen/agents/*.md.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T07:59:53.410441679Z
+  text: Implemented in JOY-0090. Agent files generated into tool directory by joy ai setup. Released in v0.6.0.
