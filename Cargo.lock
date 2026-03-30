@@ -1117,7 +1117,7 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "joy-ai"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "joy-core",
  "serde",
@@ -1128,7 +1128,7 @@ dependencies = [
 
 [[package]]
 name = "joy-core"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "argon2",
  "base64ct",
@@ -1149,7 +1149,7 @@ dependencies = [
 
 [[package]]
 name = "joyint"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "assert_cmd",

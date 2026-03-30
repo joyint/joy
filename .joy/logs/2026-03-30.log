@@ -37,3 +37,4 @@
 2026-03-30T07:11:54.345Z JOY-0095 comment.added "[x] Added clean_managed_dirs function that removes Joy-managed subdirectories before regenerating. [x] Applied to all 4 tools: Claude (agents, skills/joy), Qwen (agents, skills/joy), Vibe (agents, skills/joy), Copilot (agents, prompts). [x] User-owned files preserved (CLAUDE.md, settings.json, etc.). [x] All tests passing, clippy clean." [horst.schwarz@joydev.com]
 2026-03-30T07:12:01.547Z JOY-0095 item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
 2026-03-30T07:46:07.094Z release guard.denied "horst.schwarz@joydev.com must authenticate to perform manage actions. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-03-30T07:47:21.575Z v0.6.0 release.created [horst.schwarz@joydev.com]
