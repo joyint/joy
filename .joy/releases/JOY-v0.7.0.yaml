@@ -1,0 +1,40 @@
+version: v0.7.0
+date: 2026-03-30
+previous: v0.6.0
+contributors:
+- id: horst.schwarz@joydev.com
+  events: 72
+  items: 14
+items:
+  epics:
+  - id: JOY-0012
+    title: Capability-based agent generation for AI tools
+  stories:
+  - id: JOY-0013
+    title: Agent generation for plan capability
+  - id: JOY-0014
+    title: Agent generation for implement capability
+  - id: JOY-0015
+    title: Agent generation for review capability
+  - id: JOY-0016
+    title: Agent generation for remaining capabilities
+  - id: JOY-0096
+    title: Introduce project.defaults.yaml for AI governance (ADR-025)
+  tasks:
+  - id: JOY-0018
+    title: Agent definitions for Claude Code (.claude/agents/)
+  - id: JOY-0019
+    title: Agent definitions for Mistral Vibe (.vibe/agents/)
+  - id: JOY-001A
+    title: Agent instructions for Copilot (AGENTS.md)
+  - id: JOY-001B
+    title: Agent instructions for Qwen Code
+  - id: JOY-0097
+    title: Default AI tool capabilities in project.defaults.yaml
+  - id: JOY-0098
+    title: Show effective interaction level with source in joy show and joy project
+  - id: JOY-0017
+    title: Rename agents to modes and add CLI get/set for interaction levels
+  bugs:
+  - id: JOY-009B
+    title: Remove obsolete agents.architect config key

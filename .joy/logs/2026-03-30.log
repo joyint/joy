@@ -85,3 +85,4 @@
 2026-03-30T19:08:59.275Z JOY-0017 comment.added "[x] Renamed agents.* to modes.* across config.defaults.yaml, project.defaults.yaml, Config struct, store.rs, templates, completions. [x] Flattened project.defaults.yaml structure: modes.default, modes.<capability> directly. [x] Separated ai-defaults.capabilities from modes. [x] Removed obsolete AgentsConfig roles BTreeMap (JOY-009B). [x] Updated all tests and insta snapshot. 221 tests, clippy clean." [horst.schwarz@joydev.com]
 2026-03-30T19:08:59.339Z JOY-0017 item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
 2026-03-30T19:08:59.373Z JOY-0012 item.status_changed "new -> closed (all children closed)" [horst.schwarz@joydev.com]
+2026-03-30T19:23:58.617Z v0.7.0 release.created [horst.schwarz@joydev.com]
