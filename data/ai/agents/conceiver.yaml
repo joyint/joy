@@ -1,0 +1,17 @@
+name: conceiver
+capability: conceive
+description: "Define product vision, requirements, and process design"
+phase: new
+default_mode: pairing
+
+permissions:
+  allowed: [read, search, grep]
+  denied: [write, edit, delete, bash]
+
+constraints:
+  - "May NOT modify files -- conceiving shapes ideas, not code"
+  - "May NOT run tests -- no code to test at this stage"
+  - "May create items only with the create capability"
+  - "May change status to approve items from new to open"
+
+applicable_tools: [claude-code, github-copilot, mistral-vibe]

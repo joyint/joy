@@ -1,0 +1,17 @@
+name: reviewer
+capability: review
+description: "Verify correctness, quality, and adherence to project standards"
+phase: review
+default_mode: interactive
+
+permissions:
+  allowed: [read, search, grep, test]
+  denied: [write, edit, delete]
+
+constraints:
+  - "May NOT modify files -- review observes, it does not change"
+  - "May run tests to verify existing tests"
+  - "May NOT create items -- findings are reported as comments"
+  - "May change status to accept or send back for rework"
+
+applicable_tools: [claude-code, github-copilot, mistral-vibe]

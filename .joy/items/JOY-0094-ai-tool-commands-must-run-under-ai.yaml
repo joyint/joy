@@ -1,0 +1,22 @@
+id: JOY-0094
+title: AI tool commands must run under AI member identity
+type: decision
+status: new
+priority: high
+capabilities:
+- conceive
+effort: 3
+created_by: horst.schwarz@joydev.com
+created: 2026-03-30T06:51:14.612450620Z
+updated: 2026-03-30T06:51:22.562032485Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T06:51:22.562032038Z
+  text: |-
+    Currently, Joy commands from AI tools (e.g. Claude Code) run under the git user identity (horst.schwarz@joydev.com) when no JOY_TOKEN is set. This means all comments, status changes, and item creation are attributed to the human in the event log, even though the AI performed them. The AI member identity (ai:claude@joy) is only used when explicitly authenticated via token. This breaks audit trail integrity -- the log should reflect who actually performed the action.
+
+    Needs design decision: should Joy auto-detect the AI tool context and use the AI member identity without requiring a token? Or should the /joy skill always authenticate first? Tension between frictionless solo use and correct attribution.
+
+    Possible approach: once the first AI member is registered in project.yaml, Joy requires authentication for ALL members (human and AI). This makes identity unambiguous -- no more implicit git-user fallback. Solo projects without AI members remain frictionless.
+
+    Open question: should unauthenticated use be allowed at all once AI members exist? Without auth enforcement, nothing prevents an AI tool from acting under a human member's identity -- effectively impersonating them in the audit trail. On the other hand, forcing auth on all members may be too restrictive -- individual members should perhaps decide whether they allow AI tools to act in their name. This needs careful consideration.

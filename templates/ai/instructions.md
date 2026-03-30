@@ -99,10 +99,29 @@ Each item has a list of capabilities (visible via `joy show <ID>`).
 When working on an item, identify which capability you are exercising
 and act within its boundaries.
 
-Capability-specific rules are defined in `.joy/capabilities/`. Read them
-to understand the permissions and constraints for each capability.
 Management capabilities (`create`, `assign`, `manage`, `delete`) control
 which Joy CLI commands you may use.
+
+## Workflow
+
+Items move through these statuses:
+{% for status in workflow.statuses %}
+- **{{ status.name }}**: {{ status.description }}{% if status.initial %} (initial){% endif %}{% if status.terminal %} (terminal){% endif %}
+{% endfor %}
+
+### Transitions
+
+| From | To | Required capability | Shortcut |
+|------|----|--------------------:|----------|
+{% for t in workflow.transitions -%}
+| {{ t.from }} | {{ t.to }} | {{ t.capability }} | {% if t.shortcut %}{{ t.shortcut }}{% endif %} |
+{% endfor %}
+
+### Gates
+
+Projects can restrict transitions via `status_rules` in project.yaml.
+When a gate sets `allow_ai: false`, AI members cannot trigger that transition.
+Check `joy project` to see active gates. If a transition is denied, inform the user.
 
 ## Core commands
 
@@ -187,8 +206,6 @@ before anything else:
 2. If any of these files are missing, empty, or contain only template
    headings (HTML comments like `<!-- ... -->`), tell the user and offer
    to fill them in together
-3. Read `.joy/ai/instructions/setup.md` for the checklists to guide the
-   conversation
 
 Do not wait for the user to ask. This check is mandatory on first session.
 

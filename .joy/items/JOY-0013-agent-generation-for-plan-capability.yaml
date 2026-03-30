@@ -6,8 +6,11 @@ priority: medium
 parent: JOY-0012
 effort: 3
 created: 2026-03-20T21:02:44.738900820Z
-updated: 2026-03-25T17:43:26.151440651Z
+updated: 2026-03-30T05:35:35.776102771Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-25T17:43:15.191902391Z
   text: 'Reframed per ADR-018: This story now covers generating a plan-capability agent file from .joy/ai/capabilities/plan.md. The agent file provides tool permissions (read, search, item creation) and the system prompt for planning activities. No longer a role-based ''Architect agent''.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T05:35:35.776102397Z
+  text: 'ADR-024: Source changes from .joy/ai/capabilities/plan.md to data/capabilities/plan.md + data/ai/agents/planner.yaml (embedded). Output is generated per tool into .claude/agents/planner.md, .qwen/agents/planner.md, .vibe/agents/planner.toml, .github/agents/planner.agent.md.'

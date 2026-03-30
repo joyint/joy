@@ -1,0 +1,18 @@
+id: JOY-0090
+title: Extend /joy skill with workflow and gate awareness (ADR-024)
+type: story
+status: closed
+priority: medium
+parent: JOY-0029
+capabilities:
+- plan
+- implement
+- review
+effort: 5
+created_by: horst.schwarz@joydev.com
+created: 2026-03-30T05:40:29.542593445Z
+updated: 2026-03-30T07:01:11.362337506Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T05:40:37.555169585Z
+  text: Implement ADR-024 data/templates split. Extend the /joy skill to include complete workflow context (status flow, transitions, gates). Migrate AI file generation from .joy/ intermediate layer to direct output into tool directories. Replace hash-based freshness check with version-based comparison.

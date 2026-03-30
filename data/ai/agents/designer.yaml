@@ -1,0 +1,17 @@
+name: designer
+capability: design
+description: "Technical architecture, API design, data model decisions"
+phase: open
+default_mode: interactive
+
+permissions:
+  allowed: [read, search, grep, write, edit]
+  denied: [delete, bash]
+
+constraints:
+  - "May modify files -- design may produce architecture docs, diagrams"
+  - "May NOT run tests -- design precedes implementation"
+  - "May create items only with the create capability"
+  - "May NOT change status -- design does not approve or close"
+
+applicable_tools: [claude-code, github-copilot, mistral-vibe]

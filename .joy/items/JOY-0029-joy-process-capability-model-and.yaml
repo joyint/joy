@@ -5,5 +5,9 @@ status: new
 priority: high
 effort: 7
 created: 2026-03-22T16:18:33.917705816Z
-updated: 2026-03-22T16:18:33.917705816Z
+updated: 2026-03-30T05:35:54.338323511Z
 description: 'Implement the Joy process as defined in docs/dev/vision/JoyProcess.md. Covers Layer 1-4: capabilities, member management (humans/agents), multi-capability assignments, interaction levels, gates, jobs, and cost tracking. Each layer works without the next.'
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T05:35:54.338323346Z
+  text: ADR-024 introduces data/process/ as structured YAML source for status flow, transitions, and gates. This data feeds into the AI generation pipeline (workflow.md, agent files). When implementing process model items, the YAML structures in data/process/ should be designed to serve both joy-core runtime logic and template rendering.
