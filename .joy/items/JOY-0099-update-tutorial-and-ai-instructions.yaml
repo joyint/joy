@@ -4,12 +4,13 @@ type: task
 status: new
 priority: medium
 parent: JOY-0096
+milestone: JOY-MS-01
 capabilities:
 - implement
 effort: 2
 created_by: horst.schwarz@joydev.com
 created: 2026-03-30T16:39:49.567389012Z
-updated: 2026-03-30T16:39:55.342608009Z
+updated: 2026-03-30T19:48:56.717154157Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-30T16:39:55.342607487Z

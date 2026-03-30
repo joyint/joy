@@ -7,9 +7,10 @@ parent: JOY-0029
 deps:
 - JOY-002C
 - JOY-002A
+milestone: JOY-MS-03
 effort: 5
 created: 2026-03-22T16:19:52.733952156Z
-updated: 2026-03-25T18:06:43.119306258Z
+updated: 2026-03-30T19:49:08.633505575Z
 description: 'Job data model in joy-core, stored in .joy/jobs/ as YAML. A Job tracks: assignee (human: or agent:), item, capability, started/completed timestamps, and for agents: tokens_in, tokens_out, cost, currency. joy start auto-creates a job for the current user. joy close completes the job. Multiple jobs per item (one per capability, or multiple iterations). Jobs are the auditable record of who did what, when, and at what cost.'
 comments:
 - author: horst.schwarz@joydev.com

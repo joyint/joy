@@ -3,9 +3,10 @@ title: 'Joy process: capability model and member management'
 type: epic
 status: new
 priority: high
+milestone: JOY-MS-01
 effort: 7
 created: 2026-03-22T16:18:33.917705816Z
-updated: 2026-03-30T05:35:54.338323511Z
+updated: 2026-03-30T19:50:04.124163287Z
 description: 'Implement the Joy process as defined in docs/dev/vision/JoyProcess.md. Covers Layer 1-4: capabilities, member management (humans/agents), multi-capability assignments, interaction levels, gates, jobs, and cost tracking. Each layer works without the next.'
 comments:
 - author: horst.schwarz@joydev.com

@@ -6,10 +6,15 @@ priority: high
 parent: JOY-006B
 deps:
 - JOY-006E
+milestone: JOY-MS-01
 capabilities:
 - plan
 - implement
 - review
 effort: 3
 created: 2026-03-27T18:38:54.169234671Z
-updated: 2026-03-27T18:38:58.626881862Z
+updated: 2026-03-30T19:48:56.696993531Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T19:43:05.181702830Z
+  text: 'Approach: joy project member add generates a one-time password (OTP) and stores its hash in the member''s otp_hash field (already exists in Member struct). Admin shares the OTP out-of-band. New member runs joy auth --otp <code> which verifies the hash, then forces immediate passphrase setup via joy auth init. OTP is deleted after successful passphrase creation. Standard invite-with-forced-password-change pattern. No new data structures needed -- otp_hash field is already in place.'

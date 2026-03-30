@@ -1,0 +1,18 @@
+id: JOY-009E
+title: AI uses comments instead of description when creating items
+type: bug
+status: closed
+priority: high
+assignees:
+- member: horst.schwarz@joydev.com
+capabilities:
+- implement
+- review
+effort: 1
+created_by: horst.schwarz@joydev.com
+created: 2026-03-30T19:53:53.480588271Z
+updated: 2026-03-30T19:55:33.205079291Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T19:55:33.150858884Z
+  text: '[x] Updated instructions.md and SKILL.md: use --description when creating items for stable context, comments only for subsequent updates. Do not change descriptions after creation unless explicitly asked.'

@@ -6,7 +6,8 @@ priority: medium
 parent: JOY-0029
 deps:
 - JOY-0031
+milestone: JOY-MS-03
 effort: 3
 created: 2026-03-22T16:20:00.976314109Z
-updated: 2026-03-22T16:20:03.709538199Z
+updated: 2026-03-30T19:49:08.650711859Z
 description: Track token consumption and cost per AI job. Agents report tokens_in, tokens_out, cost, and currency when completing a job. joy show aggregates cost per item across all jobs. Feeds into the JOYC settlement layer and governance reporting (AI Decision Audit Log). No human cost tracking -- Joy is not a time-tracking tool.

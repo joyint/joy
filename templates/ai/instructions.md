@@ -167,7 +167,7 @@ Effort scale (1-7): 1=trivial, 2=small, 3=medium, 4=large, 5=major, 6=heavy, 7=m
 
 ### Creating items
 
-Analyze the user's input and break it into Joy items. Present a numbered list (title, type, priority, effort) for confirmation before creating. Suggest an effort (1-7) based on the scope of each item. Use `--effort` when creating: `joy add task "Fix login" --effort 2`. Create epics first when there are 3+ related items. Do not over-decompose -- a 1-2 day story is fine as one item.
+Analyze the user's input and break it into Joy items. Present a numbered list (title, type, priority, effort) for confirmation before creating. Suggest an effort (1-7) based on the scope of each item. Use `--effort` and `--description` when creating: `joy add task "Fix login" --effort 2 --description "..."`. The description captures the stable context of the item (what and why). Use comments only for subsequent updates (plans, decisions, results). Do not change descriptions after creation unless explicitly asked. Create epics first when there are 3+ related items. Do not over-decompose -- a 1-2 day story is fine as one item.
 
 ### Implementing items
 
