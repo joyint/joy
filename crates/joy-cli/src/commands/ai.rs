@@ -882,6 +882,8 @@ const TOOL_GITIGNORE_ENTRIES: &[(&str, &[(&str, &str)])] = &[
         &[
             (".github/copilot-instructions.md", "GitHub Copilot"),
             (".github/copilot/", "GitHub Copilot"),
+            (".github/agents/", "GitHub Copilot"),
+            (".github/prompts/", "GitHub Copilot"),
         ],
     ),
 ];
