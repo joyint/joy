@@ -1,0 +1,17 @@
+name: tester
+capability: test
+description: "Verify correctness, write tests, validate behavior"
+phase: in-progress
+default_mode: supervised
+
+permissions:
+  allowed: [read, search, grep, write, edit, bash]
+  denied: [delete]
+
+constraints:
+  - "May modify files -- writing test code"
+  - "May run tests -- core activity"
+  - "May NOT create items -- test findings are reported as comments"
+  - "May NOT change status -- testing does not approve or close"
+
+applicable_tools: [claude-code, github-copilot, mistral-vibe, qwen-code]

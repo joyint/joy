@@ -3,9 +3,11 @@ title: Capability-based agent generation for AI tools
 type: epic
 status: new
 priority: medium
+deps:
+- JOY-0090
 effort: 5
 created: 2026-03-20T21:02:31.070606074Z
-updated: 2026-03-25T17:43:36.515719390Z
+updated: 2026-03-30T05:50:30.298995326Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-20T21:02:53.015937883Z
@@ -32,3 +34,6 @@ comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-25T17:43:35.992229825Z
   text: 'Reframed per ADR-018: This epic now covers capability-based agent generation, not role-based agent definitions. joy ai setup generates tool-specific agent files from .joy/ai/capabilities/*.md YAML blocks. Children 0013-0016 rewritten to capability-based stories. Children 0018-001B generate from capability data.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T05:35:29.388271918Z
+  text: ADR-024 changes the generation pipeline. Source data moves from .joy/ai/capabilities/*.md to data/ai/agents/*.yaml (tool-agnostic, embedded in binary). Templates in templates/ai/tools/*/agents/ render tool-specific output. Output goes directly into tool directories (.claude/, .qwen/, .vibe/, .github/), not into .joy/ai/ or .joy/capabilities/. Version-based freshness check replaces SHA-256 hashing for AI files.

@@ -147,9 +147,7 @@ pub const GITIGNORE_BLOCK_END: &str = "### joy:end";
 pub const GITIGNORE_BASE_ENTRIES: &[(&str, &str)] = &[
     (".joy/config.yaml", "personal config"),
     (".joy/credentials.yaml", "secrets"),
-    (".joy/ai/", "AI instructions"),
     (".joy/hooks/", "git hooks"),
-    (".joy/capabilities/", "capability definitions"),
 ];
 
 /// Update the joy-managed block in .gitignore with the given entries.

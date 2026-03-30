@@ -6,8 +6,11 @@ priority: medium
 parent: JOY-0012
 effort: 3
 created: 2026-03-20T21:02:44.744919922Z
-updated: 2026-03-25T17:43:27.464037768Z
+updated: 2026-03-30T05:35:37.440654358Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-25T17:43:17.549269997Z
   text: 'Reframed per ADR-018: This story now covers generating a review-capability agent file from .joy/ai/capabilities/review.md. The agent file provides read-only tool permissions and the system prompt for review activities. No longer a role-based ''Reviewer agent''.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T05:35:37.440654223Z
+  text: 'ADR-024: Source changes from .joy/ai/capabilities/review.md to data/capabilities/review.md + data/ai/agents/reviewer.yaml (embedded). Output is generated per tool into .claude/agents/reviewer.md, .qwen/agents/reviewer.md, .vibe/agents/reviewer.toml, .github/agents/reviewer.agent.md.'

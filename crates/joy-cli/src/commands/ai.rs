@@ -6,7 +6,7 @@ use std::io::Write;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
-use joy_core::embedded::{self, EmbeddedFile, FileStatus};
+use joy_core::ai_templates;
 
 use crate::color;
 
@@ -20,27 +20,12 @@ macro_rules! qprintln {
     };
 }
 
-const INSTRUCTIONS_TEMPLATE: &str = include_str!("../../../../data/ai/instructions.md");
-const SETUP_INSTRUCTIONS: &str = include_str!("../../../../data/ai/instructions/setup.md");
-const SKILL_TEMPLATE: &str = include_str!("../../../../data/ai/skills/joy/SKILL.md");
-const VISION_TEMPLATE: &str = include_str!("../../../../data/ai/templates/vision/README.md");
+const VISION_TEMPLATE: &str = include_str!("../../../../templates/docs/vision/README.md");
 const ARCHITECTURE_TEMPLATE: &str =
-    include_str!("../../../../data/ai/templates/architecture/README.md");
-const CONTRIBUTING_TEMPLATE: &str = include_str!("../../../../data/ai/templates/CONTRIBUTING.md");
-const JOY_BLOCK_TEMPLATE: &str = include_str!("../../../../data/ai/joy-block.md");
+    include_str!("../../../../templates/docs/architecture/README.md");
+const CONTRIBUTING_TEMPLATE: &str = include_str!("../../../../templates/docs/CONTRIBUTING.md");
 
-// Capability definitions
-const CAP_CONCEIVE: &str = include_str!("../../../../data/capabilities/conceive.md");
-const CAP_PLAN: &str = include_str!("../../../../data/capabilities/plan.md");
-const CAP_DESIGN: &str = include_str!("../../../../data/capabilities/design.md");
-const CAP_IMPLEMENT: &str = include_str!("../../../../data/capabilities/implement.md");
-const CAP_TEST: &str = include_str!("../../../../data/capabilities/test.md");
-const CAP_REVIEW: &str = include_str!("../../../../data/capabilities/review.md");
-const CAP_DOCUMENT: &str = include_str!("../../../../data/capabilities/document.md");
-const CAP_CREATE: &str = include_str!("../../../../data/capabilities/create.md");
-const CAP_ASSIGN: &str = include_str!("../../../../data/capabilities/assign.md");
-const CAP_MANAGE: &str = include_str!("../../../../data/capabilities/manage.md");
-const CAP_DELETE: &str = include_str!("../../../../data/capabilities/delete.md");
+const JOY_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const JOY_BLOCK_START: &str = "<!-- joy:start -->";
 const JOY_BLOCK_END: &str = "<!-- joy:end -->";
@@ -88,7 +73,6 @@ fn setup() -> anyhow::Result<()> {
     println!();
 
     check_docs(&root)?;
-    copy_templates(&root)?;
     let configured_tools = configure_tools(&root)?;
     update_gitignore(&root, &configured_tools)?;
     check_nested_projects(&root)?;
@@ -164,80 +148,6 @@ fn check_docs(root: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-const AI_FILES: &[EmbeddedFile] = &[
-    EmbeddedFile {
-        content: INSTRUCTIONS_TEMPLATE,
-        target: "ai/instructions.md",
-        executable: false,
-    },
-    EmbeddedFile {
-        content: SETUP_INSTRUCTIONS,
-        target: "ai/instructions/setup.md",
-        executable: false,
-    },
-    EmbeddedFile {
-        content: SKILL_TEMPLATE,
-        target: "ai/skills/joy/SKILL.md",
-        executable: false,
-    },
-    // Capability definitions
-    EmbeddedFile {
-        content: CAP_CONCEIVE,
-        target: "capabilities/conceive.md",
-        executable: false,
-    },
-    EmbeddedFile {
-        content: CAP_PLAN,
-        target: "capabilities/plan.md",
-        executable: false,
-    },
-    EmbeddedFile {
-        content: CAP_DESIGN,
-        target: "capabilities/design.md",
-        executable: false,
-    },
-    EmbeddedFile {
-        content: CAP_IMPLEMENT,
-        target: "capabilities/implement.md",
-        executable: false,
-    },
-    EmbeddedFile {
-        content: CAP_TEST,
-        target: "capabilities/test.md",
-        executable: false,
-    },
-    EmbeddedFile {
-        content: CAP_REVIEW,
-        target: "capabilities/review.md",
-        executable: false,
-    },
-    EmbeddedFile {
-        content: CAP_DOCUMENT,
-        target: "capabilities/document.md",
-        executable: false,
-    },
-    EmbeddedFile {
-        content: CAP_CREATE,
-        target: "capabilities/create.md",
-        executable: false,
-    },
-    EmbeddedFile {
-        content: CAP_ASSIGN,
-        target: "capabilities/assign.md",
-        executable: false,
-    },
-    EmbeddedFile {
-        content: CAP_MANAGE,
-        target: "capabilities/manage.md",
-        executable: false,
-    },
-    EmbeddedFile {
-        content: CAP_DELETE,
-        target: "capabilities/delete.md",
-        executable: false,
-    },
-];
-
 fn check() -> anyhow::Result<()> {
     let root = joy_core::store::find_project_root(&std::env::current_dir()?)
         .ok_or_else(|| anyhow::anyhow!("No Joy project found (run `joy init` first)"))?;
@@ -245,27 +155,7 @@ fn check() -> anyhow::Result<()> {
     println!("{}", color::header("AI Status"));
     println!();
 
-    // Templates
-    println!("{}", color::section("Templates"));
-    let diffs = embedded::diff_files(&root, AI_FILES)?;
-    let mut has_issues = false;
-    for (path, status) in &diffs {
-        let (mark, label) = match status {
-            FileStatus::UpToDate => (color::check_mark(), color::inactive("up to date")),
-            FileStatus::Outdated => {
-                has_issues = true;
-                (color::warn_mark(), color::warning("outdated"))
-            }
-            FileStatus::Missing => {
-                has_issues = true;
-                (color::cross_mark(), color::danger("missing"))
-            }
-        };
-        println!("  {}{:<34} {}", mark, format!(".joy/{}", path), label);
-    }
-    println!();
-
-    // AI Tools
+    // AI Tools -- re-render expected output and compare against on-disk
     println!("{}", color::section("AI Tools"));
     let tool_checks: &[(&str, &str)] = &[
         ("Claude Code", "claude"),
@@ -275,6 +165,7 @@ fn check() -> anyhow::Result<()> {
     ];
 
     let mut configured_count = 0;
+    let mut has_issues = false;
     for (name, id) in tool_checks {
         let installed = match *id {
             "claude" => which("claude"),
@@ -284,33 +175,46 @@ fn check() -> anyhow::Result<()> {
             _ => false,
         };
         let configured = is_tool_configured(&root, id);
-        let (mark, status) = if configured {
+        if configured {
             configured_count += 1;
-            (
-                color::check_mark().to_string(),
-                color::success("configured"),
-            )
+            // Check if generated files are up-to-date by re-rendering and comparing
+            let member_id = format!("ai:{id}@joy");
+            let stale = check_tool_files(&root, id, &member_id).unwrap_or(true);
+            if stale {
+                has_issues = true;
+                println!(
+                    "  {}{:<24} {}",
+                    color::warn_mark(),
+                    name,
+                    color::warning("outdated")
+                );
+            } else {
+                println!(
+                    "  {}{:<24} {}",
+                    color::check_mark(),
+                    name,
+                    color::inactive("up to date")
+                );
+            }
         } else if installed {
-            (
-                color::warn_mark().to_string(),
-                color::warning("installed, not configured"),
-            )
+            println!(
+                "  {}{:<24} {}",
+                color::warn_mark(),
+                name,
+                color::warning("installed, not configured")
+            );
         } else {
-            ("  ".to_string(), color::inactive("not installed"))
-        };
-        println!("  {}{:<24} {}", mark, name, status);
+            println!("    {:<24} {}", name, color::inactive("not installed"));
+        }
     }
 
     println!();
     let msg = format!(
         "{} · {}",
         if has_issues {
-            format!(
-                "templates need update -- run {}",
-                color::label("joy ai setup")
-            )
+            format!("files need update -- run {}", color::label("joy ai setup"))
         } else {
-            "templates up to date".to_string()
+            "all up to date".to_string()
         },
         color::plural(configured_count, "tool")
     );
@@ -320,6 +224,61 @@ fn check() -> anyhow::Result<()> {
         std::process::exit(2);
     }
     Ok(())
+}
+
+/// Check if a tool's generated files are up to date by comparing version headers.
+/// Returns true if any file is stale (version mismatch or missing).
+fn check_tool_files(root: &Path, tool: &str, _member_id: &str) -> anyhow::Result<bool> {
+    // Collect all files that should have a version header
+    let mut files_to_check: Vec<std::path::PathBuf> = Vec::new();
+
+    // SKILL.md (all tools except copilot)
+    match tool {
+        "claude" => files_to_check.push(root.join(".claude/skills/joy/SKILL.md")),
+        "qwen" => files_to_check.push(root.join(".qwen/skills/joy/SKILL.md")),
+        "vibe" => files_to_check.push(root.join(".vibe/skills/joy/SKILL.md")),
+        _ => {}
+    }
+
+    // Instructions file (joy-block contains version header)
+    match tool {
+        "claude" => files_to_check.push(root.join(".claude/CLAUDE.md")),
+        "qwen" => files_to_check.push(root.join(".qwen/QWEN.md")),
+        "copilot" => {
+            files_to_check.push(root.join(".github/copilot-instructions.md"));
+            files_to_check.push(root.join(".github/prompts/joy.prompt.md"));
+        }
+        _ => {}
+    }
+
+    // Agent files
+    let agents_dir = match tool {
+        "claude" => Some(root.join(".claude/agents")),
+        "qwen" => Some(root.join(".qwen/agents")),
+        "vibe" => Some(root.join(".vibe/agents")),
+        "copilot" => Some(root.join(".github/agents")),
+        _ => None,
+    };
+    if let Some(dir) = agents_dir {
+        if dir.is_dir() {
+            for entry in fs::read_dir(&dir)?.filter_map(|e| e.ok()) {
+                files_to_check.push(entry.path());
+            }
+        }
+    }
+
+    for path in &files_to_check {
+        if !path.is_file() {
+            return Ok(true); // missing = stale
+        }
+        let content = fs::read_to_string(path)?;
+        match ai_templates::extract_version(&content) {
+            Some(version) if version == JOY_VERSION => {} // up to date
+            _ => return Ok(true),                         // stale or no header
+        }
+    }
+
+    Ok(false) // all up to date
 }
 
 fn reset(args: ResetArgs) -> anyhow::Result<()> {
@@ -333,7 +292,11 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
         (
             "GitHub Copilot",
             "copilot",
-            &[".github/copilot-instructions.md"],
+            &[
+                ".github/copilot-instructions.md",
+                ".github/agents/",
+                ".github/prompts/",
+            ],
         ),
     ];
 
@@ -449,24 +412,11 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
         }
     }
 
-    // If no AI tools remain, clean up .joy/ai/ and .joy/capabilities/
+    // If no AI tools remain, update gitignore to remove tool entries
     let any_remaining = all_tools
         .iter()
         .any(|(_, id, _)| is_tool_configured(&root, id));
     if !any_remaining {
-        let joy_dir = joy_core::store::joy_dir(&root);
-        for dir in ["ai", "capabilities"] {
-            let path = joy_dir.join(dir);
-            if path.is_dir() {
-                fs::remove_dir_all(&path)?;
-                println!(
-                    "  {}{:<24} removed (no tools remaining)",
-                    color::check_mark(),
-                    format!(".joy/{dir}/")
-                );
-            }
-        }
-        // Update gitignore to remove tool entries
         joy_core::init::update_gitignore_block(&root, joy_core::init::GITIGNORE_BASE_ENTRIES)?;
     }
 
@@ -482,31 +432,6 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
         "{}",
         color::footer(&format!("{} reset", color::plural(count, "tool")))
     );
-    Ok(())
-}
-
-fn copy_templates(root: &Path) -> anyhow::Result<()> {
-    println!("{}", color::section("Templates"));
-
-    let actions = embedded::sync_files(root, AI_FILES)?;
-
-    for action in &actions {
-        let status = if action.action == "up to date" {
-            color::inactive(action.action)
-        } else if action.action == "installed" || action.action == "updated" {
-            color::success(action.action)
-        } else {
-            action.action.to_string()
-        };
-        println!(
-            "  {}{:<32} {}",
-            color::check_mark(),
-            format!(".joy/{}", action.target),
-            status
-        );
-    }
-
-    println!();
     Ok(())
 }
 
@@ -630,41 +555,76 @@ fn configure_tools(root: &Path) -> anyhow::Result<Vec<&'static str>> {
             "  {}",
             color::inactive("Install one and re-run `joy ai setup`.")
         );
-        println!();
-        println!(
-            "  {}",
-            color::inactive("Templates in .joy/ai/ can be referenced manually from any AI tool.")
-        );
     }
 
     println!();
     Ok(configured_tools)
 }
 
-fn render_joy_block(member_id: &str, has_skill: bool) -> anyhow::Result<String> {
-    let mut env = minijinja::Environment::new();
-    env.add_template("block", JOY_BLOCK_TEMPLATE)?;
-    let tmpl = env.get_template("block")?;
-    let rendered = tmpl.render(minijinja::context! {
-        member_id => member_id,
-        has_skill => has_skill,
-    })?;
-    Ok(rendered.trim().to_string())
+/// Render the managed block (identity + instructions with workflow) for a tool's instruction file.
+fn render_managed_block(member_id: &str, has_skill: bool) -> anyhow::Result<String> {
+    let workflow = ai_templates::load_workflow()?;
+    let joy_block = ai_templates::render_joy_block(member_id, has_skill, JOY_VERSION)?;
+    let instructions = ai_templates::render_instructions(&workflow)?;
+    Ok(format!("{}\n\n{}", joy_block, instructions))
+}
+
+/// Render SKILL.md with workflow context.
+fn render_skill() -> anyhow::Result<String> {
+    let workflow = ai_templates::load_workflow()?;
+    ai_templates::render_skill(&workflow, JOY_VERSION).map_err(Into::into)
+}
+
+/// Remove and recreate Joy-managed subdirectories for a tool.
+/// Preserves user-owned files (instruction files, settings.json).
+fn clean_managed_dirs(root: &Path, dirs: &[&str]) {
+    for dir in dirs {
+        let path = root.join(dir);
+        if path.is_dir() {
+            let _ = fs::remove_dir_all(&path);
+        }
+    }
+}
+
+/// Generate agent files for a tool into the given directory.
+fn generate_agents(root: &Path, tool: &str, agents_dir: &str) -> anyhow::Result<bool> {
+    let workflow = ai_templates::load_workflow()?;
+    let agents = ai_templates::load_agents()?;
+    let mut changed = false;
+
+    for agent in &agents {
+        if !ai_templates::agent_applicable_to_tool(agent, tool) {
+            continue;
+        }
+        if let Some(filename) = ai_templates::agent_filename(agent, tool) {
+            let content = ai_templates::render_agent(agent, &workflow, tool, JOY_VERSION)?;
+            let path = root.join(agents_dir).join(&filename);
+            changed |= write_if_changed(&path, &content)?;
+            qprintln!("    {}{}/{}", color::check_mark(), agents_dir, filename);
+        }
+    }
+    Ok(changed)
 }
 
 fn configure_claude(root: &Path, member_id: &str) -> anyhow::Result<bool> {
     let claude_dir = root.join(".claude");
     fs::create_dir_all(&claude_dir)?;
+    clean_managed_dirs(root, &[".claude/agents", ".claude/skills/joy"]);
     let mut changed = false;
 
     let claude_md = claude_dir.join("CLAUDE.md");
-    changed |= update_with_joy_block(&claude_md, &render_joy_block(member_id, true)?)?;
+    changed |= update_with_joy_block(&claude_md, &render_managed_block(member_id, true)?)?;
     qprintln!("    {}.claude/CLAUDE.md", color::check_mark());
 
     let skill_path = claude_dir.join("skills/joy/SKILL.md");
-    changed |= write_if_changed(&skill_path, SKILL_TEMPLATE)?;
+    changed |= write_if_changed(&skill_path, &render_skill()?)?;
     qprintln!("    {}.claude/skills/joy/SKILL.md", color::check_mark());
 
+    let setup_path = claude_dir.join("skills/joy/setup.md");
+    changed |= write_if_changed(&setup_path, ai_templates::setup_instructions())?;
+    qprintln!("    {}.claude/skills/joy/setup.md", color::check_mark());
+
+    changed |= generate_agents(root, "claude", ".claude/agents")?;
     changed |= update_claude_permissions(root)?;
 
     Ok(changed)
@@ -674,10 +634,6 @@ fn update_claude_permissions(root: &Path) -> anyhow::Result<bool> {
     let settings_path = root.join(".claude/settings.json");
     let joy_permission = "Bash(joy *)";
     let jot_permission = "Bash(jot *)";
-    let deprecated: &[(&str, &str)] = &[
-        ("Bash(joy:*)", "Bash(joy *)"),
-        ("Bash(jot:*)", "Bash(jot *)"),
-    ];
 
     let mut settings: serde_json::Value = if settings_path.is_file() {
         let content = fs::read_to_string(&settings_path)?;
@@ -699,13 +655,6 @@ fn update_claude_permissions(root: &Path) -> anyhow::Result<bool> {
 
     let allow_arr = allow.as_array_mut().unwrap();
 
-    // Migrate deprecated colon syntax to space syntax
-    for (old, new) in deprecated {
-        if let Some(pos) = allow_arr.iter().position(|v| v.as_str() == Some(old)) {
-            allow_arr[pos] = serde_json::json!(new);
-        }
-    }
-
     for perm in [joy_permission, jot_permission] {
         if !allow_arr.iter().any(|v| v.as_str() == Some(perm)) {
             allow_arr.push(serde_json::json!(perm));
@@ -722,26 +671,22 @@ fn update_claude_permissions(root: &Path) -> anyhow::Result<bool> {
 fn configure_qwen(root: &Path, member_id: &str) -> anyhow::Result<bool> {
     let qwen_dir = root.join(".qwen");
     fs::create_dir_all(&qwen_dir)?;
+    clean_managed_dirs(root, &[".qwen/agents", ".qwen/skills/joy"]);
     let mut changed = false;
 
-    // Migrate: move root QWEN.md to .qwen/QWEN.md if it has a joy block
-    let old_qwen_md = root.join("QWEN.md");
     let qwen_md = qwen_dir.join("QWEN.md");
-    if old_qwen_md.is_file() && !qwen_md.is_file() {
-        let content = fs::read_to_string(&old_qwen_md)?;
-        if content.contains(JOY_BLOCK_START) {
-            fs::rename(&old_qwen_md, &qwen_md)?;
-            changed = true;
-        }
-    }
-
-    changed |= update_with_joy_block(&qwen_md, &render_joy_block(member_id, true)?)?;
+    changed |= update_with_joy_block(&qwen_md, &render_managed_block(member_id, true)?)?;
     qprintln!("    {}.qwen/QWEN.md", color::check_mark());
 
     let skill_path = qwen_dir.join("skills/joy/SKILL.md");
-    changed |= write_if_changed(&skill_path, SKILL_TEMPLATE)?;
+    changed |= write_if_changed(&skill_path, &render_skill()?)?;
     qprintln!("    {}.qwen/skills/joy/SKILL.md", color::check_mark());
 
+    let setup_path = qwen_dir.join("skills/joy/setup.md");
+    changed |= write_if_changed(&setup_path, ai_templates::setup_instructions())?;
+    qprintln!("    {}.qwen/skills/joy/setup.md", color::check_mark());
+
+    changed |= generate_agents(root, "qwen", ".qwen/agents")?;
     changed |= update_qwen_permissions(root)?;
 
     Ok(changed)
@@ -787,10 +732,19 @@ fn update_qwen_permissions(root: &Path) -> anyhow::Result<bool> {
 fn configure_vibe(root: &Path, _member_id: &str) -> anyhow::Result<bool> {
     let vibe_dir = root.join(".vibe");
     fs::create_dir_all(&vibe_dir)?;
+    clean_managed_dirs(root, &[".vibe/agents", ".vibe/skills/joy"]);
+    let mut changed = false;
 
     let skill_path = vibe_dir.join("skills/joy/SKILL.md");
-    let changed = write_if_changed(&skill_path, SKILL_TEMPLATE)?;
+    changed |= write_if_changed(&skill_path, &render_skill()?)?;
     qprintln!("    {}.vibe/skills/joy/SKILL.md", color::check_mark());
+
+    let setup_path = vibe_dir.join("skills/joy/setup.md");
+    changed |= write_if_changed(&setup_path, ai_templates::setup_instructions())?;
+    qprintln!("    {}.vibe/skills/joy/setup.md", color::check_mark());
+
+    changed |= generate_agents(root, "vibe", ".vibe/agents")?;
+
     qprintln!(
         "    {}",
         color::inactive("Note: set [tools.bash] permission = \"always\" in .vibe/config.toml")
@@ -802,12 +756,21 @@ fn configure_vibe(root: &Path, _member_id: &str) -> anyhow::Result<bool> {
 fn configure_copilot(root: &Path, member_id: &str) -> anyhow::Result<bool> {
     let github_dir = root.join(".github");
     fs::create_dir_all(&github_dir)?;
+    clean_managed_dirs(root, &[".github/agents", ".github/prompts"]);
     let mut changed = false;
 
     let instructions_md = github_dir.join("copilot-instructions.md");
-    changed |= update_with_joy_block(&instructions_md, &render_joy_block(member_id, false)?)?;
+    changed |= update_with_joy_block(&instructions_md, &render_managed_block(member_id, false)?)?;
     qprintln!("    {}.github/copilot-instructions.md", color::check_mark());
 
+    // Copilot skill wrapper
+    let workflow = ai_templates::load_workflow()?;
+    let prompt = ai_templates::render_copilot_prompt(&workflow, JOY_VERSION)?;
+    let prompt_path = github_dir.join("prompts/joy.prompt.md");
+    changed |= write_if_changed(&prompt_path, &prompt)?;
+    qprintln!("    {}.github/prompts/joy.prompt.md", color::check_mark());
+
+    changed |= generate_agents(root, "copilot", ".github/agents")?;
     changed |= update_copilot_permissions(root)?;
 
     Ok(changed)

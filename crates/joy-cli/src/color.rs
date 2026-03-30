@@ -445,11 +445,6 @@ pub fn warning(text: &str) -> String {
     wrap(WARNING, text)
 }
 
-/// Wrap text in danger color (red).
-pub fn danger(text: &str) -> String {
-    wrap(DANGER, text)
-}
-
 /// Wrap text in info color (cyan).
 #[allow(dead_code)]
 pub fn info(text: &str) -> String {

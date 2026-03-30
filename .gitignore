@@ -20,9 +20,7 @@ Thumbs.db
 ### joy:start -- managed by joy, do not edit manually
 .joy/config.yaml
 .joy/credentials.yaml
-.joy/ai/
 .joy/hooks/
-.joy/capabilities/
 .claude/
 .qwen/
 .vibe/

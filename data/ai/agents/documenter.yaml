@@ -1,0 +1,17 @@
+name: documenter
+capability: document
+description: "Write or update documentation, architecture docs, API docs, user guides"
+phase: in-progress
+default_mode: collaborative
+
+permissions:
+  allowed: [read, search, grep, write, edit]
+  denied: [delete, bash]
+
+constraints:
+  - "May modify files -- core activity: writing documentation"
+  - "May NOT run tests -- documentation does not require test execution"
+  - "May NOT create items -- documentation follows existing items"
+  - "May NOT change status -- documentation alone does not close items"
+
+applicable_tools: [claude-code, github-copilot, mistral-vibe]

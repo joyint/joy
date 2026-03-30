@@ -1,0 +1,21 @@
+id: JOY-0095
+title: joy ai setup does not clean stale files on update
+type: bug
+status: closed
+priority: high
+assignees:
+- member: horst.schwarz@joydev.com
+capabilities:
+- implement
+- review
+effort: 2
+created_by: horst.schwarz@joydev.com
+created: 2026-03-30T07:07:58.897114090Z
+updated: 2026-03-30T07:12:01.540324217Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T07:08:05.340608085Z
+  text: 'When joy ai setup regenerates files for a configured tool, it only creates and updates files but never removes stale ones. If an agent is renamed or removed between versions, the old file remains in the tool directory (e.g. .claude/agents/old-name.md). Fix: when the version header in existing files does not match the running binary version, remove the Joy-managed subdirectories (agents/, skills/joy/, prompts/) and regenerate from scratch. Preserve user-owned files (CLAUDE.md content outside joy markers, settings.json).'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T07:11:54.341532442Z
+  text: '[x] Added clean_managed_dirs function that removes Joy-managed subdirectories before regenerating. [x] Applied to all 4 tools: Claude (agents, skills/joy), Qwen (agents, skills/joy), Vibe (agents, skills/joy), Copilot (agents, prompts). [x] User-owned files preserved (CLAUDE.md, settings.json, etc.). [x] All tests passing, clippy clean.'

@@ -1,0 +1,9 @@
+id: JOY-0093
+title: Align item attributes in roadmap
+type: idea
+status: new
+priority: medium
+created_by: horst.schwarz@joydev.com
+created: 2026-03-30T05:44:24.518779410Z
+updated: 2026-03-30T05:44:24.518779410Z
+description: Align item attributes like item type, effort, etc. to the right hand side of the terminal, so that they are always in the same column with the infos for items with shortened title. Between title and infos can be space characters.

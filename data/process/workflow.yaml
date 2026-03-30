@@ -1,0 +1,74 @@
+statuses:
+  - name: new
+    description: "Created but not yet triaged"
+    initial: true
+  - name: open
+    description: "Triaged and accepted into backlog"
+  - name: in-progress
+    description: "Actively being worked on"
+  - name: review
+    description: "Implementation complete, awaiting review"
+  - name: closed
+    description: "Reviewed and accepted as done"
+    terminal: true
+  - name: deferred
+    description: "Postponed to a later date"
+
+transitions:
+  - from: new
+    to: open
+    capability: plan
+    description: "Triage and accept into backlog"
+  - from: open
+    to: in-progress
+    capability: implement
+    shortcut: "joy start"
+    description: "Begin working on item"
+  - from: in-progress
+    to: review
+    capability: review
+    shortcut: "joy submit"
+    description: "Submit completed work for review"
+  - from: review
+    to: closed
+    capability: review
+    shortcut: "joy close"
+    description: "Accept review and close item"
+  - from: review
+    to: in-progress
+    capability: implement
+    description: "Send back for rework after review"
+  - from: new
+    to: deferred
+    capability: plan
+    description: "Defer before triage"
+  - from: open
+    to: deferred
+    capability: plan
+    description: "Defer accepted item"
+  - from: in-progress
+    to: deferred
+    capability: plan
+    description: "Defer in-progress item"
+  - from: review
+    to: deferred
+    capability: plan
+    description: "Defer item in review"
+  - from: deferred
+    to: open
+    capability: plan
+    shortcut: "joy reopen"
+    description: "Reactivate postponed item"
+  - from: closed
+    to: open
+    capability: plan
+    shortcut: "joy reopen"
+    description: "Reopen closed item"
+
+gates:
+  description: >
+    Gates restrict specific transitions via project.yaml status_rules.
+    Example: { "review -> closed": { allow_ai: false } } prevents AI
+    members from closing items. Check `joy project` to see active gates.
+  configurable_fields:
+    - allow_ai

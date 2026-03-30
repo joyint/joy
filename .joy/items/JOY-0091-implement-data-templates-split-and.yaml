@@ -1,0 +1,24 @@
+id: JOY-0091
+title: Implement data/templates split and migrate AI generator
+type: task
+status: closed
+priority: medium
+parent: JOY-0090
+assignees:
+- member: horst.schwarz@joydev.com
+capabilities:
+- implement
+effort: 3
+created_by: horst.schwarz@joydev.com
+created: 2026-03-30T05:40:41.438181267Z
+updated: 2026-03-30T06:42:30.627703317Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T05:40:48.552946523Z
+  text: Migrate existing files from data/ai/ to templates/. Create data/process/ YAML structures for status flow, transitions, gates. Create data/ai/agents/*.yaml for tool-agnostic agent definitions. Update joy ai setup to render from data + templates directly into tool directories (.claude/, .qwen/, .vibe/, .github/). Remove .joy/ai/ and .joy/capabilities/ deployment.
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T06:10:12.797260979Z
+  text: 'Plan: Implement ADR-024 data/templates split in 10 steps. (1) Create data/process/workflow.yaml with all statuses, transitions, gates. (2) Create data/ai/agents/*.yaml for 7 work capabilities. (3) Move templates from data/ai/ to templates/ai/, doc scaffolds to templates/docs/. (4) Enhance instructions.md and SKILL.md with MiniJinja workflow blocks. (5) Create tool-specific agent frame templates. (6) Build joy-core ai_templates.rs rendering engine. (7) Rewrite ai.rs to use new rendering pipeline. (8) Update init.rs gitignore entries. (9) Add legacy .joy/ai/ cleanup. (10) Tests.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T06:42:25.334577815Z
+  text: '[x] Created data/process/workflow.yaml with 6 statuses, 11 transitions, gates. [x] Created data/ai/agents/*.yaml for 7 work capabilities. [x] Moved templates from data/ai/ to templates/ai/ and templates/docs/. [x] Enhanced instructions.md and SKILL.md with MiniJinja workflow blocks. [x] Created tool-specific agent frame templates for all 4 tools. [x] Built joy-core ai_templates.rs rendering engine. [x] Rewrote ai.rs to generate directly into tool directories. [x] Updated init.rs gitignore entries. [x] Removed backwards-compat code (legacy cleanup, colon syntax migration, QWEN.md migration). [x] 28 integration tests covering all generated files. [x] Clippy clean, cargo fmt, 194 tests passing.'

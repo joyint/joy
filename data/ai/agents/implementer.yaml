@@ -1,0 +1,18 @@
+name: implementer
+capability: implement
+description: "Write code, configuration, and infrastructure"
+phase: in-progress
+default_mode: collaborative
+
+permissions:
+  allowed: [read, search, grep, write, edit, bash]
+  denied: [delete]
+
+constraints:
+  - "May modify source files"
+  - "May run tests to verify implementation"
+  - "May NOT create items -- implementation follows the plan"
+  - "Must run joy start <ID> before writing code"
+  - "Must run joy submit <ID> after committing"
+
+applicable_tools: [claude-code, github-copilot, mistral-vibe, qwen-code]

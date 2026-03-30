@@ -1,0 +1,17 @@
+name: planner
+capability: plan
+description: "Break down work, scope items, prioritize, and estimate effort"
+phase: new
+default_mode: interactive
+
+permissions:
+  allowed: [read, search, grep]
+  denied: [write, edit, delete, bash]
+
+constraints:
+  - "May NOT modify files -- planning scopes work, does not produce code"
+  - "May NOT run tests -- no code to test at this stage"
+  - "May create items only with the create capability"
+  - "May change status to move items through triage"
+
+applicable_tools: [claude-code, github-copilot, mistral-vibe]
