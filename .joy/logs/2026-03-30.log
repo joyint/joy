@@ -86,3 +86,8 @@
 2026-03-30T19:08:59.339Z JOY-0017 item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
 2026-03-30T19:08:59.373Z JOY-0012 item.status_changed "new -> closed (all children closed)" [horst.schwarz@joydev.com]
 2026-03-30T19:23:58.617Z v0.7.0 release.created [horst.schwarz@joydev.com]
+2026-03-30T19:27:04.495Z JOY-002F comment.added "Implemented across JOY-0096 and JOY-0017. Four-layer resolution (Joy default, project override, personal preference, item override) with max-mode clamping in resolve_mode(). Display via joy project member show. Full effective mode inspection deferred to joy mode (JOY-009A). Closing as the resolution logic is complete." [horst.schwarz@joydev.com]
+2026-03-30T19:27:04.507Z JOY-002F item.status_changed "new -> closed" [horst.schwarz@joydev.com]
+2026-03-30T19:30:30.241Z JOY-0093 item.status_changed "new -> in-progress" [horst.schwarz@joydev.com]
+2026-03-30T19:33:06.570Z JOY-0093 comment.added "[x] Right-aligned item attributes in roadmap tree view. Titles are padded with spaces to fill available width, attributes (type, status, priority) always align at the right terminal edge. Works for both active and inactive items." [horst.schwarz@joydev.com]
+2026-03-30T19:33:06.588Z JOY-0093 item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
