@@ -72,6 +72,9 @@ fn setup() -> anyhow::Result<()> {
     println!("{}", color::header("AI Setup"));
     println!();
 
+    // Ensure project.defaults.yaml exists
+    joy_core::embedded::sync_files(&root, joy_core::init::PROJECT_FILES)?;
+
     check_docs(&root)?;
     let configured_tools = configure_tools(&root)?;
     update_gitignore(&root, &configured_tools)?;
@@ -505,26 +508,19 @@ fn configure_tools(root: &Path) -> anyhow::Result<Vec<&'static str>> {
 
         // Register as AI member only if tool was actually configured
         if configured && !project.members.contains_key(&member_id) {
+            let ai_defaults = joy_core::store::load_ai_defaults(root);
+            let ai_caps = if ai_defaults.capabilities.is_empty() {
+                joy_core::model::item::Capability::work_capabilities()
+            } else {
+                ai_defaults.capabilities.clone()
+            };
             project.members.insert(
                 member_id.clone(),
                 joy_core::model::project::Member::new(
                     joy_core::model::project::MemberCapabilities::Specific({
-                        use joy_core::model::item::Capability;
                         use joy_core::model::project::CapabilityConfig;
                         let mut map = std::collections::BTreeMap::new();
-                        // AI members get all work capabilities + create and assign,
-                        // but NOT manage or delete
-                        for cap in [
-                            Capability::Conceive,
-                            Capability::Plan,
-                            Capability::Design,
-                            Capability::Implement,
-                            Capability::Test,
-                            Capability::Review,
-                            Capability::Document,
-                            Capability::Create,
-                            Capability::Assign,
-                        ] {
+                        for cap in ai_caps {
                             map.insert(cap, CapabilityConfig::default());
                         }
                         map

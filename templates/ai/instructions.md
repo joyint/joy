@@ -9,7 +9,7 @@ At the start of each session:
 1. Run `joy ai check` to verify your AI instructions are current. If it exits with
    code 2, tell the user which templates are outdated and suggest `joy ai setup`.
    Do not proceed with outdated instructions.
-2. Run `joy config get agents.default.mode` to read the configured level.
+2. Run `joy config get modes.default` to read the configured level.
    If the key does not exist, default to `collaborative`.
 3. Briefly confirm: "Working in collaborative mode. Want to change that for this
    session?" One line, no menu.
@@ -24,7 +24,7 @@ Interaction levels:
 - **pairing**: Work through it step by step, question by question. Co-creation mode.
 
 The user can set the default level with:
-`joy config set agents.default.mode interactive`
+`joy config set modes.default interactive`
 
 Per-capability levels in `project.yaml` override the default when
 working on a specific capability.

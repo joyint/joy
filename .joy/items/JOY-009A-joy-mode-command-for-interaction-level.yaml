@@ -1,0 +1,18 @@
+id: JOY-009A
+title: joy mode command for interaction level inspection
+type: story
+status: new
+priority: medium
+parent: JOY-0029
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created_by: horst.schwarz@joydev.com
+created: 2026-03-30T18:46:02.970060899Z
+updated: 2026-03-30T18:46:08.711854941Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T18:46:08.711854621Z
+  text: 'New command joy mode <ID> to inspect effective interaction levels per member per item. Flags: --mine (all statuses for caller), --member <id> (all statuses for a member), --status <status> (filter to a specific status). Combinable. Default (no flags): current status, all members. Output follows Joy UI standard: full-width header/footer, dimmed annotations. The AI uses joy mode <ID> --mine to determine how to interact. Resolves all four layers (project defaults, project overrides, personal preference, item override) clamped by max-mode. See ADR-025 for resolution logic.'

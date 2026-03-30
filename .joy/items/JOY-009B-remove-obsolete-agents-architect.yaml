@@ -1,0 +1,21 @@
+id: JOY-009B
+title: Remove obsolete agents.architect config key
+type: bug
+status: closed
+priority: medium
+assignees:
+- member: horst.schwarz@joydev.com
+capabilities:
+- implement
+- review
+effort: 1
+created_by: horst.schwarz@joydev.com
+created: 2026-03-30T18:58:30.406161810Z
+updated: 2026-03-30T19:00:33.927848707Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T18:58:35.167203706Z
+  text: joy config set shows agents.architect.mode as a valid key from the old role-based design (pre ADR-018). This key has no effect and should be removed from the config probes/completions.
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T19:00:33.884590855Z
+  text: '[x] Removed flatten roles BTreeMap from AgentsConfig. The old design accepted any key as agent role (agents.architect.mode, agents.foo.mode). Now only agents.default.mode is valid. Full rename to modes.* will happen in JOY-0017.'

@@ -1,0 +1,23 @@
+id: JOY-0096
+title: Introduce project.defaults.yaml for AI governance (ADR-025)
+type: story
+status: closed
+priority: medium
+parent: JOY-0029
+assignees:
+- member: horst.schwarz@joydev.com
+capabilities:
+- plan
+- implement
+- review
+effort: 5
+created_by: horst.schwarz@joydev.com
+created: 2026-03-30T16:39:14.615542798Z
+updated: 2026-03-30T18:56:25.377158230Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T16:39:19.635688399Z
+  text: 'Implement the project.defaults.yaml pattern per ADR-025. Ship embedded defaults for per-capability interaction levels and AI tool capabilities. Merge logic: project.yaml overrides defaults, config.yaml holds personal preference, all capped by max-mode. Display effective values in joy project and joy show with source annotation.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T18:56:20.135650425Z
+  text: '[x] Created data/project.defaults.yaml with per-capability interaction levels and AI tool capabilities. [x] Embedded sync in init, onboard, ai setup; gitignored. [x] AgentDefaults, ModeSource, resolve_mode() with four-layer resolution. [x] load_agent_defaults() and load_raw_project_defaults() in store.rs with deep_merge. [x] joy project member show: header/footer, unified capability+mode matrix, wide/narrow responsive. [x] joy project: hint for member modes. [x] joy show: item-level mode override only. [x] Item struct: mode field. [x] AI capabilities from defaults. [x] 12 resolve_mode + item tests, 5 store integration tests. 220 tests, clippy clean. joy mode command tracked in JOY-009A. Rename agents to modes tracked in JOY-0017.'

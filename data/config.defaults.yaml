@@ -7,6 +7,5 @@ output:
 workflow:
   auto-assign: true
   auto-git: add
-agents:
-  default:
-    mode: collaborative
+modes:
+  default: collaborative

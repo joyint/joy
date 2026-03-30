@@ -1,8 +1,6 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-use std::collections::BTreeMap;
-
 use crate::fortune::Category;
 use serde::{Deserialize, Serialize};
 
@@ -18,7 +16,7 @@ pub struct Config {
     #[serde(default)]
     pub workflow: WorkflowConfig,
     #[serde(default)]
-    pub agents: AgentsConfig,
+    pub modes: ModesConfig,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -69,17 +67,9 @@ fn default_true() -> bool {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct AgentsConfig {
+pub struct ModesConfig {
     #[serde(default)]
-    pub default: AgentRoleConfig,
-    #[serde(flatten)]
-    pub roles: BTreeMap<String, AgentRoleConfig>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct AgentRoleConfig {
-    #[serde(default)]
-    pub mode: InteractionLevel,
+    pub default: InteractionLevel,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -156,7 +146,7 @@ impl Default for Config {
             output: OutputConfig::default(),
             ai: None,
             workflow: WorkflowConfig::default(),
-            agents: AgentsConfig::default(),
+            modes: ModesConfig::default(),
         }
     }
 }
@@ -307,5 +297,53 @@ mod tests {
         let config = Config::default();
         let yaml = serde_yaml_ng::to_string(&config).unwrap();
         insta::assert_snapshot!(yaml);
+    }
+
+    #[test]
+    fn modes_config_get_default() {
+        let config = Config::default();
+        assert_eq!(config.modes.default, InteractionLevel::Collaborative);
+    }
+
+    #[test]
+    fn modes_config_set_default() {
+        let yaml = "modes:\n  default: pairing\n";
+        let mut base = serde_json::to_value(Config::default()).unwrap();
+        let overlay: serde_json::Value = serde_yaml_ng::from_str(yaml).unwrap();
+        crate::store::deep_merge_value(&mut base, &overlay);
+        let config: Config = serde_json::from_value(base).unwrap();
+        assert_eq!(config.modes.default, InteractionLevel::Pairing);
+    }
+
+    #[test]
+    fn old_agents_key_does_not_deserialize_to_modes() {
+        let yaml = "agents:\n  default:\n    mode: pairing\n";
+        let mut base = serde_json::to_value(Config::default()).unwrap();
+        let overlay: serde_json::Value = serde_yaml_ng::from_str(yaml).unwrap();
+        crate::store::deep_merge_value(&mut base, &overlay);
+        let config: Config = serde_json::from_value(base).unwrap();
+        // modes.default should still be the default, not pairing
+        assert_eq!(config.modes.default, InteractionLevel::Collaborative);
+    }
+
+    #[test]
+    fn field_hint_modes_default() {
+        let hint = field_hint("modes.default");
+        assert!(hint.is_some());
+        let values = hint.unwrap();
+        assert!(values.contains("collaborative"));
+        assert!(values.contains("pairing"));
+    }
+
+    #[test]
+    fn old_agents_key_has_no_effect_on_modes() {
+        // Even if agents key is present in YAML, it should not affect modes
+        let yaml = "agents:\n  default:\n    mode: pairing\nmodes:\n  default: interactive\n";
+        let mut base = serde_json::to_value(Config::default()).unwrap();
+        let overlay: serde_json::Value = serde_yaml_ng::from_str(yaml).unwrap();
+        crate::store::deep_merge_value(&mut base, &overlay);
+        let config: Config = serde_json::from_value(base).unwrap();
+        // modes.default takes the explicit value, agents is ignored
+        assert_eq!(config.modes.default, InteractionLevel::Interactive);
     }
 }

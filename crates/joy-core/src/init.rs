@@ -21,6 +21,12 @@ pub const CONFIG_FILES: &[EmbeddedFile] = &[EmbeddedFile {
     executable: false,
 }];
 
+pub const PROJECT_FILES: &[EmbeddedFile] = &[EmbeddedFile {
+    content: include_str!("../../../data/project.defaults.yaml"),
+    target: "project.defaults.yaml",
+    executable: false,
+}];
+
 pub struct InitOptions {
     pub root: PathBuf,
     pub name: Option<String>,
@@ -82,8 +88,9 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
     });
     let acronym = options.acronym.unwrap_or_else(|| derive_acronym(&name));
 
-    // Write config defaults (embedded file) and project metadata
+    // Write config and project defaults (embedded files)
     embedded::sync_files(root, CONFIG_FILES)?;
+    embedded::sync_files(root, PROJECT_FILES)?;
 
     let mut project = Project::new(name, Some(acronym));
 
@@ -118,6 +125,7 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
 /// Onboard an existing project: set up local environment (hooks, etc.).
 pub fn onboard(root: &Path) -> Result<OnboardResult, JoyError> {
     embedded::sync_files(root, CONFIG_FILES)?;
+    embedded::sync_files(root, PROJECT_FILES)?;
     install_hooks(root)
 }
 
@@ -148,6 +156,7 @@ pub const GITIGNORE_BASE_ENTRIES: &[(&str, &str)] = &[
     (".joy/config.yaml", "personal config"),
     (".joy/credentials.yaml", "secrets"),
     (".joy/hooks/", "git hooks"),
+    (".joy/project.defaults.yaml", "embedded project defaults"),
 ];
 
 /// Update the joy-managed block in .gitignore with the given entries.

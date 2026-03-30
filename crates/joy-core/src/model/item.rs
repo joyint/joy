@@ -25,6 +25,8 @@ pub struct Item {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub capabilities: Vec<Capability>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<super::config::InteractionLevel>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort: Option<u8>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
@@ -91,6 +93,20 @@ impl Capability {
             Capability::Create | Capability::Assign | Capability::Manage | Capability::Delete
         )
     }
+
+    /// Whether this is a work capability (part of the development lifecycle).
+    pub fn is_work_capability(&self) -> bool {
+        !self.is_management()
+    }
+
+    /// All work capabilities in canonical order.
+    pub fn work_capabilities() -> Vec<Capability> {
+        Self::ALL
+            .iter()
+            .filter(|c| c.is_work_capability())
+            .copied()
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -150,6 +166,7 @@ impl Item {
             milestone: None,
             tags: Vec::new(),
             capabilities,
+            mode: None,
             effort: None,
             version: None,
             created_by: None,

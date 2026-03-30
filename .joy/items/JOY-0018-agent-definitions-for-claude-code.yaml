@@ -1,13 +1,16 @@
 id: JOY-0018
 title: Agent definitions for Claude Code (.claude/agents/)
 type: task
-status: new
+status: closed
 priority: medium
 parent: JOY-0012
 effort: 2
 created: 2026-03-20T21:02:44.751720316Z
-updated: 2026-03-30T05:35:43.337983496Z
+updated: 2026-03-30T07:59:53.161425680Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-30T05:35:43.337983199Z
   text: 'ADR-024: Agent source is now data/ai/agents/*.yaml + templates/ai/tools/claude-code/agents/*.md. Output goes to .claude/agents/*.md. No intermediate .joy/ files.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T07:59:53.125280487Z
+  text: Implemented in JOY-0090. Agent files generated into tool directory by joy ai setup. Released in v0.6.0.

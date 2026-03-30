@@ -1,0 +1,20 @@
+id: JOY-0017
+title: Rename agents to modes and add CLI get/set for interaction levels
+type: task
+status: closed
+priority: high
+parent: JOY-0012
+assignees:
+- member: horst.schwarz@joydev.com
+deps:
+- JOY-0096
+effort: 3
+created: 2026-03-20T21:02:44.749010399Z
+updated: 2026-03-30T19:08:59.334168217Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T19:00:55.330897214Z
+  text: 'Scope per ADR-025 discussion: (1) Rename agents.* to modes.* across config.yaml, config.defaults.yaml, project.defaults.yaml, and all Rust code. (2) joy config get/set modes.default, modes.<capability>. (3) joy project get/set modes.default, modes.<capability>. (4) joy project member set <ID> modes.<capability>.max-mode. (5) joy edit <ID> --mode <level> for item-level override.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T19:08:59.270764854Z
+  text: '[x] Renamed agents.* to modes.* across config.defaults.yaml, project.defaults.yaml, Config struct, store.rs, templates, completions. [x] Flattened project.defaults.yaml structure: modes.default, modes.<capability> directly. [x] Separated ai-defaults.capabilities from modes. [x] Removed obsolete AgentsConfig roles BTreeMap (JOY-009B). [x] Updated all tests and insta snapshot. 221 tests, clippy clean.'

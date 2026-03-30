@@ -1,0 +1,19 @@
+id: JOY-0098
+title: Show effective interaction level with source in joy show and joy project
+type: task
+status: closed
+priority: medium
+parent: JOY-0096
+capabilities:
+- implement
+effort: 3
+created_by: horst.schwarz@joydev.com
+created: 2026-03-30T16:39:36.861399363Z
+updated: 2026-03-30T18:56:33.040623264Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T16:39:43.542364580Z
+  text: joy project member show and joy show display the effective interaction level with source annotation, e.g. interactive [project], pairing [personal], collaborative [default]. Item-overridden levels display in normal text color with dimmed source annotation. All other levels display fully dimmed. The AI reads the effective level from CLI output -- no resolution logic in instructions needed.
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T18:56:33.013372236Z
+  text: Implemented in JOY-0096. joy project member show displays capability+mode matrix. joy show displays item-level mode override. joy project shows hint for member modes.

@@ -12,6 +12,7 @@ pub const JOY_DIR: &str = ".joy";
 pub const CONFIG_FILE: &str = "config.yaml";
 pub const CONFIG_DEFAULTS_FILE: &str = "config.defaults.yaml";
 pub const PROJECT_FILE: &str = "project.yaml";
+pub const PROJECT_DEFAULTS_FILE: &str = "project.defaults.yaml";
 pub const CREDENTIALS_FILE: &str = "credentials.yaml";
 pub const ITEMS_DIR: &str = "items";
 pub const MILESTONES_DIR: &str = "milestones";
@@ -114,6 +115,10 @@ pub fn local_config_path(root: &Path) -> PathBuf {
 /// Returns the path to the committed project defaults: .joy/config.defaults.yaml
 pub fn defaults_config_path(root: &Path) -> PathBuf {
     joy_dir(root).join(CONFIG_DEFAULTS_FILE)
+}
+
+pub fn project_defaults_path(root: &Path) -> PathBuf {
+    joy_dir(root).join(PROJECT_DEFAULTS_FILE)
 }
 
 fn dirs_path_home() -> Option<PathBuf> {
@@ -260,6 +265,50 @@ pub fn load_project(root: &Path) -> Result<crate::model::project::Project, crate
     read_yaml(&project_path)
 }
 
+/// Load mode defaults by merging project.defaults.yaml with project.yaml modes section.
+pub fn load_mode_defaults(root: &Path) -> crate::model::project::ModeDefaults {
+    let defaults_path = project_defaults_path(root);
+    let mut base = read_yaml_value(&defaults_path)
+        .and_then(|v| v.get("modes").cloned())
+        .unwrap_or(serde_json::json!({}));
+
+    // Overlay from project.yaml modes section
+    let project_path = joy_dir(root).join(PROJECT_FILE);
+    if let Some(overlay) = read_yaml_value(&project_path).and_then(|v| v.get("modes").cloned()) {
+        deep_merge(&mut base, &overlay);
+    }
+
+    serde_json::from_value(base).unwrap_or_default()
+}
+
+/// Load the raw mode defaults from project.defaults.yaml (before project.yaml merge).
+/// Used for source tracking in resolve_mode().
+pub fn load_raw_mode_defaults(root: &Path) -> crate::model::project::ModeDefaults {
+    let path = project_defaults_path(root);
+    read_yaml_value(&path)
+        .and_then(|v| v.get("modes").cloned())
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default()
+}
+
+/// Load AI defaults (capabilities granted to AI members) from project.defaults.yaml,
+/// with project.yaml ai-defaults overlay.
+pub fn load_ai_defaults(root: &Path) -> crate::model::project::AiDefaults {
+    let defaults_path = project_defaults_path(root);
+    let mut base = read_yaml_value(&defaults_path)
+        .and_then(|v| v.get("ai-defaults").cloned())
+        .unwrap_or(serde_json::json!({}));
+
+    let project_path = joy_dir(root).join(PROJECT_FILE);
+    if let Some(overlay) =
+        read_yaml_value(&project_path).and_then(|v| v.get("ai-defaults").cloned())
+    {
+        deep_merge(&mut base, &overlay);
+    }
+
+    serde_json::from_value(base).unwrap_or_default()
+}
+
 /// Load the project acronym from project.yaml.
 pub fn load_acronym(root: &Path) -> Result<String, crate::error::JoyError> {
     let project_path = joy_dir(root).join(PROJECT_FILE);
@@ -346,5 +395,180 @@ mod tests {
         let path = dir.path().join("blank.yaml");
         std::fs::write(&path, "  \n\n").unwrap();
         assert!(read_yaml_value(&path).is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // Mode defaults loading integration tests
+    // -----------------------------------------------------------------------
+
+    use crate::model::config::InteractionLevel;
+    use crate::model::item::Capability;
+
+    fn setup_project_dir(dir: &std::path::Path) {
+        let joy = dir.join(JOY_DIR);
+        std::fs::create_dir_all(&joy).unwrap();
+        let project = crate::model::project::Project::new("test".into(), Some("TST".into()));
+        write_yaml(&joy.join(PROJECT_FILE), &project).unwrap();
+    }
+
+    #[test]
+    fn load_mode_defaults_from_file() {
+        let dir = tempdir().unwrap();
+        setup_project_dir(dir.path());
+        let defaults_content = r#"
+modes:
+  default: interactive
+  implement: collaborative
+  review: pairing
+"#;
+        std::fs::write(
+            dir.path().join(JOY_DIR).join(PROJECT_DEFAULTS_FILE),
+            defaults_content,
+        )
+        .unwrap();
+
+        let defaults = load_mode_defaults(dir.path());
+        assert_eq!(defaults.default, InteractionLevel::Interactive);
+        assert_eq!(
+            defaults.capabilities[&Capability::Implement],
+            InteractionLevel::Collaborative
+        );
+        assert_eq!(
+            defaults.capabilities[&Capability::Review],
+            InteractionLevel::Pairing
+        );
+    }
+
+    #[test]
+    fn load_mode_defaults_missing_file_returns_default() {
+        let dir = tempdir().unwrap();
+        setup_project_dir(dir.path());
+        let defaults = load_mode_defaults(dir.path());
+        assert_eq!(defaults.default, InteractionLevel::Collaborative);
+        assert!(defaults.capabilities.is_empty());
+    }
+
+    #[test]
+    fn load_mode_defaults_project_yaml_overrides() {
+        let dir = tempdir().unwrap();
+        setup_project_dir(dir.path());
+
+        let defaults_content = r#"
+modes:
+  default: collaborative
+  implement: collaborative
+"#;
+        std::fs::write(
+            dir.path().join(JOY_DIR).join(PROJECT_DEFAULTS_FILE),
+            defaults_content,
+        )
+        .unwrap();
+
+        // project.yaml overrides implement to interactive
+        let project_content = r#"
+name: test
+acronym: TST
+language: en
+created: "2026-01-01T00:00:00+00:00"
+members: {}
+modes:
+  implement: interactive
+"#;
+        std::fs::write(dir.path().join(JOY_DIR).join(PROJECT_FILE), project_content).unwrap();
+
+        let defaults = load_mode_defaults(dir.path());
+        assert_eq!(
+            defaults.capabilities[&Capability::Implement],
+            InteractionLevel::Interactive
+        );
+    }
+
+    #[test]
+    fn load_raw_mode_defaults_ignores_project_overrides() {
+        let dir = tempdir().unwrap();
+        setup_project_dir(dir.path());
+
+        let defaults_content = r#"
+modes:
+  implement: collaborative
+"#;
+        std::fs::write(
+            dir.path().join(JOY_DIR).join(PROJECT_DEFAULTS_FILE),
+            defaults_content,
+        )
+        .unwrap();
+
+        let project_content = r#"
+name: test
+acronym: TST
+language: en
+created: "2026-01-01T00:00:00+00:00"
+members: {}
+modes:
+  implement: interactive
+"#;
+        std::fs::write(dir.path().join(JOY_DIR).join(PROJECT_FILE), project_content).unwrap();
+
+        let raw = load_raw_mode_defaults(dir.path());
+        assert_eq!(
+            raw.capabilities[&Capability::Implement],
+            InteractionLevel::Collaborative
+        );
+    }
+
+    #[test]
+    fn load_ai_defaults_from_file() {
+        let dir = tempdir().unwrap();
+        setup_project_dir(dir.path());
+
+        let defaults_content = r#"
+ai-defaults:
+  capabilities:
+    - implement
+    - review
+    - plan
+"#;
+        std::fs::write(
+            dir.path().join(JOY_DIR).join(PROJECT_DEFAULTS_FILE),
+            defaults_content,
+        )
+        .unwrap();
+
+        let defaults = load_ai_defaults(dir.path());
+        assert_eq!(defaults.capabilities.len(), 3);
+    }
+
+    #[test]
+    fn load_ai_defaults_project_override_replaces_capabilities() {
+        let dir = tempdir().unwrap();
+        setup_project_dir(dir.path());
+
+        let defaults_content = r#"
+ai-defaults:
+  capabilities:
+    - implement
+    - review
+    - plan
+"#;
+        std::fs::write(
+            dir.path().join(JOY_DIR).join(PROJECT_DEFAULTS_FILE),
+            defaults_content,
+        )
+        .unwrap();
+
+        let project_content = r#"
+name: test
+acronym: TST
+language: en
+created: "2026-01-01T00:00:00+00:00"
+members: {}
+ai-defaults:
+  capabilities:
+    - implement
+"#;
+        std::fs::write(dir.path().join(JOY_DIR).join(PROJECT_FILE), project_content).unwrap();
+
+        let defaults = load_ai_defaults(dir.path());
+        assert_eq!(defaults.capabilities, vec![Capability::Implement]);
     }
 }

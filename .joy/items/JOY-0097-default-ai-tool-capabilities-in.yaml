@@ -1,0 +1,19 @@
+id: JOY-0097
+title: Default AI tool capabilities in project.defaults.yaml
+type: task
+status: closed
+priority: medium
+parent: JOY-0096
+capabilities:
+- implement
+effort: 2
+created_by: horst.schwarz@joydev.com
+created: 2026-03-30T16:39:26.435178855Z
+updated: 2026-03-30T18:56:32.987346113Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T16:39:31.630253610Z
+  text: Move hardcoded AI member capabilities from ai.rs code to project.defaults.yaml. Projects can override via project.yaml with manage rights. joy ai setup reads defaults instead of hardcoding the capability list.
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T18:56:32.960403088Z
+  text: Implemented in JOY-0096. AI capabilities read from project.defaults.yaml instead of hardcoded in ai.rs.

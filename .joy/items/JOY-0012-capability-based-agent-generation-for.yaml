@@ -1,13 +1,13 @@
 id: JOY-0012
 title: Capability-based agent generation for AI tools
 type: epic
-status: new
+status: closed
 priority: medium
 deps:
 - JOY-0090
 effort: 5
 created: 2026-03-20T21:02:31.070606074Z
-updated: 2026-03-30T05:50:30.298995326Z
+updated: 2026-03-30T19:08:59.363342725Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-20T21:02:53.015937883Z

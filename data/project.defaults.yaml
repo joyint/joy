@@ -1,0 +1,20 @@
+modes:
+  default: collaborative
+  conceive: pairing
+  plan: interactive
+  design: interactive
+  implement: collaborative
+  test: supervised
+  review: interactive
+  document: collaborative
+ai-defaults:
+  capabilities:
+    - conceive
+    - plan
+    - design
+    - implement
+    - test
+    - review
+    - document
+    - create
+    - assign

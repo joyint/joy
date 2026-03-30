@@ -7,7 +7,8 @@ parent: JOY-0029
 deps:
 - JOY-002C
 - JOY-0017
+- JOY-0096
 effort: 3
 created: 2026-03-22T16:19:30.848705433Z
-updated: 2026-03-22T16:19:36.861906429Z
+updated: 2026-03-30T16:40:21.918476468Z
 description: 'Implement the three-layer interaction level override: (1) Joy defaults in config.defaults.yaml per capability, (2) project max in project.yaml per agent per capability -- cannot be exceeded, (3) item override -- can lower but not raise above project max. joy show displays the effective level and notes when a project max applies.'
