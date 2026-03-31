@@ -1,0 +1,12 @@
+id: JOY-00A1
+title: Define interaction level behavior for tool context
+type: task
+status: new
+priority: high
+capabilities:
+- implement
+effort: 2
+created_by: horst.schwarz@joydev.com
+created: 2026-03-31T16:13:35.321429379Z
+updated: 2026-03-31T16:13:35.321429379Z
+description: Systematically define how each interaction level (autonomous, supervised, collaborative, interactive, pairing) behaves when the AI is used interactively with a human in the chat. Update tool.md template. Currently partially defined but not structured per level.

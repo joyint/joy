@@ -1,0 +1,12 @@
+id: JOY-00A2
+title: Define interaction level behavior for automation context
+type: task
+status: new
+priority: high
+capabilities:
+- implement
+effort: 2
+created_by: horst.schwarz@joydev.com
+created: 2026-03-31T16:13:35.328347685Z
+updated: 2026-03-31T16:13:35.328347685Z
+description: Define how each interaction level behaves when the AI is dispatched by the Executor without a human in the chat. Communication via Joy comments, wait for assignee responses. Add to automation.md template.

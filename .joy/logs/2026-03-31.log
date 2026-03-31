@@ -1,0 +1,5 @@
+2026-03-31T16:13:17.722Z JOY-009F item.created "Split AI instructions into tool and automation mode" [horst.schwarz@joydev.com]
+2026-03-31T16:13:28.347Z JOY-00A0 item.created "Enforce 200-line limit on generated AI instructions" [horst.schwarz@joydev.com]
+2026-03-31T16:13:35.323Z JOY-00A1 item.created "Define interaction level behavior for tool context" [horst.schwarz@joydev.com]
+2026-03-31T16:13:35.330Z JOY-00A2 item.created "Define interaction level behavior for automation context" [horst.schwarz@joydev.com]
+2026-03-31T16:15:15.426Z JOY-009F item.updated "Split AI instructions into tool and automation mode" [horst.schwarz@joydev.com]
