@@ -1,0 +1,21 @@
+version: v0.8.0
+date: 2026-03-31
+previous: v0.7.0
+contributors:
+- id: horst.schwarz@joydev.com
+  events: 20
+  items: 5
+items:
+  stories:
+  - id: JOY-002F
+    title: Three-layer interaction level resolution
+  bugs:
+  - id: JOY-009C
+    title: joy milestone add fails when .joy/milestones/ does not exist
+  - id: JOY-009E
+    title: AI uses comments instead of description when creating items
+  - id: JOY-00B6
+    title: 'Duplicate item ID: joy add can create items with existing IDs'
+  ideas:
+  - id: JOY-0093
+    title: Align item attributes in roadmap
