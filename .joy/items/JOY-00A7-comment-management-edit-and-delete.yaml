@@ -1,0 +1,10 @@
+id: JOY-00A7
+title: 'Comment management: edit and delete comments'
+type: idea
+status: new
+priority: medium
+effort: 2
+created_by: horst.schwarz@joydev.com
+created: 2026-03-31T17:54:10.306810184Z
+updated: 2026-03-31T17:54:10.306810184Z
+description: Edit (joy comment edit <ID> <INDEX> <TEXT>) and delete (joy comment rm <ID> <INDEX>). Index-based addressing since comments have no IDs. Needed when a comment has errors or is no longer relevant. Migrated from JI-004F.

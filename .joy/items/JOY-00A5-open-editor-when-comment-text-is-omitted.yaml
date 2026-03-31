@@ -1,0 +1,12 @@
+id: JOY-00A5
+title: Open editor when comment text is omitted
+type: task
+status: new
+priority: medium
+capabilities:
+- implement
+effort: 2
+created_by: horst.schwarz@joydev.com
+created: 2026-03-31T17:54:10.279449909Z
+updated: 2026-03-31T17:54:10.279449909Z
+description: 'When joy comment <ID> is called without TEXT, open the configured editor. Editor resolution: (1) --editor flag, (2) editor in config, (3) $VISUAL, (4) $EDITOR, (5) error with hint. Empty file = abort. Migrated from JI-0045.'

@@ -1,0 +1,10 @@
+id: JOY-00AF
+title: Timeline progress bar for joy roadmap
+type: idea
+status: new
+priority: medium
+effort: 3
+created_by: horst.schwarz@joydev.com
+created: 2026-03-31T17:54:33.402055386Z
+updated: 2026-03-31T17:54:33.402055386Z
+description: Add --timeline / -t flag to joy roadmap. Horizontal progress bar across milestones, scaled to terminal width. Milestone labels, progress blocks, dates. Adaptive labels based on terminal width. Migrated from JI-008D.

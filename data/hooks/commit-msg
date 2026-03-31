@@ -36,8 +36,8 @@ if [ -z "$ACRONYM" ]; then
     exit 0
 fi
 
-# Check for item ID pattern: ACRONYM-XXXX (hex)
-PATTERN="${ACRONYM}-[0-9A-Fa-f]{4}"
+# Check for item ID pattern: ACRONYM-XXXX or ACRONYM-XXXX-YY (ADR-027)
+PATTERN="${ACRONYM}-[0-9A-Fa-f]{4}(-[0-9A-Fa-f]{2})?"
 
 if echo "$MSG" | grep -qE "$PATTERN"; then
     exit 0

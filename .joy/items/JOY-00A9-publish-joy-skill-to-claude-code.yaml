@@ -1,0 +1,12 @@
+id: JOY-00A9
+title: Publish Joy skill to Claude Code marketplace
+type: task
+status: new
+priority: low
+capabilities:
+- implement
+effort: 1
+created_by: horst.schwarz@joydev.com
+created: 2026-03-31T17:54:10.326924464Z
+updated: 2026-03-31T17:54:10.326924464Z
+description: 'Publish SKILL.md to: anthropics/skills GitHub repo (PR), SkillsMP, SkillHub. Qwen Code users can install from Claude marketplace. Migrated from JI-0054.'

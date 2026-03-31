@@ -1,0 +1,10 @@
+id: JOY-00B3
+title: Validation scripts with exact inputs and expected outputs
+type: idea
+status: new
+priority: medium
+effort: 3
+created_by: horst.schwarz@joydev.com
+created: 2026-03-31T17:54:33.448937611Z
+updated: 2026-03-31T17:54:33.448937611Z
+description: Scripted validation with concrete user inputs, expected tool behavior, and captured outputs for comparison. Fully reproducible across testers and tools, diffable between versions. Could be markdown scripts or a joy validate subcommand. Migrated from JI-00C2.

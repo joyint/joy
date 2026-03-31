@@ -1,0 +1,12 @@
+id: JOY-00A4
+title: Global --working-dir (-w) flag for cross-directory use
+type: task
+status: new
+priority: medium
+capabilities:
+- implement
+effort: 2
+created_by: horst.schwarz@joydev.com
+created: 2026-03-31T17:50:03.224115114Z
+updated: 2026-03-31T17:50:03.224115114Z
+description: Add a global -w/--working-dir flag that temporarily changes the working directory before executing any Joy command. Allows cross-project queries without cd, e.g. joy ls -w ../joy or joy roadmap -w ../platform. Error if target is not a Joy project. Replaces the need for umbrella-specific features (init --umbrella, project link, ls --repo).

@@ -1,0 +1,10 @@
+id: JOY-00AE
+title: Bootstrap project backlog from vision document
+type: idea
+status: new
+priority: medium
+effort: 5
+created_by: horst.schwarz@joydev.com
+created: 2026-03-31T17:54:19.442046701Z
+updated: 2026-03-31T17:54:19.442046701Z
+description: 'AI reads the project vision and generates an initial roadmap: milestones, epics, stories, tasks. Supports direct creation or interactive mode. Completes the vision-to-backlog pipeline. Migrated from JI-0069.'

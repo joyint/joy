@@ -1,0 +1,22 @@
+id: JOY-00B6
+title: 'Duplicate item ID: joy add can create items with existing IDs'
+type: bug
+status: closed
+priority: critical
+assignees:
+- member: horst.schwarz@joydev.com
+capabilities:
+- implement
+- review
+effort: 3
+created_by: horst.schwarz@joydev.com
+created: 2026-03-31T17:57:35.569389181Z
+updated: 2026-03-31T19:06:58.355909538Z
+description: 'Two items with ID JI-00B8 found: JI-00B8-dyamic-cli-table-sizes.yaml (closed) and JI-00B8-joy-report-to-generate-markdown-pdf-file.yaml (new). The ID generation in joy add does not reliably check for existing IDs, allowing duplicates. This breaks joy show (finds only the first match), corrupts the event log (ambiguous references), and undermines data integrity. Root cause: likely the ID counter does not scan all existing item files, or the counter file was reset/corrupted.'
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-31T18:47:30.381778821Z
+  text: 'Root cause: sequential ID generation is not collision-safe in distributed scenarios. Two machines running joy add without sync get the same next ID. Solution: ADR-027 -- append 2 hex digits from title hash to the sequential counter. New format: JOY-0100-5C. Old IDs stay unchanged, no migration needed. Short-form input (JOY-0100) accepted when unambiguous.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-31T19:06:39.013710099Z
+  text: '[x] ADR-027 implemented. New ID format: ACRONYM-XXXX-YY (sequential + title hash). Old IDs unchanged. Short-form lookup accepted when unambiguous. commit-msg hook accepts both formats. Milestones also updated. 233 tests passing, clippy clean.'

@@ -1,0 +1,12 @@
+id: JOY-00AC
+title: Support --type flag in joy edit
+type: task
+status: new
+priority: medium
+capabilities:
+- implement
+effort: 1
+created_by: horst.schwarz@joydev.com
+created: 2026-03-31T17:54:19.424910538Z
+updated: 2026-03-31T17:54:19.424910538Z
+description: Allow changing an item type via joy edit --type. Currently requires direct YAML editing. Migrated from JI-0067.

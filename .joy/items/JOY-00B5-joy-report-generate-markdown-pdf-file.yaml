@@ -1,0 +1,10 @@
+id: JOY-00B5
+title: 'joy report: generate markdown/pdf file'
+type: idea
+status: new
+priority: medium
+effort: 3
+created_by: horst.schwarz@joydev.com
+created: 2026-03-31T17:56:27.655097077Z
+updated: 2026-03-31T17:56:27.655097077Z
+description: New command to generate a project report as markdown or PDF. Includes milestone progress, item statistics, AI cost summary, timeline. Useful for stakeholder communication and compliance documentation. Migrated from JI-00B8.

@@ -1,0 +1,14 @@
+id: JOY-00B2
+title: 'joy validate: AI-assisted milestone and item validation'
+type: story
+status: new
+priority: medium
+capabilities:
+- plan
+- implement
+- review
+effort: 6
+created_by: horst.schwarz@joydev.com
+created: 2026-03-31T17:54:33.440290410Z
+updated: 2026-03-31T17:54:33.440290410Z
+description: 'New command that orchestrates validation of a milestone or item. Generates validation plan from children and acceptance criteria, creates checklists per feature, dispatches review tasks to reviewers, collects results, creates bug items for failures. AI-assisted: generates plan and evaluates results against acceptance criteria. Enterprise value: full audit trail. Migrated from JI-00B7.'
