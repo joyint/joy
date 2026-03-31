@@ -36,6 +36,10 @@ pub(crate) struct Cli {
     #[arg(short, long)]
     reverse: bool,
 
+    /// Delegation token for AI authentication (same as JOY_TOKEN env var)
+    #[arg(long, global = true, hide = true)]
+    token: Option<String>,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -135,6 +139,12 @@ fn main() -> anyhow::Result<()> {
     clap_complete::CompleteEnv::with_factory(Cli::command).complete();
 
     let cli = Cli::parse();
+
+    // Propagate --token flag to JOY_TOKEN so resolve_identity() picks it up.
+    // SAFETY: This runs before any threads are spawned; joy is single-threaded.
+    if let Some(ref token) = cli.token {
+        unsafe { std::env::set_var("JOY_TOKEN", token) };
+    }
 
     // Config subcommand handles its own validation, run it before load_config
     // to avoid duplicate warnings for invalid config state.
