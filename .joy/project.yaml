@@ -52,6 +52,10 @@ members:
     capabilities: all
     public_key: 05ae823757c1d3d0db5f2f66c7f55642b2258f15776a6b2f029142bfa9b5f73d
     salt: 3da1d77fe4dcbd9c1ee917dc49451f500c7d46cdc6e93cb9bf61f466282985ea
+    ai_tokens:
+      ai:claude@joy:
+        token_key: 91f333504482c98ae3766d4682bf3161cab5db64505a76c417cd1c6831c8d2b3
+        created: 2026-03-31T23:24:51.487651234Z
 created: 2026-03-09T23:57:36.761964460Z
 release:
   version-files:

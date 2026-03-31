@@ -1,7 +1,7 @@
 id: JOY-00C1-F2
 title: Rename auth token commands to subcommand group
 type: rework
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -11,9 +11,12 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy
 created: 2026-03-31T23:13:54.231344789Z
-updated: 2026-03-31T23:16:07.002471346Z
+updated: 2026-03-31T23:25:25.258356894Z
 description: 'Replace `joy auth create-token <MEMBER>` with a `joy auth token` subcommand group: `joy auth token add <MEMBER>` to create delegation tokens and `joy auth token rm <MEMBER>` to revoke them. Both commands require `manage` capability. Existing options from `create-token` must be preserved on `token add`.'
 comments:
 - author: ai:claude@joy
   date: 2026-03-31T23:16:07.002470244Z
   text: 'Plan: Restructure CLI — replace AuthCommand::CreateToken with Token(TokenArgs) subcommand group containing Add and Rm. token add keeps existing options (member, --ttl). token rm removes ai_tokens entry from delegator, requires manage capability. Update error messages, AI instructions template, and all integration tests.'
+- author: ai:claude@joy
+  date: 2026-03-31T23:25:22.191458219Z
+  text: '[x] Replaced AuthCommand::CreateToken with Token subcommand group (Add, Rm). [x] token add preserves existing options (member, --ttl). [x] token rm revokes token, requires manage capability, removes AI session. [x] Updated AI instructions template. [x] Updated all integration tests, added 2 new tests for token rm.'
