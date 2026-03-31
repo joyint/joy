@@ -37,3 +37,4 @@
 2026-03-31T19:42:10.108Z JOY-00BC-A1 item.created "Recovery key generation at joy crypt init" [horst.schwarz@joydev.com]
 2026-03-31T19:49:09.968Z release guard.denied "horst.schwarz@joydev.com must authenticate to perform manage actions. Run `joy auth`." [horst.schwarz@joydev.com]
 2026-03-31T19:56:13.693Z release guard.denied "horst.schwarz@joydev.com must authenticate to perform manage actions. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-03-31T19:57:20.511Z v0.8.0 release.created [horst.schwarz@joydev.com]
