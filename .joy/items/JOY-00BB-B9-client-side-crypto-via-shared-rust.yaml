@@ -1,0 +1,10 @@
+id: JOY-00BB-B9
+title: Client-side crypto via shared Rust/WASM crate
+type: idea
+status: new
+priority: medium
+effort: 5
+created_by: horst.schwarz@joydev.com
+created: 2026-03-31T19:42:10.091601243Z
+updated: 2026-03-31T19:42:10.091601243Z
+description: Shared Rust crate compiled to WASM for client-side crypto in CLI, App, and Web. Same encryption logic everywhere. Migrated from JI-00CA.

@@ -1,0 +1,12 @@
+id: JOY-00BA-93
+title: Local key management for E2E encryption
+type: task
+status: new
+priority: medium
+capabilities:
+- implement
+effort: 3
+created_by: horst.schwarz@joydev.com
+created: 2026-03-31T19:42:10.077535856Z
+updated: 2026-03-31T19:42:10.077535856Z
+description: Key generation (joy crypt init), storage in OS keyring with fallback to ~/.config/joy/keys/, per-project keys. Prerequisite for private item visibility and encrypted sync. Migrated from JI-0061.
