@@ -50,3 +50,8 @@
 2026-03-31T21:27:24.614Z JOY-00BD-9E guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
 2026-03-31T21:27:36.019Z JOY-00BD-9E comment.added "This should be blocked now!" [horst.schwarz@joydev.com]
 2026-03-31T21:28:06.561Z JOY-00BD-9E guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-03-31T21:32:26.880Z JOY-00BD-9E guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-03-31T21:33:29.453Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-03-31T21:33:33.681Z JOY-00BD-9E guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-03-31T21:43:55.053Z JOY-00BD-9E guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-03-31T21:44:36.111Z JOY-00BD-9E comment.added "test with --token flag from AI" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
