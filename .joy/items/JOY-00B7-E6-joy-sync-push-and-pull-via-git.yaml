@@ -1,0 +1,14 @@
+id: JOY-00B7-E6
+title: 'joy sync: push and pull via Git'
+type: story
+status: new
+priority: medium
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created_by: horst.schwarz@joydev.com
+created: 2026-03-31T19:28:51.696755773Z
+updated: 2026-03-31T19:28:51.696755773Z
+description: 'Sync via git push/pull to a configured remote. Support --push, --pull, --auto flags. For BYOG: users can sync to GitHub, GitLab, Gitea, or joyint.com. Requires a Git remote to be configured. Migrated from JI-0024.'

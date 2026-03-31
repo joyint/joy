@@ -29,3 +29,6 @@
 2026-03-31T19:06:23.147Z JOY-00B7-6F item.deleted "Test collision safe ID" [horst.schwarz@joydev.com]
 2026-03-31T19:06:39.016Z JOY-00B6 comment.added "[x] ADR-027 implemented. New ID format: ACRONYM-XXXX-YY (sequential + title hash). Old IDs unchanged. Short-form lookup accepted when unambiguous. commit-msg hook accepts both formats. Milestones also updated. 233 tests passing, clippy clean." [horst.schwarz@joydev.com]
 2026-03-31T19:06:58.370Z JOY-00B6 item.status_changed "in-progress -> closed" [horst.schwarz@joydev.com]
+2026-03-31T19:28:51.709Z JOY-00B7-E6 item.created "joy sync: push and pull via Git" [horst.schwarz@joydev.com]
+2026-03-31T19:28:51.723Z JOY-00B8-95 item.created "joy clone: clone project from remote" [horst.schwarz@joydev.com]
+2026-03-31T19:28:51.738Z JOY-00B9-D8 item.created "Status intelligence from git activity" [horst.schwarz@joydev.com]
