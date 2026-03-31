@@ -1,0 +1,12 @@
+id: JOY-00BE-B7
+title: Add performance timing tests for CLI commands
+type: task
+status: new
+priority: medium
+capabilities:
+- implement
+effort: 3
+created_by: ai:claude@joy
+created: 2026-03-31T22:44:42.291383803Z
+updated: 2026-03-31T22:44:42.291383803Z
+description: Ensure joy commands stay within acceptable response times. Measure cold/warm start, commands with/without auth, with/without AI members. Detect regressions from changes like TTY lookup or session scanning.

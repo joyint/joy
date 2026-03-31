@@ -70,6 +70,29 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
         }
     }
 
+    // AI member: find session by TTY match.
+    // After `joy auth --token`, the AI session is bound to the terminal.
+    // Look up registered AI members and check if any has a valid session
+    // matching the current terminal (or both without a terminal, e.g. in
+    // piped/non-interactive contexts like AI tool subprocesses).
+    if let (Some(ref pid), Some(ref project)) = (&project_id, &project) {
+        let current_tty = crate::auth::session::current_tty();
+        for member_id in project.members.keys() {
+            if !is_ai_member(member_id) {
+                continue;
+            }
+            if let Ok(Some(sess)) = crate::auth::session::load_session(pid, member_id) {
+                if sess.claims.expires > chrono::Utc::now() && sess.claims.tty == current_tty {
+                    return Ok(Identity {
+                        member: member_id.clone(),
+                        delegated_by: crate::vcs::default_vcs().user_email().ok(),
+                        authenticated: true,
+                    });
+                }
+            }
+        }
+    }
+
     // Fallback: git email, not authenticated
     Ok(Identity {
         member: git_email,
@@ -152,19 +175,12 @@ fn check_session(root: &Path, member: &str, project: &Option<Project>) -> bool {
         if crate::auth::session::validate_session(&sess, &pk, &project_id).is_err() {
             return false;
         }
-        // TTY binding: session must come from the same terminal.
-        // When AI members exist, sessions without a TTY field are rejected
-        // to prevent legacy sessions from bypassing terminal isolation.
-        let has_ai = project.members.keys().any(|k| is_ai_member(k));
-        match &sess.claims.tty {
-            Some(session_tty) => {
-                let current = crate::auth::session::current_tty();
-                if current.as_ref() != Some(session_tty) {
-                    return false;
-                }
-            }
-            None if has_ai => return false,
-            None => {}
+        // TTY binding: session must come from the same terminal context.
+        // Both session TTY and current TTY must match (including None == None
+        // for non-interactive contexts like CI, test harnesses, or AI tools).
+        let current_tty = crate::auth::session::current_tty();
+        if sess.claims.tty != current_tty {
+            return false;
         }
         return true;
     }

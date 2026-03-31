@@ -50,6 +50,22 @@ setup_ai_session() {
     export JOY_TOKEN="$AI_TOKEN"
 }
 
+DEV_PASSPHRASE="alpha bravo charlie delta echo foxtrot"
+
+# Authenticate another member (e.g. dev@example.com).
+# Switches git email, runs auth init, switches back.
+setup_member_auth() {
+    local member="$1"
+    local passphrase="$2"
+    local original_email
+    original_email=$(git config user.email)
+    git config user.email "$member"
+    joy auth init --passphrase "$passphrase"
+    git config user.email "$original_email"
+    # Re-authenticate as original (dev's auth init overwrote the session file)
+    joy auth --passphrase "$TEST_PASSPHRASE"
+}
+
 # Switch back to human identity.
 switch_to_human() {
     unset JOY_TOKEN

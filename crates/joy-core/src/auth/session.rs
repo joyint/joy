@@ -109,12 +109,8 @@ fn create_session_with_token_key(
 ) -> SessionToken {
     let now = Utc::now();
     let ttl = ttl.unwrap_or_else(|| Duration::hours(DEFAULT_TTL_HOURS));
-    // Capture TTY for human sessions (AI sessions use token_key instead)
-    let tty = if token_key.is_none() {
-        current_tty()
-    } else {
-        None
-    };
+    // Capture TTY for terminal-bound sessions (both human and AI).
+    let tty = current_tty();
     let claims = SessionClaims {
         member: member.to_string(),
         project_id: project_id.to_string(),

@@ -42,35 +42,31 @@ Your member ID is defined in the tool-specific configuration file
 
 ### Identity and authentication
 
-**Without a delegation token, do not execute Joy write commands.**
+**You must authenticate before executing Joy write commands.**
 Joy write commands include: `joy add`, `joy edit`, `joy comment`,
 `joy start`, `joy close`, `joy status`, `joy assign`, `joy rm`,
 `joy milestone`, `joy project member`. Read-only commands
 (`joy ls`, `joy show`, `joy roadmap`, `joy config`, `joy project`)
-are always allowed.
-
-Without a token you are not authenticated as your AI member identity.
-Any write command would either be rejected by the guard or attributed
-to the wrong identity in the audit trail. Do not attempt to work
-around this.
-
-When you cannot authenticate, inform the user briefly:
-"I need a delegation token to run Joy commands. Please run
-`joy auth create-token <YOUR-MEMBER-ID>` and share the token."
-Do not explain the technical background unless asked.
+are always allowed without authentication.
 
 To authenticate:
 
 1. Check if `JOY_TOKEN` environment variable is set.
-2. If not set, ask the user to provide a delegation token.
-3. Once you have the token, pass it with every write command
-   using the `--token` flag:
+   If set, run: `joy auth --token "$JOY_TOKEN"`
+2. If not set, ask the user to provide a delegation token:
+   "I need a delegation token to run Joy commands. Please run
+   `joy auth create-token <YOUR-MEMBER-ID>` and share the token."
+   Do not explain the technical background unless asked.
+3. Once you have the token, run: `joy auth --token <TOKEN>`
+
+After authentication, your session is active for this context.
+All subsequent Joy commands automatically use your AI identity:
 
 ```
-joy comment <ID> "text" --token <TOKEN>
-joy add task "title" --token <TOKEN>
-joy status <ID> closed --token <TOKEN>
-joy assign <ID> --token <TOKEN>
+joy comment <ID> "text"
+joy add task "title"
+joy status <ID> closed
+joy assign <ID>
 ```
 
 The event log records your AI identity with `delegated-by` to trace
