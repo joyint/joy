@@ -1,0 +1,12 @@
+id: JOY-00B8-95
+title: 'joy clone: clone project from remote'
+type: task
+status: new
+priority: medium
+capabilities:
+- implement
+effort: 2
+created_by: horst.schwarz@joydev.com
+created: 2026-03-31T19:28:51.719110956Z
+updated: 2026-03-31T19:28:51.719110956Z
+description: Clone a project from a remote server URL. Download all items, milestones, config. Requires a Git remote. Migrated from JI-0025.

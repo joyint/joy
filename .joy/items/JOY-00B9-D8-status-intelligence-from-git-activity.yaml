@@ -1,0 +1,10 @@
+id: JOY-00B9-D8
+title: Status intelligence from git activity
+type: idea
+status: new
+priority: low
+effort: 3
+created_by: horst.schwarz@joydev.com
+created: 2026-03-31T19:28:51.733633744Z
+updated: 2026-03-31T19:28:51.733633744Z
+description: AI analyzes git log and branch names. Suggest status updates based on development activity. Migrated from JI-001F.
