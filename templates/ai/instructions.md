@@ -55,7 +55,7 @@ To authenticate:
    If set, run: `joy auth --token "$JOY_TOKEN"`
 2. If not set, ask the user to provide a delegation token:
    "I need a delegation token to run Joy commands. Please run
-   `joy auth create-token <YOUR-MEMBER-ID>` and share the token."
+   `joy auth token add <YOUR-MEMBER-ID>` and share the token."
    Do not explain the technical background unless asked.
 3. Once you have the token, run: `joy auth --token <TOKEN>`
 
