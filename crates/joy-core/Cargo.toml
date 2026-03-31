@@ -19,6 +19,9 @@ hex = "0.4"
 base64ct = { version = "1", features = ["alloc"] }
 minijinja = { workspace = true }
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [features]
 fast-kdf = []   # Use minimal Argon2id params (for testing only, NOT secure)
 

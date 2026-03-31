@@ -214,15 +214,28 @@ impl Guard {
             }
         }
 
+        // Auth enforcement when AI members exist: all actions require authentication.
+        // This prevents AI tools from piggybacking on a human's file-based session.
+        let has_ai = self.members.keys().any(|k| is_ai_member(k));
+        if has_ai && !identity.authenticated {
+            return Verdict::Deny(format!(
+                "{} must authenticate to perform this action. Run `joy auth`.",
+                identity.member
+            ));
+        }
+
         // Auth enforcement: manage actions require authentication when auth is active
-        let auth_active = self.members.values().any(|m| m.public_key.is_some());
-        if auth_active {
-            let required = action.required_capability();
-            if required == Capability::Manage && !identity.authenticated {
-                return Verdict::Deny(format!(
-                    "{} must authenticate to perform manage actions. Run `joy auth`.",
-                    identity.member
-                ));
+        // (even without AI members, manage actions need auth if any member has a key)
+        if !has_ai && !identity.authenticated {
+            let auth_active = self.members.values().any(|m| m.public_key.is_some());
+            if auth_active {
+                let required = action.required_capability();
+                if required == Capability::Manage {
+                    return Verdict::Deny(format!(
+                        "{} must authenticate to perform manage actions. Run `joy auth`.",
+                        identity.member
+                    ));
+                }
             }
         }
 
@@ -338,6 +351,14 @@ mod tests {
         Identity {
             member: member.into(),
             delegated_by: None,
+            authenticated: true,
+        }
+    }
+
+    fn unauthenticated_identity(member: &str) -> Identity {
+        Identity {
+            member: member.into(),
+            delegated_by: None,
             authenticated: false,
         }
     }
@@ -346,7 +367,7 @@ mod tests {
         Identity {
             member: member.into(),
             delegated_by: Some(delegated_by.into()),
-            authenticated: false,
+            authenticated: true,
         }
     }
 
@@ -1005,6 +1026,54 @@ mod tests {
         assert!(guard.is_last_manager("lead@example.com"));
         // dev is not a manager
         assert!(!guard.is_last_manager("dev@example.com"));
+    }
+
+    #[test]
+    fn unauthenticated_denied_when_ai_members_exist() {
+        let project = project_with_members(vec![
+            ("dev@example.com", MemberCapabilities::All),
+            (
+                "ai:claude@joy",
+                specific_caps(&[Capability::Implement, Capability::Create]),
+            ),
+        ]);
+        let guard = Guard::new(&project);
+        let unauth = unauthenticated_identity("dev@example.com");
+
+        // All write actions denied for unauthenticated members
+        assert!(matches!(
+            guard.check(&Action::CreateItem, &unauth),
+            Verdict::Deny(_)
+        ));
+        assert!(matches!(
+            guard.check(&Action::AddComment, &unauth),
+            Verdict::Deny(_)
+        ));
+        assert!(matches!(
+            guard.check(
+                &Action::ChangeStatus {
+                    from: Status::Open,
+                    to: Status::InProgress
+                },
+                &unauth
+            ),
+            Verdict::Deny(_)
+        ));
+
+        // Authenticated member is allowed
+        let auth = identity("dev@example.com");
+        assert_eq!(guard.check(&Action::CreateItem, &auth), Verdict::Allow);
+    }
+
+    #[test]
+    fn unauthenticated_allowed_without_ai_members() {
+        let project = project_with_members(vec![("dev@example.com", MemberCapabilities::All)]);
+        let guard = Guard::new(&project);
+        let unauth = unauthenticated_identity("dev@example.com");
+
+        // No AI members -> unauthenticated access allowed (frictionless solo)
+        assert_eq!(guard.check(&Action::CreateItem, &unauth), Verdict::Allow);
+        assert_eq!(guard.check(&Action::AddComment, &unauth), Verdict::Allow);
     }
 
     #[test]

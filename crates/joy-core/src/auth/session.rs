@@ -26,6 +26,10 @@ pub struct SessionClaims {
     /// Used to invalidate sessions when the token is revoked/replaced.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token_key: Option<String>,
+    /// Terminal device at session creation (e.g. "/dev/pts/1").
+    /// Human sessions are only valid from the same terminal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tty: Option<String>,
 }
 
 /// A session token: claims + Ed25519 signature.
@@ -38,6 +42,36 @@ pub struct SessionToken {
 
 /// Default session duration: 24 hours.
 const DEFAULT_TTL_HOURS: i64 = 24;
+
+/// Detect the current terminal device for session binding.
+///
+/// Returns a unique identifier for the terminal window/tab:
+/// - Unix: TTY device path (e.g. "/dev/pts/1") via libc::ttyname
+/// - Windows Terminal: WT_SESSION GUID (unique per tab/pane)
+/// - No terminal (CI, cron, etc.): None
+pub fn current_tty() -> Option<String> {
+    // Windows Terminal sets WT_SESSION to a unique GUID per tab/pane
+    if let Ok(wt) = std::env::var("WT_SESSION") {
+        if !wt.is_empty() {
+            return Some(format!("wt:{wt}"));
+        }
+    }
+
+    #[cfg(unix)]
+    {
+        // SAFETY: ttyname returns a pointer to a static buffer.
+        // We immediately copy it into a Rust String.
+        let ptr = unsafe { libc::ttyname(0) };
+        if !ptr.is_null() {
+            let cstr = unsafe { std::ffi::CStr::from_ptr(ptr) };
+            if let Ok(s) = cstr.to_str() {
+                return Some(s.to_string());
+            }
+        }
+    }
+
+    None
+}
 
 /// Create a session token signed by the identity keypair.
 pub fn create_session(
@@ -75,12 +109,19 @@ fn create_session_with_token_key(
 ) -> SessionToken {
     let now = Utc::now();
     let ttl = ttl.unwrap_or_else(|| Duration::hours(DEFAULT_TTL_HOURS));
+    // Capture TTY for human sessions (AI sessions use token_key instead)
+    let tty = if token_key.is_none() {
+        current_tty()
+    } else {
+        None
+    };
     let claims = SessionClaims {
         member: member.to_string(),
         project_id: project_id.to_string(),
         created: now,
         expires: now + ttl,
         token_key,
+        tty,
     };
     let claims_json = serde_json::to_string(&claims).expect("claims serialize");
     let signature = keypair.sign(claims_json.as_bytes());
