@@ -1135,6 +1135,7 @@ dependencies = [
  "ed25519-dalek",
  "hex",
  "insta",
+ "libc",
  "minijinja",
  "rand",
  "serde",

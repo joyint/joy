@@ -42,8 +42,24 @@ Your member ID is defined in the tool-specific configuration file
 
 ### Identity and authentication
 
-Your identity is determined by your active session. Before running
-any Joy write commands, you must authenticate:
+**If `JOY_TOKEN` is not set, do not execute Joy write commands.**
+Joy write commands include: `joy add`, `joy edit`, `joy comment`,
+`joy start`, `joy close`, `joy status`, `joy assign`, `joy rm`,
+`joy milestone`, `joy project member`. Read-only commands
+(`joy ls`, `joy show`, `joy roadmap`, `joy config`, `joy project`)
+are always allowed.
+
+Without a token you are not authenticated as your AI member identity.
+Any write command would either be rejected by the guard or attributed
+to the wrong identity in the audit trail. Do not attempt to work
+around this.
+
+When you cannot authenticate, inform the user briefly:
+"I need a delegation token to run Joy commands. Please run
+`joy auth create-token <YOUR-MEMBER-ID>` and share the token."
+Do not explain the technical background unless asked.
+
+To authenticate:
 
 1. Check if `JOY_TOKEN` environment variable is set.
 2. If set, authenticate: `joy auth --token "$JOY_TOKEN"`

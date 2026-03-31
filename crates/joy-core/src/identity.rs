@@ -140,7 +140,7 @@ fn check_session(root: &Path, member: &str, project: &Option<Project>) -> bool {
         return false;
     }
 
-    // For human members: validate session signature against public key
+    // For human members: validate session signature against public key + TTY binding
     if !is_ai_member(member) {
         let m = project.members.get(member).unwrap();
         let Some(ref pk_hex) = m.public_key else {
@@ -149,7 +149,17 @@ fn check_session(root: &Path, member: &str, project: &Option<Project>) -> bool {
         let Ok(pk) = crate::auth::sign::PublicKey::from_hex(pk_hex) else {
             return false;
         };
-        return crate::auth::session::validate_session(&sess, &pk, &project_id).is_ok();
+        if crate::auth::session::validate_session(&sess, &pk, &project_id).is_err() {
+            return false;
+        }
+        // TTY binding: session must come from the same terminal
+        if let Some(ref session_tty) = sess.claims.tty {
+            let current = crate::auth::session::current_tty();
+            if current.as_ref() != Some(session_tty) {
+                return false;
+            }
+        }
+        return true;
     }
 
     // For AI members: session existence + not expired is sufficient

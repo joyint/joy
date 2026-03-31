@@ -1,7 +1,7 @@
 id: JOY-0094
 title: AI tool commands must run under AI member identity
 type: decision
-status: new
+status: closed
 priority: high
 milestone: JOY-MS-01
 capabilities:
@@ -9,7 +9,7 @@ capabilities:
 effort: 3
 created_by: horst.schwarz@joydev.com
 created: 2026-03-30T06:51:14.612450620Z
-updated: 2026-03-30T19:48:56.688143322Z
+updated: 2026-03-31T21:19:41.719942662Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-30T06:51:22.562032038Z
@@ -24,3 +24,52 @@ comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-30T19:41:40.593112270Z
   text: 'Decision: When joy ai setup registers the first AI member, auth becomes mandatory for the project. joy ai setup triggers joy auth init if not yet initialized. Guard rejects unauthenticated commands when AI members exist in project.yaml -- no fallback to git-user identity. This enforces audit trail integrity: every action is attributed to an authenticated member, human or AI. Solo projects without AI members remain frictionless. ADR to be written before implementation.'
+- author: horst.schwarz@joydev.com
+  date: 2026-03-31T20:41:18.261902215Z
+  text: |-
+    Design: Terminal-bound sessions with AI token enforcement
+
+    Solution combines hard enforcement (CLI) with soft enforcement (AI instructions):
+
+    1. Terminal-bound sessions (sudo model): joy auth creates a session and sets an environment variable in the current shell with a cryptographically signed session ID. resolve_identity() requires this variable and validates its content against the session file (signature, expiry, member match). Without the variable or with an invalid value, no session is found -- even if a session file exists on disk. This isolates authentication per terminal.
+
+    2. Guard enforcement: When AI members exist in project.yaml and no authenticated session is found, the guard rejects all write actions (not just manage actions as today). Read-only commands (joy ls, joy show) remain accessible without auth.
+
+    3. AI instruction enforcement (soft): AI tool instructions state: If JOY_TOKEN is not set, do not execute Joy write commands. Request a delegation token from the user. No mention of the session mechanism -- only the token requirement. This prevents AI tools from piggybacking on the human session in the same terminal.
+
+    4. joy ai setup triggers joy auth init: When the first AI member is registered, auth becomes mandatory for the project. This is the activation threshold -- projects without AI members remain frictionless.
+
+    Threat coverage:
+    - AI in different terminal: hard block (no session variable)
+    - AI in same terminal: soft block (instructions refuse without token)
+    - Forged session variable: hard block (cryptographic validation fails)
+    - AI ignores instructions: out of scope (malicious tool threat model)
+- author: horst.schwarz@joydev.com
+  date: 2026-03-31T20:51:41.101179459Z
+  text: |-
+    Design update: TTY-bound sessions instead of env var
+
+    Replaced the JOY_SESSION environment variable approach with TTY binding. joy auth records the current terminal device (e.g. /dev/pts/1) in the session. resolve_identity() only accepts human sessions where the stored TTY matches the current terminal. This is completely invisible to the user -- no export, no visible mechanism.
+
+    Terminal isolation:
+    - Human in Terminal A, authenticated: TTY matches, session valid
+    - AI in Terminal B: different TTY, session ignored, must use JOY_TOKEN
+    - AI in same terminal: same TTY, session valid, soft block via AI instructions
+    - CI/cron (no TTY): no match, must use JOY_TOKEN
+
+    Deliberate TTY spoofing is out of scope -- that requires active manipulation, not accidental impersonation.
+
+    AI instruction rule: If JOY_TOKEN is not set, do not execute Joy write commands. Request a delegation token.
+
+    Session validation already happens on every command via Context::load() -> resolve_identity() -> check_session(). The TTY check integrates into the existing validation -- no new architecture needed.
+- author: horst.schwarz@joydev.com
+  date: 2026-03-31T21:19:39.315861585Z
+  text: |-
+    [x] Added tty field to SessionClaims for terminal-bound sessions
+    [x] Implemented current_tty() with Unix (libc::ttyname) and Windows Terminal (WT_SESSION) support
+    [x] TTY captured automatically on human session creation, skipped for AI sessions
+    [x] check_session() validates TTY match for human sessions
+    [x] Guard rejects all write actions for unauthenticated members when AI members exist
+    [x] AI instructions updated: no JOY_TOKEN = no write commands, with user-facing message template
+    [x] Two new guard tests for auth enforcement with/without AI members
+    [x] All 235 tests passing
