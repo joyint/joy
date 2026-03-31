@@ -67,3 +67,8 @@
 2026-03-31T22:44:42.300Z JOY-00BE-B7 item.created "Add performance timing tests for CLI commands" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-03-31T22:51:41.813Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-03-31T22:51:52.696Z JOY-00BF-18 item.created "Add end-to-end user journey integration tests" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-03-31T23:02:14.734Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-03-31T23:02:25.724Z JOY-00C0-9E item.created "Add optional member parameter to joy deauth" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-03-31T23:02:36.813Z JOY-00C0-9E item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-03-31T23:02:36.823Z JOY-00C0-9E comment.added "[x] Added optional member arg to DeauthArgs\n[x] joy deauth without arg ends own session (backwards compatible)\n[x] joy deauth <member> ends specific member session\n[x] All 76 integration tests passing" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-03-31T23:02:36.837Z JOY-00C0-9E item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

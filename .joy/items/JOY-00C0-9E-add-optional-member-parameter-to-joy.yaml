@@ -1,0 +1,22 @@
+id: JOY-00C0-9E
+title: Add optional member parameter to joy deauth
+type: task
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 1
+created_by: ai:claude@joy
+created: 2026-03-31T23:02:25.721469644Z
+updated: 2026-03-31T23:02:36.835370826Z
+description: joy deauth accepts an optional member argument (e.g. joy deauth ai:claude@joy) to end a specific member session. Without argument, ends own session as before.
+comments:
+- author: ai:claude@joy
+  date: 2026-03-31T23:02:36.820982971Z
+  text: |-
+    [x] Added optional member arg to DeauthArgs
+    [x] joy deauth without arg ends own session (backwards compatible)
+    [x] joy deauth <member> ends specific member session
+    [x] All 76 integration tests passing
