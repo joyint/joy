@@ -8,7 +8,7 @@ capabilities:
 effort: 1
 created_by: horst.schwarz@joydev.com
 created: 2026-03-31T21:24:15.534046430Z
-updated: 2026-03-31T22:07:10.440645455Z
+updated: 2026-03-31T23:04:17.332147085Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-31T21:24:20.089709924Z
@@ -28,3 +28,6 @@ comments:
 - author: ai:claude@joy
   date: 2026-03-31T22:07:10.440645331Z
   text: 'TTY-bound AI session works: authenticate once, write freely'
+- author: ai:claude@joy
+  date: 2026-03-31T23:04:17.332146629Z
+  text: Test while authenticated - should work

@@ -42,7 +42,7 @@ setup_ai_session() {
     local ai_member="${1:-ai:test@joy}"
     # Add member if not already registered (idempotent)
     joy project member add "$ai_member" 2>/dev/null || true
-    AI_TOKEN=$(joy auth create-token "$ai_member" --passphrase "$TEST_PASSPHRASE" \
+    AI_TOKEN=$(joy auth token add "$ai_member" --passphrase "$TEST_PASSPHRASE" \
         | sed -n 's/^  \(joy_t_.*\)/\1/p')
     # Auth as AI (creates session)
     joy auth --token "$AI_TOKEN"

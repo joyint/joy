@@ -52,13 +52,6 @@ members:
     capabilities: all
     public_key: 05ae823757c1d3d0db5f2f66c7f55642b2258f15776a6b2f029142bfa9b5f73d
     salt: 3da1d77fe4dcbd9c1ee917dc49451f500c7d46cdc6e93cb9bf61f466282985ea
-    ai_tokens:
-      ai:claude@joy:
-        token_key: f61e8455eabed842d4324a48f0c337753617942629ba36f24d74460cf3f94bdf
-        created: 2026-03-31T21:32:52.060800234Z
-      ai:copilot@joy:
-        token_key: 17757bb1e03d0c734cb8c40e371f436bc180a927db89eb791e62cfe6b21893c4
-        created: 2026-03-30T11:50:38.014392942Z
 created: 2026-03-09T23:57:36.761964460Z
 release:
   version-files:

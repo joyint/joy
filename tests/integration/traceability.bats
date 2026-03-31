@@ -132,9 +132,9 @@ EOF
     joy project member add ai:claude@joy
     joy project member add ai:copilot@joy
     # Create and auth both AI members
-    TOKEN_CLAUDE=$(joy auth create-token ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
+    TOKEN_CLAUDE=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
         | sed -n 's/^  \(joy_t_.*\)/\1/p')
-    TOKEN_COPILOT=$(joy auth create-token ai:copilot@joy --passphrase "$TEST_PASSPHRASE" \
+    TOKEN_COPILOT=$(joy auth token add ai:copilot@joy --passphrase "$TEST_PASSPHRASE" \
         | sed -n 's/^  \(joy_t_.*\)/\1/p')
     joy auth --token "$TOKEN_CLAUDE"
     joy auth --token "$TOKEN_COPILOT"
@@ -153,9 +153,9 @@ EOF
     setup_human_auth
     joy project member add ai:claude@joy
     joy project member add ai:copilot@joy
-    TOKEN_CLAUDE=$(joy auth create-token ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
+    TOKEN_CLAUDE=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
         | sed -n 's/^  \(joy_t_.*\)/\1/p')
-    TOKEN_COPILOT=$(joy auth create-token ai:copilot@joy --passphrase "$TEST_PASSPHRASE" \
+    TOKEN_COPILOT=$(joy auth token add ai:copilot@joy --passphrase "$TEST_PASSPHRASE" \
         | sed -n 's/^  \(joy_t_.*\)/\1/p')
     joy auth --token "$TOKEN_CLAUDE"
     joy auth --token "$TOKEN_COPILOT"
@@ -174,7 +174,7 @@ EOF
 @test "AI guard enforcement uses correct identity per token" {
     setup_human_auth
     joy project member add ai:claude@joy --capabilities "implement,create"
-    TOKEN_CLAUDE=$(joy auth create-token ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
+    TOKEN_CLAUDE=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
         | sed -n 's/^  \(joy_t_.*\)/\1/p')
     joy auth --token "$TOKEN_CLAUDE"
     # Claude cannot manage (no manage capability)
@@ -192,9 +192,9 @@ EOF
     joy project member add ai:claude@joy --capabilities "implement,create"
     # Copilot: can review and create, but NOT implement
     joy project member add ai:copilot@joy --capabilities "review,create"
-    TOKEN_CLAUDE=$(joy auth create-token ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
+    TOKEN_CLAUDE=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
         | sed -n 's/^  \(joy_t_.*\)/\1/p')
-    TOKEN_COPILOT=$(joy auth create-token ai:copilot@joy --passphrase "$TEST_PASSPHRASE" \
+    TOKEN_COPILOT=$(joy auth token add ai:copilot@joy --passphrase "$TEST_PASSPHRASE" \
         | sed -n 's/^  \(joy_t_.*\)/\1/p')
     joy auth --token "$TOKEN_CLAUDE"
     joy auth --token "$TOKEN_COPILOT"

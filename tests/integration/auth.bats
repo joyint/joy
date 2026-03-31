@@ -177,52 +177,71 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 }
 
 # ============================================================
-# joy auth create-token
+# joy auth token add / rm
 # ============================================================
 
-@test "joy auth create-token generates token for AI member" {
+@test "joy auth token add generates token for AI member" {
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
     joy project member add ai:test@joy
-    run joy auth create-token ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    run joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
     [[ "$output" == *"joy_t_"* ]]
     [[ "$output" == *"Delegation token for ai:test@joy"* ]]
 }
 
-@test "joy auth create-token rejects non-AI member" {
+@test "joy auth token add rejects non-AI member" {
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
     joy project member add dev@example.com
-    run joy auth create-token dev@example.com --passphrase "$TEST_PASSPHRASE"
+    run joy auth token add dev@example.com --passphrase "$TEST_PASSPHRASE"
     [ "$status" -ne 0 ]
     [[ "$output" == *"not an AI member"* ]]
 }
 
-@test "joy auth create-token rejects unregistered AI member" {
+@test "joy auth token add rejects unregistered AI member" {
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    run joy auth create-token ai:unknown@joy --passphrase "$TEST_PASSPHRASE"
+    run joy auth token add ai:unknown@joy --passphrase "$TEST_PASSPHRASE"
     [ "$status" -ne 0 ]
     [[ "$output" == *"not a registered project member"* ]]
 }
 
-@test "joy auth create-token rejects wrong passphrase" {
+@test "joy auth token add rejects wrong passphrase" {
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
     joy project member add ai:test@joy
-    run joy auth create-token ai:test@joy --passphrase "wrong wrong wrong wrong wrong wrong"
+    run joy auth token add ai:test@joy --passphrase "wrong wrong wrong wrong wrong wrong"
     [ "$status" -ne 0 ]
     [[ "$output" == *"incorrect passphrase"* ]]
 }
 
-@test "joy auth create-token with TTL" {
+@test "joy auth token add with TTL" {
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
     joy project member add ai:test@joy
-    run joy auth create-token ai:test@joy --passphrase "$TEST_PASSPHRASE" --ttl 8
+    run joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" --ttl 8
     [ "$status" -eq 0 ]
     [[ "$output" == *"expires in 8 hours"* ]]
+}
+
+@test "joy auth token rm revokes token" {
+    joy init --name "Auth Test"
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy project member add ai:test@joy
+    joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    run joy auth token rm ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Token for ai:test@joy revoked"* ]]
+}
+
+@test "joy auth token rm rejects when no token exists" {
+    joy init --name "Auth Test"
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy project member add ai:test@joy
+    run joy auth token rm ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"No token registered"* ]]
 }
 
 # ============================================================
@@ -275,7 +294,7 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     echo "# test" > .claude/CLAUDE.md
     joy project member add ai:claude@joy
     # Create a delegation token and authenticate as AI
-    TOKEN=$(joy auth create-token ai:claude@joy --passphrase "$TEST_PASSPHRASE" | sed -n 's/^  \(joy_t_.*\)/\1/p')
+    TOKEN=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" | sed -n 's/^  \(joy_t_.*\)/\1/p')
     joy auth --token "$TOKEN"
     # Verify AI member exists with public_key (set by token auth)
     grep -q "ai:claude@joy" .joy/project.yaml

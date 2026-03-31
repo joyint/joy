@@ -126,7 +126,7 @@ load setup
     joy add task "TTY lookup test"
     ITEM_ID=$(joy ls 2>/dev/null | grep "TTY lookup" | awk '{print $1}')
     # Create token and authenticate (creates AI session)
-    AI_TOKEN=$(joy auth create-token ai:test@joy --passphrase "$TEST_PASSPHRASE" \
+    AI_TOKEN=$(joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" \
         | sed -n 's/^  \(joy_t_.*\)/\1/p')
     joy auth --token "$AI_TOKEN"
     # Remove human session so AI session is found by context match
@@ -144,7 +144,7 @@ load setup
     joy project member add ai:test@joy
     joy add task "Delegation test"
     ITEM_ID=$(joy ls 2>/dev/null | grep "Delegation test" | awk '{print $1}')
-    AI_TOKEN=$(joy auth create-token ai:test@joy --passphrase "$TEST_PASSPHRASE" \
+    AI_TOKEN=$(joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" \
         | sed -n 's/^  \(joy_t_.*\)/\1/p')
     joy auth --token "$AI_TOKEN"
     unset JOY_TOKEN
@@ -177,7 +177,7 @@ load setup
     joy add task "Auth once test"
     ITEM_ID=$(joy ls 2>/dev/null | grep "Auth once" | awk '{print $1}')
     # Create token while human is still authenticated (no TTY context)
-    AI_TOKEN=$(joy auth create-token ai:test@joy --passphrase "$TEST_PASSPHRASE" \
+    AI_TOKEN=$(joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" \
         | sed -n 's/^  \(joy_t_.*\)/\1/p')
     # Re-authenticate human inside a PTY so its session gets a real TTY
     script -qc "joy auth --passphrase '$TEST_PASSPHRASE'" /dev/null
