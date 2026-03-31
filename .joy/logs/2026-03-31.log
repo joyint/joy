@@ -32,3 +32,6 @@
 2026-03-31T19:28:51.709Z JOY-00B7-E6 item.created "joy sync: push and pull via Git" [horst.schwarz@joydev.com]
 2026-03-31T19:28:51.723Z JOY-00B8-95 item.created "joy clone: clone project from remote" [horst.schwarz@joydev.com]
 2026-03-31T19:28:51.738Z JOY-00B9-D8 item.created "Status intelligence from git activity" [horst.schwarz@joydev.com]
+2026-03-31T19:42:10.082Z JOY-00BA-93 item.created "Local key management for E2E encryption" [horst.schwarz@joydev.com]
+2026-03-31T19:42:10.095Z JOY-00BB-B9 item.created "Client-side crypto via shared Rust/WASM crate" [horst.schwarz@joydev.com]
+2026-03-31T19:42:10.108Z JOY-00BC-A1 item.created "Recovery key generation at joy crypt init" [horst.schwarz@joydev.com]
