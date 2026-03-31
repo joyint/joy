@@ -35,3 +35,4 @@
 2026-03-31T19:42:10.082Z JOY-00BA-93 item.created "Local key management for E2E encryption" [horst.schwarz@joydev.com]
 2026-03-31T19:42:10.095Z JOY-00BB-B9 item.created "Client-side crypto via shared Rust/WASM crate" [horst.schwarz@joydev.com]
 2026-03-31T19:42:10.108Z JOY-00BC-A1 item.created "Recovery key generation at joy crypt init" [horst.schwarz@joydev.com]
+2026-03-31T19:49:09.968Z release guard.denied "horst.schwarz@joydev.com must authenticate to perform manage actions. Run `joy auth`." [horst.schwarz@joydev.com]
