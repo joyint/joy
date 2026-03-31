@@ -1,0 +1,21 @@
+id: JOY-00BD-9E
+title: 'Test: verify auth enforcement for AI sessions'
+type: task
+status: new
+priority: medium
+capabilities:
+- implement
+effort: 1
+created_by: horst.schwarz@joydev.com
+created: 2026-03-31T21:24:15.534046430Z
+updated: 2026-03-31T21:27:36.016282545Z
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-31T21:24:20.089709924Z
+  text: Testing write access without token-based AI auth
+- author: horst.schwarz@joydev.com
+  date: 2026-03-31T21:25:39.555693532Z
+  text: This should be blocked now
+- author: horst.schwarz@joydev.com
+  date: 2026-03-31T21:27:36.016282192Z
+  text: This should be blocked now!

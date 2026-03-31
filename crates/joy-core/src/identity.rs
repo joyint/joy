@@ -152,12 +152,19 @@ fn check_session(root: &Path, member: &str, project: &Option<Project>) -> bool {
         if crate::auth::session::validate_session(&sess, &pk, &project_id).is_err() {
             return false;
         }
-        // TTY binding: session must come from the same terminal
-        if let Some(ref session_tty) = sess.claims.tty {
-            let current = crate::auth::session::current_tty();
-            if current.as_ref() != Some(session_tty) {
-                return false;
+        // TTY binding: session must come from the same terminal.
+        // When AI members exist, sessions without a TTY field are rejected
+        // to prevent legacy sessions from bypassing terminal isolation.
+        let has_ai = project.members.keys().any(|k| is_ai_member(k));
+        match &sess.claims.tty {
+            Some(session_tty) => {
+                let current = crate::auth::session::current_tty();
+                if current.as_ref() != Some(session_tty) {
+                    return false;
+                }
             }
+            None if has_ai => return false,
+            None => {}
         }
         return true;
     }
