@@ -65,3 +65,5 @@
 2026-03-31T22:07:01.164Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-03-31T22:07:10.442Z JOY-00BD-9E comment.added "TTY-bound AI session works: authenticate once, write freely" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-03-31T22:44:42.300Z JOY-00BE-B7 item.created "Add performance timing tests for CLI commands" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-03-31T22:51:41.813Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-03-31T22:51:52.696Z JOY-00BF-18 item.created "Add end-to-end user journey integration tests" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
