@@ -1,0 +1,10 @@
+id: JOY-00AB
+title: Interactive ID selection with fzf
+type: idea
+status: new
+priority: medium
+effort: 2
+created_by: horst.schwarz@joydev.com
+created: 2026-03-31T17:54:19.415570146Z
+updated: 2026-03-31T17:54:19.415570146Z
+description: Optional fzf integration for ID selection. E.g. joy show --pick opens fzf with ID + title. Graceful fallback when fzf not installed. Migrated from JI-0059.

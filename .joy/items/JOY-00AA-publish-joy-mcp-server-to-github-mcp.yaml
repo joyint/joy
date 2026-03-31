@@ -1,0 +1,12 @@
+id: JOY-00AA
+title: Publish Joy MCP server to GitHub MCP Registry
+type: task
+status: new
+priority: low
+capabilities:
+- implement
+effort: 1
+created_by: horst.schwarz@joydev.com
+created: 2026-03-31T17:54:19.398733739Z
+updated: 2026-03-31T17:54:19.398733739Z
+description: Submit Joy MCP server to GitHub MCP Registry for Copilot discoverability. Requires MCP server implementation (JOY-00A8). Migrated from JI-0055.

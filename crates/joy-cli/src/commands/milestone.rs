@@ -126,7 +126,7 @@ fn run_add(args: AddArgs) -> Result<()> {
     ctx.enforce(&Action::ManageMilestone, "milestone")?;
 
     let acronym = store::load_acronym(&ctx.root)?;
-    let id = milestones::next_id(&ctx.root, &acronym)?;
+    let id = milestones::next_id(&ctx.root, &acronym, &args.title)?;
     let mut ms = Milestone::new(id.clone(), args.title);
 
     if let Some(ref date_str) = args.date {

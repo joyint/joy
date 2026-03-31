@@ -1,0 +1,12 @@
+id: JOY-00A8
+title: 'joy ai setup: GitHub Copilot MCP server'
+type: task
+status: new
+priority: low
+capabilities:
+- implement
+effort: 3
+created_by: horst.schwarz@joydev.com
+created: 2026-03-31T17:54:10.316692510Z
+updated: 2026-03-31T17:54:10.316692510Z
+description: Provide Joy as MCP server for GitHub Copilot. Copilot is transitioning to MCP-based extensions. Expose joy commands as MCP tools. Migrated from JI-0052.

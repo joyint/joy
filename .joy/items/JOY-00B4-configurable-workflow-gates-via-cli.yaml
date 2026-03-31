@@ -1,0 +1,14 @@
+id: JOY-00B4
+title: Configurable workflow gates via CLI
+type: story
+status: new
+priority: high
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created_by: horst.schwarz@joydev.com
+created: 2026-03-31T17:54:33.456725462Z
+updated: 2026-03-31T17:54:33.456725462Z
+description: CLI commands to configure workflow gates in project.yaml (e.g. joy project gate add review-to-closed --allow-ai false). joy project visualizes gates in the workflow diagram. Currently gates require manual YAML editing. Migrated from JI-00D1.

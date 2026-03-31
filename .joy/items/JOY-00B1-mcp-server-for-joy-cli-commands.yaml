@@ -1,0 +1,14 @@
+id: JOY-00B1
+title: MCP server for Joy CLI commands
+type: story
+status: new
+priority: medium
+capabilities:
+- plan
+- implement
+- review
+effort: 5
+created_by: horst.schwarz@joydev.com
+created: 2026-03-31T17:54:33.430505722Z
+updated: 2026-03-31T17:54:33.430505722Z
+description: Model Context Protocol server exposing Joy CLI commands as MCP tools. Enables programmatic integration with GitHub Copilot, Cursor, Windsurf, and any MCP-compatible AI tool. Lower priority than instructions/skills approach since MCP requires a running server process. Migrated from JI-00B1.

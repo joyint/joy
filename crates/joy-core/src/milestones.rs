@@ -74,12 +74,14 @@ pub fn update_milestone(root: &Path, ms: &Milestone) -> Result<(), JoyError> {
 }
 
 /// Generate the next milestone ID by scanning existing files.
-/// Returns "ACRONYM-MS-01" for the first milestone.
-pub fn next_id(root: &Path, acronym: &str) -> Result<String, JoyError> {
+/// Legacy format: ACRONYM-MS-XX (2 hex digits)
+/// New format (ADR-027): ACRONYM-MS-XX-YY (2 hex digits + 2 hex title hash)
+pub fn next_id(root: &Path, acronym: &str, title: &str) -> Result<String, JoyError> {
     let prefix = format!("{acronym}-MS-");
     let ms_dir = store::joy_dir(root).join(store::MILESTONES_DIR);
     if !ms_dir.is_dir() {
-        return Ok(format!("{prefix}01"));
+        let suffix = crate::items::title_hash_suffix(title);
+        return Ok(format!("{prefix}01-{suffix}"));
     }
 
     let mut max_num: u8 = 0;
@@ -104,7 +106,8 @@ pub fn next_id(root: &Path, acronym: &str) -> Result<String, JoyError> {
     let next = max_num
         .checked_add(1)
         .ok_or_else(|| JoyError::Other(format!("{prefix} ID space exhausted (max {prefix}FF)")))?;
-    Ok(format!("{prefix}{next:02X}"))
+    let suffix = crate::items::title_hash_suffix(title);
+    Ok(format!("{prefix}{next:02X}-{suffix}"))
 }
 
 /// Find the file path for a milestone by its ID.
@@ -160,7 +163,8 @@ mod tests {
     fn next_id_first() {
         let dir = tempdir().unwrap();
         setup_project(dir.path());
-        assert_eq!(next_id(dir.path(), "JOY").unwrap(), "JOY-MS-01");
+        let id = next_id(dir.path(), "JOY", "Beta Release").unwrap();
+        assert!(id.starts_with("JOY-MS-01-"), "got: {id}");
     }
 
     #[test]
@@ -183,7 +187,8 @@ mod tests {
         let ms = Milestone::new("JOY-MS-01".into(), "First".into());
         save_milestone(dir.path(), &ms).unwrap();
 
-        assert_eq!(next_id(dir.path(), "JOY").unwrap(), "JOY-MS-02");
+        let id = next_id(dir.path(), "JOY", "Second").unwrap();
+        assert!(id.starts_with("JOY-MS-02-"), "got: {id}");
     }
 
     #[test]

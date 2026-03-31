@@ -1,0 +1,10 @@
+id: JOY-00A6
+title: 'joy commit: generate commit message from event log'
+type: idea
+status: new
+priority: medium
+effort: 2
+created_by: horst.schwarz@joydev.com
+created: 2026-03-31T17:54:10.298746626Z
+updated: 2026-03-31T17:54:10.298746626Z
+description: 'New command that reads uncommitted events from .joy/log/ and generates a structured git commit message. Commits only .joy/ files. Example: joy commit -> ''joy: add JI-0048, start JI-0048, close JI-0012''. Migrated from JI-004C.'

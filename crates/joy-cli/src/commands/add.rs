@@ -127,7 +127,7 @@ pub fn run(args: AddArgs) -> Result<()> {
         }
         None => {
             let acronym = store::load_acronym(&ctx.root)?;
-            items::next_id(&ctx.root, &acronym)?
+            items::next_id(&ctx.root, &acronym, &title)?
         }
     };
 

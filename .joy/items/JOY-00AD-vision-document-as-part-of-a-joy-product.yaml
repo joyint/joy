@@ -1,0 +1,10 @@
+id: JOY-00AD
+title: Vision document as part of a joy product
+type: idea
+status: new
+priority: medium
+effort: 3
+created_by: horst.schwarz@joydev.com
+created: 2026-03-31T17:54:19.433986768Z
+updated: 2026-03-31T17:54:19.433986768Z
+description: The vision could be written by a human with a template provided by joy, or created and maintained by AI by summarizing documents or interviewing the product creator. Migrated from JI-0068.
