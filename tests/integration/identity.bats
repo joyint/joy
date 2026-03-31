@@ -115,3 +115,78 @@ load setup
     [ "$status" -eq 0 ]
     [[ "$output" != *"AI members"* ]]
 }
+
+# ============================================================
+# AI session TTY-based lookup (JOY-0094)
+# ============================================================
+
+@test "AI session works without JOY_TOKEN after joy auth --token" {
+    setup_human_auth
+    joy project member add ai:test@joy
+    joy add task "TTY lookup test"
+    ITEM_ID=$(joy ls 2>/dev/null | grep "TTY lookup" | awk '{print $1}')
+    # Create token and authenticate (creates AI session)
+    AI_TOKEN=$(joy auth create-token ai:test@joy --passphrase "$TEST_PASSPHRASE" \
+        | sed -n 's/^  \(joy_t_.*\)/\1/p')
+    joy auth --token "$AI_TOKEN"
+    # Remove human session so AI session is found by context match
+    # (in real usage, different TTY achieves this; in tests both have no TTY)
+    unset JOY_TOKEN
+    joy deauth
+    run joy comment "$ITEM_ID" "Via context-bound session"
+    [ "$status" -eq 0 ]
+    # Verify it was attributed to the AI member
+    grep -q "author: ai:test@joy" .joy/items/*.yaml
+}
+
+@test "AI session via context-lookup shows delegated-by in log" {
+    setup_human_auth
+    joy project member add ai:test@joy
+    joy add task "Delegation test"
+    ITEM_ID=$(joy ls 2>/dev/null | grep "Delegation test" | awk '{print $1}')
+    AI_TOKEN=$(joy auth create-token ai:test@joy --passphrase "$TEST_PASSPHRASE" \
+        | sed -n 's/^  \(joy_t_.*\)/\1/p')
+    joy auth --token "$AI_TOKEN"
+    unset JOY_TOKEN
+    joy deauth
+    joy comment "$ITEM_ID" "Context delegation"
+    # Check that the comment event (not just the auth event) has delegated-by
+    grep -q "comment.added.*ai:test@joy delegated-by:test@example.com" .joy/logs/*.log
+}
+
+# ============================================================
+# TTY isolation (JOY-0094)
+# ============================================================
+
+@test "human session with TTY not usable from different context" {
+    setup_human_auth
+    joy project member add ai:test@joy
+    joy add task "TTY isolation test"
+    ITEM_ID=$(joy ls 2>/dev/null | grep "TTY isolation" | awk '{print $1}')
+    # Re-authenticate human inside a PTY (session gets a real TTY)
+    script -qc "joy auth --passphrase '$TEST_PASSPHRASE'" /dev/null
+    # Outside the PTY, human session TTY does not match -> unauthenticated
+    run joy comment "$ITEM_ID" "Should fail"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"must authenticate"* ]]
+}
+
+@test "AI authenticates once then works freely in same context" {
+    setup_human_auth
+    joy project member add ai:test@joy
+    joy add task "Auth once test"
+    ITEM_ID=$(joy ls 2>/dev/null | grep "Auth once" | awk '{print $1}')
+    # Create token while human is still authenticated (no TTY context)
+    AI_TOKEN=$(joy auth create-token ai:test@joy --passphrase "$TEST_PASSPHRASE" \
+        | sed -n 's/^  \(joy_t_.*\)/\1/p')
+    # Re-authenticate human inside a PTY so its session gets a real TTY
+    script -qc "joy auth --passphrase '$TEST_PASSPHRASE'" /dev/null
+    # Authenticate AI outside PTY (session with tty: None)
+    joy auth --token "$AI_TOKEN"
+    unset JOY_TOKEN
+    # Subsequent commands without token should work via context-bound session
+    # (human session has TTY, doesn't match; AI session has None, matches)
+    run joy comment "$ITEM_ID" "AI working freely"
+    [ "$status" -eq 0 ]
+    grep -q "author: ai:test@joy" .joy/items/*.yaml
+}

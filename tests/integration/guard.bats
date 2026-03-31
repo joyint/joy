@@ -159,7 +159,9 @@ EOF
 
 @test "developer without manage cannot add members" {
     setup_team_project
+    setup_member_auth dev@example.com "$DEV_PASSPHRASE"
     git config user.email dev@example.com
+    joy auth --passphrase "$DEV_PASSPHRASE"
     run joy project member add newbie@example.com
     [ "$status" -ne 0 ]
     [[ "$output" == *"manage"* ]]
@@ -168,7 +170,9 @@ EOF
 
 @test "developer without manage cannot delete items" {
     setup_team_project
+    setup_member_auth dev@example.com "$DEV_PASSPHRASE"
     git config user.email dev@example.com
+    joy auth --passphrase "$DEV_PASSPHRASE"
     run joy rm "$ITEM_ID" --force
     [ "$status" -ne 0 ]
     [[ "$output" == *"delete"* ]]
@@ -181,7 +185,9 @@ EOF
 
 @test "developer with implement can start work" {
     setup_team_project
+    setup_member_auth dev@example.com "$DEV_PASSPHRASE"
     git config user.email dev@example.com
+    joy auth --passphrase "$DEV_PASSPHRASE"
     run joy status "$ITEM_ID" in-progress
     [ "$status" -eq 0 ]
     git config user.email test@example.com
@@ -189,7 +195,9 @@ EOF
 
 @test "developer with create can add items" {
     setup_team_project
+    setup_member_auth dev@example.com "$DEV_PASSPHRASE"
     git config user.email dev@example.com
+    joy auth --passphrase "$DEV_PASSPHRASE"
     run joy add task "Dev task"
     [ "$status" -eq 0 ]
     git config user.email test@example.com
@@ -197,7 +205,9 @@ EOF
 
 @test "developer with create can comment" {
     setup_team_project
+    setup_member_auth dev@example.com "$DEV_PASSPHRASE"
     git config user.email dev@example.com
+    joy auth --passphrase "$DEV_PASSPHRASE"
     run joy comment "$ITEM_ID" "Dev comment"
     [ "$status" -eq 0 ]
     git config user.email test@example.com
@@ -218,9 +228,11 @@ EOF
 
 @test "warned action produces guard.warned event in log" {
     setup_team_project
+    setup_member_auth dev@example.com "$DEV_PASSPHRASE"
     # Developer tries to submit for review (needs Review cap, dev lacks it)
     joy status "$ITEM_ID" in-progress
     git config user.email dev@example.com
+    joy auth --passphrase "$DEV_PASSPHRASE"
     run joy status "$ITEM_ID" review
     [ "$status" -eq 0 ]  # Warn allows but logs
     grep -q "guard.warned" .joy/logs/*.log
@@ -309,5 +321,42 @@ EOF
     joy start "$ITEM_ID"
     joy submit "$ITEM_ID"
     run joy close "$ITEM_ID"
+    [ "$status" -eq 0 ]
+}
+
+# ============================================================
+# Scenario 10: Auth enforcement when AI members exist (JOY-0094)
+# ============================================================
+
+@test "unauthenticated write blocked when AI members exist" {
+    setup_human_auth
+    joy project member add ai:test@joy
+    joy add task "Auth test"
+    ITEM_ID=$(joy ls 2>/dev/null | grep "Auth test" | awk '{print $1}')
+    # Remove human session to become unauthenticated
+    joy deauth
+    run joy comment "$ITEM_ID" "Should fail"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"must authenticate"* ]]
+}
+
+@test "unauthenticated read allowed when AI members exist" {
+    setup_human_auth
+    joy project member add ai:test@joy
+    joy add task "Read test"
+    # Remove human session
+    joy deauth
+    run joy ls
+    [ "$status" -eq 0 ]
+    run joy show "$(joy ls 2>/dev/null | grep 'Read test' | awk '{print $1}')"
+    [ "$status" -eq 0 ]
+}
+
+@test "authenticated human can write when AI members exist" {
+    setup_human_auth
+    joy project member add ai:test@joy
+    joy add task "Human write test"
+    ITEM_ID=$(joy ls 2>/dev/null | grep "Human write" | awk '{print $1}')
+    run joy comment "$ITEM_ID" "Human comment"
     [ "$status" -eq 0 ]
 }
