@@ -1,0 +1,74 @@
+id: JOY-00C2-DC
+title: 'SKILL.md Parser: HTML-Kommentar vor YAML-Frontmatter bricht Qwen Code Skill-Loading'
+type: bug
+status: in-progress
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:qwen@joy
+created: 2026-03-31T23:53:49.190175923Z
+updated: 2026-04-01T19:20:20.466440092Z
+comments:
+- author: ai:qwen@joy
+  date: 2026-03-31T23:54:00.174488300Z
+  text: |-
+    ## Problem
+
+    Die von Joy generierte SKILL.md begann mit einem HTML-Kommentar VOR dem YAML-Frontmatter:
+
+
+
+    Qwen Codes Parser erwartet aber, dass die Datei direkt mit `---` beginnt (Zeile 1, Zeichen 1). Der Regex im Parser ist:
+
+
+
+    Das `^` bedeutet 'Anfang der Datei' – der HTML-Kommentar davor hat das Parsing verhindert.
+
+    ## Lösung
+
+    Den HTML-Kommentar NACH das Frontmatter verschieben:
+
+
+
+    ## Betroffene Komponente
+
+    Joy CLI: SKILL.md Template-Generierung (ai setup / skill export)
+
+    ## Testfall
+
+    1. Joy Skill generieren lassen
+    2. In ~/.qwen/skills/ kopieren
+    3. Qwen Code neu starten
+    4. /skills joy sollte den Skill laden
+- author: ai:qwen@joy
+  date: 2026-03-31T23:54:10.527160488Z
+  text: |-
+    PROBLEM: Joy generiert SKILL.md mit HTML-Kommentar VOR dem YAML-Frontmatter. Qwen Code Parser erwartet Datei die direkt mit --- beginnt (Regex: /^---). Der Kommentar bricht das Parsing.
+
+    LOESUNG: HTML-Kommentar NACH das Frontmatter verschieben.
+
+    BETROFFENE KOMPONENTE: Joy CLI - SKILL.md Template-Generierung (ai setup / skill export)
+
+    TESTFALL: 1) Joy Skill generieren 2) In ~/.qwen/skills/ kopieren 3) Qwen Code neu starten 4) /skills joy sollte laden
+- author: ai:qwen@joy
+  date: 2026-03-31T23:58:29.311439473Z
+  text: 'Hinweis: Der Skill muss nicht zwingend in ~/.qwen/skills/ sein. Es funktioniert auch mit dem lokalen .qwen/skills/ Verzeichnis im Projekt.'
+- author: ai:claude@joy
+  date: 2026-04-01T00:00:32.814325837Z
+  text: 'Hinweis: Betrifft auch Mistral Vibe - der Skill-Parser erwartet ebenfalls YAML-Frontmatter am Dateianfang.'
+- author: ai:claude@joy
+  date: 2026-04-01T19:20:13.522440565Z
+  text: 'Plan: Remove version comments from generated files, introduce manifest-based tracking at .joy/ai/manifest.yaml, refactor CLI into setup/update/update --check.'
+- author: ai:claude@joy
+  date: 2026-04-01T19:20:20.466439970Z
+  text: |-
+    [x] Removed version comments from all 7 templates
+    [x] Removed joy_version param from all render functions, replaced extract_version with content_hash
+    [x] New ai_manifest.rs module with SHA-256 manifest tracking
+    [x] CLI refactor: setup (new tools only), update (refresh files), update --check (status), check (deprecated alias)
+    [x] 10 new BATS integration tests, 33 updated unit tests
+    [x] 241 cargo tests + 141 BATS tests passing
