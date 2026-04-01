@@ -9,7 +9,6 @@
 //! to `.joy/ai/` and `.joy/capabilities/` (see ADR-024).
 
 use minijinja::{context, Environment};
-use sha2::{Digest, Sha256};
 
 use crate::error::JoyError;
 
@@ -207,13 +206,6 @@ pub fn agent_filename(agent: &serde_json::Value, tool: &str) -> Option<String> {
         "copilot" => Some(format!("{name}.agent.md")),
         _ => None,
     }
-}
-
-/// Compute SHA-256 hex digest of content (for manifest tracking).
-pub fn content_hash(content: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(content.as_bytes());
-    format!("{:x}", hasher.finalize())
 }
 
 #[cfg(test)]
@@ -683,24 +675,6 @@ mod tests {
         let content = setup_instructions();
         assert!(!content.is_empty());
         assert!(content.contains("Vision"));
-    }
-
-    // -----------------------------------------------------------------------
-    // Content hash tests
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn content_hash_deterministic() {
-        let hash1 = content_hash("hello world");
-        let hash2 = content_hash("hello world");
-        assert_eq!(hash1, hash2);
-    }
-
-    #[test]
-    fn content_hash_different_for_different_input() {
-        let hash1 = content_hash("hello");
-        let hash2 = content_hash("world");
-        assert_ne!(hash1, hash2);
     }
 
     #[test]
