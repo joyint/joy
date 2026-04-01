@@ -1,7 +1,7 @@
 id: JOY-00C2-DC
 title: 'SKILL.md Parser: HTML-Kommentar vor YAML-Frontmatter bricht Qwen Code Skill-Loading'
 type: bug
-status: in-progress
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -11,7 +11,7 @@ capabilities:
 effort: 2
 created_by: ai:qwen@joy
 created: 2026-03-31T23:53:49.190175923Z
-updated: 2026-04-01T19:20:20.466440092Z
+updated: 2026-04-01T19:20:49.634058783Z
 comments:
 - author: ai:qwen@joy
   date: 2026-03-31T23:54:00.174488300Z
