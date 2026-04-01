@@ -3,6 +3,7 @@
 
 #![deny(clippy::all)]
 
+pub mod ai_manifest;
 pub mod ai_templates;
 pub mod auth;
 pub mod capabilities;

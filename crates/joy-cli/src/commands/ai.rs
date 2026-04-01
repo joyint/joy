@@ -6,6 +6,7 @@ use std::io::Write;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
+use joy_core::ai_manifest::AiManifest;
 use joy_core::ai_templates;
 
 use crate::color;
@@ -38,12 +39,22 @@ pub struct AiArgs {
 
 #[derive(clap::Subcommand)]
 enum AiCommand {
-    /// Set up AI tool integration for this project
+    /// Set up AI tool integration for new tools
     Setup,
-    /// Check if AI templates are up to date, update if needed
+    /// Update AI tool files to current Joy version
+    Update(UpdateArgs),
+    /// Deprecated: use `joy ai update --check`
+    #[command(hide = true)]
     Check,
     /// Remove AI tool configurations from this project
     Reset(ResetArgs),
+}
+
+#[derive(clap::Args)]
+struct UpdateArgs {
+    /// Only check if files are up to date (exit code 2 if stale), do not write
+    #[arg(long)]
+    check: bool,
 }
 
 #[derive(clap::Args)]
@@ -60,7 +71,14 @@ struct ResetArgs {
 pub fn run(args: AiArgs) -> anyhow::Result<()> {
     match args.command {
         AiCommand::Setup => setup(),
-        AiCommand::Check => check(),
+        AiCommand::Update(a) => update(a),
+        AiCommand::Check => {
+            eprintln!(
+                "{}",
+                color::warning("deprecated: use `joy ai update --check` instead")
+            );
+            update(UpdateArgs { check: true })
+        }
         AiCommand::Reset(a) => reset(a),
     }
 }
@@ -76,7 +94,7 @@ fn setup() -> anyhow::Result<()> {
     joy_core::embedded::sync_files(&root, joy_core::init::PROJECT_FILES)?;
 
     check_docs(&root)?;
-    let configured_tools = configure_tools(&root)?;
+    let configured_tools = setup_new_tools(&root)?;
     update_gitignore(&root, &configured_tools)?;
     check_nested_projects(&root)?;
 
@@ -85,6 +103,171 @@ fn setup() -> anyhow::Result<()> {
         color::plural(configured_tools.len(), "tool")
     );
     println!("{}", color::footer(&msg));
+    Ok(())
+}
+
+fn update(args: UpdateArgs) -> anyhow::Result<()> {
+    let root = joy_core::store::find_project_root(&std::env::current_dir()?)
+        .ok_or_else(|| anyhow::anyhow!("No Joy project found (run `joy init` first)"))?;
+
+    if args.check {
+        return update_check(&root);
+    }
+
+    println!("{}", color::header("AI Update"));
+    println!();
+
+    // Ensure project.defaults.yaml exists
+    joy_core::embedded::sync_files(&root, joy_core::init::PROJECT_FILES)?;
+
+    println!("{}", color::section("AI Tools"));
+
+    let mut manifest = AiManifest::load(&root);
+    manifest.version = JOY_VERSION.to_string();
+
+    let mut tool_count = 0;
+    let tools: &[ToolEntry] = &[
+        (
+            "Claude Code",
+            "claude",
+            |_| which("claude"),
+            configure_claude,
+        ),
+        (
+            "Qwen Code",
+            "qwen",
+            |_| which("qwen") || which("qwen-code"),
+            configure_qwen,
+        ),
+        ("Mistral Vibe", "vibe", |_| which("vibe"), configure_vibe),
+        (
+            "GitHub Copilot",
+            "copilot",
+            |_| which("copilot") || which("gh"),
+            configure_copilot,
+        ),
+    ];
+
+    for (name, id, _, configure) in tools {
+        if !is_tool_configured(&root, id) {
+            continue;
+        }
+        let member_id = format!("ai:{id}@joy");
+        QUIET.store(true, std::sync::atomic::Ordering::Relaxed);
+        let changed = configure(&root, &member_id)?;
+        QUIET.store(false, std::sync::atomic::Ordering::Relaxed);
+        record_tool_hashes(&root, id, &mut manifest)?;
+        let status = if changed {
+            color::success("updated")
+        } else {
+            color::inactive("up to date")
+        };
+        println!("  {}{:<24} {}", color::check_mark(), name, status);
+        tool_count += 1;
+    }
+
+    if tool_count == 0 {
+        println!(
+            "  {}No configured AI tools found. Run {} first.",
+            color::warn_mark(),
+            color::label("joy ai setup")
+        );
+    }
+
+    manifest.save(&root)?;
+
+    println!();
+    println!(
+        "{}",
+        color::footer(&format!(
+            "AI update complete -- {}",
+            color::plural(tool_count, "tool")
+        ))
+    );
+    Ok(())
+}
+
+fn update_check(root: &Path) -> anyhow::Result<()> {
+    let manifest = AiManifest::load(root);
+
+    println!("{}", color::header("AI Status"));
+    println!();
+    println!("{}", color::section("AI Tools"));
+
+    let tool_checks: &[(&str, &str)] = &[
+        ("Claude Code", "claude"),
+        ("Qwen Code", "qwen"),
+        ("Mistral Vibe", "vibe"),
+        ("GitHub Copilot", "copilot"),
+    ];
+
+    let mut configured_count = 0;
+    let mut has_issues = false;
+
+    // No manifest or version mismatch -> everything stale
+    let version_stale = manifest.version.is_empty() || manifest.version != JOY_VERSION;
+
+    for (name, id) in tool_checks {
+        let installed = match *id {
+            "claude" => which("claude"),
+            "qwen" => which("qwen") || which("qwen-code"),
+            "vibe" => which("vibe"),
+            "copilot" => which("copilot") || which("gh"),
+            _ => false,
+        };
+        let configured = is_tool_configured(root, id);
+        if configured {
+            configured_count += 1;
+            let stale = if version_stale {
+                true
+            } else {
+                // Check file hashes against manifest
+                let stale_files = manifest.stale_files(JOY_VERSION, root);
+                stale_files.iter().any(|(t, _)| t == *id)
+            };
+            if stale {
+                has_issues = true;
+                println!(
+                    "  {}{:<24} {}",
+                    color::warn_mark(),
+                    name,
+                    color::warning("outdated")
+                );
+            } else {
+                println!(
+                    "  {}{:<24} {}",
+                    color::check_mark(),
+                    name,
+                    color::inactive("up to date")
+                );
+            }
+        } else if installed {
+            println!(
+                "  {}{:<24} {}",
+                color::warn_mark(),
+                name,
+                color::warning("installed, not configured")
+            );
+        } else {
+            println!("    {:<24} {}", name, color::inactive("not installed"));
+        }
+    }
+
+    println!();
+    let msg = format!(
+        "{} · {}",
+        if has_issues {
+            format!("files need update -- run {}", color::label("joy ai update"))
+        } else {
+            "all up to date".to_string()
+        },
+        color::plural(configured_count, "tool")
+    );
+    println!("{}", color::footer(&msg));
+
+    if has_issues {
+        std::process::exit(2);
+    }
     Ok(())
 }
 
@@ -149,139 +332,6 @@ fn check_docs(root: &Path) -> anyhow::Result<()> {
     println!();
 
     Ok(())
-}
-
-fn check() -> anyhow::Result<()> {
-    let root = joy_core::store::find_project_root(&std::env::current_dir()?)
-        .ok_or_else(|| anyhow::anyhow!("No Joy project found (run `joy init` first)"))?;
-
-    println!("{}", color::header("AI Status"));
-    println!();
-
-    // AI Tools -- re-render expected output and compare against on-disk
-    println!("{}", color::section("AI Tools"));
-    let tool_checks: &[(&str, &str)] = &[
-        ("Claude Code", "claude"),
-        ("Qwen Code", "qwen"),
-        ("Mistral Vibe", "vibe"),
-        ("GitHub Copilot", "copilot"),
-    ];
-
-    let mut configured_count = 0;
-    let mut has_issues = false;
-    for (name, id) in tool_checks {
-        let installed = match *id {
-            "claude" => which("claude"),
-            "qwen" => which("qwen") || which("qwen-code"),
-            "vibe" => which("vibe"),
-            "copilot" => which("copilot") || which("gh"),
-            _ => false,
-        };
-        let configured = is_tool_configured(&root, id);
-        if configured {
-            configured_count += 1;
-            // Check if generated files are up-to-date by re-rendering and comparing
-            let member_id = format!("ai:{id}@joy");
-            let stale = check_tool_files(&root, id, &member_id).unwrap_or(true);
-            if stale {
-                has_issues = true;
-                println!(
-                    "  {}{:<24} {}",
-                    color::warn_mark(),
-                    name,
-                    color::warning("outdated")
-                );
-            } else {
-                println!(
-                    "  {}{:<24} {}",
-                    color::check_mark(),
-                    name,
-                    color::inactive("up to date")
-                );
-            }
-        } else if installed {
-            println!(
-                "  {}{:<24} {}",
-                color::warn_mark(),
-                name,
-                color::warning("installed, not configured")
-            );
-        } else {
-            println!("    {:<24} {}", name, color::inactive("not installed"));
-        }
-    }
-
-    println!();
-    let msg = format!(
-        "{} · {}",
-        if has_issues {
-            format!("files need update -- run {}", color::label("joy ai setup"))
-        } else {
-            "all up to date".to_string()
-        },
-        color::plural(configured_count, "tool")
-    );
-    println!("{}", color::footer(&msg));
-
-    if has_issues {
-        std::process::exit(2);
-    }
-    Ok(())
-}
-
-/// Check if a tool's generated files are up to date by comparing version headers.
-/// Returns true if any file is stale (version mismatch or missing).
-fn check_tool_files(root: &Path, tool: &str, _member_id: &str) -> anyhow::Result<bool> {
-    // Collect all files that should have a version header
-    let mut files_to_check: Vec<std::path::PathBuf> = Vec::new();
-
-    // SKILL.md (all tools except copilot)
-    match tool {
-        "claude" => files_to_check.push(root.join(".claude/skills/joy/SKILL.md")),
-        "qwen" => files_to_check.push(root.join(".qwen/skills/joy/SKILL.md")),
-        "vibe" => files_to_check.push(root.join(".vibe/skills/joy/SKILL.md")),
-        _ => {}
-    }
-
-    // Instructions file (joy-block contains version header)
-    match tool {
-        "claude" => files_to_check.push(root.join(".claude/CLAUDE.md")),
-        "qwen" => files_to_check.push(root.join(".qwen/QWEN.md")),
-        "copilot" => {
-            files_to_check.push(root.join(".github/copilot-instructions.md"));
-            files_to_check.push(root.join(".github/prompts/joy.prompt.md"));
-        }
-        _ => {}
-    }
-
-    // Agent files
-    let agents_dir = match tool {
-        "claude" => Some(root.join(".claude/agents")),
-        "qwen" => Some(root.join(".qwen/agents")),
-        "vibe" => Some(root.join(".vibe/agents")),
-        "copilot" => Some(root.join(".github/agents")),
-        _ => None,
-    };
-    if let Some(dir) = agents_dir {
-        if dir.is_dir() {
-            for entry in fs::read_dir(&dir)?.filter_map(|e| e.ok()) {
-                files_to_check.push(entry.path());
-            }
-        }
-    }
-
-    for path in &files_to_check {
-        if !path.is_file() {
-            return Ok(true); // missing = stale
-        }
-        let content = fs::read_to_string(path)?;
-        match ai_templates::extract_version(&content) {
-            Some(version) if version == JOY_VERSION => {} // up to date
-            _ => return Ok(true),                         // stale or no header
-        }
-    }
-
-    Ok(false) // all up to date
 }
 
 fn reset(args: ResetArgs) -> anyhow::Result<()> {
@@ -415,6 +465,18 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
         }
     }
 
+    // Clean manifest entries for reset tools
+    let mut manifest = AiManifest::load(&root);
+    for (_, id, paths) in &tools {
+        let was_removed = paths
+            .iter()
+            .any(|p| to_remove.iter().any(|(_, tp)| tp == p));
+        if was_removed {
+            manifest.remove_tool(id);
+        }
+    }
+    manifest.save(&root)?;
+
     // If no AI tools remain, update gitignore to remove tool entries
     let any_remaining = all_tools
         .iter()
@@ -445,11 +507,12 @@ type ToolEntry = (
     fn(&Path, &str) -> anyhow::Result<bool>,
 );
 
-/// Returns the list of configured tool IDs.
-fn configure_tools(root: &Path) -> anyhow::Result<Vec<&'static str>> {
+/// Set up only NEW (not yet configured) tools. Returns list of all configured tool IDs.
+fn setup_new_tools(root: &Path) -> anyhow::Result<Vec<&'static str>> {
     println!("{}", color::section("AI Tools"));
 
     let mut configured_tools: Vec<&'static str> = Vec::new();
+    let mut newly_configured = 0;
 
     let tools: &[ToolEntry] = &[
         (
@@ -478,68 +541,71 @@ fn configure_tools(root: &Path) -> anyhow::Result<Vec<&'static str>> {
     let mut project: joy_core::model::Project = joy_core::store::read_yaml(&project_path)?;
     let mut project_changed = false;
 
+    let mut manifest = AiManifest::load(root);
+    manifest.version = JOY_VERSION.to_string();
+
     for (name, id, detect, configure) in tools {
         if !detect(false) {
             continue;
         }
         let already = is_tool_configured(root, id);
         let member_id = format!("ai:{id}@joy");
-        let mut configured = false;
         if already {
-            QUIET.store(true, std::sync::atomic::Ordering::Relaxed);
-            let changed = configure(root, &member_id)?;
-            QUIET.store(false, std::sync::atomic::Ordering::Relaxed);
-            let status = if changed {
-                color::success("updated")
-            } else {
-                color::inactive("up to date")
-            };
-            println!("  {}{:<24} {}", color::check_mark(), name, status);
-            configured = true;
-            configured_tools.push(*id);
-        } else {
-            print!("  {}{:<24} configure? [Y/n] ", color::warn_mark(), name);
-            if confirm_default_yes()? {
-                configure(root, &member_id)?;
-                configured = true;
-                configured_tools.push(*id);
-            }
-        }
-
-        // Register as AI member only if tool was actually configured
-        if configured && !project.members.contains_key(&member_id) {
-            let ai_defaults = joy_core::store::load_ai_defaults(root);
-            let ai_caps = if ai_defaults.capabilities.is_empty() {
-                joy_core::model::item::Capability::work_capabilities()
-            } else {
-                ai_defaults.capabilities.clone()
-            };
-            project.members.insert(
-                member_id.clone(),
-                joy_core::model::project::Member::new(
-                    joy_core::model::project::MemberCapabilities::Specific({
-                        use joy_core::model::project::CapabilityConfig;
-                        let mut map = std::collections::BTreeMap::new();
-                        for cap in ai_caps {
-                            map.insert(cap, CapabilityConfig::default());
-                        }
-                        map
-                    }),
-                ),
-            );
-            project_changed = true;
             println!(
                 "  {}{:<24} {}",
                 color::check_mark(),
-                member_id,
-                color::success("registered as member")
+                name,
+                color::inactive("already configured")
             );
+            configured_tools.push(*id);
+            continue;
+        }
+
+        // New tool: prompt user
+        print!("  {}{:<24} configure? [Y/n] ", color::warn_mark(), name);
+        if confirm_default_yes()? {
+            configure(root, &member_id)?;
+            record_tool_hashes(root, id, &mut manifest)?;
+            configured_tools.push(*id);
+            newly_configured += 1;
+
+            // Register as AI member
+            if !project.members.contains_key(&member_id) {
+                let ai_defaults = joy_core::store::load_ai_defaults(root);
+                let ai_caps = if ai_defaults.capabilities.is_empty() {
+                    joy_core::model::item::Capability::work_capabilities()
+                } else {
+                    ai_defaults.capabilities.clone()
+                };
+                project.members.insert(
+                    member_id.clone(),
+                    joy_core::model::project::Member::new(
+                        joy_core::model::project::MemberCapabilities::Specific({
+                            use joy_core::model::project::CapabilityConfig;
+                            let mut map = std::collections::BTreeMap::new();
+                            for cap in ai_caps {
+                                map.insert(cap, CapabilityConfig::default());
+                            }
+                            map
+                        }),
+                    ),
+                );
+                project_changed = true;
+                println!(
+                    "  {}{:<24} {}",
+                    color::check_mark(),
+                    member_id,
+                    color::success("registered as member")
+                );
+            }
         }
     }
 
     if project_changed {
         joy_core::store::write_yaml_preserve(&project_path, &project)?;
     }
+
+    manifest.save(root)?;
 
     if configured_tools.is_empty() {
         println!("  {}No supported AI tools detected.", color::warn_mark());
@@ -551,6 +617,12 @@ fn configure_tools(root: &Path) -> anyhow::Result<Vec<&'static str>> {
             "  {}",
             color::inactive("Install one and re-run `joy ai setup`.")
         );
+    } else if newly_configured == 0 {
+        println!(
+            "\n  {}All tools already configured. Use {} to update files.",
+            color::warn_mark(),
+            color::label("joy ai update")
+        );
     }
 
     println!();
@@ -560,7 +632,7 @@ fn configure_tools(root: &Path) -> anyhow::Result<Vec<&'static str>> {
 /// Render the managed block (identity + instructions with workflow) for a tool's instruction file.
 fn render_managed_block(member_id: &str, has_skill: bool) -> anyhow::Result<String> {
     let workflow = ai_templates::load_workflow()?;
-    let joy_block = ai_templates::render_joy_block(member_id, has_skill, JOY_VERSION)?;
+    let joy_block = ai_templates::render_joy_block(member_id, has_skill)?;
     let instructions = ai_templates::render_instructions(&workflow)?;
     Ok(format!("{}\n\n{}", joy_block, instructions))
 }
@@ -568,7 +640,7 @@ fn render_managed_block(member_id: &str, has_skill: bool) -> anyhow::Result<Stri
 /// Render SKILL.md with workflow context.
 fn render_skill() -> anyhow::Result<String> {
     let workflow = ai_templates::load_workflow()?;
-    ai_templates::render_skill(&workflow, JOY_VERSION).map_err(Into::into)
+    ai_templates::render_skill(&workflow).map_err(Into::into)
 }
 
 /// Remove and recreate Joy-managed subdirectories for a tool.
@@ -593,7 +665,7 @@ fn generate_agents(root: &Path, tool: &str, agents_dir: &str) -> anyhow::Result<
             continue;
         }
         if let Some(filename) = ai_templates::agent_filename(agent, tool) {
-            let content = ai_templates::render_agent(agent, &workflow, tool, JOY_VERSION)?;
+            let content = ai_templates::render_agent(agent, &workflow, tool)?;
             let path = root.join(agents_dir).join(&filename);
             changed |= write_if_changed(&path, &content)?;
             qprintln!("    {}{}/{}", color::check_mark(), agents_dir, filename);
@@ -761,7 +833,7 @@ fn configure_copilot(root: &Path, member_id: &str) -> anyhow::Result<bool> {
 
     // Copilot skill wrapper
     let workflow = ai_templates::load_workflow()?;
-    let prompt = ai_templates::render_copilot_prompt(&workflow, JOY_VERSION)?;
+    let prompt = ai_templates::render_copilot_prompt(&workflow)?;
     let prompt_path = github_dir.join("prompts/joy.prompt.md");
     changed |= write_if_changed(&prompt_path, &prompt)?;
     qprintln!("    {}.github/prompts/joy.prompt.md", color::check_mark());
@@ -973,6 +1045,72 @@ fn check_nested_at(dir: &Path, root: &Path, tools: &[&str], unconfigured: &mut V
             .to_string();
         unconfigured.push(relative);
     }
+}
+
+/// Collect relative paths for all Joy-managed files of a tool.
+fn tool_managed_files(root: &Path, tool: &str) -> Vec<String> {
+    let mut files = Vec::new();
+
+    // SKILL.md + setup.md (all tools except copilot)
+    let skill_dir = match tool {
+        "claude" => Some(".claude/skills/joy"),
+        "qwen" => Some(".qwen/skills/joy"),
+        "vibe" => Some(".vibe/skills/joy"),
+        _ => None,
+    };
+    if let Some(dir) = skill_dir {
+        files.push(format!("{dir}/SKILL.md"));
+        files.push(format!("{dir}/setup.md"));
+    }
+
+    // Instruction file (joy-block)
+    match tool {
+        "claude" => files.push(".claude/CLAUDE.md".to_string()),
+        "qwen" => files.push(".qwen/QWEN.md".to_string()),
+        "copilot" => {
+            files.push(".github/copilot-instructions.md".to_string());
+            files.push(".github/prompts/joy.prompt.md".to_string());
+        }
+        _ => {}
+    }
+
+    // Agent files
+    let agents_dir = match tool {
+        "claude" => Some(root.join(".claude/agents")),
+        "qwen" => Some(root.join(".qwen/agents")),
+        "vibe" => Some(root.join(".vibe/agents")),
+        "copilot" => Some(root.join(".github/agents")),
+        _ => None,
+    };
+    if let Some(dir) = agents_dir {
+        if dir.is_dir() {
+            if let Ok(entries) = fs::read_dir(&dir) {
+                for entry in entries.filter_map(|e| e.ok()) {
+                    if let Ok(rel) = entry.path().strip_prefix(root) {
+                        files.push(rel.to_string_lossy().to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    files
+}
+
+/// Record file hashes for a tool in the manifest.
+fn record_tool_hashes(root: &Path, tool: &str, manifest: &mut AiManifest) -> anyhow::Result<()> {
+    let files = tool_managed_files(root, tool);
+    // Clear existing entries for this tool
+    manifest.remove_tool(tool);
+    for rel_path in &files {
+        let abs_path = root.join(rel_path);
+        if abs_path.is_file() {
+            let content = fs::read_to_string(&abs_path)?;
+            let hash = joy_core::ai_manifest::manifest_hash(&content, rel_path);
+            manifest.set_file(tool, rel_path, &hash);
+        }
+    }
+    Ok(())
 }
 
 fn is_tool_configured(root: &Path, tool: &str) -> bool {

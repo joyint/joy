@@ -6,8 +6,8 @@ You are working in a project managed with [Joy](https://github.com/joyint/joy), 
 
 At the start of each session:
 
-1. Run `joy ai check` to verify your AI instructions are current. If it exits with
-   code 2, tell the user which templates are outdated and suggest `joy ai setup`.
+1. Run `joy ai update --check` to verify your AI instructions are current. If it exits with
+   code 2, tell the user which templates are outdated and suggest `joy ai update`.
    Do not proceed with outdated instructions.
 2. Run `joy config get modes.default` to read the configured level.
    If the key does not exist, default to `collaborative`.
