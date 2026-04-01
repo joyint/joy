@@ -131,3 +131,26 @@ load setup
         fi
     done
 }
+
+# --- JOY_SESSION in tool settings ---
+
+@test "joy ai setup writes JOY_SESSION to tool settings" {
+    setup_human_auth
+    joy ai setup </dev/null 2>/dev/null || true
+    # Check Claude settings
+    if [ -f ".claude/settings.json" ]; then
+        grep -q "JOY_SESSION" .claude/settings.json
+    fi
+    # Check Qwen settings
+    if [ -f ".qwen/settings.json" ]; then
+        grep -q "JOY_SESSION" .qwen/settings.json
+    fi
+    # Check Vibe .env
+    if [ -f ".vibe/.env" ]; then
+        grep -q "JOY_SESSION" .vibe/.env
+    fi
+    # Check Copilot settings
+    if [ -f ".github/copilot/settings.json" ]; then
+        grep -q "JOY_SESSION" .github/copilot/settings.json
+    fi
+}

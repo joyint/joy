@@ -1,0 +1,26 @@
+id: JOY-00C5-70
+title: JOY_SESSION not persisted for AI tools without persistent shell
+type: bug
+status: in-progress
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy
+created: 2026-04-01T21:22:21.410796899Z
+updated: 2026-04-01T21:27:16.206164365Z
+description: 'joy auth --token outputs export JOY_SESSION for eval, but AI tools run each command in a separate subshell. Environment variables do not persist. Fix: joy ai setup writes JOY_SESSION into each tool''s settings (settings.json env block or .env file). The session ID is deterministic, so it can be computed at setup time.'
+comments:
+- author: ai:claude@joy
+  date: 2026-04-01T21:22:42.589329821Z
+  text: 'Plan: joy ai setup/update writes JOY_SESSION=<session-id> into each tool''s env settings. Claude/Qwen: settings.json env block. Vibe: .vibe/.env. Copilot: settings.json. Session ID is deterministic (SHA-256 of project_id+member). Auth instructions simplified to just ''joy auth --token <TOKEN>'' without eval.'
+- author: ai:claude@joy
+  date: 2026-04-01T21:27:16.206164218Z
+  text: |-
+    [x] joy ai setup/update writes JOY_SESSION into tool settings (Claude/Qwen: settings.json env, Vibe: .env, Copilot: settings.json)
+    [x] Auth instructions simplified: just 'joy auth --token', no eval needed
+    [x] BATS test verifies JOY_SESSION in settings after setup
+    [x] 231 cargo + 11 AI BATS tests passing

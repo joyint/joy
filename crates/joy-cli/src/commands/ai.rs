@@ -687,6 +687,24 @@ fn generate_agents(root: &Path, tool: &str, agents_dir: &str) -> anyhow::Result<
     Ok(changed)
 }
 
+/// Compute the JOY_SESSION value for a tool's env settings.
+fn session_env_value(root: &Path, member_id: &str) -> Option<String> {
+    let project_id = joy_core::auth::session::project_id(root).ok()?;
+    Some(joy_core::auth::session::session_id(&project_id, member_id))
+}
+
+/// Ensure `env.JOY_SESSION` is set in a JSON settings object.
+fn set_session_env(settings: &mut serde_json::Value, session_id: &str) {
+    let env = settings
+        .as_object_mut()
+        .unwrap()
+        .entry("env")
+        .or_insert_with(|| serde_json::json!({}));
+    env.as_object_mut()
+        .unwrap()
+        .insert("JOY_SESSION".to_string(), serde_json::json!(session_id));
+}
+
 fn configure_claude(root: &Path, member_id: &str) -> anyhow::Result<bool> {
     let claude_dir = root.join(".claude");
     fs::create_dir_all(&claude_dir)?;
@@ -706,15 +724,13 @@ fn configure_claude(root: &Path, member_id: &str) -> anyhow::Result<bool> {
     qprintln!("    {}.claude/skills/joy/setup.md", color::check_mark());
 
     changed |= generate_agents(root, "claude", ".claude/agents")?;
-    changed |= update_claude_permissions(root)?;
+    changed |= update_claude_permissions(root, member_id)?;
 
     Ok(changed)
 }
 
-fn update_claude_permissions(root: &Path) -> anyhow::Result<bool> {
+fn update_claude_permissions(root: &Path, member_id: &str) -> anyhow::Result<bool> {
     let settings_path = root.join(".claude/settings.json");
-    let joy_permission = "Bash(joy *)";
-    let jot_permission = "Bash(jot *)";
 
     let mut settings: serde_json::Value = if settings_path.is_file() {
         let content = fs::read_to_string(&settings_path)?;
@@ -723,6 +739,7 @@ fn update_claude_permissions(root: &Path) -> anyhow::Result<bool> {
         serde_json::json!({})
     };
 
+    // Permissions
     let permissions = settings
         .as_object_mut()
         .unwrap()
@@ -733,13 +750,16 @@ fn update_claude_permissions(root: &Path) -> anyhow::Result<bool> {
         .unwrap()
         .entry("allow")
         .or_insert_with(|| serde_json::json!([]));
-
     let allow_arr = allow.as_array_mut().unwrap();
-
-    for perm in [joy_permission, jot_permission] {
+    for perm in ["Bash(joy *)", "Bash(jot *)"] {
         if !allow_arr.iter().any(|v| v.as_str() == Some(perm)) {
             allow_arr.push(serde_json::json!(perm));
         }
+    }
+
+    // JOY_SESSION env var
+    if let Some(sid) = session_env_value(root, member_id) {
+        set_session_env(&mut settings, &sid);
     }
 
     let json = serde_json::to_string_pretty(&settings)?;
@@ -768,12 +788,12 @@ fn configure_qwen(root: &Path, member_id: &str) -> anyhow::Result<bool> {
     qprintln!("    {}.qwen/skills/joy/setup.md", color::check_mark());
 
     changed |= generate_agents(root, "qwen", ".qwen/agents")?;
-    changed |= update_qwen_permissions(root)?;
+    changed |= update_qwen_permissions(root, member_id)?;
 
     Ok(changed)
 }
 
-fn update_qwen_permissions(root: &Path) -> anyhow::Result<bool> {
+fn update_qwen_permissions(root: &Path, member_id: &str) -> anyhow::Result<bool> {
     let settings_path = root.join(".qwen/settings.json");
 
     let mut settings: serde_json::Value = if settings_path.is_file() {
@@ -783,7 +803,7 @@ fn update_qwen_permissions(root: &Path) -> anyhow::Result<bool> {
         serde_json::json!({})
     };
 
-    // Ensure tools.allowed array exists and contains joy/jot
+    // Permissions
     let tools = settings
         .as_object_mut()
         .unwrap()
@@ -794,13 +814,16 @@ fn update_qwen_permissions(root: &Path) -> anyhow::Result<bool> {
         .unwrap()
         .entry("allowed")
         .or_insert_with(|| serde_json::json!([]));
-
     let allowed_arr = allowed.as_array_mut().unwrap();
-
     for perm in ["run_shell_command(joy)", "run_shell_command(jot)"] {
         if !allowed_arr.iter().any(|v| v.as_str() == Some(perm)) {
             allowed_arr.push(serde_json::json!(perm));
         }
+    }
+
+    // JOY_SESSION env var
+    if let Some(sid) = session_env_value(root, member_id) {
+        set_session_env(&mut settings, &sid);
     }
 
     let json = serde_json::to_string_pretty(&settings)?;
@@ -810,7 +833,7 @@ fn update_qwen_permissions(root: &Path) -> anyhow::Result<bool> {
     Ok(changed)
 }
 
-fn configure_vibe(root: &Path, _member_id: &str) -> anyhow::Result<bool> {
+fn configure_vibe(root: &Path, member_id: &str) -> anyhow::Result<bool> {
     let vibe_dir = root.join(".vibe");
     fs::create_dir_all(&vibe_dir)?;
     clean_managed_dirs(root, &[".vibe/agents", ".vibe/skills/joy"]);
@@ -825,6 +848,35 @@ fn configure_vibe(root: &Path, _member_id: &str) -> anyhow::Result<bool> {
     qprintln!("    {}.vibe/skills/joy/setup.md", color::check_mark());
 
     changed |= generate_agents(root, "vibe", ".vibe/agents")?;
+
+    // JOY_SESSION in .vibe/.env (Vibe uses .env files, not settings.json env block)
+    if let Some(sid) = session_env_value(root, member_id) {
+        let env_path = vibe_dir.join(".env");
+        let env_content = if env_path.is_file() {
+            let existing = fs::read_to_string(&env_path)?;
+            if existing.contains("JOY_SESSION=") {
+                // Replace existing line
+                existing
+                    .lines()
+                    .map(|l| {
+                        if l.starts_with("JOY_SESSION=") {
+                            format!("JOY_SESSION={sid}")
+                        } else {
+                            l.to_string()
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+                    + "\n"
+            } else {
+                format!("{}\nJOY_SESSION={sid}\n", existing.trim_end())
+            }
+        } else {
+            format!("JOY_SESSION={sid}\n")
+        };
+        changed |= write_if_changed(&env_path, &env_content)?;
+        qprintln!("    {}.vibe/.env", color::check_mark());
+    }
 
     qprintln!(
         "    {}",
@@ -852,12 +904,12 @@ fn configure_copilot(root: &Path, member_id: &str) -> anyhow::Result<bool> {
     qprintln!("    {}.github/prompts/joy.prompt.md", color::check_mark());
 
     changed |= generate_agents(root, "copilot", ".github/agents")?;
-    changed |= update_copilot_permissions(root)?;
+    changed |= update_copilot_permissions(root, member_id)?;
 
     Ok(changed)
 }
 
-fn update_copilot_permissions(root: &Path) -> anyhow::Result<bool> {
+fn update_copilot_permissions(root: &Path, member_id: &str) -> anyhow::Result<bool> {
     let copilot_dir = root.join(".github/copilot");
     fs::create_dir_all(&copilot_dir)?;
     let settings_path = copilot_dir.join("settings.json");
@@ -881,6 +933,11 @@ fn update_copilot_permissions(root: &Path) -> anyhow::Result<bool> {
         if !allow_arr.iter().any(|v| v.as_str() == Some(perm)) {
             allow_arr.push(serde_json::json!(perm));
         }
+    }
+
+    // JOY_SESSION env var
+    if let Some(sid) = session_env_value(root, member_id) {
+        set_session_env(&mut settings, &sid);
     }
 
     let json = serde_json::to_string_pretty(&settings)?;
