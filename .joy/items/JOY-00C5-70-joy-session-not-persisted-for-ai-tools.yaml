@@ -1,7 +1,7 @@
 id: JOY-00C5-70
 title: JOY_SESSION not persisted for AI tools without persistent shell
 type: bug
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -11,7 +11,7 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy
 created: 2026-04-01T21:22:21.410796899Z
-updated: 2026-04-01T21:27:16.206164365Z
+updated: 2026-04-01T21:27:40.211830587Z
 description: 'joy auth --token outputs export JOY_SESSION for eval, but AI tools run each command in a separate subshell. Environment variables do not persist. Fix: joy ai setup writes JOY_SESSION into each tool''s settings (settings.json env block or .env file). The session ID is deterministic, so it can be computed at setup time.'
 comments:
 - author: ai:claude@joy
