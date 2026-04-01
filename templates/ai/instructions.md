@@ -18,16 +18,12 @@ At the start of each session:
 
 Interaction levels:
 - **autonomous**: Work independently. Only stop at governance gates.
-- **supervised**: Work independently but confirm before irreversible actions (status changes, deleting items, pushing code).
-- **collaborative**: Propose your approach, proceed after confirmation.
-- **interactive**: Present options with rationale, wait for the user's decision before acting.
-- **pairing**: Work through it step by step, question by question. Co-creation mode.
+- **supervised**: Confirm before irreversible actions.
+- **collaborative**: Propose approach, proceed after confirmation.
+- **interactive**: Present options with rationale, wait for user decision.
+- **pairing**: Step by step, question by question.
 
-The user can set the default level with:
-`joy config set modes.default interactive`
-
-Per-capability levels in `project.yaml` override the default when
-working on a specific capability.
+Per-capability levels in `project.yaml` override the default.
 
 ## Identity and capabilities
 
@@ -40,98 +36,29 @@ Your member ID is defined in the tool-specific configuration file
 3. If your member entry does not exist, tell the user and suggest
    `joy ai setup` or `joy project member add <YOUR-ID>`.
 
-### Identity and authentication
+### Authentication
 
 **You must authenticate before executing Joy write commands.**
-Joy write commands include: `joy add`, `joy edit`, `joy comment`,
-`joy start`, `joy close`, `joy status`, `joy assign`, `joy rm`,
-`joy milestone`, `joy project member`. Read-only commands
-(`joy ls`, `joy show`, `joy roadmap`, `joy config`, `joy project`)
+Read-only commands (`joy ls`, `joy show`, `joy roadmap`, `joy config`, `joy project`)
 are always allowed without authentication.
 
-To authenticate:
-
 1. Run `joy auth status` to check if you already have an active session.
-   If authenticated, skip the remaining steps.
-2. If not authenticated, ask the user to provide a delegation token:
-   "I need a delegation token to run Joy commands. Please run
-   `joy auth token add <YOUR-MEMBER-ID>` and share the token."
-   Do not explain the technical background unless asked.
-3. Once you have the token, run: `eval $(joy auth --token <TOKEN>)`
+2. If not authenticated, ask the user for a delegation token:
+   "I need a delegation token. Please run `joy auth token add <YOUR-MEMBER-ID>` and share the token."
+3. Run: `eval $(joy auth --token <TOKEN>)`
 
-After authentication, your session is active for this context.
-All subsequent Joy commands automatically use your AI identity:
+Sessions expire after 24 hours. Re-authenticate if a command fails with an auth error.
 
-```
-joy comment <ID> "text"
-joy add task "title"
-joy status <ID> closed
-joy assign <ID>
-```
-
-The event log records your AI identity with `delegated-by` to trace
-accountability back to the human who created the token.
-
-Sessions expire after 24 hours. If a command fails with an auth error,
-re-authenticate with your token.
-
-Git commits use a different pattern: the human is the git Author,
-and your member ID goes in `Co-Authored-By`. This is already
-configured in your tool-specific file (e.g. CLAUDE.md).
-
-Respect the capabilities and limits configured for your member ID:
-- Only work on capabilities assigned to you. If asked to do something
-  outside your capabilities, inform the user.
-- Respect `max-mode` limits. If your max-mode for a capability is
-  `collaborative`, do not work autonomously on that capability even
-  if the session mode is set lower.
-- Respect `max-cost-per-job` limits when they apply.
-
-If your member has `capabilities: all`, you have no restrictions.
-
-**Capability warnings are mandatory stops.** If a Joy command prints a
-capability warning (e.g. "does not have 'create' capability"), you MUST
-stop and ask the user whether to proceed. Never ignore or suppress
-capability warnings. They indicate that the action exceeds your
-configured permissions and may be rejected by Joy Judge.
-
-## Capabilities
-
-Joy defines seven fixed capabilities that describe activities in the
-development lifecycle: `conceive`, `plan`, `design`, `implement`,
-`test`, `review`, `document`.
-
-Each item has a list of capabilities (visible via `joy show <ID>`).
-When working on an item, identify which capability you are exercising
-and act within its boundaries.
-
-Management capabilities (`create`, `assign`, `manage`, `delete`) control
-which Joy CLI commands you may use.
+Respect your configured capabilities and `max-mode` limits.
+**Capability warnings are mandatory stops** -- if a Joy command prints one, stop and ask the user.
 
 ## Workflow
 
-Items move through these statuses:
-{% for status in workflow.statuses %}
-- **{{ status.name }}**: {{ status.description }}{% if status.initial %} (initial){% endif %}{% if status.terminal %} (terminal){% endif %}
-{% endfor %}
+Shortcuts: `joy start <ID>` (begin work), `joy submit <ID>` (request review), `joy close <ID>` (done), `joy reopen <ID>` (reopen).
 
-### Transitions
-
-| From | To | Required capability | Shortcut |
-|------|----|--------------------:|----------|
-{% for t in workflow.transitions -%}
-| {{ t.from }} | {{ t.to }} | {{ t.capability }} | {% if t.shortcut %}{{ t.shortcut }}{% endif %} |
-{% endfor %}
-
-### Gates
-
-Projects can restrict transitions via `status_rules` in project.yaml.
-When a gate sets `allow_ai: false`, AI members cannot trigger that transition.
-Check `joy project` to see active gates. If a transition is denied, inform the user.
+Gates: projects can restrict transitions via `status_rules` in project.yaml. When `allow_ai: false`, inform the user.
 
 ## Core commands
-
-Use these Joy CLI commands for all product management operations:
 
 | Command | Purpose |
 |---------|---------|
@@ -143,7 +70,6 @@ Use these Joy CLI commands for all product management operations:
 | `joy start <ID>` | Set status to in-progress |
 | `joy close <ID>` | Set status to closed |
 | `joy roadmap` | Show milestone roadmap with progress |
-| `joy milestone show <ID>` | Show milestone details and risks |
 | `joy config` | Show current project configuration |
 | `joy project` | Show project metadata |
 
@@ -153,75 +79,29 @@ Effort scale (1-7): 1=trivial, 2=small, 3=medium, 4=large, 5=major, 6=heavy, 7=m
 
 ## Rules
 
-**Always use the Joy CLI.** Never read or write files in `.joy/` directly -- not items, not config, not milestones. Use `joy ls`, `joy show`, `joy config`, etc. If a Joy command does not exist for an operation, ask the user or suggest a new command -- do not work around it by editing YAML.
+**Use the project language for all artifacts.** Run `joy project` to read the configured language (default: `en`). This language strictly governs all written artifacts: Joy item titles, descriptions, comments, commit messages, and documentation. Never deviate, even if the conversation is in another language. Conversation language is separate -- follow the user's language for responses.
 
-**Every code change needs a Joy item.** If you discover a bug, identify a rework need, or make any change to the codebase, create a Joy item for it BEFORE implementing the fix. This is non-negotiable -- the event log is the project's audit trail. Ad-hoc fixes without items are invisible to governance and compliance.
+**Always use the Joy CLI.** Never read or write files in `.joy/` directly. If a Joy command does not exist for an operation, ask the user -- do not work around it by editing YAML.
 
-**Track status.** Run `joy start <ID>` before coding, `joy close <ID>` after committing. Never skip status tracking.
+**Every code change needs a Joy item.** Create a Joy item BEFORE implementing. Ad-hoc fixes without items are invisible to governance.
 
-**Comment everything.** Before implementing, comment the planned solution: `joy comment <ID> "Plan: ..."`. After implementing, comment the result: `joy comment <ID> "[x] what was done"`. This applies to ALL items -- planned work, discovered bugs, and ad-hoc fixes alike. The comments are the audit record of what was decided and why.
+**Track status.** Run `joy start <ID>` before coding, `joy close <ID>` after committing.
 
-**Confirm before changing Joy data.** At mode `collaborative` and above, never create, edit, or close Joy items during or after a discussion without explicitly confirming with the user first. Ask "Shall I update the items now?" or equivalent and wait for approval. Discussions shape decisions -- but the decision to persist them must be the user's.
+**Comment everything.** Before implementing: `joy comment <ID> "Plan: ..."`. After: `joy comment <ID> "[x] what was done"`.
 
-**Use the project language for artifacts only.** Run `joy project` to read the configured language (default: `en`). This language strictly governs all written artifacts: Joy item titles, descriptions, comments, commit messages, and documentation. Never deviate from it, even if the conversation is in another language. **Conversation language is separate.** For interactive communication (responses, explanations, questions), detect and follow the user's language. If the user writes in German, respond in German. The project language setting does NOT apply to conversation -- only to artifacts that are persisted in the project.
+**Confirm before changing Joy data.** At mode `collaborative` and above, never create, edit, or close items without explicitly confirming with the user first.
 
-**Titles are short.** Max 60 characters, actionable ("Add X", "Fix Y", not "X should be added").
+**Titles are short.** Max 60 characters, actionable ("Add X", "Fix Y").
 
-**No emoji in docs.** No emoji in documentation, commit messages, or code comments. Emoji are a CLI runtime feature only.
-
-## Working with items
-
-### Creating items
-
-Analyze the user's input and break it into Joy items. Present a numbered list (title, type, priority, effort) for confirmation before creating. Suggest an effort (1-7) based on the scope of each item. Use `--effort` and `--description` when creating: `joy add task "Fix login" --effort 2 --description "..."`. The description captures the stable context of the item (what and why). Use comments only for subsequent updates (plans, decisions, results). Do not change descriptions after creation unless explicitly asked. Create epics first when there are 3+ related items. Do not over-decompose -- a 1-2 day story is fine as one item.
-
-### Implementing items
-
-1. Read the item: `joy show <ID>`
-2. Comment your planned solution: `joy comment <ID> "Plan: ..."`
-3. Confirm with the user
-4. Start the item: `joy start <ID>`
-5. Implement the changes
-6. Commit the code
-7. Comment the result: `joy comment <ID> "[x] done this, [x] done that"`
-8. Close the item: `joy close <ID>`
-
-### Suggesting next work
-
-When asked what to work on next, check:
-1. Current milestone items: `joy milestone show <MS-ID>`
-2. Blocked items that can be unblocked
-3. High-priority items without a milestone
-Prioritize milestone items over unlinked items.
+**No emoji in docs.** No emoji in documentation, commit messages, or code comments.
 
 ## Project context
 
-Before starting work, read these documents if they exist:
-- `docs/dev/vision/` -- product goals and design decisions
-- `docs/dev/architecture/` -- technical stack and structure
-- `CONTRIBUTING.md` -- coding conventions and commit messages
-
-These documents are the source of truth. Do not contradict them.
-
-## First session
-
-At the start of your first session in a project, ALWAYS do these checks
-before anything else:
-
-1. Read `docs/dev/vision/`, `docs/dev/architecture/`, and `CONTRIBUTING.md`
-2. If any of these files are missing, empty, or contain only template
-   headings (HTML comments like `<!-- ... -->`), tell the user and offer
-   to fill them in together
-
-Do not wait for the user to ask. This check is mandatory on first session.
+On first session, read `docs/dev/vision/`, `docs/dev/architecture/`, and `CONTRIBUTING.md`. If any are missing or template-only, offer to fill them in. These documents are the source of truth.
 
 ## Commit messages
 
 Use conventional commits: `type(scope): description`
 Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`
-No emoji in commit messages.
 
-**Every commit must reference a Joy item ID** (e.g. `JOY-0001`). A commit-msg hook
-enforces this. For infrastructure commits without an item, use `[no-item]` in the
-message. In multi-repo setups, each subproject needs its own items -- a commit in the
-Joy repo references `JOY-XXXX`, a commit in the umbrella references `JI-XXXX`.
+**Every commit must reference a Joy item ID** (e.g. `JOY-0001`). A commit-msg hook enforces this. For infrastructure commits without an item, use `[no-item]`.

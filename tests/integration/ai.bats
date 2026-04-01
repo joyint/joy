@@ -107,3 +107,27 @@ load setup
         fi
     done
 }
+
+# --- line count enforcement (ADR-026) ---
+
+@test "generated instruction files under 200 lines" {
+    joy init --name "Test Project"
+    joy ai setup </dev/null 2>/dev/null || true
+    for f in .claude/CLAUDE.md .qwen/QWEN.md; do
+        if [ -f "$f" ]; then
+            lines=$(wc -l < "$f")
+            [ "$lines" -le 200 ]
+        fi
+    done
+}
+
+@test "generated skill files under 200 lines" {
+    joy init --name "Test Project"
+    joy ai setup </dev/null 2>/dev/null || true
+    for f in .claude/skills/joy/SKILL.md .qwen/skills/joy/SKILL.md .vibe/skills/joy/SKILL.md; do
+        if [ -f "$f" ]; then
+            lines=$(wc -l < "$f")
+            [ "$lines" -le 200 ]
+        fi
+    done
+}

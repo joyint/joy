@@ -1,12 +1,21 @@
 id: JOY-00A0
 title: Enforce 200-line limit on generated AI instructions
 type: task
-status: new
+status: in-progress
 priority: high
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 1
 created_by: horst.schwarz@joydev.com
 created: 2026-03-31T16:13:28.335001176Z
-updated: 2026-03-31T16:13:28.335001176Z
+updated: 2026-04-01T21:08:20.342547532Z
 description: 'Per ADR-026, add CI check that rendered AI instruction files do not exceed 200 lines. Add integration test. Re-evaluate limit quarterly (next: 2026-07-01).'
+comments:
+- author: ai:claude@joy
+  date: 2026-04-01T21:08:20.342547006Z
+  text: |-
+    [x] Shortened instructions.md from 227 to 107 template lines (261 to 122 rendered)
+    [x] Unit tests asserting <=200 lines for instructions and SKILL.md
+    [x] BATS integration tests for line count enforcement

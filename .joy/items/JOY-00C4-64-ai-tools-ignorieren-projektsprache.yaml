@@ -1,13 +1,21 @@
 id: JOY-00C4-64
 title: AI Tools ignorieren Projektsprache
 type: bug
-status: new
+status: in-progress
 priority: high
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 - review
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-01T00:03:12.870253400Z
-updated: 2026-04-01T00:03:12.870253400Z
+updated: 2026-04-01T21:08:20.350410208Z
 description: Qwen Code und Mistral Vibe ignorieren die Projektsprache und schreiben Items in Deutsch, obwohl die Projektsprache Englisch ist. Dies betrifft Titel, Beschreibungen und Kommentare.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-01T21:08:20.350409928Z
+  text: |-
+    [x] Language rule moved to first position in Rules section
+    [x] Prominent at line 96 of rendered CLAUDE.md (was line 166)
