@@ -136,16 +136,19 @@ EOF
         | sed -n 's/^  \(joy_t_.*\)/\1/p')
     TOKEN_COPILOT=$(joy auth token add ai:copilot@joy --passphrase "$TEST_PASSPHRASE" \
         | sed -n 's/^  \(joy_t_.*\)/\1/p')
-    joy auth --token "$TOKEN_CLAUDE"
-    joy auth --token "$TOKEN_COPILOT"
-    # Human status
+    eval $(joy auth --token "$TOKEN_CLAUDE")
+    SESSION_CLAUDE="$JOY_SESSION"
+    eval $(joy auth --token "$TOKEN_COPILOT")
+    SESSION_COPILOT="$JOY_SESSION"
+    # Human status (no JOY_SESSION)
+    unset JOY_SESSION
     run joy auth status
     [[ "$output" == *"test@example.com"* ]]
     # Claude status
-    run env JOY_TOKEN="$TOKEN_CLAUDE" joy auth status
+    run env JOY_SESSION="$SESSION_CLAUDE" joy auth status
     [[ "$output" == *"ai:claude@joy"* ]]
     # Copilot status
-    run env JOY_TOKEN="$TOKEN_COPILOT" joy auth status
+    run env JOY_SESSION="$SESSION_COPILOT" joy auth status
     [[ "$output" == *"ai:copilot@joy"* ]]
 }
 
@@ -157,31 +160,36 @@ EOF
         | sed -n 's/^  \(joy_t_.*\)/\1/p')
     TOKEN_COPILOT=$(joy auth token add ai:copilot@joy --passphrase "$TEST_PASSPHRASE" \
         | sed -n 's/^  \(joy_t_.*\)/\1/p')
-    joy auth --token "$TOKEN_CLAUDE"
-    joy auth --token "$TOKEN_COPILOT"
+    eval $(joy auth --token "$TOKEN_CLAUDE")
+    SESSION_CLAUDE="$JOY_SESSION"
+    eval $(joy auth --token "$TOKEN_COPILOT")
+    SESSION_COPILOT="$JOY_SESSION"
     # Human creates an item
+    unset JOY_SESSION
     joy add task "Human task"
     # Claude creates an item
-    JOY_TOKEN="$TOKEN_CLAUDE" joy add task "Claude task"
+    JOY_SESSION="$SESSION_CLAUDE" joy add task "Claude task"
     # Copilot creates an item
-    JOY_TOKEN="$TOKEN_COPILOT" joy add task "Copilot task"
+    JOY_SESSION="$SESSION_COPILOT" joy add task "Copilot task"
     # Verify all three identities in log
     grep -q "item.created.*Human task.*test@example.com" .joy/logs/*.log
     grep -q "item.created.*Claude task.*ai:claude@joy delegated-by:test@example.com" .joy/logs/*.log
     grep -q "item.created.*Copilot task.*ai:copilot@joy delegated-by:test@example.com" .joy/logs/*.log
 }
 
-@test "AI guard enforcement uses correct identity per token" {
+@test "AI guard enforcement uses correct identity per session" {
     setup_human_auth
     joy project member add ai:claude@joy --capabilities "implement,create"
     TOKEN_CLAUDE=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
         | sed -n 's/^  \(joy_t_.*\)/\1/p')
-    joy auth --token "$TOKEN_CLAUDE"
+    eval $(joy auth --token "$TOKEN_CLAUDE")
+    SESSION_CLAUDE="$JOY_SESSION"
     # Claude cannot manage (no manage capability)
-    run env JOY_TOKEN="$TOKEN_CLAUDE" joy project set description "Claude edit"
+    run env JOY_SESSION="$SESSION_CLAUDE" joy project set description "Claude edit"
     [ "$status" -ne 0 ]
     [[ "$output" == *"manage"* ]]
     # Human can manage
+    unset JOY_SESSION
     run joy project set description "Human edit"
     [ "$status" -eq 0 ]
 }
@@ -196,27 +204,29 @@ EOF
         | sed -n 's/^  \(joy_t_.*\)/\1/p')
     TOKEN_COPILOT=$(joy auth token add ai:copilot@joy --passphrase "$TEST_PASSPHRASE" \
         | sed -n 's/^  \(joy_t_.*\)/\1/p')
-    joy auth --token "$TOKEN_CLAUDE"
-    joy auth --token "$TOKEN_COPILOT"
+    eval $(joy auth --token "$TOKEN_CLAUDE")
+    SESSION_CLAUDE="$JOY_SESSION"
+    eval $(joy auth --token "$TOKEN_COPILOT")
+    SESSION_COPILOT="$JOY_SESSION"
     # Both can create items
-    JOY_TOKEN="$TOKEN_CLAUDE" joy add task "Claude item"
-    JOY_TOKEN="$TOKEN_COPILOT" joy add task "Copilot item"
+    JOY_SESSION="$SESSION_CLAUDE" joy add task "Claude item"
+    JOY_SESSION="$SESSION_COPILOT" joy add task "Copilot item"
     CLAUDE_ID=$(joy ls 2>/dev/null | grep "Claude item" | awk '{print $1}')
     COPILOT_ID=$(joy ls 2>/dev/null | grep "Copilot item" | awk '{print $1}')
     # Claude can start work (implement), Copilot cannot (warn)
-    run env JOY_TOKEN="$TOKEN_CLAUDE" joy status "$CLAUDE_ID" in-progress
+    run env JOY_SESSION="$SESSION_CLAUDE" joy status "$CLAUDE_ID" in-progress
     [ "$status" -eq 0 ]
-    run env JOY_TOKEN="$TOKEN_COPILOT" joy status "$COPILOT_ID" in-progress
+    run env JOY_SESSION="$SESSION_COPILOT" joy status "$COPILOT_ID" in-progress
     # Copilot lacks implement -> warn (still succeeds, but warning logged)
     [ "$status" -eq 0 ]
     grep -q "guard.warned.*ai:copilot@joy.*implement" .joy/logs/*.log
     # Claude cannot close (lacks review), Copilot can close (has review)
-    JOY_TOKEN="$TOKEN_CLAUDE" joy status "$CLAUDE_ID" review
-    JOY_TOKEN="$TOKEN_COPILOT" joy status "$COPILOT_ID" review
-    run env JOY_TOKEN="$TOKEN_COPILOT" joy status "$COPILOT_ID" closed
+    JOY_SESSION="$SESSION_CLAUDE" joy status "$CLAUDE_ID" review
+    JOY_SESSION="$SESSION_COPILOT" joy status "$COPILOT_ID" review
+    run env JOY_SESSION="$SESSION_COPILOT" joy status "$COPILOT_ID" closed
     [ "$status" -eq 0 ]
     # Claude closing warns (lacks review)
-    run env JOY_TOKEN="$TOKEN_CLAUDE" joy status "$CLAUDE_ID" closed
+    run env JOY_SESSION="$SESSION_CLAUDE" joy status "$CLAUDE_ID" closed
     [ "$status" -eq 0 ]
     grep -q "guard.warned.*ai:claude@joy.*review" .joy/logs/*.log
 }

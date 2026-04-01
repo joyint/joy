@@ -165,13 +165,19 @@ fn session_dir() -> Result<PathBuf, JoyError> {
 /// Session filename: SHA-256 hash of project_id + member.
 /// Deterministic but not human-readable (privacy).
 fn session_filename(project_id: &str, member: &str) -> String {
+    format!("{}.json", session_id(project_id, member))
+}
+
+/// The session ID: a short, deterministic, opaque identifier for a session.
+/// Used as `JOY_SESSION` environment variable (SSH-agent pattern).
+pub fn session_id(project_id: &str, member: &str) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(project_id.as_bytes());
     hasher.update(b":");
     hasher.update(member.as_bytes());
     let hash = hasher.finalize();
-    format!("{}.json", hex::encode(&hash[..12]))
+    hex::encode(&hash[..12])
 }
 
 /// Save a session token to disk.
@@ -193,6 +199,22 @@ pub fn save_session(project_id: &str, token: &SessionToken) -> Result<(), JoyErr
 pub fn load_session(project_id: &str, member: &str) -> Result<Option<SessionToken>, JoyError> {
     let dir = session_dir()?;
     let path = dir.join(session_filename(project_id, member));
+    if !path.exists() {
+        return Ok(None);
+    }
+    let json = std::fs::read_to_string(&path).map_err(|e| JoyError::ReadFile {
+        path: path.clone(),
+        source: e,
+    })?;
+    let token: SessionToken =
+        serde_json::from_str(&json).map_err(|e| JoyError::AuthFailed(format!("{e}")))?;
+    Ok(Some(token))
+}
+
+/// Load a session by its opaque ID (the JOY_SESSION value).
+pub fn load_session_by_id(id: &str) -> Result<Option<SessionToken>, JoyError> {
+    let dir = session_dir()?;
+    let path = dir.join(format!("{id}.json"));
     if !path.exists() {
         return Ok(None);
     }

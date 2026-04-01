@@ -37,17 +37,16 @@ setup_human_auth() {
 
 # Setup AI member, create token, authenticate AI.
 # After this, joy commands run as the AI member.
-# Sets AI_TOKEN for later use.
+# Sets JOY_SESSION (SSH-agent pattern) and saves AI_TOKEN for re-auth.
 setup_ai_session() {
     local ai_member="${1:-ai:test@joy}"
     # Add member if not already registered (idempotent)
     joy project member add "$ai_member" 2>/dev/null || true
     AI_TOKEN=$(joy auth token add "$ai_member" --passphrase "$TEST_PASSPHRASE" \
         | sed -n 's/^  \(joy_t_.*\)/\1/p')
-    # Auth as AI (creates session)
-    joy auth --token "$AI_TOKEN"
-    # Set JOY_TOKEN so resolve_identity picks up the AI session
-    export JOY_TOKEN="$AI_TOKEN"
+    # Auth as AI -- eval sets JOY_SESSION
+    eval $(joy auth --token "$AI_TOKEN")
+    SAVED_JOY_SESSION="$JOY_SESSION"
 }
 
 DEV_PASSPHRASE="alpha bravo charlie delta echo foxtrot"
@@ -68,10 +67,10 @@ setup_member_auth() {
 
 # Switch back to human identity.
 switch_to_human() {
-    unset JOY_TOKEN
+    unset JOY_SESSION
 }
 
-# Switch to AI identity (requires AI_TOKEN set by setup_ai_session).
+# Switch to AI identity (requires JOY_SESSION set by setup_ai_session).
 switch_to_ai() {
-    export JOY_TOKEN="$AI_TOKEN"
+    export JOY_SESSION="$SAVED_JOY_SESSION"
 }

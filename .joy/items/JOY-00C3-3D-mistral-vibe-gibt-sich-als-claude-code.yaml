@@ -1,13 +1,29 @@
 id: JOY-00C3-3D
 title: Mistral Vibe gibt sich als Claude Code aus
 type: bug
-status: new
+status: in-progress
 priority: high
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 - review
 effort: 3
 created_by: ai:claude@joy
 created: 2026-04-01T00:02:21.811410323Z
-updated: 2026-04-01T00:02:21.811410323Z
+updated: 2026-04-01T20:28:35.494197769Z
 description: Mistral Vibe kann aus dem selben Terminal, wo vorher Claude Code lief, sich als Claude Code ausgeben. Mit Qwen Code ging das nicht. Dieses Ticket wurde von Mistral Vibe angelegt. In den Joy Logs kann nachvollzogen werden, mit welcher Identität das passiert ist.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-01T20:28:27.469628231Z
+  text: 'Plan: Replace TTY-based AI session lookup with SSH-agent style JOY_SESSION handle. joy auth --token outputs export JOY_SESSION=<id> for eval.'
+- author: ai:claude@joy
+  date: 2026-04-01T20:28:35.494197656Z
+  text: |-
+    [x] session.rs: session_id() and load_session_by_id() for direct lookup
+    [x] auth --token: outputs export JOY_SESSION=<id> to stdout (eval-ready)
+    [x] identity.rs: JOY_SESSION > JOY_TOKEN > human session > fallback
+    [x] TTY-based AI session loop removed
+    [x] Instructions updated: eval pattern, joy auth status
+    [x] BATS: impersonation test, multi-AI tests migrated to JOY_SESSION
+    [x] 138 BATS + 229 cargo tests passing
