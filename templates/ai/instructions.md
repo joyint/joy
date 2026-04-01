@@ -45,7 +45,7 @@ are always allowed without authentication.
 1. Run `joy auth status` to check if you already have an active session.
 2. If not authenticated, ask the user for a delegation token:
    "I need a delegation token. Please run `joy auth token add <YOUR-MEMBER-ID>` and share the token."
-3. Run: `eval $(joy auth --token <TOKEN>)`
+3. Run: `joy auth --token <TOKEN>`
 
 Sessions expire after 24 hours. Re-authenticate if a command fails with an auth error.
 

@@ -1,7 +1,7 @@
 id: JOY-00A0
 title: Enforce 200-line limit on generated AI instructions
 type: task
-status: in-progress
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -10,7 +10,7 @@ capabilities:
 effort: 1
 created_by: horst.schwarz@joydev.com
 created: 2026-03-31T16:13:28.335001176Z
-updated: 2026-04-01T21:08:20.342547532Z
+updated: 2026-04-01T21:08:55.114922677Z
 description: 'Per ADR-026, add CI check that rendered AI instruction files do not exceed 200 lines. Add integration test. Re-evaluate limit quarterly (next: 2026-07-01).'
 comments:
 - author: ai:claude@joy
