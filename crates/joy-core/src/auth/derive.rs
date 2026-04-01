@@ -54,12 +54,12 @@ pub fn generate_salt() -> Salt {
 /// Derive 32 bytes of key material from a passphrase and salt using Argon2id.
 ///
 /// Production parameters: m_cost=65536 (64 MiB), t_cost=3, p_cost=4, output=32 bytes.
-/// With `fast-kdf` feature: m_cost=256, t_cost=1, p_cost=1 (fast, for testing).
+/// Debug builds and `fast-kdf` feature: m_cost=256, t_cost=1, p_cost=1 (fast, NOT secure).
 pub fn derive_key(passphrase: &str, salt: &Salt) -> Result<DerivedKey, JoyError> {
-    #[cfg(feature = "fast-kdf")]
+    #[cfg(any(feature = "fast-kdf", debug_assertions))]
     let params = Params::new(256, 1, 1, Some(32))
         .map_err(|e| JoyError::AuthFailed(format!("argon2 params: {e}")))?;
-    #[cfg(not(feature = "fast-kdf"))]
+    #[cfg(not(any(feature = "fast-kdf", debug_assertions)))]
     let params = Params::new(65536, 3, 4, Some(32))
         .map_err(|e| JoyError::AuthFailed(format!("argon2 params: {e}")))?;
     let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
