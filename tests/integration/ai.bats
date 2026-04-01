@@ -154,3 +154,37 @@ load setup
         grep -q "JOY_SESSION" .github/copilot/settings.json
     fi
 }
+
+@test "AI auth works in isolated subshell (simulates AI tool)" {
+    setup_human_auth
+    joy ai setup </dev/null 2>/dev/null || true
+    # Find a configured tool's settings with JOY_SESSION
+    SID=""
+    for f in .claude/settings.json .qwen/settings.json .github/copilot/settings.json; do
+        if [ -f "$f" ]; then
+            SID=$(grep -o '"JOY_SESSION": *"[^"]*"' "$f" | head -1 | cut -d'"' -f4)
+            break
+        fi
+    done
+    if [ -z "$SID" ] && [ -f ".vibe/.env" ]; then
+        SID=$(sed -n 's/^JOY_SESSION=//p' .vibe/.env)
+    fi
+    [ -n "$SID" ] || skip "no AI tool configured"
+    # Find the member ID for this tool
+    MEMBER=$(joy project 2>/dev/null | grep "ai:" | head -1 | awk '{print $1}')
+    [ -n "$MEMBER" ] || skip "no AI member registered"
+    # Create token and authenticate (creates session file)
+    TOKEN=$(joy auth token add "$MEMBER" --passphrase "$TEST_PASSPHRASE" \
+        | sed -n 's/^  \(joy_t_.*\)/\1/p')
+    joy auth --token "$TOKEN" >/dev/null 2>&1
+    # Run joy in a clean subshell with ONLY JOY_SESSION from settings.
+    # This simulates how AI tools work: each command is a fresh process
+    # with no inherited shell state, only env vars from tool settings.
+    run env -i HOME="$HOME" PATH="$PATH" XDG_STATE_HOME="$XDG_STATE_HOME" \
+        GIT_CONFIG_GLOBAL=/dev/null GIT_AUTHOR_NAME="Test" GIT_AUTHOR_EMAIL="test@example.com" \
+        GIT_COMMITTER_NAME="Test" GIT_COMMITTER_EMAIL="test@example.com" \
+        JOY_SESSION="$SID" joy add task "Isolated subshell test"
+    [ "$status" -eq 0 ]
+    # Verify it was attributed to the AI member
+    grep -q "delegated-by" .joy/logs/*.log
+}
