@@ -51,13 +51,13 @@ are always allowed without authentication.
 
 To authenticate:
 
-1. Check if `JOY_TOKEN` environment variable is set.
-   If set, run: `joy auth --token "$JOY_TOKEN"`
-2. If not set, ask the user to provide a delegation token:
+1. Run `joy auth status` to check if you already have an active session.
+   If authenticated, skip the remaining steps.
+2. If not authenticated, ask the user to provide a delegation token:
    "I need a delegation token to run Joy commands. Please run
    `joy auth token add <YOUR-MEMBER-ID>` and share the token."
    Do not explain the technical background unless asked.
-3. Once you have the token, run: `joy auth --token <TOKEN>`
+3. Once you have the token, run: `eval $(joy auth --token <TOKEN>)`
 
 After authentication, your session is active for this context.
 All subsequent Joy commands automatically use your AI identity:

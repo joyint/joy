@@ -41,16 +41,37 @@ impl Identity {
 
 /// Resolve the acting identity for the current operation.
 ///
-/// Priority: active session > git email.
-/// If a session exists, the identity comes from the session member.
-/// If no session, falls back to git email (for projects without auth).
+/// Priority:
+/// 1. JOY_SESSION -- direct AI session handle (SSH-agent pattern)
+/// 2. JOY_TOKEN   -- AI delegation token (backwards compatibility)
+/// 3. Human session by git email
+/// 4. Fallback: git email, unauthenticated
 pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
     let git_email = crate::vcs::default_vcs().user_email()?;
     let project = load_project_optional(root);
     let project_id = crate::auth::session::project_id(root).ok();
 
-    // JOY_TOKEN indicates the caller is an AI agent.
-    // Decode the token to find the specific AI member ID.
+    // 1. JOY_SESSION: direct session lookup by opaque ID.
+    //    `joy auth --token` outputs `export JOY_SESSION=<id>` for eval.
+    //    The ID maps directly to a session file -- no ambiguity.
+    if let Some(sid) = std::env::var("JOY_SESSION").ok().filter(|s| !s.is_empty()) {
+        if let Ok(Some(sess)) = crate::auth::session::load_session_by_id(&sid) {
+            if sess.claims.expires > chrono::Utc::now() && is_ai_member(&sess.claims.member) {
+                if let Some(ref project) = project {
+                    if project.members.contains_key(&sess.claims.member) {
+                        return Ok(Identity {
+                            member: sess.claims.member.clone(),
+                            delegated_by: crate::vcs::default_vcs().user_email().ok(),
+                            authenticated: true,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. JOY_TOKEN: decode the delegation token to find the AI member.
+    //    Backwards compatibility for tools not yet using eval pattern.
     if let Some(token_str) = std::env::var("JOY_TOKEN").ok().filter(|s| !s.is_empty()) {
         if let Ok(token) = crate::auth::token::decode_token(&token_str) {
             let ai_member = &token.claims.ai_member;
@@ -60,40 +81,16 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
                 }
             }
         }
-        // JOY_TOKEN set but no valid AI session — fall through to human
     }
 
-    // Human: find session by git email
+    // 3. Human session by git email
     if let Some(ref pid) = project_id {
         if let Some(session_identity) = session_identity(root, &git_email, pid, &project) {
             return Ok(session_identity);
         }
     }
 
-    // AI member: find session by TTY match.
-    // After `joy auth --token`, the AI session is bound to the terminal.
-    // Look up registered AI members and check if any has a valid session
-    // matching the current terminal (or both without a terminal, e.g. in
-    // piped/non-interactive contexts like AI tool subprocesses).
-    if let (Some(ref pid), Some(ref project)) = (&project_id, &project) {
-        let current_tty = crate::auth::session::current_tty();
-        for member_id in project.members.keys() {
-            if !is_ai_member(member_id) {
-                continue;
-            }
-            if let Ok(Some(sess)) = crate::auth::session::load_session(pid, member_id) {
-                if sess.claims.expires > chrono::Utc::now() && sess.claims.tty == current_tty {
-                    return Ok(Identity {
-                        member: member_id.clone(),
-                        delegated_by: crate::vcs::default_vcs().user_email().ok(),
-                        authenticated: true,
-                    });
-                }
-            }
-        }
-    }
-
-    // Fallback: git email, not authenticated
+    // 4. Fallback: git email, not authenticated
     Ok(Identity {
         member: git_email,
         delegated_by: None,

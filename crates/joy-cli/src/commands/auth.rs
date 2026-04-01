@@ -286,7 +286,11 @@ fn auth_with_token(
     );
     session::save_session(project_id, &session_token)?;
 
-    println!(
+    // Output session handle for eval (stdout) -- SSH-agent pattern.
+    // Status message goes to stderr so `eval $(joy auth --token ...)` works.
+    let sid = session::session_id(project_id, &claims.ai_member);
+    println!("export JOY_SESSION={sid}");
+    eprintln!(
         "Authenticated as {} (delegated by {}). Session active (24h).",
         claims.ai_member, claims.delegated_by
     );
