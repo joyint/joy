@@ -189,10 +189,21 @@ pub fn save_session(project_id: &str, token: &SessionToken) -> Result<(), JoyErr
     })?;
     let path = dir.join(session_filename(project_id, &token.claims.member));
     let json = serde_json::to_string_pretty(token).expect("session serialize");
-    std::fs::write(&path, json).map_err(|e| JoyError::WriteFile {
+    std::fs::write(&path, &json).map_err(|e| JoyError::WriteFile {
         path: path.clone(),
         source: e,
-    })
+    })?;
+    // Restrict to owner-only (session files contain signed claims)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o600);
+        std::fs::set_permissions(&path, perms).map_err(|e| JoyError::WriteFile {
+            path: path.clone(),
+            source: e,
+        })?;
+    }
+    Ok(())
 }
 
 /// Load a session token from disk for a specific member, if it exists.

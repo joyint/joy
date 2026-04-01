@@ -166,6 +166,24 @@ load setup
     grep -q "author: ai:claude@joy" .joy/items/*.yaml
 }
 
+@test "expired AI session rejected" {
+    setup_human_auth
+    joy project member add ai:test@joy
+    joy add task "Expiry test"
+    ITEM_ID=$(joy ls 2>/dev/null | grep "Expiry test" | awk '{print $1}')
+    setup_ai_session ai:test@joy
+    # Expire the session by patching the file
+    SESSION_FILE=$(find "$XDG_STATE_HOME/joy/sessions" -name "*.json" -newer .joy/project.yaml | head -1)
+    if [ -n "$SESSION_FILE" ]; then
+        sed -i 's/"expires": *"[^"]*"/"expires": "2020-01-01T00:00:00Z"/' "$SESSION_FILE"
+        # Expired session should not authenticate as AI
+        run joy comment "$ITEM_ID" "Should not be AI"
+        # Falls back to human (who is authenticated), so succeeds but not as AI
+        [ "$status" -eq 0 ]
+        ! grep -q "author: ai:test@joy" .joy/items/*.yaml
+    fi
+}
+
 # ============================================================
 # TTY isolation for human sessions
 # ============================================================

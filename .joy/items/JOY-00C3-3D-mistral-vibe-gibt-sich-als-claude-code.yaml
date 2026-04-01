@@ -1,7 +1,7 @@
 id: JOY-00C3-3D
 title: Mistral Vibe gibt sich als Claude Code aus
 type: bug
-status: in-progress
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -11,7 +11,7 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy
 created: 2026-04-01T00:02:21.811410323Z
-updated: 2026-04-01T20:28:35.494197769Z
+updated: 2026-04-01T20:29:09.626626916Z
 description: Mistral Vibe kann aus dem selben Terminal, wo vorher Claude Code lief, sich als Claude Code ausgeben. Mit Qwen Code ging das nicht. Dieses Ticket wurde von Mistral Vibe angelegt. In den Joy Logs kann nachvollzogen werden, mit welcher Identität das passiert ist.
 comments:
 - author: ai:claude@joy
