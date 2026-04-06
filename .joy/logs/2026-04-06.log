@@ -5,3 +5,5 @@
 2026-04-06T21:23:58.051Z JOY-00C6-2C item.created "Move embedded data/templates into joy-core crate" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-06T21:24:04.492Z JOY-00C6-2C item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-06T21:24:04.590Z JOY-00C6-2C comment.added "Plan: move data/ and templates/ into crates/joy-core/, move Tutorial.md and docs templates into crates/joy-cli/docs/, update all include_str! paths." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-06T21:26:40.090Z JOY-00C6-2C comment.added "[x] data/ and templates/ moved into crates/joy-core/, CLI docs into crates/joy-cli/docs/. All include_str! paths updated. just check passes." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-06T21:26:40.114Z JOY-00C6-2C item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

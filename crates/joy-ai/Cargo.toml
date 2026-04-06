@@ -8,7 +8,7 @@ repository = "https://github.com/joyint/joy"
 homepage = "https://joyint.com/en/joy"
 
 [dependencies]
-joy-core = { path = "../joy-core" }
+joy-core = { version = "0.8.0", path = "../joy-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
