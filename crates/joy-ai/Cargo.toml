@@ -6,6 +6,7 @@ license = "MIT"
 description = "AI integration layer for Joy product management"
 repository = "https://github.com/joyint/joy"
 homepage = "https://joyint.com/en/joy"
+readme = "README.md"
 
 [dependencies]
 joy-core = { version = "0.8.0", path = "../joy-core" }
