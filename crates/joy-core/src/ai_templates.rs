@@ -16,15 +16,15 @@ use crate::error::JoyError;
 // Embedded data (YAML, parsed at runtime)
 // ---------------------------------------------------------------------------
 
-const WORKFLOW_DATA: &str = include_str!("../../../data/process/workflow.yaml");
+const WORKFLOW_DATA: &str = include_str!("../data/process/workflow.yaml");
 
-const AGENT_CONCEIVER: &str = include_str!("../../../data/ai/agents/conceiver.yaml");
-const AGENT_PLANNER: &str = include_str!("../../../data/ai/agents/planner.yaml");
-const AGENT_DESIGNER: &str = include_str!("../../../data/ai/agents/designer.yaml");
-const AGENT_IMPLEMENTER: &str = include_str!("../../../data/ai/agents/implementer.yaml");
-const AGENT_TESTER: &str = include_str!("../../../data/ai/agents/tester.yaml");
-const AGENT_REVIEWER: &str = include_str!("../../../data/ai/agents/reviewer.yaml");
-const AGENT_DOCUMENTER: &str = include_str!("../../../data/ai/agents/documenter.yaml");
+const AGENT_CONCEIVER: &str = include_str!("../data/ai/agents/conceiver.yaml");
+const AGENT_PLANNER: &str = include_str!("../data/ai/agents/planner.yaml");
+const AGENT_DESIGNER: &str = include_str!("../data/ai/agents/designer.yaml");
+const AGENT_IMPLEMENTER: &str = include_str!("../data/ai/agents/implementer.yaml");
+const AGENT_TESTER: &str = include_str!("../data/ai/agents/tester.yaml");
+const AGENT_REVIEWER: &str = include_str!("../data/ai/agents/reviewer.yaml");
+const AGENT_DOCUMENTER: &str = include_str!("../data/ai/agents/documenter.yaml");
 
 const ALL_AGENT_SOURCES: &[&str] = &[
     AGENT_CONCEIVER,
@@ -40,18 +40,18 @@ const ALL_AGENT_SOURCES: &[&str] = &[
 // Embedded templates (MiniJinja, rendered at runtime)
 // ---------------------------------------------------------------------------
 
-const INSTRUCTIONS_TMPL: &str = include_str!("../../../templates/ai/instructions.md");
-const SETUP_TMPL: &str = include_str!("../../../templates/ai/instructions/setup.md");
-const SKILL_TMPL: &str = include_str!("../../../templates/ai/skills/joy/SKILL.md");
-const JOY_BLOCK_TMPL: &str = include_str!("../../../templates/ai/joy-block.md");
+const INSTRUCTIONS_TMPL: &str = include_str!("../templates/ai/instructions.md");
+const SETUP_TMPL: &str = include_str!("../templates/ai/instructions/setup.md");
+const SKILL_TMPL: &str = include_str!("../templates/ai/skills/joy/SKILL.md");
+const JOY_BLOCK_TMPL: &str = include_str!("../templates/ai/joy-block.md");
 
-const CLAUDE_AGENT_TMPL: &str = include_str!("../../../templates/ai/tools/claude-code/agent.md");
-const QWEN_AGENT_TMPL: &str = include_str!("../../../templates/ai/tools/qwen-code/agent.md");
-const VIBE_AGENT_TMPL: &str = include_str!("../../../templates/ai/tools/mistral-vibe/agent.toml");
+const CLAUDE_AGENT_TMPL: &str = include_str!("../templates/ai/tools/claude-code/agent.md");
+const QWEN_AGENT_TMPL: &str = include_str!("../templates/ai/tools/qwen-code/agent.md");
+const VIBE_AGENT_TMPL: &str = include_str!("../templates/ai/tools/mistral-vibe/agent.toml");
 const COPILOT_AGENT_TMPL: &str =
-    include_str!("../../../templates/ai/tools/github-copilot/agent.agent.md");
+    include_str!("../templates/ai/tools/github-copilot/agent.agent.md");
 const COPILOT_PROMPT_TMPL: &str =
-    include_str!("../../../templates/ai/tools/github-copilot/prompts/joy.prompt.md");
+    include_str!("../templates/ai/tools/github-copilot/prompts/joy.prompt.md");
 
 // ---------------------------------------------------------------------------
 // Public API

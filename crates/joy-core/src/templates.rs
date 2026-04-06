@@ -8,14 +8,14 @@ use crate::error::JoyError;
 use crate::model::item::{Item, ItemType};
 
 // Embedded item templates
-const BASE_TEMPLATE: &str = include_str!("../../../data/items/_base.yaml");
-const EPIC_TEMPLATE: &str = include_str!("../../../data/items/epic.yaml");
-const STORY_TEMPLATE: &str = include_str!("../../../data/items/story.yaml");
-const TASK_TEMPLATE: &str = include_str!("../../../data/items/task.yaml");
-const BUG_TEMPLATE: &str = include_str!("../../../data/items/bug.yaml");
-const REWORK_TEMPLATE: &str = include_str!("../../../data/items/rework.yaml");
-const DECISION_TEMPLATE: &str = include_str!("../../../data/items/decision.yaml");
-const IDEA_TEMPLATE: &str = include_str!("../../../data/items/idea.yaml");
+const BASE_TEMPLATE: &str = include_str!("../data/items/_base.yaml");
+const EPIC_TEMPLATE: &str = include_str!("../data/items/epic.yaml");
+const STORY_TEMPLATE: &str = include_str!("../data/items/story.yaml");
+const TASK_TEMPLATE: &str = include_str!("../data/items/task.yaml");
+const BUG_TEMPLATE: &str = include_str!("../data/items/bug.yaml");
+const REWORK_TEMPLATE: &str = include_str!("../data/items/rework.yaml");
+const DECISION_TEMPLATE: &str = include_str!("../data/items/decision.yaml");
+const IDEA_TEMPLATE: &str = include_str!("../data/items/idea.yaml");
 
 fn template_for_type(item_type: &ItemType) -> (&'static str, &'static str) {
     match item_type {

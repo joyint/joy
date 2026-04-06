@@ -7,7 +7,7 @@ use std::process::{Command, Stdio};
 
 use termimad::MadSkin;
 
-const TUTORIAL: &str = include_str!("../../../../docs/user/Tutorial.md");
+const TUTORIAL: &str = include_str!("../../docs/Tutorial.md");
 
 pub fn run() -> Result<()> {
     let width = crate::color::terminal_width();

@@ -1,0 +1,19 @@
+id: JOY-00C6-2C
+title: Move embedded data/templates into joy-core crate
+type: rework
+status: in-progress
+priority: low
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy
+created: 2026-04-06T21:23:58.047713661Z
+updated: 2026-04-06T21:24:04.586941662Z
+description: Relocate data/ and templates/ directories from repo root into crates/joy-core/ so that cargo publish works without path references outside the crate. Also move joy-cli-only files (Tutorial.md, docs templates) into crates/joy-cli/. Update all include_str! paths accordingly.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-06T21:24:04.586941184Z
+  text: 'Plan: move data/ and templates/ into crates/joy-core/, move Tutorial.md and docs templates into crates/joy-cli/docs/, update all include_str! paths.'
