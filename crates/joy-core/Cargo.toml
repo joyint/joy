@@ -3,6 +3,9 @@ name = "joy-core"
 version = "0.8.0"
 edition = "2021"
 license = "MIT"
+description = "Core library for Joy product management - Git-native, terminal-first"
+repository = "https://github.com/joyint/joy"
+homepage = "https://joyint.com/en/joy"
 
 [dependencies]
 serde = { workspace = true }

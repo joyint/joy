@@ -1126,29 +1126,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "joy-core"
-version = "0.8.0"
-dependencies = [
- "argon2",
- "base64ct",
- "chrono",
- "ed25519-dalek",
- "hex",
- "insta",
- "libc",
- "minijinja",
- "rand",
- "serde",
- "serde_json",
- "serde_yaml_ng",
- "sha2",
- "tempfile",
- "thiserror",
- "zeroize",
-]
-
-[[package]]
-name = "joyint"
+name = "joy-cli"
 version = "0.8.0"
 dependencies = [
  "anyhow",
@@ -1175,6 +1153,28 @@ dependencies = [
  "tower-http",
  "trycmd",
  "unicode-width 0.2.0",
+]
+
+[[package]]
+name = "joy-core"
+version = "0.8.0"
+dependencies = [
+ "argon2",
+ "base64ct",
+ "chrono",
+ "ed25519-dalek",
+ "hex",
+ "insta",
+ "libc",
+ "minijinja",
+ "rand",
+ "serde",
+ "serde_json",
+ "serde_yaml_ng",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "zeroize",
 ]
 
 [[package]]

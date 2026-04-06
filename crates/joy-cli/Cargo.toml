@@ -1,8 +1,11 @@
 [package]
-name = "joyint"
+name = "joy-cli"
 version = "0.8.0"
 edition = "2021"
 license = "MIT"
+description = "CLI for Joy product management - Git-native, terminal-first"
+repository = "https://github.com/joyint/joy"
+homepage = "https://joyint.com/en/joy"
 
 [[bin]]
 name = "joy"
