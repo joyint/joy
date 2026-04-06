@@ -1,0 +1,7 @@
+2026-04-06T21:22:30.918Z project guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-04-06T21:23:15.406Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-06T21:23:22.274Z JOY-00C6-2C guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-04-06T21:23:49.602Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-06T21:23:58.051Z JOY-00C6-2C item.created "Move embedded data/templates into joy-core crate" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-06T21:24:04.492Z JOY-00C6-2C item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-06T21:24:04.590Z JOY-00C6-2C comment.added "Plan: move data/ and templates/ into crates/joy-core/, move Tutorial.md and docs templates into crates/joy-cli/docs/, update all include_str! paths." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

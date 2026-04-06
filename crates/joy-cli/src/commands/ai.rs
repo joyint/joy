@@ -20,10 +20,9 @@ macro_rules! qprintln {
     };
 }
 
-const VISION_TEMPLATE: &str = include_str!("../../../../templates/docs/vision/README.md");
-const ARCHITECTURE_TEMPLATE: &str =
-    include_str!("../../../../templates/docs/architecture/README.md");
-const CONTRIBUTING_TEMPLATE: &str = include_str!("../../../../templates/docs/CONTRIBUTING.md");
+const VISION_TEMPLATE: &str = include_str!("../../docs/vision/README.md");
+const ARCHITECTURE_TEMPLATE: &str = include_str!("../../docs/architecture/README.md");
+const CONTRIBUTING_TEMPLATE: &str = include_str!("../../docs/CONTRIBUTING.md");
 
 const JOY_BLOCK_START: &str = "<!-- joy:start -->";
 const JOY_BLOCK_END: &str = "<!-- joy:end -->";

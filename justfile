@@ -14,11 +14,11 @@ test-unit:
 
 # Snapshot tests (trycmd)
 test-cmd:
-    cargo test -p joyint --test cmd
+    cargo test -p joy-cli --test cmd
 
 # Integration tests (bats)
 test-int:
-    cargo build -p joyint
+    cargo build -p joy-cli
     bats tests/integration/*.bats
 
 # Snapshot tests (insta)
@@ -122,7 +122,7 @@ setup:
 
 # Install to ~/.local/bin/
 install:
-    cargo build --release -p joyint && mkdir -p ~/.local/bin && cp target/release/joy ~/.local/bin/joy
+    cargo build --release -p joy-cli && mkdir -p ~/.local/bin && cp target/release/joy ~/.local/bin/joy
 
 # Auto-commit known generated files (.joy/, lockfiles)
 [private]
