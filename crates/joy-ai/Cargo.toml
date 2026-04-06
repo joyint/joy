@@ -3,6 +3,9 @@ name = "joy-ai"
 version = "0.8.0"
 edition = "2021"
 license = "MIT"
+description = "AI integration layer for Joy product management"
+repository = "https://github.com/joyint/joy"
+homepage = "https://joyint.com/en/joy"
 
 [dependencies]
 joy-core = { path = "../joy-core" }
