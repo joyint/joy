@@ -6,6 +6,7 @@ license = "MIT"
 description = "Core library for Joy product management - Git-native, terminal-first"
 repository = "https://github.com/joyint/joy"
 homepage = "https://joyint.com/en/joy"
+readme = "README.md"
 
 [dependencies]
 serde = { workspace = true }
