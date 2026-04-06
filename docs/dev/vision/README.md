@@ -640,7 +640,7 @@ Joy as a tool/skill for external AI agents:
 
 ### Web UI and Portal
 
-- SolidJS web frontend (board, item management, roadmap) for Joy and Jot
+- React/Next.js web frontend (board, item management, roadmap) for Joy and Jot
 - CalDAV server for Jot (VTODO bridge to Apple Reminders, Google Calendar)
 - Notification service (due dates, status changes, mentions)
 - joyint.com deployment (managed hosting)
