@@ -12,9 +12,9 @@ name = "joy"
 path = "src/main.rs"
 
 [dependencies]
-joy-core = { path = "../joy-core" }
+joy-core = { version = "0.8.0", path = "../joy-core" }
 minijinja = { workspace = true }
-joy-ai = { path = "../joy-ai" }
+joy-ai = { version = "0.8.0", path = "../joy-ai" }
 clap = { workspace = true }
 clap_complete = { version = "4.5", features = ["unstable-dynamic"] }
 anyhow = { workspace = true }
