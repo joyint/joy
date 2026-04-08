@@ -35,13 +35,10 @@ pub struct AiArgs {
 
 #[derive(clap::Subcommand)]
 enum AiCommand {
-    /// Set up AI tool integration for new tools
-    Setup,
+    /// Initialize AI tool integration for new tools
+    Init,
     /// Update AI tool files to current Joy version
     Update(UpdateArgs),
-    /// Deprecated: use `joy ai update --check`
-    #[command(hide = true)]
-    Check,
     /// Remove AI tool configurations from this project
     Reset(ResetArgs),
 }
@@ -66,24 +63,17 @@ struct ResetArgs {
 
 pub fn run(args: AiArgs) -> anyhow::Result<()> {
     match args.command {
-        AiCommand::Setup => setup(),
+        AiCommand::Init => ai_init(),
         AiCommand::Update(a) => update(a),
-        AiCommand::Check => {
-            eprintln!(
-                "{}",
-                color::warning("deprecated: use `joy ai update --check` instead")
-            );
-            update(UpdateArgs { check: true })
-        }
         AiCommand::Reset(a) => reset(a),
     }
 }
 
-fn setup() -> anyhow::Result<()> {
+fn ai_init() -> anyhow::Result<()> {
     let root = joy_core::store::find_project_root(&std::env::current_dir()?)
         .ok_or_else(|| anyhow::anyhow!("No Joy project found (run `joy init` first)"))?;
 
-    println!("{}", color::header("AI Setup"));
+    println!("{}", color::header("AI Init"));
     println!();
 
     // Ensure project.defaults.yaml exists
@@ -172,7 +162,7 @@ fn update(args: UpdateArgs) -> anyhow::Result<()> {
         println!(
             "  {}No configured AI tools found. Run {} first.",
             color::warn_mark(),
-            color::label("joy ai setup")
+            color::label("joy ai init")
         );
     }
 
@@ -660,7 +650,7 @@ fn setup_new_tools(root: &Path) -> anyhow::Result<Vec<&'static str>> {
         );
         println!(
             "  {}",
-            color::inactive("Install one and re-run `joy ai setup`.")
+            color::inactive("Install one and re-run `joy ai init`.")
         );
     } else if newly_configured == 0 {
         println!(
@@ -1116,7 +1106,7 @@ fn check_nested_projects(root: &Path) -> anyhow::Result<()> {
         }
         println!(
             "  {}",
-            color::inactive("Permissions are per-project. Run `joy ai setup` in each.")
+            color::inactive("Permissions are per-project. Run `joy ai init` in each.")
         );
         println!();
     }

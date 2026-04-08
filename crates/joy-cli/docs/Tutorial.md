@@ -89,7 +89,7 @@ Joy detects the existing project and switches to onboarding mode: it installs th
 After onboarding, set up AI tool integration if you use one:
 
 ```sh
-joy ai setup
+joy ai init
 ```
 
 ---
@@ -337,7 +337,7 @@ joy rm CB-0001 -rf                   # Delete epic and all children
 Even MacGyver accepts help sometimes. Joy integrates with AI coding tools so they can manage your backlog alongside you.
 
 ```sh
-joy ai setup
+joy ai init
 ```
 
 This does three things:
@@ -383,10 +383,10 @@ If your project has AI members and you run a Joy command without `--author`, Joy
 
 ### Keeping Instructions Current
 
-Run `joy ai setup` again after a Joy update to get the latest instructions. Joy-owned files are updated, your custom rules are preserved. Run `joy ai check` at any time to verify:
+Run `joy ai update` after a Joy update to get the latest instructions. Joy-owned files are updated, your custom rules are preserved. Run `joy ai update --check` at any time to verify:
 
 ```sh
-joy ai check                     # Are AI instructions up to date?
+joy ai update --check             # Are AI instructions up to date?
 ```
 
 ---
@@ -511,8 +511,8 @@ MacGyver would say: why type when the machine can do it for you?
 | `joy release ls` | List all releases |
 | `joy project` | View/edit project info and members |
 | `joy config` | Show or modify configuration |
-| `joy ai setup` | Set up AI tool integration |
-| `joy ai check` | Check if AI instructions are current |
+| `joy ai init` | Initialize AI tool integration |
+| `joy ai update` | Update AI instructions to current version |
 | `joy tutorial` | You are here |
 
 Most write commands accept `--author <MEMBER>` to attribute the action to a specific identity.

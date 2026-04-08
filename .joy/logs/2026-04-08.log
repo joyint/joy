@@ -3,3 +3,8 @@
 2026-04-08T13:46:18.778Z JOY-00C7-C9 item.created "Fix ai reset to clean up .joy/ai/ directory" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-08T13:46:24.329Z JOY-00C7-C9 comment.added "Plan: In ai reset, after removing tool directories, also remove .joy/ai/ directory. Preserve .joy/ai/jobs/ if it contains files. Implementation: extend the reset function in crates/joy-cli/src/commands/ai.rs." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-08T13:46:27.390Z JOY-00C7-C9 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-08T13:47:31.262Z JOY-00C7-C9 comment.added "[x] Extended reset() to remove .joy/ai/ when no AI tools remain. [x] Preserves .joy/ai/jobs/ if non-empty. [x] Prints status message for cleanup." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-08T13:47:31.349Z JOY-00C7-C9 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-08T13:55:49.327Z JOY-00C8-AA item.created "Rename ai setup to ai init, remove deprecated ai check" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-08T13:55:56.174Z JOY-00C8-AA comment.added "Plan: (1) Rename Setup subcommand to Init in ai.rs, update all user-facing strings. (2) Remove hidden Check subcommand entirely. (3) Update init.rs hint message. (4) Update Tutorial.md references. (5) Update joy-core template instructions.md. Do not touch .joy/items/ history." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-08T13:55:56.196Z JOY-00C8-AA item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
