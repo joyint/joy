@@ -1,0 +1,12 @@
+id: JOY-00C9-5F
+title: Add --json output to all commands
+type: task
+status: new
+priority: high
+capabilities:
+- implement
+effort: 4
+created_by: ai:claude@joy
+created: 2026-04-08T16:21:26.653264800Z
+updated: 2026-04-08T16:21:26.653264800Z
+description: All joy-cli commands need a --json flag for structured output. Required by Jon (subprocess) and gRPC service (ADR-031).

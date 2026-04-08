@@ -57,13 +57,20 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
     if let Some(sid) = std::env::var("JOY_SESSION").ok().filter(|s| !s.is_empty()) {
         if let Ok(Some(sess)) = crate::auth::session::load_session_by_id(&sid) {
             if sess.claims.expires > chrono::Utc::now() && is_ai_member(&sess.claims.member) {
-                if let Some(ref project) = project {
-                    if project.members.contains_key(&sess.claims.member) {
-                        return Ok(Identity {
-                            member: sess.claims.member.clone(),
-                            delegated_by: crate::vcs::default_vcs().user_email().ok(),
-                            authenticated: true,
-                        });
+                // Verify the session belongs to this project (not a different one)
+                let session_matches_project = project_id
+                    .as_ref()
+                    .map(|pid| sess.claims.project_id == *pid)
+                    .unwrap_or(false);
+                if session_matches_project {
+                    if let Some(ref project) = project {
+                        if project.members.contains_key(&sess.claims.member) {
+                            return Ok(Identity {
+                                member: sess.claims.member.clone(),
+                                delegated_by: crate::vcs::default_vcs().user_email().ok(),
+                                authenticated: true,
+                            });
+                        }
                     }
                 }
             }
