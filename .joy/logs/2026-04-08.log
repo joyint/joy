@@ -1,0 +1,5 @@
+2026-04-08T13:44:31.066Z JOY-00C7-C9 guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-04-08T13:46:15.217Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-08T13:46:18.778Z JOY-00C7-C9 item.created "Fix ai reset to clean up .joy/ai/ directory" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-08T13:46:24.329Z JOY-00C7-C9 comment.added "Plan: In ai reset, after removing tool directories, also remove .joy/ai/ directory. Preserve .joy/ai/jobs/ if it contains files. Implementation: extend the reset function in crates/joy-cli/src/commands/ai.rs." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-08T13:46:27.390Z JOY-00C7-C9 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

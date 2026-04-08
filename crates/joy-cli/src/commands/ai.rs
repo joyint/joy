@@ -492,12 +492,45 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
         }
     }
 
-    // If no AI tools remain, update gitignore to remove tool entries
+    // If no AI tools remain, update gitignore and clean up .joy/ai/
     let any_remaining = all_tools
         .iter()
         .any(|(_, id, _)| is_tool_configured(&root, id));
     if !any_remaining {
         joy_core::init::update_gitignore_block(&root, joy_core::init::GITIGNORE_BASE_ENTRIES)?;
+
+        // Remove .joy/ai/ directory, preserving jobs/ if non-empty
+        let ai_dir = joy_core::store::joy_dir(&root).join("ai");
+        if ai_dir.exists() {
+            let jobs_dir = ai_dir.join("jobs");
+            let jobs_has_content = jobs_dir.is_dir()
+                && fs::read_dir(&jobs_dir)
+                    .map(|mut d| d.next().is_some())
+                    .unwrap_or(false);
+
+            if jobs_has_content {
+                // Remove everything in ai/ except jobs/
+                for entry in fs::read_dir(&ai_dir)? {
+                    let entry = entry?;
+                    if entry.file_name() != "jobs" {
+                        let path = entry.path();
+                        if path.is_dir() {
+                            fs::remove_dir_all(&path)?;
+                        } else {
+                            fs::remove_file(&path)?;
+                        }
+                    }
+                }
+                println!(
+                    "  {}{:<24} cleaned (jobs/ preserved)",
+                    color::check_mark(),
+                    ".joy/ai/"
+                );
+            } else {
+                fs::remove_dir_all(&ai_dir)?;
+                println!("  {}{:<24} removed", color::check_mark(), ".joy/ai/");
+            }
+        }
     }
 
     let count = tools
