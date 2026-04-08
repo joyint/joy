@@ -18,3 +18,7 @@
 2026-04-08T16:33:02.383Z JOY-00CB-4E comment.added "[x] Added project_id check in resolve_identity for JOY_SESSION path. [x] Token scoped to project A now rejected in project B. [x] Integration test: AI session token rejected in different project." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-08T16:33:02.423Z JOY-00CB-4E item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-08T17:11:34.293Z JOY-00CC-67 item.created "Create joy-plugins crate for shared plugin system" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-08T18:10:00.422Z JOY-00CD-84 item.created "joy ai update does not add project.defaults.yaml to gitignore" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-08T18:10:00.504Z JOY-00CD-84 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-08T18:11:48.975Z JOY-00CD-84 comment.added "[x] Added update_gitignore call in ai update function. [x] Collects configured tool IDs during update loop. [x] Integration test: joy ai update syncs gitignore entries." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-08T18:11:49.011Z JOY-00CD-84 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

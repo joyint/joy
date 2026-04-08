@@ -110,12 +110,14 @@ fn update(args: UpdateArgs) -> anyhow::Result<()> {
 
     let mut tool_count = 0;
     let mut has_issues = false;
+    let mut configured_tools: Vec<&str> = Vec::new();
 
     for (name, id, detect, configure) in ALL_TOOLS {
         let installed = detect();
         let configured = is_tool_configured(&root, id);
         if configured {
             tool_count += 1;
+            configured_tools.push(id);
             let member_id = format!("ai:{id}@joy");
             if dry_run {
                 let stale = is_tool_stale(&root, id, &member_id)?;
@@ -164,6 +166,11 @@ fn update(args: UpdateArgs) -> anyhow::Result<()> {
             color::warn_mark(),
             color::label("joy ai init")
         );
+    }
+
+    // Sync gitignore entries for configured tools
+    if !dry_run {
+        update_gitignore(&root, &configured_tools)?;
     }
 
     println!();
