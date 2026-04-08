@@ -1,7 +1,7 @@
 id: JOY-00C7-C9
 title: Fix ai reset to clean up .joy/ai/ directory
 type: bug
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -11,8 +11,11 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-08T13:46:18.761122677Z
-updated: 2026-04-08T13:46:27.379456265Z
+updated: 2026-04-08T13:47:31.336658250Z
 comments:
 - author: ai:claude@joy
   date: 2026-04-08T13:46:24.324185336Z
   text: 'Plan: In ai reset, after removing tool directories, also remove .joy/ai/ directory. Preserve .joy/ai/jobs/ if it contains files. Implementation: extend the reset function in crates/joy-cli/src/commands/ai.rs.'
+- author: ai:claude@joy
+  date: 2026-04-08T13:47:31.248240110Z
+  text: '[x] Extended reset() to remove .joy/ai/ when no AI tools remain. [x] Preserves .joy/ai/jobs/ if non-empty. [x] Prints status message for cleanup.'

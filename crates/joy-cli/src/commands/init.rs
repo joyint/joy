@@ -54,7 +54,7 @@ pub fn run(args: InitArgs) -> Result<()> {
             println!("  joy status <ID> <STATUS> Change item status");
             println!("  joy                      Board overview");
             println!();
-            println!("Using AI tools? Run 'joy ai setup' to configure integration.");
+            println!("Using AI tools? Run 'joy ai init' to configure integration.");
             let log_user = joy_core::identity::resolve_identity(&root)
                 .map(|id| id.log_user())
                 .unwrap_or_default();

@@ -81,7 +81,7 @@ pub struct ModeDefaults {
     pub capabilities: BTreeMap<Capability, InteractionLevel>,
 }
 
-/// Default capabilities granted to AI members by joy ai setup.
+/// Default capabilities granted to AI members by joy ai init.
 /// Loaded from `ai-defaults.capabilities` in project.defaults.yaml.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct AiDefaults {

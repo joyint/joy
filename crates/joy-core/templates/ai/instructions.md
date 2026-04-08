@@ -34,7 +34,7 @@ Your member ID is defined in the tool-specific configuration file
 2. Run `joy project member show <YOUR-ID>` to verify your member entry
    exists and to read your current capabilities and limits.
 3. If your member entry does not exist, tell the user and suggest
-   `joy ai setup` or `joy project member add <YOUR-ID>`.
+   `joy ai init` or `joy project member add <YOUR-ID>`.
 
 ### Authentication
 
