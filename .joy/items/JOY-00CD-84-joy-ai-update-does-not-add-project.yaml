@@ -1,0 +1,19 @@
+id: JOY-00CD-84
+title: joy ai update does not add project.defaults.yaml to gitignore
+type: bug
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy
+created: 2026-04-08T18:10:00.414642528Z
+updated: 2026-04-08T18:11:49.005967120Z
+description: joy ai update updates tool files but does not sync the gitignore block. project.defaults.yaml is missing from gitignore after update.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-08T18:11:48.970388766Z
+  text: '[x] Added update_gitignore call in ai update function. [x] Collects configured tool IDs during update loop. [x] Integration test: joy ai update syncs gitignore entries.'
