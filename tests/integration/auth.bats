@@ -357,6 +357,41 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 }
 
 # ============================================================
+# cross-project session isolation (JOY-00CB)
+# ============================================================
+
+@test "AI session token rejected in different project" {
+    # Create project A
+    mkdir -p project_a && cd project_a
+    git init --quiet
+    git config user.email "test@example.com"
+    git config user.name "Test User"
+    joy init --name "Project A" --acronym PRJA
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy project member add ai:claude@joy
+    # Create AI token scoped to project A
+    TOKEN=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
+        | sed -n 's/^  \(joy_t_.*\)/\1/p')
+    eval $(joy auth --token "$TOKEN")
+    SESS="$JOY_SESSION"
+    # Verify it works in project A
+    run env JOY_SESSION="$SESS" joy add task "Test in A"
+    [ "$status" -eq 0 ]
+    # Create project B
+    cd "$TEST_DIR"
+    mkdir -p project_b && cd project_b
+    git init --quiet
+    git config user.email "test@example.com"
+    git config user.name "Test User"
+    joy init --name "Project B" --acronym PRJB
+    joy project member add ai:claude@joy
+    # Use project A's session in project B - must be rejected
+    run env JOY_SESSION="$SESS" joy add task "Test in B"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"must authenticate"* ]] || [[ "$output" == *"guard denied"* ]]
+}
+
+# ============================================================
 # write_yaml_preserve (JOY-008B)
 # ============================================================
 

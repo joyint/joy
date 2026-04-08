@@ -1,0 +1,19 @@
+id: JOY-00CB-4E
+title: Token session allows cross-project access
+type: bug
+status: in-progress
+priority: critical
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy
+created: 2026-04-08T16:25:01.763432109Z
+updated: 2026-04-08T16:25:07.149662609Z
+description: A delegation token scoped to project_id JOY can be used to create items in JI, JOT, JON, JP. Session validation does not check project_id against current project.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-08T16:25:07.109874Z
+  text: 'Plan: Find where session validation happens in guard or auth modules. Add project_id check comparing token''s project_id against the current project''s acronym. Add integration test: token for project A must be rejected in project B.'

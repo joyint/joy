@@ -10,3 +10,8 @@
 2026-04-08T13:55:56.196Z JOY-00C8-AA item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-08T13:59:07.155Z JOY-00C8-AA comment.added "[x] Renamed Setup subcommand to Init in ai.rs. [x] Removed hidden Check subcommand and deprecation bridge. [x] Updated all user-facing strings in ai.rs (5 occurrences). [x] Updated init.rs hint message. [x] Updated Tutorial.md (setup -> init, check -> update --check, command table). [x] Updated joy-core instructions.md template. [x] Updated project.rs doc comment." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-08T13:59:07.181Z JOY-00C8-AA item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-08T16:21:26.660Z JOY-00C9-5F item.created "Add --json output to all commands" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-08T16:21:34.274Z JOY-00CA-0F item.created "Create joy-connect commercial wrapper crate" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-08T16:25:01.769Z JOY-00CB-4E item.created "Token session allows cross-project access" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-08T16:25:07.115Z JOY-00CB-4E comment.added "Plan: Find where session validation happens in guard or auth modules. Add project_id check comparing token's project_id against the current project's acronym. Add integration test: token for project A must be rejected in project B." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-08T16:25:07.155Z JOY-00CB-4E item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
