@@ -23,3 +23,4 @@
 2026-04-08T18:11:48.975Z JOY-00CD-84 comment.added "[x] Added update_gitignore call in ai update function. [x] Collects configured tool IDs during update loop. [x] Integration test: joy ai update syncs gitignore entries." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-08T18:11:49.011Z JOY-00CD-84 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-08T19:34:08.379Z JOY-00CE-40 item.created "Add --app flag to launch native app plugin" [ai:claude@joy delegated-by:cx-test@example.com]
+2026-04-08T19:57:40.070Z release guard.denied "cx-test@example.com is not a registered project member" [cx-test@example.com]
