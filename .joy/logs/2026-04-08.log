@@ -15,3 +15,6 @@
 2026-04-08T16:25:01.769Z JOY-00CB-4E item.created "Token session allows cross-project access" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-08T16:25:07.115Z JOY-00CB-4E comment.added "Plan: Find where session validation happens in guard or auth modules. Add project_id check comparing token's project_id against the current project's acronym. Add integration test: token for project A must be rejected in project B." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-08T16:25:07.155Z JOY-00CB-4E item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-08T16:33:02.383Z JOY-00CB-4E comment.added "[x] Added project_id check in resolve_identity for JOY_SESSION path. [x] Token scoped to project A now rejected in project B. [x] Integration test: AI session token rejected in different project." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-08T16:33:02.423Z JOY-00CB-4E item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-08T17:11:34.293Z JOY-00CC-67 item.created "Create joy-plugins crate for shared plugin system" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
