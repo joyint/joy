@@ -1,0 +1,12 @@
+id: JOY-00CE-40
+title: Add --app flag to launch native app plugin
+type: task
+status: new
+priority: medium
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy
+created: 2026-04-08T19:34:08.374879245Z
+updated: 2026-04-08T19:34:08.374879245Z
+description: joy --app launches the native Joy app via the plugin system. If joyint-joy-app is not installed, offer to download it.
