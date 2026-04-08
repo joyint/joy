@@ -323,6 +323,39 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     ! grep -q "ai:qwen@joy" .joy/project.yaml
 }
 
+@test "joy ai reset removes .joy/ai/ directory" {
+    joy init --name "Auth Test"
+    joy ai init </dev/null 2>/dev/null || true
+    # Verify .joy/ai/ exists
+    [ -d ".joy/ai" ]
+    # Create tool directories so reset has something to remove
+    mkdir -p .claude
+    touch .claude/CLAUDE.md
+    joy project member add ai:claude@joy 2>/dev/null || true
+    # Reset all
+    joy ai reset --force
+    # .joy/ai/ should be removed
+    [ ! -d ".joy/ai" ]
+}
+
+@test "joy ai reset preserves .joy/ai/jobs/ when non-empty" {
+    joy init --name "Auth Test"
+    joy ai init </dev/null 2>/dev/null || true
+    # Put content in jobs/
+    mkdir -p .joy/ai/jobs
+    echo "test-job" > .joy/ai/jobs/job-001.yaml
+    # Create tool directories so reset has something to remove
+    mkdir -p .claude
+    touch .claude/CLAUDE.md
+    joy project member add ai:claude@joy 2>/dev/null || true
+    # Reset all
+    joy ai reset --force
+    # jobs/ should be preserved
+    [ -f ".joy/ai/jobs/job-001.yaml" ]
+    # but other ai/ contents should be gone
+    [ ! -d ".joy/ai/agents" ]
+}
+
 # ============================================================
 # write_yaml_preserve (JOY-008B)
 # ============================================================

@@ -1,6 +1,37 @@
 #!/usr/bin/env bats
 load setup
 
+# --- joy ai init ---
+
+@test "joy ai init creates .joy/ai/ directory" {
+    joy init --name "Test Project"
+    joy ai init </dev/null 2>/dev/null || true
+    [ -d ".joy/ai" ]
+    [ -d ".joy/ai/jobs" ]
+    [ -d ".joy/ai/agents" ]
+}
+
+@test "joy ai init registers AI members in project.yaml" {
+    joy init --name "Test Project"
+    joy ai init </dev/null 2>/dev/null || true
+    # At least one AI member should be registered if a tool was detected
+    configured=0
+    for dir in .claude .qwen .vibe .github/agents; do
+        [ -d "$dir" ] && configured=1 && break
+    done
+    if [ "$configured" -eq 1 ]; then
+        grep -q "ai:.*@joy" .joy/project.yaml
+    fi
+}
+
+@test "joy ai init is idempotent" {
+    joy init --name "Test Project"
+    joy ai init </dev/null 2>/dev/null || true
+    # Run again - should not fail
+    run joy ai init </dev/null 2>/dev/null
+    [ "$status" -eq 0 ]
+}
+
 # --- joy ai update --check ---
 
 @test "joy ai update --check detects tampered SKILL.md" {
