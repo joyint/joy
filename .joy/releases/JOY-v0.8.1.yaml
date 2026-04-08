@@ -1,0 +1,44 @@
+version: v0.8.1
+date: 2026-04-08
+previous: v0.8.0
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 55
+  items: 12
+- id: horst.schwarz@joydev.com
+  events: 8
+  items: 2
+- id: ai:qwen@joy delegated-by:horst.schwarz@joydev.com
+  events: 4
+  items: 1
+items:
+  tasks:
+  - id: JOY-00C0-9E
+    title: Add optional member parameter to joy deauth
+  - id: JOY-00A0
+    title: Enforce 200-line limit on generated AI instructions
+  bugs:
+  - id: JOY-00C2-DC
+    title: 'SKILL.md Parser: HTML-Kommentar vor YAML-Frontmatter bricht Qwen Code Skill-Loading'
+  - id: JOY-00C3-3D
+    title: Mistral Vibe gibt sich als Claude Code aus
+  - id: JOY-00C4-64
+    title: AI Tools ignorieren Projektsprache
+  - id: JOY-00C5-70
+    title: JOY_SESSION not persisted for AI tools without persistent shell
+  - id: JOY-00C7-C9
+    title: Fix ai reset to clean up .joy/ai/ directory
+  - id: JOY-00CB-4E
+    title: Token session allows cross-project access
+  - id: JOY-00CD-84
+    title: joy ai update does not add project.defaults.yaml to gitignore
+  reworks:
+  - id: JOY-00C1-F2
+    title: Rename auth token commands to subcommand group
+  - id: JOY-00C6-2C
+    title: Move embedded data/templates into joy-core crate
+  - id: JOY-00C8-AA
+    title: Rename ai setup to ai init, remove deprecated ai check
+  decisions:
+  - id: JOY-0094
+    title: AI tool commands must run under AI member identity
