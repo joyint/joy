@@ -127,12 +127,12 @@ EOF
     [[ "$output" != *"Mode:"* ]]
 }
 
-@test "joy ai setup syncs project.defaults.yaml" {
+@test "joy ai init syncs project.defaults.yaml" {
     joy init --name "Test Project"
     rm .joy/project.defaults.yaml
     [ ! -f ".joy/project.defaults.yaml" ]
-    # ai setup should recreate it (even without tools installed)
-    joy ai setup </dev/null 2>/dev/null || true
+    # ai init should recreate it (even without tools installed)
+    joy ai init </dev/null 2>/dev/null || true
     [ -f ".joy/project.defaults.yaml" ]
 }
 

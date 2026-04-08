@@ -1,7 +1,7 @@
 id: JOY-00C8-AA
 title: Rename ai setup to ai init, remove deprecated ai check
 type: rework
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -11,8 +11,11 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy
 created: 2026-04-08T13:55:49.323325200Z
-updated: 2026-04-08T13:55:56.193104773Z
+updated: 2026-04-08T13:59:07.177204354Z
 comments:
 - author: ai:claude@joy
   date: 2026-04-08T13:55:56.170917122Z
   text: 'Plan: (1) Rename Setup subcommand to Init in ai.rs, update all user-facing strings. (2) Remove hidden Check subcommand entirely. (3) Update init.rs hint message. (4) Update Tutorial.md references. (5) Update joy-core template instructions.md. Do not touch .joy/items/ history.'
+- author: ai:claude@joy
+  date: 2026-04-08T13:59:07.151611504Z
+  text: '[x] Renamed Setup subcommand to Init in ai.rs. [x] Removed hidden Check subcommand and deprecation bridge. [x] Updated all user-facing strings in ai.rs (5 occurrences). [x] Updated init.rs hint message. [x] Updated Tutorial.md (setup -> init, check -> update --check, command table). [x] Updated joy-core instructions.md template. [x] Updated project.rs doc comment.'
