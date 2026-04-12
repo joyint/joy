@@ -4,6 +4,8 @@ output:
   emoji: true
   short: false
   fortune: true
-agents:
-  default:
-    mode: collaborative
+workflow:
+  auto-assign: true
+  auto-git: add
+modes:
+  default: collaborative
