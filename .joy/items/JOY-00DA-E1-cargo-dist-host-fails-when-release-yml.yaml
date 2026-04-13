@@ -1,0 +1,19 @@
+id: JOY-00DA-E1
+title: cargo-dist host fails when release.yml is hand-patched
+type: bug
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy
+created: 2026-04-13T22:00:50.987206370Z
+updated: 2026-04-13T22:00:59.999090375Z
+description: 'After patching release.yml''s ''Create GitHub Release'' step into ''Create or update GitHub Release'', cargo-dist''s ''dist host --steps=create'' aborts with ''ci is out of date'' because the file no longer matches what ''dist generate'' would emit. v0.8.4 release.yml run failed at plan, no binaries uploaded. Fix: add ''allow-dirty = ["ci"]'' to dist-workspace.toml so cargo-dist tolerates the hand-patched workflow.'
+comments:
+- author: ai:claude@joy
+  date: 2026-04-13T22:00:59.983571307Z
+  text: '[x] Added ''allow-dirty = ["ci"]'' to dist-workspace.toml. cargo-dist now tolerates the hand-patched ''Create or update GitHub Release'' step instead of failing the plan job with ''ci is out of date''.'
