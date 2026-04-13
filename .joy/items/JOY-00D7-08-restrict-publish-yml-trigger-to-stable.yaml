@@ -1,0 +1,18 @@
+id: JOY-00D7-08
+title: Restrict publish.yml trigger to stable release tags
+type: task
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 1
+created_by: ai:claude@joy
+created: 2026-04-13T21:09:12.212201859Z
+updated: 2026-04-13T21:09:21.295285862Z
+description: Pre-release tags (vX.Y.Z-rc1, vX.Y.Z-test1) should not publish to crates.io because uploaded crate versions are permanent. Tighten the publish.yml tag pattern from 'v[0-9]+.[0-9]+.[0-9]+*' to 'v[0-9]+.[0-9]+.[0-9]+' (no trailing wildcard, so any suffix excludes the tag from publishing). release.yml still fires on pre-release tags so binaries can be tested.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-13T21:09:21.275219858Z
+  text: '[x] Tag pattern tightened in publish.yml (joy and jot mirrored). Pre-release tags now safe for testing.'
