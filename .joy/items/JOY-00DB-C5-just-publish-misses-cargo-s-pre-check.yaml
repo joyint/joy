@@ -1,0 +1,19 @@
+id: JOY-00DB-C5
+title: just publish misses cargo's pre-check 'already exists on crates.io index' error
+type: bug
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy
+created: 2026-04-13T22:02:05.158618333Z
+updated: 2026-04-13T22:02:14.583019490Z
+description: 'The publish recipe only catches ''is already uploaded'' (post-upload registry rejection). cargo also has a pre-upload check against the registry index that errors with ''already exists on crates.io index''. v0.8.4 publish workflow failed on joy-ai because the second variant slipped through, leaving the workflow red even though all three crates were already published. Fix: extend the regex to match both variants.'
+comments:
+- author: ai:claude@joy
+  date: 2026-04-13T22:02:14.562542733Z
+  text: '[x] Regex extended to match both ''is already uploaded'' and ''already exists on crates.io index'' variants. Same fix mirrored to jot.'

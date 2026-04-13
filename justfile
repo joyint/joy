@@ -207,7 +207,10 @@ publish:
         # run (e.g. local + CI on the same tag) is harmless instead of
         # erroring out the whole publish step.
         if ! out=$(cargo publish -p "$crate" 2>&1); then
-            if echo "$out" | grep -q "is already uploaded"; then
+            # Two cargo error variants both mean "version already published":
+            # - "is already uploaded": registry rejected the upload
+            # - "already exists on crates.io index": cargo's pre-check
+            if echo "$out" | grep -qE "is already uploaded|already exists on crates.io index"; then
                 echo "$crate $version already on crates.io (registry confirmed), skipping."
             else
                 echo "$out" >&2
