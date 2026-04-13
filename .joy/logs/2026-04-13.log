@@ -25,3 +25,7 @@
 2026-04-13T19:32:51.519Z JOY-00D4-CC item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-13T20:06:33.559Z release guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
 2026-04-13T20:08:55.272Z v0.8.2 release.created [horst.schwarz@joydev.com]
+2026-04-13T20:14:01.137Z JOY-00D5-2A item.created "Make just publish idempotent against duplicate publishes" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-13T20:14:13.166Z JOY-00D5-2A item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-13T20:14:13.174Z JOY-00D5-2A comment.added "[x] Dropped deprecated --token flag (cargo reads CARGO_REGISTRY_TOKEN from env automatically). [x] Wrapped cargo publish: capture output, treat 'is already uploaded' as success, propagate any other failure. Now safe to run from local AND CI on the same tag." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-13T20:14:13.191Z JOY-00D5-2A item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

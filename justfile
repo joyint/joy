@@ -196,13 +196,26 @@ publish:
             echo "Warning: could not resolve version for $crate, skipping."
             continue
         fi
-        # Idempotency: skip if this exact version is already on crates.io.
+        # Idempotency hint via cargo search (lags behind the registry by a
+        # minute or two, so we still need the post-publish guard below).
         if cargo search "$crate" --limit 1 2>/dev/null | grep -qE "^$crate = \"$version\""; then
             echo "$crate $version already on crates.io, skipping."
             continue
         fi
         echo "Publishing $crate $version..."
-        cargo publish -p "$crate" --token "$CARGO_REGISTRY_TOKEN"
+        # Capture output; treat "already uploaded" as success so a duplicate
+        # run (e.g. local + CI on the same tag) is harmless instead of
+        # erroring out the whole publish step.
+        if ! out=$(cargo publish -p "$crate" 2>&1); then
+            if echo "$out" | grep -q "is already uploaded"; then
+                echo "$crate $version already on crates.io (registry confirmed), skipping."
+            else
+                echo "$out" >&2
+                exit 1
+            fi
+        else
+            echo "$out"
+        fi
         # Brief wait so the next crate (which may depend on this one) sees
         # the new version in the registry index.
         sleep 5
