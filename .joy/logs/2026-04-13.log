@@ -46,3 +46,4 @@
 2026-04-13T21:52:38.523Z JOY-00D9-D3 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-13T21:52:38.530Z JOY-00D9-D3 comment.added "[x] Same fix as JOT-002C-C8 applied to joy: ci='github', strict warn-comment to never run 'dist generate'." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-13T21:52:38.546Z JOY-00D9-D3 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-13T21:57:40.777Z v0.8.4 release.created [horst.schwarz@joydev.com]
