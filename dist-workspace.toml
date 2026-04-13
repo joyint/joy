@@ -9,8 +9,11 @@ members = ["cargo:."]
 # release.yml would clobber our hand-maintained version.
 [dist]
 cargo-dist-version = "0.31.0"
-# Empty list disables CI workflow generation so 'dist generate' stays a
-# no-op for CI even if it is ever invoked.
+# Set to "github" temporarily and run 'dist generate' to refresh the
+# workflow file when upgrading cargo-dist. Then set back to [] and
+# re-apply the create-or-upload patch around the 'gh release create'
+# step (see release.yml comment block). Default state stays [] so
+# accidental 'dist generate' runs do not clobber the patch.
 ci = []
 # Installers we still want cargo-dist to produce as build artifacts (the
 # hand-written workflow uploads them).
