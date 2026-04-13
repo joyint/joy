@@ -1,8 +1,10 @@
 id: JOY-00D2-C1
 title: Publish prebuilt binaries via cargo-dist
 type: story
-status: new
+status: closed
 priority: medium
+assignees:
+- member: ai:claude@joy
 capabilities:
 - plan
 - implement
@@ -10,7 +12,7 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy
 created: 2026-04-13T17:01:04.777282937Z
-updated: 2026-04-13T17:01:04.777282937Z
+updated: 2026-04-13T17:34:19.098897834Z
 description: |-
   ## Goal
 
@@ -54,3 +56,17 @@ description: |-
     ``~/.local/bin`` (or equivalent) on Linux / macOS.
   - README mentions the new one-liner as primary install method,
     ``cargo install joy-cli`` retained as alternative.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-13T17:34:19.041364257Z
+  text: |-
+    [x] Installed cargo-dist 0.31.0 locally for workflow generation.
+    [x] Ran 'dist init --hosting github'; created dist-workspace.toml with targets aarch64/x86_64 for Linux/macOS and x86_64 for Windows.
+    [x] Enabled shell + powershell installers in dist-workspace.toml; install-path set to '~/.local/bin' (XDG standard, typically in PATH).
+    [x] Added [profile.dist] to Cargo.toml (thin LTO, inherits release).
+    [x] Generated .github/workflows/release.yml via 'dist generate'. Triggers on version tag push, PR dry-run included.
+    [x] 'dist plan' verified artifacts: joy-cli-installer.sh, joy-cli-installer.ps1, platform tarballs/zips with joy binary + LICENSE + README.md.
+    [x] Updated README.md Quick Start: curl | sh installer as primary, 'cargo install joy-cli' as alternative.
+    [x] just check green. Note that 'joy' on crates.io is taken (joystick lib) so the installer artifact stays named 'joy-cli-installer.sh'; the vanity URL 'get.joyint.com/joy' handled separately (JISITE-001B-37) keeps the end-user experience clean.
+
+    Remaining: first real tag push will exercise the workflow end-to-end; any config issues surface there and are iterated.
