@@ -736,6 +736,8 @@ fn setup_new_tools(root: &Path) -> anyhow::Result<Vec<&'static str>> {
         }
         let already = is_tool_configured(root, id);
         let member_id = format!("ai:{id}@joy");
+        let should_register;
+
         if already {
             println!(
                 "  {}{:<24} {}",
@@ -744,45 +746,48 @@ fn setup_new_tools(root: &Path) -> anyhow::Result<Vec<&'static str>> {
                 color::inactive("already configured")
             );
             configured_tools.push(*id);
-            continue;
+            // Backfill the member entry when the tool was configured outside
+            // joy ai init (e.g. by joy ai update or a copied .claude/ dir).
+            should_register = true;
+        } else {
+            print!("  {}{:<24} configure? [Y/n] ", color::warn_mark(), name);
+            if confirm_default_yes()? {
+                configure(root, &member_id)?;
+                configured_tools.push(*id);
+                newly_configured += 1;
+                should_register = true;
+            } else {
+                should_register = false;
+            }
         }
 
-        // New tool: prompt user
-        print!("  {}{:<24} configure? [Y/n] ", color::warn_mark(), name);
-        if confirm_default_yes()? {
-            configure(root, &member_id)?;
-            configured_tools.push(*id);
-            newly_configured += 1;
-
-            // Register as AI member
-            if !project.members.contains_key(&member_id) {
-                let ai_defaults = joy_core::store::load_ai_defaults(root);
-                let ai_caps = if ai_defaults.capabilities.is_empty() {
-                    joy_core::model::item::Capability::work_capabilities()
-                } else {
-                    ai_defaults.capabilities.clone()
-                };
-                project.members.insert(
-                    member_id.clone(),
-                    joy_core::model::project::Member::new(
-                        joy_core::model::project::MemberCapabilities::Specific({
-                            use joy_core::model::project::CapabilityConfig;
-                            let mut map = std::collections::BTreeMap::new();
-                            for cap in ai_caps {
-                                map.insert(cap, CapabilityConfig::default());
-                            }
-                            map
-                        }),
-                    ),
-                );
-                project_changed = true;
-                println!(
-                    "  {}{:<24} {}",
-                    color::check_mark(),
-                    member_id,
-                    color::success("registered as member")
-                );
-            }
+        if should_register && !project.members.contains_key(&member_id) {
+            let ai_defaults = joy_core::store::load_ai_defaults(root);
+            let ai_caps = if ai_defaults.capabilities.is_empty() {
+                joy_core::model::item::Capability::work_capabilities()
+            } else {
+                ai_defaults.capabilities.clone()
+            };
+            project.members.insert(
+                member_id.clone(),
+                joy_core::model::project::Member::new(
+                    joy_core::model::project::MemberCapabilities::Specific({
+                        use joy_core::model::project::CapabilityConfig;
+                        let mut map = std::collections::BTreeMap::new();
+                        for cap in ai_caps {
+                            map.insert(cap, CapabilityConfig::default());
+                        }
+                        map
+                    }),
+                ),
+            );
+            project_changed = true;
+            println!(
+                "  {}{:<24} {}",
+                color::check_mark(),
+                member_id,
+                color::success("registered as member")
+            );
         }
     }
 
