@@ -1,0 +1,99 @@
+id: JOY-00D1-3C
+title: joy ai init/reset cannot tell joy-owned files from user-owned
+type: bug
+status: new
+priority: high
+capabilities:
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy
+created: 2026-04-13T06:19:02.243808930Z
+updated: 2026-04-13T06:36:03.285052992Z
+description: |-
+  ## Symptom
+
+  Two related symptoms in joy ai init / joy ai reset, both caused by the
+  fact that joy has no marker for which files in tool config dirs (e.g.
+  ``.claude/``, ``.qwen/``, ``.vibe/``) it owns vs. what the user put
+  there. The exact mix differs per tool -- see the matrix at the bottom.
+
+  ### 1. ``joy ai init`` skips configuration when a non-joy instruction file exists
+
+  ``is_tool_configured`` checks the existence of a single file:
+
+  | Tool    | Detection path                       | Joy-specific?        |
+  |---------|--------------------------------------|----------------------|
+  | Claude  | ``.claude/CLAUDE.md``                | NO (user-shared)     |
+  | Qwen    | ``.qwen/QWEN.md``                    | NO (user-shared)     |
+  | Vibe    | ``.vibe/skills/joy/SKILL.md``        | YES                  |
+  | Copilot | ``.github/copilot-instructions.md``  | NO (user-shared)     |
+
+  For Claude, Qwen, and Copilot the file can perfectly well exist without
+  any joy involvement (Anthropic example, copied from another project,
+  Copilot's own setup, etc.). joy still treats the tool as
+  ``already configured``:
+
+  - No "configure? [Y/n]" prompt is shown.
+  - ``configure_*`` is not called -> no joy SKILL.md, no agents, no
+    joy-block injected into the instruction file, no settings.json with
+    permissions / JOY_SESSION env.
+  - (Now also fixed by JOY-00D0-CC: the AI member at least gets
+    backfilled, but the tool itself stays unconfigured.)
+
+  Reported by Horst on 2026-04-13: this matches a project where ``.claude/``
+  existed before joy was introduced; ``joy ai init`` produced no installed
+  joy-managed assets until ``joy ai reset`` had wiped the directory.
+
+  Vibe is fine as is (its detection path is already joy-only).
+
+  ### 2. ``joy ai reset`` deletes whole tool directories
+
+  The reset table in ``crates/joy-cli/src/commands/ai.rs`` lists removal
+  paths per tool:
+
+  | Tool    | Removal paths                                                                   | Precise? |
+  |---------|---------------------------------------------------------------------------------|----------|
+  | Claude  | ``.claude/``                                                                    | NO       |
+  | Qwen    | ``.qwen/``                                                                      | NO       |
+  | Vibe    | ``.vibe/``                                                                      | NO       |
+  | Copilot | ``.github/copilot-instructions.md``, ``.github/agents/``, ``.github/prompts/``  | YES      |
+
+  For Claude, Qwen, and Vibe ``fs::remove_dir_all`` then takes out
+  everything under that directory -- including user-owned files such as a
+  custom ``settings.json``, keybindings, additional agents, or unrelated
+  tool state.
+
+  Copilot is the model: it lists the joy-managed paths explicitly and only
+  touches those.
+
+  ## Suspected fix
+
+  Apply consistently to Claude, Qwen, Copilot (detection) and Claude, Qwen,
+  Vibe (reset). Vibe detection and Copilot reset are already correct.
+
+  1. Detection: report ``true`` only when joy has actually set up the tool.
+     Reliable signals:
+     - existence of ``<tool>/skills/joy/SKILL.md`` (Vibe-style, joy-only path), or
+     - joy-block markers (``<!-- joy:start -->``) inside the shared instruction file.
+     For Copilot, the joy-only marker would be ``.github/agents/`` (joy-managed) or
+     the joy-block in ``copilot-instructions.md``.
+  2. Reset: enumerate the joy-managed paths explicitly per tool. For Claude,
+     Qwen, Vibe that means ``<tool>/skills/joy/``, ``<tool>/agents/joy-*``,
+     the joy-block portion of the instruction file, and the joy-owned keys
+     in ``<tool>/settings.json``. Removing joy must leave the user's other
+     tool state intact.
+
+  ## Tests
+
+  For each affected tool (Claude, Qwen, Copilot for detection; Claude,
+  Qwen, Vibe for reset):
+
+  - Detection: pre-create the shared instruction file with no joy block,
+    run ``joy ai init`` with the tool detected, assert that the joy-block
+    markers, ``<tool>/skills/joy/SKILL.md`` (where applicable), and the AI
+    member in project.yaml are all present.
+  - Reset: create a non-joy file under the tool dir (e.g.
+    ``.claude/my-keybindings.json``, ``.qwen/notes.txt``,
+    ``.vibe/data.json``), run ``joy ai reset --tool <tool> --force``,
+    assert the user file still exists while joy-managed paths are gone.
