@@ -1,0 +1,56 @@
+id: JOY-00D2-C1
+title: Publish prebuilt binaries via cargo-dist
+type: story
+status: new
+priority: medium
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy
+created: 2026-04-13T17:01:04.777282937Z
+updated: 2026-04-13T17:01:04.777282937Z
+description: |-
+  ## Goal
+
+  Ship prebuilt Joy binaries on GitHub releases so users can install via a
+  one-line shell command instead of going through ``cargo install``.
+
+  ## Approach
+
+  Use [cargo-dist](https://axodotdev.github.io/cargo-dist/) (the Rust
+  community's standard for this, also used by ruff, uv, oxc). It generates
+  a GitHub Actions release workflow and shell/PowerShell installer scripts
+  that live next to the release assets on GitHub.
+
+  ### Scope
+
+  1. Add cargo-dist config to ``Cargo.toml`` (workspace metadata).
+  2. Generate the release workflow with ``cargo dist init`` and adjust for
+     repo conventions (PR-based release via ``just release`` recipe, signed
+     tags etc.).
+  3. Build targets: Linux x86_64 + aarch64, macOS x86_64 + aarch64, Windows
+     x86_64.
+  4. Installer artifacts produced per release:
+     - ``joy-installer.sh`` (bash)
+     - ``joy-installer.ps1`` (PowerShell)
+     - Raw tarballs / zips per target triple
+  5. Verify via a prerelease tag that the workflow produces all artifacts
+     and that ``curl -fsSL
+     github.com/joyint/joy/releases/latest/download/joy-installer.sh | sh``
+     actually installs the correct binary.
+  6. Document the new install command in Joy's README and CONTRIBUTING.
+
+  ### Out of scope
+
+  - ``get.joyint.com`` vanity domain (tracked in the website backlog).
+  - Installing docs update on joyint.com (tracked in the website backlog).
+
+  ## Acceptance
+
+  - Tagging a release triggers the workflow.
+  - ``joy-installer.sh`` on the release page installs Joy into
+    ``~/.local/bin`` (or equivalent) on Linux / macOS.
+  - README mentions the new one-liner as primary install method,
+    ``cargo install joy-cli`` retained as alternative.
