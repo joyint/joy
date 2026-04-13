@@ -47,3 +47,7 @@
 2026-04-13T21:52:38.530Z JOY-00D9-D3 comment.added "[x] Same fix as JOT-002C-C8 applied to joy: ci='github', strict warn-comment to never run 'dist generate'." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-13T21:52:38.546Z JOY-00D9-D3 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-13T21:57:40.777Z v0.8.4 release.created [horst.schwarz@joydev.com]
+2026-04-13T22:00:50.989Z JOY-00DA-E1 item.created "cargo-dist host fails when release.yml is hand-patched" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-13T22:00:59.978Z JOY-00DA-E1 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-13T22:00:59.985Z JOY-00DA-E1 comment.added "[x] Added 'allow-dirty = ["ci"]' to dist-workspace.toml. cargo-dist now tolerates the hand-patched 'Create or update GitHub Release' step instead of failing the plan job with 'ci is out of date'." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-13T22:01:00.001Z JOY-00DA-E1 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

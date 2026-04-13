@@ -17,6 +17,12 @@ cargo-dist-version = "0.31.0"
 # cargo-dist's workflow scaffolding intentionally: run 'dist generate',
 # then re-apply the create-or-upload patch (see comment in release.yml).
 ci = "github"
+# Tell cargo-dist not to fail when release.yml differs from what
+# 'dist generate' would emit. We deliberately keep a hand-patched
+# 'Create or update GitHub Release' step (create-or-upload semantics)
+# instead of the auto-generated 'gh release create' that conflicts with
+# joy's own forge-release step. See release.yml comment block.
+allow-dirty = ["ci"]
 # Installers we still want cargo-dist to produce as build artifacts (the
 # hand-written workflow uploads them).
 installers = ["shell", "powershell"]
