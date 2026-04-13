@@ -1,0 +1,37 @@
+id: JOY-00D0-CC
+title: joy ai init drops earlier AI member when configuring multiple
+type: bug
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy
+created: 2026-04-13T06:03:26.414055488Z
+updated: 2026-04-13T06:09:21.991912035Z
+description: |-
+  ## Symptom
+
+  When running ``joy ai init`` in a project where multiple AI tools (e.g. Claude Code and GitHub Copilot) are detected and confirmed for setup, only one of the AI members ends up registered in ``.joy/project.yaml``. The other member entry is missing even though the corresponding tool config (CLAUDE.md, copilot-instructions.md) was written.
+
+  Reported via Horst on 2026-04-13: after a single ``joy ai init`` run, ``joy project member`` only listed ``ai:copilot@joy``; ``ai:claude@joy`` was missing and had to be added manually.
+
+  ## Suspected cause
+
+  ``setup_new_tools`` loads project.yaml once at the start of the loop, accumulates members in memory, and writes once at the end. The merge logic in ``write_yaml_preserve`` may drop entries, or one of the per-tool ``configure_*`` calls may be writing project.yaml underneath us. Needs reproduction first.
+
+  ## Plan
+
+  1. Add a bats test that uses fake ``claude`` and ``gh`` shims on PATH so the detection succeeds, runs ``joy ai init`` once, and asserts both ``ai:claude@joy`` and ``ai:copilot@joy`` are present in project.yaml.
+  2. If the test reproduces the bug, fix the root cause.
+  3. If the test passes, ask the reporter for more detail (was a tool already configured before the run? was ``joy ai update`` involved?).
+comments:
+- author: ai:claude@joy
+  date: 2026-04-13T06:09:21.972142823Z
+  text: |-
+    [x] Reproduced via bats test 'registers member for already-configured tool missing from project.yaml': the bug surfaces when is_tool_configured(root, id) returns true (e.g. .claude/CLAUDE.md exists from a prior joy ai update or a copied repo) but the corresponding ai:<tool>@joy member is not yet in project.yaml. Old setup_new_tools used 'continue' on that branch, so member registration was skipped entirely.
+    [x] Fix: refactored the per-tool loop in setup_new_tools so member registration runs for both branches (newly configured and already configured). The 'should_register' flag is true whenever the tool is in scope; the actual insert still guards on '!project.members.contains_key(...)' so it's idempotent.
+    [x] Tests: 2 new bats tests in tests/integration/ai.bats use fake claude/gh shims to make detect_* succeed, then assert both ai:claude@joy and ai:copilot@joy land in project.yaml. just check passes.

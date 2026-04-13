@@ -168,6 +168,61 @@ load setup
     done
 }
 
+# --- multi-tool member registration (JOY-00D0-CC) ---
+
+@test "joy ai init registers all configured AI members in one run" {
+    setup_human_auth
+
+    # joy ai init detects tools by shelling out to `which`. Fake claude and gh
+    # shims so detect_claude / detect_copilot both succeed in the test env.
+    BIN_DIR="$TEST_DIR/fake-bin"
+    mkdir -p "$BIN_DIR"
+    for cmd in claude gh; do
+        printf '#!/bin/sh\nexit 0\n' > "$BIN_DIR/$cmd"
+        chmod +x "$BIN_DIR/$cmd"
+    done
+    PATH="$BIN_DIR:$PATH"
+
+    # </dev/null makes every prompt read empty:
+    # - doc paths -> accept default
+    # - "Create template?" -> Y (default)
+    # - per-tool "configure?" -> Y (default)
+    joy ai init </dev/null 2>/dev/null || true
+
+    [ -f ".claude/CLAUDE.md" ]
+    [ -f ".github/copilot-instructions.md" ]
+    grep -q "ai:claude@joy" .joy/project.yaml
+    grep -q "ai:copilot@joy" .joy/project.yaml
+}
+
+@test "joy ai init registers member for already-configured tool missing from project.yaml" {
+    setup_human_auth
+
+    # Fake binaries so detection succeeds.
+    BIN_DIR="$TEST_DIR/fake-bin"
+    mkdir -p "$BIN_DIR"
+    for cmd in claude gh; do
+        printf '#!/bin/sh\nexit 0\n' > "$BIN_DIR/$cmd"
+        chmod +x "$BIN_DIR/$cmd"
+    done
+    PATH="$BIN_DIR:$PATH"
+
+    # Pre-create Claude's instruction file as if a previous joy ai update ran
+    # (or the file was copied from another project) -- so is_tool_configured
+    # returns true for claude even though no ai:claude@joy member exists in
+    # project.yaml.
+    mkdir -p .claude
+    echo "# placeholder" > .claude/CLAUDE.md
+    ! grep -q "ai:claude@joy" .joy/project.yaml
+
+    joy ai init </dev/null 2>/dev/null || true
+
+    # Both members should be registered: claude (because the tool is
+    # configured even if it pre-existed) and copilot (newly configured).
+    grep -q "ai:claude@joy" .joy/project.yaml
+    grep -q "ai:copilot@joy" .joy/project.yaml
+}
+
 # --- configurable doc paths ---
 
 @test "joy project get docs.architecture returns default when unset" {
