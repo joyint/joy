@@ -51,3 +51,7 @@
 2026-04-13T22:00:59.978Z JOY-00DA-E1 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-13T22:00:59.985Z JOY-00DA-E1 comment.added "[x] Added 'allow-dirty = ["ci"]' to dist-workspace.toml. cargo-dist now tolerates the hand-patched 'Create or update GitHub Release' step instead of failing the plan job with 'ci is out of date'." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-13T22:01:00.001Z JOY-00DA-E1 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-13T22:02:05.163Z JOY-00DB-C5 item.created "just publish misses cargo's pre-check 'already exists on crates.io index' error" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-13T22:02:14.556Z JOY-00DB-C5 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-13T22:02:14.564Z JOY-00DB-C5 comment.added "[x] Regex extended to match both 'is already uploaded' and 'already exists on crates.io index' variants. Same fix mirrored to jot." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-13T22:02:14.586Z JOY-00DB-C5 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
