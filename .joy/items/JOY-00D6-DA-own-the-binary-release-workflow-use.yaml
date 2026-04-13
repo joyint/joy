@@ -1,0 +1,42 @@
+id: JOY-00D6-DA
+title: Own the binary release workflow, use cargo-dist only as build lib
+type: story
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- plan
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy
+created: 2026-04-13T20:59:10.193782639Z
+updated: 2026-04-13T21:02:30.436680954Z
+description: |-
+  ## Goal
+
+  Stop letting cargo-dist's auto-generated workflow own the release flow.
+  Write a hand-maintained release workflow that uses cargo-dist's 'dist
+  build' as a build subroutine (cross-compile + installer scripts) but
+  controls the upload step ourselves. Result: no conflict with joy's
+  existing forge-release prompt; binaries get uploaded to whichever
+  GitHub release exists (joy-created or new).
+
+  ## Scope
+
+  1. Delete cargo-dist's auto-generated .github/workflows/release.yml.
+  2. Disable CI workflow generation in dist-workspace.toml (so a future
+     'dist generate' does not re-create the file).
+  3. Add hand-written .github/workflows/release.yml: matrix build per
+     target (linux x86_64+aarch64, macos x86_64+aarch64, windows x86_64),
+     plus a global installer-script build, then an upload job that uses
+     'gh release upload --clobber' on an existing release or 'gh release
+     create' if none exists.
+  4. Add 'just release-binaries' recipe for local equivalent.
+  5. joy's release.rs is NOT touched. The '[y/N]' forge-release prompt
+     stays exactly as it is.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-13T21:02:30.418343827Z
+  text: '[x] cargo-dist''s auto-generated release.yml deleted. [x] Hand-maintained release.yml added: matrix build per target (linux x86_64+aarch64, macos x86_64+aarch64, windows x86_64), dist build as subroutine for both local and global (installer-script) artifacts, gh release upload --clobber on existing release or gh release create if missing. [x] just release-binaries recipe for local equivalent. [x] dist-workspace.toml: ci=[] disables dist generate''s CI output, comment warns against running dist init/generate. Joy''s release.rs and the [y/N] forge-release prompt are untouched.'
