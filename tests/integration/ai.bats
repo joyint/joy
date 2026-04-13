@@ -168,6 +168,84 @@ load setup
     done
 }
 
+# --- configurable doc paths ---
+
+@test "joy project get docs.architecture returns default when unset" {
+    joy init --name "Test Project"
+    run joy project get docs.architecture
+    [ "$status" -eq 0 ]
+    [ "$output" = "docs/dev/architecture/README.md" ]
+}
+
+@test "joy project get docs.vision returns default when unset" {
+    joy init --name "Test Project"
+    run joy project get docs.vision
+    [ "$status" -eq 0 ]
+    [ "$output" = "docs/dev/vision/README.md" ]
+}
+
+@test "joy project get docs.contributing returns default when unset" {
+    joy init --name "Test Project"
+    run joy project get docs.contributing
+    [ "$status" -eq 0 ]
+    [ "$output" = "CONTRIBUTING.md" ]
+}
+
+@test "joy project set docs.architecture persists custom path" {
+    setup_human_auth
+    joy project set docs.architecture ARCHITECTURE.md
+    run joy project get docs.architecture
+    [ "$status" -eq 0 ]
+    [ "$output" = "ARCHITECTURE.md" ]
+    grep -q "architecture: ARCHITECTURE.md" .joy/project.yaml
+}
+
+@test "joy project set docs.architecture default removes the override" {
+    setup_human_auth
+    joy project set docs.architecture ARCHITECTURE.md
+    grep -q "architecture: ARCHITECTURE.md" .joy/project.yaml
+    joy project set docs.architecture default
+    ! grep -q "architecture:" .joy/project.yaml
+    run joy project get docs.architecture
+    [ "$output" = "docs/dev/architecture/README.md" ]
+}
+
+@test "joy ai init --architecture persists custom path without prompt" {
+    joy init --name "Test Project"
+    joy ai init --architecture docs/arch.md \
+                --vision docs/vision.md \
+                --contributing CONTRIBUTING.md \
+                </dev/null 2>/dev/null || true
+    run joy project get docs.architecture
+    [ "$output" = "docs/arch.md" ]
+    run joy project get docs.vision
+    [ "$output" = "docs/vision.md" ]
+    # CONTRIBUTING.md is the default -- not stored as override
+    ! grep -q "contributing: CONTRIBUTING.md" .joy/project.yaml
+}
+
+@test "joy ai init creates template at the configured path" {
+    joy init --name "Test Project"
+    # </dev/null makes interactive prompts read empty (= accept defaults / Y),
+    # so missing template files get created at the flag-supplied paths.
+    joy ai init --architecture custom/ARCH.md \
+                --vision custom/VISION.md \
+                --contributing custom/CONTRIB.md \
+                </dev/null 2>/dev/null || true
+    [ -f "custom/ARCH.md" ]
+    [ -f "custom/VISION.md" ]
+    [ -f "custom/CONTRIB.md" ]
+}
+
+@test "joy ai init does not write docs block when only defaults are accepted" {
+    joy init --name "Test Project"
+    # </dev/null: empty input accepts default paths and (Y)es to template
+    # creation. None of the chosen paths differ from defaults, so no docs
+    # block should be written.
+    joy ai init </dev/null 2>/dev/null || true
+    ! grep -q "^docs:" .joy/project.yaml
+}
+
 # --- JOY_SESSION in tool settings ---
 
 @test "joy ai init writes JOY_SESSION to tool settings" {

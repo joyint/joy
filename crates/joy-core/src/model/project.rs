@@ -20,9 +20,53 @@ pub struct Project {
     pub language: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub forge: Option<String>,
+    #[serde(default, skip_serializing_if = "Docs::is_empty")]
+    pub docs: Docs,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub members: BTreeMap<String, Member>,
     pub created: DateTime<Utc>,
+}
+
+/// Configurable paths to the project's reference documentation, relative to
+/// the project root. Used by `joy ai init` to support existing repos with
+/// non-default doc layouts and read by AI tools via `joy project get docs.<key>`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Docs {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub architecture: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vision: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contributing: Option<String>,
+}
+
+impl Docs {
+    pub const DEFAULT_ARCHITECTURE: &'static str = "docs/dev/architecture/README.md";
+    pub const DEFAULT_VISION: &'static str = "docs/dev/vision/README.md";
+    pub const DEFAULT_CONTRIBUTING: &'static str = "CONTRIBUTING.md";
+
+    pub fn is_empty(&self) -> bool {
+        self.architecture.is_none() && self.vision.is_none() && self.contributing.is_none()
+    }
+
+    /// Configured architecture path or the default if unset.
+    pub fn architecture_or_default(&self) -> &str {
+        self.architecture
+            .as_deref()
+            .unwrap_or(Self::DEFAULT_ARCHITECTURE)
+    }
+
+    /// Configured vision path or the default if unset.
+    pub fn vision_or_default(&self) -> &str {
+        self.vision.as_deref().unwrap_or(Self::DEFAULT_VISION)
+    }
+
+    /// Configured contributing path or the default if unset.
+    pub fn contributing_or_default(&self) -> &str {
+        self.contributing
+            .as_deref()
+            .unwrap_or(Self::DEFAULT_CONTRIBUTING)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -234,6 +278,7 @@ impl Project {
             description: None,
             language: default_language(),
             forge: None,
+            docs: Docs::default(),
             members: BTreeMap::new(),
             created: Utc::now(),
         }
@@ -273,6 +318,70 @@ mod tests {
         let yaml = serde_yaml_ng::to_string(&project).unwrap();
         let parsed: Project = serde_yaml_ng::from_str(&yaml).unwrap();
         assert_eq!(project, parsed);
+    }
+
+    // -----------------------------------------------------------------------
+    // Docs tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn docs_defaults_when_unset() {
+        let docs = Docs::default();
+        assert_eq!(docs.architecture_or_default(), Docs::DEFAULT_ARCHITECTURE);
+        assert_eq!(docs.vision_or_default(), Docs::DEFAULT_VISION);
+        assert_eq!(docs.contributing_or_default(), Docs::DEFAULT_CONTRIBUTING);
+    }
+
+    #[test]
+    fn docs_returns_configured_value() {
+        let docs = Docs {
+            architecture: Some("ARCHITECTURE.md".into()),
+            vision: Some("docs/product/vision.md".into()),
+            contributing: None,
+        };
+        assert_eq!(docs.architecture_or_default(), "ARCHITECTURE.md");
+        assert_eq!(docs.vision_or_default(), "docs/product/vision.md");
+        assert_eq!(docs.contributing_or_default(), Docs::DEFAULT_CONTRIBUTING);
+    }
+
+    #[test]
+    fn docs_omitted_from_yaml_when_empty() {
+        let project = Project::new("X".into(), None);
+        let yaml = serde_yaml_ng::to_string(&project).unwrap();
+        assert!(
+            !yaml.contains("docs:"),
+            "empty docs should be skipped, got: {yaml}"
+        );
+    }
+
+    #[test]
+    fn docs_present_in_yaml_when_set() {
+        let mut project = Project::new("X".into(), None);
+        project.docs.architecture = Some("ARCHITECTURE.md".into());
+        let yaml = serde_yaml_ng::to_string(&project).unwrap();
+        assert!(yaml.contains("docs:"), "docs block expected: {yaml}");
+        assert!(yaml.contains("architecture: ARCHITECTURE.md"));
+        assert!(!yaml.contains("vision:"), "unset fields should be skipped");
+    }
+
+    #[test]
+    fn docs_yaml_roundtrip_with_overrides() {
+        let yaml = r#"
+name: Existing
+language: en
+docs:
+  architecture: ARCHITECTURE.md
+  contributing: docs/CONTRIBUTING.md
+created: 2026-01-01T00:00:00Z
+"#;
+        let parsed: Project = serde_yaml_ng::from_str(yaml).unwrap();
+        assert_eq!(parsed.docs.architecture.as_deref(), Some("ARCHITECTURE.md"));
+        assert_eq!(parsed.docs.vision, None);
+        assert_eq!(
+            parsed.docs.contributing.as_deref(),
+            Some("docs/CONTRIBUTING.md")
+        );
+        assert_eq!(parsed.docs.vision_or_default(), Docs::DEFAULT_VISION);
     }
 
     #[test]

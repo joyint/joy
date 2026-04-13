@@ -24,14 +24,13 @@ Before doing anything:
 
 ## First session check
 
-After confirming the project exists, check if the key documents have real content:
+After confirming the project exists, look up the configured doc paths and check their content:
 
-1. Read `docs/dev/vision/` -- if it only contains HTML comments (`<!-- ... -->`) or template headings without content, it needs to be filled in
-2. Read `docs/dev/architecture/` -- same check
-3. Read `CONTRIBUTING.md` -- same check
+1. Run `joy project get docs.vision`, `joy project get docs.architecture`, and `joy project get docs.contributing` to get each path.
+2. Read each file. If it does not exist, or only contains HTML comments (`<!-- ... -->`) or template headings without content, it needs to be filled in.
 
-If any document is empty or template-only, tell the user:
-"I noticed your [Vision/Architecture/Contributing] document is still a template. Want me to help fill it in? I'll ask you a few questions and write the answers into the document."
+If any document is missing or template-only, tell the user:
+"I noticed your [Vision/Architecture/Contributing] document at <path> is still a template. Want me to help fill it in? I'll ask you a few questions and write the answers into the document."
 
 If the user agrees, work through the setup checklists one question at a time.
 
