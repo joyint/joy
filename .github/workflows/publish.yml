@@ -1,0 +1,27 @@
+# Publish workspace crates to crates.io on a version tag push.
+# Thin wrapper around `just publish` -- the recipe owns the logic.
+# See ADR-032 in the umbrella for the local-first release paradigm.
+
+name: Publish to crates.io
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: extractions/setup-just@v3
+
+      - name: Publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: just publish

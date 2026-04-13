@@ -19,3 +19,7 @@
 2026-04-13T19:17:12.720Z JOY-00D3-68 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-13T19:17:12.730Z JOY-00D3-68 comment.added "[x] just publish recipe added; idempotent (skips already-published versions); env-driven token; smoke-tested locally." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-13T19:17:12.750Z JOY-00D3-68 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-13T19:32:46.358Z JOY-00D4-CC item.created "Add GitHub Actions wrapper that runs just publish on tag push" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-13T19:32:51.485Z JOY-00D4-CC item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-13T19:32:51.499Z JOY-00D4-CC comment.added "[x] .github/workflows/publish.yml added; triggers on tag push, runs just publish with CARGO_REGISTRY_TOKEN from repo secret. Secret already configured (gh secret set CARGO_REGISTRY_TOKEN --repo joyint/joy)." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-13T19:32:51.519Z JOY-00D4-CC item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
