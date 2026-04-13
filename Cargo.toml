@@ -16,3 +16,8 @@ anyhow = "1.0"
 clap = { version = "4.5", features = ["derive"] }
 chrono = { version = "0.4", features = ["serde"] }
 minijinja = "2.18"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"

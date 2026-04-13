@@ -6,8 +6,21 @@ Joy is a fast, file-based, AI-powered project management CLI for developers who 
 
 ## Quick Start
 
+Install the prebuilt binary (Linux, macOS, Windows):
+
+```sh
+curl -fsSL get.joyint.com/joy | sh
+```
+
+Or install from source via cargo:
+
 ```sh
 cargo install joy-cli
+```
+
+Then:
+
+```sh
 cd my-project && joy init
 
 joy add story "User login" --priority high
