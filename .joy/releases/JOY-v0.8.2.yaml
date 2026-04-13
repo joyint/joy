@@ -1,0 +1,21 @@
+version: v0.8.2
+date: 2026-04-13
+previous: v0.8.1
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 21
+  items: 5
+items:
+  stories:
+  - id: JOY-00CF-5E
+    title: Support existing repos in joy ai init
+  - id: JOY-00D2-C1
+    title: Publish prebuilt binaries via cargo-dist
+  tasks:
+  - id: JOY-00D3-68
+    title: Add just publish recipe for crates.io
+  - id: JOY-00D4-CC
+    title: Add GitHub Actions wrapper that runs just publish on tag push
+  bugs:
+  - id: JOY-00D0-CC
+    title: joy ai init drops earlier AI member when configuring multiple

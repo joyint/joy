@@ -24,3 +24,4 @@
 2026-04-13T19:32:51.499Z JOY-00D4-CC comment.added "[x] .github/workflows/publish.yml added; triggers on tag push, runs just publish with CARGO_REGISTRY_TOKEN from repo secret. Secret already configured (gh secret set CARGO_REGISTRY_TOKEN --repo joyint/joy)." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-13T19:32:51.519Z JOY-00D4-CC item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-13T20:06:33.559Z release guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-04-13T20:08:55.272Z v0.8.2 release.created [horst.schwarz@joydev.com]
