@@ -1,0 +1,18 @@
+id: JOY-00D4-CC
+title: Add GitHub Actions wrapper that runs just publish on tag push
+type: task
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 1
+created_by: ai:claude@joy
+created: 2026-04-13T19:32:46.356139729Z
+updated: 2026-04-13T19:32:51.516296317Z
+description: Per ADR-032, CI is a thin wrapper around the just publish recipe. Adds .github/workflows/publish.yml that triggers on v*.*.* tag pushes, sets up Rust + just, and runs 'just publish' with CARGO_REGISTRY_TOKEN injected from the repo secret. Logic stays in the recipe; switching CI venues later means swapping this one file.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-13T19:32:51.494643280Z
+  text: '[x] .github/workflows/publish.yml added; triggers on tag push, runs just publish with CARGO_REGISTRY_TOKEN from repo secret. Secret already configured (gh secret set CARGO_REGISTRY_TOKEN --repo joyint/joy).'
