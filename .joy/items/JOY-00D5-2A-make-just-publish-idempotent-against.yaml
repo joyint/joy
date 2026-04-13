@@ -1,0 +1,18 @@
+id: JOY-00D5-2A
+title: Make just publish idempotent against duplicate publishes
+type: task
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 1
+created_by: ai:claude@joy
+created: 2026-04-13T20:14:01.134537838Z
+updated: 2026-04-13T20:14:13.188412664Z
+description: 'When local ''just release-all'' publishes and the same tag triggers GH Actions publish.yml, the second run hits ''crate version is already uploaded'' and the workflow goes red. Two fixes: (1) drop --token from cargo publish (deprecated, use env CARGO_REGISTRY_TOKEN). (2) Capture cargo publish output and treat ''is already uploaded'' as success since cargo search lags the registry index by minutes.'
+comments:
+- author: ai:claude@joy
+  date: 2026-04-13T20:14:13.172549393Z
+  text: '[x] Dropped deprecated --token flag (cargo reads CARGO_REGISTRY_TOKEN from env automatically). [x] Wrapped cargo publish: capture output, treat ''is already uploaded'' as success, propagate any other failure. Now safe to run from local AND CI on the same tag.'
