@@ -1,19 +1,23 @@
 [workspace]
 members = ["cargo:."]
 
-# Config for 'dist'
+# cargo-dist is used here as a build library only (cross-compile targets
+# and installer-script generation). The release workflow itself is
+# hand-maintained in .github/workflows/release.yml so that it does not
+# conflict with joy's own forge-release step. Do NOT run 'dist init' or
+# 'dist generate' against this repo -- the resulting auto-generated
+# release.yml would clobber our hand-maintained version.
 [dist]
-# The preferred dist version to use in CI (Cargo.toml SemVer syntax)
 cargo-dist-version = "0.31.0"
-# CI backends to support
-ci = "github"
-# The installers to generate for each app
+# Empty list disables CI workflow generation so 'dist generate' stays a
+# no-op for CI even if it is ever invoked.
+ci = []
+# Installers we still want cargo-dist to produce as build artifacts (the
+# hand-written workflow uploads them).
 installers = ["shell", "powershell"]
-# Where user-run installers drop the binary (Linux/macOS). Inside PATH on
-# most Linux distributions; installer script warns the user and offers to
-# add it if missing.
+# Where the installer script drops the binary (Linux/macOS). Inside PATH
+# on most distributions; the script warns the user and offers to add it
+# if missing.
 install-path = "~/.local/bin"
-# Target platforms to build apps for (Rust target-triple syntax)
+# Target platforms to build for (Rust target-triple syntax).
 targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
-# Where to host releases
-hosting = "github"
