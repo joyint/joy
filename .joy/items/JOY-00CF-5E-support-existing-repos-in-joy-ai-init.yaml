@@ -1,7 +1,7 @@
 id: JOY-00CF-5E
 title: Support existing repos in joy ai init
 type: story
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -12,7 +12,7 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy
 created: 2026-04-13T04:49:37.027470482Z
-updated: 2026-04-13T05:25:23.201283223Z
+updated: 2026-04-13T05:40:19.141802676Z
 description: |-
   ## Problem
 
