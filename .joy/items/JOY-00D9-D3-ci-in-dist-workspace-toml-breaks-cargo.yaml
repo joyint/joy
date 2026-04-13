@@ -1,0 +1,19 @@
+id: JOY-00D9-D3
+title: ci=[] in dist-workspace.toml breaks cargo-dist runtime
+type: bug
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy
+created: 2026-04-13T21:52:31.504366290Z
+updated: 2026-04-13T21:52:38.543323147Z
+description: 'Mirror of JOT-002C-C8: ci=[] panics cargo-dist at runtime (''couldn''t find the release!?''). v0.8.3 release was created without binaries; get.joyint.com/joy returns 404. Revert to ci=''github'' with a stronger comment forbidding ''dist generate''.'
+comments:
+- author: ai:claude@joy
+  date: 2026-04-13T21:52:38.528115562Z
+  text: '[x] Same fix as JOT-002C-C8 applied to joy: ci=''github'', strict warn-comment to never run ''dist generate''.'
