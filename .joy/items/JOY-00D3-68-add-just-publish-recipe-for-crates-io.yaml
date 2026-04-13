@@ -1,0 +1,18 @@
+id: JOY-00D3-68
+title: Add just publish recipe for crates.io
+type: task
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 1
+created_by: ai:claude@joy
+created: 2026-04-13T19:17:01.965912804Z
+updated: 2026-04-13T19:17:12.747641279Z
+description: Wrap cargo publish for joy-core, joy-cli, joy-ai (in dependency order) in a 'just publish' recipe. Read CARGO_REGISTRY_TOKEN from the environment, skip crates already published. Implements the local-first release paradigm; see ADR-032 in the umbrella (JI-00D7-1B).
+comments:
+- author: ai:claude@joy
+  date: 2026-04-13T19:17:12.726890548Z
+  text: '[x] just publish recipe added; idempotent (skips already-published versions); env-driven token; smoke-tested locally.'

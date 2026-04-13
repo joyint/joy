@@ -173,3 +173,38 @@ release bump="patch":
     fi
     just auto-commit
     joy release create "{{bump}}" --full
+
+# Reads CARGO_REGISTRY_TOKEN from the environment (umbrella's `.env` is loaded
+# automatically by the umbrella justfile; CI sets it from its secret store).
+# Skips a crate when the current version is already published.
+# See ADR-032 for the local-first release paradigm.
+# Publish workspace crates (joy-core, joy-cli, joy-ai) to crates.io
+publish:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -z "${CARGO_REGISTRY_TOKEN:-}" ]; then
+        echo "Error: CARGO_REGISTRY_TOKEN is not set."
+        echo "  - Local: add it to the umbrella's .env (see .env.example)."
+        echo "  - CI: export it from the runner's secret store."
+        exit 1
+    fi
+    # Order matters: dependents after dependencies.
+    crates=(joy-core joy-cli joy-ai)
+    for crate in "${crates[@]}"; do
+        version=$(cargo pkgid --quiet -p "$crate" 2>/dev/null | sed 's/.*[#@]\(.*\)/\1/')
+        if [ -z "$version" ]; then
+            echo "Warning: could not resolve version for $crate, skipping."
+            continue
+        fi
+        # Idempotency: skip if this exact version is already on crates.io.
+        if cargo search "$crate" --limit 1 2>/dev/null | grep -qE "^$crate = \"$version\""; then
+            echo "$crate $version already on crates.io, skipping."
+            continue
+        fi
+        echo "Publishing $crate $version..."
+        cargo publish -p "$crate" --token "$CARGO_REGISTRY_TOKEN"
+        # Brief wait so the next crate (which may depend on this one) sees
+        # the new version in the registry index.
+        sleep 5
+    done
+    echo "Publish complete."
