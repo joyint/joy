@@ -1,0 +1,18 @@
+id: JOY-00D8-49
+title: Replace hand-rolled release.yml with patched cargo-dist output
+type: task
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 1
+created_by: ai:claude@joy
+created: 2026-04-13T21:26:49.015854474Z
+updated: 2026-04-13T21:27:04.705340937Z
+description: 'JOY-00D6-DA tried to write release.yml from scratch with cargo-dist as a build-only library. The hand-rolled workflow missed three non-trivial pieces cargo-dist''s auto-generated workflow handles (release context for ''dist build'', cross-compile dependency install per target, current macOS runner choice). Test tag v0.8.3-test1 made all three fail. Correct approach: keep cargo-dist''s auto-generated workflow as the foundation and patch only the single conflicting step (''Create GitHub Release'' -> create-or-upload). Also drop the matching just release-binaries recipe since ''dist build'' alone has the same release-context problem locally.'
+comments:
+- author: ai:claude@joy
+  date: 2026-04-13T21:27:04.689759301Z
+  text: '[x] Restored cargo-dist''s auto-generated release.yml. [x] Patched only the ''Create GitHub Release'' step into ''Create or update GitHub Release'' with create-or-upload behaviour (gh release upload --clobber if release exists, else gh release create). Block comment in release.yml warns against running dist generate which would clobber the patch. [x] dist-workspace.toml ci=[] keeps default state safe; comment documents how to refresh: flip ci to ''github'', dist generate, flip back, re-apply patch. [x] Removed broken ''just release-binaries'' recipe (same release-context problem locally as the failed test exposed).'
