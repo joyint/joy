@@ -1,0 +1,51 @@
+id: JOY-00CF-5E
+title: Support existing repos in joy ai init
+type: story
+status: in-progress
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy
+created: 2026-04-13T04:49:37.027470482Z
+updated: 2026-04-13T05:25:23.201283223Z
+description: |-
+  ## Problem
+
+  `joy ai init` creates docs at hard-coded paths (`docs/dev/architecture/README.md`, `docs/dev/vision/README.md`, `CONTRIBUTING.md`). When Joy is initialized in an existing repo, this collides with established doc structures (e.g. `ARCHITECTURE.md` in root, `docs/architecture/`, etc.) and forces an invasive layout change.
+
+  ## Solution
+
+  Make doc paths configurable in `project.yaml`. AI instructions reference them generically (`docs.architecture`, `docs.vision`, `docs.contributing`) so no template sync is needed when paths change - the instructions stay the same and Joy resolves the paths at runtime via `joy project`.
+
+  ## joy ai init flow
+
+  1. Scan known candidates (`ARCHITECTURE.md`, `docs/architecture/**`, `docs/dev/architecture/**`, `CONTRIBUTING.md` in root, etc.) and offer matches as the suggested path.
+  2. If nothing found, propose the current default path; allow custom input.
+  3. If the entered path does not exist, optionally create a template stub.
+
+  ## Flag-based mode
+
+  Support `joy ai init --architecture <path> --vision <path> --contributing <path>` so users get native shell completion (clap can generate completions natively). Interactive mode stays simple (default + manual input + existence check) without a custom readline implementation.
+
+  ## Tradeoffs
+
+  - One level of indirection more (instructions read paths from project.yaml instead of hard-coding them), but no template-sync problem and no collision with existing docs.
+  - Pure interactive users tab less, but flag-based mode covers the power-user/scripted case where completion matters most.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-13T05:14:05.633328884Z
+  text: 'Plan: 1) Add Docs struct to Project schema with optional architecture/vision/contributing path overrides. 2) Extend joy project get/set with docs.{architecture,vision,contributing} keys, returning configured value or default. 3) Rewrite check_docs in joy ai init to scan candidate paths (ARCHITECTURE.md, docs/architecture.md, docs/architecture/README.md, docs/dev/architecture/README.md, etc.), suggest first match, allow custom input, persist choice in project.yaml. 4) Add InitArgs with --architecture/--vision/--contributing flags (clap ValueHint::FilePath for shell completion). 5) Update instructions.md and SKILL.md so AI reads paths via joy project get docs.<key> and offers to fill missing/template-only docs. 6) Tests for candidate scan, default resolution, flag mode.'
+- author: ai:claude@joy
+  date: 2026-04-13T05:25:23.201282851Z
+  text: |-
+    [x] Added Docs struct in joy-core (architecture/vision/contributing optional fields, _or_default helpers, DEFAULT_* constants).
+    [x] Extended joy project get/set with docs.architecture, docs.vision, docs.contributing keys (get returns configured value or default; set accepts empty/'none'/'default' to reset).
+    [x] Rewrote check_docs in joy ai init: scans candidates per spec (e.g. for architecture: docs/dev/architecture/README.md, docs/architecture/README.md, docs/architecture.md, ARCHITECTURE.md), prompts with suggestion, persists non-default choice to project.yaml.
+    [x] Added --architecture/--vision/--contributing flags on joy ai init with clap ValueHint::FilePath for shell completion.
+    [x] Updated templates/ai/instructions.md and templates/ai/skills/joy/SKILL.md to read paths via 'joy project get docs.<key>' and offer to fill in missing or template-only docs.
+    [x] Tests: 5 new Docs tests in joy-core (defaults, configured value, YAML round-trip, skip-when-empty), 7 new ai tests in joy-cli (resolve_doc_path precedence, suggestion scan order). All 243 tests pass; clippy clean.

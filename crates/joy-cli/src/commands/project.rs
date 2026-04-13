@@ -13,7 +13,16 @@ use joy_core::store;
 
 use crate::color;
 
-const PROJECT_KEYS: &[&str] = &["name", "acronym", "description", "language", "created"];
+const PROJECT_KEYS: &[&str] = &[
+    "name",
+    "acronym",
+    "description",
+    "language",
+    "created",
+    "docs.architecture",
+    "docs.vision",
+    "docs.contributing",
+];
 
 #[derive(Args)]
 pub struct ProjectArgs {
@@ -111,6 +120,14 @@ pub fn run(args: ProjectArgs) -> Result<()> {
             ctx.enforce(&Action::ManageProject, "project")?;
             set_value(&mut project, &a.key, &a.value)?;
             store::write_yaml_preserve(&project_path, &project)?;
+            // write_yaml_preserve re-adds top-level keys present in the
+            // existing file but missing from the serialized struct (so unknown
+            // keys are kept). When a `docs.*` key is unset the docs block in
+            // the struct may serialize to nothing, but a stale `docs:` block
+            // from the old file would be preserved -- prune it explicitly.
+            if a.key.starts_with("docs.") {
+                prune_docs_yaml(&project_path, &project.docs)?;
+            }
             let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
             joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
             println!("{} = {}", a.key, a.value);
@@ -171,6 +188,9 @@ fn get_value(project: &Project, key: &str) -> Result<()> {
         },
         "language" => println!("{}", project.language),
         "created" => println!("{}", project.created.format("%Y-%m-%d %H:%M")),
+        "docs.architecture" => println!("{}", project.docs.architecture_or_default()),
+        "docs.vision" => println!("{}", project.docs.vision_or_default()),
+        "docs.contributing" => println!("{}", project.docs.contributing_or_default()),
         _ => anyhow::bail!(
             "unknown key: {key}\nknown keys: {}",
             PROJECT_KEYS.join(", ")
@@ -190,6 +210,9 @@ fn set_value(project: &mut Project, key: &str, value: &str) -> Result<()> {
             };
         }
         "language" => project.language = value.to_string(),
+        "docs.architecture" => project.docs.architecture = normalize_docs_value(value),
+        "docs.vision" => project.docs.vision = normalize_docs_value(value),
+        "docs.contributing" => project.docs.contributing = normalize_docs_value(value),
         "acronym" | "created" => {
             anyhow::bail!("'{key}' is read-only");
         }
@@ -198,6 +221,45 @@ fn set_value(project: &mut Project, key: &str, value: &str) -> Result<()> {
             PROJECT_KEYS.join(", ")
         ),
     }
+    Ok(())
+}
+
+/// Empty / "none" / "default" reset a docs path to its built-in default.
+fn normalize_docs_value(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty()
+        || trimmed.eq_ignore_ascii_case("none")
+        || trimmed.eq_ignore_ascii_case("default")
+    {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+/// Rewrite the project YAML so the `docs:` block exactly reflects the desired
+/// state. Removes the block entirely when no overrides are set; otherwise
+/// replaces it with only the configured fields. Needed because
+/// `write_yaml_preserve` keeps unknown top-level keys (which would otherwise
+/// re-introduce a stale `docs:` block when an override is cleared).
+fn prune_docs_yaml(path: &std::path::Path, docs: &joy_core::model::Docs) -> Result<()> {
+    use serde_yaml_ng::Value;
+
+    let raw = std::fs::read_to_string(path)?;
+    let mut value: Value = serde_yaml_ng::from_str(&raw)?;
+    let map = match value.as_mapping_mut() {
+        Some(m) => m,
+        None => return Ok(()),
+    };
+    let docs_key = Value::String("docs".to_string());
+    if docs.is_empty() {
+        map.remove(&docs_key);
+    } else {
+        let docs_value = serde_yaml_ng::to_value(docs)?;
+        map.insert(docs_key, docs_value);
+    }
+    let yaml = serde_yaml_ng::to_string(&value)?;
+    std::fs::write(path, yaml)?;
     Ok(())
 }
 

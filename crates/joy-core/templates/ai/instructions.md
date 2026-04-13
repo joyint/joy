@@ -97,7 +97,7 @@ Effort scale (1-7): 1=trivial, 2=small, 3=medium, 4=large, 5=major, 6=heavy, 7=m
 
 ## Project context
 
-On first session, read `docs/dev/vision/`, `docs/dev/architecture/`, and `CONTRIBUTING.md`. If any are missing or template-only, offer to fill them in. These documents are the source of truth.
+On first session, read your project's docs - run `joy project get docs.architecture`, `joy project get docs.vision`, and `joy project get docs.contributing` to get the paths. If a file does not exist or is template-only, offer to fill it in. These documents are the source of truth.
 
 ## Commit messages
 

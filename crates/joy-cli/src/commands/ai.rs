@@ -36,11 +36,26 @@ pub struct AiArgs {
 #[derive(clap::Subcommand)]
 enum AiCommand {
     /// Initialize AI tool integration for new tools
-    Init,
+    Init(InitArgs),
     /// Update AI tool files to current Joy version
     Update(UpdateArgs),
     /// Remove AI tool configurations from this project
     Reset(ResetArgs),
+}
+
+#[derive(clap::Args, Default)]
+struct InitArgs {
+    /// Path to the architecture doc (e.g. docs/architecture/README.md). Skips the prompt.
+    #[arg(long, value_hint = clap::ValueHint::FilePath)]
+    architecture: Option<String>,
+
+    /// Path to the vision doc (e.g. docs/vision/README.md). Skips the prompt.
+    #[arg(long, value_hint = clap::ValueHint::FilePath)]
+    vision: Option<String>,
+
+    /// Path to the contributing doc (e.g. CONTRIBUTING.md). Skips the prompt.
+    #[arg(long, value_hint = clap::ValueHint::FilePath)]
+    contributing: Option<String>,
 }
 
 #[derive(clap::Args)]
@@ -63,13 +78,13 @@ struct ResetArgs {
 
 pub fn run(args: AiArgs) -> anyhow::Result<()> {
     match args.command {
-        AiCommand::Init => ai_init(),
+        AiCommand::Init(a) => ai_init(a),
         AiCommand::Update(a) => update(a),
         AiCommand::Reset(a) => reset(a),
     }
 }
 
-fn ai_init() -> anyhow::Result<()> {
+fn ai_init(args: InitArgs) -> anyhow::Result<()> {
     let root = joy_core::store::find_project_root(&std::env::current_dir()?)
         .ok_or_else(|| anyhow::anyhow!("No Joy project found (run `joy init` first)"))?;
 
@@ -79,7 +94,7 @@ fn ai_init() -> anyhow::Result<()> {
     // Ensure project.defaults.yaml exists
     joy_core::embedded::sync_files(&root, joy_core::init::PROJECT_FILES)?;
 
-    check_docs(&root)?;
+    check_docs(&root, &args)?;
     let configured_tools = setup_new_tools(&root)?;
     update_gitignore(&root, &configured_tools)?;
     check_nested_projects(&root)?;
@@ -295,38 +310,115 @@ fn joy_block_matches(path: &Path, expected_block: &str) -> bool {
     content.contains(&expected_wrapped)
 }
 
-fn check_docs(root: &Path) -> anyhow::Result<()> {
+/// One configurable doc the project tracks for AI tools.
+struct DocSpec {
+    /// Logical key under `project.docs.*` (architecture / vision / contributing).
+    key: &'static str,
+    /// Human label shown in the prompt.
+    label: &'static str,
+    /// Why this doc helps the AI (shown when offering a template stub).
+    purpose: &'static str,
+    /// Built-in default path used when nothing is configured / scanned.
+    default_path: &'static str,
+    /// Candidate paths to scan in priority order. Used to suggest existing docs
+    /// in repos that already follow a different convention.
+    candidates: &'static [&'static str],
+    /// Embedded template content to seed a missing file.
+    template: &'static str,
+}
+
+const DOC_SPECS: &[DocSpec] = &[
+    DocSpec {
+        key: "vision",
+        label: "Vision",
+        purpose: "product goals and design decisions",
+        default_path: joy_core::model::project::Docs::DEFAULT_VISION,
+        candidates: &[
+            "docs/dev/vision/README.md",
+            "docs/vision/README.md",
+            "docs/vision.md",
+            "VISION.md",
+        ],
+        template: VISION_TEMPLATE,
+    },
+    DocSpec {
+        key: "architecture",
+        label: "Architecture",
+        purpose: "technical stack and structure",
+        default_path: joy_core::model::project::Docs::DEFAULT_ARCHITECTURE,
+        candidates: &[
+            "docs/dev/architecture/README.md",
+            "docs/architecture/README.md",
+            "docs/architecture.md",
+            "ARCHITECTURE.md",
+        ],
+        template: ARCHITECTURE_TEMPLATE,
+    },
+    DocSpec {
+        key: "contributing",
+        label: "Contributing",
+        purpose: "coding conventions and commit messages",
+        default_path: joy_core::model::project::Docs::DEFAULT_CONTRIBUTING,
+        candidates: &[
+            "CONTRIBUTING.md",
+            "docs/CONTRIBUTING.md",
+            ".github/CONTRIBUTING.md",
+        ],
+        template: CONTRIBUTING_TEMPLATE,
+    },
+];
+
+fn check_docs(root: &Path, args: &InitArgs) -> anyhow::Result<()> {
+    use joy_core::model::Project;
+
     println!("{}", color::section("Documentation"));
 
-    let docs = [
-        (
-            "docs/dev/vision/README.md",
-            "product goals and design decisions",
-            VISION_TEMPLATE,
-        ),
-        (
-            "docs/dev/architecture/README.md",
-            "technical stack and structure",
-            ARCHITECTURE_TEMPLATE,
-        ),
-        (
-            "CONTRIBUTING.md",
-            "coding conventions and commit messages",
-            CONTRIBUTING_TEMPLATE,
-        ),
-    ];
-
+    let project_path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
+    let mut project: Project = joy_core::store::read_yaml(&project_path)?;
+    let mut project_changed = false;
     let mut all_found = true;
-    for (path, purpose, template) in &docs {
-        let full = root.join(path);
-        if full.is_file() {
-            println!("  {}{}", color::check_mark(), path);
+
+    for spec in DOC_SPECS {
+        let configured = match spec.key {
+            "vision" => project.docs.vision.clone(),
+            "architecture" => project.docs.architecture.clone(),
+            "contributing" => project.docs.contributing.clone(),
+            _ => unreachable!(),
+        };
+        let flag_override = match spec.key {
+            "vision" => args.vision.clone(),
+            "architecture" => args.architecture.clone(),
+            "contributing" => args.contributing.clone(),
+            _ => unreachable!(),
+        };
+
+        let chosen = resolve_doc_path(root, spec, configured.as_deref(), flag_override.as_deref())?;
+
+        // Persist non-default choices so AI tools and future runs see them.
+        let to_store = if chosen == spec.default_path {
+            None
         } else {
-            println!("  {}{}", color::cross_mark(), color::warning(path));
-            let name = path.rsplit('/').next().unwrap_or(path);
+            Some(chosen.clone())
+        };
+        if to_store != configured {
+            match spec.key {
+                "vision" => project.docs.vision = to_store,
+                "architecture" => project.docs.architecture = to_store,
+                "contributing" => project.docs.contributing = to_store,
+                _ => unreachable!(),
+            }
+            project_changed = true;
+        }
+
+        let full = root.join(&chosen);
+        if full.is_file() {
+            println!("  {}{}", color::check_mark(), chosen);
+        } else {
+            println!("  {}{}", color::cross_mark(), color::warning(&chosen));
+            let name = chosen.rsplit('/').next().unwrap_or(&chosen);
             print!(
                 "    {} helps AI understand your {}. Create template? [Y/n] ",
-                name, purpose
+                name, spec.purpose
             );
             std::io::stdout().flush()?;
             let mut input = String::new();
@@ -336,15 +428,19 @@ fn check_docs(root: &Path) -> anyhow::Result<()> {
                 if let Some(parent) = full.parent() {
                     fs::create_dir_all(parent)?;
                 }
-                fs::write(&full, template)?;
+                fs::write(&full, spec.template)?;
                 println!(
                     "    {}Created {} (template -- your AI tool will help fill it in)",
                     color::check_mark(),
-                    path
+                    chosen
                 );
             }
             all_found = false;
         }
+    }
+
+    if project_changed {
+        joy_core::store::write_yaml_preserve(&project_path, &project)?;
     }
 
     if !all_found {
@@ -356,6 +452,51 @@ fn check_docs(root: &Path) -> anyhow::Result<()> {
     println!();
 
     Ok(())
+}
+
+/// Pick a suggestion for a doc path: the first candidate that exists, or the
+/// built-in default if none match. Does no other IO.
+fn suggested_doc_path<'a>(root: &Path, spec: &'a DocSpec) -> &'a str {
+    spec.candidates
+        .iter()
+        .find(|p| root.join(p).is_file())
+        .copied()
+        .unwrap_or(spec.default_path)
+}
+
+/// Decide which path to use for a given doc spec.
+///
+/// Precedence:
+/// 1. Flag value passed to `joy ai init` (non-interactive).
+/// 2. Path already stored in `project.docs` (no prompt unless missing on disk).
+/// 3. Interactive prompt with a suggestion (first existing candidate, else default).
+fn resolve_doc_path(
+    root: &Path,
+    spec: &DocSpec,
+    configured: Option<&str>,
+    flag: Option<&str>,
+) -> anyhow::Result<String> {
+    if let Some(flag_value) = flag {
+        let trimmed = flag_value.trim();
+        if !trimmed.is_empty() {
+            return Ok(trimmed.to_string());
+        }
+    }
+    if let Some(value) = configured {
+        return Ok(value.to_string());
+    }
+
+    let suggestion = suggested_doc_path(root, spec);
+    print!("    {} doc path [{}]: ", spec.label, suggestion);
+    std::io::stdout().flush()?;
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        Ok(suggestion.to_string())
+    } else {
+        Ok(trimmed.to_string())
+    }
 }
 
 fn reset(args: ResetArgs) -> anyhow::Result<()> {
@@ -1145,5 +1286,93 @@ fn is_tool_configured(root: &Path, tool: &str) -> bool {
         "vibe" => root.join(".vibe/skills/joy/SKILL.md").is_file(),
         "copilot" => root.join(".github/copilot-instructions.md").is_file(),
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn arch_spec() -> &'static DocSpec {
+        DOC_SPECS.iter().find(|s| s.key == "architecture").unwrap()
+    }
+
+    #[test]
+    fn flag_overrides_configured_and_scan() {
+        let tmp = tempfile::tempdir().unwrap();
+        let result = resolve_doc_path(
+            tmp.path(),
+            arch_spec(),
+            Some("docs/ignored.md"),
+            Some("docs/from-flag.md"),
+        )
+        .unwrap();
+        assert_eq!(result, "docs/from-flag.md");
+    }
+
+    #[test]
+    fn flag_trimmed_then_used() {
+        let tmp = tempfile::tempdir().unwrap();
+        let result = resolve_doc_path(
+            tmp.path(),
+            arch_spec(),
+            None,
+            Some("  docs/with-spaces.md  "),
+        )
+        .unwrap();
+        assert_eq!(result, "docs/with-spaces.md");
+    }
+
+    #[test]
+    fn configured_short_circuits_prompt() {
+        let tmp = tempfile::tempdir().unwrap();
+        let result =
+            resolve_doc_path(tmp.path(), arch_spec(), Some("ARCHITECTURE.md"), None).unwrap();
+        assert_eq!(result, "ARCHITECTURE.md");
+    }
+
+    #[test]
+    fn empty_flag_falls_back_to_configured() {
+        let tmp = tempfile::tempdir().unwrap();
+        let result = resolve_doc_path(
+            tmp.path(),
+            arch_spec(),
+            Some("ARCHITECTURE.md"),
+            Some("   "),
+        )
+        .unwrap();
+        assert_eq!(result, "ARCHITECTURE.md");
+    }
+
+    #[test]
+    fn suggestion_is_default_when_no_candidate_exists() {
+        let tmp = tempfile::tempdir().unwrap();
+        let suggestion = suggested_doc_path(tmp.path(), arch_spec());
+        assert_eq!(
+            suggestion,
+            joy_core::model::project::Docs::DEFAULT_ARCHITECTURE
+        );
+    }
+
+    #[test]
+    fn suggestion_picks_first_existing_candidate() {
+        let tmp = tempfile::tempdir().unwrap();
+        // ARCHITECTURE.md is later in the candidate list than
+        // docs/architecture/README.md; create only the latter and verify it wins.
+        let dir = tmp.path().join("docs/architecture");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("README.md"), "stub").unwrap();
+        let suggestion = suggested_doc_path(tmp.path(), arch_spec());
+        assert_eq!(suggestion, "docs/architecture/README.md");
+    }
+
+    #[test]
+    fn suggestion_skips_missing_candidates_in_order() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Only the very last candidate (ARCHITECTURE.md in root) exists -- it
+        // should be returned despite earlier candidates being absent.
+        fs::write(tmp.path().join("ARCHITECTURE.md"), "stub").unwrap();
+        let suggestion = suggested_doc_path(tmp.path(), arch_spec());
+        assert_eq!(suggestion, "ARCHITECTURE.md");
     }
 }
