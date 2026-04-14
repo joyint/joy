@@ -49,3 +49,4 @@
 2026-04-14T19:46:12.734Z JOY-00E6-1D item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-14T19:46:12.740Z JOY-00E6-1D comment.added "Fix already committed as 9b2461b (originally tagged no-item due to auth issue). gh release view checked before create; returns existing URL if release already exists." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-14T19:46:12.752Z JOY-00E6-1D item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-14T19:47:56.530Z v0.10.2 release.created [horst.schwarz@joydev.com]

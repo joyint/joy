@@ -1,0 +1,13 @@
+version: v0.10.2
+date: 2026-04-14
+previous: v0.10.1
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 8
+  items: 2
+items:
+  bugs:
+  - id: JOY-00E5-C7
+    title: releases latest_version lexicographic sort puts v0.9.0 above v0.10.0
+  - id: JOY-00E6-1D
+    title: joy release publish fails if forge release already exists
