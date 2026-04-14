@@ -9,3 +9,4 @@
 2026-04-14T17:16:38.047Z JOY-00DD-EB item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-14T17:20:58.196Z JOY-00DD-EB comment.added "Done. configure_vibe now writes .vibe/config.toml via toml_edit: creates the file if missing, inserts [tools.bash] permission = "always" into existing unrelated configs, and leaves an existing permission value untouched. 3 unit tests cover the scenarios." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-14T17:20:58.207Z JOY-00DD-EB item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-14T17:47:23.635Z v0.9.0 release.created [horst.schwarz@joydev.com]

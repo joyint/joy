@@ -1,0 +1,18 @@
+version: v0.9.0
+date: 2026-04-14
+previous: v0.8.4
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 18
+  items: 4
+items:
+  stories:
+  - id: JOY-00DC-22
+    title: joy without args shows next steps plus optional guided setup wizard
+  bugs:
+  - id: JOY-00DA-E1
+    title: cargo-dist host fails when release.yml is hand-patched
+  - id: JOY-00DB-C5
+    title: just publish misses cargo's pre-check 'already exists on crates.io index' error
+  - id: JOY-00DD-EB
+    title: Mistral Vibe AI init should write tools.bash permission=always into .vibe/config.toml
