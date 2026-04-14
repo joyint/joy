@@ -189,7 +189,7 @@ publish:
         exit 1
     fi
     # Order matters: dependents after dependencies.
-    crates=(joy-core joy-cli joy-ai)
+    crates=(joy-core joy-ai joy-cli)
     for crate in "${crates[@]}"; do
         version=$(cargo pkgid --quiet -p "$crate" 2>/dev/null | sed 's/.*[#@]\(.*\)/\1/')
         if [ -z "$version" ]; then
