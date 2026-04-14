@@ -35,3 +35,5 @@
 2026-04-14T19:30:15.769Z JOY-00E4-B6 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-14T19:30:15.775Z JOY-00E4-B6 comment.added "Split just publish into publish-crates (cargo publish only) and publish (publish-crates + joy release publish). CI's publish.yml now calls publish-crates so it doesn't need joy on PATH." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-14T19:30:15.787Z JOY-00E4-B6 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-14T19:38:04.821Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-14T19:38:11.863Z JOY-00E5-8D guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]

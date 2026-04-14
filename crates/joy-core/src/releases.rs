@@ -62,9 +62,23 @@ pub fn load_releases(root: &Path) -> Result<Vec<Release>, JoyError> {
         }
     }
 
-    // Sort by filename descending (newest first)
-    releases.sort_by(|a, b| b.version.cmp(&a.version));
+    // Sort by parsed semver descending (newest first). A lexicographic
+    // compare would put "v0.9.0" above "v0.10.0".
+    releases.sort_by(|a, b| semver_key(&b.version).cmp(&semver_key(&a.version)));
     Ok(releases)
+}
+
+/// Turn a version string like "v0.10.0" or "1.2.3" into a tuple of
+/// integers for numeric ordering. Non-numeric parts sort as 0.
+fn semver_key(v: &str) -> (u64, u64, u64) {
+    let trimmed = v.strip_prefix('v').unwrap_or(v);
+    // Drop pre-release suffixes ("-rc1", "+build") for the primary ordering.
+    let core = trimmed.split(['-', '+']).next().unwrap_or(trimmed);
+    let mut parts = core.split('.').map(|p| p.parse::<u64>().unwrap_or(0));
+    let major = parts.next().unwrap_or(0);
+    let minor = parts.next().unwrap_or(0);
+    let patch = parts.next().unwrap_or(0);
+    (major, minor, patch)
 }
 
 /// Get the latest release version, if any.
