@@ -31,6 +31,10 @@ pub struct InitOptions {
     pub root: PathBuf,
     pub name: Option<String>,
     pub acronym: Option<String>,
+    /// Override the creator member email. Falls back to git config user.email.
+    pub user: Option<String>,
+    /// Project language code (ISO 639-1, e.g. "en", "de"). Defaults to "en".
+    pub language: Option<String>,
 }
 
 #[derive(Debug)]
@@ -93,15 +97,21 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
     embedded::sync_files(root, PROJECT_FILES)?;
 
     let mut project = Project::new(name, Some(acronym));
+    if let Some(lang) = options.language.filter(|s| !s.is_empty()) {
+        project.language = lang;
+    }
 
-    // Register the project creator as a member with all capabilities
-    if let Ok(email) = vcs.user_email() {
-        if !email.is_empty() {
-            project.members.insert(
-                email,
-                crate::model::project::Member::new(crate::model::project::MemberCapabilities::All),
-            );
-        }
+    // Register the project creator as a member with all capabilities.
+    // Prefer an explicit override, fall back to git config user.email.
+    let creator_email = options
+        .user
+        .filter(|s| !s.is_empty())
+        .or_else(|| vcs.user_email().ok().filter(|s| !s.is_empty()));
+    if let Some(email) = creator_email {
+        project.members.insert(
+            email,
+            crate::model::project::Member::new(crate::model::project::MemberCapabilities::All),
+        );
     }
 
     store::write_yaml(&joy_dir.join(store::PROJECT_FILE), &project)?;
@@ -224,6 +234,8 @@ mod tests {
             root: dir.path().to_path_buf(),
             name: Some("Test Project".into()),
             acronym: Some("TP".into()),
+            user: None,
+            language: None,
         })
         .unwrap();
 
@@ -243,6 +255,8 @@ mod tests {
             root: dir.path().to_path_buf(),
             name: Some("My App".into()),
             acronym: Some("MA".into()),
+            user: None,
+            language: None,
         })
         .unwrap();
 
@@ -259,6 +273,8 @@ mod tests {
             root: dir.path().to_path_buf(),
             name: None,
             acronym: None,
+            user: None,
+            language: None,
         })
         .unwrap();
 
@@ -276,6 +292,8 @@ mod tests {
             root: dir.path().to_path_buf(),
             name: Some("Test".into()),
             acronym: None,
+            user: None,
+            language: None,
         })
         .unwrap();
 
@@ -283,6 +301,8 @@ mod tests {
             root: dir.path().to_path_buf(),
             name: Some("Test".into()),
             acronym: None,
+            user: None,
+            language: None,
         })
         .unwrap_err();
 
@@ -296,6 +316,8 @@ mod tests {
             root: dir.path().to_path_buf(),
             name: Some("Test".into()),
             acronym: None,
+            user: None,
+            language: None,
         })
         .unwrap();
 
@@ -312,6 +334,8 @@ mod tests {
             root: dir.path().to_path_buf(),
             name: Some("Test".into()),
             acronym: None,
+            user: None,
+            language: None,
         })
         .unwrap();
         let first = std::fs::read_to_string(dir.path().join(".gitignore")).unwrap();
@@ -331,6 +355,8 @@ mod tests {
             root: dir.path().to_path_buf(),
             name: Some("Test".into()),
             acronym: None,
+            user: None,
+            language: None,
         })
         .unwrap();
 

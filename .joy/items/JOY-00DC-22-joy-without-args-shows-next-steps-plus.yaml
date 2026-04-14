@@ -1,0 +1,19 @@
+id: JOY-00DC-22
+title: joy without args shows next steps plus optional guided setup wizard
+type: story
+status: in-progress
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- plan
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy
+created: 2026-04-14T16:08:28.643729173Z
+updated: 2026-04-14T16:17:52.108211959Z
+comments:
+- author: ai:claude@joy
+  date: 2026-04-14T16:17:52.096388765Z
+  text: 'Plan: replace the single-line no-project message in commands/board.rs with a multi-line next-steps block plus an interactive y/N prompt to run a setup wizard. Wizard asks: Name (default cwd basename), Acronym (derived from name), User (default from git config user.email or existing joy config), Initialize AI tools y/N. Wizard reuses the existing joy_core::init logic, just with the collected values. joy init command stays unchanged (silent with cwd-derived defaults, like git init).'
