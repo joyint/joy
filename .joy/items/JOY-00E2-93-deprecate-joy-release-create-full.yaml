@@ -1,0 +1,12 @@
+id: JOY-00E2-93
+title: Deprecate joy release create --full alias in favor of bump+record+publish
+type: rework
+status: new
+priority: medium
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy
+created: 2026-04-14T18:28:24.339836692Z
+updated: 2026-04-14T18:28:24.339836692Z

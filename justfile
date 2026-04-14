@@ -141,6 +141,9 @@ auto-commit:
         echo "Committed pending changes."
     fi
 
+# Local-only release: bump version files, refresh Cargo.lock, record,
+# commit, tag. No push, no crates.io publish, no forge release.
+# Follow with `just publish` once this succeeds.
 # Release (bump: patch, minor, or major)
 release bump="patch":
     #!/usr/bin/env bash
@@ -150,7 +153,6 @@ release bump="patch":
         exit 0
     fi
     just auto-commit
-    # Check if there is something to release before running checks
     if ! command -v joy >/dev/null 2>&1 || ! [ -f ".joy/project.yaml" ]; then
         echo "No Joy project found. Use joy init to set up."
         exit 1
@@ -163,22 +165,28 @@ release bump="patch":
         echo "Error: working tree is not clean."
         exit 1
     fi
-    echo "Updating dependencies..."
+    echo "Updating external dependencies..."
     cargo update
     just auto-commit
+    echo "Bumping version files..."
+    joy release bump "{{bump}}"
+    echo "Refreshing Cargo.lock..."
+    cargo update --workspace
     echo "Checking (format, lint, test)..."
     if ! just check > /dev/null 2>&1; then
-        echo "Checks failed. Run 'just check' for details."
+        echo "Checks failed. Run 'just check' for details. Rolling bump back."
+        git restore crates/ Cargo.lock
         exit 1
     fi
-    just auto-commit
-    joy release create "{{bump}}" --full
+    joy release record "{{bump}}"
 
-# Reads CARGO_REGISTRY_TOKEN from the environment (umbrella's `.env` is loaded
-# automatically by the umbrella justfile; CI sets it from its secret store).
-# Skips a crate when the current version is already published.
-# See ADR-032 for the local-first release paradigm.
-# Publish workspace crates (joy-core, joy-cli, joy-ai) to crates.io
+# Publish workspace crates to crates.io, then push and create the
+# forge release. Reads CARGO_REGISTRY_TOKEN from the environment
+# (umbrella's `.env` is loaded automatically; CI sets it from its
+# secret store). Skips crates whose current version is already
+# published, so re-running after a partial failure is safe. See
+# ADR-032 for the local-first release paradigm.
+# Publish workspace crates, then push + forge release.
 publish:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -223,4 +231,9 @@ publish:
         # the new version in the registry index.
         sleep 5
     done
-    echo "Publish complete."
+    echo "crates.io uploads complete."
+    # Push commits + tag and create the forge release. Running this only
+    # after crates.io succeeded means a failed publish leaves only a
+    # local tag to `git tag -d`, not a forge release pointing at a
+    # missing crate.
+    joy release publish
