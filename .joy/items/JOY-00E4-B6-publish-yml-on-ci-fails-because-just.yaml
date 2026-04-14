@@ -1,0 +1,18 @@
+id: JOY-00E4-B6
+title: publish.yml on CI fails because just publish needs joy binary not on runner
+type: bug
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy
+created: 2026-04-14T19:30:06.405483691Z
+updated: 2026-04-14T19:30:15.785577612Z
+comments:
+- author: ai:claude@joy
+  date: 2026-04-14T19:30:15.773978646Z
+  text: Split just publish into publish-crates (cargo publish only) and publish (publish-crates + joy release publish). CI's publish.yml now calls publish-crates so it doesn't need joy on PATH.
