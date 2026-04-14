@@ -305,20 +305,38 @@ In multi-repo setups (umbrella with submodules), each subproject has its own acr
 
 ### Releases
 
-When you ship a version, create a release:
+A release in Joy is three explicit steps. Joy never reaches into your build system; it just updates version strings, writes a release record, and talks to your forge. Anything ecosystem-specific (lockfile refresh, uploading to a package registry, running tests) happens between the Joy steps in your project's own release script.
 
 ```sh
-joy release create patch             # Next patch version (default)
-joy release create minor             # Next minor version
-joy release create major             # Next major version
+joy release bump patch               # Step 1: replace "X.Y.Z" in configured files
+# ... project-specific steps go here (e.g. refresh a lockfile) ...
+joy release record patch             # Step 2: record + commit + tag (local only)
+# ... project-specific steps go here (e.g. upload to a registry) ...
+joy release publish                  # Step 3: push + forge release
 ```
 
-Joy collects all items closed since the last release, groups them by type, lists contributors, and writes a release snapshot to `.joy/releases/`. Preview without creating:
+`joy release bump` replaces every quoted occurrence of the current version with the next one across the files listed under `release.version-files` in `project.yaml`. It is a text-level operation, not a TOML/JSON/YAML edit, so it catches any workspace dependency pins that happen to reference the same version.
+
+`joy release record` collects all items closed since the last release, groups them by type, lists contributors, and writes a snapshot to `.joy/releases/`. It commits the bumped files and creates the tag locally. At this point nothing has been pushed, so a failed check or typo can be rolled back with `git reset --hard HEAD~1 && git tag -d vX.Y.Z`.
+
+`joy release publish` pushes the commit and tag to the configured remote and creates the forge release (GitHub, GitLab, Gitea, Joyint, ...).
+
+Preview and browse without touching anything:
 
 ```sh
 joy release show                     # Preview from event log
 joy release show v1.0.0              # Show an existing release
 joy release ls                       # List all releases
+```
+
+Configure which files Joy bumps in `.joy/project.yaml`:
+
+```yaml
+release:
+  version-files:
+  - crates/joy-core/Cargo.toml
+  - crates/joy-cli/Cargo.toml
+  - crates/joy-ai/Cargo.toml
 ```
 
 ### Editing and Deleting
@@ -506,7 +524,9 @@ MacGyver would say: why type when the machine can do it for you?
 | `joy milestone` | Manage milestones |
 | `joy roadmap` | Milestone roadmap (tree view) |
 | `joy log` | Event log (audit trail) |
-| `joy release create <BUMP>` | Create a release (patch/minor/major) |
+| `joy release bump <BUMP>` | Step 1: patch version strings in configured files |
+| `joy release record <BUMP>` | Step 2: record, commit, tag (local only) |
+| `joy release publish` | Step 3: push + create the forge release |
 | `joy release show [VERSION]` | Show a release or preview the next |
 | `joy release ls` | List all releases |
 | `joy project` | View/edit project info and members |

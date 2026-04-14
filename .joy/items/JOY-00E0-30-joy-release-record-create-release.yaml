@@ -1,7 +1,7 @@
 id: JOY-00E0-30
 title: 'joy release record: create release record, commit, tag -- local only'
 type: story
-status: new
+status: closed
 priority: medium
 capabilities:
 - plan
@@ -10,4 +10,8 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy
 created: 2026-04-14T18:28:24.327325595Z
-updated: 2026-04-14T18:28:24.327325595Z
+updated: 2026-04-14T18:43:27.319098035Z
+comments:
+- author: ai:claude@joy
+  date: 2026-04-14T18:43:27.307650862Z
+  text: Done. joy release record collects items, writes YAML record, commits, tags locally. No push, no forge.

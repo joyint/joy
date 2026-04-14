@@ -265,12 +265,38 @@ joy reopen [id]                         # alias for: joy status [id] open
 
 ### Release
 
+A release is three explicit steps. Joy owns version-string replacement,
+the release record, and the forge call. Everything between -- lockfile
+refresh, package registry uploads, tests -- stays in the project's own
+release script. Joy does not know about cargo, npm, poetry, or any
+other ecosystem tool.
+
 ```sh
-joy release                             # Show items for latest git tag
-  joy release v0.5.0                    # Show items tagged with v0.5.0
+joy release bump minor                  # Step 1: replace current version
+                                        # in release.version-files with
+                                        # next one (quoted text replace)
+
+joy release record minor                # Step 2: write release record,
+                                        # commit, tag. All local.
+
+joy release publish                     # Step 3: push + forge release
+                                        # from the existing local tag
+
+joy release show                        # Preview next release
+  joy release show v0.5.0               # Show an existing release
+joy release ls                          # List all releases
 ```
 
-Version tags link items to git releases. Use `--version` on `joy add` or `joy edit` to tag items. If no git tags exist, `joy release` without arguments shows a usage hint.
+A failed step before `publish` rolls back with `git reset --hard
+HEAD~1 && git tag -d vX.Y.Z`; nothing is public yet. Steps two and
+three are separate so the project can squeeze its own "upload to
+crates.io / npm / PyPI" between them, only pushing the tag and
+creating the forge release once uploads succeeded.
+
+`release.version-files` in `project.yaml` lists the files to patch;
+every quoted occurrence of the current version is replaced, which
+also catches internal workspace dependency pins without parsing the
+files.
 
 ### Assignment
 

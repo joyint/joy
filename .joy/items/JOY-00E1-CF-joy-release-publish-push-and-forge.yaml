@@ -1,7 +1,7 @@
 id: JOY-00E1-CF
 title: 'joy release publish: push and forge-release from existing tag'
 type: story
-status: new
+status: closed
 priority: medium
 capabilities:
 - plan
@@ -10,4 +10,8 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-14T18:28:24.333735185Z
-updated: 2026-04-14T18:28:24.333735185Z
+updated: 2026-04-14T18:43:27.338668502Z
+comments:
+- author: ai:claude@joy
+  date: 2026-04-14T18:43:27.326330447Z
+  text: Done. joy release publish pushes commits+tag and creates the forge release from the existing local tag.

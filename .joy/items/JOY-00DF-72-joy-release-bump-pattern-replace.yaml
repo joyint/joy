@@ -1,7 +1,7 @@
 id: JOY-00DF-72
 title: 'joy release bump: pattern-replace version across configured files'
 type: story
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -12,8 +12,11 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy
 created: 2026-04-14T18:28:24.320420340Z
-updated: 2026-04-14T18:35:00.507423046Z
+updated: 2026-04-14T18:43:27.300807736Z
 comments:
 - author: ai:claude@joy
   date: 2026-04-14T18:35:00.495183418Z
   text: 'Plan: rewrite version_bump.rs to do text-replace of the old version token across whole files (matches quoted occurrences: version = "OLD", "version": "OLD", version: OLD). Drop the ''key'' field from VersionFile. Simplify project.yaml config from list of {path,key} to list of paths. Solves the internal-dep-pin bug without TOML parsing or Rust-specific knowledge.'
+- author: ai:claude@joy
+  date: 2026-04-14T18:43:27.288678061Z
+  text: Done in commit. version_bump.rs now does text-replace of quoted old-version across whole files; VersionFile just holds a path.

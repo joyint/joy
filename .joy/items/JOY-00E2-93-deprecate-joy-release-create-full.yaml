@@ -1,7 +1,7 @@
 id: JOY-00E2-93
 title: Deprecate joy release create --full alias in favor of bump+record+publish
 type: rework
-status: new
+status: closed
 priority: medium
 capabilities:
 - implement
@@ -9,4 +9,8 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-14T18:28:24.339836692Z
-updated: 2026-04-14T18:28:24.339836692Z
+updated: 2026-04-14T18:43:27.357398259Z
+comments:
+- author: ai:claude@joy
+  date: 2026-04-14T18:43:27.345337359Z
+  text: Done. --full flag and create subcommand gone; no backwards-compat alias per user decision.

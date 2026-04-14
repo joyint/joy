@@ -30,7 +30,7 @@ Forge setup is a dedicated step, separate from `joy init` and from the first syn
 - **`joy init` (new project, no remote):** No forge detection. At the end of init, Joy prints: "Using a hosting platform? Run `joy forge setup` to connect." -- analogous to the AI setup hint.
 - **`joy init` (clone/onboarding, remote exists):** Same hint at the end. If the user runs `joy forge setup` next, it detects the forge from the remote URL and proposes it.
 - **`joy forge setup` (explicit):** The user runs this when they add a remote for the first time or want to change the forge. This is the primary entry point.
-- **`joy project set forge <type>` (manual):** Sets the forge without the interactive setup flow. For users who know what they want. No validation at set time -- if prerequisites are missing (e.g. `gh` not installed, Joyint account not set up), `joy sync` and `joy release create --full` detect this and show a clear error with a hint to run `joy forge setup`.
+- **`joy project set forge <type>` (manual):** Sets the forge without the interactive setup flow. For users who know what they want. No validation at set time -- if prerequisites are missing (e.g. `gh` not installed, Joyint account not set up), `joy sync` and `joy release publish` detect this and show a clear error with a hint to run `joy forge setup`.
 
 ### Forge detection
 
@@ -95,7 +95,7 @@ Local ←→ GitHub
 
 - `joy sync push` = `git push origin`
 - `joy sync pull` = `git pull origin`
-- Release: `joy release create --full` creates GitHub Release via `gh` CLI
+- Release: `joy release publish` creates GitHub Release via `gh` CLI
 
 ### `forge: joyint` (Joyint only)
 
@@ -105,7 +105,7 @@ Local ←→ Joyint
 
 - `joy sync push` = `git push origin` (origin = joyint.com)
 - `joy sync pull` = `git pull origin`
-- Release: `joy release create --full` creates release on joyint.com via Platform API
+- Release: `joy release publish` creates release on joyint.com via Platform API
 
 ### `forge: github@joyint` (Joyint + GitHub mirror)
 
@@ -150,4 +150,4 @@ Conflicts are always resolved locally by the developer:
 | `joyint` | None (Joy speaks the Platform API natively) | -- |
 | `none` | None | -- |
 
-Joy checks tool availability at `joy init` (forge setup) and at `joy release create --full` (before attempting forge release). Missing tools produce clear error messages with installation hints.
+Joy checks tool availability at `joy init` (forge setup) and at `joy release publish` (before attempting forge release). Missing tools produce clear error messages with installation hints.
