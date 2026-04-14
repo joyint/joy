@@ -1,0 +1,21 @@
+version: v0.10.0
+date: 2026-04-14
+previous: v0.9.0
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 17
+  items: 5
+items:
+  stories:
+  - id: JOY-00DF-72
+    title: 'joy release bump: pattern-replace version across configured files'
+  - id: JOY-00E0-30
+    title: 'joy release record: create release record, commit, tag -- local only'
+  - id: JOY-00E1-CF
+    title: 'joy release publish: push and forge-release from existing tag'
+  tasks:
+  - id: JOY-00E3-D6
+    title: Update joy docs Vision, Architecture, and tutorial for new release flow
+  reworks:
+  - id: JOY-00E2-93
+    title: Deprecate joy release create --full alias in favor of bump+record+publish
