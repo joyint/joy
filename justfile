@@ -186,8 +186,10 @@ release bump="patch":
 # secret store). Skips crates whose current version is already
 # published, so re-running after a partial failure is safe. See
 # ADR-032 for the local-first release paradigm.
-# Publish workspace crates, then push + forge release.
-publish:
+# Upload crates to crates.io only. Idempotent: already-uploaded
+# versions are skipped. CI's publish.yml calls this directly; the
+# forge release is handled separately by `joy release publish`.
+publish-crates:
     #!/usr/bin/env bash
     set -euo pipefail
     if [ -z "${CARGO_REGISTRY_TOKEN:-}" ]; then
@@ -232,8 +234,11 @@ publish:
         sleep 5
     done
     echo "crates.io uploads complete."
-    # Push commits + tag and create the forge release. Running this only
-    # after crates.io succeeded means a failed publish leaves only a
-    # local tag to `git tag -d`, not a forge release pointing at a
-    # missing crate.
+
+# Full publish: upload crates + push + create forge release. This is
+# what `just release-all -P` in the umbrella calls per sub. Running
+# crates.io upload first means a failed upload leaves only a local
+# tag to drop.
+# Publish workspace crates, then push + forge release.
+publish: publish-crates
     joy release publish
