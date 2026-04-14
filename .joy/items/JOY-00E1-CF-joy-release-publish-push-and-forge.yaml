@@ -1,0 +1,13 @@
+id: JOY-00E1-CF
+title: 'joy release publish: push and forge-release from existing tag'
+type: story
+status: new
+priority: medium
+capabilities:
+- plan
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy
+created: 2026-04-14T18:28:24.333735185Z
+updated: 2026-04-14T18:28:24.333735185Z

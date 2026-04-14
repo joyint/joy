@@ -28,8 +28,12 @@ pub struct ReleaseArgs {
 
 #[derive(clap::Subcommand)]
 enum ReleaseCommand {
-    /// Create a new release from closed items since the last release
-    Create(CreateArgs),
+    /// Step 1: patch version numbers in configured files
+    Bump(BumpArgs),
+    /// Step 2: write release record, commit, tag (local only)
+    Record(RecordArgs),
+    /// Step 3: push commits + tag, create forge release
+    Publish(PublishArgs),
     /// Show a release or preview the next one
     Show(ShowArgs),
     /// List all releases
@@ -37,8 +41,15 @@ enum ReleaseCommand {
 }
 
 #[derive(clap::Args)]
-struct CreateArgs {
-    /// Version bump: patch (default), minor, or major
+struct BumpArgs {
+    /// Version bump: patch (default), minor, major, or an explicit X.Y.Z
+    bump: Option<String>,
+}
+
+#[derive(clap::Args)]
+struct RecordArgs {
+    /// Version bump: patch (default), minor, major, or an explicit X.Y.Z.
+    /// Must match what was used for `joy release bump`.
     bump: Option<String>,
 
     /// Release title
@@ -48,14 +59,12 @@ struct CreateArgs {
     /// Release description
     #[arg(long)]
     description: Option<String>,
+}
 
-    /// Explicit version (overrides bump argument)
-    #[arg(long)]
+#[derive(clap::Args)]
+struct PublishArgs {
+    /// Version to publish. Defaults to the current tag on HEAD.
     version: Option<String>,
-
-    /// Full release: bump versions, git commit/tag/push, forge release
-    #[arg(long)]
-    full: bool,
 }
 
 #[derive(clap::Args)]
@@ -70,51 +79,113 @@ struct ShowArgs {
 
 pub fn run(args: ReleaseArgs) -> Result<()> {
     match args.command {
-        ReleaseCommand::Create(args) => create(args),
+        ReleaseCommand::Bump(args) => bump(args),
+        ReleaseCommand::Record(args) => record(args),
+        ReleaseCommand::Publish(args) => publish(args),
         ReleaseCommand::Show(args) => show(args),
         ReleaseCommand::Ls => ls(),
     }
 }
 
-fn create(args: CreateArgs) -> Result<()> {
-    let ctx = Context::load()?;
+/// Compute the new version from the bump argument and the previous
+/// release (or latest tag). Deterministic: `bump` and `record` call
+/// this with the same argument and land on the same version.
+fn resolve_version(root: &std::path::Path, arg: Option<&str>) -> Result<(String, String)> {
+    let previous = releases::latest_version(root)?.or_else(|| {
+        joy_core::vcs::default_vcs()
+            .latest_version_tag(root)
+            .ok()
+            .flatten()
+    });
+    let current = previous.as_deref().unwrap_or("v0.0.0").to_string();
 
+    let next = match arg {
+        Some(v) if looks_like_explicit(v) => {
+            if v.starts_with('v') {
+                v.to_string()
+            } else {
+                format!("v{v}")
+            }
+        }
+        Some(b) => {
+            let bump: Bump = b.parse().map_err(|e: String| anyhow::anyhow!("{}", e))?;
+            joy_core::model::release::bump_version(&current, bump)
+        }
+        None => {
+            let bump: Bump = "patch"
+                .parse()
+                .map_err(|e: String| anyhow::anyhow!("{}", e))?;
+            joy_core::model::release::bump_version(&current, bump)
+        }
+    };
+    Ok((current, next))
+}
+
+fn looks_like_explicit(s: &str) -> bool {
+    matches!(s.chars().next(), Some(c) if c.is_ascii_digit()) || s.starts_with('v')
+}
+
+fn bump(args: BumpArgs) -> Result<()> {
+    let ctx = Context::load()?;
+    ctx.enforce(&Action::CreateRelease, "release")?;
+
+    let (current, next) = resolve_version(&ctx.root, args.bump.as_deref())?;
+    let current_semver = current.strip_prefix('v').unwrap_or(&current);
+    let next_semver = next.strip_prefix('v').unwrap_or(&next);
+
+    let version_files = read_version_files(&ctx.root);
+    if version_files.is_empty() {
+        println!("No release.version-files configured in project.yaml -- nothing to patch.");
+        println!("Next version will be {next}.");
+        return Ok(());
+    }
+
+    let results = version_bump::bump_all(&ctx.root, &version_files, current_semver, next_semver)?;
+
+    println!("{} -> {}", color::label(&current), color::id(&next));
+    let mut total = 0usize;
+    for r in &results {
+        let rel = r.path.strip_prefix(&ctx.root).unwrap_or(&r.path);
+        let marker = if r.replacements == 0 { "!" } else { " " };
+        println!(
+            "  {marker} {} ({} replacement{})",
+            rel.display(),
+            r.replacements,
+            if r.replacements == 1 { "" } else { "s" }
+        );
+        total += r.replacements;
+    }
+    if total == 0 {
+        anyhow::bail!(
+            "no occurrences of {current_semver} found in configured files\n  = help: check release.version-files and the old version string",
+        );
+    }
+    println!(
+        "\nNext: run lockfile refresh if needed, then `joy release record {}`.",
+        args.bump.as_deref().unwrap_or("patch")
+    );
+    Ok(())
+}
+
+fn record(args: RecordArgs) -> Result<()> {
+    let ctx = Context::load()?;
     ctx.enforce(&Action::CreateRelease, "release")?;
 
     let project = store::load_project(&ctx.root)?;
     let acronym = project.acronym.as_deref().unwrap_or("JOY");
 
-    // Determine version: Joy releases first, then git tags as fallback
-    let previous = releases::latest_version(&ctx.root)?.or_else(|| {
-        joy_core::vcs::default_vcs()
-            .latest_version_tag(&ctx.root)
-            .ok()
-            .flatten()
-    });
-    let version = if let Some(v) = args.version {
-        if v.starts_with('v') {
-            v
-        } else {
-            format!("v{v}")
-        }
+    let (previous, version) = resolve_version(&ctx.root, args.bump.as_deref())?;
+    let previous_opt = if previous == "v0.0.0" {
+        None
     } else {
-        let bump_str = args.bump.as_deref().unwrap_or("patch");
-        let bump: Bump = bump_str
-            .parse()
-            .map_err(|e: String| anyhow::anyhow!("{}", e))?;
-        let current = previous.as_deref().unwrap_or("v0.0.0");
-        joy_core::model::release::bump_version(current, bump)
+        Some(previous)
     };
 
-    // Check if release already exists
     if releases::load_release(&ctx.root, acronym, &version).is_ok() {
         anyhow::bail!("Release {} already exists", version);
     }
 
-    // Find cutoff from last release event
     let cutoff = event_log::last_release_timestamp(&ctx.root)?;
-
-    // Collect closed items since cutoff
     let closed_ids = event_log::closed_item_ids_since(&ctx.root, cutoff.as_deref())?;
 
     if closed_ids.is_empty() {
@@ -122,10 +193,8 @@ fn create(args: CreateArgs) -> Result<()> {
         return Ok(());
     }
 
-    // Load item data and group by type
     let all_items = items::load_items(&ctx.root)?;
     let mut release_items = ReleaseItems::default();
-
     for id in &closed_ids {
         let item = match all_items.iter().find(|i| &i.id == id) {
             Some(i) => i,
@@ -146,7 +215,6 @@ fn create(args: CreateArgs) -> Result<()> {
         }
     }
 
-    // Build contributor list from events on the release items only
     let actors = event_log::actors_for_items(&ctx.root, &closed_ids)?;
     let contributors: Vec<Contributor> = actors
         .into_iter()
@@ -163,38 +231,28 @@ fn create(args: CreateArgs) -> Result<()> {
         title: args.title,
         description: args.description,
         date: Utc::now().date_naive(),
-        previous: previous.clone(),
+        previous: previous_opt,
         contributors,
         items: release_items,
     };
 
-    // Show preview
     print_release(&release);
 
-    // Confirm
-    let hint = if args.bump.is_none() {
-        " (use `joy release create minor` or `major` for other bumps)".to_string()
-    } else {
-        String::new()
-    };
-    print!("\nCreate release {}?{} [y/N] ", version, hint);
+    print!("\nRecord release {}? [y/N] ", version);
     std::io::stdout().flush()?;
     let mut input = String::new();
     std::io::stdin().read_line(&mut input)?;
-    let trimmed = input.trim();
-    if !trimmed.eq_ignore_ascii_case("y") {
+    if !input.trim().eq_ignore_ascii_case("y") {
         println!("Aborted.");
         return Ok(());
     }
 
-    // Write YAML
     releases::save_release(&ctx.root, acronym, &release)?;
     println!(
         "Release saved to .joy/releases/{}-{}.yaml",
         acronym, version
     );
 
-    // Log event
     let log_user = ctx.log_user();
     event_log::log_event_as(
         &ctx.root,
@@ -204,22 +262,63 @@ fn create(args: CreateArgs) -> Result<()> {
         &log_user,
     );
 
-    // --full: version bump, git commit/tag/push, forge release
-    if args.full {
-        full_release(&ctx.root, &version, &release, &project)?;
-    } else {
-        let title_summary = release
-            .title
-            .as_deref()
-            .map(|t| format!(" {t}"))
-            .unwrap_or_default();
-        joy_core::git_ops::auto_git_post_command(
-            &ctx.root,
-            &format!("release create {version}{title_summary}"),
-            &log_user,
-        );
+    // Git: add + commit + local tag. No push, no forge call.
+    let git = vcs::default_vcs();
+    git.check_version()?;
+    git.add_all(&ctx.root)?;
+    git.commit(&ctx.root, &format!("bump to {version} [no-item]"))?;
+    let markdown_notes = render_release_markdown(&release);
+    git.tag_annotated(&ctx.root, &version, &markdown_notes)?;
+    println!("Tag {version} created locally. Next: `joy release publish`.");
+    Ok(())
+}
+
+fn publish(args: PublishArgs) -> Result<()> {
+    let ctx = Context::load()?;
+    ctx.enforce(&Action::CreateRelease, "release")?;
+
+    let project = store::load_project(&ctx.root)?;
+    let acronym = project.acronym.as_deref().unwrap_or("JOY");
+
+    let git = vcs::default_vcs();
+    git.check_version()?;
+
+    let version = match args.version {
+        Some(v) if v.starts_with('v') => v,
+        Some(v) => format!("v{v}"),
+        None => git
+            .latest_version_tag(&ctx.root)
+            .ok()
+            .flatten()
+            .ok_or_else(|| anyhow::anyhow!("no local tag to publish; pass an explicit version"))?,
+    };
+
+    let release = releases::load_release(&ctx.root, acronym, &version).map_err(|_| {
+        anyhow::anyhow!("no release record for {version} (run `joy release record` first)")
+    })?;
+
+    let remote = git.default_remote(&ctx.root)?;
+    println!("Pushing to {remote}...");
+    git.push(&ctx.root, &remote)?;
+    git.push_tag(&ctx.root, &remote, &version)?;
+    println!("Pushed {version} to {remote}.");
+
+    let forge_impl = forge::from_config(project.forge.as_deref());
+    if project.forge.as_deref().is_none() || project.forge.as_deref() == Some("none") {
+        println!("No forge configured; publish done.");
+        return Ok(());
     }
 
+    let markdown_notes = render_release_markdown(&release);
+    let title = release
+        .title
+        .as_deref()
+        .map(|t| format!("{version} - {t}"))
+        .unwrap_or_else(|| version.clone());
+    match forge_impl.create_release(&ctx.root, &version, &title, &markdown_notes)? {
+        Some(url) => println!("Forge release created: {url}"),
+        None => println!("Forge release skipped."),
+    }
     Ok(())
 }
 
@@ -238,7 +337,6 @@ fn show(args: ShowArgs) -> Result<()> {
             }
         }
         None => {
-            // Preview: show what the next release would contain
             let cutoff = event_log::last_release_timestamp(&ctx.root)?;
             let closed_ids = event_log::closed_item_ids_since(&ctx.root, cutoff.as_deref())?;
 
@@ -279,7 +377,7 @@ fn ls() -> Result<()> {
     let all_releases = releases::load_releases(&ctx.root)?;
 
     if all_releases.is_empty() {
-        println!("No releases yet. Create one with: joy release create patch");
+        println!("No releases yet. Create one with: joy release bump patch");
         return Ok(());
     }
 
@@ -313,78 +411,8 @@ fn ls() -> Result<()> {
     Ok(())
 }
 
-fn full_release(
-    root: &std::path::Path,
-    version: &str,
-    release: &Release,
-    project: &joy_core::model::project::Project,
-) -> Result<()> {
-    let git = vcs::default_vcs();
-
-    // Check git version
-    git.check_version()?;
-
-    // Version bump (if version-files configured)
-    let version_files = read_version_files(root);
-    let semver = version.strip_prefix('v').unwrap_or(version);
-    if !version_files.is_empty() {
-        let results = version_bump::bump_all(root, &version_files, semver)?;
-        for r in &results {
-            let rel_path = r.path.strip_prefix(root).unwrap_or(&r.path);
-            println!("  {} -> {}", rel_path.display(), r.new_version);
-        }
-    }
-
-    // Regenerate Cargo.lock after version bump
-    if root.join("Cargo.lock").is_file() {
-        let status = std::process::Command::new("cargo")
-            .args(["generate-lockfile"])
-            .current_dir(root)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status();
-        if status.is_err() || !status.unwrap().success() {
-            eprintln!("Warning: failed to update Cargo.lock");
-        }
-    }
-
-    // Git: add, commit, tag, push
-    git.add_all(root)?;
-    git.commit(root, &format!("bump to {version} [no-item]"))?;
-
-    // Annotated tag with markdown release notes
-    let markdown_notes = render_release_markdown(release);
-    git.tag_annotated(root, version, &markdown_notes)?;
-
-    let remote = git.default_remote(root)?;
-    git.push(root, &remote)?;
-    git.push_tag(root, &remote, version)?;
-    println!("Released {version}");
-
-    // Forge release (optional, with confirmation)
-    let forge_impl = forge::from_config(project.forge.as_deref());
-    if project.forge.is_some() && project.forge.as_deref() != Some("none") {
-        print!("Create forge release? [y/N] ");
-        std::io::stdout().flush()?;
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
-        if input.trim().eq_ignore_ascii_case("y") {
-            let title = release
-                .title
-                .as_deref()
-                .map(|t| format!("{version} -- {t}"))
-                .unwrap_or_else(|| version.to_string());
-            match forge_impl.create_release(root, version, &title, &markdown_notes)? {
-                Some(url) => println!("Forge release created: {url}"),
-                None => println!("Forge release skipped."),
-            }
-        }
-    }
-
-    Ok(())
-}
-
 /// Read release.version-files from project.yaml as raw YAML.
+/// Each entry is a path string or a mapping with a `path` field.
 fn read_version_files(root: &std::path::Path) -> Vec<version_bump::VersionFile> {
     let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
     let content = match std::fs::read_to_string(&project_path) {
@@ -402,23 +430,25 @@ fn read_version_files(root: &std::path::Path) -> Vec<version_bump::VersionFile> 
     files
         .iter()
         .filter_map(|entry| {
+            if let Some(s) = entry.as_str() {
+                return Some(version_bump::VersionFile {
+                    path: s.to_string(),
+                });
+            }
             let path = entry.get("path")?.as_str()?;
-            let key = entry.get("key")?.as_str()?;
             Some(version_bump::VersionFile {
                 path: path.to_string(),
-                key: key.to_string(),
             })
         })
         .collect()
 }
 
-/// Render release as markdown string (for tag body and forge notes).
 fn render_release_markdown(release: &Release) -> String {
     let mut out = String::new();
     let title_str = release
         .title
         .as_deref()
-        .map(|t| format!(" -- {t}"))
+        .map(|t| format!(" - {t}"))
         .unwrap_or_default();
     out.push_str(&format!("# {}{}\n\n", release.version, title_str));
     out.push_str(&format!("**Date:** {}\n", release.date));
@@ -481,7 +511,7 @@ fn print_release(release: &Release) {
     let title_str = release
         .title
         .as_deref()
-        .map(|t| format!(" -- {t}"))
+        .map(|t| format!(" - {t}"))
         .unwrap_or_default();
     let header_text = format!("{}{} ({})", release.version, title_str, release.date);
     println!("{}", color::header(&header_text));
@@ -498,7 +528,6 @@ fn print_release(release: &Release) {
         println!();
     }
 
-    // Item ID (e.g. "JOY-0025") = ~8 chars + "  " prefix = 10, leave rest for title
     let title_max = w.saturating_sub(12);
 
     let type_groups: &[(&str, &[ReleaseItem])] = &[
@@ -531,7 +560,6 @@ fn print_release(release: &Release) {
         let mut stats: Vec<String> = Vec::new();
         for (label, items) in type_groups {
             if !items.is_empty() {
-                // label is already plural ("Stories"), derive singular by trimming "s"
                 let singular = label.trim_end_matches('s').to_lowercase();
                 stats.push(color::plural(items.len(), &singular));
             }
@@ -593,7 +621,7 @@ fn print_release_markdown(release: &Release) {
     let title_str = release
         .title
         .as_deref()
-        .map(|t| format!(" -- {t}"))
+        .map(|t| format!(" - {t}"))
         .unwrap_or_default();
     println!("# {}{}", release.version, title_str);
     println!();

@@ -1,0 +1,13 @@
+id: JOY-00E0-30
+title: 'joy release record: create release record, commit, tag -- local only'
+type: story
+status: new
+priority: medium
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy
+created: 2026-04-14T18:28:24.327325595Z
+updated: 2026-04-14T18:28:24.327325595Z

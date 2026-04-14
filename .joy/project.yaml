@@ -62,9 +62,6 @@ members:
 created: 2026-03-09T23:57:36.761964460Z
 release:
   version-files:
-  - path: crates/joy-core/Cargo.toml
-    key: package.version
-  - path: crates/joy-cli/Cargo.toml
-    key: package.version
-  - path: crates/joy-ai/Cargo.toml
-    key: package.version
+  - crates/joy-core/Cargo.toml
+  - crates/joy-cli/Cargo.toml
+  - crates/joy-ai/Cargo.toml
