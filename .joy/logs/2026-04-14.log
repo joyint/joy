@@ -29,3 +29,4 @@
 2026-04-14T18:45:14.288Z JOY-00E3-D6 guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
 2026-04-14T18:45:22.270Z JOY-00E3-D6 comment.added "Done. Tutorial, Vision, and ForgeSync updated." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-14T18:45:22.282Z JOY-00E3-D6 item.status_changed "new -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-14T19:14:16.652Z release guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
