@@ -22,11 +22,19 @@ If the project is already initialized, sets up your local environment
 pub struct InitArgs {
     /// Project name (defaults to directory name)
     #[arg(long)]
-    name: Option<String>,
+    pub name: Option<String>,
 
     /// Project acronym (2-4 uppercase letters, derived from name if omitted)
     #[arg(long)]
-    acronym: Option<String>,
+    pub acronym: Option<String>,
+
+    /// Creator member email (defaults to git config user.email)
+    #[arg(long)]
+    pub user: Option<String>,
+
+    /// Project language (ISO 639-1 code, e.g. en, de). Defaults to en.
+    #[arg(long)]
+    pub language: Option<String>,
 }
 
 pub fn run(args: InitArgs) -> Result<()> {
@@ -35,6 +43,8 @@ pub fn run(args: InitArgs) -> Result<()> {
         root: root.clone(),
         name: args.name,
         acronym: args.acronym,
+        user: args.user,
+        language: args.language,
     };
 
     match init::init(options) {

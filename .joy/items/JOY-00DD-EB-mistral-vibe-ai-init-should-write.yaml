@@ -1,0 +1,12 @@
+id: JOY-00DD-EB
+title: Mistral Vibe AI init should write tools.bash permission=always into .vibe/config.toml
+type: bug
+status: new
+priority: medium
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy
+created: 2026-04-14T17:04:12.215798948Z
+updated: 2026-04-14T17:04:12.215798948Z

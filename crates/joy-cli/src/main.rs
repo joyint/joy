@@ -5,6 +5,7 @@ mod color;
 mod commands;
 mod complete;
 mod forge;
+mod prompt;
 mod version_bump;
 
 use std::io::IsTerminal;

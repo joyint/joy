@@ -7,8 +7,12 @@ use joy_core::event_log;
 use joy_core::items;
 use joy_core::model::item::{Item, Status};
 use joy_core::store;
+use joy_core::vcs::Vcs;
 
 use crate::color;
+use crate::commands::ai as ai_cmd;
+use crate::commands::init::{self as init_cmd, InitArgs};
+use crate::prompt;
 
 const STATUS_ORDER: &[(Status, &str)] = &[
     (Status::New, "NEW"),
@@ -28,10 +32,7 @@ pub fn run(args: crate::BoardArgs) -> Result<()> {
     let root = match store::find_project_root(&cwd) {
         Some(r) => r,
         None => {
-            println!(
-                "joy v{} -- run `joy init` to get started",
-                env!("CARGO_PKG_VERSION")
-            );
+            welcome_and_maybe_init(&cwd)?;
             return Ok(());
         }
     };
@@ -437,6 +438,87 @@ fn truncate_display(s: &str, max_cols: usize) -> String {
         end += c.len_utf8();
     }
     format!("{}...", &s[..end])
+}
+
+/// Shown when `joy` runs outside a project. Prints a short next-steps
+/// block and, on an interactive terminal, offers to start a guided
+/// init. On a pipe/CI the prompt is skipped.
+fn welcome_and_maybe_init(cwd: &std::path::Path) -> Result<()> {
+    println!();
+    println!(
+        "{}",
+        color::label(&format!("joy {}", env!("CARGO_PKG_VERSION")))
+    );
+    println!();
+    println!("No joy project here. Next steps:");
+    println!("  joy init             Initialize this directory as a project");
+    println!("  joy help             List all commands");
+    println!("  joy tutorial         Walkthrough");
+    println!();
+    println!("Docs: https://joyint.com/en/joy/docs");
+    println!();
+
+    if !prompt::is_interactive() {
+        return Ok(());
+    }
+
+    if !prompt::ask_yn("Initialize a project here?", false)? {
+        return Ok(());
+    }
+
+    let default_name = cwd
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("project")
+        .to_string();
+    let name = prompt::ask_text("Name", Some(&default_name))?;
+    let acronym_default = derive_acronym(&name);
+    let acronym = prompt::ask_text("Acronym", Some(&acronym_default))?;
+
+    let git_email = joy_core::vcs::default_vcs()
+        .user_email()
+        .ok()
+        .filter(|s| !s.is_empty());
+    let user = prompt::ask_text("User", git_email.as_deref())?;
+    let language = prompt::ask_text("Language (e.g. en, de)", Some("en"))?;
+
+    println!();
+    init_cmd::run(InitArgs {
+        name: Some(name),
+        acronym: Some(acronym),
+        user: Some(user),
+        language: Some(language),
+    })?;
+
+    if prompt::ask_yn("Initialize AI tools now?", false)? {
+        println!();
+        ai_cmd::run_init_default()?;
+    }
+
+    Ok(())
+}
+
+/// Derive a short uppercase acronym from a project name. The full
+/// acronym logic lives in joy-core and runs again inside init::init()
+/// if we pass the name without an acronym. This helper only exists to
+/// show the user a realistic default in the prompt.
+fn derive_acronym(name: &str) -> String {
+    let letters: String = name
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|s| !s.is_empty())
+        .filter_map(|s| s.chars().next())
+        .take(4)
+        .collect::<String>()
+        .to_uppercase();
+    if letters.len() >= 2 {
+        letters
+    } else {
+        name.chars()
+            .filter(|c| c.is_ascii_alphabetic())
+            .take(3)
+            .collect::<String>()
+            .to_uppercase()
+    }
 }
 
 fn strip_ansi(s: &str) -> String {

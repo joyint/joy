@@ -84,6 +84,12 @@ pub fn run(args: AiArgs) -> anyhow::Result<()> {
     }
 }
 
+/// Run the AI init flow with default prompts. Used by the `joy` welcome
+/// wizard after a fresh `joy init`.
+pub fn run_init_default() -> anyhow::Result<()> {
+    ai_init(InitArgs::default())
+}
+
 fn ai_init(args: InitArgs) -> anyhow::Result<()> {
     let root = joy_core::store::find_project_root(&std::env::current_dir()?)
         .ok_or_else(|| anyhow::anyhow!("No Joy project found (run `joy init` first)"))?;
