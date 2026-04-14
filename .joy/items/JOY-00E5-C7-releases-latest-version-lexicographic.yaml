@@ -1,0 +1,18 @@
+id: JOY-00E5-C7
+title: releases latest_version lexicographic sort puts v0.9.0 above v0.10.0
+type: bug
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy
+created: 2026-04-14T19:45:27.593994067Z
+updated: 2026-04-14T19:45:55.893787547Z
+comments:
+- author: ai:claude@joy
+  date: 2026-04-14T19:45:55.882189207Z
+  text: Fix already committed as 07c7dd7 (originally tagged no-item due to auth issue during release). Semver-aware sort in load_releases; 3-tuple numeric compare.
