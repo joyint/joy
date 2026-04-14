@@ -1059,12 +1059,45 @@ fn configure_vibe(root: &Path, member_id: &str) -> anyhow::Result<bool> {
         qprintln!("    {}.vibe/.env", color::check_mark());
     }
 
-    qprintln!(
-        "    {}",
-        color::inactive("Note: set [tools.bash] permission = \"always\" in .vibe/config.toml")
-    );
+    let config_path = vibe_dir.join("config.toml");
+    changed |= ensure_vibe_bash_always(&config_path)?;
+    qprintln!("    {}.vibe/config.toml", color::check_mark());
 
     Ok(changed)
+}
+
+/// Make sure .vibe/config.toml declares `[tools.bash] permission = "always"`.
+/// Creates the file if missing. If the key already exists we respect the
+/// user's value and leave the file alone, so a deliberate override is
+/// not clobbered on every `joy ai init`.
+fn ensure_vibe_bash_always(path: &Path) -> anyhow::Result<bool> {
+    use toml_edit::{value, DocumentMut, Item, Table};
+
+    let mut doc: DocumentMut = if path.is_file() {
+        fs::read_to_string(path)?.parse()?
+    } else {
+        DocumentMut::new()
+    };
+
+    let tools = doc
+        .entry("tools")
+        .or_insert_with(|| Item::Table(Table::new()))
+        .as_table_mut()
+        .ok_or_else(|| anyhow::anyhow!(".vibe/config.toml: [tools] is not a table"))?;
+    tools.set_implicit(true);
+
+    let bash = tools
+        .entry("bash")
+        .or_insert_with(|| Item::Table(Table::new()))
+        .as_table_mut()
+        .ok_or_else(|| anyhow::anyhow!(".vibe/config.toml: [tools.bash] is not a table"))?;
+
+    if bash.get("permission").is_some() {
+        return Ok(false);
+    }
+    bash["permission"] = value("always");
+
+    write_if_changed(path, &doc.to_string())
 }
 
 fn configure_copilot(root: &Path, member_id: &str) -> anyhow::Result<bool> {
@@ -1306,6 +1339,41 @@ mod tests {
 
     fn arch_spec() -> &'static DocSpec {
         DOC_SPECS.iter().find(|s| s.key == "architecture").unwrap()
+    }
+
+    #[test]
+    fn ensure_vibe_bash_always_creates_new_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("config.toml");
+        let changed = ensure_vibe_bash_always(&path).unwrap();
+        assert!(changed);
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("[tools.bash]"));
+        assert!(content.contains("permission = \"always\""));
+    }
+
+    #[test]
+    fn ensure_vibe_bash_always_adds_to_existing_unrelated_config() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("config.toml");
+        std::fs::write(&path, "[models]\ndefault = \"mistral-large\"\n").unwrap();
+        let changed = ensure_vibe_bash_always(&path).unwrap();
+        assert!(changed);
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("default = \"mistral-large\""));
+        assert!(content.contains("permission = \"always\""));
+    }
+
+    #[test]
+    fn ensure_vibe_bash_always_preserves_user_override() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("config.toml");
+        std::fs::write(&path, "[tools.bash]\npermission = \"ask\"\n").unwrap();
+        let changed = ensure_vibe_bash_always(&path).unwrap();
+        assert!(!changed);
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("permission = \"ask\""));
+        assert!(!content.contains("\"always\""));
     }
 
     #[test]
