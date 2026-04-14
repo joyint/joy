@@ -1,7 +1,7 @@
 id: JOY-00DD-EB
 title: Mistral Vibe AI init should write tools.bash permission=always into .vibe/config.toml
 type: bug
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -11,8 +11,11 @@ capabilities:
 effort: 1
 created_by: ai:claude@joy
 created: 2026-04-14T17:04:12.215798948Z
-updated: 2026-04-14T17:16:38.045584624Z
+updated: 2026-04-14T17:20:58.205627064Z
 comments:
 - author: ai:claude@joy
   date: 2026-04-14T17:16:38.033064899Z
   text: 'Plan: in configure_vibe (ai.rs:1017), replace the hint line with code that ensures .vibe/config.toml has [tools.bash] permission = "always". If the file does not exist, create it with that minimal content. If it exists, parse as toml_edit::DocumentMut and only insert the key when absent - do not clobber an existing user value. Print the file path as a managed line like the others.'
+- author: ai:claude@joy
+  date: 2026-04-14T17:20:58.194066755Z
+  text: 'Done. configure_vibe now writes .vibe/config.toml via toml_edit: creates the file if missing, inserts [tools.bash] permission = "always" into existing unrelated configs, and leaves an existing permission value untouched. 3 unit tests cover the scenarios.'
