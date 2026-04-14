@@ -1,0 +1,11 @@
+version: v0.10.1
+date: 2026-04-14
+previous: v0.10.0
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 4
+  items: 1
+items:
+  bugs:
+  - id: JOY-00E4-B6
+    title: publish.yml on CI fails because just publish needs joy binary not on runner

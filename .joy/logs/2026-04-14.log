@@ -37,3 +37,4 @@
 2026-04-14T19:30:15.787Z JOY-00E4-B6 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-14T19:38:04.821Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-14T19:38:11.863Z JOY-00E5-8D guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-04-14T19:40:44.506Z v0.10.1 release.created [horst.schwarz@joydev.com]
