@@ -1,0 +1,12 @@
+id: JOY-00DE-F4
+title: joy release create --full does not bump internal crate dependency versions
+type: bug
+status: new
+priority: medium
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy
+created: 2026-04-14T17:53:46.378709197Z
+updated: 2026-04-14T17:53:46.378709197Z
