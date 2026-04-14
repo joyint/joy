@@ -1,11 +1,15 @@
 id: JOY-00E3-D6
 title: Update joy docs Vision, Architecture, and tutorial for new release flow
 type: task
-status: new
+status: closed
 priority: medium
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-14T18:28:24.345983850Z
-updated: 2026-04-14T18:28:24.345983850Z
+updated: 2026-04-14T18:45:22.280481328Z
+comments:
+- author: ai:claude@joy
+  date: 2026-04-14T18:45:22.268588950Z
+  text: Done. Tutorial, Vision, and ForgeSync updated.
