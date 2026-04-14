@@ -56,6 +56,24 @@ impl ForgeRelease for GitHubForge {
             );
         }
 
+        // Idempotent: a release may already exist if an earlier
+        // `just publish` made it and the subsequent push failed, or
+        // if the forge workflow created it from a tag push. In both
+        // cases the release is already there and we should surface
+        // its URL instead of erroring out.
+        let existing = std::process::Command::new("gh")
+            .args(["release", "view", tag, "--json", "url", "--jq", ".url"])
+            .current_dir(root)
+            .output();
+        if let Ok(output) = existing {
+            if output.status.success() {
+                let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !url.is_empty() {
+                    return Ok(Some(url));
+                }
+            }
+        }
+
         let url = vcs::gh_create_release(root, tag, title, notes)?;
         Ok(Some(url))
     }
