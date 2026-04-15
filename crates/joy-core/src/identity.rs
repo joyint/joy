@@ -42,34 +42,39 @@ impl Identity {
 /// Resolve the acting identity for the current operation.
 ///
 /// Priority:
-/// 1. JOY_SESSION -- direct AI session handle (SSH-agent pattern)
-/// 2. JOY_TOKEN   -- AI delegation token (backwards compatibility)
-/// 3. Human session by git email
-/// 4. Fallback: git email, unauthenticated
+/// 1. JOY_SESSION -- ephemeral-key-bound AI session handle (ADR-033)
+/// 2. Human session by git email
+/// 3. Fallback: git email, unauthenticated
 pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
     let git_email = crate::vcs::default_vcs().user_email()?;
     let project = load_project_optional(root);
     let project_id = crate::auth::session::project_id(root).ok();
 
-    // 1. JOY_SESSION: direct session lookup by opaque ID.
-    //    `joy auth --token` outputs `export JOY_SESSION=<id>` for eval.
-    //    The ID maps directly to a session file -- no ambiguity.
-    if let Some(sid) = std::env::var("JOY_SESSION").ok().filter(|s| !s.is_empty()) {
-        if let Ok(Some(sess)) = crate::auth::session::load_session_by_id(&sid) {
-            if sess.claims.expires > chrono::Utc::now() && is_ai_member(&sess.claims.member) {
-                // Verify the session belongs to this project (not a different one)
-                let session_matches_project = project_id
-                    .as_ref()
-                    .map(|pid| sess.claims.project_id == *pid)
-                    .unwrap_or(false);
-                if session_matches_project {
-                    if let Some(ref project) = project {
-                        if project.members.contains_key(&sess.claims.member) {
-                            return Ok(Identity {
-                                member: sess.claims.member.clone(),
-                                delegated_by: crate::vcs::default_vcs().user_email().ok(),
-                                authenticated: true,
-                            });
+    // 1. JOY_SESSION: env var carries the ephemeral private key bound to
+    //    the session (ADR-033). We derive the public key from it and match
+    //    against `session_public_key` stored in the session file. Without
+    //    possession of the env var a sibling terminal cannot reuse a
+    //    session file it can read.
+    if let Some(env_value) = std::env::var("JOY_SESSION").ok().filter(|s| !s.is_empty()) {
+        if let Some((sid, ephemeral_private)) = crate::auth::session::parse_session_env(&env_value)
+        {
+            if let Ok(Some(sess)) = crate::auth::session::load_session_by_id(&sid) {
+                if sess.claims.expires > chrono::Utc::now() && is_ai_member(&sess.claims.member) {
+                    let session_matches_project = project_id
+                        .as_ref()
+                        .map(|pid| sess.claims.project_id == *pid)
+                        .unwrap_or(false);
+                    if session_matches_project {
+                        if let Some(ref project) = project {
+                            if project.members.contains_key(&sess.claims.member)
+                                && ephemeral_public_matches(&sess, &ephemeral_private)
+                            {
+                                return Ok(Identity {
+                                    member: sess.claims.member.clone(),
+                                    delegated_by: crate::vcs::default_vcs().user_email().ok(),
+                                    authenticated: true,
+                                });
+                            }
                         }
                     }
                 }
@@ -77,27 +82,14 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
         }
     }
 
-    // 2. JOY_TOKEN: decode the delegation token to find the AI member.
-    //    Backwards compatibility for tools not yet using eval pattern.
-    if let Some(token_str) = std::env::var("JOY_TOKEN").ok().filter(|s| !s.is_empty()) {
-        if let Ok(token) = crate::auth::token::decode_token(&token_str) {
-            let ai_member = &token.claims.ai_member;
-            if let Some(ref pid) = project_id {
-                if let Some(id) = session_identity(root, ai_member, pid, &project) {
-                    return Ok(id);
-                }
-            }
-        }
-    }
-
-    // 3. Human session by git email
+    // 2. Human session by git email
     if let Some(ref pid) = project_id {
         if let Some(session_identity) = session_identity(root, &git_email, pid, &project) {
             return Ok(session_identity);
         }
     }
 
-    // 4. Fallback: git email, not authenticated
+    // 3. Fallback: git email, not authenticated
     Ok(Identity {
         member: git_email,
         delegated_by: None,
@@ -189,9 +181,24 @@ fn check_session(root: &Path, member: &str, project: &Option<Project>) -> bool {
         return true;
     }
 
-    // For AI members: session existence + not expired is sufficient
-    // (token was validated at joy auth --token time)
-    true
+    // For AI members: under ADR-033 the only valid authentication path is
+    // the JOY_SESSION env var matched to the ephemeral public key. A
+    // session file on its own no longer authenticates anyone.
+    false
+}
+
+/// Verify that the private key bytes from JOY_SESSION derive to the public
+/// key recorded in the session claims. This is the core proof-of-possession
+/// check for AI sessions under ADR-033.
+fn ephemeral_public_matches(
+    sess: &crate::auth::session::SessionToken,
+    ephemeral_private: &[u8; 32],
+) -> bool {
+    let Some(ref stored_pk_hex) = sess.claims.session_public_key else {
+        return false;
+    };
+    let kp = crate::auth::sign::IdentityKeypair::from_seed(ephemeral_private);
+    kp.public_key().to_hex() == *stored_pk_hex
 }
 
 fn load_project_optional(root: &Path) -> Option<Project> {

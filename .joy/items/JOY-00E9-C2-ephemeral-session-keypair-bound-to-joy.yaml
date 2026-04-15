@@ -13,7 +13,7 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy
 created: 2026-04-15T05:17:13.354217608Z
-updated: 2026-04-15T05:42:43.119663589Z
+updated: 2026-04-15T06:59:04.851296767Z
 description: |-
   Bind the JOY_SESSION secret to the terminal in which it was created so it cannot be silently reused from a sibling terminal as the same OS user.
 
@@ -33,3 +33,7 @@ description: |-
   - AI exfiltrating JOY_SESSION to elsewhere is a separate threat (sandbox break) and not addressable by auth design.
 
   Touches every Joy write command path. Requires ADR-033.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-15T06:59:04.851296465Z
+  text: 'Phase 4 done: AI sessions are bound to an ephemeral keypair whose private half lives only in JOY_SESSION. Sibling terminals that can read the session file but lack the env var cannot act as the AI - Constraint 2 now structurally enforced. joy auth --token persists the live env value into tool settings files so AI tools'' fresh subshells pick it up. 230 unit tests green, 160/160 BATS green.'
