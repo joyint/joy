@@ -23,3 +23,6 @@
 2026-04-15T07:52:17.191Z JOY-00E7-B1 item.status_changed "new -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-15T07:52:26.817Z JOY-00EB-6C item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-15T07:57:49.946Z JOY-00EB-6C comment.added "Shell completion added: complete_ai_member in complete.rs reads project.yaml and emits AI member ids filtered by prefix. Wired into TokenAddArgs.member and TokenRmArgs.member via #[arg(add = ArgValueCompleter::new(...))]. 4 new unit tests on the pure filter helper (AI-prefix filtering, prefix matching, sorted output, empty no-match). Dynamic dispatch goes through the existing CompleteEnv in main.rs - no new setup required; users already following the completions docs get the new completer automatically." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-15T07:59:22.464Z JOY-00EB-6C guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-04-15T08:02:18.737Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-15T08:02:18.766Z JOY-00EB-6C item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

@@ -1,7 +1,7 @@
 id: JOY-00EB-6C
 title: Shell completion for member IDs in joy auth token add
 type: task
-status: in-progress
+status: closed
 priority: medium
 parent: JOY-00E7-B1
 assignees:
@@ -11,7 +11,7 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-15T05:17:26.691689675Z
-updated: 2026-04-15T07:57:49.943376370Z
+updated: 2026-04-15T08:02:18.764250531Z
 description: |-
   Add shell completion (bash, zsh, fish) for the AI member id argument of 'joy auth token add <ai-member>'.
 
