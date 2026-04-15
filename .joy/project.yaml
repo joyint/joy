@@ -52,13 +52,10 @@ members:
     capabilities: all
     public_key: 05ae823757c1d3d0db5f2f66c7f55642b2258f15776a6b2f029142bfa9b5f73d
     salt: 3da1d77fe4dcbd9c1ee917dc49451f500c7d46cdc6e93cb9bf61f466282985ea
-    ai_tokens:
+    ai_delegations:
       ai:claude@joy:
-        token_key: f499f2b0de5569b7da54ec2a626a83cc952eff5e68ad2d91e08eb07dd72709d5
-        created: 2026-04-15T04:46:42.325702655Z
-      ai:qwen@joy:
-        token_key: 0702f18479930ba250c013f9b195c21c5515e48be2dcb13c7b7282c9de39b7a9
-        created: 2026-03-31T23:52:33.616376414Z
+        delegation_key: 1cf49aa5bbcfbe2d8f5129e916981de8ecc181b9a2abef83ff1311a0d79b072b
+        created: 2026-04-15T08:01:14.889499391Z
 created: 2026-03-09T23:57:36.761964460Z
 release:
   version-files:
