@@ -256,7 +256,7 @@ pub fn project_id(root: &Path) -> Result<String, JoyError> {
         .unwrap_or_else(|| project.name.to_lowercase().replace(' ', "-")))
 }
 
-fn dirs_state_dir() -> Result<PathBuf, JoyError> {
+pub(super) fn dirs_state_dir() -> Result<PathBuf, JoyError> {
     // Use XDG_STATE_HOME or ~/.local/state
     if let Ok(xdg) = std::env::var("XDG_STATE_HOME") {
         return Ok(PathBuf::from(xdg));

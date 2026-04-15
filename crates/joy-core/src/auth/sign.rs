@@ -68,6 +68,13 @@ impl IdentityKeypair {
         let sig: Signature = self.signing_key.sign(message);
         sig.to_bytes().to_vec()
     }
+
+    /// Extract the 32-byte seed for at-rest persistence (e.g. delegation key files).
+    /// The returned bytes are the private key material; the caller is responsible
+    /// for protecting them (file permissions 0600, etc.).
+    pub fn to_seed_bytes(&self) -> [u8; 32] {
+        self.signing_key.to_bytes()
+    }
 }
 
 impl PublicKey {

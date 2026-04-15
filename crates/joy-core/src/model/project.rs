@@ -80,6 +80,8 @@ pub struct Member {
     pub otp_hash: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub ai_tokens: BTreeMap<String, AiTokenEntry>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub ai_delegations: BTreeMap<String, AiDelegationEntry>,
 }
 
 /// A registered AI delegation token entry.
@@ -89,6 +91,20 @@ pub struct AiTokenEntry {
     pub token_key: String,
     /// When this token was created.
     pub created: chrono::DateTime<chrono::Utc>,
+}
+
+/// A stable per-(human, AI) delegation key (ADR-033). Replaces the per-token
+/// `AiTokenEntry`. The matching private key lives off-repo at
+/// `~/.local/state/joy/delegations/<project>/<ai-member>.key`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AiDelegationEntry {
+    /// Public key of the stable delegation keypair (hex-encoded Ed25519).
+    pub delegation_key: String,
+    /// When this delegation was first issued.
+    pub created: chrono::DateTime<chrono::Utc>,
+    /// When this delegation was last rotated, if ever.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rotated: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -249,6 +265,7 @@ impl Member {
             salt: None,
             otp_hash: None,
             ai_tokens: BTreeMap::new(),
+            ai_delegations: BTreeMap::new(),
         }
     }
 
@@ -318,6 +335,103 @@ mod tests {
         let yaml = serde_yaml_ng::to_string(&project).unwrap();
         let parsed: Project = serde_yaml_ng::from_str(&yaml).unwrap();
         assert_eq!(project, parsed);
+    }
+
+    // -----------------------------------------------------------------------
+    // ai_delegations (ADR-033) tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn ai_delegations_omitted_when_empty() {
+        let mut m = Member::new(MemberCapabilities::All);
+        assert!(m.ai_delegations.is_empty());
+        let yaml = serde_yaml_ng::to_string(&m).unwrap();
+        assert!(
+            !yaml.contains("ai_delegations"),
+            "empty ai_delegations should be skipped, got: {yaml}"
+        );
+        // sanity: round-trips empty
+        m.public_key = Some("aa".repeat(32));
+        let yaml = serde_yaml_ng::to_string(&m).unwrap();
+        let parsed: Member = serde_yaml_ng::from_str(&yaml).unwrap();
+        assert_eq!(m, parsed);
+    }
+
+    #[test]
+    fn ai_delegations_yaml_roundtrip() {
+        let mut m = Member::new(MemberCapabilities::All);
+        m.public_key = Some("aa".repeat(32));
+        m.salt = Some("bb".repeat(32));
+        m.ai_delegations.insert(
+            "ai:claude@joy".into(),
+            AiDelegationEntry {
+                delegation_key: "cc".repeat(32),
+                created: chrono::DateTime::parse_from_rfc3339("2026-04-15T10:00:00Z")
+                    .unwrap()
+                    .with_timezone(&chrono::Utc),
+                rotated: None,
+            },
+        );
+        let yaml = serde_yaml_ng::to_string(&m).unwrap();
+        assert!(yaml.contains("ai_delegations:"));
+        assert!(yaml.contains("ai:claude@joy:"));
+        assert!(yaml.contains("delegation_key:"));
+        assert!(
+            !yaml.contains("rotated:"),
+            "unset rotated should be skipped"
+        );
+
+        let parsed: Member = serde_yaml_ng::from_str(&yaml).unwrap();
+        assert_eq!(m, parsed);
+    }
+
+    #[test]
+    fn ai_delegations_with_rotated_roundtrips() {
+        let mut m = Member::new(MemberCapabilities::All);
+        let created = chrono::DateTime::parse_from_rfc3339("2026-04-01T10:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let rotated = chrono::DateTime::parse_from_rfc3339("2026-04-15T12:30:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        m.ai_delegations.insert(
+            "ai:claude@joy".into(),
+            AiDelegationEntry {
+                delegation_key: "dd".repeat(32),
+                created,
+                rotated: Some(rotated),
+            },
+        );
+        let yaml = serde_yaml_ng::to_string(&m).unwrap();
+        assert!(yaml.contains("rotated:"));
+        let parsed: Member = serde_yaml_ng::from_str(&yaml).unwrap();
+        assert_eq!(m.ai_delegations["ai:claude@joy"].rotated, Some(rotated));
+        assert_eq!(parsed, m);
+    }
+
+    #[test]
+    fn ai_delegations_independent_of_ai_tokens() {
+        // Both maps may coexist on disk during the migration window between
+        // the ADR-023 and ADR-033 trust models.
+        let yaml = r#"
+capabilities: all
+public_key: aa
+salt: bb
+ai_tokens:
+  ai:claude@joy:
+    token_key: oldkey
+    created: "2026-03-28T22:00:00Z"
+ai_delegations:
+  ai:claude@joy:
+    delegation_key: newkey
+    created: "2026-04-15T10:00:00Z"
+"#;
+        let parsed: Member = serde_yaml_ng::from_str(yaml).unwrap();
+        assert_eq!(parsed.ai_tokens["ai:claude@joy"].token_key, "oldkey");
+        assert_eq!(
+            parsed.ai_delegations["ai:claude@joy"].delegation_key,
+            "newkey"
+        );
     }
 
     // -----------------------------------------------------------------------
