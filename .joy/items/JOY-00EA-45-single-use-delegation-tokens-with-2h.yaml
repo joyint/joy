@@ -1,7 +1,7 @@
 id: JOY-00EA-45
 title: Single-use delegation tokens with 2h issuance TTL
 type: story
-status: new
+status: closed
 priority: high
 parent: JOY-00E7-B1
 capabilities:
@@ -11,7 +11,7 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy
 created: 2026-04-15T05:17:21.575819432Z
-updated: 2026-04-15T07:34:46.101233147Z
+updated: 2026-04-15T07:52:17.164171534Z
 description: |-
   Make delegation tokens single-use and short-lived so each AI session traces to a deliberate, recent human approval rather than long-lived bearer reuse.
 

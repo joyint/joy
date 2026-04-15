@@ -1,15 +1,17 @@
 id: JOY-00EB-6C
 title: Shell completion for member IDs in joy auth token add
 type: task
-status: new
+status: in-progress
 priority: medium
 parent: JOY-00E7-B1
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-15T05:17:26.691689675Z
-updated: 2026-04-15T05:17:26.691689675Z
+updated: 2026-04-15T07:57:49.943376370Z
 description: |-
   Add shell completion (bash, zsh, fish) for the AI member id argument of 'joy auth token add <ai-member>'.
 
@@ -19,3 +21,7 @@ description: |-
   - Wire the existing clap completion machinery to read project.yaml and emit AI member ids.
   - Verify in bash, zsh, fish.
   - Update completion-installation docs if needed.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-15T07:57:49.943376063Z
+  text: 'Shell completion added: complete_ai_member in complete.rs reads project.yaml and emits AI member ids filtered by prefix. Wired into TokenAddArgs.member and TokenRmArgs.member via #[arg(add = ArgValueCompleter::new(...))]. 4 new unit tests on the pure filter helper (AI-prefix filtering, prefix matching, sorted output, empty no-match). Dynamic dispatch goes through the existing CompleteEnv in main.rs - no new setup required; users already following the completions docs get the new completer automatically.'

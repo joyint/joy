@@ -1,7 +1,7 @@
 id: JOY-00E9-C2
 title: Ephemeral session keypair bound to JOY_SESSION env var
 type: story
-status: in-progress
+status: closed
 priority: high
 parent: JOY-00E7-B1
 assignees:
@@ -13,7 +13,7 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy
 created: 2026-04-15T05:17:13.354217608Z
-updated: 2026-04-15T06:59:04.851296767Z
+updated: 2026-04-15T07:52:17.142566348Z
 description: |-
   Bind the JOY_SESSION secret to the terminal in which it was created so it cannot be silently reused from a sibling terminal as the same OS user.
 

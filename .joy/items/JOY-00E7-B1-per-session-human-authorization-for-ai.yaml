@@ -1,7 +1,7 @@
 id: JOY-00E7-B1
 title: Per-session human authorization for AI delegation
 type: epic
-status: new
+status: closed
 priority: high
 capabilities:
 - conceive
@@ -9,7 +9,7 @@ capabilities:
 effort: 5
 created_by: ai:claude@joy
 created: 2026-04-15T05:16:50.003514116Z
-updated: 2026-04-15T07:48:57.277583036Z
+updated: 2026-04-15T07:52:17.188164339Z
 description: |-
   Rework AI delegation auth so that (1) project.yaml stops churning on every joy auth token add, (2) JOY_SESSION cannot be silently reused in another terminal on the same machine, and (3) every AI session can be traced to an explicit human passphrase entry. Three coordinated changes captured as child stories. New ADR-024 required.
 
