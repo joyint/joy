@@ -13,7 +13,7 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy
 created: 2026-04-15T05:17:03.977337734Z
-updated: 2026-04-15T05:39:29.617860924Z
+updated: 2026-04-15T06:21:58.629659495Z
 description: |-
   Replace the per-token public key entry in members[human].ai_tokens with a stable per-(human, AI) delegation key.
 
@@ -34,3 +34,9 @@ comments:
 - author: ai:claude@joy
   date: 2026-04-15T05:39:29.617860759Z
   text: 'Plan: ADR-033 drafted in JI repo at docs/dev/architecture/decisions/ADR-033-per-session-human-authorization.md. Implementation will land JOY-00E8-3D and JOY-00E9-C2 together as one coordinated migration (shared project.yaml schema change, shared auth/token/session code paths). JOY-00EA-45 (single-use + 2h TTL) lands separately on top. JOY-00EB-6C (shell completion) is independent.'
+- author: ai:claude@joy
+  date: 2026-04-15T06:10:44.010465546Z
+  text: 'Phase 1 done (a833e55): added Member.ai_delegations schema, joy_core::auth::delegation module with save/load/remove for per-(project, AI) Ed25519 seeds at ~/.local/state/joy/delegations/<project>/<ai>.key (mode 0600), IdentityKeypair::to_seed_bytes for persistence. Pure additive, no behavior change. 12 new unit tests; full BATS suite green (159/159). Phase 2 (CLI switchover to ai_delegations) next.'
+- author: ai:claude@joy
+  date: 2026-04-15T06:21:58.629659181Z
+  text: 'Phase 2 done: CLI switched from ai_tokens to ai_delegations. token::create_token now accepts the stable delegation keypair; run_token_add reuses existing delegation or generates once and persists privately to ~/.local/state; auth_with_token validates against the stable key; run_token_rm, ai reset, and project show all switched. Legacy ai_tokens entries dropped opportunistically on issuance/revocation. 159/159 BATS green, 227 unit tests green. Existing AI sessions invalidated as expected (Phase 3 migrate-delegations will handle pre-existing deployments).'
