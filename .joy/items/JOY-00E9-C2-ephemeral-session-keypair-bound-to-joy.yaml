@@ -1,0 +1,35 @@
+id: JOY-00E9-C2
+title: Ephemeral session keypair bound to JOY_SESSION env var
+type: story
+status: in-progress
+priority: high
+parent: JOY-00E7-B1
+assignees:
+- member: ai:claude@joy
+capabilities:
+- plan
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy
+created: 2026-04-15T05:17:13.354217608Z
+updated: 2026-04-15T05:42:43.119663589Z
+description: |-
+  Bind the JOY_SESSION secret to the terminal in which it was created so it cannot be silently reused from a sibling terminal as the same OS user.
+
+  Why: Today the on-disk session file at ~/.local/state/joy/sessions/<hash>.json is the actual credential; JOY_SESSION is only a lookup id. Any process running as the same user (including a second AI instance) can read the file and operate. This violates the constraint that an AI session must require explicit human handover.
+
+  Design:
+  - joy auth --token generates an ephemeral Ed25519 keypair.
+  - Private key is encoded into JOY_SESSION env var only. Never written to disk.
+  - Public key + claims + expiry stored at ~/.local/state/joy/sessions/<id>.json. The file alone is not a credential.
+  - Each Joy write command signs its request with the ephemeral private key (read from env). joy core verifies against the session file's public key.
+  - Without the env var: no signature possible, no operation possible.
+
+  Properties achieved:
+  - Different machine: still isolated by filesystem locality.
+  - Same machine, different terminal without JOY_SESSION inherited: cannot operate.
+  - AI process and its child processes inherit JOY_SESSION (intended).
+  - AI exfiltrating JOY_SESSION to elsewhere is a separate threat (sandbox break) and not addressable by auth design.
+
+  Touches every Joy write command path. Requires ADR-033.

@@ -1,0 +1,36 @@
+id: JOY-00E8-3D
+title: Stable per-(human, AI) delegation key in project.yaml
+type: story
+status: in-progress
+priority: high
+parent: JOY-00E7-B1
+assignees:
+- member: ai:claude@joy
+capabilities:
+- plan
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy
+created: 2026-04-15T05:17:03.977337734Z
+updated: 2026-04-15T05:39:29.617860924Z
+description: |-
+  Replace the per-token public key entry in members[human].ai_tokens with a stable per-(human, AI) delegation key.
+
+  Why: The current ai_tokens map is keyed by AI member id, so issuing a new token already overwrites the previous entry; per-token revocation is not actually achievable. Yet every joy auth token add rewrites project.yaml and produces merge conflicts on multi-machine and multi-team workflows.
+
+  Design:
+  - delegation_public_key stored once in project.yaml under members[human].ai_delegations[ai_member]. Stable until rotation.
+  - delegation_private_key stored locally with the human at ~/.local/state/joy/delegations/<project>/<ai-member>.key. Never seen by the AI.
+  - Token validation continues to require both signatures (delegator + binding); the binding signature now verifies against the stable delegation public key.
+  - Revocation = joy ai rotate <ai-member>: new delegation_key in project.yaml, single commit, all prior tokens invalid.
+
+  Trade-off: Per-token revocation (which we did not actually have) is replaced by per-(human, AI) revocation. This is the honest semantics already implicit in today's data model.
+
+  Threat model note: The local delegation_private_key is a new long-lived secret on disk. An attacker with read access to the user's home cannot forge tokens (still needs the passphrase-derived identity key) but should be documented as an SSH-key-class asset.
+
+  Requires ADR-033.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-15T05:39:29.617860759Z
+  text: 'Plan: ADR-033 drafted in JI repo at docs/dev/architecture/decisions/ADR-033-per-session-human-authorization.md. Implementation will land JOY-00E8-3D and JOY-00E9-C2 together as one coordinated migration (shared project.yaml schema change, shared auth/token/session code paths). JOY-00EA-45 (single-use + 2h TTL) lands separately on top. JOY-00EB-6C (shell completion) is independent.'

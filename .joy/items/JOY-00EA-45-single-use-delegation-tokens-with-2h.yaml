@@ -1,0 +1,28 @@
+id: JOY-00EA-45
+title: Single-use delegation tokens with 2h issuance TTL
+type: story
+status: new
+priority: high
+parent: JOY-00E7-B1
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy
+created: 2026-04-15T05:17:21.575819432Z
+updated: 2026-04-15T05:17:21.575819432Z
+description: |-
+  Make delegation tokens single-use and short-lived so each AI session traces to a deliberate, recent human approval rather than long-lived bearer reuse.
+
+  Why: Today a token issued by joy auth token add is a bearer credential with long TTL. The AI could in principle redeem it many times across sessions without further human involvement. The constraint we want is: every AI session = one explicit human passphrase entry.
+
+  Design:
+  - Token TTL between issuance and redemption: 2 hours. Redemption after expiry rejected.
+  - Single-use: once joy auth --token has redeemed a token, the token id is recorded in a local consumed-tokens log (~/.local/state/joy/consumed-tokens.json) and any further redemption attempt is rejected.
+  - Token carries a stable token id (uuid or hash of claims) for replay tracking.
+  - After successful redemption, the AI's session lives normally (24h, separate concern).
+
+  Trade-off: Slightly more friction (human must be present when AI starts a new session). This is the desired property, not a defect.
+
+  UX unchanged from human's perspective: still 'joy auth token add', still hand the token string over once, AI runs joy auth --token. The string is just shorter-lived and one-shot.
