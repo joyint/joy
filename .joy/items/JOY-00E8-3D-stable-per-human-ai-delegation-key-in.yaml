@@ -1,7 +1,7 @@
 id: JOY-00E8-3D
 title: Stable per-(human, AI) delegation key in project.yaml
 type: story
-status: in-progress
+status: closed
 priority: high
 parent: JOY-00E7-B1
 assignees:
@@ -13,7 +13,7 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy
 created: 2026-04-15T05:17:03.977337734Z
-updated: 2026-04-15T06:21:58.629659495Z
+updated: 2026-04-15T07:52:17.121035576Z
 description: |-
   Replace the per-token public key entry in members[human].ai_tokens with a stable per-(human, AI) delegation key.
 

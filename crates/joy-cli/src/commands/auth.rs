@@ -60,9 +60,10 @@ enum TokenCommand {
 #[derive(Args)]
 struct TokenAddArgs {
     /// AI member ID (e.g. ai:claude@joy)
+    #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_ai_member))]
     member: String,
 
-    /// Token expiry in hours (default: no expiry)
+    /// Token expiry in hours (default 2; ADR-033 issuance window)
     #[arg(long)]
     ttl: Option<i64>,
 }
@@ -70,6 +71,7 @@ struct TokenAddArgs {
 #[derive(Args)]
 struct TokenRmArgs {
     /// AI member ID (e.g. ai:claude@joy)
+    #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_ai_member))]
     member: String,
 }
 

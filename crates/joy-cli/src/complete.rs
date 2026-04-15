@@ -55,6 +55,45 @@ pub fn complete_item_id(current: &OsStr) -> Vec<CompletionCandidate> {
     candidates
 }
 
+/// Filter member ids down to AI members whose id starts with `prefix`,
+/// returned sorted for deterministic completion output.
+fn filter_ai_members<'a, I: Iterator<Item = &'a String>>(members: I, prefix: &str) -> Vec<String> {
+    let mut out: Vec<String> = members
+        .filter(|id| joy_core::model::project::is_ai_member(id))
+        .filter(|id| id.starts_with(prefix))
+        .cloned()
+        .collect();
+    out.sort();
+    out
+}
+
+/// Complete AI member ids from the project's member list.
+///
+/// Scans `project.yaml` for entries whose id starts with `ai:` and filters
+/// by the current prefix. Errors (missing project, unreadable yaml) yield
+/// no candidates rather than panicking - completion must always be
+/// non-fatal for the interactive shell.
+pub fn complete_ai_member(current: &OsStr) -> Vec<CompletionCandidate> {
+    let Some(prefix) = current.to_str() else {
+        return Vec::new();
+    };
+    let cwd = match std::env::current_dir() {
+        Ok(d) => d,
+        Err(_) => return Vec::new(),
+    };
+    let Some(root) = store::find_project_root(&cwd) else {
+        return Vec::new();
+    };
+    let project = match store::load_project(&root) {
+        Ok(p) => p,
+        Err(_) => return Vec::new(),
+    };
+    filter_ai_members(project.members.keys(), prefix)
+        .into_iter()
+        .map(CompletionCandidate::new)
+        .collect()
+}
+
 /// Extract the ID prefix from a filename like "JOY-0001-some-title.yaml".
 fn extract_id(filename: &OsStr) -> Option<String> {
     let name = filename.to_str()?;
@@ -144,5 +183,46 @@ mod tests {
     fn extract_no_yaml() {
         let f = OsString::from("README.md");
         assert_eq!(extract_id(&f), None);
+    }
+
+    #[test]
+    fn filter_ai_members_only_returns_ai_prefix() {
+        let members: Vec<String> = vec![
+            "horst@joydev.com".into(),
+            "ai:claude@joy".into(),
+            "ai:qwen@joy".into(),
+            "alice@team.com".into(),
+        ];
+        let out = filter_ai_members(members.iter(), "");
+        assert_eq!(out, vec!["ai:claude@joy", "ai:qwen@joy"]);
+    }
+
+    #[test]
+    fn filter_ai_members_respects_prefix() {
+        let members: Vec<String> = vec![
+            "ai:claude@joy".into(),
+            "ai:qwen@joy".into(),
+            "ai:copilot@joy".into(),
+        ];
+        let out = filter_ai_members(members.iter(), "ai:c");
+        assert_eq!(out, vec!["ai:claude@joy", "ai:copilot@joy"]);
+    }
+
+    #[test]
+    fn filter_ai_members_sorted_output() {
+        let members: Vec<String> = vec![
+            "ai:zzz@joy".into(),
+            "ai:aaa@joy".into(),
+            "ai:mmm@joy".into(),
+        ];
+        let out = filter_ai_members(members.iter(), "");
+        assert_eq!(out, vec!["ai:aaa@joy", "ai:mmm@joy", "ai:zzz@joy"]);
+    }
+
+    #[test]
+    fn filter_ai_members_empty_on_no_match() {
+        let members: Vec<String> = vec!["ai:claude@joy".into()];
+        let out = filter_ai_members(members.iter(), "ai:x");
+        assert!(out.is_empty());
     }
 }
