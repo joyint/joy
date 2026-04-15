@@ -1,0 +1,21 @@
+id: JOY-00EB-6C
+title: Shell completion for member IDs in joy auth token add
+type: task
+status: new
+priority: medium
+parent: JOY-00E7-B1
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy
+created: 2026-04-15T05:17:26.691689675Z
+updated: 2026-04-15T05:17:26.691689675Z
+description: |-
+  Add shell completion (bash, zsh, fish) for the AI member id argument of 'joy auth token add <ai-member>'.
+
+  Why: AI member ids like ai:claude@joy contain characters that are awkward to type and easy to misspell. Tab completion should pull candidates from project.yaml's members list, filtered to type=ai (and optionally to AIs the current human has not yet delegated to, surfacing the most likely next pick).
+
+  Scope:
+  - Wire the existing clap completion machinery to read project.yaml and emit AI member ids.
+  - Verify in bash, zsh, fish.
+  - Update completion-installation docs if needed.

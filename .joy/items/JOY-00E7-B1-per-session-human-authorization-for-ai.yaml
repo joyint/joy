@@ -1,0 +1,38 @@
+id: JOY-00E7-B1
+title: Per-session human authorization for AI delegation
+type: epic
+status: new
+priority: high
+capabilities:
+- conceive
+- plan
+effort: 5
+created_by: ai:claude@joy
+created: 2026-04-15T05:16:50.003514116Z
+updated: 2026-04-15T05:48:15.509628656Z
+description: |-
+  Rework AI delegation auth so that (1) project.yaml stops churning on every joy auth token add, (2) JOY_SESSION cannot be silently reused in another terminal on the same machine, and (3) every AI session can be traced to an explicit human passphrase entry. Three coordinated changes captured as child stories. New ADR-024 required.
+
+  Constraints that must hold:
+  - AI must never be able to issue a token for itself (passphrase-only authority remains with the human).
+  - A session must only function where it was created (no on-disk session secret reusable from a sibling terminal).
+  - Every AI session traces to an explicit, recent human approval (no long-lived bearer reuse).
+comments:
+- author: ai:claude@joy
+  date: 2026-04-15T05:48:15.509628409Z
+  text: |-
+    Implementation plan (6 phases, hard cut, no backward compat reading per ADR-033):
+
+    Phase 1 (small): Add ai_delegations: BTreeMap<String, AiDelegationEntry> field to Member alongside existing ai_tokens. New AiDelegationEntry { delegation_key, created, rotated }. New module joy_core::auth::delegation with local-state read/write for delegation private keys at ~/.local/state/joy/delegations/<project>/<ai-member>.key (0600). No behavior change yet, all existing tests pass.
+
+    Phase 2: Rewrite run_token_add to use stable delegation key. If ai_delegations[ai_member] exists: read private from local state, sign binding with it. If absent: generate keypair, persist private locally, write public to project.yaml exactly once. Token format gains a token_id (UUID) field, included in claims and covered by both signatures. Validation in auth_with_token reads only ai_delegations (ai_tokens fully ignored). Old ai_tokens entries opportunistically removed on auth token add to keep project.yaml clean.
+
+    Phase 3: New command joy ai migrate-delegations per ADR-033 migration section. Performs explicit one-shot migration; idempotent.
+
+    Phase 4 (largest): Replace IdentityKeypair::from_token_seed (auth.rs:279) with ephemeral keypair generation for AI sessions only. Session file stores only the public key + claims + expiry. Encode private key into JOY_SESSION env var as joy_s_<base64>. Modify validate_session to additionally require a request signature signed with the ephemeral key. Add request-signing layer to every Joy write command path (one helper, called from each handler that calls guard::enforce). Human session path (TTY-bound) unchanged.
+
+    Phase 5: Token TTL default 2h (currently None = never expires). Add consumed-tokens.json at ~/.local/state/joy/consumed-tokens.json. On successful redemption: append token_id, then GC entries older than 2h. On already-consumed: reject with the exact error from ADR-033 lifecycle section (CONSUMED). On expired: reject with EXPIRED message.
+
+    Phase 6: Update joy ai update templates (CLAUDE.md, QWEN.md, AGENTS.md, ...) with the EXPIRED/CONSUMED error handling clause. Update Auth.md. Drop the ai_tokens field from Member (one release after Phase 2) and the dead AI-side TTY code. tty field stays for human sessions (still actively used in identity.rs:185-188).
+
+    Each phase = one commit, review gate between phases.
