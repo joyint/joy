@@ -232,7 +232,7 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE"
     run joy auth token rm ai:test@joy --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Token for ai:test@joy revoked"* ]]
+    [[ "$output" == *"Delegation for ai:test@joy revoked"* ]]
 }
 
 @test "joy auth token rm rejects when no token exists" {
@@ -241,7 +241,7 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     joy project member add ai:test@joy
     run joy auth token rm ai:test@joy --passphrase "$TEST_PASSPHRASE"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"No token registered"* ]]
+    [[ "$output" == *"No delegation registered"* ]]
 }
 
 # ============================================================

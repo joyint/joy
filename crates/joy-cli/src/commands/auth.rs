@@ -5,7 +5,7 @@ use anyhow::Result;
 use chrono::Utc;
 use clap::{Args, Subcommand};
 
-use joy_core::auth::{derive, session, sign, token};
+use joy_core::auth::{delegation, derive, session, sign, token};
 use joy_core::store;
 use joy_core::vcs::Vcs;
 
@@ -252,20 +252,23 @@ fn auth_with_token(
     })?;
     let human_pk = sign::PublicKey::from_hex(human_pk_hex)?;
 
-    // Look up the ai_tokens entry for this AI member under the delegator
+    // Look up the stable delegation entry for this AI member under the delegator (ADR-033).
     let ai_member_id = &delegation.claims.ai_member;
-    let token_entry = human_member.ai_tokens.get(ai_member_id).ok_or_else(|| {
-        anyhow::anyhow!(
-            "No token registered for {} by {}. Create one with `joy auth token add {}`.",
-            ai_member_id,
-            human,
-            ai_member_id
-        )
-    })?;
-    let token_pk = sign::PublicKey::from_hex(&token_entry.token_key)?;
+    let delegation_entry = human_member
+        .ai_delegations
+        .get(ai_member_id)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "No delegation registered for {} by {}. Create one with `joy auth token add {}`.",
+                ai_member_id,
+                human,
+                ai_member_id
+            )
+        })?;
+    let delegation_pk = sign::PublicKey::from_hex(&delegation_entry.delegation_key)?;
 
     // Validate dual signatures + project + expiry
-    let claims = token::validate_token(&delegation, &human_pk, &token_pk, project_id)?;
+    let claims = token::validate_token(&delegation, &human_pk, &delegation_pk, project_id)?;
 
     // Verify the AI member is registered
     if !project.members.contains_key(&claims.ai_member) {
@@ -275,14 +278,15 @@ fn auth_with_token(
         );
     }
 
-    // Create a local session — no project.yaml changes needed
+    // Create a local session — no project.yaml changes needed.
+    // Session binding to delegation_key so rotation invalidates all sessions.
     let session_keypair = sign::IdentityKeypair::from_token_seed(token_str, project_id);
     let session_token = session::create_session_for_ai(
         &session_keypair,
         &claims.ai_member,
         project_id,
         None,
-        &token_entry.token_key,
+        &delegation_entry.delegation_key,
     );
     session::save_session(project_id, &session_token)?;
 
@@ -486,28 +490,94 @@ fn run_token_add(args: TokenAddArgs, passphrase_flag: Option<&str>) -> Result<()
         anyhow::bail!("incorrect passphrase");
     }
 
-    // Create token
+    // ADR-033: stable per-(human, AI) delegation key.
+    //   1. If project.yaml already has the public key AND the matching private
+    //      key is present locally -> reuse both (no project.yaml write, no
+    //      merge conflict class).
+    //   2. If neither is present -> generate a fresh keypair, persist private
+    //      to local state (0600), and insert the public key into project.yaml
+    //      exactly once.
+    //   3. If one side is present but not the other (state/yaml desync) ->
+    //      bail with a clear instruction to rotate rather than silently
+    //      papering over a half-broken state.
     let project_id = session::project_id(&root)?;
-    let ttl = args.ttl.map(chrono::Duration::hours);
-    let result = token::create_token(&keypair, &args.member, &email, &project_id, ttl);
+    let existing_public = member
+        .ai_delegations
+        .get(&args.member)
+        .map(|e| e.delegation_key.clone());
+    let existing_private = delegation::load_delegation_key(&project_id, &args.member)?;
 
-    // Store token_key in delegator's ai_tokens
+    let (delegation_keypair, new_entry) = match (existing_public, existing_private) {
+        (Some(pub_hex), Some(seed)) => {
+            let kp = sign::IdentityKeypair::from_seed(&seed);
+            if kp.public_key().to_hex() != pub_hex {
+                anyhow::bail!(
+                    "Local delegation private key for {} does not match the public key in project.yaml. \
+                     Run `joy ai rotate {}` to generate a fresh pair.",
+                    args.member,
+                    args.member
+                );
+            }
+            (kp, false)
+        }
+        (None, None) => {
+            let kp = sign::IdentityKeypair::from_random();
+            let seed = kp.to_seed_bytes();
+            delegation::save_delegation_key(&project_id, &args.member, &seed)?;
+            (kp, true)
+        }
+        (Some(_), None) => anyhow::bail!(
+            "Delegation for {} is recorded in project.yaml but the local private key is missing. \
+             Run `joy ai rotate {}` to generate a fresh pair on this machine.",
+            args.member,
+            args.member
+        ),
+        (None, Some(_)) => anyhow::bail!(
+            "Local delegation key for {} exists but no entry is recorded in project.yaml. \
+             Run `joy ai rotate {}` to resynchronise state.",
+            args.member,
+            args.member
+        ),
+    };
+
+    let ttl = args.ttl.map(chrono::Duration::hours);
+    let token_obj = token::create_token(
+        &keypair,
+        &delegation_keypair,
+        &args.member,
+        &email,
+        &project_id,
+        ttl,
+    );
+
+    // Persist the delegation public key on first issuance, and opportunistically
+    // remove the legacy ai_tokens entry if one still lingers from ADR-023.
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
     let mut project_mut: joy_core::model::project::Project = store::read_yaml(&project_path)?;
+    let mut yaml_changed = false;
     if let Some(m) = project_mut.members.get_mut(&email) {
-        m.ai_tokens.insert(
-            args.member.clone(),
-            joy_core::model::project::AiTokenEntry {
-                token_key: result.token_public_key.clone(),
-                created: chrono::Utc::now(),
-            },
-        );
+        if new_entry {
+            m.ai_delegations.insert(
+                args.member.clone(),
+                joy_core::model::project::AiDelegationEntry {
+                    delegation_key: delegation_keypair.public_key().to_hex(),
+                    created: chrono::Utc::now(),
+                    rotated: None,
+                },
+            );
+            yaml_changed = true;
+        }
+        if m.ai_tokens.remove(&args.member).is_some() {
+            yaml_changed = true;
+        }
     }
-    store::write_yaml_preserve(&project_path, &project_mut)?;
-    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-    joy_core::git_ops::auto_git_add(&root, &[&rel]);
+    if yaml_changed {
+        store::write_yaml_preserve(&project_path, &project_mut)?;
+        let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+        joy_core::git_ops::auto_git_add(&root, &[&rel]);
+    }
 
-    let encoded = token::encode_token(&result.token);
+    let encoded = token::encode_token(&token_obj);
 
     println!("Delegation token for {}:", args.member);
     println!();
@@ -576,28 +646,33 @@ fn run_token_rm(args: TokenRmArgs, passphrase_flag: Option<&str>) -> Result<()> 
         anyhow::bail!("incorrect passphrase");
     }
 
-    // Remove token entry
+    // Remove the delegation entry from project.yaml and the private key file
+    // from local state. Also drop any legacy ai_tokens entry.
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
     let mut project_mut: joy_core::model::project::Project = store::read_yaml(&project_path)?;
-    let removed = if let Some(m) = project_mut.members.get_mut(&email) {
-        m.ai_tokens.remove(&args.member).is_some()
-    } else {
-        false
-    };
+    let mut removed = false;
+    if let Some(m) = project_mut.members.get_mut(&email) {
+        if m.ai_delegations.remove(&args.member).is_some() {
+            removed = true;
+        }
+        if m.ai_tokens.remove(&args.member).is_some() {
+            removed = true;
+        }
+    }
 
     if !removed {
-        anyhow::bail!("No token registered for {} by {}.", args.member, email);
+        anyhow::bail!("No delegation registered for {} by {}.", args.member, email);
     }
 
     store::write_yaml_preserve(&project_path, &project_mut)?;
     let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
     joy_core::git_ops::auto_git_add(&root, &[&rel]);
 
-    // Remove AI member's session if it exists
     let project_id = session::project_id(&root)?;
+    delegation::remove_delegation_key(&project_id, &args.member)?;
     let _ = session::remove_session(&project_id, &args.member);
 
-    println!("Token for {} revoked.", args.member);
+    println!("Delegation for {} revoked.", args.member);
 
     joy_core::git_ops::auto_git_post_command(
         &root,
