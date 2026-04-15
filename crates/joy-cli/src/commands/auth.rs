@@ -5,7 +5,7 @@ use anyhow::Result;
 use chrono::Utc;
 use clap::{Args, Subcommand};
 
-use joy_core::auth::{delegation, derive, session, sign, token};
+use joy_core::auth::{consumed, delegation, derive, session, sign, token};
 use joy_core::store;
 use joy_core::vcs::Vcs;
 
@@ -267,8 +267,26 @@ fn auth_with_token(
         })?;
     let delegation_pk = sign::PublicKey::from_hex(&delegation_entry.delegation_key)?;
 
+    // ADR-033 replay protection: reject tokens we have already redeemed.
+    // Must come BEFORE validate_token so a rewound clock cannot smuggle an
+    // already-consumed token back in via expiry bypass.
+    if let Ok(Some(redeemed_at)) = consumed::is_consumed(&delegation.claims.token_id) {
+        anyhow::bail!(
+            "Token already consumed (redeemed at {}). \
+             Ask the human to issue a new one with: joy auth token add {}",
+            redeemed_at.format("%Y-%m-%d %H:%M UTC"),
+            delegation.claims.ai_member
+        );
+    }
+
     // Validate dual signatures + project + expiry
     let claims = token::validate_token(&delegation, &human_pk, &delegation_pk, project_id)?;
+
+    // Mark consumed only after full validation so that invalid tokens do
+    // not pollute the replay log.
+    if let Err(e) = consumed::mark_consumed(&claims.token_id, claims.expires) {
+        eprintln!("Warning: could not record consumed token: {e}");
+    }
 
     // Verify the AI member is registered
     if !project.members.contains_key(&claims.ai_member) {
@@ -554,7 +572,14 @@ fn run_token_add(args: TokenAddArgs, passphrase_flag: Option<&str>) -> Result<()
         ),
     };
 
-    let ttl = args.ttl.map(chrono::Duration::hours);
+    // ADR-033: default issuance TTL is 2 hours. Tokens are single-use, so
+    // the window only needs to cover realistic human-to-AI handover delay.
+    const DEFAULT_TOKEN_TTL_HOURS: i64 = 2;
+    let ttl = Some(
+        args.ttl
+            .map(chrono::Duration::hours)
+            .unwrap_or_else(|| chrono::Duration::hours(DEFAULT_TOKEN_TTL_HOURS)),
+    );
     let token_obj = token::create_token(
         &keypair,
         &delegation_keypair,
@@ -593,24 +618,15 @@ fn run_token_add(args: TokenAddArgs, passphrase_flag: Option<&str>) -> Result<()
 
     let encoded = token::encode_token(&token_obj);
 
+    let hours = args.ttl.unwrap_or(DEFAULT_TOKEN_TTL_HOURS);
     println!("Delegation token for {}:", args.member);
     println!();
     println!("  {}", encoded);
     println!();
-    println!("The AI agent authenticates with:");
-    println!("  export JOY_TOKEN={}", encoded);
-    println!("  joy auth");
-    println!();
-    println!("Or in a single command:");
+    println!("The AI redeems it with:");
     println!("  joy auth --token {}", encoded);
-    if let Some(hours) = args.ttl {
-        println!("Token expires in {hours} hours.");
-    } else {
-        println!(
-            "Token does not expire. Revoke with `joy auth token rm {}`.",
-            args.member
-        );
-    }
+    println!();
+    println!("Token is single-use and expires in {hours} hours.");
 
     Ok(())
 }
