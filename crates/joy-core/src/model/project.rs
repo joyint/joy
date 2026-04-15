@@ -79,22 +79,11 @@ pub struct Member {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub otp_hash: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub ai_tokens: BTreeMap<String, AiTokenEntry>,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub ai_delegations: BTreeMap<String, AiDelegationEntry>,
 }
 
-/// A registered AI delegation token entry.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct AiTokenEntry {
-    /// Public key of the one-time token keypair (hex-encoded Ed25519).
-    pub token_key: String,
-    /// When this token was created.
-    pub created: chrono::DateTime<chrono::Utc>,
-}
-
-/// A stable per-(human, AI) delegation key (ADR-033). Replaces the per-token
-/// `AiTokenEntry`. The matching private key lives off-repo at
+/// A stable per-(human, AI) delegation key (ADR-033). The matching private
+/// key lives off-repo at
 /// `~/.local/state/joy/delegations/<project>/<ai-member>.key`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AiDelegationEntry {
@@ -264,7 +253,6 @@ impl Member {
             public_key: None,
             salt: None,
             otp_hash: None,
-            ai_tokens: BTreeMap::new(),
             ai_delegations: BTreeMap::new(),
         }
     }
@@ -410,9 +398,10 @@ mod tests {
     }
 
     #[test]
-    fn ai_delegations_independent_of_ai_tokens() {
-        // Both maps may coexist on disk during the migration window between
-        // the ADR-023 and ADR-033 trust models.
+    fn unknown_fields_from_legacy_yaml_are_ignored() {
+        // project.yaml files written by older Joy versions may still carry
+        // ai_tokens entries. They are silently discarded by serde default
+        // behaviour and do not block deserialisation.
         let yaml = r#"
 capabilities: all
 public_key: aa
@@ -427,7 +416,6 @@ ai_delegations:
     created: "2026-04-15T10:00:00Z"
 "#;
         let parsed: Member = serde_yaml_ng::from_str(yaml).unwrap();
-        assert_eq!(parsed.ai_tokens["ai:claude@joy"].token_key, "oldkey");
         assert_eq!(
             parsed.ai_delegations["ai:claude@joy"].delegation_key,
             "newkey"

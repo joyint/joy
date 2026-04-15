@@ -47,7 +47,20 @@ are always allowed without authentication.
    "I need a delegation token. Please run `joy auth token add <YOUR-MEMBER-ID>` and share the token."
 3. Run: `joy auth --token <TOKEN>`
 
-Sessions expire after 24 hours. Re-authenticate if a command fails with an auth error.
+Sessions expire after 24 hours. Delegation tokens themselves are single-use
+and expire 2 hours after issuance.
+
+If `joy auth --token` fails, read the error and react accordingly:
+- **Token expired** -- the 2 hour issuance window has passed. Do not retry
+  with the same token. Ask the user to run `joy auth token add <YOUR-ID>`
+  again and pass you the new token.
+- **Token already consumed** -- a previous `joy auth --token` call has
+  already redeemed this token. Do not retry. Ask the user for a fresh
+  token via `joy auth token add <YOUR-ID>`.
+
+If a later Joy command fails with a session error, your 24 hour session
+has expired; ask the user for a fresh delegation token and re-run
+`joy auth --token`.
 
 Respect your configured capabilities and `max-mode` limits.
 **Capability warnings are mandatory stops** -- if a Joy command prints one, stop and ask the user.

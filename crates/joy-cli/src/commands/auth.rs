@@ -589,13 +589,13 @@ fn run_token_add(args: TokenAddArgs, passphrase_flag: Option<&str>) -> Result<()
         ttl,
     );
 
-    // Persist the delegation public key on first issuance, and opportunistically
-    // remove the legacy ai_tokens entry if one still lingers from ADR-023.
+    // Persist the delegation public key on first issuance. Subsequent
+    // issuances for the same (human, AI) pair produce no project.yaml
+    // write since the key is stable (ADR-033).
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
     let mut project_mut: joy_core::model::project::Project = store::read_yaml(&project_path)?;
-    let mut yaml_changed = false;
-    if let Some(m) = project_mut.members.get_mut(&email) {
-        if new_entry {
+    if new_entry {
+        if let Some(m) = project_mut.members.get_mut(&email) {
             m.ai_delegations.insert(
                 args.member.clone(),
                 joy_core::model::project::AiDelegationEntry {
@@ -604,13 +604,7 @@ fn run_token_add(args: TokenAddArgs, passphrase_flag: Option<&str>) -> Result<()
                     rotated: None,
                 },
             );
-            yaml_changed = true;
         }
-        if m.ai_tokens.remove(&args.member).is_some() {
-            yaml_changed = true;
-        }
-    }
-    if yaml_changed {
         store::write_yaml_preserve(&project_path, &project_mut)?;
         let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
         joy_core::git_ops::auto_git_add(&root, &[&rel]);
@@ -676,19 +670,15 @@ fn run_token_rm(args: TokenRmArgs, passphrase_flag: Option<&str>) -> Result<()> 
         anyhow::bail!("incorrect passphrase");
     }
 
-    // Remove the delegation entry from project.yaml and the private key file
-    // from local state. Also drop any legacy ai_tokens entry.
+    // Remove the delegation entry from project.yaml and the private key
+    // file from local state.
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
     let mut project_mut: joy_core::model::project::Project = store::read_yaml(&project_path)?;
-    let mut removed = false;
-    if let Some(m) = project_mut.members.get_mut(&email) {
-        if m.ai_delegations.remove(&args.member).is_some() {
-            removed = true;
-        }
-        if m.ai_tokens.remove(&args.member).is_some() {
-            removed = true;
-        }
-    }
+    let removed = project_mut
+        .members
+        .get_mut(&email)
+        .map(|m| m.ai_delegations.remove(&args.member).is_some())
+        .unwrap_or(false);
 
     if !removed {
         anyhow::bail!("No delegation registered for {} by {}.", args.member, email);
