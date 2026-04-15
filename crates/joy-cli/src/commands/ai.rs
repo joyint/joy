@@ -874,14 +874,8 @@ fn generate_agents(root: &Path, tool: &str, agents_dir: &str) -> anyhow::Result<
     Ok(changed)
 }
 
-/// Compute the JOY_SESSION value for a tool's env settings.
-fn session_env_value(root: &Path, member_id: &str) -> Option<String> {
-    let project_id = joy_core::auth::session::project_id(root).ok()?;
-    Some(joy_core::auth::session::session_id(&project_id, member_id))
-}
-
 /// Ensure `env.JOY_SESSION` is set in a JSON settings object.
-fn set_session_env(settings: &mut serde_json::Value, session_id: &str) {
+fn set_session_env(settings: &mut serde_json::Value, session_value: &str) {
     let env = settings
         .as_object_mut()
         .unwrap()
@@ -889,7 +883,72 @@ fn set_session_env(settings: &mut serde_json::Value, session_id: &str) {
         .or_insert_with(|| serde_json::json!({}));
     env.as_object_mut()
         .unwrap()
-        .insert("JOY_SESSION".to_string(), serde_json::json!(session_id));
+        .insert("JOY_SESSION".to_string(), serde_json::json!(session_value));
+}
+
+/// Write the given `JOY_SESSION` env value into the AI tool's settings file
+/// so that subshells spawned by the tool pick up the live session. Called
+/// from `joy auth --token` after a fresh session is created. Returns Ok(())
+/// even when no tool settings file exists (e.g. the tool was never init'd),
+/// since that is a valid state for a project that only runs AI from eval.
+pub(crate) fn write_session_env_for_member(
+    root: &Path,
+    member_id: &str,
+    env_value: &str,
+) -> anyhow::Result<()> {
+    let tool = member_id
+        .strip_prefix("ai:")
+        .and_then(|s| s.split_once('@'))
+        .map(|(t, _)| t)
+        .unwrap_or("");
+    match tool {
+        "claude" => write_json_session_env(&root.join(".claude/settings.json"), env_value),
+        "qwen" => write_json_session_env(&root.join(".qwen/settings.json"), env_value),
+        "copilot" => write_json_session_env(&root.join(".github/copilot/settings.json"), env_value),
+        "vibe" => write_dotenv_session(&root.join(".vibe/.env"), env_value),
+        _ => Ok(()),
+    }
+}
+
+fn write_json_session_env(path: &Path, value: &str) -> anyhow::Result<()> {
+    if !path.is_file() {
+        return Ok(());
+    }
+    let content = fs::read_to_string(path)?;
+    let mut settings: serde_json::Value =
+        serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}));
+    set_session_env(&mut settings, value);
+    let rendered = serde_json::to_string_pretty(&settings)?;
+    let _ = write_if_changed(path, &format!("{rendered}\n"))?;
+    Ok(())
+}
+
+fn write_dotenv_session(path: &Path, value: &str) -> anyhow::Result<()> {
+    if !path.is_file() {
+        // If no .env file exists yet the AI tool hasn't been init'd for this
+        // project, nothing to persist into. The interactive eval path still
+        // sets the env var in the current shell.
+        return Ok(());
+    }
+    let existing = fs::read_to_string(path)?;
+    let content = if existing.contains("JOY_SESSION=") {
+        existing
+            .lines()
+            .map(|l| {
+                if l.starts_with("JOY_SESSION=") {
+                    format!("JOY_SESSION={value}")
+                } else {
+                    l.to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n"
+    } else {
+        format!("{}\nJOY_SESSION={value}\n", existing.trim_end())
+    };
+    let _ = write_if_changed(path, &content)?;
+    Ok(())
 }
 
 fn configure_claude(root: &Path, member_id: &str) -> anyhow::Result<bool> {
@@ -916,7 +975,7 @@ fn configure_claude(root: &Path, member_id: &str) -> anyhow::Result<bool> {
     Ok(changed)
 }
 
-fn update_claude_permissions(root: &Path, member_id: &str) -> anyhow::Result<bool> {
+fn update_claude_permissions(root: &Path, _member_id: &str) -> anyhow::Result<bool> {
     let settings_path = root.join(".claude/settings.json");
 
     let mut settings: serde_json::Value = if settings_path.is_file() {
@@ -944,10 +1003,8 @@ fn update_claude_permissions(root: &Path, member_id: &str) -> anyhow::Result<boo
         }
     }
 
-    // JOY_SESSION env var
-    if let Some(sid) = session_env_value(root, member_id) {
-        set_session_env(&mut settings, &sid);
-    }
+    // JOY_SESSION is written by `joy auth --token` once a real session
+    // exists. Init-time writes would be useless placeholders (ADR-033).
 
     let json = serde_json::to_string_pretty(&settings)?;
     let changed = write_if_changed(&settings_path, &format!("{json}\n"))?;
@@ -980,7 +1037,7 @@ fn configure_qwen(root: &Path, member_id: &str) -> anyhow::Result<bool> {
     Ok(changed)
 }
 
-fn update_qwen_permissions(root: &Path, member_id: &str) -> anyhow::Result<bool> {
+fn update_qwen_permissions(root: &Path, _member_id: &str) -> anyhow::Result<bool> {
     let settings_path = root.join(".qwen/settings.json");
 
     let mut settings: serde_json::Value = if settings_path.is_file() {
@@ -1008,10 +1065,7 @@ fn update_qwen_permissions(root: &Path, member_id: &str) -> anyhow::Result<bool>
         }
     }
 
-    // JOY_SESSION env var
-    if let Some(sid) = session_env_value(root, member_id) {
-        set_session_env(&mut settings, &sid);
-    }
+    // JOY_SESSION populated by `joy auth --token` (ADR-033).
 
     let json = serde_json::to_string_pretty(&settings)?;
     let changed = write_if_changed(&settings_path, &format!("{json}\n"))?;
@@ -1020,7 +1074,7 @@ fn update_qwen_permissions(root: &Path, member_id: &str) -> anyhow::Result<bool>
     Ok(changed)
 }
 
-fn configure_vibe(root: &Path, member_id: &str) -> anyhow::Result<bool> {
+fn configure_vibe(root: &Path, _member_id: &str) -> anyhow::Result<bool> {
     let vibe_dir = root.join(".vibe");
     fs::create_dir_all(&vibe_dir)?;
     clean_managed_dirs(root, &[".vibe/agents", ".vibe/skills/joy"]);
@@ -1036,32 +1090,11 @@ fn configure_vibe(root: &Path, member_id: &str) -> anyhow::Result<bool> {
 
     changed |= generate_agents(root, "vibe", ".vibe/agents")?;
 
-    // JOY_SESSION in .vibe/.env (Vibe uses .env files, not settings.json env block)
-    if let Some(sid) = session_env_value(root, member_id) {
-        let env_path = vibe_dir.join(".env");
-        let env_content = if env_path.is_file() {
-            let existing = fs::read_to_string(&env_path)?;
-            if existing.contains("JOY_SESSION=") {
-                // Replace existing line
-                existing
-                    .lines()
-                    .map(|l| {
-                        if l.starts_with("JOY_SESSION=") {
-                            format!("JOY_SESSION={sid}")
-                        } else {
-                            l.to_string()
-                        }
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n")
-                    + "\n"
-            } else {
-                format!("{}\nJOY_SESSION={sid}\n", existing.trim_end())
-            }
-        } else {
-            format!("JOY_SESSION={sid}\n")
-        };
-        changed |= write_if_changed(&env_path, &env_content)?;
+    // Create an empty .vibe/.env if missing so `joy auth --token` has a
+    // file to update. JOY_SESSION itself is written by that command (ADR-033).
+    let env_path = vibe_dir.join(".env");
+    if !env_path.is_file() {
+        changed |= write_if_changed(&env_path, "")?;
         qprintln!("    {}.vibe/.env", color::check_mark());
     }
 
@@ -1129,7 +1162,7 @@ fn configure_copilot(root: &Path, member_id: &str) -> anyhow::Result<bool> {
     Ok(changed)
 }
 
-fn update_copilot_permissions(root: &Path, member_id: &str) -> anyhow::Result<bool> {
+fn update_copilot_permissions(root: &Path, _member_id: &str) -> anyhow::Result<bool> {
     let copilot_dir = root.join(".github/copilot");
     fs::create_dir_all(&copilot_dir)?;
     let settings_path = copilot_dir.join("settings.json");
@@ -1155,10 +1188,7 @@ fn update_copilot_permissions(root: &Path, member_id: &str) -> anyhow::Result<bo
         }
     }
 
-    // JOY_SESSION env var
-    if let Some(sid) = session_env_value(root, member_id) {
-        set_session_env(&mut settings, &sid);
-    }
+    // JOY_SESSION populated by `joy auth --token` (ADR-033).
 
     let json = serde_json::to_string_pretty(&settings)?;
     let changed = write_if_changed(&settings_path, &format!("{json}\n"))?;

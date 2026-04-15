@@ -303,57 +303,75 @@ load setup
 
 # --- JOY_SESSION in tool settings ---
 
-@test "joy ai init writes JOY_SESSION to tool settings" {
+@test "joy ai init does not write JOY_SESSION placeholder (ADR-033)" {
     setup_human_auth
     joy ai init </dev/null 2>/dev/null || true
-    # Check Claude settings
+    # Under ADR-033 the JOY_SESSION env var carries the ephemeral private
+    # key; a static placeholder written at init time would be useless. The
+    # live value is written by `joy auth --token` once a session exists.
     if [ -f ".claude/settings.json" ]; then
-        grep -q "JOY_SESSION" .claude/settings.json
+        ! grep -q "JOY_SESSION" .claude/settings.json
     fi
-    # Check Qwen settings
     if [ -f ".qwen/settings.json" ]; then
-        grep -q "JOY_SESSION" .qwen/settings.json
+        ! grep -q "JOY_SESSION" .qwen/settings.json
     fi
-    # Check Vibe .env
     if [ -f ".vibe/.env" ]; then
-        grep -q "JOY_SESSION" .vibe/.env
+        ! grep -q "JOY_SESSION=" .vibe/.env
     fi
-    # Check Copilot settings
     if [ -f ".github/copilot/settings.json" ]; then
-        grep -q "JOY_SESSION" .github/copilot/settings.json
+        ! grep -q "JOY_SESSION" .github/copilot/settings.json
     fi
+}
+
+@test "joy auth --token writes JOY_SESSION to tool settings" {
+    setup_human_auth
+    joy ai init </dev/null 2>/dev/null || true
+    MEMBER=$(joy project 2>/dev/null | grep "ai:" | head -1 | awk '{print $1}')
+    [ -n "$MEMBER" ] || skip "no AI member registered"
+    TOKEN=$(joy auth token add "$MEMBER" --passphrase "$TEST_PASSPHRASE" \
+        | sed -n 's/^  \(joy_t_.*\)/\1/p')
+    joy auth --token "$TOKEN" >/dev/null 2>&1
+    # The live value must have landed in at least one tool settings file,
+    # with the ADR-033 joy_s_ prefix.
+    found=0
+    for f in .claude/settings.json .qwen/settings.json .github/copilot/settings.json; do
+        if [ -f "$f" ] && grep -q '"JOY_SESSION": *"joy_s_' "$f"; then
+            found=1
+        fi
+    done
+    if [ -f ".vibe/.env" ] && grep -q '^JOY_SESSION=joy_s_' .vibe/.env; then
+        found=1
+    fi
+    [ "$found" -eq 1 ]
 }
 
 @test "AI auth works in isolated subshell (simulates AI tool)" {
     setup_human_auth
     joy ai init </dev/null 2>/dev/null || true
-    # Find a configured tool's settings with JOY_SESSION
+    MEMBER=$(joy project 2>/dev/null | grep "ai:" | head -1 | awk '{print $1}')
+    [ -n "$MEMBER" ] || skip "no AI member registered"
+    TOKEN=$(joy auth token add "$MEMBER" --passphrase "$TEST_PASSPHRASE" \
+        | sed -n 's/^  \(joy_t_.*\)/\1/p')
+    # `joy auth --token` populates JOY_SESSION in tool settings AND prints
+    # the export for eval. We read the settings-persisted value to simulate
+    # a fresh subshell spawned later by the AI tool.
+    joy auth --token "$TOKEN" >/dev/null 2>&1
     SID=""
     for f in .claude/settings.json .qwen/settings.json .github/copilot/settings.json; do
         if [ -f "$f" ]; then
             SID=$(grep -o '"JOY_SESSION": *"[^"]*"' "$f" | head -1 | cut -d'"' -f4)
-            break
+            [ -n "$SID" ] && break
         fi
     done
     if [ -z "$SID" ] && [ -f ".vibe/.env" ]; then
         SID=$(sed -n 's/^JOY_SESSION=//p' .vibe/.env)
     fi
     [ -n "$SID" ] || skip "no AI tool configured"
-    # Find the member ID for this tool
-    MEMBER=$(joy project 2>/dev/null | grep "ai:" | head -1 | awk '{print $1}')
-    [ -n "$MEMBER" ] || skip "no AI member registered"
-    # Create token and authenticate (creates session file)
-    TOKEN=$(joy auth token add "$MEMBER" --passphrase "$TEST_PASSPHRASE" \
-        | sed -n 's/^  \(joy_t_.*\)/\1/p')
-    joy auth --token "$TOKEN" >/dev/null 2>&1
     # Run joy in a clean subshell with ONLY JOY_SESSION from settings.
-    # This simulates how AI tools work: each command is a fresh process
-    # with no inherited shell state, only env vars from tool settings.
     run env -i HOME="$HOME" PATH="$PATH" XDG_STATE_HOME="$XDG_STATE_HOME" \
         GIT_CONFIG_GLOBAL=/dev/null GIT_AUTHOR_NAME="Test" GIT_AUTHOR_EMAIL="test@example.com" \
         GIT_COMMITTER_NAME="Test" GIT_COMMITTER_EMAIL="test@example.com" \
         JOY_SESSION="$SID" joy add task "Isolated subshell test"
     [ "$status" -eq 0 ]
-    # Verify it was attributed to the AI member
     grep -q "delegated-by" .joy/logs/*.log
 }

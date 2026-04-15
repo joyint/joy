@@ -278,11 +278,15 @@ fn auth_with_token(
         );
     }
 
-    // Create a local session — no project.yaml changes needed.
-    // Session binding to delegation_key so rotation invalidates all sessions.
-    let session_keypair = sign::IdentityKeypair::from_token_seed(token_str, project_id);
+    // ADR-033: ephemeral per-session keypair. The private key lives only in
+    // the `JOY_SESSION` env var; the public key is recorded in the session
+    // claims. Validation re-derives the public key from the env var and
+    // requires a match, so sibling terminals without the env var cannot
+    // reuse the session file.
+    let ephemeral_keypair = sign::IdentityKeypair::from_random();
+    let ephemeral_private = ephemeral_keypair.to_seed_bytes();
     let session_token = session::create_session_for_ai(
-        &session_keypair,
+        &ephemeral_keypair,
         &claims.ai_member,
         project_id,
         None,
@@ -293,7 +297,17 @@ fn auth_with_token(
     // Output session handle for eval (stdout) -- SSH-agent pattern.
     // Status message goes to stderr so `eval $(joy auth --token ...)` works.
     let sid = session::session_id(project_id, &claims.ai_member);
-    println!("export JOY_SESSION={sid}");
+    let env_value = session::encode_session_env(&sid, &ephemeral_private);
+    println!("export JOY_SESSION={env_value}");
+
+    // Persist the env value to any configured AI tool settings so fresh
+    // subshells launched by the tool pick it up without needing to eval.
+    if let Err(e) =
+        crate::commands::ai::write_session_env_for_member(root, &claims.ai_member, &env_value)
+    {
+        eprintln!("Warning: could not update AI tool settings: {e}");
+    }
+
     eprintln!(
         "Authenticated as {} (delegated by {}). Session active (24h).",
         claims.ai_member, claims.delegated_by
