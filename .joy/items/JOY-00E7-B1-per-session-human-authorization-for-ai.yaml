@@ -9,7 +9,7 @@ capabilities:
 effort: 5
 created_by: ai:claude@joy
 created: 2026-04-15T05:16:50.003514116Z
-updated: 2026-04-15T06:27:12.631468963Z
+updated: 2026-04-15T07:48:57.277583036Z
 description: |-
   Rework AI delegation auth so that (1) project.yaml stops churning on every joy auth token add, (2) JOY_SESSION cannot be silently reused in another terminal on the same machine, and (3) every AI session can be traced to an explicit human passphrase entry. Three coordinated changes captured as child stories. New ADR-024 required.
 
@@ -39,3 +39,6 @@ comments:
 - author: ai:claude@joy
   date: 2026-04-15T06:27:12.631468802Z
   text: 'Scope update: Phase 3 (joy ai migrate-delegations) removed from plan. Rationale: with the hard-cut architecture adopted for ADR-033 and the opportunistic legacy ai_tokens cleanup already implemented in Phase 2 (b 81e3035), a dedicated migration command would be a backward-compatibility shim contradicting the hard-cut design. Legacy entries in project.yaml are silently ignored at validation time and auto-cleaned on the next joy auth token add for the affected AI. Remaining phases: 4 (ephemeral session keypair), 5 (single-use tokens + 2h TTL), 6 (templates + cleanup).'
+- author: ai:claude@joy
+  date: 2026-04-15T07:48:57.277582328Z
+  text: 'Phase 6 done: legacy ai_tokens path removed from the codebase, AI instruction template teaches EXPIRED/CONSUMED handling, Auth.md in JI reflects ADR-033. All six planned phases of this epic are complete (except the scrapped Phase 3, replaced by Phase-2 opportunistic cleanup). JOY-00E8-3D, JOY-00E9-C2, JOY-00EA-45 are all covered by the six commits in the main branch. JOY-00EB-6C (shell completion) remains open as independent work.'

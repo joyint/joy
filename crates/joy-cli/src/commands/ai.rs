@@ -628,11 +628,10 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
                             &member_id,
                         );
                     }
-                    // Remove delegation entries (and legacy ai_tokens) for this AI member
-                    // from all human members in project.yaml.
+                    // Remove delegation entries for this AI member from all
+                    // human members in project.yaml.
                     for (_, m) in project.members.iter_mut() {
                         m.ai_delegations.remove(&member_id);
-                        m.ai_tokens.remove(&member_id);
                     }
                 }
             }
