@@ -119,17 +119,12 @@ fn sanitize(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
     use tempfile::tempdir;
 
-    /// Tests in this module mutate process-global `XDG_STATE_HOME`. Cargo runs
-    /// tests in parallel by default, so without serialization concurrent tests
-    /// would observe each other's tempdir overrides. The mutex confines the
-    /// env-var manipulation to one test at a time.
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
-
     fn with_state_dir<F: FnOnce()>(f: F) {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = super::super::STATE_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let dir = tempdir().unwrap();
         // SAFETY: serialized via ENV_LOCK above
         unsafe { std::env::set_var("XDG_STATE_HOME", dir.path()) };

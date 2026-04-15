@@ -21,6 +21,7 @@ zeroize = { version = "1", features = ["derive"] }
 rand = "0.8"
 hex = "0.4"
 base64ct = { version = "1", features = ["alloc"] }
+uuid = { version = "1", features = ["v4", "serde"] }
 minijinja = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]

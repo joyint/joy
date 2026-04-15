@@ -23,6 +23,10 @@ const TOKEN_PREFIX: &str = "joy_t_";
 /// Claims encoded in a delegation token.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DelegationClaims {
+    /// Unique identifier for this specific token (UUID v4). Used to detect
+    /// replay: once a token has been redeemed, subsequent redemption
+    /// attempts for the same `token_id` are rejected (ADR-033).
+    pub token_id: String,
     pub ai_member: String,
     pub delegated_by: String,
     pub project_id: String,
@@ -60,6 +64,7 @@ pub fn create_token(
 ) -> DelegationToken {
     let now = Utc::now();
     let claims = DelegationClaims {
+        token_id: uuid::Uuid::new_v4().to_string(),
         ai_member: ai_member.to_string(),
         delegated_by: human.to_string(),
         project_id: project_id.to_string(),
@@ -95,7 +100,13 @@ pub fn validate_token(
 
     if let Some(expires) = token.claims.expires {
         if Utc::now() > expires {
-            return Err(JoyError::AuthFailed("delegation token expired".into()));
+            return Err(JoyError::AuthFailed(format!(
+                "Token expired (issued {}, expired {}). \
+                 Ask the human to issue a new one with: joy auth token add {}",
+                token.claims.created.format("%Y-%m-%d %H:%M UTC"),
+                expires.format("%Y-%m-%d %H:%M UTC"),
+                token.claims.ai_member
+            )));
         }
     }
 

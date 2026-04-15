@@ -11,7 +11,7 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy
 created: 2026-04-15T05:17:21.575819432Z
-updated: 2026-04-15T05:17:21.575819432Z
+updated: 2026-04-15T07:34:46.101233147Z
 description: |-
   Make delegation tokens single-use and short-lived so each AI session traces to a deliberate, recent human approval rather than long-lived bearer reuse.
 
@@ -26,3 +26,7 @@ description: |-
   Trade-off: Slightly more friction (human must be present when AI starts a new session). This is the desired property, not a defect.
 
   UX unchanged from human's perspective: still 'joy auth token add', still hand the token string over once, AI runs joy auth --token. The string is just shorter-lived and one-shot.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-15T07:34:46.101232596Z
+  text: 'Phase 5 done: tokens carry a UUID token_id covered by both signatures, default TTL is 2h, and joy auth --token rejects replay via ~/.local/state/joy/consumed-tokens.json (mode 0600) with lazy GC on expired entries. Error wording matches ADR-033 for both EXPIRED and CONSUMED. 235 unit tests green, 162/162 Joy BATS green (two new replay tests). The uuid crate was added to joy-core dependencies.'

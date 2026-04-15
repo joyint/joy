@@ -13,8 +13,16 @@
 //! Passphrase + Salt --[Argon2id]--> DerivedKey --[Ed25519]--> IdentityKeypair
 //! ```
 
+pub mod consumed;
 pub mod delegation;
 pub mod derive;
 pub mod session;
 pub mod sign;
 pub mod token;
+
+/// Cross-module test lock: modules in this tree mutate process-global
+/// `XDG_STATE_HOME` in their unit tests. Cargo runs tests in parallel, so
+/// without one shared mutex the modules would trample each other's
+/// per-test tempdir overrides.
+#[cfg(test)]
+pub(super) static STATE_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
