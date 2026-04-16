@@ -1,0 +1,21 @@
+version: v0.10.3
+date: 2026-04-16
+previous: v0.10.2
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 24
+  items: 5
+items:
+  epics:
+  - id: JOY-00E7-B1
+    title: Per-session human authorization for AI delegation
+  stories:
+  - id: JOY-00E8-3D
+    title: Stable per-(human, AI) delegation key in project.yaml
+  - id: JOY-00E9-C2
+    title: Ephemeral session keypair bound to JOY_SESSION env var
+  - id: JOY-00EA-45
+    title: Single-use delegation tokens with 2h issuance TTL
+  tasks:
+  - id: JOY-00EB-6C
+    title: Shell completion for member IDs in joy auth token add
