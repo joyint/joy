@@ -386,6 +386,10 @@ fn run_status() -> Result<()> {
             println!("Authentication not initialized for {}.", identity.member);
             println!("Run `joy auth init` to set up.");
         }
+        // Exit non-zero so shell scripts can gate on authentication state
+        // (e.g. `if joy auth status; then ...`). The human-readable status
+        // is still printed above before the failure.
+        std::process::exit(1);
     }
 
     Ok(())

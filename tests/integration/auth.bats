@@ -90,15 +90,31 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     joy auth init --passphrase "$TEST_PASSPHRASE"
     joy deauth
     run joy auth status
-    [ "$status" -eq 0 ]
+    # JOY-00ED-28: exit non-zero when no active session so scripts can gate on it.
+    [ "$status" -ne 0 ]
     [[ "$output" == *"No active session"* ]]
 }
 
 @test "joy auth status shows not initialized for new member" {
     joy init --name "Auth Test"
     run joy auth status
-    [ "$status" -eq 0 ]
+    # JOY-00ED-28: exit non-zero when auth is not initialised.
+    [ "$status" -ne 0 ]
     [[ "$output" == *"not initialized"* ]]
+}
+
+@test "joy auth status can gate shell scripts on authentication state" {
+    joy init --name "Auth Test"
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    # Authenticated: status is 0, script takes the "yes" branch.
+    run bash -c 'if joy auth status >/dev/null 2>&1; then echo YES; else echo NO; fi'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"YES"* ]]
+    # After deauth: status is non-zero, script takes the "no" branch.
+    joy deauth
+    run bash -c 'if joy auth status >/dev/null 2>&1; then echo YES; else echo NO; fi'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"NO"* ]]
 }
 
 # ============================================================
