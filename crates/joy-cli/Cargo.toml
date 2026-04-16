@@ -1,6 +1,6 @@
 [package]
 name = "joy-cli"
-version = "0.10.2"
+version = "0.10.3"
 edition = "2021"
 license = "MIT"
 description = "CLI for Joy product management - Git-native, terminal-first"
@@ -13,9 +13,9 @@ name = "joy"
 path = "src/main.rs"
 
 [dependencies]
-joy-core = { version = "0.10.2", path = "../joy-core" }
+joy-core = { version = "0.10.3", path = "../joy-core" }
 minijinja = { workspace = true }
-joy-ai = { version = "0.10.2", path = "../joy-ai" }
+joy-ai = { version = "0.10.3", path = "../joy-ai" }
 clap = { workspace = true }
 clap_complete = { version = "4.5", features = ["unstable-dynamic"] }
 anyhow = { workspace = true }
