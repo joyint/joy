@@ -1,0 +1,11 @@
+version: v0.10.5
+date: 2026-04-16
+previous: v0.10.4
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 4
+  items: 1
+items:
+  bugs:
+  - id: JOY-00EE-58
+    title: JOY_SESSION for wrong project falls back silently
