@@ -1,6 +1,6 @@
 [package]
 name = "joy-core"
-version = "0.10.4"
+version = "0.10.5"
 edition = "2021"
 license = "MIT"
 description = "Core library for Joy product management - Git-native, terminal-first"
