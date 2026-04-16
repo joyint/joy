@@ -76,6 +76,23 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
                                 });
                             }
                         }
+                    } else if let Some(ref current_pid) = project_id {
+                        // JOY_SESSION is a valid live AI session, but for a
+                        // different project. Silently falling back to the
+                        // git-email identity would confuse the caller when
+                        // the subsequent guard denial names the human
+                        // instead of the AI they thought they were acting
+                        // as. Emit a one-line stderr hint and continue
+                        // with the fallback so read-only commands still
+                        // work.
+                        eprintln!(
+                            "{}",
+                            cross_project_session_warning(
+                                &sess.claims.project_id,
+                                &sess.claims.member,
+                                current_pid,
+                            )
+                        );
                     }
                 }
             }
@@ -187,6 +204,23 @@ fn check_session(root: &Path, member: &str, project: &Option<Project>) -> bool {
     false
 }
 
+/// Build the cross-project JOY_SESSION warning text.
+///
+/// Extracted as a pure helper so it can be asserted directly in unit
+/// tests without touching stderr capture or environment mutation.
+fn cross_project_session_warning(
+    session_project: &str,
+    session_member: &str,
+    current_project: &str,
+) -> String {
+    format!(
+        "Warning: JOY_SESSION belongs to project {session_project} \
+         (member {session_member}), but the current project is {current_project}. \
+         Ask the human for a delegation in this project: \
+         joy auth token add {session_member}"
+    )
+}
+
 /// Verify that the private key bytes from JOY_SESSION derive to the public
 /// key recorded in the session claims. This is the core proof-of-possession
 /// check for AI sessions under ADR-033.
@@ -246,5 +280,14 @@ mod tests {
             authenticated: false,
         };
         assert_eq!(id.log_user(), "ai:claude@joy delegated-by:horst@joydev.com");
+    }
+
+    #[test]
+    fn cross_project_warning_names_session_and_current_projects() {
+        let msg = cross_project_session_warning("JOY", "ai:claude@joy", "JI");
+        assert!(msg.contains("belongs to project JOY"));
+        assert!(msg.contains("member ai:claude@joy"));
+        assert!(msg.contains("current project is JI"));
+        assert!(msg.contains("joy auth token add ai:claude@joy"));
     }
 }
