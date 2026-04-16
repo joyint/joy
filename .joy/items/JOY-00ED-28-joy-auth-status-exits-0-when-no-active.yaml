@@ -1,7 +1,7 @@
 id: JOY-00ED-28
 title: joy auth status exits 0 when no active session
 type: bug
-status: in-progress
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -11,7 +11,7 @@ capabilities:
 effort: 1
 created_by: ai:claude@joy
 created: 2026-04-16T04:48:44.857795872Z
-updated: 2026-04-16T04:48:51.651207125Z
+updated: 2026-04-16T04:58:44.171466045Z
 description: |-
   When no active session exists, joy auth status prints 'No active session for ...' but exits with code 0. Scripts checking the exit code (e.g. just auth-all in the joyint umbrella) treat this as 'already authenticated' and skip the actual authentication, leading to later guard-denied errors during downstream operations.
 
