@@ -3,3 +3,7 @@
 2026-04-16T04:48:51.654Z JOY-00ED-28 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-16T04:58:44.173Z JOY-00ED-28 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-16T05:09:23.740Z v0.10.4 release.created [horst.schwarz@joydev.com]
+2026-04-16T05:21:33.696Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-16T05:21:33.709Z JOY-00EE-58 item.created "JOY_SESSION for wrong project falls back silently" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-16T05:22:00.316Z JOY-00EE-58 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-16T05:27:31.431Z JOY-00EE-58 comment.added "Fix landed: identity::resolve_identity now emits a clear stderr warning when JOY_SESSION is a live AI session for a different project than the current one. The warning names both the session's project/member and the current project, and points to 'joy auth token add <ai-member>' as the fix. Fallback to git-email identity unchanged so read-only commands still work. Pure helper cross_project_session_warning is unit-tested (236 joy-core tests, 163/163 BATS). Smoke-tested by running joy add in a neighbour project with a stale JOY_SESSION - warning prints, guard then denies." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

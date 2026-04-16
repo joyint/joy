@@ -1,0 +1,22 @@
+id: JOY-00EE-58
+title: JOY_SESSION for wrong project falls back silently
+type: bug
+status: in-progress
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy
+created: 2026-04-16T05:21:33.707085269Z
+updated: 2026-04-16T05:27:31.428993857Z
+description: |-
+  When JOY_SESSION is set to a valid ephemeral-keypair session but for a different project than the current one, identity::resolve_identity silently ignores the session and falls back to the git-email unauthenticated identity. The subsequent guard denial then names the human email and suggests joy auth, which is misleading when the caller is actually an AI operating from a neighbour project (typical setup: AI tool runs in submodule A, user's shell jumps to submodule B with the same JOY_SESSION still in env).
+
+  Expected: a clear stderr warning naming the session's project and member, and pointing at the fix (joy auth token add <ai-member> in the current project). The fallback to git-email identity remains, so read-only commands still work; only the silent confusion is removed.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-16T05:27:31.428993681Z
+  text: 'Fix landed: identity::resolve_identity now emits a clear stderr warning when JOY_SESSION is a live AI session for a different project than the current one. The warning names both the session''s project/member and the current project, and points to ''joy auth token add <ai-member>'' as the fix. Fallback to git-email identity unchanged so read-only commands still work. Pure helper cross_project_session_warning is unit-tested (236 joy-core tests, 163/163 BATS). Smoke-tested by running joy add in a neighbour project with a stale JOY_SESSION - warning prints, guard then denies.'
