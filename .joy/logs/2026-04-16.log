@@ -1,1 +1,3 @@
 2026-04-16T04:32:23.123Z v0.10.3 release.created [horst.schwarz@joydev.com]
+2026-04-16T04:48:44.860Z JOY-00ED-28 item.created "joy auth status exits 0 when no active session" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-16T04:48:51.654Z JOY-00ED-28 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
