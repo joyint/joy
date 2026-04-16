@@ -1,0 +1,11 @@
+version: v0.10.4
+date: 2026-04-16
+previous: v0.10.3
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 3
+  items: 1
+items:
+  bugs:
+  - id: JOY-00ED-28
+    title: joy auth status exits 0 when no active session
