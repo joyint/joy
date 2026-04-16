@@ -161,6 +161,11 @@ release bump="patch":
         echo "No items closed since last release."
         exit 0
     fi
+    # Joy logs every invocation to .joy/logs/YYYY-MM-DD.log, so the
+    # `joy release show` above may have dirtied the tree. Absorb those
+    # writes before the clean check, otherwise the release aborts on
+    # its own audit trail.
+    just auto-commit
     if [ -n "$(git status --porcelain)" ]; then
         echo "Error: working tree is not clean."
         exit 1
