@@ -1,7 +1,7 @@
 id: JOY-00EE-58
 title: JOY_SESSION for wrong project falls back silently
 type: bug
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -11,7 +11,7 @@ capabilities:
 effort: 1
 created_by: ai:claude@joy
 created: 2026-04-16T05:21:33.707085269Z
-updated: 2026-04-16T05:27:31.428993857Z
+updated: 2026-04-16T05:27:50.307760639Z
 description: |-
   When JOY_SESSION is set to a valid ephemeral-keypair session but for a different project than the current one, identity::resolve_identity silently ignores the session and falls back to the git-email unauthenticated identity. The subsequent guard denial then names the human email and suggests joy auth, which is misleading when the caller is actually an AI operating from a neighbour project (typical setup: AI tool runs in submodule A, user's shell jumps to submodule B with the same JOY_SESSION still in env).
 
