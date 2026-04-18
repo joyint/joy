@@ -1,7 +1,7 @@
 id: JOY-00F0-89
 title: Clippy unnecessary_sort_by on Rust 1.95
 type: bug
-status: in-progress
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -11,5 +11,5 @@ capabilities:
 effort: 1
 created_by: ai:claude@joy
 created: 2026-04-18T10:23:33.001750607Z
-updated: 2026-04-18T10:23:38.329566835Z
+updated: 2026-04-18T10:25:08.220741518Z
 description: 'CI fails on Rust 1.95 clippy: two sort_by calls should use sort_by_key. event_log.rs:430 and releases.rs:67.'
