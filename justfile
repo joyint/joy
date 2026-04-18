@@ -184,6 +184,8 @@ release bump="patch":
         exit 1
     fi
     joy release record "{{bump}}"
+    tag=$(git describe --tags --exact-match HEAD 2>/dev/null || echo "unknown")
+    echo "Tagged ${tag} locally. Run 'just publish' to ship."
 
 # Publish workspace crates to crates.io, then push and create the
 # forge release. Reads CARGO_REGISTRY_TOKEN from the environment
