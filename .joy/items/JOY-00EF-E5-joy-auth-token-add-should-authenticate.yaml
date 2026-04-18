@@ -1,0 +1,26 @@
+id: JOY-00EF-E5
+title: joy auth token add should authenticate inline if no session
+type: bug
+status: new
+priority: medium
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy
+created: 2026-04-16T06:11:31.120650064Z
+updated: 2026-04-16T06:11:31.120650064Z
+description: |-
+  When a user runs `joy auth token add <ai-member>` without an active session, the command aborts with a guard error ("must authenticate to perform this action. Run `joy auth`"). The user then runs `joy auth` (passphrase prompt #1) and reruns `joy auth token add` (passphrase prompt #2). Result: three commands and two passphrase entries to produce one delegation token.
+
+  The second prompt is intentional per ADR-033 (session does not cache the identity key; every signature requires a fresh passphrase entry). The first prompt, however, is only needed because the guard insists on a pre-existing session.
+
+  Proposed behavior:
+
+  - If `joy auth token add` runs interactively without a session, prompt for the passphrase inline. Derive the identity key once and use it both to create the session (equivalent to what `joy auth` would do) and to sign the delegation binding. Write the session file, output the token.
+  - If a session already exists, behavior is unchanged: one passphrase prompt for the signature, as today.
+  - Non-interactive invocations (no TTY and no `--passphrase`) continue to fail fast. No silent fallback.
+
+  Outcome: one command, one passphrase entry in the cold-start case. No weakening of the ADR-033 guarantee, since the human still enters the passphrase explicitly.
+
+  Scope note: this is UX-only. Guard semantics for all other write commands stay as-is - only `joy auth token add` gets the inline-auth fallback, because it already prompts for the passphrase as part of its own operation.
