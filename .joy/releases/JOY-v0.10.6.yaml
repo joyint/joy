@@ -1,0 +1,11 @@
+version: v0.10.6
+date: 2026-04-18
+previous: v0.10.5
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 3
+  items: 1
+items:
+  bugs:
+  - id: JOY-00F0-89
+    title: Clippy unnecessary_sort_by on Rust 1.95

@@ -1,6 +1,6 @@
 [package]
 name = "joy-ai"
-version = "0.10.5"
+version = "0.10.6"
 edition = "2021"
 license = "MIT"
 description = "AI integration layer for Joy product management"
@@ -9,7 +9,7 @@ homepage = "https://joyint.com/en/joy"
 readme = "README.md"
 
 [dependencies]
-joy-core = { version = "0.10.5", path = "../joy-core" }
+joy-core = { version = "0.10.6", path = "../joy-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }

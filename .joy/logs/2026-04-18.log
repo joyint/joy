@@ -3,3 +3,4 @@
 2026-04-18T10:23:33.007Z JOY-00F0-89 item.created "Clippy unnecessary_sort_by on Rust 1.95" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-18T10:23:38.335Z JOY-00F0-89 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-18T10:25:08.225Z JOY-00F0-89 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-18T10:36:11.001Z v0.10.6 release.created [horst.schwarz@joydev.com]
