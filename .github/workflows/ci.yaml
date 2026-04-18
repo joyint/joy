@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
         with:
           components: rustfmt
       - run: cargo fmt --all -- --check
@@ -27,7 +27,7 @@ jobs:
     needs: fmt
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
@@ -39,7 +39,7 @@ jobs:
     needs: fmt
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace
 
@@ -49,6 +49,6 @@ jobs:
     needs: [lint, test]
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --workspace
