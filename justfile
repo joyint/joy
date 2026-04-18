@@ -53,8 +53,18 @@ fmt-check:
 lint:
     cargo clippy --workspace -- -D warnings
 
+# Abort if the local Rust stable toolchain is behind the latest release.
+# Prevents clippy-version drift between local and CI.
+[private]
+_toolchain-check:
+    #!/usr/bin/env bash
+    if rustup check stable 2>/dev/null | grep -q "Update available"; then
+        echo "Error: Rust stable toolchain is outdated. Run 'rustup update stable'."
+        exit 1
+    fi
+
 # Run fmt-check, lint, test
-check: fmt-check lint test
+check: _toolchain-check fmt-check lint test
 
 # Lint commit messages for Joy item references (default: main..HEAD)
 lint-commits base="main":
