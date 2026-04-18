@@ -110,11 +110,10 @@ pub fn run(args: crate::BoardArgs) -> Result<()> {
         })
         .sum();
     let available_for_active = term_width.saturating_sub(total_gaps + thin_total);
-    let col_width = if active_count > 0 {
-        (available_for_active / active_count).max(MIN_COL_WIDTH)
-    } else {
-        MIN_COL_WIDTH
-    };
+    let col_width = (available_for_active)
+        .checked_div(active_count)
+        .map(|w| w.max(MIN_COL_WIDTH))
+        .unwrap_or(MIN_COL_WIDTH);
 
     // Determine display mode based on column width
     let mode = if col_width >= 30 {
@@ -217,11 +216,7 @@ pub fn run(args: crate::BoardArgs) -> Result<()> {
         DisplayMode::Medium => 2,
     };
 
-    let max_items_per_col = if lines_per_item > 0 {
-        max_body_lines / lines_per_item
-    } else {
-        0
-    };
+    let max_items_per_col = max_body_lines.checked_div(lines_per_item).unwrap_or(0);
 
     // Render each active column
     let rendered: Vec<Vec<String>> = columns
