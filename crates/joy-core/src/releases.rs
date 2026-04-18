@@ -64,7 +64,7 @@ pub fn load_releases(root: &Path) -> Result<Vec<Release>, JoyError> {
 
     // Sort by parsed semver descending (newest first). A lexicographic
     // compare would put "v0.9.0" above "v0.10.0".
-    releases.sort_by(|a, b| semver_key(&b.version).cmp(&semver_key(&a.version)));
+    releases.sort_by_key(|r| std::cmp::Reverse(semver_key(&r.version)));
     Ok(releases)
 }
 

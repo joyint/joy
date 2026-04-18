@@ -427,7 +427,7 @@ pub fn actors_for_items(root: &Path, item_ids: &[String]) -> Result<Vec<ActorSta
             ActorStats { id, events, items }
         })
         .collect();
-    result.sort_by(|a, b| b.events.cmp(&a.events));
+    result.sort_by_key(|a| std::cmp::Reverse(a.events));
     Ok(result)
 }
 

@@ -1,0 +1,4 @@
+2026-04-18T10:22:01.490Z project guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-04-18T10:23:32.988Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-18T10:23:33.007Z JOY-00F0-89 item.created "Clippy unnecessary_sort_by on Rust 1.95" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-18T10:23:38.335Z JOY-00F0-89 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
