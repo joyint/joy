@@ -8,17 +8,17 @@ default:
 # Run all tests (unit + snapshot + integration)
 test: test-unit test-cmd test-int
 
-# Rust unit tests only
+# Rust unit tests only (fast-kdf: minimal Argon2id for speed)
 test-unit:
-    cargo test --workspace --lib
+    cargo test --workspace --lib --features fast-kdf
 
 # Snapshot tests (trycmd)
 test-cmd:
-    cargo test -p joy-cli --test cmd
+    cargo test -p joy-cli --test cmd --features fast-kdf
 
 # Integration tests (bats)
 test-int:
-    cargo build -p joy-cli
+    cargo build -p joy-cli --features fast-kdf
     bats tests/integration/*.bats
 
 # Snapshot tests (insta)
