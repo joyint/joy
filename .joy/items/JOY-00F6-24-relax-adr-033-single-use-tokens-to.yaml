@@ -1,0 +1,55 @@
+id: JOY-00F6-24
+title: Relax ADR-033 single-use tokens to multi-use 24h TTL
+type: rework
+status: in-progress
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy
+created: 2026-04-19T19:28:43.084631490Z
+updated: 2026-04-19T19:29:33.933072642Z
+description: |-
+  Revert ADR-033 §3 only. §1 (stable per-(human, AI) delegation key) and §2 (ephemeral session keypair bound to JOY_SESSION) remain authoritative.
+
+  Motivation: the single-use + 2h issuance TTL combination from §3 produced a level of ceremony that is disproportionate to the protection it adds. The AI needs a fresh token per session, the human re-enters the passphrase often, and the settings.json workaround (JOY-00C5-70) reintroduces a disk credential that contradicts §2. Relaxing §3 to multi-use within 24h eliminates the ceremony while keeping §1 and §2's security properties intact.
+
+  Code scope (branch rework/auth-trust-model, off main):
+
+  1. Remove joy_core::auth::consumed module and all references. No more consumed-tokens.json, no single-use check in auth_with_token.
+
+  2. Unify token TTL to a single configurable value, default 24h. joy auth token add uses 24h default (was 2h per ADR-033 §3).
+
+  3. Tokens are multi-use within their TTL: auth_with_token no longer marks tokens consumed and no longer rejects previously-redeemed token IDs.
+
+  4. Revert JOY-00C5-70: remove write_session_env_for_member and its call site in joy auth --token. joy ai setup/update no longer writes JOY_SESSION into ~/.claude/settings.json, .qwen/settings.json, .github/copilot/settings.json, .vibe/.env. §2 requires the private key to live only in env, writing it to disk breaks that property. AI tool harnesses handle env propagation themselves.
+
+  5. Update embedded AI instruction templates (crates/joy-core/templates/ai/instructions.md and .github/copilot-instructions.md if committed): drop single-use and 2h-TTL language, reflect multi-use 24h TTL. Keep the JOY_SESSION / eval pattern description -- that is §2 behaviour and stays.
+
+  Out of scope (separate items):
+  - JOY-00F3-AE (joy auth --user)
+  - JOY-00F4-CF (member show Auth check divergence)
+  - JOY-00F5-33 (session filename hash)
+  - JOY-00EF-E5 (inline-auth for joy auth token add)
+
+  Tests: cargo test --workspace and bats tests/integration/*.bats must pass. Some BATS tests explicitly exercised single-use behaviour (delegation token is single-use, announces 2h default TTL) -- those tests get updated to reflect the new multi-use 24h model.
+
+  Doc companion (tracked separately in JI): ADR-034 text, ADR-033 header update to "Superseded for §3", Auth.md minimal amendment, ADR-023 see-also note.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-19T19:29:33.933072408Z
+  text: |-
+    Plan:
+    1. Branch rework/auth-trust-model off main.
+    2. Remove crates/joy-core/src/auth/consumed.rs and references (auth/mod.rs pub mod, auth.rs imports and call sites).
+    3. auth.rs run_token_add: default TTL 2h -> 24h.
+    4. auth.rs auth_with_token: remove single-use/consumed check.
+    5. ai.rs: remove set_session_env, write_session_env_for_member, write_json_session_env, write_dotenv_session and the caller in auth.rs. Tidy up related ADR-033 placeholder comments in configure_claude / qwen / copilot / vibe.
+    6. Templates: instructions.md Auth section drop single-use + 2h clauses.
+    7. cargo test --workspace + just test-int green.
+    8. Commit per logical unit, joy submit at the end.
+
+    §1 and §2 untouched.

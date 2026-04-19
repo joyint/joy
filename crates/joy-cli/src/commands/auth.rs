@@ -5,7 +5,7 @@ use anyhow::Result;
 use chrono::Utc;
 use clap::{Args, Subcommand};
 
-use joy_core::auth::{consumed, delegation, derive, session, sign, token};
+use joy_core::auth::{delegation, derive, session, sign, token};
 use joy_core::store;
 use joy_core::vcs::Vcs;
 
@@ -63,7 +63,7 @@ struct TokenAddArgs {
     #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_ai_member))]
     member: String,
 
-    /// Token expiry in hours (default 2; ADR-033 issuance window)
+    /// Token expiry in hours (default 24; multi-use within TTL per ADR-034)
     #[arg(long)]
     ttl: Option<i64>,
 }
@@ -269,26 +269,11 @@ fn auth_with_token(
         })?;
     let delegation_pk = sign::PublicKey::from_hex(&delegation_entry.delegation_key)?;
 
-    // ADR-033 replay protection: reject tokens we have already redeemed.
-    // Must come BEFORE validate_token so a rewound clock cannot smuggle an
-    // already-consumed token back in via expiry bypass.
-    if let Ok(Some(redeemed_at)) = consumed::is_consumed(&delegation.claims.token_id) {
-        anyhow::bail!(
-            "Token already consumed (redeemed at {}). \
-             Ask the human to issue a new one with: joy auth token add {}",
-            redeemed_at.format("%Y-%m-%d %H:%M UTC"),
-            delegation.claims.ai_member
-        );
-    }
-
-    // Validate dual signatures + project + expiry
+    // Validate dual signatures + project + expiry. Tokens are multi-use
+    // within their TTL (ADR-034 relaxes ADR-033 §3): no consumed-tokens
+    // ledger, redemption of the same token from multiple shells or at
+    // multiple points in time produces independent sessions.
     let claims = token::validate_token(&delegation, &human_pk, &delegation_pk, project_id)?;
-
-    // Mark consumed only after full validation so that invalid tokens do
-    // not pollute the replay log.
-    if let Err(e) = consumed::mark_consumed(&claims.token_id, claims.expires) {
-        eprintln!("Warning: could not record consumed token: {e}");
-    }
 
     // Verify the AI member is registered
     if !project.members.contains_key(&claims.ai_member) {
@@ -316,17 +301,13 @@ fn auth_with_token(
 
     // Output session handle for eval (stdout) -- SSH-agent pattern.
     // Status message goes to stderr so `eval $(joy auth --token ...)` works.
+    // JOY_SESSION carries the ephemeral private key (ADR-033 §2). It is
+    // intentionally not persisted to any tool config file: disk persistence
+    // would contradict the proof-of-possession property. The AI tool is
+    // responsible for propagating the env value into its subshells.
     let sid = session::session_id(project_id, &claims.ai_member);
     let env_value = session::encode_session_env(&sid, &ephemeral_private);
     println!("export JOY_SESSION={env_value}");
-
-    // Persist the env value to any configured AI tool settings so fresh
-    // subshells launched by the tool pick it up without needing to eval.
-    if let Err(e) =
-        crate::commands::ai::write_session_env_for_member(root, &claims.ai_member, &env_value)
-    {
-        eprintln!("Warning: could not update AI tool settings: {e}");
-    }
 
     eprintln!(
         "Authenticated as {} (delegated by {}). Session active (24h).",
@@ -578,9 +559,9 @@ fn run_token_add(args: TokenAddArgs, passphrase_flag: Option<&str>) -> Result<()
         ),
     };
 
-    // ADR-033: default issuance TTL is 2 hours. Tokens are single-use, so
-    // the window only needs to cover realistic human-to-AI handover delay.
-    const DEFAULT_TOKEN_TTL_HOURS: i64 = 2;
+    // ADR-034 relaxes §3: tokens are multi-use within a single TTL. Default
+    // 24h covers a typical working session; human can override with --ttl.
+    const DEFAULT_TOKEN_TTL_HOURS: i64 = 24;
     let ttl = Some(
         args.ttl
             .map(chrono::Duration::hours)
@@ -626,7 +607,7 @@ fn run_token_add(args: TokenAddArgs, passphrase_flag: Option<&str>) -> Result<()
     println!("The AI redeems it with:");
     println!("  joy auth --token {}", encoded);
     println!();
-    println!("Token is single-use and expires in {hours} hours.");
+    println!("Token expires in {hours} hours. It may be redeemed multiple times within that window.");
 
     Ok(())
 }
