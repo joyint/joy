@@ -1,0 +1,17 @@
+version: v0.11.0
+date: 2026-04-19
+previous: v0.10.6
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 7
+  items: 2
+- id: horst.schwarz@joydev.com
+  events: 2
+  items: 2
+items:
+  tasks:
+  - id: JOY-00F1-AD
+    title: Add 'joy project set acronym' CLI command
+  reworks:
+  - id: JOY-00F6-24
+    title: Relax ADR-033 single-use tokens to multi-use 24h TTL
