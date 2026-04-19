@@ -1,0 +1,18 @@
+id: JOY-00F5-33
+title: session filename hash ignores project path
+type: bug
+status: new
+priority: low
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy
+created: 2026-04-19T19:28:11.072411105Z
+updated: 2026-04-19T19:28:11.072411105Z
+description: |-
+  session.rs session_id(project_id, member) = SHA-256(project_id : member), truncated to 12 bytes. project_id is the project acronym. Two projects on the same machine with identical acronyms produce the same session filename hash, so the second auth overwrites the first project's session file silently. Auth does not leak across projects (signature-verification against the other project's public_key fails), but the first project's session is lost without any signal.
+
+  Fix: include a canonicalized project root path (or a hash of it) in the session_id derivation. session_id(project_id, member, project_root) = SHA-256(project_id : member : canonical_root). Two projects with the same acronym at different on-disk paths produce distinct session filenames, no overwrite.
+
+  Low priority: does not cause data corruption, does not break auth across projects -- only silent session invalidation on a specific edge case (two projects, same acronym, same member, same machine).

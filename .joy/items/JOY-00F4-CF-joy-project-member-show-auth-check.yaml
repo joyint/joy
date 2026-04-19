@@ -1,0 +1,18 @@
+id: JOY-00F4-CF
+title: joy project member show Auth check diverges from runtime
+type: bug
+status: new
+priority: medium
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy
+created: 2026-04-19T19:28:11.063522236Z
+updated: 2026-04-19T19:28:11.063522236Z
+description: |-
+  The Auth column check mark in `joy project member` (and `joy project member show`) is set via member_auth_status in crates/joy-cli/src/commands/project.rs: it loads the session file from disk, checks TTL and delegation-key match, and reports check mark on success. This is purely file-based and does not inspect the caller's JOY_SESSION env var.
+
+  resolve_identity (joy-core identity.rs) on the other hand requires JOY_SESSION to operate as the AI per ADR-033 §2. Consequence: the check mark can show up in a sibling shell that does NOT have JOY_SESSION set, even though write commands from that shell would fail auth.
+
+  Fix: either make member_auth_status's AI branch also require JOY_SESSION to match before showing the check mark, or introduce a separate indicator for "session file present but not usable from this shell". The display and the auth behaviour must not disagree.
