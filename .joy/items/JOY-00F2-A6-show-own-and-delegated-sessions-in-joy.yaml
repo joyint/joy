@@ -1,0 +1,17 @@
+id: JOY-00F2-A6
+title: Show own and delegated sessions in joy auth status
+type: story
+status: new
+priority: medium
+capabilities:
+- plan
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy
+created: 2026-04-19T12:00:40.760459854Z
+updated: 2026-04-19T12:00:40.760459854Z
+description: |-
+  `joy auth status` currently shows only the caller's own session. For a delegating user (typically a human who has issued delegation tokens to AI members), it should also list the sessions of all members they have delegated to: member ID, session expiry, and source of delegation. This gives the delegator a single command to see which delegated sessions are still active and which need refreshing, without having to ask each agent to run `joy auth status` separately.
+
+  Visual presentation: now that the command renders structured multi-row information, align its output style with the framed, sectioned layout used by `joy ls`, `joy show`, `joy project`, etc. (header rule, section labels, consistent column alignment), instead of the current free-text lines.
