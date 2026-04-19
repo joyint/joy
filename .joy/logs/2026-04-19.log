@@ -23,3 +23,4 @@
 2026-04-19T20:50:24.121Z JOY-00F7-91 item.created "Acronym rename orphans local delegation key path" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-19T20:50:38.913Z JOY-00F8-F2 item.created "'joy ai rotate' referenced in error but not implemented" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-19T21:59:09.140Z v0.11.0 release.created [horst.schwarz@joydev.com]
+2026-04-19T22:12:52.070Z JOY-00F9-D7 item.created "Add CLI surface for release.version-files in joy project set" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
