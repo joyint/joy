@@ -91,7 +91,7 @@ tags:
   - backend
   - payments
 due_date: 2026-04-15                # optional due date
-reminder: 2026-04-14T09:00:00Z      # optional reminder (used by Jot and CalDAV)
+reminder: 2026-04-14T09:00:00Z      # optional reminder (used by Jyn and CalDAV)
 source: null                         # optional: dispatch source (e.g. "joy:PROJ-002A")
 created: 2026-03-09T10:00:00Z
 updated: 2026-03-09T10:00:00Z
@@ -559,53 +559,53 @@ Aggregated cost views available via `joy ai status --costs` per item, epic, mile
 
 ---
 
-## Dispatch: Bridging Joy and Jot
+## Dispatch: Bridging Joy and Jyn
 
-Joy and Jot use **separate item pools** (`.joy/` and `.jot/`), but the dispatch mechanism on joyint.com bridges them. When a Joy item reaches a status gate that requires human or AI action, joyint.com creates a corresponding Jot task in the target user's repository.
+Joy and Jyn use **separate item pools** (`.joy/` and `.jyn/`), but the dispatch mechanism on joyint.com bridges them. When a Joy item reaches a status gate that requires human or AI action, joyint.com creates a corresponding Jyn task in the target user's repository.
 
 ```mermaid
 sequenceDiagram
     participant J as Joy (PM)
     participant S as joyint.com
-    participant T as Jot (Todo)
+    participant T as Jyn (Todo)
 
     J->>S: Item JOY-002A -> status "review"
-    S->>T: Create todo in reviewer's .jot/<br/>source: "joy:JOY-002A"
-    Note over T: Todo appears in Apple Reminders<br/>via CalDAV or in jot ls
-    T->>S: jot done (todo completed)
+    S->>T: Create todo in reviewer's .jyn/<br/>source: "joy:JOY-002A"
+    Note over T: Todo appears in Apple Reminders<br/>via CalDAV or in jyn ls
+    T->>S: jyn done (todo completed)
     S->>J: Callback -> review gate satisfied
 ```
 
-- **Human dispatch:** Joy status gates create Jot tasks for reviewers, testers, or approvers.
-- **AI dispatch:** Joy creates Jot tasks for AI members (`ai:implementer@joy`). The AI picks up todos via `jot ls --mine`, executes work, and marks them done.
-- **Callback:** When a dispatched Jot task is completed, joyint.com signals back to the Joy project that the gate is satisfied.
+- **Human dispatch:** Joy status gates create Jyn tasks for reviewers, testers, or approvers.
+- **AI dispatch:** Joy creates Jyn tasks for AI members (`ai:implementer@joy`). The AI picks up todos via `jyn ls --mine`, executes work, and marks them done.
+- **Callback:** When a dispatched Jyn task is completed, joyint.com signals back to the Joy project that the gate is satisfied.
 
-This keeps Joy focused on orchestration and Jot focused on execution. The `source` field and the dispatch service on joyint.com are the only coupling points.
+This keeps Joy focused on orchestration and Jyn focused on execution. The `source` field and the dispatch service on joyint.com are the only coupling points.
 
 ### Dispatch Error Handling
 
 The dispatch mechanism handles four error scenarios:
 
-**1. Dispatch creation fails** (target Jot repo unreachable, auth expired, repo does not exist):
+**1. Dispatch creation fails** (target Jyn repo unreachable, auth expired, repo does not exist):
 - Retry with exponential backoff (3 attempts over 15 minutes)
 - On permanent failure: comment on the Joy item ("Dispatch to bob@example.com failed"), notification to item owner
 - Joy item stays in current status (gate not satisfied)
-- Special case: if the target user has no Jot repo, send an invitation link ("Set up your Jot account to receive tasks from this project")
+- Special case: if the target user has no Jyn repo, send an invitation link ("Set up your Jyn account to receive tasks from this project")
 
 **2. Duplicate detection on retries:**
 - The `source` field (e.g., `joy:acme/product:JOY-002A`) serves as the deduplication key
-- Before creating a todo, the dispatch service checks if an open todo with the same `source` already exists in the target Jot repo
+- Before creating a todo, the dispatch service checks if an open todo with the same `source` already exists in the target Jyn repo
 - If yes: no new todo, confirm the existing one
 
 **3. AI agent timeout (stalled dispatch):**
 - AI dispatch items have a configurable timeout (default: 1 hour, configurable per item or project)
-- On timeout: Jot task marked as `stalled`, Joy item transitions to `stalled` status, notification to item owner
+- On timeout: Jyn task marked as `stalled`, Joy item transitions to `stalled` status, notification to item owner
 - No automatic retry -- AI jobs can be expensive, the human decides
 - Item owner uses `joy reopen` to return to the previous active status and re-dispatch
 
 **4. Callback failure** (agent completes todo, but Joy repo is unreachable):
 - Same retry mechanism as dispatch creation (exponential backoff, 3 attempts)
-- On permanent failure: Jot task is correctly marked done, but Joy gate remains open. Notification to item owner ("Bob completed the review but the gate could not be updated")
+- On permanent failure: Jyn task is correctly marked done, but Joy gate remains open. Notification to item owner ("Bob completed the review but the gate could not be updated")
 - Item owner can satisfy the gate manually (`joy close`)
 - Reconciliation: the dispatch service tracks pending callbacks and delivers them when the Joy repo becomes reachable again
 
@@ -666,8 +666,8 @@ Joy as a tool/skill for external AI agents:
 
 ### Web UI and Portal
 
-- React/Next.js web frontend (board, item management, roadmap) for Joy and Jot
-- CalDAV server for Jot (VTODO bridge to Apple Reminders, Google Calendar)
+- React/Next.js web frontend (board, item management, roadmap) for Joy and Jyn
+- CalDAV server for Jyn (VTODO bridge to Apple Reminders, Google Calendar)
 - Notification service (due dates, status changes, mentions)
 - joyint.com deployment (managed hosting)
 - Tauri native app (desktop and mobile)
