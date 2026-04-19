@@ -1,7 +1,7 @@
 id: JOY-00F1-AD
 title: Add 'joy project set acronym' CLI command
 type: task
-status: in-progress
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -10,7 +10,7 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-18T17:31:31.834529350Z
-updated: 2026-04-19T12:03:04.923322811Z
+updated: 2026-04-19T12:19:20.917928201Z
 description: 'Prerequisite for the jot -> jyn rename (see JI-00E3-C5 in umbrella project JI). The acronym field in .joy/project.yaml drives item-ID prefixes but is currently not writable via the Joy CLI: ''joy project set'' accepts only name, description, language. The rename strategy preserves existing JOT-xxxx items as history and starts JYN-xxxx for new items, which requires flipping the acronym in jot/.joy/project.yaml. Direct YAML edits violate the ''always use the Joy CLI'' rule. Implementation: extend joy-cli/src/commands/project.rs set subcommand to accept ''acronym'' as key. Must validate format (uppercase alphanumeric, 2-8 chars per existing project conventions), must warn that existing items keep their old prefix (only new items get the new prefix), must not renumber anything. Optional: add integration test. Release in joy next patch version so the rename can use it.'
 comments:
 - author: ai:claude@joy
@@ -35,3 +35,15 @@ comments:
     8. joy submit for review.
 
     Non-goals for this item: validating acronym at init time (separate scope), renaming existing items (user chose historical preservation), retroactively re-prefixing.
+- author: ai:claude@joy
+  date: 2026-04-19T12:15:07.221385685Z
+  text: |-
+    [x] Implemented on branch rename/jyn, commit d034322.
+
+    - Added joy_core::model::project::validate_acronym with 7 unit tests covering real project acronyms (JI/JOT/JOY/JON/JP/JAPP/JOYC/JISITE), alphanumeric inputs (V2, A1B2), case + whitespace normalization, and rejection of too-short, too-long, non-alnum, non-ASCII inputs.
+    - joy-cli project.rs: set_value now accepts 'acronym', validates via validate_acronym, stores the normalized form. 'created' stays read-only separately.
+    - run() prints a two-line note after an acronym change: existing items keep their previous prefix, only new items use the new prefix.
+    - Updated Set subcommand doc comment to list acronym among settable keys.
+    - cargo fmt, cargo clippy --workspace -- -D warnings (CI shape), just test-unit (243/243), just test-cmd (2/2) all green.
+
+    Unrelated finding, out of scope: cargo clippy --all-targets surfaces two pre-existing errors in crates/joy-core/src/guard.rs:385 (clone_on_copy) and one expect_fun_call elsewhere. Only under --all-targets, CI uses --workspace without --all-targets so it does not fail. Worth a cleanup item at some point but not here.
