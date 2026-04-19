@@ -9,10 +9,32 @@ capabilities:
 effort: 1
 created_by: ai:claude@joy
 created: 2026-04-19T19:28:11.063522236Z
-updated: 2026-04-19T19:28:11.063522236Z
+updated: 2026-04-19T20:02:12.285219310Z
 description: |-
   The Auth column check mark in `joy project member` (and `joy project member show`) is set via member_auth_status in crates/joy-cli/src/commands/project.rs: it loads the session file from disk, checks TTL and delegation-key match, and reports check mark on success. This is purely file-based and does not inspect the caller's JOY_SESSION env var.
 
   resolve_identity (joy-core identity.rs) on the other hand requires JOY_SESSION to operate as the AI per ADR-033 §2. Consequence: the check mark can show up in a sibling shell that does NOT have JOY_SESSION set, even though write commands from that shell would fail auth.
 
   Fix: either make member_auth_status's AI branch also require JOY_SESSION to match before showing the check mark, or introduce a separate indicator for "session file present but not usable from this shell". The display and the auth behaviour must not disagree.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-19T20:02:12.285197048Z
+  text: |-
+    Additional manifestation of the same divergence, observed in the wild:
+
+      $ joy auth status
+      No active session for horst.schwarz@joydev.com. Run `joy auth` to authenticate.
+
+      $ joy project member
+        Member                   Auth con pln ...
+        horst.schwarz@joydev.com ✓ 🔐  ...
+
+    T1 authed at an earlier TTY, T2 is a different TTY (second terminal of the same OS user). T2's `joy auth status` correctly returns "no active session" (check_session enforces claims.tty == current_tty for human members). `joy project member` however shows the check mark for horst - member_auth_status only validates signature + TTL + member match on the session file, it does NOT run the TTY check.
+
+    Two user-visible states that disagree in the same shell at the same moment. Fixing member_auth_status for humans means either:
+    - run the same TTY check as check_session, OR
+    - introduce a distinct display state (for example "session file present, not usable in this shell") so the divergence is visible rather than hidden.
+
+    Parallel AI case holds too: if JOY_SESSION env is missing in this shell, resolve_identity refuses to act as the AI, but member_auth_status still shows the AI check mark because the file is intact.
+
+    The bug therefore spans both member paths; the fix is one mechanism (align member_auth_status with resolve_identity's actual preconditions), applied for humans and AIs.
