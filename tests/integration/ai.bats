@@ -323,7 +323,9 @@ load setup
     fi
 }
 
-@test "joy auth --token writes JOY_SESSION to tool settings" {
+@test "joy auth --token does not persist JOY_SESSION to tool settings" {
+    # ADR-034 relaxes ADR-033 §3 but keeps §2 intact: JOY_SESSION carries the
+    # ephemeral private key and must not be written to any tool config file.
     setup_human_auth
     joy ai init </dev/null 2>/dev/null || true
     MEMBER=$(joy project 2>/dev/null | grep "ai:" | head -1 | awk '{print $1}')
@@ -331,18 +333,14 @@ load setup
     TOKEN=$(joy auth token add "$MEMBER" --passphrase "$TEST_PASSPHRASE" \
         | sed -n 's/^  \(joy_t_.*\)/\1/p')
     joy auth --token "$TOKEN" >/dev/null 2>&1
-    # The live value must have landed in at least one tool settings file,
-    # with the ADR-033 joy_s_ prefix.
-    found=0
     for f in .claude/settings.json .qwen/settings.json .github/copilot/settings.json; do
-        if [ -f "$f" ] && grep -q '"JOY_SESSION": *"joy_s_' "$f"; then
-            found=1
+        if [ -f "$f" ]; then
+            ! grep -q '"JOY_SESSION"' "$f"
         fi
     done
-    if [ -f ".vibe/.env" ] && grep -q '^JOY_SESSION=joy_s_' .vibe/.env; then
-        found=1
+    if [ -f ".vibe/.env" ]; then
+        ! grep -q '^JOY_SESSION=' .vibe/.env
     fi
-    [ "$found" -eq 1 ]
 }
 
 @test "AI auth works in isolated subshell (simulates AI tool)" {
@@ -352,22 +350,12 @@ load setup
     [ -n "$MEMBER" ] || skip "no AI member registered"
     TOKEN=$(joy auth token add "$MEMBER" --passphrase "$TEST_PASSPHRASE" \
         | sed -n 's/^  \(joy_t_.*\)/\1/p')
-    # `joy auth --token` populates JOY_SESSION in tool settings AND prints
-    # the export for eval. We read the settings-persisted value to simulate
-    # a fresh subshell spawned later by the AI tool.
-    joy auth --token "$TOKEN" >/dev/null 2>&1
-    SID=""
-    for f in .claude/settings.json .qwen/settings.json .github/copilot/settings.json; do
-        if [ -f "$f" ]; then
-            SID=$(grep -o '"JOY_SESSION": *"[^"]*"' "$f" | head -1 | cut -d'"' -f4)
-            [ -n "$SID" ] && break
-        fi
-    done
-    if [ -z "$SID" ] && [ -f ".vibe/.env" ]; then
-        SID=$(sed -n 's/^JOY_SESSION=//p' .vibe/.env)
-    fi
-    [ -n "$SID" ] || skip "no AI tool configured"
-    # Run joy in a clean subshell with ONLY JOY_SESSION from settings.
+    # `joy auth --token` prints `export JOY_SESSION=<joy_s_...>` on stdout.
+    # The AI tool is responsible for capturing that value and propagating it
+    # into every subshell it spawns for joy commands (ADR-034).
+    SID=$(joy auth --token "$TOKEN" 2>/dev/null | sed -n 's/^export JOY_SESSION=//p')
+    [ -n "$SID" ]
+    # Run joy in a clean subshell with ONLY JOY_SESSION inherited.
     run env -i HOME="$HOME" PATH="$PATH" XDG_STATE_HOME="$XDG_STATE_HOME" \
         GIT_CONFIG_GLOBAL=/dev/null GIT_AUTHOR_NAME="Test" GIT_AUTHOR_EMAIL="test@example.com" \
         GIT_COMMITTER_NAME="Test" GIT_COMMITTER_EMAIL="test@example.com" \

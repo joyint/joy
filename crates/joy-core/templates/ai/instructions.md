@@ -45,22 +45,26 @@ are always allowed without authentication.
 1. Run `joy auth status` to check if you already have an active session.
 2. If not authenticated, ask the user for a delegation token:
    "I need a delegation token. Please run `joy auth token add <YOUR-MEMBER-ID>` and share the token."
-3. Run: `joy auth --token <TOKEN>`
+3. Run: `joy auth --token <TOKEN>` and capture the `export JOY_SESSION=...`
+   value from its stdout. That value is the ephemeral session credential; it
+   lives only in the shell's environment and is not written to any file.
 
-Sessions expire after 24 hours. Delegation tokens themselves are single-use
-and expire 2 hours after issuance.
+Tokens are multi-use within their TTL (default 24h); the same token string
+may be redeemed in multiple shells on the same machine, and each redemption
+produces an independent session. The AI tool is responsible for propagating
+the captured `JOY_SESSION` value into every subshell it spawns for joy
+commands.
 
 If `joy auth --token` fails, read the error and react accordingly:
-- **Token expired** -- the 2 hour issuance window has passed. Do not retry
-  with the same token. Ask the user to run `joy auth token add <YOUR-ID>`
-  again and pass you the new token.
-- **Token already consumed** -- a previous `joy auth --token` call has
-  already redeemed this token. Do not retry. Ask the user for a fresh
-  token via `joy auth token add <YOUR-ID>`.
+- **Token expired** -- the token's TTL has passed. Do not retry with the
+  same token. Ask the user to run `joy auth token add <YOUR-ID>` again and
+  pass you the new token.
+- **Token for wrong project** -- the token was issued for a different
+  project. Ask the user to issue a token in the current project.
 
 If a later Joy command fails with a session error, your 24 hour session
-has expired; ask the user for a fresh delegation token and re-run
-`joy auth --token`.
+has expired or the delegation has been rotated; ask the user for a fresh
+delegation token and re-run `joy auth --token`.
 
 Respect your configured capabilities and `max-mode` limits.
 **Capability warnings are mandatory stops** -- if a Joy command prints one, stop and ask the user.

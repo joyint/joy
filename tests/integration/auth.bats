@@ -264,30 +264,29 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 # Single-use tokens and 2h TTL (ADR-033 / JOY-00EA-45)
 # ============================================================
 
-@test "delegation token is single-use" {
+@test "delegation token is multi-use within its TTL" {
+    # ADR-034 relaxes ADR-033 §3: the same token may be redeemed multiple
+    # times within its TTL, each redemption producing an independent session.
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
     joy project member add ai:test@joy
     TOKEN=$(joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" \
         | sed -n 's/^  \(joy_t_.*\)/\1/p')
     [ -n "$TOKEN" ]
-    # First redemption succeeds.
-    joy auth --token "$TOKEN" >/dev/null
-    # Second redemption of the same token must be rejected as replay.
     run joy auth --token "$TOKEN"
-    [ "$status" -ne 0 ]
-    [[ "$output$stderr" == *"already consumed"* ]] \
-        || [[ "${lines[*]}" == *"already consumed"* ]]
+    [ "$status" -eq 0 ]
+    # Second redemption of the same token also succeeds.
+    run joy auth --token "$TOKEN"
+    [ "$status" -eq 0 ]
 }
 
-@test "delegation token announces 2h default TTL" {
+@test "delegation token announces 24h default TTL" {
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
     joy project member add ai:test@joy
     run joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"expires in 2 hours"* ]]
-    [[ "$output" == *"single-use"* ]]
+    [[ "$output" == *"expires in 24 hours"* ]]
 }
 
 # ============================================================
