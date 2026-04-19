@@ -1,0 +1,12 @@
+id: JOY-00F8-F2
+title: '''joy ai rotate'' referenced in error but not implemented'
+type: bug
+status: new
+priority: high
+capabilities:
+- implement
+- review
+created_by: ai:claude@joy
+created: 2026-04-19T20:50:38.907008938Z
+updated: 2026-04-19T20:50:38.907008938Z
+description: 'When delegation lookup fails because the local private key is missing (see for instance the acronym-rename orphan case in JOY-00F7-91), joy prints the guidance ''Run joy ai rotate <member> to generate a fresh pair on this machine.'' Running this command fails: ''error: unrecognized subcommand rotate''. Either ''joy ai rotate'' should be implemented (generates a fresh delegation keypair on the current machine, uploads the public half, invalidates prior key pairs for that member on this machine), or the error message should point at the real recovery path (currently: remove the delegations/<ACRONYM> directory and re-run ''joy auth token add <member>''). ADR-033 (three-part trust model) describes the keypair rotation semantics; the CLI surface has not caught up. Discovered during JI-00E3-C5 jyn rename after JOY-00F7-91 triggered the ''key missing'' path.'

@@ -1,0 +1,12 @@
+id: JOY-00F7-91
+title: Acronym rename orphans local delegation key path
+type: bug
+status: new
+priority: high
+capabilities:
+- implement
+- review
+created_by: ai:claude@joy
+created: 2026-04-19T20:50:24.119381660Z
+updated: 2026-04-19T20:50:24.119381660Z
+description: 'Changing project acronym via ''joy project set acronym'' invalidates on-disk delegation key lookups. Delegation private keys are stored under ~/.local/state/joy/delegations/<ACRONYM>/, so after a flip JOT -> JYN the old JOT directory still holds the key material while the rest of joy looks for it under JYN. Result: subsequent ''joy auth token add <member>'' fails with ''local private key is missing'' even though the key exists on disk (just under the previous acronym). Workaround today: manually mv ~/.local/state/joy/delegations/JOT ~/.local/state/joy/delegations/JYN after an acronym rename. Proper fix options: (a) ''joy project set acronym'' moves the delegations directory atomically as part of the transition; (b) joy stops using acronym as directory key (use stable project_id instead); (c) explicit migration subcommand. Encountered during JI-00E3-C5 jyn rename (flipping jot -> jyn acronym).'
