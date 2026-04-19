@@ -1,0 +1,12 @@
+id: JOY-00F9-D7
+title: Add CLI surface for release.version-files in joy project set
+type: bug
+status: new
+priority: medium
+capabilities:
+- implement
+- review
+created_by: ai:claude@joy
+created: 2026-04-19T22:12:52.022118467Z
+updated: 2026-04-19T22:12:52.022118467Z
+description: 'Today ''joy project set'' only supports name, acronym, description, and language. release.version-files (list of paths that ''joy release bump'' rewrites) has no CLI surface; editing project.yaml directly is the only way. Discovered during JI-00E3-C5 rename: after renaming crates/jot-* to crates/jyn-* in the jyn workspace, project.yaml still pointed at the old paths, so ''joy release bump'' failed with ''no files matching crates/jot-core/Cargo.toml''. We had to edit .joy/project.yaml by hand (commit ab6d153 in jyn), which violates the ''Always use the Joy CLI'' rule and is invisible to governance. Fix options: (a) extend ''joy project set'' with list semantics for release.version-files (add, remove, set all); (b) dedicated ''joy release version-files {add,rm,set,ls}'' subcommand. Either way the file must roundtrip cleanly and the guard should accept the edit via the normal auth pathway.'
