@@ -1,7 +1,7 @@
 id: JOY-00F6-24
 title: Relax ADR-033 single-use tokens to multi-use 24h TTL
 type: rework
-status: in-progress
+status: review
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -11,7 +11,7 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy
 created: 2026-04-19T19:28:43.084631490Z
-updated: 2026-04-19T19:29:33.933072642Z
+updated: 2026-04-19T19:37:17.896571277Z
 description: |-
   Revert ADR-033 §3 only. §1 (stable per-(human, AI) delegation key) and §2 (ephemeral session keypair bound to JOY_SESSION) remain authoritative.
 
@@ -53,3 +53,17 @@ comments:
     8. Commit per logical unit, joy submit at the end.
 
     §1 and §2 untouched.
+- author: ai:claude@joy
+  date: 2026-04-19T19:37:17.885882623Z
+  text: |-
+    [x] Done on branch rework/auth-trust-model, commit 26134d3.
+
+    Deletions: 371 lines. Additions: 106 lines. Net -265.
+
+    - consumed module + ledger deleted.
+    - Token default TTL 24h, multi-use within TTL. 'single-use' and '2h' strings gone from CLI output and templates.
+    - JOY_SESSION is no longer written to .claude/.qwen/.github/.vibe config files (JOY-00C5-70 revert). Templates describe the AI tool propagating the stdout export into its own subshells.
+    - §1 (delegation) and §2 (ephemeral session keypair, JOY_SESSION as credential) unchanged.
+    - Test matrix: 231/231 unit, 2/2 trycmd, 163/163 BATS, clippy --workspace clean.
+
+    Companion umbrella work (ADR-034 text, Auth.md amend, ADR-033 header, ADR-023 see-also) tracked separately.
