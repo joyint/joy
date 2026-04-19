@@ -4,3 +4,6 @@
 2026-04-18T10:23:38.335Z JOY-00F0-89 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-18T10:25:08.225Z JOY-00F0-89 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-18T10:36:11.001Z v0.10.6 release.created [horst.schwarz@joydev.com]
+2026-04-18T17:20:52.456Z project guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-04-18T17:31:31.828Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-18T17:31:31.841Z JOY-00F1-AD item.created "Add 'joy project set acronym' CLI command" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

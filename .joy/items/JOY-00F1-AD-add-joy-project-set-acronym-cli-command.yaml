@@ -1,0 +1,37 @@
+id: JOY-00F1-AD
+title: Add 'joy project set acronym' CLI command
+type: task
+status: in-progress
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy
+created: 2026-04-18T17:31:31.834529350Z
+updated: 2026-04-19T12:03:04.923322811Z
+description: 'Prerequisite for the jot -> jyn rename (see JI-00E3-C5 in umbrella project JI). The acronym field in .joy/project.yaml drives item-ID prefixes but is currently not writable via the Joy CLI: ''joy project set'' accepts only name, description, language. The rename strategy preserves existing JOT-xxxx items as history and starts JYN-xxxx for new items, which requires flipping the acronym in jot/.joy/project.yaml. Direct YAML edits violate the ''always use the Joy CLI'' rule. Implementation: extend joy-cli/src/commands/project.rs set subcommand to accept ''acronym'' as key. Must validate format (uppercase alphanumeric, 2-8 chars per existing project conventions), must warn that existing items keep their old prefix (only new items get the new prefix), must not renumber anything. Optional: add integration test. Release in joy next patch version so the rename can use it.'
+comments:
+- author: ai:claude@joy
+  date: 2026-04-19T12:03:04.923321696Z
+  text: |-
+    Plan:
+
+    1. Core: add joy_core::model::project::validate_acronym(value) -> Result<(), String>. Rules: uppercase ASCII alphanumeric (A-Z, 0-9), must start with a letter, length 2-8. Matches the shape of all existing project acronyms in the Joyint ecosystem (JI, JOT, JOY, JISITE, JAPP ...).
+
+    2. Core: unit tests for validate_acronym covering accept (JYN, JOT, JI, JAPP, JISITE, JX2) and reject (empty, single char, 9+ chars, lowercase, leading digit, hyphen, whitespace, non-ASCII, starts-with-digit).
+
+    3. CLI: in joy-cli/src/commands/project.rs set_value, replace the current bail for 'acronym' with a set-path that calls validate_acronym, assigns project.acronym. 'created' stays read-only.
+
+    4. CLI: update help text on the Set subcommand doc comment and the --help string to list 'acronym' among settable keys.
+
+    5. CLI: after set_value succeeds in run(), if key == 'acronym', print an explicit note that existing item IDs keep their previous prefix and only new items use the new prefix. Prevents user surprise (ADR-adjacent policy decision we accepted for the jot -> jyn rename).
+
+    6. cargo fmt, cargo clippy --workspace -D warnings, cargo test --workspace.
+
+    7. Commit on branch rename/jyn with conventional commit 'feat(cli): allow joy project set acronym' referencing JOY-00F1-AD. Include the staged JOY-00F1-AD item YAML.
+
+    8. joy submit for review.
+
+    Non-goals for this item: validating acronym at init time (separate scope), renaming existing items (user chose historical preservation), retroactively re-prefixing.
