@@ -31,9 +31,9 @@ Pin all dependencies to their current stable **major.minor** version. Track stab
 
 ## Shared Logic: joy-core
 
-The `joy-core` library crate is the shared foundation for both Joy and [Jot](https://github.com/joyint/jot). It provides the base data model (Item), YAML I/O, status logic, dependency management, and Git integration.
+The `joy-core` library crate is the shared foundation for both Joy and [Jyn](https://github.com/joyint/jyn). It provides the base data model (Item), YAML I/O, status logic, dependency management, and Git integration.
 
-The Jot repository depends on `joy-core` as an external crate dependency. `jot-core` extends `joy-core::Item` with todo-specific features (recurring tasks, RRULE). This ensures consistent behavior across both tools while keeping Joy free of Jot-specific code.
+The Jyn repository depends on `joy-core` as an external crate dependency. `jyn-core` extends `joy-core::Item` with todo-specific features (recurring tasks, RRULE). This ensures consistent behavior across both tools while keeping Joy free of Jyn-specific code.
 
 ```mermaid
 graph TD

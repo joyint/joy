@@ -919,7 +919,7 @@ fn update_claude_permissions(root: &Path, _member_id: &str) -> anyhow::Result<bo
         .entry("allow")
         .or_insert_with(|| serde_json::json!([]));
     let allow_arr = allow.as_array_mut().unwrap();
-    for perm in ["Bash(joy *)", "Bash(jot *)"] {
+    for perm in ["Bash(joy *)", "Bash(jyn *)"] {
         if !allow_arr.iter().any(|v| v.as_str() == Some(perm)) {
             allow_arr.push(serde_json::json!(perm));
         }
@@ -978,7 +978,7 @@ fn update_qwen_permissions(root: &Path, _member_id: &str) -> anyhow::Result<bool
         .entry("allowed")
         .or_insert_with(|| serde_json::json!([]));
     let allowed_arr = allowed.as_array_mut().unwrap();
-    for perm in ["run_shell_command(joy)", "run_shell_command(jot)"] {
+    for perm in ["run_shell_command(joy)", "run_shell_command(jyn)"] {
         if !allowed_arr.iter().any(|v| v.as_str() == Some(perm)) {
             allowed_arr.push(serde_json::json!(perm));
         }
@@ -1091,7 +1091,7 @@ fn update_copilot_permissions(root: &Path, _member_id: &str) -> anyhow::Result<b
 
     let allow_arr = allow.as_array_mut().unwrap();
 
-    for perm in ["shell(joy:*)", "shell(jot:*)"] {
+    for perm in ["shell(joy:*)", "shell(jyn:*)"] {
         if !allow_arr.iter().any(|v| v.as_str() == Some(perm)) {
             allow_arr.push(serde_json::json!(perm));
         }
