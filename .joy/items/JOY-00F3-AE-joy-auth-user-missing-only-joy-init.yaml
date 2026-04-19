@@ -1,0 +1,16 @@
+id: JOY-00F3-AE
+title: joy auth --user missing, only joy init supports it
+type: bug
+status: new
+priority: medium
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy
+created: 2026-04-19T19:28:11.055140077Z
+updated: 2026-04-19T19:28:11.055140077Z
+description: |-
+  `joy init --user <name>` registers the creator member under <name>, but `joy auth` and `resolve_identity` match only against git config user.email. A project whose member was registered with a name that differs from the current git email cannot authenticate at all via `joy auth`.
+
+  Fix: add `--user <name>` to `joy auth` (and to `joy auth token add` if consistent), that overrides the git-email lookup for the member match. Passphrase verification against members[<name>].public_key is unchanged; only the member-selector is explicit.
