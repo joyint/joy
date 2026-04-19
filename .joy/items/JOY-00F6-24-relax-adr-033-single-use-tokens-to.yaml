@@ -1,7 +1,7 @@
 id: JOY-00F6-24
 title: Relax ADR-033 single-use tokens to multi-use 24h TTL
 type: rework
-status: review
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -11,7 +11,7 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy
 created: 2026-04-19T19:28:43.084631490Z
-updated: 2026-04-19T19:37:17.896571277Z
+updated: 2026-04-19T19:48:43.281556745Z
 description: |-
   Revert ADR-033 §3 only. §1 (stable per-(human, AI) delegation key) and §2 (ephemeral session keypair bound to JOY_SESSION) remain authoritative.
 
