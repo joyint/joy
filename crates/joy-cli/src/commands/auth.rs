@@ -607,7 +607,9 @@ fn run_token_add(args: TokenAddArgs, passphrase_flag: Option<&str>) -> Result<()
     println!("The AI redeems it with:");
     println!("  joy auth --token {}", encoded);
     println!();
-    println!("Token expires in {hours} hours. It may be redeemed multiple times within that window.");
+    println!(
+        "Token expires in {hours} hours. It may be redeemed multiple times within that window."
+    );
 
     Ok(())
 }
