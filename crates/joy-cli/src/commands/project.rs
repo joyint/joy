@@ -7,7 +7,7 @@ use clap::Args;
 use joy_core::context::Context;
 use joy_core::guard::Action;
 use joy_core::model::item::Capability;
-use joy_core::model::project::{CapabilityConfig, Member, MemberCapabilities};
+use joy_core::model::project::{validate_acronym, CapabilityConfig, Member, MemberCapabilities};
 use joy_core::model::Project;
 use joy_core::store;
 
@@ -46,7 +46,7 @@ pub struct ProjectArgs {
 enum ProjectCommand {
     /// Get a project value by key (name, acronym, description, language, created)
     Get(GetArgs),
-    /// Set a project value by key (name, description, language)
+    /// Set a project value by key (name, acronym, description, language)
     Set(SetArgs),
     /// Manage project members
     Member(MemberArgs),
@@ -130,7 +130,15 @@ pub fn run(args: ProjectArgs) -> Result<()> {
             }
             let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
             joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
-            println!("{} = {}", a.key, a.value);
+            if a.key == "acronym" {
+                let stored = project.acronym.as_deref().unwrap_or(&a.value);
+                println!("{} = {}", a.key, stored);
+                println!();
+                println!("Note: existing items keep their previous ID prefix.");
+                println!("Only items created after this change use the new prefix '{stored}'.");
+            } else {
+                println!("{} = {}", a.key, a.value);
+            }
             let log_user = ctx.log_user();
             joy_core::git_ops::auto_git_post_command(
                 &ctx.root,
@@ -213,8 +221,12 @@ fn set_value(project: &mut Project, key: &str, value: &str) -> Result<()> {
         "docs.architecture" => project.docs.architecture = normalize_docs_value(value),
         "docs.vision" => project.docs.vision = normalize_docs_value(value),
         "docs.contributing" => project.docs.contributing = normalize_docs_value(value),
-        "acronym" | "created" => {
-            anyhow::bail!("'{key}' is read-only");
+        "acronym" => {
+            let normalized = validate_acronym(value).map_err(|e| anyhow::anyhow!(e))?;
+            project.acronym = Some(normalized);
+        }
+        "created" => {
+            anyhow::bail!("'created' is read-only");
         }
         _ => anyhow::bail!(
             "unknown key: {key}\nknown keys: {}",

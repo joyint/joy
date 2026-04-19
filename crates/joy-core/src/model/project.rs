@@ -290,6 +290,31 @@ impl Project {
     }
 }
 
+/// Validate and normalize a project acronym.
+///
+/// Acronyms drive item ID prefixes (`ACRONYM-XXXX`) and must therefore be
+/// ASCII, filesystem-safe, and short. Rules: ASCII uppercase letters (A-Z) or
+/// digits (0-9), length 2-8 after trimming. Input is trimmed and uppercased;
+/// the normalized form is returned on success so callers can store it as-is.
+pub fn validate_acronym(value: &str) -> Result<String, String> {
+    let normalized = value.trim().to_uppercase();
+    if normalized.len() < 2 || normalized.len() > 8 {
+        return Err(format!(
+            "acronym must be 2-8 characters, got {} ('{}')",
+            normalized.len(),
+            normalized
+        ));
+    }
+    for (i, c) in normalized.chars().enumerate() {
+        if !(c.is_ascii_uppercase() || c.is_ascii_digit()) {
+            return Err(format!(
+                "acronym character '{c}' at position {i} is not A-Z or 0-9"
+            ));
+        }
+    }
+    Ok(normalized)
+}
+
 /// Derive an acronym from a project name.
 /// Takes the first letter of each word, uppercase, max 4 characters.
 /// Single words use up to 3 uppercase characters.
@@ -504,6 +529,57 @@ created: 2026-01-01T00:00:00Z
     #[test]
     fn derive_acronym_single_long_word() {
         assert_eq!(derive_acronym("Platform"), "PLA");
+    }
+
+    // -----------------------------------------------------------------------
+    // validate_acronym tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn validate_acronym_accepts_real_project_acronyms() {
+        for a in ["JI", "JOT", "JOY", "JON", "JP", "JAPP", "JOYC", "JISITE"] {
+            assert_eq!(validate_acronym(a).unwrap(), a, "rejected real acronym {a}");
+        }
+    }
+
+    #[test]
+    fn validate_acronym_accepts_alphanumeric() {
+        assert_eq!(validate_acronym("V2").unwrap(), "V2");
+        assert_eq!(validate_acronym("A1B2").unwrap(), "A1B2");
+    }
+
+    #[test]
+    fn validate_acronym_normalizes_case_and_whitespace() {
+        assert_eq!(validate_acronym("jyn").unwrap(), "JYN");
+        assert_eq!(validate_acronym("Jyn").unwrap(), "JYN");
+        assert_eq!(validate_acronym("  jyn  ").unwrap(), "JYN");
+    }
+
+    #[test]
+    fn validate_acronym_rejects_too_short() {
+        assert!(validate_acronym("").is_err());
+        assert!(validate_acronym("J").is_err());
+        assert!(validate_acronym(" J ").is_err());
+    }
+
+    #[test]
+    fn validate_acronym_rejects_too_long() {
+        assert!(validate_acronym("ABCDEFGHI").is_err());
+    }
+
+    #[test]
+    fn validate_acronym_rejects_non_alnum() {
+        assert!(validate_acronym("JY-N").is_err());
+        assert!(validate_acronym("JY N").is_err());
+        assert!(validate_acronym("JY_N").is_err());
+        assert!(validate_acronym("JY.N").is_err());
+    }
+
+    #[test]
+    fn validate_acronym_rejects_non_ascii() {
+        assert!(validate_acronym("AEBC").is_ok());
+        assert!(validate_acronym("ABC").is_ok());
+        assert!(validate_acronym("\u{00c4}BC").is_err());
     }
 
     // -----------------------------------------------------------------------
