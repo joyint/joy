@@ -421,6 +421,7 @@ mod tests {
             "## Rules",
             "## Project context",
             "## Commit messages",
+            "## Working style",
         ] {
             assert!(
                 instructions.contains(section),

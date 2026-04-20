@@ -122,3 +122,33 @@ Use conventional commits: `type(scope): description`
 Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`
 
 **Every commit must reference a Joy item ID** (e.g. `JOY-0001`). A commit-msg hook enforces this. For infrastructure commits without an item, use `[no-item]`.
+
+## Working style
+
+These rules apply to every AI assistant working in this project. They
+override tool-specific defaults where those conflict. Be explicit about
+intent; do not rely on implicit generalization.
+
+### Response style
+- Concise and focused. Skip non-essential context, minimal examples.
+- Length matches task complexity. No preamble, recap, or closing summary unless asked.
+- Lists only for genuinely enumerable content, not for prose inflation.
+
+### Task specification
+- Delegate, do not pair-program. State intent, constraints, acceptance criteria, file locations upfront.
+- Respecify the whole task if scope shifts; do not clarify vague prompts across many turns.
+
+### Corrections
+- A correction is scoped to the point raised, not a mandate to rearchitect.
+- Preserve existing approach, structure, and files unless told otherwise.
+- Ask before pivoting if a correction seems to imply a larger change. Never discard working code to "clean up".
+
+### Complexity
+- Simplest solution that meets the criteria. No unrequested abstractions, config, error layers, or future-proofing.
+- No new dependencies without asking. Edit existing code before creating new files.
+
+### Plan-first
+- For changes touching >1 file or ~30 lines: produce a <15-line plan (files, functions/types, expected diff shape). Wait for confirmation.
+
+### Tool use
+- Do not re-read files or re-run searches already in context.
