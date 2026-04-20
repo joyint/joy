@@ -13,8 +13,10 @@
 //! Passphrase + Salt --[Argon2id]--> DerivedKey --[Ed25519]--> IdentityKeypair
 //! ```
 
+pub mod attestation;
 pub mod delegation;
 pub mod derive;
+pub mod otp;
 pub mod session;
 pub mod sign;
 pub mod token;

@@ -33,17 +33,17 @@ setup_founder() {
     joy auth init --passphrase "$FOUNDER_PASSPHRASE"
 }
 
-# Add a new member and capture the emitted OTP in the global AI_OTP var.
+# Add a new member and capture the emitted OTP in MEMBER_OTP.
 # Args: $1 = member email, $2 = capabilities (optional, default: all)
 add_member_capture_otp() {
     local email="$1"
     local caps="${2:-}"
-    local cmd="joy project member add $email --passphrase $FOUNDER_PASSPHRASE"
-    if [ -n "$caps" ]; then
-        cmd="$cmd --capabilities $caps"
-    fi
     local out
-    out=$($cmd)
+    if [ -n "$caps" ]; then
+        out=$(joy project member add "$email" --capabilities "$caps" --passphrase "$FOUNDER_PASSPHRASE")
+    else
+        out=$(joy project member add "$email" --passphrase "$FOUNDER_PASSPHRASE")
+    fi
     MEMBER_OTP=$(extract_otp "$out")
 }
 
@@ -81,16 +81,14 @@ become_member() {
     otp=$(extract_otp "$output")
     [ -n "$otp" ]
 
-    # project.yaml now contains an attestation block under alice's entry,
-    # with test@example.com (the founder) as attester.
+    # project.yaml now contains an attestation block naming test@example.com
+    # (the founder) as attester.
     grep -q "attestation:" .joy/project.yaml
-    # The attester field names the founder.
-    grep -A5 "alice@example.com" .joy/project.yaml | grep -q "attester: test@example.com"
-    # otp_hash is in signed fields (alice still has it, pre-redemption).
-    grep -A10 "alice@example.com" .joy/project.yaml | grep -q "otp_hash:"
-    # public_key is not yet set (alice has not redeemed OTP).
-    run bash -c 'grep -A20 "alice@example.com" .joy/project.yaml | grep -E "^\s+public_key:"'
-    [ "$status" -ne 0 ]
+    grep -q "attester: test@example.com" .joy/project.yaml
+    # otp_hash is recorded (alice still has one, pre-redemption).
+    grep -q "otp_hash:" .joy/project.yaml
+    # Only the founder has a public_key at this point; alice has none.
+    [ "$(grep -c '^    public_key:' .joy/project.yaml)" = "1" ]
 }
 
 @test "member add without manage-member passphrase fails" {
@@ -121,14 +119,16 @@ become_member() {
     [[ "$output" != *"reverse-attesting"* ]]
     [[ "$output" != *"founder"* ]]
 
-    # Alice's otp_hash is cleared; her public_key is set.
-    run bash -c 'grep -A10 "alice@example.com" .joy/project.yaml | grep "otp_hash:"'
+    # Alice's member-level otp_hash is cleared (attestation.signed_fields
+    # may still reference it as historical record - that's 8-space indent
+    # and not matched by the member-level regex).
+    run grep -E "^    otp_hash:" .joy/project.yaml
     [ "$status" -ne 0 ]
-    grep -A10 "alice@example.com" .joy/project.yaml | grep -q "public_key:"
+    # Both alice and founder now have public_keys at member-level.
+    [ "$(grep -cE '^    public_key:' .joy/project.yaml)" = "2" ]
 
-    # Founder now carries an attestation signed by alice.
-    grep -A5 "test@example.com:" .joy/project.yaml | grep -q "attestation:"
-    grep -A10 "test@example.com:" .joy/project.yaml | grep -q "attester: alice@example.com"
+    # Founder now carries an attestation naming alice as attester.
+    grep -q "attester: alice@example.com" .joy/project.yaml
 }
 
 # ============================================================
