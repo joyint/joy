@@ -1,7 +1,7 @@
 id: JOY-00FF-93
 title: Manage remove inherits attested members
 type: task
-status: in-progress
+status: review
 priority: medium
 parent: JOY-00FA-A5
 assignees:
@@ -12,7 +12,7 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy
 created: 2026-04-20T17:25:33.744254475Z
-updated: 2026-04-20T18:15:53.180784328Z
+updated: 2026-04-20T18:16:40.369604979Z
 description: When a manage member removes another member, any members attested by the removed member are automatically re-attested by the removing manage member in the same operation. Silent, single commit. Prevents orphaned attestations.
 comments:
 - author: ai:claude@joy

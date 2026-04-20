@@ -1,7 +1,7 @@
 id: JOY-00FE-F6
 title: Block self-remove, list manage members in error
 type: task
-status: in-progress
+status: review
 priority: medium
 parent: JOY-00FA-A5
 assignees:
@@ -12,7 +12,7 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-20T17:25:33.734967866Z
-updated: 2026-04-20T18:15:53.161627683Z
+updated: 2026-04-20T18:16:40.360948811Z
 description: '''joy project member remove <self>'' is blocked with a clear error listing the other manage members by email. Removal of a member requires action by a different manage member so attestations can be handed over.'
 comments:
 - author: ai:claude@joy

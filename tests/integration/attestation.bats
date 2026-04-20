@@ -244,6 +244,42 @@ become_member() {
 # 8. Tampered attestation signature fails joy auth
 # ============================================================
 
+@test "silent auto-seal attests existing members on first post-upgrade auth" {
+    # Simulate a pre-feature project: members with public_keys but no
+    # attestations anywhere. Dev joins via direct yaml edit + auth init
+    # before we introduced attestations (we achieve the same state by
+    # stripping attestations from a fresh project).
+    setup_founder
+    add_member_capture_otp alice@example.com
+    become_member alice@example.com
+    joy auth --otp "$MEMBER_OTP" --passphrase "$ALICE_PASSPHRASE"
+
+    # Strip every attestation block (simulating pre-feature state).
+    python3 -c "
+import re, sys
+with open('.joy/project.yaml') as f:
+    text = f.read()
+text = re.sub(r'    attestation:\n(      .*\n)*', '', text)
+with open('.joy/project.yaml', 'w') as f:
+    f.write(text)
+"
+    ! grep -q "attestation:" .joy/project.yaml
+
+    # Deauth and re-auth as founder. Auto-seal triggers: founder signs
+    # attestations for everyone else (just alice here).
+    become_member test@example.com
+    joy deauth
+    run joy auth --passphrase "$FOUNDER_PASSPHRASE"
+    [ "$status" -eq 0 ]
+
+    # Alice now has an attestation naming test@example.com as attester;
+    # founder remains unattested (trust root of the sealed state).
+    grep -A8 "alice@example.com:" .joy/project.yaml | grep -q "attester: test@example.com"
+    # Verify silent: auth output should not mention sealing.
+    [[ "$output" != *"seal"* ]]
+    [[ "$output" != *"migration"* ]]
+}
+
 @test "tampered attestation signature fails joy auth" {
     setup_founder
     add_member_capture_otp alice@example.com

@@ -1,14 +1,26 @@
 id: JOY-0101-78
 title: Silent auto-seal for pre-feature projects
 type: task
-status: new
+status: in-progress
 priority: high
 parent: JOY-00FA-A5
+assignees:
+- member: ai:claude@joy
 milestone: JOY-MS-01
 capabilities:
 - implement
 effort: 3
 created_by: ai:claude@joy
 created: 2026-04-20T17:25:33.767727831Z
-updated: 2026-04-20T18:14:26.305846190Z
+updated: 2026-04-20T18:26:14.423664554Z
 description: On first joy auth in a project that has no attestations anywhere, accept the current member state as-is and silently create attestations using the acting member's identity key. No user-facing command, no output. Enabled for the migration window only.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-20T18:16:40.403045878Z
+  text: 'Plan: in auth_with_passphrase, after the passphrase-derives-public_key check succeeds, detect the ''no attestation anywhere'' precondition. When true and the project has more than one member, silently sign an attestation for every other member using the newly-derived keypair. Writes project.yaml once, then attestation verification continues with the sealed state. The acting member becomes the trust root; subsequent members will reverse-attest them via the normal reverse-attestation path.'
+- author: ai:claude@joy
+  date: 2026-04-20T18:26:14.423663980Z
+  text: |-
+    [x] Silent auto-seal implemented in auth_with_passphrase (run_auth path only). If every member's attestation is None and the project has at least two members, the acting member silently signs attestations for everyone else. Single yaml write, git_ops::auto_git_add. No user-facing output. Acting member remains the trust root; next joiner closes the chain via normal reverse-attestation.
+    [x] Attestation invariant updated: unattested >1 is tampering, unattested ==1 combined with a mutual-attestation pair is also tampering (pair signals the reverse-attestation closure has happened; no new unattested member should ever appear after).
+    [x] Bats test: silent auto-seal attests existing members on first post-upgrade auth. Verifies other members gain attestations, acting founder remains unattested, no 'seal'/'migration' output.
