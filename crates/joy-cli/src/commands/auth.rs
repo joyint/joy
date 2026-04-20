@@ -531,10 +531,11 @@ fn run_token_add(args: TokenAddArgs, passphrase_flag: Option<&str>) -> Result<()
             let kp = sign::IdentityKeypair::from_seed(&seed);
             if kp.public_key().to_hex() != pub_hex {
                 anyhow::bail!(
-                    "Local delegation private key for {} does not match the public key in project.yaml. \
-                     Run `joy ai rotate {}` to generate a fresh pair.",
-                    args.member,
-                    args.member
+                    "Delegation state for {m} is inconsistent: the local private key does not \
+                     match the public key recorded in project.yaml. \
+                     Run `joy ai rotate {m}` to replace the keypair with a fresh one. \
+                     Any prior tokens are invalidated.",
+                    m = args.member
                 );
             }
             (kp, false)
@@ -546,17 +547,22 @@ fn run_token_add(args: TokenAddArgs, passphrase_flag: Option<&str>) -> Result<()
             (kp, true)
         }
         (Some(_), None) => anyhow::bail!(
-            "Delegation for {} is recorded in project.yaml but the local private key is missing. \
-             Run `joy ai rotate {}` to generate a fresh pair on this machine.",
-            args.member,
-            args.member
+            "Local delegation private key for {m} is missing on this machine. \
+             Run `joy ai rotate {m}` to generate a fresh pair. \
+             This invalidates any prior tokens and any copy of the private key on other machines.",
+            m = args.member
         ),
-        (None, Some(_)) => anyhow::bail!(
-            "Local delegation key for {} exists but no entry is recorded in project.yaml. \
-             Run `joy ai rotate {}` to resynchronise state.",
-            args.member,
-            args.member
-        ),
+        (None, Some(_)) => {
+            let key_path = delegation::delegation_key_path(&project_id, &args.member)?;
+            anyhow::bail!(
+                "Local delegation key for {m} exists but project.yaml has no entry for it. \
+                 This is a manual-resolution state: remove the orphan key at {p} and re-run \
+                 `joy auth token add {m}` to bootstrap a fresh delegation, or investigate why \
+                 the project.yaml entry is missing.",
+                m = args.member,
+                p = key_path.display()
+            )
+        }
     };
 
     // ADR-034 relaxes §3: tokens are multi-use within a single TTL. Default
@@ -688,6 +694,112 @@ fn run_token_rm(args: TokenRmArgs, passphrase_flag: Option<&str>) -> Result<()> 
         &format!("auth token rm {}", args.member),
         &email,
     );
+
+    Ok(())
+}
+
+/// `joy ai rotate <ai-member>` - rotate the (human, AI) delegation keypair (ADR-033).
+///
+/// Replaces the delegation keypair for the acting human and the given AI
+/// member with a fresh one: generates a new Ed25519 pair, writes the
+/// private half to local state (overwriting any prior file), updates
+/// `project.yaml` with the new public key and a `rotated` timestamp in a
+/// single commit. Any tokens signed by the prior keypair, and any sessions
+/// bound to those tokens, become invalid (signature verification against
+/// the new delegation public key will fail).
+///
+/// Precondition: a delegation entry exists in `project.yaml` for
+/// `(acting human, member)`. For the initial delegation use
+/// `joy auth token add`, not rotate.
+pub fn run_ai_rotate(member: &str, passphrase_flag: Option<&str>) -> Result<()> {
+    use joy_core::model::project::is_ai_member;
+
+    let cwd = std::env::current_dir()?;
+    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+
+    let project = store::load_project(&root)?;
+    let email = joy_core::vcs::default_vcs().user_email()?;
+
+    if !is_ai_member(member) {
+        anyhow::bail!("{} is not an AI member (must start with ai:)", member);
+    }
+    if !project.members.contains_key(member) {
+        anyhow::bail!("{} is not a registered project member.", member);
+    }
+
+    joy_core::guard::enforce(&root, &joy_core::guard::Action::ManageProject, "project")?;
+
+    let human = project
+        .members
+        .get(&email)
+        .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member.", email))?;
+    if human.public_key.is_none() {
+        anyhow::bail!(
+            "Authentication not initialized for {}. Run `joy auth init`.",
+            email
+        );
+    }
+
+    // Rotation requires an existing delegation. Bootstrap (first-time
+    // setup) goes through `joy auth token add`, where project.yaml writes
+    // happen lazily on the very first issuance.
+    if !human.ai_delegations.contains_key(member) {
+        anyhow::bail!(
+            "No delegation for {m} is recorded in project.yaml under {email}. \
+             Rotation replaces an existing keypair; to create the initial \
+             delegation, run `joy auth token add {m}` instead.",
+            m = member
+        );
+    }
+
+    let salt_hex = human.salt.as_ref().unwrap();
+    let public_key_hex = human.public_key.as_ref().unwrap();
+    let salt = derive::Salt::from_hex(salt_hex)?;
+    let public_key = sign::PublicKey::from_hex(public_key_hex)?;
+
+    let passphrase = read_passphrase(passphrase_flag, "Passphrase: ")?;
+    let key = derive::derive_key(&passphrase, &salt)?;
+    let keypair = sign::IdentityKeypair::from_derived_key(&key);
+    if keypair.public_key() != public_key {
+        anyhow::bail!("incorrect passphrase");
+    }
+
+    // Generate fresh delegation keypair and persist the private half to
+    // local state. `save_delegation_key` overwrites any existing file, so
+    // this transition is correct regardless of the prior local state
+    // (valid, mismatched, or missing).
+    let project_id = session::project_id(&root)?;
+    let new_kp = sign::IdentityKeypair::from_random();
+    let new_seed = new_kp.to_seed_bytes();
+    delegation::save_delegation_key(&project_id, member, &new_seed)?;
+
+    // Update project.yaml: new delegation_key + rotated timestamp. Single
+    // write; the old delegation_key is unreachable after this point.
+    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
+    let mut project_mut: joy_core::model::project::Project = store::read_yaml(&project_path)?;
+    let entry = project_mut
+        .members
+        .get_mut(&email)
+        .and_then(|m| m.ai_delegations.get_mut(member))
+        .expect("delegation entry exists -- validated above");
+    entry.delegation_key = new_kp.public_key().to_hex();
+    entry.rotated = Some(Utc::now());
+    store::write_yaml_preserve(&project_path, &project_mut)?;
+    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+    joy_core::git_ops::auto_git_add(&root, &[&rel]);
+
+    // Clear any local session file for the AI member. If the AI runs on a
+    // different machine this is a no-op; if it shares the machine, the
+    // stale session file would fail signature verification on next use
+    // anyway - removing it makes the local state visibly consistent.
+    let _ = session::remove_session(&project_id, member);
+
+    println!("Rotated delegation for {member}.");
+    println!();
+    println!("Any prior tokens and any sessions bound to them are invalidated.");
+    println!("Issue a fresh token with `joy auth token add {member}`.");
+
+    joy_core::git_ops::auto_git_post_command(&root, &format!("ai rotate {}", member), &email);
 
     Ok(())
 }

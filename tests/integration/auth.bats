@@ -553,6 +553,91 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     [ "$output" = "OLDACR" ]
 }
 
+@test "joy ai rotate replaces delegation keypair on working state" {
+    joy init --name "Rotate Test" --acronym RT
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy project member add ai:test@joy
+    # Initial delegation.
+    OLD_TOKEN=$(joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" \
+        | sed -n 's/^  \(joy_t_.*\)/\1/p')
+    OLD_KEY_HASH=$(sha256sum "$XDG_STATE_HOME/joy/delegations/RT/ai_test_joy.key" | cut -d' ' -f1)
+    OLD_PUB=$(grep -A2 "ai:test@joy:" .joy/project.yaml | grep delegation_key | sed 's/.*: //')
+
+    run joy ai rotate ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Rotated delegation"* ]]
+    [[ "$output" == *"invalidated"* ]]
+
+    # Local private key file replaced with a different one.
+    NEW_KEY_HASH=$(sha256sum "$XDG_STATE_HOME/joy/delegations/RT/ai_test_joy.key" | cut -d' ' -f1)
+    [ "$OLD_KEY_HASH" != "$NEW_KEY_HASH" ]
+
+    # project.yaml has new delegation_key plus a rotated timestamp.
+    NEW_PUB=$(grep -A2 "ai:test@joy:" .joy/project.yaml | grep delegation_key | sed 's/.*: //')
+    [ "$OLD_PUB" != "$NEW_PUB" ]
+    grep -q "rotated:" .joy/project.yaml
+
+    # A newly issued token works; the old token is invalidated.
+    NEW_TOKEN=$(joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" \
+        | sed -n 's/^  \(joy_t_.*\)/\1/p')
+    run joy auth --token "$NEW_TOKEN"
+    [ "$status" -eq 0 ]
+    run joy auth --token "$OLD_TOKEN"
+    [ "$status" -ne 0 ]
+}
+
+@test "joy ai rotate recovers when local private key is missing" {
+    joy init --name "Rotate Test" --acronym RT
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy project member add ai:test@joy
+    joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" >/dev/null
+    # Simulate the (Some pub, None priv) desync: remove the local key.
+    rm "$XDG_STATE_HOME/joy/delegations/RT/ai_test_joy.key"
+
+    # Without rotate, token add bails out with the desync message.
+    run joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"missing on this machine"* ]]
+
+    # Rotate re-establishes both sides.
+    run joy ai rotate ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    [ -f "$XDG_STATE_HOME/joy/delegations/RT/ai_test_joy.key" ]
+    run joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+}
+
+@test "joy ai rotate refuses when no delegation entry exists" {
+    joy init --name "Rotate Test" --acronym RT
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy project member add ai:test@joy
+    # No token add -> no ai_delegations entry in project.yaml.
+
+    run joy ai rotate ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"No delegation"* ]]
+    [[ "$output" == *"joy auth token add"* ]]
+}
+
+@test "joy ai rotate rejects non-AI member" {
+    joy init --name "Rotate Test" --acronym RT
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy project member add dev@example.com
+    run joy ai rotate dev@example.com --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"not an AI member"* ]]
+}
+
+@test "joy ai rotate rejects wrong passphrase" {
+    joy init --name "Rotate Test" --acronym RT
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy project member add ai:test@joy
+    joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" >/dev/null
+    run joy ai rotate ai:test@joy --passphrase "wrong wrong wrong wrong wrong wrong"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"incorrect passphrase"* ]]
+}
+
 @test "project set acronym is no-op when no delegation directory exists" {
     joy init --name "Rename Test" --acronym OLDACR
     joy auth init --passphrase "$TEST_PASSPHRASE"
