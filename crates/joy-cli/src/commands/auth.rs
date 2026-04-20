@@ -221,7 +221,7 @@ fn run_auth(passphrase_flag: Option<&str>, token_flag: Option<&str>) -> Result<(
 
 /// Authenticate a human member via passphrase.
 fn auth_with_passphrase(
-    _root: &std::path::Path,
+    root: &std::path::Path,
     project: &joy_core::model::project::Project,
     project_id: &str,
     email: &str,
@@ -257,13 +257,24 @@ fn auth_with_passphrase(
         anyhow::bail!("incorrect passphrase");
     }
 
+    // JOY-0101-78: silent auto-seal for pre-feature projects. If no
+    // member anywhere has an attestation yet, treat the current state as
+    // legitimate and sign attestations for every other member using the
+    // acting member's fresh keypair. The acting member becomes the trust
+    // root and remains unattested until a future joiner reverse-attests
+    // them via the normal path. Runs at most once per project, silent.
+    let sealed_project = maybe_auto_seal(root, project, email, &keypair)?;
+    let project_view: &joy_core::model::project::Project =
+        sealed_project.as_ref().unwrap_or(project);
+    let member = project_view.members.get(email).unwrap();
+
     // JOY-0100-DA: verify the member's attestation before establishing a
     // session. Founder may be unattested during the solo phase (trust
     // root); any member without attestation after the first co-member
     // joined is suspect and rejected.
     if let Some(attestation) = member.attestation.as_ref() {
-        verify_member_attestation(project, email, member, attestation)?;
-    } else if founder_must_be_attested(project) {
+        verify_member_attestation(project_view, email, member, attestation)?;
+    } else if founder_must_be_attested(project_view) {
         anyhow::bail!(
             "{} has no attestation and the project has multiple members. \
              The entry appears to have been tampered with. Ask a manage member \
@@ -279,6 +290,55 @@ fn auth_with_passphrase(
     println!("Authenticated as {}. Session active (24h).", email);
 
     Ok(())
+}
+
+/// JOY-0101-78: Silent auto-seal for projects that existed before the
+/// attestation feature landed. If no member carries an attestation, sign
+/// attestations for every other member using the acting member's keypair,
+/// write project.yaml once, and return the sealed state. Otherwise no-op.
+///
+/// This is a one-shot migration aid; JOY-0105-65 tracks removal of the
+/// code path once the deprecation window has passed.
+fn maybe_auto_seal(
+    root: &std::path::Path,
+    project: &joy_core::model::project::Project,
+    acting_email: &str,
+    acting_keypair: &sign::IdentityKeypair,
+) -> Result<Option<joy_core::model::project::Project>> {
+    let has_any_attestation = project.members.values().any(|m| m.attestation.is_some());
+    if has_any_attestation || project.members.len() < 2 {
+        return Ok(None);
+    }
+
+    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
+    let mut sealed: joy_core::model::project::Project = store::read_yaml(&project_path)?;
+
+    let targets: Vec<String> = sealed
+        .members
+        .keys()
+        .filter(|email| email.as_str() != acting_email)
+        .cloned()
+        .collect();
+    for target_email in targets {
+        let target = sealed.members.get(&target_email).cloned().unwrap();
+        let signed_fields = joy_core::auth::attestation::signed_fields_for(
+            &target_email,
+            &target.capabilities,
+            target.otp_hash.as_deref(),
+        );
+        let attestation = joy_core::auth::attestation::sign_attestation(
+            acting_email,
+            acting_keypair,
+            signed_fields,
+        );
+        sealed.members.get_mut(&target_email).unwrap().attestation = Some(attestation);
+    }
+
+    store::write_yaml_preserve(&project_path, &sealed)?;
+    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+    joy_core::git_ops::auto_git_add(root, &[&rel]);
+
+    Ok(Some(sealed))
 }
 
 /// Verify the attestation against the attester's public_key in project.yaml
@@ -322,19 +382,43 @@ fn verify_member_attestation(
         })
 }
 
-/// A member without attestation is legitimate only as long as no other
-/// authenticated human member is present. AI members never authenticate
-/// themselves via passphrase (they use delegation tokens), so their
-/// attestations do not signal that the founder's reverse-attestation
-/// opportunity has passed. Once a second human with public_key exists,
-/// every such human must carry an attestation.
+/// An unattested member is legitimate only as the sole trust root in a
+/// project that has not yet completed the reverse-attestation closure.
+/// Once any pair of members mutually attests each other (A attested B,
+/// B attested A), the chain has closed and every member - including any
+/// former trust root - must carry an attestation. A lone unattested
+/// entry that appears after closure is tampering.
 fn founder_must_be_attested(project: &joy_core::model::project::Project) -> bool {
-    project
+    let unattested = project
         .members
         .values()
-        .filter(|m| m.public_key.is_some() && m.attestation.is_some())
-        .count()
-        > 0
+        .filter(|m| m.attestation.is_none())
+        .count();
+    if unattested > 1 {
+        return true;
+    }
+    // If a mutual-attestation pair exists, the reverse-attestation step
+    // has happened; no unattested member is permitted anymore.
+    if unattested == 1 && has_mutual_attestation_pair(project) {
+        return true;
+    }
+    false
+}
+
+fn has_mutual_attestation_pair(project: &joy_core::model::project::Project) -> bool {
+    for (email, member) in &project.members {
+        let Some(att) = &member.attestation else {
+            continue;
+        };
+        if let Some(attester) = project.members.get(&att.attester) {
+            if let Some(attester_att) = &attester.attestation {
+                if attester_att.attester == *email {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 /// Authenticate an AI member via delegation token.
