@@ -139,10 +139,13 @@ EOF
 
 @test "cannot remove the last member with manage capability" {
     setup_team_project
-    # test@example.com is the only member with all (=manage) capabilities
+    # test@example.com is the only member with all (=manage) capabilities.
+    # Self-remove is blocked first; a different manage member would hit
+    # the last-manager guard instead. Either rejection is acceptable here.
     run joy project member rm test@example.com
     [ "$status" -ne 0 ]
-    [[ "$output" == *"last member with manage"* ]]
+    [[ "$output" == *"last member with manage"* ]] \
+        || [[ "$output" == *"Cannot remove yourself"* ]]
 }
 
 @test "can remove a manager when another manager exists" {

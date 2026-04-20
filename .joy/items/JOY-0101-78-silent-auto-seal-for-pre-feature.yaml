@@ -1,0 +1,14 @@
+id: JOY-0101-78
+title: Silent auto-seal for pre-feature projects
+type: task
+status: new
+priority: high
+parent: JOY-00FA-A5
+milestone: JOY-MS-01
+capabilities:
+- implement
+effort: 3
+created_by: ai:claude@joy
+created: 2026-04-20T17:25:33.767727831Z
+updated: 2026-04-20T18:14:26.305846190Z
+description: On first joy auth in a project that has no attestations anywhere, accept the current member state as-is and silently create attestations using the acting member's identity key. No user-facing command, no output. Enabled for the migration window only.

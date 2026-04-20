@@ -112,6 +112,12 @@ struct MemberAddArgs {
 struct MemberRmArgs {
     /// Member ID (email or ai:tool@joy)
     id: String,
+
+    /// Passphrase of the acting manage member (non-interactive, for
+    /// scripts and tests). Required when the removed member attested
+    /// others, so re-attestation can be signed by the remover.
+    #[arg(long)]
+    passphrase: Option<String>,
 }
 
 pub fn run(args: ProjectArgs) -> Result<()> {
@@ -517,7 +523,36 @@ fn run_member(
         }
         Some(MemberCommand::Rm(a)) => {
             ctx.enforce(&Action::ManageProject, "project")?;
-            // Prevent removing the last member with manage capability
+
+            // JOY-00FE-F6: self-remove is blocked and directs the user to
+            // another manage member.
+            let acting_email = joy_core::vcs::default_vcs().user_email()?;
+            if a.id == acting_email {
+                let others: Vec<&String> = project
+                    .members
+                    .iter()
+                    .filter(|(email, m)| {
+                        **email != acting_email && m.has_capability(&Capability::Manage)
+                    })
+                    .map(|(email, _)| email)
+                    .collect();
+                let list = if others.is_empty() {
+                    "(no other manage members; add one first via `joy project member add <email>`)"
+                        .to_string()
+                } else {
+                    others
+                        .iter()
+                        .map(|e| format!("  - {e}"))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                };
+                bail!(
+                    "Cannot remove yourself. Another manage member must perform this action.\n\
+                     Current manage members:\n{list}"
+                );
+            }
+
+            // Prevent removing the last member with manage capability.
             let guard = joy_core::guard::Guard::new(project);
             if guard.is_last_manager(&a.id) {
                 bail!(
@@ -526,9 +561,62 @@ fn run_member(
                     a.id
                 );
             }
+
+            // JOY-00FF-93: collect members whose attester is the one being
+            // removed; they need to be re-attested by the acting manage
+            // member so the attestation chain stays intact.
+            let removed_id = a.id.clone();
+            let orphans: Vec<String> = project
+                .members
+                .iter()
+                .filter(|(email, m)| {
+                    **email != removed_id
+                        && m.attestation
+                            .as_ref()
+                            .map(|att| att.attester == removed_id)
+                            .unwrap_or(false)
+                })
+                .map(|(email, _)| email.clone())
+                .collect();
+
+            let acting_kp = if orphans.is_empty() {
+                None
+            } else {
+                Some(derive_acting_keypair(
+                    project,
+                    &acting_email,
+                    a.passphrase.as_deref(),
+                )?)
+            };
+
             if project.members.remove(&a.id).is_none() {
                 bail!("member not found: {}", a.id);
             }
+
+            // Re-attest all orphans with the acting member's key. Capabilities
+            // and otp_hash of each orphan are preserved (they don't change).
+            if let Some(kp) = acting_kp {
+                for orphan_email in &orphans {
+                    let orphan = project
+                        .members
+                        .get(orphan_email)
+                        .cloned()
+                        .expect("orphan exists - just collected");
+                    let signed_fields = joy_core::auth::attestation::signed_fields_for(
+                        orphan_email,
+                        &orphan.capabilities,
+                        orphan.otp_hash.as_deref(),
+                    );
+                    let new_attestation = joy_core::auth::attestation::sign_attestation(
+                        &acting_email,
+                        &kp,
+                        signed_fields,
+                    );
+                    project.members.get_mut(orphan_email).unwrap().attestation =
+                        Some(new_attestation);
+                }
+            }
+
             store::write_yaml_preserve(project_path, project)?;
             let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
             joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
