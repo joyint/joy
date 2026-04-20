@@ -1,0 +1,49 @@
+version: v0.11.1
+date: 2026-04-20
+previous: v0.11.0
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 95
+  items: 17
+- id: horst.schwarz@joydev.com
+  events: 9
+  items: 5
+items:
+  epics:
+  - id: JOY-00FA-A5
+    title: Member attestation for project.yaml integrity
+  - id: JOY-006B
+    title: Passphrase-derived identity and AI delegation tokens
+  stories:
+  - id: JOY-0072
+    title: Member onboarding with one-time password and forced passphrase setup
+  - id: JOY-0073
+    title: Passphrase change with key re-derivation
+  tasks:
+  - id: JOY-00FB-58
+    title: Extend Member schema with attestation field
+  - id: JOY-00FC-1D
+    title: Sign attestation on joy project member add
+  - id: JOY-00FD-93
+    title: Founder reverse-attestation on first OTP redemption
+  - id: JOY-00FE-F6
+    title: Block self-remove, list manage members in error
+  - id: JOY-00FF-93
+    title: Manage remove inherits attested members
+  - id: JOY-0100-DA
+    title: Verify attestation and passphrase match at joy auth
+  - id: JOY-0101-78
+    title: Silent auto-seal for pre-feature projects
+  - id: JOY-0104-D0
+    title: Integration tests for attestation flow (TDD contract)
+  - id: JOY-0107-C7
+    title: 'Docs: attestation, OTP, passphrase, ai rotate'
+  - id: JOY-0106-B1
+    title: Add Working style section to AI instructions template
+  - id: JOY-0108-93
+    title: Render AGENTS.md in project root for Vibe integration
+  bugs:
+  - id: JOY-00F7-91
+    title: Acronym rename orphans local delegation key path
+  - id: JOY-00F8-F2
+    title: Implement joy ai rotate per ADR-033
