@@ -313,9 +313,17 @@ pub fn remove_session(project_id: &str, member: &str) -> Result<(), JoyError> {
 /// Derive a stable project ID from project name and acronym.
 pub fn project_id(root: &Path) -> Result<String, JoyError> {
     let project = crate::store::load_project(root)?;
-    Ok(project
+    Ok(project_id_of(&project))
+}
+
+/// Same as `project_id` but operates on an in-memory `Project`. Useful when
+/// the caller needs both the pre- and post-mutation id (e.g. acronym
+/// rename migrations) without re-reading the yaml.
+pub fn project_id_of(project: &crate::model::Project) -> String {
+    project
         .acronym
-        .unwrap_or_else(|| project.name.to_lowercase().replace(' ', "-")))
+        .clone()
+        .unwrap_or_else(|| project.name.to_lowercase().replace(' ', "-"))
 }
 
 pub(super) fn dirs_state_dir() -> Result<PathBuf, JoyError> {

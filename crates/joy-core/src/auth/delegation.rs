@@ -90,6 +90,47 @@ pub fn load_delegation_key(
     Ok(Some(seed))
 }
 
+/// Atomically move the delegations directory from `old_project_id` to
+/// `new_project_id`. Used when the project acronym changes so that local
+/// delegation keys remain findable under the new project id.
+///
+/// No-op when old equals new or when the source directory does not exist
+/// (typical: this machine never issued a delegation token yet). Returns an
+/// error when the target directory already exists, so we never merge two
+/// unrelated key sets silently.
+pub fn rename_project_delegations(
+    old_project_id: &str,
+    new_project_id: &str,
+) -> Result<(), JoyError> {
+    if old_project_id == new_project_id {
+        return Ok(());
+    }
+    let src = delegation_dir(old_project_id)?;
+    if !src.exists() {
+        return Ok(());
+    }
+    let dst = delegation_dir(new_project_id)?;
+    if dst.exists() {
+        return Err(JoyError::AuthFailed(format!(
+            "cannot migrate delegation directory: {} already exists. \
+             Resolve manually (inspect both directories and merge or remove one) \
+             before renaming the project acronym.",
+            dst.display()
+        )));
+    }
+    if let Some(parent) = dst.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| JoyError::CreateDir {
+            path: parent.to_path_buf(),
+            source: e,
+        })?;
+    }
+    std::fs::rename(&src, &dst).map_err(|e| JoyError::WriteFile {
+        path: dst.clone(),
+        source: e,
+    })?;
+    Ok(())
+}
+
 /// Remove the delegation private key for a given (project, ai_member). No-op if absent.
 pub fn remove_delegation_key(project_id: &str, ai_member: &str) -> Result<(), JoyError> {
     let path = delegation_key_path(project_id, ai_member)?;
@@ -210,6 +251,57 @@ mod tests {
             let path = delegation_key_path("TST", "ai:claude@joy").unwrap();
             let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
             assert_eq!(mode, 0o600);
+        });
+    }
+
+    #[test]
+    fn rename_moves_directory() {
+        with_state_dir(|| {
+            save_delegation_key("OLD", "ai:claude@joy", &[1u8; 32]).unwrap();
+            rename_project_delegations("OLD", "NEW").unwrap();
+            assert_eq!(
+                load_delegation_key("NEW", "ai:claude@joy").unwrap(),
+                Some([1u8; 32])
+            );
+            assert!(load_delegation_key("OLD", "ai:claude@joy")
+                .unwrap()
+                .is_none());
+        });
+    }
+
+    #[test]
+    fn rename_missing_source_is_noop() {
+        with_state_dir(|| {
+            rename_project_delegations("NONE", "TARGET").unwrap();
+            assert!(!delegation_dir("TARGET").unwrap().exists());
+        });
+    }
+
+    #[test]
+    fn rename_target_exists_errors() {
+        with_state_dir(|| {
+            save_delegation_key("SRC", "ai:a@joy", &[1u8; 32]).unwrap();
+            save_delegation_key("DST", "ai:b@joy", &[2u8; 32]).unwrap();
+            let err = rename_project_delegations("SRC", "DST").unwrap_err();
+            assert!(
+                matches!(&err, JoyError::AuthFailed(msg) if msg.contains("already exists")),
+                "expected AuthFailed with 'already exists', got: {err:?}"
+            );
+            // Both source and target are left intact.
+            assert!(load_delegation_key("SRC", "ai:a@joy").unwrap().is_some());
+            assert!(load_delegation_key("DST", "ai:b@joy").unwrap().is_some());
+        });
+    }
+
+    #[test]
+    fn rename_same_id_is_noop() {
+        with_state_dir(|| {
+            save_delegation_key("SAME", "ai:claude@joy", &[3u8; 32]).unwrap();
+            rename_project_delegations("SAME", "SAME").unwrap();
+            assert_eq!(
+                load_delegation_key("SAME", "ai:claude@joy").unwrap(),
+                Some([3u8; 32])
+            );
         });
     }
 
