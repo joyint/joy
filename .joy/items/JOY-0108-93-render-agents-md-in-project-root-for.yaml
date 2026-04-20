@@ -1,7 +1,7 @@
 id: JOY-0108-93
 title: Render AGENTS.md in project root for Vibe integration
 type: task
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -10,7 +10,7 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-20T18:54:14.829237988Z
-updated: 2026-04-20T18:58:31.825851440Z
+updated: 2026-04-20T18:59:39.558811184Z
 description: Mistral Vibe loads {project_root}/AGENTS.md as 'Project instructions' into its system prompt (via load_project_docs in vibe/core/config/harness_files). Joy currently renders nothing at that path, so Vibe users have no access to Joy workflow rules outside the /joy skill. Extend configure_vibe in crates/joy-cli/src/commands/ai.rs to write AGENTS.md in the project root using render_managed_block (same content as CLAUDE.md/QWEN.md). Remove the file on 'joy ai reset' when Vibe is disabled. Add test configure_vibe_writes_agents_md. Gitignore AGENTS.md so the generated file does not pollute commits.
 comments:
 - author: ai:claude@joy
