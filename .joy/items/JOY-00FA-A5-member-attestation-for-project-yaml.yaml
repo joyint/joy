@@ -1,13 +1,15 @@
 id: JOY-00FA-A5
 title: Member attestation for project.yaml integrity
 type: epic
-status: new
+status: review
 priority: high
+assignees:
+- member: ai:claude@joy
 milestone: JOY-MS-01
 capabilities:
 - conceive
 - plan
 created_by: ai:claude@joy
 created: 2026-04-20T17:25:09.374486143Z
-updated: 2026-04-20T17:25:09.374486143Z
+updated: 2026-04-20T18:33:25.964919111Z
 description: 'Per-member cryptographic attestation: each member entry in project.yaml carries a signature by a manage member over the member''s email, capabilities, and otp_hash. Verification happens locally against project.yaml, no log access needed, checked once at joy auth session establishment (zero per-command overhead). Founder is the only member without attestation during solo phase; implicitly reverse-attested by the first added manage member on their first OTP redemption. Covers the 80% attack surface (manual yaml edits, unauthorized member additions, capability manipulation) with local verification. Premium layer (Judge commit-hook, log hash chain) handles the remaining 20% (coordinated yaml+log tampering).'

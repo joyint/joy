@@ -443,6 +443,70 @@ Joy defines eleven capabilities across two groups:
 
 By default, members have `capabilities: all`. Restrict them when needed -- especially for AI members where you want to control what they can do autonomously.
 
+### Authentication and Onboarding
+
+Joy uses passphrase-derived Ed25519 identity keys. You authenticate once per 24-hour session and every significant action is cryptographically signed.
+
+**First time setup (solo):**
+
+```sh
+joy auth init                    # Choose a passphrase; your identity is now registered
+```
+
+**Adding a human teammate:**
+
+The admin adds the member and gets a one-time password back. The OTP is shared out-of-band (encrypted chat, in person, etc.).
+
+```sh
+joy project member add pete@phoenix.org
+# > Added member pete@phoenix.org
+# >
+# >   One-time password: AB7X-K3M2-PQ9Z
+# >
+# > Share the OTP with pete@phoenix.org via a trusted channel.
+```
+
+Pete redeems the OTP on his own machine, picks his own passphrase, and is ready to go:
+
+```sh
+joy auth --otp AB7X-K3M2-PQ9Z    # Prompts for a new passphrase
+```
+
+Each member you add this way is cryptographically attested by the admin's key -- Joy rejects any member entry that was manually edited into `project.yaml` without going through `joy project member add`. This runs silently in the background; you only see it when something is wrong.
+
+**Changing your passphrase:**
+
+```sh
+joy auth passphrase              # Prompts for current, then new passphrase
+```
+
+Your identity key rotates; existing sessions are invalidated; attestations on your entry remain valid.
+
+**Removing a member:**
+
+If the removed member attested others, those attestations transfer automatically to you as the removing admin. No extra step, no ceremony.
+
+```sh
+joy project member rm pete@phoenix.org    # Requires your passphrase if there are orphans to re-attest
+```
+
+You cannot remove yourself; Joy prints the project's other manage members so you know who to ask.
+
+### AI Delegation Tokens
+
+AI members authenticate via short-lived delegation tokens rather than passphrases. A human with manage capability issues a token; the AI redeems it in its own shell:
+
+```sh
+joy auth token add ai:claude@joy           # Prints a token string
+joy auth --token <token>                    # AI runs this; gets a 24h session
+```
+
+If you suspect a delegation keypair has been compromised, rotate it. All prior tokens for that AI immediately become invalid:
+
+```sh
+joy ai rotate ai:claude@joy
+```
+
 ### Configuration Layering
 
 Joy uses layered configuration where each layer overrides the one below:

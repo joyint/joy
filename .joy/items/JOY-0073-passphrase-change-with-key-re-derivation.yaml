@@ -1,7 +1,7 @@
 id: JOY-0073
 title: Passphrase change with key re-derivation
 type: story
-status: in-progress
+status: review
 priority: medium
 parent: JOY-006B
 assignees:
@@ -15,7 +15,7 @@ capabilities:
 - review
 effort: 2
 created: 2026-03-27T18:38:54.173367330Z
-updated: 2026-04-20T18:29:08.418975951Z
+updated: 2026-04-20T18:29:08.462082281Z
 description: 'Implement ''joy auth passphrase'' for self-service passphrase change. Verifies current passphrase, derives new Argon2id+Ed25519 keypair from new passphrase, updates public_key and salt in project.yaml, invalidates existing sessions. Shared core with JOY-0072 (OTP-triggered initial passphrase setup): both paths call the same set_member_passphrase primitive differing only in the authentication gate (OTP verification vs current-passphrase verification). public_key is NOT in the attestation''s signed_fields, so passphrase change does not require re-attestation. Crypt re-wrap (for E2E-encrypted projects) is a follow-up handled in JOY-0103-87 when Crypt infrastructure lands.'
 comments:
 - author: ai:claude@joy

@@ -1,0 +1,18 @@
+id: JOY-0106-B1
+title: Add Working style section to AI instructions template
+type: task
+status: in-progress
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy
+created: 2026-04-20T18:29:53.784392976Z
+updated: 2026-04-20T18:29:59.749164459Z
+description: Inject a generic Working style block into the shared AI instructions template so CLAUDE.md, QWEN.md, Copilot and Vibe configs all receive the same terminal rules (concise responses, plan-first, no unrequested abstractions, etc.). Position at the end so it is read last and taken seriously.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-20T18:29:59.749163990Z
+  text: 'Plan: Append ''## Working style'' section at end of crates/joy-core/templates/ai/instructions.md covering response style, task specification, corrections, complexity, plan-first, tool use. Extend instructions_contain_all_sections test. Run cargo fmt, cargo test -p joy-core, then joy ai update to regenerate tool files.'
