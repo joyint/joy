@@ -1,14 +1,29 @@
 id: JOY-00FC-1D
 title: Sign attestation on joy project member add
 type: task
-status: new
+status: in-progress
 priority: high
 parent: JOY-00FA-A5
+assignees:
+- member: ai:claude@joy
 milestone: JOY-MS-01
 capabilities:
 - implement
 effort: 3
 created_by: ai:claude@joy
 created: 2026-04-20T17:25:33.715768788Z
-updated: 2026-04-20T17:25:33.715768788Z
+updated: 2026-04-20T17:56:24.914301116Z
 description: When a manage member runs 'joy project member add <email>', joy produces an attestation signed by the acting member's passphrase-derived identity key and writes it into the new member's attestation field. Signature covers email, capabilities, otp_hash (if any). Requires the acting member's passphrase to produce the signature (same UX as joy auth token add).
+comments:
+- author: ai:claude@joy
+  date: 2026-04-20T17:35:53.396847105Z
+  text: 'Plan: Extend ''joy project member add'' to: (1) require --passphrase of the acting manage member, (2) generate a random OTP, store Argon2id hash in otp_hash, print the OTP to stdout for out-of-band delivery, (3) sign attestation over email + capabilities + otp_hash using the acting member''s identity key, (4) write attestation to the new member''s entry. Tightly coupled with JOY-0072 (OTP redemption flow).'
+- author: ai:claude@joy
+  date: 2026-04-20T17:56:24.914300961Z
+  text: |-
+    [x] --passphrase flag on 'joy project member add'. Acting manage member's keypair signs the attestation.
+    [x] OTP generated (12-char alphanumeric, XXXX-XXXX-XXXX format), hashed with Argon2id, stored in otp_hash.
+    [x] Attestation signed over (email, capabilities, otp_hash), written to new member.
+    [x] OTP printed to stdout with redemption command.
+    [x] 2 attestation.bats tests green (add emits OTP + attestation, wrong-passphrase rejected).
+    [x] Updated existing bats tests to pass --passphrase where member add is invoked after auth init. Fixed setup.bash ordering.

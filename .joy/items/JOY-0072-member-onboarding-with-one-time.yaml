@@ -1,9 +1,11 @@
 id: JOY-0072
 title: Member onboarding with one-time password and forced passphrase setup
 type: story
-status: new
+status: in-progress
 priority: high
 parent: JOY-006B
+assignees:
+- member: ai:claude@joy
 deps:
 - JOY-006E
 milestone: JOY-MS-01
@@ -13,7 +15,7 @@ capabilities:
 - review
 effort: 3
 created: 2026-03-27T18:38:54.169234671Z
-updated: 2026-04-20T17:26:01.704453219Z
+updated: 2026-04-20T17:56:24.933468807Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-30T19:43:05.181702830Z
@@ -21,3 +23,11 @@ comments:
 - author: ai:claude@joy
   date: 2026-04-20T17:26:01.704453063Z
   text: 'Scope note: JOY-0072 is extended by the attestation epic JOY-00FA-A5. Specifically, ''joy project member add'' now also writes an attestation (JOY-00FC-1D), and ''joy auth --otp'' performs founder reverse-attestation on first redemption by a manage member (JOY-00FD-93). Plan comment to follow when implementation starts.'
+- author: ai:claude@joy
+  date: 2026-04-20T17:35:53.405505073Z
+  text: 'Plan: Extend joy auth with --otp flag. ''joy auth --otp CODE --passphrase NEW'' verifies OTP against otp_hash, derives Argon2id key from new passphrase, sets the member''s public_key and salt, clears otp_hash, establishes a session. Implementation shares core with joy auth init but entry gate is OTP rather than ''this is my first time''. Tightly coupled with JOY-00FC-1D (OTP generation side).'
+- author: ai:claude@joy
+  date: 2026-04-20T17:56:24.933468684Z
+  text: |-
+    [x] --otp flag on 'joy auth'. 'joy auth --otp <code> --passphrase <new>' verifies OTP against otp_hash, derives fresh keypair from new passphrase, writes public_key/salt, clears otp_hash, establishes session.
+    [x] 1 attestation.bats test green (otp redemption sets passphrase silently).

@@ -10,5 +10,12 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-20T17:25:33.725746857Z
-updated: 2026-04-20T17:25:33.725746857Z
+updated: 2026-04-20T17:56:24.941421576Z
 description: When a newly-added manage member completes 'joy auth --otp <code>' and sets their passphrase, joy automatically produces an attestation for the founder (the only member still without one) and writes it. Silent, no CLI output. After this, every member in project.yaml has an attestation. Founder is identified as 'the one member without an attestation'.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-20T17:56:24.941421373Z
+  text: |-
+    [x] Founder reverse-attestation implemented in run_auth_otp. When redeemer has manage capability and exactly one member is still without attestation (the founder, during solo phase), silently signs founder's attestation with redeemer's fresh keypair.
+    [x] No user-visible output beyond the normal session message.
+    [x] 2 attestation.bats tests green (reverse-attestation happens, subsequent adds do not re-attest).

@@ -7,8 +7,8 @@ load setup
 # --- Helper: set up a project with lead, developer, and AI agent ---
 setup_team_project() {
     setup_human_auth
-    joy project member add dev@example.com --capabilities "implement,test,create"
-    joy project member add ai:test@joy --capabilities "implement,review,create"
+    joy project member add dev@example.com --capabilities "implement,test,create" --passphrase "$TEST_PASSPHRASE"
+    joy project member add ai:test@joy --capabilities "implement,review,create" --passphrase "$TEST_PASSPHRASE"
     joy add task "Test item"
     ITEM_ID=$(joy ls 2>/dev/null | grep "Test item" | awk '{print $1}')
 }
@@ -72,7 +72,7 @@ setup_team_project() {
 @test "AI member cannot add project members" {
     setup_team_project
     setup_ai_session ai:test@joy
-    run joy project member add someone@example.com
+    run joy project member add someone@example.com --passphrase "$TEST_PASSPHRASE"
     [ "$status" -ne 0 ]
     [[ "$output" == *"cannot perform manage"* ]]
 }
@@ -147,7 +147,7 @@ EOF
 
 @test "can remove a manager when another manager exists" {
     setup_human_auth
-    joy project member add backup@example.com
+    joy project member add backup@example.com --passphrase "$TEST_PASSPHRASE"
     # Now two members with capabilities: all
     run joy project member rm backup@example.com
     [ "$status" -eq 0 ]
@@ -162,7 +162,7 @@ EOF
     setup_member_auth dev@example.com "$DEV_PASSPHRASE"
     git config user.email dev@example.com
     joy auth --passphrase "$DEV_PASSPHRASE"
-    run joy project member add newbie@example.com
+    run joy project member add newbie@example.com --passphrase "$TEST_PASSPHRASE"
     [ "$status" -ne 0 ]
     [[ "$output" == *"manage"* ]]
     git config user.email test@example.com
@@ -330,7 +330,7 @@ EOF
 
 @test "unauthenticated write blocked when AI members exist" {
     setup_human_auth
-    joy project member add ai:test@joy
+    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
     joy add task "Auth test"
     ITEM_ID=$(joy ls 2>/dev/null | grep "Auth test" | awk '{print $1}')
     # Remove human session to become unauthenticated
@@ -342,7 +342,7 @@ EOF
 
 @test "unauthenticated read allowed when AI members exist" {
     setup_human_auth
-    joy project member add ai:test@joy
+    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
     joy add task "Read test"
     # Remove human session
     joy deauth
@@ -354,7 +354,7 @@ EOF
 
 @test "authenticated human can write when AI members exist" {
     setup_human_auth
-    joy project member add ai:test@joy
+    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
     joy add task "Human write test"
     ITEM_ID=$(joy ls 2>/dev/null | grep "Human write" | awk '{print $1}')
     run joy comment "$ITEM_ID" "Human comment"

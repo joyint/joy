@@ -23,6 +23,12 @@ pub struct AuthArgs {
     /// Delegation token for AI authentication (alternative to JOY_TOKEN env var).
     #[arg(long, global = true)]
     token: Option<String>,
+
+    /// One-time password for first-time member setup (JOY-0072). Redeems
+    /// the OTP, derives the caller's keypair from --passphrase, clears
+    /// the stored otp_hash, and establishes an initial session.
+    #[arg(long, global = true)]
+    otp: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -81,7 +87,13 @@ pub fn run(args: AuthArgs) -> Result<()> {
         Some(AuthCommand::Status) => run_status(),
         Some(AuthCommand::Reset(a)) => run_reset(a, args.passphrase.as_deref()),
         Some(AuthCommand::Token(a)) => run_token(a, args.passphrase.as_deref()),
-        None => run_auth(args.passphrase.as_deref(), args.token.as_deref()),
+        None => {
+            if let Some(otp) = args.otp.as_deref() {
+                run_auth_otp(otp, args.passphrase.as_deref())
+            } else {
+                run_auth(args.passphrase.as_deref(), args.token.as_deref())
+            }
+        }
     }
 }
 
@@ -696,6 +708,111 @@ fn run_token_rm(args: TokenRmArgs, passphrase_flag: Option<&str>) -> Result<()> 
     );
 
     Ok(())
+}
+
+/// `joy auth --otp <code> --passphrase <new>` - redeem a one-time password
+/// and set the member's passphrase (JOY-0072). First-time onboarding for
+/// a newly-added human member.
+///
+/// If the redeeming member has manage capability and the founder entry
+/// currently has no attestation, reverse-attests the founder with the
+/// redeemer's fresh identity key (JOY-00FD-93). Closes the attestation
+/// chain implicitly, without CLI output.
+fn run_auth_otp(otp: &str, passphrase_flag: Option<&str>) -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+
+    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
+    let mut project: joy_core::model::project::Project = store::read_yaml(&project_path)?;
+
+    let email = joy_core::vcs::default_vcs().user_email()?;
+    let member = project.members.get(&email).ok_or_else(|| {
+        anyhow::anyhow!(
+            "{} is not a registered project member. A manage member must add you first.",
+            email
+        )
+    })?;
+
+    let stored_hash = member.otp_hash.as_ref().ok_or_else(|| {
+        anyhow::anyhow!(
+            "no pending OTP for {}. Either this member has already completed setup \
+             or was added without an OTP.",
+            email
+        )
+    })?;
+
+    if !joy_core::auth::otp::verify_otp(otp, stored_hash)? {
+        anyhow::bail!("incorrect OTP");
+    }
+    // Capture capabilities before mutating project for the manage-check
+    // used by the founder reverse-attestation step below.
+    let redeemer_is_manage = member.has_capability(&joy_core::model::item::Capability::Manage);
+
+    // Derive the redeemer's keypair from the new passphrase.
+    let passphrase = read_passphrase(passphrase_flag, "Choose passphrase: ")?;
+    derive::validate_passphrase(&passphrase)?;
+    let salt = derive::generate_salt();
+    let key = derive::derive_key(&passphrase, &salt)?;
+    let keypair = sign::IdentityKeypair::from_derived_key(&key);
+
+    // Apply to project.yaml: set public_key/salt, clear otp_hash.
+    {
+        let m = project.members.get_mut(&email).unwrap();
+        m.public_key = Some(keypair.public_key().to_hex());
+        m.salt = Some(salt.to_hex());
+        m.otp_hash = None;
+    }
+
+    // JOY-00FD-93: if the redeemer is manage and the founder is still the
+    // only member without an attestation, reverse-attest them. Silent, no
+    // user-visible output beyond the normal session message.
+    if redeemer_is_manage {
+        if let Some(founder_email) = founder_needing_reverse_attestation(&project) {
+            let founder_member = project.members.get(&founder_email).cloned().unwrap();
+            let signed_fields = joy_core::auth::attestation::signed_fields_for(
+                &founder_email,
+                &founder_member.capabilities,
+                founder_member.otp_hash.as_deref(),
+            );
+            let attestation =
+                joy_core::auth::attestation::sign_attestation(&email, &keypair, signed_fields);
+            project.members.get_mut(&founder_email).unwrap().attestation = Some(attestation);
+        }
+    }
+
+    store::write_yaml_preserve(&project_path, &project)?;
+    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+    joy_core::git_ops::auto_git_add(&root, &[&rel]);
+
+    // Establish an initial session for the new member.
+    let project_id = session::project_id(&root)?;
+    let session_token = session::create_session(&keypair, &email, &project_id, None);
+    session::save_session(&project_id, &session_token)?;
+
+    println!("Authentication initialized for {}.", email);
+    println!("Public key registered. Session active (24h).");
+
+    joy_core::git_ops::auto_git_post_command(&root, "auth otp", &email);
+
+    Ok(())
+}
+
+/// Return the founder's email if exactly one member currently has no
+/// attestation (the solo founder, pre-closure). `None` otherwise.
+fn founder_needing_reverse_attestation(
+    project: &joy_core::model::project::Project,
+) -> Option<String> {
+    let mut unattested: Vec<&String> = project
+        .members
+        .iter()
+        .filter(|(_, m)| m.attestation.is_none())
+        .map(|(email, _)| email)
+        .collect();
+    if unattested.len() == 1 {
+        Some(unattested.remove(0).clone())
+    } else {
+        None
+    }
 }
 
 /// `joy ai rotate <ai-member>` - rotate the (human, AI) delegation keypair (ADR-033).

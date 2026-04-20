@@ -3,6 +3,8 @@
 
 load setup
 
+TEST_PASSPHRASE="correct horse battery staple extra words"
+
 @test "joy init creates project.defaults.yaml" {
     joy init --name "Test Project"
     [ -f ".joy/project.defaults.yaml" ]
@@ -53,7 +55,8 @@ load setup
 
 @test "joy project member show displays modes for AI member" {
     joy init --name "Test Project"
-    joy project member add ai:test@joy --capabilities conceive,plan,implement,review
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy project member add ai:test@joy --capabilities conceive,plan,implement,review --passphrase "$TEST_PASSPHRASE"
     run joy project member show ai:test@joy
     [ "$status" -eq 0 ]
     [[ "$output" == *"pairing"* ]]
@@ -64,7 +67,8 @@ load setup
 
 @test "joy project member show displays modes for all-capabilities member" {
     joy init --name "Test Project"
-    joy project member add ai:test@joy
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
     run joy project member show ai:test@joy
     [ "$status" -eq 0 ]
     [[ "$output" == *"conceive"* ]]
@@ -75,7 +79,8 @@ load setup
 
 @test "project.yaml modes override defaults" {
     joy init --name "Test Project"
-    joy project member add ai:test@joy --capabilities implement,review
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy project member add ai:test@joy --capabilities implement,review --passphrase "$TEST_PASSPHRASE"
 
     # Override implement mode in project.yaml
     cat >> .joy/project.yaml <<EOF
@@ -92,7 +97,7 @@ EOF
 
 @test "max-mode clamps effective mode" {
     setup_human_auth
-    joy project member add ai:test@joy --capabilities implement
+    joy project member add ai:test@joy --capabilities implement --passphrase "$TEST_PASSPHRASE"
 
     # Set max-mode on the member's implement capability
     # We need to manually edit project.yaml for this
@@ -138,7 +143,8 @@ EOF
 
 @test "joy project shows hint for member modes" {
     joy init --name "Test Project"
-    joy project member add ai:test@joy
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
     run joy project
     [ "$status" -eq 0 ]
     [[ "$output" == *"joy project member show"* ]]

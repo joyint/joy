@@ -111,7 +111,7 @@ EOF
 
 @test "guard.warned logged for missing capability" {
     setup_human_auth
-    joy project member add dev@example.com --capabilities "implement,create"
+    joy project member add dev@example.com --capabilities "implement,create" --passphrase "$TEST_PASSPHRASE"
     joy add task "Warn test"
     ITEM_ID=$(joy ls 2>/dev/null | grep "Warn test" | awk '{print $1}')
     # Developer tries review transition (needs Review cap, dev lacks it)
@@ -129,8 +129,8 @@ EOF
 
 @test "three identities coexist with correct auth status" {
     setup_human_auth
-    joy project member add ai:claude@joy
-    joy project member add ai:copilot@joy
+    joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add ai:copilot@joy --passphrase "$TEST_PASSPHRASE"
     # Create and auth both AI members
     TOKEN_CLAUDE=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
         | sed -n 's/^  \(joy_t_.*\)/\1/p')
@@ -154,8 +154,8 @@ EOF
 
 @test "three identities produce correct event log entries" {
     setup_human_auth
-    joy project member add ai:claude@joy
-    joy project member add ai:copilot@joy
+    joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add ai:copilot@joy --passphrase "$TEST_PASSPHRASE"
     TOKEN_CLAUDE=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
         | sed -n 's/^  \(joy_t_.*\)/\1/p')
     TOKEN_COPILOT=$(joy auth token add ai:copilot@joy --passphrase "$TEST_PASSPHRASE" \
@@ -179,7 +179,7 @@ EOF
 
 @test "AI guard enforcement uses correct identity per session" {
     setup_human_auth
-    joy project member add ai:claude@joy --capabilities "implement,create"
+    joy project member add ai:claude@joy --capabilities "implement,create" --passphrase "$TEST_PASSPHRASE"
     TOKEN_CLAUDE=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
         | sed -n 's/^  \(joy_t_.*\)/\1/p')
     eval $(joy auth --token "$TOKEN_CLAUDE")
@@ -197,9 +197,9 @@ EOF
 @test "two AIs with different capabilities enforced correctly" {
     setup_human_auth
     # Claude: can implement and create, but NOT delete
-    joy project member add ai:claude@joy --capabilities "implement,create"
+    joy project member add ai:claude@joy --capabilities "implement,create" --passphrase "$TEST_PASSPHRASE"
     # Copilot: can review and create, but NOT implement
-    joy project member add ai:copilot@joy --capabilities "review,create"
+    joy project member add ai:copilot@joy --capabilities "review,create" --passphrase "$TEST_PASSPHRASE"
     TOKEN_CLAUDE=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
         | sed -n 's/^  \(joy_t_.*\)/\1/p')
     TOKEN_COPILOT=$(joy auth token add ai:copilot@joy --passphrase "$TEST_PASSPHRASE" \

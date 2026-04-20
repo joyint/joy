@@ -4,12 +4,14 @@
 use anyhow::{bail, Result};
 use clap::Args;
 
+use joy_core::auth::{derive, sign};
 use joy_core::context::Context;
 use joy_core::guard::Action;
 use joy_core::model::item::Capability;
 use joy_core::model::project::{validate_acronym, CapabilityConfig, Member, MemberCapabilities};
 use joy_core::model::Project;
 use joy_core::store;
+use joy_core::vcs::Vcs;
 
 use crate::color;
 
@@ -98,6 +100,12 @@ struct MemberAddArgs {
     /// Capabilities (comma-separated, default: all)
     #[arg(short = 'c', long)]
     capabilities: Option<String>,
+
+    /// Passphrase of the acting manage member (non-interactive, for
+    /// scripts and tests). The acting member's identity key signs the
+    /// attestation placed on the new member's entry.
+    #[arg(long)]
+    passphrase: Option<String>,
 }
 
 #[derive(clap::Args)]
@@ -454,13 +462,52 @@ fn run_member(
                     MemberCapabilities::Specific(map)
                 }
             };
-            project
-                .members
-                .insert(a.id.clone(), Member::new(capabilities));
+
+            // Authenticate the acting manage member by passphrase. Their
+            // identity key will sign the attestation placed on the new
+            // member's entry (JOY-00FC-1D).
+            let attester_email = joy_core::vcs::default_vcs().user_email()?;
+            let attester_kp =
+                derive_acting_keypair(project, &attester_email, a.passphrase.as_deref())?;
+
+            // Generate a one-time password for the new member; the admin
+            // shares it out-of-band, the new member redeems it via
+            // `joy auth --otp` to set their passphrase (JOY-0072).
+            let otp = joy_core::auth::otp::generate_otp();
+            let otp_hash = joy_core::auth::otp::hash_otp(&otp)?;
+
+            // Construct and sign the attestation over (email, capabilities,
+            // otp_hash). public_key is intentionally not covered.
+            let signed_fields = joy_core::auth::attestation::signed_fields_for(
+                &a.id,
+                &capabilities,
+                Some(&otp_hash),
+            );
+            let attestation = joy_core::auth::attestation::sign_attestation(
+                &attester_email,
+                &attester_kp,
+                signed_fields,
+            );
+
+            let mut new_member = Member::new(capabilities);
+            new_member.otp_hash = Some(otp_hash);
+            new_member.attestation = Some(attestation);
+            project.members.insert(a.id.clone(), new_member);
+
             store::write_yaml_preserve(project_path, project)?;
             let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
             joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
+
             println!("Added member {}", a.id);
+            println!();
+            println!("  One-time password: {otp}");
+            println!();
+            println!(
+                "Share the OTP with {} via a trusted channel. They redeem it with:",
+                a.id
+            );
+            println!("  joy auth --otp {otp}");
+
             let log_user = ctx.log_user();
             joy_core::git_ops::auto_git_post_command(
                 &ctx.root,
@@ -495,6 +542,43 @@ fn run_member(
         }
     }
     Ok(())
+}
+
+/// Derive and verify the acting human member's identity keypair from their
+/// passphrase. Used to sign attestations on `joy project member add`.
+fn derive_acting_keypair(
+    project: &Project,
+    email: &str,
+    passphrase_flag: Option<&str>,
+) -> Result<sign::IdentityKeypair> {
+    let member = project
+        .members
+        .get(email)
+        .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member", email))?;
+    let public_key_hex = member.public_key.as_ref().ok_or_else(|| {
+        anyhow::anyhow!(
+            "{} has no registered public key. Run `joy auth init` first.",
+            email
+        )
+    })?;
+    let salt_hex = member.salt.as_ref().ok_or_else(|| {
+        anyhow::anyhow!(
+            "{} has no registered salt. Run `joy auth init` first.",
+            email
+        )
+    })?;
+    let public_key = sign::PublicKey::from_hex(public_key_hex)?;
+    let salt = derive::Salt::from_hex(salt_hex)?;
+    let passphrase = match passphrase_flag {
+        Some(p) => p.to_string(),
+        None => rpassword::prompt_password("Passphrase: ")?,
+    };
+    let key = derive::derive_key(&passphrase, &salt)?;
+    let keypair = sign::IdentityKeypair::from_derived_key(&key);
+    if keypair.public_key() != public_key {
+        anyhow::bail!("incorrect passphrase");
+    }
+    Ok(keypair)
 }
 
 fn print_members_table(
