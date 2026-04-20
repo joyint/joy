@@ -10,5 +10,8 @@ pub mod release;
 pub use config::{ColorMode, Config, InteractionLevel, OutputConfig};
 pub use item::{Assignee, Capability, Comment, Item, ItemType, Priority, Status};
 pub use milestone::Milestone;
-pub use project::{CapabilityConfig, Docs, Member, MemberCapabilities, Project};
+pub use project::{
+    Attestation, AttestationSignedFields, CapabilityConfig, Docs, Member, MemberCapabilities,
+    Project,
+};
 pub use release::{Bump, Release};

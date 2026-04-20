@@ -80,6 +80,50 @@ pub struct Member {
     pub otp_hash: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub ai_delegations: BTreeMap<String, AiDelegationEntry>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attestation: Option<Attestation>,
+}
+
+/// Per-member attestation: a signature by a manage member over a stable
+/// subset of the member's fields (email, capabilities, otp_hash). Verified
+/// locally against project.yaml by looking up the attester's public_key in
+/// the same file. The founder is the sole member allowed to have no
+/// attestation in a fresh project; once any additional manage member is
+/// added, that member implicitly reverse-attests the founder.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Attestation {
+    /// Email (or AI member id) of the member who produced the signature.
+    /// Must be a manage-capable member at signing time.
+    pub attester: String,
+    /// The fields this signature covers. public_key is intentionally
+    /// excluded so that passphrase changes do not break existing
+    /// attestations.
+    pub signed_fields: AttestationSignedFields,
+    /// When the attestation was produced.
+    pub signed_at: chrono::DateTime<chrono::Utc>,
+    /// Hex-encoded Ed25519 signature over the canonical serialization of
+    /// `signed_fields`.
+    pub signature: String,
+}
+
+/// The exact subset of a member's state covered by the attestation
+/// signature. Changes to any of these fields invalidate the signature.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AttestationSignedFields {
+    pub email: String,
+    pub capabilities: MemberCapabilities,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub otp_hash: Option<String>,
+}
+
+impl AttestationSignedFields {
+    /// Produce a deterministic byte sequence for signing/verification.
+    /// Stability relies on: (a) BTreeMap ordering in MemberCapabilities::Specific,
+    /// (b) struct field declaration order via serde_json, (c) skip-empty rules
+    /// being identical on write and read.
+    pub fn canonical_bytes(&self) -> Vec<u8> {
+        serde_json::to_vec(self).expect("AttestationSignedFields canonicalization")
+    }
 }
 
 /// A stable per-(human, AI) delegation key (ADR-033). The matching private
@@ -254,6 +298,7 @@ impl Member {
             salt: None,
             otp_hash: None,
             ai_delegations: BTreeMap::new(),
+            attestation: None,
         }
     }
 
@@ -420,6 +465,67 @@ mod tests {
         let parsed: Member = serde_yaml_ng::from_str(&yaml).unwrap();
         assert_eq!(m.ai_delegations["ai:claude@joy"].rotated, Some(rotated));
         assert_eq!(parsed, m);
+    }
+
+    // -----------------------------------------------------------------------
+    // attestation (JOY-00FA-A5) tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn attestation_omitted_when_none() {
+        let m = Member::new(MemberCapabilities::All);
+        let yaml = serde_yaml_ng::to_string(&m).unwrap();
+        assert!(!yaml.contains("attestation:"));
+    }
+
+    #[test]
+    fn attestation_yaml_roundtrips() {
+        let mut m = Member::new(MemberCapabilities::All);
+        m.attestation = Some(Attestation {
+            attester: "horst@example.com".into(),
+            signed_fields: AttestationSignedFields {
+                email: "alice@example.com".into(),
+                capabilities: MemberCapabilities::All,
+                otp_hash: Some("ff".repeat(32)),
+            },
+            signed_at: chrono::DateTime::parse_from_rfc3339("2026-04-20T10:00:00Z")
+                .unwrap()
+                .with_timezone(&chrono::Utc),
+            signature: "aa".repeat(32),
+        });
+        let yaml = serde_yaml_ng::to_string(&m).unwrap();
+        assert!(yaml.contains("attestation:"));
+        assert!(yaml.contains("attester: horst@example.com"));
+        let parsed: Member = serde_yaml_ng::from_str(&yaml).unwrap();
+        assert_eq!(parsed, m);
+    }
+
+    #[test]
+    fn attestation_signed_fields_canonical_is_deterministic() {
+        let a = AttestationSignedFields {
+            email: "alice@example.com".into(),
+            capabilities: MemberCapabilities::All,
+            otp_hash: Some("abc".into()),
+        };
+        let b = a.clone();
+        assert_eq!(a.canonical_bytes(), b.canonical_bytes());
+    }
+
+    #[test]
+    fn attestation_signed_fields_differ_on_capability_change() {
+        let a = AttestationSignedFields {
+            email: "alice@example.com".into(),
+            capabilities: MemberCapabilities::All,
+            otp_hash: None,
+        };
+        let mut caps = BTreeMap::new();
+        caps.insert(Capability::Implement, CapabilityConfig::default());
+        let b = AttestationSignedFields {
+            email: "alice@example.com".into(),
+            capabilities: MemberCapabilities::Specific(caps),
+            otp_hash: None,
+        };
+        assert_ne!(a.canonical_bytes(), b.canonical_bytes());
     }
 
     #[test]
