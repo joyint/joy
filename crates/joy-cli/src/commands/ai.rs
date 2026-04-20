@@ -41,6 +41,8 @@ enum AiCommand {
     Update(UpdateArgs),
     /// Remove AI tool configurations from this project
     Reset(ResetArgs),
+    /// Rotate the (human, AI) delegation keypair (ADR-033)
+    Rotate(RotateArgs),
 }
 
 #[derive(clap::Args, Default)]
@@ -76,11 +78,25 @@ struct ResetArgs {
     force: bool,
 }
 
+#[derive(clap::Args)]
+struct RotateArgs {
+    /// AI member ID whose delegation to rotate (e.g. ai:claude@joy).
+    #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_ai_member))]
+    member: String,
+
+    /// Passphrase (non-interactive, for scripts and tests).
+    #[arg(long)]
+    passphrase: Option<String>,
+}
+
 pub fn run(args: AiArgs) -> anyhow::Result<()> {
     match args.command {
         AiCommand::Init(a) => ai_init(a),
         AiCommand::Update(a) => update(a),
         AiCommand::Reset(a) => reset(a),
+        AiCommand::Rotate(a) => {
+            crate::commands::auth::run_ai_rotate(&a.member, a.passphrase.as_deref())
+        }
     }
 }
 

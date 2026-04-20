@@ -1,0 +1,62 @@
+id: JOY-00F8-F2
+title: Implement joy ai rotate per ADR-033
+type: bug
+status: in-progress
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+created_by: ai:claude@joy
+created: 2026-04-19T20:50:38.907008938Z
+updated: 2026-04-20T05:56:15.812919289Z
+description: |-
+  Implement 'joy ai rotate <ai-member>' per ADR-033: replaces an existing (human, AI) delegation keypair with a fresh one. Updates project.yaml (new delegation_key, rotated timestamp) in a single commit. Any tokens signed by the prior keypair, and any sessions bound to those tokens, are invalidated.
+
+  Preconditions: project.yaml has a delegation entry for this (human, AI) pair. Works regardless of the local private key state (present, missing, or mismatched) - rotation overwrites whatever was there.
+
+  Scope also includes correcting the three desync error messages in auth.rs (lines 534/548/554) so they accurately describe the recovery action for each case and do not misuse 'rotate' semantics for the (None pub, Some priv) case, which is a manual-resolution scenario rather than a rotation.
+
+  Use cases:
+  - Deliberate security rotation (compromise, policy).
+  - Recovery of desync cases where a prior keypair existed (mismatch, or private lost on this machine).
+  - Explicit revocation of prior tokens for a (human, AI) pair without removing the member entirely (for full removal, joy ai reset remains the command).
+comments:
+- author: ai:claude@joy
+  date: 2026-04-20T05:47:21.726935224Z
+  text: |-
+    Plan: Implement 'joy ai rotate <ai-member>' per ADR-033.
+
+    Subcommand lives under 'joy ai rotate' next to existing init/update/reset. Requires ManageProject capability (same as token add).
+
+    Flow:
+    1. Authenticate acting human (passphrase, same pattern as token add).
+    2. Verify <ai-member> is registered and has an ai_delegations entry under the acting human. If no entry: bail with 'no delegation to rotate, run joy auth token add first' (this is the (None pub, None priv) bootstrap case).
+    3. Generate fresh Ed25519 keypair.
+    4. Write new private to ~/.local/state/joy/delegations/<project>/<ai>.key (mode 0600, overwriting any existing file -> covers (Some,None), (Some,Some mismatch), (Some,Some match) uniformly).
+    5. Update project.yaml: members[<human>].ai_delegations[<ai>].delegation_key = new_pub; rotated = now. Single write via write_yaml_preserve.
+    6. Single commit via auto_git_add.
+    7. Print: 'Rotated delegation for <ai>. Prior tokens and sessions are invalidated. Issue a fresh token with joy auth token add <ai>.'
+
+    Error-message rework in auth.rs:
+    - Fall 1 (Some,Some mismatch, Z. 534): 'Delegation state for X is inconsistent (local private key does not match the public key in project.yaml). Run joy ai rotate X to replace the keypair with a fresh one. Prior tokens are invalidated.'
+    - Fall 2 (Some,None, Z. 548): 'Local delegation private key for X is missing on this machine. Run joy ai rotate X to generate a fresh pair. Note: this invalidates any prior tokens and any copy of the key on other machines.'
+    - Fall 3 (None,Some, Z. 554): no mention of rotate - this is a manual-resolution case. 'Local delegation key for X exists but project.yaml has no entry. Remove the orphan key at <path> and re-run joy auth token add, or investigate why the yaml entry is missing.'
+
+    Tests:
+    - Unit tests for any new helpers.
+    - Integration bats tests: rotate succeeds on working delegation (new key on disk, new public in yaml, rotated set, old token fails project_id/delegation_key check); rotate from (Some,None) state; rotate errors when no ai_delegations entry exists.
+
+    Preserves ADR-033 invariants:
+    - One write per (human,AI) pair at rotation events only - no new project.yaml write surface.
+    - Single commit, stable BTreeMap ordering - no merge conflict surface added.
+    - delegation_key, created, rotated fields already exist in AiDelegationEntry, no model change needed.
+- author: ai:claude@joy
+  date: 2026-04-20T05:56:15.812918869Z
+  text: |-
+    [x] run_ai_rotate in auth.rs: authenticates acting human, verifies delegation entry exists (rejects bootstrap case pointing to joy auth token add), generates fresh Ed25519 keypair, overwrites local private via delegation::save_delegation_key, updates project.yaml (new delegation_key + rotated timestamp) via write_yaml_preserve in a single commit, clears any local stale session for the member.
+    [x] joy ai rotate <ai-member> subcommand added to ai.rs alongside init/update/reset. Routes to auth::run_ai_rotate for the logic.
+    [x] Error-message rework in auth.rs token_add desync arms: Fall 1 (mismatch) and Fall 2 (Some,None) now point at joy ai rotate with accurate 'invalidates prior tokens' semantics. Fall 3 (None,Some) no longer mentions rotate - it's a manual-resolution state with the orphan path printed for the user to remove.
+    [x] Five bats integration tests: rotate on working delegation (new key differs, rotated set, old token fails), rotate recovers Some,None desync, rotate rejects without delegation entry, rejects non-AI member, rejects wrong passphrase.
+    [x] cargo fmt, full cargo test and bats integration suites pass (242 unit + 171 integration).
