@@ -41,6 +41,17 @@ enum AuthCommand {
     Reset(ResetArgs),
     /// Manage delegation tokens for AI members
     Token(TokenArgs),
+    /// Change your passphrase: re-derives your identity keypair
+    Passphrase(PassphraseArgs),
+}
+
+#[derive(Args)]
+struct PassphraseArgs {
+    /// New passphrase (non-interactive, for scripts and tests). Used in
+    /// combination with the global --passphrase flag which supplies the
+    /// current passphrase.
+    #[arg(long)]
+    new_passphrase: Option<String>,
 }
 
 #[derive(Args)]
@@ -87,6 +98,9 @@ pub fn run(args: AuthArgs) -> Result<()> {
         Some(AuthCommand::Status) => run_status(),
         Some(AuthCommand::Reset(a)) => run_reset(a, args.passphrase.as_deref()),
         Some(AuthCommand::Token(a)) => run_token(a, args.passphrase.as_deref()),
+        Some(AuthCommand::Passphrase(a)) => {
+            run_passphrase(args.passphrase.as_deref(), a.new_passphrase.as_deref())
+        }
         None => {
             if let Some(otp) = args.otp.as_deref() {
                 run_auth_otp(otp, args.passphrase.as_deref())
@@ -882,6 +896,79 @@ fn run_token_rm(args: TokenRmArgs, passphrase_flag: Option<&str>) -> Result<()> 
         &format!("auth token rm {}", args.member),
         &email,
     );
+
+    Ok(())
+}
+
+/// `joy auth passphrase` - change the current member's passphrase.
+///
+/// Verifies the current passphrase against the stored public key,
+/// derives a fresh keypair from the new passphrase + a fresh salt,
+/// writes the new public_key and salt, and invalidates any active
+/// session for this member. Attestations on this member remain valid
+/// because `public_key` is not in the signed_fields set (JOY-00FB-58).
+fn run_passphrase(current_flag: Option<&str>, new_flag: Option<&str>) -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+
+    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
+    let mut project: joy_core::model::project::Project = store::read_yaml(&project_path)?;
+
+    let email = joy_core::vcs::default_vcs().user_email()?;
+    let member = project
+        .members
+        .get(&email)
+        .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member", email))?;
+    let current_pub_hex = member.public_key.as_ref().ok_or_else(|| {
+        anyhow::anyhow!(
+            "Authentication not initialized for {}. Run `joy auth init`.",
+            email
+        )
+    })?;
+    let current_salt_hex = member
+        .salt
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("No salt registered for {}.", email))?;
+    let current_pub = sign::PublicKey::from_hex(current_pub_hex)?;
+    let current_salt = derive::Salt::from_hex(current_salt_hex)?;
+
+    let current_pass = read_passphrase(current_flag, "Current passphrase: ")?;
+    let current_key = derive::derive_key(&current_pass, &current_salt)?;
+    let current_kp = sign::IdentityKeypair::from_derived_key(&current_key);
+    if current_kp.public_key() != current_pub {
+        anyhow::bail!("incorrect passphrase");
+    }
+
+    let new_pass = read_passphrase(new_flag, "New passphrase:     ")?;
+    if new_pass == current_pass {
+        anyhow::bail!("new passphrase must differ from the current one");
+    }
+    derive::validate_passphrase(&new_pass)?;
+    if new_flag.is_none() {
+        let confirm = rpassword::prompt_password("Confirm:            ")?;
+        if confirm != new_pass {
+            anyhow::bail!("passphrases do not match");
+        }
+    }
+
+    let new_salt = derive::generate_salt();
+    let new_key = derive::derive_key(&new_pass, &new_salt)?;
+    let new_kp = sign::IdentityKeypair::from_derived_key(&new_key);
+
+    let m = project.members.get_mut(&email).unwrap();
+    m.public_key = Some(new_kp.public_key().to_hex());
+    m.salt = Some(new_salt.to_hex());
+    store::write_yaml_preserve(&project_path, &project)?;
+    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+    joy_core::git_ops::auto_git_add(&root, &[&rel]);
+
+    let project_id = session::project_id(&root)?;
+    let _ = session::remove_session(&project_id, &email);
+
+    println!("Passphrase changed for {}.", email);
+    println!("Prior sessions are invalidated. Run `joy auth` to start a fresh session.");
+
+    joy_core::git_ops::auto_git_post_command(&root, "auth passphrase", &email);
 
     Ok(())
 }

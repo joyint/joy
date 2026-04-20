@@ -513,6 +513,61 @@ YAML
 }
 
 # ============================================================
+# joy auth passphrase (JOY-0073)
+# ============================================================
+
+@test "joy auth passphrase rotates keypair preserving attestation" {
+    joy init --name "Passphrase Test" --acronym PT
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    OTP=$(joy project member add alice@example.com --passphrase "$TEST_PASSPHRASE" \
+        | sed -n 's/^[[:space:]]*One-time password:[[:space:]]*\([A-Za-z0-9-]*\).*$/\1/p' | head -1)
+    git config user.email alice@example.com
+    joy auth --otp "$OTP" --passphrase "alpha bravo charlie delta echo foxtrot"
+
+    OLD_PUB=$(grep -A3 "^  alice@example.com:" .joy/project.yaml | grep "public_key:" | awk '{print $NF}')
+    OLD_ATT=$(grep -A20 "^  alice@example.com:" .joy/project.yaml | grep "signature:" | head -1)
+
+    run joy auth passphrase \
+        --passphrase "alpha bravo charlie delta echo foxtrot" \
+        --new-passphrase "kilo lima mike november oscar papa"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Passphrase changed"* ]]
+
+    # public_key rotated, attestation preserved.
+    NEW_PUB=$(grep -A3 "^  alice@example.com:" .joy/project.yaml | grep "public_key:" | awk '{print $NF}')
+    NEW_ATT=$(grep -A20 "^  alice@example.com:" .joy/project.yaml | grep "signature:" | head -1)
+    [ "$OLD_PUB" != "$NEW_PUB" ]
+    [ "$OLD_ATT" = "$NEW_ATT" ]
+
+    # New passphrase works; old passphrase does not.
+    run joy auth --passphrase "kilo lima mike november oscar papa"
+    [ "$status" -eq 0 ]
+    joy deauth
+    run joy auth --passphrase "alpha bravo charlie delta echo foxtrot"
+    [ "$status" -ne 0 ]
+}
+
+@test "joy auth passphrase rejects wrong current passphrase" {
+    joy init --name "Passphrase Test" --acronym PT
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    run joy auth passphrase \
+        --passphrase "wrong wrong wrong wrong wrong wrong" \
+        --new-passphrase "kilo lima mike november oscar papa"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"incorrect passphrase"* ]]
+}
+
+@test "joy auth passphrase rejects identical new passphrase" {
+    joy init --name "Passphrase Test" --acronym PT
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    run joy auth passphrase \
+        --passphrase "$TEST_PASSPHRASE" \
+        --new-passphrase "$TEST_PASSPHRASE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"must differ"* ]]
+}
+
+# ============================================================
 # project set acronym migrates delegation directory (JOY-00F7-91)
 # ============================================================
 
