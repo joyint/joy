@@ -1,7 +1,7 @@
 id: JOY-0100-DA
 title: Verify attestation and passphrase match at joy auth
 type: task
-status: review
+status: closed
 priority: high
 parent: JOY-00FA-A5
 assignees:
@@ -12,7 +12,7 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy
 created: 2026-04-20T17:25:33.755335610Z
-updated: 2026-04-20T18:08:20.361471048Z
+updated: 2026-04-20T18:51:10.920457809Z
 description: 'Guard verifies at ''joy auth'' session establishment: (1) attestation signature matches one of the other members'' public_keys in project.yaml, (2) attester had manage capability, (3) local passphrase-derived public_key matches the stored public_key for the acting member. On failure: session not established, clear error message that the member entry is tampered and must be removed and re-added by a manage member.'
 comments:
 - author: ai:claude@joy
