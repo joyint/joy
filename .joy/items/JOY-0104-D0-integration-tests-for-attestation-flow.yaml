@@ -1,7 +1,7 @@
 id: JOY-0104-D0
 title: Integration tests for attestation flow (TDD contract)
 type: task
-status: in-progress
+status: review
 priority: high
 parent: JOY-00FA-A5
 assignees:
@@ -12,7 +12,7 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-20T17:28:20.692137436Z
-updated: 2026-04-20T17:31:59.191819995Z
+updated: 2026-04-20T17:32:05.382343542Z
 description: 'Write tests/integration/attestation.bats upfront, covering all 8 scenarios from the attestation design: (1) joy init creates founder without attestation, (2) joy project member add creates OTP + attestation, (3) joy auth --otp sets passphrase and reverse-attests founder silently, (4) further adds work without further reverse-attestation, (5) self-remove blocked with manage-list error, (6) manage remove inherits attested members, (7) manually injected member without attestation fails joy auth with clear error, (8) tampered attestation signature fails joy auth. All tests initially fail (red). Subsequent child items implement against them; completion criterion = all 8 tests green. Serves as both the TDD contract and the final acceptance-test suite.'
 comments:
 - author: ai:claude@joy

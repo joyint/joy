@@ -1,14 +1,28 @@
 id: JOY-00FB-58
 title: Extend Member schema with attestation field
 type: task
-status: new
+status: in-progress
 priority: high
 parent: JOY-00FA-A5
+assignees:
+- member: ai:claude@joy
 milestone: JOY-MS-01
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-20T17:25:33.706690927Z
-updated: 2026-04-20T17:25:33.706690927Z
+updated: 2026-04-20T17:35:31.134588587Z
 description: 'Add ''attestation'' struct to Member in crates/joy-core/src/model/project.rs with fields: attester (member email), signed_fields (email, capabilities, otp_hash), signed_at (DateTime), signature (hex-encoded Ed25519). Canonical serialization format for the signed_fields so signature verification is deterministic. Serde skip_serializing_if for backward-compat during migration.'
+comments:
+- author: ai:claude@joy
+  date: 2026-04-20T17:32:26.233545154Z
+  text: 'Plan: Extend Member struct in crates/joy-core/src/model/project.rs with optional attestation field. Add Attestation and AttestationSignedFields structs. Provide canonical_signed_fields helper that serializes to a deterministic byte sequence (using BTreeMap ordering and serde_json) for signing/verification. No logic change yet; just schema groundwork so subsequent items can sign and verify.'
+- author: ai:claude@joy
+  date: 2026-04-20T17:35:31.134588295Z
+  text: |-
+    [x] Added Attestation and AttestationSignedFields structs in model/project.rs.
+    [x] Added optional attestation field to Member, serde-skipped when None for backward compat.
+    [x] canonical_bytes() via serde_json - deterministic because BTreeMap ordering and struct field order.
+    [x] 4 unit tests: omitted when None, yaml round-trip, canonical determinism, canonical differs on capability change.
+    [x] Member::new initializer extended. All 246 unit tests pass.
