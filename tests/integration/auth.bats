@@ -504,3 +504,63 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     run joy auth status
     [[ "$output" == *"No active session"* ]]
 }
+
+# ============================================================
+# project set acronym migrates delegation directory (JOY-00F7-91)
+# ============================================================
+
+@test "project set acronym migrates local delegation directory" {
+    joy init --name "Rename Test" --acronym OLDACR
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy project member add ai:test@joy
+    # First-time token issuance creates the local delegation key file.
+    joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" >/dev/null
+    [ -f "$XDG_STATE_HOME/joy/delegations/OLDACR/ai_test_joy.key" ]
+
+    run joy project set acronym NEWACR
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Local delegation keys have been migrated"* ]]
+
+    # Key migrated to new path, old path gone.
+    [ -f "$XDG_STATE_HOME/joy/delegations/NEWACR/ai_test_joy.key" ]
+    [ ! -d "$XDG_STATE_HOME/joy/delegations/OLDACR" ]
+
+    # Session was scoped to the old acronym. After re-auth under the new
+    # acronym, token issuance reuses the migrated private key without
+    # generating a new keypair (no project.yaml write).
+    joy auth --passphrase "$TEST_PASSPHRASE"
+    run joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"joy_t_"* ]]
+}
+
+@test "project set acronym refuses when target delegation directory exists" {
+    joy init --name "Rename Test" --acronym OLDACR
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy project member add ai:test@joy
+    joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" >/dev/null
+    # Pre-populate a conflicting target directory.
+    mkdir -p "$XDG_STATE_HOME/joy/delegations/NEWACR"
+    echo "unrelated" > "$XDG_STATE_HOME/joy/delegations/NEWACR/placeholder"
+
+    run joy project set acronym NEWACR
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"already exists"* ]]
+
+    # Old directory untouched, project.yaml acronym still OLDACR.
+    [ -f "$XDG_STATE_HOME/joy/delegations/OLDACR/ai_test_joy.key" ]
+    run joy project get acronym
+    [ "$output" = "OLDACR" ]
+}
+
+@test "project set acronym is no-op when no delegation directory exists" {
+    joy init --name "Rename Test" --acronym OLDACR
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    # No delegation issued, no key directory on disk yet.
+    [ ! -d "$XDG_STATE_HOME/joy/delegations/OLDACR" ]
+
+    run joy project set acronym NEWACR
+    [ "$status" -eq 0 ]
+    [ ! -d "$XDG_STATE_HOME/joy/delegations/OLDACR" ]
+    [ ! -d "$XDG_STATE_HOME/joy/delegations/NEWACR" ]
+}

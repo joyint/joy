@@ -1,12 +1,39 @@
 id: JOY-00F7-91
 title: Acronym rename orphans local delegation key path
 type: bug
-status: new
+status: in-progress
 priority: high
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 - review
 created_by: ai:claude@joy
 created: 2026-04-19T20:50:24.119381660Z
-updated: 2026-04-19T20:50:24.119381660Z
+updated: 2026-04-20T05:33:08.458867209Z
 description: 'Changing project acronym via ''joy project set acronym'' invalidates on-disk delegation key lookups. Delegation private keys are stored under ~/.local/state/joy/delegations/<ACRONYM>/, so after a flip JOT -> JYN the old JOT directory still holds the key material while the rest of joy looks for it under JYN. Result: subsequent ''joy auth token add <member>'' fails with ''local private key is missing'' even though the key exists on disk (just under the previous acronym). Workaround today: manually mv ~/.local/state/joy/delegations/JOT ~/.local/state/joy/delegations/JYN after an acronym rename. Proper fix options: (a) ''joy project set acronym'' moves the delegations directory atomically as part of the transition; (b) joy stops using acronym as directory key (use stable project_id instead); (c) explicit migration subcommand. Encountered during JI-00E3-C5 jyn rename (flipping jot -> jyn acronym).'
+comments:
+- author: ai:claude@joy
+  date: 2026-04-20T05:25:58.955602023Z
+  text: |-
+    Plan: 'joy project set acronym' migrates the local delegation directory atomically as part of the operation. Option (a) from the filing.
+
+    Changes:
+    1. crates/joy-cli/src/commands/project.rs: in the set_value path for 'acronym', before writing project.yaml, call fs::rename on ~/.local/state/joy/delegations/<OLD> -> <NEW>.
+    2. Source missing -> no-op. Target already exists -> error, instruct the user to resolve manually; do not merge.
+    3. Rename first, write project.yaml second. If rename errors out, acronym change is not committed.
+    4. Unit test for the rename helper (source present, source absent, target collision).
+    5. Integration test: project set acronym with pre-existing delegation dir moves it to the new path.
+
+    Asymmetry to item IDs (which keep the old prefix per JOY-00F1-AD) is deliberate: item IDs are repo-visible, git-versioned artefacts with external references (commit messages, PRs). Delegation keys are local per-machine state read only by this tool, no external references.
+- author: ai:claude@joy
+  date: 2026-04-20T05:33:08.458866319Z
+  text: |-
+    [x] rename_project_delegations helper in auth::delegation with unit tests (move, missing-source no-op, target-exists error, same-id no-op).
+    [x] project_id_of helper in auth::session to compute project_id from an in-memory Project without re-reading yaml.
+    [x] set_value call-site in project.rs captures old project_id before mutation, migrates delegation dir atomically after acronym change, before writing project.yaml. Rename failure aborts the acronym change.
+    [x] Added CLI note: existing sessions and delegation tokens reference the old acronym and are invalidated; user should re-auth and reissue.
+    [x] Three bats integration tests: migrate directory, refuse on target collision, no-op when no delegation dir exists.
+    [x] Full cargo test and bats auth.bats suites pass.
+
+    Note: Session files are also project_id-scoped (SHA-256 hash) and become stale across an acronym rename. Not migrated here because sessions are 24h ephemerals and re-auth is cheap; user is warned in the CLI output. Delegation keys are SSH-key-class secrets and genuinely needed migration.
