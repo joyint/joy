@@ -1,7 +1,7 @@
 id: JOY-0107-C7
 title: 'Docs: attestation, OTP, passphrase, ai rotate'
 type: task
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -11,7 +11,7 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy
 created: 2026-04-20T18:36:04.556792671Z
-updated: 2026-04-20T18:38:42.689366810Z
+updated: 2026-04-20T18:51:11.021887548Z
 description: 'Update user-facing tutorials and command documentation to cover the new attestation / onboarding flow. In scope: new joy project member add output (OTP), joy auth --otp for first-time setup, joy auth passphrase for self-service change, joy ai rotate for delegation rotation, joy project member rm --passphrase with auto-inherit. Attestation itself is presented as silent background protection, not as a user action. Files: crates/joy-cli/docs/Tutorial.md and docs/user/Tutorial.md (mirrored copies). Website docs covered separately in the JISITE project.'
 comments:
 - author: ai:claude@joy

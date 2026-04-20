@@ -1,7 +1,7 @@
 id: JOY-0072
 title: Member onboarding with one-time password and forced passphrase setup
 type: story
-status: review
+status: closed
 priority: high
 parent: JOY-006B
 assignees:
@@ -15,7 +15,7 @@ capabilities:
 - review
 effort: 3
 created: 2026-03-27T18:38:54.169234671Z
-updated: 2026-04-20T17:56:52.510841944Z
+updated: 2026-04-20T18:51:10.664069922Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-30T19:43:05.181702830Z

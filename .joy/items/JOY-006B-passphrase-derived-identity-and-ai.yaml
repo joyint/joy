@@ -1,7 +1,7 @@
 id: JOY-006B
 title: Passphrase-derived identity and AI delegation tokens
 type: epic
-status: review
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -11,7 +11,7 @@ capabilities:
 - plan
 effort: 7
 created: 2026-03-27T18:25:16.637011826Z
-updated: 2026-04-20T18:33:25.945073136Z
+updated: 2026-04-20T18:51:11.060099887Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-27T18:25:41.723664182Z
