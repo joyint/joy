@@ -182,38 +182,33 @@ become_member() {
 
 @test "manage remove inherits attested members" {
     setup_founder
-    # Alice joins (manage), attests founder.
+    # Alice joins as manage, reverse-attests founder.
     add_member_capture_otp alice@example.com
     become_member alice@example.com
     joy auth --otp "$MEMBER_OTP" --passphrase "$ALICE_PASSPHRASE"
 
-    # Alice adds carol. Alice is now carol's attester.
-    become_member test@example.com
-    add_member_capture_otp carol@example.com
-    # Actually alice adds carol; but our setup uses founder for add_member_capture_otp.
-    # For this test, add carol as founder (attester: founder) - adjust expectation.
+    # Alice (as manage) adds carol; alice is carol's attester.
+    MEMBER_OTP=$(joy project member add carol@example.com --passphrase "$ALICE_PASSPHRASE" \
+        | sed -n 's/^[[:space:]]*One-time password:[[:space:]]*\([A-Za-z0-9-]*\).*$/\1/p' | head -1)
     become_member carol@example.com
     joy auth --otp "$MEMBER_OTP" --passphrase "$CAROL_PASSPHRASE"
+    grep -A8 "carol@example.com:" .joy/project.yaml | grep -q "attester: alice@example.com"
 
-    # Add bob as a second manage member via alice.
-    become_member alice@example.com
-    MEMBER_OTP=$(joy project member add bob@example.com --passphrase "$ALICE_PASSPHRASE" \
+    # Founder adds bob as another manage member.
+    become_member test@example.com
+    MEMBER_OTP=$(joy project member add bob@example.com --passphrase "$FOUNDER_PASSPHRASE" \
         | sed -n 's/^[[:space:]]*One-time password:[[:space:]]*\([A-Za-z0-9-]*\).*$/\1/p' | head -1)
     become_member bob@example.com
     joy auth --otp "$MEMBER_OTP" --passphrase "$BOB_PASSPHRASE"
 
-    # Capture carol's attester before alice is removed.
-    local before_attester
-    before_attester=$(grep -A5 "carol@example.com:" .joy/project.yaml | grep "attester:" | head -1)
-
-    # Bob removes alice (another manage member).
+    # Bob removes alice. Alice attested carol, so carol must be
+    # re-attested by bob as part of the removal.
     run joy project member rm alice@example.com --passphrase "$BOB_PASSPHRASE"
     [ "$status" -eq 0 ]
 
-    # Alice's entry is gone.
-    run grep -c "alice@example.com" .joy/project.yaml
-    # Carol's attester is now bob (inherited from alice).
-    grep -A5 "carol@example.com:" .joy/project.yaml | grep -q "attester: bob@example.com"
+    # Alice's entry is gone; carol's attester is now bob.
+    ! grep -q "^  alice@example.com:" .joy/project.yaml
+    grep -A8 "carol@example.com:" .joy/project.yaml | grep -q "attester: bob@example.com"
 }
 
 # ============================================================

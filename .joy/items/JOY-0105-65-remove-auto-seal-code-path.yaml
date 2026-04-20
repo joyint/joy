@@ -1,0 +1,12 @@
+id: JOY-0105-65
+title: Remove auto-seal code path
+type: task
+status: new
+priority: medium
+capabilities:
+- implement
+effort: 1
+created_by: ai:claude@joy
+created: 2026-04-20T18:14:26.318375676Z
+updated: 2026-04-20T18:14:26.318375676Z
+description: Remove the silent auto-seal behavior introduced by JOY-0101-78. By ~2026-07-20 the known project universe will have gone through at least one auth cycle and sealed itself. Keeping the code path longer weakens the security guarantee (unattested members get a free pass). Drop the branch in joy auth; unattested members then fail auth with the standard tampering error.

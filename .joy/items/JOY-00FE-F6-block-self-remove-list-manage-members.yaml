@@ -1,14 +1,25 @@
 id: JOY-00FE-F6
 title: Block self-remove, list manage members in error
 type: task
-status: new
+status: in-progress
 priority: medium
 parent: JOY-00FA-A5
+assignees:
+- member: ai:claude@joy
 milestone: JOY-MS-01
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-20T17:25:33.734967866Z
-updated: 2026-04-20T17:25:33.734967866Z
+updated: 2026-04-20T18:15:53.161627683Z
 description: '''joy project member remove <self>'' is blocked with a clear error listing the other manage members by email. Removal of a member requires action by a different manage member so attestations can be handed over.'
+comments:
+- author: ai:claude@joy
+  date: 2026-04-20T18:08:20.404666732Z
+  text: 'Plan: ''joy project member rm <self>'' detects self-remove and bails with a dedicated error listing the project''s other manage members. Combine with JOY-00FF-93 (manage-remove inherits attestations) in one commit - same code path.'
+- author: ai:claude@joy
+  date: 2026-04-20T18:15:53.161627413Z
+  text: |-
+    [x] Self-remove blocked in joy project member rm with a dedicated error listing the project's other manage members by email.
+    [x] Check runs before the existing last-manager guard so self-remove gets the clearer message.

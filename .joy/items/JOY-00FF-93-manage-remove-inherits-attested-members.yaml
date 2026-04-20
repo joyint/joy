@@ -1,14 +1,26 @@
 id: JOY-00FF-93
 title: Manage remove inherits attested members
 type: task
-status: new
+status: in-progress
 priority: medium
 parent: JOY-00FA-A5
+assignees:
+- member: ai:claude@joy
 milestone: JOY-MS-01
 capabilities:
 - implement
 effort: 3
 created_by: ai:claude@joy
 created: 2026-04-20T17:25:33.744254475Z
-updated: 2026-04-20T17:25:33.744254475Z
+updated: 2026-04-20T18:15:53.180784328Z
 description: When a manage member removes another member, any members attested by the removed member are automatically re-attested by the removing manage member in the same operation. Silent, single commit. Prevents orphaned attestations.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-20T18:08:20.414095759Z
+  text: 'Plan: When a manage member removes another member, any members whose attester was the removed member get re-attested by the removing manage member''s identity key. Requires the removing member''s passphrase via --passphrase. Silent re-attestation, single commit, no user-visible ceremony.'
+- author: ai:claude@joy
+  date: 2026-04-20T18:15:53.180784203Z
+  text: |-
+    [x] joy project member rm --passphrase now inherits: if the removed member attested others, those attestations are re-signed by the acting manage member's identity key as part of the same operation.
+    [x] Orphan list computed before mutation; acting keypair derived only when needed; single write + commit.
+    [x] guard.bats 'cannot remove the last member' test accepts either old last-manager or new self-remove wording.
