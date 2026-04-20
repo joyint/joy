@@ -528,7 +528,7 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
     let all_tools: &[(&str, &str, &[&str])] = &[
         ("Claude Code", "claude", &[".claude/"]),
         ("Qwen Code", "qwen", &[".qwen/"]),
-        ("Mistral Vibe", "vibe", &[".vibe/"]),
+        ("Mistral Vibe", "vibe", &[".vibe/", "AGENTS.md"]),
         (
             "GitHub Copilot",
             "copilot",
@@ -617,6 +617,8 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
         let full = root.join(path);
         if full.is_dir() {
             fs::remove_dir_all(&full)?;
+        } else if *path == "AGENTS.md" {
+            remove_joy_block_or_file(&full)?;
         } else {
             fs::remove_file(&full)?;
         }
@@ -1007,11 +1009,18 @@ fn update_qwen_permissions(root: &Path, _member_id: &str) -> anyhow::Result<bool
     Ok(changed)
 }
 
-fn configure_vibe(root: &Path, _member_id: &str) -> anyhow::Result<bool> {
+fn configure_vibe(root: &Path, member_id: &str) -> anyhow::Result<bool> {
     let vibe_dir = root.join(".vibe");
     fs::create_dir_all(&vibe_dir)?;
     clean_managed_dirs(root, &[".vibe/agents", ".vibe/skills/joy"]);
     let mut changed = false;
+
+    // Vibe reads {root}/AGENTS.md as "Project instructions" into its system
+    // prompt (see mistral-vibe vibe/core/config/harness_files). `.vibe/AGENTS.md`
+    // is NOT scanned, so the file must live at the workspace root.
+    let agents_md = root.join("AGENTS.md");
+    changed |= update_with_joy_block(&agents_md, &render_managed_block(member_id, true)?)?;
+    qprintln!("    {}AGENTS.md", color::check_mark());
 
     let skill_path = vibe_dir.join("skills/joy/SKILL.md");
     changed |= write_if_changed(&skill_path, &render_skill()?)?;
@@ -1136,6 +1145,32 @@ fn write_if_changed(path: &Path, content: &str) -> anyhow::Result<bool> {
     Ok(true)
 }
 
+/// Remove the Joy-managed block from a shared file. If the file contains only
+/// the Joy block (and whitespace), the file is deleted. If user content exists
+/// outside the markers, that content is preserved and the file remains.
+/// No-op if the file has no Joy block (never touch files Joy did not author).
+fn remove_joy_block_or_file(path: &Path) -> anyhow::Result<()> {
+    if !path.is_file() {
+        return Ok(());
+    }
+    let existing = fs::read_to_string(path)?;
+    let (Some(start), Some(end_pos)) =
+        (existing.find(JOY_BLOCK_START), existing.find(JOY_BLOCK_END))
+    else {
+        return Ok(());
+    };
+    let end = end_pos + JOY_BLOCK_END.len();
+    let mut remaining = String::new();
+    remaining.push_str(&existing[..start]);
+    remaining.push_str(&existing[end..]);
+    if remaining.trim().is_empty() {
+        fs::remove_file(path)?;
+    } else {
+        fs::write(path, format!("{}\n", remaining.trim_end()))?;
+    }
+    Ok(())
+}
+
 fn update_with_joy_block(path: &Path, content: &str) -> anyhow::Result<bool> {
     let block = format!("{}\n{}\n{}", JOY_BLOCK_START, content, JOY_BLOCK_END);
 
@@ -1181,7 +1216,10 @@ fn which(binary: &str) -> bool {
 const TOOL_GITIGNORE_ENTRIES: &[(&str, &[(&str, &str)])] = &[
     ("claude", &[(".claude/", "Claude Code")]),
     ("qwen", &[(".qwen/", "Qwen Code")]),
-    ("vibe", &[(".vibe/", "Mistral Vibe")]),
+    (
+        "vibe",
+        &[(".vibe/", "Mistral Vibe"), ("AGENTS.md", "Mistral Vibe")],
+    ),
     (
         "copilot",
         &[
@@ -1412,5 +1450,79 @@ mod tests {
         fs::write(tmp.path().join("ARCHITECTURE.md"), "stub").unwrap();
         let suggestion = suggested_doc_path(tmp.path(), arch_spec());
         assert_eq!(suggestion, "ARCHITECTURE.md");
+    }
+
+    #[test]
+    fn update_with_joy_block_creates_agents_md() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("AGENTS.md");
+        let changed = update_with_joy_block(&path, "hello world").unwrap();
+        assert!(changed);
+        let content = fs::read_to_string(&path).unwrap();
+        assert!(content.starts_with(JOY_BLOCK_START));
+        assert!(content.contains("hello world"));
+        assert!(content.contains(JOY_BLOCK_END));
+    }
+
+    #[test]
+    fn update_with_joy_block_preserves_user_content_above_and_below() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("AGENTS.md");
+        fs::write(
+            &path,
+            format!(
+                "user header\n\n{}\nold\n{}\n\nuser footer\n",
+                JOY_BLOCK_START, JOY_BLOCK_END
+            ),
+        )
+        .unwrap();
+        update_with_joy_block(&path, "new content").unwrap();
+        let content = fs::read_to_string(&path).unwrap();
+        assert!(content.starts_with("user header"));
+        assert!(content.contains("new content"));
+        assert!(!content.contains("old"));
+        assert!(content.trim_end().ends_with("user footer"));
+    }
+
+    #[test]
+    fn remove_joy_block_deletes_file_when_only_block() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("AGENTS.md");
+        fs::write(
+            &path,
+            format!("{}\nmanaged\n{}\n", JOY_BLOCK_START, JOY_BLOCK_END),
+        )
+        .unwrap();
+        remove_joy_block_or_file(&path).unwrap();
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn remove_joy_block_preserves_user_content() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("AGENTS.md");
+        fs::write(
+            &path,
+            format!(
+                "user rule\n\n{}\nmanaged\n{}\n",
+                JOY_BLOCK_START, JOY_BLOCK_END
+            ),
+        )
+        .unwrap();
+        remove_joy_block_or_file(&path).unwrap();
+        let content = fs::read_to_string(&path).unwrap();
+        assert!(content.contains("user rule"));
+        assert!(!content.contains("managed"));
+        assert!(!content.contains(JOY_BLOCK_START));
+    }
+
+    #[test]
+    fn remove_joy_block_leaves_unmanaged_file_untouched() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("AGENTS.md");
+        fs::write(&path, "pure user content\n").unwrap();
+        remove_joy_block_or_file(&path).unwrap();
+        let content = fs::read_to_string(&path).unwrap();
+        assert_eq!(content, "pure user content\n");
     }
 }

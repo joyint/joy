@@ -25,6 +25,7 @@ Thumbs.db
 .claude/
 .qwen/
 .vibe/
+AGENTS.md
 .github/copilot-instructions.md
 .github/copilot/
 .github/agents/
