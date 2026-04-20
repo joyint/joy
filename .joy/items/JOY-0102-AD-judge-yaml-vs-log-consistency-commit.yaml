@@ -1,0 +1,13 @@
+id: JOY-0102-AD
+title: 'Judge: yaml-vs-log consistency commit-hook'
+type: task
+status: new
+priority: medium
+milestone: JOY-MS-03
+capabilities:
+- implement
+effort: 5
+created_by: ai:claude@joy
+created: 2026-04-20T17:25:50.321092859Z
+updated: 2026-04-20T17:25:50.321092859Z
+description: Premium (Judge tier) layer on top of OSS attestations. Pre-commit git hook invokes Judge to verify that every member-lifecycle change in project.yaml corresponds to a valid event in the event log. Closes the gap where an attacker with push access could coordinate yaml and event-log manipulation. Depends on JOY-0074 (log hash chain) for event authenticity. Premium feature; the OSS-only attestation layer (JOY-00FA-A5) covers the baseline 80% threat model without requiring Judge.

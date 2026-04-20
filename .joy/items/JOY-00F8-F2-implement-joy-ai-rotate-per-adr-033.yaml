@@ -1,7 +1,7 @@
 id: JOY-00F8-F2
 title: Implement joy ai rotate per ADR-033
 type: bug
-status: in-progress
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -10,7 +10,7 @@ capabilities:
 - review
 created_by: ai:claude@joy
 created: 2026-04-19T20:50:38.907008938Z
-updated: 2026-04-20T05:56:15.812919289Z
+updated: 2026-04-20T06:35:47.588819666Z
 description: |-
   Implement 'joy ai rotate <ai-member>' per ADR-033: replaces an existing (human, AI) delegation keypair with a fresh one. Updates project.yaml (new delegation_key, rotated timestamp) in a single commit. Any tokens signed by the prior keypair, and any sessions bound to those tokens, are invalidated.
 

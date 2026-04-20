@@ -1,0 +1,14 @@
+id: JOY-0101-78
+title: Seal migration for existing projects
+type: task
+status: new
+priority: high
+parent: JOY-00FA-A5
+milestone: JOY-MS-01
+capabilities:
+- implement
+effort: 3
+created_by: ai:claude@joy
+created: 2026-04-20T17:25:33.767727831Z
+updated: 2026-04-20T17:25:33.767727831Z
+description: 'One-time migration for projects that exist before this feature lands. A manage member runs ''joy project seal'' (or automatic prompt on first joy auth after upgrade) which signs attestations for all existing members using the running manage member''s identity key. Founder identification: the first member in project.yaml (chronologically by created timestamp or by position). After seal, all members are attested; the feature is active.'

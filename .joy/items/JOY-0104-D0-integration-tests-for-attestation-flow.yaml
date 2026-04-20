@@ -1,0 +1,47 @@
+id: JOY-0104-D0
+title: Integration tests for attestation flow (TDD contract)
+type: task
+status: in-progress
+priority: high
+parent: JOY-00FA-A5
+assignees:
+- member: ai:claude@joy
+milestone: JOY-MS-01
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy
+created: 2026-04-20T17:28:20.692137436Z
+updated: 2026-04-20T17:31:59.191819995Z
+description: 'Write tests/integration/attestation.bats upfront, covering all 8 scenarios from the attestation design: (1) joy init creates founder without attestation, (2) joy project member add creates OTP + attestation, (3) joy auth --otp sets passphrase and reverse-attests founder silently, (4) further adds work without further reverse-attestation, (5) self-remove blocked with manage-list error, (6) manage remove inherits attested members, (7) manually injected member without attestation fails joy auth with clear error, (8) tampered attestation signature fails joy auth. All tests initially fail (red). Subsequent child items implement against them; completion criterion = all 8 tests green. Serves as both the TDD contract and the final acceptance-test suite.'
+comments:
+- author: ai:claude@joy
+  date: 2026-04-20T17:29:45.652668894Z
+  text: |-
+    Plan: Write tests/integration/attestation.bats upfront covering all 8 scenarios. Tests initially fail since the feature doesn't exist yet - they serve as the TDD contract for the subsequent child items. Each child item implements against them until all 8 are green.
+
+    Test scenarios (mapped 1:1 to the 8-point attestation design):
+    1. joy init creates founder without attestation
+    2. joy project member add creates OTP + attestation signed by founder
+    3. joy auth --otp sets passphrase and silently reverse-attests founder
+    4. Subsequent joy project member add works without further reverse-attestation
+    5. joy project member rm <self> blocked with manage-list error
+    6. Manage removing another member inherits the removed member's attestations
+    7. Manually injected member without attestation fails joy auth with clear error
+    8. Tampered attestation signature fails joy auth
+- author: ai:claude@joy
+  date: 2026-04-20T17:31:59.191819749Z
+  text: |-
+    [x] Wrote tests/integration/attestation.bats with 9 test cases covering the 8-point design.
+    [x] Baseline run: 7 tests red (as expected), 2 pass for secondary reasons (will pass for correct reasons after implementation lands).
+    [x] Tests serve as TDD contract for the remaining child items: implementation completes when all 9 tests are green.
+
+    Test layout:
+    - Scenario 1: founder-without-attestation invariant (1 test, currently green by default)
+    - Scenario 2: member add -> OTP + attestation (2 tests)
+    - Scenario 3: OTP redemption -> passphrase + reverse-attestation (1 test)
+    - Scenario 4: subsequent adds do not re-attest founder (1 test)
+    - Scenario 5: self-remove blocked (1 test)
+    - Scenario 6: manage remove inherits attestations (1 test)
+    - Scenario 7: manually injected member rejected at auth (1 test)
+    - Scenario 8: tampered signature rejected at auth (1 test)
