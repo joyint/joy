@@ -1,9 +1,11 @@
 id: JOY-0073
 title: Passphrase change with key re-derivation
 type: story
-status: new
+status: in-progress
 priority: medium
 parent: JOY-006B
+assignees:
+- member: ai:claude@joy
 deps:
 - JOY-006E
 milestone: JOY-MS-01
@@ -13,5 +15,18 @@ capabilities:
 - review
 effort: 2
 created: 2026-03-27T18:38:54.173367330Z
-updated: 2026-04-20T17:26:01.683905981Z
+updated: 2026-04-20T18:29:08.418975951Z
 description: 'Implement ''joy auth passphrase'' for self-service passphrase change. Verifies current passphrase, derives new Argon2id+Ed25519 keypair from new passphrase, updates public_key and salt in project.yaml, invalidates existing sessions. Shared core with JOY-0072 (OTP-triggered initial passphrase setup): both paths call the same set_member_passphrase primitive differing only in the authentication gate (OTP verification vs current-passphrase verification). public_key is NOT in the attestation''s signed_fields, so passphrase change does not require re-attestation. Crypt re-wrap (for E2E-encrypted projects) is a follow-up handled in JOY-0103-87 when Crypt infrastructure lands.'
+comments:
+- author: ai:claude@joy
+  date: 2026-04-20T18:26:39.501717830Z
+  text: 'Plan: New ''joy auth passphrase'' subcommand. Prompts for current passphrase (verifies via passphrase-derives-public_key check), prompts for new passphrase (validates length), derives fresh keypair from (new passphrase, fresh salt), writes member.public_key and member.salt, invalidates existing session. Attestation unaffected (public_key not in signed_fields, so signature remains valid). Single write, auto-git-add. Supports non-interactive --passphrase and --new-passphrase flags for scripting/tests.'
+- author: ai:claude@joy
+  date: 2026-04-20T18:29:08.418975824Z
+  text: |-
+    [x] joy auth passphrase subcommand: prompts current then new passphrase, verifies current via passphrase-derives-public_key, rejects identical, validates new, writes fresh keypair + salt.
+    [x] Existing session removed; user prompted to joy auth again.
+    [x] Attestation preserved (public_key not in signed_fields).
+    [x] --passphrase and --new-passphrase flags for scripts/tests.
+    [x] 3 bats tests: full rotation round-trip with attestation preservation, wrong current passphrase rejected, identical new passphrase rejected.
+    [x] Crypt re-wrap will be handled by JOY-0103-87 when Crypt lands - this item covers the key-re-derivation part only.
