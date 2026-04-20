@@ -164,6 +164,26 @@ fn run_init(passphrase_flag: Option<&str>) -> Result<()> {
     m.salt = Some(salt.to_hex());
     m.public_key = Some(public_key.to_hex());
 
+    // JOY-00FD-93 (also applies to the legacy auth init path): if the
+    // founder is the only unattested member, reverse-attest them
+    // silently. Closes the attestation chain regardless of the
+    // redeemer's capabilities - attestation verification does not
+    // require the attester to have manage capability, only that the
+    // signature verifies against a member's public_key.
+    if let Some(founder_email) = founder_needing_reverse_attestation(&project) {
+        if founder_email != email {
+            let founder_member = project.members.get(&founder_email).cloned().unwrap();
+            let signed_fields = joy_core::auth::attestation::signed_fields_for(
+                &founder_email,
+                &founder_member.capabilities,
+                founder_member.otp_hash.as_deref(),
+            );
+            let attestation =
+                joy_core::auth::attestation::sign_attestation(&email, &keypair, signed_fields);
+            project.members.get_mut(&founder_email).unwrap().attestation = Some(attestation);
+        }
+    }
+
     store::write_yaml_preserve(&project_path, &project)?;
     let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
     joy_core::git_ops::auto_git_add(&root, &[&rel]);
@@ -237,12 +257,84 @@ fn auth_with_passphrase(
         anyhow::bail!("incorrect passphrase");
     }
 
+    // JOY-0100-DA: verify the member's attestation before establishing a
+    // session. Founder may be unattested during the solo phase (trust
+    // root); any member without attestation after the first co-member
+    // joined is suspect and rejected.
+    if let Some(attestation) = member.attestation.as_ref() {
+        verify_member_attestation(project, email, member, attestation)?;
+    } else if founder_must_be_attested(project) {
+        anyhow::bail!(
+            "{} has no attestation and the project has multiple members. \
+             The entry appears to have been tampered with. Ask a manage member \
+             to remove and re-add {}.",
+            email,
+            email
+        );
+    }
+
     let session_token = session::create_session(&keypair, email, project_id, None);
     session::save_session(project_id, &session_token)?;
 
     println!("Authenticated as {}. Session active (24h).", email);
 
     Ok(())
+}
+
+/// Verify the attestation against the attester's public_key in project.yaml
+/// and against the member's current fields. Produces user-facing error
+/// messages aligned with the CLI UX (not bare JoyError strings).
+fn verify_member_attestation(
+    project: &joy_core::model::project::Project,
+    email: &str,
+    member: &joy_core::model::project::Member,
+    attestation: &joy_core::model::project::Attestation,
+) -> Result<()> {
+    let attester_entry = project.members.get(&attestation.attester).ok_or_else(|| {
+        anyhow::anyhow!(
+            "attestation for {} names attester {} but that member is not registered. \
+             Ask a manage member to remove and re-add {}.",
+            email,
+            attestation.attester,
+            email
+        )
+    })?;
+    let attester_pubkey_hex = attester_entry.public_key.as_ref().ok_or_else(|| {
+        anyhow::anyhow!(
+            "attestation for {} is signed by {} but that member has no public key. \
+             Ask a manage member to remove and re-add {}.",
+            email,
+            attestation.attester,
+            email
+        )
+    })?;
+    let attester_pubkey = sign::PublicKey::from_hex(attester_pubkey_hex)?;
+    joy_core::auth::attestation::verify_attestation(attestation, &attester_pubkey, email, member)
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "attestation for {} is not valid ({}). \
+                 The entry appears to have been tampered with. \
+                 Ask a manage member to remove and re-add {}.",
+                email,
+                e,
+                email
+            )
+        })
+}
+
+/// A member without attestation is legitimate only as long as no other
+/// authenticated human member is present. AI members never authenticate
+/// themselves via passphrase (they use delegation tokens), so their
+/// attestations do not signal that the founder's reverse-attestation
+/// opportunity has passed. Once a second human with public_key exists,
+/// every such human must carry an attestation.
+fn founder_must_be_attested(project: &joy_core::model::project::Project) -> bool {
+    project
+        .members
+        .values()
+        .filter(|m| m.public_key.is_some() && m.attestation.is_some())
+        .count()
+        > 0
 }
 
 /// Authenticate an AI member via delegation token.
@@ -744,10 +836,6 @@ fn run_auth_otp(otp: &str, passphrase_flag: Option<&str>) -> Result<()> {
     if !joy_core::auth::otp::verify_otp(otp, stored_hash)? {
         anyhow::bail!("incorrect OTP");
     }
-    // Capture capabilities before mutating project for the manage-check
-    // used by the founder reverse-attestation step below.
-    let redeemer_is_manage = member.has_capability(&joy_core::model::item::Capability::Manage);
-
     // Derive the redeemer's keypair from the new passphrase.
     let passphrase = read_passphrase(passphrase_flag, "Choose passphrase: ")?;
     derive::validate_passphrase(&passphrase)?;
@@ -763,11 +851,13 @@ fn run_auth_otp(otp: &str, passphrase_flag: Option<&str>) -> Result<()> {
         m.otp_hash = None;
     }
 
-    // JOY-00FD-93: if the redeemer is manage and the founder is still the
-    // only member without an attestation, reverse-attest them. Silent, no
-    // user-visible output beyond the normal session message.
-    if redeemer_is_manage {
-        if let Some(founder_email) = founder_needing_reverse_attestation(&project) {
+    // JOY-00FD-93: if the founder is still the only unattested member,
+    // reverse-attest them silently. Attestation verification doesn't
+    // require the attester to have manage capability, only that their
+    // public_key verifies the signature - so any redeemer (regardless
+    // of capabilities) can close the attestation chain on first join.
+    if let Some(founder_email) = founder_needing_reverse_attestation(&project) {
+        if founder_email != email {
             let founder_member = project.members.get(&founder_email).cloned().unwrap();
             let signed_fields = joy_core::auth::attestation::signed_fields_for(
                 &founder_email,

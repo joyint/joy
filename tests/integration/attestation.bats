@@ -222,20 +222,26 @@ become_member() {
 
 @test "manually injected member fails joy auth with clear error" {
     setup_founder
+    # Add a legitimate second member so the attestation-required invariant
+    # (fires once two public_keys exist) applies to every member.
+    add_member_capture_otp alice@example.com
+    become_member alice@example.com
+    joy auth --otp "$MEMBER_OTP" --passphrase "$ALICE_PASSPHRASE"
 
-    # Simulate a manual yaml edit: append eve as a member without
+    # Simulate a manual yaml edit: insert eve as a member without
     # attestation, without going through 'joy project member add'.
-    cat >> .joy/project.yaml <<'YAML'
-  eve@attacker.com:
-    capabilities:
-      manage: {}
-YAML
+    # Inserted just before the top-level 'created:' line so yaml stays valid.
+    sed -i '/^created:/i\  eve@attacker.com:\n    capabilities:\n      manage: {}' .joy/project.yaml
 
     become_member eve@attacker.com
-    run joy auth --passphrase "some new passphrase eve chose"
+    # Eve tries to bootstrap her auth (joy auth init sets her public_key)
+    # and then authenticate. The attestation check at joy auth rejects
+    # her because her entry has no attestation.
+    joy auth init --passphrase "echo foxtrot golf hotel india juliett"
+    run joy auth --passphrase "echo foxtrot golf hotel india juliett"
     [ "$status" -ne 0 ]
     [[ "$output" == *"attestation"* ]] || [[ "$output" == *"tampered"* ]] || [[ "$output" == *"not valid"* ]]
-    # Error mentions that a manage member must re-add the member.
+    # Error points the user at the recovery path.
     [[ "$output" == *"manage member"* ]] || [[ "$output" == *"re-add"* ]]
 }
 

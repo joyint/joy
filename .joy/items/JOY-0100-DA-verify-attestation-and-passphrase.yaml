@@ -1,14 +1,28 @@
 id: JOY-0100-DA
 title: Verify attestation and passphrase match at joy auth
 type: task
-status: new
+status: in-progress
 priority: high
 parent: JOY-00FA-A5
+assignees:
+- member: ai:claude@joy
 milestone: JOY-MS-01
 capabilities:
 - implement
 effort: 3
 created_by: ai:claude@joy
 created: 2026-04-20T17:25:33.755335610Z
-updated: 2026-04-20T17:25:33.755335610Z
+updated: 2026-04-20T18:08:08.892244822Z
 description: 'Guard verifies at ''joy auth'' session establishment: (1) attestation signature matches one of the other members'' public_keys in project.yaml, (2) attester had manage capability, (3) local passphrase-derived public_key matches the stored public_key for the acting member. On failure: session not established, clear error message that the member entry is tampered and must be removed and re-added by a manage member.'
+comments:
+- author: ai:claude@joy
+  date: 2026-04-20T17:57:10.412125153Z
+  text: 'Plan: At ''joy auth'' with passphrase, after deriving and verifying the passphrase against stored public_key (local self-check), also verify the member''s attestation signature against the attester''s current public_key in project.yaml. Verification uses joy_core::auth::attestation::verify_attestation which checks signature, email, capabilities, and otp_hash (respecting the post-redemption ignore rule). Founder exempt (no attestation in solo phase; verification applies only when attestation is present).'
+- author: ai:claude@joy
+  date: 2026-04-20T18:08:08.892244702Z
+  text: |-
+    [x] verify_member_attestation helper in auth.rs: looks up attester's public_key in project.yaml, delegates to joy_core::auth::attestation::verify_attestation with user-facing error messages pointing at the manage-member recovery path.
+    [x] Called from auth_with_passphrase after the local passphrase/public_key self-check succeeds.
+    [x] founder_must_be_attested invariant: triggers once any human member (with public_key) has an attestation. AI members with attestations do not trip the check because they never authenticate via passphrase.
+    [x] Reverse-attestation also runs from joy auth init, mirroring the OTP path, so that legacy onboarding flows (member add followed by plain auth init) still close the attestation chain.
+    [x] 2 attestation.bats tests green (manually injected member rejected, tampered signature rejected). Existing integration suite passes except the two remove-flow tests which are the scope of JOY-00FE-F6 / JOY-00FF-93.

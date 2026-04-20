@@ -12,7 +12,7 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-20T17:25:33.706690927Z
-updated: 2026-04-20T17:35:35.326350641Z
+updated: 2026-04-20T17:56:52.484076136Z
 description: 'Add ''attestation'' struct to Member in crates/joy-core/src/model/project.rs with fields: attester (member email), signed_fields (email, capabilities, otp_hash), signed_at (DateTime), signature (hex-encoded Ed25519). Canonical serialization format for the signed_fields so signature verification is deterministic. Serde skip_serializing_if for backward-compat during migration.'
 comments:
 - author: ai:claude@joy
