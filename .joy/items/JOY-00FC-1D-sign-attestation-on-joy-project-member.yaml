@@ -1,0 +1,14 @@
+id: JOY-00FC-1D
+title: Sign attestation on joy project member add
+type: task
+status: new
+priority: high
+parent: JOY-00FA-A5
+milestone: JOY-MS-01
+capabilities:
+- implement
+effort: 3
+created_by: ai:claude@joy
+created: 2026-04-20T17:25:33.715768788Z
+updated: 2026-04-20T17:25:33.715768788Z
+description: When a manage member runs 'joy project member add <email>', joy produces an attestation signed by the acting member's passphrase-derived identity key and writes it into the new member's attestation field. Signature covers email, capabilities, otp_hash (if any). Requires the acting member's passphrase to produce the signature (same UX as joy auth token add).

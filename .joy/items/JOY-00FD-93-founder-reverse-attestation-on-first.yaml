@@ -1,0 +1,14 @@
+id: JOY-00FD-93
+title: Founder reverse-attestation on first OTP redemption
+type: task
+status: new
+priority: high
+parent: JOY-00FA-A5
+milestone: JOY-MS-01
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy
+created: 2026-04-20T17:25:33.725746857Z
+updated: 2026-04-20T17:25:33.725746857Z
+description: When a newly-added manage member completes 'joy auth --otp <code>' and sets their passphrase, joy automatically produces an attestation for the founder (the only member still without one) and writes it. Silent, no CLI output. After this, every member in project.yaml has an attestation. Founder is identified as 'the one member without an attestation'.

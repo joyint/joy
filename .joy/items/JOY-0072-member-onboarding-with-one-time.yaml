@@ -13,8 +13,11 @@ capabilities:
 - review
 effort: 3
 created: 2026-03-27T18:38:54.169234671Z
-updated: 2026-03-30T19:48:56.696993531Z
+updated: 2026-04-20T17:26:01.704453219Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-30T19:43:05.181702830Z
   text: 'Approach: joy project member add generates a one-time password (OTP) and stores its hash in the member''s otp_hash field (already exists in Member struct). Admin shares the OTP out-of-band. New member runs joy auth --otp <code> which verifies the hash, then forces immediate passphrase setup via joy auth init. OTP is deleted after successful passphrase creation. Standard invite-with-forced-password-change pattern. No new data structures needed -- otp_hash field is already in place.'
+- author: ai:claude@joy
+  date: 2026-04-20T17:26:01.704453063Z
+  text: 'Scope note: JOY-0072 is extended by the attestation epic JOY-00FA-A5. Specifically, ''joy project member add'' now also writes an attestation (JOY-00FC-1D), and ''joy auth --otp'' performs founder reverse-attestation on first redemption by a manage member (JOY-00FD-93). Plan comment to follow when implementation starts.'
