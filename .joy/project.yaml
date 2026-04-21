@@ -113,7 +113,16 @@ members:
       signed_at: 2026-04-21T15:23:49.033114589Z
       signature: a0f2f5a829ce6145f2e4b006feef874a9b274c2c01bb269da7f201a941ae5e55ecdf9b32144de2bc1b9deb5253ce0fd4a1f4e29e540096bab53a156e65c28001
   alfred.waukmann@magna.com:
-    capabilities: all
+    capabilities:
+      conceive: {}
+      plan: {}
+      design: {}
+      implement: {}
+      test: {}
+      review: {}
+      document: {}
+      create: {}
+      assign: {}
     otp_hash: 5d7b391bd722e65d8f06c3220a1a48bb9d7c80c23fc28ab1ffec032b8c504ba8:2e76817cace3d25ae2fc91c73a98b7804a40d9d937c9f92b6b467cbe81b49c91
     attestation:
       attester: horst.schwarz@joydev.com
@@ -130,6 +139,6 @@ members:
 created: 2026-03-09T23:57:36.761964460Z
 release:
   version-files:
-  - crates/joy-core/Cargo.toml
-  - crates/joy-cli/Cargo.toml
-  - crates/joy-ai/Cargo.toml
+    - crates/joy-core/Cargo.toml
+    - crates/joy-cli/Cargo.toml
+    - crates/joy-ai/Cargo.toml
