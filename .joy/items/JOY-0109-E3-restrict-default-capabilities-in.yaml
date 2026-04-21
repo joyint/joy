@@ -1,0 +1,36 @@
+id: JOY-0109-E3
+title: Restrict default capabilities in member add
+type: task
+status: review
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy
+created: 2026-04-21T16:53:00.998711422Z
+updated: 2026-04-21T17:04:45.716505133Z
+description: |-
+  Currently `joy project member add <ID>` without `--capabilities` defaults to `MemberCapabilities::All` (crates/joy-cli/src/commands/project.rs:457-458), silently granting `manage` and `delete` to every new member.
+
+  Change the default to the work + create/assign set: `conceive,plan,design,implement,test,review,document,create,assign`. `manage` and `delete` must then be granted explicitly via `--capabilities`.
+
+  Rationale: principle of least privilege. The current default is a trap -- narrowing capabilities after the fact requires a direct YAML edit (no CLI path exists), which breaks the attestation because `signed_fields.capabilities` and `member.capabilities` diverge.
+
+  Acceptance: default MemberCapabilities in the add command is `Specific({conceive, plan, design, implement, test, review, document, create, assign})`. Tests updated. Help text for `--capabilities` reflects the new default.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-21T16:53:39.204115564Z
+  text: 'Plan: change the default in project.rs:457 from MemberCapabilities::All to Specific({conceive,plan,design,implement,test,review,document,create,assign}). Update the help text to reflect the new default. Audit unit/snapshot/integration tests for the old assumption and update any that relied on add-without-flags granting manage/delete.'
+- author: ai:claude@joy
+  date: 2026-04-21T17:04:45.709573023Z
+  text: |-
+    [x] default_member_capabilities() helper added; MemberCapabilities::All no longer used for the add default (project.rs)
+    [x] --capabilities now accepts the keyword `all` in addition to the comma-separated list (needed once the default stops granting full rights)
+    [x] Help text updated to reflect the new default set and the `all` shortcut
+    [x] Integration tests updated:
+      - attestation.bats #32 and #33: explicitly pass `--capabilities all` where the member must act as a manager
+      - attestation.bats #35: widened grep context from -A8 to -A30 to span the multi-line capability block
+      - auth.bats #74: widened grep from -A3/-A20 to -A30 for the same reason
+    [x] just check green: 255 unit + 184 integration tests pass, fmt-check and clippy clean

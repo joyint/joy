@@ -524,8 +524,12 @@ YAML
     git config user.email alice@example.com
     joy auth --otp "$OTP" --passphrase "alpha bravo charlie delta echo foxtrot"
 
-    OLD_PUB=$(grep -A3 "^  alice@example.com:" .joy/project.yaml | grep "public_key:" | awk '{print $NF}')
-    OLD_ATT=$(grep -A20 "^  alice@example.com:" .joy/project.yaml | grep "signature:" | head -1)
+    # alice's capability block is now multi-line (defaults exclude
+    # manage/delete, so nine capability keys each render on their own
+    # line). Use a generous -A range so the follow-up greps still reach
+    # public_key and signature.
+    OLD_PUB=$(grep -A30 "^  alice@example.com:" .joy/project.yaml | grep "public_key:" | awk '{print $NF}')
+    OLD_ATT=$(grep -A30 "^  alice@example.com:" .joy/project.yaml | grep "signature:" | head -1)
 
     run joy auth passphrase \
         --passphrase "alpha bravo charlie delta echo foxtrot" \
@@ -534,8 +538,8 @@ YAML
     [[ "$output" == *"Passphrase changed"* ]]
 
     # public_key rotated, attestation preserved.
-    NEW_PUB=$(grep -A3 "^  alice@example.com:" .joy/project.yaml | grep "public_key:" | awk '{print $NF}')
-    NEW_ATT=$(grep -A20 "^  alice@example.com:" .joy/project.yaml | grep "signature:" | head -1)
+    NEW_PUB=$(grep -A30 "^  alice@example.com:" .joy/project.yaml | grep "public_key:" | awk '{print $NF}')
+    NEW_ATT=$(grep -A30 "^  alice@example.com:" .joy/project.yaml | grep "signature:" | head -1)
     [ "$OLD_PUB" != "$NEW_PUB" ]
     [ "$OLD_ATT" = "$NEW_ATT" ]
 

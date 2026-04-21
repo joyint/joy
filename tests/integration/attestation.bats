@@ -164,7 +164,9 @@ become_member() {
 
 @test "self-remove blocked and error lists manage members" {
     setup_founder
-    add_member_capture_otp alice@example.com
+    # Alice must have `manage` to trigger the self-remove guard at all;
+    # the member-add default excludes manage/delete, so grant explicitly.
+    add_member_capture_otp alice@example.com all
     become_member alice@example.com
     joy auth --otp "$MEMBER_OTP" --passphrase "$ALICE_PASSPHRASE"
 
@@ -182,8 +184,10 @@ become_member() {
 
 @test "manage remove inherits attested members" {
     setup_founder
-    # Alice joins as manage, reverse-attests founder.
-    add_member_capture_otp alice@example.com
+    # Alice and Bob both need `manage`: alice to add carol, bob to remove
+    # alice. Carol stays on defaults but the grep uses -A20 so it still
+    # finds her attester line past her capability block.
+    add_member_capture_otp alice@example.com all
     become_member alice@example.com
     joy auth --otp "$MEMBER_OTP" --passphrase "$ALICE_PASSPHRASE"
 
@@ -192,11 +196,11 @@ become_member() {
         | sed -n 's/^[[:space:]]*One-time password:[[:space:]]*\([A-Za-z0-9-]*\).*$/\1/p' | head -1)
     become_member carol@example.com
     joy auth --otp "$MEMBER_OTP" --passphrase "$CAROL_PASSPHRASE"
-    grep -A8 "carol@example.com:" .joy/project.yaml | grep -q "attester: alice@example.com"
+    grep -A20 "carol@example.com:" .joy/project.yaml | grep -q "attester: alice@example.com"
 
     # Founder adds bob as another manage member.
     become_member test@example.com
-    MEMBER_OTP=$(joy project member add bob@example.com --passphrase "$FOUNDER_PASSPHRASE" \
+    MEMBER_OTP=$(joy project member add bob@example.com --capabilities all --passphrase "$FOUNDER_PASSPHRASE" \
         | sed -n 's/^[[:space:]]*One-time password:[[:space:]]*\([A-Za-z0-9-]*\).*$/\1/p' | head -1)
     become_member bob@example.com
     joy auth --otp "$MEMBER_OTP" --passphrase "$BOB_PASSPHRASE"
@@ -208,7 +212,7 @@ become_member() {
 
     # Alice's entry is gone; carol's attester is now bob.
     ! grep -q "^  alice@example.com:" .joy/project.yaml
-    grep -A8 "carol@example.com:" .joy/project.yaml | grep -q "attester: bob@example.com"
+    grep -A20 "carol@example.com:" .joy/project.yaml | grep -q "attester: bob@example.com"
 }
 
 # ============================================================
@@ -274,7 +278,9 @@ with open('.joy/project.yaml', 'w') as f:
 
     # Alice now has an attestation naming test@example.com as attester;
     # founder remains unattested (trust root of the sealed state).
-    grep -A8 "alice@example.com:" .joy/project.yaml | grep -q "attester: test@example.com"
+    # -A30 reaches past alice's capability list (default excludes
+    # manage/delete, so the capability block spans several lines).
+    grep -A30 "alice@example.com:" .joy/project.yaml | grep -q "attester: test@example.com"
     # Verify silent: auth output should not mention sealing.
     [[ "$output" != *"seal"* ]]
     [[ "$output" != *"migration"* ]]

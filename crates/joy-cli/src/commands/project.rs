@@ -97,7 +97,10 @@ struct MemberAddArgs {
     /// Member ID (email or ai:tool@joy)
     id: String,
 
-    /// Capabilities (comma-separated, default: all)
+    /// Capabilities: comma-separated list, or the keyword `all`.
+    /// Default: conceive, plan, design, implement, test, review,
+    /// document, create, assign. `manage` and `delete` must be
+    /// granted explicitly (use `all` to include them).
     #[arg(short = 'c', long)]
     capabilities: Option<String>,
 
@@ -455,7 +458,8 @@ fn run_member(
                 bail!("member {} already exists", a.id);
             }
             let capabilities = match a.capabilities {
-                None => MemberCapabilities::All,
+                None => default_member_capabilities(),
+                Some(ref caps_str) if caps_str.trim() == "all" => MemberCapabilities::All,
                 Some(ref caps_str) => {
                     let mut map = std::collections::BTreeMap::new();
                     for s in caps_str.split(',') {
@@ -630,6 +634,28 @@ fn run_member(
         }
     }
     Ok(())
+}
+
+/// Default capability set for newly added members. Excludes `manage` and
+/// `delete`: those must be granted explicitly via `--capabilities`, so a
+/// forgotten flag cannot silently hand over project administration or
+/// destructive rights (principle of least privilege).
+fn default_member_capabilities() -> MemberCapabilities {
+    let mut map = std::collections::BTreeMap::new();
+    for cap in [
+        Capability::Conceive,
+        Capability::Plan,
+        Capability::Design,
+        Capability::Implement,
+        Capability::Test,
+        Capability::Review,
+        Capability::Document,
+        Capability::Create,
+        Capability::Assign,
+    ] {
+        map.insert(cap, CapabilityConfig::default());
+    }
+    MemberCapabilities::Specific(map)
 }
 
 /// Derive and verify the acting human member's identity keypair from their
