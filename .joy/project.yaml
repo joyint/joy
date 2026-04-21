@@ -29,7 +29,7 @@ members:
           document: {}
           create: {}
           assign: {}
-      signed_at: 2026-04-20T19:04:20.062641218Z
+      signed_at: 2026-04-21T15:23:49.033068268Z
       signature: f336299d2dea26c2f00e1ff83dabe2df5fd8820070af912d7a0fcb8e33dee6a610df4ac8abc5f598815e92fd5b989c41b6f5d0b8f6969c27460b0d8889dd0b0e
   ai:copilot@joy:
     capabilities:
@@ -56,7 +56,7 @@ members:
           document: {}
           create: {}
           assign: {}
-      signed_at: 2026-04-20T19:04:20.062661405Z
+      signed_at: 2026-04-21T15:23:49.033084559Z
       signature: 5d939191f0a5c4b91820d5ac2a7e52e45008d48612fcc0641bd6632850ef287e3d2522bd1e47f17b6c0f1d71502a2df924ca738428e2c6afc0ed22d2ec77d001
   ai:qwen@joy:
     capabilities:
@@ -83,7 +83,7 @@ members:
           document: {}
           create: {}
           assign: {}
-      signed_at: 2026-04-20T19:04:20.062679937Z
+      signed_at: 2026-04-21T15:23:49.033099696Z
       signature: f934734751fe5d36343f6be04ed6e175aef95b51e99fc5437f1c9e0a17034b8fdaf49a031a28b70645e203d5da8f213841830f90ea937d66cbc35f6e2acd4309
   ai:vibe@joy:
     capabilities:
@@ -110,16 +110,23 @@ members:
           document: {}
           create: {}
           assign: {}
-      signed_at: 2026-04-20T19:04:20.062698199Z
+      signed_at: 2026-04-21T15:23:49.033114589Z
       signature: a0f2f5a829ce6145f2e4b006feef874a9b274c2c01bb269da7f201a941ae5e55ecdf9b32144de2bc1b9deb5253ce0fd4a1f4e29e540096bab53a156e65c28001
+  alfred.waukmann@magna.com:
+    capabilities: all
+    otp_hash: 5d7b391bd722e65d8f06c3220a1a48bb9d7c80c23fc28ab1ffec032b8c504ba8:2e76817cace3d25ae2fc91c73a98b7804a40d9d937c9f92b6b467cbe81b49c91
+    attestation:
+      attester: horst.schwarz@joydev.com
+      signed_fields:
+        email: alfred.waukmann@magna.com
+        capabilities: all
+        otp_hash: 5d7b391bd722e65d8f06c3220a1a48bb9d7c80c23fc28ab1ffec032b8c504ba8:2e76817cace3d25ae2fc91c73a98b7804a40d9d937c9f92b6b467cbe81b49c91
+      signed_at: 2026-04-21T15:23:56.570944064Z
+      signature: 6696f5077eacafc691364b3b642cb5f681905b5a5b31091cb6405821a73c009efec698cb7d0da0406655b960e34a27c4c60b45893ee542ec4fcbfd78a714dc06
   horst.schwarz@joydev.com:
     capabilities: all
     public_key: 05ae823757c1d3d0db5f2f66c7f55642b2258f15776a6b2f029142bfa9b5f73d
     salt: 3da1d77fe4dcbd9c1ee917dc49451f500c7d46cdc6e93cb9bf61f466282985ea
-    ai_delegations:
-      ai:claude@joy:
-        delegation_key: 1cf49aa5bbcfbe2d8f5129e916981de8ecc181b9a2abef83ff1311a0d79b072b
-        created: 2026-04-15T08:01:14.889499391Z
 created: 2026-03-09T23:57:36.761964460Z
 release:
   version-files:
