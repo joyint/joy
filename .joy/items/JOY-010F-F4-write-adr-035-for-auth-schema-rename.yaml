@@ -1,0 +1,13 @@
+id: JOY-010F-F4
+title: Write ADR-035 for auth schema rename
+type: decision
+status: new
+priority: medium
+parent: JOY-010A-34
+capabilities:
+- conceive
+effort: 2
+created_by: ai:claude@joy
+created: 2026-04-24T06:23:39.092102167Z
+updated: 2026-04-24T06:23:39.092102167Z
+description: 'New ADR at docs/dev/architecture/decisions/ADR-035-rename-auth-schema-fields.md. Document: rename rationale (semantic precision primary, scanner hygiene secondary), explicit Magna SOC trigger, canonical-form freeze for attestations, decision against schema_version field, scope limitation (no new generic update command, analogous joy auth update). Cross-ref updates in ADR-023/033/034.'

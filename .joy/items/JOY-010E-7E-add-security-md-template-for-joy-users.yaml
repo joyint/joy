@@ -1,0 +1,13 @@
+id: JOY-010E-7E
+title: Add SECURITY.md template for Joy users
+type: task
+status: new
+priority: medium
+parent: JOY-010A-34
+capabilities:
+- implement
+effort: 1
+created_by: ai:claude@joy
+created: 2026-04-24T06:23:39.083839936Z
+updated: 2026-04-24T06:23:39.083839936Z
+description: 'New template at joy-core/templates/SECURITY.md. One page: trust model summary, table of public vs secret fields (verify_key, kdf_nonce, enrollment_verifier, delegation_verifier are public by design), links to Auth.md. Rendered to repo root with marker block so user SECURITY.md content is preserved.'

@@ -1,0 +1,17 @@
+id: JOY-010A-34
+title: Rename auth schema fields for scanner hygiene
+type: epic
+status: new
+priority: high
+capabilities:
+- conceive
+- plan
+effort: 4
+created_by: ai:claude@joy
+created: 2026-04-24T06:23:18.014973979Z
+updated: 2026-04-24T06:23:47.235393060Z
+description: Rename public_key, salt, otp_hash, delegation_key to semantically precise, scanner-safe names (verify_key, kdf_nonce, enrollment_verifier, delegation_verifier). Triggered by Magna SOC false positive against joyint/joy. Umbrella item for code rename, migrations module, joy auth update command, SECURITY.md template, ADR-035, doc updates, and dogfood migration. See ADR-035 for rationale.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-24T06:23:47.235392724Z
+  text: 'Plan: field names verify_key / kdf_nonce / enrollment_verifier / delegation_verifier. Attestation canonical form frozen (existing signatures stay valid). No new generic update verb; joy auth update analog to joy ai update. Schema migration invoked only from joy auth update, not implicit on save. Read path warns on legacy names in v0.12, legacy support removed in v0.13. No schema_version field. Attestation.signature unchanged. Execution order: ADR-035 first, then model rename + migration module, then joy auth update command, then SECURITY.md template, then docs, then dogfood migration.'

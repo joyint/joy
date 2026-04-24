@@ -1,0 +1,13 @@
+id: JOY-0111-7B
+title: Migrate dogfood repos to new auth schema
+type: task
+status: new
+priority: medium
+parent: JOY-010A-34
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy
+created: 2026-04-24T06:23:39.108228867Z
+updated: 2026-04-24T06:23:39.108228867Z
+description: Run joy auth update on joy, crypt, judge, forge-sync and any other dogfood project.yaml files. One commit per repo with a Joy item reference or [no-item] for infrastructure-only projects.
