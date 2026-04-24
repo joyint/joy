@@ -1,0 +1,13 @@
+id: JOY-0110-63
+title: Update Auth.md and tutorial for new field names
+type: task
+status: new
+priority: medium
+parent: JOY-010A-34
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy
+created: 2026-04-24T06:23:39.099553244Z
+updated: 2026-04-24T06:23:39.099553244Z
+description: Rename field references throughout docs/dev/vision/trustship/Auth.md and docs/user/Tutorial.md. Add note in ADR-023/033/034 that historical field names shown in those documents were renamed by ADR-035.

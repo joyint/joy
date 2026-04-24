@@ -1,0 +1,13 @@
+id: JOY-010C-A7
+title: Add project.yaml migration module
+type: task
+status: new
+priority: high
+parent: JOY-010A-34
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy
+created: 2026-04-24T06:23:39.068158270Z
+updated: 2026-04-24T06:23:39.068158270Z
+description: Add joy-core/src/migrations/mod.rs and joy-core/src/migrations/project_yaml/2026_04_rename_auth_fields.rs. Pure serde_yaml::Value transform mapping old field names to new. Invoked only from joy auth update, not from the general write path. Scheduled for removal in v0.13.
