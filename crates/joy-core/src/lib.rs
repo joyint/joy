@@ -10,6 +10,7 @@ pub mod context;
 pub mod embedded;
 pub mod error;
 pub mod event_log;
+pub mod filter;
 pub mod fortune;
 pub mod git_ops;
 pub mod guard;

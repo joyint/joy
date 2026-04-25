@@ -12,6 +12,7 @@ pub mod config;
 pub mod deauth;
 pub mod deps;
 pub mod edit;
+pub mod filter_args;
 pub mod find;
 pub mod init;
 pub mod log;
