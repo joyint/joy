@@ -1,13 +1,22 @@
 id: JOY-010F-F4
 title: Write ADR-035 for auth schema rename
 type: decision
-status: new
+status: closed
 priority: medium
 parent: JOY-010A-34
+assignees:
+- member: ai:claude@joy
 capabilities:
 - conceive
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-24T06:23:39.092102167Z
-updated: 2026-04-24T06:23:39.092102167Z
+updated: 2026-04-25T15:44:34.961842633Z
 description: 'New ADR at docs/dev/architecture/decisions/ADR-035-rename-auth-schema-fields.md. Document: rename rationale (semantic precision primary, scanner hygiene secondary), explicit Magna SOC trigger, canonical-form freeze for attestations, decision against schema_version field, scope limitation (no new generic update command, analogous joy auth update). Cross-ref updates in ADR-023/033/034.'
+comments:
+- author: ai:claude@joy
+  date: 2026-04-25T15:40:23.322285870Z
+  text: 'Plan: write ADR-035 at docs/dev/architecture/decisions/ in the umbrella repo. Sections: Status (Accepted), Context (Magna SOC false positive, list of flagged fields), Decision (rename map, AttestationSignedFields canonical-form freeze via #[serde(rename = "otp_hash")], joy auth update analog to joy ai update, no schema_version field, transitional read with deprecation warning in v0.12, removal in v0.13, SECURITY.md rendered by joy auth init, Attestation.signature unchanged), Consequences (positive/negative/neutral), Cross-references (ADR-014/023/033/034). Title under 70 chars, no em-dashes, ASCII only. Style aligned with ADR-023 and ADR-033.'
+- author: ai:claude@joy
+  date: 2026-04-25T15:42:21.915149053Z
+  text: '[x] ADR-035 written at docs/dev/architecture/decisions/ADR-035-rename-auth-schema-fields.md. Sections: Context (SOC trigger + naming gap), Decision (rename map, attestation canonical-form freeze, migrations module layout, joy auth update analog, no schema_version, SECURITY.md rendering), Properties table, Consequences, Cross-refs to ADR-014/023/033/034. Pinned attestation serde key to historical ''otp_hash'' so existing signatures stay valid.'
