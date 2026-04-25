@@ -1,0 +1,15 @@
+id: JOY-0119-32
+title: help subcommand on every command
+type: story
+status: new
+priority: medium
+parent: JOY-0113-17
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy
+created: 2026-04-25T13:42:14.827812695Z
+updated: 2026-04-25T13:42:14.827812695Z
+description: 'Make ''joy <cmd> help'' work for every command, matching the AWS/gcloud convention. Currently joy follows the git-school (only ''joy help <cmd>'' and ''joy <cmd> --help''). Observation justifies the change: users repeatedly try ''joy ls help''. Implementation: add a Help subcommand variant under each command''s clap derive, delegating to the same renderer as --help. Output must be byte-identical between ''joy ls help'', ''joy help ls'', and ''joy ls --help''. Document the convention in CONTRIBUTING.md. Tests assert all three forms produce the same output for ls, board, roadmap, show, add, edit, comment, project, config, auth, ai, release.'

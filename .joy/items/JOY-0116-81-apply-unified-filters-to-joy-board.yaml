@@ -1,0 +1,17 @@
+id: JOY-0116-81
+title: Apply unified filters to joy board
+type: story
+status: new
+priority: high
+parent: JOY-0113-17
+deps:
+- JOY-0114-F9
+capabilities:
+- plan
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy
+created: 2026-04-25T13:41:54.706719352Z
+updated: 2026-04-25T13:41:54.706719352Z
+description: Embed the FilterArgs from JOY-0114-F9 in BoardArgs via clap's command(flatten). The board gains -T, -s, -p, -m, -M, --tag, --version, --blocked, --mine. Card rendering shows assignee initials when -m is used or --columns includes assignee/members. Integration tests cover each filter on the board, including no-match and multi-filter combinations.

@@ -1,0 +1,14 @@
+id: JOY-011A-77
+title: joy ls -c silently accepts unknown column keys
+type: bug
+status: new
+priority: medium
+parent: JOY-0113-17
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy
+created: 2026-04-25T13:42:22.099015401Z
+updated: 2026-04-25T13:42:22.099015401Z
+description: 'Today, ''joy ls -c <unknown-key>'' is silently dropped: ExtraColumns::from_args matches only the literals ''milestone'', ''ms'', ''assignee'', ''parent'' and ignores everything else. Typos and outdated values produce no feedback. Fix: validate every value in --columns against the known set; reject unknown values with a clear error listing valid keys (and any aliases such as ''members'' added by JOY-0115-8B). Integration test: ''joy ls -c bogus'' exits non-zero with the expected error message.'

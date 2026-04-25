@@ -1,0 +1,14 @@
+id: JOY-0114-F9
+title: Unified FilterArgs across listing views
+type: rework
+status: new
+priority: high
+parent: JOY-0113-17
+capabilities:
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy
+created: 2026-04-25T13:40:41.434429395Z
+updated: 2026-04-25T13:40:41.434429395Z
+description: 'Refactor: extract a single FilterArgs struct (type, status, priority, milestone, members, mine, blocked, tag, version) and embed it in LsArgs and BoardArgs via clap''s command(flatten). Move filter-application logic into a CLI-free joy-core function applying a FilterSpec to a slice of items. Identity-aware resolution (--mine -> -m self) lives in a small adapter that runs in joy-cli. No user-visible behavior change in this story. Snapshot tests cover every flag at the joy-core layer; CLI integration tests verify parity between ls and roadmap.'
