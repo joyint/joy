@@ -164,11 +164,7 @@ mod tests {
     fn verify_accepts_cleared_enrollment_verifier_post_redemption() {
         let kp = make_kp();
         let pk = kp.public_key();
-        let fields = signed_fields_for(
-            "alice@example.com",
-            &MemberCapabilities::All,
-            Some("abcd"),
-        );
+        let fields = signed_fields_for("alice@example.com", &MemberCapabilities::All, Some("abcd"));
         let att = sign_attestation("horst@example.com", &kp, fields);
         // enrollment_verifier cleared after redemption - should still verify.
         let member = fresh_member(MemberCapabilities::All, None);
@@ -190,11 +186,7 @@ mod tests {
     fn verify_fails_on_enrollment_verifier_mismatch_before_redemption() {
         let kp = make_kp();
         let pk = kp.public_key();
-        let fields = signed_fields_for(
-            "alice@example.com",
-            &MemberCapabilities::All,
-            Some("AAAA"),
-        );
+        let fields = signed_fields_for("alice@example.com", &MemberCapabilities::All, Some("AAAA"));
         let att = sign_attestation("horst@example.com", &kp, fields);
         let member = fresh_member(MemberCapabilities::All, Some("BBBB".into()));
         let err = verify_attestation(&att, &pk, "alice@example.com", &member).unwrap_err();

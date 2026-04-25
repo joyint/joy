@@ -380,10 +380,7 @@ mod tests {
     }
 
     fn specific_caps(caps: &[Capability]) -> MemberCapabilities {
-        let map: BTreeMap<Capability, _> = caps
-            .iter()
-            .map(|c| (*c, Default::default()))
-            .collect();
+        let map: BTreeMap<Capability, _> = caps.iter().map(|c| (*c, Default::default())).collect();
         MemberCapabilities::Specific(map)
     }
 

@@ -1,13 +1,19 @@
 id: JOY-010E-7E
 title: Add SECURITY.md template for Joy users
 type: task
-status: new
+status: closed
 priority: medium
 parent: JOY-010A-34
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 1
 created_by: ai:claude@joy
 created: 2026-04-24T06:23:39.083839936Z
-updated: 2026-04-24T06:23:39.083839936Z
+updated: 2026-04-25T17:40:14.786899544Z
 description: 'New template at joy-core/templates/SECURITY.md. One page: trust model summary, table of public vs secret fields (verify_key, kdf_nonce, enrollment_verifier, delegation_verifier are public by design), links to Auth.md. Rendered to repo root with marker block so user SECURITY.md content is preserved.'
+comments:
+- author: ai:claude@joy
+  date: 2026-04-25T17:40:14.708325484Z
+  text: '[x] Added joy-core/templates/SECURITY.md and joy-core/src/security_md.rs (render + is_current with marker-block preserving user content). 6 unit tests covering create, idempotency, user-content preservation, in-place block update, is_current semantics. Marker is joy:security begin/end.'

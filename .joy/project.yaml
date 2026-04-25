@@ -114,11 +114,11 @@ members:
       signature: a0f2f5a829ce6145f2e4b006feef874a9b274c2c01bb269da7f201a941ae5e55ecdf9b32144de2bc1b9deb5253ce0fd4a1f4e29e540096bab53a156e65c28001
   horst.schwarz@joydev.com:
     capabilities: all
-    public_key: 05ae823757c1d3d0db5f2f66c7f55642b2258f15776a6b2f029142bfa9b5f73d
-    salt: 3da1d77fe4dcbd9c1ee917dc49451f500c7d46cdc6e93cb9bf61f466282985ea
+    verify_key: 05ae823757c1d3d0db5f2f66c7f55642b2258f15776a6b2f029142bfa9b5f73d
+    kdf_nonce: 3da1d77fe4dcbd9c1ee917dc49451f500c7d46cdc6e93cb9bf61f466282985ea
     ai_delegations:
       ai:claude@joy:
-        delegation_key: da012a61fdfdc308f1a4ecfda44cb7c9a8bd99a73ab4847f23e868235382d693
+        delegation_verifier: da012a61fdfdc308f1a4ecfda44cb7c9a8bd99a73ab4847f23e868235382d693
         created: 2026-04-21T15:59:22.223224422Z
         rotated: 2026-04-24T06:21:08.412686670Z
 created: 2026-03-09T23:57:36.761964460Z

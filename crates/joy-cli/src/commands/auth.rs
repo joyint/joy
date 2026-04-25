@@ -33,16 +33,25 @@ pub struct AuthArgs {
 
 #[derive(Subcommand)]
 enum AuthCommand {
-    /// Initialize authentication: generate salt, derive keypair, register public key
+    /// Initialize authentication: generate kdf_nonce, derive keypair, register verify_key
     Init,
     /// Show current session status
     Status,
-    /// Reset authentication (remove public key, salt, and session)
+    /// Reset authentication (remove verify_key, kdf_nonce, and session)
     Reset(ResetArgs),
     /// Manage delegation tokens for AI members
     Token(TokenArgs),
     /// Change your passphrase: re-derives your identity keypair
     Passphrase(PassphraseArgs),
+    /// Render Joy-managed auth artefacts (SECURITY.md) and normalise project.yaml schema
+    Update(UpdateArgs),
+}
+
+#[derive(Args)]
+struct UpdateArgs {
+    /// Dry-run: do not modify any files. Exits 2 if anything is stale.
+    #[arg(long)]
+    check: bool,
 }
 
 #[derive(Args)]
@@ -101,6 +110,7 @@ pub fn run(args: AuthArgs) -> Result<()> {
         Some(AuthCommand::Passphrase(a)) => {
             run_passphrase(args.passphrase.as_deref(), a.new_passphrase.as_deref())
         }
+        Some(AuthCommand::Update(a)) => run_update(a),
         None => {
             if let Some(otp) = args.otp.as_deref() {
                 run_auth_otp(otp, args.passphrase.as_deref())
@@ -109,6 +119,69 @@ pub fn run(args: AuthArgs) -> Result<()> {
             }
         }
     }
+}
+
+/// `joy auth update` - bring auth-scoped Joy-managed artefacts up to the
+/// current Joy version. Renders SECURITY.md from the shipped template
+/// (preserving any user content outside the marker block) and normalises
+/// `project.yaml` from the legacy auth schema to the current one. Per
+/// ADR-035 this is the only place schema migration is persisted.
+fn run_update(args: UpdateArgs) -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+
+    let security_path = root.join("SECURITY.md");
+    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
+
+    // Detect schema staleness without committing any change.
+    let raw = std::fs::read_to_string(&project_path)?;
+    let raw_value: serde_yaml_ng::Value = serde_yaml_ng::from_str(&raw)?;
+    let (migrated_value, schema_stale) =
+        joy_core::migrations::project_yaml::apply(raw_value.clone());
+    let security_current = joy_core::security_md::is_current(&security_path)?;
+
+    if args.check {
+        if !security_current {
+            println!("SECURITY.md: stale (would be re-rendered)");
+        } else {
+            println!("SECURITY.md: current");
+        }
+        if schema_stale {
+            println!("project.yaml: legacy auth field names (would be normalised)");
+        } else {
+            println!("project.yaml: current schema");
+        }
+        if !security_current || schema_stale {
+            std::process::exit(2);
+        }
+        return Ok(());
+    }
+
+    let mut wrote_anything = false;
+
+    let security_changed = joy_core::security_md::render(&security_path)?;
+    if security_changed {
+        println!("Rendered SECURITY.md at repository root.");
+        joy_core::git_ops::auto_git_add(&root, &["SECURITY.md"]);
+        wrote_anything = true;
+    }
+
+    if schema_stale {
+        // Re-deserialize the migrated value into a typed Project and
+        // write it back through write_yaml_preserve so any unknown
+        // top-level keys (e.g. release config) survive untouched.
+        let project: joy_core::model::project::Project = serde_yaml_ng::from_value(migrated_value)?;
+        store::write_yaml_preserve(&project_path, &project)?;
+        let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+        joy_core::git_ops::auto_git_add(&root, &[&rel]);
+        println!("Normalised project.yaml to current auth schema.");
+        wrote_anything = true;
+    }
+
+    if !wrote_anything {
+        println!("Already up to date.");
+    }
+    Ok(())
 }
 
 /// Resolve token from --token flag or JOY_TOKEN env var.
@@ -209,6 +282,13 @@ fn run_init(passphrase_flag: Option<&str>) -> Result<()> {
 
     println!("Authentication initialized for {}.", email);
     println!("Public key registered. Session active (24h).");
+
+    // Render SECURITY.md so first-time setup leaves the repo with the
+    // canonical explanation of the public auth fields in place. Idempotent.
+    let security_path = root.join("SECURITY.md");
+    if joy_core::security_md::render(&security_path)? {
+        joy_core::git_ops::auto_git_add(&root, &["SECURITY.md"]);
+    }
 
     joy_core::git_ops::auto_git_post_command(&root, "auth init", &email);
 
