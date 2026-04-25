@@ -1,9 +1,11 @@
 id: JOY-0119-32
 title: help subcommand on every command
 type: story
-status: new
+status: closed
 priority: medium
 parent: JOY-0113-17
+assignees:
+- member: ai:claude@joy
 capabilities:
 - plan
 - implement
@@ -11,5 +13,9 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy
 created: 2026-04-25T13:42:14.827812695Z
-updated: 2026-04-25T13:42:14.827812695Z
+updated: 2026-04-25T14:17:54.536862754Z
 description: 'Make ''joy <cmd> help'' work for every command, matching the AWS/gcloud convention. Currently joy follows the git-school (only ''joy help <cmd>'' and ''joy <cmd> --help''). Observation justifies the change: users repeatedly try ''joy ls help''. Implementation: add a Help subcommand variant under each command''s clap derive, delegating to the same renderer as --help. Output must be byte-identical between ''joy ls help'', ''joy help ls'', and ''joy ls --help''. Document the convention in CONTRIBUTING.md. Tests assert all three forms produce the same output for ls, board, roadmap, show, add, edit, comment, project, config, auth, ai, release.'
+comments:
+- author: ai:claude@joy
+  date: 2026-04-25T14:17:54.492501473Z
+  text: '[x] Added rewrite_trailing_help in main.rs that walks the clap subcommand tree from args[1..]; if all intermediate args are valid subcommand names AND the trailing arg is the literal ''help'', it is rewritten to ''--help''. Cli::parse_from now consumes the rewritten vector. [x] Verified manually: joy ls help, joy show help, joy board help, joy project member help all produce help output identical to --help. joy help <cmd> still works via clap''s built-in help. [x] Tests cover: leaf rewrite, nested subcommand rewrite (project member), ''help'' alone, positional ''help'' after add task (must NOT be stolen), -T/--mine pass-through. [x] Approach chosen over restructuring every Args struct into a Subcommand-bearing tree; the tree-walking rewrite leaves the clap derive surface untouched and is bisectable by the predicate ''previous arg is a recognized subcommand''. [!] Shell completion does not suggest ''help'' since it is not a clap subcommand; this is acceptable for the cost/benefit and matches the user''s observation (people type ''help'' from muscle memory, not because they tab-completed it).'
