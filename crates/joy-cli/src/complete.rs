@@ -27,32 +27,56 @@ pub fn complete_item_id(current: &OsStr) -> Vec<CompletionCandidate> {
     let items_dir = store::joy_dir(&root).join(store::ITEMS_DIR);
     let ms_dir = store::joy_dir(&root).join(store::MILESTONES_DIR);
 
-    let mut candidates = Vec::new();
-
-    // Scan items
-    if let Ok(entries) = std::fs::read_dir(&items_dir) {
-        for entry in entries.flatten() {
-            if let Some(id) = extract_id(&entry.file_name()) {
-                if id.starts_with(prefix) {
-                    candidates.push(CompletionCandidate::new(id));
+    let mut all_ids: Vec<String> = Vec::new();
+    for dir in [&items_dir, &ms_dir] {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                if let Some(id) = extract_id(&entry.file_name()) {
+                    all_ids.push(id);
                 }
             }
         }
     }
 
-    // Scan milestones
-    if let Ok(entries) = std::fs::read_dir(&ms_dir) {
-        for entry in entries.flatten() {
-            if let Some(id) = extract_id(&entry.file_name()) {
-                if id.starts_with(prefix) {
-                    candidates.push(CompletionCandidate::new(id));
-                }
-            }
-        }
-    }
+    let mut candidates: Vec<CompletionCandidate> = all_ids
+        .iter()
+        .filter(|id| matches_item_id(id, prefix))
+        .map(|id| CompletionCandidate::new(id.clone()))
+        .collect();
 
     candidates.sort_by(|a, b| a.get_value().cmp(b.get_value()));
     candidates
+}
+
+/// Match an item ID against a completion prefix using three rules in
+/// priority order:
+///
+/// 1. Direct prefix on the full ID (case-insensitive). `J` matches both
+///    `JOY-...` and `JI-...`; `JOY-00` matches `JOY-00xx-...`.
+/// 2. Direct prefix on the part after the first dash. `00` matches
+///    `JOY-0001`, `JI-0042-AB`. `MS` matches `JOY-MS-01`.
+/// 3. Case-insensitive substring inside the part after the first dash.
+///    `AA` and `aa` match `JOY-00AA-1B` via the hex chunk in either
+///    half of the segment.
+fn matches_item_id(id: &str, prefix: &str) -> bool {
+    if prefix.is_empty() {
+        return true;
+    }
+    let id_lc = id.to_ascii_lowercase();
+    let prefix_lc = prefix.to_ascii_lowercase();
+    if id_lc.starts_with(&prefix_lc) {
+        return true;
+    }
+    if let Some((_, after)) = id.split_once('-') {
+        let after_lc = after.to_ascii_lowercase();
+        if after_lc.starts_with(&prefix_lc) {
+            return true;
+        }
+        if after_lc.contains(&prefix_lc) {
+            return true;
+        }
+    }
+    false
 }
 
 /// Match a member ID against a completion prefix, handling colon as a
@@ -314,5 +338,53 @@ mod tests {
             match_member("alice@team.com", "ali"),
             Some("alice@team.com".to_string())
         );
+    }
+
+    #[test]
+    fn item_match_acronym_prefix() {
+        assert!(matches_item_id("JOY-0001", "J"));
+        assert!(matches_item_id("JI-0042", "J"));
+        assert!(matches_item_id("JOY-0001", "JOY"));
+        assert!(matches_item_id("JOY-0001", "joy"));
+        assert!(matches_item_id("JOY-0001", "JOY-00"));
+    }
+
+    #[test]
+    fn item_match_numeric_prefix() {
+        // '00' should match the four-hex section regardless of acronym.
+        assert!(matches_item_id("JOY-0001", "00"));
+        assert!(matches_item_id("JOY-0042", "00"));
+        assert!(matches_item_id("JI-0010", "00"));
+        // a deeper numeric prefix narrows
+        assert!(matches_item_id("JOY-0010", "0010"));
+        assert!(!matches_item_id("JOY-0001", "0010"));
+    }
+
+    #[test]
+    fn item_match_hex_chunk_case_insensitive() {
+        // The shard suffix or the hex portion should match either case.
+        assert!(matches_item_id("JOY-00AA-1B", "AA"));
+        assert!(matches_item_id("JOY-00AA-1B", "aa"));
+        assert!(matches_item_id("JOY-00AA-1B", "1B"));
+        assert!(matches_item_id("JOY-00AA-1B", "1b"));
+    }
+
+    #[test]
+    fn item_match_milestone_prefix() {
+        assert!(matches_item_id("JOY-MS-01", "MS"));
+        assert!(matches_item_id("JOY-MS-01", "ms"));
+        assert!(matches_item_id("JOY-MS-01", "MS-01"));
+    }
+
+    #[test]
+    fn item_match_no_match_returns_false() {
+        assert!(!matches_item_id("JOY-0001", "FOO"));
+        assert!(!matches_item_id("JI-0001", "JOX"));
+    }
+
+    #[test]
+    fn item_match_empty_prefix_matches_all() {
+        assert!(matches_item_id("JOY-0001", ""));
+        assert!(matches_item_id("JI-MS-01", ""));
     }
 }
