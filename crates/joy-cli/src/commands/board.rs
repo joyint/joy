@@ -4,6 +4,7 @@
 use anyhow::Result;
 
 use joy_core::event_log;
+use joy_core::filter;
 use joy_core::items;
 use joy_core::model::item::{Item, Status};
 use joy_core::store;
@@ -44,6 +45,11 @@ pub fn run(args: crate::BoardArgs) -> Result<()> {
         return Ok(());
     }
 
+    // Board always shows closed/deferred status columns; pass true so the
+    // FilterSpec.all default-hide rule does not strip those items.
+    let spec = args.filter.to_spec(&root, true)?;
+    let visible: Vec<&Item> = filter::apply(&all_items, &spec);
+
     let term_width = terminal_width();
     let term_height = terminal_height();
 
@@ -53,7 +59,7 @@ pub fn run(args: crate::BoardArgs) -> Result<()> {
 
     for (status, label) in STATUS_ORDER {
         let mut items_in_status: Vec<&Item> =
-            all_items.iter().filter(|i| &i.status == status).collect();
+            visible.iter().copied().filter(|i| &i.status == status).collect();
         if !items_in_status.is_empty() {
             // Default: newest first; --reverse: oldest first (original ID order)
             if !args.reverse {

@@ -68,17 +68,15 @@ pub struct FilterArgs {
     /// Show only blocked items
     #[arg(short, long)]
     pub blocked: bool,
-
-    /// Show all items (including closed and deferred)
-    #[arg(short, long)]
-    pub all: bool,
 }
 
 impl FilterArgs {
     /// Resolve string-typed flags into a [`FilterSpec`] usable by joy-core.
+    /// `include_closed` controls the FilterSpec.all field: views with
+    /// different "show closed by default" policies pass it themselves.
     /// `root` is needed only when `--mine` or `me` triggers identity
     /// resolution and AI-delegation expansion.
-    pub fn to_spec(&self, root: &Path) -> Result<FilterSpec> {
+    pub fn to_spec(&self, root: &Path, include_closed: bool) -> Result<FilterSpec> {
         let item_type: Option<ItemType> = self
             .item_type
             .as_deref()
@@ -109,7 +107,7 @@ impl FilterArgs {
             version: self.version.clone(),
             members,
             blocked: self.blocked,
-            all: self.all,
+            all: include_closed,
         })
     }
 }
