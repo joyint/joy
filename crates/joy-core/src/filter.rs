@@ -26,12 +26,24 @@ pub struct FilterSpec {
     pub milestone: Option<String>,
     pub tag: Option<String>,
     pub version: Option<String>,
-    /// Match items where at least one assignee's member ID is in this list.
-    /// Empty means no member filter.
-    pub members: Vec<String>,
+    pub members: MemberFilter,
     pub blocked: bool,
     /// Include closed and deferred items.
     pub all: bool,
+}
+
+/// Member-based item filter. The default `Any` lets every item through.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum MemberFilter {
+    /// No member filter.
+    #[default]
+    Any,
+    /// Item matches if at least one assignee's member ID is in this list.
+    Specific(Vec<String>),
+    /// Item matches only when it has no assignees.
+    Unassigned,
+    /// Item matches when it has at least one assignee, regardless of who.
+    AnyAssigned,
 }
 
 /// Apply the spec against `all_items`, returning matching items in input order.
@@ -92,13 +104,27 @@ fn matches_spec(item: &Item, spec: &FilterSpec, all_items: &[Item]) -> bool {
         }
     }
 
-    if !spec.members.is_empty()
-        && !item
-            .assignees
-            .iter()
-            .any(|a| spec.members.iter().any(|m| m == &a.member))
-    {
-        return false;
+    match &spec.members {
+        MemberFilter::Any => {}
+        MemberFilter::Specific(ids) => {
+            if !item
+                .assignees
+                .iter()
+                .any(|a| ids.iter().any(|m| m == &a.member))
+            {
+                return false;
+            }
+        }
+        MemberFilter::Unassigned => {
+            if !item.assignees.is_empty() {
+                return false;
+            }
+        }
+        MemberFilter::AnyAssigned => {
+            if item.assignees.is_empty() {
+                return false;
+            }
+        }
     }
 
     if spec.blocked && !item.is_blocked_by(all_items) {
@@ -308,37 +334,59 @@ mod tests {
         assert_eq!(ids(&apply(&items, &spec)), vec!["A"]);
     }
 
+    fn assigned(id: &str, members: &[&str]) -> Item {
+        let mut item = make(id);
+        item.assignees = members
+            .iter()
+            .map(|m| Assignee {
+                member: (*m).to_string(),
+                capabilities: vec![],
+            })
+            .collect();
+        item
+    }
+
     #[test]
-    fn member_filter_matches_any_listed() {
-        let mut a = make("A");
-        a.assignees = vec![Assignee {
-            member: "alice@example.com".to_string(),
-            capabilities: vec![],
-        }];
-        let mut b = make("B");
-        b.assignees = vec![Assignee {
-            member: "bob@example.com".to_string(),
-            capabilities: vec![],
-        }];
-        let c = make("C");
-        let items = vec![a, b, c];
+    fn member_specific_matches_any_listed() {
+        let items = vec![
+            assigned("A", &["alice@example.com"]),
+            assigned("B", &["bob@example.com"]),
+            make("C"),
+        ];
         let spec = FilterSpec {
-            members: vec!["alice@example.com".to_string(), "bob@example.com".to_string()],
+            members: MemberFilter::Specific(vec![
+                "alice@example.com".to_string(),
+                "bob@example.com".to_string(),
+            ]),
             ..Default::default()
         };
         assert_eq!(ids(&apply(&items, &spec)), vec!["A", "B"]);
     }
 
     #[test]
-    fn empty_member_list_is_no_filter() {
-        let a = make("A");
-        let mut b = make("B");
-        b.assignees = vec![Assignee {
-            member: "alice@example.com".to_string(),
-            capabilities: vec![],
-        }];
-        let items = vec![a, b];
+    fn member_any_is_default_no_filter() {
+        let items = vec![make("A"), assigned("B", &["alice@example.com"])];
         assert_eq!(ids(&apply(&items, &FilterSpec::default())), vec!["A", "B"]);
+    }
+
+    #[test]
+    fn member_unassigned_excludes_items_with_assignees() {
+        let items = vec![make("A"), assigned("B", &["alice@example.com"])];
+        let spec = FilterSpec {
+            members: MemberFilter::Unassigned,
+            ..Default::default()
+        };
+        assert_eq!(ids(&apply(&items, &spec)), vec!["A"]);
+    }
+
+    #[test]
+    fn member_any_assigned_excludes_items_without_assignees() {
+        let items = vec![make("A"), assigned("B", &["alice@example.com"])];
+        let spec = FilterSpec {
+            members: MemberFilter::AnyAssigned,
+            ..Default::default()
+        };
+        assert_eq!(ids(&apply(&items, &spec)), vec!["B"]);
     }
 
     #[test]

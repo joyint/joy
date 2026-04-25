@@ -1,9 +1,11 @@
 id: JOY-0115-8B
 title: Members filter and milestone short flag rebinding
 type: story
-status: new
+status: closed
 priority: high
 parent: JOY-0113-17
+assignees:
+- member: ai:claude@joy
 deps:
 - JOY-0114-F9
 capabilities:
@@ -13,5 +15,12 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy
 created: 2026-04-25T13:40:50.589489832Z
-updated: 2026-04-25T13:40:50.589489832Z
+updated: 2026-04-25T14:06:54.843940718Z
 description: 'Add -m, --members <SPEC> filter to the unified FilterArgs. Special tokens: ''me'' (current identity via JOY_SESSION, falling back to git config user.email), ''none'' (no assignees), ''*'' (any assignee). Match semantics: ANY (item matches if at least one assignee is in the list). Rebind the existing -m, --milestone short flag to -M, --milestone (BREAKING). --mine becomes a long-only alias resolved to ''-m self''. Delegated AI sessions: --mine and -m me also match items assigned to AI members where delegated_by equals the current human identity. The -c assignee column key gains ''members'' as an equivalent alias. No negation support (YAGNI). CHANGELOG entry calls out the breaking flag swap.'
+comments:
+- author: ai:claude@joy
+  date: 2026-04-25T14:03:40.162904104Z
+  text: 'Plan: (1) FilterSpec.members becomes a MemberFilter enum (Any/Specific(Vec<String>)/Unassigned/AnyAssigned). (2) FilterArgs surface change: --mine becomes long-only; -M is rebound to milestone (BREAKING from previous --mine binding); -m/--members <SPEC> is added with comma-separated values. (3) Special tokens parsed in FilterArgs::to_spec(root): ''me'' resolves via identity::resolve_identity + that human''s ai_delegations keys; ''none''/''unassigned'' map to MemberFilter::Unassigned; ''*'' to AnyAssigned; mixing ''none''/''*'' with other tokens errors. (4) ExtraColumns::from_args accepts ''members'' as an alias for ''assignee''. (5) Unit tests in joy-core/filter.rs for each enum variant and the assignee-aliasing. (6) Manual integration check: -m horst.schwarz@joydev.com, -m me, -m none, -m ''*'', --mine, -M JOY-MS-01. (7) Note: AI delegation expansion only kicks in when ''me'' resolves to a human; AI sessions resolve to their own AI member ID directly so -m me from an AI session matches that AI''s items only.'
+- author: ai:claude@joy
+  date: 2026-04-25T14:06:54.827063566Z
+  text: '[x] FilterSpec.members is now a MemberFilter enum (Any/Specific/Unassigned/AnyAssigned). [x] Added -m, --members <SPEC> with comma-separated values; tokens ''me'', ''none''/''unassigned'', and ''*'' parsed in FilterArgs::to_spec. [x] BREAKING: -m short flag now binds to milestone; previous -m for milestone moves to -M; --mine becomes long-only. [x] --mine resolves symmetrically: returns the human ID, the AI ID (if any), and all sibling AIs the human has delegated to. [x] -c columns accepts ''members'' as alias for ''assignee''. [x] 9 unit tests for token parsing in filter_args.rs; 4 unit tests for MemberFilter variants in joy-core/filter.rs; full suite green. [x] Manual smoke checks: -M JOY-MS-01, -m horst.schwarz@joydev.com, -m none, -m ''*'', --mine, -c members all behave as designed. [!] CHANGELOG entry not added: joy has no CHANGELOG file; release notes are derived from closed items per JOY-003D. The ''BREAKING'' marker is in the conventional-commit footer instead.'

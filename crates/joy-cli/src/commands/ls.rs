@@ -68,7 +68,7 @@ impl ExtraColumns {
     fn from_args(columns: &[String]) -> Self {
         Self {
             milestone: columns.iter().any(|s| s == "milestone" || s == "ms"),
-            assignee: columns.iter().any(|s| s == "assignee"),
+            assignee: columns.iter().any(|s| s == "assignee" || s == "members"),
             parent: columns.iter().any(|s| s == "parent"),
         }
     }
@@ -85,7 +85,7 @@ pub fn run(args: LsArgs) -> Result<()> {
         return Ok(());
     }
 
-    let spec: FilterSpec = args.filter.to_spec()?;
+    let spec: FilterSpec = args.filter.to_spec(&root)?;
     let mut filtered: Vec<&Item> = filter::apply(&all_items, &spec);
 
     if filtered.is_empty() {
