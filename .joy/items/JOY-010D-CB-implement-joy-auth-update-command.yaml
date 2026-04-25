@@ -1,13 +1,19 @@
 id: JOY-010D-CB
 title: Implement joy auth update command
 type: task
-status: new
+status: closed
 priority: high
 parent: JOY-010A-34
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 3
 created_by: ai:claude@joy
 created: 2026-04-24T06:23:39.076343640Z
-updated: 2026-04-24T06:23:39.076343640Z
+updated: 2026-04-25T17:40:14.746499288Z
 description: 'New CLI command joy auth update (with --check), analog to joy ai update. Renders SECURITY.md from template (marker-block idempotent), normalizes project.yaml auth schema via migrations module. joy auth init calls joy auth update at the end to guarantee fresh artifacts on first setup. Read path: accept legacy field names with a deprecation warning pointing at joy auth update.'
+comments:
+- author: ai:claude@joy
+  date: 2026-04-25T17:40:14.698432214Z
+  text: '[x] Implemented joy auth update with --check flag. Renders SECURITY.md (idempotent, marker-block) and normalises project.yaml schema via the migrations module. joy auth init calls render(SECURITY.md) at the end so first-time setup leaves the repo current. --check exits 2 when stale.'

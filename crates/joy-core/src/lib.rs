@@ -21,6 +21,7 @@ pub mod migrations;
 pub mod milestones;
 pub mod model;
 pub mod releases;
+pub mod security_md;
 pub mod store;
 pub mod templates;
 pub mod vcs;
