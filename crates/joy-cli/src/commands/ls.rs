@@ -4,55 +4,19 @@
 use anyhow::Result;
 use clap::Args;
 
+use joy_core::filter::{self, FilterSpec};
 use joy_core::items;
 use joy_core::milestones;
-use joy_core::model::item::{Item, ItemType, Priority, Status};
+use joy_core::model::item::{Item, Status};
 use joy_core::store;
-use joy_core::vcs::Vcs;
 
 use crate::color;
+use crate::commands::filter_args::FilterArgs;
 
 #[derive(Args)]
 pub struct LsArgs {
-    /// Filter by ancestor item ID (shows the item and all descendants)
-    #[arg(long)]
-    parent: Option<String>,
-
-    /// Filter by type: epic, story, task, bug, rework, decision, idea
-    #[arg(short = 'T', long = "type")]
-    item_type: Option<String>,
-
-    /// Filter by status: new, open, in-progress, review, closed, deferred
-    #[arg(short, long)]
-    status: Option<String>,
-
-    /// Filter by priority: low, medium, high, critical, extreme
-    #[arg(short, long)]
-    priority: Option<String>,
-
-    /// Show only items assigned to me (git config user.email)
-    #[arg(short = 'M', long)]
-    mine: bool,
-
-    /// Filter by milestone ID (includes items inheriting from parent)
-    #[arg(short, long)]
-    milestone: Option<String>,
-
-    /// Filter by tag
-    #[arg(long)]
-    tag: Option<String>,
-
-    /// Filter by version tag
-    #[arg(short = 'v', long)]
-    version: Option<String>,
-
-    /// Show only blocked items
-    #[arg(short, long)]
-    blocked: bool,
-
-    /// Show all items (including closed and deferred)
-    #[arg(short, long)]
-    all: bool,
+    #[command(flatten)]
+    filter: FilterArgs,
 
     /// Show hierarchical tree view
     #[arg(long)]
@@ -78,16 +42,10 @@ pub struct LsArgs {
 impl LsArgs {
     pub fn roadmap(all: bool) -> Self {
         Self {
-            parent: None,
-            item_type: None,
-            status: None,
-            priority: None,
-            mine: false,
-            milestone: None,
-            tag: None,
-            version: None,
-            blocked: false,
-            all,
+            filter: FilterArgs {
+                all,
+                ..Default::default()
+            },
             tree: true,
             columns: Vec::new(),
             group: "milestone".to_string(),
@@ -97,47 +55,7 @@ impl LsArgs {
     }
 }
 
-/// Resolve the effective milestone for an item: its own, or inherited from ancestors.
-pub fn effective_milestone<'a>(item: &'a Item, all_items: &'a [Item]) -> Option<&'a str> {
-    if let Some(ref ms) = item.milestone {
-        return Some(ms.as_str());
-    }
-    let mut visited = std::collections::HashSet::new();
-    let mut current_parent = item.parent.as_deref();
-    while let Some(pid) = current_parent {
-        if !visited.insert(pid) {
-            break; // cycle detected
-        }
-        if let Some(parent) = all_items.iter().find(|i| i.id == pid) {
-            if let Some(ref ms) = parent.milestone {
-                return Some(ms.as_str());
-            }
-            current_parent = parent.parent.as_deref();
-        } else {
-            break;
-        }
-    }
-    None
-}
-
-/// Check if an item is a descendant of the given ancestor.
-fn is_descendant(item: &Item, ancestor_id: &str, all_items: &[Item]) -> bool {
-    let mut visited = std::collections::HashSet::new();
-    let mut current = item.parent.as_deref();
-    while let Some(pid) = current {
-        if !visited.insert(pid) {
-            break; // cycle detected
-        }
-        if pid == ancestor_id {
-            return true;
-        }
-        current = all_items
-            .iter()
-            .find(|i| i.id == pid)
-            .and_then(|i| i.parent.as_deref());
-    }
-    false
-}
+pub use joy_core::filter::effective_milestone;
 
 /// Which extra columns to display in table mode.
 struct ExtraColumns {
@@ -167,100 +85,8 @@ pub fn run(args: LsArgs) -> Result<()> {
         return Ok(());
     }
 
-    let my_email: Option<String> = if args.mine {
-        Some(
-            joy_core::vcs::default_vcs()
-                .user_email()
-                .map_err(|e| anyhow::anyhow!("{e}"))?,
-        )
-    } else {
-        None
-    };
-
-    let type_filter: Option<ItemType> = args
-        .item_type
-        .as_deref()
-        .map(|t| t.parse().map_err(|e: String| anyhow::anyhow!("{}", e)))
-        .transpose()?;
-
-    let status_filter: Option<Status> = args
-        .status
-        .as_deref()
-        .map(|s| s.parse().map_err(|e: String| anyhow::anyhow!("{}", e)))
-        .transpose()?;
-
-    let priority_filter: Option<Priority> = args
-        .priority
-        .as_deref()
-        .map(|p| p.parse().map_err(|e: String| anyhow::anyhow!("{}", e)))
-        .transpose()?;
-
-    let mut filtered: Vec<&Item> = all_items
-        .iter()
-        .filter(|item| {
-            // By default, exclude closed and deferred
-            if !args.all
-                && args.status.is_none()
-                && matches!(item.status, Status::Closed | Status::Deferred)
-            {
-                return false;
-            }
-
-            if let Some(ref parent_id) = args.parent {
-                if item.id != *parent_id && !is_descendant(item, parent_id, &all_items) {
-                    return false;
-                }
-            }
-
-            if let Some(ref t) = type_filter {
-                if &item.item_type != t {
-                    return false;
-                }
-            }
-
-            if let Some(ref s) = status_filter {
-                if &item.status != s {
-                    return false;
-                }
-            }
-
-            if let Some(ref p) = priority_filter {
-                if &item.priority != p {
-                    return false;
-                }
-            }
-
-            if let Some(ref ms) = args.milestone {
-                if effective_milestone(item, &all_items) != Some(ms.as_str()) {
-                    return false;
-                }
-            }
-
-            if let Some(ref tag) = args.tag {
-                if !item.tags.iter().any(|t| t == tag) {
-                    return false;
-                }
-            }
-
-            if let Some(ref version) = args.version {
-                if item.version.as_deref() != Some(version.as_str()) {
-                    return false;
-                }
-            }
-
-            if let Some(ref email) = my_email {
-                if !item.assignees.iter().any(|a| a.member == *email) {
-                    return false;
-                }
-            }
-
-            if args.blocked && !item.is_blocked_by(&all_items) {
-                return false;
-            }
-
-            true
-        })
-        .collect();
+    let spec: FilterSpec = args.filter.to_spec()?;
+    let mut filtered: Vec<&Item> = filter::apply(&all_items, &spec);
 
     if filtered.is_empty() {
         println!("No matching items.");

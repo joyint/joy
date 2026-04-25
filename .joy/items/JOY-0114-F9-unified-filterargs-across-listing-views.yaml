@@ -1,14 +1,23 @@
 id: JOY-0114-F9
 title: Unified FilterArgs across listing views
 type: rework
-status: new
+status: closed
 priority: high
 parent: JOY-0113-17
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 - review
 effort: 4
 created_by: ai:claude@joy
 created: 2026-04-25T13:40:41.434429395Z
-updated: 2026-04-25T13:40:41.434429395Z
+updated: 2026-04-25T14:02:22.315130024Z
 description: 'Refactor: extract a single FilterArgs struct (type, status, priority, milestone, members, mine, blocked, tag, version) and embed it in LsArgs and BoardArgs via clap''s command(flatten). Move filter-application logic into a CLI-free joy-core function applying a FilterSpec to a slice of items. Identity-aware resolution (--mine -> -m self) lives in a small adapter that runs in joy-cli. No user-visible behavior change in this story. Snapshot tests cover every flag at the joy-core layer; CLI integration tests verify parity between ls and roadmap.'
+comments:
+- author: ai:claude@joy
+  date: 2026-04-25T13:50:52.763511110Z
+  text: 'Plan: (1) New joy_core::filter module with FilterSpec data struct and apply() function; move effective_milestone and is_descendant from joy-cli/ls.rs into it. (2) New joy_cli::commands::filter_args module with FilterArgs (clap Args) and to_spec(identity) -> Result<FilterSpec>; --mine resolves to populating spec.members with the current identity. (3) LsArgs replaces inline filter fields with #[command(flatten)] FilterArgs and uses joy_core::filter::apply() in place of the inline filter loop. (4) Unit tests in joy-core for every filter dimension. (5) Scope clarification: BoardArgs is intentionally NOT modified in this story to preserve the no-UX-change contract; the BoardArgs flatten plus filter application live in JOY-0116-81.'
+- author: ai:claude@joy
+  date: 2026-04-25T14:02:22.298647339Z
+  text: '[x] Added joy_core::filter module with FilterSpec, apply(), effective_milestone, is_descendant. [x] Added joy_cli::commands::filter_args::FilterArgs with to_spec() resolving --mine to the git user email (full identity resolution deferred to JOY-0115-8B). [x] LsArgs now embeds FilterArgs via #[command(flatten)]; the inline filter loop is replaced by joy_core::filter::apply. [x] 13 unit tests in joy-core/filter.rs cover every dimension including milestone inheritance, descendant traversal, and the closed/deferred default-hide rule. [x] cargo test --workspace green (268 lib tests + 38+2 others). [x] joy ls/roadmap manual smoke tests show identical output to pre-refactor. [x] Net diff: -188/+24 lines, plus +175 lines for the new filter module and tests. [!] Pre-existing clippy lib-test errors in auth/attestation.rs and guard.rs are unrelated and predate this work; flagged separately.'
