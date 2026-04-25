@@ -150,7 +150,11 @@ joy ls --type story              # Only stories
 joy ls --priority critical       # Only critical items
 joy ls --parent CB-0001          # Children of an epic
 joy ls --status open             # Only open items
-joy ls --mine                    # Assigned to you
+joy ls --members alice@team.com  # Assigned to a specific member
+joy ls --members me              # Assigned to you (or --mine)
+joy ls --members none            # No assignees
+joy ls --members '*'             # Has at least one assignee
+joy ls --milestone CB-MS-01      # In a specific milestone
 joy ls --blocked                 # Items with unfinished dependencies
 joy ls --tag ui                  # Items tagged with "ui"
 ```
