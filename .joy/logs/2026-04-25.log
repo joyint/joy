@@ -1,0 +1,4 @@
+2026-04-25T08:05:44.405Z project guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-04-25T08:07:27.435Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-25T08:09:44.039Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-25T08:09:44.086Z JOY-0112-B2 item.created "Merkle-DAG event log for integrity and mergeability" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
