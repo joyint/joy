@@ -128,6 +128,34 @@ struct RoadmapArgs {
     short: bool,
 }
 
+/// Rewrite `joy <cmd...> help` to `joy <cmd...> --help` so users coming
+/// from AWS/gcloud-style CLIs (where `help` is a subcommand at every
+/// level) get the expected behaviour. The rewrite is conservative: it
+/// only fires when the trailing `help` follows a chain of valid clap
+/// subcommands. This way positional arguments that happen to be the
+/// literal string `help` (e.g. `joy add task help`) are not stolen.
+fn rewrite_trailing_help(mut args: Vec<String>, root: &clap::Command) -> Vec<String> {
+    if args.last().map(|s| s.as_str()) != Some("help") {
+        return args;
+    }
+    let mut current = root;
+    let mut idx = 1;
+    let last = args.len() - 1;
+    while idx < last {
+        match current.find_subcommand(&args[idx]) {
+            Some(sub) => {
+                current = sub;
+                idx += 1;
+            }
+            None => return args,
+        }
+    }
+    if idx == last {
+        args[last] = "--help".to_string();
+    }
+    args
+}
+
 #[derive(clap::Args)]
 struct ShortcutArgs {
     /// Item ID (e.g. IT-0001)
@@ -138,7 +166,8 @@ struct ShortcutArgs {
 fn main() -> anyhow::Result<()> {
     clap_complete::CompleteEnv::with_factory(Cli::command).complete();
 
-    let cli = Cli::parse();
+    let raw: Vec<String> = std::env::args().collect();
+    let cli = Cli::parse_from(rewrite_trailing_help(raw, &Cli::command()));
 
     // Config subcommand handles its own validation, run it before load_config
     // to avoid duplicate warnings for invalid config state.
@@ -222,4 +251,58 @@ fn main() -> anyhow::Result<()> {
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rewrite(args: &[&str]) -> Vec<String> {
+        let owned: Vec<String> = args.iter().map(|s| (*s).to_string()).collect();
+        rewrite_trailing_help(owned, &Cli::command())
+    }
+
+    #[test]
+    fn help_after_leaf_command_becomes_double_dash_help() {
+        assert_eq!(rewrite(&["joy", "ls", "help"]), &["joy", "ls", "--help"]);
+        assert_eq!(rewrite(&["joy", "show", "help"]), &["joy", "show", "--help"]);
+        assert_eq!(rewrite(&["joy", "board", "help"]), &["joy", "board", "--help"]);
+    }
+
+    #[test]
+    fn help_after_nested_subcommand_becomes_double_dash_help() {
+        assert_eq!(
+            rewrite(&["joy", "project", "member", "help"]),
+            &["joy", "project", "member", "--help"]
+        );
+    }
+
+    #[test]
+    fn help_alone_is_left_for_clap_to_handle() {
+        // 'joy help' has no preceding subcommand; clap routes this to its
+        // built-in top-level help. Rewrite would change it to --help which
+        // is equivalent, so allowing the rewrite is harmless.
+        assert_eq!(rewrite(&["joy", "help"]), &["joy", "--help"]);
+    }
+
+    #[test]
+    fn help_as_value_after_positional_is_not_rewritten() {
+        // `joy add task help` means "create a task titled help" -- the
+        // rewriter must not steal the title. After 'add' clap expects
+        // positionals (type, title) not subcommands, so the walker
+        // stops at 'task' and refuses to rewrite.
+        assert_eq!(
+            rewrite(&["joy", "add", "task", "help"]),
+            &["joy", "add", "task", "help"]
+        );
+    }
+
+    #[test]
+    fn long_dashed_options_pass_through_untouched() {
+        assert_eq!(
+            rewrite(&["joy", "ls", "--mine"]),
+            &["joy", "ls", "--mine"]
+        );
+        assert_eq!(rewrite(&["joy", "ls", "-T", "bug"]), &["joy", "ls", "-T", "bug"]);
+    }
 }
