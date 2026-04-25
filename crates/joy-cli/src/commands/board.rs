@@ -58,8 +58,11 @@ pub fn run(args: crate::BoardArgs) -> Result<()> {
     let mut total_blocked = 0usize;
 
     for (status, label) in STATUS_ORDER {
-        let mut items_in_status: Vec<&Item> =
-            visible.iter().copied().filter(|i| &i.status == status).collect();
+        let mut items_in_status: Vec<&Item> = visible
+            .iter()
+            .copied()
+            .filter(|i| &i.status == status)
+            .collect();
         if !items_in_status.is_empty() {
             // Default: newest first; --reverse: oldest first (original ID order)
             if !args.reverse {

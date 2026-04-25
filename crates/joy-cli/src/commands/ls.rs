@@ -101,7 +101,9 @@ pub fn run(args: LsArgs) -> Result<()> {
         return Ok(());
     }
 
-    let spec: FilterSpec = args.filter.to_spec(&root, args.all || args.filter.status.is_some())?;
+    let spec: FilterSpec = args
+        .filter
+        .to_spec(&root, args.all || args.filter.status.is_some())?;
     let mut filtered: Vec<&Item> = filter::apply(&all_items, &spec);
 
     if filtered.is_empty() {
