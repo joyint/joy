@@ -18,6 +18,10 @@ pub struct LsArgs {
     #[command(flatten)]
     filter: FilterArgs,
 
+    /// Show all items (including closed and deferred)
+    #[arg(short, long)]
+    all: bool,
+
     /// Show hierarchical tree view
     #[arg(long)]
     tree: bool,
@@ -42,10 +46,8 @@ pub struct LsArgs {
 impl LsArgs {
     pub fn roadmap(all: bool) -> Self {
         Self {
-            filter: FilterArgs {
-                all,
-                ..Default::default()
-            },
+            filter: FilterArgs::default(),
+            all,
             tree: true,
             columns: Vec::new(),
             group: "milestone".to_string(),
@@ -85,7 +87,7 @@ pub fn run(args: LsArgs) -> Result<()> {
         return Ok(());
     }
 
-    let spec: FilterSpec = args.filter.to_spec(&root)?;
+    let spec: FilterSpec = args.filter.to_spec(&root, args.all || args.filter.status.is_some())?;
     let mut filtered: Vec<&Item> = filter::apply(&all_items, &spec);
 
     if filtered.is_empty() {

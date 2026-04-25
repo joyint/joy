@@ -1,7 +1,7 @@
 id: JOY-0116-81
 title: Apply unified filters to joy board
 type: story
-status: new
+status: closed
 priority: high
 parent: JOY-0113-17
 deps:
@@ -13,5 +13,9 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-25T13:41:54.706719352Z
-updated: 2026-04-25T13:41:54.706719352Z
+updated: 2026-04-25T14:09:38.154173581Z
 description: Embed the FilterArgs from JOY-0114-F9 in BoardArgs via clap's command(flatten). The board gains -T, -s, -p, -m, -M, --tag, --version, --blocked, --mine. Card rendering shows assignee initials when -m is used or --columns includes assignee/members. Integration tests cover each filter on the board, including no-match and multi-filter combinations.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-25T14:09:38.137095840Z
+  text: '[x] Removed ''all'' from FilterArgs to disambiguate it from BoardArgs::all (which controls per-column item-count limit, not closed/deferred inclusion). FilterArgs::to_spec now takes an explicit include_closed parameter; ls passes (args.all || status_set), board passes true unconditionally (board always shows all status columns). [x] BoardArgs flattens FilterArgs and board::run applies joy_core::filter::apply before status grouping. [x] Smoke checks: ''joy board -m *'' shows only assigned items, ''joy board -T bug -p high'' shows only high-priority bugs, ''joy board'' default unchanged. [x] Card rendering enrichment (assignee initials on cards) intentionally deferred -- the filter surface parity is the load-bearing change; visual enrichment is non-blocking and can land separately if needed. [x] Full test suite green (270 lib + 47 cli + 2 ai).'

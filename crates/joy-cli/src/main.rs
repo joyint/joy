@@ -101,6 +101,9 @@ enum Commands {
 
 #[derive(clap::Args)]
 pub(crate) struct BoardArgs {
+    #[command(flatten)]
+    pub filter: commands::filter_args::FilterArgs,
+
     /// Compact output: emoji-only or abbreviations
     #[arg(short = 'S', long)]
     pub short: bool,
@@ -204,6 +207,7 @@ fn main() -> anyhow::Result<()> {
         Some(Commands::Auth(args)) => commands::auth::run(args),
         Some(Commands::Deauth(args)) => commands::deauth::run(args),
         None => commands::board::run(BoardArgs {
+            filter: commands::filter_args::FilterArgs::default(),
             short: false,
             all: cli.all,
             reverse: cli.reverse,
