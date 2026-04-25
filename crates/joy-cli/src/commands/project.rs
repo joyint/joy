@@ -89,6 +89,7 @@ enum MemberCommand {
 #[derive(clap::Args)]
 struct MemberShowArgs {
     /// Member ID (email or ai:tool@joy)
+    #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_member))]
     id: String,
 }
 
@@ -114,6 +115,7 @@ struct MemberAddArgs {
 #[derive(clap::Args)]
 struct MemberRmArgs {
     /// Member ID (email or ai:tool@joy)
+    #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_member))]
     id: String,
 
     /// Passphrase of the acting manage member (non-interactive, for

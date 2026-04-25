@@ -1,14 +1,20 @@
 id: JOY-0117-82
 title: Member ID completion across all commands
 type: rework
-status: new
+status: closed
 priority: medium
 parent: JOY-0113-17
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 - review
 effort: 3
 created_by: ai:claude@joy
 created: 2026-04-25T13:42:01.003885257Z
-updated: 2026-04-25T13:42:01.003885257Z
+updated: 2026-04-25T14:13:02.447003328Z
 description: 'Fix the existing shell completer for member IDs: it currently stops at the colon in IDs like ai:claude@joy because of word-boundary handling. Audit the completer registration introduced in JOY-00EB-6C and apply it consistently to every flag and positional argument that accepts a member ID across joy assign, joy auth, joy project member, and the new -m/--members filter. Tests verify completion through the colon for both human (foo@bar.com) and AI (ai:tool@joy) IDs.'
+comments:
+- author: ai:claude@joy
+  date: 2026-04-25T14:13:02.427620118Z
+  text: '[x] Added match_member shell-aware matcher in complete.rs that handles bash COMP_WORDBREAKS containing '':''. Three cases verified: full prefix (ai or ai:cl returns the full ID), post-colon prefix (cl returns the suffix claude@joy because bash stripped the leading ai:), no match returns None. [x] Existing filter_ai_members function refactored into member_candidates with a predicate parameter; complete_ai_member retained for AI-only contexts (joy auth token add, joy ai reset); complete_member added for human-or-AI contexts. [x] Wired complete_member into joy assign (member arg), joy ls/board (--members flag), joy project member show, joy project member rm. [x] 8 unit tests in complete.rs cover the matcher and the candidate filtering for both AI-only and unrestricted variants. [x] Full suite green. [!] joy ai member-add args do not get the completer because they accept new IDs not yet in the project; only commands that pick existing members were wired.'
