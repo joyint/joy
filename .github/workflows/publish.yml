@@ -14,6 +14,11 @@ on:
       # (published crate versions are permanent, only yankable).
       - 'v[0-9]+.[0-9]+.[0-9]+'
 
+# Read-only access is enough: publishing is to crates.io via
+# CARGO_REGISTRY_TOKEN, no GitHub release or branch update needed.
+permissions:
+  contents: read
+
 jobs:
   publish:
     runs-on: ubuntu-latest
