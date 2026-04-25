@@ -36,3 +36,4 @@
 2026-04-25T14:20:11.472Z JOY-011A-77 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-25T14:20:11.547Z JOY-0113-17 item.status_changed "new -> closed (all children closed)" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-25T14:20:17.725Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-25T14:20:37.599Z JOY-011B-63 item.created "Branch dirty-marker (*) for items with pending state in feature branches" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
