@@ -10,6 +10,11 @@ env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-Dwarnings"
 
+# Read-only access is enough: this workflow does not push, comment,
+# or create releases. Tightens the default GITHUB_TOKEN scope.
+permissions:
+  contents: read
+
 jobs:
   fmt:
     name: Format
