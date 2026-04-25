@@ -55,25 +55,66 @@ pub fn complete_item_id(current: &OsStr) -> Vec<CompletionCandidate> {
     candidates
 }
 
-/// Filter member ids down to AI members whose id starts with `prefix`,
-/// returned sorted for deterministic completion output.
-fn filter_ai_members<'a, I: Iterator<Item = &'a String>>(members: I, prefix: &str) -> Vec<String> {
+/// Match a member ID against a completion prefix, handling colon as a
+/// possible word boundary that the shell may have stripped (bash's
+/// COMP_WORDBREAKS includes `:`). Returns the candidate string the
+/// completer should emit, or None if there is no match.
+///
+/// Cases (id = `ai:claude@joy`):
+/// * prefix `ai`         -> `ai:claude@joy` (full)
+/// * prefix `ai:cl`      -> `ai:claude@joy` (full, prefix carries the colon)
+/// * prefix `cl`         -> `claude@joy`    (bash stripped `ai:`)
+/// * prefix `xyz`        -> None
+fn match_member(id: &str, prefix: &str) -> Option<String> {
+    if id.starts_with(prefix) {
+        return Some(id.to_string());
+    }
+    if !prefix.contains(':') {
+        if let Some((_head, tail)) = id.rsplit_once(':') {
+            if tail.starts_with(prefix) {
+                return Some(tail.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Filter members against the prefix, returning the appropriately
+/// shell-aware candidate strings in deterministic order. The optional
+/// `predicate` further restricts which member IDs are considered (e.g.
+/// AI-only).
+fn member_candidates<'a, I, P>(members: I, prefix: &str, predicate: P) -> Vec<String>
+where
+    I: Iterator<Item = &'a String>,
+    P: Fn(&str) -> bool,
+{
     let mut out: Vec<String> = members
-        .filter(|id| joy_core::model::project::is_ai_member(id))
-        .filter(|id| id.starts_with(prefix))
-        .cloned()
+        .filter(|id| predicate(id.as_str()))
+        .filter_map(|id| match_member(id.as_str(), prefix))
         .collect();
     out.sort();
+    out.dedup();
     out
 }
 
-/// Complete AI member ids from the project's member list.
-///
-/// Scans `project.yaml` for entries whose id starts with `ai:` and filters
-/// by the current prefix. Errors (missing project, unreadable yaml) yield
-/// no candidates rather than panicking - completion must always be
-/// non-fatal for the interactive shell.
+/// Complete AI member IDs only, used for AI-specific commands like
+/// `joy auth token add` and `joy ai reset`.
 pub fn complete_ai_member(current: &OsStr) -> Vec<CompletionCandidate> {
+    complete_with_predicate(current, |id| {
+        joy_core::model::project::is_ai_member(id)
+    })
+}
+
+/// Complete any project member ID (human or AI). Used everywhere a
+/// command accepts an existing member without restriction.
+pub fn complete_member(current: &OsStr) -> Vec<CompletionCandidate> {
+    complete_with_predicate(current, |_| true)
+}
+
+fn complete_with_predicate(
+    current: &OsStr,
+    predicate: impl Fn(&str) -> bool,
+) -> Vec<CompletionCandidate> {
     let Some(prefix) = current.to_str() else {
         return Vec::new();
     };
@@ -88,7 +129,7 @@ pub fn complete_ai_member(current: &OsStr) -> Vec<CompletionCandidate> {
         Ok(p) => p,
         Err(_) => return Vec::new(),
     };
-    filter_ai_members(project.members.keys(), prefix)
+    member_candidates(project.members.keys(), prefix, predicate)
         .into_iter()
         .map(CompletionCandidate::new)
         .collect()
@@ -185,44 +226,93 @@ mod tests {
         assert_eq!(extract_id(&f), None);
     }
 
+    fn ai_only(id: &str) -> bool {
+        joy_core::model::project::is_ai_member(id)
+    }
+
     #[test]
-    fn filter_ai_members_only_returns_ai_prefix() {
+    fn member_candidates_ai_only() {
         let members: Vec<String> = vec![
             "horst@joydev.com".into(),
             "ai:claude@joy".into(),
             "ai:qwen@joy".into(),
             "alice@team.com".into(),
         ];
-        let out = filter_ai_members(members.iter(), "");
+        let out = member_candidates(members.iter(), "", ai_only);
         assert_eq!(out, vec!["ai:claude@joy", "ai:qwen@joy"]);
     }
 
     #[test]
-    fn filter_ai_members_respects_prefix() {
+    fn member_candidates_includes_humans_when_unfiltered() {
+        let members: Vec<String> =
+            vec!["alice@team.com".into(), "ai:claude@joy".into(), "bob@team.com".into()];
+        let out = member_candidates(members.iter(), "", |_| true);
+        assert_eq!(
+            out,
+            vec!["ai:claude@joy", "alice@team.com", "bob@team.com"]
+        );
+    }
+
+    #[test]
+    fn member_candidates_respects_prefix() {
         let members: Vec<String> = vec![
             "ai:claude@joy".into(),
             "ai:qwen@joy".into(),
             "ai:copilot@joy".into(),
         ];
-        let out = filter_ai_members(members.iter(), "ai:c");
+        let out = member_candidates(members.iter(), "ai:c", ai_only);
         assert_eq!(out, vec!["ai:claude@joy", "ai:copilot@joy"]);
     }
 
     #[test]
-    fn filter_ai_members_sorted_output() {
-        let members: Vec<String> = vec![
-            "ai:zzz@joy".into(),
-            "ai:aaa@joy".into(),
-            "ai:mmm@joy".into(),
-        ];
-        let out = filter_ai_members(members.iter(), "");
-        assert_eq!(out, vec!["ai:aaa@joy", "ai:mmm@joy", "ai:zzz@joy"]);
+    fn member_candidates_empty_on_no_match() {
+        let members: Vec<String> = vec!["ai:claude@joy".into()];
+        let out = member_candidates(members.iter(), "ai:x", ai_only);
+        assert!(out.is_empty());
     }
 
     #[test]
-    fn filter_ai_members_empty_on_no_match() {
-        let members: Vec<String> = vec!["ai:claude@joy".into()];
-        let out = filter_ai_members(members.iter(), "ai:x");
-        assert!(out.is_empty());
+    fn match_member_full_prefix() {
+        assert_eq!(
+            match_member("ai:claude@joy", "ai"),
+            Some("ai:claude@joy".to_string())
+        );
+        assert_eq!(
+            match_member("ai:claude@joy", "ai:cl"),
+            Some("ai:claude@joy".to_string())
+        );
+        assert_eq!(
+            match_member("ai:claude@joy", "ai:claude@joy"),
+            Some("ai:claude@joy".to_string())
+        );
+    }
+
+    #[test]
+    fn match_member_post_colon_prefix() {
+        // bash's COMP_WORDBREAKS strips up to the last colon: the prefix
+        // arrives without the `ai:` part. The candidate should be the
+        // suffix only so the shell appends correctly.
+        assert_eq!(
+            match_member("ai:claude@joy", "cl"),
+            Some("claude@joy".to_string())
+        );
+        assert_eq!(
+            match_member("ai:claude@joy", "claude"),
+            Some("claude@joy".to_string())
+        );
+    }
+
+    #[test]
+    fn match_member_no_match() {
+        assert_eq!(match_member("ai:claude@joy", "xyz"), None);
+        assert_eq!(match_member("alice@team.com", "bob"), None);
+    }
+
+    #[test]
+    fn match_member_human_id() {
+        assert_eq!(
+            match_member("alice@team.com", "ali"),
+            Some("alice@team.com".to_string())
+        );
     }
 }

@@ -46,7 +46,12 @@ pub struct FilterArgs {
     /// Filter by member (comma-separated). Tokens: 'me' = current user,
     /// 'none'/'unassigned' = items without assignees, '*' = items with
     /// any assignee.
-    #[arg(short = 'm', long, value_delimiter = ',')]
+    #[arg(
+        short = 'm',
+        long,
+        value_delimiter = ',',
+        add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_member),
+    )]
     pub members: Vec<String>,
 
     /// Show only items assigned to me. Equivalent to `--members me`.

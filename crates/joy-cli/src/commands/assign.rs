@@ -19,6 +19,7 @@ pub struct AssignArgs {
     id: String,
 
     /// Member ID (email or ai:tool@joy). Omit to use git config user.email.
+    #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_member))]
     member: Option<String>,
 
     /// Capabilities to assign (comma-separated, e.g. implement,review)
