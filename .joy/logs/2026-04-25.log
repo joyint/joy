@@ -88,3 +88,8 @@
 2026-04-25T17:40:14.790Z JOY-010E-7E item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-25T17:40:14.810Z JOY-0111-7B item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-25T17:40:14.829Z JOY-0111-7B item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-25T17:46:09.107Z JOY-0110-63 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-25T17:46:09.115Z JOY-0110-63 comment.added "[x] Auth.md updated to use the new field names (verify_key, kdf_nonce, enrollment_verifier, delegation_verifier) including the key derivation diagram, the auth init/auth flow descriptions, the ai_delegations YAML example, the storage table, and prose references. Committed in the umbrella repo (commit cd4f4bf) as [no-item] since the file is internal vision documentation. Tutorial.md was already clean - it references the CLI surface, not field names." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-25T17:46:09.124Z JOY-0110-63 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-25T17:46:09.144Z JOY-0110-63 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-25T17:46:09.159Z JOY-010A-34 item.status_changed "new -> closed (all children closed)" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

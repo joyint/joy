@@ -1,13 +1,19 @@
 id: JOY-0110-63
 title: Update Auth.md and tutorial for new field names
 type: task
-status: new
+status: closed
 priority: medium
 parent: JOY-010A-34
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-24T06:23:39.099553244Z
-updated: 2026-04-24T06:23:39.099553244Z
+updated: 2026-04-25T17:46:09.141738114Z
 description: Rename field references throughout docs/dev/vision/trustship/Auth.md and docs/user/Tutorial.md. Add note in ADR-023/033/034 that historical field names shown in those documents were renamed by ADR-035.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-25T17:46:09.113433374Z
+  text: '[x] Auth.md updated to use the new field names (verify_key, kdf_nonce, enrollment_verifier, delegation_verifier) including the key derivation diagram, the auth init/auth flow descriptions, the ai_delegations YAML example, the storage table, and prose references. Committed in the umbrella repo (commit cd4f4bf) as [no-item] since the file is internal vision documentation. Tutorial.md was already clean - it references the CLI surface, not field names.'

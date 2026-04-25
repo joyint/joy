@@ -1,7 +1,7 @@
 id: JOY-010A-34
 title: Rename auth schema fields for scanner hygiene
 type: epic
-status: new
+status: closed
 priority: high
 capabilities:
 - conceive
@@ -9,7 +9,7 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy
 created: 2026-04-24T06:23:18.014973979Z
-updated: 2026-04-24T06:23:47.235393060Z
+updated: 2026-04-25T17:46:09.156888062Z
 description: Rename public_key, salt, otp_hash, delegation_key to semantically precise, scanner-safe names (verify_key, kdf_nonce, enrollment_verifier, delegation_verifier). Triggered by Magna SOC false positive against joyint/joy. Umbrella item for code rename, migrations module, joy auth update command, SECURITY.md template, ADR-035, doc updates, and dogfood migration. See ADR-035 for rationale.
 comments:
 - author: ai:claude@joy
