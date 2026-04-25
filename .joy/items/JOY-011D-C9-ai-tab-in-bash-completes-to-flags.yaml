@@ -1,0 +1,13 @@
+id: JOY-011D-C9
+title: ai:<TAB> in bash completes to flags instead of AI members
+type: bug
+status: new
+priority: medium
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy
+created: 2026-04-25T14:58:10.729583335Z
+updated: 2026-04-25T14:58:10.729583335Z
+description: 'When the user types ''joy auth token add ai:<TAB>'' bash splits the word at '':'' (COMP_WORDBREAKS contains '':'' by default), so COMP_WORDS becomes [..., ''ai:'', ''''] and clap_complete sees the member positional as already filled. It then offers --ttl/--passphrase/--token/--otp/--help instead of AI members. The fix needs to live in the bash completion script: pre-merge tokens around '':'' before delegating to clap_complete, AND strip the prefix-up-to-the-last-colon from each candidate so bash inserts the right suffix without doubling. zsh and fish are unaffected.'
