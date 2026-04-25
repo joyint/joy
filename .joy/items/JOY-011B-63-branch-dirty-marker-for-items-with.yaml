@@ -1,0 +1,20 @@
+id: JOY-011B-63
+title: Branch dirty-marker (*) for items with pending state in feature branches
+type: story
+status: new
+priority: medium
+capabilities:
+- plan
+- implement
+- review
+created_by: ai:claude@joy
+created: 2026-04-25T14:20:37.592963496Z
+updated: 2026-04-25T14:20:37.592963496Z
+description: |-
+  When a Joy item's .joy/items/<id>...yaml differs between the current ref (or any local branch whose name contains the item ID) and main, list-style commands (joy ls, joy roadmap, joy show, etc.) should mark the item with a * after its ID to signal: pending state lives in a branch, not yet on main.
+
+  Implementation sketch: compare blob SHA of the item's yaml between the target ref (e.g. main) and candidate branches via 'git rev-parse <branch>:<path>' (no checkout needed). Branches whose name does NOT contain a matching item ID are ignored, so throwaway/spike branches do not trigger false dirty markers. Local refs only at first; remote refs as a follow-up if useful.
+
+  Background: Joy currently shows the state of the checked-out HEAD only. Multi-branch aggregation was considered but introduces a hard 'authoritative source' problem (real feature branch vs. spike branch - Joy cannot tell them apart). The dirty-marker approach keeps main as the deterministic source of truth and only adds a visual hint that pending change exists somewhere, without needing any new convention beyond 'put the item ID in the branch name' (already common practice).
+
+  Documentation: update the user-facing tutorial and the web docs alongside the implementation, so users immediately understand what the * marker means and which branches feed it.
