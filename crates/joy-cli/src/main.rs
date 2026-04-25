@@ -265,8 +265,14 @@ mod tests {
     #[test]
     fn help_after_leaf_command_becomes_double_dash_help() {
         assert_eq!(rewrite(&["joy", "ls", "help"]), &["joy", "ls", "--help"]);
-        assert_eq!(rewrite(&["joy", "show", "help"]), &["joy", "show", "--help"]);
-        assert_eq!(rewrite(&["joy", "board", "help"]), &["joy", "board", "--help"]);
+        assert_eq!(
+            rewrite(&["joy", "show", "help"]),
+            &["joy", "show", "--help"]
+        );
+        assert_eq!(
+            rewrite(&["joy", "board", "help"]),
+            &["joy", "board", "--help"]
+        );
     }
 
     #[test]
@@ -299,10 +305,10 @@ mod tests {
 
     #[test]
     fn long_dashed_options_pass_through_untouched() {
+        assert_eq!(rewrite(&["joy", "ls", "--mine"]), &["joy", "ls", "--mine"]);
         assert_eq!(
-            rewrite(&["joy", "ls", "--mine"]),
-            &["joy", "ls", "--mine"]
+            rewrite(&["joy", "ls", "-T", "bug"]),
+            &["joy", "ls", "-T", "bug"]
         );
-        assert_eq!(rewrite(&["joy", "ls", "-T", "bug"]), &["joy", "ls", "-T", "bug"]);
     }
 }

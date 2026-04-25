@@ -124,9 +124,7 @@ where
 /// Complete AI member IDs only, used for AI-specific commands like
 /// `joy auth token add` and `joy ai reset`.
 pub fn complete_ai_member(current: &OsStr) -> Vec<CompletionCandidate> {
-    complete_with_predicate(current, |id| {
-        joy_core::model::project::is_ai_member(id)
-    })
+    complete_with_predicate(current, joy_core::model::project::is_ai_member)
 }
 
 /// Complete any project member ID (human or AI). Used everywhere a
@@ -268,13 +266,13 @@ mod tests {
 
     #[test]
     fn member_candidates_includes_humans_when_unfiltered() {
-        let members: Vec<String> =
-            vec!["alice@team.com".into(), "ai:claude@joy".into(), "bob@team.com".into()];
+        let members: Vec<String> = vec![
+            "alice@team.com".into(),
+            "ai:claude@joy".into(),
+            "bob@team.com".into(),
+        ];
         let out = member_candidates(members.iter(), "", |_| true);
-        assert_eq!(
-            out,
-            vec!["ai:claude@joy", "alice@team.com", "bob@team.com"]
-        );
+        assert_eq!(out, vec!["ai:claude@joy", "alice@team.com", "bob@team.com"]);
     }
 
     #[test]

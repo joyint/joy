@@ -141,14 +141,15 @@ fn resolve_members(tokens: &[String], mine: bool, root: &Path) -> Result<MemberF
         }
     }
 
-    let exclusive_count = [wants_unassigned, wants_any_assigned].iter().filter(|b| **b).count();
+    let exclusive_count = [wants_unassigned, wants_any_assigned]
+        .iter()
+        .filter(|b| **b)
+        .count();
     if exclusive_count > 1 {
         bail!("--members 'none' and '*' are mutually exclusive");
     }
     if (wants_unassigned || wants_any_assigned) && (wants_self || !explicit.is_empty()) {
-        bail!(
-            "--members 'none'/'unassigned' and '*' cannot be combined with member IDs or 'me'"
-        );
+        bail!("--members 'none'/'unassigned' and '*' cannot be combined with member IDs or 'me'");
     }
 
     if wants_unassigned {
