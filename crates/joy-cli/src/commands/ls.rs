@@ -60,19 +60,33 @@ impl LsArgs {
 pub use joy_core::filter::effective_milestone;
 
 /// Which extra columns to display in table mode.
+#[derive(Debug)]
 struct ExtraColumns {
     milestone: bool,
     assignee: bool,
     parent: bool,
 }
 
+/// Valid column keys accepted by `-c, --columns`.
+/// `ms` is a short alias for `milestone`; `members` is an alias for
+/// `assignee` matching the `-m, --members` filter vocabulary.
+const VALID_COLUMN_KEYS: &[&str] = &["milestone", "ms", "assignee", "members", "parent"];
+
 impl ExtraColumns {
-    fn from_args(columns: &[String]) -> Self {
-        Self {
+    fn from_args(columns: &[String]) -> Result<Self> {
+        for key in columns {
+            if !VALID_COLUMN_KEYS.contains(&key.as_str()) {
+                anyhow::bail!(
+                    "unknown column '{key}'. Valid columns: {}",
+                    VALID_COLUMN_KEYS.join(", ")
+                );
+            }
+        }
+        Ok(Self {
             milestone: columns.iter().any(|s| s == "milestone" || s == "ms"),
             assignee: columns.iter().any(|s| s == "assignee" || s == "members"),
             parent: columns.iter().any(|s| s == "parent"),
-        }
+        })
     }
 }
 
@@ -99,7 +113,7 @@ pub fn run(args: LsArgs) -> Result<()> {
         filtered.reverse();
     }
 
-    let extras = ExtraColumns::from_args(&args.columns);
+    let extras = ExtraColumns::from_args(&args.columns)?;
 
     if args.tree {
         match args.group.as_str() {
@@ -741,5 +755,50 @@ fn print_ms_tree_node(item: &Item, group: &[&&Item], prefix: &str, is_last: bool
     for (ci, child) in children.iter().enumerate() {
         let child_is_last = ci == children.len() - 1;
         print_ms_tree_node(child, group, &child_prefix, child_is_last);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cols(keys: &[&str]) -> Vec<String> {
+        keys.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    #[test]
+    fn columns_accepts_known_keys_and_aliases() {
+        let extras = ExtraColumns::from_args(&cols(&["milestone", "assignee", "parent"])).unwrap();
+        assert!(extras.milestone);
+        assert!(extras.assignee);
+        assert!(extras.parent);
+
+        let extras = ExtraColumns::from_args(&cols(&["ms", "members"])).unwrap();
+        assert!(extras.milestone);
+        assert!(extras.assignee);
+        assert!(!extras.parent);
+    }
+
+    #[test]
+    fn columns_rejects_unknown_key() {
+        let err = ExtraColumns::from_args(&cols(&["bogus"])).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("unknown column 'bogus'"), "got: {msg}");
+        assert!(msg.contains("milestone"), "got: {msg}");
+        assert!(msg.contains("assignee"), "got: {msg}");
+    }
+
+    #[test]
+    fn columns_rejects_when_one_value_in_a_list_is_unknown() {
+        let err = ExtraColumns::from_args(&cols(&["assignee", "wrong"])).unwrap_err();
+        assert!(err.to_string().contains("unknown column 'wrong'"));
+    }
+
+    #[test]
+    fn empty_columns_is_ok() {
+        let extras = ExtraColumns::from_args(&[]).unwrap();
+        assert!(!extras.milestone);
+        assert!(!extras.assignee);
+        assert!(!extras.parent);
     }
 }
