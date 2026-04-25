@@ -37,3 +37,8 @@
 2026-04-25T14:20:11.547Z JOY-0113-17 item.status_changed "new -> closed (all children closed)" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-25T14:20:17.725Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-25T14:20:37.599Z JOY-011B-63 item.created "Branch dirty-marker (*) for items with pending state in feature branches" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-25T14:56:45.744Z JOY-011C-56 guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-04-25T14:56:45.767Z JOY-011C-F3 guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-04-25T14:57:52.869Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-25T14:58:10.711Z JOY-011C-56 item.created "Member completion is case-sensitive on prefix" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-25T14:58:10.734Z JOY-011D-C9 item.created "ai:<TAB> in bash completes to flags instead of AI members" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
