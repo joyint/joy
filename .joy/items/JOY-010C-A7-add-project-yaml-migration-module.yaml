@@ -1,13 +1,19 @@
 id: JOY-010C-A7
 title: Add project.yaml migration module
 type: task
-status: new
+status: in-progress
 priority: high
 parent: JOY-010A-34
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-24T06:23:39.068158270Z
-updated: 2026-04-24T06:23:39.068158270Z
+updated: 2026-04-25T16:02:38.136373129Z
 description: Add joy-core/src/migrations/mod.rs and joy-core/src/migrations/project_yaml/2026_04_rename_auth_fields.rs. Pure serde_yaml::Value transform mapping old field names to new. Invoked only from joy auth update, not from the general write path. Scheduled for removal in v0.13.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-25T16:02:38.136372529Z
+  text: 'Plan: pulled forward to land in same commit as JOY-010B-98 because the standalone code rename leaves the read path unable to load existing project.yaml (broken main). Adds joy-core/src/migrations/{mod.rs, project_yaml/{mod.rs, _2026_04_rename_auth_fields.rs}}. Pure Value transform; logs a one-line deprecation warning when legacy field names are encountered. Wired into store::read_yaml on Project deserialisation. No automatic on-save rewrite per ADR-035. Tests: roundtrip old yaml -> migrated value, idempotent on already-new yaml, mixed legacy+new entries handled, AttestationSignedFields canonical bytes unchanged across migration.'
