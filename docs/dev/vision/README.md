@@ -235,13 +235,16 @@ joy ls                                  # List and filter items
   joy ls --status in-progress           # by status
   joy ls --blocked                      # items with open deps
   joy ls --priority critical            # by priority
-  joy ls --mine                         # assigned to me
-  joy ls --milestone JOY-MS-01              # by milestone (includes inherited)
+  joy ls --members alice@team.com       # assigned to a specific member
+  joy ls --members me   /  --mine       # assigned to me (and AIs delegated by me)
+  joy ls --members none                 # unassigned items
+  joy ls --members '*'                  # any items with assignees
+  joy ls --milestone JOY-MS-01          # by milestone (includes inherited)
   joy ls --tree                         # hierarchical tree view
   joy ls --tree --group milestone       # tree grouped by milestone
   joy ls --tag backend                  # by tag
   joy ls --version v0.5.0               # by version tag
-  joy ls --columns milestone,assignee   # extra columns (milestone, assignee, parent)
+  joy ls --columns milestone,assignee   # extra columns (milestone, ms, assignee, members, parent)
 
 joy show [id]                           # Detail view
   joy show JOY-002A                      # all info, deps, history, comments
