@@ -73,11 +73,11 @@ impl Docs {
 pub struct Member {
     pub capabilities: MemberCapabilities,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub public_key: Option<String>,
+    pub verify_key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub salt: Option<String>,
+    pub kdf_nonce: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub otp_hash: Option<String>,
+    pub enrollment_verifier: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub ai_delegations: BTreeMap<String, AiDelegationEntry>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -85,17 +85,17 @@ pub struct Member {
 }
 
 /// Per-member attestation: a signature by a manage member over a stable
-/// subset of the member's fields (email, capabilities, otp_hash). Verified
-/// locally against project.yaml by looking up the attester's public_key in
-/// the same file. The founder is the sole member allowed to have no
-/// attestation in a fresh project; once any additional manage member is
-/// added, that member implicitly reverse-attests the founder.
+/// subset of the member's fields (email, capabilities, enrollment_verifier).
+/// Verified locally against project.yaml by looking up the attester's
+/// verify_key in the same file. The founder is the sole member allowed to
+/// have no attestation in a fresh project; once any additional manage
+/// member is added, that member implicitly reverse-attests the founder.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Attestation {
     /// Email (or AI member id) of the member who produced the signature.
     /// Must be a manage-capable member at signing time.
     pub attester: String,
-    /// The fields this signature covers. public_key is intentionally
+    /// The fields this signature covers. verify_key is intentionally
     /// excluded so that passphrase changes do not break existing
     /// attestations.
     pub signed_fields: AttestationSignedFields,
@@ -108,12 +108,17 @@ pub struct Attestation {
 
 /// The exact subset of a member's state covered by the attestation
 /// signature. Changes to any of these fields invalidate the signature.
+///
+/// The serde key for `enrollment_verifier` is pinned to the historical
+/// name `otp_hash` (per ADR-035) so signatures created before the field
+/// rename remain bit-identically valid. Do not change the rename pin
+/// without coordinating an attestation re-signing pass.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AttestationSignedFields {
     pub email: String,
     pub capabilities: MemberCapabilities,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub otp_hash: Option<String>,
+    #[serde(default, rename = "otp_hash", skip_serializing_if = "Option::is_none")]
+    pub enrollment_verifier: Option<String>,
 }
 
 impl AttestationSignedFields {
@@ -131,8 +136,9 @@ impl AttestationSignedFields {
 /// `~/.local/state/joy/delegations/<project>/<ai-member>.key`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AiDelegationEntry {
-    /// Public key of the stable delegation keypair (hex-encoded Ed25519).
-    pub delegation_key: String,
+    /// Public verifier of the stable delegation keypair (hex-encoded Ed25519).
+    /// Used to verify the binding signature on delegation tokens.
+    pub delegation_verifier: String,
     /// When this delegation was first issued.
     pub created: chrono::DateTime<chrono::Utc>,
     /// When this delegation was last rotated, if ever.
@@ -294,9 +300,9 @@ impl Member {
     pub fn new(capabilities: MemberCapabilities) -> Self {
         Self {
             capabilities,
-            public_key: None,
-            salt: None,
-            otp_hash: None,
+            verify_key: None,
+            kdf_nonce: None,
+            enrollment_verifier: None,
             ai_delegations: BTreeMap::new(),
             attestation: None,
         }
@@ -409,7 +415,7 @@ mod tests {
             "empty ai_delegations should be skipped, got: {yaml}"
         );
         // sanity: round-trips empty
-        m.public_key = Some("aa".repeat(32));
+        m.verify_key = Some("aa".repeat(32));
         let yaml = serde_yaml_ng::to_string(&m).unwrap();
         let parsed: Member = serde_yaml_ng::from_str(&yaml).unwrap();
         assert_eq!(m, parsed);
@@ -418,12 +424,12 @@ mod tests {
     #[test]
     fn ai_delegations_yaml_roundtrip() {
         let mut m = Member::new(MemberCapabilities::All);
-        m.public_key = Some("aa".repeat(32));
-        m.salt = Some("bb".repeat(32));
+        m.verify_key = Some("aa".repeat(32));
+        m.kdf_nonce = Some("bb".repeat(32));
         m.ai_delegations.insert(
             "ai:claude@joy".into(),
             AiDelegationEntry {
-                delegation_key: "cc".repeat(32),
+                delegation_verifier: "cc".repeat(32),
                 created: chrono::DateTime::parse_from_rfc3339("2026-04-15T10:00:00Z")
                     .unwrap()
                     .with_timezone(&chrono::Utc),
@@ -433,7 +439,7 @@ mod tests {
         let yaml = serde_yaml_ng::to_string(&m).unwrap();
         assert!(yaml.contains("ai_delegations:"));
         assert!(yaml.contains("ai:claude@joy:"));
-        assert!(yaml.contains("delegation_key:"));
+        assert!(yaml.contains("delegation_verifier:"));
         assert!(
             !yaml.contains("rotated:"),
             "unset rotated should be skipped"
@@ -455,7 +461,7 @@ mod tests {
         m.ai_delegations.insert(
             "ai:claude@joy".into(),
             AiDelegationEntry {
-                delegation_key: "dd".repeat(32),
+                delegation_verifier: "dd".repeat(32),
                 created,
                 rotated: Some(rotated),
             },
@@ -486,7 +492,7 @@ mod tests {
             signed_fields: AttestationSignedFields {
                 email: "alice@example.com".into(),
                 capabilities: MemberCapabilities::All,
-                otp_hash: Some("ff".repeat(32)),
+                enrollment_verifier: Some("ff".repeat(32)),
             },
             signed_at: chrono::DateTime::parse_from_rfc3339("2026-04-20T10:00:00Z")
                 .unwrap()
@@ -505,7 +511,7 @@ mod tests {
         let a = AttestationSignedFields {
             email: "alice@example.com".into(),
             capabilities: MemberCapabilities::All,
-            otp_hash: Some("abc".into()),
+            enrollment_verifier: Some("abc".into()),
         };
         let b = a.clone();
         assert_eq!(a.canonical_bytes(), b.canonical_bytes());
@@ -516,14 +522,14 @@ mod tests {
         let a = AttestationSignedFields {
             email: "alice@example.com".into(),
             capabilities: MemberCapabilities::All,
-            otp_hash: None,
+            enrollment_verifier: None,
         };
         let mut caps = BTreeMap::new();
         caps.insert(Capability::Implement, CapabilityConfig::default());
         let b = AttestationSignedFields {
             email: "alice@example.com".into(),
             capabilities: MemberCapabilities::Specific(caps),
-            otp_hash: None,
+            enrollment_verifier: None,
         };
         assert_ne!(a.canonical_bytes(), b.canonical_bytes());
     }
@@ -543,12 +549,12 @@ ai_tokens:
     created: "2026-03-28T22:00:00Z"
 ai_delegations:
   ai:claude@joy:
-    delegation_key: newkey
+    delegation_verifier: newkey
     created: "2026-04-15T10:00:00Z"
 "#;
         let parsed: Member = serde_yaml_ng::from_str(yaml).unwrap();
         assert_eq!(
-            parsed.ai_delegations["ai:claude@joy"].delegation_key,
+            parsed.ai_delegations["ai:claude@joy"].delegation_verifier,
             "newkey"
         );
     }

@@ -259,10 +259,54 @@ pub fn read_yaml<T: DeserializeOwned>(path: &Path) -> Result<T, JoyError> {
     })
 }
 
-/// Load the full project metadata from project.yaml.
+/// Read project.yaml from an explicit path, applying schema migrations.
+///
+/// All Project deserialisation paths must funnel through this function
+/// (or [`load_project`]) so legacy auth-field renames are picked up
+/// uniformly. When a migration changes the parsed value, a one-line
+/// deprecation warning is emitted to stderr pointing at
+/// `joy auth update`. The on-disk file is not rewritten - persistence
+/// is explicit (per ADR-035). The warning is emitted at most once per
+/// process so a single command run does not flood stderr even when
+/// multiple code paths load project.yaml.
+pub fn read_project(
+    project_path: &Path,
+) -> Result<crate::model::project::Project, crate::error::JoyError> {
+    let content = std::fs::read_to_string(project_path).map_err(|e| JoyError::ReadFile {
+        path: project_path.to_path_buf(),
+        source: e,
+    })?;
+    let value: serde_yaml_ng::Value =
+        serde_yaml_ng::from_str(&content).map_err(|e| JoyError::YamlParse {
+            path: project_path.to_path_buf(),
+            source: e,
+        })?;
+    let (value, migrated) = crate::migrations::project_yaml::apply(value);
+    if migrated {
+        warn_legacy_schema_once();
+    }
+    serde_yaml_ng::from_value(value).map_err(|e| JoyError::YamlParse {
+        path: project_path.to_path_buf(),
+        source: e,
+    })
+}
+
+fn warn_legacy_schema_once() {
+    use std::sync::Once;
+    static WARN: Once = Once::new();
+    WARN.call_once(|| {
+        eprintln!(
+            "warning: project.yaml uses legacy auth field names from before v0.12; \
+             run `joy auth update` to normalise. Legacy support will be removed in v0.13."
+        );
+    });
+}
+
+/// Load the full project metadata from project.yaml under the given
+/// project root. Applies migrations via [`read_project`].
 pub fn load_project(root: &Path) -> Result<crate::model::project::Project, crate::error::JoyError> {
     let project_path = joy_dir(root).join(PROJECT_FILE);
-    read_yaml(&project_path)
+    read_project(&project_path)
 }
 
 /// Load mode defaults by merging project.defaults.yaml with project.yaml modes section.
@@ -312,7 +356,7 @@ pub fn load_ai_defaults(root: &Path) -> crate::model::project::AiDefaults {
 /// Load the project acronym from project.yaml.
 pub fn load_acronym(root: &Path) -> Result<String, crate::error::JoyError> {
     let project_path = joy_dir(root).join(PROJECT_FILE);
-    let project: crate::model::project::Project = read_yaml(&project_path)?;
+    let project = read_project(&project_path)?;
     project.acronym.ok_or_else(|| {
         crate::error::JoyError::Other(
             "project acronym not set -- run: joy project --acronym <ACRONYM>".to_string(),

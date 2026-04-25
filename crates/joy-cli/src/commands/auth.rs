@@ -131,7 +131,7 @@ fn run_init(passphrase_flag: Option<&str>) -> Result<()> {
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
-    let mut project: joy_core::model::project::Project = store::read_yaml(&project_path)?;
+    let mut project = store::read_project(&project_path)?;
 
     // Determine who we are
     let email = joy_core::vcs::default_vcs().user_email()?;
@@ -144,7 +144,7 @@ fn run_init(passphrase_flag: Option<&str>) -> Result<()> {
         );
     }
     let member = member.unwrap();
-    if member.public_key.is_some() {
+    if member.verify_key.is_some() {
         anyhow::bail!(
             "{} already has authentication initialized. Use `joy auth` to authenticate.",
             email
@@ -175,8 +175,8 @@ fn run_init(passphrase_flag: Option<&str>) -> Result<()> {
 
     // Store salt and public key in project.yaml
     let m = project.members.get_mut(&email).unwrap();
-    m.salt = Some(salt.to_hex());
-    m.public_key = Some(public_key.to_hex());
+    m.kdf_nonce = Some(salt.to_hex());
+    m.verify_key = Some(public_key.to_hex());
 
     // JOY-00FD-93 (also applies to the legacy auth init path): if the
     // founder is the only unattested member, reverse-attest them
@@ -190,7 +190,7 @@ fn run_init(passphrase_flag: Option<&str>) -> Result<()> {
             let signed_fields = joy_core::auth::attestation::signed_fields_for(
                 &founder_email,
                 &founder_member.capabilities,
-                founder_member.otp_hash.as_deref(),
+                founder_member.enrollment_verifier.as_deref(),
             );
             let attestation =
                 joy_core::auth::attestation::sign_attestation(&email, &keypair, signed_fields);
@@ -249,14 +249,14 @@ fn auth_with_passphrase(
         )
     })?;
 
-    let public_key_hex = member.public_key.as_ref().ok_or_else(|| {
+    let public_key_hex = member.verify_key.as_ref().ok_or_else(|| {
         anyhow::anyhow!(
             "Authentication not initialized for {}. Run `joy auth init`.",
             email
         )
     })?;
     let salt_hex = member
-        .salt
+        .kdf_nonce
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("No salt found for {}. Run `joy auth init`.", email))?;
 
@@ -325,7 +325,7 @@ fn maybe_auto_seal(
     }
 
     let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-    let mut sealed: joy_core::model::project::Project = store::read_yaml(&project_path)?;
+    let mut sealed = store::read_project(&project_path)?;
 
     let targets: Vec<String> = sealed
         .members
@@ -338,7 +338,7 @@ fn maybe_auto_seal(
         let signed_fields = joy_core::auth::attestation::signed_fields_for(
             &target_email,
             &target.capabilities,
-            target.otp_hash.as_deref(),
+            target.enrollment_verifier.as_deref(),
         );
         let attestation = joy_core::auth::attestation::sign_attestation(
             acting_email,
@@ -373,7 +373,7 @@ fn verify_member_attestation(
             email
         )
     })?;
-    let attester_pubkey_hex = attester_entry.public_key.as_ref().ok_or_else(|| {
+    let attester_pubkey_hex = attester_entry.verify_key.as_ref().ok_or_else(|| {
         anyhow::anyhow!(
             "attestation for {} is signed by {} but that member has no public key. \
              Ask a manage member to remove and re-add {}.",
@@ -451,7 +451,7 @@ fn auth_with_token(
         .members
         .get(human)
         .ok_or_else(|| anyhow::anyhow!("Delegating member {} is not registered.", human))?;
-    let human_pk_hex = human_member.public_key.as_ref().ok_or_else(|| {
+    let human_pk_hex = human_member.verify_key.as_ref().ok_or_else(|| {
         anyhow::anyhow!("Delegating member {} has no public key registered.", human)
     })?;
     let human_pk = sign::PublicKey::from_hex(human_pk_hex)?;
@@ -469,7 +469,7 @@ fn auth_with_token(
                 ai_member_id
             )
         })?;
-    let delegation_pk = sign::PublicKey::from_hex(&delegation_entry.delegation_key)?;
+    let delegation_pk = sign::PublicKey::from_hex(&delegation_entry.delegation_verifier)?;
 
     // Validate dual signatures + project + expiry. Tokens are multi-use
     // within their TTL (ADR-034 relaxes ADR-033 §3): no consumed-tokens
@@ -497,7 +497,7 @@ fn auth_with_token(
         &claims.ai_member,
         project_id,
         None,
-        &delegation_entry.delegation_key,
+        &delegation_entry.delegation_verifier,
     );
     session::save_session(project_id, &session_token)?;
 
@@ -559,7 +559,7 @@ fn run_status() -> Result<()> {
         // Check if auth is initialized for this member
         let project = store::load_project(&root)?;
         let member = project.members.get(&identity.member);
-        let has_auth = member.is_some_and(|m| m.public_key.is_some());
+        let has_auth = member.is_some_and(|m| m.verify_key.is_some());
         if has_auth {
             println!(
                 "No active session for {}. Run `joy auth` to authenticate.",
@@ -584,7 +584,7 @@ fn run_reset(args: ResetArgs, passphrase_flag: Option<&str>) -> Result<()> {
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
-    let mut project: joy_core::model::project::Project = store::read_yaml(&project_path)?;
+    let mut project = store::read_project(&project_path)?;
     let email = joy_core::vcs::default_vcs().user_email()?;
 
     let target = args.member.as_deref().unwrap_or(&email);
@@ -596,7 +596,7 @@ fn run_reset(args: ResetArgs, passphrase_flag: Option<&str>) -> Result<()> {
         .get(&email)
         .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member.", email))?;
 
-    if acting_member.public_key.is_none() {
+    if acting_member.verify_key.is_none() {
         anyhow::bail!(
             "Authentication not initialized for {}. Run `joy auth init`.",
             email
@@ -604,8 +604,8 @@ fn run_reset(args: ResetArgs, passphrase_flag: Option<&str>) -> Result<()> {
     }
 
     // Authenticate the acting user
-    let salt_hex = acting_member.salt.as_ref().unwrap();
-    let public_key_hex = acting_member.public_key.as_ref().unwrap();
+    let salt_hex = acting_member.kdf_nonce.as_ref().unwrap();
+    let public_key_hex = acting_member.verify_key.as_ref().unwrap();
     let salt = derive::Salt::from_hex(salt_hex)?;
     let public_key = sign::PublicKey::from_hex(public_key_hex)?;
 
@@ -628,9 +628,9 @@ fn run_reset(args: ResetArgs, passphrase_flag: Option<&str>) -> Result<()> {
 
     // Reset target member's auth fields
     let m = project.members.get_mut(target).unwrap();
-    m.public_key = None;
-    m.salt = None;
-    m.otp_hash = None;
+    m.verify_key = None;
+    m.kdf_nonce = None;
+    m.enrollment_verifier = None;
 
     store::write_yaml_preserve(&project_path, &project)?;
     let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
@@ -692,15 +692,15 @@ fn run_token_add(args: TokenAddArgs, passphrase_flag: Option<&str>) -> Result<()
         .members
         .get(&email)
         .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member.", email))?;
-    if member.public_key.is_none() {
+    if member.verify_key.is_none() {
         anyhow::bail!(
             "Authentication not initialized for {}. Run `joy auth init`.",
             email
         );
     }
 
-    let salt_hex = member.salt.as_ref().unwrap();
-    let public_key_hex = member.public_key.as_ref().unwrap();
+    let salt_hex = member.kdf_nonce.as_ref().unwrap();
+    let public_key_hex = member.verify_key.as_ref().unwrap();
     let salt = derive::Salt::from_hex(salt_hex)?;
     let public_key = sign::PublicKey::from_hex(public_key_hex)?;
 
@@ -725,7 +725,7 @@ fn run_token_add(args: TokenAddArgs, passphrase_flag: Option<&str>) -> Result<()
     let existing_public = member
         .ai_delegations
         .get(&args.member)
-        .map(|e| e.delegation_key.clone());
+        .map(|e| e.delegation_verifier.clone());
     let existing_private = delegation::load_delegation_key(&project_id, &args.member)?;
 
     let (delegation_keypair, new_entry) = match (existing_public, existing_private) {
@@ -788,13 +788,13 @@ fn run_token_add(args: TokenAddArgs, passphrase_flag: Option<&str>) -> Result<()
     // issuances for the same (human, AI) pair produce no project.yaml
     // write since the key is stable (ADR-033).
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
-    let mut project_mut: joy_core::model::project::Project = store::read_yaml(&project_path)?;
+    let mut project_mut = store::read_project(&project_path)?;
     if new_entry {
         if let Some(m) = project_mut.members.get_mut(&email) {
             m.ai_delegations.insert(
                 args.member.clone(),
                 joy_core::model::project::AiDelegationEntry {
-                    delegation_key: delegation_keypair.public_key().to_hex(),
+                    delegation_verifier: delegation_keypair.public_key().to_hex(),
                     created: chrono::Utc::now(),
                     rotated: None,
                 },
@@ -848,15 +848,15 @@ fn run_token_rm(args: TokenRmArgs, passphrase_flag: Option<&str>) -> Result<()> 
         .members
         .get(&email)
         .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member.", email))?;
-    if member.public_key.is_none() {
+    if member.verify_key.is_none() {
         anyhow::bail!(
             "Authentication not initialized for {}. Run `joy auth init`.",
             email
         );
     }
 
-    let salt_hex = member.salt.as_ref().unwrap();
-    let public_key_hex = member.public_key.as_ref().unwrap();
+    let salt_hex = member.kdf_nonce.as_ref().unwrap();
+    let public_key_hex = member.verify_key.as_ref().unwrap();
     let salt = derive::Salt::from_hex(salt_hex)?;
     let public_key = sign::PublicKey::from_hex(public_key_hex)?;
 
@@ -870,7 +870,7 @@ fn run_token_rm(args: TokenRmArgs, passphrase_flag: Option<&str>) -> Result<()> 
     // Remove the delegation entry from project.yaml and the private key
     // file from local state.
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
-    let mut project_mut: joy_core::model::project::Project = store::read_yaml(&project_path)?;
+    let mut project_mut = store::read_project(&project_path)?;
     let removed = project_mut
         .members
         .get_mut(&email)
@@ -912,21 +912,21 @@ fn run_passphrase(current_flag: Option<&str>, new_flag: Option<&str>) -> Result<
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
-    let mut project: joy_core::model::project::Project = store::read_yaml(&project_path)?;
+    let mut project = store::read_project(&project_path)?;
 
     let email = joy_core::vcs::default_vcs().user_email()?;
     let member = project
         .members
         .get(&email)
         .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member", email))?;
-    let current_pub_hex = member.public_key.as_ref().ok_or_else(|| {
+    let current_pub_hex = member.verify_key.as_ref().ok_or_else(|| {
         anyhow::anyhow!(
             "Authentication not initialized for {}. Run `joy auth init`.",
             email
         )
     })?;
     let current_salt_hex = member
-        .salt
+        .kdf_nonce
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("No salt registered for {}.", email))?;
     let current_pub = sign::PublicKey::from_hex(current_pub_hex)?;
@@ -956,8 +956,8 @@ fn run_passphrase(current_flag: Option<&str>, new_flag: Option<&str>) -> Result<
     let new_kp = sign::IdentityKeypair::from_derived_key(&new_key);
 
     let m = project.members.get_mut(&email).unwrap();
-    m.public_key = Some(new_kp.public_key().to_hex());
-    m.salt = Some(new_salt.to_hex());
+    m.verify_key = Some(new_kp.public_key().to_hex());
+    m.kdf_nonce = Some(new_salt.to_hex());
     store::write_yaml_preserve(&project_path, &project)?;
     let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
     joy_core::git_ops::auto_git_add(&root, &[&rel]);
@@ -986,7 +986,7 @@ fn run_auth_otp(otp: &str, passphrase_flag: Option<&str>) -> Result<()> {
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
-    let mut project: joy_core::model::project::Project = store::read_yaml(&project_path)?;
+    let mut project = store::read_project(&project_path)?;
 
     let email = joy_core::vcs::default_vcs().user_email()?;
     let member = project.members.get(&email).ok_or_else(|| {
@@ -996,7 +996,7 @@ fn run_auth_otp(otp: &str, passphrase_flag: Option<&str>) -> Result<()> {
         )
     })?;
 
-    let stored_hash = member.otp_hash.as_ref().ok_or_else(|| {
+    let stored_hash = member.enrollment_verifier.as_ref().ok_or_else(|| {
         anyhow::anyhow!(
             "no pending OTP for {}. Either this member has already completed setup \
              or was added without an OTP.",
@@ -1017,9 +1017,9 @@ fn run_auth_otp(otp: &str, passphrase_flag: Option<&str>) -> Result<()> {
     // Apply to project.yaml: set public_key/salt, clear otp_hash.
     {
         let m = project.members.get_mut(&email).unwrap();
-        m.public_key = Some(keypair.public_key().to_hex());
-        m.salt = Some(salt.to_hex());
-        m.otp_hash = None;
+        m.verify_key = Some(keypair.public_key().to_hex());
+        m.kdf_nonce = Some(salt.to_hex());
+        m.enrollment_verifier = None;
     }
 
     // JOY-00FD-93: if the founder is still the only unattested member,
@@ -1033,7 +1033,7 @@ fn run_auth_otp(otp: &str, passphrase_flag: Option<&str>) -> Result<()> {
             let signed_fields = joy_core::auth::attestation::signed_fields_for(
                 &founder_email,
                 &founder_member.capabilities,
-                founder_member.otp_hash.as_deref(),
+                founder_member.enrollment_verifier.as_deref(),
             );
             let attestation =
                 joy_core::auth::attestation::sign_attestation(&email, &keypair, signed_fields);
@@ -1111,7 +1111,7 @@ pub fn run_ai_rotate(member: &str, passphrase_flag: Option<&str>) -> Result<()> 
         .members
         .get(&email)
         .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member.", email))?;
-    if human.public_key.is_none() {
+    if human.verify_key.is_none() {
         anyhow::bail!(
             "Authentication not initialized for {}. Run `joy auth init`.",
             email
@@ -1130,8 +1130,8 @@ pub fn run_ai_rotate(member: &str, passphrase_flag: Option<&str>) -> Result<()> 
         );
     }
 
-    let salt_hex = human.salt.as_ref().unwrap();
-    let public_key_hex = human.public_key.as_ref().unwrap();
+    let salt_hex = human.kdf_nonce.as_ref().unwrap();
+    let public_key_hex = human.verify_key.as_ref().unwrap();
     let salt = derive::Salt::from_hex(salt_hex)?;
     let public_key = sign::PublicKey::from_hex(public_key_hex)?;
 
@@ -1154,13 +1154,13 @@ pub fn run_ai_rotate(member: &str, passphrase_flag: Option<&str>) -> Result<()> 
     // Update project.yaml: new delegation_key + rotated timestamp. Single
     // write; the old delegation_key is unreachable after this point.
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
-    let mut project_mut: joy_core::model::project::Project = store::read_yaml(&project_path)?;
+    let mut project_mut = store::read_project(&project_path)?;
     let entry = project_mut
         .members
         .get_mut(&email)
         .and_then(|m| m.ai_delegations.get_mut(member))
         .expect("delegation entry exists -- validated above");
-    entry.delegation_key = new_kp.public_key().to_hex();
+    entry.delegation_verifier = new_kp.public_key().to_hex();
     entry.rotated = Some(Utc::now());
     store::write_yaml_preserve(&project_path, &project_mut)?;
     let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);

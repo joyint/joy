@@ -160,7 +160,7 @@ impl Guard {
     /// Load project.yaml and create a Guard, including gate config.
     pub fn load(root: &Path) -> Result<Self, JoyError> {
         let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-        let project: Project = store::read_yaml(&project_path)?;
+        let project = store::read_project(&project_path)?;
         let gates = load_gates(&project_path)?;
         Ok(Self::with_gates(&project, gates))
     }
@@ -227,7 +227,7 @@ impl Guard {
         // Auth enforcement: manage actions require authentication when auth is active
         // (even without AI members, manage actions need auth if any member has a key)
         if !has_ai && !identity.authenticated {
-            let auth_active = self.members.values().any(|m| m.public_key.is_some());
+            let auth_active = self.members.values().any(|m| m.verify_key.is_some());
             if auth_active {
                 let required = action.required_capability();
                 if required == Capability::Manage {
@@ -382,7 +382,7 @@ mod tests {
     fn specific_caps(caps: &[Capability]) -> MemberCapabilities {
         let map: BTreeMap<Capability, _> = caps
             .iter()
-            .map(|c| (c.clone(), Default::default()))
+            .map(|c| (*c, Default::default()))
             .collect();
         MemberCapabilities::Specific(map)
     }

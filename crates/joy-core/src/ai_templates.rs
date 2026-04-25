@@ -500,7 +500,7 @@ mod tests {
                 }
                 let name = agent_name(agent).unwrap();
                 let rendered = render_agent(agent, &wf, tool)
-                    .expect(&format!("failed to render {name} for {tool}"));
+                    .unwrap_or_else(|_| panic!("failed to render {name} for {tool}"));
                 assert!(!rendered.is_empty(), "empty render for {name}/{tool}");
                 assert!(
                     rendered.contains(name),

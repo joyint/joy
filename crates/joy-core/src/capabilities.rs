@@ -5,7 +5,7 @@ use std::path::Path;
 
 use crate::identity;
 use crate::model::item::Capability;
-use crate::model::project::{is_ai_member, Project};
+use crate::model::project::is_ai_member;
 use crate::store;
 
 /// Check whether the current user has a management capability.
@@ -31,7 +31,7 @@ pub fn warn_unless_capable(root: &Path, required: Capability) -> bool {
     }
 
     let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-    let project: Project = match store::read_yaml(&project_path) {
+    let project = match store::read_project(&project_path) {
         Ok(p) => p,
         Err(_) => return true, // No project.yaml, allow
     };
