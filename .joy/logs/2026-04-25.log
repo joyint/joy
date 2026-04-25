@@ -93,3 +93,4 @@
 2026-04-25T17:46:09.124Z JOY-0110-63 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-25T17:46:09.144Z JOY-0110-63 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-25T17:46:09.159Z JOY-010A-34 item.status_changed "new -> closed (all children closed)" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-25T18:03:22.403Z v0.12.0 release.created [horst.schwarz@joydev.com]

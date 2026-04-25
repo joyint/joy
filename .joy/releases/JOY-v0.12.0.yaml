@@ -1,0 +1,50 @@
+version: v0.12.0
+date: 2026-04-25
+previous: v0.11.1
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 88
+  items: 18
+items:
+  epics:
+  - id: JOY-0113-17
+    title: CLI commands consolidation
+  - id: JOY-010A-34
+    title: Rename auth schema fields for scanner hygiene
+  stories:
+  - id: JOY-0115-8B
+    title: Members filter and milestone short flag rebinding
+  - id: JOY-0116-81
+    title: Apply unified filters to joy board
+  - id: JOY-0118-DD
+    title: Item ID completion with prefix matching
+  - id: JOY-0119-32
+    title: help subcommand on every command
+  tasks:
+  - id: JOY-010B-98
+    title: Rename auth fields in model and auth modules
+  - id: JOY-010C-A7
+    title: Add project.yaml migration module
+  - id: JOY-010D-CB
+    title: Implement joy auth update command
+  - id: JOY-010E-7E
+    title: Add SECURITY.md template for Joy users
+  - id: JOY-0111-7B
+    title: Migrate dogfood repos to new auth schema
+  - id: JOY-0110-63
+    title: Update Auth.md and tutorial for new field names
+  bugs:
+  - id: JOY-011A-77
+    title: joy ls -c silently accepts unknown column keys
+  - id: JOY-011C-56
+    title: Member completion is case-sensitive on prefix
+  - id: JOY-011D-C9
+    title: ai:<TAB> in bash completes to flags instead of AI members
+  reworks:
+  - id: JOY-0114-F9
+    title: Unified FilterArgs across listing views
+  - id: JOY-0117-82
+    title: Member ID completion across all commands
+  decisions:
+  - id: JOY-010F-F4
+    title: Write ADR-035 for auth schema rename
