@@ -14,9 +14,9 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     run joy auth init --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
     [[ "$output" == *"Authentication initialized"* ]]
-    # project.yaml should now have public_key and salt
-    grep -q "public_key:" .joy/project.yaml
-    grep -q "salt:" .joy/project.yaml
+    # project.yaml should now have verify_key and kdf_nonce
+    grep -q "verify_key:" .joy/project.yaml
+    grep -q "kdf_nonce:" .joy/project.yaml
 }
 
 @test "joy auth init rejects short passphrase" {
@@ -145,8 +145,8 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     run joy auth reset --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
     [[ "$output" == *"Authentication reset"* ]]
-    # public_key should be gone
-    ! grep -q "public_key:" .joy/project.yaml
+    # verify_key should be gone
+    ! grep -q "verify_key:" .joy/project.yaml
     # Can re-initialize
     run joy auth init --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
@@ -158,8 +158,8 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     run joy auth reset --passphrase "wrong wrong wrong wrong wrong wrong"
     [ "$status" -ne 0 ]
     [[ "$output" == *"incorrect passphrase"* ]]
-    # public_key should still be there
-    grep -q "public_key:" .joy/project.yaml
+    # verify_key should still be there
+    grep -q "verify_key:" .joy/project.yaml
 }
 
 @test "joy auth reset other member requires manage capability" {
@@ -341,9 +341,9 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     # Create a delegation token and authenticate as AI
     TOKEN=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" | sed -n 's/^  \(joy_t_.*\)/\1/p')
     joy auth --token "$TOKEN"
-    # Verify AI member exists with public_key (set by token auth)
+    # Verify AI member exists with verify_key (set by token auth)
     grep -q "ai:claude@joy" .joy/project.yaml
-    grep -q "public_key" .joy/project.yaml
+    grep -q "verify_key" .joy/project.yaml
     # Reset the AI tool
     joy ai reset --tool claude --force
     # AI member should be removed from project.yaml
@@ -453,7 +453,7 @@ YAML
     echo '  version-files:' >> .joy/project.yaml
     echo '  - path: Cargo.toml' >> .joy/project.yaml
     echo '    key: package.version' >> .joy/project.yaml
-    # Auth init modifies project.yaml (adds public_key, salt)
+    # Auth init modifies project.yaml (adds verify_key, kdf_nonce)
     joy auth init --passphrase "$TEST_PASSPHRASE"
     # The release config must survive
     grep -q "version-files" .joy/project.yaml
@@ -527,8 +527,8 @@ YAML
     # alice's capability block is now multi-line (defaults exclude
     # manage/delete, so nine capability keys each render on their own
     # line). Use a generous -A range so the follow-up greps still reach
-    # public_key and signature.
-    OLD_PUB=$(grep -A30 "^  alice@example.com:" .joy/project.yaml | grep "public_key:" | awk '{print $NF}')
+    # verify_key and signature.
+    OLD_PUB=$(grep -A30 "^  alice@example.com:" .joy/project.yaml | grep "verify_key:" | awk '{print $NF}')
     OLD_ATT=$(grep -A30 "^  alice@example.com:" .joy/project.yaml | grep "signature:" | head -1)
 
     run joy auth passphrase \
@@ -537,8 +537,8 @@ YAML
     [ "$status" -eq 0 ]
     [[ "$output" == *"Passphrase changed"* ]]
 
-    # public_key rotated, attestation preserved.
-    NEW_PUB=$(grep -A30 "^  alice@example.com:" .joy/project.yaml | grep "public_key:" | awk '{print $NF}')
+    # verify_key rotated, attestation preserved.
+    NEW_PUB=$(grep -A30 "^  alice@example.com:" .joy/project.yaml | grep "verify_key:" | awk '{print $NF}')
     NEW_ATT=$(grep -A30 "^  alice@example.com:" .joy/project.yaml | grep "signature:" | head -1)
     [ "$OLD_PUB" != "$NEW_PUB" ]
     [ "$OLD_ATT" = "$NEW_ATT" ]
@@ -627,7 +627,7 @@ YAML
     OLD_TOKEN=$(joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" \
         | sed -n 's/^  \(joy_t_.*\)/\1/p')
     OLD_KEY_HASH=$(sha256sum "$XDG_STATE_HOME/joy/delegations/RT/ai_test_joy.key" | cut -d' ' -f1)
-    OLD_PUB=$(grep -A2 "ai:test@joy:" .joy/project.yaml | grep delegation_key | sed 's/.*: //')
+    OLD_PUB=$(grep -A2 "ai:test@joy:" .joy/project.yaml | grep delegation_verifier | sed 's/.*: //')
 
     run joy ai rotate ai:test@joy --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
@@ -638,8 +638,8 @@ YAML
     NEW_KEY_HASH=$(sha256sum "$XDG_STATE_HOME/joy/delegations/RT/ai_test_joy.key" | cut -d' ' -f1)
     [ "$OLD_KEY_HASH" != "$NEW_KEY_HASH" ]
 
-    # project.yaml has new delegation_key plus a rotated timestamp.
-    NEW_PUB=$(grep -A2 "ai:test@joy:" .joy/project.yaml | grep delegation_key | sed 's/.*: //')
+    # project.yaml has new delegation_verifier plus a rotated timestamp.
+    NEW_PUB=$(grep -A2 "ai:test@joy:" .joy/project.yaml | grep delegation_verifier | sed 's/.*: //')
     [ "$OLD_PUB" != "$NEW_PUB" ]
     grep -q "rotated:" .joy/project.yaml
 

@@ -8,10 +8,10 @@
 //! `project.yaml`; the attester's public key is read from the same file.
 //!
 //! Signed subset (see `AttestationSignedFields`): `email`, `capabilities`,
-//! `otp_hash`. `public_key` is intentionally excluded so a member's
+//! `enrollment_verifier`. `verify_key` is intentionally excluded so a member's
 //! passphrase change does not break the attestation. Once a member has
-//! redeemed their OTP and `otp_hash` has been cleared, verification
-//! ignores `signed_fields.otp_hash` (the historical value is retained in
+//! redeemed their OTP and `enrollment_verifier` has been cleared, verification
+//! ignores `signed_fields.enrollment_verifier` (the historical value is retained in
 //! the attestation for audit).
 
 use chrono::Utc;
@@ -41,12 +41,12 @@ pub fn sign_attestation(
 pub fn signed_fields_for(
     email: &str,
     capabilities: &MemberCapabilities,
-    otp_hash: Option<&str>,
+    enrollment_verifier: Option<&str>,
 ) -> AttestationSignedFields {
     AttestationSignedFields {
         email: email.to_string(),
         capabilities: capabilities.clone(),
-        otp_hash: otp_hash.map(|s| s.to_string()),
+        enrollment_verifier: enrollment_verifier.map(|s| s.to_string()),
     }
 }
 
@@ -59,8 +59,8 @@ pub fn signed_fields_for(
 /// 2. `signed_fields.email` matches `member_email`.
 /// 3. `signed_fields.capabilities` matches the member's current
 ///    capabilities.
-/// 4. `signed_fields.otp_hash` matches the member's current `otp_hash`,
-///    unless the member's `otp_hash` is `None` (post-redemption state).
+/// 4. `signed_fields.enrollment_verifier` matches the member's current `enrollment_verifier`,
+///    unless the member's `enrollment_verifier` is `None` (post-redemption state).
 pub fn verify_attestation(
     attestation: &Attestation,
     attester_public_key: &sign::PublicKey,
@@ -84,13 +84,13 @@ pub fn verify_attestation(
             "attestation capabilities do not match member".into(),
         ));
     }
-    // otp_hash match is required only while the member still has one.
-    // Post-redemption the stored otp_hash is cleared; the attestation's
+    // enrollment_verifier match is required only while the member still has one.
+    // Post-redemption the stored value is cleared; the attestation's
     // historical value is accepted.
-    if let Some(current) = &member.otp_hash {
-        if attestation.signed_fields.otp_hash.as_deref() != Some(current.as_str()) {
+    if let Some(current) = &member.enrollment_verifier {
+        if attestation.signed_fields.enrollment_verifier.as_deref() != Some(current.as_str()) {
             return Err(JoyError::AuthFailed(
-                "attestation otp_hash does not match member".into(),
+                "attestation enrollment_verifier does not match member".into(),
             ));
         }
     }
@@ -108,7 +108,7 @@ mod tests {
 
     fn fresh_member(caps: MemberCapabilities, otp: Option<String>) -> Member {
         let mut m = Member::new(caps);
-        m.otp_hash = otp;
+        m.enrollment_verifier = otp;
         m
     }
 
@@ -161,16 +161,16 @@ mod tests {
     }
 
     #[test]
-    fn verify_accepts_cleared_otp_hash_post_redemption() {
+    fn verify_accepts_cleared_enrollment_verifier_post_redemption() {
         let kp = make_kp();
         let pk = kp.public_key();
         let fields = signed_fields_for(
             "alice@example.com",
             &MemberCapabilities::All,
-            Some("abcd".into()),
+            Some("abcd"),
         );
         let att = sign_attestation("horst@example.com", &kp, fields);
-        // otp_hash cleared after redemption - should still verify.
+        // enrollment_verifier cleared after redemption - should still verify.
         let member = fresh_member(MemberCapabilities::All, None);
         verify_attestation(&att, &pk, "alice@example.com", &member).unwrap();
     }
@@ -187,17 +187,17 @@ mod tests {
     }
 
     #[test]
-    fn verify_fails_on_otp_hash_mismatch_before_redemption() {
+    fn verify_fails_on_enrollment_verifier_mismatch_before_redemption() {
         let kp = make_kp();
         let pk = kp.public_key();
         let fields = signed_fields_for(
             "alice@example.com",
             &MemberCapabilities::All,
-            Some("AAAA".into()),
+            Some("AAAA"),
         );
         let att = sign_attestation("horst@example.com", &kp, fields);
         let member = fresh_member(MemberCapabilities::All, Some("BBBB".into()));
         let err = verify_attestation(&att, &pk, "alice@example.com", &member).unwrap_err();
-        assert!(matches!(err, JoyError::AuthFailed(msg) if msg.contains("otp_hash")));
+        assert!(matches!(err, JoyError::AuthFailed(msg) if msg.contains("enrollment_verifier")));
     }
 }

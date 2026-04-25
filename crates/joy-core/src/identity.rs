@@ -179,7 +179,7 @@ fn check_session(root: &Path, member: &str, project: &Option<Project>) -> bool {
     // For human members: validate session signature against public key + TTY binding
     if !is_ai_member(member) {
         let m = project.members.get(member).unwrap();
-        let Some(ref pk_hex) = m.public_key else {
+        let Some(ref pk_hex) = m.verify_key else {
             return false;
         };
         let Ok(pk) = crate::auth::sign::PublicKey::from_hex(pk_hex) else {
@@ -237,7 +237,7 @@ fn ephemeral_public_matches(
 
 fn load_project_optional(root: &Path) -> Option<Project> {
     let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-    store::read_yaml(&project_path).ok()
+    store::read_project(&project_path).ok()
 }
 
 #[allow(dead_code)]

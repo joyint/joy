@@ -121,9 +121,8 @@ pub fn run(args: LsArgs) -> Result<()> {
         match args.group.as_str() {
             "milestone" | "ms" => {
                 let ms_list = milestones::load_milestones(&root)?;
-                let project = store::read_yaml::<joy_core::model::Project>(
-                    &store::joy_dir(&root).join(store::PROJECT_FILE),
-                )?;
+                let project =
+                    store::read_project(&store::joy_dir(&root).join(store::PROJECT_FILE))?;
                 print_tree_by_milestone(&filtered, &ms_list, &all_items, &project);
             }
             "parent" => print_tree_by_parent(&filtered),

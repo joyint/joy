@@ -567,9 +567,7 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
     if to_remove.is_empty() {
         // No files to remove, but check for orphaned members
         let project_path = joy_core::store::joy_dir(&root).join(joy_core::store::PROJECT_FILE);
-        if let Ok(mut project) =
-            joy_core::store::read_yaml::<joy_core::model::Project>(&project_path)
-        {
+        if let Ok(mut project) = joy_core::store::read_project(&project_path) {
             let mut cleaned = false;
             for (_, id, _) in &tools {
                 let member_id = format!("ai:{id}@joy");
@@ -627,7 +625,7 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
 
     // Remove AI members from project.yaml for reset tools
     let project_path = joy_core::store::joy_dir(&root).join(joy_core::store::PROJECT_FILE);
-    if let Ok(mut project) = joy_core::store::read_yaml::<joy_core::model::Project>(&project_path) {
+    if let Ok(mut project) = joy_core::store::read_project(&project_path) {
         let mut project_changed = false;
         for (_, id, paths) in &tools {
             let was_removed = paths
@@ -756,7 +754,7 @@ fn setup_new_tools(root: &Path) -> anyhow::Result<Vec<&'static str>> {
 
     // Load project for member registration
     let project_path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
-    let mut project: joy_core::model::Project = joy_core::store::read_yaml(&project_path)?;
+    let mut project = joy_core::store::read_project(&project_path)?;
     let mut project_changed = false;
 
     for (name, id, detect, configure) in ALL_TOOLS {

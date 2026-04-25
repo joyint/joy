@@ -63,9 +63,9 @@ become_member() {
     # Founder is the sole member, trust root, no attestation expected.
     run grep -c "attestation:" .joy/project.yaml
     [ "$output" = "0" ]
-    # Founder has public_key and salt from auth init.
-    grep -q "public_key:" .joy/project.yaml
-    grep -q "salt:" .joy/project.yaml
+    # Founder has verify_key and kdf_nonce from auth init.
+    grep -q "verify_key:" .joy/project.yaml
+    grep -q "kdf_nonce:" .joy/project.yaml
 }
 
 # ============================================================
@@ -85,10 +85,10 @@ become_member() {
     # (the founder) as attester.
     grep -q "attestation:" .joy/project.yaml
     grep -q "attester: test@example.com" .joy/project.yaml
-    # otp_hash is recorded (alice still has one, pre-redemption).
-    grep -q "otp_hash:" .joy/project.yaml
-    # Only the founder has a public_key at this point; alice has none.
-    [ "$(grep -c '^    public_key:' .joy/project.yaml)" = "1" ]
+    # enrollment_verifier is recorded (alice still has one, pre-redemption).
+    grep -q "enrollment_verifier:" .joy/project.yaml
+    # Only the founder has a verify_key at this point; alice has none.
+    [ "$(grep -c '^    verify_key:' .joy/project.yaml)" = "1" ]
 }
 
 @test "member add without manage-member passphrase fails" {
@@ -119,13 +119,13 @@ become_member() {
     [[ "$output" != *"reverse-attesting"* ]]
     [[ "$output" != *"founder"* ]]
 
-    # Alice's member-level otp_hash is cleared (attestation.signed_fields
+    # Alice's member-level enrollment_verifier is cleared (attestation signed_fields under the pinned otp_hash key
     # may still reference it as historical record - that's 8-space indent
     # and not matched by the member-level regex).
-    run grep -E "^    otp_hash:" .joy/project.yaml
+    run grep -E "^    enrollment_verifier:" .joy/project.yaml
     [ "$status" -ne 0 ]
-    # Both alice and founder now have public_keys at member-level.
-    [ "$(grep -cE '^    public_key:' .joy/project.yaml)" = "2" ]
+    # Both alice and founder now have verify_keys at member-level.
+    [ "$(grep -cE '^    verify_key:' .joy/project.yaml)" = "2" ]
 
     # Founder now carries an attestation naming alice as attester.
     grep -q "attester: alice@example.com" .joy/project.yaml
@@ -222,7 +222,7 @@ become_member() {
 @test "manually injected member fails joy auth with clear error" {
     setup_founder
     # Add a legitimate second member so the attestation-required invariant
-    # (fires once two public_keys exist) applies to every member.
+    # (fires once two verify_keys exist) applies to every member.
     add_member_capture_otp alice@example.com
     become_member alice@example.com
     joy auth --otp "$MEMBER_OTP" --passphrase "$ALICE_PASSPHRASE"
@@ -233,7 +233,7 @@ become_member() {
     sed -i '/^created:/i\  eve@attacker.com:\n    capabilities:\n      manage: {}' .joy/project.yaml
 
     become_member eve@attacker.com
-    # Eve tries to bootstrap her auth (joy auth init sets her public_key)
+    # Eve tries to bootstrap her auth (joy auth init sets her verify_key)
     # and then authenticate. The attestation check at joy auth rejects
     # her because her entry has no attestation.
     joy auth init --passphrase "echo foxtrot golf hotel india juliett"
@@ -249,7 +249,7 @@ become_member() {
 # ============================================================
 
 @test "silent auto-seal attests existing members on first post-upgrade auth" {
-    # Simulate a pre-feature project: members with public_keys but no
+    # Simulate a pre-feature project: members with verify_keys but no
     # attestations anywhere. Dev joins via direct yaml edit + auth init
     # before we introduced attestations (we achieve the same state by
     # stripping attestations from a fresh project).

@@ -502,7 +502,7 @@ fn run_member(
             );
 
             let mut new_member = Member::new(capabilities);
-            new_member.otp_hash = Some(otp_hash);
+            new_member.enrollment_verifier = Some(otp_hash);
             new_member.attestation = Some(attestation);
             project.members.insert(a.id.clone(), new_member);
 
@@ -611,7 +611,7 @@ fn run_member(
                     let signed_fields = joy_core::auth::attestation::signed_fields_for(
                         orphan_email,
                         &orphan.capabilities,
-                        orphan.otp_hash.as_deref(),
+                        orphan.enrollment_verifier.as_deref(),
                     );
                     let new_attestation = joy_core::auth::attestation::sign_attestation(
                         &acting_email,
@@ -671,13 +671,13 @@ fn derive_acting_keypair(
         .members
         .get(email)
         .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member", email))?;
-    let public_key_hex = member.public_key.as_ref().ok_or_else(|| {
+    let public_key_hex = member.verify_key.as_ref().ok_or_else(|| {
         anyhow::anyhow!(
             "{} has no registered public key. Run `joy auth init` first.",
             email
         )
     })?;
-    let salt_hex = member.salt.as_ref().ok_or_else(|| {
+    let salt_hex = member.kdf_nonce.as_ref().ok_or_else(|| {
         anyhow::anyhow!(
             "{} has no registered salt. Run `joy auth init` first.",
             email
@@ -999,7 +999,7 @@ fn member_auth_status(
             .values()
             .any(|m| m.ai_delegations.contains_key(id))
     } else {
-        member.public_key.is_some()
+        member.verify_key.is_some()
     };
 
     // Session check: for humans, validate against their public_key.
@@ -1013,7 +1013,7 @@ fn member_auth_status(
         let current_delegation_keys: Vec<&str> = all_members
             .values()
             .filter_map(|m| m.ai_delegations.get(id))
-            .map(|entry| entry.delegation_key.as_str())
+            .map(|entry| entry.delegation_verifier.as_str())
             .collect();
         joy_core::auth::session::load_session(project_id, id)
             .ok()
@@ -1034,7 +1034,7 @@ fn member_auth_status(
                 }
             })
             .is_some()
-    } else if let Some(pk_hex) = member.public_key.as_ref() {
+    } else if let Some(pk_hex) = member.verify_key.as_ref() {
         if let Ok(pk) = joy_core::auth::sign::PublicKey::from_hex(pk_hex) {
             joy_core::auth::session::load_session(project_id, id)
                 .ok()
