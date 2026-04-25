@@ -1,13 +1,22 @@
 id: JOY-011C-56
 title: Member completion is case-sensitive on prefix
 type: bug
-status: new
+status: closed
 priority: medium
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 - review
 effort: 1
 created_by: ai:claude@joy
 created: 2026-04-25T14:58:10.704065632Z
-updated: 2026-04-25T14:58:10.704065632Z
+updated: 2026-04-25T15:10:57.168017608Z
 description: joy ls -m p<TAB> finds nothing if the only matching member is e.g. peter.schmidt@joydev.com because complete::match_member uses str::starts_with directly, which is case-sensitive. The user has to type capital P. matches_item_id already uses to_ascii_lowercase for the same use case; match_member should follow the same rule and apply case-insensitive prefix matching to both the full-id and the post-colon-suffix branches.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-25T15:00:44.825138110Z
+  text: 'Plan: case-fold both id and prefix in match_member''s two branches (full-id starts_with and rsplit-once tail starts_with), matching the existing pattern in matches_item_id. Tests cover lowercase prefix matching uppercase id and vice versa, plus mixed case.'
+- author: ai:claude@joy
+  date: 2026-04-25T15:10:57.125134840Z
+  text: '[x] match_member is now case-insensitive on both branches via to_ascii_lowercase. [x] 2 new unit tests cover lowercase prefix matching uppercase id and the post-colon-suffix variant. All 68 joy-cli tests pass. Manual: Peter.Schmidt@joydev.com is now found by ''p''.'

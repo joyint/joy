@@ -1,13 +1,22 @@
 id: JOY-011D-C9
 title: ai:<TAB> in bash completes to flags instead of AI members
 type: bug
-status: new
+status: closed
 priority: medium
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 - review
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-25T14:58:10.729583335Z
-updated: 2026-04-25T14:58:10.729583335Z
+updated: 2026-04-25T15:30:48.588447035Z
 description: 'When the user types ''joy auth token add ai:<TAB>'' bash splits the word at '':'' (COMP_WORDBREAKS contains '':'' by default), so COMP_WORDS becomes [..., ''ai:'', ''''] and clap_complete sees the member positional as already filled. It then offers --ttl/--passphrase/--token/--otp/--help instead of AI members. The fix needs to live in the bash completion script: pre-merge tokens around '':'' before delegating to clap_complete, AND strip the prefix-up-to-the-last-colon from each candidate so bash inserts the right suffix without doubling. zsh and fish are unaffected.'
+comments:
+- author: ai:claude@joy
+  date: 2026-04-25T15:12:11.796059457Z
+  text: 'Plan: replace ''joy completions bash'' output with a colon-aware dynamic wrapper. Steps in the wrapper: (1) read COMP_WORDS verbatim, (2) walk and merge any token group that contains '':'' (e.g. [''ai:'', '''', ''claude''] -> [''ai:claude'']), tracking the corrected COMP_CWORD, (3) call the clap_complete bash protocol with the merged words via env vars, (4) for each returned candidate that has the same colon-prefix as the (merged) current word, emit just the post-colon-prefix suffix so bash inserts only the difference. Static completion stays available via ''joy completions bash --static''. zsh/fish unchanged.'
+- author: ai:claude@joy
+  date: 2026-04-25T15:30:48.544814974Z
+  text: '[x] joy completions bash now emits a colon-aware dynamic wrapper. The wrapper walks COMP_WORDS, merges any group separated by '':'' (e.g. [''ai:'', '''', ''claude''] -> [''ai:claude'']) while tracking COMP_CWORD, calls the clap_complete bash protocol with the merged words, and strips the colon-prefix from each candidate so bash inserts only the post-colon suffix. [x] Tests with the new wrapper: ai:<TAB> -> [claude@joy, copilot@joy, qwen@joy, vibe@joy]; ai:cl<TAB> -> [claude@joy]; ai<TAB> -> [ai:claude@joy, ...]; -m h<TAB> -> [horst.schwarz@joydev.com]. [x] Static script available via ''joy completions bash --static-only'' for the legacy behavior. [x] Help text mentions ''set completion-ignore-case on'' for users who want fully case-insensitive completion (a readline setting, not joy-specific). [x] just check green end-to-end (270 lib + 2 trycmd + 184 bats).'

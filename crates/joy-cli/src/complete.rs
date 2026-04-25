@@ -81,8 +81,9 @@ fn matches_item_id(id: &str, prefix: &str) -> bool {
 
 /// Match a member ID against a completion prefix, handling colon as a
 /// possible word boundary that the shell may have stripped (bash's
-/// COMP_WORDBREAKS includes `:`). Returns the candidate string the
-/// completer should emit, or None if there is no match.
+/// COMP_WORDBREAKS includes `:`). Matching is case-insensitive on both
+/// branches so `p` finds `Peter.Schmidt@joydev.com` without forcing the
+/// user to type uppercase.
 ///
 /// Cases (id = `ai:claude@joy`):
 /// * prefix `ai`         -> `ai:claude@joy` (full)
@@ -90,12 +91,14 @@ fn matches_item_id(id: &str, prefix: &str) -> bool {
 /// * prefix `cl`         -> `claude@joy`    (bash stripped `ai:`)
 /// * prefix `xyz`        -> None
 fn match_member(id: &str, prefix: &str) -> Option<String> {
-    if id.starts_with(prefix) {
+    let id_lc = id.to_ascii_lowercase();
+    let prefix_lc = prefix.to_ascii_lowercase();
+    if id_lc.starts_with(&prefix_lc) {
         return Some(id.to_string());
     }
     if !prefix.contains(':') {
         if let Some((_head, tail)) = id.rsplit_once(':') {
-            if tail.starts_with(prefix) {
+            if tail.to_ascii_lowercase().starts_with(&prefix_lc) {
                 return Some(tail.to_string());
             }
         }
@@ -335,6 +338,32 @@ mod tests {
         assert_eq!(
             match_member("alice@team.com", "ali"),
             Some("alice@team.com".to_string())
+        );
+    }
+
+    #[test]
+    fn match_member_is_case_insensitive_on_full_prefix() {
+        assert_eq!(
+            match_member("Peter.Schmidt@joydev.com", "p"),
+            Some("Peter.Schmidt@joydev.com".to_string())
+        );
+        assert_eq!(
+            match_member("Peter.Schmidt@joydev.com", "PETER"),
+            Some("Peter.Schmidt@joydev.com".to_string())
+        );
+    }
+
+    #[test]
+    fn match_member_is_case_insensitive_on_post_colon_branch() {
+        // bash strip leaves prefix as 'CL'; the candidate id has lowercase
+        // 'claude'. Match should still hit and return the suffix.
+        assert_eq!(
+            match_member("ai:claude@joy", "CL"),
+            Some("claude@joy".to_string())
+        );
+        assert_eq!(
+            match_member("ai:Claude@joy", "cl"),
+            Some("Claude@joy".to_string())
         );
     }
 
