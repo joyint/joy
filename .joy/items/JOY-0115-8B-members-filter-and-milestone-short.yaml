@@ -1,0 +1,17 @@
+id: JOY-0115-8B
+title: Members filter and milestone short flag rebinding
+type: story
+status: new
+priority: high
+parent: JOY-0113-17
+deps:
+- JOY-0114-F9
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy
+created: 2026-04-25T13:40:50.589489832Z
+updated: 2026-04-25T13:40:50.589489832Z
+description: 'Add -m, --members <SPEC> filter to the unified FilterArgs. Special tokens: ''me'' (current identity via JOY_SESSION, falling back to git config user.email), ''none'' (no assignees), ''*'' (any assignee). Match semantics: ANY (item matches if at least one assignee is in the list). Rebind the existing -m, --milestone short flag to -M, --milestone (BREAKING). --mine becomes a long-only alias resolved to ''-m self''. Delegated AI sessions: --mine and -m me also match items assigned to AI members where delegated_by equals the current human identity. The -c assignee column key gains ''members'' as an equivalent alias. No negation support (YAGNI). CHANGELOG entry calls out the breaking flag swap.'

@@ -1,0 +1,14 @@
+id: JOY-0117-82
+title: Member ID completion across all commands
+type: rework
+status: new
+priority: medium
+parent: JOY-0113-17
+capabilities:
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy
+created: 2026-04-25T13:42:01.003885257Z
+updated: 2026-04-25T13:42:01.003885257Z
+description: 'Fix the existing shell completer for member IDs: it currently stops at the colon in IDs like ai:claude@joy because of word-boundary handling. Audit the completer registration introduced in JOY-00EB-6C and apply it consistently to every flag and positional argument that accepts a member ID across joy assign, joy auth, joy project member, and the new -m/--members filter. Tests verify completion through the colon for both human (foo@bar.com) and AI (ai:tool@joy) IDs.'

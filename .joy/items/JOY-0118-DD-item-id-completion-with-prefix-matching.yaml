@@ -1,0 +1,15 @@
+id: JOY-0118-DD
+title: Item ID completion with prefix matching
+type: story
+status: new
+priority: medium
+parent: JOY-0113-17
+capabilities:
+- plan
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy
+created: 2026-04-25T13:42:07.917447697Z
+updated: 2026-04-25T13:42:07.917447697Z
+description: 'Add a dynamic shell completer for item IDs (joy show, edit, comment, start, close, submit, reopen, assign, deps, ...). Read .joy/items/*.yaml at completion time and match against three rules in order: (1) acronym prefix (J -> JOY-, JI-), (2) numeric prefix (00 -> all JOY-00xx), (3) hex chunk in the shard suffix, case-insensitive (AA or aa -> JOY-00AA-xx). Single match auto-completes; multiple matches list. Naive scan is fine for current scale; revisit with an index when projects exceed a few thousand items.'
