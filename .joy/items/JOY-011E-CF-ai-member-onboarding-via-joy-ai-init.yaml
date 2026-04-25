@@ -1,0 +1,31 @@
+id: JOY-011E-CF
+title: AI-Member-Onboarding via 'joy ai init' bypasses attestation chain
+type: bug
+status: new
+priority: extreme
+capabilities:
+- implement
+- review
+created_by: ai:claude@joy
+created: 2026-04-25T16:48:45.236535050Z
+updated: 2026-04-25T16:48:45.236535050Z
+description: |-
+  Two code paths add a member to .joy/project.yaml, but they apply different security guarantees:
+
+  1. 'joy project member add' (crates/joy-cli/src/commands/project.rs) goes through full onboarding: an OTP is generated, an 'attestation' block is written and signed by the acting manage member's identity key. The new member can later redeem the OTP to derive their own keypair. Audit chain is intact.
+
+  2. 'joy ai init' (crates/joy-cli/src/commands/ai.rs::setup_new_tools) detects supported AI tools and registers them by calling 'Member::new(capabilities)' (joy-core/src/model/project.rs), then writes the project.yaml directly via 'write_yaml_preserve'. The resulting entry has 'attestation: None', no OTP, no verify_key.
+
+  Joy still accepts this entry as valid: any later read or write of project.yaml does not flag it. So the AI-init path produces unattested members, while the human path produces attested ones. Two classes of members exist, with no documented reason for the asymmetry.
+
+  Impact:
+
+  - Audit chain is broken at AI-Member entries. The chain of who-attested-whom for a project is incomplete by design.
+  - A user with .joy/project.yaml write access (e.g. anyone who can push a commit) can hand-craft a yaml entry that mimics the joy-ai-init shape ('Member::new'-style) and Joy will accept it without any signature being verified. This is a yaml-edit attack vector that the human-onboarding path explicitly defends against via the OTP+attestation chain.
+  - Subtle inconsistency that confuses operators: 'joy project member add ai:foo@joy' writes an OTP-and-attestation entry, but 'joy ai init' writes a bare entry. Same end goal, very different audit trail.
+
+  Expected behaviour:
+
+  All member registrations - regardless of CLI path or whether the member is a human or an AI - should produce an attested entry signed by the acting manage member. AI members specifically should still be attested even if they do not need an OTP redemption (they authenticate via delegation tokens, not via their own passphrase). The 'joy ai init' path should be brought in line with 'joy project member add' on the attestation aspect.
+
+  Discovered while setting up an AI member 'ai:feedback@joy' for an external service in another Joy project (AIP-A3). The mismatch between the two paths surfaced because the existing ai:claude@joy / ai:copilot@joy in that project (created via joy ai init) had no otp_hash, while a freshly added member via 'joy project member add' did. Same role, different trust footprint. ai:claude@joy was eventually retro-attested manually, but joy ai init does not enforce that.

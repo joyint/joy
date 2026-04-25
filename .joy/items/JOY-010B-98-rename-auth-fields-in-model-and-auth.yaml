@@ -1,13 +1,19 @@
 id: JOY-010B-98
 title: Rename auth fields in model and auth modules
 type: task
-status: new
+status: in-progress
 priority: high
 parent: JOY-010A-34
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 3
 created_by: ai:claude@joy
 created: 2026-04-24T06:23:39.060557051Z
-updated: 2026-04-24T06:23:39.060557051Z
+updated: 2026-04-25T15:46:56.741639825Z
 description: 'Rename Member.public_key -> verify_key, Member.salt -> kdf_nonce, Member.otp_hash -> enrollment_verifier, AiDelegationEntry.delegation_key -> delegation_verifier in joy-core/src/model/project.rs. Update all call sites in joy-core/src/auth/* and joy-cli/src/commands/auth.rs. Keep AttestationSignedFields canonical form frozen via #[serde(rename = "otp_hash")] so existing signatures remain valid. Tests: adjust golden YAML fixtures.'
+comments:
+- author: ai:claude@joy
+  date: 2026-04-25T15:46:56.741638994Z
+  text: 'Plan: rename four leaf fields in joy-core/src/model/project.rs (Member.public_key/salt/otp_hash, AiDelegationEntry.delegation_key) to verify_key/kdf_nonce/enrollment_verifier/delegation_verifier. Pin AttestationSignedFields.otp_hash to historical serde key via #[serde(rename = "otp_hash")] so existing signatures stay valid. Cascade rename through joy-core/src/auth/*, joy-cli/src/commands/auth.rs, and joy-cli/src/commands/member.rs. Update golden YAML in tests. Verify with cargo fmt + cargo check + cargo test on the workspace. No behavioural change.'
