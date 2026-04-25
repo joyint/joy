@@ -1,7 +1,7 @@
 id: JOY-0113-17
 title: CLI commands consolidation
 type: epic
-status: new
+status: closed
 priority: high
 capabilities:
 - conceive
@@ -9,5 +9,5 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy
 created: 2026-04-25T13:40:26.219835106Z
-updated: 2026-04-25T13:40:26.219835106Z
+updated: 2026-04-25T14:20:11.535749795Z
 description: 'Unify the CLI surface across listing commands (ls, board, roadmap) so the same filters, completions, and help patterns apply everywhere. Includes a member filter (-m), milestone short-flag rebinding (-m -> -M), board filter parity, member and item ID completion fixes, help-as-subcommand on every command, and stricter column validation. Rationale: with multi-person projects becoming common, missing a member filter is a daily friction; the broader inconsistency between ls, board, and roadmap is a long-standing rough edge.'
