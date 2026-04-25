@@ -1,0 +1,48 @@
+id: JOY-0112-B2
+title: Merkle-DAG event log for integrity and mergeability
+type: story
+status: new
+priority: high
+capabilities:
+- plan
+- implement
+- review
+effort: 5
+created_by: ai:claude@joy
+created: 2026-04-25T08:09:44.083328314Z
+updated: 2026-04-25T08:09:44.083328314Z
+description: |-
+  Event logs in .joy/logs/ are append-only files written by multiple actors via Git. Two requirements collide:
+
+  1. Avoid merge conflicts when actors append in parallel (real incident: AIP-A3 on 2026-04-24, line-level Git conflict in .joy/logs/2026-04-24.log)
+  2. Tamper evidence for audit trail integrity (security review: docs/dev/quality/review/vision/traceability/judge/2026-03-26.md, Attack Vector 3 -- "Hash-chained logs" listed as recommended mitigation)
+
+  Eliminated alternatives:
+  - Per-actor sharding -> profiling leak via filenames, does not actually prevent concurrent writes (multi-device same-actor), file-count explosion
+  - Git commit DAG anchor -> violates VCS abstraction (ADR-010), excludes Jujutsu/Pijul, depends on commit-signing discipline
+  - merge=union alone -> resolves (1) only, leaves (2) open, also fails to detect edits of historical entries and Octopus merges (3+ branches)
+
+  Chosen direction: self-contained Merkle-DAG inside the log. Each entry carries:
+  - self-hash (event ID, content-based dedup)
+  - parents[]: hashes of tips the writer saw at write time
+
+  Properties:
+  - Mergeable via union: physical line order in the file becomes irrelevant; sort-on-read for display
+  - Tamper-evident: editing or deleting any historical entry detectably breaks the chain
+  - Multi-parent native: handles parallel writers and Octopus merges without special casing
+  - VCS-agnostic: integrity is self-bearing, no Git-specific dependency
+  - Cross-day continuity: first entry of day N references tip(s) of day N-1
+
+  Related:
+  - ADR-011 (YAML-aware merge strategy) -- precedent for content-hash dedup pattern at the item-YAML level
+  - ADR-010 (VCS abstraction layer) -- portability constraint that rules out Git-DAG anchoring
+  - JOY-0074 (Integrity hash verification for tamper detection without Crypt) -- broader umbrella; this item is the log-specific concretization
+
+  Open for the new ADR:
+  - Parent selection rule (tip-based vs linear)
+  - Hash algorithm (SHA-256 multibase vs BLAKE3)
+  - Storage format (NDJSON vs extended plaintext)
+  - Verifier tooling location (joy log verify vs joy-judge log verify)
+  - Cross-day genesis and migration path for existing flat logs
+
+  Stop-the-line trigger: parallel append in multi-actor projects already produces conflicts in production.
