@@ -1,7 +1,7 @@
 id: JOY-011F-65
 title: Normalize short-form item IDs in parent and deps refs
 type: bug
-status: in-progress
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -11,7 +11,7 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy
 created: 2026-04-28T16:31:37.370129426Z
-updated: 2026-04-28T16:38:09.254996080Z
+updated: 2026-04-28T16:41:30.132393687Z
 description: |-
   joy add/edit accept short-form IDs (JOY-0042 for JOY-0042-A3) for --parent; joy deps --add does the same for dep refs. The short form is stored as-is in YAML. Internal lookups use exact string match, so silently:
 

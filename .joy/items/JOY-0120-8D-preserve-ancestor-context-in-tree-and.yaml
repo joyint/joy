@@ -1,15 +1,17 @@
 id: JOY-0120-8D
 title: Preserve ancestor context in tree and roadmap views
 type: bug
-status: new
+status: in-progress
 priority: medium
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 - review
 effort: 4
 created_by: ai:claude@joy
 created: 2026-04-28T16:31:45.363075087Z
-updated: 2026-04-28T16:31:45.363075087Z
+updated: 2026-04-28T16:50:45.786788625Z
 description: |-
   joy ls --tree and joy roadmap break hierarchy when an ancestor is not in the current visible set:
 
@@ -19,3 +21,15 @@ description: |-
   Both stem from "root = parent not in current set".
 
   Fix: when a primary item has an ancestor not in the set, pull it in as greyed-out context, recursively up the chain. Primary items stay highlighted; ancestors are dimmed. Bucket headers and counters count primary items only.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-28T16:41:37.543843649Z
+  text: 'Plan: 1) In ls.rs, before tree rendering, expand the visible set with ancestor chains of every primary item, marking ancestors as ''context''. 2) Render context items with the existing inactive/dimmed style. 3) For roadmap, perform the expansion per milestone bucket. 4) Bucket counters and stats remain over primary items only. 5) BATS integration tests for: closed parent + active child (Bug A), child with own milestone different from parent (Bug B), recursive ancestor chain.'
+- author: ai:claude@joy
+  date: 2026-04-28T16:50:45.786788319Z
+  text: |-
+    [x] Added expand_with_ancestors helper in ls.rs.
+    [x] print_tree_by_parent and print_parent_grouped_children pull ancestors of primary items into the visible set; ancestors are rendered with the existing inactive style.
+    [x] print_tree_node and print_ms_tree_node take a context_ids set and dim ancestors regardless of status.
+    [x] Bucket counters in joy roadmap continue to use effective_milestone over all_items, so context ancestors do not inflate primary counts.
+    [x] 4 BATS integration tests in ancestor_context.bats covering: closed parent + active child, three-level chain with closed middle, child in different milestone, counter correctness.

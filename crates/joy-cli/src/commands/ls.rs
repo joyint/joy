@@ -125,7 +125,7 @@ pub fn run(args: LsArgs) -> Result<()> {
                     store::read_project(&store::joy_dir(&root).join(store::PROJECT_FILE))?;
                 print_tree_by_milestone(&filtered, &ms_list, &all_items, &project);
             }
-            "parent" => print_tree_by_parent(&filtered),
+            "parent" => print_tree_by_parent(&filtered, &all_items),
             other => anyhow::bail!("unknown group: {other} (use: parent, milestone)"),
         }
     } else {
@@ -386,14 +386,53 @@ fn pad_colored(colored: &str, raw: &str, width: usize) -> String {
 
 // -- Tree by parent hierarchy (recursive) --
 
-fn print_tree_by_parent(items: &[&Item]) {
+/// Walk up the parent chain of every primary item and pull in any
+/// ancestor that is not already in the visible set, so the hierarchy
+/// stays connected even when an ancestor is excluded by the current
+/// filter or sits in a different milestone bucket.
+///
+/// Returns the expanded item list and the set of ancestor IDs that
+/// were added as context (rendered greyed-out by callers).
+fn expand_with_ancestors<'a>(
+    primary: &[&'a Item],
+    all_items: &'a [Item],
+) -> (Vec<&'a Item>, std::collections::HashSet<String>) {
+    use std::collections::HashSet;
+    let primary_ids: HashSet<String> = primary.iter().map(|i| i.id.clone()).collect();
+    let mut visible_ids: HashSet<String> = primary_ids.clone();
+    let mut context_ids: HashSet<String> = HashSet::new();
+    let mut to_walk: Vec<&'a Item> = primary.to_vec();
+    while let Some(item) = to_walk.pop() {
+        if let Some(pid) = item.parent.as_deref() {
+            if !visible_ids.contains(pid) {
+                if let Some(ancestor) = all_items.iter().find(|i| i.id == pid) {
+                    visible_ids.insert(pid.to_string());
+                    context_ids.insert(pid.to_string());
+                    to_walk.push(ancestor);
+                }
+            }
+        }
+    }
+    let mut expanded: Vec<&'a Item> = primary.to_vec();
+    for ctx_id in &context_ids {
+        if let Some(item) = all_items.iter().find(|i| &i.id == ctx_id) {
+            expanded.push(item);
+        }
+    }
+    (expanded, context_ids)
+}
+
+fn print_tree_by_parent(items: &[&Item], all_items: &[Item]) {
     let w = terminal_width();
     println!("{}", color::header("Tree"));
 
-    let item_ids: std::collections::HashSet<&str> = items.iter().map(|i| i.id.as_str()).collect();
+    let (expanded, context_ids) = expand_with_ancestors(items, all_items);
+    let primary_count = items.len();
 
-    // Root items: no parent, or parent not in the filtered set
-    let roots: Vec<&&Item> = items
+    let item_ids: std::collections::HashSet<&str> =
+        expanded.iter().map(|i| i.id.as_str()).collect();
+
+    let roots: Vec<&&Item> = expanded
         .iter()
         .filter(|i| match i.parent.as_deref() {
             None => true,
@@ -403,11 +442,11 @@ fn print_tree_by_parent(items: &[&Item]) {
 
     for (i, root) in roots.iter().enumerate() {
         let is_last = i == roots.len() - 1;
-        print_tree_node(root, items, "", is_last);
+        print_tree_node(root, &expanded, &context_ids, "", is_last);
     }
 
     println!("{}", color::label(&"-".repeat(w)));
-    println!("{}", color::label(&color::plural(items.len(), "item")));
+    println!("{}", color::label(&color::plural(primary_count, "item")));
 }
 
 /// Compute the available title width for a tree row, given the prefix and item metadata.
@@ -429,7 +468,13 @@ fn tree_title_width(prefix: &str, connector: &str, item: &Item) -> usize {
     term_width.saturating_sub(chrome_width)
 }
 
-fn print_tree_node(item: &Item, all_items: &[&Item], prefix: &str, is_last: bool) {
+fn print_tree_node(
+    item: &Item,
+    all_items: &[&Item],
+    context_ids: &std::collections::HashSet<String>,
+    prefix: &str,
+    is_last: bool,
+) {
     let connector = if prefix.is_empty() {
         String::new() // Root level: no connector
     } else if is_last {
@@ -475,7 +520,8 @@ fn print_tree_node(item: &Item, all_items: &[&Item], prefix: &str, is_last: bool
     let padding = term_width.saturating_sub(left_width + attr_width);
     let spacer = " ".repeat(padding);
 
-    if !item.is_active() {
+    let dim = !item.is_active() || context_ids.contains(&item.id);
+    if dim {
         let (status_raw, _) = color::status_display(&item.status);
         println!(
             "{}{}",
@@ -501,7 +547,7 @@ fn print_tree_node(item: &Item, all_items: &[&Item], prefix: &str, is_last: bool
 
     for (ci, child) in children.iter().enumerate() {
         let child_is_last = ci == children.len() - 1;
-        print_tree_node(child, all_items, &child_prefix, child_is_last);
+        print_tree_node(child, all_items, context_ids, &child_prefix, child_is_last);
     }
 }
 
@@ -569,6 +615,7 @@ fn print_tree_by_milestone(
             closed,
             total,
             children.as_deref().unwrap_or(&empty),
+            all_items,
         );
     }
 
@@ -580,7 +627,7 @@ fn print_tree_by_milestone(
             }
             first = false;
             let (closed, total) = milestone_counts(ms_id, all_items);
-            print_milestone_group(ms_id, None, None, closed, total, children);
+            print_milestone_group(ms_id, None, None, closed, total, children, all_items);
         }
     }
 
@@ -600,7 +647,7 @@ fn print_tree_by_milestone(
             no_ms_closed,
             no_ms_total.len()
         );
-        print_parent_grouped_children(&no_milestone);
+        print_parent_grouped_children(&no_milestone, all_items);
     }
 
     // Footer with statistics (matches board style)
@@ -660,6 +707,7 @@ fn print_milestone_group(
     closed: usize,
     total: usize,
     children: &[&&Item],
+    all_items: &[Item],
 ) {
     let date_str = date.map(|d| format!(" ({})", d)).unwrap_or_default();
     let title_str = title.unwrap_or("(undefined)");
@@ -672,15 +720,20 @@ fn print_milestone_group(
         closed,
         total
     );
-    print_parent_grouped_children(children);
+    print_parent_grouped_children(children, all_items);
 }
 
 /// Print children grouped by parent hierarchy within a milestone group.
-fn print_parent_grouped_children(items: &[&&Item]) {
-    let item_ids: std::collections::HashSet<&str> = items.iter().map(|i| i.id.as_str()).collect();
+/// Ancestors of primary items that live outside this bucket are pulled
+/// in as context (rendered greyed-out) so the hierarchy stays visible.
+fn print_parent_grouped_children(items: &[&&Item], all_items: &[Item]) {
+    let primary_refs: Vec<&Item> = items.iter().map(|r| **r).collect();
+    let (expanded, context_ids) = expand_with_ancestors(&primary_refs, all_items);
 
-    // Root items within this group: no parent, or parent not in this group
-    let roots: Vec<&&&Item> = items
+    let item_ids: std::collections::HashSet<&str> =
+        expanded.iter().map(|i| i.id.as_str()).collect();
+
+    let roots: Vec<&&Item> = expanded
         .iter()
         .filter(|i| match i.parent.as_deref() {
             None => true,
@@ -690,11 +743,17 @@ fn print_parent_grouped_children(items: &[&&Item]) {
 
     for (i, root) in roots.iter().enumerate() {
         let is_last = i == roots.len() - 1;
-        print_ms_tree_node(root, items, "  ", is_last);
+        print_ms_tree_node(root, &expanded, &context_ids, "  ", is_last);
     }
 }
 
-fn print_ms_tree_node(item: &Item, group: &[&&Item], prefix: &str, is_last: bool) {
+fn print_ms_tree_node(
+    item: &Item,
+    group: &[&Item],
+    context_ids: &std::collections::HashSet<String>,
+    prefix: &str,
+    is_last: bool,
+) {
     let connector = if is_last { "└── " } else { "├── " };
     let child_prefix = if is_last {
         format!("{prefix}    ")
@@ -704,7 +763,7 @@ fn print_ms_tree_node(item: &Item, group: &[&&Item], prefix: &str, is_last: bool
 
     let tree_chrome = color::label(&format!("{prefix}{connector}"));
 
-    let children: Vec<&&&Item> = group
+    let children: Vec<&&Item> = group
         .iter()
         .filter(|i| i.parent.as_deref() == Some(&item.id))
         .collect();
@@ -729,7 +788,8 @@ fn print_ms_tree_node(item: &Item, group: &[&&Item], prefix: &str, is_last: bool
     let padding = term_width.saturating_sub(left_width + attr_width);
     let spacer = " ".repeat(padding);
 
-    if !item.is_active() {
+    let dim = !item.is_active() || context_ids.contains(&item.id);
+    if dim {
         let (status_raw, _) = color::status_display(&item.status);
         println!(
             "{}{}",
@@ -755,7 +815,7 @@ fn print_ms_tree_node(item: &Item, group: &[&&Item], prefix: &str, is_last: bool
 
     for (ci, child) in children.iter().enumerate() {
         let child_is_last = ci == children.len() - 1;
-        print_ms_tree_node(child, group, &child_prefix, child_is_last);
+        print_ms_tree_node(child, group, context_ids, &child_prefix, child_is_last);
     }
 }
 
