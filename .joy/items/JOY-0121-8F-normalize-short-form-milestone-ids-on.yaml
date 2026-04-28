@@ -1,0 +1,37 @@
+id: JOY-0121-8F
+title: Normalize short-form milestone IDs on link
+type: bug
+status: in-progress
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy
+created: 2026-04-28T16:52:39.964879682Z
+updated: 2026-04-28T17:01:34.859542678Z
+description: |-
+  joy milestone link accepts short-form milestone IDs (TST-MS-01 for TST-MS-01-A1) and stores them verbatim in the items milestone field. Like the recently fixed parent/deps short-form bug, internal lookups use exact match, so:
+
+    - joy roadmap shows the milestone as "(undefined)" because the bucket key does not match any known milestone file
+    - joy ls --milestone TST-MS-01-A1 misses items linked via short form
+
+  Fix: same approach as JOY-011F-65 but for milestone refs. Either rewrite milestone refs in load_items by looking up the matching milestone file, or have joy milestone link store the resolved full ID. The load-time normalization is consistent with how parent and deps are handled.
+
+  Reproducer:
+    joy milestone add "First"            # generates e.g. TST-MS-01-A1
+    joy milestone link ITEM TST-MS-01    # short form accepted
+    joy roadmap                          # bucket appears as "(undefined)"
+comments:
+- author: ai:claude@joy
+  date: 2026-04-28T16:53:20.437220817Z
+  text: 'Plan: Same approach as JOY-011F-65, applied to milestone refs. In load_items, also load the milestone IDs and rewrite items.milestone short forms to their full form. Add unit tests + a BATS test that joy roadmap shows the correct bucket title when linked via short form.'
+- author: ai:claude@joy
+  date: 2026-04-28T17:01:34.859542163Z
+  text: |-
+    [x] Added milestone_short_form and normalize_milestone_refs in items.rs.
+    [x] load_items now also loads milestone IDs and normalizes item.milestone short forms.
+    [x] 5 unit tests for milestone short_form and normalization.
+    [x] 3 BATS integration tests in short_form_milestone.bats covering joy roadmap, lazy persist on write, and joy ls --milestone.

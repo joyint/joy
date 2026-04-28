@@ -1,7 +1,7 @@
 id: JOY-0120-8D
 title: Preserve ancestor context in tree and roadmap views
 type: bug
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -11,7 +11,7 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy
 created: 2026-04-28T16:31:45.363075087Z
-updated: 2026-04-28T16:50:45.786788625Z
+updated: 2026-04-28T16:51:53.933051198Z
 description: |-
   joy ls --tree and joy roadmap break hierarchy when an ancestor is not in the current visible set:
 
