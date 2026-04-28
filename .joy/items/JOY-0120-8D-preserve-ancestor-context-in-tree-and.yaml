@@ -1,0 +1,21 @@
+id: JOY-0120-8D
+title: Preserve ancestor context in tree and roadmap views
+type: bug
+status: new
+priority: medium
+capabilities:
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy
+created: 2026-04-28T16:31:45.363075087Z
+updated: 2026-04-28T16:31:45.363075087Z
+description: |-
+  joy ls --tree and joy roadmap break hierarchy when an ancestor is not in the current visible set:
+
+    - joy ls --tree: child whose parent is filtered out (closed, deferred, etc.) renders as root.
+    - joy roadmap: child with own milestone different from parent's lands in another bucket as root.
+
+  Both stem from "root = parent not in current set".
+
+  Fix: when a primary item has an ancestor not in the set, pull it in as greyed-out context, recursively up the chain. Primary items stay highlighted; ancestors are dimmed. Bucket headers and counters count primary items only.

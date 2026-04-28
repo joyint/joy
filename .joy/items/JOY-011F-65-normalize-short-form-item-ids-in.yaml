@@ -1,0 +1,40 @@
+id: JOY-011F-65
+title: Normalize short-form item IDs in parent and deps refs
+type: bug
+status: in-progress
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy
+created: 2026-04-28T16:31:37.370129426Z
+updated: 2026-04-28T16:38:09.254996080Z
+description: |-
+  joy add/edit accept short-form IDs (JOY-0042 for JOY-0042-A3) for --parent; joy deps --add does the same for dep refs. The short form is stored as-is in YAML. Internal lookups use exact string match, so silently:
+
+    - joy ls --tree, joy roadmap render children flat
+    - joy deps lists deps as "(not found)"
+    - joy ls --blocked misses blocked items
+    - delete cleanup misses short-form refs
+
+  Reproducer:
+    joy add task "Parent A"                  # id TST-0001-79
+    joy add task "Child B" --parent TST-0001
+    joy ls --tree                             # appear as siblings
+
+  Fix: in the central item-loading path, build short->full map from loaded items and rewrite parent/deps fields in memory. YAML stays untouched on read; the next regular write persists the normalized form. Out of scope: milestone refs.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-28T16:31:53.373573126Z
+  text: 'Plan: 1) Add short->full ID resolution in load_items (joy-core/src/items.rs). 2) Apply to parent and each entry of deps in memory after loading. 3) Add unit tests in items.rs for the normalization. 4) Add integration test reproducing the user-visible symptoms (ls --tree, deps, blocked filter).'
+- author: ai:claude@joy
+  date: 2026-04-28T16:38:09.254995770Z
+  text: |-
+    [x] Added short_form() and normalize_id_refs() in load_items.
+    [x] Made load_item() go through load_items so single-item edits also persist normalized refs.
+    [x] 7 unit tests in items.rs.
+    [x] 5 BATS integration tests in tests/integration/short_form_refs.bats covering ls --tree, deps, --blocked, lazy persist on write, and full-form passthrough.
+    [x] All 360 cargo + 189 bats tests pass.

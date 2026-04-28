@@ -35,7 +35,58 @@ pub fn load_items(root: &Path) -> Result<Vec<Item>, JoyError> {
         items.push(item);
     }
 
+    normalize_id_refs(&mut items);
+
     Ok(items)
+}
+
+/// Return the short form of a full item ID, or None if the ID is not
+/// in the new ACRONYM-XXXX-YY shape (legacy four-hex-digit IDs and
+/// non-item IDs like ACRONYM-MS-NN return None).
+/// "JOY-0042-A3" -> Some("JOY-0042")
+/// "JOY-0042"    -> None
+/// "JOY-MS-01"   -> None
+fn short_form(full_id: &str) -> Option<&str> {
+    let last_dash = full_id.rfind('-')?;
+    let suffix = &full_id[last_dash + 1..];
+    if suffix.len() != 2 || u8::from_str_radix(suffix, 16).is_err() {
+        return None;
+    }
+    let prefix = &full_id[..last_dash];
+    let prev_dash = prefix.rfind('-')?;
+    let middle = &prefix[prev_dash + 1..];
+    if middle.len() == 4 && u16::from_str_radix(middle, 16).is_ok() {
+        Some(prefix)
+    } else {
+        None
+    }
+}
+
+/// Rewrite short-form item ID references in `parent` and `deps` to
+/// their full form, in place. Ambiguous short forms (multiple items
+/// share the same prefix) are left untouched.
+fn normalize_id_refs(items: &mut [Item]) {
+    use std::collections::HashMap;
+    let mut map: HashMap<String, Option<String>> = HashMap::new();
+    for item in items.iter() {
+        if let Some(short) = short_form(&item.id) {
+            map.entry(short.to_string())
+                .and_modify(|e| *e = None)
+                .or_insert_with(|| Some(item.id.clone()));
+        }
+    }
+    for item in items.iter_mut() {
+        if let Some(p) = item.parent.as_deref() {
+            if let Some(Some(full)) = map.get(p) {
+                item.parent = Some(full.clone());
+            }
+        }
+        for dep in &mut item.deps {
+            if let Some(Some(full)) = map.get(dep.as_str()) {
+                *dep = full.clone();
+            }
+        }
+    }
 }
 
 /// Save an item to .joy/items/{ID}-{slug}.yaml.
@@ -195,9 +246,19 @@ fn extract_full_id(filename: &str) -> Option<String> {
 }
 
 /// Load a single item by ID.
+///
+/// Goes through `load_items` so that short-form ID references in
+/// `parent` and `deps` are normalized to full form before the caller
+/// sees them. This guarantees that any subsequent `update_item` call
+/// persists the normalized form.
 pub fn load_item(root: &Path, id: &str) -> Result<Item, JoyError> {
     let path = find_item_file(root, id)?;
-    store::read_yaml(&path)
+    let target_id: String = store::read_yaml::<Item>(&path)?.id;
+    let items = load_items(root)?;
+    items
+        .into_iter()
+        .find(|i| i.id == target_id)
+        .ok_or_else(|| JoyError::ItemNotFound(target_id))
 }
 
 /// Delete an item by ID. Returns the deleted item.
@@ -449,5 +510,158 @@ mod tests {
         let items = load_items(dir.path()).unwrap();
         assert_eq!(items[0].id, "JOY-0001");
         assert_eq!(items[1].id, "JOY-0002");
+    }
+
+    #[test]
+    fn short_form_extracts_prefix_for_suffixed_id() {
+        assert_eq!(short_form("JOY-0042-A3"), Some("JOY-0042"));
+        assert_eq!(short_form("TST-00FF-12"), Some("TST-00FF"));
+    }
+
+    #[test]
+    fn short_form_returns_none_for_legacy_id() {
+        assert_eq!(short_form("JOY-0042"), None);
+        assert_eq!(short_form("JOY-MS-01"), None);
+    }
+
+    #[test]
+    fn short_form_returns_none_for_non_hex_suffix() {
+        assert_eq!(short_form("JOY-0042-XX"), None);
+        assert_eq!(short_form("JOY-0042-AAA"), None);
+    }
+
+    #[test]
+    fn normalize_rewrites_short_form_parent() {
+        let mut parent = Item::new(
+            "JOY-0042-A3".into(),
+            "P".into(),
+            ItemType::Epic,
+            Priority::Medium,
+            vec![],
+        );
+        parent.parent = None;
+        let mut child = Item::new(
+            "JOY-0043-B1".into(),
+            "C".into(),
+            ItemType::Task,
+            Priority::Medium,
+            vec![],
+        );
+        child.parent = Some("JOY-0042".into());
+        let mut items = vec![parent, child];
+        normalize_id_refs(&mut items);
+        assert_eq!(items[1].parent.as_deref(), Some("JOY-0042-A3"));
+    }
+
+    #[test]
+    fn normalize_rewrites_short_form_deps() {
+        let dep = Item::new(
+            "JOY-0042-A3".into(),
+            "D".into(),
+            ItemType::Task,
+            Priority::Medium,
+            vec![],
+        );
+        let mut consumer = Item::new(
+            "JOY-0043-B1".into(),
+            "C".into(),
+            ItemType::Task,
+            Priority::Medium,
+            vec![],
+        );
+        consumer.deps = vec!["JOY-0042".into()];
+        let mut items = vec![dep, consumer];
+        normalize_id_refs(&mut items);
+        assert_eq!(items[1].deps, vec!["JOY-0042-A3".to_string()]);
+    }
+
+    #[test]
+    fn normalize_leaves_full_form_unchanged() {
+        let parent = Item::new(
+            "JOY-0042-A3".into(),
+            "P".into(),
+            ItemType::Epic,
+            Priority::Medium,
+            vec![],
+        );
+        let mut child = Item::new(
+            "JOY-0043-B1".into(),
+            "C".into(),
+            ItemType::Task,
+            Priority::Medium,
+            vec![],
+        );
+        child.parent = Some("JOY-0042-A3".into());
+        let mut items = vec![parent, child];
+        normalize_id_refs(&mut items);
+        assert_eq!(items[1].parent.as_deref(), Some("JOY-0042-A3"));
+    }
+
+    #[test]
+    fn normalize_leaves_unknown_refs_unchanged() {
+        let mut child = Item::new(
+            "JOY-0043-B1".into(),
+            "C".into(),
+            ItemType::Task,
+            Priority::Medium,
+            vec![],
+        );
+        child.parent = Some("JOY-9999".into());
+        child.deps = vec!["JOY-8888".into()];
+        let mut items = vec![child];
+        normalize_id_refs(&mut items);
+        assert_eq!(items[0].parent.as_deref(), Some("JOY-9999"));
+        assert_eq!(items[0].deps, vec!["JOY-8888".to_string()]);
+    }
+
+    #[test]
+    fn normalize_leaves_ambiguous_short_forms_unchanged() {
+        let a = Item::new(
+            "JOY-0042-A3".into(),
+            "A".into(),
+            ItemType::Task,
+            Priority::Medium,
+            vec![],
+        );
+        let b = Item::new(
+            "JOY-0042-B1".into(),
+            "B".into(),
+            ItemType::Task,
+            Priority::Medium,
+            vec![],
+        );
+        let mut child = Item::new(
+            "JOY-0043-CC".into(),
+            "C".into(),
+            ItemType::Task,
+            Priority::Medium,
+            vec![],
+        );
+        child.parent = Some("JOY-0042".into());
+        let mut items = vec![a, b, child];
+        normalize_id_refs(&mut items);
+        assert_eq!(items[2].parent.as_deref(), Some("JOY-0042"));
+    }
+
+    #[test]
+    fn normalize_handles_legacy_parent_referenced_by_full_id() {
+        let parent = Item::new(
+            "JOY-0042".into(),
+            "P".into(),
+            ItemType::Epic,
+            Priority::Medium,
+            vec![],
+        );
+        let mut child = Item::new(
+            "JOY-0043-B1".into(),
+            "C".into(),
+            ItemType::Task,
+            Priority::Medium,
+            vec![],
+        );
+        child.parent = Some("JOY-0042".into());
+        let mut items = vec![parent, child];
+        normalize_id_refs(&mut items);
+        assert_eq!(items[1].parent.as_deref(), Some("JOY-0042"));
     }
 }
