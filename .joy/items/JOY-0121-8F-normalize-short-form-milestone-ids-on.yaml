@@ -1,7 +1,7 @@
 id: JOY-0121-8F
 title: Normalize short-form milestone IDs on link
 type: bug
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -11,7 +11,7 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-28T16:52:39.964879682Z
-updated: 2026-04-28T17:01:34.859542678Z
+updated: 2026-04-28T17:05:38.613429637Z
 description: |-
   joy milestone link accepts short-form milestone IDs (TST-MS-01 for TST-MS-01-A1) and stores them verbatim in the items milestone field. Like the recently fixed parent/deps short-form bug, internal lookups use exact match, so:
 

@@ -40,7 +40,7 @@ pub fn run(args: CommentArgs) -> Result<()> {
 
     let log_text = text.clone();
     let comment = Comment {
-        author: ctx.identity.member.clone(),
+        author: ctx.log_user(),
         date: Utc::now(),
         text,
     };

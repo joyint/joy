@@ -1,0 +1,33 @@
+id: JOY-0122-66
+title: Include delegated-by in human-readable author fields
+type: bug
+status: in-progress
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy
+created: 2026-04-28T17:21:41.589583168Z
+updated: 2026-04-28T17:30:58.712241812Z
+description: |-
+  Vision/Auth and Judge specify that delegated AI actions must be attributed as `[ai:claude@joy delegated-by:horst@...]` wherever a human reads them. The event log does this. Item-level fields do not:
+
+    - Comment.author stores only the AI member ID.
+    - Item.created_by stores only the AI member ID.
+
+  Fix: in writers, use ctx.log_user() (member + delegated-by) instead of ctx.identity.member.clone(), so comments and created_by carry the same delegation chain as the event log.
+
+  Out of scope: assignees - those name a concrete actor responsible for the work, not an audit attribution, and stay member-only.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-28T17:21:47.207502900Z
+  text: 'Plan: 1) Replace ctx.identity.member.clone() with ctx.log_user() in comment.rs:43 (Comment.author) and add.rs:197 (Item.created_by). 2) Audit other write sites for the same anti-pattern. 3) Verify assignees remains member-only. 4) BATS integration tests: comment under delegation, item created under delegation.'
+- author: ai:claude@joy
+  date: 2026-04-28T17:30:58.712241522Z
+  text: |-
+    [x] Replaced ctx.identity.member.clone() with ctx.log_user() in comment.rs:43 and add.rs:197.
+    [x] Audited other write sites: assignees in assign.rs and status.rs auto-assign correctly remain member-only (concrete actor, not audit attribution).
+    [x] 4 BATS tests in delegated_author.bats covering Comment.author and Item.created_by under delegation, bare-member under direct human action, and assignees stay member-only.
