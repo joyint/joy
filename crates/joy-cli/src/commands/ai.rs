@@ -7,6 +7,7 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
 use joy_core::ai_templates;
+use joy_core::vcs::Vcs;
 
 use crate::color;
 
@@ -58,6 +59,12 @@ struct InitArgs {
     /// Path to the contributing doc (e.g. CONTRIBUTING.md). Skips the prompt.
     #[arg(long, value_hint = clap::ValueHint::FilePath)]
     contributing: Option<String>,
+
+    /// Passphrase (non-interactive, for scripts and tests). Required for
+    /// signing the attestation that ties newly registered AI members to
+    /// the acting manage member.
+    #[arg(long)]
+    passphrase: Option<String>,
 }
 
 #[derive(clap::Args)]
@@ -117,7 +124,7 @@ fn ai_init(args: InitArgs) -> anyhow::Result<()> {
     joy_core::embedded::sync_files(&root, joy_core::init::PROJECT_FILES)?;
 
     check_docs(&root, &args)?;
-    let configured_tools = setup_new_tools(&root)?;
+    let configured_tools = setup_new_tools(&root, args.passphrase.as_deref())?;
     update_gitignore(&root, &configured_tools)?;
     check_nested_projects(&root)?;
 
@@ -746,7 +753,7 @@ const ALL_TOOLS: &[ToolEntry] = &[
 ];
 
 /// Set up only NEW (not yet configured) tools. Returns list of all configured tool IDs.
-fn setup_new_tools(root: &Path) -> anyhow::Result<Vec<&'static str>> {
+fn setup_new_tools(root: &Path, passphrase: Option<&str>) -> anyhow::Result<Vec<&'static str>> {
     println!("{}", color::section("AI Tools"));
 
     let mut configured_tools: Vec<&'static str> = Vec::new();
@@ -756,6 +763,12 @@ fn setup_new_tools(root: &Path) -> anyhow::Result<Vec<&'static str>> {
     let project_path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
     let mut project = joy_core::store::read_project(&project_path)?;
     let mut project_changed = false;
+
+    // The acting human's identity keypair, derived lazily on the first
+    // new member registration so attestations match what
+    // `joy project member add` produces (JOY-011E-CF). Repeated
+    // registrations within the same `joy ai init` reuse the keypair.
+    let mut acting: Option<(String, joy_core::auth::sign::IdentityKeypair)> = None;
 
     for (name, id, detect, configure) in ALL_TOOLS {
         if !detect() {
@@ -795,19 +808,36 @@ fn setup_new_tools(root: &Path) -> anyhow::Result<Vec<&'static str>> {
             } else {
                 ai_defaults.capabilities.clone()
             };
-            project.members.insert(
-                member_id.clone(),
-                joy_core::model::project::Member::new(
-                    joy_core::model::project::MemberCapabilities::Specific({
-                        use joy_core::model::project::CapabilityConfig;
-                        let mut map = std::collections::BTreeMap::new();
-                        for cap in ai_caps {
-                            map.insert(cap, CapabilityConfig::default());
-                        }
-                        map
-                    }),
-                ),
+            let capabilities = {
+                use joy_core::model::project::CapabilityConfig;
+                let mut map = std::collections::BTreeMap::new();
+                for cap in ai_caps {
+                    map.insert(cap, CapabilityConfig::default());
+                }
+                joy_core::model::project::MemberCapabilities::Specific(map)
+            };
+
+            // Derive the attesting human's keypair on first need.
+            if acting.is_none() {
+                let email = joy_core::vcs::default_vcs().user_email()?;
+                let kp =
+                    crate::commands::project::derive_acting_keypair(&project, &email, passphrase)?;
+                acting = Some((email, kp));
+            }
+            let (attester_email, attester_kp) = acting.as_ref().unwrap();
+
+            let signed_fields =
+                joy_core::auth::attestation::signed_fields_for(&member_id, &capabilities, None);
+            let attestation = joy_core::auth::attestation::sign_attestation(
+                attester_email,
+                attester_kp,
+                signed_fields,
             );
+
+            let mut new_member = joy_core::model::project::Member::new(capabilities);
+            new_member.attestation = Some(attestation);
+            project.members.insert(member_id.clone(), new_member);
+
             project_changed = true;
             println!(
                 "  {}{:<24} {}",

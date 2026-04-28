@@ -662,7 +662,7 @@ fn default_member_capabilities() -> MemberCapabilities {
 
 /// Derive and verify the acting human member's identity keypair from their
 /// passphrase. Used to sign attestations on `joy project member add`.
-fn derive_acting_keypair(
+pub(crate) fn derive_acting_keypair(
     project: &Project,
     email: &str,
     passphrase_flag: Option<&str>,

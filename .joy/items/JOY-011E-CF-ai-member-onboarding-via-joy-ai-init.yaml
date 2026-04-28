@@ -1,14 +1,16 @@
 id: JOY-011E-CF
 title: AI-Member-Onboarding via 'joy ai init' bypasses attestation chain
 type: bug
-status: new
+status: closed
 priority: extreme
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 - review
 created_by: ai:claude@joy
 created: 2026-04-25T16:48:45.236535050Z
-updated: 2026-04-25T16:48:45.236535050Z
+updated: 2026-04-28T18:03:36.389764368Z
 description: |-
   Two code paths add a member to .joy/project.yaml, but they apply different security guarantees:
 
@@ -29,3 +31,15 @@ description: |-
   All member registrations - regardless of CLI path or whether the member is a human or an AI - should produce an attested entry signed by the acting manage member. AI members specifically should still be attested even if they do not need an OTP redemption (they authenticate via delegation tokens, not via their own passphrase). The 'joy ai init' path should be brought in line with 'joy project member add' on the attestation aspect.
 
   Discovered while setting up an AI member 'ai:feedback@joy' for an external service in another Joy project (AIP-A3). The mismatch between the two paths surfaced because the existing ai:claude@joy / ai:copilot@joy in that project (created via joy ai init) had no otp_hash, while a freshly added member via 'joy project member add' did. Same role, different trust footprint. ai:claude@joy was eventually retro-attested manually, but joy ai init does not enforce that.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-28T17:44:56.340691502Z
+  text: 'Plan: 1) Add --passphrase flag to InitArgs in ai.rs. 2) Before the first Member::new(...) in setup_new_tools, derive the acting human keypair via derive_acting_keypair (single passphrase prompt per joy ai init). 3) For each new AI member, build signed_fields_for(member_id, capabilities, None) and sign_attestation, set new_member.attestation. 4) Make derive_acting_keypair pub(crate) in project.rs (or a small shared helper). 5) BATS tests: joy ai init writes attestation, attestation verifies under the manage member''s pubkey, --passphrase flag works non-interactive. Backwards-compat note: read path unchanged; existing unattested AI members keep working.'
+- author: ai:claude@joy
+  date: 2026-04-28T18:03:36.326532763Z
+  text: |-
+    [x] joy ai init now derives the acting human's keypair (lazy, on first new-member registration) and signs an attestation per registered AI member.
+    [x] --passphrase flag added to ai init for non-interactive use; one prompt covers all newly registered tools in the run.
+    [x] derive_acting_keypair lifted to pub(crate) for cross-command use.
+    [x] 4 BATS tests in ai_init_attestation.bats: attestation written, no enrollment_verifier on AI members, fail-fast without passphrase, idempotent re-run does not prompt.
+    [x] Backwards-compat: read path unchanged; existing unattested AI members keep working.

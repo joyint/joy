@@ -1,7 +1,7 @@
 id: JOY-0122-66
 title: Include delegated-by in human-readable author fields
 type: bug
-status: in-progress
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -11,7 +11,7 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-28T17:21:41.589583168Z
-updated: 2026-04-28T17:30:58.712241812Z
+updated: 2026-04-28T17:32:06.886768847Z
 description: |-
   Vision/Auth and Judge specify that delegated AI actions must be attributed as `[ai:claude@joy delegated-by:horst@...]` wherever a human reads them. The event log does this. Item-level fields do not:
 

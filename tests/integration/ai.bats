@@ -12,8 +12,8 @@ load setup
 }
 
 @test "joy ai init registers AI members in project.yaml" {
-    joy init --name "Test Project"
-    joy ai init </dev/null 2>/dev/null || true
+    setup_human_auth
+    joy ai init --passphrase "$TEST_PASSPHRASE" </dev/null 2>/dev/null || true
     # At least one AI member should be registered if a tool was detected
     configured=0
     for dir in .claude .qwen .vibe .github/agents; do
@@ -25,10 +25,10 @@ load setup
 }
 
 @test "joy ai init is idempotent" {
-    joy init --name "Test Project"
-    joy ai init </dev/null 2>/dev/null || true
+    setup_human_auth
+    joy ai init --passphrase "$TEST_PASSPHRASE" </dev/null 2>/dev/null || true
     # Run again - should not fail
-    run joy ai init </dev/null 2>/dev/null
+    run joy ai init --passphrase "$TEST_PASSPHRASE" </dev/null 2>/dev/null
     [ "$status" -eq 0 ]
 }
 
@@ -187,7 +187,7 @@ load setup
     # - doc paths -> accept default
     # - "Create template?" -> Y (default)
     # - per-tool "configure?" -> Y (default)
-    joy ai init </dev/null 2>/dev/null || true
+    joy ai init --passphrase "$TEST_PASSPHRASE" </dev/null 2>/dev/null || true
 
     [ -f ".claude/CLAUDE.md" ]
     [ -f ".github/copilot-instructions.md" ]
@@ -215,7 +215,7 @@ load setup
     echo "# placeholder" > .claude/CLAUDE.md
     ! grep -q "ai:claude@joy" .joy/project.yaml
 
-    joy ai init </dev/null 2>/dev/null || true
+    joy ai init --passphrase "$TEST_PASSPHRASE" </dev/null 2>/dev/null || true
 
     # Both members should be registered: claude (because the tool is
     # configured even if it pre-existed) and copilot (newly configured).
