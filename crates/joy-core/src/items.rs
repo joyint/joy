@@ -37,6 +37,11 @@ pub fn load_items(root: &Path) -> Result<Vec<Item>, JoyError> {
 
     normalize_id_refs(&mut items);
 
+    let milestone_ids: Vec<String> = crate::milestones::load_milestones(root)
+        .map(|list| list.into_iter().map(|m| m.id).collect())
+        .unwrap_or_default();
+    normalize_milestone_refs(&mut items, &milestone_ids);
+
     Ok(items)
 }
 
@@ -59,6 +64,48 @@ fn short_form(full_id: &str) -> Option<&str> {
         Some(prefix)
     } else {
         None
+    }
+}
+
+/// Return the short form of a full milestone ID, or None if the ID
+/// is not in the new ACRONYM-MS-NN-YY shape (legacy ACRONYM-MS-NN
+/// IDs return None).
+/// "JOY-MS-01-A1" -> Some("JOY-MS-01")
+/// "JOY-MS-01"    -> None
+/// "JOY-0042-A3"  -> None
+fn milestone_short_form(full_id: &str) -> Option<&str> {
+    let last_dash = full_id.rfind('-')?;
+    let suffix = &full_id[last_dash + 1..];
+    if suffix.len() != 2 || u8::from_str_radix(suffix, 16).is_err() {
+        return None;
+    }
+    let prefix = &full_id[..last_dash];
+    if prefix.contains("-MS-") {
+        Some(prefix)
+    } else {
+        None
+    }
+}
+
+/// Rewrite short-form milestone references in `milestone` to their
+/// full form, using the supplied known milestone IDs. Ambiguous short
+/// forms are left untouched.
+fn normalize_milestone_refs(items: &mut [Item], milestone_ids: &[String]) {
+    use std::collections::HashMap;
+    let mut map: HashMap<String, Option<String>> = HashMap::new();
+    for ms_id in milestone_ids {
+        if let Some(short) = milestone_short_form(ms_id) {
+            map.entry(short.to_string())
+                .and_modify(|e| *e = None)
+                .or_insert_with(|| Some(ms_id.clone()));
+        }
+    }
+    for item in items.iter_mut() {
+        if let Some(ms) = item.milestone.as_deref() {
+            if let Some(Some(full)) = map.get(ms) {
+                item.milestone = Some(full.clone());
+            }
+        }
     }
 }
 
@@ -641,6 +688,63 @@ mod tests {
         let mut items = vec![a, b, child];
         normalize_id_refs(&mut items);
         assert_eq!(items[2].parent.as_deref(), Some("JOY-0042"));
+    }
+
+    #[test]
+    fn milestone_short_form_extracts_prefix() {
+        assert_eq!(milestone_short_form("JOY-MS-01-A1"), Some("JOY-MS-01"));
+        assert_eq!(milestone_short_form("TST-MS-FF-12"), Some("TST-MS-FF"));
+    }
+
+    #[test]
+    fn milestone_short_form_returns_none_for_legacy_or_item() {
+        assert_eq!(milestone_short_form("JOY-MS-01"), None);
+        assert_eq!(milestone_short_form("JOY-0042-A3"), None);
+    }
+
+    #[test]
+    fn normalize_milestone_rewrites_short_form() {
+        let mut item = Item::new(
+            "JOY-0001-AA".into(),
+            "X".into(),
+            ItemType::Task,
+            Priority::Medium,
+            vec![],
+        );
+        item.milestone = Some("JOY-MS-01".into());
+        let mut items = vec![item];
+        normalize_milestone_refs(&mut items, &["JOY-MS-01-A1".to_string()]);
+        assert_eq!(items[0].milestone.as_deref(), Some("JOY-MS-01-A1"));
+    }
+
+    #[test]
+    fn normalize_milestone_leaves_unknown_unchanged() {
+        let mut item = Item::new(
+            "JOY-0001-AA".into(),
+            "X".into(),
+            ItemType::Task,
+            Priority::Medium,
+            vec![],
+        );
+        item.milestone = Some("JOY-MS-99".into());
+        let mut items = vec![item];
+        normalize_milestone_refs(&mut items, &["JOY-MS-01-A1".to_string()]);
+        assert_eq!(items[0].milestone.as_deref(), Some("JOY-MS-99"));
+    }
+
+    #[test]
+    fn normalize_milestone_leaves_full_form_unchanged() {
+        let mut item = Item::new(
+            "JOY-0001-AA".into(),
+            "X".into(),
+            ItemType::Task,
+            Priority::Medium,
+            vec![],
+        );
+        item.milestone = Some("JOY-MS-01-A1".into());
+        let mut items = vec![item];
+        normalize_milestone_refs(&mut items, &["JOY-MS-01-A1".to_string()]);
+        assert_eq!(items[0].milestone.as_deref(), Some("JOY-MS-01-A1"));
     }
 
     #[test]
