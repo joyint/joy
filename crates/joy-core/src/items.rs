@@ -305,7 +305,7 @@ pub fn load_item(root: &Path, id: &str) -> Result<Item, JoyError> {
     items
         .into_iter()
         .find(|i| i.id == target_id)
-        .ok_or_else(|| JoyError::ItemNotFound(target_id))
+        .ok_or(JoyError::ItemNotFound(target_id))
 }
 
 /// Delete an item by ID. Returns the deleted item.
