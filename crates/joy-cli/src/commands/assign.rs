@@ -64,6 +64,9 @@ pub fn run(args: AssignArgs) -> Result<()> {
             Some(&member),
             &ctx.log_user(),
         );
+        if crate::output::is_json() {
+            return crate::output::emit(&item);
+        }
         println!("Unassigned {} from {}", member, color::id(&item.id));
         joy_core::git_ops::auto_git_post_command(
             &ctx.root,
@@ -106,7 +109,9 @@ pub fn run(args: AssignArgs) -> Result<()> {
         &ctx.log_user(),
     );
 
-    if caps.is_empty() {
+    if crate::output::is_json() {
+        crate::output::emit(&item)?;
+    } else if caps.is_empty() {
         println!("Assigned {} to {}", color::id(&item.id), member);
     } else {
         let cap_names: Vec<String> = caps.iter().map(|c| c.to_string()).collect();

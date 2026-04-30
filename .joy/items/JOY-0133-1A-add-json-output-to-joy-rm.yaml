@@ -1,13 +1,19 @@
 id: JOY-0133-1A
 title: Add --json output to joy rm
 type: task
-status: new
+status: closed
 priority: medium
 parent: JOY-00C9-5F
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-30T06:18:37.150423807Z
-updated: 2026-04-30T06:18:37.150423807Z
+updated: 2026-04-30T07:36:20.199141429Z
 description: Implements ADR-036 for joy rm. Write command, emits confirmation envelope (item id, new state). BATS test.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-30T07:36:20.172552949Z
+  text: '[x] RmPayload {deleted:[{id, title, deref_from}]} -- supports recursive delete (multiple entries).'

@@ -67,6 +67,7 @@ pub fn run(args: RmArgs) -> Result<()> {
     let log_user = ctx.log_user();
     let summary_title = item.title.clone();
     let summary_id = item.id.clone();
+    let mut deleted_entries: Vec<DeletedEntry> = Vec::new();
     for id in &to_delete {
         let deleted = items::delete_item(&ctx.root, id)?;
         let updated = items::remove_references(&ctx.root, id)?;
@@ -77,10 +78,23 @@ pub fn run(args: RmArgs) -> Result<()> {
             Some(&deleted.title),
             &log_user,
         );
-        println!("Deleted {} {}", color::id(id), deleted.title);
-        for ref_id in &updated {
-            println!("  Removed dependency from {}", color::id(ref_id));
+        if crate::output::is_json() {
+            deleted_entries.push(DeletedEntry {
+                id: id.clone(),
+                title: deleted.title.clone(),
+                deref_from: updated.clone(),
+            });
+        } else {
+            println!("Deleted {} {}", color::id(id), deleted.title);
+            for ref_id in &updated {
+                println!("  Removed dependency from {}", color::id(ref_id));
+            }
         }
+    }
+    if crate::output::is_json() {
+        crate::output::emit(RmPayload {
+            deleted: deleted_entries,
+        })?;
     }
 
     joy_core::git_ops::auto_git_post_command(
@@ -104,4 +118,16 @@ fn collect_descendants(
             collect_descendants(all_items, &item.id, result);
         }
     }
+}
+
+#[derive(serde::Serialize)]
+struct RmPayload {
+    deleted: Vec<DeletedEntry>,
+}
+
+#[derive(serde::Serialize)]
+struct DeletedEntry {
+    id: String,
+    title: String,
+    deref_from: Vec<String>,
 }
