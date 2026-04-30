@@ -17,6 +17,7 @@ This tutorial walks you through a complete project setup, told through the lens 
 - [Mission 8: Calling in Air Support](#mission-8-calling-in-air-support-ai) -- `ai`
 - [Mission 9: Adjusting the Rules](#mission-9-adjusting-the-rules-project-config) -- `project`, `config`
 - [Bonus: Shell Completions](#bonus-shell-completions)
+- [Bonus: Machine-Readable Output](#bonus-machine-readable-output)
 - [Command Reference](#command-reference)
 
 ## TL;DR
@@ -568,6 +569,20 @@ joy ls --ty<TAB>                 # Completes flags
 ```
 
 MacGyver would say: why type when the machine can do it for you?
+
+---
+
+## Bonus: Machine-Readable Output
+
+Every Joy command accepts a global `--json` flag. Default output stays human-readable; `--json` switches to a stable, structured envelope so scripts and CI never have to scrape display text.
+
+```sh
+joy ls --json                                # Same as joy --json ls
+joy show JOY-0001 --json                     # Single item as JSON
+joy --json ls | jq '.data.items[].id'        # Pipe into jq
+```
+
+The shape is `{"version": 1, "data": ...}`. Within a major Joy release, fields are added but never removed or repurposed -- consumers can rely on the keys they already use. CI scripts should always consume `--json`, not display output.
 
 ---
 
