@@ -89,3 +89,7 @@
 2026-04-30T07:24:46.802Z JOY-0130-B8 comment.added "[x] Emits updated Item directly (or unchanged when no flags). 2 BATS tests." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T07:24:46.813Z JOY-0130-B8 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T07:24:46.834Z JOY-0130-B8 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:25:22.543Z JOY-0131-D9 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:25:22.553Z JOY-0131-D9 comment.added "[x] Emits updated Item with the new comment in its comments list. 1 BATS test." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:25:22.566Z JOY-0131-D9 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:25:22.586Z JOY-0131-D9 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

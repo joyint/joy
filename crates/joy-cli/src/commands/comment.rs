@@ -57,7 +57,11 @@ pub fn run(args: CommentArgs) -> Result<()> {
         &ctx.log_user(),
     );
 
-    println!("Added comment to {} {}", color::id(&item.id), item.title);
+    if crate::output::is_json() {
+        crate::output::emit(&item)?;
+    } else {
+        println!("Added comment to {} {}", color::id(&item.id), item.title);
+    }
 
     joy_core::git_ops::auto_git_post_command(
         &ctx.root,

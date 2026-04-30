@@ -1,13 +1,19 @@
 id: JOY-0131-D9
 title: Add --json output to joy comment
 type: task
-status: new
+status: closed
 priority: medium
 parent: JOY-00C9-5F
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-30T06:18:37.125223624Z
-updated: 2026-04-30T06:18:37.125223624Z
+updated: 2026-04-30T07:25:22.583332424Z
 description: Implements ADR-036 for joy comment. Write command, emits confirmation envelope (item id, new state). BATS test.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-30T07:25:22.550623313Z
+  text: '[x] Emits updated Item with the new comment in its comments list. 1 BATS test.'
