@@ -106,6 +106,9 @@ fn add_dep(ctx: &Context, item_id: &str, dep_id: &str) -> Result<()> {
     let mut item = items::load_item(&ctx.root, item_id)?;
 
     if item.deps.contains(&dep_id.to_string()) {
+        if crate::output::is_json() {
+            return crate::output::emit(&item);
+        }
         println!(
             "{} already depends on {}",
             color::id(item_id),
@@ -133,11 +136,15 @@ fn add_dep(ctx: &Context, item_id: &str, dep_id: &str) -> Result<()> {
         &log_user,
     );
 
-    println!(
-        "{} now depends on {}",
-        color::id(item_id),
-        color::id(dep_id)
-    );
+    if crate::output::is_json() {
+        crate::output::emit(&item)?;
+    } else {
+        println!(
+            "{} now depends on {}",
+            color::id(item_id),
+            color::id(dep_id)
+        );
+    }
 
     joy_core::git_ops::auto_git_post_command(
         &ctx.root,
@@ -154,6 +161,9 @@ fn rm_dep(ctx: &Context, item_id: &str, dep_id: &str) -> Result<()> {
     let mut item = items::load_item(&ctx.root, item_id)?;
 
     if !item.deps.contains(&dep_id.to_string()) {
+        if crate::output::is_json() {
+            return crate::output::emit(&item);
+        }
         println!(
             "{} does not depend on {}",
             color::id(item_id),
@@ -175,11 +185,15 @@ fn rm_dep(ctx: &Context, item_id: &str, dep_id: &str) -> Result<()> {
         &log_user,
     );
 
-    println!(
-        "Removed dependency {} from {}",
-        color::id(dep_id),
-        color::id(item_id)
-    );
+    if crate::output::is_json() {
+        crate::output::emit(&item)?;
+    } else {
+        println!(
+            "Removed dependency {} from {}",
+            color::id(dep_id),
+            color::id(item_id)
+        );
+    }
 
     joy_core::git_ops::auto_git_post_command(
         &ctx.root,

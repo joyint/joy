@@ -1,13 +1,19 @@
 id: JOY-0135-8A
 title: Add --json output to joy deps modify
 type: task
-status: new
+status: closed
 priority: medium
 parent: JOY-00C9-5F
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-30T06:18:37.173624536Z
-updated: 2026-04-30T06:18:37.173624536Z
+updated: 2026-04-30T07:43:50.297522729Z
 description: Implements ADR-036 for joy deps add/rm.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-04-30T07:43:50.249272093Z
+  text: '[x] Both --add and --rm emit the updated Item. Idempotent paths (already-deps / not-deps) also emit the current item. 2 BATS tests.'
