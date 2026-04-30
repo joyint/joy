@@ -5,6 +5,7 @@ mod color;
 mod commands;
 mod complete;
 mod forge;
+mod output;
 mod prompt;
 mod version_bump;
 
@@ -36,6 +37,11 @@ pub(crate) struct Cli {
     /// Reverse sort order
     #[arg(short, long)]
     reverse: bool,
+
+    /// Emit machine-readable JSON instead of human-readable display.
+    /// See ADR-036 for the contract.
+    #[arg(long, global = true)]
+    json: bool,
 
     #[command(subcommand)]
     command: Option<Commands>,
@@ -190,6 +196,15 @@ fn main() -> anyhow::Result<()> {
         config.output.short = true;
     }
     color::init(&config.output);
+
+    // Install the global output mode (ADR-036 §1). Subcommands query it
+    // via output::is_json() / output::emit().
+    output::set_mode(if cli.json {
+        output::OutputMode::Json
+    } else {
+        output::OutputMode::Display
+    });
+
     let show_fortune = matches!(
         &cli.command,
         None | Some(Commands::Ls(_)) | Some(Commands::Roadmap(_)) | Some(Commands::Show(_))
@@ -243,7 +258,12 @@ fn main() -> anyhow::Result<()> {
         }),
     };
 
-    if show_fortune && result.is_ok() && config.output.fortune && std::io::stdout().is_terminal() {
+    if show_fortune
+        && result.is_ok()
+        && config.output.fortune
+        && !output::is_json()
+        && std::io::stdout().is_terminal()
+    {
         if let Some(text) = joy_core::fortune::fortune(config.output.fortune_category.as_ref(), 0.2)
         {
             eprintln!("\n\x1b[2m{text}\x1b[0m");

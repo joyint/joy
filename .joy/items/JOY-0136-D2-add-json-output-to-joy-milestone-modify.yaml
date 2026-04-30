@@ -1,0 +1,13 @@
+id: JOY-0136-D2
+title: Add --json output to joy milestone modify
+type: task
+status: new
+priority: medium
+parent: JOY-00C9-5F
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy
+created: 2026-04-30T06:18:37.185369574Z
+updated: 2026-04-30T06:18:37.185369574Z
+description: Implements ADR-036 for joy milestone link/unlink/add/rm.

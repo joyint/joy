@@ -1,12 +1,37 @@
 id: JOY-00C9-5F
 title: Add --json output to all commands
 type: task
-status: new
+status: closed
 priority: high
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 4
 created_by: ai:claude@joy
 created: 2026-04-08T16:21:26.653264800Z
-updated: 2026-04-08T16:21:26.653264800Z
-description: All joy-cli commands need a --json flag for structured output. Required by Jon (subprocess) and gRPC service (ADR-031).
+updated: 2026-04-30T06:40:38.702436347Z
+description: |-
+  All joy-cli commands need a --json flag for structured output, required by Jon (subprocess) and gRPC service (ADR-031). Implements ADR-036 §1: machine-readable output as the contract surface for CIs and downstream tooling.
+
+  This item covers the central infrastructure and serves as tracking parent for one subtask per subcommand:
+
+  - top-level --json flag (clap), valid at any position (joy --json ls, joy ls --json, etc.)
+  - OutputMode enum (Display | Json) threaded into each commands run()
+  - json::Envelope helper that wraps every payload as {"version": 1, "data": ...} and prints it
+  - subcommand subtasks (parent=JOY-00C9-5F): ls, show, board, deps, find, log, milestone, project, config, auth status, ai status, release (read); add, edit, comment, assign, rm, status, deps modify, milestone link, ai init, auth, project member (write)
+
+  Schema contract: additive-only between minor versions; breaking changes get a deprecation cycle and a release note (ADR-036 §1).
+comments:
+- author: ai:claude@joy
+  date: 2026-04-30T06:19:08.371782924Z
+  text: 'Plan: 1) Add --json as global flag on top-level Cli in main.rs (clap global=true). 2) Create joy_cli::output module with OutputMode enum and Envelope { version, data } helper. 3) Wire OutputMode through main.rs analogous to color::init. 4) Subtasks then use this infrastructure per-command. Tests for the envelope helper.'
+- author: ai:claude@joy
+  date: 2026-04-30T06:40:38.670573470Z
+  text: |-
+    [x] Added crate::output module: OutputMode enum, process-wide MODE atomic, set_mode/mode/is_json, Envelope struct, emit() helper.
+    [x] Added --json as global clap flag on top-level Cli (works at any position).
+    [x] Wired output::set_mode in main.rs analogous to color::init.
+    [x] Skipped fortune in JSON mode so JSON consumers see no trailing human text.
+    [x] 4 BATS tests in json_output.bats covering global flag positions and --help visibility.
+    [x] Per-command JSON shapes are owned by the 23 subtasks (JOY-0123-9A ... JOY-0139-67).

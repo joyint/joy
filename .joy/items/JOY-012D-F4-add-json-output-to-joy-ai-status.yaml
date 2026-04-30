@@ -1,0 +1,13 @@
+id: JOY-012D-F4
+title: Add --json output to joy ai status
+type: task
+status: new
+priority: high
+parent: JOY-00C9-5F
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy
+created: 2026-04-30T06:18:37.080076386Z
+updated: 2026-04-30T06:18:37.080076386Z
+description: Implements ADR-036 for joy ai status / update --check.

@@ -1,0 +1,13 @@
+id: JOY-0135-8A
+title: Add --json output to joy deps modify
+type: task
+status: new
+priority: medium
+parent: JOY-00C9-5F
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy
+created: 2026-04-30T06:18:37.173624536Z
+updated: 2026-04-30T06:18:37.173624536Z
+description: Implements ADR-036 for joy deps add/rm.

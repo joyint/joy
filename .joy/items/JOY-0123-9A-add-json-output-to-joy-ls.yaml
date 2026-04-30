@@ -1,0 +1,13 @@
+id: JOY-0123-9A
+title: Add --json output to joy ls
+type: task
+status: new
+priority: high
+parent: JOY-00C9-5F
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy
+created: 2026-04-30T05:45:27.945944802Z
+updated: 2026-04-30T05:45:27.945944802Z
+description: test

@@ -1,0 +1,13 @@
+id: JOY-012C-47
+title: Add --json output to joy auth status
+type: task
+status: new
+priority: high
+parent: JOY-00C9-5F
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy
+created: 2026-04-30T06:18:37.067471202Z
+updated: 2026-04-30T06:18:37.067471202Z
+description: Implements ADR-036 for joy auth status.

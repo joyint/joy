@@ -1,0 +1,13 @@
+id: JOY-0138-A7
+title: Add --json output to joy auth
+type: task
+status: new
+priority: medium
+parent: JOY-00C9-5F
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy
+created: 2026-04-30T06:18:37.208513046Z
+updated: 2026-04-30T06:18:37.208513046Z
+description: Implements ADR-036 for joy auth init/--token/--otp/token add.

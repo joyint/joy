@@ -1,0 +1,13 @@
+id: JOY-0131-D9
+title: Add --json output to joy comment
+type: task
+status: new
+priority: medium
+parent: JOY-00C9-5F
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy
+created: 2026-04-30T06:18:37.125223624Z
+updated: 2026-04-30T06:18:37.125223624Z
+description: Implements ADR-036 for joy comment. Write command, emits confirmation envelope (item id, new state). BATS test.
