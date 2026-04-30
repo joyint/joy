@@ -45,3 +45,7 @@
 2026-04-30T06:48:02.125Z JOY-0125-80 comment.added "[x] BoardPayload {columns:[{status,count,items}]}, all 6 status columns always present (count 0 for empty), order matches STATUS_ORDER. 3 BATS tests." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T06:48:02.133Z JOY-0125-80 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T06:48:02.152Z JOY-0125-80 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T06:52:29.385Z JOY-0126-7C item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T06:52:29.395Z JOY-0126-7C comment.added "[x] DepsPayload {id, title, deps:[{id, title, status, found}]}. Read path only -- write path is JOY-0135-8A. 2 BATS tests." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T06:52:29.405Z JOY-0126-7C item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T06:52:29.425Z JOY-0126-7C item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

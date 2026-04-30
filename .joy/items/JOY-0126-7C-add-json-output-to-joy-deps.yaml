@@ -1,13 +1,19 @@
 id: JOY-0126-7C
 title: Add --json output to joy deps
 type: task
-status: new
+status: closed
 priority: high
 parent: JOY-00C9-5F
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-30T06:18:36.998955606Z
-updated: 2026-04-30T06:18:36.998955606Z
+updated: 2026-04-30T06:52:29.422747970Z
 description: Implements ADR-036 for joy deps. Read-only command. Must emit envelope {version:1, data:...} with all displayed information. BATS test for valid JSON and stable shape.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-30T06:52:29.391935821Z
+  text: '[x] DepsPayload {id, title, deps:[{id, title, status, found}]}. Read path only -- write path is JOY-0135-8A. 2 BATS tests.'

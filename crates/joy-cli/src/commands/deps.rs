@@ -53,6 +53,27 @@ pub fn run(args: DepsArgs) -> Result<()> {
     let item = items::load_item(&ctx.root, &args.id)?;
     let all_items = items::load_items(&ctx.root)?;
 
+    if crate::output::is_json() {
+        let deps: Vec<DepEntry> = item
+            .deps
+            .iter()
+            .map(|dep_id| {
+                let resolved = all_items.iter().find(|i| &i.id == dep_id);
+                DepEntry {
+                    id: dep_id.clone(),
+                    title: resolved.map(|i| i.title.clone()),
+                    status: resolved.map(|i| format!("{:?}", i.status).to_lowercase()),
+                    found: resolved.is_some(),
+                }
+            })
+            .collect();
+        return crate::output::emit(DepsPayload {
+            id: item.id.clone(),
+            title: item.title.clone(),
+            deps,
+        });
+    }
+
     if item.deps.is_empty() {
         println!("{} has no dependencies.", color::id(&item.id));
         return Ok(());
@@ -205,4 +226,19 @@ fn print_dep_tree(
             println!("{indent}{connector}{} (not found)", color::id(dep_id));
         }
     }
+}
+
+#[derive(serde::Serialize)]
+struct DepsPayload {
+    id: String,
+    title: String,
+    deps: Vec<DepEntry>,
+}
+
+#[derive(serde::Serialize)]
+struct DepEntry {
+    id: String,
+    title: Option<String>,
+    status: Option<String>,
+    found: bool,
 }
