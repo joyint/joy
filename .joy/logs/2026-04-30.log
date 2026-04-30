@@ -65,3 +65,7 @@
 2026-04-30T07:00:57.962Z JOY-012A-4D comment.added "[x] joy project (default) emits Project struct directly. joy project get emits {key, value}; unset optional yields null instead of exit 1, which is a strict contract for JSON consumers. Read paths only -- project member is JOY-0139-67. 3 BATS tests." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T07:00:57.971Z JOY-012A-4D item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T07:00:57.994Z JOY-012A-4D item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:02:37.045Z JOY-012B-B5 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:02:37.054Z JOY-012B-B5 comment.added "[x] joy config: ConfigPayload {effective, personal}. joy config get: {key, value}; unset key yields null instead of exit 1. Set is a write op (out of scope for this task). Moved set_mode() up in main.rs so config (early-return path) sees it. 3 BATS tests." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:02:37.063Z JOY-012B-B5 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:02:37.084Z JOY-012B-B5 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

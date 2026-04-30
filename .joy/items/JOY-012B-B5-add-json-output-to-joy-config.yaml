@@ -1,13 +1,19 @@
 id: JOY-012B-B5
 title: Add --json output to joy config
 type: task
-status: new
+status: closed
 priority: high
 parent: JOY-00C9-5F
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-30T06:18:37.056482369Z
-updated: 2026-04-30T06:18:37.056482369Z
+updated: 2026-04-30T07:02:37.081250379Z
 description: Implements ADR-036 for joy config. Read-only command. Must emit envelope {version:1, data:...} with all displayed information. BATS test for valid JSON and stable shape.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-30T07:02:37.051679950Z
+  text: '[x] joy config: ConfigPayload {effective, personal}. joy config get: {key, value}; unset key yields null instead of exit 1. Set is a write op (out of scope for this task). Moved set_mode() up in main.rs so config (early-return path) sees it. 3 BATS tests.'

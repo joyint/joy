@@ -53,6 +53,18 @@ fn show_all() -> anyhow::Result<()> {
     let value = store::load_config_value();
     let personal = store::load_personal_config_value();
 
+    if crate::output::is_json() {
+        #[derive(serde::Serialize)]
+        struct ConfigPayload {
+            effective: serde_json::Value,
+            personal: serde_json::Value,
+        }
+        return crate::output::emit(ConfigPayload {
+            effective: value,
+            personal,
+        });
+    }
+
     println!("{}", color::header("Configuration"));
 
     let obj = value.as_object().cloned().unwrap_or_default();
@@ -144,8 +156,21 @@ fn has_key(value: &serde_json::Value, path: &[&str]) -> bool {
 
 fn get_value(key: &str) -> anyhow::Result<()> {
     let value = store::load_config_value();
+    let result = navigate(&value, key);
 
-    let Some(result) = navigate(&value, key) else {
+    if crate::output::is_json() {
+        #[derive(serde::Serialize)]
+        struct GetPayload<'a> {
+            key: &'a str,
+            value: serde_json::Value,
+        }
+        return crate::output::emit(GetPayload {
+            key,
+            value: result.cloned().unwrap_or(serde_json::Value::Null),
+        });
+    }
+
+    let Some(result) = result else {
         // Exit silently with code 1 -- callers check the exit code
         std::process::exit(1);
     };

@@ -175,6 +175,14 @@ fn main() -> anyhow::Result<()> {
     let raw: Vec<String> = std::env::args().collect();
     let cli = Cli::parse_from(rewrite_trailing_help(raw, &Cli::command()));
 
+    // Install --json mode before any subcommand runs, so config (which
+    // returns early below) and others all see the same flag.
+    output::set_mode(if cli.json {
+        output::OutputMode::Json
+    } else {
+        output::OutputMode::Display
+    });
+
     // Config subcommand handles its own validation, run it before load_config
     // to avoid duplicate warnings for invalid config state.
     if let Some(Commands::Config(args)) = cli.command {
@@ -196,14 +204,6 @@ fn main() -> anyhow::Result<()> {
         config.output.short = true;
     }
     color::init(&config.output);
-
-    // Install the global output mode (ADR-036 §1). Subcommands query it
-    // via output::is_json() / output::emit().
-    output::set_mode(if cli.json {
-        output::OutputMode::Json
-    } else {
-        output::OutputMode::Display
-    });
 
     let show_fortune = matches!(
         &cli.command,
