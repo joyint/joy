@@ -1,15 +1,18 @@
 id: JOY-00D1-3C
 title: joy ai init/reset cannot tell joy-owned files from user-owned
 type: bug
-status: new
+status: closed
 priority: high
+assignees:
+- member: ai:claude@joy
+milestone: JOY-MS-01
 capabilities:
 - implement
 - review
 effort: 3
 created_by: ai:claude@joy
 created: 2026-04-13T06:19:02.243808930Z
-updated: 2026-04-13T06:36:03.285052992Z
+updated: 2026-04-30T21:07:33.797813541Z
 description: |-
   ## Symptom
 
@@ -97,3 +100,13 @@ description: |-
     ``.claude/my-keybindings.json``, ``.qwen/notes.txt``,
     ``.vibe/data.json``), run ``joy ai reset --tool <tool> --force``,
     assert the user file still exists while joy-managed paths are gone.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-04-30T21:04:06.968957092Z
+  text: 'Plan: 1) is_tool_configured: change claude/qwen/copilot to joy-only markers (.claude/skills/joy/SKILL.md, .qwen/skills/joy/SKILL.md, .github/agents/conceiver.agent.md). vibe is already correct. 2) reset: per tool, list joy-managed paths only -- skills/joy, agents/, plus joy-block removal in shared instruction files (CLAUDE.md, QWEN.md, AGENTS.md, copilot-instructions.md). Never wipe whole .claude/.qwen/.vibe directories. 3) BATS tests per tool: pre-existing non-joy file survives reset; user-shared file without joy-block triggers configure (not ''already configured'').'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-04-30T21:07:33.674558043Z
+  text: |-
+    [x] is_tool_configured uses joy-only markers: claude/qwen .skills/joy/SKILL.md, copilot .github/agents/conceiver.agent.md (vibe was already correct).
+    [x] reset uses precise per-tool joy-managed paths: skills/joy/, agents/, plus joy-block strip on shared instruction files. No more wholesale .claude/.qwen/.vibe wipes.
+    [x] 7 BATS tests in ai_init_reset_ownership.bats covering detection (3 tools, pre-existing shared file) and reset (3 tools preserve user file + claude joy-block strip).

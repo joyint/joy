@@ -598,10 +598,30 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
     let root = joy_core::store::find_project_root(&std::env::current_dir()?)
         .ok_or_else(|| anyhow::anyhow!("No Joy project found (run `joy init` first)"))?;
 
+    // Per tool: joy-managed paths only. Shared files (CLAUDE.md, QWEN.md,
+    // AGENTS.md, copilot-instructions.md) are listed separately so reset
+    // strips only the joy block instead of deleting the whole file
+    // (JOY-00D1-3C).
     let all_tools: &[(&str, &str, &[&str])] = &[
-        ("Claude Code", "claude", &[".claude/"]),
-        ("Qwen Code", "qwen", &[".qwen/"]),
-        ("Mistral Vibe", "vibe", &[".vibe/", "AGENTS.md"]),
+        (
+            "Claude Code",
+            "claude",
+            &[
+                ".claude/skills/joy/",
+                ".claude/agents/",
+                ".claude/CLAUDE.md",
+            ],
+        ),
+        (
+            "Qwen Code",
+            "qwen",
+            &[".qwen/skills/joy/", ".qwen/agents/", ".qwen/QWEN.md"],
+        ),
+        (
+            "Mistral Vibe",
+            "vibe",
+            &[".vibe/skills/joy/", ".vibe/agents/", "AGENTS.md"],
+        ),
         (
             "GitHub Copilot",
             "copilot",
@@ -686,10 +706,17 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
 
     for (name, path) in &to_remove {
         let full = root.join(path);
-        if full.is_dir() {
-            fs::remove_dir_all(&full)?;
-        } else if *path == "AGENTS.md" {
+        // Shared instruction files: strip the joy-block but keep the rest
+        // intact. Joy-only paths (skills/joy/, agents/, prompts/, ...)
+        // are safe to remove wholesale.
+        let is_shared_instruction = matches!(
+            *path,
+            ".claude/CLAUDE.md" | ".qwen/QWEN.md" | "AGENTS.md" | ".github/copilot-instructions.md"
+        );
+        if is_shared_instruction {
             remove_joy_block_or_file(&full)?;
+        } else if full.is_dir() {
+            fs::remove_dir_all(&full)?;
         } else {
             fs::remove_file(&full)?;
         }
@@ -1415,11 +1442,16 @@ fn check_nested_at(dir: &Path, root: &Path, tools: &[&str], unconfigured: &mut V
 }
 
 fn is_tool_configured(root: &Path, tool: &str) -> bool {
+    // Joy-only markers: paths that exist only because joy created them.
+    // Generic instruction files (CLAUDE.md, QWEN.md, copilot-instructions.md)
+    // can exist without any joy involvement and must not be detected as
+    // "configured" -- otherwise joy ai init silently skips setup
+    // (JOY-00D1-3C).
     match tool {
-        "claude" => root.join(".claude/CLAUDE.md").is_file(),
-        "qwen" => root.join(".qwen/QWEN.md").is_file(),
+        "claude" => root.join(".claude/skills/joy/SKILL.md").is_file(),
+        "qwen" => root.join(".qwen/skills/joy/SKILL.md").is_file(),
         "vibe" => root.join(".vibe/skills/joy/SKILL.md").is_file(),
-        "copilot" => root.join(".github/copilot-instructions.md").is_file(),
+        "copilot" => root.join(".github/agents/conceiver.agent.md").is_file(),
         _ => false,
     }
 }

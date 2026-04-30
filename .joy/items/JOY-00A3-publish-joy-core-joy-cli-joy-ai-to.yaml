@@ -1,12 +1,16 @@
 id: JOY-00A3
 title: Publish joy-core, joy-cli, joy-ai to crates.io
 type: task
-status: new
+status: closed
 priority: medium
 capabilities:
 - implement
 effort: 2
 created_by: horst.schwarz@joydev.com
 created: 2026-03-31T17:30:58.414775059Z
-updated: 2026-03-31T17:30:58.414775059Z
+updated: 2026-04-30T20:55:49.180449229Z
 description: 'Publish all joy crates to crates.io for external consumption. Required for: jot-core dependency, cargo install joyint, AUR packages, and any external tool building on joy-core. Coordinate with first public release. Migrated from JI-00A8.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-04-30T20:55:49.020346590Z
+  text: '[x] joy-core, joy-cli, joy-ai are all on crates.io at v0.12.0 (verified via https://crates.io/api/v1/crates/joy-cli).'

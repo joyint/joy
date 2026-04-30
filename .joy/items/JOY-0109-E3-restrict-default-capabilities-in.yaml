@@ -1,16 +1,17 @@
 id: JOY-0109-E3
 title: Restrict default capabilities in member add
 type: task
-status: review
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
+milestone: JOY-MS-01
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-21T16:53:00.998711422Z
-updated: 2026-04-21T17:04:45.716505133Z
+updated: 2026-04-30T20:58:37.700850994Z
 description: |-
   Currently `joy project member add <ID>` without `--capabilities` defaults to `MemberCapabilities::All` (crates/joy-cli/src/commands/project.rs:457-458), silently granting `manage` and `delete` to every new member.
 
@@ -34,3 +35,6 @@ comments:
       - attestation.bats #35: widened grep context from -A8 to -A30 to span the multi-line capability block
       - auth.bats #74: widened grep from -A3/-A20 to -A30 for the same reason
     [x] just check green: 255 unit + 184 integration tests pass, fmt-check and clippy clean
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-04-30T20:58:37.619211830Z
+  text: '[x] Verified: default_member_capabilities() in project.rs:688 returns Specific with conceive/plan/design/implement/test/review/document/create/assign. --capabilities all keyword path at project.rs:485. All 365 cargo + 272 BATS tests pass.'
