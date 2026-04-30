@@ -41,6 +41,11 @@ pub fn run(args: crate::BoardArgs) -> Result<()> {
     let all_items = items::load_items(&root)?;
 
     if all_items.is_empty() {
+        if crate::output::is_json() {
+            return crate::output::emit(BoardPayload {
+                columns: Vec::new(),
+            });
+        }
         println!("No items. Run `joy add` to create one.");
         return Ok(());
     }
@@ -49,6 +54,24 @@ pub fn run(args: crate::BoardArgs) -> Result<()> {
     // FilterSpec.all default-hide rule does not strip those items.
     let spec = args.filter.to_spec(&root, true)?;
     let visible: Vec<&Item> = filter::apply(&all_items, &spec);
+
+    if crate::output::is_json() {
+        let mut cols: Vec<BoardColumn> = Vec::new();
+        for (status, label) in STATUS_ORDER {
+            let items: Vec<Item> = visible
+                .iter()
+                .copied()
+                .filter(|i| &i.status == status)
+                .cloned()
+                .collect();
+            cols.push(BoardColumn {
+                status: label.to_string(),
+                count: items.len(),
+                items,
+            });
+        }
+        return crate::output::emit(BoardPayload { columns: cols });
+    }
 
     let term_width = terminal_width();
     let term_height = terminal_height();
@@ -542,4 +565,16 @@ fn strip_ansi(s: &str) -> String {
         result.push(c);
     }
     result
+}
+
+#[derive(serde::Serialize)]
+struct BoardPayload {
+    columns: Vec<BoardColumn>,
+}
+
+#[derive(serde::Serialize)]
+struct BoardColumn {
+    status: String,
+    count: usize,
+    items: Vec<Item>,
 }

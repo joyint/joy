@@ -41,3 +41,7 @@
 2026-04-30T06:46:04.995Z JOY-0124-97 comment.added "[x] item emitted directly as data via existing serde derives. 3 BATS tests for envelope, comments, error case." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T06:46:05.009Z JOY-0124-97 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T06:46:05.034Z JOY-0124-97 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T06:46:31.913Z JOY-0125-80 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T06:48:02.125Z JOY-0125-80 comment.added "[x] BoardPayload {columns:[{status,count,items}]}, all 6 status columns always present (count 0 for empty), order matches STATUS_ORDER. 3 BATS tests." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T06:48:02.133Z JOY-0125-80 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T06:48:02.152Z JOY-0125-80 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
