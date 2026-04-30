@@ -1,13 +1,19 @@
 id: JOY-0137-42
 title: Add --json output to joy ai init
 type: task
-status: new
+status: closed
 priority: medium
 parent: JOY-00C9-5F
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-30T06:18:37.195719211Z
-updated: 2026-04-30T06:18:37.195719211Z
+updated: 2026-04-30T07:48:44.037974310Z
 description: Implements ADR-036 for joy ai init/update/reset/rotate.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-04-30T07:48:43.963651212Z
+  text: '[x] AiInitPayload {configured_tools}. All display println in ai.rs converted to dprintln/dprint macros that respect is_json. JSON consumers see only the final envelope. 1 BATS test.'

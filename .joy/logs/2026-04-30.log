@@ -113,3 +113,7 @@
 2026-04-30T07:45:14.715Z JOY-0136-D2 comment.added "[x] add/rm/edit emit Milestone; link/unlink emit updated Item. 3 BATS tests." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T07:45:14.742Z JOY-0136-D2 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T07:45:14.784Z JOY-0136-D2 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:48:43.940Z JOY-0137-42 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:48:43.967Z JOY-0137-42 comment.added "[x] AiInitPayload {configured_tools}. All display println in ai.rs converted to dprintln/dprint macros that respect is_json. JSON consumers see only the final envelope. 1 BATS test." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:48:43.996Z JOY-0137-42 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:48:44.042Z JOY-0137-42 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

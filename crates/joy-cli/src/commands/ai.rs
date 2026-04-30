@@ -15,8 +15,27 @@ static QUIET: AtomicBool = AtomicBool::new(false);
 
 macro_rules! qprintln {
     ($($arg:tt)*) => {
-        if !QUIET.load(std::sync::atomic::Ordering::Relaxed) {
+        if !QUIET.load(std::sync::atomic::Ordering::Relaxed)
+            && !crate::output::is_json()
+        {
             println!($($arg)*);
+        }
+    };
+}
+
+/// Display-only println: suppressed in JSON mode.
+macro_rules! dprintln {
+    ($($arg:tt)*) => {
+        if !crate::output::is_json() {
+            println!($($arg)*);
+        }
+    };
+}
+
+macro_rules! dprint {
+    ($($arg:tt)*) => {
+        if !crate::output::is_json() {
+            print!($($arg)*);
         }
     };
 }
@@ -117,8 +136,8 @@ fn ai_init(args: InitArgs) -> anyhow::Result<()> {
     let root = joy_core::store::find_project_root(&std::env::current_dir()?)
         .ok_or_else(|| anyhow::anyhow!("No Joy project found (run `joy init` first)"))?;
 
-    println!("{}", color::header("AI Init"));
-    println!();
+    dprintln!("{}", color::header("AI Init"));
+    dprintln!();
 
     // Ensure project.defaults.yaml exists
     joy_core::embedded::sync_files(&root, joy_core::init::PROJECT_FILES)?;
@@ -128,12 +147,23 @@ fn ai_init(args: InitArgs) -> anyhow::Result<()> {
     update_gitignore(&root, &configured_tools)?;
     check_nested_projects(&root)?;
 
+    if crate::output::is_json() {
+        return crate::output::emit(AiInitPayload {
+            configured_tools: configured_tools.iter().map(|s| s.to_string()).collect(),
+        });
+    }
+
     let msg = format!(
         "AI integration complete -- {}",
         color::plural(configured_tools.len(), "tool")
     );
-    println!("{}", color::footer(&msg));
+    dprintln!("{}", color::footer(&msg));
     Ok(())
+}
+
+#[derive(serde::Serialize)]
+struct AiInitPayload {
+    configured_tools: Vec<String>,
 }
 
 fn update(args: UpdateArgs) -> anyhow::Result<()> {
@@ -178,14 +208,14 @@ fn update(args: UpdateArgs) -> anyhow::Result<()> {
 
     let header = if dry_run { "AI Status" } else { "AI Update" };
 
-    println!("{}", color::header(header));
-    println!();
+    dprintln!("{}", color::header(header));
+    dprintln!();
 
     if !dry_run {
         joy_core::embedded::sync_files(&root, joy_core::init::PROJECT_FILES)?;
     }
 
-    println!("{}", color::section("AI Tools"));
+    dprintln!("{}", color::section("AI Tools"));
 
     let mut tool_count = 0;
     let mut has_issues = false;
@@ -202,14 +232,14 @@ fn update(args: UpdateArgs) -> anyhow::Result<()> {
                 let stale = is_tool_stale(&root, id, &member_id)?;
                 if stale {
                     has_issues = true;
-                    println!(
+                    dprintln!(
                         "  {}{:<24} {}",
                         color::warn_mark(),
                         name,
                         color::warning("outdated")
                     );
                 } else {
-                    println!(
+                    dprintln!(
                         "  {}{:<24} {}",
                         color::check_mark(),
                         name,
@@ -225,22 +255,22 @@ fn update(args: UpdateArgs) -> anyhow::Result<()> {
                 } else {
                     color::inactive("up to date")
                 };
-                println!("  {}{:<24} {}", color::check_mark(), name, status);
+                dprintln!("  {}{:<24} {}", color::check_mark(), name, status);
             }
         } else if installed {
-            println!(
+            dprintln!(
                 "  {}{:<24} {}",
                 color::warn_mark(),
                 name,
                 color::warning("installed, not configured")
             );
         } else {
-            println!("    {:<24} {}", name, color::inactive("not installed"));
+            dprintln!("    {:<24} {}", name, color::inactive("not installed"));
         }
     }
 
     if tool_count == 0 && !dry_run {
-        println!(
+        dprintln!(
             "  {}No configured AI tools found. Run {} first.",
             color::warn_mark(),
             color::label("joy ai init")
@@ -252,7 +282,7 @@ fn update(args: UpdateArgs) -> anyhow::Result<()> {
         update_gitignore(&root, &configured_tools)?;
     }
 
-    println!();
+    dprintln!();
     let msg = if dry_run {
         format!(
             "{} · {}",
@@ -269,7 +299,7 @@ fn update(args: UpdateArgs) -> anyhow::Result<()> {
             color::plural(tool_count, "tool")
         )
     };
-    println!("{}", color::footer(&msg));
+    dprintln!("{}", color::footer(&msg));
 
     if dry_run && has_issues {
         std::process::exit(2);
@@ -435,7 +465,7 @@ const DOC_SPECS: &[DocSpec] = &[
 fn check_docs(root: &Path, args: &InitArgs) -> anyhow::Result<()> {
     use joy_core::model::Project;
 
-    println!("{}", color::section("Documentation"));
+    dprintln!("{}", color::section("Documentation"));
 
     let project_path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
     let mut project: Project = joy_core::store::read_yaml(&project_path)?;
@@ -476,11 +506,11 @@ fn check_docs(root: &Path, args: &InitArgs) -> anyhow::Result<()> {
 
         let full = root.join(&chosen);
         if full.is_file() {
-            println!("  {}{}", color::check_mark(), chosen);
+            dprintln!("  {}{}", color::check_mark(), chosen);
         } else {
-            println!("  {}{}", color::cross_mark(), color::warning(&chosen));
+            dprintln!("  {}{}", color::cross_mark(), color::warning(&chosen));
             let name = chosen.rsplit('/').next().unwrap_or(&chosen);
-            print!(
+            dprint!(
                 "    {} helps AI understand your {}. Create template? [Y/n] ",
                 name, spec.purpose
             );
@@ -493,7 +523,7 @@ fn check_docs(root: &Path, args: &InitArgs) -> anyhow::Result<()> {
                     fs::create_dir_all(parent)?;
                 }
                 fs::write(&full, spec.template)?;
-                println!(
+                dprintln!(
                     "    {}Created {} (template -- your AI tool will help fill it in)",
                     color::check_mark(),
                     chosen
@@ -508,12 +538,12 @@ fn check_docs(root: &Path, args: &InitArgs) -> anyhow::Result<()> {
     }
 
     if !all_found {
-        println!(
+        dprintln!(
             "\n  {}Your AI tool will offer to fill in empty templates on first use.",
             color::warn_mark()
         );
     }
-    println!();
+    dprintln!();
 
     Ok(())
 }
@@ -551,7 +581,7 @@ fn resolve_doc_path(
     }
 
     let suggestion = suggested_doc_path(root, spec);
-    print!("    {} doc path [{}]: ", spec.label, suggestion);
+    dprint!("    {} doc path [{}]: ", spec.label, suggestion);
     std::io::stdout().flush()?;
     let mut input = String::new();
     std::io::stdin().read_line(&mut input)?;
@@ -614,7 +644,7 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
             for (_, id, _) in &tools {
                 let member_id = format!("ai:{id}@joy");
                 if project.members.remove(&member_id).is_some() {
-                    println!(
+                    dprintln!(
                         "  {}{:<24} orphaned member removed",
                         color::check_mark(),
                         member_id
@@ -625,30 +655,30 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
             if cleaned {
                 joy_core::store::write_yaml_preserve(&project_path, &project)?;
             } else {
-                println!("{}No AI tool configurations found.", color::check_mark());
+                dprintln!("{}No AI tool configurations found.", color::check_mark());
             }
         } else {
-            println!("{}No AI tool configurations found.", color::check_mark());
+            dprintln!("{}No AI tool configurations found.", color::check_mark());
         }
         return Ok(());
     }
 
-    println!("{}", color::header("AI Reset"));
-    println!();
-    println!("Will remove:");
+    dprintln!("{}", color::header("AI Reset"));
+    dprintln!();
+    dprintln!("Will remove:");
     for (name, path) in &to_remove {
-        println!("  {}{:<24} {}", color::cross_mark(), name, path);
+        dprintln!("  {}{:<24} {}", color::cross_mark(), name, path);
     }
 
     if !args.force {
-        println!();
-        print!("Proceed? [y/N] ");
+        dprintln!();
+        dprint!("Proceed? [y/N] ");
         std::io::stdout().flush()?;
         let mut input = String::new();
         std::io::stdin().read_line(&mut input)?;
         let trimmed = input.trim();
         if !trimmed.eq_ignore_ascii_case("y") {
-            println!("Aborted.");
+            dprintln!("Aborted.");
             return Ok(());
         }
     }
@@ -662,7 +692,7 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
         } else {
             fs::remove_file(&full)?;
         }
-        println!("  {}{:<24} removed", color::check_mark(), name);
+        dprintln!("  {}{:<24} removed", color::check_mark(), name);
     }
 
     // Remove AI members from project.yaml for reset tools
@@ -676,7 +706,7 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
             if was_removed {
                 let member_id = format!("ai:{id}@joy");
                 if project.members.remove(&member_id).is_some() {
-                    println!("  {}{:<24} member removed", color::check_mark(), member_id);
+                    dprintln!("  {}{:<24} member removed", color::check_mark(), member_id);
                     project_changed = true;
                     // Remove AI member's session and per-human delegation key file.
                     if let Ok(project_id) = joy_core::auth::session::project_id(&root) {
@@ -728,14 +758,14 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
                         }
                     }
                 }
-                println!(
+                dprintln!(
                     "  {}{:<24} cleaned (jobs/ preserved)",
                     color::check_mark(),
                     ".joy/ai/"
                 );
             } else {
                 fs::remove_dir_all(&ai_dir)?;
-                println!("  {}{:<24} removed", color::check_mark(), ".joy/ai/");
+                dprintln!("  {}{:<24} removed", color::check_mark(), ".joy/ai/");
             }
         }
     }
@@ -748,7 +778,7 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
                 .any(|p| to_remove.iter().any(|(_, tp)| tp == p))
         })
         .count();
-    println!(
+    dprintln!(
         "{}",
         color::footer(&format!("{} reset", color::plural(count, "tool")))
     );
@@ -789,7 +819,7 @@ const ALL_TOOLS: &[ToolEntry] = &[
 
 /// Set up only NEW (not yet configured) tools. Returns list of all configured tool IDs.
 fn setup_new_tools(root: &Path, passphrase: Option<&str>) -> anyhow::Result<Vec<&'static str>> {
-    println!("{}", color::section("AI Tools"));
+    dprintln!("{}", color::section("AI Tools"));
 
     let mut configured_tools: Vec<&'static str> = Vec::new();
     let mut newly_configured = 0;
@@ -814,7 +844,7 @@ fn setup_new_tools(root: &Path, passphrase: Option<&str>) -> anyhow::Result<Vec<
         let should_register;
 
         if already {
-            println!(
+            dprintln!(
                 "  {}{:<24} {}",
                 color::check_mark(),
                 name,
@@ -825,7 +855,7 @@ fn setup_new_tools(root: &Path, passphrase: Option<&str>) -> anyhow::Result<Vec<
             // joy ai init (e.g. by joy ai update or a copied .claude/ dir).
             should_register = true;
         } else {
-            print!("  {}{:<24} configure? [Y/n] ", color::warn_mark(), name);
+            dprint!("  {}{:<24} configure? [Y/n] ", color::warn_mark(), name);
             if confirm_default_yes()? {
                 configure(root, &member_id)?;
                 configured_tools.push(*id);
@@ -874,7 +904,7 @@ fn setup_new_tools(root: &Path, passphrase: Option<&str>) -> anyhow::Result<Vec<
             project.members.insert(member_id.clone(), new_member);
 
             project_changed = true;
-            println!(
+            dprintln!(
                 "  {}{:<24} {}",
                 color::check_mark(),
                 member_id,
@@ -888,24 +918,24 @@ fn setup_new_tools(root: &Path, passphrase: Option<&str>) -> anyhow::Result<Vec<
     }
 
     if configured_tools.is_empty() {
-        println!("  {}No supported AI tools detected.", color::warn_mark());
-        println!(
+        dprintln!("  {}No supported AI tools detected.", color::warn_mark());
+        dprintln!(
             "  {}",
             color::inactive("Supported: Claude Code, Qwen Code, Mistral Vibe, GitHub Copilot")
         );
-        println!(
+        dprintln!(
             "  {}",
             color::inactive("Install one and re-run `joy ai init`.")
         );
     } else if newly_configured == 0 {
-        println!(
+        dprintln!(
             "\n  {}All tools already configured. Use {} to update files.",
             color::warn_mark(),
             color::label("joy ai update")
         );
     }
 
-    println!();
+    dprintln!();
     Ok(configured_tools)
 }
 
@@ -1352,15 +1382,15 @@ fn check_nested_projects(root: &Path) -> anyhow::Result<()> {
     }
 
     if !unconfigured.is_empty() {
-        println!("{}", color::section("Nested Projects"));
+        dprintln!("{}", color::section("Nested Projects"));
         for path in &unconfigured {
-            println!("  {}{}/", color::warn_mark(), path);
+            dprintln!("  {}{}/", color::warn_mark(), path);
         }
-        println!(
+        dprintln!(
             "  {}",
             color::inactive("Permissions are per-project. Run `joy ai init` in each.")
         );
-        println!();
+        dprintln!();
     }
 
     Ok(())
