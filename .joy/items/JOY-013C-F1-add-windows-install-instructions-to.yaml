@@ -1,0 +1,27 @@
+id: JOY-013C-F1
+title: Add Windows install instructions to website + docs
+type: task
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+milestone: JOY-MS-01
+capabilities:
+- implement
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-04-30T21:32:01.028288660Z
+updated: 2026-04-30T21:39:48.875842629Z
+description: |-
+  Website docs at content/joy/docs/{en,de}/index.mdx currently show only the curl Linux/macOS install line. Windows users land on the same page and have no install path. The Windows installer (get.joyint.com/joy.ps1) is deployed and must be surfaced.
+
+  Add a tabbed or sectioned install block per platform:
+  - Windows (PowerShell): irm get.joyint.com/joy.ps1 | iex
+  - macOS / Linux: curl -fsSL get.joyint.com/joy | sh
+  - Any platform with Rust: cargo install joy-cli
+
+  Same change in the German index.mdx. Same change in any other public-facing install hint we ship (README.md, Tutorial). Verify against the bundled and the website tutorial that no install line is platform-implicit.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-04-30T21:39:48.745647073Z
+  text: '[x] Website index.mdx (en + de) und Joy-Repo README.md zeigen jetzt drei Install-Pfade: macOS/Linux (curl ... | sh), Windows PowerShell (irm ... | iex), cargo. Klarstellung dass der Windows-Installer User-PATH automatisch setzt und macOS/Linux es selbst tun muss. Tutorials erwaehnen kein Install (start beim joy init), bleiben unveraendert.'

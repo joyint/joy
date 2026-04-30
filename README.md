@@ -6,11 +6,21 @@ Joy is a fast, file-based, AI-powered project management CLI for developers who 
 
 ## Quick Start
 
-Install the prebuilt binary (Linux, macOS, Windows):
+Install the prebuilt binary.
+
+macOS / Linux:
 
 ```sh
 curl -fsSL get.joyint.com/joy | sh
 ```
+
+Windows (PowerShell):
+
+```powershell
+irm get.joyint.com/joy.ps1 | iex
+```
+
+Both installers drop the binary into `~/.local/bin`. The Windows installer also adds that directory to your user PATH (no administrator rights required); on macOS / Linux add it yourself if it isn't already (`export PATH="$HOME/.local/bin:$PATH"` in your shell rc).
 
 Or install from source via cargo:
 

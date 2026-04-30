@@ -1,0 +1,28 @@
+id: JOY-013A-CB
+title: Windows installer must set User-PATH automatically
+type: bug
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+milestone: JOY-MS-01
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-04-30T21:32:00.978167929Z
+updated: 2026-04-30T21:37:40.638710848Z
+description: |-
+  The Windows install script (get.joyint.com/joy.ps1) drops the binary into ~/.local/bin but does not modify the User-PATH automatically. It only prints a grey "Note: ... not on your PATH. Add: [Environment]::SetEnvironmentVariable(...)" hint that the user has to copy and run by hand. If the user misses it, `joy` invokes Windows joy.cpl (Game Controllers applet) via PATHEXT instead of the installed binary.
+
+  Fix: have the installer set the User-PATH itself, idempotently, prepending $InstallDir so it wins over System-PATH (and therefore over joy.cpl in System32). Same SetEnvironmentVariable("Path", ..., "User") call, just executed by the script. Detect existing entry to stay idempotent. Print a single confirmation line and a "restart your terminal" hint at the end.
+
+  Acceptance: a fresh Windows user running `irm get.joyint.com/joy.ps1 | iex` and then opening a new terminal can call `joy --version` without ever copying a PATH command. `joy.cpl` is shadowed in the new shell.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-04-30T21:36:26.057313327Z
+  text: 'Plan: replace the manual ''Add: ...'' note with an automatic User-PATH set. Use [Environment]::GetEnvironmentVariable(''Path'',''User'') to read the User-scope PATH (not :Path which mixes User+System), prepend  if not already present, and SetEnvironmentVariable(''Path'', ..., ''User''). Same fix in jyn.ps1. WM_SETTINGCHANGE is broadcast automatically. Print ''User PATH updated'' line and a ''Restart your terminal'' hint.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-04-30T21:37:40.395220232Z
+  text: '[x] joy.ps1 and jyn.ps1: replaced the manual ''Note: ... Add: ...'' hint with automatic User-PATH set. Reads User-scope PATH (not $env:Path which mixes User+System), checks idempotency by splitting on '';'' (not substring match - avoids false positives if InstallDir is a prefix of another entry), prepends, writes back via SetEnvironmentVariable(''Path'', ..., ''User''). Prints ''User PATH updated'' plus a ''Restart your terminal'' hint. WM_SETTINGCHANGE is broadcast by SetEnvironmentVariable automatically. Linux/macOS sh installer untouched - automatic shell-rc modification would be invasive there.'
