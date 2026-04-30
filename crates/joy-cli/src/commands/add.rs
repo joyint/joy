@@ -205,7 +205,11 @@ pub fn run(args: AddArgs) -> Result<()> {
         &ctx.log_user(),
     );
 
-    println!("Created {} {}", id, title);
+    if crate::output::is_json() {
+        crate::output::emit(&item)?;
+    } else {
+        println!("Created {} {}", id, title);
+    }
 
     joy_core::git_ops::auto_git_post_command(
         &ctx.root,

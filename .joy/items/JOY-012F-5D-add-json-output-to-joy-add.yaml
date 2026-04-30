@@ -1,13 +1,19 @@
 id: JOY-012F-5D
 title: Add --json output to joy add
 type: task
-status: new
+status: closed
 priority: medium
 parent: JOY-00C9-5F
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-30T06:18:37.101149950Z
-updated: 2026-04-30T06:18:37.101149950Z
+updated: 2026-04-30T07:23:52.623933056Z
 description: Implements ADR-036 for joy add. Write command, emits confirmation envelope (item id, new state). BATS test.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-30T07:23:52.595540005Z
+  text: '[x] Emits created Item directly. 1 BATS test.'

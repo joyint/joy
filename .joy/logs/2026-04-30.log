@@ -81,3 +81,7 @@
 2026-04-30T07:23:04.119Z JOY-012E-B9 comment.added "[x] release ls: ReleaseListPayload {total, releases}. release show <V>: full Release object. release show (preview): {previous_version, closed_item_ids}. Bump/record/publish are write ops, out of scope for this read-only task. 2 BATS tests." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T07:23:04.131Z JOY-012E-B9 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T07:23:04.154Z JOY-012E-B9 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:23:52.589Z JOY-012F-5D item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:23:52.597Z JOY-012F-5D comment.added "[x] Emits created Item directly. 1 BATS test." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:23:52.606Z JOY-012F-5D item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:23:52.626Z JOY-012F-5D item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
