@@ -81,8 +81,10 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     joy auth init --passphrase "$TEST_PASSPHRASE"
     run joy auth status
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Authenticated as"* ]]
-    [[ "$output" == *"Session expires"* ]]
+    [[ "$output" == *"Auth Status"* ]]
+    [[ "$output" == *"Your session"* ]]
+    [[ "$output" == *"Member:"* ]]
+    [[ "$output" == *"Expires:"* ]]
 }
 
 @test "joy auth status shows no session after deauth" {
@@ -303,12 +305,14 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     # Both should have active sessions
     run joy auth status
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Authenticated as dev@example.com"* ]]
+    [[ "$output" == *"dev@example.com"* ]]
+    [[ "$output" == *"Expires:"* ]]
     # Switch back to lead
     git config user.email test@example.com
     run joy auth status
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Authenticated as test@example.com"* ]]
+    [[ "$output" == *"test@example.com"* ]]
+    [[ "$output" == *"Expires:"* ]]
 }
 
 @test "deauth only removes own session" {
@@ -324,7 +328,8 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     # Lead still has session
     git config user.email test@example.com
     run joy auth status
-    [[ "$output" == *"Authenticated as test@example.com"* ]]
+    [[ "$output" == *"test@example.com"* ]]
+    [[ "$output" == *"Expires:"* ]]
 }
 
 # ============================================================
@@ -489,7 +494,8 @@ YAML
 
     # Status shows active
     run joy auth status
-    [[ "$output" == *"Authenticated"* ]]
+    [[ "$output" == *"Auth Status"* ]]
+    [[ "$output" == *"Member:"* ]]
 
     # Deauth
     joy deauth
@@ -504,7 +510,8 @@ YAML
 
     # Status shows active again
     run joy auth status
-    [[ "$output" == *"Authenticated"* ]]
+    [[ "$output" == *"Auth Status"* ]]
+    [[ "$output" == *"Member:"* ]]
 
     # Final deauth
     joy deauth

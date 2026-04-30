@@ -652,75 +652,148 @@ fn auth_with_token(
     Ok(())
 }
 
-/// `joy auth status` — show current session state.
+/// `joy auth status` — show current session state and any AI sessions
+/// the calling user has delegated to.
 fn run_status() -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
     let identity =
         joy_core::identity::resolve_identity(&root).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let project = store::load_project(&root)?;
+    let project_id = session::project_id(&root)?;
 
-    if identity.authenticated {
-        let project_id = session::project_id(&root)?;
-        let session_loaded = session::load_session(&project_id, &identity.member)
+    let own_session = if identity.authenticated {
+        session::load_session(&project_id, &identity.member)
             .ok()
-            .flatten();
-        let expires_in_seconds = session_loaded
-            .as_ref()
-            .map(|s| (s.claims.expires - Utc::now()).num_seconds());
-
-        if crate::output::is_json() {
-            return crate::output::emit(AuthStatusPayload {
-                authenticated: true,
-                member: identity.member.clone(),
-                delegated_by: identity.delegated_by.clone(),
-                session_present: session_loaded.is_some(),
-                expires_in_seconds,
-                auth_initialized: true,
-            });
-        }
-
-        if let Some(sess) = session_loaded {
-            let remaining = sess.claims.expires - Utc::now();
-            let hours = remaining.num_hours();
-            let minutes = remaining.num_minutes() % 60;
-            println!("Authenticated as {}.", identity.member);
-            if let Some(ref delegated_by) = identity.delegated_by {
-                println!("Delegated by {}.", delegated_by);
-            }
-            println!("Session expires in {}h {}m.", hours, minutes);
-        } else {
-            println!(
-                "Authenticated as {} (session file missing).",
-                identity.member
-            );
-        }
+            .flatten()
     } else {
-        let project = store::load_project(&root)?;
-        let member = project.members.get(&identity.member);
-        let has_auth = member.is_some_and(|m| m.verify_key.is_some());
+        None
+    };
+    let expires_in_seconds = own_session
+        .as_ref()
+        .map(|s| (s.claims.expires - Utc::now()).num_seconds());
+    let auth_initialized = project
+        .members
+        .get(&identity.member)
+        .is_some_and(|m| m.verify_key.is_some());
 
-        if crate::output::is_json() {
-            crate::output::emit(AuthStatusPayload {
-                authenticated: false,
-                member: identity.member.clone(),
-                delegated_by: identity.delegated_by.clone(),
-                session_present: false,
-                expires_in_seconds: None,
-                auth_initialized: has_auth,
-            })?;
+    // Delegated AI sessions: only the human delegator's own ai_delegations
+    // are surfaced here. We do not enumerate sessions delegated by other
+    // humans -- that is not this caller's audit surface.
+    let delegated_sessions: Vec<DelegatedSession> = project
+        .members
+        .get(&identity.member)
+        .map(|m| m.ai_delegations.keys().cloned().collect::<Vec<_>>())
+        .unwrap_or_default()
+        .into_iter()
+        .map(|ai_id| {
+            let sess = session::load_session(&project_id, &ai_id).ok().flatten();
+            let active = sess.as_ref().is_some_and(|s| s.claims.expires > Utc::now());
+            let expires_in_seconds = sess
+                .as_ref()
+                .filter(|_| active)
+                .map(|s| (s.claims.expires - Utc::now()).num_seconds());
+            DelegatedSession {
+                member: ai_id,
+                active,
+                expires_in_seconds,
+            }
+        })
+        .collect();
+
+    if crate::output::is_json() {
+        crate::output::emit(AuthStatusPayload {
+            authenticated: identity.authenticated,
+            member: identity.member.clone(),
+            delegated_by: identity.delegated_by.clone(),
+            session_present: own_session.is_some(),
+            expires_in_seconds,
+            auth_initialized,
+            delegated_sessions,
+        })?;
+        if !identity.authenticated {
             std::process::exit(1);
         }
+        return Ok(());
+    }
 
-        if has_auth {
+    let w = color::terminal_width();
+    println!("{}", color::header("Auth Status"));
+
+    println!("{}", color::section("Your session"));
+    if identity.authenticated {
+        if let Some(sess) = &own_session {
+            let remaining = sess.claims.expires - Utc::now();
             println!(
-                "No active session for {}. Run `joy auth` to authenticate.",
-                identity.member
+                "  {} {}",
+                color::label("Member:    "),
+                color::id(&identity.member)
+            );
+            if let Some(ref by) = identity.delegated_by {
+                println!("  {} {}", color::label("Delegated: "), by);
+            }
+            println!(
+                "  {} {}h {}m",
+                color::label("Expires:   "),
+                remaining.num_hours(),
+                remaining.num_minutes() % 60
             );
         } else {
-            println!("Authentication not initialized for {}.", identity.member);
-            println!("Run `joy auth init` to set up.");
+            println!(
+                "  {}",
+                color::warning(&format!(
+                    "Authenticated as {} (session file missing).",
+                    identity.member
+                ))
+            );
         }
+    } else if auth_initialized {
+        println!(
+            "  {}",
+            color::inactive(&format!(
+                "No active session for {}. Run `joy auth` to authenticate.",
+                identity.member
+            ))
+        );
+    } else {
+        println!(
+            "  {}",
+            color::inactive(&format!(
+                "Authentication not initialized for {}. Run `joy auth init`.",
+                identity.member
+            ))
+        );
+    }
+
+    if !delegated_sessions.is_empty() {
+        println!();
+        println!("{}", color::section("Delegated AI sessions"));
+        for d in &delegated_sessions {
+            if d.active {
+                let secs = d.expires_in_seconds.unwrap_or(0);
+                let hours = secs / 3600;
+                let minutes = (secs / 60) % 60;
+                println!(
+                    "  {} {} {}h {}m",
+                    color::id(&d.member),
+                    color::check_mark(),
+                    hours,
+                    minutes
+                );
+            } else {
+                println!(
+                    "  {} {}",
+                    color::id(&d.member),
+                    color::inactive("no active session")
+                );
+            }
+        }
+    }
+
+    println!("{}", color::label(&"-".repeat(w)));
+
+    if !identity.authenticated {
         std::process::exit(1);
     }
 
@@ -735,6 +808,14 @@ struct AuthStatusPayload {
     session_present: bool,
     expires_in_seconds: Option<i64>,
     auth_initialized: bool,
+    delegated_sessions: Vec<DelegatedSession>,
+}
+
+#[derive(serde::Serialize)]
+struct DelegatedSession {
+    member: String,
+    active: bool,
+    expires_in_seconds: Option<i64>,
 }
 
 /// `joy auth reset [member]` — reset authentication for yourself or another member.

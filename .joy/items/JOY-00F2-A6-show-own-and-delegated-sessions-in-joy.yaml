@@ -1,8 +1,10 @@
 id: JOY-00F2-A6
 title: Show own and delegated sessions in joy auth status
 type: story
-status: new
+status: closed
 priority: medium
+assignees:
+- member: ai:claude@joy
 capabilities:
 - plan
 - implement
@@ -10,8 +12,15 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-19T12:00:40.760459854Z
-updated: 2026-04-19T12:00:40.760459854Z
+updated: 2026-04-30T20:22:08.371154333Z
 description: |-
   `joy auth status` currently shows only the caller's own session. For a delegating user (typically a human who has issued delegation tokens to AI members), it should also list the sessions of all members they have delegated to: member ID, session expiry, and source of delegation. This gives the delegator a single command to see which delegated sessions are still active and which need refreshing, without having to ask each agent to run `joy auth status` separately.
 
   Visual presentation: now that the command renders structured multi-row information, align its output style with the framed, sectioned layout used by `joy ls`, `joy show`, `joy project`, etc. (header rule, section labels, consistent column alignment), instead of the current free-text lines.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-04-30T20:15:02.006617466Z
+  text: 'Plan: extend run_status to enumerate the calling user''s ai_delegations and check each one''s session (using the same predicates as member_auth_status). Output uses a framed multi-section layout (header rule, ''Your session'' section, ''Delegated AI sessions'' section) similar to joy ls --tree. Status payload (--json) gains a delegated_sessions[] array per ADR-036. BATS test: human with two AI delegations -- one with active session, one without; status output reflects both states.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-04-30T20:22:08.231154498Z
+  text: '[x] joy auth status now lists delegated AI sessions for the calling human. Layout: framed sectioned (Auth Status header + ''Your session'' + ''Delegated AI sessions''). JSON envelope gains delegated_sessions[]: {member, active, expires_in_seconds}. Section is omitted when nothing was delegated. 3 BATS tests in auth_status_delegated.bats; updated 4 existing assertions in auth.bats.'
