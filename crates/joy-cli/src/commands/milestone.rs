@@ -169,6 +169,30 @@ fn run_ls() -> Result<()> {
     let milestones = milestones::load_milestones(&ctx.root)?;
     let all_items = items::load_items(&ctx.root)?;
 
+    if crate::output::is_json() {
+        let entries: Vec<MilestoneListEntry> = milestones
+            .iter()
+            .map(|ms| {
+                let linked: Vec<_> = all_items
+                    .iter()
+                    .filter(|i| effective_milestone(i, &all_items) == Some(&ms.id))
+                    .collect();
+                let closed = linked.iter().filter(|i| !i.is_active()).count();
+                MilestoneListEntry {
+                    id: ms.id.clone(),
+                    title: ms.title.clone(),
+                    date: ms.date.map(|d| d.to_string()),
+                    total: linked.len(),
+                    closed,
+                }
+            })
+            .collect();
+        return crate::output::emit(MilestoneListPayload {
+            total: entries.len(),
+            milestones: entries,
+        });
+    }
+
     if milestones.is_empty() {
         println!("No milestones.");
         return Ok(());
@@ -220,6 +244,19 @@ fn run_show(args: ShowArgs) -> Result<()> {
         .iter()
         .filter(|i| effective_milestone(i, &all_items) == Some(&ms.id))
         .collect();
+
+    if crate::output::is_json() {
+        let closed = linked.iter().filter(|i| !i.is_active()).count();
+        return crate::output::emit(MilestoneShowPayload {
+            id: ms.id.clone(),
+            title: ms.title.clone(),
+            date: ms.date.map(|d| d.to_string()),
+            description: ms.description.clone(),
+            total: linked.len(),
+            closed,
+            items: linked.iter().map(|i| (*i).clone()).collect(),
+        });
+    }
 
     let w = color::terminal_width();
     println!("{}", color::label(&"-".repeat(w)));
@@ -499,4 +536,30 @@ fn run_unlink(args: UnlinkArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[derive(serde::Serialize)]
+struct MilestoneListPayload {
+    total: usize,
+    milestones: Vec<MilestoneListEntry>,
+}
+
+#[derive(serde::Serialize)]
+struct MilestoneListEntry {
+    id: String,
+    title: String,
+    date: Option<String>,
+    total: usize,
+    closed: usize,
+}
+
+#[derive(serde::Serialize)]
+struct MilestoneShowPayload {
+    id: String,
+    title: String,
+    date: Option<String>,
+    description: Option<String>,
+    total: usize,
+    closed: usize,
+    items: Vec<joy_core::model::Item>,
 }

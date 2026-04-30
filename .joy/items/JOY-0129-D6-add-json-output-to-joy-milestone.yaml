@@ -1,13 +1,19 @@
 id: JOY-0129-D6
 title: Add --json output to joy milestone
 type: task
-status: new
+status: closed
 priority: high
 parent: JOY-00C9-5F
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-30T06:18:37.035019512Z
-updated: 2026-04-30T06:18:37.035019512Z
+updated: 2026-04-30T06:59:35.840787253Z
 description: Implements ADR-036 for joy milestone. Read-only command. Must emit envelope {version:1, data:...} with all displayed information. BATS test for valid JSON and stable shape.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-30T06:59:35.814360405Z
+  text: '[x] MilestoneListPayload + MilestoneShowPayload. Read paths only -- write paths (add/rm/edit/link/unlink) are JOY-0136-D2. 3 BATS tests.'

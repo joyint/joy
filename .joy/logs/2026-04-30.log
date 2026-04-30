@@ -57,3 +57,7 @@
 2026-04-30T06:56:58.004Z JOY-0128-6A comment.added "[x] LogPayload {total, has_more, events}. LogEntry now derives Serialize+Clone in joy-core. 2 BATS tests." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T06:56:58.014Z JOY-0128-6A item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T06:56:58.032Z JOY-0128-6A item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T06:59:35.808Z JOY-0129-D6 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T06:59:35.816Z JOY-0129-D6 comment.added "[x] MilestoneListPayload + MilestoneShowPayload. Read paths only -- write paths (add/rm/edit/link/unlink) are JOY-0136-D2. 3 BATS tests." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T06:59:35.825Z JOY-0129-D6 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T06:59:35.843Z JOY-0129-D6 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
