@@ -149,9 +149,13 @@ fn run_add(args: AddArgs) -> Result<()> {
         &log_user,
     );
 
-    println!("Created {} {}", color::id(&id), ms.title);
-    if let Some(date) = ms.date {
-        println!("  Date: {date}");
+    if crate::output::is_json() {
+        crate::output::emit(&ms)?;
+    } else {
+        println!("Created {} {}", color::id(&id), ms.title);
+        if let Some(date) = ms.date {
+            println!("  Date: {date}");
+        }
     }
 
     joy_core::git_ops::auto_git_post_command(
@@ -385,7 +389,11 @@ fn run_rm(args: RmArgs) -> Result<()> {
         &log_user,
     );
 
-    println!("Deleted {} {}", color::id(&ms.id), ms.title);
+    if crate::output::is_json() {
+        crate::output::emit(&ms)?;
+    } else {
+        println!("Deleted {} {}", color::id(&ms.id), ms.title);
+    }
 
     joy_core::git_ops::auto_git_post_command(
         &ctx.root,
@@ -446,7 +454,11 @@ fn run_edit(args: EditArgs) -> Result<()> {
         &log_user,
     );
 
-    println!("Updated {} {}", color::id(&ms.id), ms.title);
+    if crate::output::is_json() {
+        crate::output::emit(&ms)?;
+    } else {
+        println!("Updated {} {}", color::id(&ms.id), ms.title);
+    }
 
     joy_core::git_ops::auto_git_post_command(
         &ctx.root,
@@ -479,12 +491,16 @@ fn run_link(args: LinkArgs) -> Result<()> {
         &log_user,
     );
 
-    println!(
-        "Linked {} to {} {}",
-        color::id(&item.id),
-        color::id(&ms.id),
-        ms.title
-    );
+    if crate::output::is_json() {
+        crate::output::emit(&item)?;
+    } else {
+        println!(
+            "Linked {} to {} {}",
+            color::id(&item.id),
+            color::id(&ms.id),
+            ms.title
+        );
+    }
 
     joy_core::git_ops::auto_git_post_command(
         &ctx.root,
@@ -518,11 +534,15 @@ fn run_unlink(args: UnlinkArgs) -> Result<()> {
                 &log_user,
             );
 
-            println!(
-                "Unlinked {} from {}",
-                color::id(&item.id),
-                color::id(&old_ms_id)
-            );
+            if crate::output::is_json() {
+                crate::output::emit(&item)?;
+            } else {
+                println!(
+                    "Unlinked {} from {}",
+                    color::id(&item.id),
+                    color::id(&old_ms_id)
+                );
+            }
 
             joy_core::git_ops::auto_git_post_command(
                 &ctx.root,

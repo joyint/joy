@@ -109,3 +109,7 @@
 2026-04-30T07:43:50.251Z JOY-0135-8A comment.added "[x] Both --add and --rm emit the updated Item. Idempotent paths (already-deps / not-deps) also emit the current item. 2 BATS tests." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T07:43:50.271Z JOY-0135-8A item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T07:43:50.301Z JOY-0135-8A item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:45:14.688Z JOY-0136-D2 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:45:14.715Z JOY-0136-D2 comment.added "[x] add/rm/edit emit Milestone; link/unlink emit updated Item. 3 BATS tests." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:45:14.742Z JOY-0136-D2 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:45:14.784Z JOY-0136-D2 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
