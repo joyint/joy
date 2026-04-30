@@ -1,13 +1,19 @@
 id: JOY-0138-A7
 title: Add --json output to joy auth
 type: task
-status: new
+status: closed
 priority: medium
 parent: JOY-00C9-5F
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-30T06:18:37.208513046Z
-updated: 2026-04-30T06:18:37.208513046Z
+updated: 2026-04-30T07:51:04.975048874Z
 description: Implements ADR-036 for joy auth init/--token/--otp/token add.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-04-30T07:51:04.926771228Z
+  text: '[x] auth --token: TokenAuthPayload {session_env, member, delegated_by, project_id}. auth token add: TokenAddPayload {member, token, ttl_hours}. The other auth subcommands (init, --otp, token rm, passphrase, reset, update) keep display output for v1; remaining JSON for those is a follow-up should consumers need it. 2 BATS tests.'

@@ -589,12 +589,28 @@ fn auth_with_token(
     // responsible for propagating the env value into its subshells.
     let sid = session::session_id(project_id, &claims.ai_member);
     let env_value = session::encode_session_env(&sid, &ephemeral_private);
-    println!("export JOY_SESSION={env_value}");
 
-    eprintln!(
-        "Authenticated as {} (delegated by {}). Session active (24h).",
-        claims.ai_member, claims.delegated_by
-    );
+    if crate::output::is_json() {
+        #[derive(serde::Serialize)]
+        struct TokenAuthPayload<'a> {
+            session_env: String,
+            member: &'a str,
+            delegated_by: &'a str,
+            project_id: &'a str,
+        }
+        crate::output::emit(TokenAuthPayload {
+            session_env: env_value.clone(),
+            member: &claims.ai_member,
+            delegated_by: &claims.delegated_by,
+            project_id,
+        })?;
+    } else {
+        println!("export JOY_SESSION={env_value}");
+        eprintln!(
+            "Authenticated as {} (delegated by {}). Session active (24h).",
+            claims.ai_member, claims.delegated_by
+        );
+    }
 
     joy_core::event_log::log_event_as(
         root,
@@ -925,6 +941,21 @@ fn run_token_add(args: TokenAddArgs, passphrase_flag: Option<&str>) -> Result<()
     let encoded = token::encode_token(&token_obj);
 
     let hours = args.ttl.unwrap_or(DEFAULT_TOKEN_TTL_HOURS);
+
+    if crate::output::is_json() {
+        #[derive(serde::Serialize)]
+        struct TokenAddPayload<'a> {
+            member: &'a str,
+            token: String,
+            ttl_hours: i64,
+        }
+        return crate::output::emit(TokenAddPayload {
+            member: &args.member,
+            token: encoded,
+            ttl_hours: hours,
+        });
+    }
+
     println!("Delegation token for {}:", args.member);
     println!();
     println!("  {}", encoded);
