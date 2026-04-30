@@ -145,7 +145,7 @@ pub fn append_event(root: &Path, event: &Event) -> Result<(), JoyError> {
 }
 
 /// A parsed log entry for display.
-#[derive(Debug)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct LogEntry {
     pub timestamp: String,
     pub event_type: String,

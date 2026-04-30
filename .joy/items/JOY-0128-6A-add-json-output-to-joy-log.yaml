@@ -1,13 +1,19 @@
 id: JOY-0128-6A
 title: Add --json output to joy log
 type: task
-status: new
+status: closed
 priority: high
 parent: JOY-00C9-5F
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-30T06:18:37.023683532Z
-updated: 2026-04-30T06:18:37.023683532Z
+updated: 2026-04-30T06:56:58.029398297Z
 description: Implements ADR-036 for joy log. Read-only command. Must emit envelope {version:1, data:...} with all displayed information. BATS test for valid JSON and stable shape.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-30T06:56:58.001642707Z
+  text: '[x] LogPayload {total, has_more, events}. LogEntry now derives Serialize+Clone in joy-core. 2 BATS tests.'

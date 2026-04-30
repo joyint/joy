@@ -53,3 +53,7 @@
 2026-04-30T06:53:22.708Z JOY-0127-F0 comment.added "[x] FindPayload {query, total, items}. 2 BATS tests." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T06:53:22.718Z JOY-0127-F0 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T06:53:22.736Z JOY-0127-F0 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T06:56:57.994Z JOY-0128-6A item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T06:56:58.004Z JOY-0128-6A comment.added "[x] LogPayload {total, has_more, events}. LogEntry now derives Serialize+Clone in joy-core. 2 BATS tests." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T06:56:58.014Z JOY-0128-6A item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T06:56:58.032Z JOY-0128-6A item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

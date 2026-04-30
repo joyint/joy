@@ -76,20 +76,28 @@ pub fn run(args: LogArgs) -> Result<()> {
     let effective_limit = if args.all { usize::MAX } else { args.limit };
     // Request one extra to detect if there are more entries
     let fetch_limit = effective_limit.saturating_add(1);
-    let entries =
+    let mut entries =
         event_log::read_events(&root, since.as_deref(), args.item.as_deref(), fetch_limit)?;
+
+    let has_more = !args.all && entries.len() > effective_limit;
+    if has_more {
+        entries.truncate(effective_limit);
+    }
+
+    if crate::output::is_json() {
+        return crate::output::emit(LogPayload {
+            total: entries.len(),
+            has_more,
+            events: entries,
+        });
+    }
 
     if entries.is_empty() {
         println!("No events found.");
         return Ok(());
     }
 
-    let has_more = !args.all && entries.len() > effective_limit;
-    let display_entries = if has_more {
-        &entries[..effective_limit]
-    } else {
-        &entries
-    };
+    let display_entries = &entries;
 
     for entry in display_entries {
         let local_time = format_local_time(&entry.timestamp);
@@ -153,4 +161,11 @@ mod tests {
         let result = format_local_time("not-a-date");
         assert_eq!(result, "not-a-date");
     }
+}
+
+#[derive(serde::Serialize)]
+struct LogPayload {
+    total: usize,
+    has_more: bool,
+    events: Vec<joy_core::event_log::LogEntry>,
 }
