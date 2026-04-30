@@ -73,3 +73,7 @@
 2026-04-30T07:03:44.113Z JOY-012C-47 comment.added "[x] AuthStatusPayload {authenticated, member, delegated_by, session_present, expires_in_seconds, auth_initialized}. Exit code is preserved (1 when not authenticated) so scripts can still gate on it. 2 BATS tests." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T07:03:44.121Z JOY-012C-47 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T07:03:44.139Z JOY-012C-47 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:20:27.378Z JOY-012D-F4 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:20:27.387Z JOY-012D-F4 comment.added "[x] AiStatusPayload {check, tools[{name,id,installed,configured,stale}], has_issues}. Exit code 2 on stale --check is preserved. Covers both --check (read) and update (write) since both share the same flow. 2 BATS tests." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:20:27.397Z JOY-012D-F4 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:20:27.416Z JOY-012D-F4 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

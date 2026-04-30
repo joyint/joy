@@ -141,6 +141,41 @@ fn update(args: UpdateArgs) -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("No Joy project found (run `joy init` first)"))?;
 
     let dry_run = args.check;
+
+    if crate::output::is_json() {
+        let mut entries: Vec<AiToolEntry> = Vec::new();
+        let mut has_issues = false;
+        for (name, id, detect, _configure) in ALL_TOOLS {
+            let installed = detect();
+            let configured = is_tool_configured(&root, id);
+            let stale = if dry_run && configured {
+                let member_id = format!("ai:{id}@joy");
+                is_tool_stale(&root, id, &member_id)?
+            } else {
+                false
+            };
+            if stale {
+                has_issues = true;
+            }
+            entries.push(AiToolEntry {
+                name: name.to_string(),
+                id: id.to_string(),
+                installed,
+                configured,
+                stale,
+            });
+        }
+        crate::output::emit(AiStatusPayload {
+            check: dry_run,
+            tools: entries,
+            has_issues,
+        })?;
+        if dry_run && has_issues {
+            std::process::exit(2);
+        }
+        return Ok(());
+    }
+
     let header = if dry_run { "AI Status" } else { "AI Update" };
 
     println!("{}", color::header(header));
@@ -1553,4 +1588,20 @@ mod tests {
         let content = fs::read_to_string(&path).unwrap();
         assert_eq!(content, "pure user content\n");
     }
+}
+
+#[derive(serde::Serialize)]
+struct AiStatusPayload {
+    check: bool,
+    tools: Vec<AiToolEntry>,
+    has_issues: bool,
+}
+
+#[derive(serde::Serialize)]
+struct AiToolEntry {
+    name: String,
+    id: String,
+    installed: bool,
+    configured: bool,
+    stale: bool,
 }

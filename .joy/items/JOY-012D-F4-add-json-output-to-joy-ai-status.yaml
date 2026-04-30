@@ -1,13 +1,19 @@
 id: JOY-012D-F4
 title: Add --json output to joy ai status
 type: task
-status: new
+status: closed
 priority: high
 parent: JOY-00C9-5F
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-30T06:18:37.080076386Z
-updated: 2026-04-30T06:18:37.080076386Z
+updated: 2026-04-30T07:20:27.413672016Z
 description: Implements ADR-036 for joy ai status / update --check.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-30T07:20:27.385393092Z
+  text: '[x] AiStatusPayload {check, tools[{name,id,installed,configured,stale}], has_issues}. Exit code 2 on stale --check is preserved. Covers both --check (read) and update (write) since both share the same flow. 2 BATS tests.'
