@@ -512,7 +512,8 @@ fn check_docs(root: &Path, args: &InitArgs) -> anyhow::Result<()> {
             let name = chosen.rsplit('/').next().unwrap_or(&chosen);
             dprint!(
                 "    {} helps AI understand your {}. Create template? [Y/n] ",
-                name, spec.purpose
+                name,
+                spec.purpose
             );
             std::io::stdout().flush()?;
             let mut input = String::new();

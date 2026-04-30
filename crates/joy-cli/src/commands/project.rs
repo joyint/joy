@@ -387,10 +387,7 @@ fn run_member(
                     id: &'a str,
                     member: &'a joy_core::model::project::Member,
                 }
-                return crate::output::emit(ShowPayload {
-                    id: &a.id,
-                    member,
-                });
+                return crate::output::emit(ShowPayload { id: &a.id, member });
             }
 
             let w = color::terminal_width();
