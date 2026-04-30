@@ -817,10 +817,11 @@ fn run_token_add(args: TokenAddArgs, passphrase_flag: Option<&str>) -> Result<()
         );
     }
 
-    // Guard: requires manage capability
-    joy_core::guard::enforce(&root, &joy_core::guard::Action::ManageProject, "project")?;
-
-    // Authenticate the acting human
+    // Authenticate the acting human first. We do this before the guard
+    // check so that a cold-start (no active session) does not require
+    // running `joy auth` separately: the passphrase entered here covers
+    // both signing the delegation and bootstrapping the session
+    // (JOY-00EF-E5).
     let member = project
         .members
         .get(&email)
@@ -844,6 +845,19 @@ fn run_token_add(args: TokenAddArgs, passphrase_flag: Option<&str>) -> Result<()
         anyhow::bail!("incorrect passphrase");
     }
 
+    // If no session exists, create one from the keypair we just derived.
+    // The guard check below then succeeds in the same invocation, so the
+    // user does not have to run `joy auth` separately.
+    let project_id = session::project_id(&root)?;
+    if session::load_session(&project_id, &email)?.is_none() {
+        let session_token = session::create_session(&keypair, &email, &project_id, None);
+        session::save_session(&project_id, &session_token)?;
+    }
+
+    // Guard: requires manage capability. After the inline auth above
+    // this resolves cleanly even on cold start.
+    joy_core::guard::enforce(&root, &joy_core::guard::Action::ManageProject, "project")?;
+
     // ADR-033: stable per-(human, AI) delegation key.
     //   1. If project.yaml already has the public key AND the matching private
     //      key is present locally -> reuse both (no project.yaml write, no
@@ -854,7 +868,6 @@ fn run_token_add(args: TokenAddArgs, passphrase_flag: Option<&str>) -> Result<()
     //   3. If one side is present but not the other (state/yaml desync) ->
     //      bail with a clear instruction to rotate rather than silently
     //      papering over a half-broken state.
-    let project_id = session::project_id(&root)?;
     let existing_public = member
         .ai_delegations
         .get(&args.member)

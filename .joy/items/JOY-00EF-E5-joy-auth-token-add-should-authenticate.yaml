@@ -1,15 +1,17 @@
 id: JOY-00EF-E5
 title: joy auth token add should authenticate inline if no session
 type: bug
-status: new
+status: closed
 priority: medium
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 - review
 effort: 1
 created_by: ai:claude@joy
 created: 2026-04-16T06:11:31.120650064Z
-updated: 2026-04-16T06:11:31.120650064Z
+updated: 2026-04-30T20:07:46.826855196Z
 description: |-
   When a user runs `joy auth token add <ai-member>` without an active session, the command aborts with a guard error ("must authenticate to perform this action. Run `joy auth`"). The user then runs `joy auth` (passphrase prompt #1) and reruns `joy auth token add` (passphrase prompt #2). Result: three commands and two passphrase entries to produce one delegation token.
 
@@ -24,3 +26,10 @@ description: |-
   Outcome: one command, one passphrase entry in the cold-start case. No weakening of the ADR-033 guarantee, since the human still enters the passphrase explicitly.
 
   Scope note: this is UX-only. Guard semantics for all other write commands stay as-is - only `joy auth token add` gets the inline-auth fallback, because it already prompts for the passphrase as part of its own operation.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-04-30T20:06:15.185885062Z
+  text: 'Plan: when joy auth token add runs interactively without a session, prompt for the passphrase inline. Derive the keypair once, create the session (same as joy auth would), then sign the delegation. Non-interactive without --passphrase still fails fast. BATS tests for: cold-start one-passphrase happy path, warm-session unchanged, non-interactive failure.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-04-30T20:07:46.696915467Z
+  text: '[x] Reordered run_token_add: passphrase verification before guard check. If no session exists, create one from the just-derived keypair. Cold start = one passphrase, one command. Wrong passphrase fails fast and leaves no session behind. 3 BATS tests in auth_token_inline.bats.'

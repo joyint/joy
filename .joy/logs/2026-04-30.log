@@ -125,3 +125,8 @@
 2026-04-30T07:52:49.691Z JOY-0139-67 comment.added "[x] joy project member: emits members map. show: {id, member}. add: {member, otp}. rm: {removed_member}. 4 BATS tests." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T07:52:49.712Z JOY-0139-67 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T07:52:49.742Z JOY-0139-67 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T20:06:15.191Z JOY-00EF-E5 comment.added "Plan: when joy auth token add runs interactively without a session, prompt for the passphrase inline. Derive the keypair once, create the session (same as joy auth would), then sign the delegation. Non-interactive without --passphrase still fails fast. BATS tests for: cold-start one-passphrase happy path, warm-session unchanged, non-interactive failure." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T20:06:15.264Z JOY-00EF-E5 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T20:07:46.703Z JOY-00EF-E5 comment.added "[x] Reordered run_token_add: passphrase verification before guard check. If no session exists, create one from the just-derived keypair. Cold start = one passphrase, one command. Wrong passphrase fails fast and leaves no session behind. 3 BATS tests in auth_token_inline.bats." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T20:07:46.751Z JOY-00EF-E5 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T20:07:46.834Z JOY-00EF-E5 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
