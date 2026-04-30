@@ -1,13 +1,19 @@
 id: JOY-0130-B8
 title: Add --json output to joy edit
 type: task
-status: new
+status: closed
 priority: medium
 parent: JOY-00C9-5F
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-30T06:18:37.111984410Z
-updated: 2026-04-30T06:18:37.111984410Z
+updated: 2026-04-30T07:24:46.831500141Z
 description: Implements ADR-036 for joy edit. Write command, emits confirmation envelope (item id, new state). BATS test.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-30T07:24:46.799763584Z
+  text: '[x] Emits updated Item directly (or unchanged when no flags). 2 BATS tests.'

@@ -192,6 +192,9 @@ pub fn run(args: EditArgs) -> Result<()> {
     }
 
     if !changed {
+        if crate::output::is_json() {
+            return crate::output::emit(&item);
+        }
         println!("Nothing to change. Use flags like --title, --priority, --parent, etc.");
         return Ok(());
     }
@@ -216,7 +219,11 @@ pub fn run(args: EditArgs) -> Result<()> {
         &log_user,
     );
 
-    println!("Updated {} {}", item.id, item.title);
+    if crate::output::is_json() {
+        crate::output::emit(&item)?;
+    } else {
+        println!("Updated {} {}", item.id, item.title);
+    }
 
     joy_core::git_ops::auto_git_post_command(
         &ctx.root,
