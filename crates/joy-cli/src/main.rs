@@ -39,7 +39,6 @@ pub(crate) struct Cli {
     reverse: bool,
 
     /// Emit machine-readable JSON instead of human-readable display.
-    /// See ADR-036 for the contract.
     #[arg(long, global = true)]
     json: bool,
 
