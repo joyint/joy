@@ -2,7 +2,7 @@
 
 Use this prompt when working with Joy backlog items, milestones, planning, or status tracking.
 
-The `joy` binary is installed and available. Always use Joy CLI commands -- never edit `.joy/` files directly.
+The `joy` binary is installed and available. Always use Joy CLI commands - never edit `.joy/` files directly.
 
 ## Status changes
 

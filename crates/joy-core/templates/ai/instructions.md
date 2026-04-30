@@ -61,10 +61,10 @@ the captured `JOY_SESSION` value into every subshell it spawns for joy
 commands.
 
 If `joy auth --token` fails, read the error and react accordingly:
-- **Token expired** -- the token's TTL has passed. Do not retry with the
+- **Token expired** - the token's TTL has passed. Do not retry with the
   same token. Ask the user to run `joy auth token add <YOUR-ID>` again and
   pass you the new token.
-- **Token for wrong project** -- the token was issued for a different
+- **Token for wrong project** - the token was issued for a different
   project. Ask the user to issue a token in the current project.
 
 If a later Joy command fails with a session error, your 24 hour session
@@ -72,7 +72,7 @@ has expired or the delegation has been rotated; ask the user for a fresh
 delegation token and re-run `joy auth --token`.
 
 Respect your configured capabilities and `max-mode` limits.
-**Capability warnings are mandatory stops** -- if a Joy command prints one, stop and ask the user.
+**Capability warnings are mandatory stops** - if a Joy command prints one, stop and ask the user.
 
 ## Workflow
 
@@ -101,9 +101,9 @@ Effort scale (1-7): 1=trivial, 2=small, 3=medium, 4=large, 5=major, 6=heavy, 7=m
 
 ## Rules
 
-**Use the project language for all artifacts.** Run `joy project` to read the configured language (default: `en`). This language strictly governs all written artifacts: Joy item titles, descriptions, comments, commit messages, and documentation. Never deviate, even if the conversation is in another language. Conversation language is separate -- follow the user's language for responses.
+**Use the project language for all artifacts.** Run `joy project` to read the configured language (default: `en`). This language strictly governs all written artifacts: Joy item titles, descriptions, comments, commit messages, and documentation. Never deviate, even if the conversation is in another language. Conversation language is separate - follow the user's language for responses.
 
-**Always use the Joy CLI.** Never read or write files in `.joy/` directly. If a Joy command does not exist for an operation, ask the user -- do not work around it by editing YAML.
+**Always use the Joy CLI.** Never read or write files in `.joy/` directly. If a Joy command does not exist for an operation, ask the user - do not work around it by editing YAML.
 
 **Every code change needs a Joy item.** Create a Joy item BEFORE implementing. Ad-hoc fixes without items are invisible to governance.
 

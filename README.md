@@ -39,19 +39,19 @@ joy init     # installs commit-msg hook, sets up git hooks path
 joy ai setup # optional: configure AI tool integration
 ```
 
-`joy init` detects the existing project and switches to onboarding mode -- it installs the commit-msg hook and sets `core.hooksPath` without touching project data.
+`joy init` detects the existing project and switches to onboarding mode - it installs the commit-msg hook and sets `core.hooksPath` without touching project data.
 
 ## Features
 
-- **Git-native** -- all data in `.joy/` as YAML, versioned with your code
-- **AI-powered** -- estimate, plan, implement, review via pluggable AI tools
-- **Single binary** -- one small Rust binary, no runtime dependencies
-- **Offline-first** -- no server needed, sync when you want
+- **Git-native** - all data in `.joy/` as YAML, versioned with your code
+- **AI-powered** - estimate, plan, implement, review via pluggable AI tools
+- **Single binary** - one small Rust binary, no runtime dependencies
+- **Offline-first** - no server needed, sync when you want
 
 ## Documentation
 
-- [Tutorial](docs/user/Tutorial.md) -- Getting started with an example project
-- [Contributing](docs/dev/CONTRIBUTING.md) -- Joy-specific coding conventions
+- [Tutorial](docs/user/Tutorial.md) - Getting started with an example project
+- [Contributing](docs/dev/CONTRIBUTING.md) - Joy-specific coding conventions
 
 For product vision, architecture, and ADRs see the [umbrella project](https://github.com/joyint/project).
 

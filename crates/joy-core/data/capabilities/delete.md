@@ -16,7 +16,7 @@ This is a management capability that controls access to `joy rm`.
 
 Without this capability, a member cannot delete items. This is the
 most restrictive management capability. AI tools should rarely have
-`delete` -- prefer closing or deferring items over deletion to
+`delete` - prefer closing or deferring items over deletion to
 preserve the audit trail.
 
 ## Agent Configuration

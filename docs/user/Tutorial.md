@@ -7,15 +7,15 @@ This tutorial walks you through a complete project setup, told through the lens 
 ## Contents
 
 - [TL;DR](#tldr)
-- [Mission 1: Setting Up Base Camp](#mission-1-setting-up-base-camp-init) -- `init`
-- [Mission 2: Building Your Arsenal](#mission-2-building-your-arsenal-add) -- `add`
-- [Mission 3: Surveying the Terrain](#mission-3-surveying-the-terrain-ls-show-find) -- `ls`, `show`, `find`
-- [Mission 4: Wiring the Circuit](#mission-4-wiring-the-circuit-deps) -- `deps`
-- [Mission 5: Into the Field](#mission-5-into-the-field-status-start-submit-close) -- `status`, `start`, `submit`, `close`
-- [Mission 6: Setting the Deadline](#mission-6-setting-the-deadline-milestone) -- `milestone`
-- [Mission 7: Reading the Black Box](#mission-7-reading-the-black-box-log-release) -- `log`, `release`
-- [Mission 8: Calling in Air Support](#mission-8-calling-in-air-support-ai) -- `ai`
-- [Mission 9: Adjusting the Rules](#mission-9-adjusting-the-rules-project-config) -- `project`, `config`
+- [Mission 1: Setting Up Base Camp](#mission-1-setting-up-base-camp-init) - `init`
+- [Mission 2: Building Your Arsenal](#mission-2-building-your-arsenal-add) - `add`
+- [Mission 3: Surveying the Terrain](#mission-3-surveying-the-terrain-ls-show-find) - `ls`, `show`, `find`
+- [Mission 4: Wiring the Circuit](#mission-4-wiring-the-circuit-deps) - `deps`
+- [Mission 5: Into the Field](#mission-5-into-the-field-status-start-submit-close) - `status`, `start`, `submit`, `close`
+- [Mission 6: Setting the Deadline](#mission-6-setting-the-deadline-milestone) - `milestone`
+- [Mission 7: Reading the Black Box](#mission-7-reading-the-black-box-log-release) - `log`, `release`
+- [Mission 8: Calling in Air Support](#mission-8-calling-in-air-support-ai) - `ai`
+- [Mission 9: Adjusting the Rules](#mission-9-adjusting-the-rules-project-config) - `project`, `config`
 - [Bonus: Shell Completions](#bonus-shell-completions)
 - [Bonus: Machine-Readable Output](#bonus-machine-readable-output)
 - [Command Reference](#command-reference)
@@ -73,7 +73,7 @@ You can also name your project explicitly:
 joy init --name "Cookbox" --acronym CB
 ```
 
-Joy also installs a commit-msg hook that enforces item references in every commit message. This is part of the audit trail -- every code change must link to a Joy item. More on this in Mission 7.
+Joy also installs a commit-msg hook that enforces item references in every commit message. This is part of the audit trail - every code change must link to a Joy item. More on this in Mission 7.
 
 ### Joining an Existing Project
 
@@ -99,7 +99,7 @@ joy ai setup
 
 A Swiss Army knife is only useful if you actually open it. Time to create some work items.
 
-Start with an epic -- the big picture:
+Start with an epic - the big picture:
 
 ```sh
 joy add epic "Recipe Management"
@@ -107,7 +107,7 @@ joy add epic "Recipe Management"
 
 Joy assigns ID `CB-0001` and creates `.joy/items/CB-0001-recipe-management.yaml`.
 
-Now break it down. MacGyver doesn't try to defuse the whole bomb at once -- he works one wire at a time:
+Now break it down. MacGyver doesn't try to defuse the whole bomb at once - he works one wire at a time:
 
 ```sh
 joy add story "Add a recipe" --parent CB-0001 --priority high
@@ -130,7 +130,7 @@ Estimate work with `--effort` on a 1-7 scale: 1=trivial, 2=small, 3=medium, 4=la
 | `bug` | Something is broken |
 | `rework` | Refactoring or improvement of existing code |
 | `decision` | Architecture or product decision to document |
-| `idea` | Not yet refined -- just capture it before it escapes |
+| `idea` | Not yet refined - just capture it before it escapes |
 
 All items start with status `new`. Priorities: `extreme`, `critical`, `high`, `medium` (default), `low`.
 
@@ -168,7 +168,7 @@ joy find "database"              # Search titles and descriptions
 
 ### Tags
 
-Tags are free-text labels for cross-cutting categories -- things like `ui`, `backend`, `security`, or `tech-debt`:
+Tags are free-text labels for cross-cutting categories - things like `ui`, `backend`, `security`, or `tech-debt`:
 
 ```sh
 joy add task "Fix layout" --tags "ui,urgent"
@@ -265,13 +265,13 @@ joy milestone ls                 # All milestones with counts
 joy roadmap                      # Full roadmap tree view
 ```
 
-Children inherit their parent's milestone automatically. If `CB-0001` is linked to `CB-MS-01`, all its children are too -- unless they override it.
+Children inherit their parent's milestone automatically. If `CB-0001` is linked to `CB-MS-01`, all its children are too - unless they override it.
 
 ---
 
 ## Mission 7: Reading the Black Box (`log`, `release`)
 
-MacGyver always reviews the flight recorder after a mission. Joy has one too -- a structured event log that records every action automatically.
+MacGyver always reviews the flight recorder after a mission. Joy has one too - a structured event log that records every action automatically.
 
 ```sh
 joy log                          # Last 20 events
@@ -280,7 +280,7 @@ joy log --item CB-0005           # Events for a specific item
 joy log --limit 50               # Show more entries
 ```
 
-Every joy command leaves a trace in `.joy/logs/` -- one file per day, append-only, timestamped to the millisecond:
+Every joy command leaves a trace in `.joy/logs/` - one file per day, append-only, timestamped to the millisecond:
 
 ```
 2026-03-11T16:14:32.320Z CB-0005 item.created "Set up SQLite database" [mac@phoenix.org]
@@ -289,7 +289,7 @@ Every joy command leaves a trace in `.joy/logs/` -- one file per day, append-onl
 2026-03-11T17:00:00.000Z CB-0005 comment.added "AI review complete" [ai:claude@joy delegated-by:mac@phoenix.org]
 ```
 
-These logs are committed to git with your project. Every team member's actions are recorded -- a built-in audit trail. When an AI tool acts on behalf of a human, the log shows both identities via `delegated-by`.
+These logs are committed to git with your project. Every team member's actions are recorded - a built-in audit trail. When an AI tool acts on behalf of a human, the log shows both identities via `delegated-by`.
 
 ### Commit-Msg Hook
 
@@ -375,7 +375,7 @@ After setup, your AI tool knows how to use Joy commands, follows your project co
 
 Joy's AI Governance is built on five pillars: **Trustship** (who do I trust?), **Guardianship** (what do I protect against?), **Orchestration** (how do I steer work?), **Traceability** (what happened?), and **Settlement** (what did it cost?).
 
-Together they form the Trust Model -- the configuration that governs how humans and AI agents collaborate. It scales naturally: a solo developer has implicit trust (one member, all capabilities, no gates). A team adds explicit trust (members with specific capabilities). An enterprise adds verified trust (gates, cost limits, audit trails). Same workflow, growing accountability.
+Together they form the Trust Model - the configuration that governs how humans and AI agents collaborate. It scales naturally: a solo developer has implicit trust (one member, all capabilities, no gates). A team adds explicit trust (members with specific capabilities). An enterprise adds verified trust (gates, cost limits, audit trails). Same workflow, growing accountability.
 
 The rest of this mission covers the parts you can use today: identity (Trustship), the event log (Traceability), and capabilities (Trustship). Gates (Guardianship), cost tracking (Settlement), and AI dispatch (Orchestration) are covered in the [Vision](../dev/Vision.md#ai-governance-the-five-pillars).
 
@@ -440,30 +440,47 @@ joy project member show pete@phoenix.org
 joy project member rm pete@phoenix.org
 ```
 
-Joy defines eleven capabilities across two groups:
+Joy defines eleven capabilities across two groups.
 
-**Lifecycle capabilities** (what you can do on items): `conceive`, `plan`, `design`, `implement`, `test`, `review`, `document`
+**Lifecycle capabilities** govern what a member can do on items:
 
-**Management capabilities** (project-level operations): `create`, `assign`, `manage`, `delete`
+| Capability | What it grants |
+|---|---|
+| `conceive` | Frame a problem and propose direction (typically on `idea`/`epic`). |
+| `plan` | Break work down: scope, effort, milestones. |
+| `design` | Settle the technical approach for an item. |
+| `implement` | Write the code or content. |
+| `test` | Verify behaviour and add tests. |
+| `review` | Approve work from someone else and gate `submit -> closed`. |
+| `document` | Update user- or developer-facing docs. |
 
-By default, members have `capabilities: all`. Restrict them when needed -- especially for AI members where you want to control what they can do autonomously.
+**Management capabilities** govern project-level operations:
+
+| Capability | What it grants |
+|---|---|
+| `create` | Create new items (`joy add`). |
+| `assign` | Assign items to members (`joy assign`). |
+| `manage` | Add/edit members, change project settings. |
+| `delete` | Remove items (`joy rm`). |
+
+`joy project member add` defaults to the lifecycle set plus `create` and `assign`. `manage` and `delete` must be granted explicitly. AI members never get `manage` even when their entry says so - that is enforced at runtime.
 
 ### Interaction Levels
 
 Each capability also carries an interaction level that tells AI tools how much autonomy they have. Joy defines five levels, from least to most oversight:
 
-- `autonomous` -- work independently; only stop at governance gates
-- `supervised` -- confirm before irreversible actions
-- `collaborative` -- propose approach, proceed after confirmation
-- `interactive` -- present options with rationale, wait for user decision
-- `pairing` -- step by step, question by question
+- `autonomous` - work independently; only stop at governance gates
+- `supervised` - confirm before irreversible actions
+- `collaborative` - propose approach, proceed after confirmation
+- `interactive` - present options with rationale, wait for user decision
+- `pairing` - step by step, question by question
 
 The effective level for a `(member, capability)` pair is resolved across four layers, each overriding the previous:
 
-1. **Project defaults** (`.joy/project.defaults.yaml`) -- ship with sensible defaults per capability (e.g. `pairing` for `conceive`, `collaborative` for `implement`).
-2. **Project overrides** (`.joy/project.yaml`) -- per-capability settings the team agrees on for this project.
-3. **Personal preference** (`.joy/config.yaml`) -- per-user override under `modes.default`, applied to capabilities the project hasn't pinned.
-4. **Item override** -- a single item can request a different level via its `mode` field, taking effect only for that item.
+1. **Project defaults** (`.joy/project.defaults.yaml`) - ship with sensible defaults per capability (e.g. `pairing` for `conceive`, `collaborative` for `implement`).
+2. **Project overrides** (`.joy/project.yaml`) - per-capability settings the team agrees on for this project.
+3. **Personal preference** (`.joy/config.yaml`) - per-user override under `modes.default`, applied to capabilities the project hasn't pinned.
+4. **Item override** - a single item can request a different level via its `mode` field, taking effect only for that item.
 
 Inspect what is in force with:
 
@@ -472,7 +489,31 @@ joy project member show ai:claude@joy   # All capabilities, current level + sour
 joy project member show pete@phoenix.org
 ```
 
-The output's third column shows the level and (in brackets) where it was set. Tools and AI agents read this command and follow the level shown -- they do not re-derive it.
+The output's third column shows the level and (in brackets) where it was set. Tools and AI agents read this command and follow the level shown - they do not re-derive it.
+
+### Gates (Status Rules)
+
+By default every status transition is allowed. Add gates only when the project needs them. Gates live in `.joy/project.yaml` under `status_rules`:
+
+```yaml
+status_rules:
+  review_to_closed:
+    allow_ai: false        # AI members may not close items
+  in_progress_to_review:
+    allow_ai: true
+```
+
+Today only `allow_ai` is honored at runtime; more rule kinds (e.g. `requires_role`, `requires_ci`) are part of the vision and not yet enforced. The key follows the pattern `<from>_to_<to>` using the lower-case status names.
+
+### Solo to Enterprise
+
+Joy scales to the level of ceremony you actually need:
+
+- **Solo:** one member, `capabilities: all`, no `status_rules`. Run `joy init` and start working.
+- **Small team:** add members with explicit capability sets (e.g. AI tools restricted to `implement,review,document`). Interaction levels stay at project defaults.
+- **Enterprise:** turn on gates (`status_rules`), tighten interaction levels per capability, set `allow_ai: false` on transitions where humans must sign off, and rely on the event log for audit.
+
+The same workflow works at every scale - you only opt into more controls.
 
 ### Authentication and Onboarding
 
@@ -503,7 +544,7 @@ Pete redeems the OTP on his own machine, picks his own passphrase, and is ready 
 joy auth --otp AB7X-K3M2-PQ9Z    # Prompts for a new passphrase
 ```
 
-Each member you add this way is cryptographically attested by the admin's key -- Joy rejects any member entry that was manually edited into `project.yaml` without going through `joy project member add`. This runs silently in the background; you only see it when something is wrong.
+Each member you add this way is cryptographically attested by the admin's key - Joy rejects any member entry that was manually edited into `project.yaml` without going through `joy project member add`. This runs silently in the background; you only see it when something is wrong.
 
 **Changing your passphrase:**
 
@@ -557,7 +598,7 @@ joy config get workflow.auto-assign  # Get a specific value
 joy config set output.emoji true     # Set a personal override
 ```
 
-`joy config set` always writes to your personal `.joy/config.yaml` -- your preferences never affect teammates. Project defaults in `config.defaults.yaml` set the shared baseline that the whole team inherits.
+`joy config set` always writes to your personal `.joy/config.yaml` - your preferences never affect teammates. Project defaults in `config.defaults.yaml` set the shared baseline that the whole team inherits.
 
 Key settings:
 
@@ -608,7 +649,7 @@ joy show JOY-0001 --json                     # Single item as JSON
 joy --json ls | jq '.data.items[].id'        # Pipe into jq
 ```
 
-The shape is `{"version": 1, "data": ...}`. Within a major Joy release, fields are added but never removed or repurposed -- consumers can rely on the keys they already use. CI scripts should always consume `--json`, not display output.
+The shape is `{"version": 1, "data": ...}`. Within a major Joy release, fields are added but never removed or repurposed - consumers can rely on the keys they already use. CI scripts should always consume `--json`, not display output.
 
 ---
 
@@ -646,6 +687,6 @@ The shape is `{"version": 1, "data": ...}`. Within a major Joy release, fields a
 
 Most write commands accept `--author <MEMBER>` to attribute the action to a specific identity.
 
-> "Any problem can be solved with a little ingenuity." -- MacGyver
+> "Any problem can be solved with a little ingenuity." - MacGyver
 
 See also: `joy --help`, `joy <command> --help`, `docs/dev/vision/`

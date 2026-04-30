@@ -1,4 +1,4 @@
-# Joy -- Architecture
+# Joy - Architecture
 
 This document defines the technical foundation for the Joy repository. It covers technology choices, repository structure, crate layout, and build configuration.
 
@@ -19,7 +19,7 @@ Pin all dependencies to their current stable **major.minor** version. Track stab
 | **Rust**                     | 1.85 (latest stable) | Performance, single binary, type safety, memory safety            |
 | **clap** (derive API)        | 4.5                  | De-facto CLI standard, shell completions, derive macros           |
 | **ratatui**                  | 0.29                 | TUI framework, ships in same binary as CLI                        |
-| **serde** + **serde_yml**    | 1.0 / 0.0.12         | YAML for `.joy/` files, JSON for API. 0.0.x is the current stable fork of the deprecated `serde_yaml` -- re-evaluate if a breaking change occurs |
+| **serde** + **serde_yml**    | 1.0 / 0.0.12         | YAML for `.joy/` files, JSON for API. 0.0.x is the current stable fork of the deprecated `serde_yaml` - re-evaluate if a breaking change occurs |
 | **tokio**                    | 1.43                 | Async runtime for server, sync, AI jobs                           |
 | **thiserror**                | 2.0                  | Explicit error types in library crates                            |
 | **anyhow**                   | 1.0                  | Convenient error handling in binary crate                         |
@@ -50,7 +50,7 @@ graph TD
 
 Note: There is no separate server binary. `joy serve` is a subcommand of the `joy` CLI binary. It serves the REST API (Git gateway), CalDAV, and the web UI. Server components are compiled behind the `server` feature flag to keep the default binary lean.
 
-Multiple CLI instances can run simultaneously -- each reads/writes individual YAML files. File-level locking in `joy-core` prevents concurrent writes to the same item. The server serializes writes when running.
+Multiple CLI instances can run simultaneously - each reads/writes individual YAML files. File-level locking in `joy-core` prevents concurrent writes to the same item. The server serializes writes when running.
 
 ---
 
@@ -78,7 +78,7 @@ joy/
 │   │       ├── milestones.rs   # Milestone CRUD, ID generation
 │   │       ├── init.rs         # Project initialization
 │   │       └── error.rs        # Error types (thiserror)
-│   ├── joy-cli/                # PM CLI binary (clap) -- includes TUI and server (MIT)
+│   ├── joy-cli/                # PM CLI binary (clap) - includes TUI and server (MIT)
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── main.rs
@@ -160,11 +160,11 @@ All data on joyint.com is E2E-encrypted (AES-256-GCM). The key stays on the clie
 
 ### AI Governance: The Five Pillars
 
-Joy's AI Governance is an architecture built on five pillars: **Trustship** (who do I trust?), **Guardianship** (what do I protect against?), **Orchestration** (how do I steer work?), **Traceability** (what happened?), and **Settlement** (what did it cost?). Together they form the **Trust Model** -- see [Vision.md](./Vision.md#ai-governance-the-five-pillars) for the full breakdown.
+Joy's AI Governance is an architecture built on five pillars: **Trustship** (who do I trust?), **Guardianship** (what do I protect against?), **Orchestration** (how do I steer work?), **Traceability** (what happened?), and **Settlement** (what did it cost?). Together they form the **Trust Model** - see [Vision.md](./Vision.md#ai-governance-the-five-pillars) for the full breakdown.
 
 ### Agent Sandboxing
 
-AI agents executing code operate in controlled environments (Guardianship pillar). Joy tracks what each agent is allowed to do (create branch, commit, push) -- no implicit permissions.
+AI agents executing code operate in controlled environments (Guardianship pillar). Joy tracks what each agent is allowed to do (create branch, commit, push) - no implicit permissions.
 
 ---
 

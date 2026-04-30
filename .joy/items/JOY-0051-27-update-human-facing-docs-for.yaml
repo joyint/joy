@@ -1,14 +1,27 @@
 id: JOY-0051-27
 title: Update human-facing docs for capability model
 type: task
-status: new
+status: closed
 priority: medium
 parent: JOY-0029
+assignees:
+- member: ai:claude@joy
 milestone: JOY-MS-01
 effort: 3
 created: 2026-03-25T16:49:04.757869544Z
-updated: 2026-03-30T19:48:56.708160974Z
+updated: 2026-04-30T21:19:28.564583216Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-25T16:49:09.470420305Z
   text: 'Update Tutorial and CONTRIBUTING.md for the new capability model: capabilities, members, modes, gates, jobs. Cover the full range from solo (no gates) to enterprise (full enforcement). Depends on all technical items being implemented first.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-04-30T21:09:46.219425877Z
+  text: 'Plan: Tutorial Mission 9 ergaenzen um (a) capability-list with one-line meaning per capability, (b) Gates section showing how status_rules in project.yaml restrict transitions, (c) brief solo-team-enterprise narrative. CONTRIBUTING.md gets a short paragraph linking to the capability model. Jobs are not yet implemented; out of scope until JOY-0031 ships.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-04-30T21:19:28.444570394Z
+  text: |-
+    [x] Tutorial Mission 9 erweitert: capability table with one-line meaning per capability, Gates section (status_rules + allow_ai), Solo-to-Enterprise narrative.
+    [x] Both Tutorial.md (bundled + docs/user) updated.
+    [x] Website tutorial.mdx and features.mdx mirrored.
+    [x] Out of scope: jobs (JOY-0031 not yet implemented).
+    [x] Side cleanup: removed all double-dash punctuation from joy-repo docs and website per project style.

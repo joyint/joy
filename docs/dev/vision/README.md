@@ -1,8 +1,8 @@
-# Joy -- Vision
+# Joy - Vision
 
 Joy is a terminal-native product management tool that lives inside your Git repository. It replaces heavyweight tools like Jira with a fast, file-based workflow that developers actually enjoy using.
 
-Joy is built for teams of all sizes -- from solo founders with AI agent teams, through small development teams, to enterprises in regulated industries that need AI governance, audit trails, and compliance for AI-assisted development.
+Joy is built for teams of all sizes - from solo founders with AI agent teams, through small development teams, to enterprises in regulated industries that need AI governance, audit trails, and compliance for AI-assisted development.
 
 ## Naming and Distribution
 
@@ -12,13 +12,13 @@ The portal and sync service run under **joyint.com**. Self-hosting is supported 
 
 ## Core Principles
 
-**Git-native.** All data lives in `.joy/` inside your repo. YAML files, versioned with Git, no external service required to start. Your product management history is part of your code history. Git is the sync backend -- your local `.joy/` directory is always yours, always readable, always complete.
+**Git-native.** All data lives in `.joy/` inside your repo. YAML files, versioned with Git, no external service required to start. Your product management history is part of your code history. Git is the sync backend - your local `.joy/` directory is always yours, always readable, always complete.
 
-**Terminal-first, not terminal-only.** The CLI is the primary interface. A TUI provides visual overview. A portal (joyint.com or self-hosted) enables access from any device -- browser, desktop app, mobile access via CalDAV -- plus collaboration and AI agent orchestration.
+**Terminal-first, not terminal-only.** The CLI is the primary interface. A TUI provides visual overview. A portal (joyint.com or self-hosted) enables access from any device - browser, desktop app, mobile access via CalDAV - plus collaboration and AI agent orchestration.
 
 **Dogfooding.** Joy is built and managed with Joy. Every feature goes through Joy's own workflow before it's shipped.
 
-**AI as a first-class collaborator.** AI agents don't just assist -- they estimate, plan, implement, and review. Joy orchestrates the handoff between human intent and AI execution.
+**AI as a first-class collaborator.** AI agents don't just assist - they estimate, plan, implement, and review. Joy orchestrates the handoff between human intent and AI execution.
 
 **Simple by default, powerful when needed.** 10 core commands cover 95% of daily use. Complexity lives in flags and interactive mode, not in the command hierarchy.
 
@@ -65,7 +65,7 @@ Both `config.yaml` and `credentials.yaml` support two levels: global (`~/.config
 
 A user's identity in Joy is their **e-mail address**. This is the stable identifier used in item fields (`assignee`, `author`), role definitions, change history, and sync authentication.
 
-Locally, the e-mail is read from `git config user.email` -- no separate login required for CLI usage. On the server, users authenticate via OAuth (GitHub, GitLab, Gitea, or other supported providers). The server matches the OAuth-provided e-mail against the project's role definitions.
+Locally, the e-mail is read from `git config user.email` - no separate login required for CLI usage. On the server, users authenticate via OAuth (GitHub, GitLab, Gitea, or other supported providers). The server matches the OAuth-provided e-mail against the project's role definitions.
 
 AI members use a synthetic identity with the `ai:` prefix (e.g. `ai:claude@joy`). This distinguishes AI actions from human actions in the change log and enables `allow_ai` rules in status transitions.
 
@@ -104,7 +104,7 @@ comments:
     text: "Consider also supporting SEPA direct debit."
 ```
 
-Items form a generic parent-child hierarchy via the `parent` field. Any item can be a parent -- epics group stories, stories group tasks, etc. All commands (`add`, `ls`, `status`, `rm`, etc.) work uniformly across any nesting depth.
+Items form a generic parent-child hierarchy via the `parent` field. Any item can be a parent - epics group stories, stories group tasks, etc. All commands (`add`, `ls`, `status`, `rm`, etc.) work uniformly across any nesting depth.
 
 ### Item Types
 
@@ -151,15 +151,15 @@ stateDiagram-v2
     closed --> [*]
 ```
 
-`blocked` is not a manual state -- it is computed automatically from dependencies.
+`blocked` is not a manual state - it is computed automatically from dependencies.
 
-The status model is intentionally minimal -- most teams need 5-6 states, not 15.
+The status model is intentionally minimal - most teams need 5-6 states, not 15.
 
 ### Status Rules
 
 **One process with dimmers, not multiple processes with switches.** There is exactly one workflow per project. It is not templated, not selectable, not importable. Instead, individual transitions can be tightened or loosened via rules in `.joy/project.yaml`.
 
-A solo founder uses Joy with zero rules -- every transition is open. A team adds a gate on `review -> closed` so only leads can accept work. A regulated project adds a second gate on `new -> open` for triage. Same workflow, different strictness. This scales from "no process" to "controlled process" without switching modes, importing templates, or learning a new concept.
+A solo founder uses Joy with zero rules - every transition is open. A team adds a gate on `review -> closed` so only leads can accept work. A regulated project adds a second gate on `new -> open` for triage. Same workflow, different strictness. This scales from "no process" to "controlled process" without switching modes, importing templates, or learning a new concept.
 
 Available gates:
 
@@ -186,7 +186,7 @@ Dependencies are modeled as a simple list of item IDs in the `deps` field. One d
 ### Project
 
 ```sh
-joy                                     # Board/overview -- the most used command
+joy                                     # Board/overview - the most used command
 joy init                                # Initialize new project
   joy init --name "Joyint" --acronym JI
 
@@ -269,8 +269,8 @@ joy reopen [id]                         # alias for: joy status [id] open
 ### Release
 
 A release is three explicit steps. Joy owns version-string replacement,
-the release record, and the forge call. Everything between -- lockfile
-refresh, package registry uploads, tests -- stays in the project's own
+the release record, and the forge call. Everything between - lockfile
+refresh, package registry uploads, tests - stays in the project's own
 release script. Joy does not know about cargo, npm, poetry, or any
 other ecosystem tool.
 
@@ -393,7 +393,7 @@ Joy's AI Governance is built on five pillars, each answering a distinct question
 | **Traceability** | What happened? | Event Log, Audit Trail | Judge (post-hoc audit, compliance reports, anomaly detection) |
 | **Settlement** | What did it cost? | Cost Tracking, Budgets | JOYC (on-chain settlement) |
 
-Together these pillars form the **Trust Model** -- the concrete configuration of identity, capabilities, gates, and agent definitions that governs how humans and AI agents collaborate in a project. Trustship establishes who is acting. Guardianship enforces boundaries at runtime. Orchestration steers work distribution. Traceability records what happened. Settlement accounts for the cost.
+Together these pillars form the **Trust Model** - the concrete configuration of identity, capabilities, gates, and agent definitions that governs how humans and AI agents collaborate in a project. Trustship establishes who is acting. Guardianship enforces boundaries at runtime. Orchestration steers work distribution. Traceability records what happened. Settlement accounts for the cost.
 
 The Trust Model scales naturally: implicit trust (solo) -> explicit trust (team) -> verified trust (enterprise). Each level builds on the previous one without reconfiguration.
 
@@ -412,23 +412,23 @@ Supported tools for tool mode:
 | Mistral Vibe (Mistral) | `mistral-vibe` | Project instructions |
 | Qwen Code (Alibaba) | `qwen-code` | Project instructions |
 
-No own agent runtime, no API calls, no cost tracking needed. The AI tool handles everything -- Joy just provides the product management interface.
+No own agent runtime, no API calls, no cost tracking needed. The AI tool handles everything - Joy just provides the product management interface.
 
 ### AI file lifecycle
 
 Files managed by Joy fall into two lifecycle groups:
 
-**Permanent** -- created by `joy init`, persist regardless of AI tool configuration:
+**Permanent** - created by `joy init`, persist regardless of AI tool configuration:
 - `.joy/hooks/` (commit-msg hook for item ID enforcement)
 - `.joy/project.yaml` (project metadata, members)
 - `.joy/config.defaults.yaml` (shared config baseline)
 
-**AI-bound** -- created by `joy ai setup`, removed when the last AI tool is reset via `joy ai reset`:
+**AI-bound** - created by `joy ai setup`, removed when the last AI tool is reset via `joy ai reset`:
 - `.joy/ai/` (instructions, skills, setup guides)
 - `.joy/capabilities/` (capability definition files)
 - Tool-specific directories (`.claude/`, `.qwen/`, `.vibe/`, `.github/copilot*`)
 
-When adding new AI-related files, decide which group they belong to. If the file is only useful when at least one AI tool is configured, it belongs to the AI-bound group. The `.gitignore` block is also updated dynamically -- only configured tools get gitignore entries.
+When adding new AI-related files, decide which group they belong to. If the file is only useful when at least one AI tool is configured, it belongs to the AI-bound group. The `.gitignore` block is also updated dynamically - only configured tools get gitignore entries.
 
 ### Capability files
 
@@ -442,7 +442,7 @@ AI agents in Joy operate at one of five interaction levels, configurable per mem
 
 | Level | Behavior | Example capabilities |
 |-------|----------|---------------------|
-| autonomous | Work independently, only governance gates as checkpoints | -- |
+| autonomous | Work independently, only governance gates as checkpoints | - |
 | supervised | Work independently, confirm before irreversible actions | test, implement (routine) |
 | collaborative | Propose approach, proceed after confirmation | implement |
 | interactive | Present options with rationale, wait for decision | review, plan |
@@ -451,7 +451,7 @@ AI agents in Joy operate at one of five interaction levels, configurable per mem
 The effective mode for a specific job is determined by three layers:
 
 1. **Joy defaults** (`config.defaults.yaml`): sensible starting points per capability
-2. **Project max** (`project.yaml`): upper bound per member per capability -- cannot be exceeded
+2. **Project max** (`project.yaml`): upper bound per member per capability - cannot be exceeded
 3. **Item override**: can lower the level for a specific item, but never raise it above the project max
 
 ```yaml
@@ -489,7 +489,7 @@ Joy actively dispatches work to external AI tools and tracks results:
 | GitHub Copilot (GitHub) | `github-copilot` | `copilot` |
 | Qwen Code (Alibaba) | `qwen-code` | `qwen` |
 
-Each project configures one tool via `joy ai setup agent`. Joy is the **dispatcher**, not the **runtime** -- it prepares context, invokes the tool, and tracks the outcome.
+Each project configures one tool via `joy ai setup agent`. Joy is the **dispatcher**, not the **runtime** - it prepares context, invokes the tool, and tracks the outcome.
 
 **Workflows:**
 - **Estimation:** AI estimates effort and cost from item context
@@ -603,7 +603,7 @@ The dispatch mechanism handles four error scenarios:
 **3. AI agent timeout (stalled dispatch):**
 - AI dispatch items have a configurable timeout (default: 1 hour, configurable per item or project)
 - On timeout: Jyn task marked as `stalled`, Joy item transitions to `stalled` status, notification to item owner
-- No automatic retry -- AI jobs can be expensive, the human decides
+- No automatic retry - AI jobs can be expensive, the human decides
 - Item owner uses `joy reopen` to return to the previous active status and re-dispatch
 
 **4. Callback failure** (agent completes todo, but Joy repo is unreachable):
@@ -630,7 +630,7 @@ Items that fail dispatch or agent timeout enter the `stalled` status. This is se
 
 **AI is a team member, not a feature.** AI agents have roles, budgets, and accountability. Their work is tracked the same way as human work.
 
-**Start solo, scale to team.** Joy works offline for one person. Add a server when you need collaboration. The workflow doesn't change -- only sync is added.
+**Start solo, scale to team.** Joy works offline for one person. Add a server when you need collaboration. The workflow doesn't change - only sync is added.
 
 **One process, adjustable strictness.** Joy has one workflow, not a library of process templates. Strictness is controlled by adding or removing rules on individual transitions. Zero rules means zero ceremony. Two rules give you triage and acceptance gates. No mode switching, no template selection, no workflow engine.
 
@@ -655,15 +655,15 @@ The CLI is the foundation. All core commands are implemented and Joy manages its
 
 Joy as a tool/skill for external AI agents:
 
-- `joy ai setup` -- check docs, install AI instructions/skills, configure detected tools
-- `joy config` -- show current configuration
+- `joy ai setup` - check docs, install AI instructions/skills, configure detected tools
+- `joy config` - show current configuration
 - Standardized instructions and skills that work across AI tools (Claude Code, Qwen Code, Mistral Vibe)
-- No own agent runtime -- the external tool calls `joy` commands
+- No own agent runtime - the external tool calls `joy` commands
 
 ### Sync and Server
 
-- `joy sync` -- push/pull via Git remote
-- `joy clone` -- clone remote project
+- `joy sync` - push/pull via Git remote
+- `joy clone` - clone remote project
 - OAuth authentication (GitHub, GitLab, Gitea)
 - E2E encryption (AES-256-GCM, always active on joyint.com)
 
@@ -679,13 +679,13 @@ Joy as a tool/skill for external AI agents:
 
 Joy dispatches work to AI APIs and tracks results:
 
-- `joy ai setup agent` -- configure AI tool and model
+- `joy ai setup agent` - configure AI tool and model
 - `joy ai estimate`, `joy ai plan`, `joy ai implement`, `joy ai review`
 - Job logging and cost tracking
 
 ### TUI
 
-- `joy app` -- ratatui-based terminal UI
+- `joy app` - ratatui-based terminal UI
 - Board view, item detail panel, dependency graph
 
 ---

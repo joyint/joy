@@ -17,7 +17,7 @@ This is a management capability that controls access to `joy add`.
 Without this capability, a member cannot create items. This prevents
 AI tools from generating items autonomously. A planner needs
 `conceive, plan, create` to define and create items. An implementer
-with only `implement` cannot add items -- discovered bugs must be
+with only `implement` cannot add items - discovered bugs must be
 reported to someone with `create`.
 
 ## Agent Configuration

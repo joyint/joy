@@ -24,21 +24,21 @@ For product vision and data model see [docs/dev/vision/](docs/dev/vision/). For 
 
 Follow the CLI output conventions defined in the [umbrella CONTRIBUTING.md](https://github.com/joyint/project/blob/main/CONTRIBUTING.md#cli-output-style). All shared helpers live in `crates/joy-cli/src/color.rs`:
 
-- `header(title)` -- full-width header (line/title/line)
-- `footer(message)` -- full-width footer (line/message)
-- `section(title)` -- sub-section heading with underline
-- `key_value(key, value, width)` -- aligned label-value pair
-- `check_mark()`, `warn_mark()`, `cross_mark()` -- status indicators
-- `label()`, `success()`, `warning()`, `danger()`, `inactive()` -- semantic colors
-- `terminal_width()` -- use this, never hardcode widths
+- `header(title)` - full-width header (line/title/line)
+- `footer(message)` - full-width footer (line/message)
+- `section(title)` - sub-section heading with underline
+- `key_value(key, value, width)` - aligned label-value pair
+- `check_mark()`, `warn_mark()`, `cross_mark()` - status indicators
+- `label()`, `success()`, `warning()`, `danger()`, `inactive()` - semantic colors
+- `terminal_width()` - use this, never hardcode widths
 
 ### Rust
 
 **Edition:** 2021 (or latest stable)
 
-**Formatting:** `rustfmt` with default settings. No custom overrides -- consistency over preference. Always run `cargo fmt --all` before committing.
+**Formatting:** `rustfmt` with default settings. No custom overrides - consistency over preference. Always run `cargo fmt --all` before committing.
 
-**Linting:** `clippy` at `warn` level in CI, with `#[deny(clippy::all)]` in library crates. Run `cargo clippy --workspace -- -D warnings` before pushing. Pedantic lints enabled selectively.
+**Linting:** `clippy` at `warn` level in CI, with `#[deny(clippy::all)]` in library crates. Run `cargo clippy --workspace - -D warnings` before pushing. Pedantic lints enabled selectively.
 
 **Naming:**
 
@@ -50,7 +50,7 @@ Follow the CLI output conventions defined in the [umbrella CONTRIBUTING.md](http
 
 **Error handling:**
 
-- Core libraries (`joy-core`) use `thiserror` enums -- every error type is explicit and matchable
+- Core libraries (`joy-core`) use `thiserror` enums - every error type is explicit and matchable
 - CLI crates (`joy-cli`) use `anyhow` for convenient error propagation to the user
 - No `unwrap()` or `expect()` in library code. Allowed in tests and in CLI `main()` only.
 
@@ -128,15 +128,15 @@ just test-watch        # Re-run on file change
 
 ### Before closing an item
 
-Run `just test` before closing any implementation item. All three layers (unit, snapshot, integration) must pass. If a test fails, fix it before closing -- do not close items with broken tests.
+Run `just test` before closing any implementation item. All three layers (unit, snapshot, integration) must pass. If a test fails, fix it before closing - do not close items with broken tests.
 
-When adding new CLI commands or flags, write the tests as part of the implementation, not as a follow-up item. Tests are not optional extras -- they are part of "done".
+When adding new CLI commands or flags, write the tests as part of the implementation, not as a follow-up item. Tests are not optional extras - they are part of "done".
 
 When closing a **bug** item, add a comment that references the test covering the fix (e.g. "Tested by `render_title_with_colon` in templates.rs and `joy add sets created_by field` in basic.bats"). This ensures the fix is traceable and regression-protected.
 
 ### Coverage Target
 
-Aim for >80% line coverage on core libraries. No hard enforcement -- coverage is a signal, not a goal.
+Aim for >80% line coverage on core libraries. No hard enforcement - coverage is a signal, not a goal.
 
 ---
 
@@ -146,10 +146,10 @@ Aim for >80% line coverage on core libraries. No hard enforcement -- coverage is
 
 Every push and pull request triggers:
 
-1. **Format check** -- `cargo fmt --check`
-2. **Lint** -- `cargo clippy -- -D warnings`
-3. **Test** -- Full test suite (unit + integration + snapshots)
-4. **Build** -- Debug build for all targets
+1. **Format check** - `cargo fmt --check`
+2. **Lint** - `cargo clippy - -D warnings`
+3. **Test** - Full test suite (unit + integration + snapshots)
+4. **Build** - Debug build for all targets
 
 ### Release Pipeline
 
