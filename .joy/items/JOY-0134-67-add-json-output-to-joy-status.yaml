@@ -1,13 +1,19 @@
 id: JOY-0134-67
 title: Add --json output to joy status
 type: task
-status: new
+status: closed
 priority: medium
 parent: JOY-00C9-5F
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-30T06:18:37.163555395Z
-updated: 2026-04-30T06:18:37.163555395Z
+updated: 2026-04-30T07:42:01.584287486Z
 description: Implements ADR-036 for joy status. Write command, emits confirmation envelope (item id, new state). BATS test.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-04-30T07:42:01.533098493Z
+  text: '[x] StatusPayload {id, from, to, auto_closed:[{id, from, to}]}. Covers start/submit/close/reopen (all go through status.rs). Auto-assign eprintln suppressed in JSON mode. 2 BATS tests.'

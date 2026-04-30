@@ -146,11 +146,13 @@ pub fn run(args: StatusArgs) -> Result<()> {
                 member: ctx.identity.member.clone(),
                 capabilities: Vec::new(),
             });
-            eprintln!(
-                "Auto-assigned {} to {}",
-                color::id(&item.id),
-                ctx.identity.member
-            );
+            if !crate::output::is_json() {
+                eprintln!(
+                    "Auto-assigned {} to {}",
+                    color::id(&item.id),
+                    ctx.identity.member
+                );
+            }
 
             // Warn if member lacks item capabilities
             let project_path = store::joy_dir(&ctx.root).join(store::PROJECT_FILE);
@@ -197,12 +199,16 @@ pub fn run(args: StatusArgs) -> Result<()> {
         &log_user,
     );
 
-    println!(
-        "{} {} -> {}",
-        color::id(&item.id),
-        color::status(&old_status),
-        color::status(&new_status)
-    );
+    let mut auto_closed_parents: Vec<StatusTransition> = Vec::new();
+
+    if !crate::output::is_json() {
+        println!(
+            "{} {} -> {}",
+            color::id(&item.id),
+            color::status(&old_status),
+            color::status(&new_status)
+        );
+    }
 
     // Auto-close parent when all children are closed
     // (must run before auto_git_post_command so auto-close changes are included)
@@ -226,15 +232,32 @@ pub fn run(args: StatusArgs) -> Result<()> {
                         Some(&format!("{parent_old} -> closed (all children closed)")),
                         &log_user,
                     );
-                    println!(
-                        "{} {} -> {} (all children closed)",
-                        color::id(&parent.id),
-                        color::status(&parent_old),
-                        color::status(&parent.status)
-                    );
+                    if crate::output::is_json() {
+                        auto_closed_parents.push(StatusTransition {
+                            id: parent.id.clone(),
+                            from: format!("{parent_old}"),
+                            to: format!("{}", parent.status),
+                        });
+                    } else {
+                        println!(
+                            "{} {} -> {} (all children closed)",
+                            color::id(&parent.id),
+                            color::status(&parent_old),
+                            color::status(&parent.status)
+                        );
+                    }
                 }
             }
         }
+    }
+
+    if crate::output::is_json() {
+        crate::output::emit(StatusPayload {
+            id: item.id.clone(),
+            from: format!("{old_status}"),
+            to: format!("{new_status}"),
+            auto_closed: auto_closed_parents,
+        })?;
     }
 
     joy_core::git_ops::auto_git_post_command(
@@ -244,4 +267,19 @@ pub fn run(args: StatusArgs) -> Result<()> {
     );
 
     Ok(())
+}
+
+#[derive(serde::Serialize)]
+struct StatusPayload {
+    id: String,
+    from: String,
+    to: String,
+    auto_closed: Vec<StatusTransition>,
+}
+
+#[derive(serde::Serialize)]
+struct StatusTransition {
+    id: String,
+    from: String,
+    to: String,
 }

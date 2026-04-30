@@ -101,3 +101,7 @@
 2026-04-30T07:36:20.174Z JOY-0133-1A comment.added "[x] RmPayload {deleted:[{id, title, deref_from}]} -- supports recursive delete (multiple entries)." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T07:36:20.183Z JOY-0133-1A item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T07:36:20.202Z JOY-0133-1A item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:42:01.516Z JOY-0134-67 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:42:01.535Z JOY-0134-67 comment.added "[x] StatusPayload {id, from, to, auto_closed:[{id, from, to}]}. Covers start/submit/close/reopen (all go through status.rs). Auto-assign eprintln suppressed in JSON mode. 2 BATS tests." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:42:01.557Z JOY-0134-67 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:42:01.587Z JOY-0134-67 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
