@@ -195,3 +195,4 @@
 2026-04-30T21:39:48.750Z JOY-013C-F1 comment.added "[x] Website index.mdx (en + de) und Joy-Repo README.md zeigen jetzt drei Install-Pfade: macOS/Linux (curl ... | sh), Windows PowerShell (irm ... | iex), cargo. Klarstellung dass der Windows-Installer User-PATH automatisch setzt und macOS/Linux es selbst tun muss. Tutorials erwaehnen kein Install (start beim joy init), bleiben unveraendert." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T21:39:48.798Z JOY-013C-F1 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T21:39:48.882Z JOY-013C-F1 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T21:47:13.438Z v0.13.0 release.created [horst.schwarz@joydev.com]

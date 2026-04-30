@@ -1,0 +1,99 @@
+version: v0.13.0
+date: 2026-04-30
+previous: v0.12.0
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 223
+  items: 41
+- id: horst.schwarz@joydev.com
+  events: 9
+  items: 5
+- id: ai:qwen@joy delegated-by:horst.schwarz@joydev.com
+  events: 1
+  items: 1
+items:
+  stories:
+  - id: JOY-00F2-A6
+    title: Show own and delegated sessions in joy auth status
+  tasks:
+  - id: JOY-00C9-5F
+    title: Add --json output to all commands
+  - id: JOY-0123-9A
+    title: Add --json output to joy ls
+  - id: JOY-0124-97
+    title: Add --json output to joy show
+  - id: JOY-0125-80
+    title: Add --json output to joy board
+  - id: JOY-0126-7C
+    title: Add --json output to joy deps
+  - id: JOY-0127-F0
+    title: Add --json output to joy find
+  - id: JOY-0128-6A
+    title: Add --json output to joy log
+  - id: JOY-0129-D6
+    title: Add --json output to joy milestone
+  - id: JOY-012A-4D
+    title: Add --json output to joy project
+  - id: JOY-012B-B5
+    title: Add --json output to joy config
+  - id: JOY-012C-47
+    title: Add --json output to joy auth status
+  - id: JOY-012D-F4
+    title: Add --json output to joy ai status
+  - id: JOY-012E-B9
+    title: Add --json output to joy release
+  - id: JOY-012F-5D
+    title: Add --json output to joy add
+  - id: JOY-0130-B8
+    title: Add --json output to joy edit
+  - id: JOY-0131-D9
+    title: Add --json output to joy comment
+  - id: JOY-0132-84
+    title: Add --json output to joy assign
+  - id: JOY-0133-1A
+    title: Add --json output to joy rm
+  - id: JOY-0134-67
+    title: Add --json output to joy status
+  - id: JOY-0135-8A
+    title: Add --json output to joy deps modify
+  - id: JOY-0136-D2
+    title: Add --json output to joy milestone modify
+  - id: JOY-0137-42
+    title: Add --json output to joy ai init
+  - id: JOY-0138-A7
+    title: Add --json output to joy auth
+  - id: JOY-0139-67
+    title: Add --json output to joy project member
+  - id: JOY-0099
+    title: Update tutorial and AI instructions for interaction levels
+  - id: JOY-00A3
+    title: Publish joy-core, joy-cli, joy-ai to crates.io
+  - id: JOY-0109-E3
+    title: Restrict default capabilities in member add
+  - id: JOY-00BD-9E
+    title: 'Test: verify auth enforcement for AI sessions'
+  - id: JOY-0051-27
+    title: Update human-facing docs for capability model
+  - id: JOY-013C-F1
+    title: Add Windows install instructions to website + docs
+  bugs:
+  - id: JOY-011F-65
+    title: Normalize short-form item IDs in parent and deps refs
+  - id: JOY-0120-8D
+    title: Preserve ancestor context in tree and roadmap views
+  - id: JOY-0121-8F
+    title: Normalize short-form milestone IDs on link
+  - id: JOY-0122-66
+    title: Include delegated-by in human-readable author fields
+  - id: JOY-011E-CF
+    title: AI-Member-Onboarding via 'joy ai init' bypasses attestation chain
+  - id: JOY-00EF-E5
+    title: joy auth token add should authenticate inline if no session
+  - id: JOY-00F3-AE
+    title: joy auth --user missing, only joy init supports it
+  - id: JOY-00F4-CF
+    title: joy project member show Auth check diverges from runtime
+  - id: JOY-00D1-3C
+    title: joy ai init/reset cannot tell joy-owned files from user-owned
+  - id: JOY-013A-CB
+    title: Windows installer must set User-PATH automatically
