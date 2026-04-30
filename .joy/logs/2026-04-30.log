@@ -37,3 +37,7 @@
 2026-04-30T06:44:01.278Z JOY-0123-9A comment.added "[x] LsPayload {items, total} envelope. JSON path emits before tree/table rendering. Empty/no-match cases emit empty list, not the human strings. 6 BATS tests covering envelope shape, filters, status default/--all, position-equivalent flag." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T06:44:01.288Z JOY-0123-9A item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T06:44:01.307Z JOY-0123-9A item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T06:45:14.588Z JOY-0124-97 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T06:46:04.995Z JOY-0124-97 comment.added "[x] item emitted directly as data via existing serde derives. 3 BATS tests for envelope, comments, error case." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T06:46:05.009Z JOY-0124-97 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T06:46:05.034Z JOY-0124-97 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

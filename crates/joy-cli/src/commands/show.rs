@@ -28,6 +28,10 @@ pub fn run(args: ShowArgs) -> Result<()> {
     let item = items::load_item(&root, &args.id)?;
     let all_items = items::load_items(&root)?;
 
+    if crate::output::is_json() {
+        return crate::output::emit(&item);
+    }
+
     let w = color::terminal_width();
     println!("{}", color::label(&"-".repeat(w)));
     println!("{} {}", color::id(&item.id), color::label(&item.title));

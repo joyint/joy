@@ -1,13 +1,19 @@
 id: JOY-0124-97
 title: Add --json output to joy show
 type: task
-status: new
+status: closed
 priority: high
 parent: JOY-00C9-5F
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-30T06:18:36.976662644Z
-updated: 2026-04-30T06:18:36.976662644Z
+updated: 2026-04-30T06:46:05.030596855Z
 description: Implements ADR-036 for joy show. Read-only command. Must emit envelope {version:1, data:...} with all displayed information. BATS test for valid JSON and stable shape.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-30T06:46:04.992237826Z
+  text: '[x] item emitted directly as data via existing serde derives. 3 BATS tests for envelope, comments, error case.'
