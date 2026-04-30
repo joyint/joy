@@ -1,16 +1,25 @@
 id: JOY-00F3-AE
 title: joy auth --user missing, only joy init supports it
 type: bug
-status: new
+status: closed
 priority: medium
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 - review
 effort: 1
 created_by: ai:claude@joy
 created: 2026-04-19T19:28:11.055140077Z
-updated: 2026-04-19T19:28:11.055140077Z
+updated: 2026-04-30T20:12:35.775396930Z
 description: |-
   `joy init --user <name>` registers the creator member under <name>, but `joy auth` and `resolve_identity` match only against git config user.email. A project whose member was registered with a name that differs from the current git email cannot authenticate at all via `joy auth`.
 
   Fix: add `--user <name>` to `joy auth` (and to `joy auth token add` if consistent), that overrides the git-email lookup for the member match. Passphrase verification against members[<name>].public_key is unchanged; only the member-selector is explicit.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-04-30T20:08:14.580578680Z
+  text: 'Plan: add --user <id> as a global flag on AuthArgs. When set, it overrides the git-email lookup for the member-selector in joy auth (passphrase + token paths) and joy auth token add. Passphrase verification against members[<id>].verify_key is unchanged. BATS test: project where the registered member id differs from git config user.email.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-04-30T20:12:35.561164393Z
+  text: '[x] Added --user as global flag on AuthArgs. Centralised member-selector resolution in resolve_user(). Wired through run_auth, run_init, run_token, run_token_add. Guard check in run_token_add now uses the explicit Identity built from the resolved member, not resolve_identity (which falls back to git email). 3 BATS tests.'

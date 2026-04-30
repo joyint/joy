@@ -29,6 +29,12 @@ pub struct AuthArgs {
     /// the stored otp_hash, and establishes an initial session.
     #[arg(long, global = true)]
     otp: Option<String>,
+
+    /// Member ID to authenticate as. Overrides the git-email lookup so
+    /// projects whose member entry differs from `git config user.email`
+    /// (e.g. registered via `joy init --user`) can authenticate.
+    #[arg(long, global = true)]
+    user: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -103,10 +109,12 @@ struct TokenRmArgs {
 
 pub fn run(args: AuthArgs) -> Result<()> {
     match args.command {
-        Some(AuthCommand::Init) => run_init(args.passphrase.as_deref()),
+        Some(AuthCommand::Init) => run_init(args.passphrase.as_deref(), args.user.as_deref()),
         Some(AuthCommand::Status) => run_status(),
         Some(AuthCommand::Reset(a)) => run_reset(a, args.passphrase.as_deref()),
-        Some(AuthCommand::Token(a)) => run_token(a, args.passphrase.as_deref()),
+        Some(AuthCommand::Token(a)) => {
+            run_token(a, args.passphrase.as_deref(), args.user.as_deref())
+        }
         Some(AuthCommand::Passphrase(a)) => {
             run_passphrase(args.passphrase.as_deref(), a.new_passphrase.as_deref())
         }
@@ -115,9 +123,23 @@ pub fn run(args: AuthArgs) -> Result<()> {
             if let Some(otp) = args.otp.as_deref() {
                 run_auth_otp(otp, args.passphrase.as_deref())
             } else {
-                run_auth(args.passphrase.as_deref(), args.token.as_deref())
+                run_auth(
+                    args.passphrase.as_deref(),
+                    args.token.as_deref(),
+                    args.user.as_deref(),
+                )
             }
         }
+    }
+}
+
+/// Resolve the member-selector for this invocation. `--user` always
+/// wins; otherwise we fall back to git config user.email. Centralised
+/// here so every auth path uses the same rule (JOY-00F3-AE).
+fn resolve_user(user_flag: Option<&str>) -> Result<String> {
+    match user_flag {
+        Some(u) if !u.is_empty() => Ok(u.to_string()),
+        _ => Ok(joy_core::vcs::default_vcs().user_email()?),
     }
 }
 
@@ -199,7 +221,7 @@ fn read_passphrase(flag: Option<&str>, prompt: &str) -> Result<String> {
 }
 
 /// `joy auth init` — first-time setup for the current member.
-fn run_init(passphrase_flag: Option<&str>) -> Result<()> {
+fn run_init(passphrase_flag: Option<&str>, user_flag: Option<&str>) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
@@ -207,7 +229,7 @@ fn run_init(passphrase_flag: Option<&str>) -> Result<()> {
     let mut project = store::read_project(&project_path)?;
 
     // Determine who we are
-    let email = joy_core::vcs::default_vcs().user_email()?;
+    let email = resolve_user(user_flag)?;
     let member = project.members.get(&email);
     if member.is_none() {
         anyhow::bail!(
@@ -296,7 +318,11 @@ fn run_init(passphrase_flag: Option<&str>) -> Result<()> {
 }
 
 /// `joy auth` — authenticate by passphrase (human) or delegation token (AI).
-fn run_auth(passphrase_flag: Option<&str>, token_flag: Option<&str>) -> Result<()> {
+fn run_auth(
+    passphrase_flag: Option<&str>,
+    token_flag: Option<&str>,
+    user_flag: Option<&str>,
+) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
@@ -309,7 +335,7 @@ fn run_auth(passphrase_flag: Option<&str>, token_flag: Option<&str>) -> Result<(
     }
 
     // Human authentication via passphrase
-    let email = joy_core::vcs::default_vcs().user_email()?;
+    let email = resolve_user(user_flag)?;
     auth_with_passphrase(&root, &project, &project_id, &email, passphrase_flag)
 }
 
@@ -788,22 +814,30 @@ fn run_reset(args: ResetArgs, passphrase_flag: Option<&str>) -> Result<()> {
 }
 
 /// `joy auth token` — manage delegation tokens.
-fn run_token(args: TokenArgs, passphrase_flag: Option<&str>) -> Result<()> {
+fn run_token(
+    args: TokenArgs,
+    passphrase_flag: Option<&str>,
+    user_flag: Option<&str>,
+) -> Result<()> {
     match args.command {
-        TokenCommand::Add(a) => run_token_add(a, passphrase_flag),
+        TokenCommand::Add(a) => run_token_add(a, passphrase_flag, user_flag),
         TokenCommand::Rm(a) => run_token_rm(a, passphrase_flag),
     }
 }
 
 /// `joy auth token add <ai-member>` — create a delegation token.
-fn run_token_add(args: TokenAddArgs, passphrase_flag: Option<&str>) -> Result<()> {
+fn run_token_add(
+    args: TokenAddArgs,
+    passphrase_flag: Option<&str>,
+    user_flag: Option<&str>,
+) -> Result<()> {
     use joy_core::model::project::is_ai_member;
 
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
     let project = store::load_project(&root)?;
-    let email = joy_core::vcs::default_vcs().user_email()?;
+    let email = resolve_user(user_flag)?;
 
     // Validate AI member
     if !is_ai_member(&args.member) {
@@ -854,9 +888,18 @@ fn run_token_add(args: TokenAddArgs, passphrase_flag: Option<&str>) -> Result<()
         session::save_session(&project_id, &session_token)?;
     }
 
-    // Guard: requires manage capability. After the inline auth above
-    // this resolves cleanly even on cold start.
-    joy_core::guard::enforce(&root, &joy_core::guard::Action::ManageProject, "project")?;
+    // Guard: requires manage capability. We construct an explicit
+    // Identity from the resolved member id so that --user takes effect
+    // here too (otherwise resolve_identity would fall back to the git
+    // email and refuse the action -- JOY-00F3-AE).
+    let identity = joy_core::identity::Identity {
+        member: email.clone(),
+        delegated_by: None,
+        authenticated: true,
+    };
+    joy_core::guard::Guard::load(&root)?
+        .check(&joy_core::guard::Action::ManageProject, &identity)
+        .enforce(&root, "project", &identity)?;
 
     // ADR-033: stable per-(human, AI) delegation key.
     //   1. If project.yaml already has the public key AND the matching private
