@@ -365,6 +365,9 @@ fn run_member(
 ) -> Result<()> {
     match args.command {
         None => {
+            if crate::output::is_json() {
+                return crate::output::emit(&project.members);
+            }
             // List members
             if project.members.is_empty() {
                 println!("No members configured.");
@@ -377,6 +380,18 @@ fn run_member(
                 .members
                 .get(&a.id)
                 .ok_or_else(|| anyhow::anyhow!("member not found: {}", a.id))?;
+
+            if crate::output::is_json() {
+                #[derive(serde::Serialize)]
+                struct ShowPayload<'a> {
+                    id: &'a str,
+                    member: &'a joy_core::model::project::Member,
+                }
+                return crate::output::emit(ShowPayload {
+                    id: &a.id,
+                    member,
+                });
+            }
 
             let w = color::terminal_width();
             let wide = w >= 60;
@@ -519,15 +534,27 @@ fn run_member(
             let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
             joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
 
-            println!("Added member {}", a.id);
-            println!();
-            println!("  One-time password: {otp}");
-            println!();
-            println!(
-                "Share the OTP with {} via a trusted channel. They redeem it with:",
-                a.id
-            );
-            println!("  joy auth --otp {otp}");
+            if crate::output::is_json() {
+                #[derive(serde::Serialize)]
+                struct AddPayload<'a> {
+                    member: &'a str,
+                    otp: &'a str,
+                }
+                crate::output::emit(AddPayload {
+                    member: &a.id,
+                    otp: &otp,
+                })?;
+            } else {
+                println!("Added member {}", a.id);
+                println!();
+                println!("  One-time password: {otp}");
+                println!();
+                println!(
+                    "Share the OTP with {} via a trusted channel. They redeem it with:",
+                    a.id
+                );
+                println!("  joy auth --otp {otp}");
+            }
 
             let log_user = ctx.log_user();
             joy_core::git_ops::auto_git_post_command(
@@ -635,7 +662,17 @@ fn run_member(
             store::write_yaml_preserve(project_path, project)?;
             let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
             joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
-            println!("Removed member {}", a.id);
+            if crate::output::is_json() {
+                #[derive(serde::Serialize)]
+                struct RmPayload<'a> {
+                    removed_member: &'a str,
+                }
+                crate::output::emit(RmPayload {
+                    removed_member: &a.id,
+                })?;
+            } else {
+                println!("Removed member {}", a.id);
+            }
             let log_user = ctx.log_user();
             joy_core::git_ops::auto_git_post_command(
                 &ctx.root,

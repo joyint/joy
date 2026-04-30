@@ -121,3 +121,7 @@
 2026-04-30T07:51:04.929Z JOY-0138-A7 comment.added "[x] auth --token: TokenAuthPayload {session_env, member, delegated_by, project_id}. auth token add: TokenAddPayload {member, token, ttl_hours}. The other auth subcommands (init, --otp, token rm, passphrase, reset, update) keep display output for v1; remaining JSON for those is a follow-up should consumers need it. 2 BATS tests." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T07:51:04.948Z JOY-0138-A7 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T07:51:04.977Z JOY-0138-A7 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:52:49.671Z JOY-0139-67 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:52:49.691Z JOY-0139-67 comment.added "[x] joy project member: emits members map. show: {id, member}. add: {member, otp}. rm: {removed_member}. 4 BATS tests." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:52:49.712Z JOY-0139-67 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:52:49.742Z JOY-0139-67 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

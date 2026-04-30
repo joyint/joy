@@ -1,13 +1,19 @@
 id: JOY-0139-67
 title: Add --json output to joy project member
 type: task
-status: new
+status: closed
 priority: medium
 parent: JOY-00C9-5F
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-30T06:18:37.219161795Z
-updated: 2026-04-30T06:18:37.219161795Z
+updated: 2026-04-30T07:52:49.739493665Z
 description: Implements ADR-036 for joy project member add/rm/edit.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-04-30T07:52:49.688672589Z
+  text: '[x] joy project member: emits members map. show: {id, member}. add: {member, otp}. rm: {removed_member}. 4 BATS tests.'
