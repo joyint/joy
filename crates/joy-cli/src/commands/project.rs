@@ -1045,14 +1045,22 @@ fn member_auth_status(
         member.verify_key.is_some()
     };
 
-    // Session check: for humans, validate against their public_key.
-    // For AI, just check if a session file exists and is not expired.
+    // Session check: must mirror what resolve_identity (joy-core) actually
+    // accepts at runtime. A check mark that the runtime would reject is
+    // exactly the divergence JOY-00F4-CF closes -- the display and the
+    // auth behaviour must agree.
     let has_session = if !has_auth {
         false
     } else if is_ai {
-        // AI sessions: check session exists, not expired, and its delegation
-        // binding still matches a current ai_delegations entry. Rotating the
-        // delegation invalidates any session bound to the previous key.
+        // AI sessions (ADR-033): a session file alone is not enough; the
+        // caller must hold the matching ephemeral private key in
+        // JOY_SESSION. Otherwise the session is "present on disk but not
+        // usable from this shell".
+        let current_session_id = std::env::var("JOY_SESSION")
+            .ok()
+            .and_then(|v| joy_core::auth::session::parse_session_env(&v))
+            .map(|(sid, _)| sid);
+
         let current_delegation_keys: Vec<&str> = all_members
             .values()
             .filter_map(|m| m.ai_delegations.get(id))
@@ -1074,6 +1082,12 @@ fn member_auth_status(
                         None
                     }
                     None => None,
+                }?;
+                let expected_sid = joy_core::auth::session::session_id(project_id, id);
+                if current_session_id.as_deref() == Some(expected_sid.as_str()) {
+                    Some(())
+                } else {
+                    None
                 }
             })
             .is_some()
@@ -1083,9 +1097,16 @@ fn member_auth_status(
                 .ok()
                 .flatten()
                 .and_then(|token| {
-                    joy_core::auth::session::validate_session(&token, &pk, project_id)
+                    let claims = joy_core::auth::session::validate_session(&token, &pk, project_id)
                         .ok()
-                        .filter(|claims| claims.member == id)
+                        .filter(|c| c.member == id)?;
+                    // Human sessions are TTY-bound (see resolve_identity in
+                    // joy-core). A session created in TTY-A must not be
+                    // reported as active in TTY-B.
+                    if claims.tty != joy_core::auth::session::current_tty() {
+                        return None;
+                    }
+                    Some(())
                 })
                 .is_some()
         } else {

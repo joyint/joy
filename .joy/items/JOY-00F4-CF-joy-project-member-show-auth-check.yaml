@@ -1,15 +1,17 @@
 id: JOY-00F4-CF
 title: joy project member show Auth check diverges from runtime
 type: bug
-status: new
+status: closed
 priority: medium
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 - review
 effort: 1
 created_by: ai:claude@joy
 created: 2026-04-19T19:28:11.063522236Z
-updated: 2026-04-19T20:02:12.285219310Z
+updated: 2026-04-30T20:14:50.208351918Z
 description: |-
   The Auth column check mark in `joy project member` (and `joy project member show`) is set via member_auth_status in crates/joy-cli/src/commands/project.rs: it loads the session file from disk, checks TTL and delegation-key match, and reports check mark on success. This is purely file-based and does not inspect the caller's JOY_SESSION env var.
 
@@ -38,3 +40,9 @@ comments:
     Parallel AI case holds too: if JOY_SESSION env is missing in this shell, resolve_identity refuses to act as the AI, but member_auth_status still shows the AI check mark because the file is intact.
 
     The bug therefore spans both member paths; the fix is one mechanism (align member_auth_status with resolve_identity's actual preconditions), applied for humans and AIs.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-04-30T20:13:31.103438276Z
+  text: 'Plan: align member_auth_status with resolve_identity. For humans: after validate_session, additionally require claims.tty == current_tty(); else the check mark must not be shown. For AI members: additionally require JOY_SESSION env var to be present and reference this session id; absence means the file exists but is not usable from this shell. BATS test: human session in TTY-A, joy project member in TTY-B reports no check mark.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-04-30T20:14:50.020653353Z
+  text: '[x] member_auth_status now mirrors resolve_identity. Humans: TTY-bound (claims.tty == current_tty()). AI members: require JOY_SESSION env var to point at this session id. Display and runtime now agree. 2 BATS tests covering the two failure modes (cross-TTY, no-env-var).'
