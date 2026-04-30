@@ -33,6 +33,14 @@ pub fn run(args: FindArgs) -> Result<()> {
         })
         .collect();
 
+    if crate::output::is_json() {
+        return crate::output::emit(FindPayload {
+            query: args.query.clone(),
+            total: matches.len(),
+            items: matches.iter().map(|i| (*i).clone()).collect(),
+        });
+    }
+
     if matches.is_empty() {
         println!("No items matching \"{}\".", args.query);
         return Ok(());
@@ -54,4 +62,11 @@ pub fn run(args: FindArgs) -> Result<()> {
     );
 
     Ok(())
+}
+
+#[derive(serde::Serialize)]
+struct FindPayload {
+    query: String,
+    total: usize,
+    items: Vec<joy_core::model::Item>,
 }

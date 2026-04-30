@@ -49,3 +49,7 @@
 2026-04-30T06:52:29.395Z JOY-0126-7C comment.added "[x] DepsPayload {id, title, deps:[{id, title, status, found}]}. Read path only -- write path is JOY-0135-8A. 2 BATS tests." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T06:52:29.405Z JOY-0126-7C item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T06:52:29.425Z JOY-0126-7C item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T06:53:22.700Z JOY-0127-F0 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T06:53:22.708Z JOY-0127-F0 comment.added "[x] FindPayload {query, total, items}. 2 BATS tests." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T06:53:22.718Z JOY-0127-F0 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T06:53:22.736Z JOY-0127-F0 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
