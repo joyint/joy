@@ -97,6 +97,12 @@ pub fn run(args: LsArgs) -> Result<()> {
     let all_items = items::load_items(&root)?;
 
     if all_items.is_empty() {
+        if crate::output::is_json() {
+            return crate::output::emit(LsPayload {
+                items: Vec::new(),
+                total: 0,
+            });
+        }
         println!("No items. Run `joy add` to create one.");
         return Ok(());
     }
@@ -105,6 +111,17 @@ pub fn run(args: LsArgs) -> Result<()> {
         .filter
         .to_spec(&root, args.all || args.filter.status.is_some())?;
     let mut filtered: Vec<&Item> = filter::apply(&all_items, &spec);
+
+    if crate::output::is_json() {
+        if args.reverse {
+            filtered.reverse();
+        }
+        let total = filtered.len();
+        return crate::output::emit(LsPayload {
+            items: filtered.into_iter().cloned().collect(),
+            total,
+        });
+    }
 
     if filtered.is_empty() {
         println!("No matching items.");
@@ -133,6 +150,12 @@ pub fn run(args: LsArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[derive(serde::Serialize)]
+struct LsPayload {
+    items: Vec<Item>,
+    total: usize,
 }
 
 /// Detect terminal width: crossterm -> COLUMNS env var -> 80.

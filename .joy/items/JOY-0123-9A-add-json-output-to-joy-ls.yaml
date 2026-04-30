@@ -1,13 +1,22 @@
 id: JOY-0123-9A
 title: Add --json output to joy ls
 type: task
-status: new
+status: closed
 priority: high
 parent: JOY-00C9-5F
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-30T05:45:27.945944802Z
-updated: 2026-04-30T05:45:27.945944802Z
+updated: 2026-04-30T06:44:01.304985744Z
 description: test
+comments:
+- author: ai:claude@joy
+  date: 2026-04-30T06:43:01.925620641Z
+  text: 'Plan: serialize ls output as {items: [...], total: N, milestone_groups?: ...} via Item''s existing serde derives. JSON path runs after filter+sort, before any tree-rendering. Tree mode (--tree) keeps the same flat list in JSON; tree shape is reconstructible from item.parent. BATS test for: shape, version envelope, --mine filter respected.'
+- author: ai:claude@joy
+  date: 2026-04-30T06:44:01.276247048Z
+  text: '[x] LsPayload {items, total} envelope. JSON path emits before tree/table rendering. Empty/no-match cases emit empty list, not the human strings. 6 BATS tests covering envelope shape, filters, status default/--all, position-equivalent flag.'
