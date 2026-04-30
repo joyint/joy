@@ -1,13 +1,19 @@
 id: JOY-012A-4D
 title: Add --json output to joy project
 type: task
-status: new
+status: closed
 priority: high
 parent: JOY-00C9-5F
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-30T06:18:37.044379122Z
-updated: 2026-04-30T06:18:37.044379122Z
+updated: 2026-04-30T07:00:57.990037209Z
 description: Implements ADR-036 for joy project. Read-only command. Must emit envelope {version:1, data:...} with all displayed information. BATS test for valid JSON and stable shape.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-30T07:00:57.959425783Z
+  text: '[x] joy project (default) emits Project struct directly. joy project get emits {key, value}; unset optional yields null instead of exit 1, which is a strict contract for JSON consumers. Read paths only -- project member is JOY-0139-67. 3 BATS tests.'

@@ -61,3 +61,7 @@
 2026-04-30T06:59:35.816Z JOY-0129-D6 comment.added "[x] MilestoneListPayload + MilestoneShowPayload. Read paths only -- write paths (add/rm/edit/link/unlink) are JOY-0136-D2. 3 BATS tests." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T06:59:35.825Z JOY-0129-D6 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T06:59:35.843Z JOY-0129-D6 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:00:57.952Z JOY-012A-4D item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:00:57.962Z JOY-012A-4D comment.added "[x] joy project (default) emits Project struct directly. joy project get emits {key, value}; unset optional yields null instead of exit 1, which is a strict contract for JSON consumers. Read paths only -- project member is JOY-0139-67. 3 BATS tests." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:00:57.971Z JOY-012A-4D item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:00:57.994Z JOY-012A-4D item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

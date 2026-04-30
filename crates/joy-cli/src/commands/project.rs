@@ -214,30 +214,39 @@ pub fn run(args: ProjectArgs) -> Result<()> {
         joy_core::git_ops::auto_git_post_command(&ctx.root, "project edit", &log_user);
     }
 
+    if crate::output::is_json() {
+        return crate::output::emit(&project);
+    }
     show_project(&project, &ctx.root);
     Ok(())
 }
 
 fn get_value(project: &Project, key: &str) -> Result<()> {
-    match key {
-        "name" => println!("{}", project.name),
-        "acronym" => match &project.acronym {
-            Some(a) => println!("{a}"),
-            None => std::process::exit(1),
-        },
-        "description" => match &project.description {
-            Some(d) => println!("{d}"),
-            None => std::process::exit(1),
-        },
-        "language" => println!("{}", project.language),
-        "created" => println!("{}", project.created.format("%Y-%m-%d %H:%M")),
-        "docs.architecture" => println!("{}", project.docs.architecture_or_default()),
-        "docs.vision" => println!("{}", project.docs.vision_or_default()),
-        "docs.contributing" => println!("{}", project.docs.contributing_or_default()),
+    let value: Option<String> = match key {
+        "name" => Some(project.name.clone()),
+        "acronym" => project.acronym.clone(),
+        "description" => project.description.clone(),
+        "language" => Some(project.language.clone()),
+        "created" => Some(project.created.format("%Y-%m-%d %H:%M").to_string()),
+        "docs.architecture" => Some(project.docs.architecture_or_default().to_string()),
+        "docs.vision" => Some(project.docs.vision_or_default().to_string()),
+        "docs.contributing" => Some(project.docs.contributing_or_default().to_string()),
         _ => anyhow::bail!(
             "unknown key: {key}\nknown keys: {}",
             PROJECT_KEYS.join(", ")
         ),
+    };
+    if crate::output::is_json() {
+        #[derive(serde::Serialize)]
+        struct GetPayload<'a> {
+            key: &'a str,
+            value: Option<String>,
+        }
+        return crate::output::emit(GetPayload { key, value });
+    }
+    match value {
+        Some(v) => println!("{v}"),
+        None => std::process::exit(1),
     }
     Ok(())
 }
