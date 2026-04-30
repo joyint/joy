@@ -448,6 +448,32 @@ Joy defines eleven capabilities across two groups:
 
 By default, members have `capabilities: all`. Restrict them when needed -- especially for AI members where you want to control what they can do autonomously.
 
+### Interaction Levels
+
+Each capability also carries an interaction level that tells AI tools how much autonomy they have. Joy defines five levels, from least to most oversight:
+
+- `autonomous` -- work independently; only stop at governance gates
+- `supervised` -- confirm before irreversible actions
+- `collaborative` -- propose approach, proceed after confirmation
+- `interactive` -- present options with rationale, wait for user decision
+- `pairing` -- step by step, question by question
+
+The effective level for a `(member, capability)` pair is resolved across four layers, each overriding the previous:
+
+1. **Project defaults** (`.joy/project.defaults.yaml`) -- ship with sensible defaults per capability (e.g. `pairing` for `conceive`, `collaborative` for `implement`).
+2. **Project overrides** (`.joy/project.yaml`) -- per-capability settings the team agrees on for this project.
+3. **Personal preference** (`.joy/config.yaml`) -- per-user override under `modes.default`, applied to capabilities the project hasn't pinned.
+4. **Item override** -- a single item can request a different level via its `mode` field, taking effect only for that item.
+
+Inspect what is in force with:
+
+```sh
+joy project member show ai:claude@joy   # All capabilities, current level + source
+joy project member show pete@phoenix.org
+```
+
+The output's third column shows the level and (in brackets) where it was set. Tools and AI agents read this command and follow the level shown -- they do not re-derive it.
+
 ### Authentication and Onboarding
 
 Joy uses passphrase-derived Ed25519 identity keys. You authenticate once per 24-hour session and every significant action is cryptographically signed.

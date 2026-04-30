@@ -9,21 +9,26 @@ At the start of each session:
 1. Run `joy ai update --check` to verify your AI instructions are current. If it exits with
    code 2, tell the user which templates are outdated and suggest `joy ai update`.
    Do not proceed with outdated instructions.
-2. Run `joy config get modes.default` to read the configured level.
-   If the key does not exist, default to `collaborative`.
+2. Run `joy project member show <YOUR-ID>` to read your effective interaction
+   level per capability. Joy resolves all four layers (project defaults, project
+   overrides, personal preference, item override) and prints the effective level
+   with its source for each capability. The default level applies when no source
+   is shown.
 3. Briefly confirm: "Working in collaborative mode. Want to change that for this
-   session?" One line, no menu.
+   session?" One line, no menu. Use whichever level applies to the current
+   capability.
 4. Accept natural language overrides at any time ("let's work through this together",
    "just do it", "be more autonomous", etc.).
 
-Interaction levels:
+Interaction levels (lowest to highest oversight):
 - **autonomous**: Work independently. Only stop at governance gates.
 - **supervised**: Confirm before irreversible actions.
 - **collaborative**: Propose approach, proceed after confirmation.
 - **interactive**: Present options with rationale, wait for user decision.
 - **pairing**: Step by step, question by question.
 
-Per-capability levels in `project.yaml` override the default.
+The effective level shown by `joy project member show` is what governs your
+behaviour. Do not re-derive it from `project.yaml` or `joy config`.
 
 ## Identity and capabilities
 

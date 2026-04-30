@@ -1,17 +1,25 @@
 id: JOY-0099
 title: Update tutorial and AI instructions for interaction levels
 type: task
-status: new
+status: closed
 priority: medium
 parent: JOY-0096
+assignees:
+- member: ai:claude@joy
 milestone: JOY-MS-01
 capabilities:
 - implement
 effort: 2
 created_by: horst.schwarz@joydev.com
 created: 2026-03-30T16:39:49.567389012Z
-updated: 2026-03-30T19:48:56.717154157Z
+updated: 2026-04-30T20:31:23.360005339Z
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-30T16:39:55.342607487Z
   text: 'Tutorial documents how to configure interaction levels at each layer (project defaults, project overrides, personal preference, item override). AI instructions only need to say: read effective mode from joy project member show and work accordingly. Resolution logic stays in the CLI, not in the prompt. CONTRIBUTING.md is not affected -- it is tool-agnostic.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-04-30T20:28:59.208333505Z
+  text: 'Plan: AI instructions template (instructions.md): replace step 2 (joy config get modes.default, single layer) with joy project member show <YOUR-ID> -- the CLI already resolves all four layers and prints the effective mode per capability. Tutorial.md: add a ''Interaction levels'' subsection under Project Configuration explaining the four layers. Then run joy ai update so the changed template propagates into the dogfood project''s CLAUDE.md / QWEN.md / etc.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-04-30T20:31:23.135747141Z
+  text: '[x] AI instructions template (joy-core/templates/ai/instructions.md): step 2 now reads ''joy project member show <YOUR-ID>'' instead of ''joy config get modes.default'' (single layer); explicit note that resolution stays in CLI. [x] Tutorial.md (both bundled and docs/user): new ''Interaction Levels'' subsection in Project Configuration covering five levels and four resolution layers. [x] website/content/joy/docs/en/tutorial.mdx: same subsection.'
