@@ -330,6 +330,9 @@ fn show(args: ShowArgs) -> Result<()> {
     match args.version {
         Some(version) => {
             let release = releases::load_release(&ctx.root, acronym, &version)?;
+            if crate::output::is_json() {
+                return crate::output::emit(&release);
+            }
             if args.markdown {
                 print_release_markdown(&release);
             } else {
@@ -340,12 +343,20 @@ fn show(args: ShowArgs) -> Result<()> {
             let cutoff = event_log::last_release_timestamp(&ctx.root)?;
             let closed_ids = event_log::closed_item_ids_since(&ctx.root, cutoff.as_deref())?;
 
+            let previous = releases::latest_version(&ctx.root)?;
+
+            if crate::output::is_json() {
+                return crate::output::emit(ReleasePreviewPayload {
+                    previous_version: previous.clone(),
+                    closed_item_ids: closed_ids.clone(),
+                });
+            }
+
             if closed_ids.is_empty() {
                 println!("No items closed since last release.");
                 std::process::exit(1);
             }
 
-            let previous = releases::latest_version(&ctx.root)?;
             let prev_str = previous.as_deref().unwrap_or("(none)");
 
             let header_text = format!(
@@ -375,6 +386,13 @@ fn ls() -> Result<()> {
     let ctx = Context::load()?;
 
     let all_releases = releases::load_releases(&ctx.root)?;
+
+    if crate::output::is_json() {
+        return crate::output::emit(ReleaseListPayload {
+            total: all_releases.len(),
+            releases: all_releases,
+        });
+    }
 
     if all_releases.is_empty() {
         println!("No releases yet. Create one with: joy release bump patch");
@@ -674,4 +692,16 @@ fn print_release_markdown(release: &Release) {
         println!("---");
         println!("*{}*", color::plural(total, "item"));
     }
+}
+
+#[derive(serde::Serialize)]
+struct ReleaseListPayload {
+    total: usize,
+    releases: Vec<joy_core::model::Release>,
+}
+
+#[derive(serde::Serialize)]
+struct ReleasePreviewPayload {
+    previous_version: Option<String>,
+    closed_item_ids: Vec<String>,
 }

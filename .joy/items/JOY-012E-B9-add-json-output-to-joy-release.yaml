@@ -1,13 +1,19 @@
 id: JOY-012E-B9
 title: Add --json output to joy release
 type: task
-status: new
+status: closed
 priority: high
 parent: JOY-00C9-5F
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy
 created: 2026-04-30T06:18:37.089994371Z
-updated: 2026-04-30T06:18:37.089994371Z
+updated: 2026-04-30T07:23:04.151309494Z
 description: Implements ADR-036 for joy release commands.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-30T07:23:04.116824765Z
+  text: '[x] release ls: ReleaseListPayload {total, releases}. release show <V>: full Release object. release show (preview): {previous_version, closed_item_ids}. Bump/record/publish are write ops, out of scope for this read-only task. 2 BATS tests.'

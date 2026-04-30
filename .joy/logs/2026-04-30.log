@@ -77,3 +77,7 @@
 2026-04-30T07:20:27.387Z JOY-012D-F4 comment.added "[x] AiStatusPayload {check, tools[{name,id,installed,configured,stale}], has_issues}. Exit code 2 on stale --check is preserved. Covers both --check (read) and update (write) since both share the same flow. 2 BATS tests." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T07:20:27.397Z JOY-012D-F4 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T07:20:27.416Z JOY-012D-F4 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:23:04.109Z JOY-012E-B9 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:23:04.119Z JOY-012E-B9 comment.added "[x] release ls: ReleaseListPayload {total, releases}. release show <V>: full Release object. release show (preview): {previous_version, closed_item_ids}. Bump/record/publish are write ops, out of scope for this read-only task. 2 BATS tests." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:23:04.131Z JOY-012E-B9 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:23:04.154Z JOY-012E-B9 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
