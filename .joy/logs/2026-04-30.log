@@ -69,3 +69,7 @@
 2026-04-30T07:02:37.054Z JOY-012B-B5 comment.added "[x] joy config: ConfigPayload {effective, personal}. joy config get: {key, value}; unset key yields null instead of exit 1. Set is a write op (out of scope for this task). Moved set_mode() up in main.rs so config (early-return path) sees it. 3 BATS tests." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T07:02:37.063Z JOY-012B-B5 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-04-30T07:02:37.084Z JOY-012B-B5 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:03:44.104Z JOY-012C-47 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:03:44.113Z JOY-012C-47 comment.added "[x] AuthStatusPayload {authenticated, member, delegated_by, session_present, expires_in_seconds, auth_initialized}. Exit code is preserved (1 when not authenticated) so scripts can still gate on it. 2 BATS tests." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:03:44.121Z JOY-012C-47 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-04-30T07:03:44.139Z JOY-012C-47 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

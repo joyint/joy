@@ -620,7 +620,25 @@ fn run_status() -> Result<()> {
 
     if identity.authenticated {
         let project_id = session::project_id(&root)?;
-        if let Ok(Some(sess)) = session::load_session(&project_id, &identity.member) {
+        let session_loaded = session::load_session(&project_id, &identity.member)
+            .ok()
+            .flatten();
+        let expires_in_seconds = session_loaded
+            .as_ref()
+            .map(|s| (s.claims.expires - Utc::now()).num_seconds());
+
+        if crate::output::is_json() {
+            return crate::output::emit(AuthStatusPayload {
+                authenticated: true,
+                member: identity.member.clone(),
+                delegated_by: identity.delegated_by.clone(),
+                session_present: session_loaded.is_some(),
+                expires_in_seconds,
+                auth_initialized: true,
+            });
+        }
+
+        if let Some(sess) = session_loaded {
             let remaining = sess.claims.expires - Utc::now();
             let hours = remaining.num_hours();
             let minutes = remaining.num_minutes() % 60;
@@ -636,10 +654,22 @@ fn run_status() -> Result<()> {
             );
         }
     } else {
-        // Check if auth is initialized for this member
         let project = store::load_project(&root)?;
         let member = project.members.get(&identity.member);
         let has_auth = member.is_some_and(|m| m.verify_key.is_some());
+
+        if crate::output::is_json() {
+            crate::output::emit(AuthStatusPayload {
+                authenticated: false,
+                member: identity.member.clone(),
+                delegated_by: identity.delegated_by.clone(),
+                session_present: false,
+                expires_in_seconds: None,
+                auth_initialized: has_auth,
+            })?;
+            std::process::exit(1);
+        }
+
         if has_auth {
             println!(
                 "No active session for {}. Run `joy auth` to authenticate.",
@@ -649,13 +679,20 @@ fn run_status() -> Result<()> {
             println!("Authentication not initialized for {}.", identity.member);
             println!("Run `joy auth init` to set up.");
         }
-        // Exit non-zero so shell scripts can gate on authentication state
-        // (e.g. `if joy auth status; then ...`). The human-readable status
-        // is still printed above before the failure.
         std::process::exit(1);
     }
 
     Ok(())
+}
+
+#[derive(serde::Serialize)]
+struct AuthStatusPayload {
+    authenticated: bool,
+    member: String,
+    delegated_by: Option<String>,
+    session_present: bool,
+    expires_in_seconds: Option<i64>,
+    auth_initialized: bool,
 }
 
 /// `joy auth reset [member]` — reset authentication for yourself or another member.
