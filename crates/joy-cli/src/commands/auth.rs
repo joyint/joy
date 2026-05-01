@@ -1056,12 +1056,8 @@ fn run_token_add(
             (Some(pub_hex), None) => {
                 if let Some(salt_hex) = &existing_salt {
                     let salt = derive::Salt::from_hex(salt_hex)?;
-                    let seed = derive::derive_delegation_seed(
-                        &key,
-                        &salt,
-                        &project_id,
-                        &args.member,
-                    );
+                    let seed =
+                        derive::derive_delegation_seed(&key, &salt, &project_id, &args.member);
                     let kp = sign::IdentityKeypair::from_seed(&seed);
                     if kp.public_key().to_hex() != *pub_hex {
                         anyhow::bail!(

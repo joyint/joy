@@ -1851,11 +1851,7 @@ mod tests {
     #[test]
     fn existing_managed_block_entries_returns_empty_when_no_block() {
         let tmp = tempfile::tempdir().unwrap();
-        fs::write(
-            tmp.path().join(".gitignore"),
-            "*.log\nnode_modules/\n",
-        )
-        .unwrap();
+        fs::write(tmp.path().join(".gitignore"), "*.log\nnode_modules/\n").unwrap();
         assert!(existing_managed_block_entries(tmp.path()).is_empty());
     }
 
