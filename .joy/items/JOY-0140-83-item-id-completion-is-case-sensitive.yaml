@@ -1,7 +1,7 @@
 id: JOY-0140-83
 title: Item ID completion is case-sensitive on hex chunks
 type: bug
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -11,7 +11,7 @@ capabilities:
 effort: 1
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-01T16:47:16.647459Z
-updated: 2026-05-01T17:40:36.918070Z
+updated: 2026-05-01T17:51:42.254353Z
 description: |-
   Follow-up to JOY-0118-DD (released in v0.12.0). The completer accepts uppercase hex chunks but rejects lowercase ones: typing `13F<TAB>` completes to `JOY-013F-33`, but `13f<TAB>` does not.
 
@@ -24,3 +24,6 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-05-01T17:40:36.857956Z
   text: 'Plan: refactor matches_item_id into rewrite_candidate(id, prefix) -> Option<String>. On a case-insensitive match, return the canonical id with the matched substring overwritten by the user''s exact prefix. The candidate then contains the user''s typed casing as a substring, so zsh''s case-sensitive _describe accepts it. joy commands already resolve case-insensitively, so the rewritten candidate still maps to the right item.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-01T17:51:42.200846Z
+  text: Fixed in e23e816.

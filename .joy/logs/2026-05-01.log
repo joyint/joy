@@ -19,3 +19,5 @@
 2026-05-01T16:47:16.656Z JOY-0140-83 item.created "Item ID completion is case-sensitive on hex chunks" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-05-01T17:40:36.870Z JOY-0140-83 comment.added "Plan: refactor matches_item_id into rewrite_candidate(id, prefix) -> Option<String>. On a case-insensitive match, return the canonical id with the matched substring overwritten by the user's exact prefix. The candidate then contains the user's typed casing as a substring, so zsh's case-sensitive _describe accepts it. joy commands already resolve case-insensitively, so the rewritten candidate still maps to the right item." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-05-01T17:40:36.928Z JOY-0140-83 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-01T17:51:42.208Z JOY-0140-83 comment.added "Fixed in e23e816." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-01T17:51:42.261Z JOY-0140-83 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
