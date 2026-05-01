@@ -1,7 +1,7 @@
 id: JOY-013D-5B
 title: Make ai init auto-accept detected doc paths
 type: bug
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -11,7 +11,7 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-01T10:56:52.759548Z
-updated: 2026-05-01T11:01:34.248561Z
+updated: 2026-05-01T11:13:33.957738Z
 description: |-
   `joy ai init` shows inconsistent UX when checking documentation paths.
 
@@ -43,3 +43,17 @@ comments:
     4. In the `configured but missing on disk` branch (ai.rs:510): before offering to create a template at the configured path, run `suggested_doc_path` again. If an existing candidate is found, prompt to switch to it (Y/n) and update project.yaml. Only fall back to the existing template-creation flow when nothing is found.
 
     5. Net effect: prompts only appear when there is a real decision to make (nothing detected anywhere). Detection events are surfaced in the output instead of swallowed.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-01T11:13:33.904860Z
+  text: |-
+    Implemented in commit 1df5442.
+
+    Changes in `crates/joy-cli/src/commands/ai.rs`:
+
+    - [x] Introduced `DocPathSource` enum and `ResolvedDoc` struct so callers know whether a path came from a flag, project.yaml, auto-detection, or an interactive prompt.
+    - [x] `resolve_doc_path` now takes the first existing candidate silently as `AutoDetected` and only prompts when nothing is detected.
+    - [x] `check_docs` annotates auto-detected paths with `(auto-detected)` next to the checkmark and prints a one-line tip referencing `joy project set docs.<key> <path>` when at least one path was auto-detected.
+    - [x] `check_docs` validates configured paths: when the file is missing but a candidate exists at a different location, it offers `Switch to <suggestion>? [Y/n]` instead of creating a duplicate template at the stale path.
+    - [x] Updated existing unit tests for the new return type and added two regression tests: `auto_detects_existing_candidate_without_prompt` and `auto_detects_default_path_when_present`.
+
+    Verification: `cargo test --workspace --lib --features fast-kdf` (297 passed), `cargo test -p joy-cli --test cmd --features fast-kdf` (snapshots green), `cargo clippy -p joy-cli --all-targets -- -D warnings` clean.
