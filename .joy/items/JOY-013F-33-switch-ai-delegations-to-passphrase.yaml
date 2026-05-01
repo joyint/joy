@@ -10,7 +10,7 @@ capabilities:
 effort: 5
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-01T12:08:13.095471Z
-updated: 2026-05-01T15:16:51.465525Z
+updated: 2026-05-01T15:54:04.420413Z
 description: |-
   ADR-033 §1 made the per-(human, AI) delegation keypair *stable* but bound it to the local machine on which it was first generated. Working from a second machine on the same project breaks this assumption: the local private key file is missing, `joy auth token add` bails with "delegation state is inconsistent", and `joy ai rotate` is the only sanctioned recovery. Rotation rewrites `project.yaml` (new `delegation_verifier`, new `rotated:` timestamp) and invalidates the other machine in turn. Each machine-switch produces a `project.yaml` commit that has no architectural meaning -- it just records "today I worked on the other machine".
 
@@ -91,3 +91,6 @@ comments:
     - Documentation refresh in CLAUDE.md / ai_templates referencing the new mental model.
 
     Submitting for review rather than closing -- this is security-critical code and warrants explicit human ratification before being declared done.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-01T15:54:04.420413Z
+  text: 'Follow-up commit 3339087: self-heal of stale local cache. (Some, Some) mismatch now tries re-derivation from passphrase + salt before bailing -- one rotation propagates to all of a user''s machines transparently.'
