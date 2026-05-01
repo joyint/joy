@@ -1444,16 +1444,51 @@ const TOOL_GITIGNORE_ENTRIES: &[(&str, &[(&str, &str)])] = &[
 fn update_gitignore(root: &Path, configured_tools: &[&str]) -> anyhow::Result<()> {
     use joy_core::init::GITIGNORE_BASE_ENTRIES;
 
+    // Read the current managed block so we can preserve entries for AI tools
+    // that aren't installed on this machine but were registered on another.
+    // Without this, running `joy ai init` on a machine with fewer tools
+    // silently drops entries that were committed elsewhere.
+    let existing = existing_managed_block_entries(root);
+
     let mut entries: Vec<(&str, &str)> = GITIGNORE_BASE_ENTRIES.to_vec();
 
     for (tool_id, tool_entries) in TOOL_GITIGNORE_ENTRIES {
-        if configured_tools.contains(tool_id) {
+        let configured_now = configured_tools.contains(tool_id);
+        let previously_recorded = tool_entries
+            .iter()
+            .any(|(path, _)| existing.iter().any(|line| line == *path));
+        if configured_now || previously_recorded {
             entries.extend_from_slice(tool_entries);
         }
     }
 
     joy_core::init::update_gitignore_block(root, &entries)?;
     Ok(())
+}
+
+/// Read the lines currently inside the joy-managed `.gitignore` block.
+/// Returns an empty vec if `.gitignore` is missing or has no managed block.
+fn existing_managed_block_entries(root: &Path) -> Vec<String> {
+    use joy_core::init::{GITIGNORE_BLOCK_END, GITIGNORE_BLOCK_START};
+
+    let path = root.join(".gitignore");
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return Vec::new();
+    };
+    let Some(start) = content.find(GITIGNORE_BLOCK_START) else {
+        return Vec::new();
+    };
+    let after_start = start + GITIGNORE_BLOCK_START.len();
+    let Some(end_offset) = content[after_start..].find(GITIGNORE_BLOCK_END) else {
+        return Vec::new();
+    };
+    let block_body = &content[after_start..after_start + end_offset];
+    block_body
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(str::to_string)
+        .collect()
 }
 
 /// Scan subdirectories (max 2 levels) for nested Joy projects that lack AI tool config.
@@ -1694,6 +1729,140 @@ mod tests {
         fs::write(tmp.path().join("ARCHITECTURE.md"), "stub").unwrap();
         let suggestion = suggested_doc_path(tmp.path(), arch_spec());
         assert_eq!(suggestion, "ARCHITECTURE.md");
+    }
+
+    /// Helper: write a `.gitignore` file with a joy-managed block
+    /// containing the given path lines.
+    fn seed_gitignore(root: &Path, managed_paths: &[&str]) {
+        use joy_core::init::{GITIGNORE_BLOCK_END, GITIGNORE_BLOCK_START};
+        let mut body = String::from(GITIGNORE_BLOCK_START);
+        body.push('\n');
+        for p in managed_paths {
+            body.push_str(p);
+            body.push('\n');
+        }
+        body.push_str(GITIGNORE_BLOCK_END);
+        body.push('\n');
+        fs::write(root.join(".gitignore"), body).unwrap();
+    }
+
+    /// Read the joy-managed block lines from the given `.gitignore` file.
+    fn read_block_lines(root: &Path) -> Vec<String> {
+        existing_managed_block_entries(root)
+    }
+
+    #[test]
+    fn update_gitignore_preserves_other_tools_block_entries() {
+        // Drift scenario: existing block was committed from a machine with all
+        // four AI tools installed; current machine only has Claude. The block
+        // must keep the other tools' entries.
+        let tmp = tempfile::tempdir().unwrap();
+        seed_gitignore(
+            tmp.path(),
+            &[
+                ".joy/config.yaml",
+                ".joy/credentials.yaml",
+                ".joy/hooks/",
+                ".joy/project.defaults.yaml",
+                ".claude/",
+                ".qwen/",
+                ".vibe/",
+                "AGENTS.md",
+                ".github/copilot-instructions.md",
+                ".github/copilot/",
+                ".github/agents/",
+                ".github/prompts/",
+            ],
+        );
+
+        update_gitignore(tmp.path(), &["claude"]).unwrap();
+
+        let lines = read_block_lines(tmp.path());
+        assert!(lines.iter().any(|l| l == ".claude/"));
+        assert!(lines.iter().any(|l| l == ".qwen/"));
+        assert!(lines.iter().any(|l| l == ".vibe/"));
+        assert!(lines.iter().any(|l| l == "AGENTS.md"));
+        assert!(lines.iter().any(|l| l == ".github/copilot-instructions.md"));
+        assert!(lines.iter().any(|l| l == ".github/copilot/"));
+        assert!(lines.iter().any(|l| l == ".github/agents/"));
+        assert!(lines.iter().any(|l| l == ".github/prompts/"));
+    }
+
+    #[test]
+    fn update_gitignore_adds_newly_configured_tool() {
+        // Existing block has only Claude; init now sees Claude + Qwen
+        // configured. Both tools' entries must be present afterwards.
+        let tmp = tempfile::tempdir().unwrap();
+        seed_gitignore(
+            tmp.path(),
+            &[
+                ".joy/config.yaml",
+                ".joy/credentials.yaml",
+                ".joy/hooks/",
+                ".joy/project.defaults.yaml",
+                ".claude/",
+            ],
+        );
+
+        update_gitignore(tmp.path(), &["claude", "qwen"]).unwrap();
+
+        let lines = read_block_lines(tmp.path());
+        assert!(lines.iter().any(|l| l == ".claude/"));
+        assert!(lines.iter().any(|l| l == ".qwen/"));
+    }
+
+    #[test]
+    fn update_gitignore_does_not_resurrect_unrelated_lines() {
+        // Lines inside the block that don't correspond to a known tool entry
+        // must NOT be carried over -- the additive policy only preserves
+        // entries that Joy itself manages.
+        let tmp = tempfile::tempdir().unwrap();
+        seed_gitignore(
+            tmp.path(),
+            &[
+                ".joy/config.yaml",
+                ".joy/credentials.yaml",
+                ".joy/hooks/",
+                ".joy/project.defaults.yaml",
+                ".claude/",
+                "user-injected-line.txt",
+            ],
+        );
+
+        update_gitignore(tmp.path(), &["claude"]).unwrap();
+
+        let lines = read_block_lines(tmp.path());
+        assert!(lines.iter().any(|l| l == ".claude/"));
+        assert!(!lines.iter().any(|l| l == "user-injected-line.txt"));
+    }
+
+    #[test]
+    fn update_gitignore_creates_block_from_scratch_when_absent() {
+        // No existing `.gitignore`: init writes a fresh block with base
+        // entries plus configured tools. Nothing else.
+        let tmp = tempfile::tempdir().unwrap();
+        update_gitignore(tmp.path(), &["claude"]).unwrap();
+        let lines = read_block_lines(tmp.path());
+        assert!(lines.iter().any(|l| l == ".joy/credentials.yaml"));
+        assert!(lines.iter().any(|l| l == ".claude/"));
+        assert!(!lines.iter().any(|l| l == ".qwen/"));
+    }
+
+    #[test]
+    fn existing_managed_block_entries_returns_empty_when_no_block() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(
+            tmp.path().join(".gitignore"),
+            "*.log\nnode_modules/\n",
+        )
+        .unwrap();
+        assert!(existing_managed_block_entries(tmp.path()).is_empty());
+    }
+
+    #[test]
+    fn existing_managed_block_entries_returns_empty_when_no_gitignore() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(existing_managed_block_entries(tmp.path()).is_empty());
     }
 
     #[test]

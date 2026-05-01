@@ -1,0 +1,49 @@
+id: JOY-013E-BC
+title: Make ai init gitignore block additive only
+type: bug
+status: in-progress
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-01T11:48:40.769347Z
+updated: 2026-05-01T11:48:56.727728Z
+description: |-
+  `joy ai init` rewrites the joy-managed block in `.gitignore` based on the AI tools detected locally. On a machine with only some AI tools installed, this drops the gitignore entries for the others, even though they were committed to the block from another machine where those tools were installed.
+
+  Result: cross-machine drift. After running `joy ai init` on machine B (fewer tools), entries for the missing tools disappear from `.gitignore`. On machine A, files for those tools (e.g. `.qwen/`, `.github/copilot/`, `AGENTS.md`) suddenly appear as untracked and risk being committed.
+
+  Reproduction:
+  1. Machine A has claude, qwen, vibe, copilot installed. `joy ai init` writes a managed block with all four tool dirs.
+  2. Commit and push.
+  3. Pull on machine B, which only has claude installed. Run `joy ai init`.
+  4. The block is rewritten with claude only; qwen/vibe/copilot entries are gone.
+
+  Root cause is in `crates/joy-cli/src/commands/ai.rs`, `update_gitignore()` (around line 1444): it builds the entries list from `configured_tools` only and passes that to `update_gitignore_block()`, which replaces the entire block.
+
+  Constraint: the fix must be minimal. Do not introduce new project-level configuration, do not add init-time questions, and do not change the default ignore policy. Mixed setups (e.g. Claude managed by Joy, Copilot managed by another tool) must continue to work without surprises.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-01T11:48:53.834125Z
+  text: |-
+    Plan:
+
+    1. Add helper `existing_managed_block_entries(root) -> Vec<String>` in `crates/joy-cli/src/commands/ai.rs`. It reads `.gitignore`, locates the `### joy:start ... ### joy:end` markers and returns the non-empty trimmed lines between them. Returns empty vec if the file or block is missing.
+
+    2. Change `update_gitignore` in `ai.rs` to be additive:
+       - Build the base entries from `GITIGNORE_BASE_ENTRIES` plus entries for tools in `configured_tools` (as today).
+       - Read the existing block. For each tool in `TOOL_GITIGNORE_ENTRIES` not already added (i.e. not currently configured), include its entries if at least one of them appears in the existing block.
+       - Iteration order stays fixed (the TOOL_GITIGNORE_ENTRIES order), so the resulting block is deterministic.
+
+    3. The reset path (`joy ai reset` with no remaining tools, ai.rs:854) keeps the existing replace semantics so the user can still reset cleanly. The single-tool reset path already does not touch the gitignore.
+
+    4. New unit tests:
+       - `update_gitignore_preserves_other_tools_block_entries`: existing block has all four tools, init runs with claude only -> block keeps all four.
+       - `update_gitignore_adds_newly_configured_tool`: existing block has claude only, init runs with claude+qwen -> block has both.
+       - `update_gitignore_does_not_resurrect_unrelated_lines`: only well-known tool entries are preserved; foreign lines inside the block are not.
+
+    5. Net effect: drift between machines disappears; mixed setups are unaffected (Joy still only manages entries for tools it knows, and never invents new ones).
