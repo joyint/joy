@@ -213,10 +213,26 @@ fn resolve_token(flag: Option<&str>) -> Option<String> {
 }
 
 /// Read passphrase from flag or prompt interactively.
+///
+/// When no flag is given and stdin is not a terminal (piped, redirected
+/// from `/dev/null`, or otherwise non-interactive), refuse to prompt and
+/// surface a clear error. `rpassword` would otherwise reach for
+/// `/dev/tty` directly and block indefinitely on terminals where bats /
+/// other test harnesses redirected stdin but cannot intercept the
+/// controlling TTY.
 fn read_passphrase(flag: Option<&str>, prompt: &str) -> Result<String> {
+    use std::io::IsTerminal;
     match flag {
         Some(p) => Ok(p.to_string()),
-        None => Ok(rpassword::prompt_password(prompt)?),
+        None => {
+            if !std::io::stdin().is_terminal() {
+                anyhow::bail!(
+                    "passphrase required: stdin is not a terminal. \
+                     Pass --passphrase <value> for non-interactive use."
+                );
+            }
+            Ok(rpassword::prompt_password(prompt)?)
+        }
     }
 }
 
