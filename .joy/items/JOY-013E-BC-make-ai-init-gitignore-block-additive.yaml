@@ -1,7 +1,7 @@
 id: JOY-013E-BC
 title: Make ai init gitignore block additive only
 type: bug
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -11,7 +11,7 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-01T11:48:40.769347Z
-updated: 2026-05-01T11:48:56.727728Z
+updated: 2026-05-01T11:52:16.779614Z
 description: |-
   `joy ai init` rewrites the joy-managed block in `.gitignore` based on the AI tools detected locally. On a machine with only some AI tools installed, this drops the gitignore entries for the others, even though they were committed to the block from another machine where those tools were installed.
 
@@ -47,3 +47,24 @@ comments:
        - `update_gitignore_does_not_resurrect_unrelated_lines`: only well-known tool entries are preserved; foreign lines inside the block are not.
 
     5. Net effect: drift between machines disappears; mixed setups are unaffected (Joy still only manages entries for tools it knows, and never invents new ones).
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-01T11:52:16.728533Z
+  text: |-
+    Implemented in commit 5b4eb10.
+
+    Changes in `crates/joy-cli/src/commands/ai.rs`:
+
+    - [x] Added helper `existing_managed_block_entries(root)` that reads `.gitignore`, locates the joy:start/joy:end markers and returns the trimmed non-empty lines inside the block.
+    - [x] Reworked `update_gitignore` to be additive: it now iterates `TOOL_GITIGNORE_ENTRIES` and includes a tool's entries when either (a) the tool is currently configured locally, or (b) at least one of its entries is already present in the existing block. Iteration order is fixed, so the resulting block stays deterministic.
+    - [x] Reset path (`joy ai reset` with no remaining tools, ai.rs:854) is unchanged -- a full reset still resets the block to base entries.
+    - [x] Added unit tests:
+        - `update_gitignore_preserves_other_tools_block_entries`
+        - `update_gitignore_adds_newly_configured_tool`
+        - `update_gitignore_does_not_resurrect_unrelated_lines`
+        - `update_gitignore_creates_block_from_scratch_when_absent`
+        - `existing_managed_block_entries_returns_empty_when_no_block`
+        - `existing_managed_block_entries_returns_empty_when_no_gitignore`
+
+    Verification: `cargo test -p joy-cli` (ai module 23 passed), `cargo test --workspace --lib --features fast-kdf` (297 passed), `cargo clippy -p joy-cli --all-targets -- -D warnings` clean.
+
+    Note: the fix prevents future drift but does not recover entries that were already dropped from a working tree before this commit. To restore them on the affected machine, discard the unstaged `.gitignore` change (so the committed version with all tools is back) and re-run `joy ai init`.
