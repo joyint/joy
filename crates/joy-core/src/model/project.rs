@@ -131,14 +131,31 @@ impl AttestationSignedFields {
     }
 }
 
-/// A stable per-(human, AI) delegation key (ADR-033). The matching private
-/// key lives off-repo at
-/// `~/.local/state/joy/delegations/<project>/<ai-member>.key`.
+/// A stable per-(human, AI) delegation key.
+///
+/// Under ADR-037 the delegation seed is deterministically derived from the
+/// human's Argon2id-derived identity material (`derive_key(passphrase, kdf_nonce)`)
+/// plus the per-(human, AI) `delegation_salt` recorded here. Identical inputs
+/// on any of the human's machines yield the same Ed25519 keypair, so the same
+/// delegation is reachable from anywhere without per-machine state in
+/// `project.yaml`. The matching private seed is cached at
+/// `~/.local/state/joy/delegations/<project>/<ai-member>.key` (0600); a missing
+/// cache is regenerated transparently from passphrase + salt at next use.
+///
+/// Legacy entries (created under ADR-033 §1, before ADR-037) carry no
+/// `delegation_salt`. They keep working on the machine whose local cache holds
+/// the matching random seed; rotating under the new code populates the salt
+/// and unblocks every other machine going forward.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AiDelegationEntry {
     /// Public verifier of the stable delegation keypair (hex-encoded Ed25519).
     /// Used to verify the binding signature on delegation tokens.
     pub delegation_verifier: String,
+    /// 32-byte hex salt feeding HKDF-SHA256 over the human's identity material
+    /// (ADR-037). `None` for legacy entries created under ADR-033 §1; populated
+    /// by `joy ai rotate` and by every fresh delegation issued under ADR-037.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delegation_salt: Option<String>,
     /// When this delegation was first issued.
     pub created: chrono::DateTime<chrono::Utc>,
     /// When this delegation was last rotated, if ever.
@@ -430,6 +447,7 @@ mod tests {
             "ai:claude@joy".into(),
             AiDelegationEntry {
                 delegation_verifier: "cc".repeat(32),
+                delegation_salt: None,
                 created: chrono::DateTime::parse_from_rfc3339("2026-04-15T10:00:00Z")
                     .unwrap()
                     .with_timezone(&chrono::Utc),
@@ -440,6 +458,10 @@ mod tests {
         assert!(yaml.contains("ai_delegations:"));
         assert!(yaml.contains("ai:claude@joy:"));
         assert!(yaml.contains("delegation_verifier:"));
+        assert!(
+            !yaml.contains("delegation_salt:"),
+            "unset delegation_salt should be skipped (legacy entry)"
+        );
         assert!(
             !yaml.contains("rotated:"),
             "unset rotated should be skipped"
@@ -462,6 +484,7 @@ mod tests {
             "ai:claude@joy".into(),
             AiDelegationEntry {
                 delegation_verifier: "dd".repeat(32),
+                delegation_salt: None,
                 created,
                 rotated: Some(rotated),
             },

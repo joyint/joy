@@ -5,9 +5,15 @@
 //!
 //! Produces 32 bytes of key material suitable for Ed25519 seed generation.
 //! Parameters match Bitwarden defaults: 64 MiB memory, 3 iterations, 4 lanes.
+//!
+//! ADR-037 adds a second derivation: HKDF-SHA256 over the human's identity
+//! material plus a per-(human, AI) salt yields the deterministic delegation
+//! seed used for Ed25519 delegation keypairs. See `derive_delegation_seed`.
 
 use argon2::{Algorithm, Argon2, Params, Version};
+use hkdf::Hkdf;
 use rand::RngCore;
+use sha2::Sha256;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::error::JoyError;
@@ -70,6 +76,41 @@ pub fn derive_key(passphrase: &str, salt: &Salt) -> Result<DerivedKey, JoyError>
         .map_err(|e| JoyError::AuthFailed(format!("key derivation failed: {e}")))?;
 
     Ok(DerivedKey(output))
+}
+
+/// Derive a 32-byte Ed25519 seed for a per-(human, AI) delegation key from
+/// the human's Argon2id-derived identity material plus a per-(human, AI)
+/// salt (ADR-037).
+///
+/// Inputs:
+///   - `identity_key`: the 32-byte Argon2id output for the human (already in
+///     hand from `derive_key(passphrase, kdf_nonce)`).
+///   - `salt`: the per-(human, AI) `delegation_salt` recorded in
+///     `project.yaml`.
+///   - `project_id`: the canonical project id (acronym today).
+///   - `ai_member_id`: the AI member id, e.g. `ai:claude@joy`.
+///
+/// Output: 32 bytes suitable for `IdentityKeypair::from_seed`.
+///
+/// HKDF-SHA256 is used in Extract-and-Expand form. The `info` parameter
+/// embeds project and member ids so the same `(identity_key, salt)` cannot
+/// be replayed across (project, AI) pairs.
+pub fn derive_delegation_seed(
+    identity_key: &DerivedKey,
+    salt: &Salt,
+    project_id: &str,
+    ai_member_id: &str,
+) -> [u8; 32] {
+    let hk = Hkdf::<Sha256>::new(Some(salt.as_bytes()), identity_key.as_bytes());
+    let mut info = Vec::with_capacity(16 + project_id.len() + 1 + ai_member_id.len());
+    info.extend_from_slice(b"joy-delegation:");
+    info.extend_from_slice(project_id.as_bytes());
+    info.push(b':');
+    info.extend_from_slice(ai_member_id.as_bytes());
+    let mut out = [0u8; 32];
+    hk.expand(&info, &mut out)
+        .expect("HKDF-SHA256 expand to 32 bytes never fails");
+    out
 }
 
 /// Validate that a passphrase has at least 6 whitespace-separated words.
@@ -145,5 +186,60 @@ mod tests {
     fn passphrase_valid() {
         assert!(validate_passphrase("one two three four five six").is_ok());
         assert!(validate_passphrase("a b c d e f g h").is_ok());
+    }
+
+    /// Helper that mints a deterministic identity key from a fixed salt so
+    /// delegation-seed tests do not depend on Argon2id parameters.
+    fn fixed_identity_key() -> DerivedKey {
+        let bytes = Zeroizing::new([7u8; 32]);
+        DerivedKey(bytes)
+    }
+
+    #[test]
+    fn delegation_seed_is_deterministic() {
+        let salt = generate_salt();
+        let id = fixed_identity_key();
+        let s1 = derive_delegation_seed(&id, &salt, "JOY", "ai:claude@joy");
+        let s2 = derive_delegation_seed(&id, &salt, "JOY", "ai:claude@joy");
+        assert_eq!(s1, s2);
+    }
+
+    #[test]
+    fn delegation_seed_changes_with_salt() {
+        let id = fixed_identity_key();
+        let s1 = derive_delegation_seed(&id, &generate_salt(), "JOY", "ai:claude@joy");
+        let s2 = derive_delegation_seed(&id, &generate_salt(), "JOY", "ai:claude@joy");
+        assert_ne!(s1, s2);
+    }
+
+    #[test]
+    fn delegation_seed_is_domain_separated_by_project() {
+        let salt = generate_salt();
+        let id = fixed_identity_key();
+        let s1 = derive_delegation_seed(&id, &salt, "JOY", "ai:claude@joy");
+        let s2 = derive_delegation_seed(&id, &salt, "OTHER", "ai:claude@joy");
+        assert_ne!(s1, s2);
+    }
+
+    #[test]
+    fn delegation_seed_is_domain_separated_by_member() {
+        let salt = generate_salt();
+        let id = fixed_identity_key();
+        let s1 = derive_delegation_seed(&id, &salt, "JOY", "ai:claude@joy");
+        let s2 = derive_delegation_seed(&id, &salt, "JOY", "ai:qwen@joy");
+        assert_ne!(s1, s2);
+    }
+
+    #[test]
+    fn delegation_seed_changes_with_identity_key() {
+        let salt = generate_salt();
+        let id_a = fixed_identity_key();
+        let id_b = {
+            let bytes = Zeroizing::new([8u8; 32]);
+            DerivedKey(bytes)
+        };
+        let s1 = derive_delegation_seed(&id_a, &salt, "JOY", "ai:claude@joy");
+        let s2 = derive_delegation_seed(&id_b, &salt, "JOY", "ai:claude@joy");
+        assert_ne!(s1, s2);
     }
 }

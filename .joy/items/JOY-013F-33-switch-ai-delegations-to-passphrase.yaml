@@ -1,14 +1,16 @@
 id: JOY-013F-33
 title: Switch AI delegations to passphrase-derived keys
 type: decision
-status: new
+status: in-progress
 priority: high
+assignees:
+- member: ai:claude@joy
 capabilities:
 - conceive
 effort: 5
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-01T12:08:13.095471Z
-updated: 2026-05-01T12:08:13.095471Z
+updated: 2026-05-01T15:05:02.866152Z
 description: |-
   ADR-033 §1 made the per-(human, AI) delegation keypair *stable* but bound it to the local machine on which it was first generated. Working from a second machine on the same project breaks this assumption: the local private key file is missing, `joy auth token add` bails with "delegation state is inconsistent", and `joy ai rotate` is the only sanctioned recovery. Rotation rewrites `project.yaml` (new `delegation_verifier`, new `rotated:` timestamp) and invalidates the other machine in turn. Each machine-switch produces a `project.yaml` commit that has no architectural meaning -- it just records "today I worked on the other machine".
 
@@ -24,3 +26,44 @@ description: |-
   - ADR-037 ratified and merged in the umbrella repo.
   - A follow-up implementation epic links back to this decision and ADR-037.
   - No code change in this item; implementation proceeds under the follow-up epic.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-01T15:05:02.753036Z
+  text: |-
+    Implementation plan (under this item; closing requires ADR-037 ratification + this work landing):
+
+    Step 1 -- Schema (`crates/joy-core/src/model/project.rs`)
+    - Add `delegation_salt: Option<String>` to `AiDelegationEntry` with `#[serde(default, skip_serializing_if = "Option::is_none")]`. Backward-compatible per ADR-035.
+
+    Step 2 -- HKDF helper (`crates/joy-core/src/auth/derive.rs`)
+    - Add `hkdf` crate to joy-core deps.
+    - Add `pub fn derive_delegation_seed(identity_key: &DerivedKey, salt: &Salt, project_id: &str, ai_member_id: &str) -> [u8; 32]`. Uses HKDF-SHA256 with `info = "joy-delegation:" || project_id || ":" || ai_member_id` per ADR-037.
+    - Tests: deterministic, per-(salt, project, member) domain separation.
+
+    Step 3 -- Bootstrap path (`crates/joy-cli/src/commands/auth.rs::token_add`)
+    - Match arm `(None, None)`: generate fresh `delegation_salt`, derive seed via HKDF, save to local cache, write `project.yaml` entry with both `delegation_verifier` and `delegation_salt`.
+    - Match arm `(Some, None)` with `delegation_salt` present: derive seed locally from passphrase + salt + info, save to cache, NO `project.yaml` write. New code path -- the multi-machine ergonomic.
+    - Match arm `(Some, None)` without `delegation_salt` (legacy entry): keep existing bail with rotate suggestion. Rotation now writes the salt and unblocks future machines.
+    - Match arm `(Some, Some)`: unchanged fast path.
+    - Match arm `(None, Some)`: unchanged orphan-cache bail.
+
+    Step 4 -- Rotate (`crates/joy-cli/src/commands/auth.rs::run_ai_rotate`)
+    - Replace random keypair generation with: fresh salt, HKDF-derived seed.
+    - Update `delegation_verifier` AND `delegation_salt` AND `rotated:` in a single `project.yaml` write.
+    - Save derived seed locally.
+
+    Step 5 -- Tests
+    - Unit tests for HKDF derivation (deterministic, domain-separated).
+    - Bootstrap test: fresh delegation produces salt + verifier consistent with derivation.
+    - Multi-machine test: with salt set in yaml and no local cache, derive-and-cache works without yaml write.
+    - Rotate test: salt changes, verifier changes, local cache replaced.
+
+    Step 6 -- Migration story
+    - No automatic migration code in this pass. Existing entries without `delegation_salt` keep working on the machine that has the cached private key (Some, Some) -- the fast path is salt-agnostic. They only show their age when the user tries to use the delegation on a second machine, and the bail message instructs `joy ai rotate`. Rotation under the new code writes the salt and unblocks all future machines.
+    - Phase 2 (separate item): explicit `joy ai migrate-delegations` for batch migration.
+
+    Out of scope for this pass:
+    - `joy ai migrate-delegations` command.
+    - Auth.md update.
+
+    Rollout: implementation lands as a single PR; users on stale binaries continue to work normally (legacy entries verify against legacy verifiers); users on new binaries pick up the multi-machine ergonomic on next rotate or on first use of a project bootstrapped under the new code.
