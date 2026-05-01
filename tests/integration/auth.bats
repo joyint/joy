@@ -659,20 +659,39 @@ YAML
     [ "$status" -ne 0 ]
 }
 
-@test "joy ai rotate recovers when local private key is missing" {
+@test "joy auth token add self-heals when local private key is missing (ADR-037)" {
     joy init --name "Rotate Test" --acronym RT
     joy auth init --passphrase "$TEST_PASSPHRASE"
     joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
     joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" >/dev/null
-    # Simulate the (Some pub, None priv) desync: remove the local key.
+    # Simulate the multi-machine bootstrap: delete the local key so the
+    # (Some pub, None priv) branch with a delegation_salt fires.
     rm "$XDG_STATE_HOME/joy/delegations/RT/ai_test_joy.key"
 
-    # Without rotate, token add bails out with the desync message.
+    # Under ADR-037 the entry carries delegation_salt, so token add
+    # re-derives the seed from passphrase + salt without rotating.
+    run joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    [ -f "$XDG_STATE_HOME/joy/delegations/RT/ai_test_joy.key" ]
+}
+
+@test "joy auth token add bails on legacy delegation without salt" {
+    joy init --name "Rotate Test" --acronym RT
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" >/dev/null
+    # Simulate an ADR-033 §1 legacy entry by stripping delegation_salt
+    # from project.yaml, then drop the local cache.
+    sed_inplace '/^        delegation_salt:/d' .joy/project.yaml
+    rm "$XDG_STATE_HOME/joy/delegations/RT/ai_test_joy.key"
+
     run joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE"
     [ "$status" -ne 0 ]
     [[ "$output" == *"missing on this machine"* ]]
+    [[ "$output" == *"joy ai rotate"* ]]
 
-    # Rotate re-establishes both sides.
+    # Rotation under ADR-037 writes a fresh salt and unblocks subsequent
+    # machines; here we just verify it leaves the local state usable.
     run joy ai rotate ai:test@joy --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
     [ -f "$XDG_STATE_HOME/joy/delegations/RT/ai_test_joy.key" ]

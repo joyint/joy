@@ -10,7 +10,7 @@ load setup
     rm -rf "$XDG_STATE_HOME/joy/sessions"
 
     # Create a session inside a separate PTY with a TTY device.
-    script -qc "joy auth --passphrase '$TEST_PASSPHRASE'" /dev/null >/dev/null 2>&1
+    pty_run "joy auth --passphrase '$TEST_PASSPHRASE'" >/dev/null 2>&1
 
     # Outside that PTY: joy auth status correctly reports no active session.
     run joy auth status

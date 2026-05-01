@@ -74,3 +74,27 @@ switch_to_human() {
 switch_to_ai() {
     export JOY_SESSION="$SAVED_JOY_SESSION"
 }
+
+# Portable in-place sed. Args: <expr> <file...>. Works on BSD (macOS)
+# and GNU because both accept `-i.bak`; the resulting `.bak` files are
+# cleaned up afterwards.
+sed_inplace() {
+    local expr="$1"
+    shift
+    sed -i.bak "$expr" "$@"
+    local f
+    for f in "$@"; do
+        rm -f "${f}.bak"
+    done
+}
+
+# Run a shell command inside a real PTY, portably across BSD (macOS)
+# and util-linux `script` flavours.
+pty_run() {
+    local cmd="$1"
+    if script --version 2>&1 | grep -q util-linux; then
+        script -qc "$cmd" /dev/null
+    else
+        script -q /dev/null sh -c "$cmd"
+    fi
+}

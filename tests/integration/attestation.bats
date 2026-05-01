@@ -230,7 +230,14 @@ become_member() {
     # Simulate a manual yaml edit: insert eve as a member without
     # attestation, without going through 'joy project member add'.
     # Inserted just before the top-level 'created:' line so yaml stays valid.
-    sed -i '/^created:/i\  eve@attacker.com:\n    capabilities:\n      manage: {}' .joy/project.yaml
+    # awk for BSD/GNU portability: insert eve before the top-level created: line.
+    awk '/^created:/ && !done {
+        print "  eve@attacker.com:";
+        print "    capabilities:";
+        print "      manage: {}";
+        done = 1
+    } { print }' .joy/project.yaml > .joy/project.yaml.tmp \
+        && mv .joy/project.yaml.tmp .joy/project.yaml
 
     become_member eve@attacker.com
     # Eve tries to bootstrap her auth (joy auth init sets her verify_key)

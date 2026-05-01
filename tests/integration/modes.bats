@@ -101,7 +101,17 @@ EOF
 
     # Set max-mode on the member's implement capability
     # We need to manually edit project.yaml for this
-    sed -i 's/implement: {}/implement:\n        max-mode: interactive/' .joy/project.yaml
+    # awk for BSD/GNU portability: replace the single-line implement entry
+    # with a block that adds a max-mode override.
+    awk '
+        /^      implement: \{\}/ {
+            print "      implement:";
+            print "        max-mode: interactive";
+            next
+        }
+        { print }
+    ' .joy/project.yaml > .joy/project.yaml.tmp \
+        && mv .joy/project.yaml.tmp .joy/project.yaml
 
     run joy project member show ai:test@joy
     [ "$status" -eq 0 ]
@@ -115,8 +125,11 @@ EOF
     joy add task "Test task"
     ITEM_ID=$(joy ls 2>/dev/null | grep "Test task" | awk '{print $1}')
 
-    # Add mode field to item YAML
-    sed -i '/^status:/a mode: pairing' ".joy/items/${ITEM_ID}-"*.yaml
+    # Add mode field to item YAML (awk for BSD/GNU portability).
+    for f in ".joy/items/${ITEM_ID}-"*.yaml; do
+        awk '/^status:/ { print; print "mode: pairing"; next } { print }' "$f" > "${f}.tmp" \
+            && mv "${f}.tmp" "$f"
+    done
 
     run joy show "$ITEM_ID"
     [ "$status" -eq 0 ]

@@ -175,7 +175,7 @@ load setup
     # Expire the session by patching the file
     SESSION_FILE=$(find "$XDG_STATE_HOME/joy/sessions" -name "*.json" -newer .joy/project.yaml | head -1)
     if [ -n "$SESSION_FILE" ]; then
-        sed -i 's/"expires": *"[^"]*"/"expires": "2020-01-01T00:00:00Z"/' "$SESSION_FILE"
+        sed_inplace 's/"expires": *"[^"]*"/"expires": "2020-01-01T00:00:00Z"/' "$SESSION_FILE"
         # Expired session should not authenticate as AI
         run joy comment "$ITEM_ID" "Should not be AI"
         # Falls back to human (who is authenticated), so succeeds but not as AI
@@ -194,7 +194,7 @@ load setup
     joy add task "TTY isolation test"
     ITEM_ID=$(joy ls 2>/dev/null | grep "TTY isolation" | awk '{print $1}')
     # Re-authenticate human inside a PTY (session gets a real TTY)
-    script -qc "joy auth --passphrase '$TEST_PASSPHRASE'" /dev/null
+    pty_run "joy auth --passphrase '$TEST_PASSPHRASE'"
     # Outside the PTY, human session TTY does not match -> unauthenticated
     run joy comment "$ITEM_ID" "Should fail"
     [ "$status" -ne 0 ]
