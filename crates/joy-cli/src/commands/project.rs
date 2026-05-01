@@ -728,10 +728,7 @@ pub(crate) fn derive_acting_keypair(
     })?;
     let public_key = sign::PublicKey::from_hex(public_key_hex)?;
     let salt = derive::Salt::from_hex(salt_hex)?;
-    let passphrase = match passphrase_flag {
-        Some(p) => p.to_string(),
-        None => rpassword::prompt_password("Passphrase: ")?,
-    };
+    let passphrase = crate::commands::auth::read_passphrase(passphrase_flag, "Passphrase: ")?;
     let key = derive::derive_key(&passphrase, &salt)?;
     let keypair = sign::IdentityKeypair::from_derived_key(&key);
     if keypair.public_key() != public_key {

@@ -220,7 +220,10 @@ fn resolve_token(flag: Option<&str>) -> Option<String> {
 /// `/dev/tty` directly and block indefinitely on terminals where bats /
 /// other test harnesses redirected stdin but cannot intercept the
 /// controlling TTY.
-fn read_passphrase(flag: Option<&str>, prompt: &str) -> Result<String> {
+///
+/// `pub(crate)` so other commands (e.g. `derive_acting_keypair` in the
+/// project module) share the same non-interactive-detection rule.
+pub(crate) fn read_passphrase(flag: Option<&str>, prompt: &str) -> Result<String> {
     use std::io::IsTerminal;
     match flag {
         Some(p) => Ok(p.to_string()),
