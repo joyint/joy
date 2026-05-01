@@ -1010,16 +1010,40 @@ fn run_token_add(
         match (&existing_public, &existing_private) {
             (Some(pub_hex), Some(seed)) => {
                 let kp = sign::IdentityKeypair::from_seed(seed);
-                if kp.public_key().to_hex() != *pub_hex {
+                if kp.public_key().to_hex() == *pub_hex {
+                    (kp, None)
+                } else if let Some(salt_hex) = &existing_salt {
+                    // Cache stale (typically: another machine rotated under
+                    // ADR-037). Try re-deriving from passphrase + salt before
+                    // bailing -- if the result matches the recorded verifier,
+                    // overwrite the stale cache and continue without forcing
+                    // another rotation.
+                    let salt = derive::Salt::from_hex(salt_hex)?;
+                    let new_seed =
+                        derive::derive_delegation_seed(&key, &salt, &project_id, &args.member);
+                    let derived_kp = sign::IdentityKeypair::from_seed(&new_seed);
+                    if derived_kp.public_key().to_hex() == *pub_hex {
+                        delegation::save_delegation_key(&project_id, &args.member, &new_seed)?;
+                        (derived_kp, None)
+                    } else {
+                        anyhow::bail!(
+                            "Delegation state for {m} is inconsistent: neither the local private \
+                             key nor a passphrase-derived candidate match the public key recorded \
+                             in project.yaml. Run `joy ai rotate {m}` to replace the keypair with \
+                             a fresh one. Any prior tokens are invalidated.",
+                            m = args.member
+                        );
+                    }
+                } else {
                     anyhow::bail!(
                         "Delegation state for {m} is inconsistent: the local private key does not \
-                         match the public key recorded in project.yaml. \
+                         match the public key recorded in project.yaml, and the entry has no \
+                         delegation_salt to re-derive from (legacy ADR-033 §1 entry). \
                          Run `joy ai rotate {m}` to replace the keypair with a fresh one. \
                          Any prior tokens are invalidated.",
                         m = args.member
                     );
                 }
-                (kp, None)
             }
             (None, None) => {
                 let new_salt = derive::generate_salt();
