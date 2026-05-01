@@ -1,0 +1,15 @@
+version: v0.13.1
+date: 2026-05-01
+previous: v0.13.0
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 15
+  items: 3
+items:
+  bugs:
+  - id: JOY-013D-5B
+    title: Make ai init auto-accept detected doc paths
+  - id: JOY-013E-BC
+    title: Make ai init gitignore block additive only
+  - id: JOY-0140-83
+    title: Item ID completion is case-sensitive on hex chunks
