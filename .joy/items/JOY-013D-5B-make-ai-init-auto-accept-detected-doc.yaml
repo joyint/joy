@@ -1,0 +1,45 @@
+id: JOY-013D-5B
+title: Make ai init auto-accept detected doc paths
+type: bug
+status: in-progress
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-01T10:56:52.759548Z
+updated: 2026-05-01T11:01:34.248561Z
+description: |-
+  `joy ai init` shows inconsistent UX when checking documentation paths.
+
+  Repro: in a project that already has CONTRIBUTING.md at the root, where `docs.vision` and `docs.architecture` are configured (e.g. to non-default paths under docs/dev/), but `docs.contributing` is not yet stored in project.yaml, run `joy ai init`:
+
+      Documentation
+      -------------
+        ✔ docs/dev/README.md
+        ✔ docs/dev/arch/README.md
+          Contributing doc path [CONTRIBUTING.md]:
+
+  The first two are confirmed silently as found, but contributing — although the suggested default also exists on disk — still triggers an interactive prompt. From the user's perspective the behaviour is asymmetric: equally present files are treated differently.
+
+  Root cause is in `resolve_doc_path` (crates/joy-cli/src/commands/ai.rs:568): the prompt is skipped only when a value is already configured in project.yaml, not when an existing candidate is auto-detected. The asymmetry is therefore an artefact of persistence state, not of file detection.
+
+  A second, related gap: when a configured doc path no longer points to an existing file, `check_docs` (ai.rs:507) offers to create a new template at the configured path even if the actual file is sitting at one of the standard candidate locations. This silently produces duplicate or misplaced docs.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-01T10:56:58.146529Z
+  text: |-
+    Plan:
+
+    1. In `resolve_doc_path` (crates/joy-cli/src/commands/ai.rs:568): when `configured.is_none()` and `suggested_doc_path` returns an existing candidate, take it silently without prompting and persist it in project.yaml (only if it differs from the built-in default).
+
+    2. In `check_docs` output (ai.rs:507-509): annotate freshly auto-detected paths so the user can see they were just picked up, e.g. `✔ CONTRIBUTING.md (auto-detected)`.
+
+    3. After the loop, if any path was newly persisted, print a one-line hint: change paths with `joy project set docs.<key> <path>`.
+
+    4. In the `configured but missing on disk` branch (ai.rs:510): before offering to create a template at the configured path, run `suggested_doc_path` again. If an existing candidate is found, prompt to switch to it (Y/n) and update project.yaml. Only fall back to the existing template-creation flow when nothing is found.
+
+    5. Net effect: prompts only appear when there is a real decision to make (nothing detected anywhere). Detection events are surfaced in the output instead of swallowed.

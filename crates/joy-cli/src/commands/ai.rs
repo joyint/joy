@@ -462,6 +462,25 @@ const DOC_SPECS: &[DocSpec] = &[
     },
 ];
 
+/// How a resolved doc path was obtained. Drives the output annotation and the
+/// "tip" hint at the end of `check_docs`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DocPathSource {
+    /// Provided via `--vision` / `--architecture` / `--contributing` flag.
+    Flag,
+    /// Already stored in `project.yaml` under `docs.*`.
+    Configured,
+    /// Discovered on disk by scanning `spec.candidates`.
+    AutoDetected,
+    /// User answered an interactive prompt because nothing was detected.
+    Prompted,
+}
+
+struct ResolvedDoc {
+    path: String,
+    source: DocPathSource,
+}
+
 fn check_docs(root: &Path, args: &InitArgs) -> anyhow::Result<()> {
     use joy_core::model::Project;
 
@@ -471,6 +490,7 @@ fn check_docs(root: &Path, args: &InitArgs) -> anyhow::Result<()> {
     let mut project: Project = joy_core::store::read_yaml(&project_path)?;
     let mut project_changed = false;
     let mut all_found = true;
+    let mut any_auto_detected = false;
 
     for spec in DOC_SPECS {
         let configured = match spec.key {
@@ -486,7 +506,38 @@ fn check_docs(root: &Path, args: &InitArgs) -> anyhow::Result<()> {
             _ => unreachable!(),
         };
 
-        let chosen = resolve_doc_path(root, spec, configured.as_deref(), flag_override.as_deref())?;
+        let mut resolved =
+            resolve_doc_path(root, spec, configured.as_deref(), flag_override.as_deref())?;
+
+        // If the configured path no longer points to a file but a candidate
+        // location does, offer to switch instead of creating a duplicate
+        // template at the stale path.
+        if resolved.source == DocPathSource::Configured && !root.join(&resolved.path).is_file() {
+            let suggestion = suggested_doc_path(root, spec);
+            if suggestion != resolved.path && root.join(suggestion).is_file() {
+                dprintln!(
+                    "  {}{}",
+                    color::warn_mark(),
+                    color::warning(&format!(
+                        "configured {} not found, but {} exists",
+                        resolved.path, suggestion
+                    ))
+                );
+                dprint!("    Switch to {}? [Y/n] ", suggestion);
+                std::io::stdout().flush()?;
+                let mut input = String::new();
+                std::io::stdin().read_line(&mut input)?;
+                let trimmed = input.trim();
+                if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("y") {
+                    resolved = ResolvedDoc {
+                        path: suggestion.to_string(),
+                        source: DocPathSource::AutoDetected,
+                    };
+                }
+            }
+        }
+
+        let chosen = resolved.path.clone();
 
         // Persist non-default choices so AI tools and future runs see them.
         let to_store = if chosen == spec.default_path {
@@ -504,9 +555,22 @@ fn check_docs(root: &Path, args: &InitArgs) -> anyhow::Result<()> {
             project_changed = true;
         }
 
+        if resolved.source == DocPathSource::AutoDetected {
+            any_auto_detected = true;
+        }
+
         let full = root.join(&chosen);
         if full.is_file() {
-            dprintln!("  {}{}", color::check_mark(), chosen);
+            if resolved.source == DocPathSource::AutoDetected {
+                dprintln!(
+                    "  {}{} {}",
+                    color::check_mark(),
+                    chosen,
+                    color::inactive("(auto-detected)")
+                );
+            } else {
+                dprintln!("  {}{}", color::check_mark(), chosen);
+            }
         } else {
             dprintln!("  {}{}", color::cross_mark(), color::warning(&chosen));
             let name = chosen.rsplit('/').next().unwrap_or(&chosen);
@@ -538,6 +602,13 @@ fn check_docs(root: &Path, args: &InitArgs) -> anyhow::Result<()> {
         joy_core::store::write_yaml_preserve(&project_path, &project)?;
     }
 
+    if any_auto_detected {
+        dprintln!(
+            "\n  {}",
+            color::inactive("Tip: change doc paths with `joy project set docs.<key> <path>`")
+        );
+    }
+
     if !all_found {
         dprintln!(
             "\n  {}Your AI tool will offer to fill in empty templates on first use.",
@@ -563,35 +634,53 @@ fn suggested_doc_path<'a>(root: &Path, spec: &'a DocSpec) -> &'a str {
 ///
 /// Precedence:
 /// 1. Flag value passed to `joy ai init` (non-interactive).
-/// 2. Path already stored in `project.docs` (no prompt unless missing on disk).
-/// 3. Interactive prompt with a suggestion (first existing candidate, else default).
+/// 2. Path already stored in `project.docs` (no prompt).
+/// 3. Auto-detection: first existing candidate file (no prompt).
+/// 4. Interactive prompt, defaulting to the built-in default path.
 fn resolve_doc_path(
     root: &Path,
     spec: &DocSpec,
     configured: Option<&str>,
     flag: Option<&str>,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<ResolvedDoc> {
     if let Some(flag_value) = flag {
         let trimmed = flag_value.trim();
         if !trimmed.is_empty() {
-            return Ok(trimmed.to_string());
+            return Ok(ResolvedDoc {
+                path: trimmed.to_string(),
+                source: DocPathSource::Flag,
+            });
         }
     }
     if let Some(value) = configured {
-        return Ok(value.to_string());
+        return Ok(ResolvedDoc {
+            path: value.to_string(),
+            source: DocPathSource::Configured,
+        });
     }
 
     let suggestion = suggested_doc_path(root, spec);
+    if root.join(suggestion).is_file() {
+        return Ok(ResolvedDoc {
+            path: suggestion.to_string(),
+            source: DocPathSource::AutoDetected,
+        });
+    }
+
     dprint!("    {} doc path [{}]: ", spec.label, suggestion);
     std::io::stdout().flush()?;
     let mut input = String::new();
     std::io::stdin().read_line(&mut input)?;
     let trimmed = input.trim();
-    if trimmed.is_empty() {
-        Ok(suggestion.to_string())
+    let path = if trimmed.is_empty() {
+        suggestion.to_string()
     } else {
-        Ok(trimmed.to_string())
-    }
+        trimmed.to_string()
+    };
+    Ok(ResolvedDoc {
+        path,
+        source: DocPathSource::Prompted,
+    })
 }
 
 fn reset(args: ResetArgs) -> anyhow::Result<()> {
@@ -1509,7 +1598,8 @@ mod tests {
             Some("docs/from-flag.md"),
         )
         .unwrap();
-        assert_eq!(result, "docs/from-flag.md");
+        assert_eq!(result.path, "docs/from-flag.md");
+        assert_eq!(result.source, DocPathSource::Flag);
     }
 
     #[test]
@@ -1522,7 +1612,8 @@ mod tests {
             Some("  docs/with-spaces.md  "),
         )
         .unwrap();
-        assert_eq!(result, "docs/with-spaces.md");
+        assert_eq!(result.path, "docs/with-spaces.md");
+        assert_eq!(result.source, DocPathSource::Flag);
     }
 
     #[test]
@@ -1530,7 +1621,8 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let result =
             resolve_doc_path(tmp.path(), arch_spec(), Some("ARCHITECTURE.md"), None).unwrap();
-        assert_eq!(result, "ARCHITECTURE.md");
+        assert_eq!(result.path, "ARCHITECTURE.md");
+        assert_eq!(result.source, DocPathSource::Configured);
     }
 
     #[test]
@@ -1543,7 +1635,33 @@ mod tests {
             Some("   "),
         )
         .unwrap();
-        assert_eq!(result, "ARCHITECTURE.md");
+        assert_eq!(result.path, "ARCHITECTURE.md");
+        assert_eq!(result.source, DocPathSource::Configured);
+    }
+
+    #[test]
+    fn auto_detects_existing_candidate_without_prompt() {
+        // Nothing configured, no flag, but a candidate exists on disk:
+        // resolve_doc_path must take it silently rather than prompting.
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join("ARCHITECTURE.md"), "stub").unwrap();
+        let result = resolve_doc_path(tmp.path(), arch_spec(), None, None).unwrap();
+        assert_eq!(result.path, "ARCHITECTURE.md");
+        assert_eq!(result.source, DocPathSource::AutoDetected);
+    }
+
+    #[test]
+    fn auto_detects_default_path_when_present() {
+        // The built-in default is itself a candidate -- if the file exists at
+        // the default location, that should also be auto-detected silently.
+        let tmp = tempfile::tempdir().unwrap();
+        let default_path = joy_core::model::project::Docs::DEFAULT_ARCHITECTURE;
+        let full = tmp.path().join(default_path);
+        fs::create_dir_all(full.parent().unwrap()).unwrap();
+        fs::write(&full, "stub").unwrap();
+        let result = resolve_doc_path(tmp.path(), arch_spec(), None, None).unwrap();
+        assert_eq!(result.path, default_path);
+        assert_eq!(result.source, DocPathSource::AutoDetected);
     }
 
     #[test]

@@ -118,9 +118,9 @@ members:
     kdf_nonce: 3da1d77fe4dcbd9c1ee917dc49451f500c7d46cdc6e93cb9bf61f466282985ea
     ai_delegations:
       ai:claude@joy:
-        delegation_verifier: da012a61fdfdc308f1a4ecfda44cb7c9a8bd99a73ab4847f23e868235382d693
+        delegation_verifier: dcfd6d5a75c69bfd3b37cda49a97ab4af2dbaf0a752f99882b8eff85d331a2e4
         created: 2026-04-21T15:59:22.223224422Z
-        rotated: 2026-04-24T06:21:08.412686670Z
+        rotated: 2026-05-01T10:55:06.244749Z
 created: 2026-03-09T23:57:36.761964460Z
 release:
   version-files:
