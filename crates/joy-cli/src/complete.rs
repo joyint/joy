@@ -40,8 +40,8 @@ pub fn complete_item_id(current: &OsStr) -> Vec<CompletionCandidate> {
 
     let mut candidates: Vec<CompletionCandidate> = all_ids
         .iter()
-        .filter(|id| matches_item_id(id, prefix))
-        .map(|id| CompletionCandidate::new(id.clone()))
+        .filter_map(|id| rewrite_candidate(id, prefix))
+        .map(CompletionCandidate::new)
         .collect();
 
     candidates.sort_by(|a, b| a.get_value().cmp(b.get_value()));
@@ -49,34 +49,56 @@ pub fn complete_item_id(current: &OsStr) -> Vec<CompletionCandidate> {
 }
 
 /// Match an item ID against a completion prefix using three rules in
-/// priority order:
+/// priority order, and return the canonical ID with the matched substring
+/// overwritten by the user's exact (potentially differently-cased) prefix.
 ///
-/// 1. Direct prefix on the full ID (case-insensitive). `J` matches both
-///    `JOY-...` and `JI-...`; `JOY-00` matches `JOY-00xx-...`.
+/// Rules (case-insensitive):
+/// 1. Direct prefix on the full ID. `J` matches `JOY-...` and `JI-...`;
+///    `JOY-00` matches `JOY-00xx-...`.
 /// 2. Direct prefix on the part after the first dash. `00` matches
 ///    `JOY-0001`, `JI-0042-AB`. `MS` matches `JOY-MS-01`.
-/// 3. Case-insensitive substring inside the part after the first dash.
-///    `AA` and `aa` match `JOY-00AA-1B` via the hex chunk in either
-///    half of the segment.
-fn matches_item_id(id: &str, prefix: &str) -> bool {
+/// 3. Substring inside the part after the first dash. `AA`/`aa` match
+///    `JOY-00AA-1B` via the hex chunk.
+///
+/// The returned candidate contains the user's prefix verbatim where the
+/// match landed, so case-sensitive shell completers (e.g. zsh `_describe`)
+/// still accept it. Joy resolves IDs case-insensitively at the command
+/// layer, so a candidate like `JOY-013f-33` resolves to `JOY-013F-33`.
+fn rewrite_candidate(id: &str, prefix: &str) -> Option<String> {
     if prefix.is_empty() {
-        return true;
+        return Some(id.to_string());
     }
     let id_lc = id.to_ascii_lowercase();
     let prefix_lc = prefix.to_ascii_lowercase();
     if id_lc.starts_with(&prefix_lc) {
-        return true;
+        return Some(splice(id, 0, prefix.len(), prefix));
     }
-    if let Some((_, after)) = id.split_once('-') {
+    if let Some((acronym, after)) = id.split_once('-') {
         let after_lc = after.to_ascii_lowercase();
+        let after_offset = acronym.len() + 1;
         if after_lc.starts_with(&prefix_lc) {
-            return true;
+            return Some(splice(id, after_offset, prefix.len(), prefix));
         }
-        if after_lc.contains(&prefix_lc) {
-            return true;
+        if let Some(pos) = after_lc.find(&prefix_lc) {
+            return Some(splice(id, after_offset + pos, prefix.len(), prefix));
         }
     }
-    false
+    None
+}
+
+/// Replace `len` bytes starting at byte index `start` in `s` with `replacement`.
+/// All inputs are ASCII in the completer's call sites, so byte indexing is safe.
+fn splice(s: &str, start: usize, len: usize, replacement: &str) -> String {
+    let mut out = String::with_capacity(s.len() - len + replacement.len());
+    out.push_str(&s[..start]);
+    out.push_str(replacement);
+    out.push_str(&s[start + len..]);
+    out
+}
+
+#[cfg(test)]
+fn matches_item_id(id: &str, prefix: &str) -> bool {
+    rewrite_candidate(id, prefix).is_some()
 }
 
 /// Match a member ID against a completion prefix, handling colon as a
@@ -413,5 +435,54 @@ mod tests {
     fn item_match_empty_prefix_matches_all() {
         assert!(matches_item_id("JOY-0001", ""));
         assert!(matches_item_id("JI-MS-01", ""));
+    }
+
+    #[test]
+    fn rewrite_preserves_canonical_when_case_matches() {
+        assert_eq!(
+            rewrite_candidate("JOY-013F-33", "13F").as_deref(),
+            Some("JOY-013F-33")
+        );
+        assert_eq!(
+            rewrite_candidate("JOY-0001", "JOY").as_deref(),
+            Some("JOY-0001")
+        );
+    }
+
+    #[test]
+    fn rewrite_overwrites_match_with_user_case() {
+        // The user-typed substring is spliced into the canonical id at the
+        // matched position, so a case-sensitive shell substring filter still
+        // accepts the candidate. Joy commands resolve case-insensitively.
+        assert_eq!(
+            rewrite_candidate("JOY-013F-33", "13f").as_deref(),
+            Some("JOY-013f-33")
+        );
+        assert_eq!(
+            rewrite_candidate("JOY-00AA-1B", "aa").as_deref(),
+            Some("JOY-00aa-1B")
+        );
+        assert_eq!(
+            rewrite_candidate("JOY-00AA-1B", "1b").as_deref(),
+            Some("JOY-00AA-1b")
+        );
+    }
+
+    #[test]
+    fn rewrite_overwrites_full_id_prefix_with_user_case() {
+        assert_eq!(
+            rewrite_candidate("JOY-0001", "joy").as_deref(),
+            Some("joy-0001")
+        );
+        assert_eq!(
+            rewrite_candidate("JOY-0001", "joy-00").as_deref(),
+            Some("joy-0001")
+        );
+    }
+
+    #[test]
+    fn rewrite_returns_none_for_no_match() {
+        assert!(rewrite_candidate("JOY-0001", "FOO").is_none());
+        assert!(rewrite_candidate("JI-0001", "JOX").is_none());
     }
 }
