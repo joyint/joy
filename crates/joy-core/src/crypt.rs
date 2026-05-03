@@ -45,7 +45,10 @@ pub const FILTER_VERSION: u8 = 1;
 /// objects.
 pub fn encrypt_blob(zone_name: &str, zone_key: &ZoneKey, plaintext: &[u8]) -> Vec<u8> {
     let zone_bytes = zone_name.as_bytes();
-    assert!(zone_bytes.len() <= 255, "zone name too long for blob format");
+    assert!(
+        zone_bytes.len() <= 255,
+        "zone name too long for blob format"
+    );
     let mut nonce = [0u8; 12];
     rand::thread_rng().fill_bytes(&mut nonce);
     let aad = aad_for(zone_bytes);
@@ -63,7 +66,10 @@ pub fn encrypt_blob(zone_name: &str, zone_key: &ZoneKey, plaintext: &[u8]) -> Ve
 }
 
 /// Inverse of `encrypt_blob`. Returns `(zone_name, plaintext)`.
-pub fn decrypt_blob(zone_key_lookup: impl Fn(&str) -> Option<ZoneKey>, blob: &[u8]) -> Result<(String, Vec<u8>), JoyError> {
+pub fn decrypt_blob(
+    zone_key_lookup: impl Fn(&str) -> Option<ZoneKey>,
+    blob: &[u8],
+) -> Result<(String, Vec<u8>), JoyError> {
     if blob.len() < 8 + 1 + 1 + 12 + 16 || &blob[..8] != FILTER_MAGIC {
         return Err(JoyError::AuthFailed("not a Crypt blob".into()));
     }
@@ -89,8 +95,9 @@ pub fn decrypt_blob(zone_key_lookup: impl Fn(&str) -> Option<ZoneKey>, blob: &[u
     nonce.copy_from_slice(&blob[nonce_start..nonce_end]);
     let ct = &blob[nonce_end..];
 
-    let zone_key = zone_key_lookup(&zone_name)
-        .ok_or_else(|| JoyError::AuthFailed(format!("no zone key for '{}'; run `joy auth`", zone_name)))?;
+    let zone_key = zone_key_lookup(&zone_name).ok_or_else(|| {
+        JoyError::AuthFailed(format!("no zone key for '{}'; run `joy auth`", zone_name))
+    })?;
     let aad = aad_for(zone_name.as_bytes());
     let plaintext = joy_crypt::aead::open(zone_key.as_bytes(), &nonce, &aad, ct)
         .map_err(|_| JoyError::AuthFailed(format!("failed to decrypt zone '{}'", zone_name)))?;
@@ -175,11 +182,7 @@ pub fn wrap_for_member(
 }
 
 /// Convenience wrapper: self-wrap produced by a member for themselves.
-pub fn wrap_for_self(
-    zone_key: &ZoneKey,
-    zone_name: &str,
-    member_seed: &[u8; 32],
-) -> String {
+pub fn wrap_for_self(zone_key: &ZoneKey, zone_name: &str, member_seed: &[u8; 32]) -> String {
     let kp = Keypair::from_seed(member_seed);
     let pk = kp.public_key();
     wrap_for_member(zone_key, zone_name, member_seed, &pk, &pk)
@@ -240,13 +243,8 @@ mod tests {
         let granter_pk = Keypair::from_seed(&granter_seed).public_key();
         let recipient_pk = Keypair::from_seed(&recipient_seed).public_key();
 
-        let wrap_hex = wrap_for_member(
-            &zk,
-            DEFAULT_ZONE,
-            &granter_seed,
-            &granter_pk,
-            &recipient_pk,
-        );
+        let wrap_hex =
+            wrap_for_member(&zk, DEFAULT_ZONE, &granter_seed, &granter_pk, &recipient_pk);
         let recovered = unwrap_for_member(&wrap_hex, DEFAULT_ZONE, &recipient_seed).unwrap();
         assert_eq!(zk.as_bytes(), recovered.as_bytes());
     }
@@ -260,13 +258,8 @@ mod tests {
         let granter_pk = Keypair::from_seed(&granter_seed).public_key();
         let recipient_pk = Keypair::from_seed(&recipient_seed).public_key();
 
-        let wrap_hex = wrap_for_member(
-            &zk,
-            DEFAULT_ZONE,
-            &granter_seed,
-            &granter_pk,
-            &recipient_pk,
-        );
+        let wrap_hex =
+            wrap_for_member(&zk, DEFAULT_ZONE, &granter_seed, &granter_pk, &recipient_pk);
         let err = unwrap_for_member(&wrap_hex, DEFAULT_ZONE, &intruder_seed).unwrap_err();
         assert!(matches!(err, JoyError::AuthFailed(_)));
     }
@@ -293,9 +286,17 @@ mod tests {
         let pt = b"id: JOY-0123\ntitle: secret\n";
         let blob = encrypt_blob("default", &zk, pt);
         assert!(looks_like_blob(&blob));
-        let (zone, recovered) =
-            decrypt_blob(|name| if name == "default" { Some(ZoneKey::from_bytes(*zk.as_bytes())) } else { None }, &blob)
-                .unwrap();
+        let (zone, recovered) = decrypt_blob(
+            |name| {
+                if name == "default" {
+                    Some(ZoneKey::from_bytes(*zk.as_bytes()))
+                } else {
+                    None
+                }
+            },
+            &blob,
+        )
+        .unwrap();
         assert_eq!(zone, "default");
         assert_eq!(recovered, pt);
     }
@@ -305,7 +306,8 @@ mod tests {
         let zk = ZoneKey::generate();
         let blob = encrypt_blob("default", &zk, b"x");
         let other = ZoneKey::generate();
-        let err = decrypt_blob(|_| Some(ZoneKey::from_bytes(*other.as_bytes())), &blob).unwrap_err();
+        let err =
+            decrypt_blob(|_| Some(ZoneKey::from_bytes(*other.as_bytes())), &blob).unwrap_err();
         assert!(matches!(err, JoyError::AuthFailed(_)));
     }
 
@@ -316,7 +318,8 @@ mod tests {
         // Flip a byte inside the zone name (offset 10).
         blob[10] ^= 1;
         let zk_clone = ZoneKey::from_bytes(*zk.as_bytes());
-        let err = decrypt_blob(|_| Some(ZoneKey::from_bytes(*zk_clone.as_bytes())), &blob).unwrap_err();
+        let err =
+            decrypt_blob(|_| Some(ZoneKey::from_bytes(*zk_clone.as_bytes())), &blob).unwrap_err();
         assert!(matches!(err, JoyError::AuthFailed(_)));
     }
 

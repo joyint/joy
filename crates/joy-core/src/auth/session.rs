@@ -416,10 +416,9 @@ mod tests {
     const TEST_PASSPHRASE: &str = "correct horse battery staple extra words";
 
     fn test_keypair() -> (IdentityKeypair, PublicKey) {
-        let salt = Salt::from_hex(
-            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-        )
-        .unwrap();
+        let salt =
+            Salt::from_hex("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+                .unwrap();
         let key = derive_key(TEST_PASSPHRASE, &salt).unwrap();
         let kp = IdentityKeypair::from_derived_key(&key);
         let pk = kp.public_key();

@@ -17,7 +17,7 @@ use anyhow::{bail, Result};
 use clap::{Args, Subcommand};
 
 use joy_core::crypt as core_crypt;
-use joy_core::model::project::{CryptZone, Project};
+use joy_core::model::project::Project;
 use joy_core::store;
 use joy_core::vcs::Vcs;
 
@@ -116,7 +116,9 @@ struct ZoneRmArgs {
 }
 
 pub fn run(args: CryptArgs) -> Result<()> {
-    let zone = args.zone.unwrap_or_else(|| core_crypt::DEFAULT_ZONE.to_string());
+    let zone = args
+        .zone
+        .unwrap_or_else(|| core_crypt::DEFAULT_ZONE.to_string());
     match args.command {
         CryptCommand::Add(t) => match (t.all, t.target.as_deref()) {
             (true, _) => run_add_all(&zone, args.passphrase.as_deref()),
@@ -191,7 +193,6 @@ fn ensure_gitattributes_for_item(root: &std::path::Path, item_id: &str) -> Resul
     Ok(())
 }
 
-
 fn load_context() -> Result<(std::path::PathBuf, Project, String)> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
@@ -203,7 +204,11 @@ fn load_context() -> Result<(std::path::PathBuf, Project, String)> {
 
 /// Unwrap the acting member's wrap for the zone, or generate a fresh
 /// zone key if `autocreate` is allowed and no wrap exists.
-fn unlock_zone(zone: &str, passphrase_flag: Option<&str>, autocreate: bool) -> Result<UnlockedZone> {
+fn unlock_zone(
+    zone: &str,
+    passphrase_flag: Option<&str>,
+    autocreate: bool,
+) -> Result<UnlockedZone> {
     let (root, project, email) = load_context()?;
     let acting = project
         .members
@@ -257,9 +262,8 @@ impl UnlockedZone {
             .crypt
             .zones
             .entry(self.zone.clone())
-            .or_insert_with(CryptZone::default);
-        let wrap_hex =
-            core_crypt::wrap_for_self(&self.zone_key, &self.zone, &self.acting_seed);
+            .or_default();
+        let wrap_hex = core_crypt::wrap_for_self(&self.zone_key, &self.zone, &self.acting_seed);
         let m = self.project.members.get_mut(&self.acting_email).unwrap();
         m.crypt_wraps.insert(self.zone.clone(), wrap_hex);
 
@@ -275,10 +279,7 @@ impl UnlockedZone {
         let project_id = joy_core::auth::session::project_id(&self.root)?;
         let mut keys = joy_core::auth::session::load_zone_keys(&project_id, &self.acting_email)
             .unwrap_or_default();
-        keys.insert(
-            self.zone.clone(),
-            hex::encode(self.zone_key.as_bytes()),
-        );
+        keys.insert(self.zone.clone(), hex::encode(self.zone_key.as_bytes()));
         let _ = joy_core::auth::session::save_zone_keys(&project_id, &self.acting_email, &keys);
         Ok(())
     }
@@ -314,7 +315,7 @@ fn run_add(zone: &str, target: &str, passphrase: Option<&str>) -> Result<()> {
             .crypt
             .zones
             .entry(zone.to_string())
-            .or_insert_with(CryptZone::default);
+            .or_default();
         if zone_entry.paths.iter().any(|p| p == target) {
             println!("Path '{}' is already in zone '{}'.", target, zone);
             return Ok(());
@@ -444,7 +445,10 @@ fn run_zone_list() -> Result<()> {
         return Ok(());
     }
     let items = joy_core::items::load_items(&root).unwrap_or_default();
-    println!("{:<20} {:>8} {:>8} {:>8}", "ZONE", "PATHS", "ITEMS", "MEMBERS");
+    println!(
+        "{:<20} {:>8} {:>8} {:>8}",
+        "ZONE", "PATHS", "ITEMS", "MEMBERS"
+    );
     for (name, zone) in &project.crypt.zones {
         let item_count = items
             .iter()
@@ -545,7 +549,7 @@ fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>) -> Resul
         .crypt
         .zones
         .entry(unlocked.zone.clone())
-        .or_insert_with(CryptZone::default);
+        .or_default();
     let m = project
         .members
         .get_mut(target_member)
@@ -554,11 +558,8 @@ fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>) -> Resul
 
     // Ensure the granter's own wrap is also present (auto-create path
     // when this is the first add+grant in the same session).
-    let granter_wrap = joy_core::crypt::wrap_for_self(
-        &unlocked.zone_key,
-        &unlocked.zone,
-        &unlocked.acting_seed,
-    );
+    let granter_wrap =
+        joy_core::crypt::wrap_for_self(&unlocked.zone_key, &unlocked.zone, &unlocked.acting_seed);
     let g = project.members.get_mut(&unlocked.acting_email).unwrap();
     g.crypt_wraps
         .entry(unlocked.zone.clone())

@@ -1167,8 +1167,12 @@ fn run_token_add(
                     // overwrite the stale cache and continue without forcing
                     // another rotation.
                     let salt = Salt::from_hex(salt_hex)?;
-                    let new_seed =
-                        delegation::derive_delegation_seed(&identity_seed, &salt, &project_id, &args.member);
+                    let new_seed = delegation::derive_delegation_seed(
+                        &identity_seed,
+                        &salt,
+                        &project_id,
+                        &args.member,
+                    );
                     let derived_kp = IdentityKeypair::from_seed(&new_seed);
                     if derived_kp.public_key().to_hex() == *pub_hex {
                         delegation::save_delegation_key(&project_id, &args.member, &new_seed)?;
@@ -1195,8 +1199,12 @@ fn run_token_add(
             }
             (None, None) => {
                 let new_salt = generate_salt();
-                let seed =
-                    delegation::derive_delegation_seed(&identity_seed, &new_salt, &project_id, &args.member);
+                let seed = delegation::derive_delegation_seed(
+                    &identity_seed,
+                    &new_salt,
+                    &project_id,
+                    &args.member,
+                );
                 let kp = IdentityKeypair::from_seed(&seed);
                 delegation::save_delegation_key(&project_id, &args.member, &seed)?;
                 (kp, Some(new_salt.to_hex()))
@@ -1204,8 +1212,12 @@ fn run_token_add(
             (Some(pub_hex), None) => {
                 if let Some(salt_hex) = &existing_salt {
                     let salt = Salt::from_hex(salt_hex)?;
-                    let seed =
-                        delegation::derive_delegation_seed(&identity_seed, &salt, &project_id, &args.member);
+                    let seed = delegation::derive_delegation_seed(
+                        &identity_seed,
+                        &salt,
+                        &project_id,
+                        &args.member,
+                    );
                     let kp = IdentityKeypair::from_seed(&seed);
                     if kp.public_key().to_hex() != *pub_hex {
                         anyhow::bail!(
@@ -1438,8 +1450,11 @@ fn run_passphrase(current_flag: Option<&str>, new_flag: Option<&str>) -> Result<
         let recovery = seed_mod::RecoveryKey::generate();
         let m = project.members.get_mut(&email).unwrap();
         m.seed_wrap_passphrase = Some(seed_mod::wrap_seed_for_migration(&migrated_seed));
-        m.seed_wrap_recovery =
-            Some(seed_mod::wrap_seed_with_recovery(&migrated_seed, &recovery, &current_salt)?);
+        m.seed_wrap_recovery = Some(seed_mod::wrap_seed_with_recovery(
+            &migrated_seed,
+            &recovery,
+            &current_salt,
+        )?);
         // Recovery key must reach the user; print before continuing so a
         // crash mid-rewrap leaves the recovery path intact.
         println!();
@@ -1774,7 +1789,8 @@ pub fn run_ai_rotate(member: &str, passphrase_flag: Option<&str>) -> Result<()> 
     // from ADR-033 §1).
     let project_id = session::project_id(&root)?;
     let new_salt = generate_salt();
-    let new_seed = delegation::derive_delegation_seed(&identity_seed, &new_salt, &project_id, member);
+    let new_seed =
+        delegation::derive_delegation_seed(&identity_seed, &new_salt, &project_id, member);
     let new_kp = IdentityKeypair::from_seed(&new_seed);
     delegation::save_delegation_key(&project_id, member, &new_seed)?;
 

@@ -111,12 +111,12 @@ fn run_smudge(_path: Option<&str>) -> Result<()> {
     };
 
     let zone_keys = active_zone_keys()?;
-    let raw = zone_keys
-        .get(&zone)
-        .ok_or_else(|| anyhow::anyhow!(
+    let raw = zone_keys.get(&zone).ok_or_else(|| {
+        anyhow::anyhow!(
             "no active zone key for '{}'; run `joy auth` to populate the session",
             zone
-        ))?;
+        )
+    })?;
     let zk = ZoneKey::from_bytes(*raw);
     let blob = core_crypt::encrypt_blob(&zone, &zk, &input);
     std::io::stdout().write_all(&blob)?;
@@ -124,8 +124,7 @@ fn run_smudge(_path: Option<&str>) -> Result<()> {
 }
 
 fn run_textconv(path: &str) -> Result<()> {
-    let bytes = std::fs::read(path)
-        .map_err(|e| anyhow::anyhow!("failed to read {path}: {e}"))?;
+    let bytes = std::fs::read(path).map_err(|e| anyhow::anyhow!("failed to read {path}: {e}"))?;
     if !core_crypt::looks_like_blob(&bytes) {
         std::io::stdout().write_all(&bytes)?;
         return Ok(());
@@ -143,18 +142,22 @@ fn run_textconv(path: &str) -> Result<()> {
 /// AES-256-GCM keys (hex on disk, raw bytes here).
 fn active_zone_keys() -> Result<std::collections::BTreeMap<String, [u8; 32]>> {
     let cwd = std::env::current_dir()?;
-    let root = store::find_project_root(&cwd).ok_or_else(|| {
-        anyhow::anyhow!("not inside a Joy project (run `joy init` first)")
-    })?;
+    let root = store::find_project_root(&cwd)
+        .ok_or_else(|| anyhow::anyhow!("not inside a Joy project (run `joy init` first)"))?;
     let project_id = session::project_id(&root)?;
-    let email = joy_core::vcs::default_vcs().user_email().unwrap_or_default();
+    let email = joy_core::vcs::default_vcs()
+        .user_email()
+        .unwrap_or_default();
     let sidecar = session::load_zone_keys(&project_id, &email)?;
     let mut out = std::collections::BTreeMap::new();
     for (zone, hex_str) in sidecar {
         let bytes = hex::decode(&hex_str)
             .map_err(|e| anyhow::anyhow!("zone-key sidecar corrupt for '{zone}': {e}"))?;
         if bytes.len() != 32 {
-            bail!("zone-key sidecar for '{zone}' has wrong length: {}", bytes.len());
+            bail!(
+                "zone-key sidecar for '{zone}' has wrong length: {}",
+                bytes.len()
+            );
         }
         let mut arr = [0u8; 32];
         arr.copy_from_slice(&bytes);

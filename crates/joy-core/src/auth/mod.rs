@@ -29,9 +29,7 @@ pub mod token;
 // joy-core/auth and joy-cli use these names; the underlying
 // implementation lives in joy-crypt (ADR-039).
 pub use joy_crypt::identity::{Keypair as IdentityKeypair, PublicKey};
-pub use joy_crypt::kdf::{
-    derive_argon2id as derive_key, generate_salt, DerivedKey, Salt,
-};
+pub use joy_crypt::kdf::{derive_argon2id as derive_key, generate_salt, DerivedKey, Salt};
 
 use crate::error::JoyError;
 

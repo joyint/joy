@@ -138,9 +138,9 @@ pub fn unwrap_seed_with_passphrase(
     let kek = derive_argon2id(passphrase, kdf_nonce)?;
     let plain = wrap::unwrap(kek.as_bytes(), &wrapped)
         .map_err(|_| JoyError::AuthFailed("incorrect passphrase".into()))?;
-    let arr: [u8; 32] = plain
-        .try_into()
-        .map_err(|v: Vec<u8>| JoyError::AuthFailed(format!("seed has wrong length: {}", v.len())))?;
+    let arr: [u8; 32] = plain.try_into().map_err(|v: Vec<u8>| {
+        JoyError::AuthFailed(format!("seed has wrong length: {}", v.len()))
+    })?;
     Ok(Seed::from_bytes(arr))
 }
 
@@ -167,9 +167,9 @@ pub fn unwrap_seed_with_recovery(
     let kek = derive_argon2id(&pass, kdf_nonce)?;
     let plain = wrap::unwrap(kek.as_bytes(), &wrapped)
         .map_err(|_| JoyError::AuthFailed("incorrect recovery key".into()))?;
-    let arr: [u8; 32] = plain
-        .try_into()
-        .map_err(|v: Vec<u8>| JoyError::AuthFailed(format!("seed has wrong length: {}", v.len())))?;
+    let arr: [u8; 32] = plain.try_into().map_err(|v: Vec<u8>| {
+        JoyError::AuthFailed(format!("seed has wrong length: {}", v.len()))
+    })?;
     Ok(Seed::from_bytes(arr))
 }
 
@@ -196,10 +196,10 @@ mod tests {
     fn passphrase_wrong_passphrase_rejected() {
         let seed = Seed::generate();
         let salt = generate_salt();
-        let wrap_hex = wrap_seed_with_passphrase(&seed, "right pass words six total", &salt).unwrap();
-        let err =
-            unwrap_seed_with_passphrase(&wrap_hex, "wrong pass words six total here", &salt)
-                .unwrap_err();
+        let wrap_hex =
+            wrap_seed_with_passphrase(&seed, "right pass words six total", &salt).unwrap();
+        let err = unwrap_seed_with_passphrase(&wrap_hex, "wrong pass words six total here", &salt)
+            .unwrap_err();
         assert!(matches!(err, JoyError::AuthFailed(_)));
     }
 
@@ -232,25 +232,18 @@ mod tests {
         let kp_before = Keypair::from_seed(seed.as_bytes());
 
         let salt = generate_salt();
-        let old_wrap = wrap_seed_with_passphrase(&seed, "alpha bravo charlie delta echo foxtrot", &salt).unwrap();
-        let recovered = unwrap_seed_with_passphrase(
-            &old_wrap,
-            "alpha bravo charlie delta echo foxtrot",
-            &salt,
-        )
-        .unwrap();
-        let new_wrap = wrap_seed_with_passphrase(
-            &recovered,
-            "yankee zulu papa quebec sierra tango",
-            &salt,
-        )
-        .unwrap();
-        let after = unwrap_seed_with_passphrase(
-            &new_wrap,
-            "yankee zulu papa quebec sierra tango",
-            &salt,
-        )
-        .unwrap();
+        let old_wrap =
+            wrap_seed_with_passphrase(&seed, "alpha bravo charlie delta echo foxtrot", &salt)
+                .unwrap();
+        let recovered =
+            unwrap_seed_with_passphrase(&old_wrap, "alpha bravo charlie delta echo foxtrot", &salt)
+                .unwrap();
+        let new_wrap =
+            wrap_seed_with_passphrase(&recovered, "yankee zulu papa quebec sierra tango", &salt)
+                .unwrap();
+        let after =
+            unwrap_seed_with_passphrase(&new_wrap, "yankee zulu papa quebec sierra tango", &salt)
+                .unwrap();
         let kp_after = Keypair::from_seed(after.as_bytes());
 
         assert_eq!(kp_before.public_key(), kp_after.public_key());
