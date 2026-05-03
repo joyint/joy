@@ -17,7 +17,6 @@ use argon2::{Algorithm, Argon2, Params, Version};
 use rand::distributions::{Alphanumeric, DistString};
 use rand::RngCore;
 
-use super::derive;
 use crate::error::JoyError;
 
 /// Generate a fresh OTP formatted as `XXXX-XXXX-XXXX` using uppercase
@@ -53,13 +52,14 @@ pub fn verify_otp(otp: &str, stored: &str) -> Result<bool, JoyError> {
 }
 
 fn argon2id_raw(material: &[u8], salt: &[u8]) -> Result<[u8; 32], JoyError> {
-    // Mirror derive::derive_key params so debug/fast-kdf builds are cheap.
-    let _ = &derive::generate_salt; // silence unused-import warnings in future refactors
+    // Mirror joy_crypt::kdf::derive_argon2id params so debug/fast-kdf
+    // builds stay cheap. Kept inline here to avoid dragging the OTP path
+    // into joy-crypt's surface area.
     #[cfg(any(feature = "fast-kdf", debug_assertions))]
     let params = Params::new(256, 1, 1, Some(32))
         .map_err(|e| JoyError::AuthFailed(format!("argon2 params: {e}")))?;
     #[cfg(not(any(feature = "fast-kdf", debug_assertions)))]
-    let params = Params::new(65536, 3, 4, Some(32))
+    let params: Params = Params::new(65536, 3, 4, Some(32))
         .map_err(|e| JoyError::AuthFailed(format!("argon2 params: {e}")))?;
     let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
     let mut out = [0u8; 32];

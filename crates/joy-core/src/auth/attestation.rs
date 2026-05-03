@@ -16,7 +16,7 @@
 
 use chrono::Utc;
 
-use super::sign;
+use super::{IdentityKeypair, PublicKey};
 use crate::error::JoyError;
 use crate::model::project::{Attestation, AttestationSignedFields, Member, MemberCapabilities};
 
@@ -24,7 +24,7 @@ use crate::model::project::{Attestation, AttestationSignedFields, Member, Member
 /// identity keypair.
 pub fn sign_attestation(
     attester_email: &str,
-    attester_keypair: &sign::IdentityKeypair,
+    attester_keypair: &IdentityKeypair,
     signed_fields: AttestationSignedFields,
 ) -> Attestation {
     let bytes = signed_fields.canonical_bytes();
@@ -63,7 +63,7 @@ pub fn signed_fields_for(
 ///    unless the member's `enrollment_verifier` is `None` (post-redemption state).
 pub fn verify_attestation(
     attestation: &Attestation,
-    attester_public_key: &sign::PublicKey,
+    attester_public_key: &PublicKey,
     member_email: &str,
     member: &Member,
 ) -> Result<(), JoyError> {
@@ -102,8 +102,8 @@ mod tests {
     use super::*;
     use crate::model::project::{CapabilityConfig, MemberCapabilities};
 
-    fn make_kp() -> sign::IdentityKeypair {
-        sign::IdentityKeypair::from_random()
+    fn make_kp() -> IdentityKeypair {
+        IdentityKeypair::from_random()
     }
 
     fn fresh_member(caps: MemberCapabilities, otp: Option<String>) -> Member {

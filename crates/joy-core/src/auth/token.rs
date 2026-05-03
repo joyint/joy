@@ -14,7 +14,7 @@
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::sign::{IdentityKeypair, PublicKey};
+use super::{IdentityKeypair, PublicKey};
 use crate::error::JoyError;
 
 /// Token prefix for visual identification.
@@ -159,24 +159,24 @@ fn base64_decode(s: &str) -> Result<Vec<u8>, JoyError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::auth::{derive, sign};
+    use crate::auth::{derive_key, Salt};
     use chrono::Duration;
 
     const TEST_PASSPHRASE: &str = "correct horse battery staple extra words";
 
-    fn test_keypair() -> (sign::IdentityKeypair, sign::PublicKey) {
-        let salt = derive::Salt::from_hex(
+    fn test_keypair() -> (IdentityKeypair, PublicKey) {
+        let salt = Salt::from_hex(
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
         )
         .unwrap();
-        let key = derive::derive_key(TEST_PASSPHRASE, &salt).unwrap();
-        let kp = sign::IdentityKeypair::from_derived_key(&key);
+        let key = derive_key(TEST_PASSPHRASE, &salt).unwrap();
+        let kp = IdentityKeypair::from_derived_key(&key);
         let pk = kp.public_key();
         (kp, pk)
     }
 
-    fn fresh_delegation() -> (sign::IdentityKeypair, sign::PublicKey) {
-        let kp = sign::IdentityKeypair::from_random();
+    fn fresh_delegation() -> (IdentityKeypair, PublicKey) {
+        let kp = IdentityKeypair::from_random();
         let pk = kp.public_key();
         (kp, pk)
     }
@@ -274,10 +274,10 @@ mod tests {
             None,
         );
 
-        let other_salt = derive::generate_salt();
+        let other_salt = crate::auth::generate_salt();
         let other_key =
-            derive::derive_key("alpha bravo charlie delta echo foxtrot", &other_salt).unwrap();
-        let other_kp = sign::IdentityKeypair::from_derived_key(&other_key);
+            derive_key("alpha bravo charlie delta echo foxtrot", &other_salt).unwrap();
+        let other_kp = IdentityKeypair::from_derived_key(&other_key);
         let other_pk = other_kp.public_key();
 
         assert!(validate_token(&token, &other_pk, &delegation_pk, "TST").is_err());

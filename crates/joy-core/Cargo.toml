@@ -9,16 +9,14 @@ homepage = "https://joyint.com/en/joy"
 readme = "README.md"
 
 [dependencies]
+joy-crypt = { workspace = true }
 serde = { workspace = true }
 serde_yaml_ng = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 chrono = { workspace = true }
 sha2 = "0.10.9"
-hkdf = "0.12"
 argon2 = "0.5"
-ed25519-dalek = { version = "2", features = ["rand_core"] }
-zeroize = { version = "1", features = ["derive"] }
 rand = "0.8"
 hex = "0.4"
 base64ct = { version = "1", features = ["alloc"] }
@@ -29,7 +27,7 @@ minijinja = { workspace = true }
 libc = "0.2"
 
 [features]
-fast-kdf = []   # Use minimal Argon2id params (for testing only, NOT secure)
+fast-kdf = ["joy-crypt/fast-kdf"]   # Use minimal Argon2id params (for testing only, NOT secure)
 
 [dev-dependencies]
 insta = { version = "1.41", features = ["yaml"] }

@@ -950,7 +950,7 @@ fn setup_new_tools(root: &Path, passphrase: Option<&str>) -> anyhow::Result<Vec<
     // new member registration so attestations match what
     // `joy project member add` produces (JOY-011E-CF). Repeated
     // registrations within the same `joy ai init` reuse the keypair.
-    let mut acting: Option<(String, joy_core::auth::sign::IdentityKeypair)> = None;
+    let mut acting: Option<(String, joy_core::auth::IdentityKeypair)> = None;
 
     for (name, id, detect, configure) in ALL_TOOLS {
         if !detect() {

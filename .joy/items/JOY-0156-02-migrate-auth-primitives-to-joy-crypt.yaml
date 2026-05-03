@@ -1,0 +1,23 @@
+id: JOY-0156-02
+title: Migrate Auth primitives to joy-crypt and add AES-GCM helpers
+type: task
+status: closed
+priority: high
+parent: JOY-0145-51
+assignees:
+- member: ai:claude@joy
+milestone: JOY-MS-02
+capabilities:
+- implement
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-03T15:11:40.201943Z
+updated: 2026-05-03T15:33:43.120518Z
+description: 'Move Argon2id KDF and Ed25519 sign/verify/from-seed primitives from joy-core/auth (derive.rs, sign.rs) into joy-crypt modules kdf and identity. Add AES-256-GCM wrap/unwrap helpers in joy-crypt aead/wrap (new dependency: aes-gcm). joy-core/auth keeps the application-layer files (mod.rs, session.rs, token.rs, delegation.rs, otp.rs, attestation.rs) and consumes joy-crypt for every primitive call. Behaviour preserved: verify_key derivation, signature format, and KDF parameters identical. Prerequisite for JOY-0147-85 (wrapped-seed) and all subsequent Crypt work per ADR-039 §"Crate boundary and dependency direction".'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-03T15:14:09.890088Z
+  text: 'Plan: (1) Survey use sites of auth::derive::{Salt,DerivedKey,...} and auth::sign::{IdentityKeypair,PublicKey,...} in joy-core. (2) Implement joy-crypt modules: kdf (Salt, DerivedKey, generate_salt, derive_argon2id, derive_hkdf_sha256), identity (Keypair, PublicKey), aead (seal/open AES-256-GCM), wrap (wrap/unwrap with random-nonce prefix), plus error type. Move tests along. (3) Delete joy-core/auth/derive.rs and sign.rs entirely; all consumers import from joy_crypt directly. Joy-specific helpers (validate_passphrase, derive_delegation_seed, from_token_seed) move to fitting auth modules. (4) cargo test passes in crypt and joy. (5) Three commits per submodule (CRYPT new item, JOY-0156-02, umbrella bump).'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-03T15:33:43.021738Z
+  text: 'Done: joy-core depends on joy-crypt = workspace path. Removed direct deps hkdf, ed25519-dalek, zeroize. auth/derive.rs and auth/sign.rs deleted; primitives consumed via joy-crypt. Joy-domain helpers moved: validate_passphrase to auth/mod.rs, derive_delegation_seed to auth/delegation.rs (with all 5 original tests). auth/mod.rs re-exports joy-crypt names: IdentityKeypair (alias for Keypair), PublicKey, Salt, DerivedKey, generate_salt, derive_key. JoyError gains From<joy_crypt::Error>. fast-kdf feature now propagates via joy-crypt/fast-kdf. All 287 (now 292) joy-core tests pass single-threaded; existing flakiness under parallel execution is pre-existing (XDG_STATE_HOME mutex).'

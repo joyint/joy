@@ -56,6 +56,9 @@ pub enum JoyError {
     #[error("authentication failed: {0}")]
     AuthFailed(String),
 
+    #[error("crypto error: {0}")]
+    Crypto(#[from] joy_crypt::Error),
+
     #[error("passphrase too short (minimum 6 words)")]
     PassphraseTooShort,
 

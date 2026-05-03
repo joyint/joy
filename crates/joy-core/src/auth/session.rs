@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::sign::{IdentityKeypair, PublicKey};
+use super::{IdentityKeypair, PublicKey};
 use crate::error::JoyError;
 
 /// Claims encoded in a session token.
@@ -342,18 +342,18 @@ pub(super) fn dirs_state_dir() -> Result<PathBuf, JoyError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::auth::{derive, sign};
+    use crate::auth::{derive_key, IdentityKeypair, PublicKey, Salt};
     use tempfile::tempdir;
 
     const TEST_PASSPHRASE: &str = "correct horse battery staple extra words";
 
-    fn test_keypair() -> (sign::IdentityKeypair, sign::PublicKey) {
-        let salt = derive::Salt::from_hex(
+    fn test_keypair() -> (IdentityKeypair, PublicKey) {
+        let salt = Salt::from_hex(
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
         )
         .unwrap();
-        let key = derive::derive_key(TEST_PASSPHRASE, &salt).unwrap();
-        let kp = sign::IdentityKeypair::from_derived_key(&key);
+        let key = derive_key(TEST_PASSPHRASE, &salt).unwrap();
+        let kp = IdentityKeypair::from_derived_key(&key);
         let pk = kp.public_key();
         (kp, pk)
     }
@@ -412,7 +412,7 @@ mod tests {
 
     #[test]
     fn ai_session_carries_ephemeral_public_key() {
-        let ephemeral = sign::IdentityKeypair::from_random();
+        let ephemeral = IdentityKeypair::from_random();
         let ephemeral_pk = ephemeral.public_key().to_hex();
         let token = create_session_for_ai(&ephemeral, "ai:claude@joy", "TST", None, "dkey");
         assert_eq!(
@@ -421,7 +421,7 @@ mod tests {
         );
         assert_eq!(token.claims.token_key.as_deref(), Some("dkey"));
         // Ensure the session signature validates against the ephemeral public key.
-        let pk = sign::PublicKey::from_hex(&ephemeral_pk).unwrap();
+        let pk = PublicKey::from_hex(&ephemeral_pk).unwrap();
         validate_session(&token, &pk, "TST").unwrap();
     }
 

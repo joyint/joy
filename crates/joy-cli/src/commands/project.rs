@@ -4,7 +4,7 @@
 use anyhow::{bail, Result};
 use clap::Args;
 
-use joy_core::auth::{derive, sign};
+use joy_core::auth::{derive_key, IdentityKeypair, PublicKey, Salt};
 use joy_core::context::Context;
 use joy_core::guard::Action;
 use joy_core::model::item::Capability;
@@ -709,7 +709,7 @@ pub(crate) fn derive_acting_keypair(
     project: &Project,
     email: &str,
     passphrase_flag: Option<&str>,
-) -> Result<sign::IdentityKeypair> {
+) -> Result<IdentityKeypair> {
     let member = project
         .members
         .get(email)
@@ -726,11 +726,11 @@ pub(crate) fn derive_acting_keypair(
             email
         )
     })?;
-    let public_key = sign::PublicKey::from_hex(public_key_hex)?;
-    let salt = derive::Salt::from_hex(salt_hex)?;
+    let public_key = PublicKey::from_hex(public_key_hex)?;
+    let salt = Salt::from_hex(salt_hex)?;
     let passphrase = crate::commands::auth::read_passphrase(passphrase_flag, "Passphrase: ")?;
-    let key = derive::derive_key(&passphrase, &salt)?;
-    let keypair = sign::IdentityKeypair::from_derived_key(&key);
+    let key = derive_key(&passphrase, &salt)?;
+    let keypair = IdentityKeypair::from_derived_key(&key);
     if keypair.public_key() != public_key {
         anyhow::bail!("incorrect passphrase");
     }
@@ -1089,7 +1089,7 @@ fn member_auth_status(
             })
             .is_some()
     } else if let Some(pk_hex) = member.verify_key.as_ref() {
-        if let Ok(pk) = joy_core::auth::sign::PublicKey::from_hex(pk_hex) {
+        if let Ok(pk) = joy_core::auth::PublicKey::from_hex(pk_hex) {
             joy_core::auth::session::load_session(project_id, id)
                 .ok()
                 .flatten()

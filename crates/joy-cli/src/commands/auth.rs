@@ -5,7 +5,10 @@ use anyhow::Result;
 use chrono::Utc;
 use clap::{Args, Subcommand};
 
-use joy_core::auth::{delegation, derive, session, sign, token};
+use joy_core::auth::{
+    delegation, derive_key, generate_salt, session, token, validate_passphrase, IdentityKeypair,
+    PublicKey, Salt,
+};
 use joy_core::store;
 use joy_core::vcs::Vcs;
 
@@ -271,7 +274,7 @@ fn run_init(passphrase_flag: Option<&str>, user_flag: Option<&str>) -> Result<()
         eprintln!("Choose a passphrase (minimum 6 words, e.g. Diceware):");
     }
     let passphrase = read_passphrase(passphrase_flag, "  Passphrase: ")?;
-    derive::validate_passphrase(&passphrase)?;
+    validate_passphrase(&passphrase)?;
 
     // Confirm (only in interactive mode)
     if passphrase_flag.is_none() {
@@ -282,9 +285,9 @@ fn run_init(passphrase_flag: Option<&str>, user_flag: Option<&str>) -> Result<()
     }
 
     // Derive keypair
-    let salt = derive::generate_salt();
-    let key = derive::derive_key(&passphrase, &salt)?;
-    let keypair = sign::IdentityKeypair::from_derived_key(&key);
+    let salt = generate_salt();
+    let key = derive_key(&passphrase, &salt)?;
+    let keypair = IdentityKeypair::from_derived_key(&key);
     let public_key = keypair.public_key();
 
     // Store salt and public key in project.yaml
@@ -385,12 +388,12 @@ fn auth_with_passphrase(
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("No salt found for {}. Run `joy auth init`.", email))?;
 
-    let public_key = sign::PublicKey::from_hex(public_key_hex)?;
-    let salt = derive::Salt::from_hex(salt_hex)?;
+    let public_key = PublicKey::from_hex(public_key_hex)?;
+    let salt = Salt::from_hex(salt_hex)?;
 
     let passphrase = read_passphrase(passphrase_flag, "Passphrase: ")?;
-    let key = derive::derive_key(&passphrase, &salt)?;
-    let keypair = sign::IdentityKeypair::from_derived_key(&key);
+    let key = derive_key(&passphrase, &salt)?;
+    let keypair = IdentityKeypair::from_derived_key(&key);
 
     if keypair.public_key() != public_key {
         anyhow::bail!("incorrect passphrase");
@@ -442,7 +445,7 @@ fn maybe_auto_seal(
     root: &std::path::Path,
     project: &joy_core::model::project::Project,
     acting_email: &str,
-    acting_keypair: &sign::IdentityKeypair,
+    acting_keypair: &IdentityKeypair,
 ) -> Result<Option<joy_core::model::project::Project>> {
     let has_any_attestation = project.members.values().any(|m| m.attestation.is_some());
     if has_any_attestation || project.members.len() < 2 {
@@ -507,7 +510,7 @@ fn verify_member_attestation(
             email
         )
     })?;
-    let attester_pubkey = sign::PublicKey::from_hex(attester_pubkey_hex)?;
+    let attester_pubkey = PublicKey::from_hex(attester_pubkey_hex)?;
     joy_core::auth::attestation::verify_attestation(attestation, &attester_pubkey, email, member)
         .map_err(|e| {
             anyhow::anyhow!(
@@ -579,7 +582,7 @@ fn auth_with_token(
     let human_pk_hex = human_member.verify_key.as_ref().ok_or_else(|| {
         anyhow::anyhow!("Delegating member {} has no public key registered.", human)
     })?;
-    let human_pk = sign::PublicKey::from_hex(human_pk_hex)?;
+    let human_pk = PublicKey::from_hex(human_pk_hex)?;
 
     // Look up the stable delegation entry for this AI member under the delegator (ADR-033).
     let ai_member_id = &delegation.claims.ai_member;
@@ -594,7 +597,7 @@ fn auth_with_token(
                 ai_member_id
             )
         })?;
-    let delegation_pk = sign::PublicKey::from_hex(&delegation_entry.delegation_verifier)?;
+    let delegation_pk = PublicKey::from_hex(&delegation_entry.delegation_verifier)?;
 
     // Validate dual signatures + project + expiry. Tokens are multi-use
     // within their TTL (ADR-034 relaxes ADR-033 §3): no consumed-tokens
@@ -615,7 +618,7 @@ fn auth_with_token(
     // claims. Validation re-derives the public key from the env var and
     // requires a match, so sibling terminals without the env var cannot
     // reuse the session file.
-    let ephemeral_keypair = sign::IdentityKeypair::from_random();
+    let ephemeral_keypair = IdentityKeypair::from_random();
     let ephemeral_private = ephemeral_keypair.to_seed_bytes();
     let session_token = session::create_session_for_ai(
         &ephemeral_keypair,
@@ -865,12 +868,12 @@ fn run_reset(args: ResetArgs, passphrase_flag: Option<&str>) -> Result<()> {
     // Authenticate the acting user
     let salt_hex = acting_member.kdf_nonce.as_ref().unwrap();
     let public_key_hex = acting_member.verify_key.as_ref().unwrap();
-    let salt = derive::Salt::from_hex(salt_hex)?;
-    let public_key = sign::PublicKey::from_hex(public_key_hex)?;
+    let salt = Salt::from_hex(salt_hex)?;
+    let public_key = PublicKey::from_hex(public_key_hex)?;
 
     let passphrase = read_passphrase(passphrase_flag, "Passphrase: ")?;
-    let key = derive::derive_key(&passphrase, &salt)?;
-    let keypair = sign::IdentityKeypair::from_derived_key(&key);
+    let key = derive_key(&passphrase, &salt)?;
+    let keypair = IdentityKeypair::from_derived_key(&key);
     if keypair.public_key() != public_key {
         anyhow::bail!("incorrect passphrase");
     }
@@ -969,12 +972,12 @@ fn run_token_add(
 
     let salt_hex = member.kdf_nonce.as_ref().unwrap();
     let public_key_hex = member.verify_key.as_ref().unwrap();
-    let salt = derive::Salt::from_hex(salt_hex)?;
-    let public_key = sign::PublicKey::from_hex(public_key_hex)?;
+    let salt = Salt::from_hex(salt_hex)?;
+    let public_key = PublicKey::from_hex(public_key_hex)?;
 
     let passphrase = read_passphrase(passphrase_flag, "Passphrase: ")?;
-    let key = derive::derive_key(&passphrase, &salt)?;
-    let keypair = sign::IdentityKeypair::from_derived_key(&key);
+    let key = derive_key(&passphrase, &salt)?;
+    let keypair = IdentityKeypair::from_derived_key(&key);
     if keypair.public_key() != public_key {
         anyhow::bail!("incorrect passphrase");
     }
@@ -1028,7 +1031,7 @@ fn run_token_add(
     let (delegation_keypair, delegation_salt_to_persist) =
         match (&existing_public, &existing_private) {
             (Some(pub_hex), Some(seed)) => {
-                let kp = sign::IdentityKeypair::from_seed(seed);
+                let kp = IdentityKeypair::from_seed(seed);
                 if kp.public_key().to_hex() == *pub_hex {
                     (kp, None)
                 } else if let Some(salt_hex) = &existing_salt {
@@ -1037,10 +1040,10 @@ fn run_token_add(
                     // bailing -- if the result matches the recorded verifier,
                     // overwrite the stale cache and continue without forcing
                     // another rotation.
-                    let salt = derive::Salt::from_hex(salt_hex)?;
+                    let salt = Salt::from_hex(salt_hex)?;
                     let new_seed =
-                        derive::derive_delegation_seed(&key, &salt, &project_id, &args.member);
-                    let derived_kp = sign::IdentityKeypair::from_seed(&new_seed);
+                        delegation::derive_delegation_seed(&key, &salt, &project_id, &args.member);
+                    let derived_kp = IdentityKeypair::from_seed(&new_seed);
                     if derived_kp.public_key().to_hex() == *pub_hex {
                         delegation::save_delegation_key(&project_id, &args.member, &new_seed)?;
                         (derived_kp, None)
@@ -1065,19 +1068,19 @@ fn run_token_add(
                 }
             }
             (None, None) => {
-                let new_salt = derive::generate_salt();
+                let new_salt = generate_salt();
                 let seed =
-                    derive::derive_delegation_seed(&key, &new_salt, &project_id, &args.member);
-                let kp = sign::IdentityKeypair::from_seed(&seed);
+                    delegation::derive_delegation_seed(&key, &new_salt, &project_id, &args.member);
+                let kp = IdentityKeypair::from_seed(&seed);
                 delegation::save_delegation_key(&project_id, &args.member, &seed)?;
                 (kp, Some(new_salt.to_hex()))
             }
             (Some(pub_hex), None) => {
                 if let Some(salt_hex) = &existing_salt {
-                    let salt = derive::Salt::from_hex(salt_hex)?;
+                    let salt = Salt::from_hex(salt_hex)?;
                     let seed =
-                        derive::derive_delegation_seed(&key, &salt, &project_id, &args.member);
-                    let kp = sign::IdentityKeypair::from_seed(&seed);
+                        delegation::derive_delegation_seed(&key, &salt, &project_id, &args.member);
+                    let kp = IdentityKeypair::from_seed(&seed);
                     if kp.public_key().to_hex() != *pub_hex {
                         anyhow::bail!(
                             "Re-derived delegation key for {m} does not match the public key \
@@ -1223,12 +1226,12 @@ fn run_token_rm(args: TokenRmArgs, passphrase_flag: Option<&str>) -> Result<()> 
 
     let salt_hex = member.kdf_nonce.as_ref().unwrap();
     let public_key_hex = member.verify_key.as_ref().unwrap();
-    let salt = derive::Salt::from_hex(salt_hex)?;
-    let public_key = sign::PublicKey::from_hex(public_key_hex)?;
+    let salt = Salt::from_hex(salt_hex)?;
+    let public_key = PublicKey::from_hex(public_key_hex)?;
 
     let passphrase = read_passphrase(passphrase_flag, "Passphrase: ")?;
-    let key = derive::derive_key(&passphrase, &salt)?;
-    let keypair = sign::IdentityKeypair::from_derived_key(&key);
+    let key = derive_key(&passphrase, &salt)?;
+    let keypair = IdentityKeypair::from_derived_key(&key);
     if keypair.public_key() != public_key {
         anyhow::bail!("incorrect passphrase");
     }
@@ -1295,12 +1298,12 @@ fn run_passphrase(current_flag: Option<&str>, new_flag: Option<&str>) -> Result<
         .kdf_nonce
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("No salt registered for {}.", email))?;
-    let current_pub = sign::PublicKey::from_hex(current_pub_hex)?;
-    let current_salt = derive::Salt::from_hex(current_salt_hex)?;
+    let current_pub = PublicKey::from_hex(current_pub_hex)?;
+    let current_salt = Salt::from_hex(current_salt_hex)?;
 
     let current_pass = read_passphrase(current_flag, "Current passphrase: ")?;
-    let current_key = derive::derive_key(&current_pass, &current_salt)?;
-    let current_kp = sign::IdentityKeypair::from_derived_key(&current_key);
+    let current_key = derive_key(&current_pass, &current_salt)?;
+    let current_kp = IdentityKeypair::from_derived_key(&current_key);
     if current_kp.public_key() != current_pub {
         anyhow::bail!("incorrect passphrase");
     }
@@ -1309,7 +1312,7 @@ fn run_passphrase(current_flag: Option<&str>, new_flag: Option<&str>) -> Result<
     if new_pass == current_pass {
         anyhow::bail!("new passphrase must differ from the current one");
     }
-    derive::validate_passphrase(&new_pass)?;
+    validate_passphrase(&new_pass)?;
     if new_flag.is_none() {
         let confirm = rpassword::prompt_password("Confirm:            ")?;
         if confirm != new_pass {
@@ -1317,9 +1320,9 @@ fn run_passphrase(current_flag: Option<&str>, new_flag: Option<&str>) -> Result<
         }
     }
 
-    let new_salt = derive::generate_salt();
-    let new_key = derive::derive_key(&new_pass, &new_salt)?;
-    let new_kp = sign::IdentityKeypair::from_derived_key(&new_key);
+    let new_salt = generate_salt();
+    let new_key = derive_key(&new_pass, &new_salt)?;
+    let new_kp = IdentityKeypair::from_derived_key(&new_key);
 
     let m = project.members.get_mut(&email).unwrap();
     m.verify_key = Some(new_kp.public_key().to_hex());
@@ -1375,10 +1378,10 @@ fn run_auth_otp(otp: &str, passphrase_flag: Option<&str>) -> Result<()> {
     }
     // Derive the redeemer's keypair from the new passphrase.
     let passphrase = read_passphrase(passphrase_flag, "Choose passphrase: ")?;
-    derive::validate_passphrase(&passphrase)?;
-    let salt = derive::generate_salt();
-    let key = derive::derive_key(&passphrase, &salt)?;
-    let keypair = sign::IdentityKeypair::from_derived_key(&key);
+    validate_passphrase(&passphrase)?;
+    let salt = generate_salt();
+    let key = derive_key(&passphrase, &salt)?;
+    let keypair = IdentityKeypair::from_derived_key(&key);
 
     // Apply to project.yaml: set public_key/salt, clear otp_hash.
     {
@@ -1498,12 +1501,12 @@ pub fn run_ai_rotate(member: &str, passphrase_flag: Option<&str>) -> Result<()> 
 
     let salt_hex = human.kdf_nonce.as_ref().unwrap();
     let public_key_hex = human.verify_key.as_ref().unwrap();
-    let salt = derive::Salt::from_hex(salt_hex)?;
-    let public_key = sign::PublicKey::from_hex(public_key_hex)?;
+    let salt = Salt::from_hex(salt_hex)?;
+    let public_key = PublicKey::from_hex(public_key_hex)?;
 
     let passphrase = read_passphrase(passphrase_flag, "Passphrase: ")?;
-    let key = derive::derive_key(&passphrase, &salt)?;
-    let keypair = sign::IdentityKeypair::from_derived_key(&key);
+    let key = derive_key(&passphrase, &salt)?;
+    let keypair = IdentityKeypair::from_derived_key(&key);
     if keypair.public_key() != public_key {
         anyhow::bail!("incorrect passphrase");
     }
@@ -1514,9 +1517,9 @@ pub fn run_ai_rotate(member: &str, passphrase_flag: Option<&str>) -> Result<()> 
     // of the prior local state (valid, mismatched, missing, or random-legacy
     // from ADR-033 §1).
     let project_id = session::project_id(&root)?;
-    let new_salt = derive::generate_salt();
-    let new_seed = derive::derive_delegation_seed(&key, &new_salt, &project_id, member);
-    let new_kp = sign::IdentityKeypair::from_seed(&new_seed);
+    let new_salt = generate_salt();
+    let new_seed = delegation::derive_delegation_seed(&key, &new_salt, &project_id, member);
+    let new_kp = IdentityKeypair::from_seed(&new_seed);
     delegation::save_delegation_key(&project_id, member, &new_seed)?;
 
     // Update project.yaml: new delegation_verifier + new delegation_salt +

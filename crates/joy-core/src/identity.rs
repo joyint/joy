@@ -182,7 +182,7 @@ fn check_session(root: &Path, member: &str, project: &Option<Project>) -> bool {
         let Some(ref pk_hex) = m.verify_key else {
             return false;
         };
-        let Ok(pk) = crate::auth::sign::PublicKey::from_hex(pk_hex) else {
+        let Ok(pk) = crate::auth::PublicKey::from_hex(pk_hex) else {
             return false;
         };
         if crate::auth::session::validate_session(&sess, &pk, &project_id).is_err() {
@@ -231,7 +231,7 @@ fn ephemeral_public_matches(
     let Some(ref stored_pk_hex) = sess.claims.session_public_key else {
         return false;
     };
-    let kp = crate::auth::sign::IdentityKeypair::from_seed(ephemeral_private);
+    let kp = crate::auth::IdentityKeypair::from_seed(ephemeral_private);
     kp.public_key().to_hex() == *stored_pk_hex
 }
 

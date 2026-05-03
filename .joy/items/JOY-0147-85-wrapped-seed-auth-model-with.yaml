@@ -4,6 +4,8 @@ type: story
 status: new
 priority: high
 parent: JOY-0145-51
+deps:
+- JOY-0156-02
 milestone: JOY-MS-02
 capabilities:
 - plan
@@ -12,5 +14,5 @@ capabilities:
 effort: 5
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-02T22:45:08.872122Z
-updated: 2026-05-02T22:45:08.872122Z
+updated: 2026-05-03T15:11:44.950416Z
 description: 'Implements the wrapped-seed identity model per ADR-039: random per-member seed encrypted under a passphrase-derived KEK and a recovery-key-derived KEK, both AES-256-GCM, stored as seed_wrap_passphrase and seed_wrap_recovery in project.yaml. Includes joy auth init that generates and displays the recovery key once, joy auth recover --recovery-key for passphrase-loss recovery, and joy auth recover --regenerate-key for recovery-key rotation. Foundation for all other Crypt work; the identity keypair stays stable across passphrase changes so Crypt zone wraps remain valid.'
