@@ -1,9 +1,11 @@
 id: JOY-0155-D0
 title: Initialize joy-crypt crate skeleton in joyint/crypt
 type: task
-status: new
+status: closed
 priority: high
 parent: JOY-0145-51
+assignees:
+- member: ai:claude@joy
 deps:
 - JOY-0154-3C
 milestone: JOY-MS-02
@@ -12,5 +14,12 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-03T10:04:19.807883Z
-updated: 2026-05-03T10:04:19.807883Z
+updated: 2026-05-03T10:41:38.339819Z
 description: 'Create Cargo crate at crypt/crates/joy-crypt/ inside the joyint/crypt submodule. Set up Cargo.toml with RustCrypto deps (argon2, ed25519-dalek, aes-gcm, zeroize, secrecy). Add empty module stubs: kdf, aead, identity, wrap, zone, session_wrap. Wire joy workspace to consume joy-crypt via path dependency on ../crypt/crates/joy-crypt. Scaffolding and dependency wiring only, no business logic.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-03T10:33:05.458738Z
+  text: 'Plan: (1) crypt/Cargo.toml as workspace with member crates/joy-crypt; (2) crypt/crates/joy-crypt/Cargo.toml with RustCrypto deps; (3) lib.rs declaring pub mod aead, identity, kdf, session_wrap, wrap, zone; (4) six empty stub module files with doc comment only; (5) joy/Cargo.toml workspace.dependencies adds joy-crypt as path dep on ../crypt/crates/joy-crypt; (6) cargo check in both workspaces. Three commits across crypt, joy, umbrella.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-03T10:41:38.228673Z
+  text: 'Done: [x] crypt/Cargo.toml workspace with shared RustCrypto deps. [x] joy-crypt package at crypt/crates/joy-crypt with argon2, ed25519-dalek, aes-gcm, zeroize, secrecy, rand_core, thiserror. [x] lib.rs declares modules aead, identity, kdf, session_wrap, wrap, zone with #![forbid(unsafe_code)]. [x] Six stub module files with doc comments. [x] joy/Cargo.toml workspace.dependencies adds joy-crypt = { path = "../crypt/crates/joy-crypt" }. [x] cargo check passes in crypt and joy. No business logic yet; ready for primitive implementations in subsequent items.'
