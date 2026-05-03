@@ -7,6 +7,7 @@ pub mod ai_templates;
 pub mod auth;
 pub mod capabilities;
 pub mod context;
+pub mod crypt;
 pub mod embedded;
 pub mod error;
 pub mod event_log;

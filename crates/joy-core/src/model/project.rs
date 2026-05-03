@@ -24,7 +24,41 @@ pub struct Project {
     pub docs: Docs,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub members: BTreeMap<String, Member>,
+    /// Crypt zone registry. Empty / absent means encryption is not in
+    /// use; `crypt_wraps` on members and `crypt_zone` on items only have
+    /// meaning relative to the zones declared here. See ADR-038 and
+    /// vision/guardianship/Crypt.md.
+    #[serde(default, skip_serializing_if = "CryptConfig::is_empty")]
+    pub crypt: CryptConfig,
     pub created: DateTime<Utc>,
+}
+
+/// Top-level Crypt configuration. Holds the zone registry; per-member
+/// wraps live on `Member.crypt_wraps`, per-item zone references live on
+/// `Item.crypt_zone`. The default zone uses the conventional name
+/// `"default"` and is auto-created on first `joy crypt add`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct CryptConfig {
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub zones: BTreeMap<String, CryptZone>,
+}
+
+impl CryptConfig {
+    pub fn is_empty(&self) -> bool {
+        self.zones.is_empty()
+    }
+}
+
+/// A single Crypt zone: marked paths and project-wide properties. The
+/// zone key itself is never stored in plaintext; it lives only as
+/// per-member wraps under `Member.crypt_wraps[<zone-name>]`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct CryptZone {
+    /// Path patterns (gitattributes-style globs) that belong to this
+    /// zone. Empty list means item-only encryption (zone references
+    /// come from items via `crypt_zone`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub paths: Vec<String>,
 }
 
 /// Configurable paths to the project's reference documentation, relative to
@@ -91,6 +125,13 @@ pub struct Member {
     pub enrollment_verifier: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub ai_delegations: BTreeMap<String, AiDelegationEntry>,
+    /// Per-member Crypt zone-key wraps. Map from zone name to the
+    /// hex-encoded `nonce || ciphertext || tag` produced by
+    /// `joy_crypt::wrap::wrap` over the zone key. The KEK derives from
+    /// the member's identity seed via HKDF-SHA256 with a fixed
+    /// "crypt-member-kek" tag.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub crypt_wraps: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attestation: Option<Attestation>,
 }
@@ -334,6 +375,7 @@ impl Member {
             seed_wrap_recovery: None,
             enrollment_verifier: None,
             ai_delegations: BTreeMap::new(),
+            crypt_wraps: BTreeMap::new(),
             attestation: None,
         }
     }
@@ -366,6 +408,7 @@ impl Project {
             forge: None,
             docs: Docs::default(),
             members: BTreeMap::new(),
+            crypt: CryptConfig::default(),
             created: Utc::now(),
         }
     }

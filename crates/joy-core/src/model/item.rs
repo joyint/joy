@@ -36,6 +36,11 @@ pub struct Item {
     pub updated: DateTime<Utc>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Name of the Crypt zone this item belongs to. Absent or null
+    /// means the item is plaintext. The zone must be declared in the
+    /// project's `crypt.zones` registry. See ADR-038 and Crypt.md.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub crypt_zone: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub comments: Vec<Comment>,
 }
@@ -173,6 +178,7 @@ impl Item {
             created: now,
             updated: now,
             description: None,
+            crypt_zone: None,
             comments: Vec::new(),
         }
     }

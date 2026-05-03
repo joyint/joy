@@ -205,6 +205,7 @@ mod tests {
             created: now,
             updated: now,
             description: None,
+            crypt_zone: None,
             comments: vec![],
         }
     }

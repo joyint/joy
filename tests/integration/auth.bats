@@ -811,3 +811,76 @@ YAML
 # directly from passphrase+kdf_nonce is straightforward to construct.
 # A bats-only legacy fixture would have to recreate Argon2id parameters
 # and yaml byte layout manually, so that path stays in Rust tests.
+
+@test "joy crypt status shows empty config on fresh project" {
+    joy init --name "Crypt Test" --acronym CT
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    run joy crypt status
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"zones registered:  0"* ]]
+    [[ "$output" == *"items in any zone: 0"* ]]
+    [[ "$output" == *"No encryption configured"* ]]
+}
+
+@test "joy crypt add marks an item with crypt_zone (default zone)" {
+    joy init --name "Crypt Test" --acronym CT
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy add task "Sensitive item" >/dev/null
+
+    # Item ID has the form CT-XXXX-YY; pull it from the item filename
+    # rather than parsing JSON to avoid python dependencies in CI.
+    ITEM_FILE=$(ls .joy/items/CT-*.yaml | head -1)
+    ID=$(basename "$ITEM_FILE" | sed -E 's/^(CT-[0-9A-Fa-f]+(-[0-9A-Fa-f]+)?)-.*/\1/')
+
+    run joy crypt add "$ID" --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Added"* ]]
+
+    grep -q "crypt_zone: default" "$ITEM_FILE"
+
+    # Status now reports one item in a zone.
+    run joy crypt status
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"items in any zone: 1"* ]]
+}
+
+@test "joy crypt add with path glob populates zone.paths" {
+    joy init --name "Crypt Test" --acronym CT
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+
+    run joy crypt add "data/customer-x/" --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    grep -q "data/customer-x/" .joy/project.yaml
+
+    # list shows the path under the default zone.
+    run joy crypt list
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"data/customer-x/"* ]]
+}
+
+@test "joy crypt grant currently bails pending JOY-0157-86" {
+    joy init --name "Crypt Test" --acronym CT
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    OTP=$(joy project member add bob@example.com --passphrase "$TEST_PASSPHRASE" \
+        | sed -n 's/^[[:space:]]*One-time password:[[:space:]]*\([A-Za-z0-9-]*\).*$/\1/p' | head -1)
+    [ -n "$OTP" ]
+
+    run joy crypt grant bob@example.com --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"JOY-0157-86"* ]]
+}
+
+@test "joy crypt revoke removes a member's wrap" {
+    joy init --name "Crypt Test" --acronym CT
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+
+    # Self-grant via the auto-create path: `joy crypt add` writes the
+    # acting member's own crypt_wraps entry.
+    joy crypt add "secret/" --passphrase "$TEST_PASSPHRASE" >/dev/null
+    grep -q "crypt_wraps:" .joy/project.yaml
+
+    run joy crypt revoke test@example.com
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Revoked"* ]]
+    ! grep -A 3 "test@example.com" .joy/project.yaml | grep -q "crypt_wraps:"
+}

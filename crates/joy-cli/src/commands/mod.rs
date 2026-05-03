@@ -9,6 +9,7 @@ pub mod board;
 pub mod comment;
 pub mod completions;
 pub mod config;
+pub mod crypt;
 pub mod deauth;
 pub mod deps;
 pub mod edit;

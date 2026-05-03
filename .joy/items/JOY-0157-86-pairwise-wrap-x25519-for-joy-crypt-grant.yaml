@@ -1,0 +1,14 @@
+id: JOY-0157-86
+title: Pairwise wrap (X25519) for joy crypt grant
+type: task
+status: new
+priority: high
+parent: JOY-0145-51
+milestone: JOY-MS-02
+capabilities:
+- implement
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-03T16:43:35.982634Z
+updated: 2026-05-03T16:43:35.982634Z
+description: Implement the cross-member zone-key wrap that joy crypt grant needs. Add X25519 conversion of Ed25519 verify_keys to joy-crypt, add an authenticated ECDH primitive (sender's seed + recipient's verify_key produces a pairwise KEK), wrap zone keys for granted members, decrypt on the recipient side. Replaces the bail in joy-cli/commands/crypt::run_grant. Required to ship joy crypt grant; default-zone CLI in JOY-0148-84 ships without grant pending this primitive.
