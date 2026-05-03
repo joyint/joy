@@ -1,0 +1,16 @@
+id: JOY-0150-B0
+title: WebUI Crypt parity via Web Crypto API
+type: story
+status: new
+priority: high
+parent: JOY-0146-87
+milestone: JOY-MS-03
+capabilities:
+- plan
+- implement
+- review
+effort: 5
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-02T22:45:44.088886Z
+updated: 2026-05-02T22:45:44.088886Z
+description: 'Implements browser-side encryption and wrapping in the WebUI using Web Crypto API: AES-256-GCM, Argon2id-derived KEKs, Ed25519 keypair operations. When a user triggers a status change on an encrypted item with an AI assignee, the browser unwraps the user''s zone key locally, re-wraps it for the AI session pubkey, and posts the Job record. Server stores ciphertext only. Same wire format as the Rust client.'

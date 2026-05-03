@@ -1,0 +1,14 @@
+id: JOY-0146-87
+title: Crypt integration with Jobs and WebUI
+type: epic
+status: new
+priority: high
+milestone: JOY-MS-03
+capabilities:
+- conceive
+- plan
+effort: 5
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-02T22:44:24.961766Z
+updated: 2026-05-02T22:44:24.961766Z
+description: 'Builds on the MS-02 Crypt foundation (JOY-0145-51) by integrating Crypt into Job records and the WebUI. Covers the Job-bound AI access path with crypt-block wraps and state-based validity, browser-side wrapping via Web Crypto API, and the corresponding tutorial and website updates. References: ADR-038, ADR-039, Crypt.md, Auth.md, Process.md.'

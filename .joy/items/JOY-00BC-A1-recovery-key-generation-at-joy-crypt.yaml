@@ -1,7 +1,7 @@
 id: JOY-00BC-A1
 title: Recovery key generation at joy crypt init
 type: story
-status: new
+status: closed
 priority: high
 milestone: JOY-MS-02
 capabilities:
@@ -11,5 +11,9 @@ capabilities:
 effort: 2
 created_by: horst.schwarz@joydev.com
 created: 2026-03-31T19:42:10.104362826Z
-updated: 2026-04-30T20:56:30.858078579Z
+updated: 2026-05-02T22:47:52.094307Z
 description: Generate a recovery key at joy crypt init for last-resort key recovery. Migrated from JI-00D0.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-02T22:45:59.874963Z
+  text: Closing as obsolete. The wrapped-seed Auth model (ADR-039) provides recovery via Auth (joy auth recover --recovery-key). Crypt no longer has its own recovery key concept and inherits recovery from Auth. The joy crypt init command itself was superseded by the selective Crypt model (ADR-038). Replacement work is tracked in epic JOY-0145-51.

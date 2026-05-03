@@ -1,0 +1,16 @@
+id: JOY-014F-D4
+title: Crypt block on Job records with state-based validity
+type: story
+status: new
+priority: high
+parent: JOY-0146-87
+milestone: JOY-MS-03
+capabilities:
+- plan
+- implement
+- review
+effort: 5
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-02T22:45:41.739248Z
+updated: 2026-05-02T22:45:41.739248Z
+description: Adds the optional crypt block to Job records (.joy/jobs/<ITEM-ID>/JOB-XXXX.yaml). On status change that creates a Job for an AI assignee on an encrypted item, the triggering principal wraps the zone keys for the AI's session pubkey and writes them into the Job. Decrypt operations validate Job state (assignee, item status, capability) before unwrapping. Wraps become inert when the Job closes. Depends on JOY-0031 (Job tracking with automatic lifecycle).

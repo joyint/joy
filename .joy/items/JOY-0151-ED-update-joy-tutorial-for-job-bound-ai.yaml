@@ -1,0 +1,16 @@
+id: JOY-0151-ED
+title: Update Joy Tutorial for Job-bound AI access and WebUI Crypt
+type: story
+status: new
+priority: medium
+parent: JOY-0146-87
+milestone: JOY-MS-03
+capabilities:
+- plan
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-02T22:45:46.408027Z
+updated: 2026-05-02T22:45:46.408027Z
+description: 'Extends crates/joy-cli/docs/Tutorial.md once Job-bound AI access and the WebUI Crypt path are functional: Job-bound access flow, what is wrapped where, browser-side wrapping in the WebUI, the responsibility model when the trigger does not hold the zone key.'

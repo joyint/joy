@@ -1,0 +1,16 @@
+id: JOY-014D-83
+title: Update Joy Tutorial for Crypt CLI and new Auth flow
+type: story
+status: new
+priority: medium
+parent: JOY-0145-51
+milestone: JOY-MS-02
+capabilities:
+- plan
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-02T22:45:36.789525Z
+updated: 2026-05-02T22:45:36.789525Z
+description: 'Updates crates/joy-cli/docs/Tutorial.md: Auth section to reflect the wrapped-seed model and the recovery key flows; new Crypt section covering the default zone, named zones, --all whole-project mode, the four verbs (add/rm/grant/revoke), and the Auth-inherited recovery story. Removes references to the obsolete joy crypt init flow and the whole-project-E2E-by-default framing.'

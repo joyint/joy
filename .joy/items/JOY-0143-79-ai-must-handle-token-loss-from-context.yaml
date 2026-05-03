@@ -1,0 +1,16 @@
+id: JOY-0143-79
+title: AI must handle token loss from context compaction
+type: idea
+status: new
+priority: high
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-02T21:25:40.188093Z
+updated: 2026-05-02T21:25:40.188093Z
+description: |-
+  Long AI-tool sessions (Claude Code, Copilot, Qwen) undergo automatic context compaction near the context limit. The exact delegation token (joy_t_...) and the derived session value (JOY_SESSION=joy_s_...) can be dropped during compaction. The AI then loses authentication state without realizing it. Env vars do not persist across Bash invocations, so the AI must keep the session string in its conversational context and re-pass it as a prefix on each command. Compaction breaks that.
+
+  Two desirable improvements:
+
+  1. Persistence path that does not depend on AI memory. Cache the delegation token (and optionally the active session) in a secure local file owned by the OS user, or in OS keyring. A fresh Bash invocation picks it up automatically and, if the session has expired but the delegation token is still valid (per ADR-034 multi-use TTL), re-redeems silently. AI no longer carries the string through context.
+
+  2. Behavioural rule for AI tools. If an unauthenticated state is encountered where a session was previously active, the AI must consider context compaction as a plausible cause and ask for a fresh token, not insist that it was never authenticated.

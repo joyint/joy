@@ -1,0 +1,16 @@
+id: JOY-014A-F9
+title: Crypt --all whole-project mode
+type: story
+status: new
+priority: medium
+parent: JOY-0145-51
+milestone: JOY-MS-02
+capabilities:
+- plan
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-02T22:45:29.081495Z
+updated: 2026-05-02T22:45:29.081495Z
+description: Adds joy crypt add --all and joy crypt rm --all to encrypt or release the entire .joy/ content. Sets a project default that auto-encrypts new items. Used in compliance and regulated setups where the entire backlog should be protected.

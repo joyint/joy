@@ -1,0 +1,16 @@
+id: JOY-0152-87
+title: Update website content for Job-bound AI access and WebUI Crypt
+type: story
+status: new
+priority: medium
+parent: JOY-0146-87
+milestone: JOY-MS-03
+capabilities:
+- plan
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-02T22:45:47.880026Z
+updated: 2026-05-02T22:45:47.880026Z
+description: Extends project/website content to reflect Job-bound AI access and the browser-side WebUI Crypt path. Marketing positioning for the three E2E levels on joyint.com is updated to reference the implemented architecture.

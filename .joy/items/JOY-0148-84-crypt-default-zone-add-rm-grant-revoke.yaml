@@ -1,0 +1,16 @@
+id: JOY-0148-84
+title: 'Crypt default zone: add/rm/grant/revoke/list/status'
+type: story
+status: new
+priority: high
+parent: JOY-0145-51
+milestone: JOY-MS-02
+capabilities:
+- plan
+- implement
+- review
+effort: 5
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-02T22:45:23.363316Z
+updated: 2026-05-02T22:45:23.363316Z
+description: 'Implements the default-zone CLI surface: joy crypt add <id|path>, joy crypt rm, joy crypt grant <email>, joy crypt revoke <email>, joy crypt list, joy crypt status. Per-zone AES-256-GCM key, per-member wraps stored under crypt_wraps in member entries in project.yaml. Default zone is implicit; first add creates it. Recovery is inherited from Auth (no separate Crypt recovery key).'

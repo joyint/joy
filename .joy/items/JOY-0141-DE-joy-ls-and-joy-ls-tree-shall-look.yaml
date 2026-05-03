@@ -1,0 +1,11 @@
+id: JOY-0141-DE
+title: joy ls and joy ls --tree shall look similar
+type: rework
+status: new
+priority: medium
+capabilities:
+- implement
+- review
+created_by: horst.schwarz@joydev.com
+created: 2026-05-02T18:32:16.599328Z
+updated: 2026-05-02T18:32:16.599328Z

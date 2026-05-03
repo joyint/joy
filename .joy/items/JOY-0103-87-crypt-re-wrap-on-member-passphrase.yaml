@@ -1,7 +1,7 @@
 id: JOY-0103-87
 title: Crypt re-wrap on member passphrase change
 type: task
-status: new
+status: closed
 priority: medium
 milestone: JOY-MS-03
 capabilities:
@@ -9,5 +9,9 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy
 created: 2026-04-20T17:25:50.330769566Z
-updated: 2026-04-20T17:25:50.330769566Z
+updated: 2026-05-02T22:47:52.150803Z
 description: 'When Crypt is active, a member''s passphrase change re-derives their public_key, which invalidates their wrap of the project key. Crypt must re-wrap on every change. Integration point: the passphrase-change core in auth layer (from JOY-0073). Dependencies: JOY-0073 (passphrase change core), JOY-00BA (local key management for E2E encryption), JOY-00BB (client-side crypto crate), JOY-00BC (recovery key at crypt init). Without Crypt active, this is a no-op - the hook sits idle.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-02T22:46:01.314164Z
+  text: Closing as obsolete. Under the wrapped-seed Auth model (ADR-039), passphrase changes only re-wrap the seed_wrap_passphrase entry; the identity keypair stays stable and Crypt zone wraps remain valid. No Crypt re-wrap is needed on passphrase change.

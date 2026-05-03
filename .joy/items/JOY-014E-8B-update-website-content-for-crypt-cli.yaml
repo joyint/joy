@@ -1,0 +1,16 @@
+id: JOY-014E-8B
+title: Update website content for Crypt CLI and new Auth flow
+type: story
+status: new
+priority: medium
+parent: JOY-0145-51
+milestone: JOY-MS-02
+capabilities:
+- plan
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-02T22:45:39.504087Z
+updated: 2026-05-02T22:45:39.504087Z
+description: Updates project/website content (and any related docs surface) to reflect the wrapped-seed Auth model with recovery key, the selective Crypt design with default zone and named zones, and the three E2E levels on joyint.com (at-rest, compute-bounded, strong-compute). The umbrella BusinessModel.md updates already in place serve as the canonical reference.

@@ -1,0 +1,23 @@
+id: JOY-0144-E5
+title: 'AI instructions: state that documentation is specification'
+type: task
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-02T21:26:08.287583Z
+updated: 2026-05-02T21:30:02.451210Z
+description: |-
+  AI assistants in confirmation-requiring interaction modes (supervised, collaborative, interactive, pairing) have been observed writing unagreed concrete decisions into project documentation: invented configuration fields, file paths, command flags, schema fragments, internal storage layouts, dependency choices, marketing claims, all phrased as if they were settled. The fabricated content is plausible and well-integrated, which forces the user to audit every diff line by line.
+
+  The existing 'Complexity / No unrequested abstractions' rule under Working style in the AI instructions template was interpreted as code-only. Documentation was treated as lower-stakes commentary rather than normative specification, which is the gap to close.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-02T21:26:16.805455Z
+  text: 'Plan: Add a ''Documentation as specification'' subsection under Working style in crates/joy-core/templates/ai/instructions.md. Around 5 lines, fits within ADR-026''s 200-line budget (current 159 lines, after change ~164). Once ADR-026''s split into tool.md/automation.md is implemented, the block must appear in both.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-02T21:26:44.149583Z
+  text: '[x] Added ''Documentation as specification'' subsection under Working style in crates/joy-core/templates/ai/instructions.md. File grew from 159 to 164 lines, well within the 200-line budget from ADR-026. The subsection sits between ''Complexity'' and ''Plan-first'' to keep flow with the existing rules about unrequested abstractions.'

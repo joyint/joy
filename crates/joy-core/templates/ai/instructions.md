@@ -152,6 +152,11 @@ intent; do not rely on implicit generalization.
 - Simplest solution that meets the criteria. No unrequested abstractions, config, error layers, or future-proofing.
 - No new dependencies without asking. Edit existing code before creating new files.
 
+### Documentation as specification
+- Documentation in this project is specification, not commentary. Every field, path, flag, default, or schema fragment that lands in a doc file is a normative decision.
+- In any interaction mode that requires confirmation (supervised, collaborative, interactive, pairing), write only what was explicitly agreed in the conversation. No clarifying extensions, no plausible-looking defaults, no "obvious" extras.
+- When in doubt, propose in chat, not in a file edit.
+
 ### Plan-first
 - For changes touching >1 file or ~30 lines: produce a <15-line plan (files, functions/types, expected diff shape). Wait for confirmation.
 
