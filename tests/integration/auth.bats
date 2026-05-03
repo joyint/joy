@@ -523,7 +523,7 @@ YAML
 # joy auth passphrase (JOY-0073)
 # ============================================================
 
-@test "joy auth passphrase rotates keypair preserving attestation" {
+@test "joy auth passphrase preserves keypair and attestation (ADR-039)" {
     joy init --name "Passphrase Test" --acronym PT
     joy auth init --passphrase "$TEST_PASSPHRASE"
     OTP=$(joy project member add alice@example.com --passphrase "$TEST_PASSPHRASE" \
@@ -535,8 +535,9 @@ YAML
     # manage/delete, so nine capability keys each render on their own
     # line). Use a generous -A range so the follow-up greps still reach
     # verify_key and signature.
-    OLD_PUB=$(grep -A30 "^  alice@example.com:" .joy/project.yaml | grep "verify_key:" | awk '{print $NF}')
-    OLD_ATT=$(grep -A30 "^  alice@example.com:" .joy/project.yaml | grep "signature:" | head -1)
+    OLD_PUB=$(grep -A40 "^  alice@example.com:" .joy/project.yaml | grep "verify_key:" | awk '{print $NF}')
+    OLD_ATT=$(grep -A40 "^  alice@example.com:" .joy/project.yaml | grep "signature:" | head -1)
+    OLD_WRAP=$(grep -A40 "^  alice@example.com:" .joy/project.yaml | grep "seed_wrap_passphrase:" | awk '{print $NF}')
 
     run joy auth passphrase \
         --passphrase "alpha bravo charlie delta echo foxtrot" \
@@ -544,11 +545,15 @@ YAML
     [ "$status" -eq 0 ]
     [[ "$output" == *"Passphrase changed"* ]]
 
-    # verify_key rotated, attestation preserved.
-    NEW_PUB=$(grep -A30 "^  alice@example.com:" .joy/project.yaml | grep "verify_key:" | awk '{print $NF}')
-    NEW_ATT=$(grep -A30 "^  alice@example.com:" .joy/project.yaml | grep "signature:" | head -1)
-    [ "$OLD_PUB" != "$NEW_PUB" ]
+    # verify_key preserved (ADR-039 wrapped-seed model: keypair derives
+    # from a stable seed). seed_wrap_passphrase rotates. Attestation is
+    # untouched.
+    NEW_PUB=$(grep -A40 "^  alice@example.com:" .joy/project.yaml | grep "verify_key:" | awk '{print $NF}')
+    NEW_ATT=$(grep -A40 "^  alice@example.com:" .joy/project.yaml | grep "signature:" | head -1)
+    NEW_WRAP=$(grep -A40 "^  alice@example.com:" .joy/project.yaml | grep "seed_wrap_passphrase:" | awk '{print $NF}')
+    [ "$OLD_PUB" = "$NEW_PUB" ]
     [ "$OLD_ATT" = "$NEW_ATT" ]
+    [ "$OLD_WRAP" != "$NEW_WRAP" ]
 
     # New passphrase works; old passphrase does not.
     run joy auth --passphrase "kilo lima mike november oscar papa"
@@ -741,3 +746,68 @@ YAML
     [ ! -d "$XDG_STATE_HOME/joy/delegations/OLDACR" ]
     [ ! -d "$XDG_STATE_HOME/joy/delegations/NEWACR" ]
 }
+
+@test "joy auth init displays recovery key once (ADR-039)" {
+    joy init --name "Recovery Test" --acronym RT
+    run joy auth init --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"RECOVERY KEY"* ]]
+    [[ "$output" == *"joy_r_"* ]]
+
+    # Both wraps land in project.yaml.
+    grep -q "seed_wrap_passphrase:" .joy/project.yaml
+    grep -q "seed_wrap_recovery:" .joy/project.yaml
+}
+
+@test "joy auth recover --recovery-key resets passphrase preserving keypair (ADR-039)" {
+    joy init --name "Recovery Test" --acronym RT
+    OUT=$(joy auth init --passphrase "$TEST_PASSPHRASE")
+    REC=$(echo "$OUT" | sed -n 's/^.*\(joy_r_[0-9a-f]\{64\}\).*$/\1/p' | head -1)
+    [ -n "$REC" ]
+
+    OLD_PUB=$(grep "verify_key:" .joy/project.yaml | head -1 | awk '{print $NF}')
+
+    run joy auth recover --recovery-key \
+        --recovery "$REC" \
+        --new-passphrase "kilo lima mike november oscar papa"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Recovery successful"* ]]
+
+    # Keypair preserved (verify_key unchanged).
+    NEW_PUB=$(grep "verify_key:" .joy/project.yaml | head -1 | awk '{print $NF}')
+    [ "$OLD_PUB" = "$NEW_PUB" ]
+
+    # New passphrase works; old does not.
+    run joy auth --passphrase "kilo lima mike november oscar papa"
+    [ "$status" -eq 0 ]
+    joy deauth
+    run joy auth --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -ne 0 ]
+}
+
+@test "joy auth recover --regenerate-key rotates recovery wrap (ADR-039)" {
+    joy init --name "Recovery Test" --acronym RT
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    OLD_REC_WRAP=$(grep "seed_wrap_recovery:" .joy/project.yaml | awk '{print $NF}')
+    OLD_PASS_WRAP=$(grep "seed_wrap_passphrase:" .joy/project.yaml | awk '{print $NF}')
+
+    run joy auth recover --regenerate-key --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Recovery key rotated"* ]]
+    [[ "$output" == *"NEW RECOVERY KEY"* ]]
+
+    NEW_REC_WRAP=$(grep "seed_wrap_recovery:" .joy/project.yaml | awk '{print $NF}')
+    NEW_PASS_WRAP=$(grep "seed_wrap_passphrase:" .joy/project.yaml | awk '{print $NF}')
+    [ "$OLD_REC_WRAP" != "$NEW_REC_WRAP" ]
+    [ "$OLD_PASS_WRAP" = "$NEW_PASS_WRAP" ]
+
+    # Existing passphrase still works.
+    run joy auth --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+}
+
+# Lazy-migration end-to-end is exercised by the joy-core unit tests
+# (`auth::seed::tests`), where a legacy state with `verify_key` derived
+# directly from passphrase+kdf_nonce is straightforward to construct.
+# A bats-only legacy fixture would have to recreate Argon2id parameters
+# and yaml byte layout manually, so that path stays in Rust tests.

@@ -76,6 +76,17 @@ pub struct Member {
     pub verify_key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kdf_nonce: Option<String>,
+    /// AES-256-GCM ciphertext of the member's identity seed, encrypted
+    /// under a KEK derived from passphrase + kdf_nonce via Argon2id
+    /// (ADR-039). Hex-encoded `nonce || ciphertext || tag`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seed_wrap_passphrase: Option<String>,
+    /// AES-256-GCM ciphertext of the same seed, encrypted under a KEK
+    /// derived from a recovery key via Argon2id (ADR-039). The recovery
+    /// key itself is generated at `joy auth init`, displayed once, and
+    /// stored externally by the user. Hex-encoded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seed_wrap_recovery: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enrollment_verifier: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -319,6 +330,8 @@ impl Member {
             capabilities,
             verify_key: None,
             kdf_nonce: None,
+            seed_wrap_passphrase: None,
+            seed_wrap_recovery: None,
             enrollment_verifier: None,
             ai_delegations: BTreeMap::new(),
             attestation: None,

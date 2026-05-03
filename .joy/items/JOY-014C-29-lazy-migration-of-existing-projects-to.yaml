@@ -1,9 +1,11 @@
 id: JOY-014C-29
 title: Lazy migration of existing projects to wrapped-seed
 type: story
-status: new
+status: closed
 priority: high
 parent: JOY-0145-51
+assignees:
+- member: ai:claude@joy
 deps:
 - JOY-0147-85
 milestone: JOY-MS-02
@@ -14,5 +16,9 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-02T22:45:34.067107Z
-updated: 2026-05-03T15:11:45.027692Z
+updated: 2026-05-03T16:30:59.770816Z
 description: On first joy auth after upgrade, detects legacy member entries (no seed_wrap_*), derives the seed via the legacy passphrase + kdf_nonce path, generates a fresh recovery key, writes seed_wrap_passphrase and seed_wrap_recovery to project.yaml. Identity keypair preserved; existing Crypt wraps unaffected. One additional prompt at first login to capture the recovery key for external storage.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-03T16:30:59.671599Z
+  text: 'Done as part of JOY-0147-85: lazy migration runs on the first joy auth after upgrade for any member entry without seed_wrap_*. Detects legacy state, takes the legacy derived_key as the seed (so the existing keypair stays valid), generates a fresh recovery key, wraps the seed under both KEKs, persists, displays the recovery key once. Identity keypair preserved; existing Crypt wraps unaffected. Same migration path is reused by joy auth passphrase when called on a legacy entry.'

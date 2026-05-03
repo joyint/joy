@@ -1,9 +1,11 @@
 id: JOY-0147-85
 title: Wrapped-seed Auth model with passphrase and recovery wraps
 type: story
-status: new
+status: closed
 priority: high
 parent: JOY-0145-51
+assignees:
+- member: ai:claude@joy
 deps:
 - JOY-0156-02
 milestone: JOY-MS-02
@@ -14,5 +16,9 @@ capabilities:
 effort: 5
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-02T22:45:08.872122Z
-updated: 2026-05-03T15:11:44.950416Z
+updated: 2026-05-03T16:30:59.614532Z
 description: 'Implements the wrapped-seed identity model per ADR-039: random per-member seed encrypted under a passphrase-derived KEK and a recovery-key-derived KEK, both AES-256-GCM, stored as seed_wrap_passphrase and seed_wrap_recovery in project.yaml. Includes joy auth init that generates and displays the recovery key once, joy auth recover --recovery-key for passphrase-loss recovery, and joy auth recover --regenerate-key for recovery-key rotation. Foundation for all other Crypt work; the identity keypair stays stable across passphrase changes so Crypt zone wraps remain valid.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-03T16:30:59.511347Z
+  text: 'Done: schema gains seed_wrap_passphrase, seed_wrap_recovery on Member. joy auth init generates random seed and recovery key, wraps seed under passphrase KEK and recovery KEK, displays recovery key once. joy auth (passphrase path) prefers wrapped path; legacy entries trigger lazy migration to wrapped-seed (preserves keypair: legacy derived_key becomes the seed). joy auth recover --recovery-key restores passphrase access via recovery key. joy auth recover --regenerate-key rotates recovery wrap. joy auth passphrase preserves keypair across rotation (only seed_wrap_passphrase changes). joy auth --otp also onboards via wrapped seed. ai_init/project_member/token_add/token_rm/ai_rotate use the new joy_core::auth::unlock_identity helper that handles both wrapped and legacy states. derive_delegation_seed signature updated to take seed bytes per ADR-039. 8 new joy-core unit tests + 4 new bats integration tests; existing 285 bats tests still green. Test for legacy-state lazy migration deferred to Rust unit tests (constructing a real legacy state from bats requires reproducing Argon2id parameters).'

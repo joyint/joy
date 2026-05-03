@@ -6,8 +6,8 @@ use chrono::Utc;
 use clap::{Args, Subcommand};
 
 use joy_core::auth::{
-    delegation, derive_key, generate_salt, session, token, validate_passphrase, IdentityKeypair,
-    PublicKey, Salt,
+    delegation, derive_key, generate_salt, seed as seed_mod, session, token, validate_passphrase,
+    IdentityKeypair, PublicKey, Salt,
 };
 use joy_core::store;
 use joy_core::vcs::Vcs;
@@ -52,6 +52,8 @@ enum AuthCommand {
     Token(TokenArgs),
     /// Change your passphrase: re-derives your identity keypair
     Passphrase(PassphraseArgs),
+    /// Recover identity via recovery key, or rotate the recovery key
+    Recover(RecoverArgs),
     /// Render Joy-managed auth artefacts (SECURITY.md) and normalise project.yaml schema
     Update(UpdateArgs),
 }
@@ -61,6 +63,28 @@ struct UpdateArgs {
     /// Dry-run: do not modify any files. Exits 2 if anything is stale.
     #[arg(long)]
     check: bool,
+}
+
+#[derive(Args)]
+struct RecoverArgs {
+    /// Recover identity using the recovery key after passphrase loss.
+    /// Prompts for the recovery key (or reads it from --recovery), then
+    /// asks for a new passphrase and re-wraps seed_wrap_passphrase.
+    #[arg(long, conflicts_with = "regenerate_key")]
+    recovery_key: bool,
+
+    /// Generate a fresh recovery key for an authenticated session and
+    /// re-wrap seed_wrap_recovery only. Requires the current passphrase.
+    #[arg(long)]
+    regenerate_key: bool,
+
+    /// Recovery key (non-interactive, for scripts and tests).
+    #[arg(long)]
+    recovery: Option<String>,
+
+    /// New passphrase to set after recovery (non-interactive).
+    #[arg(long)]
+    new_passphrase: Option<String>,
 }
 
 #[derive(Args)]
@@ -121,6 +145,7 @@ pub fn run(args: AuthArgs) -> Result<()> {
         Some(AuthCommand::Passphrase(a)) => {
             run_passphrase(args.passphrase.as_deref(), a.new_passphrase.as_deref())
         }
+        Some(AuthCommand::Recover(a)) => run_recover(a, args.passphrase.as_deref()),
         Some(AuthCommand::Update(a)) => run_update(a),
         None => {
             if let Some(otp) = args.otp.as_deref() {
@@ -284,16 +309,24 @@ fn run_init(passphrase_flag: Option<&str>, user_flag: Option<&str>) -> Result<()
         }
     }
 
-    // Derive keypair
+    // Wrapped-seed model (ADR-039): generate a random seed, wrap it under
+    // both a passphrase-derived KEK and a recovery-key-derived KEK. The
+    // identity keypair derives from the seed and stays stable across
+    // passphrase rotation.
     let salt = generate_salt();
-    let key = derive_key(&passphrase, &salt)?;
-    let keypair = IdentityKeypair::from_derived_key(&key);
+    let seed = seed_mod::Seed::generate();
+    let recovery = seed_mod::RecoveryKey::generate();
+    let wrap_passphrase = seed_mod::wrap_seed_with_passphrase(&seed, &passphrase, &salt)?;
+    let wrap_recovery = seed_mod::wrap_seed_with_recovery(&seed, &recovery, &salt)?;
+    let keypair = IdentityKeypair::from_seed(seed.as_bytes());
     let public_key = keypair.public_key();
 
-    // Store salt and public key in project.yaml
+    // Store salt, public key, and both wraps in project.yaml
     let m = project.members.get_mut(&email).unwrap();
     m.kdf_nonce = Some(salt.to_hex());
     m.verify_key = Some(public_key.to_hex());
+    m.seed_wrap_passphrase = Some(wrap_passphrase);
+    m.seed_wrap_recovery = Some(wrap_recovery);
 
     // JOY-00FD-93 (also applies to the legacy auth init path): if the
     // founder is the only unattested member, reverse-attest them
@@ -326,6 +359,13 @@ fn run_init(passphrase_flag: Option<&str>, user_flag: Option<&str>) -> Result<()
 
     println!("Authentication initialized for {}.", email);
     println!("Public key registered. Session active (24h).");
+    println!();
+    println!("RECOVERY KEY (write this down now, it is shown only once):");
+    println!();
+    println!("    {}", recovery.to_display_string());
+    println!();
+    println!("Use it with `joy auth recover --recovery-key` if you ever forget");
+    println!("your passphrase. Joy never stores the plaintext recovery key.");
 
     // Render SECURITY.md so first-time setup leaves the repo with the
     // canonical explanation of the public auth fields in place. Idempotent.
@@ -392,12 +432,31 @@ fn auth_with_passphrase(
     let salt = Salt::from_hex(salt_hex)?;
 
     let passphrase = read_passphrase(passphrase_flag, "Passphrase: ")?;
-    let key = derive_key(&passphrase, &salt)?;
-    let keypair = IdentityKeypair::from_derived_key(&key);
 
-    if keypair.public_key() != public_key {
-        anyhow::bail!("incorrect passphrase");
-    }
+    // ADR-039: prefer the wrapped-seed path when seed_wrap_passphrase is
+    // present. The legacy path (no wrap) triggers a one-time lazy
+    // migration that preserves the existing keypair.
+    let keypair = if let Some(wrap_hex) = member.seed_wrap_passphrase.as_deref() {
+        let seed = seed_mod::unwrap_seed_with_passphrase(wrap_hex, &passphrase, &salt)?;
+        let kp = IdentityKeypair::from_seed(seed.as_bytes());
+        if kp.public_key() != public_key {
+            anyhow::bail!("incorrect passphrase");
+        }
+        kp
+    } else {
+        let key = derive_key(&passphrase, &salt)?;
+        let kp = IdentityKeypair::from_derived_key(&key);
+        if kp.public_key() != public_key {
+            anyhow::bail!("incorrect passphrase");
+        }
+        // JOY-014C-29 lazy migration: legacy member entry has no
+        // seed_wrap_*. Use the derived_key as the seed (it produced
+        // the existing verify_key), generate a fresh recovery key,
+        // wrap the seed under both KEKs, persist. Identity keypair
+        // stays the same; existing Crypt wraps remain valid.
+        migrate_to_wrapped_seed(root, email, &key, &salt, &passphrase)?;
+        kp
+    };
 
     // JOY-0101-78: silent auto-seal for pre-feature projects. If no
     // member anywhere has an attestation yet, treat the current state as
@@ -430,6 +489,53 @@ fn auth_with_passphrase(
     session::save_session(project_id, &session_token)?;
 
     println!("Authenticated as {}. Session active (24h).", email);
+
+    Ok(())
+}
+
+/// JOY-014C-29 lazy migration: convert a legacy member entry (no
+/// seed_wrap_*) to the wrapped-seed model on first authenticated `joy
+/// auth`. Generates a fresh recovery key and writes both wraps. The
+/// keypair is preserved because the legacy `derived_key` becomes the
+/// new seed; verify_key stays valid.
+fn migrate_to_wrapped_seed(
+    root: &std::path::Path,
+    email: &str,
+    derived_key: &joy_core::auth::DerivedKey,
+    kdf_nonce: &Salt,
+    _passphrase: &str,
+) -> Result<()> {
+    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
+    let mut project = store::read_project(&project_path)?;
+
+    let seed = seed_mod::Seed::from_derived_key(derived_key);
+    let recovery = seed_mod::RecoveryKey::generate();
+    // ADR-039: during migration KEK_passphrase happens to equal the
+    // seed, so the wrap is structural rather than secret-bearing. After
+    // any subsequent passphrase change the wraps decouple naturally.
+    let wrap_passphrase = seed_mod::wrap_seed_for_migration(&seed);
+    let wrap_recovery = seed_mod::wrap_seed_with_recovery(&seed, &recovery, kdf_nonce)?;
+
+    let m = project
+        .members
+        .get_mut(email)
+        .ok_or_else(|| anyhow::anyhow!("member {} disappeared mid-migration", email))?;
+    m.seed_wrap_passphrase = Some(wrap_passphrase);
+    m.seed_wrap_recovery = Some(wrap_recovery);
+
+    store::write_yaml_preserve(&project_path, &project)?;
+    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+    joy_core::git_ops::auto_git_add(root, &[&rel]);
+
+    println!();
+    println!("Auth schema upgraded to wrapped-seed (ADR-039).");
+    println!("RECOVERY KEY (write this down now, it is shown only once):");
+    println!();
+    println!("    {}", recovery.to_display_string());
+    println!();
+    println!("Use it with `joy auth recover --recovery-key` if you ever forget");
+    println!("your passphrase. Joy never stores the plaintext recovery key.");
+    println!();
 
     Ok(())
 }
@@ -866,17 +972,8 @@ fn run_reset(args: ResetArgs, passphrase_flag: Option<&str>) -> Result<()> {
     }
 
     // Authenticate the acting user
-    let salt_hex = acting_member.kdf_nonce.as_ref().unwrap();
-    let public_key_hex = acting_member.verify_key.as_ref().unwrap();
-    let salt = Salt::from_hex(salt_hex)?;
-    let public_key = PublicKey::from_hex(public_key_hex)?;
-
     let passphrase = read_passphrase(passphrase_flag, "Passphrase: ")?;
-    let key = derive_key(&passphrase, &salt)?;
-    let keypair = IdentityKeypair::from_derived_key(&key);
-    if keypair.public_key() != public_key {
-        anyhow::bail!("incorrect passphrase");
-    }
+    let _ = joy_core::auth::unlock_identity(acting_member, &passphrase)?;
 
     // If resetting another member, check manage capability
     if resetting_other {
@@ -892,6 +989,8 @@ fn run_reset(args: ResetArgs, passphrase_flag: Option<&str>) -> Result<()> {
     let m = project.members.get_mut(target).unwrap();
     m.verify_key = None;
     m.kdf_nonce = None;
+    m.seed_wrap_passphrase = None;
+    m.seed_wrap_recovery = None;
     m.enrollment_verifier = None;
 
     store::write_yaml_preserve(&project_path, &project)?;
@@ -970,17 +1069,10 @@ fn run_token_add(
         );
     }
 
-    let salt_hex = member.kdf_nonce.as_ref().unwrap();
-    let public_key_hex = member.verify_key.as_ref().unwrap();
-    let salt = Salt::from_hex(salt_hex)?;
-    let public_key = PublicKey::from_hex(public_key_hex)?;
-
     let passphrase = read_passphrase(passphrase_flag, "Passphrase: ")?;
-    let key = derive_key(&passphrase, &salt)?;
-    let keypair = IdentityKeypair::from_derived_key(&key);
-    if keypair.public_key() != public_key {
-        anyhow::bail!("incorrect passphrase");
-    }
+    let unlocked = joy_core::auth::unlock_identity(member, &passphrase)?;
+    let keypair = unlocked.keypair;
+    let identity_seed = unlocked.seed;
 
     // If no session exists, create one from the keypair we just derived.
     // The guard check below then succeeds in the same invocation, so the
@@ -1042,7 +1134,7 @@ fn run_token_add(
                     // another rotation.
                     let salt = Salt::from_hex(salt_hex)?;
                     let new_seed =
-                        delegation::derive_delegation_seed(&key, &salt, &project_id, &args.member);
+                        delegation::derive_delegation_seed(&identity_seed, &salt, &project_id, &args.member);
                     let derived_kp = IdentityKeypair::from_seed(&new_seed);
                     if derived_kp.public_key().to_hex() == *pub_hex {
                         delegation::save_delegation_key(&project_id, &args.member, &new_seed)?;
@@ -1070,7 +1162,7 @@ fn run_token_add(
             (None, None) => {
                 let new_salt = generate_salt();
                 let seed =
-                    delegation::derive_delegation_seed(&key, &new_salt, &project_id, &args.member);
+                    delegation::derive_delegation_seed(&identity_seed, &new_salt, &project_id, &args.member);
                 let kp = IdentityKeypair::from_seed(&seed);
                 delegation::save_delegation_key(&project_id, &args.member, &seed)?;
                 (kp, Some(new_salt.to_hex()))
@@ -1079,7 +1171,7 @@ fn run_token_add(
                 if let Some(salt_hex) = &existing_salt {
                     let salt = Salt::from_hex(salt_hex)?;
                     let seed =
-                        delegation::derive_delegation_seed(&key, &salt, &project_id, &args.member);
+                        delegation::derive_delegation_seed(&identity_seed, &salt, &project_id, &args.member);
                     let kp = IdentityKeypair::from_seed(&seed);
                     if kp.public_key().to_hex() != *pub_hex {
                         anyhow::bail!(
@@ -1224,17 +1316,8 @@ fn run_token_rm(args: TokenRmArgs, passphrase_flag: Option<&str>) -> Result<()> 
         );
     }
 
-    let salt_hex = member.kdf_nonce.as_ref().unwrap();
-    let public_key_hex = member.verify_key.as_ref().unwrap();
-    let salt = Salt::from_hex(salt_hex)?;
-    let public_key = PublicKey::from_hex(public_key_hex)?;
-
     let passphrase = read_passphrase(passphrase_flag, "Passphrase: ")?;
-    let key = derive_key(&passphrase, &salt)?;
-    let keypair = IdentityKeypair::from_derived_key(&key);
-    if keypair.public_key() != public_key {
-        anyhow::bail!("incorrect passphrase");
-    }
+    let _ = joy_core::auth::unlock_identity(member, &passphrase)?;
 
     // Remove the delegation entry from project.yaml and the private key
     // file from local state.
@@ -1302,11 +1385,37 @@ fn run_passphrase(current_flag: Option<&str>, new_flag: Option<&str>) -> Result<
     let current_salt = Salt::from_hex(current_salt_hex)?;
 
     let current_pass = read_passphrase(current_flag, "Current passphrase: ")?;
-    let current_key = derive_key(&current_pass, &current_salt)?;
-    let current_kp = IdentityKeypair::from_derived_key(&current_key);
-    if current_kp.public_key() != current_pub {
-        anyhow::bail!("incorrect passphrase");
-    }
+
+    // ADR-039: in the wrapped-seed model the seed and keypair are stable
+    // across passphrase rotation; we only re-wrap seed_wrap_passphrase.
+    // Legacy entries (no seed_wrap_*) are migrated transparently first
+    // and then re-wrapped under the new passphrase.
+    let seed = if let Some(wrap_hex) = member.seed_wrap_passphrase.as_deref() {
+        seed_mod::unwrap_seed_with_passphrase(wrap_hex, &current_pass, &current_salt)?
+    } else {
+        let current_key = derive_key(&current_pass, &current_salt)?;
+        let current_kp = IdentityKeypair::from_derived_key(&current_key);
+        if current_kp.public_key() != current_pub {
+            anyhow::bail!("incorrect passphrase");
+        }
+        // Same migration path as auth_with_passphrase: derived_key
+        // becomes the seed.
+        let migrated_seed = seed_mod::Seed::from_derived_key(&current_key);
+        let recovery = seed_mod::RecoveryKey::generate();
+        let m = project.members.get_mut(&email).unwrap();
+        m.seed_wrap_passphrase = Some(seed_mod::wrap_seed_for_migration(&migrated_seed));
+        m.seed_wrap_recovery =
+            Some(seed_mod::wrap_seed_with_recovery(&migrated_seed, &recovery, &current_salt)?);
+        // Recovery key must reach the user; print before continuing so a
+        // crash mid-rewrap leaves the recovery path intact.
+        println!();
+        println!("Auth schema upgraded to wrapped-seed (ADR-039).");
+        println!("RECOVERY KEY (write this down now, it is shown only once):");
+        println!();
+        println!("    {}", recovery.to_display_string());
+        println!();
+        migrated_seed
+    };
 
     let new_pass = read_passphrase(new_flag, "New passphrase:     ")?;
     if new_pass == current_pass {
@@ -1320,13 +1429,14 @@ fn run_passphrase(current_flag: Option<&str>, new_flag: Option<&str>) -> Result<
         }
     }
 
-    let new_salt = generate_salt();
-    let new_key = derive_key(&new_pass, &new_salt)?;
-    let new_kp = IdentityKeypair::from_derived_key(&new_key);
+    // Re-wrap the seed under the new passphrase KEK. kdf_nonce stays
+    // stable so seed_wrap_recovery remains valid (recovery key is not
+    // rotated by this command). verify_key does not change because the
+    // keypair derives from the unchanged seed.
+    let new_wrap_passphrase = seed_mod::wrap_seed_with_passphrase(&seed, &new_pass, &current_salt)?;
 
     let m = project.members.get_mut(&email).unwrap();
-    m.verify_key = Some(new_kp.public_key().to_hex());
-    m.kdf_nonce = Some(new_salt.to_hex());
+    m.seed_wrap_passphrase = Some(new_wrap_passphrase);
     store::write_yaml_preserve(&project_path, &project)?;
     let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
     joy_core::git_ops::auto_git_add(&root, &[&rel]);
@@ -1338,6 +1448,113 @@ fn run_passphrase(current_flag: Option<&str>, new_flag: Option<&str>) -> Result<
     println!("Prior sessions are invalidated. Run `joy auth` to start a fresh session.");
 
     joy_core::git_ops::auto_git_post_command(&root, "auth passphrase", &email);
+
+    Ok(())
+}
+
+/// `joy auth recover` - recovery-key paths (ADR-039).
+///
+/// `--recovery-key`: passphrase-loss recovery. User provides their
+/// recovery key plus a new passphrase. Joy unwraps the seed via the
+/// recovery KEK, re-wraps it under the new passphrase KEK, leaves the
+/// recovery wrap untouched. Identity keypair is preserved.
+///
+/// `--regenerate-key`: rotate the recovery key. User authenticates with
+/// the current passphrase. Joy unwraps the seed, generates a new
+/// recovery key, re-wraps the seed under the new recovery KEK, leaves
+/// the passphrase wrap untouched. Old recovery key becomes useless.
+fn run_recover(args: RecoverArgs, passphrase_flag: Option<&str>) -> Result<()> {
+    if !args.recovery_key && !args.regenerate_key {
+        anyhow::bail!(
+            "specify --recovery-key (passphrase loss) or --regenerate-key (rotate recovery key)"
+        );
+    }
+
+    let cwd = std::env::current_dir()?;
+    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
+    let mut project = store::read_project(&project_path)?;
+
+    let email = joy_core::vcs::default_vcs().user_email()?;
+    let member = project
+        .members
+        .get(&email)
+        .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member", email))?;
+    let salt_hex = member
+        .kdf_nonce
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Authentication not initialized for {}.", email))?;
+    let salt = Salt::from_hex(salt_hex)?;
+
+    if args.recovery_key {
+        let wrap_recovery_hex = member.seed_wrap_recovery.as_ref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "{} has no recovery wrap. The legacy auth schema needs `joy auth` once first \
+                 to migrate, which also reveals the recovery key.",
+                email
+            )
+        })?;
+
+        let recovery_str = match args.recovery.as_deref() {
+            Some(s) => s.to_string(),
+            None => rpassword::prompt_password("Recovery key: ")?,
+        };
+        let recovery = seed_mod::RecoveryKey::from_user_input(&recovery_str)?;
+        let seed = seed_mod::unwrap_seed_with_recovery(wrap_recovery_hex, &recovery, &salt)?;
+
+        let new_pass = read_passphrase(args.new_passphrase.as_deref(), "New passphrase: ")?;
+        validate_passphrase(&new_pass)?;
+        if args.new_passphrase.is_none() {
+            let confirm = rpassword::prompt_password("Confirm:        ")?;
+            if confirm != new_pass {
+                anyhow::bail!("passphrases do not match");
+            }
+        }
+
+        let new_wrap_passphrase = seed_mod::wrap_seed_with_passphrase(&seed, &new_pass, &salt)?;
+        let m = project.members.get_mut(&email).unwrap();
+        m.seed_wrap_passphrase = Some(new_wrap_passphrase);
+        store::write_yaml_preserve(&project_path, &project)?;
+        let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+        joy_core::git_ops::auto_git_add(&root, &[&rel]);
+
+        let project_id = session::project_id(&root)?;
+        let _ = session::remove_session(&project_id, &email);
+
+        println!("Recovery successful. Passphrase reset for {}.", email);
+        println!(
+            "Run `joy auth` with the new passphrase to start a session. The recovery key remains valid."
+        );
+        joy_core::git_ops::auto_git_post_command(&root, "auth recover --recovery-key", &email);
+    } else {
+        // --regenerate-key: rotate the recovery wrap.
+        let wrap_passphrase_hex = member.seed_wrap_passphrase.as_ref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "{} has no passphrase wrap. The legacy auth schema needs `joy auth` once first.",
+                email
+            )
+        })?;
+
+        let passphrase = read_passphrase(passphrase_flag, "Passphrase: ")?;
+        let seed = seed_mod::unwrap_seed_with_passphrase(wrap_passphrase_hex, &passphrase, &salt)?;
+
+        let new_recovery = seed_mod::RecoveryKey::generate();
+        let new_wrap_recovery = seed_mod::wrap_seed_with_recovery(&seed, &new_recovery, &salt)?;
+        let m = project.members.get_mut(&email).unwrap();
+        m.seed_wrap_recovery = Some(new_wrap_recovery);
+        store::write_yaml_preserve(&project_path, &project)?;
+        let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+        joy_core::git_ops::auto_git_add(&root, &[&rel]);
+
+        println!("Recovery key rotated for {}.", email);
+        println!();
+        println!("NEW RECOVERY KEY (write this down now, it is shown only once):");
+        println!();
+        println!("    {}", new_recovery.to_display_string());
+        println!();
+        println!("The previous recovery key is now invalid.");
+        joy_core::git_ops::auto_git_post_command(&root, "auth recover --regenerate-key", &email);
+    }
 
     Ok(())
 }
@@ -1376,18 +1593,24 @@ fn run_auth_otp(otp: &str, passphrase_flag: Option<&str>) -> Result<()> {
     if !joy_core::auth::otp::verify_otp(otp, stored_hash)? {
         anyhow::bail!("incorrect OTP");
     }
-    // Derive the redeemer's keypair from the new passphrase.
+    // Wrapped-seed onboarding (ADR-039): generate a random seed and
+    // recovery key, wrap the seed under both KEKs.
     let passphrase = read_passphrase(passphrase_flag, "Choose passphrase: ")?;
     validate_passphrase(&passphrase)?;
     let salt = generate_salt();
-    let key = derive_key(&passphrase, &salt)?;
-    let keypair = IdentityKeypair::from_derived_key(&key);
+    let seed = seed_mod::Seed::generate();
+    let recovery = seed_mod::RecoveryKey::generate();
+    let wrap_passphrase = seed_mod::wrap_seed_with_passphrase(&seed, &passphrase, &salt)?;
+    let wrap_recovery = seed_mod::wrap_seed_with_recovery(&seed, &recovery, &salt)?;
+    let keypair = IdentityKeypair::from_seed(seed.as_bytes());
 
-    // Apply to project.yaml: set public_key/salt, clear otp_hash.
+    // Apply to project.yaml: set public_key/salt/wraps, clear otp_hash.
     {
         let m = project.members.get_mut(&email).unwrap();
         m.verify_key = Some(keypair.public_key().to_hex());
         m.kdf_nonce = Some(salt.to_hex());
+        m.seed_wrap_passphrase = Some(wrap_passphrase);
+        m.seed_wrap_recovery = Some(wrap_recovery);
         m.enrollment_verifier = None;
     }
 
@@ -1421,6 +1644,13 @@ fn run_auth_otp(otp: &str, passphrase_flag: Option<&str>) -> Result<()> {
 
     println!("Authentication initialized for {}.", email);
     println!("Public key registered. Session active (24h).");
+    println!();
+    println!("RECOVERY KEY (write this down now, it is shown only once):");
+    println!();
+    println!("    {}", recovery.to_display_string());
+    println!();
+    println!("Use it with `joy auth recover --recovery-key` if you ever forget");
+    println!("your passphrase. Joy never stores the plaintext recovery key.");
 
     joy_core::git_ops::auto_git_post_command(&root, "auth otp", &email);
 
@@ -1499,17 +1729,9 @@ pub fn run_ai_rotate(member: &str, passphrase_flag: Option<&str>) -> Result<()> 
         );
     }
 
-    let salt_hex = human.kdf_nonce.as_ref().unwrap();
-    let public_key_hex = human.verify_key.as_ref().unwrap();
-    let salt = Salt::from_hex(salt_hex)?;
-    let public_key = PublicKey::from_hex(public_key_hex)?;
-
     let passphrase = read_passphrase(passphrase_flag, "Passphrase: ")?;
-    let key = derive_key(&passphrase, &salt)?;
-    let keypair = IdentityKeypair::from_derived_key(&key);
-    if keypair.public_key() != public_key {
-        anyhow::bail!("incorrect passphrase");
-    }
+    let unlocked = joy_core::auth::unlock_identity(human, &passphrase)?;
+    let identity_seed = unlocked.seed;
 
     // ADR-037: rotation rewrites the per-(human, AI) delegation salt and
     // re-derives the seed from passphrase + new salt. `save_delegation_key`
@@ -1518,7 +1740,7 @@ pub fn run_ai_rotate(member: &str, passphrase_flag: Option<&str>) -> Result<()> 
     // from ADR-033 §1).
     let project_id = session::project_id(&root)?;
     let new_salt = generate_salt();
-    let new_seed = delegation::derive_delegation_seed(&key, &new_salt, &project_id, member);
+    let new_seed = delegation::derive_delegation_seed(&identity_seed, &new_salt, &project_id, member);
     let new_kp = IdentityKeypair::from_seed(&new_seed);
     delegation::save_delegation_key(&project_id, member, &new_seed)?;
 

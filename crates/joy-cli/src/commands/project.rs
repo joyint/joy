@@ -4,7 +4,7 @@
 use anyhow::{bail, Result};
 use clap::Args;
 
-use joy_core::auth::{derive_key, IdentityKeypair, PublicKey, Salt};
+use joy_core::auth::IdentityKeypair;
 use joy_core::context::Context;
 use joy_core::guard::Action;
 use joy_core::model::item::Capability;
@@ -714,27 +714,15 @@ pub(crate) fn derive_acting_keypair(
         .members
         .get(email)
         .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member", email))?;
-    let public_key_hex = member.verify_key.as_ref().ok_or_else(|| {
-        anyhow::anyhow!(
+    if member.verify_key.is_none() {
+        anyhow::bail!(
             "{} has no registered public key. Run `joy auth init` first.",
             email
-        )
-    })?;
-    let salt_hex = member.kdf_nonce.as_ref().ok_or_else(|| {
-        anyhow::anyhow!(
-            "{} has no registered salt. Run `joy auth init` first.",
-            email
-        )
-    })?;
-    let public_key = PublicKey::from_hex(public_key_hex)?;
-    let salt = Salt::from_hex(salt_hex)?;
-    let passphrase = crate::commands::auth::read_passphrase(passphrase_flag, "Passphrase: ")?;
-    let key = derive_key(&passphrase, &salt)?;
-    let keypair = IdentityKeypair::from_derived_key(&key);
-    if keypair.public_key() != public_key {
-        anyhow::bail!("incorrect passphrase");
+        );
     }
-    Ok(keypair)
+    let passphrase = crate::commands::auth::read_passphrase(passphrase_flag, "Passphrase: ")?;
+    let unlocked = joy_core::auth::unlock_identity(member, &passphrase)?;
+    Ok(unlocked.keypair)
 }
 
 fn print_members_table(
