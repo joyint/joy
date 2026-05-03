@@ -307,7 +307,75 @@ pub fn remove_session(project_id: &str, member: &str) -> Result<(), JoyError> {
     if path.exists() {
         std::fs::remove_file(&path).map_err(|e| JoyError::WriteFile { path, source: e })?;
     }
+    // Remove the zone-keys sidecar too if present.
+    let zones_path = zone_keys_filename(&dir, project_id, member);
+    if zones_path.exists() {
+        let _ = std::fs::remove_file(&zones_path);
+    }
     Ok(())
+}
+
+/// Sidecar file holding decrypted Crypt zone keys for the duration of
+/// a session. Lives next to the session token, mode 0600, never
+/// committed. Populated on `joy auth` so the Git filter binary
+/// (`joy crypt-filter`) can decrypt without re-prompting for a
+/// passphrase. JOY-014B-09.
+fn zone_keys_filename(dir: &Path, project_id: &str, member: &str) -> PathBuf {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(project_id.as_bytes());
+    hasher.update([0u8]);
+    hasher.update(member.as_bytes());
+    let h = hasher.finalize();
+    dir.join(format!("{}.zones.json", hex::encode(&h[..16])))
+}
+
+/// Persist the zone-key sidecar for an authenticated member.
+pub fn save_zone_keys(
+    project_id: &str,
+    member: &str,
+    zone_keys: &std::collections::BTreeMap<String, String>,
+) -> Result<(), JoyError> {
+    let dir = session_dir()?;
+    std::fs::create_dir_all(&dir).map_err(|e| JoyError::CreateDir {
+        path: dir.clone(),
+        source: e,
+    })?;
+    let path = zone_keys_filename(&dir, project_id, member);
+    let json = serde_json::to_string_pretty(zone_keys).expect("zone-keys serialize");
+    std::fs::write(&path, &json).map_err(|e| JoyError::WriteFile {
+        path: path.clone(),
+        source: e,
+    })?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o600);
+        std::fs::set_permissions(&path, perms).map_err(|e| JoyError::WriteFile {
+            path: path.clone(),
+            source: e,
+        })?;
+    }
+    Ok(())
+}
+
+/// Load the zone-key sidecar for an authenticated member, if present.
+pub fn load_zone_keys(
+    project_id: &str,
+    member: &str,
+) -> Result<std::collections::BTreeMap<String, String>, JoyError> {
+    let dir = session_dir()?;
+    let path = zone_keys_filename(&dir, project_id, member);
+    if !path.exists() {
+        return Ok(std::collections::BTreeMap::new());
+    }
+    let json = std::fs::read_to_string(&path).map_err(|e| JoyError::ReadFile {
+        path: path.clone(),
+        source: e,
+    })?;
+    let map: std::collections::BTreeMap<String, String> =
+        serde_json::from_str(&json).map_err(|e| JoyError::AuthFailed(format!("{e}")))?;
+    Ok(map)
 }
 
 /// Derive a stable project ID from project name and acronym.

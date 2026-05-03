@@ -56,6 +56,9 @@ enum CryptCommand {
     Status,
     /// Manage named zones (list, rm).
     Zone(ZoneArgs),
+    /// Configure Git's clean/smudge/textconv filter to use
+    /// `joy crypt-filter`. Runs once per clone; safe to repeat.
+    Setup,
 }
 
 #[derive(Args)]
@@ -131,7 +134,73 @@ pub fn run(args: CryptArgs) -> Result<()> {
             ZoneCommand::List => run_zone_list(),
             ZoneCommand::Rm(args) => run_zone_rm(&args.name),
         },
+        CryptCommand::Setup => run_setup(),
     }
+}
+
+/// Configure Git filter / diff drivers in `.git/config`. Idempotent.
+fn run_setup() -> Result<()> {
+    let (root, _project, _email) = load_context()?;
+    setup_git_filter(&root)?;
+    println!("Git filter 'joy-crypt' configured. Marked items now encrypt on checkout.");
+    Ok(())
+}
+
+fn setup_git_filter(root: &std::path::Path) -> Result<()> {
+    use std::process::Command;
+    let configs = [
+        ("filter.joy-crypt.clean", "joy crypt-filter clean -- %f"),
+        ("filter.joy-crypt.smudge", "joy crypt-filter smudge -- %f"),
+        ("filter.joy-crypt.required", "true"),
+        ("diff.joy-crypt.textconv", "joy crypt-filter textconv"),
+        ("diff.joy-crypt.cachetextconv", "false"),
+    ];
+    for (key, value) in configs {
+        let status = Command::new("git")
+            .current_dir(root)
+            .args(["config", key, value])
+            .status()
+            .map_err(|e| anyhow::anyhow!("git config {key}: {e}"))?;
+        if !status.success() {
+            bail!("git config {} failed", key);
+        }
+    }
+    Ok(())
+}
+
+/// Append a `.gitattributes` rule for an item file, idempotent.
+fn ensure_gitattributes_for_item(root: &std::path::Path, item_id: &str) -> Result<()> {
+    let path = root.join(".gitattributes");
+    let pattern = format!(".joy/items/{item_id}-*.yaml");
+    let line = format!("{pattern} filter=joy-crypt diff=joy-crypt -text\n");
+    if path.exists() {
+        let existing = std::fs::read_to_string(&path).unwrap_or_default();
+        if existing.lines().any(|l| l.starts_with(&pattern)) {
+            return Ok(());
+        }
+        let mut combined = existing;
+        if !combined.ends_with('\n') && !combined.is_empty() {
+            combined.push('\n');
+        }
+        combined.push_str(&line);
+        std::fs::write(&path, combined)?;
+    } else {
+        std::fs::write(&path, &line)?;
+    }
+    joy_core::git_ops::auto_git_add(root, &[".gitattributes"]);
+    Ok(())
+}
+
+/// Detect whether `git config filter.joy-crypt.clean` is set, so the
+/// first `joy crypt add` in a fresh clone can auto-run setup.
+fn git_filter_configured(root: &std::path::Path) -> bool {
+    use std::process::Command;
+    Command::new("git")
+        .current_dir(root)
+        .args(["config", "--get", "filter.joy-crypt.clean"])
+        .output()
+        .map(|o| o.status.success() && !o.stdout.is_empty())
+        .unwrap_or(false)
 }
 
 fn load_context() -> Result<(std::path::PathBuf, Project, String)> {
@@ -210,6 +279,18 @@ impl UnlockedZone {
         let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
         joy_core::git_ops::auto_git_add(&self.root, &[&rel]);
         joy_core::git_ops::auto_git_post_command(&self.root, summary, &self.acting_email);
+
+        // Refresh the session zone-keys sidecar so `joy crypt-filter`
+        // can encrypt/decrypt this zone immediately, without
+        // requiring the user to re-run `joy auth`.
+        let project_id = joy_core::auth::session::project_id(&self.root)?;
+        let mut keys = joy_core::auth::session::load_zone_keys(&project_id, &self.acting_email)
+            .unwrap_or_default();
+        keys.insert(
+            self.zone.clone(),
+            hex::encode(self.zone_key.as_bytes()),
+        );
+        let _ = joy_core::auth::session::save_zone_keys(&project_id, &self.acting_email, &keys);
         Ok(())
     }
 }
@@ -229,6 +310,13 @@ fn run_add(zone: &str, target: &str, passphrase: Option<&str>) -> Result<()> {
         if let Ok(rel) = item_path.strip_prefix(&unlocked.root) {
             joy_core::git_ops::auto_git_add(&unlocked.root, &[&rel.to_string_lossy()]);
         }
+        // Wire the Git filter so subsequent `git add`s encrypt and
+        // `git checkout`s decrypt this item file. First call in a
+        // clone runs setup automatically; later calls are no-ops.
+        if !git_filter_configured(&unlocked.root) {
+            let _ = setup_git_filter(&unlocked.root);
+        }
+        ensure_gitattributes_for_item(&unlocked.root, target)?;
         println!("Added {} to zone '{}'.", target, zone);
         format!("crypt add {target} (zone {zone})")
     } else {

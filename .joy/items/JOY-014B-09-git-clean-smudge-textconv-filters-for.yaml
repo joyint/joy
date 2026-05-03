@@ -1,9 +1,11 @@
 id: JOY-014B-09
 title: Git clean/smudge/textconv filters for marked items and paths
 type: story
-status: new
+status: closed
 priority: high
 parent: JOY-0145-51
+assignees:
+- member: ai:claude@joy
 milestone: JOY-MS-02
 capabilities:
 - plan
@@ -12,5 +14,12 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-02T22:45:31.715875Z
-updated: 2026-05-02T22:45:31.715875Z
+updated: 2026-05-03T17:40:37.171992Z
 description: Configures Git clean, smudge, and textconv filters via .gitattributes so the working directory holds ciphertext for marked items and paths while Git history remains plaintext (textconv-based diff/blame). Enables transparent encryption without changing the user CLI workflow. Working directory ciphertext blocks AI tools and other processes that read files directly.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-03T17:23:20.499403Z
+  text: 'Plan: (1) SessionToken gains zone_keys cache populated on joy auth. (2) New joy crypt-filter clean/smudge/textconv subcommand. (3) Magic-header blob format JOYCRYPT||v1||zone||nonce||AES-256-GCM ct+tag. (4) joy crypt add <id> auto-writes .gitattributes rules; joy crypt setup writes git filter config to .git/config. (5) Bats tests covering filter roundtrip and gitattributes wiring. Path-based filter (zone.paths globs) deferred to follow-up.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-03T17:40:37.073939Z
+  text: 'Done: joy-core/auth/session adds zone-keys sidecar (save/load/remove). joy-core/crypt encrypt_blob/decrypt_blob produce/parse JOYCRYPT||v1||zone-len||zone||nonce||AES-GCM-ct+tag (zone in AAD). joy auth populates the sidecar after passphrase verification using the just-recovered seed. joy-cli/commands/crypt_filter implements the Git filter binary with clean/smudge/textconv subcommands; smudge reads crypt_zone from inbound YAML, clean/textconv read the magic header. joy crypt add auto-runs git config filter.joy-crypt.{clean,smudge,required} + diff.joy-crypt.{textconv,cachetextconv} on first call per clone, and writes a .gitattributes entry per item. joy crypt setup makes the same setup explicit. joy crypt add also refreshes the sidecar so the filter has the new zone key without re-running joy auth. 5 new joy-core unit tests for blob roundtrip + tamper / wrong-key / wrong-zone / magic-detect cases; 3 new bats tests for .gitattributes/git config wiring, clean/smudge roundtrip, and the plaintext-passthrough fallback. 310 + 91 + 300 tests green. Path-based filter (zone.paths globs) lands in a follow-up; only item-file YAML is auto-encrypted in this release.'

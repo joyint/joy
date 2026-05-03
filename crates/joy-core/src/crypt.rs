@@ -28,6 +28,92 @@ use crate::error::JoyError;
 /// Conventional name of the implicit default zone.
 pub const DEFAULT_ZONE: &str = "default";
 
+/// Magic prefix for Crypt-encrypted file blobs (Git filter format).
+pub const FILTER_MAGIC: &[u8; 8] = b"JOYCRYPT";
+/// On-disk blob format version. Bump on incompatible changes.
+pub const FILTER_VERSION: u8 = 1;
+
+/// Encrypt content for a zone in the Git-filter blob format
+/// (JOY-014B-09):
+///
+/// `JOYCRYPT || version (1) || zone-name-len (1) || zone-name ||
+///  nonce (12) || ciphertext+tag`.
+///
+/// The magic header is required so the filter (`joy crypt-filter clean`)
+/// can refuse to operate on plaintext that was already encrypted, and
+/// the textconv path can short-circuit on already-plaintext history
+/// objects.
+pub fn encrypt_blob(zone_name: &str, zone_key: &ZoneKey, plaintext: &[u8]) -> Vec<u8> {
+    let zone_bytes = zone_name.as_bytes();
+    assert!(zone_bytes.len() <= 255, "zone name too long for blob format");
+    let mut nonce = [0u8; 12];
+    rand::thread_rng().fill_bytes(&mut nonce);
+    let aad = aad_for(zone_bytes);
+    let ct = joy_crypt::aead::seal(zone_key.as_bytes(), &nonce, &aad, plaintext)
+        .expect("AES-256-GCM seal with valid 32-byte key never fails");
+
+    let mut out = Vec::with_capacity(8 + 1 + 1 + zone_bytes.len() + 12 + ct.len());
+    out.extend_from_slice(FILTER_MAGIC);
+    out.push(FILTER_VERSION);
+    out.push(zone_bytes.len() as u8);
+    out.extend_from_slice(zone_bytes);
+    out.extend_from_slice(&nonce);
+    out.extend_from_slice(&ct);
+    out
+}
+
+/// Inverse of `encrypt_blob`. Returns `(zone_name, plaintext)`.
+pub fn decrypt_blob(zone_key_lookup: impl Fn(&str) -> Option<ZoneKey>, blob: &[u8]) -> Result<(String, Vec<u8>), JoyError> {
+    if blob.len() < 8 + 1 + 1 + 12 + 16 || &blob[..8] != FILTER_MAGIC {
+        return Err(JoyError::AuthFailed("not a Crypt blob".into()));
+    }
+    let version = blob[8];
+    if version != FILTER_VERSION {
+        return Err(JoyError::AuthFailed(format!(
+            "unsupported Crypt blob version: {}",
+            version
+        )));
+    }
+    let zone_len = blob[9] as usize;
+    let zone_start = 10;
+    let zone_end = zone_start + zone_len;
+    if blob.len() < zone_end + 12 + 16 {
+        return Err(JoyError::AuthFailed("truncated Crypt blob".into()));
+    }
+    let zone_name = std::str::from_utf8(&blob[zone_start..zone_end])
+        .map_err(|_| JoyError::AuthFailed("invalid zone name in Crypt blob".into()))?
+        .to_string();
+    let nonce_start = zone_end;
+    let nonce_end = nonce_start + 12;
+    let mut nonce = [0u8; 12];
+    nonce.copy_from_slice(&blob[nonce_start..nonce_end]);
+    let ct = &blob[nonce_end..];
+
+    let zone_key = zone_key_lookup(&zone_name)
+        .ok_or_else(|| JoyError::AuthFailed(format!("no zone key for '{}'; run `joy auth`", zone_name)))?;
+    let aad = aad_for(zone_name.as_bytes());
+    let plaintext = joy_crypt::aead::open(zone_key.as_bytes(), &nonce, &aad, ct)
+        .map_err(|_| JoyError::AuthFailed(format!("failed to decrypt zone '{}'", zone_name)))?;
+    Ok((zone_name, plaintext))
+}
+
+/// AAD binds the ciphertext to its zone-name so a wrap from one zone
+/// can't be replayed under another.
+fn aad_for(zone_bytes: &[u8]) -> Vec<u8> {
+    let mut aad = Vec::with_capacity(8 + zone_bytes.len());
+    aad.extend_from_slice(b"JOYBLOB:");
+    aad.extend_from_slice(zone_bytes);
+    aad
+}
+
+/// Quick check for whether a byte slice begins with the Crypt blob
+/// magic. Used by the filter to short-circuit when working-dir
+/// content is already plaintext (e.g. on first add before encryption
+/// landed).
+pub fn looks_like_blob(bytes: &[u8]) -> bool {
+    bytes.len() >= FILTER_MAGIC.len() && &bytes[..FILTER_MAGIC.len()] == FILTER_MAGIC
+}
+
 /// 32-byte AES-256-GCM key for a Crypt zone.
 pub struct ZoneKey(Zeroizing<[u8; 32]>);
 
@@ -199,6 +285,46 @@ mod tests {
         let bytes = vec![0u8; 16];
         let err = unwrap_for_member(&hex::encode(&bytes), DEFAULT_ZONE, &[1u8; 32]).unwrap_err();
         assert!(matches!(err, JoyError::AuthFailed(_)));
+    }
+
+    #[test]
+    fn blob_roundtrip() {
+        let zk = ZoneKey::generate();
+        let pt = b"id: JOY-0123\ntitle: secret\n";
+        let blob = encrypt_blob("default", &zk, pt);
+        assert!(looks_like_blob(&blob));
+        let (zone, recovered) =
+            decrypt_blob(|name| if name == "default" { Some(ZoneKey::from_bytes(*zk.as_bytes())) } else { None }, &blob)
+                .unwrap();
+        assert_eq!(zone, "default");
+        assert_eq!(recovered, pt);
+    }
+
+    #[test]
+    fn blob_rejects_wrong_zone_key() {
+        let zk = ZoneKey::generate();
+        let blob = encrypt_blob("default", &zk, b"x");
+        let other = ZoneKey::generate();
+        let err = decrypt_blob(|_| Some(ZoneKey::from_bytes(*other.as_bytes())), &blob).unwrap_err();
+        assert!(matches!(err, JoyError::AuthFailed(_)));
+    }
+
+    #[test]
+    fn blob_rejects_tampered_zone_name() {
+        let zk = ZoneKey::generate();
+        let mut blob = encrypt_blob("default", &zk, b"x");
+        // Flip a byte inside the zone name (offset 10).
+        blob[10] ^= 1;
+        let zk_clone = ZoneKey::from_bytes(*zk.as_bytes());
+        let err = decrypt_blob(|_| Some(ZoneKey::from_bytes(*zk_clone.as_bytes())), &blob).unwrap_err();
+        assert!(matches!(err, JoyError::AuthFailed(_)));
+    }
+
+    #[test]
+    fn looks_like_blob_detects_magic() {
+        assert!(looks_like_blob(b"JOYCRYPT\x01\x07default..."));
+        assert!(!looks_like_blob(b"id: JOY-0123\n"));
+        assert!(!looks_like_blob(b""));
     }
 
     #[test]

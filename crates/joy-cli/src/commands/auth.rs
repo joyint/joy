@@ -488,9 +488,43 @@ fn auth_with_passphrase(
     let session_token = session::create_session(&keypair, email, project_id, None);
     session::save_session(project_id, &session_token)?;
 
+    // Populate the Crypt zone-keys sidecar so `joy crypt-filter`
+    // (Git filter binary) can decrypt without re-prompting for a
+    // passphrase. We have the seed because the keypair we just
+    // verified derives from it directly (ADR-039).
+    cache_zone_keys(project_view, email, project_id, &keypair.to_seed_bytes());
+
     println!("Authenticated as {}. Session active (24h).", email);
 
     Ok(())
+}
+
+/// Populate the session zone-keys sidecar from the member's
+/// `crypt_wraps`. Decrypts each wrap with the member's seed so the
+/// Git filter has plaintext zone keys ready. Best-effort: errors are
+/// non-fatal because the session itself is already established.
+fn cache_zone_keys(
+    project: &joy_core::model::project::Project,
+    email: &str,
+    project_id: &str,
+    seed: &[u8; 32],
+) {
+    use std::collections::BTreeMap;
+    let Some(member) = project.members.get(email) else {
+        return;
+    };
+    let mut keys: BTreeMap<String, String> = BTreeMap::new();
+    for (zone, wrap_hex) in &member.crypt_wraps {
+        match joy_core::crypt::unwrap_for_member(wrap_hex, zone, seed) {
+            Ok(zk) => {
+                keys.insert(zone.clone(), hex::encode(zk.as_bytes()));
+            }
+            Err(_) => {
+                // Stale or wrong wrap; skip rather than aborting auth.
+            }
+        }
+    }
+    let _ = session::save_zone_keys(project_id, email, &keys);
 }
 
 /// JOY-014C-29 lazy migration: convert a legacy member entry (no

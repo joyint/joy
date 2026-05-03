@@ -940,6 +940,67 @@ YAML
     [[ "$output" == *"items in any zone: 0"* ]]
 }
 
+@test "joy crypt add wires .gitattributes and git filter for the item (JOY-014B-09)" {
+    joy init --name "Crypt Test" --acronym CT
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy add task "Sensitive item" >/dev/null
+    ITEM_FILE=$(ls .joy/items/CT-*.yaml | head -1)
+    ID=$(basename "$ITEM_FILE" | sed -E 's/^(CT-[0-9A-Fa-f]+(-[0-9A-Fa-f]+)?)-.*/\1/')
+
+    run joy crypt add "$ID" --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+
+    # .gitattributes lists the item and points at the filter.
+    [ -f .gitattributes ]
+    grep -q "filter=joy-crypt" .gitattributes
+    grep -q "diff=joy-crypt" .gitattributes
+
+    # Git config picked up the filter / diff drivers.
+    run git config --get filter.joy-crypt.clean
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"crypt-filter clean"* ]]
+    run git config --get diff.joy-crypt.textconv
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"crypt-filter textconv"* ]]
+}
+
+@test "joy crypt-filter clean/smudge roundtrip preserves the plaintext (JOY-014B-09)" {
+    joy init --name "Crypt Test" --acronym CT
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy add task "Sensitive item" >/dev/null
+    ITEM_FILE=$(ls .joy/items/CT-*.yaml | head -1)
+    ID=$(basename "$ITEM_FILE" | sed -E 's/^(CT-[0-9A-Fa-f]+(-[0-9A-Fa-f]+)?)-.*/\1/')
+
+    joy crypt add "$ID" --passphrase "$TEST_PASSPHRASE" >/dev/null
+
+    # smudge takes plaintext on stdin (with crypt_zone:) and writes
+    # an encrypted blob to stdout. clean reverses it. Use files to
+    # avoid bash command-substitution stripping trailing newlines and
+    # mangling binary bytes.
+    cp "$ITEM_FILE" /tmp/joy-crypt-plain-$$
+    joy crypt-filter smudge -- "$ITEM_FILE" \
+        < /tmp/joy-crypt-plain-$$ > /tmp/joy-crypt-blob-$$
+
+    # First 8 bytes should be JOYCRYPT magic.
+    HEAD8=$(head -c 8 /tmp/joy-crypt-blob-$$)
+    [ "$HEAD8" = "JOYCRYPT" ]
+
+    joy crypt-filter clean -- "$ITEM_FILE" \
+        < /tmp/joy-crypt-blob-$$ > /tmp/joy-crypt-round-$$
+    cmp /tmp/joy-crypt-plain-$$ /tmp/joy-crypt-round-$$
+
+    rm -f /tmp/joy-crypt-plain-$$ /tmp/joy-crypt-blob-$$ /tmp/joy-crypt-round-$$
+}
+
+@test "joy crypt-filter clean passes plaintext through unchanged (JOY-014B-09)" {
+    joy init --name "Crypt Test" --acronym CT
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+
+    PLAIN="id: CT-9999\ntitle: not encrypted yet\n"
+    OUT=$(printf '%s' "$PLAIN" | joy crypt-filter clean)
+    [ "$OUT" = "$PLAIN" ]
+}
+
 @test "joy crypt revoke removes a member's wrap" {
     joy init --name "Crypt Test" --acronym CT
     joy auth init --passphrase "$TEST_PASSPHRASE"

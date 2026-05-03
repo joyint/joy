@@ -1229,6 +1229,7 @@ dependencies = [
  "clap_complete",
  "crossterm 0.28.1",
  "glob",
+ "hex",
  "joy-ai",
  "joy-core",
  "minijinja",
