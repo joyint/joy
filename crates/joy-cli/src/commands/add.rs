@@ -45,9 +45,9 @@ pub struct AddArgs {
     #[arg(long)]
     parent: Option<String>,
 
-    /// Effort (1-7): 1=trivial, 2=small, 3=medium, 4=large, 5=major, 6=heavy, 7=massive
+    /// Effort: 1-7 or t-shirt size (xxs, xs, s, m, l, xl, xxl)
     #[arg(short, long)]
-    effort: Option<u8>,
+    effort: Option<String>,
 
     /// Description
     #[arg(short, long)]
@@ -158,11 +158,8 @@ pub fn run(args: AddArgs) -> Result<()> {
     }
 
     item.version = args.version;
-    if let Some(e) = args.effort {
-        if !(1..=7).contains(&e) {
-            bail!("effort must be between 1 and 7");
-        }
-        item.effort = Some(e);
+    if let Some(ref e) = args.effort {
+        item.effort = crate::effort::parse_effort(e)?;
     }
 
     if let Some(ref s) = args.status {

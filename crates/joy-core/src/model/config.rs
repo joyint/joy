@@ -155,8 +155,8 @@ impl Default for OutputConfig {
     fn default() -> Self {
         Self {
             color: ColorMode::Auto,
-            emoji: true,
-            short: false,
+            emoji: false,
+            short: true,
             fortune: true,
             fortune_category: None,
         }

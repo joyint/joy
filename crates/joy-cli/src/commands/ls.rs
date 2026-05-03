@@ -207,15 +207,16 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
             .max(display_width(header))
     };
 
+    let h_type = if color::is_short() { "TYP" } else { "TYPE" };
+    let h_status = if color::is_short() { "STA" } else { "STATUS" };
+    let h_prio = if color::is_short() { "PRI" } else { "PRIO" };
+    let h_eff = if color::is_short() { "EFF" } else { "EFFORT" };
+
     let w_id = col_raw("ID", &|i| i.id.clone());
-    let w_type = col_raw("TYPE", &|i| color::item_type_display(&i.item_type).0);
-    let w_status = col_raw("STATUS", &|i| color::status_display(&i.status).0);
-    let w_prio = col_raw("PRIO", &|i| color::priority_display(&i.priority).0);
-    let w_eff = col_raw("EFF", &|i| {
-        i.effort
-            .map(|e| e.to_string())
-            .unwrap_or_else(|| " ".into())
-    });
+    let w_type = col_raw(h_type, &|i| color::item_type_display(&i.item_type).0);
+    let w_status = col_raw(h_status, &|i| color::status_display(&i.status).0);
+    let w_prio = col_raw(h_prio, &|i| color::priority_display(&i.priority).0);
+    let w_eff = col_raw(h_eff, &|i| color::effort_label(i.effort));
 
     let w_parent = if extras.parent {
         col_raw("PARENT", &|i| {
@@ -251,20 +252,20 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
         0
     };
 
-    // Total fixed width (each column + 1 space separator)
+    // Total fixed width (2 spaces between every column).
     let fixed_width = w_id
-        + 1
+        + 2
         + w_type
-        + 1
+        + 2
         + w_status
-        + 1
+        + 2
         + w_prio
-        + 1
+        + 2
         + w_eff
-        + 1
-        + if extras.parent { w_parent + 1 } else { 0 }
-        + if extras.milestone { w_ms + 1 } else { 0 }
-        + if extras.assignee { w_assignee + 1 } else { 0 };
+        + 2
+        + if extras.parent { w_parent + 2 } else { 0 }
+        + if extras.milestone { w_ms + 2 } else { 0 }
+        + if extras.assignee { w_assignee + 2 } else { 0 };
 
     let min_title_width = 20;
     let title_width = if term_width > fixed_width {
@@ -278,32 +279,32 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
     println!("{}", color::label(&"-".repeat(sep_len)));
 
     let mut header = format!(
-        "{} {} {} {} {}",
+        "{}  {}  {}  {}  {}",
         pad_colored(&color::label("ID"), "ID", w_id),
-        pad_colored(&color::label("TYPE"), "TYPE", w_type),
-        pad_colored(&color::label("STATUS"), "STATUS", w_status),
-        pad_colored(&color::label("PRIO"), "PRIO", w_prio),
-        pad_colored(&color::label("EFF"), "EFF", w_eff),
+        pad_colored(&color::label(h_type), h_type, w_type),
+        pad_colored(&color::label(h_status), h_status, w_status),
+        pad_colored(&color::label(h_prio), h_prio, w_prio),
+        pad_colored(&color::label(h_eff), h_eff, w_eff),
     );
     if extras.parent {
         header.push_str(&format!(
-            " {}",
+            "  {}",
             pad_colored(&color::label("PARENT"), "PARENT", w_parent)
         ));
     }
     if extras.milestone {
         header.push_str(&format!(
-            " {}",
+            "  {}",
             pad_colored(&color::label("MS"), "MS", w_ms)
         ));
     }
     if extras.assignee {
         header.push_str(&format!(
-            " {}",
+            "  {}",
             pad_colored(&color::label("ASSIGNEE"), "ASSIGNEE", w_assignee)
         ));
     }
-    header.push_str(&format!(" {}", color::label("TITLE")));
+    header.push_str(&format!("  {}", color::label("TITLE")));
     println!("{header}");
 
     println!("{}", color::label(&"-".repeat(sep_len)));
@@ -333,13 +334,10 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
         let (priority_raw, priority_str) = color::priority_display(&item.priority);
 
         let eff_str = color::effort_indicator(item.effort);
-        let eff_raw = item
-            .effort
-            .map(|e| e.to_string())
-            .unwrap_or_else(|| " ".to_string());
+        let eff_raw = color::effort_label(item.effort);
 
         let mut line = format!(
-            "{} {} {} {} {}",
+            "{}  {}  {}  {}  {}",
             pad_colored(&id_str, &item.id, w_id),
             pad_colored(&type_str, &type_raw, w_type),
             pad_colored(&status_str, &status_raw, w_status),
@@ -350,7 +348,7 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
         if extras.parent {
             let parent_val = item.parent.as_deref().unwrap_or("-");
             line.push_str(&format!(
-                " {}",
+                "  {}",
                 pad_colored(&color::id(parent_val), parent_val, w_parent)
             ));
         }
@@ -368,7 +366,7 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
                 ms_val.to_string()
             };
             line.push_str(&format!(
-                " {}",
+                "  {}",
                 pad_colored(&color::id(&display), &display, w_ms)
             ));
         }
@@ -384,12 +382,12 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
             };
             let assignee_val = assignee_val.as_str();
             line.push_str(&format!(
-                " {}",
+                "  {}",
                 pad_colored(assignee_val, assignee_val, w_assignee)
             ));
         }
 
-        line.push_str(&format!(" {}", colored_title));
+        line.push_str(&format!("  {}", colored_title));
         println!("{line}");
     }
 
@@ -446,8 +444,7 @@ fn expand_with_ancestors<'a>(
 }
 
 fn print_tree_by_parent(items: &[&Item], all_items: &[Item]) {
-    let w = terminal_width();
-    println!("{}", color::header("Tree"));
+    let term_width = terminal_width();
 
     let (expanded, context_ids) = expand_with_ancestors(items, all_items);
     let primary_count = items.len();
@@ -463,43 +460,145 @@ fn print_tree_by_parent(items: &[&Item], all_items: &[Item]) {
         })
         .collect();
 
+    // Pass 1: walk the tree to build a flat ordered list of (prefix, item, is_dim).
+    let mut rows: Vec<(String, &Item, bool)> = Vec::new();
     for (i, root) in roots.iter().enumerate() {
         let is_last = i == roots.len() - 1;
-        print_tree_node(root, &expanded, &context_ids, "", is_last);
+        collect_tree_rows(root, &expanded, &context_ids, "", is_last, &mut rows);
     }
 
-    println!("{}", color::label(&"-".repeat(w)));
+    // Pass 2: compute column widths from the flat row list.
+    let w_id = rows
+        .iter()
+        .map(|(prefix, item, _)| display_width(&format!("{}{}", prefix, item.id)))
+        .max()
+        .unwrap_or(0)
+        .max(display_width("ID"));
+    let h_type = if color::is_short() { "TYP" } else { "TYPE" };
+    let h_status = if color::is_short() { "STA" } else { "STATUS" };
+    let h_prio = if color::is_short() { "PRI" } else { "PRIO" };
+    let h_eff = if color::is_short() { "EFF" } else { "EFFORT" };
+
+    let w_type = rows
+        .iter()
+        .map(|(_, item, _)| display_width(&color::item_type_display(&item.item_type).0))
+        .max()
+        .unwrap_or(0)
+        .max(display_width(h_type));
+    let w_status = rows
+        .iter()
+        .map(|(_, item, _)| display_width(&color::status_display(&item.status).0))
+        .max()
+        .unwrap_or(0)
+        .max(display_width(h_status));
+    let w_prio = rows
+        .iter()
+        .map(|(_, item, _)| display_width(&color::priority_display(&item.priority).0))
+        .max()
+        .unwrap_or(0)
+        .max(display_width(h_prio));
+    let w_eff = rows
+        .iter()
+        .map(|(_, item, _)| display_width(&color::effort_label(item.effort)))
+        .max()
+        .unwrap_or(0)
+        .max(display_width(h_eff));
+
+    let fixed_width = w_id + 2 + w_type + 2 + w_status + 2 + w_prio + 2 + w_eff + 2;
+    let title_width = term_width.saturating_sub(fixed_width);
+    let sep_len = term_width.min(fixed_width + title_width);
+
+    // Print header (matches joy ls).
+    println!("{}", color::label(&"-".repeat(sep_len)));
+    println!(
+        "{}  {}  {}  {}  {}  {}",
+        pad_colored(&color::label("ID"), "ID", w_id),
+        pad_colored(&color::label(h_type), h_type, w_type),
+        pad_colored(&color::label(h_status), h_status, w_status),
+        pad_colored(&color::label(h_prio), h_prio, w_prio),
+        pad_colored(&color::label(h_eff), h_eff, w_eff),
+        color::label("TITLE"),
+    );
+    println!("{}", color::label(&"-".repeat(sep_len)));
+
+    // Print rows.
+    for (prefix, item, dim) in &rows {
+        let id_with_prefix_raw = format!("{}{}", prefix, item.id);
+        let id_with_prefix_colored = if *dim {
+            color::inactive(&id_with_prefix_raw)
+        } else {
+            format!("{}{}", color::label(prefix), color::id(&item.id))
+        };
+
+        let (type_raw, type_colored) = color::item_type_display(&item.item_type);
+        let (status_raw, status_colored) = color::status_display(&item.status);
+        let (priority_raw, priority_colored) = color::priority_display(&item.priority);
+        let eff_str = color::effort_indicator(item.effort);
+        let eff_raw = color::effort_label(item.effort);
+
+        let title = truncate_title(&item.title, title_width);
+        let title_colored = if *dim {
+            color::inactive(&title)
+        } else {
+            title.clone()
+        };
+        let (type_str, status_str, priority_str) = if *dim {
+            (
+                color::inactive(&type_raw),
+                color::inactive(&status_raw),
+                color::inactive(&priority_raw),
+            )
+        } else {
+            (type_colored, status_colored, priority_colored)
+        };
+
+        println!(
+            "{}  {}  {}  {}  {}  {}",
+            pad_colored(&id_with_prefix_colored, &id_with_prefix_raw, w_id),
+            pad_colored(&type_str, &type_raw, w_type),
+            pad_colored(&status_str, &status_raw, w_status),
+            pad_colored(&priority_str, &priority_raw, w_prio),
+            pad_colored(&eff_str, &eff_raw, w_eff),
+            title_colored,
+        );
+    }
+
+    // Print footer.
+    println!("{}", color::label(&"-".repeat(sep_len)));
     println!("{}", color::label(&color::plural(primary_count, "item")));
 }
 
-/// Compute the available title width for a tree row, given the prefix and item metadata.
+/// Compute the available title width for a milestone-grouped tree row.
 fn tree_title_width(prefix: &str, connector: &str, item: &Item) -> usize {
     let term_width = terminal_width();
     let (type_raw, _) = color::item_type_display(&item.item_type);
     let (status_raw, _) = color::status_display(&item.status);
     let (prio_raw, _) = color::priority_display(&item.priority);
 
-    // Fixed parts: prefix + connector + "ID " + " [type] [status] [prio]"
     let chrome_width = display_width(prefix)
         + display_width(connector)
         + display_width(&item.id)
-        + 1 // space after ID
-        + 3 + display_width(&type_raw)   // " [type]"
-        + 3 + display_width(&status_raw) // " [status]"
-        + 3 + display_width(&prio_raw); // " [prio]"
+        + 1
+        + 3
+        + display_width(&type_raw)
+        + 3
+        + display_width(&status_raw)
+        + 3
+        + display_width(&prio_raw);
 
     term_width.saturating_sub(chrome_width)
 }
 
-fn print_tree_node(
-    item: &Item,
-    all_items: &[&Item],
+fn collect_tree_rows<'a>(
+    item: &'a Item,
+    all_items: &[&'a Item],
     context_ids: &std::collections::HashSet<String>,
     prefix: &str,
     is_last: bool,
+    rows: &mut Vec<(String, &'a Item, bool)>,
 ) {
     let connector = if prefix.is_empty() {
-        String::new() // Root level: no connector
+        String::new()
     } else if is_last {
         "└── ".to_string()
     } else {
@@ -514,63 +613,24 @@ fn print_tree_node(
         format!("{prefix}│   ")
     };
 
-    let tree_chrome = color::label(&format!("{prefix}{connector}"));
+    let dim = !item.is_active() || context_ids.contains(&item.id);
+    rows.push((format!("{prefix}{connector}"), item, dim));
 
-    // Find children in the filtered set
     let children: Vec<&&Item> = all_items
         .iter()
         .filter(|i| i.parent.as_deref() == Some(&item.id))
         .collect();
 
-    let title_width = tree_title_width(prefix, &connector, item);
-    let title = truncate_title(&item.title, title_width);
-
-    let (type_raw, type_colored) = color::item_type_display(&item.item_type);
-    let (prio_raw, prio_colored) = color::priority_display(&item.priority);
-
-    // Right-align attributes: calculate how much space the left side uses,
-    // then pad to push attributes to the right terminal edge.
-    let left_raw = format!("{}{}{} {}", prefix, connector, item.id, title);
-    let left_width = display_width(&left_raw);
-    let attr_raw = format!(
-        " [{}] [{}] [{}]",
-        type_raw,
-        color::status_display(&item.status).0,
-        prio_raw
-    );
-    let attr_width = display_width(&attr_raw);
-    let term_width = terminal_width();
-    let padding = term_width.saturating_sub(left_width + attr_width);
-    let spacer = " ".repeat(padding);
-
-    let dim = !item.is_active() || context_ids.contains(&item.id);
-    if dim {
-        let (status_raw, _) = color::status_display(&item.status);
-        println!(
-            "{}{}",
-            tree_chrome,
-            color::inactive(&format!(
-                "{} {}{} [{}] [{}] [{}]",
-                item.id, title, spacer, type_raw, status_raw, prio_raw
-            ))
-        );
-    } else {
-        let (_, status_colored) = color::status_display(&item.status);
-        println!(
-            "{}{} {}{} [{}] [{}] [{}]",
-            tree_chrome,
-            color::id(&item.id),
-            title,
-            spacer,
-            type_colored,
-            status_colored,
-            prio_colored
-        );
-    }
-
     for (ci, child) in children.iter().enumerate() {
         let child_is_last = ci == children.len() - 1;
-        print_tree_node(child, all_items, context_ids, &child_prefix, child_is_last);
+        collect_tree_rows(
+            child,
+            all_items,
+            context_ids,
+            &child_prefix,
+            child_is_last,
+            rows,
+        );
     }
 }
 

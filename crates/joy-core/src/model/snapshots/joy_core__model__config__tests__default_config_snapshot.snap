@@ -5,8 +5,8 @@ expression: yaml
 version: 1
 output:
   color: auto
-  emoji: true
-  short: false
+  emoji: false
+  short: true
   fortune: true
 workflow:
   auto-assign: true

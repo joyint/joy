@@ -1,11 +1,37 @@
 id: JOY-0141-DE
 title: joy ls and joy ls --tree shall look similar
 type: rework
-status: new
+status: closed
 priority: medium
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 - review
 created_by: horst.schwarz@joydev.com
 created: 2026-05-02T18:32:16.599328Z
-updated: 2026-05-02T18:32:16.599328Z
+updated: 2026-05-03T01:58:30.344895Z
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-03T01:16:32.355752Z
+  text: 'Plan: align joy ls --tree with joy ls table layout. Same header (separator + column headers + separator), same columns (ID, TYPE, STAT, PRIO, EFRT, TITLE). Tree connectors (├── └── │) precede the ID; the ID column width scales to max(len(''ID''), max prefix+id width). Reuse col_raw and pad_colored helpers. Bundled label rename (also requested): STATUS -> STAT, EFF -> EFRT in the table header.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-03T01:23:19.092494Z
+  text: |-
+    [x] Header rename: STATUS -> STAT, EFF -> EFRT in ls table.
+    [x] Tree by parent (default 'joy ls --tree') refactored to ls table layout: same separator, same column headers, same column structure. Tree connectors are prepended to ID; ID column scales to max(prefix+id, header). Effort indicator and label respect the existing emoji setting.
+    [x] Smoke test: joy ls --tree shows ID/TYPE/STAT/PRIO/EFRT/TITLE columns with ├── prefixes inside the ID column.
+    [x] cargo build, cargo test (88+2 green), cargo clippy clean.
+    [x] Out of scope here: joy ls --tree --group milestone keeps its existing inline-bracket layout. If alignment with the new table layout is desired there too, that is a separate item.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-03T01:26:16.572616Z
+  text: 'Polish: column gap after the ID column is now 2 spaces (1 space between the other columns), in both joy ls and joy ls --tree. Header, rows and separator widths updated accordingly. Tests still green.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-03T01:37:26.249623Z
+  text: 'Polish round 2: 2 spaces between every column (not just after ID). Headers adapt to is_short(): short on -> TYP / STA / PRI / EFF, short off -> TYPE / STATUS / PRIO / EFFORT. With emoji on and short off, the EFFORT cell shows the colored block character followed by the t-shirt size (e.g. ''▇ xxl''); with emoji on and short on it stays at the block character only; with emoji off it stays at the t-shirt size only. Both joy ls and joy ls --tree updated. Tests green.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-03T01:40:11.336779Z
+  text: 'Polish round 3: column alignment for VS-16 emoji glyphs (♻️ rework, ▶️ in-progress, ⏸️ deferred). The unicode_width crate counts the base character but ignores the U+FE0F variation selector, so terminals that render base+VS-16 as a 2-cell emoji ended up with one extra padding space. display_width now adds one cell per VS-16 occurrence.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-03T01:51:45.405231Z
+  text: 'Polish round 4: replaced VS-16 emoji glyphs (♻️, ▶️, ⏸️) with single-codepoint emojis to match the rest of the icon set and avoid alignment quirks across terminals: rework now 🔄, in-progress now 🏃, deferred now 💤. Also reverted the display_width VS-16 compensation: unicode-width 0.2 already counts these correctly, so the manual adjustment was double-counting. Tests green.'

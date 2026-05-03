@@ -1,11 +1,29 @@
 id: JOY-0142-62
 title: Short names for effort like xxl or m
 type: rework
-status: new
+status: closed
 priority: medium
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 - review
+effort: 7
 created_by: horst.schwarz@joydev.com
 created: 2026-05-02T18:35:48.606106Z
-updated: 2026-05-02T18:35:48.606106Z
+updated: 2026-05-03T01:58:24.033439Z
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-03T00:53:28.237568Z
+  text: 'Plan: T-Shirt-Mapping xxs=1, xs=2, s=3, m=4, l=5, xl=6, xxl=7. Helper parse_effort(s: &str) in joy-cli akzeptiert ''none'', ''1''-''7'', und xxs..xxl (case-insensitiv). add.rs effort von Option<u8> auf Option<String>. edit.rs nutzt denselben Helper. Tests fuer den Helper. Doku-Updates: Tutorial.md, AI-instructions.md, SKILL.md. Display bleibt Block-Char/Zahl; T-Shirt-Anzeige in Listen waere ein separates Item.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-03T01:03:52.783987Z
+  text: |-
+    [x] Helper parse_effort in joy-cli/src/effort.rs implementiert. add.rs --effort auf Option<String> umgestellt. edit.rs auf Helper umgestellt.
+    [x] 6 Unit-Tests fuer den Helper, alle gruen. cargo test -p joy-cli komplett gruen (88 + 2 tests).
+    [x] Smoke-Test: joy edit JOY-0142-62 --effort xxl speichert effort: 7. Numerisch und 'none' weiter funktional.
+    [x] Doku angepasst: Tutorial.md (effort scale section), templates/ai/instructions.md, templates/ai/skills/joy/SKILL.md.
+    [x] T-Shirt-Anzeige in Listen ausgeklammert (separates Item bei Bedarf).
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-03T01:10:38.899033Z
+  text: 'Nachgezogen: in joy ls / board zeigt die EFF-Spalte jetzt T-Shirt-Sizes (xxs..xxl), wenn emoji off ist. Mit emoji on weiterhin Block-Char. Neue Helper-Funktion color::effort_label fuer Width-Berechnung; effort_indicator nutzt Label intern. ls.rs w_eff korrekt auf max T-Shirt-Breite (3) skaliert. cargo test gruen.'

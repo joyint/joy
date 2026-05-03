@@ -4,6 +4,7 @@
 mod color;
 mod commands;
 mod complete;
+mod effort;
 mod forge;
 mod output;
 mod prompt;

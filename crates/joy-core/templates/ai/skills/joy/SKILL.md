@@ -54,7 +54,7 @@ Do this check BEFORE showing the "What would you like to do?" prompt. This is th
 When the user describes features, ideas, problems, or requirements:
 
 1. Break it down into Joy items using types: `epic`, `story`, `task`, `bug`, `rework`, `decision`, `idea`
-2. Present a short numbered list (title, type, priority, effort, description) and ask if it looks right. Suggest an effort (1-7) for each item based on scope.
+2. Present a short numbered list (title, type, priority, effort, description) and ask if it looks right. Suggest an effort (1-7 or t-shirt size xxs/xs/s/m/l/xl/xxl) for each item based on scope.
 3. Create items one by one with `joy add --effort <N> --description "..."`. Ask "Create this item? (y/n/edit)" before each
 4. After all items are processed, run `joy ls` to show the result
 

@@ -97,7 +97,7 @@ Gates: projects can restrict transitions via `status_rules` in project.yaml. Whe
 
 Item types: `epic`, `story`, `task`, `bug`, `rework`, `decision`, `idea`.
 Priority levels: `critical`, `high`, `medium`, `low`.
-Effort scale (1-7): 1=trivial, 2=small, 3=medium, 4=large, 5=major, 6=heavy, 7=massive.
+Effort scale (1-7 or t-shirt size xxs/xs/s/m/l/xl/xxl): 1=xxs=trivial, 2=xs=small, 3=s=medium, 4=m=large, 5=l=major, 6=xl=heavy, 7=xxl=massive.
 
 ## Rules
 

@@ -80,17 +80,7 @@ pub fn run(args: EditArgs) -> Result<()> {
     }
 
     if let Some(ref effort_str) = args.effort {
-        if effort_str == "none" {
-            item.effort = None;
-        } else {
-            let e: u8 = effort_str
-                .parse()
-                .map_err(|_| anyhow::anyhow!("effort must be 1-7 or 'none'"))?;
-            if !(1..=7).contains(&e) {
-                anyhow::bail!("effort must be between 1 and 7");
-            }
-            item.effort = Some(e);
-        }
+        item.effort = crate::effort::parse_effort(effort_str)?;
         changed = true;
     }
 

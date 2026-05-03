@@ -117,7 +117,7 @@ joy add task "Set up SQLite database" --parent CB-0001 --priority critical --eff
 
 ### Effort
 
-Estimate work with `--effort` on a 1-7 scale: 1=trivial, 2=small, 3=medium, 4=large, 5=major, 6=heavy, 7=massive. It's optional but helps with planning.
+Estimate work with `--effort` on a 1-7 scale or with t-shirt sizes (xxs=1, xs=2, s=3, m=4, l=5, xl=6, xxl=7): 1=trivial, 2=small, 3=medium, 4=large, 5=major, 6=heavy, 7=massive. It's optional but helps with planning.
 
 ### Item Types
 

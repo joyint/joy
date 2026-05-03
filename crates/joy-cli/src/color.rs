@@ -59,7 +59,7 @@ pub fn item_type_indicator(t: &ItemType) -> &'static str {
         ItemType::Story => "\u{1f4d6} ",
         ItemType::Task => "\u{1f527} ",
         ItemType::Bug => "\u{1f41e} ",
-        ItemType::Rework => "\u{267b}\u{fe0f} ",
+        ItemType::Rework => "\u{1f504} ",
         ItemType::Decision => "\u{1f4a1} ",
         ItemType::Idea => "\u{2728} ",
     }
@@ -72,10 +72,10 @@ pub fn status_indicator(s: &Status) -> &'static str {
     match s {
         Status::New => "\u{1f331} ",
         Status::Open => "\u{1f7e2} ",
-        Status::InProgress => "\u{25b6}\u{fe0f} ",
+        Status::InProgress => "\u{1f3c3} ",
         Status::Review => "\u{1f440} ",
         Status::Closed => "\u{2705} ",
-        Status::Deferred => "\u{23f8}\u{fe0f} ",
+        Status::Deferred => "\u{1f4a4} ",
     }
 }
 
@@ -324,8 +324,32 @@ pub fn status_heading(s: &Status, text: &str) -> String {
     }
 }
 
-/// Format an effort value (1-7) as a colored block character.
-/// Always shown, regardless of emoji setting.
+/// Raw text label for an effort value, used for column-width calculation.
+/// - emoji on, short on:  block character only (e.g. "▇")
+/// - emoji on, short off: block character + space + t-shirt size (e.g. "▇ xxl")
+/// - emoji off:           t-shirt size only (e.g. "xxl")
+pub fn effort_label(effort: Option<u8>) -> String {
+    let blocks = ['▁', '▂', '▃', '▄', '▅', '▆', '▇'];
+    let tshirt = ["xxs", "xs", "s", "m", "l", "xl", "xxl"];
+    match effort {
+        Some(s) if (1..=7).contains(&s) => {
+            let idx = (s - 1) as usize;
+            if is_emoji_enabled() {
+                if is_short() {
+                    blocks[idx].to_string()
+                } else {
+                    format!("{} {}", blocks[idx], tshirt[idx])
+                }
+            } else {
+                tshirt[idx].to_string()
+            }
+        }
+        _ => " ".to_string(),
+    }
+}
+
+/// Format an effort value (1-7) for terminal display, coloured per scale.
+/// Layout follows effort_label.
 /// Colors: 1-2 green, 3-4 yellow, 5 orange, 6-7 red.
 pub fn effort_indicator(effort: Option<u8>) -> String {
     const GREEN: &str = "\x1b[32m";
@@ -334,11 +358,9 @@ pub fn effort_indicator(effort: Option<u8>) -> String {
     const RED: &str = "\x1b[31m";
     const RESET: &str = "\x1b[0m";
 
-    let blocks = ['▁', '▂', '▃', '▄', '▅', '▆', '▇'];
-
     match effort {
         Some(s) if (1..=7).contains(&s) => {
-            let block = blocks[(s - 1) as usize];
+            let label = effort_label(Some(s));
             let color = match s {
                 1 | 2 => GREEN,
                 3 | 4 => YELLOW,
@@ -347,9 +369,9 @@ pub fn effort_indicator(effort: Option<u8>) -> String {
                 _ => "",
             };
             if is_color_enabled() {
-                format!("{color}{block}{RESET}")
+                format!("{color}{label}{RESET}")
             } else {
-                format!("{}", s)
+                label
             }
         }
         _ => " ".to_string(),
