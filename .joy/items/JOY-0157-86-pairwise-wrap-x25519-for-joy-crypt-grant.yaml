@@ -1,14 +1,23 @@
 id: JOY-0157-86
 title: Pairwise wrap (X25519) for joy crypt grant
 type: task
-status: new
+status: closed
 priority: high
 parent: JOY-0145-51
+assignees:
+- member: ai:claude@joy
 milestone: JOY-MS-02
 capabilities:
 - implement
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-03T16:43:35.982634Z
-updated: 2026-05-03T16:43:35.982634Z
+updated: 2026-05-03T17:16:11.360498Z
 description: Implement the cross-member zone-key wrap that joy crypt grant needs. Add X25519 conversion of Ed25519 verify_keys to joy-crypt, add an authenticated ECDH primitive (sender's seed + recipient's verify_key produces a pairwise KEK), wrap zone keys for granted members, decrypt on the recipient side. Replaces the bail in joy-cli/commands/crypt::run_grant. Required to ship joy crypt grant; default-zone CLI in JOY-0148-84 ships without grant pending this primitive.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-03T17:02:10.674366Z
+  text: 'Plan: (1) joy-crypt: add x25519-dalek + curve25519-dalek deps; identity::Keypair gains to_x25519_secret() and PublicKey gains to_x25519_public() via Ed25519->Montgomery conversion. New pairwise module with pairwise_kek(my_x25519_secret, peer_x25519_public, info) -> [u8; 32] doing ECDH + HKDF. (2) joy-core/crypt: change wrap format to include granter''s verify_key as a prefix; wrap_for_member uses pairwise_kek with the granter''s secret + recipient''s public; unwrap_for_member reads the granter prefix, looks up their public key, derives the symmetric pairwise KEK with own secret + granter''s public, decrypts. Self-wrap (auto-create) is the special case granter==recipient. (3) joy-cli/commands/crypt: implement run_grant using the new primitive. (4) Tests: pairwise self/cross roundtrip, recipient cannot decrypt without granter pubkey, third party cannot decrypt.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-03T17:16:10.847537Z
+  text: 'Done: joy-crypt gains x25519-dalek + curve25519-dalek deps; identity::Keypair::to_x25519_secret_bytes (SHA-512 + bit-clamping) and PublicKey::to_x25519_public_bytes (Ed25519->Montgomery) round out the conversion. New pairwise module exposes pairwise_kek(my_x25519_secret, peer_x25519_public, info) doing X25519 ECDH + HKDF-SHA256 with ''crypt-pairwise-v1'' prefix. joy-core/crypt now wraps zone keys with the granter''s verify_key prepended; unwrap reads the prefix, locates the granter''s X25519 public, and reproduces the same KEK on the recipient side. Self-wrap is the special case granter==recipient. joy crypt grant <member> uses the new primitive end-to-end. 35 joy-crypt unit tests (5 new for pairwise), 6 joy-core crypt tests (rewritten for the wrapped format), 1 new bats integration test exercising founder->member grant. All green.'

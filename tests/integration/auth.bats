@@ -858,16 +858,32 @@ YAML
     [[ "$output" == *"data/customer-x/"* ]]
 }
 
-@test "joy crypt grant currently bails pending JOY-0157-86" {
+@test "joy crypt grant wraps the zone key for another member (X25519, JOY-0157-86)" {
     joy init --name "Crypt Test" --acronym CT
     joy auth init --passphrase "$TEST_PASSPHRASE"
     OTP=$(joy project member add bob@example.com --passphrase "$TEST_PASSPHRASE" \
         | sed -n 's/^[[:space:]]*One-time password:[[:space:]]*\([A-Za-z0-9-]*\).*$/\1/p' | head -1)
     [ -n "$OTP" ]
 
+    # Bob redeems the OTP so he has a verify_key registered for ECDH.
+    git config user.email bob@example.com
+    joy auth --otp "$OTP" --passphrase "alpha bravo charlie delta echo foxtrot" \
+        | grep -q "Authentication initialized"
+    git config user.email test@example.com
+
+    # Founder seeds the default zone via add, then grants Bob.
+    joy crypt add "secret/" --passphrase "$TEST_PASSPHRASE" >/dev/null
     run joy crypt grant bob@example.com --passphrase "$TEST_PASSPHRASE"
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"JOY-0157-86"* ]]
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Granted"* ]]
+
+    # Bob's member entry now has a wrap; founder still has theirs.
+    grep -A 25 "^  bob@example.com:" .joy/project.yaml | grep -q "default:"
+    grep -A 25 "^  test@example.com:" .joy/project.yaml | grep -q "default:"
+
+    # zone list reports both members.
+    run joy crypt zone list
+    [[ "$output" == *"default"* ]]
 }
 
 @test "joy crypt zone list reports paths/items/members per zone" {

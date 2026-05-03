@@ -1276,6 +1276,7 @@ version = "0.1.0"
 dependencies = [
  "aes-gcm",
  "argon2",
+ "curve25519-dalek",
  "ed25519-dalek",
  "hex",
  "hkdf",
@@ -1284,6 +1285,7 @@ dependencies = [
  "secrecy",
  "sha2",
  "thiserror",
+ "x25519-dalek",
  "zeroize",
 ]
 
@@ -2921,6 +2923,18 @@ dependencies = [
  "serde_json",
  "unicode-xid",
  "wasmparser",
+]
+
+[[package]]
+name = "x25519-dalek"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7e468321c81fb07fa7f4c636c3972b9100f0346e5b6a9f2bd0603a52f7ed277"
+dependencies = [
+ "curve25519-dalek",
+ "rand_core",
+ "serde",
+ "zeroize",
 ]
 
 [[package]]

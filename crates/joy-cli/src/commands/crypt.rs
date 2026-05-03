@@ -123,7 +123,7 @@ pub fn run(args: CryptArgs) -> Result<()> {
             (false, Some(target)) => run_rm(&zone, target, args.passphrase.as_deref()),
             (false, None) => bail!("specify a target item/path or use --all"),
         },
-        CryptCommand::Grant(m) => run_grant(&zone, &m.member),
+        CryptCommand::Grant(m) => run_grant(&zone, &m.member, args.passphrase.as_deref()),
         CryptCommand::Revoke(m) => run_revoke(&zone, &m.member),
         CryptCommand::List => run_list(&zone),
         CryptCommand::Status => run_status(),
@@ -201,7 +201,7 @@ impl UnlockedZone {
             .entry(self.zone.clone())
             .or_insert_with(CryptZone::default);
         let wrap_hex =
-            core_crypt::wrap_for_member(&self.zone_key, &self.zone, &self.acting_seed);
+            core_crypt::wrap_for_self(&self.zone_key, &self.zone, &self.acting_seed);
         let m = self.project.members.get_mut(&self.acting_email).unwrap();
         m.crypt_wraps.insert(self.zone.clone(), wrap_hex);
 
@@ -425,12 +425,81 @@ fn run_zone_rm(name: &str) -> Result<()> {
     Ok(())
 }
 
-fn run_grant(_zone: &str, _target_member: &str) -> Result<()> {
-    bail!(
-        "joy crypt grant requires the X25519-based pairwise wrap primitive, tracked in \
-         JOY-0157-86. The default-zone CLI ships without grant in this release; the \
-         granter implicitly holds the zone key after `joy crypt add`."
-    )
+fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>) -> Result<()> {
+    let unlocked = unlock_zone(zone, passphrase, false)?;
+    let target = unlocked
+        .project
+        .members
+        .get(target_member)
+        .ok_or_else(|| anyhow::anyhow!("member '{}' not found", target_member))?;
+    let target_verify_hex = target.verify_key.as_deref().ok_or_else(|| {
+        anyhow::anyhow!(
+            "{} has no verify_key yet. They must run `joy auth` (or `joy auth --otp`) before \
+             they can receive a Crypt grant.",
+            target_member
+        )
+    })?;
+    let target_verify_key = joy_core::auth::PublicKey::from_hex(target_verify_hex)?;
+    let granter_verify_hex = unlocked
+        .project
+        .members
+        .get(&unlocked.acting_email)
+        .and_then(|m| m.verify_key.clone())
+        .ok_or_else(|| anyhow::anyhow!("granter has no verify_key registered"))?;
+    let granter_verify_key = joy_core::auth::PublicKey::from_hex(&granter_verify_hex)?;
+
+    // Wrap the zone key for the target. The granter's verify_key
+    // travels in the wrap header so the target can locate the right
+    // X25519 public for ECDH.
+    let wrap_hex = joy_core::crypt::wrap_for_member(
+        &unlocked.zone_key,
+        &unlocked.zone,
+        &unlocked.acting_seed,
+        &granter_verify_key,
+        &target_verify_key,
+    );
+
+    // Persist the new wrap on the target's member entry. Re-load the
+    // project to keep the granter's own wrap untouched (unlocked.save
+    // would overwrite the granter's crypt_wraps entry too).
+    let project_path = store::joy_dir(&unlocked.root).join(store::PROJECT_FILE);
+    let mut project = store::read_project(&project_path)?;
+    project
+        .crypt
+        .zones
+        .entry(unlocked.zone.clone())
+        .or_insert_with(CryptZone::default);
+    let m = project
+        .members
+        .get_mut(target_member)
+        .expect("target member existed at unwrap time");
+    m.crypt_wraps.insert(unlocked.zone.clone(), wrap_hex);
+
+    // Ensure the granter's own wrap is also present (auto-create path
+    // when this is the first add+grant in the same session).
+    let granter_wrap = joy_core::crypt::wrap_for_self(
+        &unlocked.zone_key,
+        &unlocked.zone,
+        &unlocked.acting_seed,
+    );
+    let g = project.members.get_mut(&unlocked.acting_email).unwrap();
+    g.crypt_wraps
+        .entry(unlocked.zone.clone())
+        .or_insert(granter_wrap);
+
+    store::write_yaml_preserve(&project_path, &project)?;
+    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+    joy_core::git_ops::auto_git_add(&unlocked.root, &[&rel]);
+    joy_core::git_ops::auto_git_post_command(
+        &unlocked.root,
+        &format!("crypt grant {target_member} (zone {})", unlocked.zone),
+        &unlocked.acting_email,
+    );
+    println!(
+        "Granted {} access to zone '{}'.",
+        target_member, unlocked.zone
+    );
+    Ok(())
 }
 
 fn run_revoke(zone: &str, target_member: &str) -> Result<()> {
