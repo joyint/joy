@@ -1,0 +1,18 @@
+id: JOY-0154-3C
+title: joy-crypt as leaf crate, no joy-core dependency
+type: decision
+status: closed
+priority: high
+parent: JOY-0145-51
+milestone: JOY-MS-02
+capabilities:
+- conceive
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-03T10:03:03.583542Z
+updated: 2026-05-03T10:17:42.947593Z
+description: 'Establish that joy-crypt is a leaf crate exposing only cryptographic primitives on bytes: Argon2id KDF, AES-256-GCM AEAD, Ed25519 sign/verify, seed/zone-key wrapping, Job-bound session wraps. joy-core depends on joy-crypt; joy-crypt has no reverse dependency. Schema knowledge of project.yaml, session/token storage, and orchestration live in joy-core''s auth module. WebUI mirrors the same byte-level contract via Web Crypto API. Resolves Auth.md Open Question #5. Rationale appended to ADR-039.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-03T10:17:39.547437Z
+  text: 'Decision recorded in ADR-039 §"Crate boundary and dependency direction". Auth.md updated ("Where auth lives" section, Open Question #5 removed) to reflect the split: joy-crypt owns the cryptographic primitives, joy-core/auth keeps the identity application layer and depends on joy-crypt. No reverse dependency.'

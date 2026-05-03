@@ -1,0 +1,16 @@
+id: JOY-0155-D0
+title: Initialize joy-crypt crate skeleton in joyint/crypt
+type: task
+status: new
+priority: high
+parent: JOY-0145-51
+deps:
+- JOY-0154-3C
+milestone: JOY-MS-02
+capabilities:
+- implement
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-03T10:04:19.807883Z
+updated: 2026-05-03T10:04:19.807883Z
+description: 'Create Cargo crate at crypt/crates/joy-crypt/ inside the joyint/crypt submodule. Set up Cargo.toml with RustCrypto deps (argon2, ed25519-dalek, aes-gcm, zeroize, secrecy). Add empty module stubs: kdf, aead, identity, wrap, zone, session_wrap. Wire joy workspace to consume joy-crypt via path dependency on ../crypt/crates/joy-crypt. Scaffolding and dependency wiring only, no business logic.'
