@@ -14,7 +14,7 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-02T22:45:31.715875Z
-updated: 2026-05-03T17:40:37.171992Z
+updated: 2026-05-03T19:00:58.604046Z
 description: Configures Git clean, smudge, and textconv filters via .gitattributes so the working directory holds ciphertext for marked items and paths while Git history remains plaintext (textconv-based diff/blame). Enables transparent encryption without changing the user CLI workflow. Working directory ciphertext blocks AI tools and other processes that read files directly.
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
@@ -23,3 +23,9 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-05-03T17:40:37.073939Z
   text: 'Done: joy-core/auth/session adds zone-keys sidecar (save/load/remove). joy-core/crypt encrypt_blob/decrypt_blob produce/parse JOYCRYPT||v1||zone-len||zone||nonce||AES-GCM-ct+tag (zone in AAD). joy auth populates the sidecar after passphrase verification using the just-recovered seed. joy-cli/commands/crypt_filter implements the Git filter binary with clean/smudge/textconv subcommands; smudge reads crypt_zone from inbound YAML, clean/textconv read the magic header. joy crypt add auto-runs git config filter.joy-crypt.{clean,smudge,required} + diff.joy-crypt.{textconv,cachetextconv} on first call per clone, and writes a .gitattributes entry per item. joy crypt setup makes the same setup explicit. joy crypt add also refreshes the sidecar so the filter has the new zone key without re-running joy auth. 5 new joy-core unit tests for blob roundtrip + tamper / wrong-key / wrong-zone / magic-detect cases; 3 new bats tests for .gitattributes/git config wiring, clean/smudge roundtrip, and the plaintext-passthrough fallback. 310 + 91 + 300 tests green. Path-based filter (zone.paths globs) lands in a follow-up; only item-file YAML is auto-encrypted in this release.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-03T18:11:57.769559Z
+  text: Adding e2e bats coverage that the file ladder (joy crypt add → git add → git commit → rm + git checkout) actually round-trips through the real Git filter invocation, not just the filter binary in isolation.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-03T19:00:58.496319Z
+  text: 'Fix-up: removed the unilaterally added joy crypt-filter top-level (hyphen-form, broke the all-spaces convention) and joy crypt setup (broke the init-only convention). FilterArgs now lives as a hidden Filter subcommand under joy crypt, so git config calls ''joy crypt filter clean -- %f'' etc. The previous git_filter_configured check in run_add is gone; setup_git_filter is now called unconditionally whenever joy crypt add writes to .gitattributes - ''git config'' is idempotent at the Git level, so we don''t add a Joy-side check on top. New e2e bats test (Crypt e2e: git add + commit + checkout drives the filter) confirms the full Git filter pipeline through real git invocations. 301 bats tests green.'

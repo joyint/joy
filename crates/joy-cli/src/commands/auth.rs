@@ -488,7 +488,7 @@ fn auth_with_passphrase(
     let session_token = session::create_session(&keypair, email, project_id, None);
     session::save_session(project_id, &session_token)?;
 
-    // Populate the Crypt zone-keys sidecar so `joy crypt-filter`
+    // Populate the Crypt zone-keys sidecar so `joy crypt filter`
     // (Git filter binary) can decrypt without re-prompting for a
     // passphrase. We have the seed because the keypair we just
     // verified derives from it directly (ADR-039).

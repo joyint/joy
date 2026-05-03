@@ -1,0 +1,13 @@
+id: JOY-0159-E2
+title: Auto-encrypt new items in marked zones (--crypt flag on joy add, project default)
+type: task
+status: new
+priority: medium
+milestone: JOY-MS-02
+capabilities:
+- implement
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-03T18:10:40.184674Z
+updated: 2026-05-03T18:10:40.184674Z
+description: joy crypt add --all sets every existing item's crypt_zone, but joy add task ... creates a new item without it. Add a --crypt[=<zone>] flag on joy add and joy edit so users can opt new items into a zone explicitly. Plus a project-level default (CryptConfig.default_zone or similar) that auto-tags new items in --all mode. Touches joy-cli/commands/add.rs and edit.rs and joy-core/model/project.rs.

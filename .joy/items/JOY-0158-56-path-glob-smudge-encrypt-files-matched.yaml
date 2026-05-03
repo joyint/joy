@@ -1,0 +1,13 @@
+id: JOY-0158-56
+title: 'Path-glob smudge: encrypt files matched by crypt.zones[].paths'
+type: task
+status: new
+priority: medium
+milestone: JOY-MS-02
+capabilities:
+- implement
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-03T18:10:40.149001Z
+updated: 2026-05-03T18:10:40.149001Z
+description: 'Today the Git smudge filter only encrypts item YAML files (zone is read from the inbound ''crypt_zone:'' field). Path-based encryption (joy crypt add data/customer-x/ or joy crypt add --zone customer-x <glob>) writes the glob to crypt.zones[].paths but smudge does not match the file path against those globs, so the file passes through plaintext. Extend joy crypt-filter smudge: when the inbound bytes don''t carry a crypt_zone, walk crypt.zones[].paths and pick the first zone whose glob matches the %f path; encrypt with that zone''s session-cached key. Also extend joy crypt add to write a .gitattributes rule for path globs (today only items get one). Adds a bats test for path-glob roundtrip.'

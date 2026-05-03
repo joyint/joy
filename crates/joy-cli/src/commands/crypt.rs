@@ -56,9 +56,11 @@ enum CryptCommand {
     Status,
     /// Manage named zones (list, rm).
     Zone(ZoneArgs),
-    /// Configure Git's clean/smudge/textconv filter to use
-    /// `joy crypt-filter`. Runs once per clone; safe to repeat.
-    Setup,
+    /// Git clean/smudge/textconv filter binary. Hidden; only Git
+    /// invokes it via the filter and diff drivers configured by the
+    /// first `joy crypt add` in this clone.
+    #[command(hide = true)]
+    Filter(super::crypt_filter::FilterArgs),
 }
 
 #[derive(Args)]
@@ -134,25 +136,23 @@ pub fn run(args: CryptArgs) -> Result<()> {
             ZoneCommand::List => run_zone_list(),
             ZoneCommand::Rm(args) => run_zone_rm(&args.name),
         },
-        CryptCommand::Setup => run_setup(),
+        CryptCommand::Filter(args) => super::crypt_filter::run(args),
     }
 }
 
-/// Configure Git filter / diff drivers in `.git/config`. Idempotent.
-fn run_setup() -> Result<()> {
-    let (root, _project, _email) = load_context()?;
-    setup_git_filter(&root)?;
-    println!("Git filter 'joy-crypt' configured. Marked items now encrypt on checkout.");
-    Ok(())
-}
-
+/// Configure Git's filter and diff drivers so the next `git add` /
+/// `git checkout` / `git diff` on a marked file invokes
+/// `joy crypt filter`. Called from `run_add` whenever
+/// `.gitattributes` is touched. `git config` is idempotent at the
+/// Git level, so we just write the four entries unconditionally
+/// rather than gating on a Joy-side "is it set?" check.
 fn setup_git_filter(root: &std::path::Path) -> Result<()> {
     use std::process::Command;
     let configs = [
-        ("filter.joy-crypt.clean", "joy crypt-filter clean -- %f"),
-        ("filter.joy-crypt.smudge", "joy crypt-filter smudge -- %f"),
+        ("filter.joy-crypt.clean", "joy crypt filter clean -- %f"),
+        ("filter.joy-crypt.smudge", "joy crypt filter smudge -- %f"),
         ("filter.joy-crypt.required", "true"),
-        ("diff.joy-crypt.textconv", "joy crypt-filter textconv"),
+        ("diff.joy-crypt.textconv", "joy crypt filter textconv"),
         ("diff.joy-crypt.cachetextconv", "false"),
     ];
     for (key, value) in configs {
@@ -191,17 +191,6 @@ fn ensure_gitattributes_for_item(root: &std::path::Path, item_id: &str) -> Resul
     Ok(())
 }
 
-/// Detect whether `git config filter.joy-crypt.clean` is set, so the
-/// first `joy crypt add` in a fresh clone can auto-run setup.
-fn git_filter_configured(root: &std::path::Path) -> bool {
-    use std::process::Command;
-    Command::new("git")
-        .current_dir(root)
-        .args(["config", "--get", "filter.joy-crypt.clean"])
-        .output()
-        .map(|o| o.status.success() && !o.stdout.is_empty())
-        .unwrap_or(false)
-}
 
 fn load_context() -> Result<(std::path::PathBuf, Project, String)> {
     let cwd = std::env::current_dir()?;
@@ -280,7 +269,7 @@ impl UnlockedZone {
         joy_core::git_ops::auto_git_add(&self.root, &[&rel]);
         joy_core::git_ops::auto_git_post_command(&self.root, summary, &self.acting_email);
 
-        // Refresh the session zone-keys sidecar so `joy crypt-filter`
+        // Refresh the session zone-keys sidecar so `joy crypt filter`
         // can encrypt/decrypt this zone immediately, without
         // requiring the user to re-run `joy auth`.
         let project_id = joy_core::auth::session::project_id(&self.root)?;
@@ -310,12 +299,12 @@ fn run_add(zone: &str, target: &str, passphrase: Option<&str>) -> Result<()> {
         if let Ok(rel) = item_path.strip_prefix(&unlocked.root) {
             joy_core::git_ops::auto_git_add(&unlocked.root, &[&rel.to_string_lossy()]);
         }
-        // Wire the Git filter so subsequent `git add`s encrypt and
-        // `git checkout`s decrypt this item file. First call in a
-        // clone runs setup automatically; later calls are no-ops.
-        if !git_filter_configured(&unlocked.root) {
-            let _ = setup_git_filter(&unlocked.root);
-        }
+        // We are about to write a `filter=joy-crypt` rule into
+        // .gitattributes. Make sure `.git/config` knows what that
+        // filter resolves to. Unconditional, no Joy-side "is it
+        // configured?" check; Git's own `config` write is
+        // idempotent.
+        setup_git_filter(&unlocked.root)?;
         ensure_gitattributes_for_item(&unlocked.root, target)?;
         println!("Added {} to zone '{}'.", target, zone);
         format!("crypt add {target} (zone {zone})")

@@ -958,13 +958,13 @@ YAML
     # Git config picked up the filter / diff drivers.
     run git config --get filter.joy-crypt.clean
     [ "$status" -eq 0 ]
-    [[ "$output" == *"crypt-filter clean"* ]]
+    [[ "$output" == *"crypt filter clean"* ]]
     run git config --get diff.joy-crypt.textconv
     [ "$status" -eq 0 ]
-    [[ "$output" == *"crypt-filter textconv"* ]]
+    [[ "$output" == *"crypt filter textconv"* ]]
 }
 
-@test "joy crypt-filter clean/smudge roundtrip preserves the plaintext (JOY-014B-09)" {
+@test "joy crypt filter clean/smudge roundtrip preserves the plaintext (JOY-014B-09)" {
     joy init --name "Crypt Test" --acronym CT
     joy auth init --passphrase "$TEST_PASSPHRASE"
     joy add task "Sensitive item" >/dev/null
@@ -978,26 +978,65 @@ YAML
     # avoid bash command-substitution stripping trailing newlines and
     # mangling binary bytes.
     cp "$ITEM_FILE" /tmp/joy-crypt-plain-$$
-    joy crypt-filter smudge -- "$ITEM_FILE" \
+    joy crypt filter smudge -- "$ITEM_FILE" \
         < /tmp/joy-crypt-plain-$$ > /tmp/joy-crypt-blob-$$
 
     # First 8 bytes should be JOYCRYPT magic.
     HEAD8=$(head -c 8 /tmp/joy-crypt-blob-$$)
     [ "$HEAD8" = "JOYCRYPT" ]
 
-    joy crypt-filter clean -- "$ITEM_FILE" \
+    joy crypt filter clean -- "$ITEM_FILE" \
         < /tmp/joy-crypt-blob-$$ > /tmp/joy-crypt-round-$$
     cmp /tmp/joy-crypt-plain-$$ /tmp/joy-crypt-round-$$
 
     rm -f /tmp/joy-crypt-plain-$$ /tmp/joy-crypt-blob-$$ /tmp/joy-crypt-round-$$
 }
 
-@test "joy crypt-filter clean passes plaintext through unchanged (JOY-014B-09)" {
+@test "Crypt e2e: git add + commit + checkout drives the filter (JOY-014B-09)" {
+    joy init --name "Crypt E2E" --acronym CTE
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy add task "Sensitive item" >/dev/null
+    ITEM_FILE=$(ls .joy/items/CTE-*.yaml | head -1)
+    ID=$(basename "$ITEM_FILE" | sed -E 's/^(CTE-[0-9A-Fa-f]+(-[0-9A-Fa-f]+)?)-.*/\1/')
+
+    # Mark the item: writes crypt_zone field, configures git filter,
+    # appends .gitattributes rule, refreshes session sidecar.
+    joy crypt add "$ID" --passphrase "$TEST_PASSPHRASE" >/dev/null
+
+    # First commit on a fresh project: stage the touched files and
+    # commit. The clean filter runs on the item file but sees
+    # plaintext (the working file is still plaintext at this point),
+    # passes through unchanged, so Git stores plaintext.
+    git add .gitattributes .joy/project.yaml "$ITEM_FILE"
+    git commit -m "test commit [no-item]" >/dev/null
+
+    # Git history holds plaintext: cat-file -p on the blob shows the
+    # YAML.
+    BLOB_HASH=$(git ls-files -s "$ITEM_FILE" | awk '{print $2}')
+    git cat-file -p "$BLOB_HASH" | grep -q "crypt_zone: default"
+
+    # Force a smudge round: drop the working copy and ask Git to
+    # re-materialize it. Smudge encrypts because the inbound YAML
+    # carries crypt_zone.
+    rm "$ITEM_FILE"
+    git checkout HEAD -- "$ITEM_FILE"
+
+    # Working dir now holds a Crypt blob.
+    HEAD8=$(head -c 8 "$ITEM_FILE")
+    [ "$HEAD8" = "JOYCRYPT" ]
+
+    # textconv should hand `git diff` the plaintext back, verifying
+    # the textconv path for forge tools / blame.
+    OUT=$(joy crypt filter textconv "$ITEM_FILE")
+    [[ "$OUT" == *"crypt_zone: default"* ]]
+}
+
+@test "joy crypt filter clean passes plaintext through unchanged (JOY-014B-09)" {
     joy init --name "Crypt Test" --acronym CT
     joy auth init --passphrase "$TEST_PASSPHRASE"
 
     PLAIN="id: CT-9999\ntitle: not encrypted yet\n"
-    OUT=$(printf '%s' "$PLAIN" | joy crypt-filter clean)
+    OUT=$(printf '%s' "$PLAIN" | joy crypt filter clean)
     [ "$OUT" = "$PLAIN" ]
 }
 

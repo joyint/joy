@@ -1,7 +1,9 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! `joy crypt-filter` - Git clean/smudge/textconv binary (JOY-014B-09).
+//! `joy crypt filter` - Git clean/smudge/textconv binary (JOY-014B-09).
+//! Hidden subcommand under `joy crypt`; only Git invokes it via the
+//! filter / diff drivers configured in `.git/config`.
 //!
 //! Working dir holds Crypt blobs (binary, magic-headed) for items
 //! marked via `joy crypt add`. Git history holds plaintext. The filter
@@ -34,7 +36,7 @@ use joy_core::vcs::Vcs;
 use std::io::{Read, Write};
 
 #[derive(Args)]
-pub struct CryptFilterArgs {
+pub struct FilterArgs {
     #[command(subcommand)]
     command: FilterCommand,
 }
@@ -68,7 +70,7 @@ enum FilterCommand {
     },
 }
 
-pub fn run(args: CryptFilterArgs) -> Result<()> {
+pub fn run(args: FilterArgs) -> Result<()> {
     match args.command {
         FilterCommand::Clean { path } => run_clean(path.as_deref()),
         FilterCommand::Smudge { path } => run_smudge(path.as_deref()),

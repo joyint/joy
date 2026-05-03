@@ -105,10 +105,6 @@ enum Commands {
     Deauth(commands::deauth::DeauthArgs),
     /// Manage Crypt zones, items, paths, and grants
     Crypt(commands::crypt::CryptArgs),
-    /// Git filter binary (clean/smudge/textconv) for Crypt-marked
-    /// files. Invoked by Git via `.git/config`, not directly.
-    #[command(name = "crypt-filter", hide = true)]
-    CryptFilter(commands::crypt_filter::CryptFilterArgs),
 }
 
 #[derive(clap::Args)]
@@ -257,7 +253,6 @@ fn main() -> anyhow::Result<()> {
         Some(Commands::Auth(args)) => commands::auth::run(args),
         Some(Commands::Deauth(args)) => commands::deauth::run(args),
         Some(Commands::Crypt(args)) => commands::crypt::run(args),
-        Some(Commands::CryptFilter(args)) => commands::crypt_filter::run(args),
         None => commands::board::run(BoardArgs {
             filter: commands::filter_args::FilterArgs::default(),
             short: false,
