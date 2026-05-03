@@ -1,0 +1,24 @@
+id: JOY-0153-A2
+title: Per-zone encryption mode and WebUI as review surface
+type: idea
+status: new
+priority: high
+parent: JOY-0146-87
+milestone: JOY-MS-03
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-03T00:36:39.681387Z
+updated: 2026-05-03T00:36:39.681387Z
+description: |-
+  Per-zone setting that selects between two Crypt modes:
+
+  - working-dir-only (default): clean filter decrypts on commit, Git history is plaintext, forge-side review tools (PR diffs, blame, web search) work normally. Local AI in working dir is blocked.
+  - full: clean and smudge are identity, content stays ciphertext in Git as well. Forge sees only ciphertext; PR reviews on GitHub, GitLab, or Gitea are not possible for the affected paths.
+
+  For full-mode zones, joyint.com WebUI becomes the review surface. The user's browser unwraps the seed via Web Crypto API on login (passphrase or recovery key), unwraps the per-zone Crypt wraps, and decrypts PR diffs, blame, and inline comments client-side for display. Server stays blind. This is the architectural payoff that turns 'forge sees only ciphertext' from a limitation into a positioning: when the forge is outside the trust circle, joyint.com is where reviews happen.
+
+  Concrete deliverables when implemented:
+  - Schema: crypt.zones.<name>.mode in project.yaml
+  - Filter wiring: per-zone .gitattributes with the appropriate clean/smudge/textconv configuration
+  - WebUI: client-side decryption pipeline for diff, blame, and inline review on full-mode zones
+  - Documentation: Crypt.md updated with the mode dimension; positioning text for marketing
+  - Migration story: switching a zone between modes affects only future commits; old history stays in its prior mode.
