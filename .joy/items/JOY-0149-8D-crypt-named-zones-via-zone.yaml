@@ -1,9 +1,11 @@
 id: JOY-0149-8D
 title: Crypt named zones via --zone
 type: story
-status: new
+status: closed
 priority: medium
 parent: JOY-0145-51
+assignees:
+- member: ai:claude@joy
 milestone: JOY-MS-02
 capabilities:
 - plan
@@ -12,5 +14,9 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-02T22:45:27.293870Z
-updated: 2026-05-02T22:45:27.293870Z
+updated: 2026-05-03T17:00:02.960981Z
 description: Extends the four crypt verbs and joy crypt list with the --zone <name> flag for named zones (multi-tenant case). Auto-creates a zone on first reference. Adds joy crypt zone list and joy crypt zone rm for zone administration. Items reference their zone via the crypt_zone field; paths via the top-level crypt.zones[].paths registry in project.yaml.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-03T17:00:02.847014Z
+  text: 'Done: --zone <name> already worked through the global flag from JOY-0148-84; this story adds joy crypt zone list and joy crypt zone rm. zone list prints a one-line-per-zone table with PATHS/ITEMS/MEMBERS counts. zone rm refuses to drop non-empty zones (items still tagged or members still granted). HKDF salts zone keys with the zone name so different zones derive distinct member KEKs from the same seed; no cross-zone key reuse. 2 new bats tests cover the new subcommands; existing 295 still green.'

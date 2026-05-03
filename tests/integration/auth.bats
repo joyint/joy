@@ -870,6 +870,60 @@ YAML
     [[ "$output" == *"JOY-0157-86"* ]]
 }
 
+@test "joy crypt zone list reports paths/items/members per zone" {
+    joy init --name "Crypt Test" --acronym CT
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+
+    # Default zone via path; named zone via --zone.
+    joy crypt add "secret/" --passphrase "$TEST_PASSPHRASE" >/dev/null
+    joy crypt add "data/customer-x/" --zone customer-x --passphrase "$TEST_PASSPHRASE" >/dev/null
+
+    run joy crypt zone list
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"default"* ]]
+    [[ "$output" == *"customer-x"* ]]
+}
+
+@test "joy crypt zone rm refuses non-empty zones" {
+    joy init --name "Crypt Test" --acronym CT
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+
+    joy crypt add "secret/" --passphrase "$TEST_PASSPHRASE" >/dev/null
+
+    run joy crypt zone rm default
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"not empty"* ]]
+}
+
+@test "joy crypt add --all marks every item with the zone" {
+    joy init --name "Crypt Test" --acronym CT
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy add task "Item one" >/dev/null
+    joy add task "Item two" >/dev/null
+
+    run joy crypt add --all --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"item(s) tagged"* ]]
+
+    run joy crypt status
+    [[ "$output" == *"items in any zone: 2"* ]]
+}
+
+@test "joy crypt rm --all clears the zone tag from every item" {
+    joy init --name "Crypt Test" --acronym CT
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy add task "Item one" >/dev/null
+
+    joy crypt add --all --passphrase "$TEST_PASSPHRASE" >/dev/null
+
+    run joy crypt rm --all --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Removed"* ]]
+
+    run joy crypt status
+    [[ "$output" == *"items in any zone: 0"* ]]
+}
+
 @test "joy crypt revoke removes a member's wrap" {
     joy init --name "Crypt Test" --acronym CT
     joy auth init --passphrase "$TEST_PASSPHRASE"

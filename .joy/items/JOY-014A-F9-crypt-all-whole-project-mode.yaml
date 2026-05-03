@@ -1,9 +1,11 @@
 id: JOY-014A-F9
 title: Crypt --all whole-project mode
 type: story
-status: new
+status: closed
 priority: medium
 parent: JOY-0145-51
+assignees:
+- member: ai:claude@joy
 milestone: JOY-MS-02
 capabilities:
 - plan
@@ -12,5 +14,9 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-02T22:45:29.081495Z
-updated: 2026-05-02T22:45:29.081495Z
+updated: 2026-05-03T17:00:03.110540Z
 description: Adds joy crypt add --all and joy crypt rm --all to encrypt or release the entire .joy/ content. Sets a project default that auto-encrypts new items. Used in compliance and regulated setups where the entire backlog should be protected.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-03T17:00:03.015324Z
+  text: 'Done: joy crypt add --all tags every existing item with the addressed zone; joy crypt rm --all clears the tag from every item in the zone. add --all auto-creates the default zone if needed; rm --all leaves the zone registered (zone list / zone rm handle removal). The ''auto-encrypt new items'' project default per ADR-038 is noted in the success message but deferred (still requires the --crypt flag on add/edit, tracked separately). 2 new bats tests cover the bulk add and bulk rm flows.'
