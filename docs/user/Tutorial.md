@@ -523,7 +523,21 @@ Joy uses passphrase-derived Ed25519 identity keys. You authenticate once per 24-
 
 ```sh
 joy auth init                    # Choose a passphrase; your identity is now registered
+# > Authentication initialized for you@example.com.
+# > Public key registered. Session active (24h).
+# >
+# > RECOVERY KEY (write this down now, it is shown only once):
+# >
+# >     joy_r_<64-hex-characters>
+# >
+# > Use it with `joy auth recover --recovery-key` if you ever forget
+# > your passphrase. Joy never stores the plaintext recovery key.
 ```
+
+The recovery key is a one-shot escape hatch (ADR-039). It unlocks the
+same identity keypair that your passphrase does, so you can reset the
+passphrase from a new machine without losing access to anything you
+have signed or encrypted under that identity.
 
 **Adding a human teammate:**
 
@@ -552,7 +566,28 @@ Each member you add this way is cryptographically attested by the admin's key - 
 joy auth passphrase              # Prompts for current, then new passphrase
 ```
 
-Your identity key rotates; existing sessions are invalidated; attestations on your entry remain valid.
+The wrap of your seed re-encrypts under the new passphrase KEK. Your
+identity keypair stays the same (ADR-039: the seed is the long-term
+secret, the passphrase is one of two keys that unwrap it), so existing
+attestations on your entry and Crypt zone wraps you have been granted
+remain valid. Existing sessions are invalidated; run `joy auth` once
+with the new passphrase.
+
+**Recovering after a forgotten passphrase:**
+
+```sh
+joy auth recover --recovery-key  # Prompts for the recovery key + new passphrase
+```
+
+The recovery key (shown once at `joy auth init`) unwraps the seed via
+its own KEK and re-wraps it under the new passphrase. Same keypair,
+no re-onboarding.
+
+To rotate the recovery key from an authenticated session:
+
+```sh
+joy auth recover --regenerate-key  # New recovery key; old one becomes useless
+```
 
 **Removing a member:**
 
@@ -609,6 +644,84 @@ Key settings:
 | `output.emoji` | `false` | Show emoji indicators in output |
 | `output.short` | `true` | Compact list output (abbreviations) |
 | `output.fortune` | `true` | Show occasional quotes in output |
+
+---
+
+## Mission 10: Sealing the Vault (`crypt`)
+
+Some Joy items are sensitive: NDA-bound customer information, embargoed
+security incidents, multi-tenant work where one client's content must
+never be visible to another. Crypt encrypts marked items so the working
+directory holds ciphertext (invisible to AI tooling reading files
+directly), while Git history stays plaintext for forge tools, blame,
+and PR review (ADR-038).
+
+You opt in per item or per path glob. Unmarked content stays plain.
+
+**Encrypt an item:**
+
+```sh
+joy crypt add JOY-0123          # Tag the item with the default zone
+# > Added JOY-0123 to zone 'default'.
+```
+
+The first call in a fresh clone wires up Git's filter driver
+automatically and adds a `.gitattributes` rule for the item file. From
+then on `git add` stores plaintext in history while the working-dir
+file holds a `JOYCRYPT...` blob.
+
+**Encrypt a whole directory:**
+
+```sh
+joy crypt add data/customer-x/  # Add a path glob to the zone
+joy crypt add --all             # Mark every existing item under the zone
+```
+
+**Inspect what is encrypted:**
+
+```sh
+joy crypt status                # Counts: zones, items, your access
+joy crypt list                  # Paths, items, members for a zone
+joy crypt zone list             # Per-zone summary (paths/items/members)
+```
+
+**Multiple confidentiality boundaries (named zones):**
+
+If two clients must never see each other's data, use named zones:
+
+```sh
+joy crypt add JOY-0125 --zone customer-x
+joy crypt grant alice@team.com --zone customer-x
+joy crypt zone list
+```
+
+A new zone is auto-created on first reference. Each zone has its own
+key derived from the granter's identity, so a member granted to
+zone A learns nothing about zone B even when both wraps live in the
+same `project.yaml`.
+
+**Granting and revoking access:**
+
+```sh
+joy crypt grant bob@team.com    # Wrap the default-zone key for Bob via X25519 ECDH
+joy crypt revoke bob@team.com   # Remove Bob's wrap; rotate the zone key for full forward secrecy
+```
+
+The grant uses Bob's `verify_key` (already in `project.yaml`); Bob
+just needs to have run `joy auth` at least once so his key material
+is available for the pairwise wrap.
+
+**No separate Crypt recovery:** Crypt access is tied to your Auth
+identity (ADR-039). As long as you can recover your identity via
+passphrase or the recovery key, every Crypt zone you have a wrap for
+remains decryptable. There is no second secret to lose.
+
+**What it does not protect against:** the Git host (joyint.com,
+GitHub, GitLab, Gitea) sees plaintext history because the clean
+filter decrypts on commit. Crypt's threat model is the local
+working directory and the AI tooling that reads it. Server-blind
+operation against a privileged operator would require Confidential
+Computing substrates, an idea for a future Enterprise tier.
 
 ---
 
