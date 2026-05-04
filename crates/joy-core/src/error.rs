@@ -59,6 +59,9 @@ pub enum JoyError {
     #[error("crypto error: {0}")]
     Crypto(#[from] joy_crypt::Error),
 
+    #[error("no access to zone '{zone}': ask a member with access to run `joy crypt grant`")]
+    ZoneAccessDenied { zone: String },
+
     #[error("passphrase too short (minimum 6 words)")]
     PassphraseTooShort,
 

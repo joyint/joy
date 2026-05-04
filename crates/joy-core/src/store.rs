@@ -249,11 +249,22 @@ pub fn load_config_value() -> serde_json::Value {
 }
 
 pub fn read_yaml<T: DeserializeOwned>(path: &Path) -> Result<T, JoyError> {
-    let content = std::fs::read_to_string(path).map_err(|e| JoyError::ReadFile {
+    let bytes = std::fs::read(path).map_err(|e| JoyError::ReadFile {
         path: path.to_path_buf(),
         source: e,
     })?;
-    serde_yaml_ng::from_str(&content).map_err(|e| JoyError::YamlParse {
+    // ADR-040: item / file content can be a JOYCRYPT blob on disk.
+    // The active session's zone keys live in a thread-local context
+    // populated by joy-cli after passphrase verification. If the
+    // blob's zone is not in that context, surface ZoneAccessDenied
+    // rather than a YAML parse error.
+    let plaintext = if crate::crypt::looks_like_blob(&bytes) {
+        let (_zone, plain) = crate::crypt::decrypt_blob(crate::crypt::active_zone_key, &bytes)?;
+        plain
+    } else {
+        bytes
+    };
+    serde_yaml_ng::from_slice(&plaintext).map_err(|e| JoyError::YamlParse {
         path: path.to_path_buf(),
         source: e,
     })

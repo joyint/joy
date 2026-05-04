@@ -10,7 +10,6 @@ pub mod comment;
 pub mod completions;
 pub mod config;
 pub mod crypt;
-pub mod crypt_filter;
 pub mod deauth;
 pub mod deps;
 pub mod edit;

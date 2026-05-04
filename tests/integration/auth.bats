@@ -822,38 +822,49 @@ YAML
     [[ "$output" == *"No encryption configured"* ]]
 }
 
-@test "joy crypt add marks an item with crypt_zone (default zone)" {
+@test "joy crypt add encrypts the item file in place (ADR-040)" {
     joy init --name "Crypt Test" --acronym CT
     joy auth init --passphrase "$TEST_PASSPHRASE"
     joy add task "Sensitive item" >/dev/null
 
-    # Item ID has the form CT-XXXX-YY; pull it from the item filename
-    # rather than parsing JSON to avoid python dependencies in CI.
     ITEM_FILE=$(ls .joy/items/CT-*.yaml | head -1)
     ID=$(basename "$ITEM_FILE" | sed -E 's/^(CT-[0-9A-Fa-f]+(-[0-9A-Fa-f]+)?)-.*/\1/')
+
+    # Before: file is plaintext yaml.
+    head -c 8 "$ITEM_FILE" | grep -qv "JOYCRYPT"
 
     run joy crypt add "$ID" --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
     [[ "$output" == *"Added"* ]]
 
-    grep -q "crypt_zone: default" "$ITEM_FILE"
+    # After: item file is a JOYCRYPT blob (encrypt-on-disk).
+    HEAD8=$(head -c 8 "$ITEM_FILE")
+    [ "$HEAD8" = "JOYCRYPT" ]
 
-    # Status now reports one item in a zone.
+    # Status walks metadata only - no passphrase needed.
     run joy crypt status
     [ "$status" -eq 0 ]
     [[ "$output" == *"items in any zone: 1"* ]]
 }
 
-@test "joy crypt add with path glob populates zone.paths" {
+@test "joy crypt add encrypts a free file in place" {
     joy init --name "Crypt Test" --acronym CT
     joy auth init --passphrase "$TEST_PASSPHRASE"
+    mkdir -p data/customer-x
+    echo "secret payload" > data/customer-x/notes.txt
 
     run joy crypt add "data/customer-x/" --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
+
+    # Path registered in project.yaml.
     grep -q "data/customer-x/" .joy/project.yaml
 
-    # list shows the path under the default zone.
-    run joy crypt list
+    # File on disk is now ciphertext.
+    HEAD8=$(head -c 8 data/customer-x/notes.txt)
+    [ "$HEAD8" = "JOYCRYPT" ]
+
+    # ls shows the path.
+    run joy crypt ls
     [ "$status" -eq 0 ]
     [[ "$output" == *"data/customer-x/"* ]]
 }
@@ -871,7 +882,9 @@ YAML
         | grep -q "Authentication initialized"
     git config user.email test@example.com
 
-    # Founder seeds the default zone via add, then grants Bob.
+    # Founder seeds the default zone via a real path, then grants Bob.
+    mkdir -p secret
+    echo "x" > secret/file.txt
     joy crypt add "secret/" --passphrase "$TEST_PASSPHRASE" >/dev/null
     run joy crypt grant bob@example.com --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
@@ -881,20 +894,23 @@ YAML
     grep -A 25 "^  bob@example.com:" .joy/project.yaml | grep -q "default:"
     grep -A 25 "^  test@example.com:" .joy/project.yaml | grep -q "default:"
 
-    # zone list reports both members.
-    run joy crypt zone list
+    # zone ls reports the default zone.
+    run joy crypt zone ls
     [[ "$output" == *"default"* ]]
 }
 
-@test "joy crypt zone list reports paths/items/members per zone" {
+@test "joy crypt zone ls reports paths/items/members per zone" {
     joy init --name "Crypt Test" --acronym CT
     joy auth init --passphrase "$TEST_PASSPHRASE"
 
-    # Default zone via path; named zone via --zone.
+    # Default zone via real path; named zone via --zone.
+    mkdir -p secret data/customer-x
+    echo "a" > secret/a.txt
+    echo "b" > data/customer-x/b.txt
     joy crypt add "secret/" --passphrase "$TEST_PASSPHRASE" >/dev/null
     joy crypt add "data/customer-x/" --zone customer-x --passphrase "$TEST_PASSPHRASE" >/dev/null
 
-    run joy crypt zone list
+    run joy crypt zone ls
     [ "$status" -eq 0 ]
     [[ "$output" == *"default"* ]]
     [[ "$output" == *"customer-x"* ]]
@@ -904,6 +920,8 @@ YAML
     joy init --name "Crypt Test" --acronym CT
     joy auth init --passphrase "$TEST_PASSPHRASE"
 
+    mkdir -p secret
+    echo "x" > secret/file.txt
     joy crypt add "secret/" --passphrase "$TEST_PASSPHRASE" >/dev/null
 
     run joy crypt zone rm default
@@ -911,7 +929,7 @@ YAML
     [[ "$output" == *"not empty"* ]]
 }
 
-@test "joy crypt add --all marks every item with the zone" {
+@test "joy crypt add --all encrypts every item under the zone" {
     joy init --name "Crypt Test" --acronym CT
     joy auth init --passphrase "$TEST_PASSPHRASE"
     joy add task "Item one" >/dev/null
@@ -919,13 +937,19 @@ YAML
 
     run joy crypt add --all --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"item(s) tagged"* ]]
+    [[ "$output" == *"item(s) encrypted"* ]]
 
     run joy crypt status
     [[ "$output" == *"items in any zone: 2"* ]]
+
+    # Each item file is now a JOYCRYPT blob.
+    for f in .joy/items/CT-*.yaml; do
+        HEAD8=$(head -c 8 "$f")
+        [ "$HEAD8" = "JOYCRYPT" ]
+    done
 }
 
-@test "joy crypt rm --all clears the zone tag from every item" {
+@test "joy crypt rm --all decrypts every item back to plaintext" {
     joy init --name "Crypt Test" --acronym CT
     joy auth init --passphrase "$TEST_PASSPHRASE"
     joy add task "Item one" >/dev/null
@@ -934,110 +958,157 @@ YAML
 
     run joy crypt rm --all --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Removed"* ]]
+    [[ "$output" == *"Decrypted"* ]]
 
     run joy crypt status
     [[ "$output" == *"items in any zone: 0"* ]]
+
+    # Files are plaintext yaml again.
+    for f in .joy/items/CT-*.yaml; do
+        HEAD8=$(head -c 8 "$f")
+        [ "$HEAD8" != "JOYCRYPT" ]
+    done
 }
 
-@test "joy crypt add wires .gitattributes and git filter for the item (JOY-014B-09)" {
+@test "joy crypt read decrypts a file to stdout (ADR-040)" {
     joy init --name "Crypt Test" --acronym CT
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy add task "Sensitive item" >/dev/null
-    ITEM_FILE=$(ls .joy/items/CT-*.yaml | head -1)
-    ID=$(basename "$ITEM_FILE" | sed -E 's/^(CT-[0-9A-Fa-f]+(-[0-9A-Fa-f]+)?)-.*/\1/')
+    mkdir -p secret
+    echo "the secret payload" > secret/notes.txt
+    joy crypt add "secret/" --passphrase "$TEST_PASSPHRASE" >/dev/null
 
-    run joy crypt add "$ID" --passphrase "$TEST_PASSPHRASE"
-    [ "$status" -eq 0 ]
-
-    # .gitattributes lists the item and points at the filter.
-    [ -f .gitattributes ]
-    grep -q "filter=joy-crypt" .gitattributes
-    grep -q "diff=joy-crypt" .gitattributes
-
-    # Git config picked up the filter / diff drivers.
-    run git config --get filter.joy-crypt.clean
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"crypt filter clean"* ]]
-    run git config --get diff.joy-crypt.textconv
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"crypt filter textconv"* ]]
-}
-
-@test "joy crypt filter clean/smudge roundtrip preserves the plaintext (JOY-014B-09)" {
-    joy init --name "Crypt Test" --acronym CT
-    joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy add task "Sensitive item" >/dev/null
-    ITEM_FILE=$(ls .joy/items/CT-*.yaml | head -1)
-    ID=$(basename "$ITEM_FILE" | sed -E 's/^(CT-[0-9A-Fa-f]+(-[0-9A-Fa-f]+)?)-.*/\1/')
-
-    joy crypt add "$ID" --passphrase "$TEST_PASSPHRASE" >/dev/null
-
-    # smudge takes plaintext on stdin (with crypt_zone:) and writes
-    # an encrypted blob to stdout. clean reverses it. Use files to
-    # avoid bash command-substitution stripping trailing newlines and
-    # mangling binary bytes.
-    cp "$ITEM_FILE" /tmp/joy-crypt-plain-$$
-    joy crypt filter smudge -- "$ITEM_FILE" \
-        < /tmp/joy-crypt-plain-$$ > /tmp/joy-crypt-blob-$$
-
-    # First 8 bytes should be JOYCRYPT magic.
-    HEAD8=$(head -c 8 /tmp/joy-crypt-blob-$$)
+    # File on disk is now encrypted.
+    HEAD8=$(head -c 8 secret/notes.txt)
     [ "$HEAD8" = "JOYCRYPT" ]
 
-    joy crypt filter clean -- "$ITEM_FILE" \
-        < /tmp/joy-crypt-blob-$$ > /tmp/joy-crypt-round-$$
-    cmp /tmp/joy-crypt-plain-$$ /tmp/joy-crypt-round-$$
+    # joy crypt read decrypts to stdout, plaintext never on disk.
+    run joy crypt read secret/notes.txt --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"the secret payload"* ]]
 
-    rm -f /tmp/joy-crypt-plain-$$ /tmp/joy-crypt-blob-$$ /tmp/joy-crypt-round-$$
+    # File is still encrypted on disk after read.
+    HEAD8=$(head -c 8 secret/notes.txt)
+    [ "$HEAD8" = "JOYCRYPT" ]
 }
 
-@test "Crypt e2e: git add + commit + checkout drives the filter (JOY-014B-09)" {
-    joy init --name "Crypt E2E" --acronym CTE
+@test "joy crypt write encrypts stdin into a marked file" {
+    joy init --name "Crypt Test" --acronym CT
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    mkdir -p secret
+    echo "initial" > secret/data.txt
+    joy crypt add "secret/" --passphrase "$TEST_PASSPHRASE" >/dev/null
+
+    # Pipe a new value through joy crypt write.
+    echo "updated payload" | joy crypt write secret/data.txt --passphrase "$TEST_PASSPHRASE"
+
+    # On disk: encrypted blob.
+    HEAD8=$(head -c 8 secret/data.txt)
+    [ "$HEAD8" = "JOYCRYPT" ]
+
+    # Roundtrip via read.
+    run joy crypt read secret/data.txt --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"updated payload"* ]]
+}
+
+@test "joy crypt unlock + lock roundtrip preserves content" {
+    joy init --name "Crypt Test" --acronym CT
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    mkdir -p secret
+    echo "binary file content" > secret/blob.bin
+    joy crypt add "secret/" --passphrase "$TEST_PASSPHRASE" >/dev/null
+
+    # Unlock: file becomes plaintext on disk.
+    run joy crypt unlock secret/blob.bin --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    HEAD8=$(head -c 8 secret/blob.bin)
+    [ "$HEAD8" != "JOYCRYPT" ]
+    grep -q "binary file content" secret/blob.bin
+
+    # Lock: file goes back to ciphertext.
+    run joy crypt lock secret/blob.bin --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    HEAD8=$(head -c 8 secret/blob.bin)
+    [ "$HEAD8" = "JOYCRYPT" ]
+
+    # Decrypt back via read - content matches.
+    run joy crypt read secret/blob.bin --passphrase "$TEST_PASSPHRASE"
+    [[ "$output" == *"binary file content"* ]]
+}
+
+@test "joy crypt edit drives \$EDITOR on a temp file" {
+    joy init --name "Crypt Test" --acronym CT
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    mkdir -p secret
+    echo "before" > secret/notes.txt
+    joy crypt add "secret/" --passphrase "$TEST_PASSPHRASE" >/dev/null
+
+    # Use a fake "editor" that appends a line. EDITOR receives the
+    # temp path as its single argument.
+    EDITOR='sh -c "echo after >> $1" --' \
+        joy crypt edit secret/notes.txt --passphrase "$TEST_PASSPHRASE"
+
+    # File on disk is still encrypted; decrypt and check content.
+    HEAD8=$(head -c 8 secret/notes.txt)
+    [ "$HEAD8" = "JOYCRYPT" ]
+    run joy crypt read secret/notes.txt --passphrase "$TEST_PASSPHRASE"
+    [[ "$output" == *"before"* ]]
+    [[ "$output" == *"after"* ]]
+}
+
+@test "joy crypt read on encrypted item without passphrase fails with no-access (ADR-040)" {
+    joy init --name "Crypt Test" --acronym CT
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    mkdir -p secret
+    echo "x" > secret/file.txt
+    joy crypt add "secret/" --passphrase "$TEST_PASSPHRASE" >/dev/null
+
+    # Without passphrase, reading must fail at the auth step (rather
+    # than producing a crypto-internal error).
+    run joy crypt read secret/file.txt --passphrase "wrong wrong wrong wrong wrong wrong"
+    [ "$status" -ne 0 ]
+}
+
+@test "joy show on encrypted item works with passphrase (ADR-040)" {
+    joy init --name "Crypt Test" --acronym CT
     joy auth init --passphrase "$TEST_PASSPHRASE"
     joy add task "Sensitive item" >/dev/null
-    ITEM_FILE=$(ls .joy/items/CTE-*.yaml | head -1)
-    ID=$(basename "$ITEM_FILE" | sed -E 's/^(CTE-[0-9A-Fa-f]+(-[0-9A-Fa-f]+)?)-.*/\1/')
+    ITEM_FILE=$(ls .joy/items/CT-*.yaml | head -1)
+    ID=$(basename "$ITEM_FILE" | sed -E 's/^(CT-[0-9A-Fa-f]+(-[0-9A-Fa-f]+)?)-.*/\1/')
 
-    # Mark the item: writes crypt_zone field, configures git filter,
-    # appends .gitattributes rule, refreshes session sidecar.
     joy crypt add "$ID" --passphrase "$TEST_PASSPHRASE" >/dev/null
 
-    # First commit on a fresh project: stage the touched files and
-    # commit. The clean filter runs on the item file but sees
-    # plaintext (the working file is still plaintext at this point),
-    # passes through unchanged, so Git stores plaintext.
-    git add .gitattributes .joy/project.yaml "$ITEM_FILE"
-    git commit -m "test commit [no-item]" >/dev/null
-
-    # Git history holds plaintext: cat-file -p on the blob shows the
-    # YAML.
-    BLOB_HASH=$(git ls-files -s "$ITEM_FILE" | awk '{print $2}')
-    git cat-file -p "$BLOB_HASH" | grep -q "crypt_zone: default"
-
-    # Force a smudge round: drop the working copy and ask Git to
-    # re-materialize it. Smudge encrypts because the inbound YAML
-    # carries crypt_zone.
-    rm "$ITEM_FILE"
-    git checkout HEAD -- "$ITEM_FILE"
-
-    # Working dir now holds a Crypt blob.
+    # On disk: ciphertext.
     HEAD8=$(head -c 8 "$ITEM_FILE")
     [ "$HEAD8" = "JOYCRYPT" ]
 
-    # textconv should hand `git diff` the plaintext back, verifying
-    # the textconv path for forge tools / blame.
-    OUT=$(joy crypt filter textconv "$ITEM_FILE")
-    [[ "$OUT" == *"crypt_zone: default"* ]]
+    # joy show with passphrase decrypts and renders.
+    run joy show "$ID" --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Sensitive item"* ]]
 }
 
-@test "joy crypt filter clean passes plaintext through unchanged (JOY-014B-09)" {
+@test "joy auth re-locks files left unlocked (ADR-040)" {
     joy init --name "Crypt Test" --acronym CT
     joy auth init --passphrase "$TEST_PASSPHRASE"
+    mkdir -p secret
+    echo "important" > secret/leak.txt
+    joy crypt add "secret/" --passphrase "$TEST_PASSPHRASE" >/dev/null
 
-    PLAIN="id: CT-9999\ntitle: not encrypted yet\n"
-    OUT=$(printf '%s' "$PLAIN" | joy crypt filter clean)
-    [ "$OUT" = "$PLAIN" ]
+    # Unlock the file - now plaintext on disk.
+    joy crypt unlock secret/leak.txt --passphrase "$TEST_PASSPHRASE" >/dev/null
+    HEAD8=$(head -c 8 secret/leak.txt)
+    [ "$HEAD8" != "JOYCRYPT" ]
+
+    # Forget about it; deauth and re-auth (typical day-2 flow).
+    joy deauth
+    run joy auth --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Re-locked"* ]]
+
+    # File is back to ciphertext.
+    HEAD8=$(head -c 8 secret/leak.txt)
+    [ "$HEAD8" = "JOYCRYPT" ]
 }
 
 @test "joy crypt revoke removes a member's wrap" {
@@ -1046,6 +1117,8 @@ YAML
 
     # Self-grant via the auto-create path: `joy crypt add` writes the
     # acting member's own crypt_wraps entry.
+    mkdir -p secret
+    echo "x" > secret/file.txt
     joy crypt add "secret/" --passphrase "$TEST_PASSPHRASE" >/dev/null
     grep -q "crypt_wraps:" .joy/project.yaml
 

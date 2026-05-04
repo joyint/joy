@@ -19,11 +19,19 @@ pub struct ShowArgs {
     /// Compact output: emoji-only or abbreviations
     #[arg(short = 'S', long)]
     pub short: bool,
+
+    /// Passphrase (non-interactive). Needed to read encrypted items.
+    #[arg(long)]
+    passphrase: Option<String>,
 }
 
 pub fn run(args: ShowArgs) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+
+    // ADR-040: install zone keys upfront if the active member has any
+    // Crypt wraps. No-op for plain projects.
+    crate::crypt_session::ensure_zone_keys(args.passphrase.as_deref())?;
 
     let item = items::load_item(&root, &args.id)?;
     let all_items = items::load_items(&root)?;

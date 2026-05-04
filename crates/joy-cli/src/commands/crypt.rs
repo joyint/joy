@@ -51,16 +51,24 @@ enum CryptCommand {
     /// Revoke a member's access to the zone.
     Revoke(MemberRefArgs),
     /// Show what is encrypted and who has access.
-    List,
+    Ls,
     /// High-level summary of Crypt configuration.
     Status,
-    /// Manage named zones (list, rm).
+    /// Manage named zones (ls, rm).
     Zone(ZoneArgs),
-    /// Git clean/smudge/textconv filter binary. Hidden; only Git
-    /// invokes it via the filter and diff drivers configured by the
-    /// first `joy crypt add` in this clone.
-    #[command(hide = true)]
-    Filter(super::crypt_filter::FilterArgs),
+    /// Decrypt a Crypt-marked file to stdout (pipe-friendly).
+    /// Plaintext never lands on disk.
+    Read(FileArgs),
+    /// Encrypt stdin into the given Crypt-marked file.
+    Write(FileArgs),
+    /// Open $EDITOR on a temporary plaintext copy of a Crypt-marked
+    /// file; re-encrypt and delete the temp on save.
+    Edit(FileArgs),
+    /// Decrypt a Crypt-marked file in place. AI on the same FS can
+    /// read it during the unlock window. Pair with `joy crypt lock`.
+    Unlock(FileArgs),
+    /// Re-encrypt a previously unlocked file.
+    Lock(FileArgs),
 }
 
 #[derive(Args)]
@@ -94,6 +102,12 @@ struct MemberRefArgs {
 }
 
 #[derive(Args)]
+struct FileArgs {
+    /// Path to the file (relative to project root or absolute).
+    file: String,
+}
+
+#[derive(Args)]
 struct ZoneArgs {
     #[command(subcommand)]
     command: ZoneCommand,
@@ -102,7 +116,7 @@ struct ZoneArgs {
 #[derive(Subcommand)]
 enum ZoneCommand {
     /// List all configured zones with their member and item counts.
-    List,
+    Ls,
     /// Remove a named zone. Refuses to drop a zone that still has
     /// items or members assigned, so revocations have to happen first.
     Rm(ZoneRmArgs),
@@ -132,65 +146,18 @@ pub fn run(args: CryptArgs) -> Result<()> {
         },
         CryptCommand::Grant(m) => run_grant(&zone, &m.member, args.passphrase.as_deref()),
         CryptCommand::Revoke(m) => run_revoke(&zone, &m.member),
-        CryptCommand::List => run_list(&zone),
+        CryptCommand::Ls => run_list(&zone),
         CryptCommand::Status => run_status(),
         CryptCommand::Zone(z) => match z.command {
-            ZoneCommand::List => run_zone_list(),
+            ZoneCommand::Ls => run_zone_list(),
             ZoneCommand::Rm(args) => run_zone_rm(&args.name),
         },
-        CryptCommand::Filter(args) => super::crypt_filter::run(args),
+        CryptCommand::Read(f) => run_read(&f.file, args.passphrase.as_deref()),
+        CryptCommand::Write(f) => run_write(&f.file, args.passphrase.as_deref()),
+        CryptCommand::Edit(f) => run_edit(&f.file, args.passphrase.as_deref()),
+        CryptCommand::Unlock(f) => run_unlock(&f.file, args.passphrase.as_deref()),
+        CryptCommand::Lock(f) => run_lock(&f.file, args.passphrase.as_deref()),
     }
-}
-
-/// Configure Git's filter and diff drivers so the next `git add` /
-/// `git checkout` / `git diff` on a marked file invokes
-/// `joy crypt filter`. Called from `run_add` whenever
-/// `.gitattributes` is touched. `git config` is idempotent at the
-/// Git level, so we just write the four entries unconditionally
-/// rather than gating on a Joy-side "is it set?" check.
-fn setup_git_filter(root: &std::path::Path) -> Result<()> {
-    use std::process::Command;
-    let configs = [
-        ("filter.joy-crypt.clean", "joy crypt filter clean -- %f"),
-        ("filter.joy-crypt.smudge", "joy crypt filter smudge -- %f"),
-        ("filter.joy-crypt.required", "true"),
-        ("diff.joy-crypt.textconv", "joy crypt filter textconv"),
-        ("diff.joy-crypt.cachetextconv", "false"),
-    ];
-    for (key, value) in configs {
-        let status = Command::new("git")
-            .current_dir(root)
-            .args(["config", key, value])
-            .status()
-            .map_err(|e| anyhow::anyhow!("git config {key}: {e}"))?;
-        if !status.success() {
-            bail!("git config {} failed", key);
-        }
-    }
-    Ok(())
-}
-
-/// Append a `.gitattributes` rule for an item file, idempotent.
-fn ensure_gitattributes_for_item(root: &std::path::Path, item_id: &str) -> Result<()> {
-    let path = root.join(".gitattributes");
-    let pattern = format!(".joy/items/{item_id}-*.yaml");
-    let line = format!("{pattern} filter=joy-crypt diff=joy-crypt -text\n");
-    if path.exists() {
-        let existing = std::fs::read_to_string(&path).unwrap_or_default();
-        if existing.lines().any(|l| l.starts_with(&pattern)) {
-            return Ok(());
-        }
-        let mut combined = existing;
-        if !combined.ends_with('\n') && !combined.is_empty() {
-            combined.push('\n');
-        }
-        combined.push_str(&line);
-        std::fs::write(&path, combined)?;
-    } else {
-        std::fs::write(&path, &line)?;
-    }
-    joy_core::git_ops::auto_git_add(root, &[".gitattributes"]);
-    Ok(())
 }
 
 fn load_context() -> Result<(std::path::PathBuf, Project, String)> {
@@ -257,7 +224,11 @@ struct UnlockedZone {
 }
 
 impl UnlockedZone {
-    fn save(mut self, summary: &str) -> Result<()> {
+    /// Persist the zone wrap into project.yaml. Splits out from the
+    /// later git_add/post_command so callers can encrypt items in
+    /// between - if the process dies after this call, the wrap is on
+    /// disk and the still-plaintext item is recoverable on retry.
+    fn persist_wrap(&mut self) -> Result<()> {
         self.project
             .crypt
             .zones
@@ -269,18 +240,22 @@ impl UnlockedZone {
 
         let project_path = store::joy_dir(&self.root).join(store::PROJECT_FILE);
         store::write_yaml_preserve(&project_path, &self.project)?;
+        Ok(())
+    }
+
+    /// Make the zone key available to joy-core's encrypt/decrypt
+    /// thread-local context. Called before encrypting an item file.
+    fn install_zone_key(&self) {
+        let mut keys = std::collections::BTreeMap::new();
+        keys.insert(self.zone.clone(), *self.zone_key.as_bytes());
+        joy_core::crypt::set_active_zone_keys(keys);
+    }
+
+    /// Wrap up: stage project.yaml, run the post-command hook.
+    fn finalize(self, summary: &str) -> Result<()> {
         let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
         joy_core::git_ops::auto_git_add(&self.root, &[&rel]);
         joy_core::git_ops::auto_git_post_command(&self.root, summary, &self.acting_email);
-
-        // Refresh the session zone-keys sidecar so `joy crypt filter`
-        // can encrypt/decrypt this zone immediately, without
-        // requiring the user to re-run `joy auth`.
-        let project_id = joy_core::auth::session::project_id(&self.root)?;
-        let mut keys = joy_core::auth::session::load_zone_keys(&project_id, &self.acting_email)
-            .unwrap_or_default();
-        keys.insert(self.zone.clone(), hex::encode(self.zone_key.as_bytes()));
-        let _ = joy_core::auth::session::save_zone_keys(&project_id, &self.acting_email, &keys);
         Ok(())
     }
 }
@@ -288,96 +263,466 @@ impl UnlockedZone {
 fn run_add(zone: &str, target: &str, passphrase: Option<&str>) -> Result<()> {
     let mut unlocked = unlock_zone(zone, passphrase, true)?;
 
-    let summary = if looks_like_item_id(target) {
+    if looks_like_item_id(target) {
         let item_path = joy_core::items::find_item_file(&unlocked.root, target)?;
         let mut item: joy_core::model::item::Item = store::read_yaml(&item_path)?;
         if item.crypt_zone.as_deref() == Some(zone) {
             println!("{} is already in zone '{}'.", target, zone);
             return Ok(());
         }
+        // Persist the wrap to project.yaml first; if encryption fails
+        // afterwards the item file is still plaintext on disk and a
+        // retry can complete the operation.
+        unlocked.persist_wrap()?;
         item.crypt_zone = Some(zone.to_string());
-        store::write_yaml(&item_path, &item)?;
+        unlocked.install_zone_key();
+        joy_core::items::update_item(&unlocked.root, &item)?;
+        joy_core::crypt::clear_active_zone_keys();
         if let Ok(rel) = item_path.strip_prefix(&unlocked.root) {
             joy_core::git_ops::auto_git_add(&unlocked.root, &[&rel.to_string_lossy()]);
         }
-        // We are about to write a `filter=joy-crypt` rule into
-        // .gitattributes. Make sure `.git/config` knows what that
-        // filter resolves to. Unconditional, no Joy-side "is it
-        // configured?" check; Git's own `config` write is
-        // idempotent.
-        setup_git_filter(&unlocked.root)?;
-        ensure_gitattributes_for_item(&unlocked.root, target)?;
         println!("Added {} to zone '{}'.", target, zone);
-        format!("crypt add {target} (zone {zone})")
+        unlocked.finalize(&format!("crypt add {target} (zone {zone})"))
     } else {
+        let resolved = resolve_target_paths(&unlocked.root, target)?;
+        let mut count = 0usize;
+        // Persist wrap first for the same crash-safety reason.
+        unlocked.persist_wrap()?;
         let zone_entry = unlocked
             .project
             .crypt
             .zones
             .entry(zone.to_string())
             .or_default();
-        if zone_entry.paths.iter().any(|p| p == target) {
-            println!("Path '{}' is already in zone '{}'.", target, zone);
-            return Ok(());
+        if !zone_entry.paths.iter().any(|p| p == target) {
+            zone_entry.paths.push(target.to_string());
         }
-        zone_entry.paths.push(target.to_string());
-        println!("Added path '{}' to zone '{}'.", target, zone);
-        format!("crypt add {target} (zone {zone})")
+        // Re-write project.yaml after we've added the path to the
+        // zones registry. Wrap was already persisted above; this
+        // adds the registry entry.
+        let project_path = store::joy_dir(&unlocked.root).join(store::PROJECT_FILE);
+        store::write_yaml_preserve(&project_path, &unlocked.project)?;
+        unlocked.install_zone_key();
+        for file in &resolved {
+            encrypt_file_in_place(file, zone, &unlocked.zone_key)?;
+            if let Ok(rel) = file.strip_prefix(&unlocked.root) {
+                joy_core::git_ops::auto_git_add(&unlocked.root, &[&rel.to_string_lossy()]);
+            }
+            count += 1;
+        }
+        joy_core::crypt::clear_active_zone_keys();
+        println!(
+            "Added '{}' to zone '{}' ({} file(s) encrypted).",
+            target, zone, count
+        );
+        unlocked.finalize(&format!("crypt add {target} (zone {zone})"))
+    }
+}
+
+/// Resolve a user-provided target into a list of concrete file
+/// paths. A single file resolves to itself; a directory resolves to
+/// every regular file under it (recursive). The path is interpreted
+/// relative to the project root.
+fn resolve_target_paths(root: &std::path::Path, target: &str) -> Result<Vec<std::path::PathBuf>> {
+    let absolute = if std::path::Path::new(target).is_absolute() {
+        std::path::PathBuf::from(target)
+    } else {
+        root.join(target)
+    };
+    if absolute.is_file() {
+        return Ok(vec![absolute]);
+    }
+    if absolute.is_dir() {
+        let mut out = Vec::new();
+        walk_files(&absolute, &mut out)?;
+        return Ok(out);
+    }
+    bail!(
+        "'{}' is not a file or directory under {}",
+        target,
+        root.display()
+    );
+}
+
+fn walk_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) -> Result<()> {
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            walk_files(&path, out)?;
+        } else if path.is_file() {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
+/// Read a file, encrypt it under the given zone key, write the blob
+/// back atomically. No-op when the file is already a JOYCRYPT blob
+/// (idempotent re-encryption protection).
+fn encrypt_file_in_place(
+    path: &std::path::Path,
+    zone: &str,
+    zone_key: &joy_core::crypt::ZoneKey,
+) -> Result<()> {
+    let bytes = std::fs::read(path)?;
+    if joy_core::crypt::looks_like_blob(&bytes) {
+        return Ok(());
+    }
+    let blob = joy_core::crypt::encrypt_blob(zone, zone_key, &bytes);
+    write_atomic(path, &blob)
+}
+
+/// Decrypt a file in place. No-op when the file is already plaintext.
+fn decrypt_file_in_place(path: &std::path::Path) -> Result<()> {
+    let bytes = std::fs::read(path)?;
+    if !joy_core::crypt::looks_like_blob(&bytes) {
+        return Ok(());
+    }
+    let (_zone, plaintext) =
+        joy_core::crypt::decrypt_blob(joy_core::crypt::active_zone_key, &bytes)?;
+    write_atomic(path, &plaintext)
+}
+
+fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> Result<()> {
+    let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    std::fs::create_dir_all(parent)?;
+    let tmp = parent.join(format!(
+        ".{}.tmp.{}",
+        path.file_name().and_then(|s| s.to_str()).unwrap_or("crypt"),
+        std::process::id()
+    ));
+    std::fs::write(&tmp, bytes)?;
+    std::fs::rename(&tmp, path)?;
+    Ok(())
+}
+
+/// Resolve a user-supplied file string to an absolute path under the
+/// project root. Errors if the path escapes the project.
+fn resolve_file_path(root: &std::path::Path, file: &str) -> Result<std::path::PathBuf> {
+    let p = std::path::Path::new(file);
+    let abs = if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        root.join(p)
+    };
+    Ok(abs)
+}
+
+/// Look up the zone a file belongs to via `crypt.zones[].paths`.
+/// Matches: exact path equality OR the registered path is a prefix
+/// (directory marker, ends with `/`).
+fn zone_for_path(
+    project: &Project,
+    root: &std::path::Path,
+    abs_path: &std::path::Path,
+) -> Option<String> {
+    let rel = abs_path
+        .strip_prefix(root)
+        .ok()?
+        .to_string_lossy()
+        .to_string();
+    for (name, zone) in &project.crypt.zones {
+        for p in &zone.paths {
+            let trimmed = p.trim_end_matches('/');
+            if rel == trimmed || rel.starts_with(&format!("{}/", trimmed)) {
+                return Some(name.clone());
+            }
+        }
+    }
+    None
+}
+
+/// Common: load context, prompt, unlock the zone the file belongs to.
+/// The zone is read from the blob header if the file is encrypted,
+/// otherwise looked up via crypt.zones[].paths.
+fn unlock_for_file(
+    abs_path: &std::path::Path,
+    passphrase_flag: Option<&str>,
+) -> Result<(std::path::PathBuf, String, core_crypt::ZoneKey)> {
+    let cwd = std::env::current_dir()?;
+    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
+    let project = store::read_project(&project_path)?;
+    let email = joy_core::vcs::default_vcs().user_email()?;
+    let acting = project
+        .members
+        .get(&email)
+        .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member", email))?;
+
+    // Determine the zone: either from the blob magic on disk or from
+    // the project's zones[].paths registry.
+    let zone_name = match std::fs::read(abs_path) {
+        Ok(bytes) if joy_core::crypt::looks_like_blob(&bytes) => {
+            // Peek the zone-name from the header.
+            let zone_len = bytes.get(9).copied().unwrap_or(0) as usize;
+            let end = 10 + zone_len;
+            std::str::from_utf8(bytes.get(10..end).unwrap_or(&[]))
+                .map_err(|_| anyhow::anyhow!("invalid zone name in blob header"))?
+                .to_string()
+        }
+        _ => zone_for_path(&project, &root, abs_path).ok_or_else(|| {
+            anyhow::anyhow!(
+                "{} is not in any Crypt zone (and not encrypted). \
+                 Run `joy crypt add <path>` first.",
+                abs_path.display()
+            )
+        })?,
     };
 
-    unlocked.save(&summary)
+    let wrap_hex = acting.crypt_wraps.get(&zone_name).ok_or_else(|| {
+        joy_core::error::JoyError::ZoneAccessDenied {
+            zone: zone_name.clone(),
+        }
+    })?;
+
+    let passphrase = read_passphrase(passphrase_flag, "Passphrase: ")?;
+    let unlocked = joy_core::auth::unlock_identity(acting, &passphrase)?;
+    let zone_key = core_crypt::unwrap_for_member(wrap_hex, &zone_name, &unlocked.seed)?;
+    Ok((root, zone_name, zone_key))
+}
+
+fn run_read(file: &str, passphrase: Option<&str>) -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+    let abs = resolve_file_path(&root, file)?;
+    let bytes = std::fs::read(&abs)?;
+    if !joy_core::crypt::looks_like_blob(&bytes) {
+        // Already plaintext - just stream it.
+        use std::io::Write;
+        std::io::stdout().write_all(&bytes)?;
+        return Ok(());
+    }
+    let (_root, _zone, zone_key) = unlock_for_file(&abs, passphrase)?;
+    let mut keys = std::collections::BTreeMap::new();
+    let zone_len = bytes[9] as usize;
+    let zone_name = std::str::from_utf8(&bytes[10..10 + zone_len])?.to_string();
+    keys.insert(zone_name, *zone_key.as_bytes());
+    joy_core::crypt::set_active_zone_keys(keys);
+    let (_zone, plaintext) =
+        joy_core::crypt::decrypt_blob(joy_core::crypt::active_zone_key, &bytes)?;
+    joy_core::crypt::clear_active_zone_keys();
+    use std::io::Write;
+    std::io::stdout().write_all(&plaintext)?;
+    Ok(())
+}
+
+fn run_write(file: &str, passphrase: Option<&str>) -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+    let abs = resolve_file_path(&root, file)?;
+    let (_root, zone, zone_key) = unlock_for_file(&abs, passphrase)?;
+
+    use std::io::Read;
+    let mut input = Vec::new();
+    std::io::stdin().read_to_end(&mut input)?;
+    let blob = joy_core::crypt::encrypt_blob(&zone, &zone_key, &input);
+    write_atomic(&abs, &blob)?;
+    if let Ok(rel) = abs.strip_prefix(&root) {
+        joy_core::git_ops::auto_git_add(&root, &[&rel.to_string_lossy()]);
+    }
+    eprintln!(
+        "Encrypted {} ({} bytes) into zone '{}'.",
+        abs.display(),
+        input.len(),
+        zone
+    );
+    Ok(())
+}
+
+fn run_unlock(file: &str, passphrase: Option<&str>) -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+    let abs = resolve_file_path(&root, file)?;
+    let bytes = std::fs::read(&abs)?;
+    if !joy_core::crypt::looks_like_blob(&bytes) {
+        bail!(
+            "{} is already plaintext (or not encrypted by Crypt).",
+            abs.display()
+        );
+    }
+    let (_root, _zone, zone_key) = unlock_for_file(&abs, passphrase)?;
+    let mut keys = std::collections::BTreeMap::new();
+    let zone_len = bytes[9] as usize;
+    let zone_name = std::str::from_utf8(&bytes[10..10 + zone_len])?.to_string();
+    keys.insert(zone_name.clone(), *zone_key.as_bytes());
+    joy_core::crypt::set_active_zone_keys(keys);
+    let (_zone, plaintext) =
+        joy_core::crypt::decrypt_blob(joy_core::crypt::active_zone_key, &bytes)?;
+    joy_core::crypt::clear_active_zone_keys();
+    write_atomic(&abs, &plaintext)?;
+    println!(
+        "Unlocked {}. Other processes on this machine can now read it. \
+         Run `joy crypt lock {}` when done.",
+        abs.display(),
+        file
+    );
+    Ok(())
+}
+
+fn run_lock(file: &str, passphrase: Option<&str>) -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+    let abs = resolve_file_path(&root, file)?;
+    let bytes = std::fs::read(&abs)?;
+    if joy_core::crypt::looks_like_blob(&bytes) {
+        println!("{} is already encrypted; nothing to do.", abs.display());
+        return Ok(());
+    }
+    let (_root, zone, zone_key) = unlock_for_file(&abs, passphrase)?;
+    let blob = joy_core::crypt::encrypt_blob(&zone, &zone_key, &bytes);
+    write_atomic(&abs, &blob)?;
+    if let Ok(rel) = abs.strip_prefix(&root) {
+        joy_core::git_ops::auto_git_add(&root, &[&rel.to_string_lossy()]);
+    }
+    println!("Locked {} into zone '{}'.", abs.display(), zone);
+    Ok(())
+}
+
+fn run_edit(file: &str, passphrase: Option<&str>) -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+    let abs = resolve_file_path(&root, file)?;
+    let (_root, zone, zone_key) = unlock_for_file(&abs, passphrase)?;
+
+    // Decrypt to a temp file in $TMPDIR, open editor, re-encrypt.
+    let plaintext = match std::fs::read(&abs) {
+        Ok(b) if joy_core::crypt::looks_like_blob(&b) => {
+            let mut keys = std::collections::BTreeMap::new();
+            keys.insert(zone.clone(), *zone_key.as_bytes());
+            joy_core::crypt::set_active_zone_keys(keys);
+            let (_z, pt) = joy_core::crypt::decrypt_blob(joy_core::crypt::active_zone_key, &b)?;
+            joy_core::crypt::clear_active_zone_keys();
+            pt
+        }
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(e) => return Err(e.into()),
+    };
+
+    let tmpdir = std::env::temp_dir();
+    let tmp = tmpdir.join(format!(
+        "joy-crypt-edit-{}-{}",
+        std::process::id(),
+        abs.file_name().and_then(|s| s.to_str()).unwrap_or("file")
+    ));
+    std::fs::write(&tmp, &plaintext)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600));
+    }
+
+    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
+    // Run via `sh -c` so EDITOR can be a shell command with flags or
+    // pipes ("code -w", "vim -O", ...). The temp path arrives as $1.
+    let cmd_line = format!("{} \"$@\"", editor);
+    let status = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(&cmd_line)
+        .arg("sh")
+        .arg(&tmp)
+        .status()?;
+    if !status.success() {
+        let _ = std::fs::remove_file(&tmp);
+        bail!("editor exited with non-zero status");
+    }
+
+    let edited = std::fs::read(&tmp)?;
+    let _ = std::fs::remove_file(&tmp);
+
+    let blob = joy_core::crypt::encrypt_blob(&zone, &zone_key, &edited);
+    write_atomic(&abs, &blob)?;
+    if let Ok(rel) = abs.strip_prefix(&root) {
+        joy_core::git_ops::auto_git_add(&root, &[&rel.to_string_lossy()]);
+    }
+    println!(
+        "Saved {} ({} bytes plaintext, encrypted under '{}').",
+        abs.display(),
+        edited.len(),
+        zone
+    );
+    Ok(())
 }
 
 fn run_rm(zone: &str, target: &str, passphrase: Option<&str>) -> Result<()> {
     let mut unlocked = unlock_zone(zone, passphrase, false)?;
 
-    let summary = if looks_like_item_id(target) {
+    if looks_like_item_id(target) {
+        // Install the zone key so read_yaml decrypts the existing
+        // ciphertext blob before parsing.
+        unlocked.install_zone_key();
         let item_path = joy_core::items::find_item_file(&unlocked.root, target)?;
         let mut item: joy_core::model::item::Item = store::read_yaml(&item_path)?;
         match item.crypt_zone.as_deref() {
             Some(z) if z == zone => {
                 item.crypt_zone = None;
-                store::write_yaml(&item_path, &item)?;
+                // Item is now plain (crypt_zone=None) so save_item
+                // writes plaintext YAML.
+                joy_core::items::update_item(&unlocked.root, &item)?;
+                joy_core::crypt::clear_active_zone_keys();
                 if let Ok(rel) = item_path.strip_prefix(&unlocked.root) {
                     joy_core::git_ops::auto_git_add(&unlocked.root, &[&rel.to_string_lossy()]);
                 }
                 println!("Removed {} from zone '{}'.", target, zone);
             }
-            Some(z) => bail!(
-                "{} is in zone '{}', not '{}'. Use `--zone {}` to remove it.",
-                target,
-                z,
-                zone,
-                z
-            ),
+            Some(z) => {
+                joy_core::crypt::clear_active_zone_keys();
+                bail!(
+                    "{} is in zone '{}', not '{}'. Use `--zone {}` to remove it.",
+                    target,
+                    z,
+                    zone,
+                    z
+                );
+            }
             None => {
+                joy_core::crypt::clear_active_zone_keys();
                 println!("{} is not in any Crypt zone.", target);
                 return Ok(());
             }
         }
-        format!("crypt rm {target} (zone {zone})")
+        unlocked.finalize(&format!("crypt rm {target} (zone {zone})"))
     } else {
-        let zone_entry = unlocked
-            .project
-            .crypt
-            .zones
-            .get_mut(zone)
-            .ok_or_else(|| anyhow::anyhow!("zone '{}' does not exist", zone))?;
-        let before = zone_entry.paths.len();
-        zone_entry.paths.retain(|p| p != target);
-        if zone_entry.paths.len() == before {
-            println!("Path '{}' is not in zone '{}'.", target, zone);
-            return Ok(());
+        let resolved = resolve_target_paths(&unlocked.root, target)?;
+        let removed_from_registry;
+        {
+            let zone_entry = unlocked
+                .project
+                .crypt
+                .zones
+                .get_mut(zone)
+                .ok_or_else(|| anyhow::anyhow!("zone '{}' does not exist", zone))?;
+            let before = zone_entry.paths.len();
+            zone_entry.paths.retain(|p| p != target);
+            removed_from_registry = zone_entry.paths.len() != before;
         }
-        println!("Removed path '{}' from zone '{}'.", target, zone);
-        format!("crypt rm {target} (zone {zone})")
-    };
-
-    unlocked.save(&summary)
+        unlocked.install_zone_key();
+        for file in &resolved {
+            decrypt_file_in_place(file)?;
+            if let Ok(rel) = file.strip_prefix(&unlocked.root) {
+                joy_core::git_ops::auto_git_add(&unlocked.root, &[&rel.to_string_lossy()]);
+            }
+        }
+        joy_core::crypt::clear_active_zone_keys();
+        // Persist the registry change.
+        let project_path = store::joy_dir(&unlocked.root).join(store::PROJECT_FILE);
+        store::write_yaml_preserve(&project_path, &unlocked.project)?;
+        if removed_from_registry {
+            println!("Removed path '{}' from zone '{}'.", target, zone);
+        }
+        println!("Decrypted {} file(s).", resolved.len());
+        unlocked.finalize(&format!("crypt rm {target} (zone {zone})"))
+    }
 }
 
 fn run_add_all(zone: &str, passphrase: Option<&str>) -> Result<()> {
-    let unlocked = unlock_zone(zone, passphrase, true)?;
+    let mut unlocked = unlock_zone(zone, passphrase, true)?;
+    // Persist wrap before encrypting any items - if encryption fails
+    // mid-way, items still on plaintext are recoverable; the wrap
+    // ensures the zone key survives.
+    unlocked.persist_wrap()?;
+    unlocked.install_zone_key();
     let items = joy_core::items::load_items(&unlocked.root).unwrap_or_default();
     let mut updated = 0usize;
     let mut already = 0usize;
@@ -386,56 +731,47 @@ fn run_add_all(zone: &str, passphrase: Option<&str>) -> Result<()> {
             already += 1;
             continue;
         }
-        let item_path = joy_core::items::find_item_file(&unlocked.root, &item.id)?;
-        let mut item: joy_core::model::item::Item = store::read_yaml(&item_path)?;
+        let mut item = item.clone();
         item.crypt_zone = Some(zone.to_string());
-        store::write_yaml(&item_path, &item)?;
+        joy_core::items::update_item(&unlocked.root, &item)?;
+        let item_path = joy_core::items::find_item_file(&unlocked.root, &item.id)?;
         if let Ok(rel) = item_path.strip_prefix(&unlocked.root) {
             joy_core::git_ops::auto_git_add(&unlocked.root, &[&rel.to_string_lossy()]);
         }
         updated += 1;
     }
+    joy_core::crypt::clear_active_zone_keys();
     println!(
-        "{} item(s) tagged with zone '{}'; {} already tagged.",
+        "{} item(s) encrypted under zone '{}'; {} already in zone.",
         updated, zone, already
     );
-    println!(
-        "Note: the project-default for new items is not yet auto-applied; \
-         add new items with `joy add ... --crypt` (or `joy edit <ID> --crypt`) \
-         to keep them in the zone."
-    );
-    unlocked.save(&format!("crypt add --all (zone {zone})"))
+    unlocked.finalize(&format!("crypt add --all (zone {zone})"))
 }
 
 fn run_rm_all(zone: &str, passphrase: Option<&str>) -> Result<()> {
     let unlocked = unlock_zone(zone, passphrase, false)?;
+    unlocked.install_zone_key();
     let items = joy_core::items::load_items(&unlocked.root).unwrap_or_default();
     let mut updated = 0usize;
     for item in &items {
         if item.crypt_zone.as_deref() != Some(zone) {
             continue;
         }
-        let item_path = joy_core::items::find_item_file(&unlocked.root, &item.id)?;
-        let mut item: joy_core::model::item::Item = store::read_yaml(&item_path)?;
+        let mut item = item.clone();
         item.crypt_zone = None;
-        store::write_yaml(&item_path, &item)?;
+        // crypt_zone is None now, so save_item writes plaintext YAML.
+        joy_core::items::update_item(&unlocked.root, &item)?;
+        let item_path = joy_core::items::find_item_file(&unlocked.root, &item.id)?;
         if let Ok(rel) = item_path.strip_prefix(&unlocked.root) {
             joy_core::git_ops::auto_git_add(&unlocked.root, &[&rel.to_string_lossy()]);
         }
         updated += 1;
     }
+    joy_core::crypt::clear_active_zone_keys();
     let project_path = store::joy_dir(&unlocked.root).join(store::PROJECT_FILE);
-    let project = unlocked.project; // owned
-    store::write_yaml_preserve(&project_path, &project)?;
-    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-    joy_core::git_ops::auto_git_add(&unlocked.root, &[&rel]);
-    joy_core::git_ops::auto_git_post_command(
-        &unlocked.root,
-        &format!("crypt rm --all (zone {zone})"),
-        &unlocked.acting_email,
-    );
-    println!("Removed {} item(s) from zone '{}'.", updated, zone);
-    Ok(())
+    store::write_yaml_preserve(&project_path, &unlocked.project)?;
+    println!("Decrypted {} item(s) in zone '{}'.", updated, zone);
+    unlocked.finalize(&format!("crypt rm --all (zone {zone})"))
 }
 
 fn run_zone_list() -> Result<()> {
@@ -444,15 +780,15 @@ fn run_zone_list() -> Result<()> {
         println!("No zones configured.");
         return Ok(());
     }
-    let items = joy_core::items::load_items(&root).unwrap_or_default();
+    let metas = joy_core::items::list_item_metadata(&root).unwrap_or_default();
     println!(
         "{:<20} {:>8} {:>8} {:>8}",
         "ZONE", "PATHS", "ITEMS", "MEMBERS"
     );
     for (name, zone) in &project.crypt.zones {
-        let item_count = items
+        let item_count = metas
             .iter()
-            .filter(|i| i.crypt_zone.as_deref() == Some(name.as_str()))
+            .filter(|m| m.zone() == Some(name.as_str()))
             .count();
         let member_count = project
             .members
@@ -475,11 +811,8 @@ fn run_zone_rm(name: &str) -> Result<()> {
     if !project.crypt.zones.contains_key(name) {
         bail!("zone '{}' is not registered", name);
     }
-    let items = joy_core::items::load_items(&root).unwrap_or_default();
-    let item_count = items
-        .iter()
-        .filter(|i| i.crypt_zone.as_deref() == Some(name))
-        .count();
+    let metas = joy_core::items::list_item_metadata(&root).unwrap_or_default();
+    let item_count = metas.iter().filter(|m| m.zone() == Some(name)).count();
     let member_count = project
         .members
         .values()
@@ -640,11 +973,18 @@ fn run_list(zone: &str) -> Result<()> {
 
     println!();
     println!("Items:");
-    let items = joy_core::items::load_items(&root).unwrap_or_default();
+    // Metadata-only walk: works without auth. We list IDs and a
+    // marker for encrypted-without-key; titles come along only when
+    // the file is plaintext (typical: zone removed or never added).
+    let metas = joy_core::items::list_item_metadata(&root).unwrap_or_default();
     let mut found_any = false;
-    for item in &items {
-        if item.crypt_zone.as_deref() == Some(zone) {
-            println!("  {} {}", item.id, item.title);
+    for meta in &metas {
+        if meta.zone() == Some(zone) {
+            if meta.encrypted_zone.is_some() {
+                println!("  {} (encrypted)", meta.id);
+            } else {
+                println!("  {}", meta.id);
+            }
             found_any = true;
         }
     }
@@ -672,11 +1012,9 @@ fn run_status() -> Result<()> {
     let (root, project, email) = load_context()?;
     let cfg = &project.crypt;
     let zone_count = cfg.zones.len();
-    let item_count_total = joy_core::items::load_items(&root)
-        .unwrap_or_default()
-        .iter()
-        .filter(|i| i.crypt_zone.is_some())
-        .count();
+    // Metadata walk: count items in any zone without prompting.
+    let metas = joy_core::items::list_item_metadata(&root).unwrap_or_default();
+    let item_count_total = metas.iter().filter(|m| m.zone().is_some()).count();
     let me_access = project
         .members
         .get(&email)

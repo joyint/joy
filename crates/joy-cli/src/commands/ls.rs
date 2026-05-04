@@ -41,6 +41,12 @@ pub struct LsArgs {
     /// Compact output: emoji-only or abbreviations
     #[arg(short = 'S', long)]
     pub short: bool,
+
+    /// Passphrase (non-interactive). Needed when listing encrypted
+    /// items; without it, encrypted items are skipped and a count is
+    /// shown.
+    #[arg(long)]
+    pub passphrase: Option<String>,
 }
 
 impl LsArgs {
@@ -53,6 +59,7 @@ impl LsArgs {
             group: "milestone".to_string(),
             reverse: false,
             short: false,
+            passphrase: None,
         }
     }
 }
@@ -93,6 +100,10 @@ impl ExtraColumns {
 pub fn run(args: LsArgs) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+
+    // ADR-040: install zone keys upfront so encrypted items decrypt
+    // transparently. No-op when the project has no Crypt activity.
+    crate::crypt_session::ensure_zone_keys(args.passphrase.as_deref())?;
 
     let all_items = items::load_items(&root)?;
 

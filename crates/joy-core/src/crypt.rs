@@ -95,8 +95,8 @@ pub fn decrypt_blob(
     nonce.copy_from_slice(&blob[nonce_start..nonce_end]);
     let ct = &blob[nonce_end..];
 
-    let zone_key = zone_key_lookup(&zone_name).ok_or_else(|| {
-        JoyError::AuthFailed(format!("no zone key for '{}'; run `joy auth`", zone_name))
+    let zone_key = zone_key_lookup(&zone_name).ok_or_else(|| JoyError::ZoneAccessDenied {
+        zone: zone_name.clone(),
     })?;
     let aad = aad_for(zone_name.as_bytes());
     let plaintext = joy_crypt::aead::open(zone_key.as_bytes(), &nonce, &aad, ct)
@@ -114,11 +114,58 @@ fn aad_for(zone_bytes: &[u8]) -> Vec<u8> {
 }
 
 /// Quick check for whether a byte slice begins with the Crypt blob
-/// magic. Used by the filter to short-circuit when working-dir
-/// content is already plaintext (e.g. on first add before encryption
-/// landed).
+/// magic. Read paths use this to short-circuit when content is
+/// already plaintext (item not encrypted, or file outside any zone).
 pub fn looks_like_blob(bytes: &[u8]) -> bool {
     bytes.len() >= FILTER_MAGIC.len() && &bytes[..FILTER_MAGIC.len()] == FILTER_MAGIC
+}
+
+// =====================================================================
+// Active-session zone-key context (ADR-040)
+//
+// Joy CLI commands that authenticate up front (passphrase prompt or
+// JOY_PASSPHRASE) populate a thread-local map of decrypted zone keys
+// before reading items. joy-core's read paths consult this map when
+// they encounter a JOYCRYPT blob; when the relevant zone is absent,
+// the call returns JoyError::ZoneAccessDenied. Secrets are wiped on
+// `clear_active_zone_keys` (typically a Drop guard at end of command).
+// =====================================================================
+
+use std::cell::RefCell;
+use std::collections::BTreeMap;
+
+thread_local! {
+    static ACTIVE_ZONE_KEYS: RefCell<BTreeMap<String, [u8; 32]>> =
+        const { RefCell::new(BTreeMap::new()) };
+}
+
+/// Replace the thread-local active zone-keys with the given map.
+/// Typically called once per joy command after passphrase verification.
+pub fn set_active_zone_keys(keys: BTreeMap<String, [u8; 32]>) {
+    ACTIVE_ZONE_KEYS.with(|c| *c.borrow_mut() = keys);
+}
+
+/// Wipe the thread-local active zone-keys. Call at the end of a
+/// command to ensure no plaintext key material outlives the process
+/// (Drop in main.rs covers normal exit).
+pub fn clear_active_zone_keys() {
+    ACTIVE_ZONE_KEYS.with(|c| c.borrow_mut().clear());
+}
+
+/// Look up an active zone key. Used by joy-core's read path when
+/// decrypting a JOYCRYPT blob.
+pub fn active_zone_key(zone: &str) -> Option<ZoneKey> {
+    ACTIVE_ZONE_KEYS.with(|c| {
+        c.borrow()
+            .get(zone)
+            .map(|bytes| ZoneKey::from_bytes(*bytes))
+    })
+}
+
+/// Whether any zone key is currently active. Useful for joy-cli to
+/// decide whether to prompt for passphrase before reading items.
+pub fn has_active_zone_keys() -> bool {
+    ACTIVE_ZONE_KEYS.with(|c| !c.borrow().is_empty())
 }
 
 /// 32-byte AES-256-GCM key for a Crypt zone.

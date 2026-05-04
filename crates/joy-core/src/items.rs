@@ -141,9 +141,173 @@ pub fn save_item(root: &Path, item: &Item) -> Result<(), JoyError> {
     let items_dir = store::joy_dir(root).join(store::ITEMS_DIR);
     let filename = item_filename(&item.id, &item.title);
     let path = items_dir.join(&filename);
-    store::write_yaml(&path, item)?;
+    write_item_file(&path, item)?;
     let rel = format!("{}/{}/{}", store::JOY_DIR, store::ITEMS_DIR, filename);
     crate::git_ops::auto_git_add(root, &[&rel]);
+    Ok(())
+}
+
+/// Write an item file, encrypting in place when `crypt_zone` is set.
+/// Reads the active session's zone keys (set by joy-cli after
+/// passphrase verification); without an active key for the zone the
+/// write fails with `ZoneAccessDenied`. ADR-040.
+fn write_item_file(path: &Path, item: &Item) -> Result<(), JoyError> {
+    let yaml = serde_yaml_ng::to_string(item).map_err(JoyError::Yaml)?;
+    let bytes = match item.crypt_zone.as_deref() {
+        Some(zone) => {
+            let zone_key =
+                crate::crypt::active_zone_key(zone).ok_or_else(|| JoyError::ZoneAccessDenied {
+                    zone: zone.to_string(),
+                })?;
+            crate::crypt::encrypt_blob(zone, &zone_key, yaml.as_bytes())
+        }
+        None => yaml.into_bytes(),
+    };
+    write_atomic(path, &bytes)
+}
+
+/// Lightweight item metadata available without authentication.
+/// Walks `.joy/items/`, peeks each file: if it is a JOYCRYPT blob,
+/// reads the zone name from the header without decrypting; if it is
+/// plaintext YAML, parses just enough to extract the id and
+/// crypt_zone fields. Used by `joy crypt status` / `joy crypt ls` /
+/// `joy auth` to count and locate Crypt content without prompting
+/// the user for a passphrase.
+#[derive(Debug, Clone)]
+pub struct ItemMeta {
+    pub id: String,
+    pub path: std::path::PathBuf,
+    pub encrypted_zone: Option<String>,
+    /// crypt_zone field as parsed from the plaintext YAML; only
+    /// populated when the file is plaintext.
+    pub plaintext_crypt_zone: Option<String>,
+}
+
+impl ItemMeta {
+    /// The zone this item belongs to, regardless of whether it is
+    /// currently encrypted on disk.
+    pub fn zone(&self) -> Option<&str> {
+        self.encrypted_zone
+            .as_deref()
+            .or(self.plaintext_crypt_zone.as_deref())
+    }
+}
+
+/// Walk `.joy/items/` and return one `ItemMeta` per item file.
+/// Never prompts, never decrypts. Use `load_items` when you need
+/// full Item objects.
+pub fn list_item_metadata(root: &Path) -> Result<Vec<ItemMeta>, JoyError> {
+    let items_dir = store::joy_dir(root).join(store::ITEMS_DIR);
+    if !items_dir.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(&items_dir).map_err(|e| JoyError::ReadFile {
+        path: items_dir.clone(),
+        source: e,
+    })? {
+        let Ok(entry) = entry else { continue };
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let Some(id) = id_from_filename(name) else {
+            continue;
+        };
+        let bytes = std::fs::read(&path).map_err(|e| JoyError::ReadFile {
+            path: path.clone(),
+            source: e,
+        })?;
+        let (encrypted_zone, plaintext_crypt_zone) = if crate::crypt::looks_like_blob(&bytes) {
+            (parse_blob_zone(&bytes), None)
+        } else {
+            (None, parse_plaintext_crypt_zone(&bytes))
+        };
+        out.push(ItemMeta {
+            id,
+            path,
+            encrypted_zone,
+            plaintext_crypt_zone,
+        });
+    }
+    Ok(out)
+}
+
+fn id_from_filename(name: &str) -> Option<String> {
+    // Item filenames look like `<ID>-<title-slug>.yaml`. The ID is
+    // either ACRONYM-XXXX or ACRONYM-XXXX-YY (per ADR-027). Strip
+    // the `.yaml` suffix and split on the last segment that doesn't
+    // match the ID shape.
+    let stem = name.strip_suffix(".yaml")?;
+    let parts: Vec<&str> = stem.split('-').collect();
+    if parts.len() >= 2 && parts[1].chars().all(|c| c.is_ascii_hexdigit()) && parts[1].len() == 4 {
+        // ACRONYM-XXXX[-YY]-...
+        let id_end = if parts.len() >= 3
+            && parts[2].chars().all(|c| c.is_ascii_hexdigit())
+            && parts[2].len() == 2
+        {
+            3
+        } else {
+            2
+        };
+        Some(parts[..id_end].join("-"))
+    } else {
+        None
+    }
+}
+
+fn parse_blob_zone(bytes: &[u8]) -> Option<String> {
+    // Layout: 8-byte magic + 1 version + 1 zone-len + zone bytes + ...
+    if bytes.len() < 10 {
+        return None;
+    }
+    let zone_len = bytes[9] as usize;
+    if bytes.len() < 10 + zone_len {
+        return None;
+    }
+    std::str::from_utf8(&bytes[10..10 + zone_len])
+        .ok()
+        .map(str::to_string)
+}
+
+fn parse_plaintext_crypt_zone(bytes: &[u8]) -> Option<String> {
+    let text = std::str::from_utf8(bytes).ok()?;
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        if let Some(rest) = trimmed.strip_prefix("crypt_zone:") {
+            let value = rest.trim().trim_matches(|c: char| c == '"' || c == '\'');
+            if value.is_empty() || value == "null" || value == "~" {
+                return None;
+            }
+            return Some(value.to_string());
+        }
+    }
+    None
+}
+
+/// Atomic write: temp file in the same directory, fsync, rename.
+fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), JoyError> {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(parent).map_err(|e| JoyError::CreateDir {
+        path: parent.to_path_buf(),
+        source: e,
+    })?;
+    let tmp = parent.join(format!(
+        ".{}.tmp.{}",
+        path.file_name().and_then(|s| s.to_str()).unwrap_or("item"),
+        std::process::id()
+    ));
+    std::fs::write(&tmp, bytes).map_err(|e| JoyError::WriteFile {
+        path: tmp.clone(),
+        source: e,
+    })?;
+    std::fs::rename(&tmp, path).map_err(|e| JoyError::WriteFile {
+        path: path.to_path_buf(),
+        source: e,
+    })?;
     Ok(())
 }
 

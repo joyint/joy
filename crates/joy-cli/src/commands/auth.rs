@@ -488,43 +488,108 @@ fn auth_with_passphrase(
     let session_token = session::create_session(&keypair, email, project_id, None);
     session::save_session(project_id, &session_token)?;
 
-    // Populate the Crypt zone-keys sidecar so `joy crypt filter`
-    // (Git filter binary) can decrypt without re-prompting for a
-    // passphrase. We have the seed because the keypair we just
-    // verified derives from it directly (ADR-039).
-    cache_zone_keys(project_view, email, project_id, &keypair.to_seed_bytes());
+    // ADR-040: opportunistic re-lock. We have the seed in hand; walk
+    // every zone this member has a wrap for and re-encrypt any
+    // plaintext file under crypt.zones[<zone>].paths that the user
+    // forgot to lock.
+    let relocked = relock_unlocked_files(root, project_view, email, &keypair.to_seed_bytes());
+    if relocked > 0 {
+        println!("Re-locked {} unlocked file(s).", relocked);
+    }
 
     println!("Authenticated as {}. Session active (24h).", email);
 
     Ok(())
 }
 
-/// Populate the session zone-keys sidecar from the member's
-/// `crypt_wraps`. Decrypts each wrap with the member's seed so the
-/// Git filter has plaintext zone keys ready. Best-effort: errors are
-/// non-fatal because the session itself is already established.
-fn cache_zone_keys(
+/// Walk `crypt.zones[].paths` for every zone the member is granted to;
+/// any file currently in plaintext gets re-encrypted with the
+/// matching zone key. Best-effort: errors per file are logged but the
+/// walk continues. Returns the number of files re-locked.
+fn relock_unlocked_files(
+    root: &std::path::Path,
     project: &joy_core::model::project::Project,
     email: &str,
-    project_id: &str,
     seed: &[u8; 32],
-) {
-    use std::collections::BTreeMap;
+) -> usize {
     let Some(member) = project.members.get(email) else {
-        return;
+        return 0;
     };
-    let mut keys: BTreeMap<String, String> = BTreeMap::new();
+    let mut relocked = 0;
     for (zone, wrap_hex) in &member.crypt_wraps {
-        match joy_core::crypt::unwrap_for_member(wrap_hex, zone, seed) {
-            Ok(zk) => {
-                keys.insert(zone.clone(), hex::encode(zk.as_bytes()));
-            }
-            Err(_) => {
-                // Stale or wrong wrap; skip rather than aborting auth.
-            }
+        let Ok(zone_key) = joy_core::crypt::unwrap_for_member(wrap_hex, zone, seed) else {
+            continue;
+        };
+        let Some(zone_cfg) = project.crypt.zones.get(zone) else {
+            continue;
+        };
+        for pattern in &zone_cfg.paths {
+            relock_path(root, &zone_key, zone, pattern, &mut relocked);
         }
     }
-    let _ = session::save_zone_keys(project_id, email, &keys);
+    relocked
+}
+
+fn relock_path(
+    root: &std::path::Path,
+    zone_key: &joy_core::crypt::ZoneKey,
+    zone: &str,
+    pattern: &str,
+    relocked: &mut usize,
+) {
+    let abs = root.join(pattern);
+    if abs.is_file() {
+        if relock_file(&abs, zone_key, zone) {
+            *relocked += 1;
+        }
+    } else if abs.is_dir() {
+        relock_dir(&abs, zone_key, zone, relocked);
+    }
+}
+
+fn relock_dir(
+    dir: &std::path::Path,
+    zone_key: &joy_core::crypt::ZoneKey,
+    zone: &str,
+    relocked: &mut usize,
+) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.is_dir() {
+            relock_dir(&p, zone_key, zone, relocked);
+        } else if p.is_file() && relock_file(&p, zone_key, zone) {
+            *relocked += 1;
+        }
+    }
+}
+
+fn relock_file(path: &std::path::Path, zone_key: &joy_core::crypt::ZoneKey, zone: &str) -> bool {
+    let Ok(bytes) = std::fs::read(path) else {
+        return false;
+    };
+    if joy_core::crypt::looks_like_blob(&bytes) {
+        return false;
+    }
+    let blob = joy_core::crypt::encrypt_blob(zone, zone_key, &bytes);
+    let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let tmp = parent.join(format!(
+        ".{}.tmp.{}",
+        path.file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("relock"),
+        std::process::id()
+    ));
+    if std::fs::write(&tmp, &blob).is_err() {
+        return false;
+    }
+    if std::fs::rename(&tmp, path).is_err() {
+        let _ = std::fs::remove_file(&tmp);
+        return false;
+    }
+    true
 }
 
 /// JOY-014C-29 lazy migration: convert a legacy member entry (no
