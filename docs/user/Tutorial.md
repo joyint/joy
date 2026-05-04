@@ -651,38 +651,76 @@ Key settings:
 
 Some Joy items are sensitive: NDA-bound customer information, embargoed
 security incidents, multi-tenant work where one client's content must
-never be visible to another. Crypt encrypts marked items so the working
-directory holds ciphertext (invisible to AI tooling reading files
-directly), while Git history stays plaintext for forge tools, blame,
-and PR review (ADR-038).
+never be visible to another. Crypt is selective end-to-end encryption:
+anything you mark via `joy crypt add` is AES-256-GCM-encrypted on the
+spot, and stays ciphertext through the working directory, Git's index,
+every commit, every clone, and the forge (ADR-040).
 
-You opt in per item or per path glob. Unmarked content stays plain.
+You opt in per item or per file/directory. Unmarked content stays plain.
 
 **Encrypt an item:**
 
 ```sh
-joy crypt add JOY-0123          # Tag the item with the default zone
+joy crypt add JOY-0123 --passphrase "..."
 # > Added JOY-0123 to zone 'default'.
 ```
 
-The first call in a fresh clone wires up Git's filter driver
-automatically and adds a `.gitattributes` rule for the item file. From
-then on `git add` stores plaintext in history while the working-dir
-file holds a `JOYCRYPT...` blob.
+After this call, `.joy/items/JOY-0123-*.yaml` on disk is the
+`JOYCRYPT...` blob. Git stores those bytes verbatim. There is no Git
+filter, no `.gitattributes` rule, no `.git/config` wiring - Joy
+encrypts the file before Git ever sees it.
 
-**Encrypt a whole directory:**
+**Encrypt a file or whole directory:**
 
 ```sh
-joy crypt add data/customer-x/  # Add a path glob to the zone
-joy crypt add --all             # Mark every existing item under the zone
+joy crypt add data/customer-x/notes.txt        # one file
+joy crypt add data/customer-x/                 # recursive
+joy crypt add --all                            # every existing item under the zone
 ```
+
+**Read encrypted items:**
+
+```sh
+joy show JOY-0123 --passphrase "..."           # decrypts transparently
+joy ls --passphrase "..."                      # list shows titles for items you can decrypt
+```
+
+Without the passphrase, `joy show` on an encrypted item returns a
+clear `no access to zone <name>` message. `joy ls` skips items you
+can't decrypt and continues.
+
+**Read or edit encrypted free files:**
+
+The default verbs keep plaintext off the local filesystem entirely:
+
+```sh
+joy crypt read   data/customer-x/notes.txt | less          # decrypt to stdout
+echo "new content" | joy crypt write data/customer-x/notes.txt
+joy crypt edit   data/customer-x/notes.txt                 # $EDITOR on a temp; re-encrypted on save
+```
+
+For binary files that need a real path on disk (PPT, PDF, images,
+video), use the explicit `unlock` / `lock` toggle. **Any process
+running as the same OS user, including AI tools, can read the file
+while it is unlocked.** Lock as soon as you are done.
+
+```sh
+joy crypt unlock data/customer-x/diagram.png   # plaintext on disk; AI on FS can read it
+xdg-open data/customer-x/diagram.png            # view in an external app
+joy crypt lock   data/customer-x/diagram.png   # back to ciphertext
+```
+
+If you forget to lock, the next `joy auth` (or any other `joy crypt`
+command that prompts you) walks the zones and re-locks every
+plaintext file it finds.
 
 **Inspect what is encrypted:**
 
 ```sh
-joy crypt status                # Counts: zones, items, your access
-joy crypt list                  # Paths, items, members for a zone
-joy crypt zone list             # Per-zone summary (paths/items/members)
+joy crypt status                # zones, items in any zone, your access
+joy crypt ls                    # paths, items, members for the addressed zone
+joy crypt ls --unlocked         # files currently in plaintext on disk
+joy crypt zone ls               # per-zone summary
 ```
 
 **Multiple confidentiality boundaries (named zones):**
@@ -692,36 +730,42 @@ If two clients must never see each other's data, use named zones:
 ```sh
 joy crypt add JOY-0125 --zone customer-x
 joy crypt grant alice@team.com --zone customer-x
-joy crypt zone list
+joy crypt zone ls
 ```
 
-A new zone is auto-created on first reference. Each zone has its own
-key derived from the granter's identity, so a member granted to
-zone A learns nothing about zone B even when both wraps live in the
-same `project.yaml`.
+Each zone has its own key. Granting to zone A says nothing about
+zone B even when both wraps live in the same `project.yaml`.
 
-**Granting and revoking access:**
+**Grant and revoke access:**
 
 ```sh
-joy crypt grant bob@team.com    # Wrap the default-zone key for Bob via X25519 ECDH
-joy crypt revoke bob@team.com   # Remove Bob's wrap; rotate the zone key for full forward secrecy
+joy crypt grant bob@team.com    # X25519 ECDH wrap of the zone key for Bob
+joy crypt revoke bob@team.com   # Remove Bob's wrap (rotate the zone key after for forward secrecy)
 ```
 
-The grant uses Bob's `verify_key` (already in `project.yaml`); Bob
-just needs to have run `joy auth` at least once so his key material
-is available for the pairwise wrap.
+The grant uses Bob's `verify_key` from `project.yaml`; Bob just needs
+to have run `joy auth` at least once so his key material is published
+for the pairwise wrap.
 
-**No separate Crypt recovery:** Crypt access is tied to your Auth
+**No separate Crypt recovery.** Crypt access is tied to your Auth
 identity (ADR-039). As long as you can recover your identity via
 passphrase or the recovery key, every Crypt zone you have a wrap for
 remains decryptable. There is no second secret to lose.
 
-**What it does not protect against:** the Git host (joyint.com,
-GitHub, GitLab, Gitea) sees plaintext history because the clean
-filter decrypts on commit. Crypt's threat model is the local
-working directory and the AI tooling that reads it. Server-blind
-operation against a privileged operator would require Confidential
-Computing substrates, an idea for a future Enterprise tier.
+**Forge plaintext via Joyint (optional).** Variants A and B:
+
+- *Pure E2E (default).* Forge sees ciphertext. PR diffs / blame / web
+  view show binary garbage for marked content. Strongest privacy.
+- *Joyint as decrypt gateway.* Grant the platform a per-zone
+  platform-wrap from the Joyint Web UI. Joyint can then render
+  plaintext to authenticated reviewers in its UI, and decrypt-on-
+  mirror to GitHub/GitLab/Gitea per `joy int mirror add ... --decrypt`.
+  Audited and revocable. (Web UI lands with MS-03 WebUI Crypt parity.)
+
+Other forges never receive a wrap; there is no Joy-aware decrypt
+service running on GitHub. You either accept review tools showing
+binary garbage on those forges, or you mirror through Joyint with
+`--decrypt`.
 
 ---
 
