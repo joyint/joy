@@ -1,7 +1,7 @@
 id: JOY-015A-FD
 title: 'Repair Crypt: encrypt-on-disk, file workflows, transparent item decrypt'
 type: rework
-status: in-progress
+status: closed
 priority: critical
 parent: JOY-0145-51
 assignees:
@@ -13,7 +13,7 @@ capabilities:
 effort: 6
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-03T20:07:20.239273Z
-updated: 2026-05-04T06:16:21.311504Z
+updated: 2026-05-04T06:25:48.907251Z
 description: |-
   Repair Crypt end-to-end after the JOY-014B-09 implementation turned out to be unusable in practice. The original ADR-038 design (clean/smudge filters that decrypt working-dir ciphertext on git add so the forge sees plaintext) is replaced with a simpler, stricter model: ciphertext stays ciphertext from joy crypt add until the moment the user reads it via Joy CLI.
 
@@ -190,3 +190,6 @@ comments:
     (crypt_session helper) New joy-cli/src/crypt_session.rs with ensure_zone_keys() that any read command (joy show, joy ls) calls upfront. No-op on plain projects; populates the thread-local context for projects with Crypt activity. joy show and joy ls grew an optional --passphrase flag that hooks into this.
 
     Tests: 310 joy-core, 88 joy-cli unit tests; 304 bats integration tests including the new crypt e2e (read/write/edit/lock/unlock roundtrips, joy show on encrypted item, joy auth re-lock). cargo fmt + cargo clippy --all-D warnings both green. Phase 3 (Tutorial + website docs) follows next.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-04T06:25:48.805909Z
+  text: Phase 3 (docs) complete. Tutorial Mission 10 rewritten in joy commit 1713750; website features.mdx updated in website commit 43f3f5c.

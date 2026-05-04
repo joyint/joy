@@ -1,7 +1,7 @@
 id: JOY-0145-51
 title: Encryption layer for project items and files
 type: epic
-status: open
+status: closed
 priority: high
 milestone: JOY-MS-02
 capabilities:
@@ -10,5 +10,5 @@ capabilities:
 effort: 7
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-02T22:38:52.499424Z
-updated: 2026-05-03T20:07:30.525742Z
+updated: 2026-05-04T06:25:48.945513Z
 description: 'Initial implementation of Crypt, the encryption layer that protects items and files in a Joy project. Covers selective encryption with a default zone and optional named zones, Git filter integration so working-directory ciphertext is invisible to AI without breaking diff/blame, the wrapped-seed Auth model that makes recovery possible without losing identity, Job-bound AI access via Job records, lazy migration of existing projects, and Web Crypto API parity for the WebUI. References: ADR-038 (selective encryption), ADR-039 (wrapped-seed identity model), Crypt.md, Auth.md.'
