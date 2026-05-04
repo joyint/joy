@@ -1,0 +1,174 @@
+id: JOY-015A-FD
+title: 'Repair Crypt: encrypt-on-disk, file workflows, transparent item decrypt'
+type: rework
+status: in-progress
+priority: critical
+parent: JOY-0145-51
+assignees:
+- member: ai:claude@joy
+milestone: JOY-MS-02
+capabilities:
+- implement
+- review
+effort: 6
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-03T20:07:20.239273Z
+updated: 2026-05-03T21:15:08.329172Z
+description: |-
+  Repair Crypt end-to-end after the JOY-014B-09 implementation turned out to be unusable in practice. The original ADR-038 design (clean/smudge filters that decrypt working-dir ciphertext on git add so the forge sees plaintext) is replaced with a simpler, stricter model: ciphertext stays ciphertext from joy crypt add until the moment the user reads it via Joy CLI.
+
+  DESIGN
+
+  Selective E2E. Items, files, or whole zones marked via joy crypt add are AES-256-GCM encrypted client-side and stay ciphertext through the working directory, Git's index, every commit, every clone, and the forge. Only members granted to the zone hold the wrap that unlocks it. Joyint.com optionally re-enters the trust chain as a decrypt gateway via a per-zone platform-wrap configured in the Joyint Web UI - that path is out of scope here and lands with MS-03 WebUI Crypt parity (JOY-0150-B0).
+
+  No Git filters. The clean / smudge / textconv pipeline is removed entirely. No .gitattributes rules, no .git/config wiring, no joy-side filter binary. Git is pure transport: bytes in, identical bytes out. The infrastructure added for JOY-014B-09 is rolled back.
+
+  Encrypt-on-disk semantics. joy crypt add encrypts the file in place at the moment of the call. Working-directory file is the JOYCRYPT blob immediately. Reading or editing requires Joy CLI (items) or the explicit verbs below (free files).
+
+  CLI surface (final).
+
+  Zone admin (no token verbs - 'token' concept not needed, joyint platform-wrap is web-only):
+    joy crypt add <id|file|dir>        encrypt now
+    joy crypt rm  <id|file|dir>        decrypt and stop encrypting
+    joy crypt grant <email>            zone access via X25519 ECDH
+    joy crypt revoke <email>           remove access
+    joy crypt ls                       what is encrypted, who has access
+    joy crypt ls --unlocked            files currently in plaintext
+    joy crypt status                   summary, includes unlocked count
+    joy crypt zone ls / zone rm <name> named zone admin
+
+  Items (transparent via Joy CLI):
+    joy show JOY-0123 / joy edit JOY-0123  decrypt implicit on read
+
+  Free files (default keeps plaintext off the FS):
+    joy crypt read   <file>            decrypt to stdout (pipe-friendly)
+    joy crypt write  <file>            encrypt stdin into file
+    joy crypt edit   <file>            $EDITOR on temp, re-encrypt on save, delete temp
+
+  Free files (opt-in fallback for binary tools):
+    joy crypt unlock <file>            decrypt in place
+    joy crypt lock   <file>            re-encrypt after unlock
+
+  Bulk + named zones via --all and --zone <name>.
+
+  NO LONGER USED: joy crypt list (use ls), joy crypt setup (auto-rolled in earlier; setup is implicit), joy crypt-filter (top-level removed), joy crypt token add/rm (forge token concept dropped from CLI - lives only as Joyint Web UI feature).
+
+  KEYS NEVER PERSIST AS SECRETS
+
+  Per-command passphrase prompt. Every joy crypt verb (and joy show/edit on encrypted items) prompts for the passphrase up front, derives the seed in memory, derives the zone keys from project.yaml wraps as needed, decrypts/encrypts, and discards the secrets when the command exits. Scripts use --passphrase or JOY_PASSPHRASE env var.
+
+  No session-file zone-key cache. The Session file at ~/.local/state/joy/sessions/<hash>.json contains only signed auth claims (verify_key + claims + signature) - zero Crypt secrets. The zones.json sidecar from JOY-014B-09 is removed.
+
+  No unlocked-files tracking. State lives on disk: a file under crypt.zones[].paths is either a JOYCRYPT blob or it is plaintext, that is the source of truth. joy crypt status walks the zone paths on demand to count unlocked files; joy crypt ls --unlocked enumerates them.
+
+  Auto re-lock is opportunistic. joy auth walks crypt.zones[].paths and re-encrypts any plaintext files it finds, using the just-derived seed (one prompt covers auth + re-lock). Any other joy command that already prompts for passphrase (joy crypt verbs, joy show/edit on encrypted items) does the same walk in the same in-memory seed lifetime. Non-crypto commands do not walk and do not prompt. There is no background daemon; effectively the next crypto-touching joy command after an unlock-with-forgot-to-lock re-locks it.
+
+  PHASE ORDER
+
+  1. SPEC. Crypt.md fully rewritten for the new model:
+     - Selective E2E framing in the intro.
+     - Git integration section: 'Git is pure transport, no filters'.
+     - CLI section: full new verb list with ls/zone ls.
+     - New section: Working with encrypted free files (read/write/edit/lock/unlock with security caveat on unlock).
+     - New section: Permission errors (no access to zone X, not crypto error).
+     - New section: Session lifetime and crypt secrets (per-command, no on-disk caching, opportunistic re-lock).
+     - Server-side exposure section rewritten for E2E.
+     - Document Joyint platform-wrap as a future / MS-03 WebUI feature.
+
+     ADR-040 (new): supersedes ADR-038 §Server-side exposure with the E2E selective design and no-filter architecture. ADR-038 stays in place; ADR-040 cites the supersede. ADR-039, ADR-006 reference updates.
+
+     No code lands until the spec edits are reviewed and merged.
+
+  2. IMPLEMENTATION.
+     - Roll back JOY-014B-09 filter pipeline: delete crates/joy-cli/src/commands/crypt_filter.rs, drop the Filter subcommand from CryptCommand, drop setup_git_filter and ensure_gitattributes_for_item helpers, drop git config setup. Working-tree side: leave existing .gitattributes lines as obsolete-but-harmless or remove during the next joy crypt add in the project (probably just remove on the spec-driven re-init).
+     - Roll back the session zone-keys sidecar: delete save_zone_keys / load_zone_keys, drop the zones.json file and the cache_zone_keys path in auth_with_passphrase. SessionToken loses zone_keys (it never had unlocked_files).
+     - joy crypt add: encrypt the file in place atomically (write to .tmp, rename). joy crypt rm: decrypt in place atomically.
+     - joy-core read path: introduce a thin wrapper around store::read_yaml for item files that detects JOYCRYPT magic, derives zone key on demand (requires passphrase context), decrypts, then serde_yaml::from_str. Without a passphrase context the read returns ZoneAccessDenied / NoPassphraseAvailable.
+     - joy-core write path: when crypt_zone is set, encrypt before writing.
+     - New joy_core::error::JoyError variant: ZoneAccessDenied { zone: String }. CLI maps to the user-facing 'no access to zone X' message. Where current code raises a YAML error from a JOYCRYPT-blob, route to ZoneAccessDenied first.
+     - New joy crypt subcommands: read, write, edit, lock, unlock, zone ls, zone rm.
+     - Passphrase passing: every joy crypt verb accepts --passphrase, JOY_PASSPHRASE env var, or interactive prompt. Per-command in-memory seed; zone keys derived as the seed is unwrapped.
+     - joy auth: after the existing auth steps, walk crypt.zones[].paths for plaintext files, re-encrypt them with the freshly derived seed.
+     - Tests: bats e2e for joy crypt add -> file is JOYCRYPT on disk immediately; joy show / joy edit on an encrypted item with no passphrase fails with ZoneAccessDenied; joy show with --passphrase works; read/write/edit pipe roundtrip; unlock + forgotten-lock + joy auth re-locks it; grant + cross-member roundtrip end to end without filters; ZoneAccessDenied on a member without grant.
+
+  3. DOCS.
+     - joy/docs/user/Tutorial.md Mission 10 rewritten: encrypt-on-disk model, the verb table, the security caveat on unlock, the opportunistic re-lock behaviour, the no-filter-needed simplification.
+     - website/content/joy/docs/en/features.mdx revised: selective E2E framing, Joyint platform-wrap teaser as future MS-03 feature.
+     - Cross-link to ADR-040.
+
+  OUT OF SCOPE (separate items)
+  - Joyint Web UI to issue / manage platform-wraps (lands with JOY-0150-B0).
+  - Joyint server-side decrypt-on-mirror logic.
+  - Path-glob filter (was JOY-0158-56 - now obsolete since there are no filters; close as superseded).
+  - Auto-encrypt new items in marked zones (JOY-0159-E2 stays open as a UX improvement).
+
+  This story marks JOY-014B-09 as obsolete in retrospect: that filter scaffolding was the wrong architecture and is rolled back here.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-03T20:21:26.284197Z
+  text: |-
+    Spec refinements after discussion:
+
+    (a) joy crypt list -> joy crypt ls (and zone list -> zone ls). Joy uses 'ls' everywhere; the original Crypt.md spec used 'list', that was inconsistent.
+
+    (b) Free-file verbs split into a safe default and an explicit fallback:
+      - Default (plaintext never on FS): joy crypt read (decrypt to stdout, pipe-friendly), joy crypt write (encrypt stdin), joy crypt edit ($EDITOR on temp, re-encrypt + delete temp on save).
+      - Fallback (plaintext on FS until lock): joy crypt unlock <file>, joy crypt lock <file>. Documented as the larger AI-readable window, opt-in for tools that need a real path (PPT, PDF, images, video).
+
+    (c) Session storage consolidates into one file. No separate zone-keys sidecar, no separate unlocked-files sidecar. The session JSON gets two new top-level fields:
+      - zone_keys: { zone -> hex } - decrypted at joy auth, lives only as long as the session.
+      - unlocked_files: [ { path, zone } ] - tracks files currently in plaintext on disk via joy crypt unlock.
+    The signature still covers only 'claims'; zone_keys and unlocked_files are local mutable state.
+
+    (d) Session lifetime = zone-key lifetime. On joy auth: derive zone keys fresh, write to session. On joy deauth: re-encrypt any unlocked files first, then delete the session file. On expiry detection (next joy command after the 24h TTL): read old file's unlocked_files + zone_keys, prompt re-auth, re-encrypt unlocked files with old zone keys, write fresh session, delete old.
+
+    (e) joy crypt unlock prints a one-shot reminder. joy crypt status shows count. joy crypt ls --unlocked lists them explicitly. No 'WARNING: N unlocked' on every command.
+
+    (f) Permission errors at the read path produce 'no access to zone X' (joy_core::error::ZoneAccessDenied), not a YAML-parse error.
+
+    These refinements are part of Phase 1 (Crypt.md update) before any code lands.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-03T20:55:34.818055Z
+  text: |-
+    Final design after the long thread - simplified and consolidated:
+
+    THREAT MODEL (revised):
+    This item flips ADR-038's 'forge sees plaintext' decision for marked content. Working directory, Git history, and the forge all hold ciphertext for items and files added via joy crypt add. Selective E2E - the user opts in per item/path/zone; everything outside stays plaintext as today. Joyint.com optionally re-enters the loop as a *trusted decrypt gateway* via a platform-wrap, configured in the Joyint Web UI (NOT in the joy CLI), used for review surface or decrypt-on-mirror to other forges.
+
+    CLI SURFACE (no token verbs):
+    Zone admin: joy crypt add, rm, grant, revoke, ls, ls --unlocked, status.
+    Items: implicit decrypt via joy show/edit (no special verbs).
+    Free files: joy crypt read/write/edit (default, plaintext never on FS) + joy crypt lock/unlock (opt-in fallback for binary tools, AI-readable window during unlock).
+    Bulk: --all flag on add/rm.
+    Named zones: --zone <name> on every verb.
+    Zone admin: joy crypt zone ls / zone rm.
+
+    OUT OF CLI (deferred to joyint platform / WebUI):
+    - Platform-wrap (forge token equivalent) is set via Joyint Web UI as part of MS-03 WebUI Crypt parity (JOY-0150-B0).
+    - Decrypt-on-mirror logic in joyint-server is a separate platform item.
+    - Cross-forge review surfaces (browser extension, joyint as cross-forge UI) are future, not in any active item.
+
+    ENCRYPT-ON-DISK SEMANTICS:
+    joy crypt add encrypts the file in place at the moment of the call. No git checkout dependence. After the call the working-dir file IS the JOYCRYPT blob.
+
+    ITEM READ PATH:
+    joy-core/store::read_yaml (or a wrapper for item files) detects JOYCRYPT magic, decrypts via session zone-keys, then serde_yaml. Permission errors map to JoyError::ZoneAccessDenied with a friendly 'no access to zone X' message, NOT a YAML parse error.
+
+    SESSION STORAGE:
+    One file at ~/.local/state/joy/sessions/<hash>.json, mode 0600. Holds claims+signature (auth) AND zone_keys (decrypted at joy auth) AND unlocked_files (tracking). The pre-existing zones.json sidecar from JOY-014B-09 is removed - everything consolidates into the session file. zone_keys lifetime equals session lifetime; on expiry detection joy reads old file's unlocked_files and zone_keys, prompts re-auth, re-encrypts unlocked files with old zone keys, writes fresh session, removes old.
+
+    GIT FILTER FATE:
+    With true E2E, the clean filter is no longer needed (working dir = git blob = ciphertext). The smudge filter and textconv stay relevant only when the user temporarily checks files out via git tooling (rare, since joy crypt verbs cover most use cases). To be confirmed during Phase 2 implementation - may simplify the filter pipeline.
+
+    SPEC TOUCHPOINTS (Phase 1):
+    - Crypt.md: rewrite Server-side exposure, CLI verbs (incl. ls vs list), new sections for free-file workflows, permission errors, session lifetime, encrypt-on-disk diagram.
+    - ADR-038: amend or supersede the Server-side exposure section. New ADR-040 candidate vs amendment - decide during draft.
+    - Auth.md: minor cross-link update.
+
+    PHASE ORDER (unchanged):
+    1. Spec (Crypt.md + ADR amendment) - approved by user before code.
+    2. Implementation (encrypt-on-disk, item decrypt path, file verbs, error type, session-file consolidation).
+    3. Docs (Tutorial, website features.mdx).
+
+    JOYINT PLATFORM-SIDE (out of scope here, separate item):
+    Decrypt-on-mirror gateway: configured per mirror (--decrypt or default-ciphertext), per zone. Joyint stores ciphertext at rest. Browser-side WebUI reads user seed, computes pairwise wrap against joyint's published platform pubkey, sends to backend. Joyint uses the wrap to decrypt for review-rendering and for plaintext-mirroring on push.
