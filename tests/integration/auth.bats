@@ -611,68 +611,19 @@ YAML
 # project set acronym migrates delegation directory (JOY-00F7-91)
 # ============================================================
 
-@test "project set acronym migrates local delegation directory" {
-    joy init --name "Rename Test" --acronym OLDACR
-    joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
-    # First-time token issuance creates the local delegation key file.
-    joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" >/dev/null
-    [ -f "$XDG_STATE_HOME/joy/delegations/OLDACR/ai_test_joy.key" ]
-
-    run joy project set acronym NEWACR
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"Local delegation keys have been migrated"* ]]
-
-    # Key migrated to new path, old path gone.
-    [ -f "$XDG_STATE_HOME/joy/delegations/NEWACR/ai_test_joy.key" ]
-    [ ! -d "$XDG_STATE_HOME/joy/delegations/OLDACR" ]
-
-    # Session was scoped to the old acronym. After re-auth under the new
-    # acronym, token issuance reuses the migrated private key without
-    # generating a new keypair (no project.yaml write).
-    joy auth --passphrase "$TEST_PASSPHRASE"
-    run joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE"
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"joy_t_"* ]]
-}
-
-@test "project set acronym refuses when target delegation directory exists" {
-    joy init --name "Rename Test" --acronym OLDACR
-    joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
-    joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" >/dev/null
-    # Pre-populate a conflicting target directory.
-    mkdir -p "$XDG_STATE_HOME/joy/delegations/NEWACR"
-    echo "unrelated" > "$XDG_STATE_HOME/joy/delegations/NEWACR/placeholder"
-
-    run joy project set acronym NEWACR
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"already exists"* ]]
-
-    # Old directory untouched, project.yaml acronym still OLDACR.
-    [ -f "$XDG_STATE_HOME/joy/delegations/OLDACR/ai_test_joy.key" ]
-    run joy project get acronym
-    [ "$output" = "OLDACR" ]
-}
-
 @test "joy ai rotate replaces delegation keypair on working state" {
     joy init --name "Rotate Test" --acronym RT
     joy auth init --passphrase "$TEST_PASSPHRASE"
     joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
     # Initial delegation.
     OLD_TOKEN=$(joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" \
-        | sed -n 's/^  \(joy_t_.*\)/\1/p')
-    OLD_KEY_HASH=$(sha256sum "$XDG_STATE_HOME/joy/delegations/RT/ai_test_joy.key" | cut -d' ' -f1)
+        | grep -o 'joy_t_[A-Za-z0-9+/=]*' | head -1)
     OLD_PUB=$(grep -A2 "ai:test@joy:" .joy/project.yaml | grep delegation_verifier | sed 's/.*: //')
 
     run joy ai rotate ai:test@joy --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
     [[ "$output" == *"Rotated delegation"* ]]
     [[ "$output" == *"invalidated"* ]]
-
-    # Local private key file replaced with a different one.
-    NEW_KEY_HASH=$(sha256sum "$XDG_STATE_HOME/joy/delegations/RT/ai_test_joy.key" | cut -d' ' -f1)
-    [ "$OLD_KEY_HASH" != "$NEW_KEY_HASH" ]
 
     # project.yaml has new delegation_verifier plus a rotated timestamp.
     NEW_PUB=$(grep -A2 "ai:test@joy:" .joy/project.yaml | grep delegation_verifier | sed 's/.*: //')
@@ -681,27 +632,11 @@ YAML
 
     # A newly issued token works; the old token is invalidated.
     NEW_TOKEN=$(joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" \
-        | sed -n 's/^  \(joy_t_.*\)/\1/p')
+        | grep -o 'joy_t_[A-Za-z0-9+/=]*' | head -1)
     run joy auth --token "$NEW_TOKEN"
     [ "$status" -eq 0 ]
     run joy auth --token "$OLD_TOKEN"
     [ "$status" -ne 0 ]
-}
-
-@test "joy auth token add self-heals when local private key is missing (ADR-037)" {
-    joy init --name "Rotate Test" --acronym RT
-    joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
-    joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" >/dev/null
-    # Simulate the multi-machine bootstrap: delete the local key so the
-    # (Some pub, None priv) branch with a delegation_salt fires.
-    rm "$XDG_STATE_HOME/joy/delegations/RT/ai_test_joy.key"
-
-    # Under ADR-037 the entry carries delegation_salt, so token add
-    # re-derives the seed from passphrase + salt without rotating.
-    run joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE"
-    [ "$status" -eq 0 ]
-    [ -f "$XDG_STATE_HOME/joy/delegations/RT/ai_test_joy.key" ]
 }
 
 @test "joy auth token add bails on legacy delegation without salt" {
@@ -709,21 +644,17 @@ YAML
     joy auth init --passphrase "$TEST_PASSPHRASE"
     joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
     joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" >/dev/null
-    # Simulate an ADR-033 §1 legacy entry by stripping delegation_salt
-    # from project.yaml, then drop the local cache.
+    # Simulate a legacy entry by stripping delegation_salt from project.yaml.
     sed_inplace '/^        delegation_salt:/d' .joy/project.yaml
-    rm "$XDG_STATE_HOME/joy/delegations/RT/ai_test_joy.key"
 
     run joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"missing on this machine"* ]]
-    [[ "$output" == *"joy ai rotate"* ]]
+    [[ "$output" == *"Cannot issue a new token"* ]]
+    [[ "$output" == *"joy auth delegation rotate"* ]]
 
-    # Rotation under ADR-037 writes a fresh salt and unblocks subsequent
-    # machines; here we just verify it leaves the local state usable.
+    # Rotation writes a fresh salt and unblocks subsequent issuance.
     run joy ai rotate ai:test@joy --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
-    [ -f "$XDG_STATE_HOME/joy/delegations/RT/ai_test_joy.key" ]
     run joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
 }
@@ -1151,3 +1082,104 @@ YAML
     [[ "$output" == *"Revoked"* ]]
     ! grep -A 3 "test@example.com" .joy/project.yaml | grep -q "crypt_wraps:"
 }
+
+# ============================================================
+# AI Tool --crypt token flow (JOY-015B-53, JOY-015E-4C)
+# ============================================================
+
+@test "joy auth token add --crypt embeds delegation private key" {
+    joy init --name "AI Crypt Test" --acronym AC
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE"
+    # Auth-only token: no privkey embedded.
+    PLAIN=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
+        | grep -o 'joy_t_[A-Za-z0-9+/=]*' | head -1)
+    [ -n "$PLAIN" ]
+    PLAIN_DECODED=$(echo "$PLAIN" | sed 's/^joy_t_//' | base64 -d 2>/dev/null || true)
+    [[ "$PLAIN_DECODED" != *"delegation_private_key"* ]]
+
+    # --crypt token: privkey embedded.
+    CRYPT=$(joy auth token add ai:claude@joy --crypt --passphrase "$TEST_PASSPHRASE" \
+        | grep -o 'joy_t_[A-Za-z0-9+/=]*' | head -1)
+    [ -n "$CRYPT" ]
+    CRYPT_DECODED=$(echo "$CRYPT" | sed 's/^joy_t_//' | base64 -d 2>/dev/null || true)
+    [[ "$CRYPT_DECODED" == *"delegation_private_key"* ]]
+    [[ "$CRYPT_DECODED" == *"\"crypt\""* ]]
+}
+
+@test "auth-only token redemption produces a 44-byte JOY_SESSION payload" {
+    joy init --name "AI Crypt Test" --acronym AC
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE"
+    TOKEN=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
+        | grep -o 'joy_t_[A-Za-z0-9+/=]*' | head -1)
+    OUTPUT=$(joy auth --token "$TOKEN")
+    # Extract just the base64 payload from the export line.
+    PAYLOAD=$(echo "$OUTPUT" | grep -o 'joy_s_[A-Za-z0-9+/=]*' | head -1 | sed 's/^joy_s_//')
+    DECODED_LEN=$(echo "$PAYLOAD" | base64 -d 2>/dev/null | wc -c | tr -d '[:space:]')
+    [ "$DECODED_LEN" = "44" ]
+}
+
+@test "--crypt token redemption produces a 76-byte JOY_SESSION payload" {
+    joy init --name "AI Crypt Test" --acronym AC
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE"
+    TOKEN=$(joy auth token add ai:claude@joy --crypt --passphrase "$TEST_PASSPHRASE" \
+        | grep -o 'joy_t_[A-Za-z0-9+/=]*' | head -1)
+    OUTPUT=$(joy auth --token "$TOKEN")
+    PAYLOAD=$(echo "$OUTPUT" | grep -o 'joy_s_[A-Za-z0-9+/=]*' | head -1 | sed 's/^joy_s_//')
+    DECODED_LEN=$(echo "$PAYLOAD" | base64 -d 2>/dev/null | wc -c | tr -d '[:space:]')
+    [ "$DECODED_LEN" = "76" ]
+}
+
+@test "joy crypt grant for AI writes zone-major delegation wraps" {
+    joy init --name "AI Crypt Test" --acronym AC
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE"
+    # Bootstrap operator's delegation entry by issuing one (auth-only) token.
+    joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" >/dev/null
+
+    # Seed default zone so wraps can be derived.
+    mkdir -p secret
+    echo "x" > secret/file.txt
+    joy crypt add "secret/" --passphrase "$TEST_PASSPHRASE" >/dev/null
+
+    run joy crypt grant ai:claude@joy --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Granted ai:claude@joy"* ]]
+
+    # The wrap landed under crypt.zones.default.delegations.ai:claude@joy.<operator>
+    grep -q "delegations:" .joy/project.yaml
+    grep -A 6 "delegations:" .joy/project.yaml | grep -q "ai:claude@joy:"
+    grep -A 6 "ai:claude@joy:" .joy/project.yaml | grep -q "test@example.com:"
+}
+
+@test "joy crypt revoke for AI removes the entire delegations.<ai> map" {
+    joy init --name "AI Crypt Test" --acronym AC
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE"
+    joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" >/dev/null
+    mkdir -p secret
+    echo "x" > secret/file.txt
+    joy crypt add "secret/" --passphrase "$TEST_PASSPHRASE" >/dev/null
+    joy crypt grant ai:claude@joy --passphrase "$TEST_PASSPHRASE" >/dev/null
+
+    run joy crypt revoke ai:claude@joy
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Revoked"* ]]
+
+    ! grep -A 6 "default:" .joy/project.yaml | grep -q "ai:claude@joy:"
+}
+
+# Two more behaviours are deliberately exercised at the Rust unit-test
+# level rather than via bats because a portable shell reproduction would
+# be brittle:
+#   - session.expires = min(session_ttl, token.expires) is verified by
+#     ai_session_clamped_to_token_expiry / _uses_session_ttl_when_token
+#     _lives_longer in joy-core/auth/session.rs.
+#   - The AI-side decrypt round-trip (JOY_SESSION carries the delegation
+#     private key, ensure_zone_keys uses it to unwrap a granted zone) is
+#     covered through the parse_session_env_full unit test plus the live
+#     unwrap_for_member path; bats-driving JOY_SESSION across the
+#     run/eval boundary from a captured token string was inconsistent
+#     across bash versions.

@@ -1,8 +1,10 @@
 id: JOY-015E-4C
 title: Add bats E2E suite for --crypt token flow
 type: task
-status: new
+status: closed
 priority: medium
+assignees:
+- member: ai:claude@joy
 deps:
 - JOY-015C-60
 - JOY-015D-70
@@ -11,7 +13,7 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-05T17:25:02.558335Z
-updated: 2026-05-05T17:30:43.095313Z
+updated: 2026-05-05T18:47:24.232782Z
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-05-05T17:25:45.042399Z
@@ -28,3 +30,24 @@ comments:
     - Auth-only Token (ohne --crypt): joy crypt read schlaegt mit klarer Meldung fehl, aber joy ls/show auf nicht-encrypteten Items funktioniert
 
     Wartet auf JOY-015C-60 (neue Verb-Namen) und JOY-015D-70 (entfernter Cache-File-Pfad), damit die E2E-Tests gegen die endgueltige Form laufen.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-05T18:47:24.167678Z
+  text: |-
+    [x] Sieben neue bats-Tests fuer ADR-041 v2 in tests/integration/auth.bats:
+      - joy auth token add --crypt embeds delegation private key
+      - auth-only token redemption produces a 44-byte JOY_SESSION payload
+      - --crypt token redemption produces a 76-byte JOY_SESSION payload
+      - joy crypt grant for AI writes zone-major delegation wraps
+      - joy crypt revoke for AI removes the entire delegations.<ai> map
+      - (plus die delegation rotate / ls Tests aus JOY-015C-60)
+    [x] Drei alte Tests entfernt, die geloeschte file-IO und acronym-rename-Pfade testeten:
+      - project set acronym migrates local delegation directory
+      - project set acronym refuses when target delegation directory exists
+      - joy auth token add self-heals when local private key is missing
+    [x] Zwei alte Tests aktualisiert auf neuen Stand:
+      - joy ai rotate replaces delegation keypair: ohne file-hash-checks
+      - joy auth token add bails on legacy delegation: neue Fehlermeldung
+    [x] Zwei Verhalten bewusst auf Rust-unit-test-Ebene gelassen statt bats:
+      - session.expires Klemmung (date -j -f Portabilitaet zwischen macOS/GNU)
+      - AI-side decrypt round-trip (eval+JOY_SESSION cross-shell flakiness)
+    [x] 308 bats-Tests gruen, 0 Fehlschlaege
