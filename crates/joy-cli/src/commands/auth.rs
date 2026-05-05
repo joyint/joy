@@ -50,6 +50,8 @@ enum AuthCommand {
     Reset(ResetArgs),
     /// Manage delegation tokens for AI members
     Token(TokenArgs),
+    /// Manage your per-(operator, AI) delegations: rotate, list
+    Delegation(DelegationArgs),
     /// Change your passphrase: re-derives your identity keypair
     Passphrase(PassphraseArgs),
     /// Recover identity via recovery key, or rotate the recovery key
@@ -112,8 +114,40 @@ struct TokenArgs {
 enum TokenCommand {
     /// Create a delegation token for an AI member
     Add(TokenAddArgs),
-    /// Revoke a delegation token for an AI member
-    Rm(TokenRmArgs),
+}
+
+#[derive(Args)]
+struct DelegationArgs {
+    #[command(subcommand)]
+    command: DelegationCommand,
+}
+
+#[derive(Subcommand)]
+enum DelegationCommand {
+    /// Rotate your delegation keypair for an AI member. Generates a fresh
+    /// salt and verifier, invalidates every token you have issued for this
+    /// AI, and removes your zone-key wraps for this AI (re-grant where
+    /// needed). Other operators' delegations are untouched.
+    Rotate(DelegationRotateArgs),
+    /// List delegations recorded in project.yaml. Shows every operator's
+    /// delegation for the given AI member, or every (operator, AI) pair
+    /// when no member id is given.
+    Ls(DelegationLsArgs),
+}
+
+#[derive(Args)]
+struct DelegationRotateArgs {
+    /// AI member ID (e.g. ai:claude@joy)
+    #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_ai_member))]
+    member: String,
+}
+
+#[derive(Args)]
+struct DelegationLsArgs {
+    /// Optional AI member ID (e.g. ai:claude@joy). Without it, every AI
+    /// member with at least one operator delegation is listed.
+    #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_ai_member))]
+    member: Option<String>,
 }
 
 #[derive(Args)]
@@ -134,13 +168,6 @@ struct TokenAddArgs {
     crypt: bool,
 }
 
-#[derive(Args)]
-struct TokenRmArgs {
-    /// AI member ID (e.g. ai:claude@joy)
-    #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_ai_member))]
-    member: String,
-}
-
 pub fn run(args: AuthArgs) -> Result<()> {
     match args.command {
         Some(AuthCommand::Init) => run_init(args.passphrase.as_deref(), args.user.as_deref()),
@@ -149,6 +176,12 @@ pub fn run(args: AuthArgs) -> Result<()> {
         Some(AuthCommand::Token(a)) => {
             run_token(a, args.passphrase.as_deref(), args.user.as_deref())
         }
+        Some(AuthCommand::Delegation(a)) => match a.command {
+            DelegationCommand::Rotate(args_) => {
+                run_ai_rotate(&args_.member, args.passphrase.as_deref())
+            }
+            DelegationCommand::Ls(args_) => run_delegation_ls(args_.member.as_deref()),
+        },
         Some(AuthCommand::Passphrase(a)) => {
             run_passphrase(args.passphrase.as_deref(), a.new_passphrase.as_deref())
         }
@@ -1173,7 +1206,6 @@ fn run_token(
 ) -> Result<()> {
     match args.command {
         TokenCommand::Add(a) => run_token_add(a, passphrase_flag, user_flag),
-        TokenCommand::Rm(a) => run_token_rm(a, passphrase_flag),
     }
 }
 
@@ -1456,72 +1488,85 @@ fn run_token_add(
     Ok(())
 }
 
-/// `joy auth token rm <ai-member>` — revoke a delegation token.
-fn run_token_rm(args: TokenRmArgs, passphrase_flag: Option<&str>) -> Result<()> {
+/// `joy auth delegation ls [ai-member]` -- list registered delegations.
+///
+/// Reads `project.yaml`'s `members.*.ai_delegations.*` and prints one
+/// row per registered (operator, AI) pair. With a member id, the output
+/// is filtered to that AI; without, every (operator, AI) pair is shown.
+fn run_delegation_ls(filter_member: Option<&str>) -> Result<()> {
     use joy_core::model::project::is_ai_member;
-
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
-
     let project = store::load_project(&root)?;
-    let email = joy_core::vcs::default_vcs().user_email()?;
 
-    // Validate AI member
-    if !is_ai_member(&args.member) {
-        anyhow::bail!("{} is not an AI member (must start with ai:)", args.member);
-    }
-    if !project.members.contains_key(&args.member) {
-        anyhow::bail!("{} is not a registered project member.", args.member);
+    if let Some(m) = filter_member {
+        if !is_ai_member(m) {
+            anyhow::bail!("{m} is not an AI member (must start with ai:)");
+        }
     }
 
-    // Guard: requires manage capability
-    joy_core::guard::enforce(&root, &joy_core::guard::Action::ManageProject, "project")?;
+    #[derive(serde::Serialize)]
+    struct Row<'a> {
+        operator: &'a str,
+        ai_member: &'a str,
+        delegation_verifier: &'a str,
+        created: String,
+        rotated: Option<String>,
+    }
 
-    // Authenticate the acting human
-    let member = project
-        .members
-        .get(&email)
-        .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member.", email))?;
-    if member.verify_key.is_none() {
-        anyhow::bail!(
-            "Authentication not initialized for {}. Run `joy auth init`.",
-            email
+    let mut rows: Vec<Row<'_>> = Vec::new();
+    for (operator, member) in &project.members {
+        for (ai, entry) in &member.ai_delegations {
+            if let Some(filter) = filter_member {
+                if filter != ai {
+                    continue;
+                }
+            }
+            rows.push(Row {
+                operator,
+                ai_member: ai,
+                delegation_verifier: &entry.delegation_verifier,
+                created: entry.created.format("%Y-%m-%d %H:%M UTC").to_string(),
+                rotated: entry
+                    .rotated
+                    .map(|t| t.format("%Y-%m-%d %H:%M UTC").to_string()),
+            });
+        }
+    }
+
+    if crate::output::is_json() {
+        return crate::output::emit(rows);
+    }
+
+    if rows.is_empty() {
+        match filter_member {
+            Some(m) => println!("No delegations registered for {m}."),
+            None => println!("No AI delegations registered."),
+        }
+        return Ok(());
+    }
+
+    let op_w = rows.iter().map(|r| r.operator.len()).max().unwrap_or(8);
+    let ai_w = rows.iter().map(|r| r.ai_member.len()).max().unwrap_or(8);
+    println!(
+        "{:<op_w$}  {:<ai_w$}  {:<22}  ROTATED",
+        "OPERATOR",
+        "AI MEMBER",
+        "CREATED",
+        op_w = op_w,
+        ai_w = ai_w
+    );
+    for r in &rows {
+        println!(
+            "{:<op_w$}  {:<ai_w$}  {:<22}  {}",
+            r.operator,
+            r.ai_member,
+            r.created,
+            r.rotated.as_deref().unwrap_or("-"),
+            op_w = op_w,
+            ai_w = ai_w
         );
     }
-
-    let passphrase = read_passphrase(passphrase_flag, "Passphrase: ")?;
-    let _ = joy_core::auth::unlock_identity(member, &passphrase)?;
-
-    // Remove the delegation entry from project.yaml and the private key
-    // file from local state.
-    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
-    let mut project_mut = store::read_project(&project_path)?;
-    let removed = project_mut
-        .members
-        .get_mut(&email)
-        .map(|m| m.ai_delegations.remove(&args.member).is_some())
-        .unwrap_or(false);
-
-    if !removed {
-        anyhow::bail!("No delegation registered for {} by {}.", args.member, email);
-    }
-
-    store::write_yaml_preserve(&project_path, &project_mut)?;
-    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-    joy_core::git_ops::auto_git_add(&root, &[&rel]);
-
-    let project_id = session::project_id(&root)?;
-    delegation::remove_delegation_key(&project_id, &args.member)?;
-    let _ = session::remove_session(&project_id, &args.member);
-
-    println!("Delegation for {} revoked.", args.member);
-
-    joy_core::git_ops::auto_git_post_command(
-        &root,
-        &format!("auth token rm {}", args.member),
-        &email,
-    );
-
     Ok(())
 }
 

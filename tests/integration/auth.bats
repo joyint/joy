@@ -243,23 +243,47 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     [[ "$output" == *"expires in 8 hours"* ]]
 }
 
-@test "joy auth token rm revokes token" {
+@test "joy auth delegation rotate replaces the keypair" {
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
     joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
     joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE"
-    run joy auth token rm ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    local before
+    before=$(grep delegation_verifier .joy/project.yaml | head -1)
+    run joy auth delegation rotate ai:test@joy --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Delegation for ai:test@joy revoked"* ]]
+    [[ "$output" == *"Rotated delegation for ai:test@joy"* ]]
+    local after
+    after=$(grep delegation_verifier .joy/project.yaml | head -1)
+    [ "$before" != "$after" ]
 }
 
-@test "joy auth token rm rejects when no token exists" {
+@test "joy auth delegation rotate rejects when no delegation exists" {
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
     joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
-    run joy auth token rm ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    run joy auth delegation rotate ai:test@joy --passphrase "$TEST_PASSPHRASE"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"No delegation registered"* ]]
+    [[ "$output" == *"No delegation"* ]]
+}
+
+@test "joy auth delegation ls lists registered delegations" {
+    joy init --name "Auth Test"
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    run joy auth delegation ls
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"ai:test@joy"* ]]
+    [[ "$output" == *"OPERATOR"* ]]
+}
+
+@test "joy auth delegation ls reports empty backlog cleanly" {
+    joy init --name "Auth Test"
+    joy auth init --passphrase "$TEST_PASSPHRASE"
+    run joy auth delegation ls
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"No AI delegations registered"* ]]
 }
 
 # ============================================================

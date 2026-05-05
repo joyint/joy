@@ -1,14 +1,16 @@
 id: JOY-015C-60
 title: Add joy auth delegation rotate + delegation ls subcommands
 type: task
-status: new
+status: closed
 priority: medium
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-05T17:24:59.819711Z
-updated: 2026-05-05T17:25:24.239665Z
+updated: 2026-05-05T17:49:20.946703Z
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-05-05T17:25:24.239664Z
@@ -28,3 +30,12 @@ comments:
     Voraussetzung: keine. Code fuer rotate ist schon vorhanden in commands/auth.rs run_token_rm.
 
     Dependencies: blocks JOY-015E-4C (bats E2E will die neuen Verben benutzen)
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-05T17:49:20.891389Z
+  text: |-
+    [x] Subcommand auth Delegation hinzugefuegt mit Rotate + Ls
+    [x] Rotate ruft die existierende run_ai_rotate Funktion (per-Operator-Semantik passend zu ADR-041 §7)
+    [x] Ls listet alle in project.yaml registrierten Delegations, optional gefiltert nach AI-Member
+    [x] TokenCommand::Rm + run_token_rm entfernt (semantisch ersetzt durch delegation rotate)
+    [x] bats Tests aktualisiert: zwei tests für rotate, zwei tests für ls
+    [x] joy auth token rm tests entfernt (war pre-1.0 Schnittstelle)
