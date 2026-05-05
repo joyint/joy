@@ -15,16 +15,31 @@ env:
 permissions:
   contents: read
 
+# joy-core depends on joy-crypt via a path dependency
+# (`../crypt/crates/joy-crypt`) plus a version constraint so that
+# `cargo publish` resolves the version from crates.io while local
+# builds use the sibling checkout. The standalone joy CI therefore
+# also clones joyint/crypt into a sibling directory before running
+# any cargo command. Both repos are public; no PAT or deploy key is
+# needed.
+
 jobs:
   fmt:
     name: Format
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: joy
+      - uses: actions/checkout@v4
+        with:
+          repository: joyint/crypt
+          path: crypt
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
       - run: cargo fmt --all -- --check
+        working-directory: joy
 
   lint:
     name: Lint
@@ -32,11 +47,20 @@ jobs:
     needs: fmt
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: joy
+      - uses: actions/checkout@v4
+        with:
+          repository: joyint/crypt
+          path: crypt
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: joy
       - run: cargo clippy --workspace -- -D warnings
+        working-directory: joy
 
   test:
     name: Test
@@ -44,9 +68,18 @@ jobs:
     needs: fmt
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: joy
+      - uses: actions/checkout@v4
+        with:
+          repository: joyint/crypt
+          path: crypt
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: joy
       - run: cargo test --workspace
+        working-directory: joy
 
   build:
     name: Build
@@ -54,6 +87,15 @@ jobs:
     needs: [lint, test]
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: joy
+      - uses: actions/checkout@v4
+        with:
+          repository: joyint/crypt
+          path: crypt
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: joy
       - run: cargo build --workspace
+        working-directory: joy
