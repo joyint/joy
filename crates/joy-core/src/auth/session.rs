@@ -481,8 +481,7 @@ mod tests {
     fn ai_session_carries_ephemeral_public_key() {
         let ephemeral = IdentityKeypair::from_random();
         let ephemeral_pk = ephemeral.public_key().to_hex();
-        let token =
-            create_session_for_ai(&ephemeral, "ai:claude@joy", "TST", None, "dkey", None);
+        let token = create_session_for_ai(&ephemeral, "ai:claude@joy", "TST", None, "dkey", None);
         assert_eq!(
             token.claims.session_public_key.as_deref(),
             Some(ephemeral_pk.as_str())

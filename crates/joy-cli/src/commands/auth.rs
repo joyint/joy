@@ -891,11 +891,8 @@ fn auth_with_token(
     // would contradict the proof-of-possession property. The AI tool is
     // responsible for propagating the env value into its subshells.
     let sid = session::session_id(project_id, &claims.ai_member);
-    let env_value = session::encode_session_env_full(
-        &sid,
-        &ephemeral_private,
-        delegation_private.as_ref(),
-    );
+    let env_value =
+        session::encode_session_env_full(&sid, &ephemeral_private, delegation_private.as_ref());
 
     if crate::output::is_json() {
         #[derive(serde::Serialize)]

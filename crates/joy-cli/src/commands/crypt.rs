@@ -883,8 +883,7 @@ fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>) -> Resul
             let Some(entry) = member.ai_delegations.get(ai_id) else {
                 continue;
             };
-            let delegation_pk =
-                joy_core::auth::PublicKey::from_hex(&entry.delegation_verifier)?;
+            let delegation_pk = joy_core::auth::PublicKey::from_hex(&entry.delegation_verifier)?;
             let wrap_hex = joy_core::crypt::wrap_for_member(
                 &unlocked.zone_key,
                 &unlocked.zone,
@@ -906,10 +905,7 @@ fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>) -> Resul
             .zones
             .get_mut(&unlocked.zone)
             .expect("zone entry just inserted");
-        let delegations_for_ai = zone_entry
-            .delegations
-            .entry(ai_id.to_string())
-            .or_default();
+        let delegations_for_ai = zone_entry.delegations.entry(ai_id.to_string()).or_default();
         let count = wraps.len();
         for (op, wrap) in wraps {
             delegations_for_ai.insert(op, wrap);
@@ -932,7 +928,10 @@ fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>) -> Resul
         joy_core::git_ops::auto_git_add(&unlocked.root, &[&rel]);
         joy_core::git_ops::auto_git_post_command(
             &unlocked.root,
-            &format!("crypt grant {ai_id} (zone {}, {count} delegations)", unlocked.zone),
+            &format!(
+                "crypt grant {ai_id} (zone {}, {count} delegations)",
+                unlocked.zone
+            ),
             &unlocked.acting_email,
         );
         println!(
