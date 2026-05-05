@@ -1,12 +1,37 @@
 id: JOY-00B0
 title: YAML-aware Git merge driver for .joy/.jot files
 type: task
-status: new
+status: in-progress
 priority: medium
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 3
 created_by: horst.schwarz@joydev.com
 created: 2026-03-31T17:54:33.420916689Z
-updated: 2026-03-31T17:54:33.420916689Z
+updated: 2026-05-05T21:32:42.626786Z
 description: Custom Git merge driver for Joy/Jot YAML. List fields (comments, deps) merged as union sorted by timestamp. Scalar conflicts escalated to user. joy init registers the driver in .gitattributes. See ADR-011. Migrated from JI-008F.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-05T21:05:48.894655Z
+  text: 'Real merge incident on 2026-05-05: `joy ls` failed with `duplicate field ''updated''` on a task item after a feature branch was merged into main. Two `updated:` keys appeared on adjacent lines. Confirms the failure mode: parallel `updated:` edits with enough surrounding diff are silently kept as two YAML keys instead of escalating to a Git conflict. Risk extends to any frequently-edited scalar (status, priority, effort).'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-05T21:19:32.899377Z
+  text: |-
+    Plan agreed 2026-05-05:
+    - crates/joy-core/src/merge.rs: 3-way YAML merge on top-level mapping. Lists union-merged with dedup keys: comments by (author, date), deps/tags/capabilities by value, assignees by member. 'updated' -> max(both). All other scalars -> side with the later 'updated' wins. Driver always resolves; never emits conflict markers.
+    - crates/joy-cli/src/commands/merge.rs: hidden 'joy merge driver' subcommand for git to invoke (args --base/--current/--other/--path).
+    - crates/joy-core/src/init.rs: managed block in .gitattributes (analogous to existing .gitignore block) with two entries: '.joy/**/*.yaml merge=joy-yaml' and '.joy/logs/*.log merge=union' (interim, narrower than JOY-0112's Merkle-DAG design but enough to stop same-day log collisions); plus local 'git config merge.joy-yaml.{name,driver}'. Hooked into init and onboard.
+    - Tests: unit tests for the merge function (clean / list-union / scalar via updated-tiebreaker / updated-max); init test for the gitattributes block.
+
+    Trigger for adding the log entry to the gitattributes block: prior local-only setup on a developer machine masked the issue and let it surface in a clone today. Committing the block ships the protection to every clone.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-05T21:32:42.626786Z
+  text: |-
+    [x] crates/joy-core/src/merge.rs added: 3-way YAML merge on the AST (serde_yaml_ng::Value), recursive on mappings, set-merge on sequences with stable identity per path (comments by (author, date), assignees by member, others by value). Tiebreaker for genuine scalar conflicts is the side with the later top-level 'updated' (defaults to theirs when no signal). 12 unit tests covering duplicate-updated, scalar tiebreaker, list union, list 3-way removal, missing-field, nested mapping, JOYCRYPT detection.
+    [x] crates/joy-cli/src/commands/merge.rs added: hidden 'joy merge driver' subcommand (--base/--current/--other/--path/--ours-rev/--theirs-rev). Reads bytes; if any side is a JOYCRYPT blob -> never merges, picks the side with the later git commit timestamp via 'git log -1 --format=%ct', defaulting to theirs. Plaintext path delegates to merge_yaml_doc.
+    [x] crates/joy-core/src/init.rs: managed block in .gitattributes registering merge=joy-yaml on .joy/items/.../milestones/.../releases/.../ai/agents/.../ai/jobs/*.yaml + project.yaml + config.defaults.yaml, plus merge=union on .joy/logs/*.log (interim until JOY-0112). Local 'git config merge.joy-yaml.{name,driver}' set on init AND onboard, since git-config doesn't travel through clone. 3 new tests: gitattributes block presence, no duplication on re-run, git-config registration with %X/%Y placeholders.
+    [x] Workspace tests: 319 + 88 + 2 = 409 passing. cargo clippy --workspace --all-targets -D warnings clean.
+
+    Open: end-to-end real-git-merge integration test (using bats or equivalent) is deferred; relying on unit tests for now. Awaiting explicit OK to commit.

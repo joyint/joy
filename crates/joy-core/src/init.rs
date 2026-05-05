@@ -122,6 +122,10 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
     // Ensure .joy/credentials.yaml is in .gitignore
     ensure_gitignore(root)?;
 
+    // Register the YAML / log merge driver in .gitattributes and git config.
+    ensure_gitattributes(root)?;
+    register_merge_driver(root)?;
+
     // Install hooks
     install_hooks(root)?;
 
@@ -136,6 +140,8 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
 pub fn onboard(root: &Path) -> Result<OnboardResult, JoyError> {
     embedded::sync_files(root, CONFIG_FILES)?;
     embedded::sync_files(root, PROJECT_FILES)?;
+    ensure_gitattributes(root)?;
+    register_merge_driver(root)?;
     install_hooks(root)
 }
 
@@ -220,6 +226,102 @@ pub fn update_gitignore_block(root: &Path, entries: &[(&str, &str)]) -> Result<(
 
 fn ensure_gitignore(root: &Path) -> Result<(), JoyError> {
     update_gitignore_block(root, GITIGNORE_BASE_ENTRIES)
+}
+
+pub const GITATTRIBUTES_BLOCK_START: &str = "### joy:start -- managed by joy, do not edit manually";
+pub const GITATTRIBUTES_BLOCK_END: &str = "### joy:end";
+
+/// Path-pattern -> Git attribute lines for the joy-managed
+/// `.gitattributes` block. The YAML driver covers every Joy YAML file
+/// (items, milestones, releases, project metadata). The log entry uses
+/// Git's built-in union driver as an interim until JOY-0112 (Merkle-DAG
+/// log) ships.
+pub const GITATTRIBUTES_BASE_ENTRIES: &[&str] = &[
+    ".joy/items/*.yaml merge=joy-yaml",
+    ".joy/milestones/*.yaml merge=joy-yaml",
+    ".joy/releases/*.yaml merge=joy-yaml",
+    ".joy/ai/agents/*.yaml merge=joy-yaml",
+    ".joy/ai/jobs/*.yaml merge=joy-yaml",
+    ".joy/project.yaml merge=joy-yaml",
+    ".joy/config.defaults.yaml merge=joy-yaml",
+    ".joy/logs/*.log merge=union",
+];
+
+pub const MERGE_DRIVER_NAME_KEY: &str = "merge.joy-yaml.name";
+pub const MERGE_DRIVER_NAME_VALUE: &str = "Joy YAML merge driver";
+pub const MERGE_DRIVER_CMD_KEY: &str = "merge.joy-yaml.driver";
+pub const MERGE_DRIVER_CMD_VALUE: &str =
+    "joy merge driver --base %O --current %A --other %B --path %P --ours-rev %X --theirs-rev %Y";
+
+/// Update the joy-managed block in .gitattributes with the given lines.
+/// Replaces the block if it exists, appends otherwise.
+pub fn update_gitattributes_block(root: &Path, lines: &[&str]) -> Result<(), JoyError> {
+    let path = root.join(".gitattributes");
+
+    let mut joined = String::new();
+    for line in lines {
+        joined.push_str(line);
+        joined.push('\n');
+    }
+    let block = format!(
+        "{}\n{}{}",
+        GITATTRIBUTES_BLOCK_START, joined, GITATTRIBUTES_BLOCK_END
+    );
+
+    let content = if path.is_file() {
+        let existing = std::fs::read_to_string(&path).map_err(|e| JoyError::ReadFile {
+            path: path.clone(),
+            source: e,
+        })?;
+        if existing.contains(GITATTRIBUTES_BLOCK_START)
+            && existing.contains(GITATTRIBUTES_BLOCK_END)
+        {
+            let start = existing.find(GITATTRIBUTES_BLOCK_START).unwrap();
+            let end =
+                existing.find(GITATTRIBUTES_BLOCK_END).unwrap() + GITATTRIBUTES_BLOCK_END.len();
+            let mut updated = String::new();
+            updated.push_str(&existing[..start]);
+            updated.push_str(&block);
+            updated.push_str(&existing[end..]);
+            updated
+        } else {
+            let trimmed = existing.trim_end();
+            if trimmed.is_empty() {
+                format!("{}\n", block)
+            } else {
+                format!("{}\n\n{}\n", trimmed, block)
+            }
+        }
+    } else {
+        format!("{}\n", block)
+    };
+
+    std::fs::write(&path, &content).map_err(|e| JoyError::WriteFile { path, source: e })?;
+    crate::git_ops::auto_git_add(root, &[".gitattributes"]);
+    Ok(())
+}
+
+fn ensure_gitattributes(root: &Path) -> Result<(), JoyError> {
+    update_gitattributes_block(root, GITATTRIBUTES_BASE_ENTRIES)
+}
+
+/// Register the joy-yaml merge driver in the local Git config. Idempotent:
+/// repeated calls overwrite with the same value. The config is per-clone
+/// (Git does not transmit it through clone), so this is also called from
+/// `onboard` to bring fresh clones up to date.
+fn register_merge_driver(root: &Path) -> Result<(), JoyError> {
+    let vcs = default_vcs();
+    if !vcs.is_repo(root) {
+        return Ok(());
+    }
+    if vcs.config_get(root, MERGE_DRIVER_NAME_KEY).ok().as_deref() != Some(MERGE_DRIVER_NAME_VALUE)
+    {
+        vcs.config_set(root, MERGE_DRIVER_NAME_KEY, MERGE_DRIVER_NAME_VALUE)?;
+    }
+    if vcs.config_get(root, MERGE_DRIVER_CMD_KEY).ok().as_deref() != Some(MERGE_DRIVER_CMD_VALUE) {
+        vcs.config_set(root, MERGE_DRIVER_CMD_KEY, MERGE_DRIVER_CMD_VALUE)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -346,6 +448,72 @@ mod tests {
 
         assert_eq!(first, second);
         assert_eq!(second.matches(GITIGNORE_BLOCK_START).count(), 1);
+    }
+
+    #[test]
+    fn init_writes_gitattributes_block_with_joy_yaml_and_union_log() {
+        let dir = tempdir().unwrap();
+        init(InitOptions {
+            root: dir.path().to_path_buf(),
+            name: Some("Test".into()),
+            acronym: None,
+            user: None,
+            language: None,
+        })
+        .unwrap();
+
+        let content = std::fs::read_to_string(dir.path().join(".gitattributes")).unwrap();
+        assert!(content.contains(GITATTRIBUTES_BLOCK_START));
+        assert!(content.contains(GITATTRIBUTES_BLOCK_END));
+        assert!(content.contains(".joy/items/*.yaml merge=joy-yaml"));
+        assert!(content.contains(".joy/milestones/*.yaml merge=joy-yaml"));
+        assert!(content.contains(".joy/releases/*.yaml merge=joy-yaml"));
+        assert!(content.contains(".joy/ai/agents/*.yaml merge=joy-yaml"));
+        assert!(content.contains(".joy/ai/jobs/*.yaml merge=joy-yaml"));
+        assert!(content.contains(".joy/project.yaml merge=joy-yaml"));
+        assert!(content.contains(".joy/config.defaults.yaml merge=joy-yaml"));
+        assert!(content.contains(".joy/logs/*.log merge=union"));
+    }
+
+    #[test]
+    fn init_does_not_duplicate_gitattributes_block() {
+        let dir = tempdir().unwrap();
+        init(InitOptions {
+            root: dir.path().to_path_buf(),
+            name: Some("Test".into()),
+            acronym: None,
+            user: None,
+            language: None,
+        })
+        .unwrap();
+        let first = std::fs::read_to_string(dir.path().join(".gitattributes")).unwrap();
+
+        super::ensure_gitattributes(dir.path()).unwrap();
+        let second = std::fs::read_to_string(dir.path().join(".gitattributes")).unwrap();
+
+        assert_eq!(first, second);
+        assert_eq!(second.matches(GITATTRIBUTES_BLOCK_START).count(), 1);
+    }
+
+    #[test]
+    fn init_registers_merge_driver_in_git_config() {
+        let dir = tempdir().unwrap();
+        init(InitOptions {
+            root: dir.path().to_path_buf(),
+            name: Some("Test".into()),
+            acronym: None,
+            user: None,
+            language: None,
+        })
+        .unwrap();
+
+        let vcs = default_vcs();
+        let name = vcs.config_get(dir.path(), MERGE_DRIVER_NAME_KEY).unwrap();
+        let cmd = vcs.config_get(dir.path(), MERGE_DRIVER_CMD_KEY).unwrap();
+        assert_eq!(name, MERGE_DRIVER_NAME_VALUE);
+        assert_eq!(cmd, MERGE_DRIVER_CMD_VALUE);
+        assert!(cmd.contains("--ours-rev %X"));
+        assert!(cmd.contains("--theirs-rev %Y"));
     }
 
     #[test]

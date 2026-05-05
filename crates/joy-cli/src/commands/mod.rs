@@ -18,6 +18,7 @@ pub mod find;
 pub mod init;
 pub mod log;
 pub mod ls;
+pub mod merge;
 pub mod milestone;
 pub mod project;
 pub mod release;

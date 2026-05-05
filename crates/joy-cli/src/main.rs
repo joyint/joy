@@ -106,6 +106,8 @@ enum Commands {
     Deauth(commands::deauth::DeauthArgs),
     /// Manage Crypt zones, items, paths, and grants
     Crypt(commands::crypt::CryptArgs),
+    /// Internal: Git merge driver helpers (invoked via .gitattributes).
+    Merge(commands::merge::MergeArgs),
 }
 
 #[derive(clap::Args)]
@@ -254,6 +256,7 @@ fn main() -> anyhow::Result<()> {
         Some(Commands::Auth(args)) => commands::auth::run(args),
         Some(Commands::Deauth(args)) => commands::deauth::run(args),
         Some(Commands::Crypt(args)) => commands::crypt::run(args),
+        Some(Commands::Merge(args)) => commands::merge::run(args),
         None => commands::board::run(BoardArgs {
             filter: commands::filter_args::FilterArgs::default(),
             short: false,
