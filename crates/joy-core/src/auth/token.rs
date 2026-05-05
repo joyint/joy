@@ -1,13 +1,20 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! AI delegation tokens with dual signatures (ADR-023, refined by ADR-033).
+//! AI delegation tokens with dual signatures (ADR-023, refined by ADR-033 and
+//! ADR-041).
 //!
 //! Each token carries two Ed25519 signatures:
 //! 1. Delegator signature (human's identity key) — proves authorization
 //! 2. Binding signature (stable delegation key per (human, AI)) — binds to
 //!    the public key recorded in `project.yaml` under
-//!    `members[<human>].ai_delegations[<ai-member>].delegation_key`.
+//!    `members[<human>].ai_delegations[<ai-member>].delegation_verifier`.
+//!
+//! Tokens carry a `scopes` claim (ADR-041 §3). The default `["auth"]` lets
+//! the AI run joy commands as the AI member. With `--crypt` (`["auth",
+//! "crypt"]`) the token additionally embeds the delegation private key as
+//! a 32-byte Ed25519 seed so the AI can unwrap zone keys for the duration
+//! of the token's TTL.
 //!
 //! Tokens are passed via `--token` flag or `JOY_TOKEN` env var to `joy auth`.
 
@@ -19,6 +26,17 @@ use crate::error::JoyError;
 
 /// Token prefix for visual identification.
 const TOKEN_PREFIX: &str = "joy_t_";
+
+/// Default scope set when a token's claims omit the field (back-compat).
+fn default_scopes() -> Vec<String> {
+    vec!["auth".to_string()]
+}
+
+/// Scope value indicating the token additionally carries the delegation
+/// private key for Crypt unwrap (ADR-041).
+pub const SCOPE_CRYPT: &str = "crypt";
+/// Scope value for ordinary AI command authentication (default).
+pub const SCOPE_AUTH: &str = "auth";
 
 /// Claims encoded in a delegation token.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,6 +50,18 @@ pub struct DelegationClaims {
     pub project_id: String,
     pub created: DateTime<Utc>,
     pub expires: Option<DateTime<Utc>>,
+    /// Capability scopes for this token. Default `["auth"]`. Tokens issued
+    /// with `--crypt` also carry `"crypt"` (ADR-041 §3). Unknown scopes are
+    /// preserved so newer scope vocabularies do not break older verifiers.
+    #[serde(default = "default_scopes")]
+    pub scopes: Vec<String>,
+}
+
+impl DelegationClaims {
+    /// Whether the token authorises Crypt unwrap (carries delegation privkey).
+    pub fn has_crypt_scope(&self) -> bool {
+        self.scopes.iter().any(|s| s == SCOPE_CRYPT)
+    }
 }
 
 /// A delegation token with dual signatures.
@@ -46,6 +76,13 @@ pub struct DelegationToken {
     /// value recorded in `project.yaml` under `ai_delegations`; kept as an
     /// aid for debugging and for error messages pointing at a mismatch.
     pub delegation_public_key: String,
+    /// Hex-encoded 32-byte Ed25519 seed for the delegation keypair. Present
+    /// only on tokens with `crypt` scope; lets the AI re-derive the
+    /// delegation keypair to unwrap zone keys (ADR-041 §2). Never persisted
+    /// on the AI's disk; it travels in the token string and lives in the
+    /// `JOY_SESSION` env var while a session is active.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delegation_private_key: Option<String>,
 }
 
 /// Create a delegation token with dual signatures.
@@ -54,15 +91,28 @@ pub struct DelegationToken {
 /// issuance via the first signature) and the stable per-(human, AI)
 /// delegation keypair (produces the binding signature). The matching
 /// `delegation_public_key` must already be recorded in `project.yaml`.
+///
+/// `delegation_seed` is the 32-byte seed of the delegation keypair. When
+/// `crypt_scope` is true (ADR-041 §3), the seed is embedded in the token
+/// so the AI can re-derive the keypair and unwrap zone keys; the token's
+/// scope claim becomes `["auth", "crypt"]`. When false, the seed is
+/// discarded and the token is auth-only.
 pub fn create_token(
     delegator_keypair: &IdentityKeypair,
     delegation_keypair: &IdentityKeypair,
+    delegation_seed: &[u8; 32],
     ai_member: &str,
     human: &str,
     project_id: &str,
     ttl: Option<Duration>,
+    crypt_scope: bool,
 ) -> DelegationToken {
     let now = Utc::now();
+    let scopes = if crypt_scope {
+        vec![SCOPE_AUTH.to_string(), SCOPE_CRYPT.to_string()]
+    } else {
+        vec![SCOPE_AUTH.to_string()]
+    };
     let claims = DelegationClaims {
         token_id: uuid::Uuid::new_v4().to_string(),
         ai_member: ai_member.to_string(),
@@ -70,17 +120,25 @@ pub fn create_token(
         project_id: project_id.to_string(),
         created: now,
         expires: ttl.map(|d| now + d),
+        scopes,
     };
     let claims_json = serde_json::to_string(&claims).expect("claims serialize");
 
     let delegator_sig = delegator_keypair.sign(claims_json.as_bytes());
     let binding_sig = delegation_keypair.sign(claims_json.as_bytes());
 
+    let delegation_private_key = if crypt_scope {
+        Some(hex::encode(delegation_seed))
+    } else {
+        None
+    };
+
     DelegationToken {
         claims,
         delegator_signature: hex::encode(delegator_sig),
         binding_signature: hex::encode(binding_sig),
         delegation_public_key: delegation_keypair.public_key().to_hex(),
+        delegation_private_key,
     }
 }
 
@@ -174,41 +232,68 @@ mod tests {
         (kp, pk)
     }
 
-    fn fresh_delegation() -> (IdentityKeypair, PublicKey) {
-        let kp = IdentityKeypair::from_random();
+    fn fresh_delegation() -> ([u8; 32], IdentityKeypair, PublicKey) {
+        use rand::RngCore;
+        let mut seed = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut seed);
+        let kp = IdentityKeypair::from_seed(&seed);
         let pk = kp.public_key();
-        (kp, pk)
+        (seed, kp, pk)
     }
 
     #[test]
     fn create_and_validate_token() {
         let (delegator, delegator_pk) = test_keypair();
-        let (delegation, delegation_pk) = fresh_delegation();
+        let (seed, delegation, delegation_pk) = fresh_delegation();
         let token = create_token(
             &delegator,
             &delegation,
+            &seed,
             "ai:claude@joy",
             "human@example.com",
             "TST",
             None,
+            false,
         );
         let claims = validate_token(&token, &delegator_pk, &delegation_pk, "TST").unwrap();
         assert_eq!(claims.ai_member, "ai:claude@joy");
         assert_eq!(claims.delegated_by, "human@example.com");
         assert_eq!(token.delegation_public_key, delegation_pk.to_hex());
+        assert!(token.delegation_private_key.is_none());
+        assert!(!claims.has_crypt_scope());
+    }
+
+    #[test]
+    fn crypt_token_carries_seed() {
+        let (delegator, _) = test_keypair();
+        let (seed, delegation, _) = fresh_delegation();
+        let token = create_token(
+            &delegator,
+            &delegation,
+            &seed,
+            "ai:claude@joy",
+            "human@example.com",
+            "TST",
+            None,
+            true,
+        );
+        assert_eq!(token.delegation_private_key, Some(hex::encode(seed)));
+        assert!(token.claims.has_crypt_scope());
     }
 
     #[test]
     fn token_with_expiry() {
         let (delegator, delegator_pk) = test_keypair();
-        let (delegation, delegation_pk) = fresh_delegation();
+        let (seed, delegation, delegation_pk) = fresh_delegation();
         let token = create_token(
             &delegator,
             &delegation,
+            &seed,
             "ai:claude@joy",
             "human@example.com",
             "TST",
             Some(Duration::hours(8)),
+            false,
         );
         let claims = validate_token(&token, &delegator_pk, &delegation_pk, "TST").unwrap();
         assert!(claims.expires.is_some());
@@ -217,14 +302,16 @@ mod tests {
     #[test]
     fn expired_token_rejected() {
         let (delegator, delegator_pk) = test_keypair();
-        let (delegation, delegation_pk) = fresh_delegation();
+        let (seed, delegation, delegation_pk) = fresh_delegation();
         let token = create_token(
             &delegator,
             &delegation,
+            &seed,
             "ai:claude@joy",
             "human@example.com",
             "TST",
             Some(Duration::seconds(-1)),
+            false,
         );
         assert!(validate_token(&token, &delegator_pk, &delegation_pk, "TST").is_err());
     }
@@ -232,14 +319,16 @@ mod tests {
     #[test]
     fn wrong_project_rejected() {
         let (delegator, delegator_pk) = test_keypair();
-        let (delegation, delegation_pk) = fresh_delegation();
+        let (seed, delegation, delegation_pk) = fresh_delegation();
         let token = create_token(
             &delegator,
             &delegation,
+            &seed,
             "ai:claude@joy",
             "human@example.com",
             "TST",
             None,
+            false,
         );
         assert!(validate_token(&token, &delegator_pk, &delegation_pk, "OTHER").is_err());
     }
@@ -247,14 +336,16 @@ mod tests {
     #[test]
     fn tampered_claims_rejected() {
         let (delegator, delegator_pk) = test_keypair();
-        let (delegation, delegation_pk) = fresh_delegation();
+        let (seed, delegation, delegation_pk) = fresh_delegation();
         let mut token = create_token(
             &delegator,
             &delegation,
+            &seed,
             "ai:claude@joy",
             "human@example.com",
             "TST",
             None,
+            false,
         );
         token.claims.ai_member = "ai:attacker@evil".into();
         assert!(validate_token(&token, &delegator_pk, &delegation_pk, "TST").is_err());
@@ -263,14 +354,16 @@ mod tests {
     #[test]
     fn wrong_delegator_key_rejected() {
         let (delegator, _) = test_keypair();
-        let (delegation, delegation_pk) = fresh_delegation();
+        let (seed, delegation, delegation_pk) = fresh_delegation();
         let token = create_token(
             &delegator,
             &delegation,
+            &seed,
             "ai:claude@joy",
             "human@example.com",
             "TST",
             None,
+            false,
         );
 
         let other_salt = crate::auth::generate_salt();
@@ -284,38 +377,65 @@ mod tests {
     #[test]
     fn wrong_delegation_key_rejected() {
         let (delegator, delegator_pk) = test_keypair();
-        let (delegation, _) = fresh_delegation();
+        let (seed, delegation, _) = fresh_delegation();
         let token = create_token(
             &delegator,
             &delegation,
+            &seed,
             "ai:claude@joy",
             "human@example.com",
             "TST",
             None,
+            false,
         );
 
         // Simulates rotation: validator looks up a different delegation_key in project.yaml.
-        let (_, rotated_pk) = fresh_delegation();
+        let (_, _, rotated_pk) = fresh_delegation();
         assert!(validate_token(&token, &delegator_pk, &rotated_pk, "TST").is_err());
     }
 
     #[test]
     fn encode_decode_roundtrip() {
         let (delegator, delegator_pk) = test_keypair();
-        let (delegation, delegation_pk) = fresh_delegation();
+        let (seed, delegation, delegation_pk) = fresh_delegation();
         let token = create_token(
             &delegator,
             &delegation,
+            &seed,
             "ai:claude@joy",
             "human@example.com",
             "TST",
             None,
+            false,
         );
         let encoded = encode_token(&token);
         assert!(encoded.starts_with("joy_t_"));
         let decoded = decode_token(&encoded).unwrap();
         let claims = validate_token(&decoded, &delegator_pk, &delegation_pk, "TST").unwrap();
         assert_eq!(claims.ai_member, "ai:claude@joy");
+    }
+
+    #[test]
+    fn legacy_token_without_scopes_field_decodes() {
+        // Old tokens (pre-ADR-041) had no `scopes` field in claims. Ensure
+        // they still deserialize, with the default scope ["auth"].
+        let legacy_json = r#"{
+            "claims": {
+                "token_id": "abc",
+                "ai_member": "ai:claude@joy",
+                "delegated_by": "human@example.com",
+                "project_id": "TST",
+                "created": "2026-05-01T00:00:00Z",
+                "expires": null
+            },
+            "delegator_signature": "00",
+            "binding_signature": "00",
+            "delegation_public_key": "00"
+        }"#;
+        let token: DelegationToken = serde_json::from_str(legacy_json).unwrap();
+        assert_eq!(token.claims.scopes, vec!["auth".to_string()]);
+        assert!(!token.claims.has_crypt_scope());
+        assert!(token.delegation_private_key.is_none());
     }
 
     #[test]

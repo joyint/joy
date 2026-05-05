@@ -1,0 +1,35 @@
+id: JOY-015B-53
+title: 'Implement ADR-041: passphrase-derived AI delegation'
+type: story
+status: in-progress
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- plan
+- implement
+- review
+effort: 6
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-05T16:10:06.761519Z
+updated: 2026-05-05T16:12:29.607321Z
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-05T16:12:29.607321Z
+  text: |-
+    Plan fuer diese Session: ADR-041 v2 Kernverhalten implementieren.
+    Scope dieser Session:
+    - Token claims: scopes-Feld hinzufuegen (Default [auth]), wire-format um optionales delegation_private_key erweitern
+    - joy auth token add --crypt Flag: bettet Delegation-Privkey in den Token ein
+    - Token Redemption: parst scopes, packt Privkey in JOY_SESSION bei crypt-Scope
+    - session.expires = min(session_ttl, token.expires) Klemmung
+    - JOY_SESSION Encoding erweitern: optional embedded delegation-privkey
+    - Crypt grant/revoke fuer AI: zone-major Wrap-Layout unter crypt.zones.<zone>.delegations.<ai>.<operator>
+    - Crypt Unwrap Pfad: liest delegation-privkey aus JOY_SESSION wenn verfuegbar
+    - Tests fuer das Kernverhalten
+
+    Deferred (Follow-up Items):
+    - On-disk Delegation-Key-File entfernen (heute dual-mode ok)
+    - joy auth delegation ls / rotate als eigene Subkommandos
+    - Migration alter wraps
+    - Volle bats-E2E-Suite

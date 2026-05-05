@@ -96,20 +96,31 @@ pub fn create_session(
 /// claims; the matching private key must live in the `JOY_SESSION` env var
 /// of the caller. `delegation_key` is the hex-encoded public key of the
 /// stable ai_delegations entry; rotating that key invalidates the session.
+///
+/// Per ADR-041 §6, the `token_expires` is an upper bound on the session's
+/// own expiry: `session.expires = min(session_ttl, token_expires)`. When
+/// the AI redeems a 30-minute Crypt token, the session must die after 30
+/// minutes too, regardless of the configured session TTL.
 pub fn create_session_for_ai(
     ephemeral_keypair: &IdentityKeypair,
     member: &str,
     project_id: &str,
     ttl: Option<Duration>,
     delegation_key: &str,
+    token_expires: Option<DateTime<Utc>>,
 ) -> SessionToken {
     let now = Utc::now();
     let ttl = ttl.unwrap_or_else(|| Duration::hours(DEFAULT_TTL_HOURS));
+    let session_expiry = now + ttl;
+    let expires = match token_expires {
+        Some(token_exp) if token_exp < session_expiry => token_exp,
+        _ => session_expiry,
+    };
     let claims = SessionClaims {
         member: member.to_string(),
         project_id: project_id.to_string(),
         created: now,
-        expires: now + ttl,
+        expires,
         token_key: Some(delegation_key.to_string()),
         session_public_key: Some(ephemeral_keypair.public_key().to_hex()),
         tty: None,
@@ -209,37 +220,94 @@ pub fn session_id(project_id: &str, member: &str) -> String {
 pub const SESSION_ENV_PREFIX: &str = "joy_s_";
 const SESSION_ID_LEN: usize = 12;
 const SESSION_PRIVATE_LEN: usize = 32;
+const DELEGATION_PRIVATE_LEN: usize = 32;
 
-/// Encode a `JOY_SESSION` env var value from the session id (hex) and the
-/// 32-byte ephemeral private key. Layout of the decoded payload:
-/// `[sid_raw 12 bytes][ephemeral_private 32 bytes]`, base64-encoded.
+/// Encode a `JOY_SESSION` env var value. Backward-compatible with sessions
+/// that carry only the ephemeral session key; pass `delegation_private =
+/// None` for that case.
+///
+/// Layout (base64-encoded):
+/// - Auth-only:    `[sid 12][session_priv 32]` (44 bytes)
+/// - Auth + Crypt: `[sid 12][session_priv 32][delegation_priv 32]` (76 bytes)
+///
+/// Per ADR-041 §5, the delegation private key is included exactly when the
+/// originating token had `crypt` scope. The AI's joy commands read the
+/// delegation key from this env var to unwrap zone keys; it never lives on
+/// disk.
 pub fn encode_session_env(sid_hex: &str, ephemeral_private: &[u8; SESSION_PRIVATE_LEN]) -> String {
+    encode_session_env_full(sid_hex, ephemeral_private, None)
+}
+
+/// Encode a `JOY_SESSION` env var value with an optional embedded
+/// delegation private key (ADR-041 §5).
+pub fn encode_session_env_full(
+    sid_hex: &str,
+    ephemeral_private: &[u8; SESSION_PRIVATE_LEN],
+    delegation_private: Option<&[u8; DELEGATION_PRIVATE_LEN]>,
+) -> String {
     let sid_bytes = hex::decode(sid_hex).expect("session id must be valid hex");
     assert_eq!(
         sid_bytes.len(),
         SESSION_ID_LEN,
         "session id length mismatch"
     );
-    let mut payload = Vec::with_capacity(SESSION_ID_LEN + SESSION_PRIVATE_LEN);
+    let total_len = SESSION_ID_LEN
+        + SESSION_PRIVATE_LEN
+        + if delegation_private.is_some() {
+            DELEGATION_PRIVATE_LEN
+        } else {
+            0
+        };
+    let mut payload = Vec::with_capacity(total_len);
     payload.extend_from_slice(&sid_bytes);
     payload.extend_from_slice(ephemeral_private);
+    if let Some(dpk) = delegation_private {
+        payload.extend_from_slice(dpk);
+    }
     use base64ct::{Base64, Encoding};
     format!("{SESSION_ENV_PREFIX}{}", Base64::encode_string(&payload))
 }
 
 /// Parse a `JOY_SESSION` env var value produced by `encode_session_env`.
 /// Returns `(sid_hex, ephemeral_private_bytes)` or None on malformed input.
+/// Sessions with an embedded delegation private key (Crypt scope) parse
+/// successfully here too; use `parse_session_env_full` to access the
+/// delegation key.
 pub fn parse_session_env(env_value: &str) -> Option<(String, [u8; SESSION_PRIVATE_LEN])> {
+    let (sid, session_priv, _) = parse_session_env_full(env_value)?;
+    Some((sid, session_priv))
+}
+
+/// Parse a `JOY_SESSION` env var value, returning the session id, the
+/// ephemeral session private key, and (if the originating token was
+/// Crypt-scoped) the delegation private key embedded for zone-key unwrap
+/// (ADR-041 §5).
+pub fn parse_session_env_full(
+    env_value: &str,
+) -> Option<(
+    String,
+    [u8; SESSION_PRIVATE_LEN],
+    Option<[u8; DELEGATION_PRIVATE_LEN]>,
+)> {
     let encoded = env_value.strip_prefix(SESSION_ENV_PREFIX)?;
     use base64ct::{Base64, Encoding};
     let payload = Base64::decode_vec(encoded).ok()?;
-    if payload.len() != SESSION_ID_LEN + SESSION_PRIVATE_LEN {
+    let auth_only_len = SESSION_ID_LEN + SESSION_PRIVATE_LEN;
+    let with_crypt_len = auth_only_len + DELEGATION_PRIVATE_LEN;
+    if payload.len() != auth_only_len && payload.len() != with_crypt_len {
         return None;
     }
     let sid_hex = hex::encode(&payload[..SESSION_ID_LEN]);
-    let mut private = [0u8; SESSION_PRIVATE_LEN];
-    private.copy_from_slice(&payload[SESSION_ID_LEN..]);
-    Some((sid_hex, private))
+    let mut session_priv = [0u8; SESSION_PRIVATE_LEN];
+    session_priv.copy_from_slice(&payload[SESSION_ID_LEN..auth_only_len]);
+    let delegation_priv = if payload.len() == with_crypt_len {
+        let mut dpk = [0u8; DELEGATION_PRIVATE_LEN];
+        dpk.copy_from_slice(&payload[auth_only_len..]);
+        Some(dpk)
+    } else {
+        None
+    };
+    Some((sid_hex, session_priv, delegation_priv))
 }
 
 /// Save a session token to disk.
@@ -413,7 +481,8 @@ mod tests {
     fn ai_session_carries_ephemeral_public_key() {
         let ephemeral = IdentityKeypair::from_random();
         let ephemeral_pk = ephemeral.public_key().to_hex();
-        let token = create_session_for_ai(&ephemeral, "ai:claude@joy", "TST", None, "dkey");
+        let token =
+            create_session_for_ai(&ephemeral, "ai:claude@joy", "TST", None, "dkey", None);
         assert_eq!(
             token.claims.session_public_key.as_deref(),
             Some(ephemeral_pk.as_str())
@@ -422,6 +491,69 @@ mod tests {
         // Ensure the session signature validates against the ephemeral public key.
         let pk = PublicKey::from_hex(&ephemeral_pk).unwrap();
         validate_session(&token, &pk, "TST").unwrap();
+    }
+
+    #[test]
+    fn ai_session_clamped_to_token_expiry() {
+        // ADR-041 §6: a 30-minute token must not produce a 24h session.
+        let ephemeral = IdentityKeypair::from_random();
+        let token_expires = Utc::now() + Duration::minutes(30);
+        let token = create_session_for_ai(
+            &ephemeral,
+            "ai:claude@joy",
+            "TST",
+            None,
+            "dkey",
+            Some(token_expires),
+        );
+        // Session expiry should equal token_expires (within a tiny window).
+        let delta = (token.claims.expires - token_expires).num_seconds().abs();
+        assert!(delta < 2, "session expiry should match token expiry");
+    }
+
+    #[test]
+    fn ai_session_uses_session_ttl_when_token_lives_longer() {
+        let ephemeral = IdentityKeypair::from_random();
+        let token_expires = Utc::now() + Duration::days(7);
+        let token = create_session_for_ai(
+            &ephemeral,
+            "ai:claude@joy",
+            "TST",
+            Some(Duration::hours(1)),
+            "dkey",
+            Some(token_expires),
+        );
+        // Session expiry should be ~1h, not 7 days.
+        let session_ttl = token.claims.expires - token.claims.created;
+        assert!(
+            session_ttl <= Duration::hours(1),
+            "session must respect its own TTL when token lives longer"
+        );
+    }
+
+    #[test]
+    fn session_env_full_roundtrip_with_delegation() {
+        let sid = "0123456789abcdef01234567";
+        let session_priv = [7u8; 32];
+        let delegation_priv = [9u8; 32];
+        let encoded = encode_session_env_full(sid, &session_priv, Some(&delegation_priv));
+        let (decoded_sid, decoded_session, decoded_delegation) =
+            parse_session_env_full(&encoded).unwrap();
+        assert_eq!(decoded_sid, sid);
+        assert_eq!(decoded_session, session_priv);
+        assert_eq!(decoded_delegation, Some(delegation_priv));
+    }
+
+    #[test]
+    fn session_env_legacy_auth_only_still_parses() {
+        let sid = "0123456789abcdef01234567";
+        let session_priv = [7u8; 32];
+        let encoded = encode_session_env(sid, &session_priv);
+        let (decoded_sid, decoded_session, decoded_delegation) =
+            parse_session_env_full(&encoded).unwrap();
+        assert_eq!(decoded_sid, sid);
+        assert_eq!(decoded_session, session_priv);
+        assert!(decoded_delegation.is_none());
     }
 
     #[test]

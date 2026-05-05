@@ -125,6 +125,13 @@ struct TokenAddArgs {
     /// Token expiry in hours (default 24; multi-use within TTL per ADR-034)
     #[arg(long)]
     ttl: Option<i64>,
+
+    /// Issue with Crypt scope: embed the delegation private key in the
+    /// token so the AI can unwrap zone keys for any zone the operator's
+    /// delegation has wraps for (ADR-041 §3). Without this flag the token
+    /// is auth-only.
+    #[arg(long)]
+    crypt: bool,
 }
 
 #[derive(Args)]
@@ -825,12 +832,55 @@ fn auth_with_token(
     // reuse the session file.
     let ephemeral_keypair = IdentityKeypair::from_random();
     let ephemeral_private = ephemeral_keypair.to_seed_bytes();
+
+    // ADR-041 §5: when the token carries the `crypt` scope, the embedded
+    // delegation private key (32-byte Ed25519 seed) is propagated through
+    // JOY_SESSION so subsequent joy commands on this AI session can unwrap
+    // zone keys without further passphrase entry by the operator.
+    let delegation_private: Option<[u8; 32]> = if claims.has_crypt_scope() {
+        match delegation.delegation_private_key.as_ref() {
+            Some(hex_seed) => {
+                let bytes = hex::decode(hex_seed).map_err(|e| {
+                    anyhow::anyhow!("Token has malformed delegation_private_key: {e}")
+                })?;
+                if bytes.len() != 32 {
+                    anyhow::bail!(
+                        "Token's delegation_private_key has wrong length: expected 32, got {}",
+                        bytes.len()
+                    );
+                }
+                let mut seed = [0u8; 32];
+                seed.copy_from_slice(&bytes);
+                // Verify the seed produces the public key we expect.
+                let derived = IdentityKeypair::from_seed(&seed);
+                if derived.public_key().to_hex() != delegation_entry.delegation_verifier {
+                    anyhow::bail!(
+                        "Token's delegation_private_key does not match the registered \
+                         delegation_verifier. The delegation may have been rotated since the \
+                         token was issued; ask the operator for a fresh token."
+                    );
+                }
+                Some(seed)
+            }
+            None => anyhow::bail!(
+                "Token claims include the `crypt` scope but the delegation private key is \
+                 missing from the token. Ask the operator to re-issue with --crypt."
+            ),
+        }
+    } else {
+        None
+    };
+
+    // ADR-041 §6: bound the session lifetime by the token expiry so a
+    // short-lived Crypt token (e.g. --ttl 30m) actually grants only that
+    // window of access.
     let session_token = session::create_session_for_ai(
         &ephemeral_keypair,
         &claims.ai_member,
         project_id,
         None,
         &delegation_entry.delegation_verifier,
+        claims.expires,
     );
     session::save_session(project_id, &session_token)?;
 
@@ -841,7 +891,11 @@ fn auth_with_token(
     // would contradict the proof-of-possession property. The AI tool is
     // responsible for propagating the env value into its subshells.
     let sid = session::session_id(project_id, &claims.ai_member);
-    let env_value = session::encode_session_env(&sid, &ephemeral_private);
+    let env_value = session::encode_session_env_full(
+        &sid,
+        &ephemeral_private,
+        delegation_private.as_ref(),
+    );
 
     if crate::output::is_json() {
         #[derive(serde::Serialize)]
@@ -1218,107 +1272,112 @@ fn run_token_add(
     let existing_private = delegation::load_delegation_key(&project_id, &args.member)?;
 
     // `delegation_salt_to_persist` is `Some` only when we end up writing a
-    // brand-new project.yaml entry (the (None, None) bootstrap case).
-    let (delegation_keypair, delegation_salt_to_persist) =
-        match (&existing_public, &existing_private) {
-            (Some(pub_hex), Some(seed)) => {
-                let kp = IdentityKeypair::from_seed(seed);
-                if kp.public_key().to_hex() == *pub_hex {
-                    (kp, None)
-                } else if let Some(salt_hex) = &existing_salt {
-                    // Cache stale (typically: another machine rotated under
-                    // ADR-037). Try re-deriving from passphrase + salt before
-                    // bailing -- if the result matches the recorded verifier,
-                    // overwrite the stale cache and continue without forcing
-                    // another rotation.
-                    let salt = Salt::from_hex(salt_hex)?;
-                    let new_seed = delegation::derive_delegation_seed(
-                        &identity_seed,
-                        &salt,
-                        &project_id,
-                        &args.member,
-                    );
-                    let derived_kp = IdentityKeypair::from_seed(&new_seed);
-                    if derived_kp.public_key().to_hex() == *pub_hex {
-                        delegation::save_delegation_key(&project_id, &args.member, &new_seed)?;
-                        (derived_kp, None)
-                    } else {
-                        anyhow::bail!(
-                            "Delegation state for {m} is inconsistent: neither the local private \
-                             key nor a passphrase-derived candidate match the public key recorded \
-                             in project.yaml. Run `joy ai rotate {m}` to replace the keypair with \
-                             a fresh one. Any prior tokens are invalidated.",
-                            m = args.member
-                        );
-                    }
+    // brand-new project.yaml entry (the (None, None) bootstrap case). The
+    // 32-byte seed comes back so the caller can embed it in `--crypt`
+    // tokens (ADR-041 §3).
+    let (delegation_keypair, delegation_seed, delegation_salt_to_persist): (
+        IdentityKeypair,
+        [u8; 32],
+        Option<String>,
+    ) = match (&existing_public, &existing_private) {
+        (Some(pub_hex), Some(seed)) => {
+            let kp = IdentityKeypair::from_seed(seed);
+            if kp.public_key().to_hex() == *pub_hex {
+                (kp, *seed, None)
+            } else if let Some(salt_hex) = &existing_salt {
+                // Cache stale (typically: another machine rotated under
+                // ADR-037). Try re-deriving from passphrase + salt before
+                // bailing -- if the result matches the recorded verifier,
+                // overwrite the stale cache and continue without forcing
+                // another rotation.
+                let salt = Salt::from_hex(salt_hex)?;
+                let new_seed = delegation::derive_delegation_seed(
+                    &identity_seed,
+                    &salt,
+                    &project_id,
+                    &args.member,
+                );
+                let derived_kp = IdentityKeypair::from_seed(&new_seed);
+                if derived_kp.public_key().to_hex() == *pub_hex {
+                    delegation::save_delegation_key(&project_id, &args.member, &new_seed)?;
+                    (derived_kp, new_seed, None)
                 } else {
                     anyhow::bail!(
-                        "Delegation state for {m} is inconsistent: the local private key does not \
-                         match the public key recorded in project.yaml, and the entry has no \
-                         delegation_salt to re-derive from (legacy ADR-033 §1 entry). \
-                         Run `joy ai rotate {m}` to replace the keypair with a fresh one. \
-                         Any prior tokens are invalidated.",
+                        "Delegation state for {m} is inconsistent: neither the local private \
+                         key nor a passphrase-derived candidate match the public key recorded \
+                         in project.yaml. Run `joy ai rotate {m}` to replace the keypair with \
+                         a fresh one. Any prior tokens are invalidated.",
                         m = args.member
                     );
                 }
+            } else {
+                anyhow::bail!(
+                    "Delegation state for {m} is inconsistent: the local private key does not \
+                     match the public key recorded in project.yaml, and the entry has no \
+                     delegation_salt to re-derive from (legacy ADR-033 §1 entry). \
+                     Run `joy ai rotate {m}` to replace the keypair with a fresh one. \
+                     Any prior tokens are invalidated.",
+                    m = args.member
+                );
             }
-            (None, None) => {
-                let new_salt = generate_salt();
+        }
+        (None, None) => {
+            let new_salt = generate_salt();
+            let seed = delegation::derive_delegation_seed(
+                &identity_seed,
+                &new_salt,
+                &project_id,
+                &args.member,
+            );
+            let kp = IdentityKeypair::from_seed(&seed);
+            delegation::save_delegation_key(&project_id, &args.member, &seed)?;
+            (kp, seed, Some(new_salt.to_hex()))
+        }
+        (Some(pub_hex), None) => {
+            if let Some(salt_hex) = &existing_salt {
+                let salt = Salt::from_hex(salt_hex)?;
                 let seed = delegation::derive_delegation_seed(
                     &identity_seed,
-                    &new_salt,
+                    &salt,
                     &project_id,
                     &args.member,
                 );
                 let kp = IdentityKeypair::from_seed(&seed);
-                delegation::save_delegation_key(&project_id, &args.member, &seed)?;
-                (kp, Some(new_salt.to_hex()))
-            }
-            (Some(pub_hex), None) => {
-                if let Some(salt_hex) = &existing_salt {
-                    let salt = Salt::from_hex(salt_hex)?;
-                    let seed = delegation::derive_delegation_seed(
-                        &identity_seed,
-                        &salt,
-                        &project_id,
-                        &args.member,
-                    );
-                    let kp = IdentityKeypair::from_seed(&seed);
-                    if kp.public_key().to_hex() != *pub_hex {
-                        anyhow::bail!(
-                            "Re-derived delegation key for {m} does not match the public key \
-                             recorded in project.yaml. The salt or human identity may have been \
-                             rotated since this checkout was last updated. Pull the latest \
-                             project.yaml and retry, or run `joy ai rotate {m}` to start a fresh \
-                             delegation.",
-                            m = args.member
-                        );
-                    }
-                    delegation::save_delegation_key(&project_id, &args.member, &seed)?;
-                    (kp, None)
-                } else {
+                if kp.public_key().to_hex() != *pub_hex {
                     anyhow::bail!(
-                        "Local delegation private key for {m} is missing on this machine, and \
-                         the project.yaml entry has no delegation_salt (legacy ADR-033 §1 \
-                         delegation). Run `joy ai rotate {m}` to replace the keypair with a \
-                         fresh derivation; this invalidates any prior tokens and any copy of \
-                         the private key on other machines.",
+                        "Re-derived delegation key for {m} does not match the public key \
+                         recorded in project.yaml. The salt or human identity may have been \
+                         rotated since this checkout was last updated. Pull the latest \
+                         project.yaml and retry, or run `joy ai rotate {m}` to start a fresh \
+                         delegation.",
                         m = args.member
-                    )
+                    );
                 }
-            }
-            (None, Some(_)) => {
-                let key_path = delegation::delegation_key_path(&project_id, &args.member)?;
+                delegation::save_delegation_key(&project_id, &args.member, &seed)?;
+                (kp, seed, None)
+            } else {
                 anyhow::bail!(
-                    "Local delegation key for {m} exists but project.yaml has no entry for it. \
-                     This is a manual-resolution state: remove the orphan key at {p} and re-run \
-                     `joy auth token add {m}` to bootstrap a fresh delegation, or investigate \
-                     why the project.yaml entry is missing.",
-                    m = args.member,
-                    p = key_path.display()
+                    "Local delegation private key for {m} is missing on this machine, and \
+                     the project.yaml entry has no delegation_salt (legacy ADR-033 §1 \
+                     delegation). Run `joy ai rotate {m}` to replace the keypair with a \
+                     fresh derivation; this invalidates any prior tokens and any copy of \
+                     the private key on other machines.",
+                    m = args.member
                 )
             }
-        };
+        }
+        (None, Some(_)) => {
+            let key_path = delegation::delegation_key_path(&project_id, &args.member)?;
+            anyhow::bail!(
+                "Local delegation key for {m} exists but project.yaml has no entry for it. \
+                 This is a manual-resolution state: remove the orphan key at {p} and re-run \
+                 `joy auth token add {m}` to bootstrap a fresh delegation, or investigate \
+                 why the project.yaml entry is missing.",
+                m = args.member,
+                p = key_path.display()
+            )
+        }
+    };
 
     let new_entry = delegation_salt_to_persist.is_some();
     let delegation_salt_hex = delegation_salt_to_persist;
@@ -1334,10 +1393,12 @@ fn run_token_add(
     let token_obj = token::create_token(
         &keypair,
         &delegation_keypair,
+        &delegation_seed,
         &args.member,
         &email,
         &project_id,
         ttl,
+        args.crypt,
     );
 
     // Persist the delegation public key on first issuance. Subsequent
