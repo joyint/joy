@@ -97,6 +97,7 @@ pub struct DelegationToken {
 /// so the AI can re-derive the keypair and unwrap zone keys; the token's
 /// scope claim becomes `["auth", "crypt"]`. When false, the seed is
 /// discarded and the token is auth-only.
+#[allow(clippy::too_many_arguments)]
 pub fn create_token(
     delegator_keypair: &IdentityKeypair,
     delegation_keypair: &IdentityKeypair,
