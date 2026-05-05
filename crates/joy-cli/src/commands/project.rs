@@ -137,19 +137,7 @@ pub fn run(args: ProjectArgs) -> Result<()> {
         }
         Some(ProjectCommand::Set(a)) => {
             ctx.enforce(&Action::ManageProject, "project")?;
-            // Acronym is embedded in the on-disk path of local delegation
-            // keys. Capture the current project id before mutating so that,
-            // after set_value flips the acronym, we can migrate the
-            // delegations directory atomically before touching project.yaml.
-            let old_project_id = joy_core::auth::session::project_id_of(&project);
             set_value(&mut project, &a.key, &a.value)?;
-            if a.key == "acronym" {
-                let new_project_id = joy_core::auth::session::project_id_of(&project);
-                joy_core::auth::delegation::rename_project_delegations(
-                    &old_project_id,
-                    &new_project_id,
-                )?;
-            }
             store::write_yaml_preserve(&project_path, &project)?;
             // write_yaml_preserve re-adds top-level keys present in the
             // existing file but missing from the serialized struct (so unknown

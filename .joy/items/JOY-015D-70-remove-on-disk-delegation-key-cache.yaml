@@ -1,14 +1,16 @@
 id: JOY-015D-70
 title: Remove on-disk delegation key cache, add legacy salt-less error
 type: task
-status: new
+status: closed
 priority: medium
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-05T17:25:01.546340Z
-updated: 2026-05-05T17:25:33.129245Z
+updated: 2026-05-05T17:53:46.237817Z
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-05-05T17:25:33.129244Z
@@ -29,3 +31,15 @@ comments:
     - Tests + Clippy gruen
 
     Voraussetzung: keine. Block fuer JOY-015E-4C (E2E will den neuen Stand testen)
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-05T17:53:46.176958Z
+  text: |-
+    [x] save_delegation_key, load_delegation_key, remove_delegation_key, delegation_key_path, rename_project_delegations entfernt aus joy-core/auth/delegation.rs
+    [x] Match-Arme in run_token_add reduziert auf drei Faelle: bootstrap (None,_) / re-derive (Some,Some) / legacy bail (Some,None)
+    [x] Legacy-Bail nutzt die kurze Fehlermeldung aus der Diskussion: 'Cannot issue a new token... Run: joy auth delegation rotate ... Existing tokens keep working...'
+    [x] run_ai_rotate ohne save_delegation_key
+    [x] ai.rs purge-Pfad ohne remove_delegation_key
+    [x] project.rs Acronym-Aenderung ohne rename_project_delegations
+    [x] auth/mod.rs STATE_ENV_LOCK entfernt (war nur fuer die geloeschten file-IO-Tests)
+    [x] joy auth update druckt eine zusaetzliche Warnung pro legacy Eintrag ohne delegation_salt
+    [x] cargo build, clippy, tests, fmt alle gruen

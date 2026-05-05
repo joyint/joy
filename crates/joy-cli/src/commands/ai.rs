@@ -825,13 +825,12 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
                 if project.members.remove(&member_id).is_some() {
                     dprintln!("  {}{:<24} member removed", color::check_mark(), member_id);
                     project_changed = true;
-                    // Remove AI member's session and per-human delegation key file.
+                    // Remove the AI member's local session file. The
+                    // delegation private key is not persisted on disk
+                    // (it is re-derived from the operator's passphrase
+                    // at issuance), so there is nothing else to clean.
                     if let Ok(project_id) = joy_core::auth::session::project_id(&root) {
                         let _ = joy_core::auth::session::remove_session(&project_id, &member_id);
-                        let _ = joy_core::auth::delegation::remove_delegation_key(
-                            &project_id,
-                            &member_id,
-                        );
                     }
                     // Remove delegation entries for this AI member from all
                     // human members in project.yaml.
