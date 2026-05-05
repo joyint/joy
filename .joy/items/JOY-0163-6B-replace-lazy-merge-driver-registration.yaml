@@ -1,0 +1,13 @@
+id: JOY-0163-6B
+title: Replace lazy merge-driver registration with a non-stopgap activation strategy
+type: rework
+status: new
+priority: medium
+capabilities:
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-05T22:10:05.718703Z
+updated: 2026-05-05T22:10:05.718703Z
+description: 'Lazy-registration in every joy invocation (JOY-0162) is a quick fix for the gap between binary upgrade and per-clone .gitattributes/git-config setup. Every command pays a small overhead, the magic is invisible to users, and it leaves a code path that has to stay behind any future schema change. Better long-term options to design through: (a) a clone/checkout hook installed by joy init that triggers onboard-equivalent on first command, (b) a dedicated ''joy migrate'' that compares stored vs current binary version and runs needed steps, (c) shipping a richer .gitattributes that does not require per-clone git config, (d) something else. Pick after JOY-0162 has stabilised and we have field signal.'

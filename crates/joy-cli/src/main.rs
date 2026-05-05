@@ -194,6 +194,15 @@ fn main() -> anyhow::Result<()> {
         return commands::config::run(args);
     }
 
+    // JOY-0162: keep the merge-driver registration in sync with the
+    // current binary. Best-effort, must never fail a user-facing
+    // command.
+    if let Ok(cwd) = std::env::current_dir() {
+        if let Some(root) = joy_core::store::find_project_root(&cwd) {
+            let _ = joy_core::init::ensure_lazy_activation(&root);
+        }
+    }
+
     let mut config = joy_core::store::load_config();
 
     // Extract --short from subcommands that support it

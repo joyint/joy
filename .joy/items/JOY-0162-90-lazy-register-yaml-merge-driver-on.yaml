@@ -1,0 +1,26 @@
+id: JOY-0162-90
+title: Lazy-register YAML merge driver on every joy invocation
+type: task
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-05T22:09:42.049378Z
+updated: 2026-05-05T22:13:14.052121Z
+description: |-
+  After joy v0.14.1 shipped the YAML-aware merge driver but without auto-activation, the binary upgrade alone does not protect existing repos: .gitattributes and the local merge.joy-yaml.driver config are written only by joy init/onboard. Users who upgrade joy and never re-run init keep the old (broken) merge behaviour and silently re-introduce duplicate-key incidents.
+
+  Fix: every joy invocation that finds a project root checks the local merge driver registration cheaply (two git config reads) and re-runs ensure_gitattributes + register_merge_driver if anything is stale. Best-effort, never fails a user-facing command. Cost target under 5ms.
+
+  This is a stopgap; see follow-up rework item.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-05T22:13:13.995012Z
+  text: |-
+    [x] joy-core/init.rs: ensure_lazy_activation(root) calls ensure_gitattributes + register_merge_driver. update_gitattributes_block now skips write+auto-stage when content already matches (idempotent on hot path).
+    [x] joy-cli/main.rs: invokes ensure_lazy_activation early on every command, best-effort, swallows errors.
+    [x] 3 bats tests: re-creates deleted .gitattributes; re-registers wiped git config; does not dirty clean working tree.

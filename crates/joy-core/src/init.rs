@@ -296,6 +296,17 @@ pub fn update_gitattributes_block(root: &Path, lines: &[&str]) -> Result<(), Joy
         format!("{}\n", block)
     };
 
+    // Idempotency: skip write + auto-stage when content already matches.
+    // The lazy-activation hook (called on every joy invocation) relies on
+    // this short-circuit to stay cheap and to not dirty the working tree.
+    if path.is_file() {
+        if let Ok(existing) = std::fs::read_to_string(&path) {
+            if existing == content {
+                return Ok(());
+            }
+        }
+    }
+
     std::fs::write(&path, &content).map_err(|e| JoyError::WriteFile { path, source: e })?;
     crate::git_ops::auto_git_add(root, &[".gitattributes"]);
     Ok(())
@@ -303,6 +314,25 @@ pub fn update_gitattributes_block(root: &Path, lines: &[&str]) -> Result<(), Joy
 
 fn ensure_gitattributes(root: &Path) -> Result<(), JoyError> {
     update_gitattributes_block(root, GITATTRIBUTES_BASE_ENTRIES)
+}
+
+/// Best-effort registration check, called before every joy invocation
+/// that has a project root. Brings `.gitattributes` and the local git
+/// merge-driver config in line with the current binary, so users who
+/// upgraded joy without re-running `joy init` still get the merge
+/// driver. See JOY-0162.
+///
+/// Idempotent and silent: the file write is skipped when the block is
+/// already up to date, and `register_merge_driver` only writes when the
+/// stored values differ.
+pub fn ensure_lazy_activation(root: &Path) -> Result<(), JoyError> {
+    let vcs = default_vcs();
+    if !vcs.is_repo(root) {
+        return Ok(());
+    }
+    ensure_gitattributes(root)?;
+    register_merge_driver(root)?;
+    Ok(())
 }
 
 /// Register the joy-yaml merge driver in the local Git config. Idempotent:
