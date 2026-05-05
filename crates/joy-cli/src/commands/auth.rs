@@ -156,14 +156,13 @@ struct TokenAddArgs {
     #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_ai_member))]
     member: String,
 
-    /// Token expiry in hours (default 24; multi-use within TTL per ADR-034)
+    /// Token expiry in hours (default 24; multi-use within the window)
     #[arg(long)]
     ttl: Option<i64>,
 
     /// Issue with Crypt scope: embed the delegation private key in the
-    /// token so the AI can unwrap zone keys for any zone the operator's
-    /// delegation has wraps for (ADR-041 §3). Without this flag the token
-    /// is auth-only.
+    /// token so the AI can unwrap zone keys for any zone your delegation
+    /// has wraps for. Without this flag the token is auth-only.
     #[arg(long)]
     crypt: bool,
 }
@@ -693,7 +692,7 @@ fn migrate_to_wrapped_seed(
     joy_core::git_ops::auto_git_add(root, &[&rel]);
 
     println!();
-    println!("Auth schema upgraded to wrapped-seed (ADR-039).");
+    println!("Auth schema upgraded to the wrapped-seed identity model.");
     println!("RECOVERY KEY (write this down now, it is shown only once):");
     println!();
     println!("    {}", recovery.to_display_string());
@@ -1589,7 +1588,7 @@ fn run_passphrase(current_flag: Option<&str>, new_flag: Option<&str>) -> Result<
         // Recovery key must reach the user; print before continuing so a
         // crash mid-rewrap leaves the recovery path intact.
         println!();
-        println!("Auth schema upgraded to wrapped-seed (ADR-039).");
+        println!("Auth schema upgraded to the wrapped-seed identity model.");
         println!("RECOVERY KEY (write this down now, it is shown only once):");
         println!();
         println!("    {}", recovery.to_display_string());

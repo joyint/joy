@@ -534,7 +534,7 @@ joy auth init                    # Choose a passphrase; your identity is now reg
 # > your passphrase. Joy never stores the plaintext recovery key.
 ```
 
-The recovery key is a one-shot escape hatch (ADR-039). It unlocks the
+The recovery key is a one-shot escape hatch. It unlocks the
 same identity keypair that your passphrase does, so you can reset the
 passphrase from a new machine without losing access to anything you
 have signed or encrypted under that identity.
@@ -567,8 +567,8 @@ joy auth passphrase              # Prompts for current, then new passphrase
 ```
 
 The wrap of your seed re-encrypts under the new passphrase KEK. Your
-identity keypair stays the same (ADR-039: the seed is the long-term
-secret, the passphrase is one of two keys that unwrap it), so existing
+identity keypair stays the same: the seed is the long-term secret, the
+passphrase is one of two keys that unwrap it. Existing
 attestations on your entry and Crypt zone wraps you have been granted
 remain valid. Existing sessions are invalidated; run `joy auth` once
 with the new passphrase.
@@ -654,7 +654,7 @@ security incidents, multi-tenant work where one client's content must
 never be visible to another. Crypt is selective end-to-end encryption:
 anything you mark via `joy crypt add` is AES-256-GCM-encrypted on the
 spot, and stays ciphertext through the working directory, Git's index,
-every commit, every clone, and the forge (ADR-040).
+every commit, every clone, and the forge.
 
 You opt in per item or per file/directory. Unmarked content stays plain.
 
@@ -747,7 +747,7 @@ The grant uses Bob's `verify_key` from `project.yaml`; Bob just needs
 to have run `joy auth` at least once so his key material is published
 for the pairwise wrap.
 
-**Grant access to an AI Tool (token-scoped, ADR-041):**
+**Grant access to an AI Tool (token-scoped):**
 
 AI Tools (Claude Code, Qwen, Mistral Vibe, Copilot, ...) work
 differently. Each operator has their own per-(operator, AI) delegation
@@ -780,12 +780,13 @@ default. The AI cannot extend its own access beyond the token window.
 joy ai rotate ai:claude@joy   # nuclear: every operator's delegation for claude is gone
 ```
 
-Per-operator rotation (invalidate only your own outstanding tokens
-without disturbing teammates) is part of the [ADR-041](https://github.com/joyint/project/blob/main/docs/dev/architecture/decisions/ADR-041-ai-tool-crypt-delegation.md)
-follow-up; `joy ai rotate` is the project-wide answer for now.
+Per-operator rotation - kills your outstanding tokens for one AI
+without touching teammates' delegations - is `joy auth delegation
+rotate <ai>`. `joy ai rotate <ai>` is the project-wide nuclear:
+every operator's delegation for that AI is gone.
 
 **No separate Crypt recovery.** Crypt access is tied to your Auth
-identity (ADR-039). As long as you can recover your identity via
+identity. As long as you can recover your identity via
 passphrase or the recovery key, every Crypt zone you have a wrap for
 remains decryptable. There is no second secret to lose.
 

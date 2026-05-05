@@ -61,7 +61,7 @@ enum AiCommand {
     Update(UpdateArgs),
     /// Remove AI tool configurations from this project
     Reset(ResetArgs),
-    /// Rotate the (human, AI) delegation keypair (ADR-033)
+    /// Rotate the (operator, AI) delegation keypair
     Rotate(RotateArgs),
 }
 
