@@ -747,6 +747,43 @@ The grant uses Bob's `verify_key` from `project.yaml`; Bob just needs
 to have run `joy auth` at least once so his key material is published
 for the pairwise wrap.
 
+**Grant access to an AI Tool (token-scoped, ADR-041):**
+
+AI Tools (Claude Code, Qwen, Mistral Vibe, Copilot, ...) work
+differently. Each operator has their own per-(operator, AI) delegation
+keypair, derived deterministically from the operator's seed at
+passphrase entry; the public key is registered once in `project.yaml`,
+the private key is never persisted. A `joy crypt grant ai:claude@joy
+--zone customer-x` writes one wrap per operator-delegation, all in one
+commit. Each operator's tokens then pick up the access:
+
+```sh
+joy auth token add ai:claude@joy             # auth-only token, default 24h
+joy auth token add ai:claude@joy --crypt --ttl 30m   # auth + crypt, 30 min
+joy crypt grant   ai:claude@joy --zone customer-x    # per-operator wraps
+joy crypt revoke  ai:claude@joy --zone customer-x    # remove all of them
+```
+
+The `--crypt` flag embeds your delegation private key in the token
+itself. The AI then carries that key in its `JOY_SESSION` env var
+(never on disk) and can unwrap zone keys until the token expires. An
+auth-only token (no `--crypt`) lets the AI run joy commands but
+returns "no access to zone" on any decrypt attempt.
+
+**Per-token expiry is honoured by the session.** A `--ttl 30m` token
+produces a 30-minute session, regardless of any longer session TTL
+default. The AI cannot extend its own access beyond the token window.
+
+**Rotation when something looks off:**
+
+```sh
+joy ai rotate ai:claude@joy   # nuclear: every operator's delegation for claude is gone
+```
+
+Per-operator rotation (invalidate only your own outstanding tokens
+without disturbing teammates) is part of the [ADR-041](https://github.com/joyint/project/blob/main/docs/dev/architecture/decisions/ADR-041-ai-tool-crypt-delegation.md)
+follow-up; `joy ai rotate` is the project-wide answer for now.
+
 **No separate Crypt recovery.** Crypt access is tied to your Auth
 identity (ADR-039). As long as you can recover your identity via
 passphrase or the recovery key, every Crypt zone you have a wrap for
