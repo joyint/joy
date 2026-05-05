@@ -3,6 +3,13 @@
 # forge release (that is created by the local `joy release publish`
 # before this workflow runs). See ADR-032 for the local-first
 # release paradigm.
+#
+# joy-core depends on joy-crypt via a path dependency
+# (`../crypt/crates/joy-crypt`). cargo metadata, cargo pkgid and
+# cargo publish all read the path even though the published manifest
+# strips it back to a version-only spec, so we clone joyint/crypt
+# as a sibling before invoking cargo. Both repos are public; default
+# GITHUB_TOKEN suffices.
 
 name: Publish to crates.io
 
@@ -25,6 +32,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          repository: joyint/crypt
+          path: ../crypt
           persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@stable

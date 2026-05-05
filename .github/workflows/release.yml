@@ -60,6 +60,13 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+      # joy-core depends on joy-crypt via a path dep at ../crypt/crates/joy-crypt.
+      # Standalone tag-driven workflow has no umbrella; clone the public sibling.
+      - uses: actions/checkout@v6
+        with:
+          repository: joyint/crypt
+          path: ../crypt
+          persist-credentials: false
       - name: Install dist
         # we specify bash to get pipefail; it guards against the `curl` command
         # failing. otherwise `sh` won't catch that `curl` returned non-0
@@ -120,6 +127,13 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+      # joy-core depends on joy-crypt via a path dep at ../crypt/crates/joy-crypt.
+      # Standalone tag-driven workflow has no umbrella; clone the public sibling.
+      - uses: actions/checkout@v6
+        with:
+          repository: joyint/crypt
+          path: ../crypt
+          persist-credentials: false
       - name: Install Rust non-interactively if not already installed
         if: ${{ matrix.container }}
         run: |
@@ -179,6 +193,13 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+      # joy-core depends on joy-crypt via a path dep at ../crypt/crates/joy-crypt.
+      # Standalone tag-driven workflow has no umbrella; clone the public sibling.
+      - uses: actions/checkout@v6
+        with:
+          repository: joyint/crypt
+          path: ../crypt
+          persist-credentials: false
       - name: Install cached dist
         uses: actions/download-artifact@v7
         with:
@@ -229,6 +250,13 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+      # joy-core depends on joy-crypt via a path dep at ../crypt/crates/joy-crypt.
+      # Standalone tag-driven workflow has no umbrella; clone the public sibling.
+      - uses: actions/checkout@v6
+        with:
+          repository: joyint/crypt
+          path: ../crypt
+          persist-credentials: false
       - name: Install cached dist
         uses: actions/download-artifact@v7
         with:
@@ -308,3 +336,10 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+      # joy-core depends on joy-crypt via a path dep at ../crypt/crates/joy-crypt.
+      # Standalone tag-driven workflow has no umbrella; clone the public sibling.
+      - uses: actions/checkout@v6
+        with:
+          repository: joyint/crypt
+          path: ../crypt
+          persist-credentials: false
