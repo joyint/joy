@@ -33,11 +33,11 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: actions/checkout@v6
-        with:
-          repository: joyint/crypt
-          path: ../crypt
-          persist-credentials: false
+      # joy-core depends on joy-crypt via a path dep at ../crypt/crates/joy-crypt.
+      # actions/checkout refuses paths above $GITHUB_WORKSPACE, so we shell-
+      # clone crypt into the parent directory of the workspace.
+      - name: Clone joyint/crypt sibling
+        run: git clone --depth 1 https://github.com/joyint/crypt.git ../crypt
 
       - uses: dtolnay/rust-toolchain@stable
 
