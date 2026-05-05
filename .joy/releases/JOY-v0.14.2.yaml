@@ -1,0 +1,14 @@
+version: v0.14.2
+date: 2026-05-05
+previous: v0.14.1
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 8
+  items: 2
+items:
+  tasks:
+  - id: JOY-0162-90
+    title: Lazy-register YAML merge driver on every joy invocation
+  bugs:
+  - id: JOY-0163-95
+    title: joy release record skips .yaml when no items closed; publish then fails

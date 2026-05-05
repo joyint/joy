@@ -51,3 +51,4 @@
 2026-05-05T22:13:14.059Z JOY-0162-90 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-05-05T22:13:14.100Z JOY-0163-95 comment.added "[x] joy-cli/commands/release.rs::record: removed early-exit on empty closed_ids. Empty releases now produce a .yaml + commit + tag, no prompt. Non-empty path keeps the y/N prompt.\n[x] 2 bats tests: empty release writes .yaml and tags v0.0.1; no prompt is shown for empty release (verified with </dev/null)." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-05-05T22:13:14.153Z JOY-0163-95 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-05T22:21:48.940Z v0.14.2 release.created [horst.schwarz@joydev.com]
