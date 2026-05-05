@@ -1,0 +1,14 @@
+version: v0.14.1
+date: 2026-05-05
+previous: v0.14.0
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 5
+  items: 1
+- id: horst.schwarz@joydev.com
+  events: 1
+  items: 1
+items:
+  tasks:
+  - id: JOY-00B0
+    title: YAML-aware Git merge driver for .joy/.jot files
