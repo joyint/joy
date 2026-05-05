@@ -1,0 +1,21 @@
+id: JOY-0163-95
+title: joy release record skips .yaml when no items closed; publish then fails
+type: bug
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-05T22:10:05.718703Z
+updated: 2026-05-05T22:13:14.145899Z
+description: 'joy release record returns Ok early with ''No items closed since last release'' and creates no .yaml, no commit, no tag. joy release publish in the same flow then fails with ''no release record for vX.Y.Z''. Real incident on 2026-05-05: jyn 0.6.3 release was tagged + pushed but the forge release crashed at publish time, requiring manual recovery (commit a hand-written empty .yaml). Fix: record always writes a .yaml (incl. empty contributors/items), without prompting when empty; publish stays as-is. Audit trail then has one record per version, and release-all becomes idempotent across submodules with no closed items.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-05T22:13:14.093205Z
+  text: |-
+    [x] joy-cli/commands/release.rs::record: removed early-exit on empty closed_ids. Empty releases now produce a .yaml + commit + tag, no prompt. Non-empty path keeps the y/N prompt.
+    [x] 2 bats tests: empty release writes .yaml and tags v0.0.1; no prompt is shown for empty release (verified with </dev/null).

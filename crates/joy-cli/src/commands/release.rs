@@ -187,11 +187,7 @@ fn record(args: RecordArgs) -> Result<()> {
 
     let cutoff = event_log::last_release_timestamp(&ctx.root)?;
     let closed_ids = event_log::closed_item_ids_since(&ctx.root, cutoff.as_deref())?;
-
-    if closed_ids.is_empty() {
-        println!("No items closed since last release.");
-        return Ok(());
-    }
+    let is_empty_release = closed_ids.is_empty();
 
     let all_items = items::load_items(&ctx.root)?;
     let mut release_items = ReleaseItems::default();
@@ -238,13 +234,24 @@ fn record(args: RecordArgs) -> Result<()> {
 
     print_release(&release);
 
-    print!("\nRecord release {}? [y/N] ", version);
-    std::io::stdout().flush()?;
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input)?;
-    if !input.trim().eq_ignore_ascii_case("y") {
-        println!("Aborted.");
-        return Ok(());
+    if is_empty_release {
+        // No items closed since the previous release. We still record an
+        // empty .yaml so that `joy release publish` (and downstream
+        // release-all) is idempotent across submodules with nothing
+        // closed; otherwise the absent record breaks the publish step
+        // (JOY-0163-95).
+        println!(
+            "\nNo items closed since the previous release; recording empty release {version}."
+        );
+    } else {
+        print!("\nRecord release {}? [y/N] ", version);
+        std::io::stdout().flush()?;
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        if !input.trim().eq_ignore_ascii_case("y") {
+            println!("Aborted.");
+            return Ok(());
+        }
     }
 
     releases::save_release(&ctx.root, acronym, &release)?;
