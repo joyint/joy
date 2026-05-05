@@ -1388,14 +1388,18 @@ fn run_token_add(
             .unwrap_or_else(|| chrono::Duration::hours(DEFAULT_TOKEN_TTL_HOURS)),
     );
     let token_obj = token::create_token(
-        &keypair,
-        &delegation_keypair,
-        &delegation_seed,
-        &args.member,
-        &email,
-        &project_id,
-        ttl,
-        args.crypt,
+        token::TokenSigningKeys {
+            delegator: &keypair,
+            delegation: &delegation_keypair,
+            delegation_seed: &delegation_seed,
+        },
+        token::TokenIssueParams {
+            ai_member: &args.member,
+            human: &email,
+            project_id: &project_id,
+            ttl,
+            crypt_scope: args.crypt,
+        },
     );
 
     // Persist the delegation public key on first issuance. Subsequent
