@@ -1,0 +1,31 @@
+id: JOY-015D-70
+title: Remove on-disk delegation key cache, add legacy salt-less error
+type: task
+status: new
+priority: medium
+capabilities:
+- implement
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-05T17:25:01.546340Z
+updated: 2026-05-05T17:25:33.129245Z
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-05T17:25:33.129244Z
+  text: |-
+    Hintergrund: ADR-041 v2 fordert no-on-disk-Privkey fuer AI-Tool-Delegationen. Aktuell ist der Cache unter ~/.local/state/joy/delegations/<project>/<ai>.key noch dual-mode aktiv (save/load). Re-Derive aus Operator-Seed + delegation_salt (HKDF) ist schon implementiert (ADR-037).
+
+    Was zu tun:
+    - joy_core::auth::delegation::save_delegation_key, load_delegation_key, remove_delegation_key entfernen
+    - delegation_key_path und rename_project_delegations entfernen (sind verwaiste Helfer)
+    - run_token_add Match-Arme reduzieren auf zwei Faelle: (Some(verifier), Some(salt)) -> re-derive, validate, issue; (Some(verifier), None) -> bail mit Migrations-Fehler; (None, _) -> bootstrap mit fresh salt
+    - Bestehender opportunistischer relock-Walk (auth.rs run_auth) muss den File-Pfad nicht mehr aufraeumen
+    - joy auth update druckt bei detektierter Legacy-Form (no salt) eine einmalige Warnung 'AI delegation for <ai> needs rotation, run joy ai rotate <ai> at next token issuance'
+
+    Acceptance:
+    - File ist nicht mehr existent in joy-State; auch nach joy auth token add wird nichts unter ~/.local/state/joy/delegations/ angelegt
+    - Legacy-Projekte ohne salt: joy auth token add bailt mit der knappen Fehlermeldung (siehe JOY-0161-B6 fuer Wortlaut-Konsens)
+    - 365T-Tokens aus Legacy-Projekten redeemen weiter bis TTL ablaeuft
+    - Tests + Clippy gruen
+
+    Voraussetzung: keine. Block fuer JOY-015E-4C (E2E will den neuen Stand testen)

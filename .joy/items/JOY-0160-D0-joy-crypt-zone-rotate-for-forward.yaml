@@ -1,0 +1,35 @@
+id: JOY-0160-D0
+title: joy crypt zone rotate for forward secrecy
+type: story
+status: new
+priority: high
+capabilities:
+- plan
+- implement
+- review
+effort: 5
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-05T17:25:04.549031Z
+updated: 2026-05-05T17:26:06.752354Z
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-05T17:26:06.752353Z
+  text: |-
+    Forward Secrecy nach einem joy crypt revoke: heute behaelt der ehemalige Granted-Member alle Daten, die er vor dem Revoke clonen konnte, fuer immer entschluesselbar (sein Wrap ist weg, aber der Zone-Key war ihm vorher bekannt). joy crypt zone rotate verspricht: ab dem Zeitpunkt des Rotates ist alter Key wertlos.
+
+    Was die Operation tut:
+    1. Frischer Zone-Key generieren
+    2. Alle Files/Items in der Zone mit dem alten Key entschluesseln, mit dem neuen Key reverschluesseln
+    3. Wraps fuer alle aktuell granted Members + Delegations gegen den neuen Key neu schreiben
+    4. Alter Wrap-Set wird ueberschrieben
+
+    Spec-zuerst: erfordert Spec im Umbrella (Crypt.md + Operations-Doc), dann groessere Implementation.
+
+    Acceptance-Skizze:
+    - joy crypt zone rotate <zone> liest Zone-Inhalte, rotiert Schluessel, schreibt alle Files/Items neu
+    - Bestehende Members + Delegations behalten Zugriff (Wraps werden neu erzeugt)
+    - Revoke-vor-Rotate-Flow funktioniert: revoke + zone rotate => bisheriger Member ohne neuen Wrap, sein alter Zone-Key entschluesselt nichts mehr was nach Rotate geschrieben wird
+    - Ein Commit, alle Files/Items + project.yaml gleichzeitig
+    - Tests fuer Konsistenz (kein File mit alter Key-Version verbleibt)
+
+    Heavy. Spec-Diskussion zuerst.

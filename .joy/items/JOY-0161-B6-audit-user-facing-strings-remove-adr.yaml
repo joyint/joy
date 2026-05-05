@@ -1,0 +1,30 @@
+id: JOY-0161-B6
+title: 'Audit user-facing strings: remove ADR/umbrella refs'
+type: task
+status: new
+priority: medium
+capabilities:
+- implement
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-05T17:25:05.387426Z
+updated: 2026-05-05T17:26:18.035983Z
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-05T17:26:18.035982Z
+  text: |-
+    Hintergrund: das Umbrella-Repo (mit ADRs, Vision-Docs etc.) ist privat. Anwender sehen nur den joy-Submodule-Code und joy/docs/user/. ADR-Verweise in user-facing Strings (CLI-Errors, Tutorial-Anleitungen, Help-Texte) sind tote Pointer fuer den Anwender.
+
+    Was zu tun:
+    - Sweep ueber crates/joy-cli/src/ und joy-core/src/ Error-Typen, anyhow::bail/println-Aufrufe in user-facing Code-Pfaden, clap-Help-Strings
+    - Sweep ueber joy/docs/user/Tutorial.md, joy/README.md, SECURITY.md (gerendert)
+    - Jede Erwaehnung von 'ADR-NNN' / 'docs/dev/architecture/decisions/' entfernen, durch CLI-getriebene Erklaerung ersetzen
+    - ADR-Referenzen bleiben erlaubt in: doc-comments inneres im Code (nur entwicklerlesbar), CONTRIBUTING.md, joy/docs/dev/
+
+    Beispiel-Konversion (siehe Diskussion zu JOY-015D-70):
+    'Run joy ai rotate <ai> to replace the keypair with a fresh derivation' -> 'Run: joy ai rotate <ai>' + kurze Reassurance
+
+    Acceptance:
+    - grep -rn 'ADR-' crates/joy-cli/src/ liefert nur Treffer in dev-doc-comments, nicht in user-facing Strings
+    - grep -rn 'ADR-' joy/docs/user/Tutorial.md liefert nichts
+    - Tutorial-Mission-10 spricht in CLI-Sprache, nicht in Spec-Sprache

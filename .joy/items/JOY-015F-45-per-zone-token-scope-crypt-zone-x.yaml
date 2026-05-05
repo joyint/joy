@@ -1,0 +1,29 @@
+id: JOY-015F-45
+title: Per-zone token scope (--crypt --zone X)
+type: story
+status: new
+priority: low
+capabilities:
+- plan
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-05T17:25:03.469702Z
+updated: 2026-05-05T17:25:54.995595Z
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-05T17:25:54.995594Z
+  text: |-
+    Heutiger Crypt-Scope an einem Token deckt alle Zonen ab, in die der Operator gewrappt ist. Per-Zone-Verfeinerung erlaubt zeitlich/raeumlich engere Freigaben.
+
+    Spec-zuerst: erfordert Erweiterung in Crypt.md / ADR-041, dann Implementation. Vorschlag-Skizze:
+    - Token-Scope-Vokabular akzeptiert crypt:<zone-name> neben dem generischen crypt
+    - joy auth token add --crypt --zone customer-x setzt scopes auf [auth, crypt:customer-x]
+    - joy CLI prueft beim Crypt-Operationsstart die Scope-Liste gegen die Zone des Item/Files; lehnt mit klarer Meldung ab wenn nicht abgedeckt
+    - Mehrere --zone Flags moeglich -> mehrere crypt:<name>-Scopes
+    - Bare --crypt ohne --zone bleibt als 'alle Zonen' erhalten
+
+    Voraussetzung: Umbrella-Spec-Erweiterung von ADR-041 oder neue ADR. Vor Implementation kurzes Designgespraech, dann eigenes Spec-Item im umbrella anlegen.
+
+    Aufschiebbar bis ein Anwender den Bedarf konkret meldet; aktuell low-Priority weil --ttl + --crypt scope schon eine zeitliche Verengung erlauben.

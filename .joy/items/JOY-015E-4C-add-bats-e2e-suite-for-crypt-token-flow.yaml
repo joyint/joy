@@ -1,0 +1,30 @@
+id: JOY-015E-4C
+title: Add bats E2E suite for --crypt token flow
+type: task
+status: new
+priority: medium
+deps:
+- JOY-015C-60
+- JOY-015D-70
+capabilities:
+- implement
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-05T17:25:02.558335Z
+updated: 2026-05-05T17:30:43.095313Z
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-05T17:25:45.042399Z
+  text: |-
+    End-to-End-Tests des --crypt-Flows in tests/integration/.
+
+    Was abdecken:
+    - joy auth token add --crypt --ttl 1h emittiert Token mit eingebettetem delegation_private_key
+    - joy auth --token <T> redeemt erfolgreich, JOY_SESSION-Wert hat 76 Bytes Payload (sid+session_priv+delegation_priv)
+    - joy crypt grant ai:claude@joy --zone customer-x schreibt crypt.zones.customer-x.delegations.ai:claude@joy.<operator>: <wrap> Eintrag, kein members.<ai>.crypt_wraps-Update
+    - AI-Session liest ein zur Zone gehoerendes verschluesseltes Item via joy show, ohne Passphrase-Prompt
+    - joy crypt revoke ai:claude@joy --zone customer-x entfernt die delegations.ai-Map; Folge-show schlaegt mit ZoneAccessDenied fehl
+    - TTL-Klemmung: --ttl 30m -> Session-Datei expires-Feld liegt innerhalb 30m
+    - Auth-only Token (ohne --crypt): joy crypt read schlaegt mit klarer Meldung fehl, aber joy ls/show auf nicht-encrypteten Items funktioniert
+
+    Wartet auf JOY-015C-60 (neue Verb-Namen) und JOY-015D-70 (entfernter Cache-File-Pfad), damit die E2E-Tests gegen die endgueltige Form laufen.

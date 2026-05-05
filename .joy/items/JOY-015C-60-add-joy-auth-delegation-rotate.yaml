@@ -1,0 +1,30 @@
+id: JOY-015C-60
+title: Add joy auth delegation rotate + delegation ls subcommands
+type: task
+status: new
+priority: medium
+capabilities:
+- implement
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-05T17:24:59.819711Z
+updated: 2026-05-05T17:25:24.239665Z
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-05T17:25:24.239664Z
+  text: |-
+    Naming-Refactor + neuer View-Verb fuer AI-Tool-Delegations.
+
+    Was zu tun:
+    - joy auth token rm <ai-member> bekommt einen Alias / wird umbenannt zu joy auth delegation rotate <ai-member> (Semantik bleibt: per-Operator Delegation neu, alle eigenen Tokens dieser AI tot)
+    - Neu: joy auth delegation ls <ai-member> listet alle in project.yaml registrierten Delegations dieser AI (alle Operatoren, mit created/rotated/delegation_verifier-Praefix)
+    - joy auth token rm bleibt entweder als Deprecated-Alias oder fliegt komplett raus, je nach Stil-Vorgabe
+
+    Acceptance:
+    - joy --help zeigt beide neuen Verben
+    - bats- oder unit-Test bestaetigt rotate + ls
+    - Tutorial Mission 10 referenziert die neuen Namen statt joy auth token rm
+
+    Voraussetzung: keine. Code fuer rotate ist schon vorhanden in commands/auth.rs run_token_rm.
+
+    Dependencies: blocks JOY-015E-4C (bats E2E will die neuen Verben benutzen)
