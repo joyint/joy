@@ -20,6 +20,14 @@ use crate::commands::auth::read_passphrase;
 /// Populate `joy_core::crypt`'s thread-local zone-key context for
 /// the active member. Idempotent: returns immediately when keys are
 /// already installed or when there are no wraps to unwrap.
+///
+/// Two unwrap paths coexist (ADR-041):
+/// - Human members: unwrap `members.<email>.crypt_wraps[zone]` using the
+///   passphrase-derived seed.
+/// - AI Tool sessions with `--crypt` scope: unwrap `crypt.zones[zone]
+///   .delegations[ai-member][operator]` using the delegation private key
+///   embedded in `JOY_SESSION` (no passphrase prompt for the AI; the
+///   operator already typed it at token issuance).
 pub fn ensure_zone_keys(passphrase_flag: Option<&str>) -> Result<()> {
     if joy_core::crypt::has_active_zone_keys() {
         return Ok(());
@@ -38,6 +46,43 @@ pub fn ensure_zone_keys(passphrase_flag: Option<&str>) -> Result<()> {
     let Some(member) = project.members.get(&email) else {
         return Ok(());
     };
+
+    // AI Tool path (ADR-041 §5): the delegation private key embedded in
+    // JOY_SESSION unwraps zone keys via per-(operator, AI) wraps under
+    // crypt.zones.<zone>.delegations.<ai>.<operator>. No passphrase
+    // prompt - the operator already authenticated at token issuance.
+    if joy_core::model::project::is_ai_member(&email) {
+        let env_value = match std::env::var("JOY_SESSION") {
+            Ok(v) => v,
+            Err(_) => return Ok(()),
+        };
+        let Some((_, _, Some(delegation_priv))) =
+            joy_core::auth::session::parse_session_env_full(&env_value)
+        else {
+            // No --crypt scope on this session; AI cannot unwrap zones.
+            return Ok(());
+        };
+        let mut keys = std::collections::BTreeMap::new();
+        for (zone_name, zone) in &project.crypt.zones {
+            let Some(per_ai) = zone.delegations.get(&email) else {
+                continue;
+            };
+            // Try each operator wrap: the AI session derives from one
+            // specific operator's delegation, so only that operator's
+            // wrap will unwrap. Walking is cheap (one or a few entries).
+            for wrap_hex in per_ai.values() {
+                if let Ok(zk) =
+                    joy_core::crypt::unwrap_for_member(wrap_hex, zone_name, &delegation_priv)
+                {
+                    keys.insert(zone_name.clone(), *zk.as_bytes());
+                    break;
+                }
+            }
+        }
+        joy_core::crypt::set_active_zone_keys(keys);
+        return Ok(());
+    }
+
     if member.crypt_wraps.is_empty() {
         return Ok(());
     }

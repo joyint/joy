@@ -51,7 +51,9 @@ impl CryptConfig {
 
 /// A single Crypt zone: marked paths and project-wide properties. The
 /// zone key itself is never stored in plaintext; it lives only as
-/// per-member wraps under `Member.crypt_wraps[<zone-name>]`.
+/// per-member wraps under `Member.crypt_wraps[<zone-name>]` (humans) and
+/// per-(operator, AI) wraps under `delegations[<ai-member>][<operator>]`
+/// (AI Tool, ADR-041).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct CryptZone {
     /// Path patterns (gitattributes-style globs) that belong to this
@@ -59,6 +61,18 @@ pub struct CryptZone {
     /// come from items via `crypt_zone`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub paths: Vec<String>,
+    /// Per-(operator, AI) zone-key wraps for AI Tool delegations
+    /// (ADR-041 §3-4). Outer key is the AI member id (e.g.
+    /// `ai:claude@joy`); inner key is the operator email; value is the
+    /// hex-encoded X25519 wrap of the zone key against the operator's
+    /// stable delegation public key.
+    ///
+    /// One wrap per (operator, AI) pair, regardless of how many tokens
+    /// the operator has issued. Token issuance writes nothing here; the
+    /// embedded delegation private key in `--crypt` tokens is what the
+    /// AI uses to unwrap (ADR-041 §5).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub delegations: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 /// Configurable paths to the project's reference documentation, relative to

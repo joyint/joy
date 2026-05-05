@@ -840,12 +840,109 @@ fn run_zone_rm(name: &str) -> Result<()> {
 }
 
 fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>) -> Result<()> {
+    use joy_core::model::project::is_ai_member;
     let unlocked = unlock_zone(zone, passphrase, false)?;
     let target = unlocked
         .project
         .members
         .get(target_member)
         .ok_or_else(|| anyhow::anyhow!("member '{}' not found", target_member))?;
+
+    let granter_verify_hex = unlocked
+        .project
+        .members
+        .get(&unlocked.acting_email)
+        .and_then(|m| m.verify_key.clone())
+        .ok_or_else(|| anyhow::anyhow!("granter has no verify_key registered"))?;
+    let granter_verify_key = joy_core::auth::PublicKey::from_hex(&granter_verify_hex)?;
+
+    // ADR-041 §4: AI Tool grants target one wrap per (operator, AI),
+    // stored zone-major under crypt.zones.<zone>.delegations.<ai>.<op>.
+    // Human grants stay member-major under members.<who>.crypt_wraps as
+    // before; the wrap layouts coexist in the same `project.yaml`.
+    let target_is_ai = is_ai_member(target_member);
+
+    let project_path = store::joy_dir(&unlocked.root).join(store::PROJECT_FILE);
+    let mut project = store::read_project(&project_path)?;
+    project
+        .crypt
+        .zones
+        .entry(unlocked.zone.clone())
+        .or_default();
+
+    if target_is_ai {
+        // Walk every operator who has a delegation entry for this AI and
+        // write a wrap targeting their delegation_verifier. Per ADR-041
+        // §1, the delegation pubkey is stable per (operator, AI); the
+        // wrap therefore covers every token that operator has issued and
+        // every token they will issue until they rotate.
+        let ai_id = target_member;
+        let _ = target; // target lookup was for existence check; not used further on AI path
+        let mut wraps: Vec<(String, String)> = Vec::new();
+        for (operator_email, member) in &project.members {
+            let Some(entry) = member.ai_delegations.get(ai_id) else {
+                continue;
+            };
+            let delegation_pk =
+                joy_core::auth::PublicKey::from_hex(&entry.delegation_verifier)?;
+            let wrap_hex = joy_core::crypt::wrap_for_member(
+                &unlocked.zone_key,
+                &unlocked.zone,
+                &unlocked.acting_seed,
+                &granter_verify_key,
+                &delegation_pk,
+            );
+            wraps.push((operator_email.clone(), wrap_hex));
+        }
+        if wraps.is_empty() {
+            anyhow::bail!(
+                "No operator has a delegation registered for {ai_id}. Each operator who wants to \
+                 use {ai_id} must first run `joy auth token add {ai_id}` once to register their \
+                 per-(operator, AI) delegation."
+            );
+        }
+        let zone_entry = project
+            .crypt
+            .zones
+            .get_mut(&unlocked.zone)
+            .expect("zone entry just inserted");
+        let delegations_for_ai = zone_entry
+            .delegations
+            .entry(ai_id.to_string())
+            .or_default();
+        let count = wraps.len();
+        for (op, wrap) in wraps {
+            delegations_for_ai.insert(op, wrap);
+        }
+
+        // Ensure the granter's own (human) wrap is also present so they
+        // do not lose access by being the first in the zone.
+        let granter_wrap = joy_core::crypt::wrap_for_self(
+            &unlocked.zone_key,
+            &unlocked.zone,
+            &unlocked.acting_seed,
+        );
+        let g = project.members.get_mut(&unlocked.acting_email).unwrap();
+        g.crypt_wraps
+            .entry(unlocked.zone.clone())
+            .or_insert(granter_wrap);
+
+        store::write_yaml_preserve(&project_path, &project)?;
+        let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+        joy_core::git_ops::auto_git_add(&unlocked.root, &[&rel]);
+        joy_core::git_ops::auto_git_post_command(
+            &unlocked.root,
+            &format!("crypt grant {ai_id} (zone {}, {count} delegations)", unlocked.zone),
+            &unlocked.acting_email,
+        );
+        println!(
+            "Granted {ai_id} access to zone '{}' for {count} operator delegation(s).",
+            unlocked.zone
+        );
+        return Ok(());
+    }
+
+    // Human grant: target gets a wrap on members.<email>.crypt_wraps.<zone>.
     let target_verify_hex = target.verify_key.as_deref().ok_or_else(|| {
         anyhow::anyhow!(
             "{} has no verify_key yet. They must run `joy auth` (or `joy auth --otp`) before \
@@ -854,13 +951,6 @@ fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>) -> Resul
         )
     })?;
     let target_verify_key = joy_core::auth::PublicKey::from_hex(target_verify_hex)?;
-    let granter_verify_hex = unlocked
-        .project
-        .members
-        .get(&unlocked.acting_email)
-        .and_then(|m| m.verify_key.clone())
-        .ok_or_else(|| anyhow::anyhow!("granter has no verify_key registered"))?;
-    let granter_verify_key = joy_core::auth::PublicKey::from_hex(&granter_verify_hex)?;
 
     // Wrap the zone key for the target. The granter's verify_key
     // travels in the wrap header so the target can locate the right
@@ -873,16 +963,6 @@ fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>) -> Resul
         &target_verify_key,
     );
 
-    // Persist the new wrap on the target's member entry. Re-load the
-    // project to keep the granter's own wrap untouched (unlocked.save
-    // would overwrite the granter's crypt_wraps entry too).
-    let project_path = store::joy_dir(&unlocked.root).join(store::PROJECT_FILE);
-    let mut project = store::read_project(&project_path)?;
-    project
-        .crypt
-        .zones
-        .entry(unlocked.zone.clone())
-        .or_default();
     let m = project
         .members
         .get_mut(target_member)
@@ -914,15 +994,28 @@ fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>) -> Resul
 }
 
 fn run_revoke(zone: &str, target_member: &str) -> Result<()> {
+    use joy_core::model::project::is_ai_member;
     let (root, mut project, email) = load_context()?;
     if !project.members.contains_key(target_member) {
         bail!("member '{}' not found", target_member);
     }
-    let removed = project
-        .members
-        .get_mut(target_member)
-        .map(|m| m.crypt_wraps.remove(zone).is_some())
-        .unwrap_or(false);
+
+    // ADR-041 §5: AI Tool revoke removes the entire delegations.<ai> map
+    // under the zone (all operator-keyed wraps for that AI). Human
+    // revoke continues to remove from members.<who>.crypt_wraps.
+    let removed = if is_ai_member(target_member) {
+        let zone_entry = project.crypt.zones.get_mut(zone);
+        match zone_entry {
+            Some(z) => z.delegations.remove(target_member).is_some(),
+            None => false,
+        }
+    } else {
+        project
+            .members
+            .get_mut(target_member)
+            .map(|m| m.crypt_wraps.remove(zone).is_some())
+            .unwrap_or(false)
+    };
     if !removed {
         println!(
             "{} had no access to zone '{}'; nothing to revoke.",
