@@ -1,0 +1,66 @@
+version: v0.14.0
+date: 2026-05-05
+previous: v0.13.1
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 133
+  items: 25
+- id: horst.schwarz@joydev.com
+  events: 6
+  items: 4
+items:
+  epics:
+  - id: JOY-0145-51
+    title: Encryption layer for project items and files
+  stories:
+  - id: JOY-00BC-A1
+    title: Recovery key generation at joy crypt init
+  - id: JOY-0147-85
+    title: Wrapped-seed Auth model with passphrase and recovery wraps
+  - id: JOY-014C-29
+    title: Lazy migration of existing projects to wrapped-seed
+  - id: JOY-0148-84
+    title: 'Crypt default zone: add/rm/grant/revoke/list/status'
+  - id: JOY-0149-8D
+    title: Crypt named zones via --zone
+  - id: JOY-014A-F9
+    title: Crypt --all whole-project mode
+  - id: JOY-014B-09
+    title: Git clean/smudge/textconv filters for marked items and paths
+  - id: JOY-014D-83
+    title: Update Joy Tutorial for Crypt CLI and new Auth flow
+  - id: JOY-014E-8B
+    title: Update website content for Crypt CLI and new Auth flow
+  - id: JOY-015B-53
+    title: 'Implement ADR-041: passphrase-derived AI delegation'
+  tasks:
+  - id: JOY-0144-E5
+    title: 'AI instructions: state that documentation is specification'
+  - id: JOY-0103-87
+    title: Crypt re-wrap on member passphrase change
+  - id: JOY-0155-D0
+    title: Initialize joy-crypt crate skeleton in joyint/crypt
+  - id: JOY-0156-02
+    title: Migrate Auth primitives to joy-crypt and add AES-GCM helpers
+  - id: JOY-0157-86
+    title: Pairwise wrap (X25519) for joy crypt grant
+  - id: JOY-0158-56
+    title: 'Path-glob smudge: encrypt files matched by crypt.zones[].paths'
+  - id: JOY-015C-60
+    title: Add joy auth delegation rotate + delegation ls subcommands
+  - id: JOY-015D-70
+    title: Remove on-disk delegation key cache, add legacy salt-less error
+  - id: JOY-0161-B6
+    title: 'Audit user-facing strings: remove ADR/umbrella refs'
+  - id: JOY-015E-4C
+    title: Add bats E2E suite for --crypt token flow
+  reworks:
+  - id: JOY-0142-62
+    title: Short names for effort like xxl or m
+  - id: JOY-0141-DE
+    title: joy ls and joy ls --tree shall look similar
+  - id: JOY-015A-FD
+    title: 'Repair Crypt: encrypt-on-disk, file workflows, transparent item decrypt'
+  decisions:
+  - id: JOY-0154-3C
+    title: joy-crypt as leaf crate, no joy-core dependency
