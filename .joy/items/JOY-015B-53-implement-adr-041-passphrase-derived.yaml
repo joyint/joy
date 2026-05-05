@@ -1,7 +1,7 @@
 id: JOY-015B-53
 title: 'Implement ADR-041: passphrase-derived AI delegation'
 type: story
-status: in-progress
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -12,7 +12,7 @@ capabilities:
 effort: 6
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-05T16:10:06.761519Z
-updated: 2026-05-05T16:12:29.607321Z
+updated: 2026-05-05T16:30:03.479358Z
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-05-05T16:12:29.607321Z
@@ -33,3 +33,25 @@ comments:
     - joy auth delegation ls / rotate als eigene Subkommandos
     - Migration alter wraps
     - Volle bats-E2E-Suite
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-05T16:29:52.842468Z
+  text: |-
+    [x] Token scopes (auth / auth+crypt) implementiert; --crypt-Flag bettet 32-Byte Delegation-Seed in Token-String ein
+    [x] JOY_SESSION extended encoding (auth-only 44 Bytes / auth+crypt 76 Bytes); parse_session_env_full Helfer
+    [x] session.expires = min(session_ttl, token.expires) Klemmung in create_session_for_ai
+    [x] Token-Redemption extrahiert Delegation-Privkey, validiert gegen registriertes delegation_verifier, packt in JOY_SESSION
+    [x] CryptZone Schema um delegations: BTreeMap<ai-id, BTreeMap<operator, wrap>> erweitert
+    [x] joy crypt grant ai:<id> --zone X schreibt einen Wrap pro Operator mit ai_delegations-Eintrag, alles in einem Commit
+    [x] joy crypt revoke ai:<id> --zone X entfernt die ganze delegations.<ai>-Map
+    [x] AI-Crypt-Unwrap-Pfad in ensure_zone_keys: liest delegation_priv aus JOY_SESSION, walks crypt.zones[*].delegations[ai], probiert je Wrap
+    [x] Tests: token + session unit-tests, 406 Workspace-Tests gruen
+    [x] Tutorial Mission 10 erweitert um AI-Tool-Crypt-Flow
+    [x] Website features.mdx Crypt-Section um --crypt-Tokens erweitert
+
+    Deferred (eigene Items angelegt werden bei Bedarf):
+    - joy auth delegation rotate als eigenes Subkommando (heute joy auth token rm hat aehnliches Verhalten, aber Naming hinkt)
+    - joy auth delegation ls als eigenes Subkommando
+    - Persistente delegation_key.key auf Platte vollstaendig ausschalten (heute noch dual-mode mit Re-Derive-Fallback)
+    - Migration alter members.<ai>.crypt_wraps-Eintraege auf neue delegations-Form
+    - bats E2E-Suite fuer den --crypt-Flow
+    - Abgelehntes joy auth --token mit Crypt-Scope wenn Delegation rotiert wurde: Pfad funktioniert (Binding-Sig-Mismatch), aber Fehlermeldung koennte spezifischer sein
