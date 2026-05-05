@@ -1,7 +1,7 @@
 id: JOY-00B0
 title: YAML-aware Git merge driver for .joy/.jot files
 type: task
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -10,7 +10,7 @@ capabilities:
 effort: 3
 created_by: horst.schwarz@joydev.com
 created: 2026-03-31T17:54:33.420916689Z
-updated: 2026-05-05T21:32:42.626786Z
+updated: 2026-05-05T21:53:39.191658Z
 description: Custom Git merge driver for Joy/Jot YAML. List fields (comments, deps) merged as union sorted by timestamp. Scalar conflicts escalated to user. joy init registers the driver in .gitattributes. See ADR-011. Migrated from JI-008F.
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
