@@ -38,6 +38,10 @@ toml_edit = "0.25.5"
 glob = "0.3.3"
 termimad = "0.31"
 hex = "0.4"
+# Self-update for cargo-dist-distributed binaries. Receipt-gated, so
+# brew / cargo-install / distro-package builds opt out gracefully.
+# See JOY-0164-B5.
+axoupdater = { version = "0.10", features = ["blocking"] }
 
 [dev-dependencies]
 assert_cmd = "2"

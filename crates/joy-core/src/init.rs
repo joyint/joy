@@ -335,6 +335,44 @@ pub fn ensure_lazy_activation(root: &Path) -> Result<(), JoyError> {
     Ok(())
 }
 
+/// Per-clone git config key recording the joy version that last synced
+/// this repo. Compared against `env!("CARGO_PKG_VERSION")` to drive the
+/// auto-sync hook. See JOY-0164-B5.
+pub const LAST_SYNC_VERSION_KEY: &str = "joy.last-sync-version";
+
+/// Read the recorded last-sync version from this clone's git config.
+/// `None` if not a repo or the key is unset.
+///
+/// TODO: route through a `Vcs::config_get` trait method so non-Git
+/// backends can implement (ADR-010). Today it's a `GitVcs` inherent
+/// method, which constrains the abstraction.
+pub fn last_sync_version(root: &Path) -> Option<String> {
+    let vcs = default_vcs();
+    if !vcs.is_repo(root) {
+        return None;
+    }
+    vcs.config_get(root, LAST_SYNC_VERSION_KEY).ok()
+}
+
+/// Stamp the current binary version into this clone's git config.
+pub fn set_last_sync_version(root: &Path, version: &str) -> Result<(), JoyError> {
+    let vcs = default_vcs();
+    if !vcs.is_repo(root) {
+        return Ok(());
+    }
+    vcs.config_set(root, LAST_SYNC_VERSION_KEY, version)
+}
+
+/// One-shot full sync of a repo against the current binary. Today this
+/// runs `ensure_lazy_activation` and stamps `joy.last-sync-version`.
+/// Future work (tracked under JOY-0164-B5): also fold in the work that
+/// `joy auth update` and `joy ai update` do, with a unified output
+/// protocol.
+pub fn run_sync(root: &Path, current_version: &str) -> Result<(), JoyError> {
+    ensure_lazy_activation(root)?;
+    set_last_sync_version(root, current_version)
+}
+
 /// Register the joy-yaml merge driver in the local Git config. Idempotent:
 /// repeated calls overwrite with the same value. The config is per-clone
 /// (Git does not transmit it through clone), so this is also called from
