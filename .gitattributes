@@ -1,0 +1,10 @@
+### joy:start -- managed by joy, do not edit manually
+.joy/items/*.yaml merge=joy-yaml
+.joy/milestones/*.yaml merge=joy-yaml
+.joy/releases/*.yaml merge=joy-yaml
+.joy/ai/agents/*.yaml merge=joy-yaml
+.joy/ai/jobs/*.yaml merge=joy-yaml
+.joy/project.yaml merge=joy-yaml
+.joy/config.defaults.yaml merge=joy-yaml
+.joy/logs/*.log merge=union
+### joy:end

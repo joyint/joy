@@ -17,6 +17,12 @@ pub struct Config {
     pub workflow: WorkflowConfig,
     #[serde(default)]
     pub modes: ModesConfig,
+    #[serde(default = "default_auto_sync", rename = "auto-sync")]
+    pub auto_sync: bool,
+}
+
+fn default_auto_sync() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -147,6 +153,7 @@ impl Default for Config {
             ai: None,
             workflow: WorkflowConfig::default(),
             modes: ModesConfig::default(),
+            auto_sync: default_auto_sync(),
         }
     }
 }

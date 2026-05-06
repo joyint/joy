@@ -176,6 +176,47 @@ struct ShortcutArgs {
     id: String,
 }
 
+/// Detect a binary-version mismatch against the per-clone marker and,
+/// when auto-sync is enabled, run the repo sync. Best-effort: any error
+/// here is swallowed; never blocks a user-facing command.
+///
+/// Skipped entirely for `joy update` itself, which runs the sync
+/// explicitly with full output, and for `joy completions` which can
+/// be invoked outside a project root.
+fn auto_sync_repo() {
+    let cwd = match std::env::current_dir() {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    let root = match joy_core::store::find_project_root(&cwd) {
+        Some(r) => r,
+        None => return,
+    };
+
+    // Always reassert lazy activation (cheap and idempotent).
+    let _ = joy_core::init::ensure_lazy_activation(&root);
+
+    // Honour the auto-sync toggle from .joy/config.yaml.
+    let config = joy_core::store::load_config();
+    if !config.auto_sync {
+        return;
+    }
+
+    let current = commands::update::CURRENT_VERSION;
+    match joy_core::init::last_sync_version(&root) {
+        Some(v) if v == current => {} // already in sync
+        recorded => {
+            // Run the full sync, stamp the marker, print a one-line
+            // summary symmetrical to `joy update`'s output. Errors are
+            // swallowed (best-effort).
+            if joy_core::init::run_sync(&root, current).is_ok() {
+                let prev = recorded.unwrap_or_else(|| "(never)".to_string());
+                eprintln!("joy {current}: synced this repo (previous marker: {prev}).");
+            }
+        }
+    }
+}
+
 fn main() -> anyhow::Result<()> {
     clap_complete::CompleteEnv::with_factory(Cli::command).complete();
 
@@ -196,14 +237,10 @@ fn main() -> anyhow::Result<()> {
         return commands::config::run(args);
     }
 
-    // JOY-0162: keep the merge-driver registration in sync with the
-    // current binary. Best-effort, must never fail a user-facing
-    // command.
-    if let Ok(cwd) = std::env::current_dir() {
-        if let Some(root) = joy_core::store::find_project_root(&cwd) {
-            let _ = joy_core::init::ensure_lazy_activation(&root);
-        }
-    }
+    // JOY-0162 / JOY-0164-B5: keep the merge-driver registration and the
+    // per-clone version marker in sync with the current binary.
+    // Best-effort, must never fail a user-facing command.
+    auto_sync_repo();
 
     let mut config = joy_core::store::load_config();
 

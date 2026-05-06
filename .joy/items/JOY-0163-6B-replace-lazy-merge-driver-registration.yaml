@@ -9,5 +9,24 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-05T22:10:05.718703Z
-updated: 2026-05-05T22:10:05.718703Z
+updated: 2026-05-06T05:35:30.968096Z
 description: 'Lazy-registration in every joy invocation (JOY-0162) is a quick fix for the gap between binary upgrade and per-clone .gitattributes/git-config setup. Every command pays a small overhead, the magic is invisible to users, and it leaves a code path that has to stay behind any future schema change. Better long-term options to design through: (a) a clone/checkout hook installed by joy init that triggers onboard-equivalent on first command, (b) a dedicated ''joy migrate'' that compares stored vs current binary version and runs needed steps, (c) shipping a richer .gitattributes that does not require per-clone git config, (d) something else. Pick after JOY-0162 has stabilised and we have field signal.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-06T05:35:30.968096Z
+  text: |-
+    Design decided 2026-05-06 (collaborative) - hybrid joy update with implicit auto-sync.
+
+    Update channel: GitHub Releases via cargo-dist + axoupdater. Stays GitHub for the foreseeable future.
+
+    Mechanics:
+    - New 'joy update' subcommand wraps axoupdater (AxoUpdater::new_for("joy").load_receipt()?.run_sync()?). Receipt-gated, so brew/cargo-install users are skipped gracefully with a clear 'use your installer' message instead of a clobber.
+    - After a successful binary swap, joy update runs the in-repo sync: lazy-activation (.gitattributes + merge driver) + the work joy auth update does (SECURITY.md, project.yaml schema) + the work joy ai update does (AI tool files). Output lists each touched file: 'refreshed: SECURITY.md', 'registered: .gitattributes', etc.
+    - Per-clone version marker stored in local git config: joy.last-sync-version. Vcs trait gains config_get/config_set so this stays inside the abstraction (ADR-010). Marker is per-clone, lives in .git/config or .git/modules/<sub>/config for submodules.
+    - Auto-sync: every joy invocation (on top of the lazy-activation we already have) compares CARGO_PKG_VERSION to joy.last-sync-version. Mismatch -> runs the same sync routine, prints the same 'refreshed: ...' summary, then proceeds with the user's actual command. Symmetric to joy update's Phase-1 output so users don't see surprise dirty files.
+    - Toggle for the auto-sync goes into .joy/config.yaml (auto-sync: true|false), with the per-clone marker staying in git config (separation: user preference vs implementation state).
+    - Per-domain commands joy ai update + joy auth update become internal routines used by joy update. Public CLI keeps them for one or two release cycles as deprecated aliases, then removes.
+    - AI session-start check removed entirely. CLAUDE.md template tells the AI: 'after any joy command, if the output mentions refreshed: CLAUDE.md (or your tool file), re-read it'. The dedicated joy ai update --check at session start goes away because the auto-sync already covers it.
+    - Modes: collaborative+ asks before each refresh, autonomous just does it, pairing walks through file by file.
+
+    Implementation scoped in JOY-0164 (next item). This rework item closes when that lands and we have field signal that the auto-sync is reliable.

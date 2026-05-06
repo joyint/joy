@@ -1,0 +1,49 @@
+id: JOY-0164-B5
+title: Add joy update with axoupdater + auto-sync on every invocation
+type: task
+status: new
+priority: high
+capabilities:
+- implement
+effort: 5
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-06T05:44:07.070296Z
+updated: 2026-05-06T07:40:45.350532Z
+description: |-
+  Implement the hybrid update mechanism designed in JOY-0163-6B.
+
+  Components:
+  1. axoupdater dependency in joy-cli; install-updater = true in dist-workspace.toml.
+  2. Subcommand 'joy update' wraps axoupdater (binary swap via GitHub Releases receipt). Graceful fallback for non-cargo-dist installs (brew, cargo install): prints clear 'use your installer' message via load_receipt() error handling.
+  3. 'joy update --check' aggregates checks across binary version, .gitattributes block, merge driver config, SECURITY.md, project.yaml schema, AI tool files. Exit 2 if anything would refresh, JSON output for AI tools.
+  4. Sync orchestrator runs lazy-activation + the work auth update + ai update do internally. Single output protocol: 'refreshed: <path>' / 'registered: <key>' lines.
+  5. Per-clone version marker in local git config: joy.last-sync-version. Add config_get / config_set to the Vcs trait (ADR-010 compliance) so other VCS backends can implement when needed.
+  6. Auto-sync hook in main.rs: after lazy-activation, compare CARGO_PKG_VERSION to joy.last-sync-version. Mismatch -> run sync orchestrator, print summary, then proceed.
+  7. .joy/config.yaml gains auto-sync: bool (default true). Plumbing into Config struct + read in the auto-sync hook.
+  8. joy ai update + joy auth update remain in the CLI as deprecated aliases for one release cycle, then go away.
+  9. CLAUDE.md / Copilot instructions / Qwen / Vibe templates updated: drop 'run joy ai update --check at session start', add 'watch joy command output for refreshed: <your-instruction-file> and re-read'.
+  10. Tests: bats E2E for joy update, joy update --check, auto-sync trigger via faked stale marker, output protocol, CLAUDE.md template re-read advice.
+
+  Acceptance:
+  - joy update on a cargo-dist-installed binary fetches and replaces.
+  - joy update on a brew/cargo-install build prints a clear non-clobbering message.
+  - After a binary upgrade with no in-repo run, the next joy invocation in the repo silently runs the sync and prints the same output joy update would have, marker is updated, working tree only carries the legitimate file changes.
+  - joy update --check exits 2 with structured output when anything is stale.
+  - AI templates use the new 'watch refreshed:' contract.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-06T07:40:45.350531Z
+  text: |-
+    [x] axoupdater wired: dist-workspace.toml gets install-updater=true; joy-cli depends on axoupdater 0.10 with the blocking feature.
+    [x] joy update subcommand: binary swap via AxoUpdater::run_sync() (receipt-gated, brew/cargo-install builds skip with a clear message). Then runs the in-repo sync.
+    [x] joy update --check: reports binary state (receipt missing or up-to-date or update available) and repo state (synced / stale / never-synced). Exit 2 if anything is stale.
+    [x] Per-clone version marker in git config: joy.last-sync-version. Helpers init::last_sync_version + init::set_last_sync_version (using GitVcs::config_get/set inherent methods for now).
+    [x] Auto-sync hook in main.rs: every joy invocation reasserts lazy-activation, then if auto-sync is enabled and the marker mismatches the current binary version, runs init::run_sync and prints a one-line 'joy X.Y.Z: synced this repo' summary on stderr.
+    [x] auto-sync: bool default true added to .joy/config.yaml (Config struct in joy-core/model/config.rs). Snapshot updated.
+    [x] 5 bats tests: receipt-missing reporting, repo synced after first invocation, marker stamped on first invocation, stale marker triggers resync output, auto-sync: false in config.yaml is honoured.
+
+    Deferred to follow-up items (still under JOY-0163-6B umbrella):
+    - Bundling joy auth update + joy ai update into the sync orchestrator (current run_sync only does lazy-activation + stamp marker)
+    - Vcs trait extension for config_get/set (today they live as GitVcs inherent methods; ADR-010 wants them on the trait)
+    - AI template updates (drop the joy ai update --check session-start ritual, add 'watch for refreshed:' guidance)
+    - Deprecation of joy ai update / joy auth update CLI surface
