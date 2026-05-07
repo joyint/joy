@@ -206,13 +206,13 @@ fn auto_sync_repo() {
     match joy_core::init::last_sync_version(&root) {
         Some(v) if v == current => {} // already in sync
         recorded => {
-            // Run the full sync, stamp the marker, print a one-line
-            // summary symmetrical to `joy update`'s output. Errors are
-            // swallowed (best-effort).
-            if joy_core::init::run_sync(&root, current).is_ok() {
-                let prev = recorded.unwrap_or_else(|| "(never)".to_string());
-                eprintln!("joy {current}: synced this repo (previous marker: {prev}).");
-            }
+            // Run the full sync (lazy-activation + auth update + ai
+            // update + stamp marker). Each routine prints its own
+            // summary; the trailing one-liner ties them together so the
+            // user / AI can spot the version transition.
+            commands::update::run_full_sync(&root);
+            let prev = recorded.unwrap_or_else(|| "(never)".to_string());
+            eprintln!("joy {current}: synced this repo (previous marker: {prev}).");
         }
     }
 }

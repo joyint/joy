@@ -1,14 +1,14 @@
 id: JOY-0164-B5
 title: Add joy update with axoupdater + auto-sync on every invocation
 type: task
-status: new
+status: closed
 priority: high
 capabilities:
 - implement
 effort: 5
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-06T05:44:07.070296Z
-updated: 2026-05-06T07:40:45.350532Z
+updated: 2026-05-07T04:51:33.067319Z
 description: |-
   Implement the hybrid update mechanism designed in JOY-0163-6B.
 
@@ -47,3 +47,12 @@ comments:
     - Vcs trait extension for config_get/set (today they live as GitVcs inherent methods; ADR-010 wants them on the trait)
     - AI template updates (drop the joy ai update --check session-start ritual, add 'watch for refreshed:' guidance)
     - Deprecation of joy ai update / joy auth update CLI surface
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-07T04:51:32.996069Z
+  text: |-
+    [x] Bundling: auth::run_update_default + ai::run_update_default exposed as pub(crate); commands::update::run_full_sync orchestrates init::run_sync + auth update + ai update; main.rs auto_sync_repo uses the orchestrator on version mismatch.
+    [x] AI templates: instructions.md drops the session-start joy ai update --check ritual; replaces it with 'watch stderr for joy X.Y.Z: synced ...' and re-read your instruction file when it appears.
+    [x] Vcs trait: config_get / config_set lifted from GitVcs inherent methods into the Vcs trait per ADR-010. GitVcs now implements them as trait methods.
+    [x] Marker stamping in init::init and init::onboard so the first joy invocation after a fresh init/onboard does not re-trigger auto-sync (working tree stays clean for the existing 'second joy invocation in a clean state' bats test).
+
+    Acceptance: 319 unit tests, 34 sanity bats green, clippy + fmt clean. Item complete.

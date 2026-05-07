@@ -129,6 +129,12 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
     // Install hooks
     install_hooks(root)?;
 
+    // Stamp the per-clone version marker so the first joy invocation
+    // after init does not re-trigger the auto-sync routine. The CLI
+    // caller is responsible for the cargo-pkg version string; we use
+    // the joy-core version here as a stable proxy.
+    let _ = set_last_sync_version(root, env!("CARGO_PKG_VERSION"));
+
     Ok(InitResult {
         project_dir: joy_dir,
         git_initialized,
@@ -142,7 +148,11 @@ pub fn onboard(root: &Path) -> Result<OnboardResult, JoyError> {
     embedded::sync_files(root, PROJECT_FILES)?;
     ensure_gitattributes(root)?;
     register_merge_driver(root)?;
-    install_hooks(root)
+    let result = install_hooks(root)?;
+    // Stamp the per-clone marker so the first joy invocation after
+    // onboard does not re-trigger the auto-sync routine.
+    let _ = set_last_sync_version(root, env!("CARGO_PKG_VERSION"));
+    Ok(result)
 }
 
 /// Sync hook files and set core.hooksPath.

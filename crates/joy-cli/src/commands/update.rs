@@ -10,11 +10,15 @@
 //! cargo-install / distro-package builds skip the swap with a clear
 //! message instead of clobbering a foreign-managed binary.
 
+use std::path::Path;
+
 use anyhow::Result;
 use axoupdater::AxoUpdater;
 use clap::Args;
 
 use joy_core::{init, store};
+
+use crate::commands::{ai, auth};
 
 const PKG_NAME: &str = "joy";
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -56,18 +60,35 @@ pub fn run(args: UpdateArgs) -> Result<()> {
     }
 
     if let Some(root) = project_root {
-        match init::run_sync(&root, CURRENT_VERSION) {
-            Ok(()) => println!(
-                "Synced this repo to joy {} (registered: .gitattributes, merge driver).",
-                CURRENT_VERSION
-            ),
-            Err(e) => eprintln!("warning: in-repo sync failed: {e}"),
-        }
+        run_full_sync(&root);
     } else {
         println!("Not inside a Joy project; skipping in-repo sync.");
     }
 
     Ok(())
+}
+
+/// Run the full per-repo sync: lazy-activation (`.gitattributes` +
+/// merge driver) + the work `joy auth update` does (SECURITY.md,
+/// project.yaml schema) + the work `joy ai update` does (AI tool
+/// instruction files) + stamp the version marker.
+///
+/// Best-effort: each step is fenced; a failure in one routine prints
+/// a warning and the rest still run. Output is each routine's own
+/// stdout, prefixed by section banners; a unified "refreshed: ..."
+/// protocol is left for a follow-up polish pass under JOY-0163-6B.
+pub(crate) fn run_full_sync(root: &Path) {
+    if let Err(e) = init::run_sync(root, CURRENT_VERSION) {
+        eprintln!("warning: lazy-activation sync failed: {e}");
+    }
+
+    if let Err(e) = auth::run_update_default() {
+        eprintln!("warning: auth update skipped: {e}");
+    }
+
+    if let Err(e) = ai::run_update_default() {
+        eprintln!("warning: ai update skipped: {e}");
+    }
 }
 
 fn run_check() -> Result<()> {

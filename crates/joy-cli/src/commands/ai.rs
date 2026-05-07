@@ -166,6 +166,13 @@ struct AiInitPayload {
     configured_tools: Vec<String>,
 }
 
+/// Programmatic entry to the AI update routine, invoked from the
+/// `joy update` orchestrator and the auto-sync hook so configured AI
+/// tool files refresh after a binary upgrade.
+pub(crate) fn run_update_default() -> anyhow::Result<()> {
+    update(UpdateArgs { check: false })
+}
+
 fn update(args: UpdateArgs) -> anyhow::Result<()> {
     let root = joy_core::store::find_project_root(&std::env::current_dir()?)
         .ok_or_else(|| anyhow::anyhow!("No Joy project found (run `joy init` first)"))?;

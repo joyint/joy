@@ -215,6 +215,13 @@ fn resolve_user(user_flag: Option<&str>) -> Result<String> {
 /// (preserving any user content outside the marker block) and normalises
 /// `project.yaml` from the legacy auth schema to the current one. Per
 /// ADR-035 this is the only place schema migration is persisted.
+/// Programmatic entry to the auth update routine, invoked from the
+/// `joy update` orchestrator and the auto-sync hook so the same
+/// SECURITY.md / project.yaml refresh runs after a binary upgrade.
+pub(crate) fn run_update_default() -> Result<()> {
+    run_update(UpdateArgs { check: false })
+}
+
 fn run_update(args: UpdateArgs) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
