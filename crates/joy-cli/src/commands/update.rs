@@ -3,7 +3,11 @@
 
 //! `joy update` -- swap the binary (when this build was distributed via
 //! cargo-dist) and bring the current repo's joy-managed state in line
-//! with the new binary. See JOY-0164-B5.
+//! with the new binary. See JOY-0164-B5 / JOY-0169-6A.
+//!
+//! Per-artefact logic lives in [`crate::update_registry`]. This module
+//! is a thin orchestrator: iterate the registry, format rows joy-style,
+//! and stitch the binary self-update around it.
 //!
 //! The binary swap is receipt-gated by `axoupdater`: only cargo-dist
 //! installer-managed binaries carry the install receipt, so brew /
@@ -16,14 +20,24 @@ use anyhow::Result;
 use axoupdater::AxoUpdater;
 use clap::Args;
 
-use joy_core::vcs::Vcs;
-use joy_core::{init, store};
+use joy_core::store;
 
 use crate::color;
-use crate::commands::{ai, auth};
+use crate::update_registry::{self, RowMark, UpdateItem};
 
 const PKG_NAME: &str = "joy";
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Section ordering used in the displayed output. Items are grouped by
+/// their `section()` value; within a section the order is the order in
+/// which they appear in [`update_registry::all`].
+const SECTION_ORDER: &[&str] = &[
+    update_registry::SECTION_REPO,
+    update_registry::SECTION_GIT,
+    update_registry::SECTION_EMBEDDED,
+    update_registry::SECTION_AUTH,
+    update_registry::SECTION_AI,
+];
 
 #[derive(Args)]
 #[command(after_help = "\
@@ -71,12 +85,10 @@ pub fn run(args: UpdateArgs) -> Result<()> {
     if let Some(root) = project_root {
         let changed = run_full_sync(&root);
         println!();
-        let summary = if changed == 0 {
-            "Joy update complete -- nothing to refresh.".to_string()
-        } else if changed == 1 {
-            "Joy update complete -- 1 artefact refreshed.".to_string()
-        } else {
-            format!("Joy update complete -- {changed} artefacts refreshed.")
+        let summary = match changed {
+            0 => "Joy update complete -- nothing to refresh.".to_string(),
+            1 => "Joy update complete -- 1 artefact refreshed.".to_string(),
+            n => format!("Joy update complete -- {n} artefacts refreshed."),
         };
         println!("{}", color::footer(&summary));
     } else {
@@ -90,40 +102,44 @@ pub fn run(args: UpdateArgs) -> Result<()> {
     Ok(())
 }
 
-/// Run the full per-repo sync: lazy-activation (`.gitattributes` +
-/// merge driver) + the work `joy auth update` does (SECURITY.md,
-/// project.yaml schema) + the work `joy ai update` does (AI tool
-/// instruction files) + stamp the version marker.
-///
-/// Best-effort: each step is fenced; a failure in one routine prints
-/// a warning and the rest still run. Output is each routine's own
-/// stdout, prefixed by section banners; a unified "refreshed: ..."
-/// protocol is left for a follow-up polish pass under JOY-0163-6B.
-/// Terse write-path orchestrator: call each refresh routine and let
-/// it print joy-style rows ONLY for items it actually changed. Returns
-/// the total number of artefacts refreshed across all subsystems so
-/// the caller can summarise.
+/// Iterate the update registry, refreshing every item. Prints joy-style
+/// rows ONLY for items that actually changed (terse by design); section
+/// headers are printed lazily when the first changed row appears.
+/// Returns the total number of refreshed artefacts.
 pub(crate) fn run_full_sync(root: &Path) -> u32 {
+    let items = update_registry::all();
     let mut changed = 0u32;
-
-    // init::onboard handles the joy-core-side artefacts (.gitattributes
-    // block, merge driver git config, hooks, embedded defaults, version
-    // marker). Today it does not report what it touched; for the terse
-    // path we simply note whether it succeeded.
-    if let Err(e) = init::onboard(root) {
-        eprintln!("warning: onboard sync failed: {e}");
+    for section in SECTION_ORDER {
+        let mut header_printed = false;
+        for item in items.iter().filter(|i| &i.section() == section) {
+            let rows = match item.refresh(root) {
+                Ok(rs) => rs,
+                Err(e) => {
+                    eprintln!("warning: refresh of {} failed: {e}", item.section());
+                    continue;
+                }
+            };
+            for row in rows {
+                if let Some(action) = row.action {
+                    if !header_printed {
+                        println!("{}", color::section(section));
+                        header_printed = true;
+                    }
+                    println!(
+                        "  {}{:<24} {}",
+                        color::check_mark(),
+                        row.name,
+                        color::success(action)
+                    );
+                    changed += 1;
+                }
+            }
+        }
+        if header_printed {
+            println!();
+        }
     }
-
-    match auth::run_update_default() {
-        Ok(n) => changed += n,
-        Err(e) => eprintln!("warning: auth update skipped: {e}"),
-    }
-
-    match ai::run_update_default() {
-        Ok(n) => changed += n,
-        Err(e) => eprintln!("warning: ai update skipped: {e}"),
-    }
-
+    // Trim the trailing blank line we always add after the last section.
     changed
 }
 
@@ -166,176 +182,36 @@ fn run_check() -> Result<()> {
         return Ok(());
     };
 
-    println!();
-    println!("{}", color::section("Repo state"));
-    match init::last_sync_version(&root) {
-        Some(v) if v == CURRENT_VERSION => println!(
-            "  {}version marker {}",
-            color::check_mark(),
-            color::inactive(&format!("({v})"))
-        ),
-        Some(v) => {
-            stale = true;
-            println!(
-                "  {}version marker {}",
-                color::warn_mark(),
-                color::warning(&format!("stale (last {v}, current {CURRENT_VERSION})"))
-            );
+    let items = update_registry::all();
+    for section in SECTION_ORDER {
+        let section_items: Vec<&Box<dyn UpdateItem>> =
+            items.iter().filter(|i| &i.section() == section).collect();
+        if section_items.is_empty() {
+            continue;
         }
-        None => {
-            stale = true;
-            println!(
-                "  {}version marker {}",
-                color::warn_mark(),
-                color::warning("never synced")
-            );
-        }
-    }
-
-    println!();
-    println!("{}", color::section("Git extensions"));
-    let row = |ok: bool, name: &str, detail: &str| {
-        let mark = if ok {
-            color::check_mark()
-        } else {
-            color::warn_mark()
-        };
-        let status = if ok {
-            color::inactive(detail)
-        } else {
-            color::warning(detail)
-        };
-        println!("  {mark}{name:<24} {status}");
-    };
-
-    let block_ok = |path: &std::path::Path, marker: &str, entries: &[&str]| {
-        std::fs::read_to_string(path)
-            .map(|s| s.contains(marker) && entries.iter().all(|e| s.contains(e)))
-            .unwrap_or(false)
-    };
-
-    let gitignore_entries: Vec<&str> = joy_core::init::GITIGNORE_BASE_ENTRIES
-        .iter()
-        .map(|(p, _)| *p)
-        .collect();
-    let gitignore_ok = block_ok(
-        &root.join(".gitignore"),
-        joy_core::init::GITIGNORE_BLOCK_START,
-        &gitignore_entries,
-    );
-    if !gitignore_ok {
-        stale = true;
-    }
-    row(
-        gitignore_ok,
-        ".gitignore block",
-        if gitignore_ok {
-            "managed block present"
-        } else {
-            "missing or out of date"
-        },
-    );
-
-    let attrs_ok = block_ok(
-        &root.join(".gitattributes"),
-        joy_core::init::GITATTRIBUTES_BLOCK_START,
-        joy_core::init::GITATTRIBUTES_BASE_ENTRIES,
-    );
-    if !attrs_ok {
-        stale = true;
-    }
-    row(
-        attrs_ok,
-        ".gitattributes block",
-        if attrs_ok {
-            "managed block present"
-        } else {
-            "missing or out of date"
-        },
-    );
-
-    let vcs = joy_core::vcs::default_vcs();
-    let driver_ok = vcs
-        .config_get(&root, joy_core::init::MERGE_DRIVER_NAME_KEY)
-        .ok()
-        .as_deref()
-        == Some(joy_core::init::MERGE_DRIVER_NAME_VALUE)
-        && vcs
-            .config_get(&root, joy_core::init::MERGE_DRIVER_CMD_KEY)
-            .ok()
-            .as_deref()
-            == Some(joy_core::init::MERGE_DRIVER_CMD_VALUE);
-    if !driver_ok {
-        stale = true;
-    }
-    row(
-        driver_ok,
-        "merge.joy-yaml.driver",
-        if driver_ok {
-            "registered"
-        } else {
-            "missing or out of date"
-        },
-    );
-
-    let hooks_path_ok =
-        vcs.config_get(&root, "core.hooksPath").ok().as_deref() == Some(".joy/hooks");
-    if !hooks_path_ok {
-        stale = true;
-    }
-    row(
-        hooks_path_ok,
-        "core.hooksPath",
-        if hooks_path_ok {
-            ".joy/hooks"
-        } else {
-            "not pointing at .joy/hooks"
-        },
-    );
-
-    println!();
-    println!("{}", color::section("Embedded files"));
-    use joy_core::embedded::FileStatus;
-    let embedded_groups: &[(&[joy_core::embedded::EmbeddedFile], &str)] = &[
-        (joy_core::init::HOOK_FILES, "hook"),
-        (joy_core::init::CONFIG_FILES, "config default"),
-        (joy_core::init::PROJECT_FILES, "project default"),
-    ];
-    for (files, _label) in embedded_groups {
-        match joy_core::embedded::diff_files(&root, files) {
-            Ok(diffs) => {
-                for (target, status) in diffs {
-                    let ok = matches!(status, FileStatus::UpToDate);
-                    if !ok {
-                        stale = true;
-                    }
-                    let detail = match status {
-                        FileStatus::UpToDate => "up to date",
-                        FileStatus::Outdated => "stale (would be re-rendered)",
-                        FileStatus::Missing => "missing (would be installed)",
-                    };
-                    row(ok, target, detail);
+        println!();
+        println!("{}", color::section(section));
+        for item in section_items {
+            let rows = match item.check(&root) {
+                Ok(rs) => rs,
+                Err(e) => {
+                    stale = true;
+                    println!("  {}error: {e}", color::warn_mark());
+                    continue;
                 }
-            }
-            Err(e) => {
-                stale = true;
-                println!("  {}error reading embedded files: {e}", color::warn_mark());
+            };
+            for row in rows {
+                let (mark, detail) = match row.mark {
+                    RowMark::Ok => (color::check_mark(), color::inactive(&row.detail)),
+                    RowMark::Stale => {
+                        stale = true;
+                        (color::warn_mark(), color::warning(&row.detail))
+                    }
+                    RowMark::Info => (color::empty_mark(), color::inactive(&row.detail)),
+                };
+                println!("  {mark}{:<24} {}", row.name, detail);
             }
         }
-    }
-
-    println!();
-    match auth::run_check_default() {
-        Ok(true) => stale = true,
-        Ok(false) => {}
-        Err(e) => println!("  {}error: {e}", color::warn_mark()),
-    }
-
-    println!();
-    match ai::run_check_default() {
-        Ok(true) => stale = true,
-        Ok(false) => {}
-        Err(e) => println!("  {}error: {e}", color::warn_mark()),
     }
 
     println!();

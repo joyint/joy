@@ -1,0 +1,525 @@
+// Copyright (c) 2026 Joydev GmbH (joydev.com)
+// SPDX-License-Identifier: MIT
+
+//! Declarative registry of joy-managed artefacts.
+//!
+//! `joy update` and `joy update --check` iterate this registry instead
+//! of hand-rolling per-domain plumbing. Adding a new artefact means
+//! writing one [`UpdateItem`] impl and registering it in [`all`].
+//! See JOY-0169-6A.
+//!
+//! The trait keeps two paths separate:
+//! - [`UpdateItem::check`] is read-only and reports the current state.
+//! - [`UpdateItem::refresh`] writes if needed and returns whether
+//!   anything actually changed.
+//!
+//! The orchestrator (in [`crate::commands::update`]) groups rows by
+//! [`UpdateItem::section`] and drives output formatting.
+
+use std::path::Path;
+
+use anyhow::Result;
+use joy_core::vcs::Vcs;
+use joy_core::{embedded, init};
+
+use crate::commands::{ai, auth};
+
+/// Section labels used to group items in the output.
+pub const SECTION_REPO: &str = "Repo state";
+pub const SECTION_GIT: &str = "Git extensions";
+pub const SECTION_EMBEDDED: &str = "Embedded files";
+pub const SECTION_AUTH: &str = "Auth artefacts";
+pub const SECTION_AI: &str = "AI tool files";
+
+/// Visual-and-semantic state of a check row.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum RowMark {
+    /// Up to date. Renders with `check_mark`. Does not contribute to
+    /// the "stale" exit code.
+    Ok,
+    /// Needs attention from `joy update`. Renders with `warn_mark` and
+    /// makes `joy update --check` exit 2.
+    Stale,
+    /// Informational only (e.g. "not installed"). Renders with
+    /// `empty_mark` and does not contribute to the exit code.
+    Info,
+}
+
+/// Read-only result of an [`UpdateItem::check`].
+pub struct CheckRow {
+    /// Display name shown left-aligned in the row.
+    pub name: String,
+    pub mark: RowMark,
+    /// Right-aligned detail (e.g. "up to date", "stale", "(0.14.2)").
+    pub detail: String,
+}
+
+impl RowMark {
+    /// Convenience for items that only distinguish ok/stale.
+    pub fn from_ok(ok: bool) -> Self {
+        if ok {
+            RowMark::Ok
+        } else {
+            RowMark::Stale
+        }
+    }
+}
+
+/// Write result of an [`UpdateItem::refresh`].
+pub struct RefreshRow {
+    pub name: String,
+    /// `Some(verb)` when the item was actually changed (e.g.
+    /// "rendered", "registered", "refreshed"). `None` when already up
+    /// to date and therefore not displayed in the terse `joy update`
+    /// output.
+    pub action: Option<&'static str>,
+}
+
+/// One joy-managed artefact (or a small group thereof).
+pub trait UpdateItem: Sync + Send {
+    fn section(&self) -> &'static str;
+    /// Read-only check; may produce zero or more rows.
+    fn check(&self, root: &Path) -> Result<Vec<CheckRow>>;
+    /// Write path. Idempotent. Produces one row per touched artefact;
+    /// rows with `action: None` mean "already up to date".
+    fn refresh(&self, root: &Path) -> Result<Vec<RefreshRow>>;
+}
+
+/// Build the registry. Order in this list defines section ordering and
+/// row ordering within a section in the displayed output.
+pub fn all() -> Vec<Box<dyn UpdateItem>> {
+    let mut v: Vec<Box<dyn UpdateItem>> = vec![
+        Box::new(VersionMarkerItem),
+        Box::new(GitignoreBlockItem),
+        Box::new(GitattributesBlockItem),
+        Box::new(MergeDriverItem),
+        Box::new(HooksPathItem),
+        Box::new(EmbeddedFilesItem {
+            section: SECTION_EMBEDDED,
+            files: init::HOOK_FILES,
+        }),
+        Box::new(EmbeddedFilesItem {
+            section: SECTION_EMBEDDED,
+            files: init::CONFIG_FILES,
+        }),
+        Box::new(EmbeddedFilesItem {
+            section: SECTION_EMBEDDED,
+            files: init::PROJECT_FILES,
+        }),
+        Box::new(SecurityMdItem),
+        Box::new(ProjectYamlSchemaItem),
+    ];
+    for id in ai::tool_ids() {
+        v.push(Box::new(AiToolItem { id }));
+    }
+    v
+}
+
+// -- Repo state ---------------------------------------------------------
+
+struct VersionMarkerItem;
+
+impl UpdateItem for VersionMarkerItem {
+    fn section(&self) -> &'static str {
+        SECTION_REPO
+    }
+    fn check(&self, root: &Path) -> Result<Vec<CheckRow>> {
+        let current = crate::commands::update::CURRENT_VERSION;
+        let detail = match init::last_sync_version(root) {
+            Some(v) if v == current => (true, format!("({current})")),
+            Some(v) => (false, format!("stale (last {v}, current {current})")),
+            None => (false, "never synced".to_string()),
+        };
+        Ok(vec![CheckRow {
+            name: "version marker".into(),
+            mark: RowMark::from_ok(detail.0),
+            detail: detail.1,
+        }])
+    }
+    fn refresh(&self, root: &Path) -> Result<Vec<RefreshRow>> {
+        let current = crate::commands::update::CURRENT_VERSION;
+        let was_current = init::last_sync_version(root).as_deref() == Some(current);
+        init::set_last_sync_version(root, current)?;
+        Ok(vec![RefreshRow {
+            name: "version marker".into(),
+            action: if was_current { None } else { Some("stamped") },
+        }])
+    }
+}
+
+// -- Git extensions -----------------------------------------------------
+
+fn block_present(path: &Path, marker: &str, entries: &[&str]) -> bool {
+    std::fs::read_to_string(path)
+        .map(|s| s.contains(marker) && entries.iter().all(|e| s.contains(e)))
+        .unwrap_or(false)
+}
+
+struct GitignoreBlockItem;
+
+impl UpdateItem for GitignoreBlockItem {
+    fn section(&self) -> &'static str {
+        SECTION_GIT
+    }
+    fn check(&self, root: &Path) -> Result<Vec<CheckRow>> {
+        let entries: Vec<&str> = init::GITIGNORE_BASE_ENTRIES
+            .iter()
+            .map(|(p, _)| *p)
+            .collect();
+        let ok = block_present(
+            &root.join(".gitignore"),
+            init::GITIGNORE_BLOCK_START,
+            &entries,
+        );
+        Ok(vec![CheckRow {
+            name: ".gitignore block".into(),
+            mark: RowMark::from_ok(ok),
+            detail: if ok {
+                "managed block present".into()
+            } else {
+                "missing or out of date".into()
+            },
+        }])
+    }
+    fn refresh(&self, root: &Path) -> Result<Vec<RefreshRow>> {
+        let before = matches!(self.check(root)?[0].mark, RowMark::Ok);
+        init::update_gitignore_block(root, init::GITIGNORE_BASE_ENTRIES)?;
+        Ok(vec![RefreshRow {
+            name: ".gitignore block".into(),
+            action: if before { None } else { Some("registered") },
+        }])
+    }
+}
+
+struct GitattributesBlockItem;
+
+impl UpdateItem for GitattributesBlockItem {
+    fn section(&self) -> &'static str {
+        SECTION_GIT
+    }
+    fn check(&self, root: &Path) -> Result<Vec<CheckRow>> {
+        let ok = block_present(
+            &root.join(".gitattributes"),
+            init::GITATTRIBUTES_BLOCK_START,
+            init::GITATTRIBUTES_BASE_ENTRIES,
+        );
+        Ok(vec![CheckRow {
+            name: ".gitattributes block".into(),
+            mark: RowMark::from_ok(ok),
+            detail: if ok {
+                "managed block present".into()
+            } else {
+                "missing or out of date".into()
+            },
+        }])
+    }
+    fn refresh(&self, root: &Path) -> Result<Vec<RefreshRow>> {
+        let before = matches!(self.check(root)?[0].mark, RowMark::Ok);
+        init::update_gitattributes_block(root, init::GITATTRIBUTES_BASE_ENTRIES)?;
+        Ok(vec![RefreshRow {
+            name: ".gitattributes block".into(),
+            action: if before { None } else { Some("registered") },
+        }])
+    }
+}
+
+struct MergeDriverItem;
+
+impl MergeDriverItem {
+    fn current(&self, root: &Path) -> bool {
+        let vcs = joy_core::vcs::default_vcs();
+        if !vcs.is_repo(root) {
+            return false;
+        }
+        vcs.config_get(root, init::MERGE_DRIVER_NAME_KEY)
+            .ok()
+            .as_deref()
+            == Some(init::MERGE_DRIVER_NAME_VALUE)
+            && vcs
+                .config_get(root, init::MERGE_DRIVER_CMD_KEY)
+                .ok()
+                .as_deref()
+                == Some(init::MERGE_DRIVER_CMD_VALUE)
+    }
+}
+
+impl UpdateItem for MergeDriverItem {
+    fn section(&self) -> &'static str {
+        SECTION_GIT
+    }
+    fn check(&self, root: &Path) -> Result<Vec<CheckRow>> {
+        let ok = self.current(root);
+        Ok(vec![CheckRow {
+            name: "merge.joy-yaml.driver".into(),
+            mark: RowMark::from_ok(ok),
+            detail: if ok {
+                "registered".into()
+            } else {
+                "missing or out of date".into()
+            },
+        }])
+    }
+    fn refresh(&self, root: &Path) -> Result<Vec<RefreshRow>> {
+        let before = self.current(root);
+        let vcs = joy_core::vcs::default_vcs();
+        if vcs.is_repo(root) {
+            vcs.config_set(
+                root,
+                init::MERGE_DRIVER_NAME_KEY,
+                init::MERGE_DRIVER_NAME_VALUE,
+            )?;
+            vcs.config_set(
+                root,
+                init::MERGE_DRIVER_CMD_KEY,
+                init::MERGE_DRIVER_CMD_VALUE,
+            )?;
+        }
+        Ok(vec![RefreshRow {
+            name: "merge.joy-yaml.driver".into(),
+            action: if before { None } else { Some("registered") },
+        }])
+    }
+}
+
+struct HooksPathItem;
+
+impl HooksPathItem {
+    fn current(&self, root: &Path) -> bool {
+        let vcs = joy_core::vcs::default_vcs();
+        vcs.config_get(root, "core.hooksPath").ok().as_deref() == Some(".joy/hooks")
+    }
+}
+
+impl UpdateItem for HooksPathItem {
+    fn section(&self) -> &'static str {
+        SECTION_GIT
+    }
+    fn check(&self, root: &Path) -> Result<Vec<CheckRow>> {
+        let ok = self.current(root);
+        Ok(vec![CheckRow {
+            name: "core.hooksPath".into(),
+            mark: RowMark::from_ok(ok),
+            detail: if ok {
+                ".joy/hooks".into()
+            } else {
+                "not pointing at .joy/hooks".into()
+            },
+        }])
+    }
+    fn refresh(&self, root: &Path) -> Result<Vec<RefreshRow>> {
+        let before = self.current(root);
+        let vcs = joy_core::vcs::default_vcs();
+        if vcs.is_repo(root) {
+            vcs.config_set(root, "core.hooksPath", ".joy/hooks")?;
+        }
+        Ok(vec![RefreshRow {
+            name: "core.hooksPath".into(),
+            action: if before { None } else { Some("set") },
+        }])
+    }
+}
+
+// -- Embedded files -----------------------------------------------------
+
+struct EmbeddedFilesItem {
+    section: &'static str,
+    files: &'static [embedded::EmbeddedFile],
+}
+
+impl UpdateItem for EmbeddedFilesItem {
+    fn section(&self) -> &'static str {
+        self.section
+    }
+    fn check(&self, root: &Path) -> Result<Vec<CheckRow>> {
+        let diffs = embedded::diff_files(root, self.files)?;
+        Ok(diffs
+            .into_iter()
+            .map(|(target, status)| {
+                let ok = matches!(status, embedded::FileStatus::UpToDate);
+                let detail = match status {
+                    embedded::FileStatus::UpToDate => "up to date",
+                    embedded::FileStatus::Outdated => "stale (would be re-rendered)",
+                    embedded::FileStatus::Missing => "missing (would be installed)",
+                }
+                .to_string();
+                CheckRow {
+                    name: target.to_string(),
+                    mark: RowMark::from_ok(ok),
+                    detail,
+                }
+            })
+            .collect())
+    }
+    fn refresh(&self, root: &Path) -> Result<Vec<RefreshRow>> {
+        let actions = embedded::sync_files(root, self.files)?;
+        Ok(actions
+            .into_iter()
+            .map(|a| {
+                let action = match a.action {
+                    "up to date" => None,
+                    "created" => Some("installed"),
+                    "updated" => Some("refreshed"),
+                    other => Some(Box::leak(other.to_string().into_boxed_str()) as &'static str),
+                };
+                RefreshRow {
+                    name: a.target.to_string(),
+                    action,
+                }
+            })
+            .collect())
+    }
+}
+
+// -- Auth artefacts -----------------------------------------------------
+
+struct SecurityMdItem;
+
+impl UpdateItem for SecurityMdItem {
+    fn section(&self) -> &'static str {
+        SECTION_AUTH
+    }
+    fn check(&self, root: &Path) -> Result<Vec<CheckRow>> {
+        let (security_current, _, _, _) = auth::auth_state_pub(root)?;
+        Ok(vec![CheckRow {
+            name: "SECURITY.md".into(),
+            mark: RowMark::from_ok(security_current),
+            detail: if security_current {
+                "up to date".into()
+            } else {
+                "stale".into()
+            },
+        }])
+    }
+    fn refresh(&self, root: &Path) -> Result<Vec<RefreshRow>> {
+        let security_path = root.join("SECURITY.md");
+        let changed = joy_core::security_md::render(&security_path)?;
+        if changed {
+            joy_core::git_ops::auto_git_add(root, &["SECURITY.md"]);
+        }
+        Ok(vec![RefreshRow {
+            name: "SECURITY.md".into(),
+            action: if changed { Some("rendered") } else { None },
+        }])
+    }
+}
+
+struct ProjectYamlSchemaItem;
+
+impl UpdateItem for ProjectYamlSchemaItem {
+    fn section(&self) -> &'static str {
+        SECTION_AUTH
+    }
+    fn check(&self, root: &Path) -> Result<Vec<CheckRow>> {
+        let (_, schema_stale, _, _) = auth::auth_state_pub(root)?;
+        Ok(vec![CheckRow {
+            name: "project.yaml schema".into(),
+            mark: RowMark::from_ok(!schema_stale),
+            detail: if schema_stale {
+                "stale".into()
+            } else {
+                "up to date".into()
+            },
+        }])
+    }
+    fn refresh(&self, root: &Path) -> Result<Vec<RefreshRow>> {
+        let (_, schema_stale, migrated_value, _) = auth::auth_state_pub(root)?;
+        if schema_stale {
+            auth::write_migrated_project(root, migrated_value)?;
+        }
+        Ok(vec![RefreshRow {
+            name: "project.yaml schema".into(),
+            action: if schema_stale {
+                Some("normalised")
+            } else {
+                None
+            },
+        }])
+    }
+}
+
+// -- AI tool files ------------------------------------------------------
+
+struct AiToolItem {
+    id: &'static str,
+}
+
+impl AiToolItem {
+    fn display_name(&self) -> &'static str {
+        ai::tool_display_name(self.id).unwrap_or(self.id)
+    }
+    fn member_id(&self) -> String {
+        format!("ai:{}@joy", self.id)
+    }
+}
+
+impl UpdateItem for AiToolItem {
+    fn section(&self) -> &'static str {
+        SECTION_AI
+    }
+    fn check(&self, root: &Path) -> Result<Vec<CheckRow>> {
+        let installed = ai::is_tool_installed(self.id);
+        let configured = ai::is_tool_configured_pub(root, self.id);
+        // joy update only refreshes configured tools; "installed but
+        // not configured" and "not installed" are informational, not
+        // stale (the user must run joy ai init to opt in).
+        let (mark, detail) = if configured {
+            let stale = ai::is_tool_stale_pub(root, self.id, &self.member_id())?;
+            if stale {
+                (RowMark::Stale, "outdated".to_string())
+            } else {
+                (RowMark::Ok, "up to date".to_string())
+            }
+        } else if installed {
+            (
+                RowMark::Info,
+                "installed, not configured (run joy ai init)".to_string(),
+            )
+        } else {
+            (RowMark::Info, "not installed".to_string())
+        };
+        Ok(vec![CheckRow {
+            name: self.display_name().to_string(),
+            mark,
+            detail,
+        }])
+    }
+    fn refresh(&self, root: &Path) -> Result<Vec<RefreshRow>> {
+        if !ai::is_tool_configured_pub(root, self.id) {
+            // Not configured -> not joy's job to install; skip silently.
+            return Ok(Vec::new());
+        }
+        let changed = ai::refresh_tool_by_id(root, self.id, &self.member_id())?;
+        // Keep the configured-tools .gitignore entries fresh too.
+        let _ = ai::sync_gitignore_for_configured_tools(root);
+        Ok(vec![RefreshRow {
+            name: self.display_name().to_string(),
+            action: if changed { Some("refreshed") } else { None },
+        }])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Sanity: every section name referenced in [`all`] is one of the
+    /// declared section constants. This stops a typo from silently
+    /// inventing a new section.
+    #[test]
+    fn registered_items_use_known_sections() {
+        let known = [
+            SECTION_REPO,
+            SECTION_GIT,
+            SECTION_EMBEDDED,
+            SECTION_AUTH,
+            SECTION_AI,
+        ];
+        for item in all() {
+            assert!(
+                known.contains(&item.section()),
+                "unknown section: {}",
+                item.section()
+            );
+        }
+    }
+}

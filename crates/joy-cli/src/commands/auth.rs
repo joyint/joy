@@ -200,6 +200,31 @@ fn resolve_user(user_flag: Option<&str>) -> Result<String> {
     }
 }
 
+/// Inspect SECURITY.md and project.yaml schema. Returns
+/// `(security_current, schema_stale, migrated_value, security_path)`.
+/// `security_current` is true when SECURITY.md matches the shipped
+/// template; `schema_stale` is true when project.yaml uses legacy
+/// auth-field names. Exposed for the update registry.
+pub(crate) fn auth_state_pub(
+    root: &std::path::Path,
+) -> Result<(bool, bool, serde_yaml_ng::Value, std::path::PathBuf)> {
+    auth_state(root)
+}
+
+/// Persist a project.yaml schema migration produced by [`auth_state_pub`].
+/// Used by the update registry's project-schema item.
+pub(crate) fn write_migrated_project(
+    root: &std::path::Path,
+    migrated_value: serde_yaml_ng::Value,
+) -> Result<()> {
+    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
+    let project: joy_core::model::project::Project = serde_yaml_ng::from_value(migrated_value)?;
+    store::write_yaml_preserve(&project_path, &project)?;
+    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+    joy_core::git_ops::auto_git_add(root, &[&rel]);
+    Ok(())
+}
+
 fn auth_state(
     root: &std::path::Path,
 ) -> Result<(bool, bool, serde_yaml_ng::Value, std::path::PathBuf)> {
@@ -216,120 +241,6 @@ fn auth_state(
         migrated_value,
         security_path,
     ))
-}
-
-/// Aggregated check used by `joy update --check`. Prints the section
-/// header and one row per inspected artefact; returns `true` when
-/// anything is stale.
-pub(crate) fn run_check_default() -> Result<bool> {
-    use crate::color;
-    let cwd = std::env::current_dir()?;
-    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
-    let (security_current, schema_stale, _, _) = auth_state(&root)?;
-    println!("{}", color::section("Auth artefacts"));
-    let row = |ok: bool, name: &str| {
-        let mark = if ok {
-            color::check_mark()
-        } else {
-            color::warn_mark()
-        };
-        let status = if ok {
-            color::inactive("up to date")
-        } else {
-            color::warning("stale")
-        };
-        println!("  {mark}{name:<24} {status}");
-    };
-    row(security_current, "SECURITY.md");
-    row(!schema_stale, "project.yaml schema");
-    Ok(!security_current || schema_stale)
-}
-
-/// `joy update` orchestrator entry point: bring auth-scoped Joy-managed
-/// artefacts up to the current Joy version. Renders SECURITY.md from the
-/// shipped template (preserving any user content outside the marker
-/// block) and normalises `project.yaml` from the legacy auth schema to
-/// the current one. Per ADR-035 this is the only place schema migration
-/// is persisted.
-/// `joy update` orchestrator entry: refresh auth artefacts. Prints
-/// joy-style rows only for items that actually changed; stays silent
-/// when everything is current. Returns the number of artefacts
-/// refreshed so the caller can decide whether to surface an empty
-/// section.
-pub(crate) fn run_update_default() -> Result<u32> {
-    use crate::color;
-    let cwd = std::env::current_dir()?;
-    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
-    let (_, schema_stale, migrated_value, security_path) = auth_state(&root)?;
-    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
-
-    let mut changed = 0u32;
-    let mut header_printed = false;
-    let mut header = || {
-        if !header_printed {
-            println!("{}", color::section("Auth artefacts"));
-            header_printed = true;
-        }
-    };
-
-    let security_changed = joy_core::security_md::render(&security_path)?;
-    if security_changed {
-        joy_core::git_ops::auto_git_add(&root, &["SECURITY.md"]);
-        header();
-        println!(
-            "  {}{:<24} {}",
-            color::check_mark(),
-            "SECURITY.md",
-            color::success("rendered")
-        );
-        changed += 1;
-    }
-
-    if schema_stale {
-        // Re-deserialize the migrated value into a typed Project and
-        // write it back through write_yaml_preserve so any unknown
-        // top-level keys (e.g. release config) survive untouched.
-        let project: joy_core::model::project::Project = serde_yaml_ng::from_value(migrated_value)?;
-        store::write_yaml_preserve(&project_path, &project)?;
-        let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-        joy_core::git_ops::auto_git_add(&root, &[&rel]);
-        header();
-        println!(
-            "  {}{:<24} {}",
-            color::check_mark(),
-            "project.yaml schema",
-            color::success("normalised")
-        );
-        changed += 1;
-    }
-
-    // Warn about AI delegation entries that lack delegation_salt: the
-    // operator can still redeem any outstanding token until its TTL
-    // expires, but the next `joy auth token add` will refuse to issue
-    // a new one until they rotate. Surface the situation here so they
-    // are not surprised at issuance time.
-    let project = store::read_project(&project_path)?;
-    let mut legacy_pairs: Vec<(String, String)> = Vec::new();
-    for (operator, member) in &project.members {
-        for (ai, entry) in &member.ai_delegations {
-            if entry.delegation_salt.is_none() {
-                legacy_pairs.push((operator.clone(), ai.clone()));
-            }
-        }
-    }
-    if !legacy_pairs.is_empty() {
-        println!();
-        println!("Legacy AI delegations without a delegation_salt:");
-        for (op, ai) in &legacy_pairs {
-            println!("  {op} -> {ai}");
-        }
-        println!(
-            "  Existing tokens keep working until their TTL expires; the next \
-             `joy auth token add` for these will require `joy auth delegation rotate`."
-        );
-    }
-
-    Ok(changed)
 }
 
 /// Resolve token from --token flag or JOY_TOKEN env var.

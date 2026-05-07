@@ -9,6 +9,7 @@ mod effort;
 mod forge;
 mod output;
 mod prompt;
+mod update_registry;
 mod version_bump;
 
 use std::io::IsTerminal;

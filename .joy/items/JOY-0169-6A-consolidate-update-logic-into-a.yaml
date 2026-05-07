@@ -1,0 +1,35 @@
+id: JOY-0169-6A
+title: Consolidate update logic into a declarative UpdateItem registry
+type: task
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-07T05:56:14.145122Z
+updated: 2026-05-07T06:07:55.336603Z
+description: |-
+  Today the update logic is split across joy-cli (commands/update.rs orchestrator, commands/auth.rs run_update_default + run_check_default, commands/ai.rs configure_* + is_tool_stale + run_update_default + run_check_default) and joy-core (init::onboard, ensure_gitattributes, ensure_gitignore, register_merge_driver, install_hooks; embedded::diff_files, sync_files). joy update and joy update --check have to know about every domain explicitly to stitch the output.
+
+  Refactor to a registry pattern: a trait UpdateItem with name(), section(), check(root), refresh(root), exposed by each domain. A single const list (or builder) registered centrally drives both joy update and joy update --check. Adding a new updateable artefact means writing one impl, not threading a third call into each side.
+
+  Acceptance:
+  - New UpdateItem trait + registry in joy-cli (or joy-core if portable).
+  - Existing per-domain refreshers/checkers re-expose themselves as registry entries; legacy run_update_default / run_check_default disappear in favour of registry iteration.
+  - joy update and joy update --check produce equivalent output (terse vs comprehensive) with no per-domain plumbing.
+  - Adding a fictional new item (e.g. .joy/foobar.yaml) requires only an impl + registry entry, no edit in update.rs.
+  - Tests stay green; behaviour identical for existing items.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-07T06:07:55.257454Z
+  text: |-
+    [x] New module crates/joy-cli/src/update_registry.rs with UpdateItem trait + RowMark enum (Ok / Stale / Info) + CheckRow / RefreshRow value types + all() returning Vec<Box<dyn UpdateItem>>.
+    [x] Items implemented: VersionMarkerItem, GitignoreBlockItem, GitattributesBlockItem, MergeDriverItem, HooksPathItem, EmbeddedFilesItem (parameterised, three instances for HOOK_FILES / CONFIG_FILES / PROJECT_FILES), SecurityMdItem, ProjectYamlSchemaItem, AiToolItem (parameterised, four instances for claude / qwen / vibe / copilot).
+    [x] commands/update.rs is now a thin orchestrator: iterate the registry by section, format rows joy-style, drive the binary self-update around it. run_check is comprehensive (every row), run_full_sync is terse (only changed rows + lazy section headers).
+    [x] commands/auth.rs and commands/ai.rs lost their per-domain run_update_default / run_check_default / update_terse functions; the work moved into the registry items. They now expose only the helpers the items need (auth_state_pub, write_migrated_project, tool_display_name, tool_ids, is_tool_installed, is_tool_configured_pub, is_tool_stale_pub, refresh_tool_by_id, sync_gitignore_for_configured_tools).
+    [x] commands/init.rs no longer routes through commands::auth; it calls security_md::render directly so a fresh init has SECURITY.md rendered without going through the registry.
+    [x] AiToolItem reports 'installed, not configured' and 'not installed' as RowMark::Info so they no longer count toward the --check exit code.
+    [x] 319 unit tests, 56 sanity bats green, clippy + fmt clean. Adding a new artefact now means: write one impl, append one entry in update_registry::all(); orchestrator and check pick it up automatically.

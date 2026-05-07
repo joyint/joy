@@ -156,184 +156,60 @@ struct AiInitPayload {
     configured_tools: Vec<String>,
 }
 
-/// Programmatic entry to the AI update routine, invoked from the
-/// `joy update` orchestrator and the auto-sync hook so configured AI
-/// tool files refresh after a binary upgrade. Returns the number of
-/// tools that were actually refreshed (skipped tools that were
-/// already up to date or not installed do not count).
-pub(crate) fn run_update_default() -> anyhow::Result<u32> {
-    update_terse()
-}
-
-/// Read-only check used by `joy update --check`. Prints the section
-/// header and one line per configured AI tool; returns `true` when
-/// anything is stale.
-pub(crate) fn run_check_default() -> anyhow::Result<bool> {
-    update(true)
-}
-
-/// Terse write path: only print rows for tools that were actually
-/// refreshed; tools that were already up to date / not configured /
-/// not installed contribute no output.
-fn update_terse() -> anyhow::Result<u32> {
-    let root = joy_core::store::find_project_root(&std::env::current_dir()?)
-        .ok_or_else(|| anyhow::anyhow!("No Joy project found (run `joy init` first)"))?;
-
-    joy_core::embedded::sync_files(&root, joy_core::init::PROJECT_FILES)?;
-
-    let mut changed_count = 0u32;
-    let mut header_printed = false;
-    let mut configured_tools: Vec<&str> = Vec::new();
-    for (name, id, _detect, configure) in ALL_TOOLS {
-        if !is_tool_configured(&root, id) {
-            continue;
-        }
-        configured_tools.push(id);
-        let member_id = format!("ai:{id}@joy");
-        QUIET.store(true, std::sync::atomic::Ordering::Relaxed);
-        let changed = configure(&root, &member_id)?;
-        QUIET.store(false, std::sync::atomic::Ordering::Relaxed);
-        if changed {
-            if !header_printed {
-                dprintln!("{}", color::section("AI tool files"));
-                header_printed = true;
-            }
-            dprintln!(
-                "  {}{:<24} {}",
-                color::check_mark(),
-                name,
-                color::success("refreshed")
-            );
-            changed_count += 1;
-        }
-    }
-
-    update_gitignore(&root, &configured_tools)?;
-    Ok(changed_count)
-}
-
-fn update(dry_run: bool) -> anyhow::Result<bool> {
-    let root = joy_core::store::find_project_root(&std::env::current_dir()?)
-        .ok_or_else(|| anyhow::anyhow!("No Joy project found (run `joy init` first)"))?;
-
-    if crate::output::is_json() {
-        let mut entries: Vec<AiToolEntry> = Vec::new();
-        let mut has_issues = false;
-        for (name, id, detect, _configure) in ALL_TOOLS {
-            let installed = detect();
-            let configured = is_tool_configured(&root, id);
-            let stale = if dry_run && configured {
-                let member_id = format!("ai:{id}@joy");
-                is_tool_stale(&root, id, &member_id)?
-            } else {
-                false
-            };
-            if stale {
-                has_issues = true;
-            }
-            entries.push(AiToolEntry {
-                name: name.to_string(),
-                id: id.to_string(),
-                installed,
-                configured,
-                stale,
-            });
-        }
-        crate::output::emit(AiStatusPayload {
-            check: dry_run,
-            tools: entries,
-            has_issues,
-        })?;
-        return Ok(has_issues);
-    }
-
-    if !dry_run {
-        joy_core::embedded::sync_files(&root, joy_core::init::PROJECT_FILES)?;
-    }
-    // Both dry-run and write path use the same section title. The
-    // surrounding `joy update` (or `joy update --check`) wrapper
-    // provides the full-width header.
-    dprintln!("{}", color::section("AI tool files"));
-
-    let mut tool_count = 0;
-    let mut has_issues = false;
-    let mut configured_tools: Vec<&str> = Vec::new();
-
-    for (name, id, detect, configure) in ALL_TOOLS {
-        let installed = detect();
-        let configured = is_tool_configured(&root, id);
-        if configured {
-            tool_count += 1;
-            configured_tools.push(id);
-            let member_id = format!("ai:{id}@joy");
-            if dry_run {
-                let stale = is_tool_stale(&root, id, &member_id)?;
-                if stale {
-                    has_issues = true;
-                    dprintln!(
-                        "  {}{:<24} {}",
-                        color::warn_mark(),
-                        name,
-                        color::warning("outdated")
-                    );
-                } else {
-                    dprintln!(
-                        "  {}{:<24} {}",
-                        color::check_mark(),
-                        name,
-                        color::inactive("up to date")
-                    );
-                }
-            } else {
-                QUIET.store(true, std::sync::atomic::Ordering::Relaxed);
-                let changed = configure(&root, &member_id)?;
-                QUIET.store(false, std::sync::atomic::Ordering::Relaxed);
-                let status = if changed {
-                    color::success("updated")
-                } else {
-                    color::inactive("up to date")
-                };
-                dprintln!("  {}{:<24} {}", color::check_mark(), name, status);
-            }
-        } else if installed {
-            dprintln!(
-                "  {}{:<24} {}",
-                color::warn_mark(),
-                name,
-                color::warning("installed, not configured")
-            );
-        } else {
-            dprintln!(
-                "  {}{:<24} {}",
-                color::empty_mark(),
-                name,
-                color::inactive("not installed")
-            );
-        }
-    }
-
-    if tool_count == 0 && !dry_run {
-        dprintln!(
-            "  {}No configured AI tools found. Run {} first.",
-            color::warn_mark(),
-            color::label("joy ai init")
-        );
-    }
-
-    // Sync gitignore entries for configured tools
-    if !dry_run {
-        update_gitignore(&root, &configured_tools)?;
-    }
-
-    // The wrapping `joy update` / `joy update --check` provides the
-    // overall footer; the per-section output stays footer-less.
-    let _ = tool_count;
-
-    Ok(has_issues)
-}
-
 /// Check if a tool's generated files are up to date by re-rendering expected
 /// content and comparing against on-disk files.
+/// Look up an ALL_TOOLS entry by id; exposed for the update registry.
+pub(crate) fn tool_display_name(id: &str) -> Option<&'static str> {
+    ALL_TOOLS
+        .iter()
+        .find(|(_, eid, _, _)| *eid == id)
+        .map(|(name, _, _, _)| *name)
+}
+
+pub(crate) fn tool_ids() -> &'static [&'static str] {
+    &["claude", "qwen", "vibe", "copilot"]
+}
+
+pub(crate) fn is_tool_installed(id: &str) -> bool {
+    ALL_TOOLS
+        .iter()
+        .find(|(_, eid, _, _)| *eid == id)
+        .map(|(_, _, detect, _)| detect())
+        .unwrap_or(false)
+}
+
+pub(crate) fn is_tool_configured_pub(root: &Path, id: &str) -> bool {
+    is_tool_configured(root, id)
+}
+
+pub(crate) fn is_tool_stale_pub(root: &Path, id: &str, member_id: &str) -> anyhow::Result<bool> {
+    is_tool_stale(root, id, member_id)
+}
+
+/// Sync the joy-managed `.gitignore` block with the entries needed for
+/// every currently configured AI tool.
+pub(crate) fn sync_gitignore_for_configured_tools(root: &Path) -> anyhow::Result<()> {
+    let configured: Vec<&'static str> = ALL_TOOLS
+        .iter()
+        .filter(|(_, id, _, _)| is_tool_configured(root, id))
+        .map(|(_, id, _, _)| *id)
+        .collect();
+    update_gitignore(root, &configured)
+}
+
+/// Refresh a single AI tool by id. Used by the update registry.
+pub(crate) fn refresh_tool_by_id(root: &Path, id: &str, member_id: &str) -> anyhow::Result<bool> {
+    let entry = ALL_TOOLS
+        .iter()
+        .find(|(_, eid, _, _)| *eid == id)
+        .ok_or_else(|| anyhow::anyhow!("unknown ai tool id: {id}"))?;
+    let configure = entry.3;
+    QUIET.store(true, std::sync::atomic::Ordering::Relaxed);
+    let changed = configure(root, member_id);
+    QUIET.store(false, std::sync::atomic::Ordering::Relaxed);
+    changed
+}
+
 fn is_tool_stale(root: &Path, tool: &str, member_id: &str) -> anyhow::Result<bool> {
     let workflow = ai_templates::load_workflow()?;
     let agents = ai_templates::load_agents()?;
@@ -1970,20 +1846,4 @@ mod tests {
         let content = fs::read_to_string(&path).unwrap();
         assert_eq!(content, "pure user content\n");
     }
-}
-
-#[derive(serde::Serialize)]
-struct AiStatusPayload {
-    check: bool,
-    tools: Vec<AiToolEntry>,
-    has_issues: bool,
-}
-
-#[derive(serde::Serialize)]
-struct AiToolEntry {
-    name: String,
-    id: String,
-    installed: bool,
-    configured: bool,
-    stale: bool,
 }
