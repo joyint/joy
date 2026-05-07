@@ -57,8 +57,6 @@ pub struct AiArgs {
 enum AiCommand {
     /// Initialize AI tool integration for new tools
     Init(InitArgs),
-    /// Update AI tool files to current Joy version
-    Update(UpdateArgs),
     /// Remove AI tool configurations from this project
     Reset(ResetArgs),
     /// Rotate the (operator, AI) delegation keypair
@@ -87,13 +85,6 @@ struct InitArgs {
 }
 
 #[derive(clap::Args)]
-struct UpdateArgs {
-    /// Only check if files are up to date (exit code 2 if stale), do not write
-    #[arg(long)]
-    check: bool,
-}
-
-#[derive(clap::Args)]
 struct ResetArgs {
     /// Only reset a specific tool (claude, qwen, vibe, copilot)
     #[arg(long)]
@@ -118,7 +109,6 @@ struct RotateArgs {
 pub fn run(args: AiArgs) -> anyhow::Result<()> {
     match args.command {
         AiCommand::Init(a) => ai_init(a),
-        AiCommand::Update(a) => update(a),
         AiCommand::Reset(a) => reset(a),
         AiCommand::Rotate(a) => {
             crate::commands::auth::run_ai_rotate(&a.member, a.passphrase.as_deref())
@@ -170,14 +160,18 @@ struct AiInitPayload {
 /// `joy update` orchestrator and the auto-sync hook so configured AI
 /// tool files refresh after a binary upgrade.
 pub(crate) fn run_update_default() -> anyhow::Result<()> {
-    update(UpdateArgs { check: false })
+    update(false).map(|_| ())
 }
 
-fn update(args: UpdateArgs) -> anyhow::Result<()> {
+/// Read-only check used by `joy update --check`. Prints one line per
+/// configured AI tool and returns `true` when anything is stale.
+pub(crate) fn run_check_default() -> anyhow::Result<bool> {
+    update(true)
+}
+
+fn update(dry_run: bool) -> anyhow::Result<bool> {
     let root = joy_core::store::find_project_root(&std::env::current_dir()?)
         .ok_or_else(|| anyhow::anyhow!("No Joy project found (run `joy init` first)"))?;
-
-    let dry_run = args.check;
 
     if crate::output::is_json() {
         let mut entries: Vec<AiToolEntry> = Vec::new();
@@ -207,10 +201,7 @@ fn update(args: UpdateArgs) -> anyhow::Result<()> {
             tools: entries,
             has_issues,
         })?;
-        if dry_run && has_issues {
-            std::process::exit(2);
-        }
-        return Ok(());
+        return Ok(has_issues);
     }
 
     let header = if dry_run { "AI Status" } else { "AI Update" };
@@ -308,10 +299,7 @@ fn update(args: UpdateArgs) -> anyhow::Result<()> {
     };
     dprintln!("{}", color::footer(&msg));
 
-    if dry_run && has_issues {
-        std::process::exit(2);
-    }
-    Ok(())
+    Ok(has_issues)
 }
 
 /// Check if a tool's generated files are up to date by re-rendering expected

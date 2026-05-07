@@ -7,16 +7,14 @@ load setup
     joy init --name "Test"
     git add -A && git commit -m "init [no-item]" --quiet
     run joy update --check
-    [[ "$output" == *"binary: install receipt missing"* ]]
+    [[ "$output" == *"install receipt missing"* ]]
 }
 
-@test "joy update --check reports the repo as freshly synced after first joy invocation" {
+@test "joy update --check reports the version marker in sync after a fresh init" {
     joy init --name "Test"
     git add -A && git commit -m "init [no-item]" --quiet
-    # joy ls triggers auto-sync, which stamps the marker.
-    joy ls >/dev/null
     run joy update --check
-    [[ "$output" == *"repo: synced"* ]]
+    [[ "$output" == *"version marker: ok"* ]]
 }
 
 @test "auto-sync stamps joy.last-sync-version on first joy invocation" {

@@ -78,8 +78,11 @@ pub fn run(args: UpdateArgs) -> Result<()> {
 /// stdout, prefixed by section banners; a unified "refreshed: ..."
 /// protocol is left for a follow-up polish pass under JOY-0163-6B.
 pub(crate) fn run_full_sync(root: &Path) {
-    if let Err(e) = init::run_sync(root, CURRENT_VERSION) {
-        eprintln!("warning: lazy-activation sync failed: {e}");
+    // init::onboard covers the joy-core side: embedded files (config
+    // defaults, project defaults), .gitattributes block, merge driver
+    // git config, commit-msg hook + core.hooksPath, version marker.
+    if let Err(e) = init::onboard(root) {
+        eprintln!("warning: onboard sync failed: {e}");
     }
 
     if let Err(e) = auth::run_update_default() {
@@ -96,35 +99,59 @@ fn run_check() -> Result<()> {
     let mut stale = false;
 
     // Binary version: ask axoupdater whether a newer release exists.
+    println!("Binary:");
     let mut updater = AxoUpdater::new_for(PKG_NAME);
     if updater.load_receipt().is_err() {
-        println!("binary: install receipt missing (managed by another installer)");
+        println!("  install receipt missing (managed by another installer)");
     } else {
         let upgrade = updater.is_update_needed_sync().unwrap_or(false);
         if upgrade {
             stale = true;
-            println!("binary: update available (current {CURRENT_VERSION})");
+            println!("  update available (current {CURRENT_VERSION})");
         } else {
-            println!("binary: up to date ({CURRENT_VERSION})");
+            println!("  up to date ({CURRENT_VERSION})");
         }
     }
 
-    if let Some(root) = store::find_project_root(&cwd) {
-        match init::last_sync_version(&root) {
-            Some(v) if v == CURRENT_VERSION => {
-                println!("repo: synced ({v})");
-            }
-            Some(v) => {
-                stale = true;
-                println!("repo: stale (last synced at {v}, current {CURRENT_VERSION})");
-            }
-            None => {
-                stale = true;
-                println!("repo: never synced (current {CURRENT_VERSION})");
-            }
+    let Some(root) = store::find_project_root(&cwd) else {
+        println!();
+        println!("Not inside a Joy project; skipping in-repo checks.");
+        if stale {
+            std::process::exit(2);
         }
-    } else {
-        println!("repo: not inside a Joy project");
+        return Ok(());
+    };
+
+    println!();
+    println!("Repo state:");
+    match init::last_sync_version(&root) {
+        Some(v) if v == CURRENT_VERSION => {
+            println!("  version marker: ok ({v})");
+        }
+        Some(v) => {
+            stale = true;
+            println!("  version marker: stale (last synced at {v}, current {CURRENT_VERSION})");
+        }
+        None => {
+            stale = true;
+            println!("  version marker: never synced (current {CURRENT_VERSION})");
+        }
+    }
+
+    println!();
+    println!("Auth artefacts:");
+    match auth::run_check_default() {
+        Ok(true) => stale = true,
+        Ok(false) => {}
+        Err(e) => println!("  error: {e}"),
+    }
+
+    println!();
+    println!("AI tool files:");
+    match ai::run_check_default() {
+        Ok(true) => stale = true,
+        Ok(false) => {}
+        Err(e) => println!("  error: {e}"),
     }
 
     if stale {

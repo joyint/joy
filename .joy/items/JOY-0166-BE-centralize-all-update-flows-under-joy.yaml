@@ -1,0 +1,44 @@
+id: JOY-0166-BE
+title: Centralize all update flows under joy update; remove joy auth update + joy ai update subcommands
+type: task
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-07T05:13:42.331451Z
+updated: 2026-05-07T05:22:10.597403Z
+description: |-
+  Two halves:
+
+  (1) Make joy update / --check complete and well-typed.
+  - joy update -> change run_full_sync to call init::onboard (covers commit-msg hook + core.hooksPath + .joy/config.defaults.yaml + .joy/project.defaults.yaml) instead of init::run_sync, then auth update routine, then ai update routine.
+  - joy update --check -> aggregate per-domain readiness checks: binary version, .gitattributes block, merge driver git config, commit-msg hook freshness, SECURITY.md, project.yaml schema, AI tool files. One section per topic, ok / stale, exit 2 if any stale.
+
+  (2) Drop the per-domain CLI surface.
+  - Remove joy auth update subcommand (Update variant in AuthCommand enum, AuthCommand::Update arm, UpdateArgs).
+  - Remove joy ai update subcommand (same shape).
+  - The internal run_update_default helpers stay; they are called by joy update's orchestrator and the auto-sync hook.
+  - Update bats tests, SKILL.md, copilot-instructions.md, and any other reference to the removed subcommands.
+
+  Acceptance:
+  - joy update --check produces an aggregated, per-section report with no writes.
+  - joy update writes everything that init / onboard would write plus what the old joy auth update + joy ai update would write.
+  - joy auth update and joy ai update are gone from the CLI; their absence does not break joy update or the auto-sync hook.
+  - Existing bats suites pass.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-07T05:22:10.516560Z
+  text: |-
+    [x] Removed joy auth update CLI subcommand: AuthCommand::Update variant + UpdateArgs + dispatch arm gone. Internal helpers exposed: auth::run_update_default (write), auth::run_check_default (read-only).
+    [x] Removed joy ai update CLI subcommand: AiCommand::Update variant + UpdateArgs + dispatch arm gone. Internal helpers: ai::run_update_default (write), ai::run_check_default (read-only). update() refactored to return Result<bool> instead of process::exit(2).
+    [x] joy update orchestrator (run_full_sync) now calls init::onboard (covers commit-msg hook + core.hooksPath + config.defaults.yaml + project.defaults.yaml + .gitattributes + merge driver + version marker) plus auth::run_update_default + ai::run_update_default. Closes the gap with hooks / config defaults that the previous run_sync only path did not touch.
+    [x] joy update --check now aggregates per-section: Binary / Repo state / Auth artefacts / AI tool files. One section per topic, exit 2 if anything stale. No process::exit inside the per-domain helpers.
+    [x] joy init also calls auth::run_update_default after init::init succeeds, so SECURITY.md is rendered immediately and joy update --check is clean right after init.
+    [x] Templates: SKILL.md drops the joy ai update --check ritual and adopts the auto-sync 'synced this repo' contract. instructions.md was already updated under JOY-0164-B5.
+    [x] Tests: ai.bats sed-replaced joy ai update -> joy update; meta test updated to assert auto-sync language. json_ai_status.bats deleted (it covered the per-domain --check JSON path which no longer exists). update_command.bats assertions updated for the new sectioned output.
+
+    Acceptance: 319 unit tests, 56 sanity bats green, clippy + fmt clean. joy auth update and joy ai update no longer appear in joy --help; joy update covers everything.

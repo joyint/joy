@@ -32,9 +32,9 @@ load setup
     [ "$status" -eq 0 ]
 }
 
-# --- joy ai update ---
+# --- joy update ---
 
-@test "joy ai update syncs gitignore entries" {
+@test "joy update syncs gitignore entries" {
     joy init --name "Test Project"
     joy ai init </dev/null 2>/dev/null || true
     # Remove the joy-managed gitignore block. Use awk for BSD/GNU
@@ -43,20 +43,20 @@ load setup
         .gitignore > .gitignore.tmp && mv .gitignore.tmp .gitignore
     ! grep -q "project.defaults.yaml" .gitignore
     # Update should restore it
-    joy ai update </dev/null 2>/dev/null || true
+    joy update </dev/null 2>/dev/null || true
     grep -q "project.defaults.yaml" .gitignore
 }
 
-# --- joy ai update --check ---
+# --- joy update --check ---
 
-@test "joy ai update --check detects tampered SKILL.md" {
+@test "joy update --check detects tampered SKILL.md" {
     joy init --name "Test Project"
     joy ai init </dev/null 2>/dev/null || true
     # Tamper a generated file if any tool was configured
     for f in .claude/skills/joy/SKILL.md .qwen/skills/joy/SKILL.md .vibe/skills/joy/SKILL.md; do
         if [ -f "$f" ]; then
             echo "tampered" >> "$f"
-            run joy ai update --check
+            run joy update --check
             [ "$status" -eq 2 ]
             [[ "$output" == *"outdated"* ]]
             break
@@ -64,28 +64,28 @@ load setup
     done
 }
 
-@test "joy ai update --check exits 0 when up to date" {
+@test "joy update --check exits 0 when up to date" {
     joy init --name "Test Project"
     joy ai init </dev/null 2>/dev/null || true
     # Immediately after setup, everything should be up to date
-    run joy ai update --check
+    run joy update --check
     # status 0 if tools configured and up to date, or no tools at all
     [ "$status" -eq 0 ]
 }
 
-# --- joy ai update ---
+# --- joy update ---
 
-@test "joy ai update fixes tampered files" {
+@test "joy update fixes tampered files" {
     joy init --name "Test Project"
     joy ai init </dev/null 2>/dev/null || true
     for f in .claude/skills/joy/SKILL.md .qwen/skills/joy/SKILL.md .vibe/skills/joy/SKILL.md; do
         if [ -f "$f" ]; then
             echo "tampered" >> "$f"
-            run joy ai update
+            run joy update
             [ "$status" -eq 0 ]
             [[ "$output" == *"updated"* ]]
             # After update, check should pass
-            run joy ai update --check
+            run joy update --check
             [ "$status" -eq 0 ]
             break
         fi
@@ -135,12 +135,13 @@ load setup
 
 # --- instructions reference new commands ---
 
-@test "instructions reference joy ai update not joy ai check" {
+@test "instructions reference auto-sync, not the removed joy ai update --check" {
     joy init --name "Test Project"
     joy ai init </dev/null 2>/dev/null || true
     for f in .claude/skills/joy/SKILL.md .qwen/skills/joy/SKILL.md; do
         if [ -f "$f" ]; then
-            grep -q "joy ai update --check" "$f"
+            grep -q "synced this repo" "$f"
+            ! grep -q "joy ai update --check" "$f"
             ! grep -q "joy ai check" "$f"
         fi
     done
@@ -209,7 +210,7 @@ load setup
     done
     PATH="$BIN_DIR:$PATH"
 
-    # Pre-create Claude's instruction file as if a previous joy ai update ran
+    # Pre-create Claude's instruction file as if a previous joy update ran
     # (or the file was copied from another project) -- so is_tool_configured
     # returns true for claude even though no ai:claude@joy member exists in
     # project.yaml.

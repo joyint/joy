@@ -56,15 +56,6 @@ enum AuthCommand {
     Passphrase(PassphraseArgs),
     /// Recover identity via recovery key, or rotate the recovery key
     Recover(RecoverArgs),
-    /// Render Joy-managed auth artefacts (SECURITY.md) and normalise project.yaml schema
-    Update(UpdateArgs),
-}
-
-#[derive(Args)]
-struct UpdateArgs {
-    /// Dry-run: do not modify any files. Exits 2 if anything is stale.
-    #[arg(long)]
-    check: bool,
 }
 
 #[derive(Args)]
@@ -185,7 +176,6 @@ pub fn run(args: AuthArgs) -> Result<()> {
             run_passphrase(args.passphrase.as_deref(), a.new_passphrase.as_deref())
         }
         Some(AuthCommand::Recover(a)) => run_recover(a, args.passphrase.as_deref()),
-        Some(AuthCommand::Update(a)) => run_update(a),
         None => {
             if let Some(otp) = args.otp.as_deref() {
                 run_auth_otp(otp, args.passphrase.as_deref())
@@ -210,48 +200,52 @@ fn resolve_user(user_flag: Option<&str>) -> Result<String> {
     }
 }
 
-/// `joy auth update` - bring auth-scoped Joy-managed artefacts up to the
-/// current Joy version. Renders SECURITY.md from the shipped template
-/// (preserving any user content outside the marker block) and normalises
-/// `project.yaml` from the legacy auth schema to the current one. Per
-/// ADR-035 this is the only place schema migration is persisted.
-/// Programmatic entry to the auth update routine, invoked from the
-/// `joy update` orchestrator and the auto-sync hook so the same
-/// SECURITY.md / project.yaml refresh runs after a binary upgrade.
-pub(crate) fn run_update_default() -> Result<()> {
-    run_update(UpdateArgs { check: false })
-}
-
-fn run_update(args: UpdateArgs) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
-
+fn auth_state(
+    root: &std::path::Path,
+) -> Result<(bool, bool, serde_yaml_ng::Value, std::path::PathBuf)> {
+    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
     let security_path = root.join("SECURITY.md");
-    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
-
-    // Detect schema staleness without committing any change.
     let raw = std::fs::read_to_string(&project_path)?;
     let raw_value: serde_yaml_ng::Value = serde_yaml_ng::from_str(&raw)?;
     let (migrated_value, schema_stale) =
         joy_core::migrations::project_yaml::apply(raw_value.clone());
     let security_current = joy_core::security_md::is_current(&security_path)?;
+    Ok((
+        security_current,
+        schema_stale,
+        migrated_value,
+        security_path,
+    ))
+}
 
-    if args.check {
-        if !security_current {
-            println!("SECURITY.md: stale (would be re-rendered)");
-        } else {
-            println!("SECURITY.md: current");
-        }
-        if schema_stale {
-            println!("project.yaml: legacy auth field names (would be normalised)");
-        } else {
-            println!("project.yaml: current schema");
-        }
-        if !security_current || schema_stale {
-            std::process::exit(2);
-        }
-        return Ok(());
-    }
+/// Aggregated check used by `joy update --check`. Prints one line per
+/// inspected artefact and returns `true` when anything is stale.
+pub(crate) fn run_check_default() -> Result<bool> {
+    let cwd = std::env::current_dir()?;
+    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+    let (security_current, schema_stale, _, _) = auth_state(&root)?;
+    println!(
+        "  SECURITY.md: {}",
+        if security_current { "ok" } else { "stale" }
+    );
+    println!(
+        "  project.yaml schema: {}",
+        if schema_stale { "stale" } else { "ok" }
+    );
+    Ok(!security_current || schema_stale)
+}
+
+/// `joy update` orchestrator entry point: bring auth-scoped Joy-managed
+/// artefacts up to the current Joy version. Renders SECURITY.md from the
+/// shipped template (preserving any user content outside the marker
+/// block) and normalises `project.yaml` from the legacy auth schema to
+/// the current one. Per ADR-035 this is the only place schema migration
+/// is persisted.
+pub(crate) fn run_update_default() -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+    let (_, schema_stale, migrated_value, security_path) = auth_state(&root)?;
+    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
 
     let mut wrote_anything = false;
 
