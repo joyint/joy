@@ -457,6 +457,16 @@ pub fn warn_mark() -> &'static str {
     }
 }
 
+/// Empty checkbox: indicates an inactive / not-installed slot. Same
+/// width as `check_mark` so columns line up across rows.
+pub fn empty_mark() -> &'static str {
+    if is_emoji_enabled() {
+        "  "
+    } else {
+        "[ ] "
+    }
+}
+
 /// Wrap text in success color (green).
 pub fn success(text: &str) -> String {
     wrap(SUCCESS, text)

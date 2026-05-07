@@ -221,17 +221,25 @@ fn auth_state(
 /// Aggregated check used by `joy update --check`. Prints one line per
 /// inspected artefact and returns `true` when anything is stale.
 pub(crate) fn run_check_default() -> Result<bool> {
+    use crate::color;
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
     let (security_current, schema_stale, _, _) = auth_state(&root)?;
-    println!(
-        "  SECURITY.md: {}",
-        if security_current { "ok" } else { "stale" }
-    );
-    println!(
-        "  project.yaml schema: {}",
-        if schema_stale { "stale" } else { "ok" }
-    );
+    let row = |ok: bool, name: &str| {
+        let mark = if ok {
+            color::check_mark()
+        } else {
+            color::warn_mark()
+        };
+        let status = if ok {
+            color::inactive("up to date")
+        } else {
+            color::warning("stale")
+        };
+        println!("  {mark}{name:<24} {status}");
+    };
+    row(security_current, "SECURITY.md");
+    row(!schema_stale, "project.yaml schema");
     Ok(!security_current || schema_stale)
 }
 

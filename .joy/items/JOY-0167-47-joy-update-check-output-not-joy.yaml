@@ -1,0 +1,36 @@
+id: JOY-0167-47
+title: joy update --check output not Joy-formatted; leftover joy ai update strings
+type: bug
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-07T05:32:06.828022Z
+updated: 2026-05-07T05:32:28.735024Z
+description: |-
+  After JOY-0166-BE removed joy ai update / joy auth update from the CLI, residual references to those commands stayed in user-facing strings:
+
+  - ai.rs dry-run footer: 'files need update -- run joy ai update'
+  - ai.rs setup_new_tools: 'Use joy ai update to update files'
+  - store.rs migration warning: 'run joy auth update to normalise'
+  - code-internal rustdoc comments mentioning the removed commands
+
+  Plus the new joy update --check output had no Joy-typical header/section/footer formatting and the AI tool list 'not installed' branch used 4-space indent without a marker, which broke vertical alignment with the configured rows.
+
+  Fix: replace user-facing strings with joy update; update rustdoc comments; add color::empty_mark() ([ ] in ascii, two spaces in emoji) and use it for the not-installed branch; wrap joy update --check in color::header / color::section / color::footer; suppress ai::update's own header/section/footer when called in dry-run mode (joy update --check provides them).
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-07T05:32:28.647225Z
+  text: |-
+    [x] color::empty_mark() helper added (returns '[ ] ' in ascii, '  ' in emoji mode) for not-installed/inactive rows.
+    [x] ai.rs not-installed branch now uses empty_mark, aligning with check_mark/warn_mark widths.
+    [x] ai.rs dry_run path no longer prints its own color::header / color::section / color::footer; the joy update --check aggregator owns them.
+    [x] update.rs run_check wrapped in color::header('Joy update check') + per-block color::section + color::footer (success / stale variant).
+    [x] auth::run_check_default output uses [ok]/[!] mark + aligned columns matching the AI tool layout.
+    [x] joy ai update -> joy update in remaining user-visible strings (ai.rs setup hint, store.rs legacy schema warning); rustdoc comments brought in line.
+    [x] update_command.bats assertion updated to the new sectioned format; 32 sanity bats green, 319 unit tests green, clippy + fmt clean.

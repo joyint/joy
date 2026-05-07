@@ -373,11 +373,10 @@ pub fn set_last_sync_version(root: &Path, version: &str) -> Result<(), JoyError>
     vcs.config_set(root, LAST_SYNC_VERSION_KEY, version)
 }
 
-/// One-shot full sync of a repo against the current binary. Today this
-/// runs `ensure_lazy_activation` and stamps `joy.last-sync-version`.
-/// Future work (tracked under JOY-0164-B5): also fold in the work that
-/// `joy auth update` and `joy ai update` do, with a unified output
-/// protocol.
+/// One-shot core-side sync of a repo against the current binary:
+/// `ensure_lazy_activation` + stamp `joy.last-sync-version`. The full
+/// `joy update` orchestrator wraps this with the auth and AI refresh
+/// routines (see joy-cli's `commands::update::run_full_sync`).
 pub fn run_sync(root: &Path, current_version: &str) -> Result<(), JoyError> {
     ensure_lazy_activation(root)?;
     set_last_sync_version(root, current_version)

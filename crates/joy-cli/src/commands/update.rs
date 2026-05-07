@@ -18,6 +18,7 @@ use clap::Args;
 
 use joy_core::{init, store};
 
+use crate::color;
 use crate::commands::{ai, auth};
 
 const PKG_NAME: &str = "joy";
@@ -98,19 +99,30 @@ fn run_check() -> Result<()> {
     let cwd = std::env::current_dir()?;
     let mut stale = false;
 
-    // Binary version: ask axoupdater whether a newer release exists.
-    println!("Binary:");
+    println!("{}", color::header("Joy update check"));
+    println!();
+
+    println!("{}", color::section("Binary"));
     let mut updater = AxoUpdater::new_for(PKG_NAME);
     if updater.load_receipt().is_err() {
-        println!("  install receipt missing (managed by another installer)");
+        println!(
+            "  {}install receipt missing {}",
+            color::empty_mark(),
+            color::inactive("(managed by another installer)")
+        );
+    } else if updater.is_update_needed_sync().unwrap_or(false) {
+        stale = true;
+        println!(
+            "  {}update available {}",
+            color::warn_mark(),
+            color::warning(&format!("(current {CURRENT_VERSION})"))
+        );
     } else {
-        let upgrade = updater.is_update_needed_sync().unwrap_or(false);
-        if upgrade {
-            stale = true;
-            println!("  update available (current {CURRENT_VERSION})");
-        } else {
-            println!("  up to date ({CURRENT_VERSION})");
-        }
+        println!(
+            "  {}up to date {}",
+            color::check_mark(),
+            color::inactive(&format!("({CURRENT_VERSION})"))
+        );
     }
 
     let Some(root) = store::find_project_root(&cwd) else {
@@ -123,39 +135,59 @@ fn run_check() -> Result<()> {
     };
 
     println!();
-    println!("Repo state:");
+    println!("{}", color::section("Repo state"));
     match init::last_sync_version(&root) {
-        Some(v) if v == CURRENT_VERSION => {
-            println!("  version marker: ok ({v})");
-        }
+        Some(v) if v == CURRENT_VERSION => println!(
+            "  {}version marker {}",
+            color::check_mark(),
+            color::inactive(&format!("({v})"))
+        ),
         Some(v) => {
             stale = true;
-            println!("  version marker: stale (last synced at {v}, current {CURRENT_VERSION})");
+            println!(
+                "  {}version marker {}",
+                color::warn_mark(),
+                color::warning(&format!("stale (last {v}, current {CURRENT_VERSION})"))
+            );
         }
         None => {
             stale = true;
-            println!("  version marker: never synced (current {CURRENT_VERSION})");
+            println!(
+                "  {}version marker {}",
+                color::warn_mark(),
+                color::warning("never synced")
+            );
         }
     }
 
     println!();
-    println!("Auth artefacts:");
+    println!("{}", color::section("Auth artefacts"));
     match auth::run_check_default() {
         Ok(true) => stale = true,
         Ok(false) => {}
-        Err(e) => println!("  error: {e}"),
+        Err(e) => println!("  {}error: {e}", color::warn_mark()),
     }
 
     println!();
-    println!("AI tool files:");
+    println!("{}", color::section("AI tool files"));
     match ai::run_check_default() {
         Ok(true) => stale = true,
         Ok(false) => {}
-        Err(e) => println!("  error: {e}"),
+        Err(e) => println!("  {}error: {e}", color::warn_mark()),
     }
 
+    println!();
     if stale {
+        println!(
+            "{}",
+            color::footer(&format!(
+                "Stale items found -- run {} to refresh.",
+                color::label("joy update")
+            ))
+        );
         std::process::exit(2);
+    } else {
+        println!("{}", color::footer("All Joy-managed state is up to date."));
     }
     Ok(())
 }

@@ -275,11 +275,11 @@ pub fn read_yaml<T: DeserializeOwned>(path: &Path) -> Result<T, JoyError> {
 /// All Project deserialisation paths must funnel through this function
 /// (or [`load_project`]) so legacy auth-field renames are picked up
 /// uniformly. When a migration changes the parsed value, a one-line
-/// deprecation warning is emitted to stderr pointing at
-/// `joy auth update`. The on-disk file is not rewritten - persistence
-/// is explicit (per ADR-035). The warning is emitted at most once per
-/// process so a single command run does not flood stderr even when
-/// multiple code paths load project.yaml.
+/// deprecation warning is emitted to stderr pointing at `joy update`.
+/// The on-disk file is not rewritten - persistence is explicit (per
+/// ADR-035). The warning is emitted at most once per process so a
+/// single command run does not flood stderr even when multiple code
+/// paths load project.yaml.
 pub fn read_project(
     project_path: &Path,
 ) -> Result<crate::model::project::Project, crate::error::JoyError> {
@@ -308,7 +308,7 @@ fn warn_legacy_schema_once() {
     WARN.call_once(|| {
         eprintln!(
             "warning: project.yaml uses legacy auth field names from before v0.12; \
-             run `joy auth update` to normalise. Legacy support will be removed in v0.13."
+             run `joy update` to normalise. Legacy support will be removed in v0.13."
         );
     });
 }

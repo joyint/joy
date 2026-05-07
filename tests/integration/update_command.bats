@@ -14,7 +14,8 @@ load setup
     joy init --name "Test"
     git add -A && git commit -m "init [no-item]" --quiet
     run joy update --check
-    [[ "$output" == *"version marker: ok"* ]]
+    [[ "$output" == *"version marker"* ]]
+    [[ "$output" == *"All Joy-managed state is up to date"* ]]
 }
 
 @test "auto-sync stamps joy.last-sync-version on first joy invocation" {

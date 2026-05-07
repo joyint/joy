@@ -204,16 +204,15 @@ fn update(dry_run: bool) -> anyhow::Result<bool> {
         return Ok(has_issues);
     }
 
-    let header = if dry_run { "AI Status" } else { "AI Update" };
-
-    dprintln!("{}", color::header(header));
-    dprintln!();
-
     if !dry_run {
+        // Full-width header / sync only on the write path. The dry-run
+        // path is invoked from `joy update --check`, which provides
+        // the surrounding header and section title itself.
+        dprintln!("{}", color::header("AI Update"));
+        dprintln!();
         joy_core::embedded::sync_files(&root, joy_core::init::PROJECT_FILES)?;
+        dprintln!("{}", color::section("AI Tools"));
     }
-
-    dprintln!("{}", color::section("AI Tools"));
 
     let mut tool_count = 0;
     let mut has_issues = false;
@@ -263,7 +262,12 @@ fn update(dry_run: bool) -> anyhow::Result<bool> {
                 color::warning("installed, not configured")
             );
         } else {
-            dprintln!("    {:<24} {}", name, color::inactive("not installed"));
+            dprintln!(
+                "  {}{:<24} {}",
+                color::empty_mark(),
+                name,
+                color::inactive("not installed")
+            );
         }
     }
 
@@ -280,24 +284,16 @@ fn update(dry_run: bool) -> anyhow::Result<bool> {
         update_gitignore(&root, &configured_tools)?;
     }
 
-    dprintln!();
-    let msg = if dry_run {
-        format!(
-            "{} · {}",
-            if has_issues {
-                format!("files need update -- run {}", color::label("joy ai update"))
-            } else {
-                "all up to date".to_string()
-            },
-            color::plural(tool_count, "tool")
-        )
-    } else {
-        format!(
+    if !dry_run {
+        // The aggregated joy update --check provides its own footer;
+        // the per-section dry-run path stays footer-less.
+        dprintln!();
+        let msg = format!(
             "AI update complete -- {}",
             color::plural(tool_count, "tool")
-        )
-    };
-    dprintln!("{}", color::footer(&msg));
+        );
+        dprintln!("{}", color::footer(&msg));
+    }
 
     Ok(has_issues)
 }
@@ -1042,7 +1038,7 @@ fn setup_new_tools(root: &Path, passphrase: Option<&str>) -> anyhow::Result<Vec<
         dprintln!(
             "\n  {}All tools already configured. Use {} to update files.",
             color::warn_mark(),
-            color::label("joy ai update")
+            color::label("joy update")
         );
     }
 
