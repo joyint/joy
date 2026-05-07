@@ -65,6 +65,38 @@ impl RowMark {
     }
 }
 
+/// Best-effort semver-style version compare. Parses leading "X.Y.Z"
+/// triples and compares numerically; falls back to lexical compare
+/// when either side is not parseable.
+pub fn cmp_version(a: &str, b: &str) -> std::cmp::Ordering {
+    fn triple(v: &str) -> Option<(u32, u32, u32)> {
+        let mut parts = v.split('.');
+        let x: u32 = parts.next()?.parse().ok()?;
+        let y: u32 = parts.next()?.parse().ok()?;
+        let z_raw = parts.next()?;
+        let z_digits: String = z_raw.chars().take_while(|c| c.is_ascii_digit()).collect();
+        let z: u32 = z_digits.parse().ok()?;
+        Some((x, y, z))
+    }
+    match (triple(a), triple(b)) {
+        (Some(x), Some(y)) => x.cmp(&y),
+        _ => a.cmp(b),
+    }
+}
+
+/// Returns the recorded `joy.last-sync-version` when it is newer than
+/// `current_version`; `None` otherwise. Used by the top-level
+/// downgrade guard in `main.rs` and by [`VersionMarkerItem`] to refuse
+/// rolling repo state back to an older binary's templates.
+pub fn marker_ahead_of(root: &std::path::Path, current_version: &str) -> Option<String> {
+    let marker = init::last_sync_version(root)?;
+    if cmp_version(&marker, current_version) == std::cmp::Ordering::Greater {
+        Some(marker)
+    } else {
+        None
+    }
+}
+
 /// Write result of an [`UpdateItem::refresh`].
 pub struct RefreshRow {
     pub name: String,
@@ -125,19 +157,37 @@ impl UpdateItem for VersionMarkerItem {
     }
     fn check(&self, root: &Path) -> Result<Vec<CheckRow>> {
         let current = crate::commands::update::CURRENT_VERSION;
-        let detail = match init::last_sync_version(root) {
-            Some(v) if v == current => (true, format!("({current})")),
-            Some(v) => (false, format!("stale (last {v}, current {current})")),
-            None => (false, "never synced".to_string()),
+        let (mark, detail) = match init::last_sync_version(root) {
+            Some(v) if v == current => (RowMark::Ok, format!("({current})")),
+            Some(v) => match cmp_version(&v, current) {
+                std::cmp::Ordering::Greater => (
+                    RowMark::Stale,
+                    format!("binary older than repo (last {v}, running {current}); update joy"),
+                ),
+                _ => (
+                    RowMark::Stale,
+                    format!("stale (last {v}, current {current})"),
+                ),
+            },
+            None => (RowMark::Stale, "never synced".to_string()),
         };
         Ok(vec![CheckRow {
             name: "version marker".into(),
-            mark: RowMark::from_ok(detail.0),
-            detail: detail.1,
+            mark,
+            detail,
         }])
     }
     fn refresh(&self, root: &Path) -> Result<Vec<RefreshRow>> {
         let current = crate::commands::update::CURRENT_VERSION;
+        // Refuse to roll the marker back: a newer marker means a more
+        // recent joy version touched this repo. Overwriting would
+        // claim downgrade work that did not happen.
+        if marker_ahead_of(root, current).is_some() {
+            return Ok(vec![RefreshRow {
+                name: "version marker".into(),
+                action: None,
+            }]);
+        }
         let was_current = init::last_sync_version(root).as_deref() == Some(current);
         init::set_last_sync_version(root, current)?;
         Ok(vec![RefreshRow {
@@ -501,6 +551,26 @@ impl UpdateItem for AiToolItem {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::cmp::Ordering;
+
+    #[test]
+    fn cmp_version_orders_numerically() {
+        assert_eq!(cmp_version("0.14.2", "0.14.2"), Ordering::Equal);
+        assert_eq!(cmp_version("0.14.2", "0.15.0"), Ordering::Less);
+        assert_eq!(cmp_version("0.15.0", "0.14.2"), Ordering::Greater);
+        // Numeric, not lexical: 9 < 10.
+        assert_eq!(cmp_version("0.9.0", "0.10.0"), Ordering::Less);
+        assert_eq!(cmp_version("1.0.0", "0.99.99"), Ordering::Greater);
+    }
+
+    #[test]
+    fn cmp_version_tolerates_pre_release_suffix_on_patch() {
+        // We strip non-digits from the patch component, so "rc1"
+        // suffixes do not break the compare.
+        assert_eq!(cmp_version("0.14.2-rc1", "0.14.2"), Ordering::Equal);
+        assert_eq!(cmp_version("0.14.2-rc1", "0.14.3"), Ordering::Less);
+    }
 
     /// Sanity: every section name referenced in [`all`] is one of the
     /// declared section constants. This stops a typo from silently

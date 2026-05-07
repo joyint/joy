@@ -194,6 +194,20 @@ fn auto_sync_repo() {
         None => return,
     };
 
+    let current = commands::update::CURRENT_VERSION;
+
+    // Downgrade guard: if the repo was last synced by a newer joy
+    // binary, refuse to touch anything and warn once. Running an old
+    // binary against newer joy-managed files risks dropping schema
+    // fields and rolling templates back. See JOY-016B-A1.
+    if let Some(marker) = update_registry::marker_ahead_of(&root, current) {
+        eprintln!(
+            "warning: this repo was last synced with joy {marker}; you are running joy {current}.\n\
+             Update joy before continuing to avoid downgrading repo state."
+        );
+        return;
+    }
+
     // Always reassert lazy activation (cheap and idempotent).
     let _ = joy_core::init::ensure_lazy_activation(&root);
 
@@ -203,7 +217,6 @@ fn auto_sync_repo() {
         return;
     }
 
-    let current = commands::update::CURRENT_VERSION;
     match joy_core::init::last_sync_version(&root) {
         Some(v) if v == current => {} // already in sync
         recorded => {

@@ -1,0 +1,38 @@
+id: JOY-016B-A1
+title: 'Older joy binary against newer-synced repo: no downgrade guard'
+type: bug
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-07T06:14:43.963204Z
+updated: 2026-05-07T06:19:55.347430Z
+description: |-
+  joy.last-sync-version is compared with string equality today. Two real failure modes:
+
+  1. Auto-sync downgrade: a colleague synced the repo with joy 0.15.0 and another developer runs joy 0.14.2. Auto-sync sees 'mismatch', re-runs onboard/auth/ai update, and rolls repo state back to the older templates / schema.
+
+  2. Generic write path: even outside auto-sync, an older binary touching newer joy-managed files (joy edit, joy add, joy auth ...) can drop nested-structure fields the newer version introduced, mishandle .gitattributes entries it does not know, or run schema-migrations that already happened.
+
+  Fix:
+  - Add a semver-style version tuple comparator (X.Y.Z) in update_registry.
+  - Top-level guard in main.rs: before dispatching any subcommand, if joy.last-sync-version > CARGO_PKG_VERSION, print one-line stderr warning 'your joy 0.14.2 is older than this repo's last sync (0.15.0). Update joy before continuing.'
+  - joy update (write path) refuses: skip onboard / auth / ai refresh entirely, suggest 'joy update' on the user's install method.
+  - joy update --check reports VersionMarkerItem as RowMark::Stale with the downgrade detail; exits 2.
+  - Read-only commands (joy ls, joy show, joy log, joy roadmap, joy config, joy project) still run after the warning so the user can inspect; write-path commands are not blocked here (the warning suffices) since making those refuse hard would break workflows where the in-flight schema is compatible.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-07T06:19:55.266817Z
+  text: |-
+    [x] update_registry::cmp_version (semver-style triple parse, numeric compare, lexical fallback) + 2 unit tests.
+    [x] update_registry::marker_ahead_of helper used by both main.rs and VersionMarkerItem.
+    [x] VersionMarkerItem.check returns RowMark::Stale with detail 'binary older than repo (last X, running Y); update joy' when marker > current; refresh refuses to roll the marker back.
+    [x] main.rs auto_sync_repo: detects downgrade, prints one-line stderr warning, skips the in-repo refresh; read-only commands keep working with that warning visible.
+    [x] commands/update.rs run() (write path): binary swap still runs (so the user CAN bring joy up to date); in-repo sync is skipped with an explicit footer telling the user to re-run joy update from a new shell once the binary upgrade is in PATH.
+    [x] commands/update.rs run_update_json: surfaces downgrade_blocked: <marker-version> in the JSON envelope so machine callers can react.
+    [x] 321 unit tests, sanity bats green, clippy + fmt clean. Manual verification against a fake marker = 99.0.0: warning fires, joy update behaves as documented, JSON envelope carries the field.

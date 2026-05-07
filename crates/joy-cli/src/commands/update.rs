@@ -89,6 +89,23 @@ pub fn run(args: UpdateArgs) -> Result<()> {
     }
 
     if let Some(root) = project_root {
+        // Downgrade guard: when the marker is ahead of this running
+        // binary, we already did the binary swap above (when the
+        // installer supports it), but the in-repo sync must run
+        // against the NEW binary, not this still-running OLD process.
+        // Refuse to refresh in-repo state from the OLD process and
+        // ask the user to re-run. See JOY-016B-A1.
+        if let Some(marker) = update_registry::marker_ahead_of(&root, CURRENT_VERSION) {
+            println!();
+            println!(
+                "{}",
+                color::footer(&format!(
+                    "In-repo sync skipped: this process is still running joy {CURRENT_VERSION} but the repo is at {marker}. \
+                     If the binary was updated above, open a new shell and run `joy update` again to refresh repo state."
+                ))
+            );
+            return Ok(());
+        }
         let changed = run_full_sync(&root);
         println!();
         let summary = match changed {
@@ -266,6 +283,12 @@ struct UpdatePayload {
     repo_root: Option<String>,
     sections: Vec<UpdateSection>,
     refreshed_count: u32,
+    /// When the repo was last synced by a newer joy binary, the
+    /// running OLD process refuses to roll state back. The marker
+    /// version is surfaced here so callers can ask the user to re-run
+    /// `joy update` after the binary swap above takes effect.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    downgrade_blocked: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -433,30 +456,38 @@ fn run_update_json(args: UpdateArgs) -> Result<()> {
     let mut sections: Vec<UpdateSection> = Vec::new();
     let mut refreshed_count = 0u32;
     let mut repo_root: Option<String> = None;
+    let mut downgrade_blocked: Option<String> = None;
 
     if let Some(root) = project_root {
         repo_root = Some(root.display().to_string());
-        let items = update_registry::all();
-        for section in SECTION_ORDER {
-            let mut rows: Vec<UpdateRowJson> = Vec::new();
-            for item in items.iter().filter(|i| &i.section() == section) {
-                if let Ok(rs) = item.refresh(&root) {
-                    for row in rs {
-                        if let Some(action) = row.action {
-                            refreshed_count += 1;
-                            rows.push(UpdateRowJson {
-                                name: row.name,
-                                action: Some(action),
-                            });
+        if let Some(marker) = update_registry::marker_ahead_of(&root, CURRENT_VERSION) {
+            // Same contract as the human path: do not roll repo state
+            // back from this still-running OLD process. Surface the
+            // marker so callers can prompt the user.
+            downgrade_blocked = Some(marker);
+        } else {
+            let items = update_registry::all();
+            for section in SECTION_ORDER {
+                let mut rows: Vec<UpdateRowJson> = Vec::new();
+                for item in items.iter().filter(|i| &i.section() == section) {
+                    if let Ok(rs) = item.refresh(&root) {
+                        for row in rs {
+                            if let Some(action) = row.action {
+                                refreshed_count += 1;
+                                rows.push(UpdateRowJson {
+                                    name: row.name,
+                                    action: Some(action),
+                                });
+                            }
                         }
                     }
                 }
-            }
-            if !rows.is_empty() {
-                sections.push(UpdateSection {
-                    name: section,
-                    rows,
-                });
+                if !rows.is_empty() {
+                    sections.push(UpdateSection {
+                        name: section,
+                        rows,
+                    });
+                }
             }
         }
     }
@@ -466,6 +497,7 @@ fn run_update_json(args: UpdateArgs) -> Result<()> {
         repo_root,
         sections,
         refreshed_count,
+        downgrade_blocked,
     })?;
     Ok(())
 }
