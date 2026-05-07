@@ -218,13 +218,15 @@ fn auth_state(
     ))
 }
 
-/// Aggregated check used by `joy update --check`. Prints one line per
-/// inspected artefact and returns `true` when anything is stale.
+/// Aggregated check used by `joy update --check`. Prints the section
+/// header and one row per inspected artefact; returns `true` when
+/// anything is stale.
 pub(crate) fn run_check_default() -> Result<bool> {
     use crate::color;
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
     let (security_current, schema_stale, _, _) = auth_state(&root)?;
+    println!("{}", color::section("Auth artefacts"));
     let row = |ok: bool, name: &str| {
         let mark = if ok {
             color::check_mark()
@@ -249,19 +251,38 @@ pub(crate) fn run_check_default() -> Result<bool> {
 /// block) and normalises `project.yaml` from the legacy auth schema to
 /// the current one. Per ADR-035 this is the only place schema migration
 /// is persisted.
-pub(crate) fn run_update_default() -> Result<()> {
+/// `joy update` orchestrator entry: refresh auth artefacts. Prints
+/// joy-style rows only for items that actually changed; stays silent
+/// when everything is current. Returns the number of artefacts
+/// refreshed so the caller can decide whether to surface an empty
+/// section.
+pub(crate) fn run_update_default() -> Result<u32> {
+    use crate::color;
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
     let (_, schema_stale, migrated_value, security_path) = auth_state(&root)?;
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
 
-    let mut wrote_anything = false;
+    let mut changed = 0u32;
+    let mut header_printed = false;
+    let mut header = || {
+        if !header_printed {
+            println!("{}", color::section("Auth artefacts"));
+            header_printed = true;
+        }
+    };
 
     let security_changed = joy_core::security_md::render(&security_path)?;
     if security_changed {
-        println!("Rendered SECURITY.md at repository root.");
         joy_core::git_ops::auto_git_add(&root, &["SECURITY.md"]);
-        wrote_anything = true;
+        header();
+        println!(
+            "  {}{:<24} {}",
+            color::check_mark(),
+            "SECURITY.md",
+            color::success("rendered")
+        );
+        changed += 1;
     }
 
     if schema_stale {
@@ -272,8 +293,14 @@ pub(crate) fn run_update_default() -> Result<()> {
         store::write_yaml_preserve(&project_path, &project)?;
         let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
         joy_core::git_ops::auto_git_add(&root, &[&rel]);
-        println!("Normalised project.yaml to current auth schema.");
-        wrote_anything = true;
+        header();
+        println!(
+            "  {}{:<24} {}",
+            color::check_mark(),
+            "project.yaml schema",
+            color::success("normalised")
+        );
+        changed += 1;
     }
 
     // Warn about AI delegation entries that lack delegation_salt: the
@@ -302,10 +329,7 @@ pub(crate) fn run_update_default() -> Result<()> {
         );
     }
 
-    if !wrote_anything {
-        println!("Already up to date.");
-    }
-    Ok(())
+    Ok(changed)
 }
 
 /// Resolve token from --token flag or JOY_TOKEN env var.

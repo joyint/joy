@@ -60,7 +60,7 @@ pub fn run(args: InitArgs) -> Result<()> {
             // Render SECURITY.md and normalise project.yaml schema so a
             // fresh `joy update --check` is clean immediately after init
             // (otherwise the auth artefacts would be reported "stale").
-            let _ = crate::commands::auth::run_update_default();
+            let _: Result<u32, _> = crate::commands::auth::run_update_default();
             println!();
             println!("Get started:");
             println!("  joy add <TYPE> <TITLE>   Create an item");

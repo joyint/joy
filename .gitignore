@@ -23,7 +23,6 @@ Thumbs.db
 .joy/hooks/
 .joy/project.defaults.yaml
 .claude/
-.qwen/
 .vibe/
 AGENTS.md
 .github/copilot-instructions.md

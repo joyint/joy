@@ -146,6 +146,7 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
 pub fn onboard(root: &Path) -> Result<OnboardResult, JoyError> {
     embedded::sync_files(root, CONFIG_FILES)?;
     embedded::sync_files(root, PROJECT_FILES)?;
+    ensure_gitignore(root)?;
     ensure_gitattributes(root)?;
     register_merge_driver(root)?;
     let result = install_hooks(root)?;
@@ -225,6 +226,15 @@ pub fn update_gitignore_block(root: &Path, entries: &[(&str, &str)]) -> Result<(
     } else {
         format!("{}\n", block)
     };
+
+    // Idempotency: skip write + auto-stage when content already matches.
+    if gitignore_path.is_file() {
+        if let Ok(existing) = std::fs::read_to_string(&gitignore_path) {
+            if existing == content {
+                return Ok(());
+            }
+        }
+    }
 
     std::fs::write(&gitignore_path, &content).map_err(|e| JoyError::WriteFile {
         path: gitignore_path,

@@ -158,15 +158,58 @@ struct AiInitPayload {
 
 /// Programmatic entry to the AI update routine, invoked from the
 /// `joy update` orchestrator and the auto-sync hook so configured AI
-/// tool files refresh after a binary upgrade.
-pub(crate) fn run_update_default() -> anyhow::Result<()> {
-    update(false).map(|_| ())
+/// tool files refresh after a binary upgrade. Returns the number of
+/// tools that were actually refreshed (skipped tools that were
+/// already up to date or not installed do not count).
+pub(crate) fn run_update_default() -> anyhow::Result<u32> {
+    update_terse()
 }
 
-/// Read-only check used by `joy update --check`. Prints one line per
-/// configured AI tool and returns `true` when anything is stale.
+/// Read-only check used by `joy update --check`. Prints the section
+/// header and one line per configured AI tool; returns `true` when
+/// anything is stale.
 pub(crate) fn run_check_default() -> anyhow::Result<bool> {
     update(true)
+}
+
+/// Terse write path: only print rows for tools that were actually
+/// refreshed; tools that were already up to date / not configured /
+/// not installed contribute no output.
+fn update_terse() -> anyhow::Result<u32> {
+    let root = joy_core::store::find_project_root(&std::env::current_dir()?)
+        .ok_or_else(|| anyhow::anyhow!("No Joy project found (run `joy init` first)"))?;
+
+    joy_core::embedded::sync_files(&root, joy_core::init::PROJECT_FILES)?;
+
+    let mut changed_count = 0u32;
+    let mut header_printed = false;
+    let mut configured_tools: Vec<&str> = Vec::new();
+    for (name, id, _detect, configure) in ALL_TOOLS {
+        if !is_tool_configured(&root, id) {
+            continue;
+        }
+        configured_tools.push(id);
+        let member_id = format!("ai:{id}@joy");
+        QUIET.store(true, std::sync::atomic::Ordering::Relaxed);
+        let changed = configure(&root, &member_id)?;
+        QUIET.store(false, std::sync::atomic::Ordering::Relaxed);
+        if changed {
+            if !header_printed {
+                dprintln!("{}", color::section("AI tool files"));
+                header_printed = true;
+            }
+            dprintln!(
+                "  {}{:<24} {}",
+                color::check_mark(),
+                name,
+                color::success("refreshed")
+            );
+            changed_count += 1;
+        }
+    }
+
+    update_gitignore(&root, &configured_tools)?;
+    Ok(changed_count)
 }
 
 fn update(dry_run: bool) -> anyhow::Result<bool> {
@@ -205,14 +248,12 @@ fn update(dry_run: bool) -> anyhow::Result<bool> {
     }
 
     if !dry_run {
-        // Full-width header / sync only on the write path. The dry-run
-        // path is invoked from `joy update --check`, which provides
-        // the surrounding header and section title itself.
-        dprintln!("{}", color::header("AI Update"));
-        dprintln!();
         joy_core::embedded::sync_files(&root, joy_core::init::PROJECT_FILES)?;
-        dprintln!("{}", color::section("AI Tools"));
     }
+    // Both dry-run and write path use the same section title. The
+    // surrounding `joy update` (or `joy update --check`) wrapper
+    // provides the full-width header.
+    dprintln!("{}", color::section("AI tool files"));
 
     let mut tool_count = 0;
     let mut has_issues = false;
@@ -284,16 +325,9 @@ fn update(dry_run: bool) -> anyhow::Result<bool> {
         update_gitignore(&root, &configured_tools)?;
     }
 
-    if !dry_run {
-        // The aggregated joy update --check provides its own footer;
-        // the per-section dry-run path stays footer-less.
-        dprintln!();
-        let msg = format!(
-            "AI update complete -- {}",
-            color::plural(tool_count, "tool")
-        );
-        dprintln!("{}", color::footer(&msg));
-    }
+    // The wrapping `joy update` / `joy update --check` provides the
+    // overall footer; the per-section output stays footer-less.
+    let _ = tool_count;
 
     Ok(has_issues)
 }
@@ -1092,6 +1126,9 @@ fn generate_agents(root: &Path, tool: &str, agents_dir: &str) -> anyhow::Result<
 }
 
 fn configure_claude(root: &Path, member_id: &str) -> anyhow::Result<bool> {
+    if !is_tool_stale(root, "claude", member_id)? {
+        return Ok(false);
+    }
     let claude_dir = root.join(".claude");
     fs::create_dir_all(&claude_dir)?;
     clean_managed_dirs(root, &[".claude/agents", ".claude/skills/joy"]);
@@ -1151,6 +1188,9 @@ fn update_claude_permissions(root: &Path, _member_id: &str) -> anyhow::Result<bo
 }
 
 fn configure_qwen(root: &Path, member_id: &str) -> anyhow::Result<bool> {
+    if !is_tool_stale(root, "qwen", member_id)? {
+        return Ok(false);
+    }
     let qwen_dir = root.join(".qwen");
     fs::create_dir_all(&qwen_dir)?;
     clean_managed_dirs(root, &[".qwen/agents", ".qwen/skills/joy"]);
@@ -1210,6 +1250,9 @@ fn update_qwen_permissions(root: &Path, _member_id: &str) -> anyhow::Result<bool
 }
 
 fn configure_vibe(root: &Path, member_id: &str) -> anyhow::Result<bool> {
+    if !is_tool_stale(root, "vibe", member_id)? {
+        return Ok(false);
+    }
     let vibe_dir = root.join(".vibe");
     fs::create_dir_all(&vibe_dir)?;
     clean_managed_dirs(root, &[".vibe/agents", ".vibe/skills/joy"]);
@@ -1274,6 +1317,9 @@ fn ensure_vibe_bash_always(path: &Path) -> anyhow::Result<bool> {
 }
 
 fn configure_copilot(root: &Path, member_id: &str) -> anyhow::Result<bool> {
+    if !is_tool_stale(root, "copilot", member_id)? {
+        return Ok(false);
+    }
     let github_dir = root.join(".github");
     fs::create_dir_all(&github_dir)?;
     clean_managed_dirs(root, &[".github/agents", ".github/prompts"]);

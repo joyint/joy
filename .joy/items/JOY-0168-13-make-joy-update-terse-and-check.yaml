@@ -1,0 +1,33 @@
+id: JOY-0168-13
+title: Make joy update terse and --check comprehensive
+type: task
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-07T05:55:15.398103Z
+updated: 2026-05-07T05:55:40.923120Z
+description: |-
+  Two intertwined gaps after the centralisation under JOY-0166-BE:
+
+  - joy update and joy update --check produced identical full output. They should diverge: --check is a comprehensive read-only audit (every joy-managed artefact, ok or stale); update is terse, prints rows only for things that actually changed and a one-line footer summary.
+  - joy update --check did not cover .gitignore block, embedded files (commit-msg hook, config.defaults.yaml, project.defaults.yaml), and the various git-extension config entries (.gitattributes block, merge.joy-yaml.driver, core.hooksPath). Every check item must have a corresponding writer in joy update.
+
+  Also: the configure_claude/qwen/vibe/copilot tool functions in ai.rs ran clean_managed_dirs unconditionally, then re-rendered everything; the changed flag therefore was always true. Idempotency required for the terse update output to mean anything.
+
+  Also: marks in joy-style rows had inconsistent ASCII width ([ok]=5 chars, [!]=4 chars, no mark for not-installed), so columns did not align. Switched to single-character unicode marks (check, warn, cross) and a 2-char empty marker; column alignment now consistent.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-07T05:55:40.840342Z
+  text: |-
+    [x] joy update --check now covers binary, repo state, .gitignore block, .gitattributes block, merge.joy-yaml.driver, core.hooksPath, embedded files (commit-msg hook + config.defaults.yaml + project.defaults.yaml), auth artefacts (SECURITY.md + project.yaml schema), AI tool files. Every check item has a writer in init::onboard or auth/ai run_update_default.
+    [x] joy update is now terse: prints joy header, binary status row, ONLY rows for artefacts that actually changed, and a one-line footer ("nothing to refresh" or "N artefacts refreshed"). joy update --check stays comprehensive (every section, every row).
+    [x] auth::run_update_default and ai::run_update_default refactored to return Result<u32> (count of changes) and print joy-style rows only for items they refreshed.
+    [x] ai.rs configure_claude/qwen/vibe/copilot now early-return when is_tool_stale is false, fixing the previous "updated every time" bug caused by clean_managed_dirs running unconditionally.
+    [x] color::check_mark / warn_mark / cross_mark / empty_mark are now single visual cell wide (check / ! / cross / two spaces). Columns align across mixed rows.
+    [x] init::onboard now also calls ensure_gitignore so the .gitignore block stays in sync after a binary upgrade. update_gitignore_block made idempotent (no write when content already matches), matching the existing gitattributes idempotency.
+    [x] 51 sanity bats green, 319 unit tests, clippy + fmt clean.

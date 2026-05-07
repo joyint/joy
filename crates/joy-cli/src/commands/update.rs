@@ -16,6 +16,7 @@ use anyhow::Result;
 use axoupdater::AxoUpdater;
 use clap::Args;
 
+use joy_core::vcs::Vcs;
 use joy_core::{init, store};
 
 use crate::color;
@@ -51,19 +52,39 @@ pub fn run(args: UpdateArgs) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let project_root = store::find_project_root(&cwd);
 
-    let mut binary_msg: Option<String> = None;
-    if !args.no_binary {
-        binary_msg = Some(swap_binary());
-    }
+    println!("{}", color::header("Joy Update"));
+    println!();
 
-    if let Some(msg) = binary_msg {
-        println!("{}", msg);
+    println!("{}", color::section("Binary"));
+    if args.no_binary {
+        println!(
+            "  {}{:<24} {}",
+            color::empty_mark(),
+            "binary",
+            color::inactive("skipped (--no-binary)")
+        );
+    } else {
+        let (mark, status) = swap_binary_status();
+        println!("  {mark}{:<24} {}", "binary", status);
     }
 
     if let Some(root) = project_root {
-        run_full_sync(&root);
+        let changed = run_full_sync(&root);
+        println!();
+        let summary = if changed == 0 {
+            "Joy update complete -- nothing to refresh.".to_string()
+        } else if changed == 1 {
+            "Joy update complete -- 1 artefact refreshed.".to_string()
+        } else {
+            format!("Joy update complete -- {changed} artefacts refreshed.")
+        };
+        println!("{}", color::footer(&summary));
     } else {
-        println!("Not inside a Joy project; skipping in-repo sync.");
+        println!();
+        println!(
+            "{}",
+            color::footer("Not inside a Joy project; in-repo sync skipped.")
+        );
     }
 
     Ok(())
@@ -78,21 +99,32 @@ pub fn run(args: UpdateArgs) -> Result<()> {
 /// a warning and the rest still run. Output is each routine's own
 /// stdout, prefixed by section banners; a unified "refreshed: ..."
 /// protocol is left for a follow-up polish pass under JOY-0163-6B.
-pub(crate) fn run_full_sync(root: &Path) {
-    // init::onboard covers the joy-core side: embedded files (config
-    // defaults, project defaults), .gitattributes block, merge driver
-    // git config, commit-msg hook + core.hooksPath, version marker.
+/// Terse write-path orchestrator: call each refresh routine and let
+/// it print joy-style rows ONLY for items it actually changed. Returns
+/// the total number of artefacts refreshed across all subsystems so
+/// the caller can summarise.
+pub(crate) fn run_full_sync(root: &Path) -> u32 {
+    let mut changed = 0u32;
+
+    // init::onboard handles the joy-core-side artefacts (.gitattributes
+    // block, merge driver git config, hooks, embedded defaults, version
+    // marker). Today it does not report what it touched; for the terse
+    // path we simply note whether it succeeded.
     if let Err(e) = init::onboard(root) {
         eprintln!("warning: onboard sync failed: {e}");
     }
 
-    if let Err(e) = auth::run_update_default() {
-        eprintln!("warning: auth update skipped: {e}");
+    match auth::run_update_default() {
+        Ok(n) => changed += n,
+        Err(e) => eprintln!("warning: auth update skipped: {e}"),
     }
 
-    if let Err(e) = ai::run_update_default() {
-        eprintln!("warning: ai update skipped: {e}");
+    match ai::run_update_default() {
+        Ok(n) => changed += n,
+        Err(e) => eprintln!("warning: ai update skipped: {e}"),
     }
+
+    changed
 }
 
 fn run_check() -> Result<()> {
@@ -161,7 +193,138 @@ fn run_check() -> Result<()> {
     }
 
     println!();
-    println!("{}", color::section("Auth artefacts"));
+    println!("{}", color::section("Git extensions"));
+    let row = |ok: bool, name: &str, detail: &str| {
+        let mark = if ok {
+            color::check_mark()
+        } else {
+            color::warn_mark()
+        };
+        let status = if ok {
+            color::inactive(detail)
+        } else {
+            color::warning(detail)
+        };
+        println!("  {mark}{name:<24} {status}");
+    };
+
+    let block_ok = |path: &std::path::Path, marker: &str, entries: &[&str]| {
+        std::fs::read_to_string(path)
+            .map(|s| s.contains(marker) && entries.iter().all(|e| s.contains(e)))
+            .unwrap_or(false)
+    };
+
+    let gitignore_entries: Vec<&str> = joy_core::init::GITIGNORE_BASE_ENTRIES
+        .iter()
+        .map(|(p, _)| *p)
+        .collect();
+    let gitignore_ok = block_ok(
+        &root.join(".gitignore"),
+        joy_core::init::GITIGNORE_BLOCK_START,
+        &gitignore_entries,
+    );
+    if !gitignore_ok {
+        stale = true;
+    }
+    row(
+        gitignore_ok,
+        ".gitignore block",
+        if gitignore_ok {
+            "managed block present"
+        } else {
+            "missing or out of date"
+        },
+    );
+
+    let attrs_ok = block_ok(
+        &root.join(".gitattributes"),
+        joy_core::init::GITATTRIBUTES_BLOCK_START,
+        joy_core::init::GITATTRIBUTES_BASE_ENTRIES,
+    );
+    if !attrs_ok {
+        stale = true;
+    }
+    row(
+        attrs_ok,
+        ".gitattributes block",
+        if attrs_ok {
+            "managed block present"
+        } else {
+            "missing or out of date"
+        },
+    );
+
+    let vcs = joy_core::vcs::default_vcs();
+    let driver_ok = vcs
+        .config_get(&root, joy_core::init::MERGE_DRIVER_NAME_KEY)
+        .ok()
+        .as_deref()
+        == Some(joy_core::init::MERGE_DRIVER_NAME_VALUE)
+        && vcs
+            .config_get(&root, joy_core::init::MERGE_DRIVER_CMD_KEY)
+            .ok()
+            .as_deref()
+            == Some(joy_core::init::MERGE_DRIVER_CMD_VALUE);
+    if !driver_ok {
+        stale = true;
+    }
+    row(
+        driver_ok,
+        "merge.joy-yaml.driver",
+        if driver_ok {
+            "registered"
+        } else {
+            "missing or out of date"
+        },
+    );
+
+    let hooks_path_ok =
+        vcs.config_get(&root, "core.hooksPath").ok().as_deref() == Some(".joy/hooks");
+    if !hooks_path_ok {
+        stale = true;
+    }
+    row(
+        hooks_path_ok,
+        "core.hooksPath",
+        if hooks_path_ok {
+            ".joy/hooks"
+        } else {
+            "not pointing at .joy/hooks"
+        },
+    );
+
+    println!();
+    println!("{}", color::section("Embedded files"));
+    use joy_core::embedded::FileStatus;
+    let embedded_groups: &[(&[joy_core::embedded::EmbeddedFile], &str)] = &[
+        (joy_core::init::HOOK_FILES, "hook"),
+        (joy_core::init::CONFIG_FILES, "config default"),
+        (joy_core::init::PROJECT_FILES, "project default"),
+    ];
+    for (files, _label) in embedded_groups {
+        match joy_core::embedded::diff_files(&root, files) {
+            Ok(diffs) => {
+                for (target, status) in diffs {
+                    let ok = matches!(status, FileStatus::UpToDate);
+                    if !ok {
+                        stale = true;
+                    }
+                    let detail = match status {
+                        FileStatus::UpToDate => "up to date",
+                        FileStatus::Outdated => "stale (would be re-rendered)",
+                        FileStatus::Missing => "missing (would be installed)",
+                    };
+                    row(ok, target, detail);
+                }
+            }
+            Err(e) => {
+                stale = true;
+                println!("  {}error reading embedded files: {e}", color::warn_mark());
+            }
+        }
+    }
+
+    println!();
     match auth::run_check_default() {
         Ok(true) => stale = true,
         Ok(false) => {}
@@ -169,7 +332,6 @@ fn run_check() -> Result<()> {
     }
 
     println!();
-    println!("{}", color::section("AI tool files"));
     match ai::run_check_default() {
         Ok(true) => stale = true,
         Ok(false) => {}
@@ -192,25 +354,27 @@ fn run_check() -> Result<()> {
     Ok(())
 }
 
-fn swap_binary() -> String {
+/// One-line binary swap result: (mark, status detail).
+fn swap_binary_status() -> (&'static str, String) {
     let mut updater = AxoUpdater::new_for(PKG_NAME);
     if updater.load_receipt().is_err() {
-        return format!(
-            "Binary update skipped: no cargo-dist install receipt found at {}.\n\
-             Update via the installer that placed this binary, e.g.\n  \
-             cargo install --force joy-cli\n  brew upgrade joy",
-            std::env::current_exe()
-                .ok()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|| "<unknown path>".into())
+        return (
+            color::empty_mark(),
+            color::inactive(&format!("managed by another installer ({CURRENT_VERSION})")),
         );
     }
     match updater.run_sync() {
-        Ok(Some(result)) => format!(
-            "Binary updated: {:?} -> {:?}",
-            result.old_version, result.new_version
+        Ok(Some(result)) => (
+            color::check_mark(),
+            color::success(&format!(
+                "updated {:?} -> {:?}",
+                result.old_version, result.new_version
+            )),
         ),
-        Ok(None) => format!("Binary already up to date ({CURRENT_VERSION})."),
-        Err(e) => format!("Binary update failed: {e}"),
+        Ok(None) => (
+            color::check_mark(),
+            color::inactive(&format!("up to date ({CURRENT_VERSION})")),
+        ),
+        Err(e) => (color::warn_mark(), color::warning(&format!("failed: {e}"))),
     }
 }

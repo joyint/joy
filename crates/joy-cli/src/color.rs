@@ -430,41 +430,38 @@ pub fn key_value(key: &str, value: &str, label_width: usize) -> String {
     format!("{:<width$} {}", label(key), value, width = label_width)
 }
 
-/// Success check mark (respects emoji setting).
+/// Success check mark (respects emoji setting). Single visual cell so
+/// rows mixing different mark kinds line up vertically.
 pub fn check_mark() -> &'static str {
     if is_emoji_enabled() {
         "\u{2714} "
     } else {
-        "[ok] "
+        "\u{2713} "
     }
 }
 
-/// Failure cross mark (respects emoji setting).
+/// Failure cross mark (respects emoji setting). Single visual cell.
 pub fn cross_mark() -> &'static str {
     if is_emoji_enabled() {
         "\u{2718} "
     } else {
-        "[!!] "
+        "\u{2717} "
     }
 }
 
-/// Warning indicator (respects emoji setting).
+/// Warning indicator (respects emoji setting). Single visual cell.
 pub fn warn_mark() -> &'static str {
     if is_emoji_enabled() {
         "\u{26a0}\u{fe0f} "
     } else {
-        "[!] "
+        "! "
     }
 }
 
 /// Empty checkbox: indicates an inactive / not-installed slot. Same
 /// width as `check_mark` so columns line up across rows.
 pub fn empty_mark() -> &'static str {
-    if is_emoji_enabled() {
-        "  "
-    } else {
-        "[ ] "
-    }
+    "  "
 }
 
 /// Wrap text in success color (green).
