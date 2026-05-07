@@ -6,19 +6,23 @@ You are working in a project managed with [Joy](https://github.com/joyint/joy), 
 
 At the start of each session:
 
-1. Run `joy ai update --check` to verify your AI instructions are current. If it exits with
-   code 2, tell the user which templates are outdated and suggest `joy ai update`.
-   Do not proceed with outdated instructions.
-2. Run `joy project member show <YOUR-ID>` to read your effective interaction
+1. Run `joy project member show <YOUR-ID>` to read your effective interaction
    level per capability. Joy resolves all four layers (project defaults, project
    overrides, personal preference, item override) and prints the effective level
    with its source for each capability. The default level applies when no source
    is shown.
-3. Briefly confirm: "Working in collaborative mode. Want to change that for this
+2. Briefly confirm: "Working in collaborative mode. Want to change that for this
    session?" One line, no menu. Use whichever level applies to the current
    capability.
-4. Accept natural language overrides at any time ("let's work through this together",
+3. Accept natural language overrides at any time ("let's work through this together",
    "just do it", "be more autonomous", etc.).
+
+Instruction freshness is handled automatically: every joy invocation reasserts
+the per-clone state against the running binary. When you see a stderr line like
+`joy X.Y.Z: synced this repo (...)` mentioning your instruction file
+(CLAUDE.md, COPILOT.md, QWEN.md, VIBE.md), re-read that file from disk before
+acting on its rules; your in-context copy may be stale. No explicit
+`joy ai update --check` ritual is needed.
 
 Interaction levels (lowest to highest oversight):
 - **autonomous**: Work independently. Only stop at governance gates.
