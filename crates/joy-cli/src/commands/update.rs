@@ -60,7 +60,13 @@ pub struct UpdateArgs {
 
 pub fn run(args: UpdateArgs) -> Result<()> {
     if args.check {
+        if crate::output::is_json() {
+            return run_check_json();
+        }
         return run_check();
+    }
+    if crate::output::is_json() {
+        return run_update_json(args);
     }
 
     let cwd = std::env::current_dir()?;
@@ -227,6 +233,240 @@ fn run_check() -> Result<()> {
     } else {
         println!("{}", color::footer("All Joy-managed state is up to date."));
     }
+    Ok(())
+}
+
+// -- JSON output ---------------------------------------------------------
+
+#[derive(serde::Serialize)]
+struct CheckPayload {
+    binary: BinaryStatus,
+    repo_root: Option<String>,
+    sections: Vec<CheckSection>,
+    has_issues: bool,
+}
+
+#[derive(serde::Serialize)]
+struct CheckSection {
+    name: &'static str,
+    rows: Vec<CheckRowJson>,
+}
+
+#[derive(serde::Serialize)]
+struct CheckRowJson {
+    name: String,
+    /// `"ok"`, `"stale"`, or `"info"`.
+    status: &'static str,
+    detail: String,
+}
+
+#[derive(serde::Serialize)]
+struct UpdatePayload {
+    binary: BinaryAction,
+    repo_root: Option<String>,
+    sections: Vec<UpdateSection>,
+    refreshed_count: u32,
+}
+
+#[derive(serde::Serialize)]
+struct UpdateSection {
+    name: &'static str,
+    rows: Vec<UpdateRowJson>,
+}
+
+#[derive(serde::Serialize)]
+struct UpdateRowJson {
+    name: String,
+    /// `Some(verb)` if the artefact was changed; `None` if already up
+    /// to date.
+    action: Option<&'static str>,
+}
+
+#[derive(serde::Serialize)]
+struct BinaryStatus {
+    /// `"up_to_date"`, `"update_available"`, or `"unmanaged"`.
+    state: &'static str,
+    current_version: &'static str,
+}
+
+#[derive(serde::Serialize)]
+struct BinaryAction {
+    /// `"updated"`, `"already_current"`, `"unmanaged"`, `"skipped"`,
+    /// or `"failed"`.
+    state: &'static str,
+    current_version: &'static str,
+    /// Set on `"failed"`.
+    error: Option<String>,
+    /// Set on `"updated"`.
+    old_version: Option<String>,
+    /// Set on `"updated"`.
+    new_version: Option<String>,
+}
+
+fn run_check_json() -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let mut updater = AxoUpdater::new_for(PKG_NAME);
+    let binary = if updater.load_receipt().is_err() {
+        BinaryStatus {
+            state: "unmanaged",
+            current_version: CURRENT_VERSION,
+        }
+    } else if updater.is_update_needed_sync().unwrap_or(false) {
+        BinaryStatus {
+            state: "update_available",
+            current_version: CURRENT_VERSION,
+        }
+    } else {
+        BinaryStatus {
+            state: "up_to_date",
+            current_version: CURRENT_VERSION,
+        }
+    };
+    let mut has_issues = matches!(binary.state, "update_available");
+    let mut sections: Vec<CheckSection> = Vec::new();
+    let mut repo_root: Option<String> = None;
+
+    if let Some(root) = store::find_project_root(&cwd) {
+        repo_root = Some(root.display().to_string());
+        let items = update_registry::all();
+        for section in SECTION_ORDER {
+            let mut rows: Vec<CheckRowJson> = Vec::new();
+            for item in items.iter().filter(|i| &i.section() == section) {
+                match item.check(&root) {
+                    Ok(rs) => {
+                        for row in rs {
+                            let status = match row.mark {
+                                RowMark::Ok => "ok",
+                                RowMark::Stale => {
+                                    has_issues = true;
+                                    "stale"
+                                }
+                                RowMark::Info => "info",
+                            };
+                            rows.push(CheckRowJson {
+                                name: row.name,
+                                status,
+                                detail: row.detail,
+                            });
+                        }
+                    }
+                    Err(e) => {
+                        has_issues = true;
+                        rows.push(CheckRowJson {
+                            name: "error".into(),
+                            status: "stale",
+                            detail: e.to_string(),
+                        });
+                    }
+                }
+            }
+            if !rows.is_empty() {
+                sections.push(CheckSection {
+                    name: section,
+                    rows,
+                });
+            }
+        }
+    }
+
+    crate::output::emit(CheckPayload {
+        binary,
+        repo_root,
+        sections,
+        has_issues,
+    })?;
+    if has_issues {
+        std::process::exit(2);
+    }
+    Ok(())
+}
+
+fn run_update_json(args: UpdateArgs) -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let project_root = store::find_project_root(&cwd);
+
+    let binary = if args.no_binary {
+        BinaryAction {
+            state: "skipped",
+            current_version: CURRENT_VERSION,
+            error: None,
+            old_version: None,
+            new_version: None,
+        }
+    } else {
+        let mut updater = AxoUpdater::new_for(PKG_NAME);
+        if updater.load_receipt().is_err() {
+            BinaryAction {
+                state: "unmanaged",
+                current_version: CURRENT_VERSION,
+                error: None,
+                old_version: None,
+                new_version: None,
+            }
+        } else {
+            match updater.run_sync() {
+                Ok(Some(result)) => BinaryAction {
+                    state: "updated",
+                    current_version: CURRENT_VERSION,
+                    error: None,
+                    old_version: Some(format!("{:?}", result.old_version)),
+                    new_version: Some(format!("{:?}", result.new_version)),
+                },
+                Ok(None) => BinaryAction {
+                    state: "already_current",
+                    current_version: CURRENT_VERSION,
+                    error: None,
+                    old_version: None,
+                    new_version: None,
+                },
+                Err(e) => BinaryAction {
+                    state: "failed",
+                    current_version: CURRENT_VERSION,
+                    error: Some(e.to_string()),
+                    old_version: None,
+                    new_version: None,
+                },
+            }
+        }
+    };
+
+    let mut sections: Vec<UpdateSection> = Vec::new();
+    let mut refreshed_count = 0u32;
+    let mut repo_root: Option<String> = None;
+
+    if let Some(root) = project_root {
+        repo_root = Some(root.display().to_string());
+        let items = update_registry::all();
+        for section in SECTION_ORDER {
+            let mut rows: Vec<UpdateRowJson> = Vec::new();
+            for item in items.iter().filter(|i| &i.section() == section) {
+                if let Ok(rs) = item.refresh(&root) {
+                    for row in rs {
+                        if let Some(action) = row.action {
+                            refreshed_count += 1;
+                            rows.push(UpdateRowJson {
+                                name: row.name,
+                                action: Some(action),
+                            });
+                        }
+                    }
+                }
+            }
+            if !rows.is_empty() {
+                sections.push(UpdateSection {
+                    name: section,
+                    rows,
+                });
+            }
+        }
+    }
+
+    crate::output::emit(UpdatePayload {
+        binary,
+        repo_root,
+        sections,
+        refreshed_count,
+    })?;
     Ok(())
 }
 

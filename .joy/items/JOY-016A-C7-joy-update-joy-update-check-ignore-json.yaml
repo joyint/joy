@@ -1,0 +1,30 @@
+id: JOY-016A-C7
+title: joy update / joy update --check ignore --json
+type: bug
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-07T06:11:14.334544Z
+updated: 2026-05-07T06:11:25.237211Z
+description: |-
+  Both joy update and joy update --check were converted to plain text-only output during the central-orchestrator refactor (JOY-0166-BE / JOY-0169-6A). The --json global flag was no longer honoured: joy update --check --json printed the human-readable sectioned report.
+
+  Fix: route both paths through dedicated JSON serialisers when crate::output::is_json() is true. Schemas:
+
+  joy update --check --json -> { binary: {state, current_version}, repo_root, sections: [{name, rows: [{name, status: ok|stale|info, detail}]}], has_issues }, exit 2 if has_issues.
+
+  joy update --json -> { binary: {state: updated|already_current|unmanaged|skipped|failed, current_version, error?, old_version?, new_version?}, repo_root, sections: [{name, rows: [{name, action}]}], refreshed_count }.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-07T06:11:25.154086Z
+  text: |-
+    [x] commands/update.rs: run() routes to run_check_json or run_update_json when output::is_json() is true.
+    [x] CheckPayload / UpdatePayload schemas with sections (Repo state / Git extensions / Embedded files / Auth artefacts / AI tool files), per-row {name, status|action, detail}, and binary state.
+    [x] joy update --check --json exits 2 when has_issues = true.
+    [x] 319 unit tests, 32 sanity bats green, clippy + fmt clean. Manual demo on a fresh init confirms both JSON paths produce well-formed envelopes.
