@@ -1,0 +1,25 @@
+id: JOY-0165-1F
+title: joy update --check writes files via auto-sync hook
+type: bug
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-07T05:03:25.822990Z
+updated: 2026-05-07T05:04:00.031660Z
+description: |-
+  main() runs auto_sync_repo before dispatching, which on a stale or missing version marker calls run_full_sync (auth update + ai update + lazy activation). When the user invokes 'joy update --check' (read-only), that hook still writes SECURITY.md, AI tool files, etc. before the actual --check run reports back. Real symptom on 2026-05-07: joy update --check rendered SECURITY.md and updated all configured AI tools, then said 'binary: install receipt missing; repo: synced (0.14.2)'. Second invocation was silent because the marker was now current.
+
+  Fix: skip auto_sync_repo when the dispatched subcommand is Commands::Update(_). joy update runs the full sync itself; joy update --check must never write.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-07T05:03:59.953222Z
+  text: |-
+    [x] main.rs: skip auto_sync_repo when cli.command is Some(Commands::Update(_)). joy update runs the sync itself with full output; joy update --check is read-only.
+    [x] new bats test verifying joy update --check does not write or change the version marker even when the marker is forced stale.
+    [x] all 6 update_command.bats tests green.

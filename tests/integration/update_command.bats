@@ -43,6 +43,19 @@ load setup
     [ "$stamped" != "0.0.0-stale" ]
 }
 
+@test "joy update --check does not write any files even with stale marker (JOY-0165-1F)" {
+    joy init --name "Test"
+    git add -A && git commit -m "init [no-item]" --quiet
+    # Force a stale marker so the auto-sync hook would otherwise fire.
+    git config --local joy.last-sync-version "0.0.0-stale"
+    [ -z "$(git status --porcelain)" ]
+    run joy update --check
+    # --check is allowed to exit 2 (stale binary or repo); just must not write.
+    [ -z "$(git status --porcelain)" ]
+    # Marker must still be the stale value -- nothing was synced.
+    [ "$(git config --local joy.last-sync-version)" = "0.0.0-stale" ]
+}
+
 @test "auto-sync respects auto-sync: false in .joy/config.yaml" {
     joy init --name "Test"
     git add -A && git commit -m "init [no-item]" --quiet

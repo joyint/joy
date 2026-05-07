@@ -240,7 +240,13 @@ fn main() -> anyhow::Result<()> {
     // JOY-0162 / JOY-0164-B5: keep the merge-driver registration and the
     // per-clone version marker in sync with the current binary.
     // Best-effort, must never fail a user-facing command.
-    auto_sync_repo();
+    //
+    // Skip for `joy update`: that subcommand runs the sync itself
+    // (with full output), and `joy update --check` must not write
+    // anything.
+    if !matches!(cli.command, Some(Commands::Update(_))) {
+        auto_sync_repo();
+    }
 
     let mut config = joy_core::store::load_config();
 
