@@ -37,6 +37,16 @@ pub trait Vcs {
 
     /// Get the latest reachable version tag, if any.
     fn latest_version_tag(&self, root: &Path) -> Result<Option<String>, JoyError>;
+
+    /// Read a per-clone VCS-config value. The semantics are
+    /// Git-flavoured (`git config --local <key>`); other backends
+    /// implement on the closest equivalent (jj has `jj config`, pijul
+    /// `pijul config`).
+    fn config_get(&self, root: &Path, key: &str) -> Result<String, JoyError>;
+
+    /// Write a per-clone VCS-config value. Same semantics as
+    /// [`Vcs::config_get`].
+    fn config_set(&self, root: &Path, key: &str, value: &str) -> Result<(), JoyError>;
 }
 
 /// Git implementation of the VCS trait.
@@ -138,21 +148,17 @@ impl Vcs for GitVcs {
             _ => Ok(None),
         }
     }
-}
 
-// -- Git config operations --
-
-impl GitVcs {
-    /// Get a git config value (local scope).
-    pub fn config_get(&self, root: &Path, key: &str) -> Result<String, JoyError> {
+    fn config_get(&self, root: &Path, key: &str) -> Result<String, JoyError> {
         git_output(root, &["config", "--local", key])
     }
 
-    /// Set a git config value (local scope).
-    pub fn config_set(&self, root: &Path, key: &str, value: &str) -> Result<(), JoyError> {
+    fn config_set(&self, root: &Path, key: &str, value: &str) -> Result<(), JoyError> {
         git_run(root, &["config", "--local", key, value])
     }
 }
+
+// -- Git config operations: now part of the Vcs trait. --
 
 // -- Git version check --
 
