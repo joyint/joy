@@ -1,0 +1,33 @@
+id: JOY-016C-95
+title: 'Doc sweep: reflect joy update / auto-sync / downgrade-guard in user-facing docs'
+type: task
+status: in-progress
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-08T04:42:30.970499Z
+updated: 2026-05-08T04:42:31.090729Z
+description: |-
+  Update user-facing docs to match the central joy update / joy update --check architecture (JOY-0166-BE / JOY-0169-6A / JOY-016A-C7 / JOY-016B-A1).
+
+  Files to update:
+  - joy/README.md
+  - joy/docs/user/Tutorial.md
+  - joy/crates/joy-cli/docs/Tutorial.md
+  - website/content/joy/docs/en/tutorial.mdx
+  - ../docs/dev/vision/trustship/Auth.md (joy auth token rm -> joy auth delegation rotate / joy ai rotate)
+
+  Replacements:
+  - 'joy ai update --check' / 'joy ai check' -> describe auto-sync; explicit check is 'joy update --check'
+  - 'joy ai update' / 'joy auth update' -> 'joy update'
+  - 'joy ai setup' -> 'joy ai init' (memory rule: init never setup)
+
+  Plus a short 'Updating joy' section in the user tutorials and the website explaining: joy update swaps the binary AND syncs in-repo state; auto-sync handles the in-repo half implicitly on the next joy invocation; downgrade guard refuses if the binary is older than the repo's last sync; auto-sync: false in .joy/config.yaml as opt-out; --json envelope for both joy update and joy update --check.
+
+  Generated AI tool files (.claude/CLAUDE.md, AGENTS.md, .github/copilot-instructions.md, etc.) and joy-core templates are already current; no edit there.
+
+  ADRs / vision / research / business docs are out of scope: historical records.

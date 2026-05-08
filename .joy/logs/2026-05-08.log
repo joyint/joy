@@ -1,0 +1,3 @@
+2026-05-08T04:42:30.985Z JOY-016C-95 item.created "Doc sweep: reflect joy update / auto-sync / downgrade-guard in user-facing docs" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-08T04:42:31.098Z JOY-016C-95 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-08T06:53:39.063Z JOY-016C-95 guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]

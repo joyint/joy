@@ -46,7 +46,7 @@ If you clone a repo that already uses Joy, run `joy init` to set up your local e
 ```sh
 git clone <repo-url> && cd <repo>
 joy init     # installs commit-msg hook, sets up git hooks path
-joy ai setup # optional: configure AI tool integration
+joy ai init  # optional: configure AI tool integration
 ```
 
 `joy init` detects the existing project and switches to onboarding mode - it installs the commit-msg hook and sets `core.hooksPath` without touching project data.

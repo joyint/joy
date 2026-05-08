@@ -90,7 +90,7 @@ Joy detects the existing project and switches to onboarding mode: it installs th
 After onboarding, set up AI tool integration if you use one:
 
 ```sh
-joy ai setup
+joy ai init
 ```
 
 ---
@@ -360,7 +360,7 @@ joy rm CB-0001 -rf                   # Delete epic and all children
 Even MacGyver accepts help sometimes. Joy integrates with AI coding tools so they can manage your backlog alongside you.
 
 ```sh
-joy ai setup
+joy ai init
 ```
 
 This does three things:
@@ -406,11 +406,23 @@ If your project has AI members and you run a Joy command without `--author`, Joy
 
 ### Keeping Instructions Current
 
-Run `joy ai setup` again after a Joy update to get the latest instructions. Joy-owned files are updated, your custom rules are preserved. Run `joy ai check` at any time to verify:
+You usually do not have to run anything explicitly. Every joy invocation
+checks whether this clone is in sync with the running binary and
+quietly refreshes the AI instruction files (and the rest of the
+joy-managed state) when it sees a version mismatch. When that happens
+joy prints a one-line `joy X.Y.Z: synced this repo (...)` notice on
+stderr; if your AI tool's instruction file is mentioned in that
+output, re-read it before continuing the session.
+
+If you want an explicit audit, run:
 
 ```sh
-joy ai check                     # Are AI instructions up to date?
+joy update --check               # Read-only: every joy-managed artefact
+joy update                       # Refresh anything that is stale
 ```
+
+`joy update` also handles the binary self-update when joy was
+installed via the cargo-dist installer. See "Updating joy" below.
 
 ---
 
@@ -644,10 +656,72 @@ Key settings:
 | `output.emoji` | `false` | Show emoji indicators in output |
 | `output.short` | `true` | Compact list output (abbreviations) |
 | `output.fortune` | `true` | Show occasional quotes in output |
+| `auto-sync` | `true` | Refresh joy-managed state when the binary version moves ahead of this clone's marker |
 
 ---
 
-## Mission 10: Sealing the Vault (`crypt`)
+## Mission 10: Updating joy (`update`)
+
+Joy keeps two things current side by side: the `joy` binary on your
+machine, and the joy-managed artefacts in each clone (`.gitattributes`,
+the YAML merge driver registration, the commit-msg hook,
+`SECURITY.md`, AI tool instruction files, ...). Both are handled by a
+single command:
+
+```sh
+joy update                       # Swap binary + refresh in-repo state
+joy update --check               # Read-only audit of every joy-managed artefact
+joy update --no-binary           # In-repo refresh only
+joy update --json                # Same, machine-readable envelope
+```
+
+`joy update` is receipt-gated for the binary swap: only builds installed
+through the cargo-dist installer carry the receipt that lets joy update
+itself in place. Builds installed via `cargo install`, Homebrew, or a
+distro package skip the swap with a clear message and ask you to use the
+installer that placed the binary. The in-repo refresh runs in either
+case (when the binary on disk is at least as new as the repo's marker;
+see "Downgrade guard" below).
+
+### Auto-sync: the in-repo half is implicit
+
+You almost never have to run `joy update` for the in-repo refresh.
+Every joy invocation cheaply compares the running binary's version
+against `joy.last-sync-version` (kept in this clone's local git config)
+and silently catches up when they differ. When that happens you see a
+single stderr line such as:
+
+```
+joy 0.15.0: synced this repo (previous marker: 0.14.2).
+```
+
+If the file mentioned alongside that line is your AI tool's instruction
+file (CLAUDE.md, COPILOT.md, QWEN.md, AGENTS.md), re-read it; the
+in-context copy may now be stale. To opt out per project, set
+`auto-sync: false` in `.joy/config.yaml`; `joy update` then becomes
+the only path that touches in-repo state.
+
+### Downgrade guard
+
+If the repo was last synced by a newer joy binary than the one you are
+running, joy refuses to roll repo state back. The first joy invocation
+prints a one-line warning, `joy update --check` reports the version
+marker as stale, and `joy update` runs the binary swap (so you can
+catch up) but skips the in-repo refresh from this still-running OLD
+process. Open a new shell once the new binary is in `$PATH` and the
+auto-sync (or another `joy update`) does the rest.
+
+### Two real flows
+
+- **You have an older binary in a freshly synced repo.** `joy update`
+  swaps the binary and tells you to re-run from a new shell; the next
+  joy invocation in the new shell auto-syncs.
+- **You have a current binary in an older repo.** Nothing to do
+  explicitly: the very next joy command (any of them) auto-syncs.
+
+---
+
+## Mission 11: Sealing the Vault (`crypt`)
 
 Some Joy items are sensitive: NDA-bound customer information, embargoed
 security incidents, multi-tenant work where one client's content must
@@ -876,8 +950,9 @@ The shape is `{"version": 1, "data": ...}`. Within a major Joy release, fields a
 | `joy release ls` | List all releases |
 | `joy project` | View/edit project info and members |
 | `joy config` | Show or modify configuration |
-| `joy ai setup` | Set up AI tool integration |
-| `joy ai check` | Check if AI instructions are current |
+| `joy ai init` | Set up AI tool integration |
+| `joy update` | Update the joy binary and refresh joy-managed state |
+| `joy update --check` | Read-only audit of every joy-managed artefact |
 | `joy tutorial` | You are here |
 
 Most write commands accept `--author <MEMBER>` to attribute the action to a specific identity.
