@@ -31,3 +31,4 @@
 2026-05-09T22:09:16.442Z JOY-016F-16 item.status_changed "closed -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-05-09T22:09:16.517Z JOY-0170-08 comment.added "[x] commands/add.rs runs a duplicate-title check (case-insensitive, whitespace-trimmed) against existing items before creating a new one. Aborts with 'an item with this title already exists: <id>; pass --allow-duplicate to create another one anyway'. New --allow-duplicate flag bypasses the check for the rare cases where it is desired." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-05-09T22:09:16.610Z JOY-0170-08 item.status_changed "closed -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-09T22:28:22.282Z v0.15.1 release.created [horst.schwarz@joydev.com]

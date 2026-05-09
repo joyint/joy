@@ -1,0 +1,25 @@
+version: v0.15.1
+date: 2026-05-09
+previous: v0.15.0
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 34
+  items: 7
+items:
+  tasks:
+  - id: JOY-016C-95
+    title: 'Doc sweep: reflect joy update / auto-sync / downgrade-guard in user-facing docs'
+  - id: JOY-0171-50
+    title: Lower passphrase min length default from 6 to 3 words
+  bugs:
+  - id: JOY-016D-D6
+    title: joy update receipt lookup uses wrong app name
+  - id: JOY-016F-16
+    title: joy project member add ai:... shows OTP instructions; AI members do not use OTP
+  - id: JOY-0170-08
+    title: Items can be created with duplicate titles, no warning
+  reworks:
+  - id: JOY-0163-6B
+    title: Replace lazy merge-driver registration with a non-stopgap activation strategy
+  - id: JOY-016E-81
+    title: Shorten verbose CLI help texts to fit ~80 columns
