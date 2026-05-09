@@ -49,7 +49,7 @@ Examples:
   joy update --check        Check whether anything would change
   joy update --no-binary    Sync only, do not touch the binary")]
 pub struct UpdateArgs {
-    /// Only check; do not modify anything. Exit 2 if anything would change.
+    /// Read-only audit; exit 2 if stale.
     #[arg(long)]
     pub check: bool,
 
