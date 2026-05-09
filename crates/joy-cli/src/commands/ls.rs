@@ -103,13 +103,14 @@ pub fn run(args: LsArgs) -> Result<()> {
     // transparently. No-op when the project has no Crypt activity.
     crate::crypt_session::ensure_zone_keys(args.passphrase.as_deref())?;
 
-    let all_items = items::load_items(&root)?;
+    let (all_items, locked) = items::load_items_with_locked(&root)?;
 
-    if all_items.is_empty() {
+    if all_items.is_empty() && locked.is_empty() {
         if crate::output::is_json() {
             return crate::output::emit(LsPayload {
                 items: Vec::new(),
                 total: 0,
+                locked: Vec::new(),
             });
         }
         println!("No items. Run `joy add` to create one.");
@@ -129,6 +130,13 @@ pub fn run(args: LsArgs) -> Result<()> {
         return crate::output::emit(LsPayload {
             items: filtered.into_iter().cloned().collect(),
             total,
+            locked: locked
+                .iter()
+                .map(|l| LockedRow {
+                    id: l.id.clone(),
+                    zone: l.zone.clone(),
+                })
+                .collect(),
         });
     }
 
@@ -155,7 +163,7 @@ pub fn run(args: LsArgs) -> Result<()> {
             other => anyhow::bail!("unknown group: {other} (use: parent, milestone)"),
         }
     } else {
-        print_table(&filtered, &all_items, &extras);
+        print_table(&filtered, &all_items, &extras, &locked);
     }
 
     Ok(())
@@ -165,6 +173,14 @@ pub fn run(args: LsArgs) -> Result<()> {
 struct LsPayload {
     items: Vec<Item>,
     total: usize,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    locked: Vec<LockedRow>,
+}
+
+#[derive(serde::Serialize)]
+struct LockedRow {
+    id: String,
+    zone: String,
 }
 
 /// Detect terminal width: crossterm -> COLUMNS env var -> 80.
@@ -203,7 +219,12 @@ fn truncate_title(s: &str, max_len: usize) -> String {
     format!("{}...", &s[..end])
 }
 
-fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
+fn print_table(
+    items: &[&Item],
+    all_items: &[Item],
+    extras: &ExtraColumns,
+    locked: &[items::LockedItem],
+) {
     let term_width = terminal_width();
 
     // Pass 1: compute dynamic column widths from data
@@ -220,12 +241,35 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
     let h_status = if color::is_short() { "STA" } else { "STATUS" };
     let h_prio = if color::is_short() { "PRI" } else { "PRIO" };
     let h_eff = if color::is_short() { "EFF" } else { "EFFORT" };
+    let h_enc = if color::is_short() {
+        "ENC"
+    } else {
+        "ENCRYPTION"
+    };
 
-    let w_id = col_raw("ID", &|i| i.id.clone());
+    let locked_id_max = locked.iter().map(|l| l.id.len()).max().unwrap_or(0);
+    let w_id = col_raw("ID", &|i| i.id.clone()).max(locked_id_max);
     let w_type = col_raw(h_type, &|i| color::item_type_display(&i.item_type).0);
     let w_status = col_raw(h_status, &|i| color::status_display(&i.status).0);
     let w_prio = col_raw(h_prio, &|i| color::priority_display(&i.priority).0);
     let w_eff = col_raw(h_eff, &|i| color::effort_label(i.effort));
+
+    // ENC column appears only when at least one item in the project is
+    // encrypted (own-zone marker on a plaintext or accessible item, or
+    // a locked placeholder). Otherwise it is hidden entirely so the
+    // table stays compact for plain projects.
+    let any_encrypted = items.iter().any(|i| i.crypt_zone.is_some()) || !locked.is_empty();
+    let w_enc = if any_encrypted {
+        let from_items = items
+            .iter()
+            .map(|i| i.crypt_zone.as_deref().unwrap_or("-").len())
+            .max()
+            .unwrap_or(0);
+        let from_locked = locked.iter().map(|l| l.zone.len()).max().unwrap_or(0);
+        from_items.max(from_locked).max(h_enc.len())
+    } else {
+        0
+    };
 
     let w_parent = if extras.parent {
         col_raw("PARENT", &|i| {
@@ -274,7 +318,8 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
         + 2
         + if extras.parent { w_parent + 2 } else { 0 }
         + if extras.milestone { w_ms + 2 } else { 0 }
-        + if extras.assignee { w_assignee + 2 } else { 0 };
+        + if extras.assignee { w_assignee + 2 } else { 0 }
+        + if any_encrypted { w_enc + 2 } else { 0 };
 
     let min_title_width = 20;
     let title_width = if term_width > fixed_width {
@@ -311,6 +356,12 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
         header.push_str(&format!(
             "  {}",
             pad_colored(&color::label("ASSIGNEE"), "ASSIGNEE", w_assignee)
+        ));
+    }
+    if any_encrypted {
+        header.push_str(&format!(
+            "  {}",
+            pad_colored(&color::label(h_enc), h_enc, w_enc)
         ));
     }
     header.push_str(&format!("  {}", color::label("TITLE")));
@@ -395,14 +446,65 @@ fn print_table(items: &[&Item], all_items: &[Item], extras: &ExtraColumns) {
                 pad_colored(assignee_val, assignee_val, w_assignee)
             ));
         }
+        if any_encrypted {
+            let zone_val = item.crypt_zone.as_deref().unwrap_or("-");
+            line.push_str(&format!(
+                "  {}",
+                pad_colored(&color::inactive(zone_val), zone_val, w_enc)
+            ));
+        }
 
         line.push_str(&format!("  {}", colored_title));
         println!("{line}");
     }
 
+    // Locked-encrypted-item rows: stars in the typed columns, the
+    // zone in the title slot. Filename gives us the ID, JOYCRYPT magic
+    // header gives us the zone -- nothing is decrypted. See JOY-0174-D3.
+    for l in locked {
+        let stars = "***";
+        let mut line = format!(
+            "{}  {}  {}  {}  {}",
+            pad_colored(&color::inactive(&l.id), &l.id, w_id),
+            pad_colored(&color::inactive(stars), stars, w_type),
+            pad_colored(&color::inactive(stars), stars, w_status),
+            pad_colored(&color::inactive(stars), stars, w_prio),
+            pad_colored(&color::inactive(stars), stars, w_eff),
+        );
+        if extras.parent {
+            line.push_str(&format!(
+                "  {}",
+                pad_colored(&color::inactive(stars), stars, w_parent)
+            ));
+        }
+        if extras.milestone {
+            line.push_str(&format!(
+                "  {}",
+                pad_colored(&color::inactive(stars), stars, w_ms)
+            ));
+        }
+        if extras.assignee {
+            line.push_str(&format!(
+                "  {}",
+                pad_colored(&color::inactive(stars), stars, w_assignee)
+            ));
+        }
+        // ENC column always present here (locked items imply
+        // any_encrypted = true), so render the zone name and let the
+        // title carry the "no access" hint without repeating the zone.
+        line.push_str(&format!(
+            "  {}",
+            pad_colored(&color::inactive(&l.zone), &l.zone, w_enc)
+        ));
+        let title = "[encrypted, no access]";
+        line.push_str(&format!("  {}", color::inactive(title)));
+        println!("{line}");
+    }
+
     let w = terminal_width();
     println!("{}", color::label(&"-".repeat(w)));
-    println!("{}", color::label(&color::plural(items.len(), "item")));
+    let total = items.len() + locked.len();
+    println!("{}", color::label(&color::plural(total, "item")));
 }
 
 fn display_width(s: &str) -> usize {

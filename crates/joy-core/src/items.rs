@@ -7,41 +7,57 @@ use crate::error::JoyError;
 use crate::model::item::{item_filename, Item};
 use crate::store;
 
-/// Load all items from the .joy/items/ directory.
-pub fn load_items(root: &Path) -> Result<Vec<Item>, JoyError> {
-    let items_dir = store::joy_dir(root).join(store::ITEMS_DIR);
-    if !items_dir.is_dir() {
-        return Ok(Vec::new());
-    }
+/// Lightweight placeholder for an encrypted item the caller cannot
+/// decrypt. ID is read from the filename, zone from the JOYCRYPT magic
+/// header; nothing is decrypted. Used by `joy ls` to render a `[Crypted
+/// in zone <name>]` row instead of failing the whole listing. See
+/// JOY-0174-D3.
+#[derive(Debug, Clone)]
+pub struct LockedItem {
+    pub id: String,
+    pub zone: String,
+}
 
-    let mut items = Vec::new();
-    let mut entries: Vec<_> = std::fs::read_dir(&items_dir)
-        .map_err(|e| JoyError::ReadFile {
-            path: items_dir.clone(),
-            source: e,
-        })?
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.path()
-                .extension()
-                .is_some_and(|ext| ext == "yaml" || ext == "yml")
-        })
-        .collect();
+/// Load all items from `.joy/items/`, separating decryptable ones from
+/// encrypted blobs the caller has no zone-key for. Plaintext items and
+/// items whose zone key is currently active are returned as `Item`;
+/// items in zones without an active key are returned as
+/// [`LockedItem`] placeholders. See JOY-0174-D3.
+pub fn load_items_with_locked(root: &Path) -> Result<(Vec<Item>, Vec<LockedItem>), JoyError> {
+    let mut metas = list_item_metadata(root)?;
+    metas.sort_by(|a, b| a.path.file_name().cmp(&b.path.file_name()));
 
-    entries.sort_by_key(|e| e.file_name());
-
-    for entry in entries {
-        let item: Item = store::read_yaml(&entry.path())?;
+    let mut items: Vec<Item> = Vec::new();
+    let mut locked: Vec<LockedItem> = Vec::new();
+    for meta in metas {
+        if let Some(zone) = meta.encrypted_zone.as_deref() {
+            if crate::crypt::active_zone_key(zone).is_none() {
+                locked.push(LockedItem {
+                    id: meta.id,
+                    zone: zone.to_string(),
+                });
+                continue;
+            }
+        }
+        let item: Item = store::read_yaml(&meta.path)?;
         items.push(item);
     }
 
     normalize_id_refs(&mut items);
-
     let milestone_ids: Vec<String> = crate::milestones::load_milestones(root)
         .map(|list| list.into_iter().map(|m| m.id).collect())
         .unwrap_or_default();
     normalize_milestone_refs(&mut items, &milestone_ids);
 
+    Ok((items, locked))
+}
+
+/// Load all items from `.joy/items/`. Inaccessible-encrypted items are
+/// silently skipped (the caller treats them as not present). For
+/// surfacing locked-item placeholders, use
+/// [`load_items_with_locked`].
+pub fn load_items(root: &Path) -> Result<Vec<Item>, JoyError> {
+    let (items, _) = load_items_with_locked(root)?;
     Ok(items)
 }
 
