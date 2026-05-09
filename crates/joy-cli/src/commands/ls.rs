@@ -42,9 +42,7 @@ pub struct LsArgs {
     #[arg(short = 'S', long)]
     pub short: bool,
 
-    /// Passphrase (non-interactive). Needed when listing encrypted
-    /// items; without it, encrypted items are skipped and a count is
-    /// shown.
+    /// Passphrase (non-interactive); without it, encrypted items are skipped.
     #[arg(long)]
     pub passphrase: Option<String>,
 }

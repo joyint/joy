@@ -36,7 +36,7 @@ pub struct StatusArgs {
     #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_item_id))]
     id: String,
 
-    /// New status: new, open, in-progress, review, closed, deferred
+    /// New status: new|open|in-progress|review|closed|deferred
     status: String,
 }
 

@@ -20,7 +20,7 @@ pub struct ShowArgs {
     #[arg(short = 'S', long)]
     pub short: bool,
 
-    /// Passphrase (non-interactive). Needed to read encrypted items.
+    /// Passphrase for encrypted items.
     #[arg(long)]
     passphrase: Option<String>,
 }

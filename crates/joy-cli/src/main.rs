@@ -41,7 +41,7 @@ pub(crate) struct Cli {
     #[arg(short, long)]
     reverse: bool,
 
-    /// Emit machine-readable JSON instead of human-readable display.
+    /// Machine-readable JSON output.
     #[arg(long, global = true)]
     json: bool,
 

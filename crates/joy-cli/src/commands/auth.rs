@@ -19,30 +19,26 @@ pub struct AuthArgs {
     #[command(subcommand)]
     command: Option<AuthCommand>,
 
-    /// Passphrase (non-interactive, for scripts and tests).
+    /// Passphrase (non-interactive).
     #[arg(long, global = true)]
     passphrase: Option<String>,
 
-    /// Delegation token for AI authentication (alternative to JOY_TOKEN env var).
+    /// Delegation token for AI auth (or set JOY_TOKEN).
     #[arg(long, global = true)]
     token: Option<String>,
 
-    /// One-time password for first-time member setup (JOY-0072). Redeems
-    /// the OTP, derives the caller's keypair from --passphrase, clears
-    /// the stored otp_hash, and establishes an initial session.
+    /// One-time password for first-time member setup.
     #[arg(long, global = true)]
     otp: Option<String>,
 
-    /// Member ID to authenticate as. Overrides the git-email lookup so
-    /// projects whose member entry differs from `git config user.email`
-    /// (e.g. registered via `joy init --user`) can authenticate.
+    /// Authenticate as this member ID.
     #[arg(long, global = true)]
     user: Option<String>,
 }
 
 #[derive(Subcommand)]
 enum AuthCommand {
-    /// Initialize authentication: generate kdf_nonce, derive keypair, register verify_key
+    /// Initialize authentication for this member
     Init,
     /// Show current session status
     Status,

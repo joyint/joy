@@ -21,7 +21,7 @@ Item IDs use the project acronym as prefix and are auto-generated:
 Use --id to assign a specific ID manually."
 )]
 pub struct AddArgs {
-    /// Item type: epic, story, task, bug, rework, decision, idea
+    /// Item type: epic|story|task|bug|rework|decision|idea
     #[arg(index = 1, value_name = "TYPE")]
     pos_type: Option<String>,
 
@@ -33,11 +33,11 @@ pub struct AddArgs {
     #[arg(short, long, hide = true)]
     title: Option<String>,
 
-    /// Item type (alternative to positional): epic, story, task, bug, rework, decision, idea
+    /// Item type (alt to positional): epic|story|task|bug|rework|decision|idea
     #[arg(short = 'T', long = "type", hide = true)]
     item_type: Option<String>,
 
-    /// Priority: low, medium, high, critical, extreme
+    /// Priority: low|medium|high|critical|extreme
     #[arg(short, long, default_value = "medium")]
     priority: String,
 
@@ -45,7 +45,7 @@ pub struct AddArgs {
     #[arg(long)]
     parent: Option<String>,
 
-    /// Effort: 1-7 or t-shirt size (xxs, xs, s, m, l, xl, xxl)
+    /// Effort: 1-7 or xxs|xs|s|m|l|xl|xxl
     #[arg(short, long)]
     effort: Option<String>,
 
@@ -69,7 +69,7 @@ pub struct AddArgs {
     #[arg(long)]
     deps: Option<String>,
 
-    /// Initial status: new, open, in-progress, review, closed, deferred
+    /// Status: new|open|in-progress|review|closed|deferred
     #[arg(short, long)]
     status: Option<String>,
 
@@ -77,7 +77,7 @@ pub struct AddArgs {
     #[arg(short = 'v', long)]
     version: Option<String>,
 
-    /// Capabilities (comma-separated, overrides type defaults)
+    /// Capabilities (CSV; overrides type defaults)
     #[arg(short = 'c', long)]
     capabilities: Option<String>,
 }

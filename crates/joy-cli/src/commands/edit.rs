@@ -20,7 +20,7 @@ pub struct EditArgs {
     #[arg(short, long)]
     title: Option<String>,
 
-    /// New priority: low, medium, high, critical, extreme
+    /// Priority: low|medium|high|critical|extreme
     #[arg(short, long)]
     priority: Option<String>,
 
@@ -44,11 +44,11 @@ pub struct EditArgs {
     #[arg(long)]
     tags: Option<String>,
 
-    /// Dependencies (comma-separated IDs, replaces existing)
+    /// Dependencies (CSV; replaces existing)
     #[arg(long)]
     deps: Option<String>,
 
-    /// Set assignee (use "none" to clear all). Use `joy assign` for capability-based assignments.
+    /// Set assignee ("none" clears all)
     #[arg(short = 'A', long)]
     assignee: Option<String>,
 
@@ -56,7 +56,7 @@ pub struct EditArgs {
     #[arg(short = 'v', long)]
     version: Option<String>,
 
-    /// Capabilities (comma-separated, replaces existing)
+    /// Capabilities (CSV; replaces existing)
     #[arg(short = 'c', long)]
     capabilities: Option<String>,
 }

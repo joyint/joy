@@ -46,9 +46,9 @@ pub struct ProjectArgs {
 
 #[derive(clap::Subcommand)]
 enum ProjectCommand {
-    /// Get a project value by key (name, acronym, description, language, created)
+    /// Get a project value: name|acronym|description|language|created
     Get(GetArgs),
-    /// Set a project value by key (name, acronym, description, language)
+    /// Set a project value: name|acronym|description|language
     Set(SetArgs),
     /// Manage project members
     Member(MemberArgs),

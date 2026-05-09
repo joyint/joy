@@ -28,13 +28,11 @@ pub struct CryptArgs {
     #[command(subcommand)]
     command: CryptCommand,
 
-    /// Passphrase of the acting member (non-interactive). Required by
-    /// every subcommand that touches zone keys (add, rm, revoke).
+    /// Passphrase of the acting member (non-interactive).
     #[arg(long, global = true)]
     passphrase: Option<String>,
 
-    /// Operate on a named zone (default: the implicit "default" zone).
-    /// Auto-creates the zone on first reference.
+    /// Named zone (default: "default", auto-created).
     #[arg(long, global = true)]
     zone: Option<String>,
 }
@@ -45,8 +43,7 @@ enum CryptCommand {
     Add(AddArgs),
     /// Remove an item or path from a zone (returns it to plaintext).
     Rm(RmArgs),
-    /// Grant a member access to the zone (requires pairwise wrap; see
-    /// note on the module for status).
+    /// Grant a member access to the zone.
     Grant(MemberRefArgs),
     /// Revoke a member's access to the zone.
     Revoke(MemberRefArgs),
@@ -56,16 +53,13 @@ enum CryptCommand {
     Status,
     /// Manage named zones (ls, rm).
     Zone(ZoneArgs),
-    /// Decrypt a Crypt-marked file to stdout (pipe-friendly).
-    /// Plaintext never lands on disk.
+    /// Decrypt a Crypt-marked file to stdout.
     Read(FileArgs),
     /// Encrypt stdin into the given Crypt-marked file.
     Write(FileArgs),
-    /// Open $EDITOR on a temporary plaintext copy of a Crypt-marked
-    /// file; re-encrypt and delete the temp on save.
+    /// Open $EDITOR on a temporary plaintext copy; re-encrypt on save.
     Edit(FileArgs),
-    /// Decrypt a Crypt-marked file in place. AI on the same FS can
-    /// read it during the unlock window. Pair with `joy crypt lock`.
+    /// Decrypt a Crypt-marked file in place; pair with `joy crypt lock`.
     Unlock(FileArgs),
     /// Re-encrypt a previously unlocked file.
     Lock(FileArgs),

@@ -27,25 +27,23 @@ const TOKEN_ANY: &str = "*";
 
 #[derive(Args, Default, Clone)]
 pub struct FilterArgs {
-    /// Filter by ancestor item ID (shows the item and all descendants)
+    /// Filter by ancestor item ID (item + descendants)
     #[arg(long)]
     pub parent: Option<String>,
 
-    /// Filter by type: epic, story, task, bug, rework, decision, idea
+    /// Type: epic|story|task|bug|rework|decision|idea
     #[arg(short = 'T', long = "type")]
     pub item_type: Option<String>,
 
-    /// Filter by status: new, open, in-progress, review, closed, deferred
+    /// Status: new|open|in-progress|review|closed|deferred
     #[arg(short, long)]
     pub status: Option<String>,
 
-    /// Filter by priority: low, medium, high, critical, extreme
+    /// Priority: low|medium|high|critical|extreme
     #[arg(short, long)]
     pub priority: Option<String>,
 
-    /// Filter by member (comma-separated). Tokens: 'me' = current user,
-    /// 'none'/'unassigned' = items without assignees, '*' = items with
-    /// any assignee.
+    /// Filter by member (CSV; tokens: me, none, unassigned, *).
     #[arg(
         short = 'm',
         long,
@@ -54,7 +52,7 @@ pub struct FilterArgs {
     )]
     pub members: Vec<String>,
 
-    /// Show only items assigned to me. Equivalent to `--members me`.
+    /// Only items assigned to me (alias for --members me).
     #[arg(long)]
     pub mine: bool,
 

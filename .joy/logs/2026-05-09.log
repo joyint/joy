@@ -9,3 +9,7 @@
 2026-05-09T21:38:36.973Z JOY-016D-D6 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-05-09T21:38:50.852Z JOY-016D-D6 comment.added "[x] PKG_NAME changed from "joy" to "joy-cli" in commands/update.rs. Verified locally: receipt at ~/.config/joy-cli/joy-cli-receipt.json now found, joy update --check shows Binary 'up to date (0.15.0)' instead of 'install receipt missing'." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-05-09T21:38:50.938Z JOY-016D-D6 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-09T21:50:03.183Z JOY-016E-81 item.created "Shorten verbose CLI help texts to fit ~80 columns" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-09T21:50:03.313Z JOY-016E-81 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-09T21:50:11.941Z JOY-016E-81 comment.added "[x] All targeted descriptions trimmed. Remaining lines >80 are alignment-driven by clap (description column padded to widest option signature) and would only shrink further by dropping value lists, which loses more than it saves. 319 unit tests still green; clippy + fmt clean." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-09T21:50:12.042Z JOY-016E-81 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

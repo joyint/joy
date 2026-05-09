@@ -1,0 +1,22 @@
+id: JOY-016E-81
+title: Shorten verbose CLI help texts to fit ~80 columns
+type: rework
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-09T21:50:03.173505Z
+updated: 2026-05-09T21:50:12.033829Z
+description: |-
+  Several --help lines exceeded 80 chars due to multi-sentence descriptions or comma-padded value lists. Trim to single-line, pipe-separated value lists, drop implementation-detail tail clauses. Remaining lines >80 are clap-alignment driven (description column padded to widest option signature) and would only shrink further by dropping value lists, which is more loss than gain.
+
+  Touched: main.rs (--json), filter_args.rs (--parent/--type/--status/--priority/--members/--mine), add.rs (TYPE/--priority/--effort/--status/--capabilities), edit.rs (--priority/--deps/--assignee/--capabilities), show.rs (--passphrase), ls.rs (--passphrase), status.rs (status arg), project.rs (Get/Set), auth.rs (--token/--otp/--user/--passphrase, AuthCommand::Init), crypt.rs (--passphrase/--zone, several subcommands).
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-09T21:50:11.930642Z
+  text: '[x] All targeted descriptions trimmed. Remaining lines >80 are alignment-driven by clap (description column padded to widest option signature) and would only shrink further by dropping value lists, which loses more than it saves. 319 unit tests still green; clippy + fmt clean.'
