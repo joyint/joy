@@ -75,7 +75,7 @@ pub fn run(args: RmArgs) -> Result<()> {
             &ctx.root,
             joy_core::event_log::EventType::ItemDeleted,
             id,
-            Some(&deleted.title),
+            None,
             &log_user,
         );
         if crate::output::is_json() {

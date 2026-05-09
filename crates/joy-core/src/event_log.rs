@@ -61,6 +61,26 @@ impl fmt::Display for EventType {
 }
 
 impl EventType {
+    /// True if this event's `details` field would carry user-authored
+    /// item content (titles, descriptions, comment text). Such payloads
+    /// are stripped at log-write time so the log holds only structural
+    /// metadata. Identifiers (member emails, item / milestone IDs,
+    /// state names) and system-generated strings (guard reasons, auth
+    /// session notices) are not user content. See JOY-0175-9B.
+    pub fn carries_user_content(&self) -> bool {
+        matches!(
+            self,
+            Self::ItemCreated
+                | Self::ItemUpdated
+                | Self::ItemDeleted
+                | Self::CommentAdded
+                | Self::MilestoneCreated
+                | Self::MilestoneUpdated
+                | Self::MilestoneDeleted
+                | Self::ReleaseCreated
+        )
+    }
+
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "item.created" => Some(Self::ItemCreated),
@@ -107,7 +127,13 @@ pub fn append_event(root: &Path, event: &Event) -> Result<(), JoyError> {
 
     let log_file = log_dir.join(format!("{date_str}.log"));
 
-    let line = match &event.details {
+    let effective_details = if event.event_type.carries_user_content() {
+        None
+    } else {
+        event.details.as_deref()
+    };
+
+    let line = match effective_details {
         Some(details) => {
             let escaped = escape_details(details);
             format!(
@@ -486,18 +512,18 @@ mod tests {
         setup_project(dir.path());
 
         let event = Event {
-            event_type: EventType::ItemCreated,
+            event_type: EventType::ItemStatusChanged,
             target: "JOY-0001".to_string(),
-            details: Some("User login".to_string()),
+            details: Some("new -> in-progress".to_string()),
             user: "test@example.com".to_string(),
         };
         append_event(dir.path(), &event).unwrap();
 
         let entries = read_events(dir.path(), None, None, 100).unwrap();
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].event_type, "item.created");
+        assert_eq!(entries[0].event_type, "item.status_changed");
         assert_eq!(entries[0].target, "JOY-0001");
-        assert_eq!(entries[0].details.as_deref(), Some("User login"));
+        assert_eq!(entries[0].details.as_deref(), Some("new -> in-progress"));
         assert_eq!(entries[0].user, "test@example.com");
     }
 
@@ -506,15 +532,11 @@ mod tests {
         let dir = tempdir().unwrap();
         setup_project(dir.path());
 
-        for (target, details) in [
-            ("JOY-0001", "First"),
-            ("JOY-0002", "Second"),
-            ("JOY-0001", "Update"),
-        ] {
+        for target in ["JOY-0001", "JOY-0002", "JOY-0001"] {
             let event = Event {
                 event_type: EventType::ItemCreated,
                 target: target.to_string(),
-                details: Some(details.to_string()),
+                details: None,
                 user: "test@example.com".to_string(),
             };
             append_event(dir.path(), &event).unwrap();
@@ -522,6 +544,55 @@ mod tests {
 
         let entries = read_events(dir.path(), None, Some("JOY-0001"), 100).unwrap();
         assert_eq!(entries.len(), 2);
+    }
+
+    #[test]
+    fn user_content_is_stripped_at_write_time() {
+        let dir = tempdir().unwrap();
+        setup_project(dir.path());
+
+        for kind in [
+            EventType::ItemCreated,
+            EventType::ItemUpdated,
+            EventType::ItemDeleted,
+            EventType::CommentAdded,
+            EventType::MilestoneCreated,
+            EventType::MilestoneUpdated,
+            EventType::MilestoneDeleted,
+            EventType::ReleaseCreated,
+        ] {
+            assert!(
+                kind.carries_user_content(),
+                "{kind} must be content-bearing"
+            );
+        }
+        for kind in [
+            EventType::ItemStatusChanged,
+            EventType::ItemAssigned,
+            EventType::ItemUnassigned,
+            EventType::DepAdded,
+            EventType::DepRemoved,
+            EventType::MilestoneLinked,
+            EventType::MilestoneUnlinked,
+            EventType::GuardDenied,
+            EventType::GuardWarned,
+            EventType::AuthSessionCreated,
+        ] {
+            assert!(!kind.carries_user_content(), "{kind} must be structural");
+        }
+
+        let event = Event {
+            event_type: EventType::CommentAdded,
+            target: "JOY-0001".to_string(),
+            details: Some("a secret comment that should never land in the log".to_string()),
+            user: "test@example.com".to_string(),
+        };
+        append_event(dir.path(), &event).unwrap();
+
+        let entries = read_events(dir.path(), None, None, 100).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].event_type, "comment.added");
+        assert_eq!(entries[0].details, None);
     }
 
     #[test]
@@ -577,9 +648,12 @@ mod tests {
         let dir = tempdir().unwrap();
         setup_project(dir.path());
 
+        // Use a structural event type so the writer does not strip
+        // details; the round-trip targets the escape/unescape path,
+        // not the strip rule (covered separately).
         let multiline = "First line\nSecond line\nThird with \\backslash";
         let event = Event {
-            event_type: EventType::CommentAdded,
+            event_type: EventType::GuardDenied,
             target: "JOY-0001".to_string(),
             details: Some(multiline.to_string()),
             user: "test@example.com".to_string(),

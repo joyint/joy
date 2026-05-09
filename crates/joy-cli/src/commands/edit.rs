@@ -205,7 +205,7 @@ pub fn run(args: EditArgs) -> Result<()> {
         &ctx.root,
         joy_core::event_log::EventType::ItemUpdated,
         &item.id,
-        Some(&item.title),
+        None,
         &log_user,
     );
 

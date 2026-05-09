@@ -221,7 +221,6 @@ fn record(args: RecordArgs) -> Result<()> {
         })
         .collect();
 
-    let title_for_log = args.title.clone();
     let release = Release {
         version: version.clone(),
         title: args.title,
@@ -265,7 +264,7 @@ fn record(args: RecordArgs) -> Result<()> {
         &ctx.root,
         event_log::EventType::ReleaseCreated,
         &version,
-        title_for_log.as_deref(),
+        None,
         &log_user,
     );
 

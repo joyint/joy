@@ -221,7 +221,7 @@ pub fn run(args: AddArgs) -> Result<()> {
         &ctx.root,
         joy_core::event_log::EventType::ItemCreated,
         &id,
-        Some(&title),
+        None,
         &ctx.log_user(),
     );
 

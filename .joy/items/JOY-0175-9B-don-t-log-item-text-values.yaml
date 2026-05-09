@@ -1,15 +1,17 @@
 id: JOY-0175-9B
 title: Don't log item text values
 type: decision
-status: new
+status: closed
 priority: high
+assignees:
+- member: ai:claude@joy
 milestone: JOY-MS-02
 capabilities:
 - conceive
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-09T23:44:14.888971Z
-updated: 2026-05-09T23:46:58.058064Z
+updated: 2026-05-09T23:57:29.842951Z
 description: |-
   Joy logs record only (timestamp, item ID, action, actor). No item field values - no titles, no descriptions, no comment text - are written to the log, regardless of whether the item is in a Crypt zone.
 
@@ -24,3 +26,11 @@ description: |-
   - Forbid later encryption: not acceptable, will be a common operation.
 
   EU AI Act: Art. 12 traceability is satisfied: who, what, when, on what object are all preserved. Content reconstruction by authorized auditors is via the item itself.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-09T23:57:29.738100Z
+  text: |-
+    [x] EventType::carries_user_content() classifier; append_event strips details for content-bearing types
+    [x] All call sites updated to pass None instead of titles/descriptions/comment text (add, edit, rm, comment, milestone create/update/delete, release)
+    [x] Unit test asserts strip behavior + classifier coverage of all variants
+    [x] Smoke-tested in fresh repo: item.created / comment.added log lines no longer carry payload, item.status_changed keeps its structural state-name payload

@@ -38,7 +38,6 @@ pub fn run(args: CommentArgs) -> Result<()> {
 
     ctx.enforce(&Action::AddComment, &item.id)?;
 
-    let log_text = text.clone();
     let comment = Comment {
         author: ctx.log_user(),
         date: Utc::now(),
@@ -53,7 +52,7 @@ pub fn run(args: CommentArgs) -> Result<()> {
         &ctx.root,
         joy_core::event_log::EventType::CommentAdded,
         &item.id,
-        Some(&log_text),
+        None,
         &ctx.log_user(),
     );
 

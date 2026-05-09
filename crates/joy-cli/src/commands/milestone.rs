@@ -145,7 +145,7 @@ fn run_add(args: AddArgs) -> Result<()> {
         &ctx.root,
         joy_core::event_log::EventType::MilestoneCreated,
         &id,
-        Some(&ms.title),
+        None,
         &log_user,
     );
 
@@ -385,7 +385,7 @@ fn run_rm(args: RmArgs) -> Result<()> {
         &ctx.root,
         joy_core::event_log::EventType::MilestoneDeleted,
         &ms.id,
-        Some(&ms.title),
+        None,
         &log_user,
     );
 
@@ -450,7 +450,7 @@ fn run_edit(args: EditArgs) -> Result<()> {
         &ctx.root,
         joy_core::event_log::EventType::MilestoneUpdated,
         &ms.id,
-        Some(&ms.title),
+        None,
         &log_user,
     );
 
