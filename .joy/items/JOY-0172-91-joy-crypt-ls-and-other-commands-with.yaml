@@ -1,0 +1,11 @@
+id: JOY-0172-91
+title: joy crypt ls and other commands with joy styled output
+type: idea
+status: in-progress
+priority: medium
+assignees:
+- member: ai:claude@joy
+created_by: horst.schwarz@joydev.com
+created: 2026-05-09T22:40:17.201725Z
+updated: 2026-05-09T23:14:21.717043Z
+description: All commands should have the same default output format like joy ls, with header and footer.

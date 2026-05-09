@@ -21,6 +21,7 @@ use joy_core::model::project::Project;
 use joy_core::store;
 use joy_core::vcs::Vcs;
 
+use crate::color;
 use crate::commands::auth::read_passphrase;
 
 #[derive(Args)]
@@ -770,14 +771,19 @@ fn run_rm_all(zone: &str, passphrase: Option<&str>) -> Result<()> {
 
 fn run_zone_list() -> Result<()> {
     let (root, project, _email) = load_context()?;
+    println!("{}", color::header("Crypt zones"));
+    println!();
     if project.crypt.is_empty() {
-        println!("No zones configured.");
+        println!("{}", color::footer("No zones configured."));
         return Ok(());
     }
     let metas = joy_core::items::list_item_metadata(&root).unwrap_or_default();
     println!(
-        "{:<20} {:>8} {:>8} {:>8}",
-        "ZONE", "PATHS", "ITEMS", "MEMBERS"
+        "   {:<18} {:>8} {:>8} {:>8}",
+        color::label("ZONE"),
+        color::label("PATHS"),
+        color::label("ITEMS"),
+        color::label("MEMBERS"),
     );
     for (name, zone) in &project.crypt.zones {
         let item_count = metas
@@ -790,13 +796,21 @@ fn run_zone_list() -> Result<()> {
             .filter(|m| m.crypt_wraps.contains_key(name))
             .count();
         println!(
-            "{:<20} {:>8} {:>8} {:>8}",
+            "   {:<18} {:>8} {:>8} {:>8}",
             name,
             zone.paths.len(),
             item_count,
             member_count
         );
     }
+    println!();
+    println!(
+        "{}",
+        color::footer(&format!(
+            "{} zone(s) registered.",
+            project.crypt.zones.len()
+        ))
+    );
     Ok(())
 }
 
@@ -1037,37 +1051,34 @@ fn run_revoke(zone: &str, target_member: &str) -> Result<()> {
 fn run_list(zone: &str) -> Result<()> {
     let (root, project, _email) = load_context()?;
     let cfg = &project.crypt;
+    println!("{}", color::header(&format!("Crypt zone: {zone}")));
+    println!();
     if cfg.is_empty() && project.members.values().all(|m| m.crypt_wraps.is_empty()) {
-        println!("No Crypt zones configured.");
+        println!("{}", color::footer("No Crypt zones configured."));
         return Ok(());
     }
 
-    println!("Zone: {}", zone);
-    println!();
-    println!("Paths:");
+    println!("{}", color::section("Paths"));
     if let Some(z) = cfg.zones.get(zone) {
         if z.paths.is_empty() {
-            println!("  (none)");
+            println!("  {}", color::inactive("(none)"));
         } else {
             for p in &z.paths {
-                println!("  {}", p);
+                println!("  {p}");
             }
         }
     } else {
-        println!("  (zone not registered)");
+        println!("  {}", color::inactive("(zone not registered)"));
     }
 
     println!();
-    println!("Items:");
-    // Metadata-only walk: works without auth. We list IDs and a
-    // marker for encrypted-without-key; titles come along only when
-    // the file is plaintext (typical: zone removed or never added).
+    println!("{}", color::section("Items"));
     let metas = joy_core::items::list_item_metadata(&root).unwrap_or_default();
     let mut found_any = false;
     for meta in &metas {
         if meta.zone() == Some(zone) {
             if meta.encrypted_zone.is_some() {
-                println!("  {} (encrypted)", meta.id);
+                println!("  {} {}", meta.id, color::inactive("(encrypted)"));
             } else {
                 println!("  {}", meta.id);
             }
@@ -1075,22 +1086,29 @@ fn run_list(zone: &str) -> Result<()> {
         }
     }
     if !found_any {
-        println!("  (none)");
+        println!("  {}", color::inactive("(none)"));
     }
 
     println!();
-    println!("Members with access:");
-    let mut found_any = false;
+    println!("{}", color::section("Members with access"));
+    let mut access_count = 0;
     for (email, member) in &project.members {
         if member.crypt_wraps.contains_key(zone) {
-            println!("  {}", email);
-            found_any = true;
+            println!("  {email}");
+            access_count += 1;
         }
     }
-    if !found_any {
-        println!("  (none)");
+    if access_count == 0 {
+        println!("  {}", color::inactive("(none)"));
     }
 
+    println!();
+    println!(
+        "{}",
+        color::footer(&format!(
+            "Zone '{zone}': {access_count} member(s) with access."
+        ))
+    );
     Ok(())
 }
 
@@ -1107,14 +1125,26 @@ fn run_status() -> Result<()> {
         .map(|m| m.crypt_wraps.len())
         .unwrap_or(0);
 
-    println!("Crypt status:");
+    println!("{}", color::header("Crypt status"));
+    println!();
     println!("  zones registered:  {}", zone_count);
     println!("  items in any zone: {}", item_count_total);
     println!("  your access:       {} zone(s)", me_access);
-    if zone_count == 0 && item_count_total == 0 {
-        println!();
-        println!("No encryption configured. Use `joy crypt add <id|path>` to start.");
-    }
+    println!();
+    let footer = if zone_count == 0 && item_count_total == 0 {
+        "No encryption configured. Use `joy crypt add <id|path>` to start.".to_string()
+    } else if me_access == 0 {
+        format!(
+            "{} zone(s) registered, you have no access. Ask a current key-holder for `joy crypt grant`.",
+            zone_count
+        )
+    } else {
+        format!(
+            "{} zone(s) registered, {} accessible to you.",
+            zone_count, me_access
+        )
+    };
+    println!("{}", color::footer(&footer));
     Ok(())
 }
 
