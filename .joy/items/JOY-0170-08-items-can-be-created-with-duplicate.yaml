@@ -1,0 +1,28 @@
+id: JOY-0170-08
+title: Items can be created with duplicate titles, no warning
+type: bug
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-09T21:58:56.539725Z
+updated: 2026-05-09T22:09:16.602712Z
+description: |-
+  commands/add.rs only enforces ID uniqueness (line 124, --id collision). Two items with identical titles can be created via repeated 'joy add task "Foo"' without any warning. Downstream pain: AI agents that resolve a parent epic by title (joy ls | grep) pick the wrong match silently.
+
+  Fix:
+  - Detect existing items with the same (case-insensitive) title at add time.
+  - Default behaviour: warn 'an item with this title already exists: <ID>; pass --allow-duplicate to create anyway' and abort.
+  - --allow-duplicate flag for the rare case where it is desired.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-09T22:09:06.820957Z
+  text: '[x] commands/add.rs: case-insensitive title-collision check before item creation. Aborts with the colliding ID(s) and a hint to pass --allow-duplicate to override.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-09T22:09:16.510230Z
+  text: '[x] commands/add.rs runs a duplicate-title check (case-insensitive, whitespace-trimmed) against existing items before creating a new one. Aborts with ''an item with this title already exists: <id>; pass --allow-duplicate to create another one anyway''. New --allow-duplicate flag bypasses the check for the rare cases where it is desired.'

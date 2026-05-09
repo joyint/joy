@@ -80,6 +80,10 @@ pub struct AddArgs {
     /// Capabilities (CSV; overrides type defaults)
     #[arg(short = 'c', long)]
     capabilities: Option<String>,
+
+    /// Skip the duplicate-title check (rare; allows two items with the same title).
+    #[arg(long)]
+    allow_duplicate: bool,
 }
 
 pub fn run(args: AddArgs) -> Result<()> {
@@ -112,6 +116,25 @@ pub fn run(args: AddArgs) -> Result<()> {
     let item_type: ItemType = type_str
         .parse()
         .map_err(|e: String| anyhow::anyhow!("{}", e))?;
+
+    // Refuse to silently create a second item with an identical title;
+    // downstream tools (and humans) cannot disambiguate by title once
+    // duplicates exist. See JOY-0170-08.
+    if !args.allow_duplicate {
+        let existing = items::load_items(&ctx.root)?;
+        let title_lc = title.trim().to_lowercase();
+        let collision: Vec<&joy_core::model::item::Item> = existing
+            .iter()
+            .filter(|i| i.title.trim().to_lowercase() == title_lc)
+            .collect();
+        if !collision.is_empty() {
+            let ids: Vec<String> = collision.iter().map(|i| i.id.clone()).collect();
+            bail!(
+                "an item with this title already exists: {}\n  pass --allow-duplicate to create another one anyway",
+                ids.join(", ")
+            );
+        }
+    }
 
     let priority: Priority = args
         .priority
