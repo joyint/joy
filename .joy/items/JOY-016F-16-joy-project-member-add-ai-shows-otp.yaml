@@ -1,0 +1,27 @@
+id: JOY-016F-16
+title: joy project member add ai:... shows OTP instructions; AI members do not use OTP
+type: bug
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-09T21:58:56.471782Z
+updated: 2026-05-09T22:09:16.434681Z
+description: |-
+  commands/project.rs:533-541 always generates an OTP and prints 'Share the OTP with <id> via a trusted channel. They redeem it with: joy auth --otp <otp>'. AI members do not redeem OTPs; they get a delegation token via 'joy auth token add <ai-id>'. The output is misleading and may push users to share an OTP that has no purpose for the AI member.
+
+  Fix:
+  - Detect ai:* member IDs and print the AI-correct flow instead: 'Run joy auth token add <id> to issue a delegation token for this AI member.'
+  - Optionally skip OTP generation entirely for AI members (members.<ai>.enrollment_verifier is not used by AI auth).
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-09T22:09:06.659527Z
+  text: '[x] commands/project.rs MemberCommand::Add: ai:* member IDs skip OTP generation entirely (no enrollment_verifier, attestation signed without otp_hash) and print ''AI members authenticate via a delegation token, not an OTP. Issue one with: joy auth token add <id>''. Human flow unchanged.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-09T22:09:16.347739Z
+  text: '[x] commands/project.rs::Member::Add detects ai:* member IDs and skips OTP generation entirely (otp_hash = None, enrollment_verifier = None). Output for AI members is now: ''AI members authenticate via a delegation token, not an OTP. Issue one with: joy auth token add <id>''. Human members keep the OTP flow unchanged. Bats green.'

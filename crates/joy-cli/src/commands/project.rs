@@ -491,18 +491,26 @@ fn run_member(
             let attester_kp =
                 derive_acting_keypair(project, &attester_email, a.passphrase.as_deref())?;
 
-            // Generate a one-time password for the new member; the admin
-            // shares it out-of-band, the new member redeems it via
-            // `joy auth --otp` to set their passphrase (JOY-0072).
-            let otp = joy_core::auth::otp::generate_otp();
-            let otp_hash = joy_core::auth::otp::hash_otp(&otp)?;
+            // AI members do not enrol via passphrase; they get a delegation
+            // token issued by an existing operator (`joy auth token add`).
+            // Skip the OTP machinery for them so the on-screen instructions
+            // do not point at the wrong flow (JOY-016F-16).
+            let is_ai = a.id.starts_with("ai:");
+
+            let (otp_opt, otp_hash_opt) = if is_ai {
+                (None, None)
+            } else {
+                let otp = joy_core::auth::otp::generate_otp();
+                let otp_hash = joy_core::auth::otp::hash_otp(&otp)?;
+                (Some(otp), Some(otp_hash))
+            };
 
             // Construct and sign the attestation over (email, capabilities,
             // otp_hash). public_key is intentionally not covered.
             let signed_fields = joy_core::auth::attestation::signed_fields_for(
                 &a.id,
                 &capabilities,
-                Some(&otp_hash),
+                otp_hash_opt.as_deref(),
             );
             let attestation = joy_core::auth::attestation::sign_attestation(
                 &attester_email,
@@ -511,7 +519,7 @@ fn run_member(
             );
 
             let mut new_member = Member::new(capabilities);
-            new_member.enrollment_verifier = Some(otp_hash);
+            new_member.enrollment_verifier = otp_hash_opt;
             new_member.attestation = Some(attestation);
             project.members.insert(a.id.clone(), new_member);
 
@@ -523,22 +531,27 @@ fn run_member(
                 #[derive(serde::Serialize)]
                 struct AddPayload<'a> {
                     member: &'a str,
-                    otp: &'a str,
+                    otp: Option<&'a str>,
                 }
                 crate::output::emit(AddPayload {
                     member: &a.id,
-                    otp: &otp,
+                    otp: otp_opt.as_deref(),
                 })?;
             } else {
                 println!("Added member {}", a.id);
                 println!();
-                println!("  One-time password: {otp}");
-                println!();
-                println!(
-                    "Share the OTP with {} via a trusted channel. They redeem it with:",
-                    a.id
-                );
-                println!("  joy auth --otp {otp}");
+                if is_ai {
+                    println!("AI members authenticate via a delegation token, not an OTP.");
+                    println!("  Issue one with: joy auth token add {}", a.id);
+                } else if let Some(ref otp) = otp_opt {
+                    println!("  One-time password: {otp}");
+                    println!();
+                    println!(
+                        "Share the OTP with {} via a trusted channel. They redeem it with:",
+                        a.id
+                    );
+                    println!("  joy auth --otp {otp}");
+                }
             }
 
             let log_user = ctx.log_user();
