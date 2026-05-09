@@ -87,6 +87,20 @@ pub fn ensure_zone_keys(passphrase_flag: Option<&str>) -> Result<()> {
         return Ok(());
     }
 
+    // Pre-check: if no item in the project is actually encrypted (and
+    // no plaintext item carries a crypt_zone marker pointing at one of
+    // our wrapped zones), unwrapping serves no purpose. Skip the
+    // prompt entirely. See JOY-0173-B3.
+    let metas = joy_core::items::list_item_metadata(&root).unwrap_or_default();
+    let any_relevant_encrypted = metas.iter().any(|m| {
+        m.zone()
+            .map(|z| member.crypt_wraps.contains_key(z))
+            .unwrap_or(false)
+    });
+    if !any_relevant_encrypted {
+        return Ok(());
+    }
+
     let passphrase = read_passphrase(passphrase_flag, "Passphrase: ")?;
     let unlocked = joy_core::auth::unlock_identity(member, &passphrase)?;
     let mut keys = std::collections::BTreeMap::new();

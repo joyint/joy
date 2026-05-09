@@ -1,0 +1,18 @@
+id: JOY-0173-B3
+title: joy ls prompts for passphrase even when no encrypted items exist
+type: bug
+status: in-progress
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-09T23:14:21.552190Z
+updated: 2026-05-09T23:14:21.804547Z
+description: |-
+  ensure_zone_keys() in commands/ls.rs prompts for the passphrase whenever the acting member has any crypt_wraps, even if no item or path in the project is actually encrypted. Real example: a user runs 'joy crypt add some-file' to register a path glob in the default zone, then has 0 encrypted items but a wrap. Every subsequent 'joy ls' demands the passphrase pointlessly.
+
+  Fix: pre-scan items via items::list_item_metadata (no decrypt). If zero items carry a JOYCRYPT magic header and zero plaintext-yaml items reference an encrypted zone, skip ensure_zone_keys entirely.
