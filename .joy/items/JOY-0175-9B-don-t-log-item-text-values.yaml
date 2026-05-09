@@ -1,0 +1,26 @@
+id: JOY-0175-9B
+title: Don't log item text values
+type: decision
+status: new
+priority: high
+milestone: JOY-MS-02
+capabilities:
+- conceive
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-09T23:44:14.888971Z
+updated: 2026-05-09T23:46:58.058064Z
+description: |-
+  Joy logs record only (timestamp, item ID, action, actor). No item field values - no titles, no descriptions, no comment text - are written to the log, regardless of whether the item is in a Crypt zone.
+
+  Rationale: items can be encrypted after creation. If the log carried plaintext values, every later zone migration would either leak history or require retroactive log redaction (breaking append-only). Keeping logs free of values from the start avoids the migration gap entirely.
+
+  Display: joy log, joy show <ID> --history etc. join log entries with the current item state at lookup time. Historical field values come from Git history of the item file, gated by zone access. Members see what they have always seen; non-members see the structural trail only.
+
+  Rejected alternatives:
+  - Encrypt log entries per zone: kills the open audit trail.
+  - Two-log architecture (public + encrypted content log): overdimensioned.
+  - Selective redaction at write time + retro-redaction on zone migration: breaks append-only, which is the core audit property.
+  - Forbid later encryption: not acceptable, will be a common operation.
+
+  EU AI Act: Art. 12 traceability is satisfied: who, what, when, on what object are all preserved. Content reconstruction by authorized auditors is via the item itself.

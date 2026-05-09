@@ -1,7 +1,7 @@
 id: JOY-0174-D3
 title: joy ls fails entirely on encrypted items in zones the member cannot decrypt
 type: bug
-status: in-progress
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -11,7 +11,7 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-09T23:14:21.627609Z
-updated: 2026-05-09T23:14:31.120329Z
+updated: 2026-05-09T23:52:27.105730Z
 description: |-
   When the project contains an encrypted item in a zone the acting member has no wrap for, items::load_items walks .joy/items/*.yaml and calls store::read_yaml on every file. read_yaml's JOYCRYPT path returns ZoneAccessDenied for the inaccessible zone; load_items propagates the error via ?, so the entire 'joy ls' invocation aborts. The user cannot even see their plaintext items.
 
@@ -19,3 +19,7 @@ description: |-
   - items::load_items_with_locked(root) returns (Vec<Item>, Vec<LockedItem>) where LockedItem carries id and zone, derived from filename and JOYCRYPT magic header (no decrypt).
   - items::load_items skips inaccessible encrypted items silently (treats them as not-found for that caller).
   - joy ls uses load_items_with_locked. Locked rows render with *** in TYP / STA / PRI / EFF columns and title '[Crypted in zone <name>]'.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-09T23:52:26.790554Z
+  text: '[x] LockedItem placeholder + load_items_with_locked; ls renders ***-rows with [encrypted, no access] title; auto ENC column when any item is encrypted'

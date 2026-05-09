@@ -3,10 +3,11 @@ title: Support --type flag in joy edit
 type: task
 status: new
 priority: medium
+milestone: JOY-MS-02
 capabilities:
 - implement
 effort: 1
 created_by: horst.schwarz@joydev.com
 created: 2026-03-31T17:54:19.424910538Z
-updated: 2026-03-31T17:54:19.424910538Z
+updated: 2026-05-09T22:44:16.229954Z
 description: Allow changing an item type via joy edit --type. Currently requires direct YAML editing. Migrated from JI-0067.
