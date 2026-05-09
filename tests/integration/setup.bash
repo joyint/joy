@@ -18,15 +18,23 @@ setup() {
     git init --quiet
     git config user.email "test@example.com"
     git config user.name "Test User"
-    # Isolate sessions between tests
+    # Isolate per-user state between tests. axoupdater reads its
+    # install receipt from ~/.config/<pkg>/ (hard-coded relative to
+    # $HOME on Unix, ignoring XDG_CONFIG_HOME), so a real receipt left
+    # behind by a prior curl|sh install would otherwise leak into the
+    # test run. Overriding HOME isolates that too.
+    export HOME="$TEST_DIR"
     export XDG_STATE_HOME="$TEST_DIR/.state"
+    export XDG_CONFIG_HOME="$TEST_DIR/.config"
 }
 
 # Clean up after each test
 teardown() {
     cd /
     rm -rf "$TEST_DIR"
+    unset HOME
     unset XDG_STATE_HOME
+    unset XDG_CONFIG_HOME
 }
 
 # Setup human auth and return to authenticated state.
