@@ -1,0 +1,26 @@
+version: v0.15.0
+date: 2026-05-09
+previous: v0.14.2
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 32
+  items: 8
+items:
+  tasks:
+  - id: JOY-0164-B5
+    title: Add joy update with axoupdater + auto-sync on every invocation
+  - id: JOY-0166-BE
+    title: Centralize all update flows under joy update; remove joy auth update + joy ai update subcommands
+  - id: JOY-0168-13
+    title: Make joy update terse and --check comprehensive
+  - id: JOY-0169-6A
+    title: Consolidate update logic into a declarative UpdateItem registry
+  bugs:
+  - id: JOY-0165-1F
+    title: joy update --check writes files via auto-sync hook
+  - id: JOY-0167-47
+    title: joy update --check output not Joy-formatted; leftover joy ai update strings
+  - id: JOY-016A-C7
+    title: joy update / joy update --check ignore --json
+  - id: JOY-016B-A1
+    title: 'Older joy binary against newer-synced repo: no downgrade guard'
