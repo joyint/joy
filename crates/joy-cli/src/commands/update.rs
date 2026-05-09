@@ -25,7 +25,9 @@ use joy_core::store;
 use crate::color;
 use crate::update_registry::{self, RowMark, UpdateItem};
 
-const PKG_NAME: &str = "joy";
+/// Cargo-dist installer writes the receipt under this name (matches
+/// the joy-cli Cargo package name, not the binary name `joy`).
+const PKG_NAME: &str = "joy-cli";
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Section ordering used in the displayed output. Items are grouped by

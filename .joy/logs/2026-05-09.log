@@ -5,3 +5,7 @@
 2026-05-09T21:33:13.566Z JOY-016C-95 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-05-09T21:33:13.644Z JOY-0163-6B comment.added "[x] Closed: the hybrid better-activation design captured here landed via JOY-0164-B5 (joy update + axoupdater binary swap + auto-sync hook), JOY-0166-BE (centralisation under joy update, removed per-domain joy ai/auth update), JOY-0169-6A (declarative UpdateItem registry), JOY-016A-C7 (--json envelopes), and JOY-016B-A1 (semver-aware downgrade guard). Lazy-registration is no longer the only mechanism." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-05-09T21:33:13.736Z JOY-0163-6B item.status_changed "new -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-09T21:38:36.851Z JOY-016D-D6 item.created "joy update receipt lookup uses wrong app name" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-09T21:38:36.973Z JOY-016D-D6 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-09T21:38:50.852Z JOY-016D-D6 comment.added "[x] PKG_NAME changed from "joy" to "joy-cli" in commands/update.rs. Verified locally: receipt at ~/.config/joy-cli/joy-cli-receipt.json now found, joy update --check shows Binary 'up to date (0.15.0)' instead of 'install receipt missing'." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-09T21:38:50.938Z JOY-016D-D6 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

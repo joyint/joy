@@ -1,0 +1,22 @@
+id: JOY-016D-D6
+title: joy update receipt lookup uses wrong app name
+type: bug
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-09T21:38:36.840263Z
+updated: 2026-05-09T21:38:50.931851Z
+description: |-
+  axoupdater is invoked via AxoUpdater::new_for("joy"), but cargo-dist's installer writes the receipt under the Cargo package name joy-cli (~/.config/joy-cli/joy-cli-receipt.json). joy update --check therefore reported 'install receipt missing (managed by another installer)' even on cargo-dist installs done via curl get.joyint.com/joy.
+
+  Fix: PKG_NAME = "joy-cli" so the lookup matches the receipt path written by the installer.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-09T21:38:50.845441Z
+  text: '[x] PKG_NAME changed from "joy" to "joy-cli" in commands/update.rs. Verified locally: receipt at ~/.config/joy-cli/joy-cli-receipt.json now found, joy update --check shows Binary ''up to date (0.15.0)'' instead of ''install receipt missing''.'
