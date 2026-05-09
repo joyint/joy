@@ -1,2 +1,7 @@
 2026-05-09T21:13:58.619Z release guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
 2026-05-09T21:28:19.595Z v0.15.0 release.created [horst.schwarz@joydev.com]
+2026-05-09T21:33:13.393Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-09T21:33:13.472Z JOY-016C-95 comment.added "[x] Doc sweep complete: see d2b6694 in joy submodule (Tutorial.md, crates/joy-cli/docs/Tutorial.md, README.md, docs/dev/vision/README.md), 1443421 in umbrella (Auth.md), and a11880c + efa2438 in website (tutorial.mdx + features.mdx)." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-09T21:33:13.566Z JOY-016C-95 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-09T21:33:13.644Z JOY-0163-6B comment.added "[x] Closed: the hybrid better-activation design captured here landed via JOY-0164-B5 (joy update + axoupdater binary swap + auto-sync hook), JOY-0166-BE (centralisation under joy update, removed per-domain joy ai/auth update), JOY-0169-6A (declarative UpdateItem registry), JOY-016A-C7 (--json envelopes), and JOY-016B-A1 (semver-aware downgrade guard). Lazy-registration is no longer the only mechanism." [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-09T21:33:13.736Z JOY-0163-6B item.status_changed "new -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

@@ -1,7 +1,7 @@
 id: JOY-016C-95
 title: 'Doc sweep: reflect joy update / auto-sync / downgrade-guard in user-facing docs'
 type: task
-status: in-progress
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -10,7 +10,7 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-08T04:42:30.970499Z
-updated: 2026-05-08T04:42:31.090729Z
+updated: 2026-05-09T21:33:13.558564Z
 description: |-
   Update user-facing docs to match the central joy update / joy update --check architecture (JOY-0166-BE / JOY-0169-6A / JOY-016A-C7 / JOY-016B-A1).
 
@@ -31,3 +31,7 @@ description: |-
   Generated AI tool files (.claude/CLAUDE.md, AGENTS.md, .github/copilot-instructions.md, etc.) and joy-core templates are already current; no edit there.
 
   ADRs / vision / research / business docs are out of scope: historical records.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-09T21:33:13.464923Z
+  text: '[x] Doc sweep complete: see d2b6694 in joy submodule (Tutorial.md, crates/joy-cli/docs/Tutorial.md, README.md, docs/dev/vision/README.md), 1443421 in umbrella (Auth.md), and a11880c + efa2438 in website (tutorial.mdx + features.mdx).'
