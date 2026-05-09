@@ -33,14 +33,17 @@ pub use joy_crypt::kdf::{derive_argon2id as derive_key, generate_salt, DerivedKe
 
 use crate::error::JoyError;
 
-/// Validate that a passphrase has at least 6 whitespace-separated words.
-///
-/// Joy uses the Diceware convention: short list of dictionary words is
-/// easier to memorise than random characters and reaches comparable
-/// entropy at 6+ words.
+/// Minimum word count for a Joy passphrase. Diceware-style with
+/// Argon2id parameters Joy ships, three well-chosen words still give
+/// substantial brute-force resistance for the local-key-derivation
+/// threat model. See JOY-0171-50.
+pub const MIN_PASSPHRASE_WORDS: usize = 3;
+
+/// Validate that a passphrase has at least [`MIN_PASSPHRASE_WORDS`]
+/// whitespace-separated words.
 pub fn validate_passphrase(passphrase: &str) -> Result<(), JoyError> {
     let word_count = passphrase.split_whitespace().count();
-    if word_count < 6 {
+    if word_count < MIN_PASSPHRASE_WORDS {
         return Err(JoyError::PassphraseTooShort);
     }
     Ok(())
@@ -104,12 +107,14 @@ mod tests {
 
     #[test]
     fn passphrase_too_short() {
-        assert!(validate_passphrase("one two three").is_err());
-        assert!(validate_passphrase("one two three four five").is_err());
+        assert!(validate_passphrase("").is_err());
+        assert!(validate_passphrase("one").is_err());
+        assert!(validate_passphrase("one two").is_err());
     }
 
     #[test]
     fn passphrase_valid() {
+        assert!(validate_passphrase("one two three").is_ok());
         assert!(validate_passphrase("one two three four five six").is_ok());
         assert!(validate_passphrase("a b c d e f g h").is_ok());
     }

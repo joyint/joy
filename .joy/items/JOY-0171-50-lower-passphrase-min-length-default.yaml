@@ -1,0 +1,26 @@
+id: JOY-0171-50
+title: Lower passphrase min length default from 6 to 3 words
+type: task
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-09T21:58:56.605672Z
+updated: 2026-05-09T22:09:16.273582Z
+description: |-
+  Feedback from a real user: 6-word passphrase floor on 'joy auth init' / 'joy auth passphrase' is unnecessarily long for everyday use. With Argon2id parameters joy uses, 3 well-chosen words still give substantial brute-force resistance.
+
+  Fix:
+  - Drop the hardcoded 6-word minimum to 3 words.
+  - Update the matching error message ('passphrase too short (minimum 6 words)' -> 'minimum 3 words').
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-09T22:09:06.497975Z
+  text: '[x] MIN_PASSPHRASE_WORDS const = 3 (auth/mod.rs); validate_passphrase + tests updated; error message and joy auth init prompt now say ''minimum 3 words''.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-09T22:09:16.186108Z
+  text: '[x] MIN_PASSPHRASE_WORDS const = 3 in joy_core::auth (was hardcoded 6). validate_passphrase + tests + ''minimum 3 words'' error message + ''minimum 3 words'' prompt all aligned. 319 unit tests, 166 bats green.'

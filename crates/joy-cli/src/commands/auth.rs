@@ -301,7 +301,7 @@ fn run_init(passphrase_flag: Option<&str>, user_flag: Option<&str>) -> Result<()
     // Get passphrase
     if passphrase_flag.is_none() {
         eprintln!("Setting up authentication for {}.", color::id(&email));
-        eprintln!("Choose a passphrase (minimum 6 words, e.g. Diceware):");
+        eprintln!("Choose a passphrase (minimum 3 words, e.g. Diceware):");
     }
     let passphrase = read_passphrase(passphrase_flag, "  Passphrase: ")?;
     validate_passphrase(&passphrase)?;
