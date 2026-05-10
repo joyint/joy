@@ -1,0 +1,19 @@
+id: JOY-0177-B8
+title: joy update prints raw Debug version output
+type: bug
+status: closed
+priority: low
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-10T00:37:39.066979Z
+updated: 2026-05-10T00:37:57.547320Z
+description: 'joy update renders ''updated Some(Version { major: 0, minor: 15, patch: 0 }) -> Version { major: 0, minor: 15, patch: 1 }''. Replace the {:?} format with Display so the line reads ''updated 0.15.0 -> 0.15.1''. Old version is Option (None on first install), render as ''unknown'' in that case.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-10T00:37:57.448244Z
+  text: '[x] Display formatting for new_version, Option-aware for old_version (renders as ''unknown'' when None)'

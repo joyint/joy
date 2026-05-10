@@ -514,13 +514,18 @@ fn swap_binary_status() -> (&'static str, String) {
         );
     }
     match updater.run_sync() {
-        Ok(Some(result)) => (
-            color::check_mark(),
-            color::success(&format!(
-                "updated {:?} -> {:?}",
-                result.old_version, result.new_version
-            )),
-        ),
+        Ok(Some(result)) => {
+            let old = result
+                .old_version
+                .as_ref()
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+            let new = result.new_version.to_string();
+            (
+                color::check_mark(),
+                color::success(&format!("updated {old} -> {new}")),
+            )
+        }
         Ok(None) => (
             color::check_mark(),
             color::inactive(&format!("up to date ({CURRENT_VERSION})")),
