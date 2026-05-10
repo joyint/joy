@@ -5,7 +5,6 @@ use anyhow::{bail, Result};
 use chrono::Utc;
 use clap::Args;
 
-use joy_core::context::Context;
 use joy_core::guard::Action;
 use joy_core::items;
 use joy_core::model::item::{Assignee, Capability};
@@ -32,7 +31,7 @@ pub struct AssignArgs {
 }
 
 pub fn run(args: AssignArgs) -> Result<()> {
-    let ctx = Context::load()?;
+    let ctx = crate::crypt_session::load_context(None)?;
 
     let mut item = items::load_item(&ctx.root, &args.id)?;
 

@@ -5,7 +5,6 @@ use anyhow::Result;
 use chrono::NaiveDate;
 use clap::{Args, Subcommand};
 
-use joy_core::context::Context;
 use joy_core::guard::Action;
 use joy_core::items;
 use joy_core::milestones;
@@ -121,7 +120,7 @@ pub fn run(args: MilestoneArgs) -> Result<()> {
 }
 
 fn run_add(args: AddArgs) -> Result<()> {
-    let ctx = Context::load()?;
+    let ctx = crate::crypt_session::load_context(None)?;
 
     ctx.enforce(&Action::ManageMilestone, "milestone")?;
 
@@ -168,7 +167,7 @@ fn run_add(args: AddArgs) -> Result<()> {
 }
 
 fn run_ls() -> Result<()> {
-    let ctx = Context::load()?;
+    let ctx = crate::crypt_session::load_context(None)?;
 
     let milestones = milestones::load_milestones(&ctx.root)?;
     let all_items = items::load_items(&ctx.root)?;
@@ -240,7 +239,7 @@ fn run_ls() -> Result<()> {
 }
 
 fn run_show(args: ShowArgs) -> Result<()> {
-    let ctx = Context::load()?;
+    let ctx = crate::crypt_session::load_context(None)?;
 
     let ms = milestones::load_milestone(&ctx.root, &args.id)?;
     let all_items = items::load_items(&ctx.root)?;
@@ -347,7 +346,7 @@ fn run_show(args: ShowArgs) -> Result<()> {
 }
 
 fn run_rm(args: RmArgs) -> Result<()> {
-    let ctx = Context::load()?;
+    let ctx = crate::crypt_session::load_context(None)?;
 
     ctx.enforce(&Action::ManageMilestone, &args.id)?;
 
@@ -405,7 +404,7 @@ fn run_rm(args: RmArgs) -> Result<()> {
 }
 
 fn run_edit(args: EditArgs) -> Result<()> {
-    let ctx = Context::load()?;
+    let ctx = crate::crypt_session::load_context(None)?;
 
     ctx.enforce(&Action::ManageMilestone, &args.id)?;
 
@@ -470,7 +469,7 @@ fn run_edit(args: EditArgs) -> Result<()> {
 }
 
 fn run_link(args: LinkArgs) -> Result<()> {
-    let ctx = Context::load()?;
+    let ctx = crate::crypt_session::load_context(None)?;
 
     ctx.enforce(&Action::ManageMilestone, &args.item_id)?;
 
@@ -512,7 +511,7 @@ fn run_link(args: LinkArgs) -> Result<()> {
 }
 
 fn run_unlink(args: UnlinkArgs) -> Result<()> {
-    let ctx = Context::load()?;
+    let ctx = crate::crypt_session::load_context(None)?;
 
     ctx.enforce(&Action::ManageMilestone, &args.item_id)?;
 

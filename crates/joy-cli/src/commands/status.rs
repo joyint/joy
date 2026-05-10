@@ -7,7 +7,6 @@ use anyhow::Result;
 use chrono::Utc;
 use clap::Args;
 
-use joy_core::context::Context;
 use joy_core::guard::Action;
 use joy_core::items;
 use joy_core::model::item::{Assignee, Status};
@@ -47,7 +46,7 @@ impl StatusArgs {
 }
 
 pub fn run(args: StatusArgs) -> Result<()> {
-    let ctx = Context::load()?;
+    let ctx = crate::crypt_session::load_context(None)?;
 
     let new_status: Status = args
         .status

@@ -4,7 +4,6 @@
 use anyhow::Result;
 use clap::Args;
 
-use joy_core::context::Context;
 use joy_core::guard::Action;
 use joy_core::items;
 
@@ -26,7 +25,7 @@ pub struct RmArgs {
 }
 
 pub fn run(args: RmArgs) -> Result<()> {
-    let ctx = Context::load()?;
+    let ctx = crate::crypt_session::load_context(None)?;
 
     let item = items::load_item(&ctx.root, &args.id)?;
 

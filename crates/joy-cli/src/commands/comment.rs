@@ -5,7 +5,6 @@ use anyhow::Result;
 use chrono::Utc;
 use clap::Args;
 
-use joy_core::context::Context;
 use joy_core::guard::Action;
 use joy_core::items;
 use joy_core::model::item::Comment;
@@ -32,7 +31,7 @@ pub fn run(args: CommentArgs) -> Result<()> {
         None => anyhow::bail!("text is required: joy comment <ID> \"your comment\""),
     };
 
-    let ctx = Context::load()?;
+    let ctx = crate::crypt_session::load_context(None)?;
 
     let mut item = items::load_item(&ctx.root, &args.id)?;
 

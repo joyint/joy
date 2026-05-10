@@ -104,15 +104,15 @@ pub fn run(args: LogArgs) -> Result<()> {
         let details_str = entry
             .details
             .as_ref()
-            .map(|d| format!(" \"{d}\""))
+            .map(|d| format!(" - \"{d}\""))
             .unwrap_or_default();
 
         println!(
-            "{} - {} - {} - {} [{}]",
+            "{} - {} - {}{} [{}]",
             color::label(&local_time),
             color::id(&entry.target),
             color::label(&entry.event_type),
-            details_str.trim_start(),
+            details_str,
             color::user(&entry.user),
         );
     }

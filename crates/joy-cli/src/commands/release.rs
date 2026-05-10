@@ -6,7 +6,6 @@ use std::io::Write;
 use anyhow::Result;
 use chrono::Utc;
 
-use joy_core::context::Context;
 use joy_core::event_log;
 use joy_core::guard::Action;
 use joy_core::items;
@@ -126,7 +125,7 @@ fn looks_like_explicit(s: &str) -> bool {
 }
 
 fn bump(args: BumpArgs) -> Result<()> {
-    let ctx = Context::load()?;
+    let ctx = crate::crypt_session::load_context(None)?;
     ctx.enforce(&Action::CreateRelease, "release")?;
 
     let (current, next) = resolve_version(&ctx.root, args.bump.as_deref())?;
@@ -168,7 +167,7 @@ fn bump(args: BumpArgs) -> Result<()> {
 }
 
 fn record(args: RecordArgs) -> Result<()> {
-    let ctx = Context::load()?;
+    let ctx = crate::crypt_session::load_context(None)?;
     ctx.enforce(&Action::CreateRelease, "release")?;
 
     let project = store::load_project(&ctx.root)?;
@@ -280,7 +279,7 @@ fn record(args: RecordArgs) -> Result<()> {
 }
 
 fn publish(args: PublishArgs) -> Result<()> {
-    let ctx = Context::load()?;
+    let ctx = crate::crypt_session::load_context(None)?;
     ctx.enforce(&Action::CreateRelease, "release")?;
 
     let project = store::load_project(&ctx.root)?;
@@ -329,7 +328,7 @@ fn publish(args: PublishArgs) -> Result<()> {
 }
 
 fn show(args: ShowArgs) -> Result<()> {
-    let ctx = Context::load()?;
+    let ctx = crate::crypt_session::load_context(None)?;
     let project = store::load_project(&ctx.root)?;
     let acronym = project.acronym.as_deref().unwrap_or("JOY");
 
@@ -389,7 +388,7 @@ fn show(args: ShowArgs) -> Result<()> {
 }
 
 fn ls() -> Result<()> {
-    let ctx = Context::load()?;
+    let ctx = crate::crypt_session::load_context(None)?;
 
     let all_releases = releases::load_releases(&ctx.root)?;
 

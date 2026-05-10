@@ -4,7 +4,6 @@
 use anyhow::{bail, Result};
 use clap::Args;
 
-use joy_core::context::Context;
 use joy_core::guard::Action;
 use joy_core::items;
 use joy_core::model::item::{Capability, ItemType, Priority, Status};
@@ -101,7 +100,7 @@ pub fn run(args: AddArgs) -> Result<()> {
         std::process::exit(0);
     }
 
-    let ctx = Context::load()?;
+    let ctx = crate::crypt_session::load_context(None)?;
 
     let type_str = args
         .item_type

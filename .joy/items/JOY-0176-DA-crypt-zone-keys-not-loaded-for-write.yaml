@@ -1,0 +1,31 @@
+id: JOY-0176-DA
+title: Crypt zone keys not loaded for write commands
+type: bug
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-09T23:59:39.021066Z
+updated: 2026-05-10T00:07:43.753353Z
+description: |-
+  joy edit / comment / start / close / assign / deps / milestone link / rm fail with 'no access to zone X' on encrypted items, even when the acting member has a wrap. Only ls and show currently call ensure_zone_keys; the rest never unwrap and so cannot read or save items in any zone.
+
+  Fix: move ensure_zone_keys into Context::load() so every command that goes through Context picks up the keys exactly once per joy invocation. The JOY-0173-B3 pre-check keeps plaintext-only projects prompt-free.
+
+  Repro:
+    joy ls            -- prompts, succeeds
+    joy edit X-0001 --description '...'  -- 'no access to zone default'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-10T00:07:43.651847Z
+  text: |-
+    [x] crypt_session::load_context() wrapper installs zone keys before returning Context
+    [x] All 9 item-touching commands switched to load_context: add, edit, rm, comment, assign, deps, status, milestone, release (15 call sites)
+    [x] ensure_zone_keys also reads JOY_PASSPHRASE env so non-interactive callers (CI / scripts / tests) do not need a per-command --passphrase flag
+    [x] tests/integration/crypt.bats: 5 tests covering full human-member journey (edit, comment, status, close, multi-member grant, locked-row rendering, log content stripping, plaintext-only no-prompt)
+    [x] Workspace tests + clippy + fmt clean

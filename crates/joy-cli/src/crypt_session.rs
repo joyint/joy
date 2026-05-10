@@ -13,9 +13,21 @@
 //! live only for the lifetime of the joy process.
 
 use anyhow::Result;
+use joy_core::context::Context;
 use joy_core::vcs::Vcs;
 
 use crate::commands::auth::read_passphrase;
+
+/// Load the project [`Context`] and install zone keys before returning,
+/// so any subsequent read or write of items in a Crypt zone succeeds
+/// without each command having to remember to call
+/// [`ensure_zone_keys`]. Plaintext-only projects skip the prompt via
+/// the [`ensure_zone_keys`] pre-check (JOY-0173-B3).
+pub fn load_context(passphrase: Option<&str>) -> Result<Context> {
+    let ctx = Context::load()?;
+    ensure_zone_keys(passphrase)?;
+    Ok(ctx)
+}
 
 /// Populate `joy_core::crypt`'s thread-local zone-key context for
 /// the active member. Idempotent: returns immediately when keys are
@@ -101,7 +113,14 @@ pub fn ensure_zone_keys(passphrase_flag: Option<&str>) -> Result<()> {
         return Ok(());
     }
 
-    let passphrase = read_passphrase(passphrase_flag, "Passphrase: ")?;
+    // Allow non-interactive callers (CI, scripts, tests) to supply
+    // the passphrase via JOY_PASSPHRASE when no --passphrase flag was
+    // passed on the command line. Visible to the same process tree as
+    // a CLI flag, but does not require every command to expose its
+    // own --passphrase argument.
+    let env_passphrase = std::env::var("JOY_PASSPHRASE").ok();
+    let effective_flag = passphrase_flag.or(env_passphrase.as_deref());
+    let passphrase = read_passphrase(effective_flag, "Passphrase: ")?;
     let unlocked = joy_core::auth::unlock_identity(member, &passphrase)?;
     let mut keys = std::collections::BTreeMap::new();
     for (zone, wrap_hex) in &member.crypt_wraps {

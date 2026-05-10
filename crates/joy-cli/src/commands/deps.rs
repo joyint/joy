@@ -39,7 +39,7 @@ pub struct DepsArgs {
 }
 
 pub fn run(args: DepsArgs) -> Result<()> {
-    let ctx = Context::load()?;
+    let ctx = crate::crypt_session::load_context(None)?;
 
     if let Some(ref dep_id) = args.add {
         return add_dep(&ctx, &args.id, dep_id);
