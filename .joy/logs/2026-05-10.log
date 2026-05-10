@@ -3,3 +3,4 @@
 2026-05-10T00:07:43.534Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-05-10T00:07:43.659Z JOY-0176-DA comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-05-10T00:07:43.760Z JOY-0176-DA item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-10T00:29:41.259Z v0.15.2 release.created [horst.schwarz@joydev.com]

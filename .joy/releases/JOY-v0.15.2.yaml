@@ -1,0 +1,24 @@
+version: v0.15.2
+date: 2026-05-10
+previous: v0.15.1
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 20
+  items: 5
+- id: horst.schwarz@joydev.com
+  events: 3
+  items: 1
+items:
+  bugs:
+  - id: JOY-0173-B3
+    title: joy ls prompts for passphrase even when no encrypted items exist
+  - id: JOY-0174-D3
+    title: joy ls fails entirely on encrypted items in zones the member cannot decrypt
+  - id: JOY-0176-DA
+    title: Crypt zone keys not loaded for write commands
+  decisions:
+  - id: JOY-0175-9B
+    title: Don't log item text values
+  ideas:
+  - id: JOY-0172-91
+    title: joy crypt ls and other commands with joy styled output
