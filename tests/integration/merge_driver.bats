@@ -75,20 +75,22 @@ load setup
     BRANCH=$(git symbolic-ref --short HEAD)
 
     git checkout -q -b branch-a
-    joy add task "From branch a" --effort 2
+    A_ID=$(joy add task "From branch a" --effort 2 | sed -n 's/^Created \([A-Z0-9-]\+\) .*/\1/p')
     git add -A && git commit -m "branch a [no-item]" --quiet
 
     git checkout -q "$BRANCH"
     git checkout -q -b branch-b
     sleep 1
-    joy add task "From branch b" --effort 2
+    B_ID=$(joy add task "From branch b" --effort 2 | sed -n 's/^Created \([A-Z0-9-]\+\) .*/\1/p')
     git add -A && git commit -m "branch b [no-item]" --quiet
 
     run git merge --no-edit -q branch-a
     [ "$status" -eq 0 ]
 
-    grep -hq "From branch a" .joy/logs/*.log
-    grep -hq "From branch b" .joy/logs/*.log
+    # Titles are not in the log (JOY-0175-9B); both per-branch
+    # creation events must survive the union merge by ID.
+    grep -hq "$A_ID item.created" .joy/logs/*.log
+    grep -hq "$B_ID item.created" .joy/logs/*.log
     # No conflict markers leaked into any log file.
     ! grep -lq '^<<<<<<< ' .joy/logs/*.log 2>/dev/null
 }
