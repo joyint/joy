@@ -29,7 +29,9 @@ load setup
     joy add task "Comment log test"
     ITEM_ID=$(joy ls 2>/dev/null | grep "Comment log" | awk '{print $1}')
     joy comment "$ITEM_ID" "Human comment"
-    grep -q "$ITEM_ID comment.added.*Human comment.*test@example.com" .joy/logs/*.log
+    # Comment text is no longer recorded in the log (JOY-0175-9B);
+    # the structural event + actor are what we verify here.
+    grep -q "$ITEM_ID comment.added.*test@example.com" .joy/logs/*.log
 }
 
 # ============================================================
@@ -40,7 +42,9 @@ load setup
     setup_human_auth
     setup_ai_session ai:test@joy
     joy add task "AI created"
-    grep -q "item.created.*AI created.*ai:test@joy delegated-by:test@example.com" .joy/logs/*.log
+    # Item title is not recorded in the log (JOY-0175-9B); verify the
+    # structural event and the delegated-by actor.
+    grep -q "item.created .*ai:test@joy delegated-by:test@example.com" .joy/logs/*.log
 }
 
 @test "AI item.status_changed has delegated-by in log" {
@@ -58,7 +62,8 @@ load setup
     ITEM_ID=$(joy ls 2>/dev/null | grep "AI comment" | awk '{print $1}')
     setup_ai_session ai:test@joy
     joy comment "$ITEM_ID" "AI said this"
-    grep -q "$ITEM_ID comment.added.*AI said this.*ai:test@joy delegated-by:test@example.com" .joy/logs/*.log
+    # Comment text is not recorded in the log (JOY-0175-9B).
+    grep -q "$ITEM_ID comment.added .*ai:test@joy delegated-by:test@example.com" .joy/logs/*.log
 }
 
 @test "AI item.assigned has delegated-by in log" {
@@ -164,17 +169,17 @@ EOF
     SESSION_CLAUDE="$JOY_SESSION"
     eval $(joy auth --token "$TOKEN_COPILOT")
     SESSION_COPILOT="$JOY_SESSION"
-    # Human creates an item
+    # Capture IDs as items are created so we can verify the per-item
+    # actor without relying on titles in the log (JOY-0175-9B).
     unset JOY_SESSION
-    joy add task "Human task"
-    # Claude creates an item
-    JOY_SESSION="$SESSION_CLAUDE" joy add task "Claude task"
-    # Copilot creates an item
-    JOY_SESSION="$SESSION_COPILOT" joy add task "Copilot task"
-    # Verify all three identities in log
-    grep -q "item.created.*Human task.*test@example.com" .joy/logs/*.log
-    grep -q "item.created.*Claude task.*ai:claude@joy delegated-by:test@example.com" .joy/logs/*.log
-    grep -q "item.created.*Copilot task.*ai:copilot@joy delegated-by:test@example.com" .joy/logs/*.log
+    HUMAN_ID=$(joy add task "Human task" | sed -n 's/^Created \([A-Z0-9-]\+\) .*/\1/p')
+    CLAUDE_ID=$(JOY_SESSION="$SESSION_CLAUDE" joy add task "Claude task" \
+        | sed -n 's/^Created \([A-Z0-9-]\+\) .*/\1/p')
+    COPILOT_ID=$(JOY_SESSION="$SESSION_COPILOT" joy add task "Copilot task" \
+        | sed -n 's/^Created \([A-Z0-9-]\+\) .*/\1/p')
+    grep -q "$HUMAN_ID item.created .*test@example.com" .joy/logs/*.log
+    grep -q "$CLAUDE_ID item.created .*ai:claude@joy delegated-by:test@example.com" .joy/logs/*.log
+    grep -q "$COPILOT_ID item.created .*ai:copilot@joy delegated-by:test@example.com" .joy/logs/*.log
 }
 
 @test "AI guard enforcement uses correct identity per session" {
@@ -248,5 +253,8 @@ EOF
 @test "milestone.created has correct author in log" {
     setup_human_auth
     joy milestone add "Test MS" --date 2026-12-01
-    grep -q "milestone.created.*Test MS.*test@example.com" .joy/logs/*.log
+    # The title is no longer recorded in the event log (JOY-0175-9B);
+    # match the structural target id and the actor instead.
+    MS_ID=$(joy milestone ls 2>/dev/null | grep "Test MS" | awk '{print $1}')
+    grep -q "$MS_ID milestone.created.*test@example.com" .joy/logs/*.log
 }
