@@ -1,0 +1,39 @@
+version: v0.15.3
+date: 2026-05-11
+previous: v0.15.2
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 44
+  items: 12
+- id: horst.schwarz@joydev.com
+  events: 4
+  items: 4
+items:
+  tasks:
+  - id: JOY-00AC
+    title: Support --type flag in joy edit
+  - id: JOY-00A5
+    title: Open editor when comment text is omitted
+  - id: JOY-00A4
+    title: Global --working-dir (-w) flag for cross-directory use
+  - id: JOY-0179-8F
+    title: 'Tutorial + features.mdx: catch up with recent feature work'
+  - id: JOY-017A-F2
+    title: Group commands in joy --help
+  - id: JOY-017B-EE
+    title: 'Tutorial: neutral tone, drop MacGyver framing'
+  - id: JOY-017C-AC
+    title: 'joy tutorial: add -i/--interactive menu mode'
+  bugs:
+  - id: JOY-0177-B8
+    title: joy update prints raw Debug version output
+  - id: JOY-017E-44
+    title: 'joy tutorial -i: scroll within a section via pager'
+  - id: JOY-017D-C5
+    title: Tutorial unreadable on light terminals (MadSkin::default_dark)
+  reworks:
+  - id: JOY-0178-AE
+    title: Path completion hints on -w and crypt path args
+  ideas:
+  - id: JOY-00A7
+    title: 'Comment management: edit and delete comments'

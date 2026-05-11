@@ -64,3 +64,4 @@
 2026-05-11T06:05:41.093Z JOY-017E-44 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-05-11T06:05:41.189Z JOY-017D-C5 comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-05-11T06:05:41.305Z JOY-017D-C5 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-11T06:12:39.576Z v0.15.3 release.created [horst.schwarz@joydev.com]
