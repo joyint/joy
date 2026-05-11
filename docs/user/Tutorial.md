@@ -235,7 +235,12 @@ If an item depends on something unfinished, Joy warns you but does not block. Wh
 joy assign CB-0005               # Assign to yourself (git email)
 joy assign CB-0005 pete@phoenix.org  # Assign to someone else
 joy comment CB-0005 "Schema looks good, all migrations pass."
+joy comment CB-0005              # Opens $EDITOR for a longer note
+joy comment edit CB-0005 1 "Schema looks good (verified all migrations)."
+joy comment rm CB-0005 2 --force # Delete comment #2
 ```
+
+`joy comment <ID>` without TEXT opens your editor on an empty tempfile; saving an empty buffer aborts. Editor resolution: `--editor <cmd>`, then `joy config set editor`, then `$VISUAL`, then `$EDITOR`. Comment indices for `edit` and `rm` are 1-based and match what `joy show <ID>` prints.
 
 When starting an item (`joy start`), Joy auto-assigns it to you if no one is assigned yet.
 
@@ -283,11 +288,13 @@ joy log --limit 50               # Show more entries
 Every joy command leaves a trace in `.joy/logs/` - one file per day, append-only, timestamped to the millisecond:
 
 ```
-2026-03-11T16:14:32.320Z CB-0005 item.created "Set up SQLite database" [mac@phoenix.org]
+2026-03-11T16:14:32.320Z CB-0005 item.created [mac@phoenix.org]
 2026-03-11T16:15:01.440Z CB-0005 item.status_changed "new -> in-progress" [mac@phoenix.org]
-2026-03-11T16:42:18.100Z CB-0005 comment.added "Schema looks good" [pete@phoenix.org]
-2026-03-11T17:00:00.000Z CB-0005 comment.added "AI review complete" [ai:claude@joy delegated-by:mac@phoenix.org]
+2026-03-11T16:42:18.100Z CB-0005 comment.added [pete@phoenix.org]
+2026-03-11T17:00:00.000Z CB-0005 comment.added [ai:claude@joy delegated-by:mac@phoenix.org]
 ```
+
+The log records only structural facts: who did what, when, on which item. Titles, descriptions, and comment text are not written to the log - they live in the item file itself, behind whatever Crypt zone protects it. The log stays as a faithful audit trail even when item content is later encrypted. State transitions (`new -> in-progress`), member IDs, and item / milestone IDs do appear, because they are needed to interpret the event.
 
 These logs are committed to git with your project. Every team member's actions are recorded - a built-in audit trail. When an AI tool acts on behalf of a human, the log shows both identities via `delegated-by`.
 
@@ -349,6 +356,7 @@ release:
 ```sh
 joy edit CB-0002 --priority critical
 joy edit CB-0002 --title "Add and validate a recipe"
+joy edit CB-0002 --type bug          # Change item type
 joy rm CB-0006                       # Delete (asks for confirmation)
 joy rm CB-0001 -rf                   # Delete epic and all children
 ```
@@ -756,12 +764,26 @@ joy crypt add --all                            # every existing item under the z
 
 ```sh
 joy show JOY-0123 --passphrase "..."           # decrypts transparently
-joy ls --passphrase "..."                      # list shows titles for items you can decrypt
+joy ls --passphrase "..."                      # list, with one prompt at the start
 ```
 
-Without the passphrase, `joy show` on an encrypted item returns a
-clear `no access to zone <name>` message. `joy ls` skips items you
-can't decrypt and continues.
+Once unlocked, every command in the same `joy` invocation uses the
+zone keys without re-prompting. Write commands (`joy edit`, `joy
+comment`, `joy start`, `joy close`, `joy assign`, `joy deps`,
+`joy rm`, `joy milestone link`) prompt for the passphrase the same
+way and then go straight through.
+
+`joy ls` always lists every item in the project. Items in a zone you
+cannot decrypt appear as a locked row: `***` in the typed columns and
+`[encrypted, no access]` as the title. An `ENC` column is added as
+soon as at least one item carries a zone, showing the zone name on
+both unlocked and locked rows. `joy show` on an item without zone
+access prints `no access to zone <name>`.
+
+For non-interactive use (CI, scripts, hooks), set the passphrase via
+the `JOY_PASSPHRASE` environment variable; it is consulted whenever
+no `--passphrase` flag is on the command line. Treat the variable as
+sensitive: it lives only in the shell that exports it.
 
 **Read or edit encrypted free files:**
 
@@ -881,6 +903,20 @@ binary garbage on those forges, or you mirror through Joyint with
 
 ---
 
+## Bonus: Cross-Directory Queries (`-w`)
+
+Joy normally operates on the project containing the current working directory. The global `-w / --working-dir <PATH>` flag runs a command as if you had `cd`'d into PATH first:
+
+```sh
+joy ls -w ../platform            # List items of the sibling project
+joy roadmap -w ~/repos/jyn       # Roadmap of an unrelated project
+joy log -w ../platform --limit 5 # Audit trail of another tree
+```
+
+PATH must contain a Joy project (a `.joy/` directory in itself or an ancestor); otherwise the command bails. Tab completion offers directory names after `-w`. This is the supported way to query across multiple projects without `cd` and without per-command repo shortcuts.
+
+---
+
 ## Bonus: Shell Completions
 
 Joy supports tab completion for commands, flags, and item IDs. Add one line to your shell config:
@@ -938,7 +974,9 @@ The shape is `{"version": 1, "data": ...}`. Within a major Joy release, fields a
 | `joy reopen <ID>` | Reopen a closed/deferred item |
 | `joy rm <ID>` | Delete an item |
 | `joy assign <ID> [MEMBER]` | Assign item to member |
-| `joy comment <ID> <TEXT>` | Add comment to item |
+| `joy comment <ID> [TEXT]` | Add comment (opens $EDITOR if TEXT omitted) |
+| `joy comment edit <ID> <N> [TEXT]` | Replace comment #N |
+| `joy comment rm <ID> <N> [--force]` | Delete comment #N |
 | `joy deps <ID>` | Manage dependencies |
 | `joy milestone` | Manage milestones |
 | `joy roadmap` | Milestone roadmap (tree view) |
@@ -955,7 +993,7 @@ The shape is `{"version": 1, "data": ...}`. Within a major Joy release, fields a
 | `joy update --check` | Read-only audit of every joy-managed artefact |
 | `joy tutorial` | You are here |
 
-Most write commands accept `--author <MEMBER>` to attribute the action to a specific identity.
+Most write commands accept `--author <MEMBER>` to attribute the action to a specific identity. Every command accepts the global `-w / --working-dir <PATH>` flag to run as if started from PATH.
 
 > "Any problem can be solved with a little ingenuity." - MacGyver
 

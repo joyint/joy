@@ -34,7 +34,7 @@ Quick start:
 Run 'joy tutorial' for the full guide."
 )]
 pub(crate) struct Cli {
-    /// Run as if joy was started in <PATH> (must be a Joy project)
+    /// Run as if joy was started in <PATH>
     #[arg(
         short = 'w',
         long = "working-dir",

@@ -1,14 +1,16 @@
 id: JOY-0179-8F
 title: 'Tutorial + features.mdx: catch up with recent feature work'
 type: task
-status: new
+status: closed
 priority: high
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-11T05:04:56.265838Z
-updated: 2026-05-11T05:04:56.265838Z
+updated: 2026-05-11T05:18:21.256730Z
 description: |-
   Documentation is behind on recent changes. One bundled pass covers:
 
@@ -30,3 +32,10 @@ description: |-
   - if a 'comments' section exists, document edit/rm + editor flow
 
   Verify: every claim above maps to a real CLI behaviour today; do not write speculative text.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-11T05:18:21.152327Z
+  text: |-
+    [x] Tutorial.md updated: log examples stripped of payload, Assignments&Comments adds editor + edit/rm, Editing&Deleting adds --type, new -w bonus section, Mission 11 (Crypt) updated with ENC column / locked rows / JOY_PASSPHRASE, Command Reference table refreshed
+    [x] Website-side counterpart tracked separately under JISITE-0032-07 (per submodule rule)
+    [x] Trimmed -w help text to single line on user request
