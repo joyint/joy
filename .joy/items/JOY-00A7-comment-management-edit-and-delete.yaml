@@ -1,11 +1,22 @@
 id: JOY-00A7
 title: 'Comment management: edit and delete comments'
 type: idea
-status: new
+status: closed
 priority: medium
+assignees:
+- member: ai:claude@joy
 milestone: JOY-MS-02
 effort: 2
 created_by: horst.schwarz@joydev.com
 created: 2026-03-31T17:54:10.306810184Z
-updated: 2026-05-09T22:44:16.081129Z
+updated: 2026-05-11T04:53:08.789716Z
 description: Edit (joy comment edit <ID> <INDEX> <TEXT>) and delete (joy comment rm <ID> <INDEX>). Index-based addressing since comments have no IDs. Needed when a comment has errors or is no longer relevant. Migrated from JI-004F.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-11T04:53:08.687528Z
+  text: |-
+    [x] joy comment edit <ID> <INDEX> [TEXT] replaces comment by 1-based index; opens editor when TEXT is omitted
+    [x] joy comment rm <ID> <INDEX> [--force] removes a comment; confirms by default
+    [x] bare-form joy comment <ID> [TEXT] kept intact (args_conflicts_with_subcommands)
+    [x] new EventType::CommentEdited / CommentRemoved (structural, payload = [<index>])
+    [x] bats covers add, edit, rm, out-of-range

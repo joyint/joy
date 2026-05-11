@@ -92,3 +92,43 @@ load setup
     run joy show "$ID"
     [[ "$output" == *"via-flag"* ]]
 }
+
+@test "joy comment edit replaces an existing comment" {
+    joy init --name "Test"
+    joy add task "many comments"
+    ID=$(joy ls 2>/dev/null | grep "many comments" | awk '{print $1}')
+    joy comment "$ID" "first"
+    joy comment "$ID" "second"
+    run joy comment edit "$ID" 1 "first replaced"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Edited comment #1"* ]]
+    run joy show "$ID"
+    [[ "$output" == *"first replaced"* ]]
+    [[ "$output" != *"first"$'\n'* ]] || true
+    [[ "$output" == *"second"* ]]
+}
+
+@test "joy comment rm deletes a comment by index" {
+    joy init --name "Test"
+    joy add task "to clean"
+    ID=$(joy ls 2>/dev/null | grep "to clean" | awk '{print $1}')
+    joy comment "$ID" "keep me"
+    joy comment "$ID" "delete me"
+    run joy comment rm "$ID" 2 --force
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Removed comment #2"* ]]
+    run joy show "$ID"
+    [[ "$output" == *"keep me"* ]]
+    [[ "$output" != *"delete me"* ]]
+}
+
+@test "joy comment edit/rm reject out-of-range index" {
+    joy init --name "Test"
+    joy add task "single"
+    ID=$(joy ls 2>/dev/null | grep "single" | awk '{print $1}')
+    joy comment "$ID" "only"
+    run joy comment edit "$ID" 5 "ghost"
+    [ "$status" -ne 0 ]
+    run joy comment rm "$ID" 0 --force
+    [ "$status" -ne 0 ]
+}
