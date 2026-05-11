@@ -26,7 +26,7 @@ pub fn run(args: TutorialArgs) -> Result<()> {
 
 fn print_full(markdown: &str) -> Result<()> {
     let width = crate::color::terminal_width();
-    let skin = MadSkin::default_dark();
+    let skin = MadSkin::default();
     let formatted = skin.area_text(markdown, &termimad::Area::new(0, 0, width as u16, u16::MAX));
 
     let pager = std::env::var("PAGER").ok().unwrap_or_default();
@@ -179,12 +179,8 @@ fn chapter_loop(chapter: &Chapter) -> Result<()> {
 }
 
 fn render_then_pause(markdown: &str) -> Result<()> {
-    let width = crate::color::terminal_width();
-    let skin = MadSkin::default_dark();
-    let formatted = skin.area_text(markdown, &termimad::Area::new(0, 0, width as u16, u16::MAX));
-    println!("{formatted}");
-    let _ = inquire::Confirm::new("Press Enter to return to the menu")
-        .with_default(true)
-        .prompt_skippable();
-    Ok(())
+    // Route the rendered section through a pager so the user can
+    // scroll with arrows / PgUp / PgDn / `/`-search; quitting the
+    // pager (`q`) returns to the menu loop above.
+    print_full(markdown)
 }

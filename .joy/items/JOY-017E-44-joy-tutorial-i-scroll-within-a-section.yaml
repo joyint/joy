@@ -1,0 +1,19 @@
+id: JOY-017E-44
+title: 'joy tutorial -i: scroll within a section via pager'
+type: bug
+status: closed
+priority: low
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-11T06:05:26.981274Z
+updated: 2026-05-11T06:05:41.084983Z
+description: After picking a section in joy tutorial -i, the rendered Markdown was printed straight to stdout with a Confirm-prompt for return-to-menu. Long sections were not scrollable. Route the rendered slice through the same pager path used by the default mode so users can scroll with arrows / PgUp / PgDn / search, and quit with q to return to the menu.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-11T06:05:40.962107Z
+  text: '[x] render_then_pause routes through print_full so each section opens in less / $PAGER; q returns to the menu'
