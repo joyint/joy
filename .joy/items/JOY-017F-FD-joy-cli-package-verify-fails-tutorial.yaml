@@ -1,0 +1,25 @@
+id: JOY-017F-FD
+title: 'joy-cli package verify fails: Tutorial.md outside crate'
+type: bug
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-11T06:16:22.961576Z
+updated: 2026-05-11T06:19:18.648471Z
+description: |-
+  After moving include_str! to point at the canonical docs/user/Tutorial.md (JOY-017C-AC), cargo package verify fails because the canonical file lives outside the joy-cli crate root and is not shipped in the tarball.
+
+  Restore a committed in-crate copy at crates/joy-cli/docs/Tutorial.md and have include_str! point at it. Add a justfile sync-tutorial recipe that copies from docs/user/, wire it into release-all and check. A unit test asserts that the two files are byte-identical so they cannot silently drift.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-11T06:19:18.532762Z
+  text: |-
+    [x] Restored in-crate copy crates/joy-cli/docs/Tutorial.md, include_str! points back at it (relative to source file inside the crate)
+    [x] justfile gained sync-tutorial recipe (cp from docs/user/); wired as a pre-step for publish-crates and check
+    [x] Unit test in_crate_tutorial_matches_canonical reads both files via include_str! and asserts byte equality; assertion message names the fix

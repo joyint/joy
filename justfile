@@ -63,8 +63,14 @@ _toolchain-check:
         exit 1
     fi
 
+# Refresh the in-crate copy of the Tutorial used by `joy tutorial`.
+# The canonical doc is docs/user/Tutorial.md; cargo package needs a
+# copy inside the joy-cli crate. See JOY-017F-FD.
+sync-tutorial:
+    cp docs/user/Tutorial.md crates/joy-cli/docs/Tutorial.md
+
 # Run fmt-check, lint, test
-check: _toolchain-check fmt-check lint test
+check: _toolchain-check sync-tutorial fmt-check lint test
 
 # Lint commit messages for Joy item references (default: main..HEAD)
 lint-commits base="main":
@@ -206,7 +212,7 @@ release bump="patch":
 # Upload crates to crates.io only. Idempotent: already-uploaded
 # versions are skipped. CI's publish.yml calls this directly; the
 # forge release is handled separately by `joy release publish`.
-publish-crates:
+publish-crates: sync-tutorial
     #!/usr/bin/env bash
     set -euo pipefail
     if [ -z "${CARGO_REGISTRY_TOKEN:-}" ]; then
