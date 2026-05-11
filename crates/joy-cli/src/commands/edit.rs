@@ -7,7 +7,7 @@ use clap::Args;
 
 use joy_core::guard::Action;
 use joy_core::items;
-use joy_core::model::item::{Capability, Priority};
+use joy_core::model::item::{Capability, ItemType, Priority};
 
 #[derive(Args)]
 pub struct EditArgs {
@@ -18,6 +18,10 @@ pub struct EditArgs {
     /// New title
     #[arg(short, long)]
     title: Option<String>,
+
+    /// Change item type: epic|story|task|bug|rework|decision|idea
+    #[arg(short = 'T', long = "type")]
+    item_type: Option<String>,
 
     /// Priority: low|medium|high|critical|extreme
     #[arg(short, long)]
@@ -68,6 +72,13 @@ pub fn run(args: EditArgs) -> Result<()> {
 
     if let Some(title) = args.title {
         item.title = title;
+        changed = true;
+    }
+
+    if let Some(ref t) = args.item_type {
+        item.item_type = t
+            .parse::<ItemType>()
+            .map_err(|e: String| anyhow::anyhow!("{}", e))?;
         changed = true;
     }
 

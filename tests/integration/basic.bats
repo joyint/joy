@@ -44,3 +44,17 @@ load setup
     [ "$status" -eq 0 ]
     [[ "$output" == *"Added comment"* ]]
 }
+
+@test "joy edit --type changes the item type" {
+    joy init --name "Test"
+    joy add task "swap me"
+    ID=$(joy ls 2>/dev/null | grep "swap me" | awk '{print $1}')
+    run joy edit "$ID" --type bug
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Updated"* ]]
+    run joy show "$ID"
+    [[ "$output" == *"Type:"* ]]
+    [[ "$output" == *"bug"* ]]
+    run joy edit "$ID" --type nonsense
+    [ "$status" -ne 0 ]
+}
