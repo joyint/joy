@@ -1,0 +1,11 @@
+version: v0.15.4
+date: 2026-05-11
+previous: v0.15.3
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 4
+  items: 1
+items:
+  bugs:
+  - id: JOY-017F-FD
+    title: 'joy-cli package verify fails: Tutorial.md outside crate'
