@@ -1,21 +1,24 @@
 # Joy Tutorial
 
-A field guide to terminal-native product management.
+A reference walk-through for terminal-native product management with Joy.
 
-This tutorial walks you through a complete project setup, told through the lens of everyone's favorite improviser. Because product management, like defusing a bomb with a paperclip, is all about using the right tool at the right moment.
+This tutorial covers a complete project setup, from `joy init` through encryption, AI delegation, and updates. Each chapter focuses on one verb (or small group of verbs) and shows the commands, expected output, and the decisions you typically make at that stage.
 
 ## Contents
 
 - [TL;DR](#tldr)
-- [Mission 1: Setting Up Base Camp](#mission-1-setting-up-base-camp-init) - `init`
-- [Mission 2: Building Your Arsenal](#mission-2-building-your-arsenal-add) - `add`
-- [Mission 3: Surveying the Terrain](#mission-3-surveying-the-terrain-ls-show-find) - `ls`, `show`, `find`
-- [Mission 4: Wiring the Circuit](#mission-4-wiring-the-circuit-deps) - `deps`
-- [Mission 5: Into the Field](#mission-5-into-the-field-status-start-submit-close) - `status`, `start`, `submit`, `close`
-- [Mission 6: Setting the Deadline](#mission-6-setting-the-deadline-milestone) - `milestone`
-- [Mission 7: Reading the Black Box](#mission-7-reading-the-black-box-log-release) - `log`, `release`
-- [Mission 8: Calling in Air Support](#mission-8-calling-in-air-support-ai) - `ai`
-- [Mission 9: Adjusting the Rules](#mission-9-adjusting-the-rules-project-config) - `project`, `config`
+- [1. Initializing a Project](#1-initializing-a-project) - `init`
+- [2. Creating Items](#2-creating-items) - `add`
+- [3. Listing, Searching, and Showing Items](#3-listing-searching-and-showing-items) - `ls`, `show`, `find`
+- [4. Dependencies](#4-dependencies) - `deps`
+- [5. Status Transitions](#5-status-transitions) - `status`, `start`, `submit`, `close`
+- [6. Milestones](#6-milestones) - `milestone`
+- [7. Audit Log and Releases](#7-audit-log-and-releases) - `log`, `release`
+- [8. AI Tool Integration](#8-ai-tool-integration) - `ai`
+- [9. Project Configuration](#9-project-configuration) - `project`, `config`
+- [10. Updating joy](#10-updating-joy) - `update`
+- [11. Encryption with Crypt](#11-encryption-with-crypt) - `crypt`
+- [Bonus: Cross-Directory Queries](#bonus-cross-directory-queries-w)
 - [Bonus: Shell Completions](#bonus-shell-completions)
 - [Bonus: Machine-Readable Output](#bonus-machine-readable-output)
 - [Command Reference](#command-reference)
@@ -41,9 +44,9 @@ That's the whole loop. Read on for the details.
 
 ---
 
-## Mission 1: Setting Up Base Camp (`init`)
+## 1. Initializing a Project
 
-Every mission starts with preparation. MacGyver never walks into a building without checking the exits first. You never start coding without setting up your project.
+`joy init` creates the `.joy/` directory that holds every Joy artefact for the project: items, milestones, configuration, and the event log.
 
 Create a fresh project:
 
@@ -65,7 +68,7 @@ Joy creates a `.joy/` directory inside your repo:
 └── logs/                  Event log (audit trail)
 ```
 
-Everything is plain text, versioned with git. No database, no cloud dependency. If your hard drive survives, your project plan survives. MacGyver would approve.
+Everything is plain text, versioned with git. No database, no cloud dependency: if the working tree survives, the project plan survives.
 
 You can also name your project explicitly:
 
@@ -73,7 +76,7 @@ You can also name your project explicitly:
 joy init --name "Cookbox" --acronym CB
 ```
 
-Joy also installs a commit-msg hook that enforces item references in every commit message. This is part of the audit trail - every code change must link to a Joy item. More on this in Mission 7.
+Joy also installs a commit-msg hook that enforces item references in every commit message. This is part of the audit trail - every code change must link to a Joy item. More on this in chapter 7.
 
 ### Joining an Existing Project
 
@@ -95,9 +98,9 @@ joy ai init
 
 ---
 
-## Mission 2: Building Your Arsenal (`add`)
+## 2. Creating Items
 
-A Swiss Army knife is only useful if you actually open it. Time to create some work items.
+`joy add` creates items. The first positional argument is the type, the second is the title.
 
 Start with an epic - the big picture:
 
@@ -107,7 +110,7 @@ joy add epic "Recipe Management"
 
 Joy assigns ID `CB-0001` and creates `.joy/items/CB-0001-recipe-management.yaml`.
 
-Now break it down. MacGyver doesn't try to defuse the whole bomb at once - he works one wire at a time:
+Now break it down into smaller items:
 
 ```sh
 joy add story "Add a recipe" --parent CB-0001 --priority high
@@ -136,9 +139,9 @@ All items start with status `new`. Priorities: `extreme`, `critical`, `high`, `m
 
 ---
 
-## Mission 3: Surveying the Terrain (`ls`, `show`, `find`)
+## 3. Listing, Searching, and Showing Items
 
-Before MacGyver acts, he observes. Get the lay of the land:
+Three commands cover most read paths: list, show one item, search by text.
 
 ```sh
 joy ls
@@ -187,9 +190,9 @@ joy show CB-0002                 # Full detail view with comments
 
 ---
 
-## Mission 4: Wiring the Circuit (`deps`)
+## 4. Dependencies
 
-MacGyver knows: if you cut the wrong wire, everything blows up. In a project, dependencies are those wires. You need the database before you can add recipes.
+`joy deps` declares ordering between items. Recording "X depends on Y" is the project-management equivalent of "Y must finish before X can".
 
 ```sh
 joy deps CB-0002 --add CB-0005
@@ -203,13 +206,13 @@ joy deps CB-0002 --tree          # Show full dependency tree
 joy deps CB-0002 --rm CB-0005   # Remove a dependency
 ```
 
-Joy detects circular dependencies and refuses to create them. No infinite loops on MacGyver's watch.
+Joy detects circular dependencies and refuses to create them.
 
 ---
 
-## Mission 5: Into the Field (`status`, `start`, `submit`, `close`)
+## 5. Status Transitions
 
-Time to get your hands dirty. The status workflow:
+Items move through a fixed state machine:
 
 ```
 new --> open --> in-progress --> review --> closed
@@ -233,7 +236,7 @@ If an item depends on something unfinished, Joy warns you but does not block. Wh
 
 ```sh
 joy assign CB-0005               # Assign to yourself (git email)
-joy assign CB-0005 pete@phoenix.org  # Assign to someone else
+joy assign CB-0005 pete@example.com  # Assign to someone else
 joy comment CB-0005 "Schema looks good, all migrations pass."
 joy comment CB-0005              # Opens $EDITOR for a longer note
 joy comment edit CB-0005 1 "Schema looks good (verified all migrations)."
@@ -246,9 +249,9 @@ When starting an item (`joy start`), Joy auto-assigns it to you if no one is ass
 
 ---
 
-## Mission 6: Setting the Deadline (`milestone`)
+## 6. Milestones
 
-Every mission has a countdown. Milestones are yours.
+`joy milestone` groups items under a date target.
 
 ```sh
 joy milestone add "MVP" --date 2026-04-01
@@ -274,9 +277,9 @@ Children inherit their parent's milestone automatically. If `CB-0001` is linked 
 
 ---
 
-## Mission 7: Reading the Black Box (`log`, `release`)
+## 7. Audit Log and Releases
 
-MacGyver always reviews the flight recorder after a mission. Joy has one too - a structured event log that records every action automatically.
+Joy maintains a structured event log that records every state-changing action automatically.
 
 ```sh
 joy log                          # Last 20 events
@@ -288,10 +291,10 @@ joy log --limit 50               # Show more entries
 Every joy command leaves a trace in `.joy/logs/` - one file per day, append-only, timestamped to the millisecond:
 
 ```
-2026-03-11T16:14:32.320Z CB-0005 item.created [mac@phoenix.org]
-2026-03-11T16:15:01.440Z CB-0005 item.status_changed "new -> in-progress" [mac@phoenix.org]
-2026-03-11T16:42:18.100Z CB-0005 comment.added [pete@phoenix.org]
-2026-03-11T17:00:00.000Z CB-0005 comment.added [ai:claude@joy delegated-by:mac@phoenix.org]
+2026-03-11T16:14:32.320Z CB-0005 item.created [mac@example.com]
+2026-03-11T16:15:01.440Z CB-0005 item.status_changed "new -> in-progress" [mac@example.com]
+2026-03-11T16:42:18.100Z CB-0005 comment.added [pete@example.com]
+2026-03-11T17:00:00.000Z CB-0005 comment.added [ai:claude@joy delegated-by:mac@example.com]
 ```
 
 The log records only structural facts: who did what, when, on which item. Titles, descriptions, and comment text are not written to the log - they live in the item file itself, behind whatever Crypt zone protects it. The log stays as a faithful audit trail even when item content is later encrypted. State transitions (`new -> in-progress`), member IDs, and item / milestone IDs do appear, because they are needed to interpret the event.
@@ -363,9 +366,9 @@ joy rm CB-0001 -rf                   # Delete epic and all children
 
 ---
 
-## Mission 8: Calling in Air Support (`ai`)
+## 8. AI Tool Integration
 
-Even MacGyver accepts help sometimes. Joy integrates with AI coding tools so they can manage your backlog alongside you.
+Joy integrates with AI coding tools so they can manage the backlog alongside you, under explicit delegation tokens and capability gates.
 
 ```sh
 joy ai init
@@ -405,7 +408,7 @@ joy add bug "Crash on empty input" --author ai:claude@joy
 The event log traces accountability back to the human who started the session:
 
 ```
-[ai:claude@joy delegated-by:mac@phoenix.org]
+[ai:claude@joy delegated-by:mac@example.com]
 ```
 
 AI members have the same capabilities as human members, with one exception: **AI members cannot perform manage actions** (adding members, changing capabilities, modifying project settings). Management stays with humans.
@@ -434,9 +437,9 @@ installed via the cargo-dist installer. See "Updating joy" below.
 
 ---
 
-## Mission 9: Adjusting the Rules (`project`, `config`)
+## 9. Project Configuration
 
-Joy starts with zero ceremony. No gates, no approvals, no bureaucracy. Add rules only when you need them.
+Joy starts with zero ceremony: no gates, no approvals. Add rules only when the project actually needs them.
 
 ### Project Metadata
 
@@ -454,10 +457,10 @@ Settable keys: `name`, `description`, `language`. Read-only: `acronym`, `created
 Joy tracks project members and their capabilities. Members are added automatically during `joy init` (from `git config user.email`) or manually:
 
 ```sh
-joy project member add pete@phoenix.org
+joy project member add pete@example.com
 joy project member add ai:claude@joy --capabilities "implement,review"
-joy project member show pete@phoenix.org
-joy project member rm pete@phoenix.org
+joy project member show pete@example.com
+joy project member rm pete@example.com
 ```
 
 Joy defines eleven capabilities across two groups.
@@ -506,7 +509,7 @@ Inspect what is in force with:
 
 ```sh
 joy project member show ai:claude@joy   # All capabilities, current level + source
-joy project member show pete@phoenix.org
+joy project member show pete@example.com
 ```
 
 The output's third column shows the level and (in brackets) where it was set. Tools and AI agents read this command and follow the level shown - they do not re-derive it.
@@ -564,12 +567,12 @@ have signed or encrypted under that identity.
 The admin adds the member and gets a one-time password back. The OTP is shared out-of-band (encrypted chat, in person, etc.).
 
 ```sh
-joy project member add pete@phoenix.org
-# > Added member pete@phoenix.org
+joy project member add pete@example.com
+# > Added member pete@example.com
 # >
 # >   One-time password: AB7X-K3M2-PQ9Z
 # >
-# > Share the OTP with pete@phoenix.org via a trusted channel.
+# > Share the OTP with pete@example.com via a trusted channel.
 ```
 
 Pete redeems the OTP on his own machine, picks his own passphrase, and is ready to go:
@@ -614,7 +617,7 @@ joy auth recover --regenerate-key  # New recovery key; old one becomes useless
 If the removed member attested others, those attestations transfer automatically to you as the removing admin. No extra step, no ceremony.
 
 ```sh
-joy project member rm pete@phoenix.org    # Requires your passphrase if there are orphans to re-attest
+joy project member rm pete@example.com    # Requires your passphrase if there are orphans to re-attest
 ```
 
 You cannot remove yourself; Joy prints the project's other manage members so you know who to ask.
@@ -668,7 +671,7 @@ Key settings:
 
 ---
 
-## Mission 10: Updating joy (`update`)
+## 10. Updating joy
 
 Joy keeps two things current side by side: the `joy` binary on your
 machine, and the joy-managed artefacts in each clone (`.gitattributes`,
@@ -729,7 +732,7 @@ auto-sync (or another `joy update`) does the rest.
 
 ---
 
-## Mission 11: Sealing the Vault (`crypt`)
+## 11. Encryption with Crypt
 
 Some Joy items are sensitive: NDA-bound customer information, embargoed
 security incidents, multi-tenant work where one client's content must
@@ -940,7 +943,7 @@ joy sta<TAB>                     # Completes subcommands
 joy ls --ty<TAB>                 # Completes flags
 ```
 
-MacGyver would say: why type when the machine can do it for you?
+Tab completion replaces manual ID lookup; pair it with `joy ls` filters for fast navigation.
 
 ---
 
@@ -994,7 +997,5 @@ The shape is `{"version": 1, "data": ...}`. Within a major Joy release, fields a
 | `joy tutorial` | You are here |
 
 Most write commands accept `--author <MEMBER>` to attribute the action to a specific identity. Every command accepts the global `-w / --working-dir <PATH>` flag to run as if started from PATH.
-
-> "Any problem can be solved with a little ingenuity." - MacGyver
 
 See also: `joy --help`, `joy <command> --help`, `docs/dev/vision/`

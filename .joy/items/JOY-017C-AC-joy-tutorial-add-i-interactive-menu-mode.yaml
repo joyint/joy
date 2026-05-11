@@ -1,0 +1,23 @@
+id: JOY-017C-AC
+title: 'joy tutorial: add -i/--interactive menu mode'
+type: task
+status: new
+priority: medium
+deps:
+- JOY-017B-EE
+capabilities:
+- implement
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-11T05:46:04.529605Z
+updated: 2026-05-11T05:46:10.937739Z
+description: |-
+  joy tutorial keeps its current behaviour by default (full markdown via pager). A new -i / --interactive flag launches a menu (inquire crate Select) that lets the user pick a chapter / subchapter and render that section, then returns to the menu. ESC goes back one level, ESC at top exits.
+
+  Approach:
+  - Parse the embedded Tutorial.md at runtime: ## headings are chapters, ### are subchapters.
+  - Section body is everything until the next same-or-higher heading; render via termimad like today.
+  - Non-TTY guard: if stdout is not a terminal, -i degrades to the same non-interactive output as the default mode, so 'joy tutorial -i > out.txt' still produces useful output.
+  - Add inquire to joy-cli Cargo.toml.
+
+  Depends on the new Tutorial.md from the rewrite item so the parser sees the neutral headings.

@@ -1,0 +1,21 @@
+id: JOY-017B-EE
+title: 'Tutorial: neutral tone, drop MacGyver framing'
+type: task
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-11T05:46:04.433004Z
+updated: 2026-05-11T05:50:53.923020Z
+description: |-
+  Rewrite Tutorial.md so the technical content stays the same but the MacGyver / Mission framing is dropped. Section headings become neutral (e.g. 'Mission 1: Setting Up Base Camp (init)' -> '1. Initializing a Project'), pull-quotes and MacGyver one-liners are removed, the field-guide voice becomes a flat reference style.
+
+  Scope: docs/user/Tutorial.md only. The website mirror (tutorial.mdx) belongs to JISITE and is tracked separately.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-11T05:50:53.822355Z
+  text: '[x] Tutorial.md rewrite: dropped MacGyver framing throughout (Mission N: ... -> N. <topic>), removed pull quotes and one-liners, normalised email domains in examples to @example.com, kept all technical content intact, TOC anchors regenerated for new headings'
