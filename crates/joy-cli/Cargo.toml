@@ -37,6 +37,7 @@ unicode-width = "0.2.0"
 toml_edit = "0.25.5"
 glob = "0.3.3"
 termimad = "0.31"
+inquire = { version = "0.7", default-features = false, features = ["crossterm"] }
 hex = "0.4"
 # Self-update for cargo-dist-distributed binaries. Receipt-gated, so
 # brew / cargo-install / distro-package builds opt out gracefully.

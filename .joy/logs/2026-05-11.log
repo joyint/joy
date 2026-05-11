@@ -47,3 +47,8 @@
 2026-05-11T05:50:53.697Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-05-11T05:50:53.829Z JOY-017B-EE comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-05-11T05:50:53.930Z JOY-017B-EE item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-11T05:51:07.750Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-11T05:51:07.855Z JOY-017C-AC item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-11T05:55:36.655Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-11T05:55:36.790Z JOY-017C-AC comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-11T05:55:36.905Z JOY-017C-AC item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

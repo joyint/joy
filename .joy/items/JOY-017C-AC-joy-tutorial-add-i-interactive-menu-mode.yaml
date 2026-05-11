@@ -1,8 +1,10 @@
 id: JOY-017C-AC
 title: 'joy tutorial: add -i/--interactive menu mode'
 type: task
-status: new
+status: closed
 priority: medium
+assignees:
+- member: ai:claude@joy
 deps:
 - JOY-017B-EE
 capabilities:
@@ -10,7 +12,7 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-11T05:46:04.529605Z
-updated: 2026-05-11T05:46:10.937739Z
+updated: 2026-05-11T05:55:36.897276Z
 description: |-
   joy tutorial keeps its current behaviour by default (full markdown via pager). A new -i / --interactive flag launches a menu (inquire crate Select) that lets the user pick a chapter / subchapter and render that section, then returns to the menu. ESC goes back one level, ESC at top exits.
 
@@ -21,3 +23,12 @@ description: |-
   - Add inquire to joy-cli Cargo.toml.
 
   Depends on the new Tutorial.md from the rewrite item so the parser sees the neutral headings.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-11T05:55:36.782944Z
+  text: |-
+    [x] joy tutorial gains -i / --interactive flag (inquire crate, crossterm backend)
+    [x] Parser reads embedded Tutorial.md at runtime: ## -> chapter, ### -> subsection; bodies span to next same/higher heading
+    [x] Non-TTY fallback: -i without a stdout TTY degrades to the same dump-via-pager output as the default mode, so piping still works
+    [x] include_str! now points at the canonical docs/user/Tutorial.md (stale copy crates/joy-cli/docs/Tutorial.md removed)
+    [x] joy --help footer mentions both 'joy tutorial' and 'joy tutorial --interactive' on separate lines (under 80 cols)

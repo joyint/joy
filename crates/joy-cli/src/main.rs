@@ -82,7 +82,8 @@ Quick start:
   joy start IT-0001                     Start working on it
   joy                                   Show the board
 
-Run 'joy tutorial' for the full guide.\n"
+Run 'joy tutorial' for the full guide.
+Run 'joy tutorial --interactive' for a chapter menu.\n"
 )]
 pub(crate) struct Cli {
     /// Run as if joy was started in <PATH>
@@ -142,7 +143,7 @@ enum Commands {
     /// Generate shell completions
     Completions(commands::completions::CompletionsArgs),
     /// Read the Joy tutorial
-    Tutorial,
+    Tutorial(commands::tutorial::TutorialArgs),
     /// Show milestone roadmap (alias for ls --tree --group milestone)
     Roadmap(RoadmapArgs),
     /// Shortcut: set item status to in-progress
@@ -375,7 +376,7 @@ fn main() -> anyhow::Result<()> {
         Some(Commands::Assign(args)) => commands::assign::run(args),
         Some(Commands::Log(args)) => commands::log::run(args),
         Some(Commands::Completions(args)) => commands::completions::run(args, &mut Cli::command()),
-        Some(Commands::Tutorial) => commands::tutorial::run(),
+        Some(Commands::Tutorial(args)) => commands::tutorial::run(args),
         Some(Commands::Roadmap(args)) => commands::ls::run(commands::ls::LsArgs::roadmap(args.all)),
         Some(Commands::Start(args)) => commands::status::run(commands::status::StatusArgs::new(
             args.id,
