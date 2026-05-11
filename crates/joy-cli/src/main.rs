@@ -35,7 +35,13 @@ Run 'joy tutorial' for the full guide."
 )]
 pub(crate) struct Cli {
     /// Run as if joy was started in <PATH> (must be a Joy project)
-    #[arg(short = 'w', long = "working-dir", global = true, value_name = "PATH")]
+    #[arg(
+        short = 'w',
+        long = "working-dir",
+        global = true,
+        value_name = "PATH",
+        value_hint = clap::ValueHint::DirPath
+    )]
     working_dir: Option<std::path::PathBuf>,
 
     /// Show all items on the board (no limit per column)

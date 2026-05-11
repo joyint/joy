@@ -1,0 +1,32 @@
+id: JOY-0179-8F
+title: 'Tutorial + features.mdx: catch up with recent feature work'
+type: task
+status: new
+priority: high
+capabilities:
+- implement
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-11T05:04:56.265838Z
+updated: 2026-05-11T05:04:56.265838Z
+description: |-
+  Documentation is behind on recent changes. One bundled pass covers:
+
+  Tutorial.md + tutorial.mdx:
+  - update example log lines: comment.added / item.created no longer carry payload (JOY-0175-9B)
+  - joy comment without TEXT opens $EDITOR; --editor flag; config.editor (JOY-00A5)
+  - joy comment edit <ID> <INDEX> [TEXT] / joy comment rm <ID> <INDEX> [--force] (JOY-00A7)
+  - joy edit --type / -T flag (JOY-00AC)
+  - joy -w / --working-dir <PATH> (JOY-00A4)
+  - joy ls now renders locked rows + ENC column for encrypted items (JOY-0174-D3)
+  - joy crypt status / zone ls / ls now use the styled header/section/footer (JOY-0172-91)
+  - JOY_PASSPHRASE env for non-interactive crypt unlock (JOY-0176-DA)
+  - short note that joy logs no longer carry titles/descriptions/comment text (JOY-0175-9B)
+  - update Command reference table (the bottom of Tutorial)
+
+  features.mdx:
+  - ensure encryption section mentions the per-zone access model and locked-row rendering
+  - mention -w as the cross-project entrypoint that replaces umbrella shortcuts
+  - if a 'comments' section exists, document edit/rm + editor flow
+
+  Verify: every claim above maps to a real CLI behaviour today; do not write speculative text.

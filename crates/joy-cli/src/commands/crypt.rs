@@ -70,6 +70,7 @@ enum CryptCommand {
 struct AddArgs {
     /// Item ID (e.g. JOY-0123) or path glob (e.g. data/customer-x/).
     /// Required unless `--all` is given.
+    #[arg(value_hint = clap::ValueHint::AnyPath)]
     target: Option<String>,
     /// Encrypt every item in the project under the addressed zone and
     /// flip the project default so newly created items inherit the
@@ -83,6 +84,7 @@ struct AddArgs {
 struct RmArgs {
     /// Item ID (e.g. JOY-0123) or path glob (e.g. data/customer-x/).
     /// Required unless `--all` is given.
+    #[arg(value_hint = clap::ValueHint::AnyPath)]
     target: Option<String>,
     /// Remove every item from the addressed zone (and clear the
     /// project default). Inverse of `add --all`.
@@ -99,6 +101,7 @@ struct MemberRefArgs {
 #[derive(Args)]
 struct FileArgs {
     /// Path to the file (relative to project root or absolute).
+    #[arg(value_hint = clap::ValueHint::FilePath)]
     file: String,
 }
 

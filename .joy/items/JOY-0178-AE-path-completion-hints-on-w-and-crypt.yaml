@@ -1,0 +1,25 @@
+id: JOY-0178-AE
+title: Path completion hints on -w and crypt path args
+type: rework
+status: closed
+priority: low
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-11T05:04:56.181230Z
+updated: 2026-05-11T05:05:35.779814Z
+description: |-
+  Add clap ValueHint annotations so shells can offer tab completion for path arguments:
+  - -w / --working-dir: DirPath
+  - joy crypt add/rm <target>: AnyPath (item ID OR file glob)
+  - joy crypt read/write/edit/unlock/lock <file>: FilePath
+
+  Without the hint, shells fall back to default arg completion and offer nothing useful for paths.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-11T05:05:35.677181Z
+  text: '[x] -w gets ValueHint::DirPath; crypt add/rm target gets AnyPath; crypt file args (read/write/edit/unlock/lock) get FilePath'
