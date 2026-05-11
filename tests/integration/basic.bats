@@ -132,3 +132,34 @@ load setup
     run joy comment rm "$ID" 0 --force
     [ "$status" -ne 0 ]
 }
+
+@test "joy -w runs commands in another project directory" {
+    joy init --name "Outer"
+    joy add task "outer item"
+    INNER="$TEST_DIR/inner"
+    mkdir -p "$INNER"
+    (
+        cd "$INNER"
+        git init --quiet
+        git config user.email "test@example.com"
+        git config user.name "Test User"
+        joy init --name "Inner"
+        joy add task "inner item"
+    )
+    # From outer, list inner via -w; only the inner item should show.
+    run joy ls -w "$INNER"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"inner item"* ]]
+    [[ "$output" != *"outer item"* ]]
+}
+
+@test "joy -w rejects non-joy directories" {
+    joy init --name "Outer"
+    # mktemp -d returns a path outside TEST_DIR, so find_project_root
+    # cannot walk up and accidentally hit the outer project.
+    NONJOY=$(mktemp -d)
+    run joy ls -w "$NONJOY"
+    rm -rf "$NONJOY"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"not a Joy project"* ]]
+}

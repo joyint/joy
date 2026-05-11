@@ -34,6 +34,10 @@ Quick start:
 Run 'joy tutorial' for the full guide."
 )]
 pub(crate) struct Cli {
+    /// Run as if joy was started in <PATH> (must be a Joy project)
+    #[arg(short = 'w', long = "working-dir", global = true, value_name = "PATH")]
+    working_dir: Option<std::path::PathBuf>,
+
     /// Show all items on the board (no limit per column)
     #[arg(short, long)]
     all: bool,
@@ -237,6 +241,20 @@ fn main() -> anyhow::Result<()> {
 
     let raw: Vec<String> = std::env::args().collect();
     let cli = Cli::parse_from(rewrite_trailing_help(raw, &Cli::command()));
+
+    // Honour -w / --working-dir BEFORE anything that depends on cwd
+    // (auto-sync, load_config, find_project_root). The target must be
+    // an existing Joy project; otherwise we bail loudly so the user
+    // does not run a subcommand against the wrong tree.
+    if let Some(ref path) = cli.working_dir {
+        let canon = std::fs::canonicalize(path)
+            .map_err(|e| anyhow::anyhow!("--working-dir {}: {e}", path.display()))?;
+        if joy_core::store::find_project_root(&canon).is_none() {
+            anyhow::bail!("--working-dir {}: not a Joy project", canon.display());
+        }
+        std::env::set_current_dir(&canon)
+            .map_err(|e| anyhow::anyhow!("--working-dir {}: {e}", canon.display()))?;
+    }
 
     // Install --json mode before any subcommand runs, so config (which
     // returns early below) and others all see the same flag.
