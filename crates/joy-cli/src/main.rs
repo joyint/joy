@@ -33,9 +33,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 Usage: {usage}
 
 Options:
-{options}
-
-{after-help}",
+{options}{after-help}",
     after_help = "\
 Core Commands:
   init       Initialize a new Joy project
