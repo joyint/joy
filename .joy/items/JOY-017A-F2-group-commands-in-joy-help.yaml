@@ -1,0 +1,21 @@
+id: JOY-017A-F2
+title: Group commands in joy --help
+type: task
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-11T05:27:19.214592Z
+updated: 2026-05-11T05:36:15.523721Z
+description: 'joy --help has grown to ~30 entries in a single flat Commands: list. Group them via clap help_heading so the output reads as: Core Commands (10), Shortcuts (4), Discovery & Reporting (5), Confidentiality (3), Project & Members (3), Maintenance (3). Hide board (default no-arg behaviour) and help (clap-internal) from the list.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-11T05:36:15.396036Z
+  text: |-
+    [x] Custom help_template drops clap's native subcommand block; grouped command list moved to after_help (Core / Shortcuts / Discovery & Reporting / Confidentiality / Project & Members / Maintenance)
+    [x] Board marked hide=true (was the only user-facing variant that should not be in the grouped list)
+    [x] Self-maintaining test: iterates Cli::command().get_subcommands(), asserts every non-hidden subcommand appears in after_help; assertion message points at the exact fix

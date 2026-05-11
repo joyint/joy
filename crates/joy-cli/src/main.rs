@@ -23,7 +23,60 @@ use clap::{CommandFactory, Parser, Subcommand};
     version,
     infer_subcommands = true,
     about = "Terminal-native product management",
+    // clap 4.5 has no native subcommand grouping. The custom template
+    // below omits {subcommands} so we can render a grouped list by
+    // hand in `after_help`. Discoverability is preserved: every
+    // subcommand still parses, completes, and replies to
+    // `joy <cmd> --help`.
+    help_template = "\
+{about-with-newline}
+Usage: {usage}
+
+Options:
+{options}
+
+{after-help}",
     after_help = "\
+Core Commands:
+  init       Initialize a new Joy project
+  add        Create a new item
+  ls         List items
+  show       Show item details
+  edit       Modify an existing item
+  status     Change item status
+  comment    Add a comment to an item
+  deps       Manage dependencies
+  milestone  Manage milestones
+  log        Show change history for items
+
+Shortcuts:
+  start   Set item status to in-progress
+  submit  Set item status to review
+  close   Set item status to closed
+  reopen  Reopen a closed or deferred item
+
+Discovery & Reporting:
+  find     Search items by text
+  roadmap  Show milestone roadmap (alias for ls --tree --group milestone)
+  assign   Assign or unassign items
+  rm       Delete an item
+  release  Show release notes for a version
+
+Confidentiality:
+  auth    Authenticate (enter passphrase to start a session)
+  deauth  End the current session
+  crypt   Manage Crypt zones, items, paths, and grants
+
+Project & Members:
+  project  View or edit project metadata
+  config   Show or modify configuration
+  ai       AI tool integration
+
+Maintenance:
+  update       Update the joy binary and sync this repo's joy-managed state
+  completions  Generate shell completions
+  tutorial     Read the Joy tutorial
+
 Quick start:
   joy init                              Set up a new project
   joy add task \"Fix login bug\"          Create an item
@@ -31,7 +84,7 @@ Quick start:
   joy start IT-0001                     Start working on it
   joy                                   Show the board
 
-Run 'joy tutorial' for the full guide."
+Run 'joy tutorial' for the full guide.\n"
 )]
 pub(crate) struct Cli {
     /// Run as if joy was started in <PATH>
@@ -107,6 +160,7 @@ enum Commands {
     /// Show release notes for a version
     Release(commands::release::ReleaseArgs),
     /// Show the board (default when no command given)
+    #[command(hide = true)]
     Board(BoardArgs),
     /// Show or modify configuration
     Config(commands::config::ConfigArgs),
@@ -430,6 +484,52 @@ mod tests {
         assert_eq!(
             rewrite(&["joy", "ls", "-T", "bug"]),
             &["joy", "ls", "-T", "bug"]
+        );
+    }
+
+    /// Every non-hidden subcommand from the Commands enum must appear
+    /// in the grouped command list rendered by `joy --help`. The
+    /// help_template drops clap's native subcommand block in favour
+    /// of a hand-grouped `after_help` string, so a new subcommand
+    /// added to the enum is invisible to users until it is also
+    /// listed in `after_help`. This test catches that omission.
+    ///
+    /// If this test fails:
+    ///   1. Open crates/joy-cli/src/main.rs.
+    ///   2. Find the `after_help = "\` block on the top-level `Cli`
+    ///      `#[command(...)]` attribute.
+    ///   3. Add a line for the missing subcommand to the group it
+    ///      belongs to (Core Commands / Shortcuts / Discovery &
+    ///      Reporting / Confidentiality / Project & Members /
+    ///      Maintenance), using the same `<name>  <about>` layout as
+    ///      its neighbours. Align the description column with two
+    ///      spaces past the longest name in that group.
+    ///   4. If the new subcommand is genuinely internal (Git driver,
+    ///      default no-arg behaviour, etc.) mark it with
+    ///      `#[command(hide = true)]` instead, and this test will
+    ///      skip it.
+    #[test]
+    fn after_help_lists_every_visible_subcommand() {
+        let cmd = <Cli as clap::CommandFactory>::command();
+        let after_help = cmd
+            .get_after_help()
+            .map(|s| s.to_string())
+            .unwrap_or_default();
+        let mut missing: Vec<String> = Vec::new();
+        for sub in cmd.get_subcommands() {
+            if sub.is_hide_set() {
+                continue;
+            }
+            let name = sub.get_name();
+            if !after_help.contains(name) {
+                missing.push(name.to_string());
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "joy --help is missing these subcommands in its grouped \
+             after_help block: {missing:?}. See the comment on this \
+             test for the exact fix."
         );
     }
 }
