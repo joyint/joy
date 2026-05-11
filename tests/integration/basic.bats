@@ -58,3 +58,37 @@ load setup
     run joy edit "$ID" --type nonsense
     [ "$status" -ne 0 ]
 }
+
+@test "joy comment without text opens the editor" {
+    joy init --name "Test"
+    joy add task "needs comment"
+    ID=$(joy ls 2>/dev/null | grep "needs comment" | awk '{print $1}')
+    # Editor that writes a fixed string into the tempfile passed as $1.
+    EDITOR="sh -c 'echo from-editor > \$1' --" run joy comment "$ID"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Added comment"* ]]
+    run joy show "$ID"
+    [[ "$output" == *"from-editor"* ]]
+}
+
+@test "joy comment with empty editor result aborts cleanly" {
+    joy init --name "Test"
+    joy add task "no comment"
+    ID=$(joy ls 2>/dev/null | grep "no comment" | awk '{print $1}')
+    EDITOR="sh -c 'true' --" run joy comment "$ID"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Empty comment"* ]]
+    run joy show "$ID"
+    # No "Comments:" section because nothing was added.
+    [[ "$output" != *"Comments:"* ]]
+}
+
+@test "joy comment --editor overrides EDITOR" {
+    joy init --name "Test"
+    joy add task "override"
+    ID=$(joy ls 2>/dev/null | grep "override" | awk '{print $1}')
+    EDITOR="false" run joy comment "$ID" --editor "sh -c 'echo via-flag > \$1' --"
+    [ "$status" -eq 0 ]
+    run joy show "$ID"
+    [[ "$output" == *"via-flag"* ]]
+}

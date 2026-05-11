@@ -15,20 +15,31 @@ use crate::color;
 #[command(after_help = "\
 Examples:
   joy comment IT-0001 \"Looks good, merging now\"
+  joy comment IT-0001                    # opens $EDITOR
   joy comment EP-0002 \"Blocked by external API changes\"")]
 pub struct CommentArgs {
     /// Item ID (e.g. IT-0001)
     #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_item_id))]
     id: String,
 
-    /// Comment text (required)
+    /// Comment text. If omitted, an editor is opened.
     text: Option<String>,
+
+    /// Editor command to use when TEXT is omitted (overrides config / $VISUAL / $EDITOR).
+    #[arg(long)]
+    editor: Option<String>,
 }
 
 pub fn run(args: CommentArgs) -> Result<()> {
     let text = match args.text {
         Some(t) => t,
-        None => anyhow::bail!("text is required: joy comment <ID> \"your comment\""),
+        None => match crate::editor::edit_text(args.editor.as_deref(), "", "comment.md")? {
+            Some(t) => t,
+            None => {
+                println!("Empty comment, nothing added.");
+                return Ok(());
+            }
+        },
     };
 
     let ctx = crate::crypt_session::load_context(None)?;

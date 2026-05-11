@@ -1,13 +1,23 @@
 id: JOY-00A5
 title: Open editor when comment text is omitted
 type: task
-status: new
+status: closed
 priority: medium
+assignees:
+- member: ai:claude@joy
 milestone: JOY-MS-02
 capabilities:
 - implement
 effort: 2
 created_by: horst.schwarz@joydev.com
 created: 2026-03-31T17:54:10.279449909Z
-updated: 2026-05-09T22:44:16.157044Z
+updated: 2026-05-11T04:48:00.247718Z
 description: 'When joy comment <ID> is called without TEXT, open the configured editor. Editor resolution: (1) --editor flag, (2) editor in config, (3) $VISUAL, (4) $EDITOR, (5) error with hint. Empty file = abort. Migrated from JI-0045.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-11T04:48:00.147625Z
+  text: |-
+    [x] new editor module with edit_text helper; resolution order --editor -> config.editor -> $VISUAL -> $EDITOR -> error
+    [x] config gains an optional editor field (skip_serializing_if so default-config snapshot stays unchanged)
+    [x] joy comment <ID> without TEXT calls the editor; empty result aborts cleanly without writing
+    [x] --editor flag added to joy comment; bats covers happy / empty / flag-override paths

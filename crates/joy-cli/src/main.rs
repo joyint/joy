@@ -5,6 +5,7 @@ mod color;
 mod commands;
 mod complete;
 mod crypt_session;
+mod editor;
 mod effort;
 mod forge;
 mod output;

@@ -19,6 +19,11 @@ pub struct Config {
     pub modes: ModesConfig,
     #[serde(default = "default_auto_sync", rename = "auto-sync")]
     pub auto_sync: bool,
+    /// Editor invoked when a Joy command needs free-form input (e.g.
+    /// joy comment without TEXT). Takes precedence over $VISUAL /
+    /// $EDITOR; the value is run via `sh -c`, so it can carry flags.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editor: Option<String>,
 }
 
 fn default_auto_sync() -> bool {
@@ -154,6 +159,7 @@ impl Default for Config {
             workflow: WorkflowConfig::default(),
             modes: ModesConfig::default(),
             auto_sync: default_auto_sync(),
+            editor: None,
         }
     }
 }
