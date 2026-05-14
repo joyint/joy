@@ -1,7 +1,7 @@
 id: JOY-0182-17
 title: Add global `--session` flag as alternative to JOY_SESSION env var
 type: story
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -12,7 +12,7 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-14T18:14:50.280954741Z
-updated: 2026-05-14T18:38:53.766264865Z
+updated: 2026-05-14T18:47:22.257710168Z
 description: |-
   Currently the session credential must be passed via the `JOY_SESSION` env var. For AI tool runners that spawn a fresh shell per command (e.g. Claude Code's Bash tool) and for users configuring tool permission allowlists, an inline flag is materially easier -- `joy *` covers all calls, whereas the env var approach requires either persistent shell state or allowing `JOY_SESSION=* joy *` patterns.
 
@@ -31,3 +31,17 @@ comments:
     - Test (tests/): integration test verifying `joy --session <value> add ...` succeeds with the same session as `JOY_SESSION=<value> joy add ...`. Existing tests under tests/ should cover the structure; pick the most similar fixture.
 
     Out of scope (deferred to JOY-0181-95): tutorial doc updates.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-14T18:46:19.297447125Z
+  text: |-
+    [x] Added `session: Option<String>` global flag on `Cli` in `crates/joy-cli/src/main.rs` (help text explains precedence and use cases).
+    [x] After `Cli::parse_from`, if `cli.session.is_some()` we call `std::env::set_var("JOY_SESSION", value)`. This keeps `joy-core/src/identity.rs` and `crypt_session.rs` unchanged -- both read JOY_SESSION as before. Precedence is naturally `--session` > `JOY_SESSION`.
+    [x] Integration tests in `tests/integration/session_flag.bats` cover: equivalence with JOY_SESSION, precedence over JOY_SESSION, absence of both = no AI session. (Bats not installed locally; tests structured to match existing bats fixtures.)
+    [x] Smoke-tested manually with `auth status`: `--session` works, env var works, `--session` overrides bogus env. All three pass.
+    [x] `cargo test -p joy-cli` green (93 unit + 2 integration).
+    [x] `joy --help` now lists `--session <SESSION>` with explanation.
+
+    Commit: 8b77e21 on branch `feat/joy-0182-session-flag`.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-14T18:47:22.196944264Z
+  text: Reviewed and accepted by user (merge into main).
