@@ -1,0 +1,14 @@
+id: JOY-0180-AA
+title: Integrate `joy auth init` into `joy ai init` flow
+type: story
+status: new
+priority: medium
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-14T18:02:31.053985416Z
+updated: 2026-05-14T18:02:31.053985416Z
+description: When `joy ai init` is run without prior authentication, it fails partway through (after creating doc templates and AI tool configs) with "no registered public key". Auth is a prerequisite for the AI member registration step, so detect missing auth at the start of `joy ai init` and run `joy auth init` inline (no extra y/n confirmation -- the passphrase prompt itself is the natural commitment point). The setup should complete in a single flow.

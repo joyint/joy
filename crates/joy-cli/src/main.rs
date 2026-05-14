@@ -108,6 +108,12 @@ pub(crate) struct Cli {
     #[arg(long, global = true)]
     json: bool,
 
+    /// Session credential (overrides JOY_SESSION env var). Useful for AI tool
+    /// runners that spawn a fresh shell per command and for permission
+    /// allowlists that prefer flags over env-var patterns.
+    #[arg(long, global = true, value_name = "SESSION")]
+    session: Option<String>,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -300,6 +306,13 @@ fn main() -> anyhow::Result<()> {
 
     let raw: Vec<String> = std::env::args().collect();
     let cli = Cli::parse_from(rewrite_trailing_help(raw, &Cli::command()));
+
+    // --session overrides JOY_SESSION. Setting the env var here keeps all
+    // downstream readers (joy-core identity resolution, crypt_session)
+    // unchanged. Precedence: --session > JOY_SESSION > no session.
+    if let Some(ref session) = cli.session {
+        std::env::set_var("JOY_SESSION", session);
+    }
 
     // Honour -w / --working-dir BEFORE anything that depends on cwd
     // (auto-sync, load_config, find_project_root). The target must be

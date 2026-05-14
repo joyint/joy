@@ -1,0 +1,66 @@
+id: JOY-0181-95
+title: Add `joy ai tutorial` as AI-facing operational guide
+type: story
+status: new
+priority: medium
+deps:
+- JOY-0182-17
+- JOY-0183-04
+capabilities:
+- plan
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-14T18:10:33.089570872Z
+updated: 2026-05-14T18:37:30.465702319Z
+description: |-
+  Introduce `joy ai tutorial` as the canonical AI-facing operational guide, covering patterns that depend on how AI tools execute commands and differ from human-facing docs:
+
+  - Session env var (`JOY_SESSION`) handling: explicit instructions for AI tools that spawn independent shells per command (capture the value once from `joy auth --token --json`, prefix every subsequent joy invocation with it). Document common stumbling blocks (e.g. `eval $(joy auth ...)` does not persist across separate shell calls in tool-based runners).
+  - Token/delegation flow: requesting delegation tokens, multi-use within TTL, scope.
+  - Common error patterns and recovery (e.g. distinguishing "delegator must authenticate" from delegation scope issues).
+  - Member ID conventions.
+
+  AI instruction files (CLAUDE.md, COPILOT.md, QWEN.md, VIBE.md) reference this tutorial as a required read at session start, rather than embedding the same content in every tool's file. Consider tying re-reads to the existing auto-sync version mechanism so tutorial changes are picked up automatically.
+
+  Note: `joy auth --token <TOKEN> --json` already exists and returns the session value via the `session_env` field -- no new CLI flag needed, just documentation.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-14T18:10:40.085687263Z
+  text: 'Emphasis: the tutorial must explicitly explain JOY_SESSION usage for AI tools whose runners spawn a fresh shell per command (Claude Code''s Bash tool is one such case). The current CLAUDE.md instruction "propagate JOY_SESSION into every subshell" assumes a persistent shell model and led to a clumsy first attempt (`eval $(joy auth --token ... | grep export)`) that silently fails because env does not survive between separate tool calls. Tutorial should show the correct pattern end-to-end: `JOY_SESSION=$(joy auth --token <TOKEN> --json | jq -r .data.session_env)` captured once, then inline-prefixed (`JOY_SESSION=<value> joy ...`) or re-exported at the start of each compound bash invocation.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-14T18:16:04.504719436Z
+  text: 'Tutorial file location: `docs/ai/Tutorial.md`.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-14T18:24:43.261134859Z
+  text: |-
+    Migration scope: most of `crates/joy-core/templates/ai/instructions.md` should move into the tutorial. Tool-specific instruction files (CLAUDE.md, QWEN.md, VIBE.md, copilot-instructions.md) shrink to ~15 lines: identity + pointer.
+
+    Move to `docs/ai/Tutorial.md`:
+    1. Interaction modes (autonomous/supervised/collaborative/interactive/pairing) -- definitions, `joy project member show` resolution across the four layers, natural-language overrides.
+    2. Authentication (token to session flow, JOY_SESSION env, new `--session` flag from JOY-0182-17, error patterns and recovery, multi-use TTL semantics, delegation scope).
+    3. Identity and capabilities (member-ID lookup, capability check, capability warnings as mandatory stops).
+    4. Workflow (shortcuts, status gates, `allow_ai: false` handling).
+    5. Core commands table + item types / priorities / effort scale (reference data).
+    6. Rules (project language, always use joy CLI, every code change needs an item, track status, comment everything, confirm before changing, titles, no-emoji).
+    7. Project context (read project docs on first session).
+    8. Commit messages (conventional commits, JOY-xxxx ref, `[no-item]` escape).
+    9. Working style (response style, task spec, corrections, complexity, docs as spec, plan-first, tool use).
+    10. Instruction-freshness mechanism (`joy X.Y.Z: synced this repo` re-read pattern -- extend to also cover the tutorial itself).
+
+    Stays in tool-specific files (~15 lines each):
+    - Member-ID assignment (e.g. `ai:claude@joy`).
+    - Tool-specific Co-Authored-By line.
+    - Don't-use-AI-brand-names rule.
+    - Skill/agents reference (e.g. `/joy` for Claude Code).
+    - Pointer to `joy ai tutorial` as required read at session start, with re-read trigger on version sync.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-14T18:34:33.372943146Z
+  text: |-
+    Identity transfer pattern: the tutorial must explicitly document that the AI learns its own member ID from the token redemption response, not via an out-of-band "you are ai:X@joy" instruction. `joy auth --token <TOKEN> --json` already returns `{"data":{"session_env":"...","member":"ai:...","delegated_by":"...","project_id":"..."}}`. The tutorial should show: parse the response, take `data.session_env` as auth (via `--session` from JOY-0182-17 or `JOY_SESSION`), take `data.member` as identity. This makes the generic-AI-member flow (see follow-up item) self-contained: token transfer = identity transfer + auth, no manual ID-paste step needed.
+
+    Currently the template (`crates/joy-core/templates/ai/instructions.md` line 57) only mentions capturing `export JOY_SESSION=...`, ignoring the `member` field. The new tutorial must replace that with the full JSON-based pickup.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-14T18:36:28.631674764Z
+  text: 'Discoverability: extend the help footer in `crates/joy-cli/src/main.rs` (around line 85, currently "Run ''joy tutorial'' for the full guide. / Run ''joy tutorial --interactive'' for a chapter menu.") with an AI-targeted line, e.g. "AI tools: run ''joy ai tutorial'' for the AI operational guide." AI tools commonly run `joy --help` early in a session, so this is the lowest-friction entry point for the tutorial.'
