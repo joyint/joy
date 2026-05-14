@@ -273,7 +273,7 @@ pub(crate) fn read_passphrase(flag: Option<&str>, prompt: &str) -> Result<String
 }
 
 /// `joy auth init` — first-time setup for the current member.
-fn run_init(passphrase_flag: Option<&str>, user_flag: Option<&str>) -> Result<()> {
+pub(crate) fn run_init(passphrase_flag: Option<&str>, user_flag: Option<&str>) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 

@@ -1,8 +1,10 @@
 id: JOY-0180-AA
 title: Integrate `joy auth init` into `joy ai init` flow
 type: story
-status: new
+status: in-progress
 priority: medium
+assignees:
+- member: ai:claude@joy
 capabilities:
 - plan
 - implement
@@ -10,5 +12,18 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-14T18:02:31.053985416Z
-updated: 2026-05-14T18:02:31.053985416Z
+updated: 2026-05-14T18:48:41.241420006Z
 description: When `joy ai init` is run without prior authentication, it fails partway through (after creating doc templates and AI tool configs) with "no registered public key". Auth is a prerequisite for the AI member registration step, so detect missing auth at the start of `joy ai init` and run `joy auth init` inline (no extra y/n confirmation -- the passphrase prompt itself is the natural commitment point). The setup should complete in a single flow.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-14T18:48:06.787199541Z
+  text: |-
+    Plan:
+    - `crates/joy-cli/src/commands/ai.rs`: new helper `ensure_human_auth_initialized(root, passphrase)` that:
+      - Reads the project, looks up the caller's git email member entry
+      - Returns Ok(()) silently if `member.verify_key.is_some()` (already initialised)
+      - Bails with a clear error if the caller is not a registered project member (pre-existing constraint, unrelated to ai init)
+      - Otherwise prints a `color::section("Authentication")` header and delegates to `crate::commands::auth::run_init(passphrase, None)`. No extra y/n -- the passphrase prompt is the natural commitment point.
+    - Visibility bump on `commands::auth::run_init` to `pub(crate)`.
+    - Call site: in `ai_init()` between `sync_files` (line 133) and `check_docs` (line 135). Order in output becomes: AI Init banner -> Authentication (only when needed) -> Documentation -> AI Tools.
+    - Bats test: `tests/integration/ai_init_auth_inline.bats` -- cold start, no prior auth, run `joy ai init --passphrase`, verify the call succeeds end-to-end (member ai:test@joy registered, verify_key present).

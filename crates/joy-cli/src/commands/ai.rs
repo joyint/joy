@@ -132,6 +132,7 @@ fn ai_init(args: InitArgs) -> anyhow::Result<()> {
     // Ensure project.defaults.yaml exists
     joy_core::embedded::sync_files(&root, joy_core::init::PROJECT_FILES)?;
 
+    ensure_human_auth_initialized(&root, args.passphrase.as_deref())?;
     check_docs(&root, &args)?;
     let configured_tools = setup_new_tools(&root, args.passphrase.as_deref())?;
     update_gitignore(&root, &configured_tools)?;
@@ -154,6 +155,34 @@ fn ai_init(args: InitArgs) -> anyhow::Result<()> {
 #[derive(serde::Serialize)]
 struct AiInitPayload {
     configured_tools: Vec<String>,
+}
+
+/// Ensure the acting human has authentication initialised before AI tool
+/// setup runs. Without a registered public key, member registration will
+/// fail partway through `setup_new_tools()`, leaving doc templates and AI
+/// tool configs written but no members attested. Detecting and resolving
+/// here keeps the flow in one pass.
+fn ensure_human_auth_initialized(root: &Path, passphrase: Option<&str>) -> anyhow::Result<()> {
+    let project_path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
+    let project = joy_core::store::read_project(&project_path)?;
+    let email = joy_core::vcs::default_vcs().user_email()?;
+    let member = project.members.get(&email).ok_or_else(|| {
+        anyhow::anyhow!(
+            "{} is not a registered project member. Run `joy project member add {}` first.",
+            email,
+            email
+        )
+    })?;
+    if member.verify_key.is_some() {
+        return Ok(());
+    }
+
+    if !crate::output::is_json() {
+        dprintln!("{}", color::section("Authentication"));
+    }
+    crate::commands::auth::run_init(passphrase, None)?;
+    dprintln!();
+    Ok(())
 }
 
 /// Check if a tool's generated files are up to date by re-rendering expected
