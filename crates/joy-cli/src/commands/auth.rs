@@ -156,7 +156,9 @@ struct TokenAddArgs {
 
 pub fn run(args: AuthArgs) -> Result<()> {
     match args.command {
-        Some(AuthCommand::Init) => run_init(args.passphrase.as_deref(), args.user.as_deref()),
+        Some(AuthCommand::Init) => {
+            run_init(args.passphrase.as_deref(), args.user.as_deref()).map(|_| ())
+        }
         Some(AuthCommand::Status) => run_status(),
         Some(AuthCommand::Reset(a)) => run_reset(a, args.passphrase.as_deref()),
         Some(AuthCommand::Token(a)) => {
@@ -273,7 +275,14 @@ pub(crate) fn read_passphrase(flag: Option<&str>, prompt: &str) -> Result<String
 }
 
 /// `joy auth init` — first-time setup for the current member.
-pub(crate) fn run_init(passphrase_flag: Option<&str>, user_flag: Option<&str>) -> Result<()> {
+///
+/// Returns the validated passphrase so callers that bootstrap auth as part
+/// of a larger flow (e.g. `joy ai init`) can pass it forward to subsequent
+/// operations in the same invocation without re-prompting the user.
+pub(crate) fn run_init(
+    passphrase_flag: Option<&str>,
+    user_flag: Option<&str>,
+) -> Result<String> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
@@ -381,7 +390,7 @@ pub(crate) fn run_init(passphrase_flag: Option<&str>, user_flag: Option<&str>) -
 
     joy_core::git_ops::auto_git_post_command(&root, "auth init", &email);
 
-    Ok(())
+    Ok(passphrase)
 }
 
 /// `joy auth` — authenticate by passphrase (human) or delegation token (AI).

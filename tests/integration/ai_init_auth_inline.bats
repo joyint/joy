@@ -5,7 +5,7 @@ load setup
 
 @test "joy ai init bootstraps auth inline on cold start" {
     joy init --name "Test Project" 2>/dev/null
-    # No `joy auth init` here -- ai init must do it.
+    # No `joy auth init` here; ai init must do it.
     # Suppress tool detection so the test does not depend on which AI
     # binaries happen to be installed on the host; we only care that
     # the auth bootstrap step ran before any other AI Init phase.
@@ -24,7 +24,7 @@ load setup
     setup_human_auth
     run joy ai init --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
-    # The auth section header must NOT appear -- already initialised.
+    # The auth section header must NOT appear when already initialised.
     [[ "$output" != *"Setting up authentication"* ]]
     [[ "$output" != *"RECOVERY KEY"* ]]
 }

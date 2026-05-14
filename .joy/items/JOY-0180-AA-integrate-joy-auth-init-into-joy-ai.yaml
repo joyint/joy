@@ -12,7 +12,7 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-14T18:02:31.053985416Z
-updated: 2026-05-14T18:48:41.241420006Z
+updated: 2026-05-14T19:04:51.918928074Z
 description: When `joy ai init` is run without prior authentication, it fails partway through (after creating doc templates and AI tool configs) with "no registered public key". Auth is a prerequisite for the AI member registration step, so detect missing auth at the start of `joy ai init` and run `joy auth init` inline (no extra y/n confirmation -- the passphrase prompt itself is the natural commitment point). The setup should complete in a single flow.
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
@@ -27,3 +27,22 @@ comments:
     - Visibility bump on `commands::auth::run_init` to `pub(crate)`.
     - Call site: in `ai_init()` between `sync_files` (line 133) and `check_docs` (line 135). Order in output becomes: AI Init banner -> Authentication (only when needed) -> Documentation -> AI Tools.
     - Bats test: `tests/integration/ai_init_auth_inline.bats` -- cold start, no prior auth, run `joy ai init --passphrase`, verify the call succeeds end-to-end (member ai:test@joy registered, verify_key present).
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-14T18:55:16.219659825Z
+  text: |-
+    [x] Added `ensure_human_auth_initialized(root, passphrase)` in `crates/joy-cli/src/commands/ai.rs`. Reads project.yaml, looks up caller's git email, bails with a clear hint if not a member, returns silently if already initialised, else prints `Authentication` section header and calls `auth::run_init`.
+    [x] Lifted `auth::run_init` visibility to `pub(crate)`.
+    [x] Call site: in `ai_init()` between `sync_files` and `check_docs`. Order in output: AI Init banner -> Authentication (only when needed) -> Documentation -> AI Tools.
+    [x] Bats test `tests/integration/ai_init_auth_inline.bats`: cold start (no auth) succeeds end-to-end with passphrase; warm start (auth already done) silently skips the auth section.
+    [x] Smoke-tested manually: cold-start run produced the new `Authentication` section header followed by `run_init` output, then continued through Documentation and AI Tools without interruption. Single flow confirmed.
+    [x] `cargo test -p joy-cli` green.
+
+    Commit: bdede7c on main.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-14T19:04:51.918927589Z
+  text: |-
+    Review feedback (user):
+    1. Passphrase wird in der Cold-Start-Flow zweimal abgefragt -- einmal in `auth::run_init` (Bootstrap), einmal später in `setup_new_tools` via `derive_acting_keypair` (Member-Attestation). Innerhalb derselben `joy ai init`-Sitzung darf das nicht passieren.
+    2. Eine kurze Begründung warum AI Init jetzt Auth braucht fehlt im Output.
+
+    Fix: `auth::run_init` signature change to return the validated passphrase. `ensure_human_auth_initialized` returns `Option<String>` (Some if newly bootstrapped). `ai_init` passes that forward to `setup_new_tools` so the subsequent `derive_acting_keypair` skips its prompt. Also: one-line explanation printed before the auth section, e.g. "AI tool members are attested with your project key -- authentication required before registration."

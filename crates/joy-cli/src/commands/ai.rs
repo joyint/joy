@@ -132,9 +132,12 @@ fn ai_init(args: InitArgs) -> anyhow::Result<()> {
     // Ensure project.defaults.yaml exists
     joy_core::embedded::sync_files(&root, joy_core::init::PROJECT_FILES)?;
 
-    ensure_human_auth_initialized(&root, args.passphrase.as_deref())?;
+    let bootstrapped_passphrase = ensure_human_auth_initialized(&root, args.passphrase.as_deref())?;
+    let effective_passphrase = bootstrapped_passphrase
+        .as_deref()
+        .or(args.passphrase.as_deref());
     check_docs(&root, &args)?;
-    let configured_tools = setup_new_tools(&root, args.passphrase.as_deref())?;
+    let configured_tools = setup_new_tools(&root, effective_passphrase)?;
     update_gitignore(&root, &configured_tools)?;
     check_nested_projects(&root)?;
 
@@ -162,7 +165,15 @@ struct AiInitPayload {
 /// fail partway through `setup_new_tools()`, leaving doc templates and AI
 /// tool configs written but no members attested. Detecting and resolving
 /// here keeps the flow in one pass.
-fn ensure_human_auth_initialized(root: &Path, passphrase: Option<&str>) -> anyhow::Result<()> {
+///
+/// Returns `Some(passphrase)` if auth was just bootstrapped, so the caller
+/// can pass it forward to subsequent operations such as AI member
+/// attestations in `setup_new_tools` without re-prompting. Returns `None`
+/// if auth was already initialised.
+fn ensure_human_auth_initialized(
+    root: &Path,
+    passphrase: Option<&str>,
+) -> anyhow::Result<Option<String>> {
     let project_path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
     let project = joy_core::store::read_project(&project_path)?;
     let email = joy_core::vcs::default_vcs().user_email()?;
@@ -174,15 +185,19 @@ fn ensure_human_auth_initialized(root: &Path, passphrase: Option<&str>) -> anyho
         )
     })?;
     if member.verify_key.is_some() {
-        return Ok(());
+        return Ok(None);
     }
 
-    if !crate::output::is_json() {
-        dprintln!("{}", color::section("Authentication"));
-    }
-    crate::commands::auth::run_init(passphrase, None)?;
+    dprintln!("{}", color::section("Authentication"));
+    dprintln!(
+        "{}",
+        color::inactive(
+            "AI tool members are attested with your project key, so authentication is required before registration."
+        )
+    );
+    let bootstrapped = crate::commands::auth::run_init(passphrase, None)?;
     dprintln!();
-    Ok(())
+    Ok(Some(bootstrapped))
 }
 
 /// Check if a tool's generated files are up to date by re-rendering expected
