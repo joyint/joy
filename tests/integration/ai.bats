@@ -273,6 +273,7 @@ load setup
     joy ai init --architecture docs/arch.md \
                 --vision docs/vision.md \
                 --contributing CONTRIBUTING.md \
+                --passphrase "$TEST_PASSPHRASE" \
                 </dev/null 2>/dev/null || true
     run joy project get docs.architecture
     [ "$output" = "docs/arch.md" ]
@@ -289,6 +290,7 @@ load setup
     joy ai init --architecture custom/ARCH.md \
                 --vision custom/VISION.md \
                 --contributing custom/CONTRIB.md \
+                --passphrase "$TEST_PASSPHRASE" \
                 </dev/null 2>/dev/null || true
     [ -f "custom/ARCH.md" ]
     [ -f "custom/VISION.md" ]

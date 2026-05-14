@@ -108,9 +108,7 @@ pub(crate) struct Cli {
     #[arg(long, global = true)]
     json: bool,
 
-    /// Session credential (overrides JOY_SESSION env var). Useful for AI tool
-    /// runners that spawn a fresh shell per command and for permission
-    /// allowlists that prefer flags over env-var patterns.
+    /// Session credential. Overrides JOY_SESSION env var.
     #[arg(long, global = true, value_name = "SESSION")]
     session: Option<String>,
 

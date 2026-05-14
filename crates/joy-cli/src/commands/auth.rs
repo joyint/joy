@@ -279,10 +279,7 @@ pub(crate) fn read_passphrase(flag: Option<&str>, prompt: &str) -> Result<String
 /// Returns the validated passphrase so callers that bootstrap auth as part
 /// of a larger flow (e.g. `joy ai init`) can pass it forward to subsequent
 /// operations in the same invocation without re-prompting the user.
-pub(crate) fn run_init(
-    passphrase_flag: Option<&str>,
-    user_flag: Option<&str>,
-) -> Result<String> {
+pub(crate) fn run_init(passphrase_flag: Option<&str>, user_flag: Option<&str>) -> Result<String> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 

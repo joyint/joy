@@ -1,0 +1,47 @@
+id: JOY-0183-04
+title: Improve `joy project member add` UX for AI members
+type: story
+status: in-progress
+priority: medium
+assignees:
+- member: ai:claude@joy
+deps:
+- JOY-0182-17
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-14T18:34:46.571348959Z
+updated: 2026-05-14T19:24:15.658885340Z
+description: |-
+  `joy project member add` already supports AI member IDs (`ai:*@joy`) since JOY-016F-16: it detects the prefix, skips OTP generation, signs the attestation, and uses the same default capabilities that AI members get from `joy ai init` (con/pln/des/imp/tst/rev/doc/crt/asg). What the command does not do today is guide the user through the rest of the flow, so AI tools that cannot be auto-detected by `joy ai init` (e.g. GitHub Copilot Chat in VS Code, Cursor's built-in chat, generic chat-only AIs) end up registered as members with no obvious next step.
+
+  Gaps to close:
+  - **Next-steps hint** on stdout after registering an `ai:*@joy` member: "AI member registered. Issue a delegation token with `joy auth token add <ID>` and share it with the AI. The AI will run `joy auth --token <TOKEN> --json` to pick up its identity and session, then `joy ai tutorial` for operational rules."
+  - **Optional `--with-token` flag** for one-shot register-and-issue-token, so the user does not have to run two commands. JSON output mode emits `{member, token}` so scripted flows pick up both atomically.
+  - **Discoverability from `joy ai`**: add a short "For chat-only or unsupported AI tools, register manually with `joy project member add ai:<name>@joy`" line to `joy ai --help` (and possibly an alias `joy ai member add` that forwards to `joy project member add` for users who look under the `ai` namespace).
+  - **Hello snippet** the user can paste into the AI session, e.g. "In this Joy project you are `ai:copilot-chat@joy`. Get a delegation token from the user, redeem with `joy auth --token <TOKEN> --json`, take `member` as your identity and `session_env` as auth. Then read `joy ai tutorial`." The snippet should not be needed at all once the AI parses the token-redemption JSON, but is helpful for first-contact when the AI has no instructions loaded.
+
+  Out of scope: a new `joy ai member add` command. The existing command path is sufficient with the UX additions above. Dependencies: JOY-0181-95 (tutorial is what the AI will read for operations) and JOY-0182-17 (`--session` flag makes the AI's permission setup simpler).
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-14T19:20:12.591347780Z
+  text: |-
+    Plan:
+    - `crates/joy-cli/src/commands/project.rs`:
+      - Extend the existing `is_ai` print block (line 543) with a next-steps hint that mentions sharing the token with the AI and the JSON redemption path. Reference `joy ai tutorial` for operational rules (the tutorial item JOY-0181-95 ships after this).
+      - Add `--with-token` boolean on `MemberAddArgs`. When set and id is an ai: member, after the existing registration call `crate::commands::auth::run_token_add` with a `TokenAddArgs { member: id.clone(), ttl: None, crypt: false }`. Passphrase: read once at the start of the add block, then pass via flag to both `derive_acting_keypair` and `run_token_add` so the interactive case prompts only once.
+      - JSON mode: extend `AddPayload` with an optional `token` field; populate it when `--with-token` issued one.
+      - Visibility bump on `auth::run_token_add` and `auth::TokenAddArgs` to pub(crate).
+    - `crates/joy-cli/src/commands/ai.rs`: add a short "For chat-only or unsupported AI tools" line to the about-text of `joy ai` (or to its trailing help section) pointing at `joy project member add ai:<name>@joy`.
+    - Test `tests/integration/member_add_ai.bats`: cases for ai-id without --with-token (existing behaviour, plus new hint visible), ai-id with --with-token (one passphrase, prints token), human-id (unchanged).
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-14T19:24:15.658884858Z
+  text: |-
+    Scope reduced (user decision): drop `--with-token` flag from this item. Focus on the two trivial UX improvements:
+    1. Better next-steps hint on stdout after AI-member registration: token issuance command, sharing instruction, JSON redemption path the AI uses to pick up identity + auth, and pointer to `joy ai tutorial`.
+    2. Discoverability from `joy ai --help` for chat-only or unsupported AI tools.
+
+    The `--with-token` flag moves to its own follow-up item with its own refactor (extract `issue_delegation_token` helper from `run_token_add`) and tests.

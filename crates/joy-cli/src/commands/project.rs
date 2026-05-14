@@ -541,8 +541,16 @@ fn run_member(
                 println!("Added member {}", a.id);
                 println!();
                 if is_ai {
-                    println!("AI members authenticate via a delegation token, not an OTP.");
-                    println!("  Issue one with: joy auth token add {}", a.id);
+                    println!("Next steps:");
+                    println!("  1. Issue a delegation token:");
+                    println!("       joy auth token add {}", a.id);
+                    println!("  2. Share the token with the AI in chat.");
+                    println!("  3. The AI redeems it with:");
+                    println!("       joy auth --token <TOKEN> --json");
+                    println!(
+                        "     and picks up `member` as its identity and `session_env` as auth."
+                    );
+                    println!("  4. The AI reads `joy ai tutorial` for the operational guide.");
                 } else if let Some(ref otp) = otp_opt {
                     println!("  One-time password: {otp}");
                     println!();

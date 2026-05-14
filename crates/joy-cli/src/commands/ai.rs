@@ -48,6 +48,9 @@ const JOY_BLOCK_START: &str = "<!-- joy:start -->";
 const JOY_BLOCK_END: &str = "<!-- joy:end -->";
 
 #[derive(clap::Args)]
+#[command(
+    after_help = "For chat-only or otherwise undetected AI tools (e.g. Copilot Chat in VS Code, Cursor's built-in chat), register the member manually:\n  joy project member add ai:<name>@joy\nthen issue a delegation token with `joy auth token add ai:<name>@joy`."
+)]
 pub struct AiArgs {
     #[command(subcommand)]
     command: AiCommand,

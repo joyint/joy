@@ -1,7 +1,7 @@
 id: JOY-0180-AA
 title: Integrate `joy auth init` into `joy ai init` flow
 type: story
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -12,7 +12,7 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-14T18:02:31.053985416Z
-updated: 2026-05-14T19:04:51.918928074Z
+updated: 2026-05-14T19:17:28.953234334Z
 description: When `joy ai init` is run without prior authentication, it fails partway through (after creating doc templates and AI tool configs) with "no registered public key". Auth is a prerequisite for the AI member registration step, so detect missing auth at the start of `joy ai init` and run `joy auth init` inline (no extra y/n confirmation -- the passphrase prompt itself is the natural commitment point). The setup should complete in a single flow.
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
@@ -46,3 +46,13 @@ comments:
     2. Eine kurze Begründung warum AI Init jetzt Auth braucht fehlt im Output.
 
     Fix: `auth::run_init` signature change to return the validated passphrase. `ensure_human_auth_initialized` returns `Option<String>` (Some if newly bootstrapped). `ai_init` passes that forward to `setup_new_tools` so the subsequent `derive_acting_keypair` skips its prompt. Also: one-line explanation printed before the auth section, e.g. "AI tool members are attested with your project key -- authentication required before registration."
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-14T19:17:20.338865578Z
+  text: |-
+    [x] `auth::run_init` now returns the validated passphrase (`Result<String>`); existing dispatcher caller maps it to `()`.
+    [x] `ensure_human_auth_initialized` returns `Result<Option<String>>`; cold-bootstrap returns the passphrase, warm path returns None.
+    [x] `ai_init` forwards the bootstrapped passphrase to `setup_new_tools` as `effective_passphrase`, so the later `derive_acting_keypair` call reuses it and the second prompt is skipped.
+    [x] Added a one-line explanation under the Authentication section header so the user sees why ai init now needs auth.
+    [x] Smoke-tested: cold-start with `--passphrase` shows the new section + explanation + run_init output, then doc templates and AI tool registration without further prompts.
+
+    Commit: 0beb20b on main.

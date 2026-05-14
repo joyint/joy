@@ -1,0 +1,29 @@
+id: JOY-0184-4A
+title: Inconsistent git staging after `joy init` and `joy ai init`
+type: bug
+status: new
+priority: medium
+capabilities:
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-14T19:16:42.106620770Z
+updated: 2026-05-14T19:16:42.106620770Z
+description: |-
+  After `joy init` followed by `joy ai init` on a fresh repo, files land in three different git states:
+
+  - **Staged** (from `joy init`): `.gitattributes`, `.gitignore`, `.joy/config.defaults.yaml`, `.joy/project.yaml`.
+  - **Modified** (unstaged): `.joy/project.yaml` — re-written by `setup_new_tools` after `joy init` staged the earlier version, so the same file is both staged at V1 and modified to V2.
+  - **Untracked**: `CONTRIBUTING.md`, `SECURITY.md`, `docs/*`, `.claude/*`, `.github/*` — written by the doc-templates step, the per-tool configure functions, and the inline auth bootstrap added in JOY-0180-AA.
+
+  The configured `workflow.auto-git: add` policy implies "joy stages what it writes". `joy init` and `joy auth init` follow it; `joy ai init` (specifically `setup_new_tools`, `check_docs`, the per-tool `configure` functions, and the post-bootstrap `setup_new_tools` re-write of project.yaml) does not.
+
+  Fix: audit every write path reachable from `joy ai init` and call `joy_core::git_ops::auto_git_add` for every file joy creates or modifies. This includes:
+  - `.joy/project.yaml` after `setup_new_tools` writes new AI member entries.
+  - All `.claude/*`, `.qwen/*`, `.vibe/*`, `.github/*` files written by the per-tool configure functions.
+  - Doc templates (`CONTRIBUTING.md`, `SECURITY.md`, `docs/...`) written by `check_docs`.
+
+  Acceptance: on a fresh `joy init && joy ai init`, `git status` shows every file joy created or modified as staged, with no joy-managed file in `Changes not staged` or `Untracked files`. Users who do not want a specific template in the first commit can `git restore --staged <file>` deliberately.
+
+  The alternative of "never auto-stage anything" would also be consistent but conflicts with the existing `auto-git: add` config default and pushes friction onto every user.

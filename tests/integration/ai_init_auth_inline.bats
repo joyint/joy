@@ -28,3 +28,14 @@ load setup
     [[ "$output" != *"Setting up authentication"* ]]
     [[ "$output" != *"RECOVERY KEY"* ]]
 }
+
+@test "joy ai init fails clearly when caller is not a project member" {
+    joy init --name "Test Project" 2>/dev/null
+    # Switch git identity to someone who has never been added to the project.
+    git config user.email "stranger@example.com"
+    run env PATH="$(dirname "$JOY_BIN"):/usr/bin:/bin" \
+        joy ai init --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"stranger@example.com"* ]]
+    [[ "$output" == *"not a registered project member"* ]]
+}

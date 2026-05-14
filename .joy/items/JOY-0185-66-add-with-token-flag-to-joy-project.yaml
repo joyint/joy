@@ -1,0 +1,29 @@
+id: JOY-0185-66
+title: Add `--with-token` flag to `joy project member add`
+type: story
+status: new
+priority: low
+deps:
+- JOY-0183-04
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-14T19:24:15.710534713Z
+updated: 2026-05-14T19:24:24.614734585Z
+description: |-
+  Convenience flag for AI-member registration: `joy project member add ai:foo@joy --with-token` registers the member and immediately issues a delegation token, so the user does not have to run two commands.
+
+  Implementation requires extracting a `pub(crate) fn issue_delegation_token(root, member, ttl, crypt, operator_email, operator_passphrase) -> Result<(String, i64)>` from `run_token_add` in `auth.rs` so both code paths share the token-creation logic without duplicate auth, guard checks, or passphrase prompts. Existing `run_token_add` keeps its current behaviour by calling the helper and adding its own printing.
+
+  In `project member add`:
+  - Read passphrase once at the top of the AI add path.
+  - Use it for `derive_acting_keypair` (existing) and `issue_delegation_token` (new).
+  - Display mode: combined output with both the member-add hint and the token printout.
+  - JSON mode: single `AddPayload` with optional `token` and `ttl_hours` fields.
+
+  Tests: `tests/integration/member_add_with_token.bats` covering display + JSON paths, single-prompt assertion, human-id rejection of the flag.
+
+  Depends on JOY-0183-04 (next-steps hint shipped first; this builds on it).

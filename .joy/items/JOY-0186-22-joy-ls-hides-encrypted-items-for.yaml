@@ -1,0 +1,30 @@
+id: JOY-0186-22
+title: joy ls hides encrypted items for members without zone access
+type: bug
+status: new
+priority: high
+capabilities:
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-14T19:53:52.740602176Z
+updated: 2026-05-14T19:53:52.740602176Z
+description: |-
+  Regression against JOY-0174-D3 ("render locked items in joy ls + auto ENC column"). The bats test `crypt journey: second member sees locked rows until granted` in `tests/integration/crypt.bats` line 80 reproduces it deterministically.
+
+  Setup:
+  - Bob initialises a project (acronym CT), runs `joy auth init`.
+  - Bob adds task `CT-0001` and encrypts it via `joy crypt add CT-0001`.
+  - Bob adds Alice as a member, switches git identity to Alice, Alice runs `joy auth init`.
+  - Alice runs `joy ls`.
+
+  Expected (per test comment and JOY-0174-D3): Alice sees `CT-0001` as a locked row with an "encrypted, no access" marker. The default ENC column should auto-appear.
+
+  Actual: `joy ls` prints `No matching items.` -- the encrypted item is filtered out entirely instead of rendered locked.
+
+  Reproduces on commit 85c2893 (before any of the recent JOY-0180/0182/0183/0184/0185 work), so this is pre-existing and not caused by the AI-init/session-flag changes.
+
+  Test: `bats tests/integration/crypt.bats -f 'second member sees locked rows until granted'`.
+
+  Likely cause: the filter that drops items where the caller has no zone access runs before the locked-row renderer, instead of letting locked rows through to be marked. Fix should restore JOY-0174-D3's behaviour and verify the existing bats test passes.
