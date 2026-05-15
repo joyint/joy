@@ -99,3 +99,4 @@
 2026-05-15T23:08:16.547Z JOY-0195-A0 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-05-15T23:08:16.607Z JOY-0195-A0 comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-05-15T23:59:49.631Z JOY-0195-A0 comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-15T23:59:49.783Z JOY-0195-A0 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

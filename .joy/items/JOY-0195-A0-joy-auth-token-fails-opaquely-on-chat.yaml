@@ -1,7 +1,7 @@
 id: JOY-0195-A0
 title: joy auth --token fails opaquely on chat-wrapped tokens
 type: bug
-status: in-progress
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -11,10 +11,12 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-15T23:08:08.508245461Z
-updated: 2026-05-15T23:59:49.622370921Z
+updated: 2026-05-15T23:59:49.777531588Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-05-15T23:08:16.542736114Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-15T23:59:49.777531588Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   When a delegation token gets pasted from a chat client into an
