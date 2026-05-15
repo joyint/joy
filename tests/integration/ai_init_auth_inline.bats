@@ -20,7 +20,12 @@ load setup
     [[ "$output" == *"Authentication initialized for"* ]]
     [[ "$output" == *"Public key registered"* ]]
     # Caller now has a verify_key in project.yaml.
-    run joy auth status
+    # The session created above was bound to a non-TTY stdin (the
+    # `</dev/null` redirect that prevented the interactive doc/tool
+    # prompts from blocking). Sessions are TTY-bound (identity.rs's
+    # `check_session`), so the follow-up `joy auth status` must run
+    # under the same non-TTY context for the session to validate.
+    run joy auth status </dev/null
     [ "$status" -eq 0 ]
 }
 
