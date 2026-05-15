@@ -1,7 +1,7 @@
 id: JOY-0191-6E
 title: Wildcard + --describe support for joy project get
 type: task
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -10,10 +10,12 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-15T20:04:18.051048390Z
-updated: 2026-05-15T20:18:29.671879723Z
+updated: 2026-05-15T20:18:48.911883521Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-05-15T20:05:33.408525767Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-15T20:18:48.911883521Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   joy project get only accepts fully-qualified keys today:
