@@ -170,16 +170,21 @@ pub fn run(args: ShowArgs) -> Result<()> {
                 color::label(&date_str),
                 color::user(&comment.author),
             );
-            // Body indented four spaces so the comment block reads as a
+            // Body indented two spaces so the comment block reads as a
             // visual unit and stays separate from item-level content
-            // (description above, footer below). Markdown stays rendered.
+            // (description above, footer below). Markdown wrap-width is
+            // reduced by the indent so a long line never spills back to
+            // column zero on a wrap.
             println!();
-            let body = crate::commands::tutorial::render_markdown(&comment.text);
+            let indent = "  ";
+            let inner_width = w.saturating_sub(indent.len());
+            let body =
+                crate::commands::tutorial::render_markdown_with_width(&comment.text, inner_width);
             for line in body.lines() {
                 if line.is_empty() {
                     println!();
                 } else {
-                    println!("    {line}");
+                    println!("{indent}{line}");
                 }
             }
             // Per-comment edit audit. Each entry: `Updated: <date> by
@@ -191,7 +196,7 @@ pub fn run(args: ShowArgs) -> Result<()> {
                     let edit_local: DateTime<Local> = edit.date.with_timezone(&Local);
                     let edit_str = edit_local.format("%Y-%m-%d %H:%M").to_string();
                     println!(
-                        "    {} {} by {}",
+                        "  {} {} by {}",
                         color::label("Updated:"),
                         color::label(&edit_str),
                         color::user(&edit.by),

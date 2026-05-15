@@ -49,7 +49,15 @@ pub(crate) fn run_markdown(markdown: &str, interactive: bool, use_pager: bool) -
 /// (item descriptions, comment bodies) and any future markdown-capable
 /// output path.
 pub(crate) fn render_markdown(markdown: &str) -> String {
-    let width = crate::color::terminal_width();
+    render_markdown_with_width(markdown, crate::color::terminal_width())
+}
+
+/// Render markdown wrapped to `width` columns rather than the full
+/// terminal. Useful when the caller will prefix each rendered line with
+/// an indent: caller passes `terminal_width - indent_width` so the
+/// indent + line stays within the terminal and termimad's wrapping does
+/// not produce overflowing lines that bleed back to column zero.
+pub(crate) fn render_markdown_with_width(markdown: &str, width: usize) -> String {
     let is_tty = std::io::stdout().is_terminal();
     let skin = if is_tty {
         MadSkin::default()

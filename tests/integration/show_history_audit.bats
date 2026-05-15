@@ -71,7 +71,7 @@ load setup
     [[ "$output" == *"edited body"* ]]
     [[ "$output" != *"original body"* ]]
     # An indented `Updated:` line names the editor (dev@example.com).
-    echo "$output" | grep -E "^    Updated: [0-9-]+ [0-9:]+ by dev@example\.com$"
+    echo "$output" | grep -E "^  Updated: [0-9-]+ [0-9:]+ by dev@example\.com$"
 }
 
 @test "joy show: legacy item without history still renders single Updated line" {
