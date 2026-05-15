@@ -1,7 +1,7 @@
 id: JOY-018F-A4
 title: Audit history footer + per-comment edit list
 type: task
-status: in-progress
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -10,10 +10,14 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-15T14:45:35.317701796Z
-updated: 2026-05-15T14:52:41.264249653Z
+updated: 2026-05-15T15:02:19.746428997Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-05-15T14:52:40.735668829Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-15T15:02:19.410466016Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-15T15:02:19.746428997Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Replace single-line `Created/Updated` footer with a multi-line audit-history block; track per-comment edits without overwriting original author/date.
@@ -65,3 +69,17 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-05-15T14:52:41.264247147Z
   text: Second comment
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-15T15:02:19.233963633Z
+  text: |-
+    [x] `Item.history: Option<Vec<UpdateEntry>>` with None=legacy, Some(empty)=new-no-changes, Some([...])=audit list.
+    [x] Two helpers in joy-core: `touch_for_attribute_change` (bumps + appends) and `touch_for_comment_change` (bumps only).
+    [x] All attribute writers use the attribute helper; comment add/edit/rm use the comment helper.
+    [x] Comment edit no longer overwrites author/date; uses `Comment.edits: Vec<UpdateEntry>` instead. Original author preserved.
+    [x] `joy show` footer: blank-line separator, Created on its own line, multi-line Updated entries from history (legacy fallback for None).
+    [x] Comment block: header unchanged, after body an indented `Updated:`-block when comment has edits.
+    [x] Templates::render_item seeds Some(vec![]) so new items follow the new model.
+    [x] Bats coverage in show_history_audit.bats (6 cases). Snapshot test updated.
+    [x] `just check` green except pre-existing JOY-0186-22.
+
+    Commit: 69d678d on main.

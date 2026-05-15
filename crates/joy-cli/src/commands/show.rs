@@ -170,10 +170,18 @@ pub fn run(args: ShowArgs) -> Result<()> {
                 color::label(&date_str),
                 color::user(&comment.author),
             );
-            print!(
-                "{}",
-                crate::commands::tutorial::render_markdown(&comment.text)
-            );
+            // Body indented four spaces so the comment block reads as a
+            // visual unit and stays separate from item-level content
+            // (description above, footer below). Markdown stays rendered.
+            println!();
+            let body = crate::commands::tutorial::render_markdown(&comment.text);
+            for line in body.lines() {
+                if line.is_empty() {
+                    println!();
+                } else {
+                    println!("    {line}");
+                }
+            }
             // Per-comment edit audit. Each entry: `Updated: <date> by
             // <editor>`. Indented to align with the body. Skipped when
             // the comment has never been edited.

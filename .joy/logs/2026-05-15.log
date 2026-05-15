@@ -42,3 +42,6 @@
 2026-05-15T14:52:40.893Z JOY-018F-A4 comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-05-15T14:52:41.083Z JOY-018F-A4 comment.edited "[1]" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-05-15T14:52:41.269Z JOY-018F-A4 comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-15T15:02:19.240Z JOY-018F-A4 comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-15T15:02:19.415Z JOY-018F-A4 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-15T15:02:19.754Z JOY-018F-A4 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
