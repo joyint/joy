@@ -9,8 +9,12 @@ load setup
     # Suppress tool detection so the test does not depend on which AI
     # binaries happen to be installed on the host; we only care that
     # the auth bootstrap step ran before any other AI Init phase.
+    # `</dev/null` keeps the per-doc-template and per-tool
+    # `[Y/n]` prompts from blocking when the caller's stdin is a TTY
+    # (e.g. interactive `just check`). With empty stdin they fall
+    # through to their Default-Y branch.
     run env PATH="$(dirname "$JOY_BIN"):/usr/bin:/bin" \
-        joy ai init --passphrase "$TEST_PASSPHRASE"
+        joy ai init --passphrase "$TEST_PASSPHRASE" </dev/null
     [ "$status" -eq 0 ]
     [[ "$output" == *"Authentication"* ]]
     [[ "$output" == *"Authentication initialized for"* ]]
@@ -22,7 +26,7 @@ load setup
 
 @test "joy ai init skips auth section when caller is already authenticated" {
     setup_human_auth
-    run joy ai init --passphrase "$TEST_PASSPHRASE"
+    run joy ai init --passphrase "$TEST_PASSPHRASE" </dev/null
     [ "$status" -eq 0 ]
     # The auth section header must NOT appear when already initialised.
     [[ "$output" != *"Setting up authentication"* ]]
@@ -34,7 +38,7 @@ load setup
     # Switch git identity to someone who has never been added to the project.
     git config user.email "stranger@example.com"
     run env PATH="$(dirname "$JOY_BIN"):/usr/bin:/bin" \
-        joy ai init --passphrase "$TEST_PASSPHRASE"
+        joy ai init --passphrase "$TEST_PASSPHRASE" </dev/null
     [ "$status" -ne 0 ]
     [[ "$output" == *"stranger@example.com"* ]]
     [[ "$output" == *"not a registered project member"* ]]

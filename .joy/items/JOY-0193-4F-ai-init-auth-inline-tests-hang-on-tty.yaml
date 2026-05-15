@@ -1,0 +1,50 @@
+id: JOY-0193-4F
+title: ai_init_auth_inline tests hang on TTY stdin
+type: bug
+status: in-progress
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-15T21:33:25.327529769Z
+updated: 2026-05-15T21:34:33.846961238Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-05-15T21:33:31.774481085Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  \`tests/integration/ai_init_auth_inline.bats\` calls \`joy ai init\`
+  through \`run env PATH=... joy ai init --passphrase ...\` without
+  redirecting stdin. The other ai-init tests in \`ai.bats\` all close
+  stdin with \`</dev/null\`.
+
+  \`joy ai init\` reaches \`std::io::stdin().read_line()\` in two places
+  without a TTY check:
+
+  - \`crates/joy-cli/src/commands/ai.rs\` doc-template prompt
+    (\`Create template? [Y/n]\`)
+  - \`confirm_default_yes()\` for the per-tool \`configure? [Y/n]\` prompt
+
+  When stdin is a TTY (i.e. \`just check\` from an interactive shell),
+  the subprocess blocks on the first prompt and the test appears to
+  hang. In CI (and in any \`stdin = pipe/null\` environment) the
+  \`read_line\` returns 0 bytes, the empty-input branch picks the
+  Default-Y, and the test passes -- which is why the regression was
+  invisible in automated runs.
+
+  This item is the test-side fix only: add \`</dev/null\` to the three
+  \`joy ai init\` invocations in \`ai_init_auth_inline.bats\` so the
+  suite is robust against the caller's terminal state. A separate
+  hardening (TTY-aware prompt helper in \`joy ai init\`) can be
+  discussed later if needed.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-15T21:33:31.823427927Z
+  text: 'Plan: append ''</dev/null'' to the three ''joy ai init'' invocations in ai_init_auth_inline.bats. The non-interactive default-Y branch in joy ai init''s read_line() calls (docs templates, tool configure) will then pick up the empty input the same way it does in CI.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-15T21:34:33.846960568Z
+  text: '[x] Appended ''</dev/null'' to all three ''joy ai init'' invocations in tests/integration/ai_init_auth_inline.bats and added a one-liner explaining the stdin redirection (same pattern as ai.bats and ai_init_attestation.bats). The three tests pass locally in 0.6s under non-TTY stdin (Bash subprocess); the fix should also clear the hang under interactive ''just check'' since the read_line() calls now get EOF and take the Default-Y branch immediately.'
