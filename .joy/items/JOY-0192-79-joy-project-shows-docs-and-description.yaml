@@ -1,7 +1,7 @@
 id: JOY-0192-79
 title: joy project shows docs.* and description in overview
 type: task
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -10,10 +10,12 @@ capabilities:
 effort: 1
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-15T20:22:16.901434485Z
-updated: 2026-05-15T20:26:59.188582634Z
+updated: 2026-05-15T20:27:39.926822770Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-05-15T20:22:24.459989803Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-15T20:27:39.926822770Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   \`joy project\` (no subcommand) prints the project overview but
