@@ -1,7 +1,7 @@
 id: JOY-0189-0B
 title: Update user Tutorial for new AI auth/session/member flow
 type: task
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -10,10 +10,14 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-15T09:26:47.350368436Z
-updated: 2026-05-15T15:25:25.773321700Z
+updated: 2026-05-15T15:29:44.491506941Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-05-15T15:25:25.773321700Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-15T15:29:44.212246303Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-15T15:29:44.491506941Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Bring `docs/user/Tutorial.md` in sync with the AI-side changes shipped under JOY-0180-AA, JOY-0182-17, JOY-0183-04, and JOY-0181-95:
@@ -50,3 +54,13 @@ comments:
     3. §9.7 AI Delegation Tokens: add `--json` form returning `session_env`/`member`/`delegated_by`, mention `--session` flag and `JOY_SESSION` env, mention generic AI registration for chat-only tools (`joy project member add ai:<name>@joy`).
 
     Out of scope: §8 The Trust Model, AI Identity capabilities table, Keeping Instructions Current. Those are still correct.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-15T15:29:44.050658227Z
+  text: |-
+    [x] Section 8: rewrote `joy ai init` summary (4 steps with inline auth bootstrap), removed misleading `.joy/ai/` path, added pointer to `joy ai tutorial`, added paragraph on chat-only AI member registration.
+    [x] AI Identity sub-section: dropped deprecated `--author` examples, reframed identity as session-based.
+    [x] Section 9 AI Delegation Tokens: full walk-through with `--token --json`, `session_env/member/delegated_by` pickup, `--session` flag and `JOY_SESSION` env var.
+    [x] Synced in-crate copy at crates/joy-cli/docs/user/Tutorial.md.
+    [x] `just check` green except pre-existing JOY-0186-22.
+
+    Commit: ab155f8 on main.

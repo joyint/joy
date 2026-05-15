@@ -1,15 +1,21 @@
 id: JOY-0184-4A
 title: Inconsistent git staging after `joy init` and `joy ai init`
 type: bug
-status: new
+status: in-progress
 priority: medium
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 - review
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-14T19:16:42.106620770Z
-updated: 2026-05-14T19:16:42.106620770Z
+updated: 2026-05-15T15:52:15.350202839Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-05-15T15:52:15.350202839Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   After `joy init` followed by `joy ai init` on a fresh repo, files land in three different git states:
 

@@ -578,6 +578,10 @@ fn check_docs(root: &Path, args: &InitArgs) -> anyhow::Result<()> {
                     fs::create_dir_all(parent)?;
                 }
                 fs::write(&full, spec.template)?;
+                if let Ok(rel) = full.strip_prefix(root) {
+                    let rel_str = rel.to_string_lossy().into_owned();
+                    joy_core::git_ops::auto_git_add(root, &[&rel_str]);
+                }
                 dprintln!(
                     "    {}Created {} (template -- your AI tool will help fill it in)",
                     color::check_mark(),
@@ -590,6 +594,12 @@ fn check_docs(root: &Path, args: &InitArgs) -> anyhow::Result<()> {
 
     if project_changed {
         joy_core::store::write_yaml_preserve(&project_path, &project)?;
+        let rel = format!(
+            "{}/{}",
+            joy_core::store::JOY_DIR,
+            joy_core::store::PROJECT_FILE
+        );
+        joy_core::git_ops::auto_git_add(root, &[&rel]);
     }
 
     if any_auto_detected {
@@ -754,6 +764,12 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
             }
             if cleaned {
                 joy_core::store::write_yaml_preserve(&project_path, &project)?;
+                let rel = format!(
+                    "{}/{}",
+                    joy_core::store::JOY_DIR,
+                    joy_core::store::PROJECT_FILE
+                );
+                joy_core::git_ops::auto_git_add(&root, &[&rel]);
             } else {
                 dprintln!("{}No AI tool configurations found.", color::check_mark());
             }
@@ -832,6 +848,12 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
         }
         if project_changed {
             joy_core::store::write_yaml_preserve(&project_path, &project)?;
+            let rel = format!(
+                "{}/{}",
+                joy_core::store::JOY_DIR,
+                joy_core::store::PROJECT_FILE
+            );
+            joy_core::git_ops::auto_git_add(&root, &[&rel]);
         }
     }
 
@@ -1021,6 +1043,12 @@ fn setup_new_tools(root: &Path, passphrase: Option<&str>) -> anyhow::Result<Vec<
 
     if project_changed {
         joy_core::store::write_yaml_preserve(&project_path, &project)?;
+        let rel = format!(
+            "{}/{}",
+            joy_core::store::JOY_DIR,
+            joy_core::store::PROJECT_FILE
+        );
+        joy_core::git_ops::auto_git_add(root, &[&rel]);
     }
 
     if configured_tools.is_empty() {
@@ -1083,7 +1111,7 @@ fn generate_agents(root: &Path, tool: &str, agents_dir: &str) -> anyhow::Result<
         if let Some(filename) = ai_templates::agent_filename(agent, tool) {
             let content = ai_templates::render_agent(agent, &workflow, tool)?;
             let path = root.join(agents_dir).join(&filename);
-            changed |= write_if_changed(&path, &content)?;
+            changed |= write_if_changed(root, &path, &content)?;
             qprintln!("    {}{}/{}", color::check_mark(), agents_dir, filename);
         }
     }
@@ -1101,17 +1129,18 @@ fn configure_claude(root: &Path, member_id: &str) -> anyhow::Result<bool> {
 
     let claude_md = claude_dir.join("CLAUDE.md");
     changed |= update_with_joy_block(
+        root,
         &claude_md,
         &render_managed_block(member_id, true, "claude")?,
     )?;
     qprintln!("    {}.claude/CLAUDE.md", color::check_mark());
 
     let skill_path = claude_dir.join("skills/joy/SKILL.md");
-    changed |= write_if_changed(&skill_path, &render_skill()?)?;
+    changed |= write_if_changed(root, &skill_path, &render_skill()?)?;
     qprintln!("    {}.claude/skills/joy/SKILL.md", color::check_mark());
 
     let setup_path = claude_dir.join("skills/joy/setup.md");
-    changed |= write_if_changed(&setup_path, ai_templates::setup_instructions())?;
+    changed |= write_if_changed(root, &setup_path, ai_templates::setup_instructions())?;
     qprintln!("    {}.claude/skills/joy/setup.md", color::check_mark());
 
     changed |= generate_agents(root, "claude", ".claude/agents")?;
@@ -1149,7 +1178,7 @@ fn update_claude_permissions(root: &Path, _member_id: &str) -> anyhow::Result<bo
     }
 
     let json = serde_json::to_string_pretty(&settings)?;
-    let changed = write_if_changed(&settings_path, &format!("{json}\n"))?;
+    let changed = write_if_changed(root, &settings_path, &format!("{json}\n"))?;
     qprintln!("    {}.claude/settings.json", color::check_mark());
 
     Ok(changed)
@@ -1165,15 +1194,19 @@ fn configure_qwen(root: &Path, member_id: &str) -> anyhow::Result<bool> {
     let mut changed = false;
 
     let qwen_md = qwen_dir.join("QWEN.md");
-    changed |= update_with_joy_block(&qwen_md, &render_managed_block(member_id, true, "qwen")?)?;
+    changed |= update_with_joy_block(
+        root,
+        &qwen_md,
+        &render_managed_block(member_id, true, "qwen")?,
+    )?;
     qprintln!("    {}.qwen/QWEN.md", color::check_mark());
 
     let skill_path = qwen_dir.join("skills/joy/SKILL.md");
-    changed |= write_if_changed(&skill_path, &render_skill()?)?;
+    changed |= write_if_changed(root, &skill_path, &render_skill()?)?;
     qprintln!("    {}.qwen/skills/joy/SKILL.md", color::check_mark());
 
     let setup_path = qwen_dir.join("skills/joy/setup.md");
-    changed |= write_if_changed(&setup_path, ai_templates::setup_instructions())?;
+    changed |= write_if_changed(root, &setup_path, ai_templates::setup_instructions())?;
     qprintln!("    {}.qwen/skills/joy/setup.md", color::check_mark());
 
     changed |= generate_agents(root, "qwen", ".qwen/agents")?;
@@ -1211,7 +1244,7 @@ fn update_qwen_permissions(root: &Path, _member_id: &str) -> anyhow::Result<bool
     }
 
     let json = serde_json::to_string_pretty(&settings)?;
-    let changed = write_if_changed(&settings_path, &format!("{json}\n"))?;
+    let changed = write_if_changed(root, &settings_path, &format!("{json}\n"))?;
     qprintln!("    {}.qwen/settings.json", color::check_mark());
 
     Ok(changed)
@@ -1230,21 +1263,25 @@ fn configure_vibe(root: &Path, member_id: &str) -> anyhow::Result<bool> {
     // prompt (see mistral-vibe vibe/core/config/harness_files). `.vibe/AGENTS.md`
     // is NOT scanned, so the file must live at the workspace root.
     let agents_md = root.join("AGENTS.md");
-    changed |= update_with_joy_block(&agents_md, &render_managed_block(member_id, true, "vibe")?)?;
+    changed |= update_with_joy_block(
+        root,
+        &agents_md,
+        &render_managed_block(member_id, true, "vibe")?,
+    )?;
     qprintln!("    {}AGENTS.md", color::check_mark());
 
     let skill_path = vibe_dir.join("skills/joy/SKILL.md");
-    changed |= write_if_changed(&skill_path, &render_skill()?)?;
+    changed |= write_if_changed(root, &skill_path, &render_skill()?)?;
     qprintln!("    {}.vibe/skills/joy/SKILL.md", color::check_mark());
 
     let setup_path = vibe_dir.join("skills/joy/setup.md");
-    changed |= write_if_changed(&setup_path, ai_templates::setup_instructions())?;
+    changed |= write_if_changed(root, &setup_path, ai_templates::setup_instructions())?;
     qprintln!("    {}.vibe/skills/joy/setup.md", color::check_mark());
 
     changed |= generate_agents(root, "vibe", ".vibe/agents")?;
 
     let config_path = vibe_dir.join("config.toml");
-    changed |= ensure_vibe_bash_always(&config_path)?;
+    changed |= ensure_vibe_bash_always(root, &config_path)?;
     qprintln!("    {}.vibe/config.toml", color::check_mark());
 
     Ok(changed)
@@ -1254,7 +1291,7 @@ fn configure_vibe(root: &Path, member_id: &str) -> anyhow::Result<bool> {
 /// Creates the file if missing. If the key already exists we respect the
 /// user's value and leave the file alone, so a deliberate override is
 /// not clobbered on every `joy ai init`.
-fn ensure_vibe_bash_always(path: &Path) -> anyhow::Result<bool> {
+fn ensure_vibe_bash_always(root: &Path, path: &Path) -> anyhow::Result<bool> {
     use toml_edit::{value, DocumentMut, Item, Table};
 
     let mut doc: DocumentMut = if path.is_file() {
@@ -1281,7 +1318,7 @@ fn ensure_vibe_bash_always(path: &Path) -> anyhow::Result<bool> {
     }
     bash["permission"] = value("always");
 
-    write_if_changed(path, &doc.to_string())
+    write_if_changed(root, path, &doc.to_string())
 }
 
 fn configure_copilot(root: &Path, member_id: &str) -> anyhow::Result<bool> {
@@ -1295,6 +1332,7 @@ fn configure_copilot(root: &Path, member_id: &str) -> anyhow::Result<bool> {
 
     let instructions_md = github_dir.join("copilot-instructions.md");
     changed |= update_with_joy_block(
+        root,
         &instructions_md,
         &render_managed_block(member_id, false, "copilot")?,
     )?;
@@ -1304,7 +1342,7 @@ fn configure_copilot(root: &Path, member_id: &str) -> anyhow::Result<bool> {
     let workflow = ai_templates::load_workflow()?;
     let prompt = ai_templates::render_copilot_prompt(&workflow)?;
     let prompt_path = github_dir.join("prompts/joy.prompt.md");
-    changed |= write_if_changed(&prompt_path, &prompt)?;
+    changed |= write_if_changed(root, &prompt_path, &prompt)?;
     qprintln!("    {}.github/prompts/joy.prompt.md", color::check_mark());
 
     changed |= generate_agents(root, "copilot", ".github/agents")?;
@@ -1340,15 +1378,23 @@ fn update_copilot_permissions(root: &Path, _member_id: &str) -> anyhow::Result<b
     }
 
     let json = serde_json::to_string_pretty(&settings)?;
-    let changed = write_if_changed(&settings_path, &format!("{json}\n"))?;
+    let changed = write_if_changed(root, &settings_path, &format!("{json}\n"))?;
     qprintln!("    {}.github/copilot/settings.json", color::check_mark());
 
     Ok(changed)
 }
 
 /// Write content to a file only if it differs.
-/// Returns true if the file was changed.
-fn write_if_changed(path: &Path, content: &str) -> anyhow::Result<bool> {
+/// Write `content` to `path` if the existing file content differs (or the
+/// file is missing). Returns true when the file was actually changed.
+///
+/// Whenever the write happens, the path is auto-staged via Joy's
+/// `workflow.auto-git` so a subsequent `git commit` picks it up
+/// alongside the rest of joy-managed state. Without this, `joy ai init`
+/// would leave doc templates, AI tool configs, and the like as
+/// untracked clutter, inconsistent with `joy init` and `joy auth init`
+/// which already stage their writes (JOY-0184-4A).
+fn write_if_changed(root: &Path, path: &Path, content: &str) -> anyhow::Result<bool> {
     if path.is_file() {
         let existing = fs::read_to_string(path)?;
         if existing == content {
@@ -1359,6 +1405,10 @@ fn write_if_changed(path: &Path, content: &str) -> anyhow::Result<bool> {
         fs::create_dir_all(parent)?;
     }
     fs::write(path, content)?;
+    if let Ok(rel) = path.strip_prefix(root) {
+        let rel_str = rel.to_string_lossy().into_owned();
+        joy_core::git_ops::auto_git_add(root, &[&rel_str]);
+    }
     Ok(true)
 }
 
@@ -1388,7 +1438,7 @@ fn remove_joy_block_or_file(path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn update_with_joy_block(path: &Path, content: &str) -> anyhow::Result<bool> {
+fn update_with_joy_block(root: &Path, path: &Path, content: &str) -> anyhow::Result<bool> {
     let block = format!("{}\n{}\n{}", JOY_BLOCK_START, content, JOY_BLOCK_END);
 
     let new_content = if path.is_file() {
@@ -1408,7 +1458,7 @@ fn update_with_joy_block(path: &Path, content: &str) -> anyhow::Result<bool> {
         format!("{}\n", block)
     };
 
-    write_if_changed(path, &new_content)
+    write_if_changed(root, path, &new_content)
 }
 
 fn confirm_default_yes() -> anyhow::Result<bool> {
@@ -1599,7 +1649,7 @@ mod tests {
     fn ensure_vibe_bash_always_creates_new_file() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("config.toml");
-        let changed = ensure_vibe_bash_always(&path).unwrap();
+        let changed = ensure_vibe_bash_always(tmp.path(), &path).unwrap();
         assert!(changed);
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("[tools.bash]"));
@@ -1611,7 +1661,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("config.toml");
         std::fs::write(&path, "[models]\ndefault = \"mistral-large\"\n").unwrap();
-        let changed = ensure_vibe_bash_always(&path).unwrap();
+        let changed = ensure_vibe_bash_always(tmp.path(), &path).unwrap();
         assert!(changed);
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("default = \"mistral-large\""));
@@ -1623,7 +1673,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("config.toml");
         std::fs::write(&path, "[tools.bash]\npermission = \"ask\"\n").unwrap();
-        let changed = ensure_vibe_bash_always(&path).unwrap();
+        let changed = ensure_vibe_bash_always(tmp.path(), &path).unwrap();
         assert!(!changed);
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("permission = \"ask\""));
@@ -1872,7 +1922,7 @@ mod tests {
     fn update_with_joy_block_creates_agents_md() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("AGENTS.md");
-        let changed = update_with_joy_block(&path, "hello world").unwrap();
+        let changed = update_with_joy_block(tmp.path(), &path, "hello world").unwrap();
         assert!(changed);
         let content = fs::read_to_string(&path).unwrap();
         assert!(content.starts_with(JOY_BLOCK_START));
@@ -1892,7 +1942,7 @@ mod tests {
             ),
         )
         .unwrap();
-        update_with_joy_block(&path, "new content").unwrap();
+        update_with_joy_block(tmp.path(), &path, "new content").unwrap();
         let content = fs::read_to_string(&path).unwrap();
         assert!(content.starts_with("user header"));
         assert!(content.contains("new content"));

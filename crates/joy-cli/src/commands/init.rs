@@ -61,7 +61,14 @@ pub fn run(args: InitArgs) -> Result<()> {
             // clean immediately after init (otherwise the auth section
             // would report SECURITY.md as stale). project.yaml is just
             // created at the current schema, so no migration is needed.
-            let _ = joy_core::security_md::render(&root.join("SECURITY.md"));
+            // Stage with the rest of joy's writes (JOY-0184-4A) so the
+            // first commit picks it up alongside .joy/* and templates.
+            if matches!(
+                joy_core::security_md::render(&root.join("SECURITY.md")),
+                Ok(true)
+            ) {
+                joy_core::git_ops::auto_git_add(&root, &["SECURITY.md"]);
+            }
             println!();
             println!("Get started:");
             println!("  joy add <TYPE> <TITLE>   Create an item");
