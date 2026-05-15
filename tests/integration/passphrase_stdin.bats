@@ -53,8 +53,21 @@ load setup
 }
 
 @test "joy project member add accepts --passphrase-stdin" {
-    setup_human_auth
-    run bash -c "echo '$TEST_PASSPHRASE' | joy project member add ai:pstdin@joy --passphrase-stdin"
+    # Sessions are TTY-bound on purpose (identity::check_session): a
+    # session minted in one terminal must not be usable from another
+    # terminal or from an unattended subprocess. So this test cannot
+    # mix `setup_human_auth` (TTY stdin) with `echo X | joy …` (pipe
+    # stdin) -- the pipe call would correctly be refused.
+    #
+    # A realistic `--passphrase-stdin` scenario is a GUI / CI /
+    # orchestration pipeline where *every* joy invocation reads from
+    # a pipe. Wrap auth init and the member add in the same pipe
+    # context so the two `current_tty()` values match (both None).
+    run bash -c "
+        joy init --name 'Test Project' >/dev/null
+        echo '$TEST_PASSPHRASE' | joy auth init --passphrase-stdin >/dev/null
+        echo '$TEST_PASSPHRASE' | joy project member add ai:pstdin@joy --passphrase-stdin
+    "
     [ "$status" -eq 0 ]
     [[ "$output" == *"Added member ai:pstdin@joy"* ]]
 }

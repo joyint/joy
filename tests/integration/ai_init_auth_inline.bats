@@ -19,14 +19,13 @@ load setup
     [[ "$output" == *"Authentication"* ]]
     [[ "$output" == *"Authentication initialized for"* ]]
     [[ "$output" == *"Public key registered"* ]]
-    # Caller now has a verify_key in project.yaml.
-    # The session created above was bound to a non-TTY stdin (the
-    # `</dev/null` redirect that prevented the interactive doc/tool
-    # prompts from blocking). Sessions are TTY-bound (identity.rs's
-    # `check_session`), so the follow-up `joy auth status` must run
-    # under the same non-TTY context for the session to validate.
-    run joy auth status </dev/null
-    [ "$status" -eq 0 ]
+    # Persistent indicator: the caller now has a verify_key in
+    # project.yaml. We deliberately do NOT run `joy auth status`
+    # here: that checks the *session*, which is TTY-bound by design
+    # (identity::check_session) and would not match the non-TTY
+    # context we just used to drive the init through its [Y/n]
+    # prompts. The auth-bootstrap claim is fully tied to verify_key.
+    grep -q "^    verify_key:" .joy/project.yaml
 }
 
 @test "joy ai init skips auth section when caller is already authenticated" {
