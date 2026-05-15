@@ -25,12 +25,11 @@ pub struct AuthArgs {
     #[arg(long, global = true)]
     passphrase: Option<String>,
 
-    /// Read the passphrase from a single line on stdin. Pattern matches
-    /// `gh auth login --with-token` / `docker login --password-stdin` so
-    /// GUI frontends (e.g. the VS Code extension) can collect the
-    /// passphrase via their own input widget without exposing it in the
-    /// process listing the way `--passphrase <value>` would. Mutually
-    /// exclusive with `--passphrase`. (JOY-018E-21)
+    /// Read the passphrase from a single line on stdin. Useful for
+    /// GUI frontends and CI pipelines that collect the secret elsewhere
+    /// and want to avoid exposing it in the process listing the way
+    /// `--passphrase <value>` would. Mutually exclusive with
+    /// `--passphrase`.
     #[arg(long = "passphrase-stdin", global = true)]
     passphrase_stdin: bool,
 

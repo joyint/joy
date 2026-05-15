@@ -408,6 +408,25 @@ pub fn is_ai_member(id: &str) -> bool {
     id.starts_with("ai:")
 }
 
+/// One-line description for a `joy project get` key. Returned by
+/// `--describe` so the CLI is the single source of truth for what
+/// each project field means. Mirrors `crate::model::config::describe_value`
+/// for the config tree.
+pub fn describe_value(key: &str, _value: &serde_json::Value) -> Option<String> {
+    let text = match key {
+        "name" => "human-readable project name",
+        "acronym" => "short prefix used in item IDs",
+        "description" => "one-paragraph project description",
+        "language" => "project language for written artifacts (titles, comments, commits)",
+        "created" => "ISO timestamp when the project was initialized",
+        "docs.architecture" => "path to the technical architecture document",
+        "docs.vision" => "path to the product-vision document",
+        "docs.contributing" => "path to the contributing guide",
+        _ => return None,
+    };
+    Some(text.to_string())
+}
+
 fn default_language() -> String {
     "en".to_string()
 }
@@ -486,6 +505,27 @@ mod tests {
         let yaml = serde_yaml_ng::to_string(&project).unwrap();
         let parsed: Project = serde_yaml_ng::from_str(&yaml).unwrap();
         assert_eq!(project, parsed);
+    }
+
+    #[test]
+    fn describe_value_covers_documented_keys() {
+        let dummy = serde_json::Value::Null;
+        for key in &[
+            "name",
+            "acronym",
+            "description",
+            "language",
+            "created",
+            "docs.architecture",
+            "docs.vision",
+            "docs.contributing",
+        ] {
+            assert!(
+                describe_value(key, &dummy).is_some(),
+                "missing description for project key {key}"
+            );
+        }
+        assert!(describe_value("unknown", &dummy).is_none());
     }
 
     // -----------------------------------------------------------------------

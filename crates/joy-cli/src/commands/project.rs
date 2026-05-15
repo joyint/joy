@@ -56,9 +56,15 @@ enum ProjectCommand {
 
 #[derive(clap::Args)]
 struct GetArgs {
-    /// Project key
+    /// Project key (e.g. `name`, `docs.architecture`). A trailing `.*`
+    /// lists every leaf under that prefix.
     #[arg(add = clap_complete::engine::ArgValueCompleter::new(complete_project_key))]
     key: String,
+
+    /// Append a one-line semantic description to each value. Same flag
+    /// and shape as `joy config get --describe`.
+    #[arg(long)]
+    describe: bool,
 }
 
 #[derive(clap::Args)]
@@ -111,7 +117,7 @@ struct MemberAddArgs {
     #[arg(long)]
     passphrase: Option<String>,
 
-    /// Read the passphrase from a single line on stdin (JOY-018E-21).
+    /// Read the passphrase from a single line on stdin.
     #[arg(long = "passphrase-stdin")]
     passphrase_stdin: bool,
 
@@ -135,7 +141,7 @@ struct MemberRmArgs {
     #[arg(long)]
     passphrase: Option<String>,
 
-    /// Read the passphrase from a single line on stdin (JOY-018E-21).
+    /// Read the passphrase from a single line on stdin.
     #[arg(long = "passphrase-stdin")]
     passphrase_stdin: bool,
 }
@@ -148,7 +154,7 @@ pub fn run(args: ProjectArgs) -> Result<()> {
 
     match args.command {
         Some(ProjectCommand::Get(a)) => {
-            return get_value(&project, &a.key);
+            return get_value(&project, &a.key, a.describe);
         }
         Some(ProjectCommand::Set(a)) => {
             ctx.enforce(&Action::ManageProject, "project")?;
@@ -224,34 +230,190 @@ pub fn run(args: ProjectArgs) -> Result<()> {
     Ok(())
 }
 
-fn get_value(project: &Project, key: &str) -> Result<()> {
-    let value: Option<String> = match key {
-        "name" => Some(project.name.clone()),
-        "acronym" => project.acronym.clone(),
-        "description" => project.description.clone(),
-        "language" => Some(project.language.clone()),
-        "created" => Some(project.created.format("%Y-%m-%d %H:%M").to_string()),
-        "docs.architecture" => Some(project.docs.architecture_or_default().to_string()),
-        "docs.vision" => Some(project.docs.vision_or_default().to_string()),
-        "docs.contributing" => Some(project.docs.contributing_or_default().to_string()),
-        _ => anyhow::bail!(
+fn get_value(project: &Project, key: &str, describe: bool) -> Result<()> {
+    let tree = project_value_tree(project);
+
+    // Wildcard form: `docs.*` lists every leaf under that prefix.
+    // Mirrors `joy config get <prefix>.*` (JOY-0187-D0).
+    if let Some(prefix) = wildcard_prefix(key) {
+        return get_wildcard(&tree, key, prefix, describe);
+    }
+
+    if !PROJECT_KEYS.contains(&key) {
+        anyhow::bail!(
             "unknown key: {key}\nknown keys: {}",
             PROJECT_KEYS.join(", ")
-        ),
-    };
+        );
+    }
+
+    let value = joy_core::model::config::flatten_under(&tree, "");
+    let scalar = value.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone());
+
     if crate::output::is_json() {
         #[derive(serde::Serialize)]
         struct GetPayload<'a> {
             key: &'a str,
             value: Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            description: Option<String>,
         }
-        return crate::output::emit(GetPayload { key, value });
+        let description = if describe {
+            scalar
+                .as_ref()
+                .and_then(|v| joy_core::model::project::describe_value(key, v))
+        } else {
+            None
+        };
+        return crate::output::emit(GetPayload {
+            key,
+            value: scalar.as_ref().and_then(value_as_optional_string),
+            description,
+        });
     }
-    match value {
-        Some(v) => println!("{v}"),
-        None => std::process::exit(1),
+
+    let Some(value) = scalar else {
+        std::process::exit(1);
+    };
+
+    let suffix = if describe {
+        joy_core::model::project::describe_value(key, &value)
+            .map(|d| format!("  {} {}", color::inactive("-"), color::inactive(&d)))
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    match &value {
+        serde_json::Value::Null => std::process::exit(1),
+        serde_json::Value::String(s) => println!("{s}{suffix}"),
+        other => println!("{other}{suffix}"),
     }
     Ok(())
+}
+
+/// Strip a trailing `.*` (or bare `*`) from `key` and return the
+/// prefix that remains. `None` when the key has no wildcard.
+fn wildcard_prefix(key: &str) -> Option<&str> {
+    if key == "*" {
+        Some("")
+    } else {
+        key.strip_suffix(".*")
+    }
+}
+
+fn get_wildcard(tree: &serde_json::Value, key: &str, prefix: &str, describe: bool) -> Result<()> {
+    let leaves = joy_core::model::config::flatten_under(tree, prefix);
+
+    if crate::output::is_json() {
+        #[derive(serde::Serialize)]
+        struct Entry {
+            key: String,
+            value: Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            description: Option<String>,
+        }
+        #[derive(serde::Serialize)]
+        struct Payload<'a> {
+            key: &'a str,
+            entries: Vec<Entry>,
+        }
+        let entries = leaves
+            .into_iter()
+            .map(|(k, v)| {
+                let description = if describe {
+                    joy_core::model::project::describe_value(&k, &v)
+                } else {
+                    None
+                };
+                Entry {
+                    key: k,
+                    value: value_as_optional_string(&v),
+                    description,
+                }
+            })
+            .collect();
+        return crate::output::emit(Payload { key, entries });
+    }
+
+    if leaves.is_empty() {
+        std::process::exit(1);
+    }
+
+    let rows: Vec<(String, String, Option<String>)> = leaves
+        .iter()
+        .map(|(k, v)| {
+            let display = scalar_str(v);
+            let desc = if describe {
+                joy_core::model::project::describe_value(k, v)
+            } else {
+                None
+            };
+            (k.clone(), display, desc)
+        })
+        .collect();
+
+    let max_key = rows.iter().map(|(k, _, _)| k.len()).max().unwrap_or(0);
+    let max_val = rows.iter().map(|(_, v, _)| v.len()).max().unwrap_or(0);
+
+    for (k, v, desc) in &rows {
+        if let Some(d) = desc {
+            println!(
+                "{:<kw$}  {:<vw$}  {} {}",
+                color::label(k),
+                v,
+                color::inactive("-"),
+                color::inactive(d),
+                kw = max_key,
+                vw = max_val,
+            );
+        } else {
+            println!("{:<kw$}  {}", color::label(k), v, kw = max_key);
+        }
+    }
+    Ok(())
+}
+
+fn scalar_str(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Bool(b) => b.to_string(),
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::Null => String::new(),
+        other => other.to_string(),
+    }
+}
+
+/// Some project fields are `Option<String>` (acronym, description).
+/// In the existing JSON contract those return `null` when unset, not
+/// the string `"null"`. Preserve that.
+fn value_as_optional_string(v: &serde_json::Value) -> Option<String> {
+    match v {
+        serde_json::Value::Null => None,
+        serde_json::Value::String(s) => Some(s.clone()),
+        other => Some(other.to_string()),
+    }
+}
+
+/// Snapshot the project's read-exposed metadata into a nested JSON
+/// tree so `flatten_under` and `describe_value` can walk it the same
+/// way `joy config get` does. The shape matches PROJECT_KEYS: top-level
+/// scalars plus a `docs` object holding the three resolved doc paths.
+/// Unset optional fields (acronym, description) are represented as
+/// `null` so the existing JSON payload shape on those keys is
+/// preserved.
+fn project_value_tree(project: &Project) -> serde_json::Value {
+    serde_json::json!({
+        "name": project.name,
+        "acronym": project.acronym,
+        "description": project.description,
+        "language": project.language,
+        "created": project.created.format("%Y-%m-%d %H:%M").to_string(),
+        "docs": {
+            "architecture": project.docs.architecture_or_default(),
+            "vision": project.docs.vision_or_default(),
+            "contributing": project.docs.contributing_or_default(),
+        }
+    })
 }
 
 fn set_value(project: &mut Project, key: &str, value: &str) -> Result<()> {

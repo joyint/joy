@@ -96,8 +96,7 @@ struct InitArgs {
     passphrase: Option<String>,
 
     /// Read the passphrase from a single line on stdin. See
-    /// `joy auth --help` for the rationale; same flag, same semantics
-    /// (JOY-018E-21).
+    /// `joy auth --help` for the rationale; same flag, same semantics.
     #[arg(long = "passphrase-stdin")]
     passphrase_stdin: bool,
 }
@@ -123,7 +122,7 @@ struct RotateArgs {
     #[arg(long)]
     passphrase: Option<String>,
 
-    /// Read the passphrase from a single line on stdin (JOY-018E-21).
+    /// Read the passphrase from a single line on stdin.
     #[arg(long = "passphrase-stdin")]
     passphrase_stdin: bool,
 }

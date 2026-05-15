@@ -1,16 +1,20 @@
 id: JOY-0191-6E
 title: Wildcard + --describe support for joy project get
 type: task
-status: new
+status: in-progress
 priority: medium
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-15T20:04:18.051048390Z
-updated: 2026-05-15T20:04:18.051048390Z
+updated: 2026-05-15T20:18:29.671879723Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
+history:
+- date: 2026-05-15T20:05:33.408525767Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   joy project get only accepts fully-qualified keys today:
 
@@ -47,3 +51,16 @@ description: |-
   non-zero).
 
   Pairs naturally with JOY-0187-D0; no strict dependency.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-15T20:06:08.884338971Z
+  text: |-
+    Plan: mirror the JOY-0187-D0 shape in three steps.
+    1) Add describe_value(key, value) in joy-core::model::project covering name/acronym/description/language/created and docs.*; descriptions live next to the Project struct so the CLI is the single source of truth.
+    2) Build a serde_json::Value snapshot of the project (using the *_or_default() docs helpers so wildcard listings show the effective paths, not just the explicit overrides) and reuse joy_core::model::config::flatten_under for the wildcard walk. Same wildcard syntax: trailing .* (or bare *).
+    3) Rewrite get_value to support: (a) scalar key with optional --describe annotation; (b) wildcard prefix returns a table (display) or {key, entries:[{key,value,description?}]} (JSON); (c) object-valued non-wildcard keys keep the existing YAML/object payload for backwards compat.
+    Add --describe to GetArgs (same flag name as on joy config get).
+    Tests: tests/integration/project_describe.bats with the same cases as config_describe.bats (wildcard listing, --describe annotation, JSON entries, legacy payload preserved, unknown prefix exits non-zero).
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-15T20:18:29.671878387Z
+  text: '[x] joy_core::model::project gains describe_value(key, value) covering name, acronym, description, language, created and the three docs paths. joy-cli::commands::project rewrites get_value to (a) snapshot the project into a serde_json tree via project_value_tree (using docs.*_or_default() so wildcard listings show effective paths, not just explicit overrides), (b) detect trailing .* (or bare *) for wildcard listings via the shared joy_core::model::config::flatten_under helper, (c) render aligned key/value/description rows in display mode and an entries: [{key, value, description?}] array in JSON, (d) keep the legacy scalar {key, value} JSON shape and the existing ''unknown key'' bail-out for non-wildcard reads so existing callers don''t break. --describe flag added to GetArgs (same name and behavior as on joy config get). Tests: tests/integration/project_describe.bats covers wildcard listing, --describe annotation on scalar and wildcard forms, JSON entries shape, * top-level wildcard, legacy {key,value} payload preservation, unknown-prefix exit non-zero, and Option<String> field returning null. Also stripped JOY-XXXX-XX tags from clap doc strings across auth/project/crypt/ai (operators don''t have a way to look up those IDs, so they''re noise in --help; moved to memory as a standing rule). All 391 bats tests pass.'

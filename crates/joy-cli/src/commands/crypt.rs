@@ -33,8 +33,8 @@ pub struct CryptArgs {
     #[arg(long, global = true)]
     passphrase: Option<String>,
 
-    /// Read the passphrase from a single line on stdin (JOY-018E-21).
-    /// Mutually exclusive with `--passphrase`.
+    /// Read the passphrase from a single line on stdin. Mutually
+    /// exclusive with `--passphrase`.
     #[arg(long = "passphrase-stdin", global = true)]
     passphrase_stdin: bool,
 
@@ -79,8 +79,7 @@ struct AddArgs {
     target: Option<String>,
     /// Encrypt every item in the project under the addressed zone and
     /// flip the project default so newly created items inherit the
-    /// zone (ADR-038 whole-project mode). Mutually exclusive with the
-    /// positional target.
+    /// zone. Mutually exclusive with the positional target.
     #[arg(long, conflicts_with = "target")]
     all: bool,
 }
