@@ -40,8 +40,8 @@ macro_rules! dprint {
     };
 }
 
-const VISION_TEMPLATE: &str = include_str!("../../docs/vision/README.md");
-const ARCHITECTURE_TEMPLATE: &str = include_str!("../../docs/architecture/README.md");
+const VISION_TEMPLATE: &str = include_str!("../../docs/dev/vision/README.md");
+const ARCHITECTURE_TEMPLATE: &str = include_str!("../../docs/dev/architecture/README.md");
 const CONTRIBUTING_TEMPLATE: &str = include_str!("../../docs/CONTRIBUTING.md");
 
 const JOY_BLOCK_START: &str = "<!-- joy:start -->";
@@ -64,6 +64,15 @@ enum AiCommand {
     Reset(ResetArgs),
     /// Rotate the (operator, AI) delegation keypair
     Rotate(RotateArgs),
+    /// Read the AI operational guide (CLI reference for AI assistants)
+    Tutorial(AiTutorialArgs),
+}
+
+#[derive(clap::Args)]
+struct AiTutorialArgs {
+    /// Browse the tutorial via a chapter / subchapter menu (TTY only).
+    #[arg(short = 'i', long)]
+    interactive: bool,
 }
 
 #[derive(clap::Args, Default)]
@@ -116,7 +125,40 @@ pub fn run(args: AiArgs) -> anyhow::Result<()> {
         AiCommand::Rotate(a) => {
             crate::commands::auth::run_ai_rotate(&a.member, a.passphrase.as_deref())
         }
+        AiCommand::Tutorial(a) => ai_tutorial(a),
     }
+}
+
+// The canonical AI Tutorial lives at docs/ai/Tutorial.md in the repo
+// root. We ship an in-crate copy at crates/joy-cli/docs/ai/Tutorial.md
+// because `cargo package` builds the crate in isolation and cannot
+// reach files outside the crate root. The two files must stay
+// byte-identical; `just sync-tutorial` refreshes the copy and the
+// unit test below catches drift. Same pattern as the user-facing
+// tutorial, see JOY-017F-FD.
+const AI_TUTORIAL: &str = include_str!("../../docs/ai/Tutorial.md");
+
+fn ai_tutorial(args: AiTutorialArgs) -> anyhow::Result<()> {
+    // `joy ai tutorial` is targeted at AI consumption, so it opts out of
+    // the pager unconditionally. Even when stdout is a TTY (an AI tool
+    // runner that wires stdio through a PTY), spawning `less` would
+    // block the runner waiting for keyboard input. A human who wants
+    // scrolling can pipe to their own pager.
+    crate::commands::tutorial::run_markdown(AI_TUTORIAL, args.interactive, false)
+}
+
+#[cfg(test)]
+#[test]
+fn in_crate_ai_tutorial_matches_canonical() {
+    let canonical = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/ai/Tutorial.md"
+    ));
+    assert_eq!(
+        canonical, AI_TUTORIAL,
+        "crates/joy-cli/docs/AiTutorial.md is out of sync with \
+         docs/ai/Tutorial.md. Run `just sync-tutorial`."
+    );
 }
 
 /// Run the AI init flow with default prompts. Used by the `joy` welcome
@@ -297,7 +339,7 @@ fn is_tool_stale(root: &Path, tool: &str, member_id: &str) -> anyhow::Result<boo
     };
     if let Some(path) = block_path {
         let has_skill = tool != "copilot";
-        let expected_block = render_managed_block(member_id, has_skill)?;
+        let expected_block = render_managed_block(member_id, has_skill, tool)?;
         if !joy_block_matches(&path, &expected_block) {
             return Ok(true);
         }
@@ -1004,9 +1046,9 @@ fn setup_new_tools(root: &Path, passphrase: Option<&str>) -> anyhow::Result<Vec<
 }
 
 /// Render the managed block (identity + instructions with workflow) for a tool's instruction file.
-fn render_managed_block(member_id: &str, has_skill: bool) -> anyhow::Result<String> {
+fn render_managed_block(member_id: &str, has_skill: bool, tool: &str) -> anyhow::Result<String> {
     let workflow = ai_templates::load_workflow()?;
-    let joy_block = ai_templates::render_joy_block(member_id, has_skill)?;
+    let joy_block = ai_templates::render_joy_block(member_id, has_skill, tool)?;
     let instructions = ai_templates::render_instructions(&workflow)?;
     Ok(format!("{}\n\n{}", joy_block, instructions))
 }
@@ -1058,7 +1100,10 @@ fn configure_claude(root: &Path, member_id: &str) -> anyhow::Result<bool> {
     let mut changed = false;
 
     let claude_md = claude_dir.join("CLAUDE.md");
-    changed |= update_with_joy_block(&claude_md, &render_managed_block(member_id, true)?)?;
+    changed |= update_with_joy_block(
+        &claude_md,
+        &render_managed_block(member_id, true, "claude")?,
+    )?;
     qprintln!("    {}.claude/CLAUDE.md", color::check_mark());
 
     let skill_path = claude_dir.join("skills/joy/SKILL.md");
@@ -1120,7 +1165,7 @@ fn configure_qwen(root: &Path, member_id: &str) -> anyhow::Result<bool> {
     let mut changed = false;
 
     let qwen_md = qwen_dir.join("QWEN.md");
-    changed |= update_with_joy_block(&qwen_md, &render_managed_block(member_id, true)?)?;
+    changed |= update_with_joy_block(&qwen_md, &render_managed_block(member_id, true, "qwen")?)?;
     qprintln!("    {}.qwen/QWEN.md", color::check_mark());
 
     let skill_path = qwen_dir.join("skills/joy/SKILL.md");
@@ -1185,7 +1230,7 @@ fn configure_vibe(root: &Path, member_id: &str) -> anyhow::Result<bool> {
     // prompt (see mistral-vibe vibe/core/config/harness_files). `.vibe/AGENTS.md`
     // is NOT scanned, so the file must live at the workspace root.
     let agents_md = root.join("AGENTS.md");
-    changed |= update_with_joy_block(&agents_md, &render_managed_block(member_id, true)?)?;
+    changed |= update_with_joy_block(&agents_md, &render_managed_block(member_id, true, "vibe")?)?;
     qprintln!("    {}AGENTS.md", color::check_mark());
 
     let skill_path = vibe_dir.join("skills/joy/SKILL.md");
@@ -1249,7 +1294,10 @@ fn configure_copilot(root: &Path, member_id: &str) -> anyhow::Result<bool> {
     let mut changed = false;
 
     let instructions_md = github_dir.join("copilot-instructions.md");
-    changed |= update_with_joy_block(&instructions_md, &render_managed_block(member_id, false)?)?;
+    changed |= update_with_joy_block(
+        &instructions_md,
+        &render_managed_block(member_id, false, "copilot")?,
+    )?;
     qprintln!("    {}.github/copilot-instructions.md", color::check_mark());
 
     // Copilot skill wrapper

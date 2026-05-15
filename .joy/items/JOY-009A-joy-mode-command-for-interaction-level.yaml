@@ -4,6 +4,8 @@ type: story
 status: new
 priority: medium
 parent: JOY-0029
+deps:
+- JOY-0187-D0
 milestone: JOY-MS-02
 capabilities:
 - plan
@@ -12,8 +14,18 @@ capabilities:
 effort: 3
 created_by: horst.schwarz@joydev.com
 created: 2026-03-30T18:46:02.970060899Z
-updated: 2026-03-30T19:49:01.974960537Z
+updated: 2026-05-14T22:07:01.446241156Z
+description: |-
+  New command `joy mode <ID>` to inspect effective interaction levels per member per item. Flags: `--mine` (all statuses for caller), `--member <id>` (all statuses for a member), `--status <status>` (filter to a specific status). Combinable. Default (no flags): current status, all members. Output follows Joy UI standard: full-width header/footer, dimmed annotations. The AI uses `joy mode <ID> --mine` to determine how to interact. Resolves all four layers (project defaults, project overrides, personal preference, item override) clamped by max-mode. See ADR-025 for resolution logic.
+
+  Output must include the **semantic description** of each level, not just the name, so the AI knows what behaviour the level implies without having to look elsewhere. The canonical description set (single source of truth) lives next to the level definitions in joy-core and is what `joy config get modes.* --describe` (see JOY-0187-D0) returns too.
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-30T18:46:08.711854621Z
   text: 'New command joy mode <ID> to inspect effective interaction levels per member per item. Flags: --mine (all statuses for caller), --member <id> (all statuses for a member), --status <status> (filter to a specific status). Combinable. Default (no flags): current status, all members. Output follows Joy UI standard: full-width header/footer, dimmed annotations. The AI uses joy mode <ID> --mine to determine how to interact. Resolves all four layers (project defaults, project overrides, personal preference, item override) clamped by max-mode. See ADR-025 for resolution logic.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-14T22:04:47.707140767Z
+  text: Renamed from `joy mode` to `joy ai mode` to keep the AI-targeted CLI surface under the `joy ai` namespace, consistent with `joy ai init`, `joy ai reset`, `joy ai rotate`, `joy ai tutorial`. The output must include the level description so the AI does not need to consult an external document just to act on the resolved value.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-14T22:07:01.446240647Z
+  text: 'Reverted to `joy mode` (not `joy ai mode`). Reasoning: this is item-attribute inspection, same shape as `joy show <ID>`, `joy edit <ID>`, etc. Both humans and AIs run it. The `joy ai` namespace is reserved for AI-tool integration setup.'

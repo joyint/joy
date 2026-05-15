@@ -1,0 +1,37 @@
+id: JOY-0188-37
+title: Multi-value filter flags across joy commands
+type: story
+status: new
+priority: medium
+capabilities:
+- plan
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-14T23:13:10.239223041Z
+updated: 2026-05-14T23:16:39.955150176Z
+description: |-
+  Filter flags on joy commands (`--status`, `--type`, `--priority`, etc.) today accept a single value. Comma-separated lists (`--status closed,in-progress,review`) and repeated flags (`--status closed --status review`) both fail with errors.
+
+  Workflows that legitimately need a subset must either:
+  - Run `joy ls --all` and filter the output mentally / via post-processing.
+  - Run one invocation per value and merge results.
+
+  Hot spots in the codebase:
+  - `crates/joy-cli/src/commands/filter_args.rs` (used by `joy ls`, drives `joy roadmap` indirectly).
+  - `crates/joy-cli/src/commands/deps.rs` has its own `--status` filter.
+  - Any future filter-driven command (e.g. an extension of `joy find`).
+
+  The AI tutorial's session-start decisions step (see docs/ai/Tutorial.md, `Reading the project`) hits this: the AI wants "all decisions whose status is in-progress, review, or closed" and falls back to listing all and mentally skipping new/open/deferred. That works but costs tokens on extra rows.
+
+  Proposed: filter flags that take an enum value accept comma-separated lists with OR semantics, e.g.:
+
+    joy ls --type decision --status closed,in-progress,review
+    joy ls --type story,task --priority high,critical
+
+  Acceptance:
+  - `--status A,B,C` filters to items whose status is A or B or C.
+  - Single-value form continues to work.
+  - Same multi-value form on `--type` and `--priority` (and any other enum-valued filter flag) supported uniformly.
+  - Audit pass: every filter flag in the CLI that takes an enum value supports the multi-value form, not just `joy ls`.

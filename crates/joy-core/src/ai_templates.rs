@@ -75,8 +75,23 @@ pub fn load_agents() -> Result<Vec<serde_json::Value>, JoyError> {
     Ok(agents)
 }
 
+/// Canonical `Co-Authored-By:` trailer line per supported AI tool. The
+/// value is `<Brand> <email>` (no leading `Co-Authored-By:`), matching the
+/// form each tool uses in its own default commits when run standalone.
+/// Brand names are allowed in this trailer (and only this trailer); the
+/// rest of the project artifacts use the Joy member ID.
+fn coauthor_line_for_tool(tool: &str) -> &'static str {
+    match tool {
+        "claude" => "Claude <noreply@anthropic.com>",
+        "copilot" => "Copilot <copilot@github.com>",
+        "qwen" => "Qwen-Coder <qwen-coder@alibabacloud.com>",
+        "vibe" => "Mistral Vibe <vibe@mistral.ai>",
+        _ => "",
+    }
+}
+
 /// Render the joy-block (identity section inserted between markers in tool instruction files).
-pub fn render_joy_block(member_id: &str, has_skill: bool) -> Result<String, JoyError> {
+pub fn render_joy_block(member_id: &str, has_skill: bool, tool: &str) -> Result<String, JoyError> {
     let mut env = Environment::new();
     env.add_template("joy-block", JOY_BLOCK_TMPL)
         .map_err(|e| JoyError::Template(e.to_string()))?;
@@ -87,6 +102,7 @@ pub fn render_joy_block(member_id: &str, has_skill: bool) -> Result<String, JoyE
         .render(context! {
             member_id => member_id,
             has_skill => has_skill,
+            coauthor_line => coauthor_line_for_tool(tool),
         })
         .map_err(|e| JoyError::Template(e.to_string()))?;
     Ok(rendered.trim().to_string())
@@ -231,33 +247,48 @@ mod tests {
 
     #[test]
     fn render_joy_block_contains_member_id() {
-        let block = render_joy_block("ai:claude@joy", true).unwrap();
+        let block = render_joy_block("ai:claude@joy", true, "claude").unwrap();
         assert!(block.contains("ai:claude@joy"));
         assert!(block.contains("/joy"));
     }
 
     #[test]
     fn render_joy_block_without_skill() {
-        let block = render_joy_block("ai:copilot@joy", false).unwrap();
+        let block = render_joy_block("ai:copilot@joy", false, "copilot").unwrap();
         assert!(block.contains("Joy CLI commands"));
         assert!(!block.contains("`/joy` skill"));
     }
 
     #[test]
-    fn render_instructions_contains_workflow() {
-        let wf = load_workflow().unwrap();
-        let instructions = render_instructions(&wf).unwrap();
-        assert!(instructions.contains("## Workflow"));
-        assert!(instructions.contains("in-progress"));
-        assert!(instructions.contains("review"));
-        assert!(instructions.contains("joy start"));
+    fn render_joy_block_coauthor_per_tool() {
+        let claude = render_joy_block("ai:claude@joy", true, "claude").unwrap();
+        assert!(claude.contains("Claude <noreply@anthropic.com>"));
+        let copilot = render_joy_block("ai:copilot@joy", false, "copilot").unwrap();
+        assert!(copilot.contains("Copilot <copilot@github.com>"));
+        let qwen = render_joy_block("ai:qwen@joy", true, "qwen").unwrap();
+        assert!(qwen.contains("Qwen-Coder <qwen-coder@alibabacloud.com>"));
+        let vibe = render_joy_block("ai:vibe@joy", true, "vibe").unwrap();
+        assert!(vibe.contains("Mistral Vibe <vibe@mistral.ai>"));
     }
 
     #[test]
-    fn render_skill_contains_workflow() {
+    fn render_joy_block_includes_delegated_by_trailer() {
+        let block = render_joy_block("ai:claude@joy", true, "claude").unwrap();
+        assert!(block.contains("Delegated-By:"));
+    }
+
+    #[test]
+    fn render_instructions_points_to_tutorial() {
+        let wf = load_workflow().unwrap();
+        let instructions = render_instructions(&wf).unwrap();
+        assert!(instructions.contains("joy ai tutorial"));
+    }
+
+    #[test]
+    fn render_skill_points_to_tutorial_and_exposes_commands() {
         let wf = load_workflow().unwrap();
         let skill = render_skill(&wf).unwrap();
-        assert!(skill.contains("### Workflow"));
+        assert!(skill.contains("joy ai tutorial"));
         assert!(skill.contains("joy submit"));
     }
 
@@ -410,24 +441,17 @@ mod tests {
     }
 
     #[test]
-    fn instructions_contain_all_sections() {
+    fn instructions_point_to_tutorial() {
         let wf = load_workflow().unwrap();
         let instructions = render_instructions(&wf).unwrap();
-        for section in [
-            "## Session start",
-            "## Identity and capabilities",
-            "## Workflow",
-            "## Core commands",
-            "## Rules",
-            "## Project context",
-            "## Commit messages",
-            "## Working style",
-        ] {
-            assert!(
-                instructions.contains(section),
-                "instructions missing section: {section}"
-            );
-        }
+        assert!(
+            instructions.contains("joy ai tutorial"),
+            "tool instruction template must direct the AI to `joy ai tutorial`"
+        );
+        assert!(
+            instructions.contains("synced this repo"),
+            "tool instruction template must explain the re-read trigger"
+        );
     }
 
     #[test]
@@ -449,16 +473,13 @@ mod tests {
         let wf = load_workflow().unwrap();
         let skill = render_skill(&wf).unwrap();
         for section in [
-            "## Prerequisites",
-            "## First session check",
+            "## Before doing anything",
+            "## What `/joy` adds on top",
             "### Viewing and navigating",
-            "### Planning and creating items",
             "### Status changes",
-            "### Workflow",
             "### Editing and organizing",
-            "### Implementing items",
-            "### Discovered bugs and ad-hoc fixes",
-            "## General rules",
+            "### Planning and creating items",
+            "### Questions and analysis",
         ] {
             assert!(skill.contains(section), "skill missing section: {section}");
         }
@@ -684,7 +705,7 @@ mod tests {
             "rendered output must not contain version comments"
         );
 
-        let block = render_joy_block("ai:test@joy", true).unwrap();
+        let block = render_joy_block("ai:test@joy", true, "claude").unwrap();
         assert!(
             !block.contains("Generated by Joy"),
             "joy-block must not contain version comments"
@@ -706,7 +727,7 @@ mod tests {
     #[test]
     fn rendered_instructions_under_200_lines() {
         let wf = load_workflow().unwrap();
-        let block = render_joy_block("ai:test@joy", true).unwrap();
+        let block = render_joy_block("ai:test@joy", true, "claude").unwrap();
         let instructions = render_instructions(&wf).unwrap();
         let combined = format!("{}\n\n{}", block, instructions);
         let lines = combined.lines().count();

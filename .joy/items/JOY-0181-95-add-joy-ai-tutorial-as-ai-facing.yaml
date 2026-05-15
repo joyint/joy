@@ -1,8 +1,10 @@
 id: JOY-0181-95
 title: Add `joy ai tutorial` as AI-facing operational guide
 type: story
-status: new
+status: in-progress
 priority: medium
+assignees:
+- member: ai:claude@joy
 deps:
 - JOY-0182-17
 - JOY-0183-04
@@ -13,7 +15,7 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-14T18:10:33.089570872Z
-updated: 2026-05-14T18:37:30.465702319Z
+updated: 2026-05-14T20:06:25.075498528Z
 description: |-
   Introduce `joy ai tutorial` as the canonical AI-facing operational guide, covering patterns that depend on how AI tools execute commands and differ from human-facing docs:
 
@@ -64,3 +66,29 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-05-14T18:36:28.631674764Z
   text: 'Discoverability: extend the help footer in `crates/joy-cli/src/main.rs` (around line 85, currently "Run ''joy tutorial'' for the full guide. / Run ''joy tutorial --interactive'' for a chapter menu.") with an AI-targeted line, e.g. "AI tools: run ''joy ai tutorial'' for the AI operational guide." AI tools commonly run `joy --help` early in a session, so this is the lowest-friction entry point for the tutorial.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-14T20:06:25.075497907Z
+  text: |-
+    Plan (broken into phases):
+
+    **Phase A: Canonical tutorial content** -- write `docs/ai/Tutorial.md` (canonical). Sections:
+    - Overview + how to read the rest
+    - Session start ritual (interaction modes, member-show resolution, freshness mechanism)
+    - Authentication (token to session flow; `joy auth --token --json` returns `{member, session_env, delegated_by, project_id}`; `--session` flag from JOY-0182-17 as recommended path; JOY_SESSION env as alternative; error patterns; expired/wrong-project token recovery)
+    - Identity (learn from token redemption JSON, capability check, mandatory-stop on capability warnings)
+    - Workflow (status transitions, shortcuts, gates, allow_ai: false)
+    - Core commands + item types/priorities/effort scale (reference tables)
+    - Rules (project language, always-use-CLI, every-change-needs-item, status tracking, commenting, titles, no-emoji)
+    - Project context (read docs.architecture/vision/contributing on first session)
+    - Commit messages (conventional, item ID required)
+    - Working style (response, task spec, corrections, complexity, docs as spec, plan-first, tool use)
+
+    **Phase B: `joy ai tutorial` command** -- mirror the existing `joy tutorial` pattern: AiCommand::Tutorial subcommand, ships in-crate copy at `crates/joy-cli/docs/AiTutorial.md`, includes `--interactive` for chapter menu. Add justfile sync step.
+
+    **Phase C: Shrink instruction templates** -- reduce `crates/joy-core/templates/ai/instructions.md` from 168 lines to ~30. Keep: member-ID assignment line, tool-specific Co-Authored-By, no-brand-names rule, skill/agents reference, pointer to `joy ai tutorial` as required read with re-read on version sync.
+
+    **Phase D: Help footer** -- add "AI tools: run 'joy ai tutorial' for the AI operational guide." to the `Cli` after-help block in `main.rs`.
+
+    **Phase E: Tests** -- bats: `joy ai tutorial` prints expected sections; `joy ai tutorial --interactive` accepts (skip if non-TTY); generated CLAUDE.md after `joy ai init` is short (~30 lines) and points at tutorial; in-crate AiTutorial.md matches canonical.
+
+    Commit per phase or one phase at a time, your call.

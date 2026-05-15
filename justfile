@@ -67,7 +67,9 @@ _toolchain-check:
 # The canonical doc is docs/user/Tutorial.md; cargo package needs a
 # copy inside the joy-cli crate. See JOY-017F-FD.
 sync-tutorial:
-    cp docs/user/Tutorial.md crates/joy-cli/docs/Tutorial.md
+    mkdir -p crates/joy-cli/docs/user crates/joy-cli/docs/ai
+    cp docs/user/Tutorial.md crates/joy-cli/docs/user/Tutorial.md
+    cp docs/ai/Tutorial.md crates/joy-cli/docs/ai/Tutorial.md
 
 # Run fmt-check, lint, test
 check: _toolchain-check sync-tutorial fmt-check lint test

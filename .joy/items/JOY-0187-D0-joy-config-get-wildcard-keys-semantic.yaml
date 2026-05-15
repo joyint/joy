@@ -1,0 +1,44 @@
+id: JOY-0187-D0
+title: 'joy config get: wildcard keys + semantic descriptions'
+type: story
+status: new
+priority: medium
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-14T22:05:01.499046227Z
+updated: 2026-05-14T22:05:01.499046227Z
+description: |-
+  `joy config get <key>` today fetches a single fully-qualified key, value-only. Two gaps:
+
+  1. **No wildcard**: there is no way to list a section, e.g. all `modes.*` defaults at once. Users (and AIs) end up running multiple invocations or falling back to reading raw YAML, which contradicts the always-use-the-CLI rule.
+
+  2. **No semantic context**: `joy config get modes.default` returns just `collaborative`. The string alone does not tell an AI what behaviour `collaborative` requires. The same applies to other defaults (workflow.auto-git values, output.color modes, etc.). Forcing the consumer to hunt for descriptions elsewhere is a workflow-CLI smell.
+
+  Proposed:
+
+  - Wildcard support: `joy config get modes.*` or `joy config get modes` returns the whole section as a structured listing (display + JSON).
+  - New flag `--describe` (or always-on for descriptive values): each value is followed by a one-line semantic description maintained in joy-core alongside the value definitions, so the CLI is the single source of truth.
+
+  Example display:
+
+  ```
+  $ joy config get modes.default --describe
+  collaborative - propose approach, proceed after confirmation
+  ```
+
+  ```
+  $ joy config get modes.* --describe
+  modes.default       collaborative - propose approach, proceed after confirmation
+  modes.max           pairing       - step by step, question by question
+  ```
+
+  Acceptance:
+  - Every project-level default that has a discrete value set (interaction modes, auto-git policy, output modes, etc.) has a maintained one-line description string in joy-core.
+  - `joy config get <key>` accepts wildcards and prefix-only forms.
+  - `--describe` adds the description; `--json` exposes it as a structured field.
+
+  Depends on: nothing strict, but pairs naturally with JOY-009A (`joy ai mode`) which reuses the same description source for resolved-mode output.

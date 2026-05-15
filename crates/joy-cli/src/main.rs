@@ -82,6 +82,8 @@ Quick start:
   joy start IT-0001                     Start working on it
   joy                                   Show the board
 
+AI tools: run 'joy ai tutorial' for the AI operational guide.
+
 Run 'joy tutorial' for the full guide.
 Run 'joy tutorial --interactive' for a chapter menu.\n"
 )]
