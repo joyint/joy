@@ -21,6 +21,7 @@ capabilities:
 - review
 created: 2026-03-09T10:00:00Z
 updated: 2026-03-09T10:00:00Z
+history: []
 description: |
   Integrate Stripe for payment processing.
   Must support EUR and USD.

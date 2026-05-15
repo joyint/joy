@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 use anyhow::Result;
-use chrono::Utc;
 use clap::Args;
 
 use joy_core::guard::Action;
@@ -208,8 +207,7 @@ pub fn run(args: EditArgs) -> Result<()> {
     ctx.enforce(&action, &item.id)?;
 
     let log_user = ctx.log_user();
-    item.updated = Utc::now();
-    item.updated_by = Some(log_user.clone());
+    items::touch_for_attribute_change(&mut item, &log_user);
     items::update_item(&ctx.root, &item)?;
     joy_core::event_log::log_event_as(
         &ctx.root,

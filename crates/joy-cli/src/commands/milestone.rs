@@ -372,8 +372,7 @@ fn run_rm(args: RmArgs) -> Result<()> {
     for mut item in all_items {
         if item.milestone.as_deref() == Some(&ms.id) {
             item.milestone = None;
-            item.updated = chrono::Utc::now();
-            item.updated_by = Some(log_user.clone());
+            items::touch_for_attribute_change(&mut item, &log_user);
             items::update_item(&ctx.root, &item)?;
             println!("  Unlinked {}", color::id(&item.id));
         }
@@ -481,8 +480,7 @@ fn run_link(args: LinkArgs) -> Result<()> {
     let mut item = items::load_item(&ctx.root, &args.item_id)?;
     let log_user = ctx.log_user();
     item.milestone = Some(args.ms_id.clone());
-    item.updated = chrono::Utc::now();
-    item.updated_by = Some(log_user.clone());
+    items::touch_for_attribute_change(&mut item, &log_user);
     items::update_item(&ctx.root, &item)?;
     joy_core::event_log::log_event_as(
         &ctx.root,
@@ -524,8 +522,7 @@ fn run_unlink(args: UnlinkArgs) -> Result<()> {
             let old_ms_id = ms_id.clone();
             let log_user = ctx.log_user();
             item.milestone = None;
-            item.updated = chrono::Utc::now();
-            item.updated_by = Some(log_user.clone());
+            items::touch_for_attribute_change(&mut item, &log_user);
             items::update_item(&ctx.root, &item)?;
             joy_core::event_log::log_event_as(
                 &ctx.root,

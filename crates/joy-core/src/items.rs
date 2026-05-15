@@ -152,6 +152,36 @@ fn normalize_id_refs(items: &mut [Item]) {
     }
 }
 
+/// Record an attribute-level mutation on an item. Sets `updated` /
+/// `updated_by` for sort recency AND appends an entry to `history` for
+/// the audit footer. Use this whenever you mutate an item attribute
+/// (status, priority, deps, assignee, edit, ...). Do NOT use it for
+/// comment add / edit / rm; those use `touch_for_comment_change`
+/// instead, because per-comment audit lives on the comment itself.
+pub fn touch_for_attribute_change(item: &mut Item, by: &str) {
+    let now = chrono::Utc::now();
+    item.updated = now;
+    item.updated_by = Some(by.to_string());
+    item.history
+        .get_or_insert_with(Vec::new)
+        .push(crate::model::item::UpdateEntry {
+            date: now,
+            by: by.to_string(),
+        });
+}
+
+/// Bump an item's `updated` / `updated_by` for sort recency without
+/// appending to its attribute history. Use this for comment add / edit
+/// / rm: the item is touched but no attribute changed, so the audit
+/// trail of comment activity lives on the comment itself (its `edits`
+/// list, plus the item's `comments` Vec membership) rather than in the
+/// item's attribute history.
+pub fn touch_for_comment_change(item: &mut Item, by: &str) {
+    let now = chrono::Utc::now();
+    item.updated = now;
+    item.updated_by = Some(by.to_string());
+}
+
 /// Save an item to .joy/items/{ID}-{slug}.yaml.
 pub fn save_item(root: &Path, item: &Item) -> Result<(), JoyError> {
     let items_dir = store::joy_dir(root).join(store::ITEMS_DIR);
@@ -523,8 +553,7 @@ pub fn remove_references(
             changed = true;
         }
         if changed {
-            item.updated = chrono::Utc::now();
-            item.updated_by = Some(updated_by.to_string());
+            touch_for_attribute_change(&mut item, updated_by);
             update_item(root, &item)?;
             updated.push(item.id.clone());
         }

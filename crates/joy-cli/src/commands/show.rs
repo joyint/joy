@@ -174,13 +174,30 @@ pub fn run(args: ShowArgs) -> Result<()> {
                 "{}",
                 crate::commands::tutorial::render_markdown(&comment.text)
             );
+            // Per-comment edit audit. Each entry: `Updated: <date> by
+            // <editor>`. Indented to align with the body. Skipped when
+            // the comment has never been edited.
+            if !comment.edits.is_empty() {
+                println!();
+                for edit in &comment.edits {
+                    let edit_local: DateTime<Local> = edit.date.with_timezone(&Local);
+                    let edit_str = edit_local.format("%Y-%m-%d %H:%M").to_string();
+                    println!(
+                        "    {} {} by {}",
+                        color::label("Updated:"),
+                        color::label(&edit_str),
+                        color::user(&edit.by),
+                    );
+                }
+            }
         }
     }
 
+    // Blank line separates the footer block from the last comment body.
+    println!();
     println!("{}", color::label(&"-".repeat(w)));
     let created_date = item.created.format("%Y-%m-%d %H:%M").to_string();
-    let updated_date = item.updated.format("%Y-%m-%d %H:%M").to_string();
-    let created_part = match &item.created_by {
+    let created_line = match &item.created_by {
         Some(by) => format!(
             "{} {} by {}",
             color::label("Created:"),
@@ -193,22 +210,43 @@ pub fn run(args: ShowArgs) -> Result<()> {
             color::label(&created_date),
         ),
     };
-    // `updated_by` is optional so items written before the field existed
-    // still render cleanly; only the date shows in that case.
-    let updated_part = match &item.updated_by {
-        Some(by) => format!(
-            "{} {} by {}",
-            color::label("Updated:"),
-            color::label(&updated_date),
-            color::user(by),
-        ),
-        None => format!(
-            "{} {}",
-            color::label("Updated:"),
-            color::label(&updated_date),
-        ),
-    };
-    println!("{created_part}  {updated_part}");
+    println!("{created_line}");
+    match &item.history {
+        None => {
+            // Legacy YAML written before `history` shipped: fall back to a
+            // single `Updated:` line when the item has been mutated since
+            // creation. New items always have `Some(...)` so they never go
+            // through this branch.
+            if item.updated > item.created {
+                let updated_date = item.updated.format("%Y-%m-%d %H:%M").to_string();
+                let updated_line = match &item.updated_by {
+                    Some(by) => format!(
+                        "{} {} by {}",
+                        color::label("Updated:"),
+                        color::label(&updated_date),
+                        color::user(by),
+                    ),
+                    None => format!(
+                        "{} {}",
+                        color::label("Updated:"),
+                        color::label(&updated_date),
+                    ),
+                };
+                println!("{updated_line}");
+            }
+        }
+        Some(entries) => {
+            for entry in entries {
+                let entry_date = entry.date.format("%Y-%m-%d %H:%M").to_string();
+                println!(
+                    "{} {} by {}",
+                    color::label("Updated:"),
+                    color::label(&entry_date),
+                    color::user(&entry.by),
+                );
+            }
+        }
+    }
 
     Ok(())
 }

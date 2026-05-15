@@ -106,10 +106,10 @@ fn run_add(id: String, text: Option<String>, editor: Option<&str>) -> Result<()>
         author: ctx.log_user(),
         date: Utc::now(),
         text,
+        edits: Vec::new(),
     };
     item.comments.push(comment);
-    item.updated = Utc::now();
-    item.updated_by = Some(ctx.log_user());
+    items::touch_for_comment_change(&mut item, &ctx.log_user());
     items::update_item(&ctx.root, &item)?;
 
     joy_core::event_log::log_event_as(
@@ -151,11 +151,19 @@ fn run_edit(args: EditArgs) -> Result<()> {
         },
     };
 
+    let editor = ctx.log_user();
+    let now = Utc::now();
     item.comments[pos].text = new_text;
-    item.comments[pos].author = ctx.log_user();
-    item.comments[pos].date = Utc::now();
-    item.updated = Utc::now();
-    item.updated_by = Some(ctx.log_user());
+    // Original `author` and `date` stay immutable; the editor's identity
+    // and timestamp go into the comment's append-only edit log so the
+    // original author is never overwritten by an edit.
+    item.comments[pos]
+        .edits
+        .push(joy_core::model::item::UpdateEntry {
+            date: now,
+            by: editor.clone(),
+        });
+    items::touch_for_comment_change(&mut item, &editor);
     items::update_item(&ctx.root, &item)?;
 
     joy_core::event_log::log_event_as(
@@ -207,8 +215,7 @@ fn run_rm(args: RmArgs) -> Result<()> {
     }
 
     item.comments.remove(pos);
-    item.updated = Utc::now();
-    item.updated_by = Some(ctx.log_user());
+    items::touch_for_comment_change(&mut item, &ctx.log_user());
     items::update_item(&ctx.root, &item)?;
 
     joy_core::event_log::log_event_as(

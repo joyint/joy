@@ -34,8 +34,19 @@ pub struct Item {
     pub created_by: Option<String>,
     pub created: DateTime<Utc>,
     pub updated: DateTime<Utc>,
+    /// Identity of the last writer of any kind. Stays in sync with `updated`
+    /// and serves as a recency hint for sort/UI. `history` carries the
+    /// full attribute-change list; this field is the legacy summary.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub updated_by: Option<String>,
+    /// Append-only audit list of attribute-level mutations (status, priority,
+    /// edit, deps, assignee, milestone, ...). Comment add / edit / rm do NOT
+    /// append here. `None` for legacy YAML written before this field existed
+    /// (display falls back to `updated` / `updated_by`); `Some(vec![])` for
+    /// items created after the field shipped but with no attribute mutations
+    /// yet. On first attribute mutation the vec gains its first entry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub history: Option<Vec<UpdateEntry>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     /// Name of the Crypt zone this item belongs to. Absent or null
@@ -145,11 +156,26 @@ pub struct Assignee {
     pub capabilities: Vec<Capability>,
 }
 
+/// One entry in an item's `history` or a comment's `edits` audit list.
+/// Records who touched the artifact and when.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UpdateEntry {
+    pub date: DateTime<Utc>,
+    pub by: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Comment {
+    /// Original author. Immutable after creation; comment edits do not
+    /// overwrite this field. Editors are recorded in `edits`.
     pub author: String,
+    /// Original creation timestamp. Immutable after creation.
     pub date: DateTime<Utc>,
     pub text: String,
+    /// Per-comment edit audit list. Each entry records one `joy comment
+    /// edit` invocation: timestamp and editor identity. Append-only.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub edits: Vec<UpdateEntry>,
 }
 
 impl Item {
@@ -180,6 +206,7 @@ impl Item {
             created: now,
             updated: now,
             updated_by: None,
+            history: Some(Vec::new()),
             description: None,
             crypt_zone: None,
             comments: Vec::new(),

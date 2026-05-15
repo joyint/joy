@@ -1,0 +1,67 @@
+id: JOY-018F-A4
+title: Audit history footer + per-comment edit list
+type: task
+status: in-progress
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-15T14:45:35.317701796Z
+updated: 2026-05-15T14:52:41.264249653Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-05-15T14:52:40.735668829Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Replace single-line `Created/Updated` footer with a multi-line audit-history block; track per-comment edits without overwriting original author/date.
+
+  **Item schema**:
+  - Add `history: Vec<UpdateEntry>` where `UpdateEntry { date, by }`.
+  - Appended only for attribute-level mutations (status, priority, deps, assignee, milestone, edit, ...).
+  - Comment add / edit / rm do NOT append to item history (they have their own per-comment tracking).
+  - Existing `updated` and `updated_by` stay for sort recency and backward-compat fallback in display.
+
+  **Comment schema**:
+  - Add `edits: Vec<UpdateEntry>` on Comment.
+  - `Comment.author` and `Comment.date` become immutable (original creator + creation date).
+  - On comment edit: change `text`, append `{now, editor}` to `edits`. Never touch `author` or `date`.
+
+  **Display (`joy show`)**:
+  - Footer (after the comments block, separated by blank line):
+    - If `history` empty: render single line as today (`Created: ... by ...  Updated: ... by ...`).
+    - If `history` non-empty: multi-line, `Created: ... by ...` on its own line, then one `Updated: ... by ...` per history entry.
+  - Each comment header stays single-line (`[N] <date> by <original author>`).
+  - After the comment body, if `edits` non-empty: a blank line, then one indented `Updated: <date> by <editor>` per edit.
+
+  **Backward compat**:
+  - Items without `history`: footer renders as today.
+  - Comments without `edits`: header + body only, no extra block (as today).
+  - `updated_by` from JOY-018B-5F stays on the Item; display falls back to it when `history` is empty.
+
+  **Audit fix**:
+  - Today `joy comment edit` overwrites `Comment.author` to the editor and `Comment.date` to now. Original author info is lost from item state. This commit fixes that: original `author` and `date` stay; editor is recorded in `edits`.
+
+  **Tests** (bats + unit):
+  - Comment edit preserves original author/date; edits list has the editor.
+  - Multiple edits append correctly.
+  - Item attribute change pushes a history entry; sort-by-updated still works.
+  - Comment add/rm/edit does NOT push to item history.
+  - Old YAML item without history renders single-line footer.
+  - Old YAML comment without edits renders without extra block.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-15T14:52:40.887874115Z
+  text: |-
+    Updated **plan**:
+    - [x] schema
+    - [x] writers
+    - [ ] display
+  edits:
+  - date: 2026-05-15T14:52:41.074400262Z
+    by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-15T14:52:41.264247147Z
+  text: Second comment

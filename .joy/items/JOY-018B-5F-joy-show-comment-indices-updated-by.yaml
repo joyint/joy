@@ -1,7 +1,7 @@
 id: JOY-018B-5F
 title: 'joy show: comment indices + updated_by attribution'
 type: task
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -10,7 +10,8 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-15T10:07:06.409280608Z
-updated: 2026-05-15T10:07:13.232954478Z
+updated: 2026-05-15T14:17:49.523123278Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Two related display improvements for `joy show <ID>`, plus the item-side schema piece for the second one.
 
@@ -39,3 +40,14 @@ description: |-
   - Bats: after `joy comment`, `joy show` shows `Updated: <new> by <commenter>`.
   - Bats: each comment in the output carries an `[N]` index, matching the order returned by `joy comment edit <ID> <N>`.
   - Bats backward compat: drop a hand-written YAML fixture without `updated_by` into `.joy/items/` and confirm `joy show` falls back to `Updated: <date>` without `by`.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-15T14:17:49.066197313Z
+  text: |-
+    [x] Item has `updated_by: Option<String>` next to `created_by`; serde default keeps old YAML loadable.
+    [x] Every write site touched: add, edit, assign, deps, milestone (link/unlink/delete-cascade), status (incl. auto-close parent), comment (add/edit/rm), items::remove_references (called from rm).
+    [x] joy show renders `Updated: <date> by <user>` when set, falls back to `Updated: <date>` for legacy items.
+    [x] Comments now carry `[N]` 1-based index header matching what `joy comment edit/rm <ID> <INDEX>` expects.
+    [x] Bats coverage (tests/integration/show_updated_by.bats): updated_by on add, indices in order, editor as updated_by, legacy fixture backward compat.
+
+    Commit: 4cf9a46 on main.
