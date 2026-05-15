@@ -1,7 +1,7 @@
 id: JOY-0194-E3
 title: joy ai init / joy update stage gitignored AI-tool files
 type: bug
-status: in-progress
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -11,10 +11,12 @@ capabilities:
 effort: 1
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-15T22:39:22.394124826Z
-updated: 2026-05-15T22:49:33.962500305Z
+updated: 2026-05-15T22:51:05.067886047Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-05-15T22:41:14.216942042Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-15T22:51:05.067886047Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   JOY-0184-4A added auto-git-add to the AI tool file writer
