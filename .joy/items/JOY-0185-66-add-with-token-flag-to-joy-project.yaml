@@ -1,7 +1,7 @@
 id: JOY-0185-66
 title: Add `--with-token` flag to `joy project member add`
 type: story
-status: in-progress
+status: closed
 priority: low
 assignees:
 - member: ai:claude@joy
@@ -14,10 +14,12 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-14T19:24:15.710534713Z
-updated: 2026-05-15T16:51:10.831098017Z
+updated: 2026-05-15T19:16:09.113188043Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-05-15T16:22:52.518300727Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-15T19:16:09.113188043Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Convenience flag for AI-member registration: `joy project member add ai:foo@joy --with-token` registers the member and immediately issues a delegation token, so the user does not have to run two commands.
