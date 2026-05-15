@@ -13,8 +13,8 @@ load setup
     # `[Y/n]` prompts from blocking when the caller's stdin is a TTY
     # (e.g. interactive `just check`). With empty stdin they fall
     # through to their Default-Y branch.
-    run env PATH="$(dirname "$JOY_BIN"):/usr/bin:/bin" \
-        joy ai init --passphrase "$TEST_PASSPHRASE" </dev/null
+    PATH_OVERRIDE="$(dirname "$JOY_BIN"):/usr/bin:/bin"
+    run env PATH="$PATH_OVERRIDE" joy ai init --passphrase "$TEST_PASSPHRASE" </dev/null
     [ "$status" -eq 0 ]
     [[ "$output" == *"Authentication"* ]]
     [[ "$output" == *"Authentication initialized for"* ]]
@@ -37,8 +37,8 @@ load setup
     joy init --name "Test Project" 2>/dev/null
     # Switch git identity to someone who has never been added to the project.
     git config user.email "stranger@example.com"
-    run env PATH="$(dirname "$JOY_BIN"):/usr/bin:/bin" \
-        joy ai init --passphrase "$TEST_PASSPHRASE" </dev/null
+    PATH_OVERRIDE="$(dirname "$JOY_BIN"):/usr/bin:/bin"
+    run env PATH="$PATH_OVERRIDE" joy ai init --passphrase "$TEST_PASSPHRASE" </dev/null
     [ "$status" -ne 0 ]
     [[ "$output" == *"stranger@example.com"* ]]
     [[ "$output" == *"not a registered project member"* ]]
