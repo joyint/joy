@@ -75,3 +75,4 @@
 2026-05-15T19:39:41.476Z JOY-018E-21 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-05-15T19:59:16.948Z JOY-018E-21 comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-05-15T19:59:49.261Z JOY-018E-21 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-15T20:04:18.054Z JOY-0191-6E item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

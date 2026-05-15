@@ -1,0 +1,49 @@
+id: JOY-0191-6E
+title: Wildcard + --describe support for joy project get
+type: task
+status: new
+priority: medium
+capabilities:
+- implement
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-15T20:04:18.051048390Z
+updated: 2026-05-15T20:04:18.051048390Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: |-
+  joy project get only accepts fully-qualified keys today:
+
+      $ joy project get docs.*
+      Error: unknown key: docs.*
+
+  This contradicts the always-use-the-CLI rule: users (and AIs) who want
+  the docs paths or any other section have to either run three separate
+  `get` calls or fall back to reading `.joy/project.yaml` directly.
+
+  `joy config get` learned wildcard listings and `--describe`
+  annotations in JOY-0187-D0. `joy project get` should follow the same
+  pattern so the two read paths stay symmetric and the always-use-the-CLI
+  rule covers project metadata too.
+
+  Acceptance:
+
+  - `joy project get <prefix>.*` lists every leaf under that prefix,
+    both for nested sections (`docs.*`) and the top-level (`*`).
+  - `--describe` adds a one-line semantic description to each value
+    where one is defined (e.g. `docs.architecture`: "technical stack
+    and structure", `language`: configured project language). The
+    descriptions live next to the field definitions in
+    `joy-core::model::project` so the CLI is the single source of
+    truth.
+  - JSON output for the wildcard form returns an `entries` array,
+    matching the shape introduced for `joy config get` (JOY-0187-D0).
+  - The legacy scalar / object payload on non-wildcard reads is
+    preserved (no API break on existing callers).
+
+  Tests under `tests/integration/project_describe.bats` analogous to
+  `config_describe.bats` (wildcard listing, --describe annotation,
+  JSON entries shape, legacy shape preserved, unknown-prefix exits
+  non-zero).
+
+  Pairs naturally with JOY-0187-D0; no strict dependency.
