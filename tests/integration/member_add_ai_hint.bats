@@ -14,6 +14,7 @@ load setup
     [[ "$output" == *"joy auth --token <TOKEN> --json"* ]]
     [[ "$output" == *"session_env"* ]]
     [[ "$output" == *"joy ai tutorial"* ]]
+    [[ "$output" == *"--with-token"* ]]
 }
 
 @test "joy project member add still prints OTP flow for human members" {
@@ -45,10 +46,9 @@ load setup
     grep -q "ai:copilot-chat@joy:" .joy/project.yaml
 
     # Step 2: issue a delegation token (as the next-steps hint instructs).
+    # The command now prints only the bare token on stdout.
     local token
-    token=$(joy auth token add ai:copilot-chat@joy \
-        --passphrase "$TEST_PASSPHRASE" \
-        | sed -n 's/^  \(joy_t_.*\)/\1/p')
+    token=$(joy auth token add ai:copilot-chat@joy --passphrase "$TEST_PASSPHRASE")
     [[ "$token" == joy_t_* ]]
 
     # Step 3: AI redeems the token via --json and learns its identity + auth.

@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
+use std::path::Path;
+
 use anyhow::Result;
 use chrono::Utc;
 use clap::{Args, Subcommand};
@@ -1186,23 +1188,70 @@ fn run_token_add(
     passphrase_flag: Option<&str>,
     user_flag: Option<&str>,
 ) -> Result<()> {
-    use joy_core::model::project::is_ai_member;
-
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
-
-    let project = store::load_project(&root)?;
     let email = resolve_user(user_flag)?;
+    let passphrase = read_passphrase(passphrase_flag, "Passphrase: ")?;
 
-    // Validate AI member
-    if !is_ai_member(&args.member) {
-        anyhow::bail!("{} is not an AI member (must start with ai:)", args.member);
+    let (encoded, hours) = create_delegation_token(
+        &root,
+        &email,
+        &passphrase,
+        &args.member,
+        args.ttl,
+        args.crypt,
+    )?;
+
+    if crate::output::is_json() {
+        #[derive(serde::Serialize)]
+        struct TokenAddPayload<'a> {
+            member: &'a str,
+            token: String,
+            ttl_hours: i64,
+        }
+        return crate::output::emit(TokenAddPayload {
+            member: &args.member,
+            token: encoded,
+            ttl_hours: hours,
+        });
     }
-    if !project.members.contains_key(&args.member) {
+
+    // The token is meant to be copy/pasted into the AI's chat; any extra
+    // lines around it just create noise the operator has to strip. Emit
+    // only the token (JOY-0185-66 follow-up).
+    let _ = hours;
+    println!("{}", encoded);
+
+    Ok(())
+}
+
+/// Create a delegation token for `ai_member` issued by the human at
+/// `operator_email`. Returns `(encoded_token, ttl_hours)`.
+///
+/// Shared between `joy auth token add` and `joy project member add
+/// --with-token` so both code paths use the same delegation key
+/// derivation, project.yaml bookkeeping, and session bootstrap. The
+/// caller is responsible for any user-facing output.
+pub(crate) fn create_delegation_token(
+    root: &Path,
+    operator_email: &str,
+    operator_passphrase: &str,
+    ai_member: &str,
+    ttl_hours_override: Option<i64>,
+    crypt_scope: bool,
+) -> Result<(String, i64)> {
+    use joy_core::model::project::is_ai_member;
+
+    let project = store::load_project(root)?;
+
+    if !is_ai_member(ai_member) {
+        anyhow::bail!("{} is not an AI member (must start with ai:)", ai_member);
+    }
+    if !project.members.contains_key(ai_member) {
         anyhow::bail!(
             "{} is not a registered project member. Run `joy project member add {}`.",
-            args.member,
-            args.member
+            ai_member,
+            ai_member
         );
     }
 
@@ -1213,41 +1262,40 @@ fn run_token_add(
     // (JOY-00EF-E5).
     let member = project
         .members
-        .get(&email)
-        .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member.", email))?;
+        .get(operator_email)
+        .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member.", operator_email))?;
     if member.verify_key.is_none() {
         anyhow::bail!(
             "Authentication not initialized for {}. Run `joy auth init`.",
-            email
+            operator_email
         );
     }
 
-    let passphrase = read_passphrase(passphrase_flag, "Passphrase: ")?;
-    let unlocked = joy_core::auth::unlock_identity(member, &passphrase)?;
+    let unlocked = joy_core::auth::unlock_identity(member, operator_passphrase)?;
     let keypair = unlocked.keypair;
     let identity_seed = unlocked.seed;
 
     // If no session exists, create one from the keypair we just derived.
     // The guard check below then succeeds in the same invocation, so the
     // user does not have to run `joy auth` separately.
-    let project_id = session::project_id(&root)?;
-    if session::load_session(&project_id, &email)?.is_none() {
-        let session_token = session::create_session(&keypair, &email, &project_id, None);
+    let project_id = session::project_id(root)?;
+    if session::load_session(&project_id, operator_email)?.is_none() {
+        let session_token = session::create_session(&keypair, operator_email, &project_id, None);
         session::save_session(&project_id, &session_token)?;
     }
 
     // Guard: requires manage capability. We construct an explicit
     // Identity from the resolved member id so that --user takes effect
     // here too (otherwise resolve_identity would fall back to the git
-    // email and refuse the action -- JOY-00F3-AE).
+    // email and refuse the action, JOY-00F3-AE).
     let identity = joy_core::identity::Identity {
-        member: email.clone(),
+        member: operator_email.to_string(),
         delegated_by: None,
         authenticated: true,
     };
-    joy_core::guard::Guard::load(&root)?
+    joy_core::guard::Guard::load(root)?
         .check(&joy_core::guard::Action::ManageProject, &identity)
-        .enforce(&root, "project", &identity)?;
+        .enforce(root, "project", &identity)?;
 
     // The delegation private key is never persisted on disk. Three cases:
     //   - no project.yaml entry yet  -> bootstrap: fresh salt, derive
@@ -1257,7 +1305,7 @@ fn run_token_add(
     //     project.yaml write. Verifier double-checked.
     //   - entry has no delegation_salt (legacy random keypair) -> bail
     //     with a rotate-first message; the original seed is unrecoverable.
-    let existing_entry = member.ai_delegations.get(&args.member);
+    let existing_entry = member.ai_delegations.get(ai_member);
     let existing_public = existing_entry.map(|e| e.delegation_verifier.clone());
     let existing_salt = existing_entry.and_then(|e| e.delegation_salt.clone());
 
@@ -1276,19 +1324,15 @@ fn run_token_add(
                 &identity_seed,
                 &new_salt,
                 &project_id,
-                &args.member,
+                ai_member,
             );
             let kp = IdentityKeypair::from_seed(&seed);
             (kp, seed, Some(new_salt.to_hex()))
         }
         (Some(pub_hex), Some(salt_hex)) => {
             let salt = Salt::from_hex(salt_hex)?;
-            let seed = delegation::derive_delegation_seed(
-                &identity_seed,
-                &salt,
-                &project_id,
-                &args.member,
-            );
+            let seed =
+                delegation::derive_delegation_seed(&identity_seed, &salt, &project_id, ai_member);
             let kp = IdentityKeypair::from_seed(&seed);
             if kp.public_key().to_hex() != *pub_hex {
                 anyhow::bail!(
@@ -1297,7 +1341,7 @@ fn run_token_add(
                      rotated since this checkout was last updated. Pull the latest \
                      project.yaml and retry, or run `joy auth delegation rotate {m}` to \
                      start a fresh delegation.",
-                    m = args.member
+                    m = ai_member
                 );
             }
             (kp, seed, None)
@@ -1307,7 +1351,7 @@ fn run_token_add(
                 "Cannot issue a new token for {m}.\n  \
                  Run:  joy auth delegation rotate {m}\n  \
                  Existing tokens keep working until their TTL expires.",
-                m = args.member
+                m = ai_member
             )
         }
     };
@@ -1319,7 +1363,7 @@ fn run_token_add(
     // 24h covers a typical working session; human can override with --ttl.
     const DEFAULT_TOKEN_TTL_HOURS: i64 = 24;
     let ttl = Some(
-        args.ttl
+        ttl_hours_override
             .map(chrono::Duration::hours)
             .unwrap_or_else(|| chrono::Duration::hours(DEFAULT_TOKEN_TTL_HOURS)),
     );
@@ -1330,23 +1374,23 @@ fn run_token_add(
             delegation_seed: &delegation_seed,
         },
         token::TokenIssueParams {
-            ai_member: &args.member,
-            human: &email,
+            ai_member,
+            human: operator_email,
             project_id: &project_id,
             ttl,
-            crypt_scope: args.crypt,
+            crypt_scope,
         },
     );
 
     // Persist the delegation public key on first issuance. Subsequent
     // issuances for the same (human, AI) pair produce no project.yaml
     // write since the key is stable (ADR-033).
-    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
+    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
     let mut project_mut = store::read_project(&project_path)?;
     if new_entry {
-        if let Some(m) = project_mut.members.get_mut(&email) {
+        if let Some(m) = project_mut.members.get_mut(operator_email) {
             m.ai_delegations.insert(
-                args.member.clone(),
+                ai_member.to_string(),
                 joy_core::model::project::AiDelegationEntry {
                     delegation_verifier: delegation_keypair.public_key().to_hex(),
                     delegation_salt: delegation_salt_hex.clone(),
@@ -1357,39 +1401,12 @@ fn run_token_add(
         }
         store::write_yaml_preserve(&project_path, &project_mut)?;
         let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-        joy_core::git_ops::auto_git_add(&root, &[&rel]);
+        joy_core::git_ops::auto_git_add(root, &[&rel]);
     }
 
     let encoded = token::encode_token(&token_obj);
-
-    let hours = args.ttl.unwrap_or(DEFAULT_TOKEN_TTL_HOURS);
-
-    if crate::output::is_json() {
-        #[derive(serde::Serialize)]
-        struct TokenAddPayload<'a> {
-            member: &'a str,
-            token: String,
-            ttl_hours: i64,
-        }
-        return crate::output::emit(TokenAddPayload {
-            member: &args.member,
-            token: encoded,
-            ttl_hours: hours,
-        });
-    }
-
-    println!("Delegation token for {}:", args.member);
-    println!();
-    println!("  {}", encoded);
-    println!();
-    println!("The AI redeems it with:");
-    println!("  joy auth --token {}", encoded);
-    println!();
-    println!(
-        "Token expires in {hours} hours. It may be redeemed multiple times within that window."
-    );
-
-    Ok(())
+    let hours = ttl_hours_override.unwrap_or(DEFAULT_TOKEN_TTL_HOURS);
+    Ok((encoded, hours))
 }
 
 /// `joy auth delegation ls [ai-member]` -- list registered delegations.

@@ -7,7 +7,7 @@ load setup
     setup_human_auth
     joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE" >/dev/null
     AI_TOKEN=$(joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" \
-        | sed -n 's/^  \(joy_t_.*\)/\1/p')
+        | grep '^joy_t_')
 
     run joy auth --token "$AI_TOKEN" --json
     [ "$status" -eq 0 ]

@@ -204,8 +204,9 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
     run joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"joy_t_"* ]]
-    [[ "$output" == *"Delegation token for ai:test@joy"* ]]
+    # Output is just the token (no banner, no usage hints) so the
+    # operator can pipe it straight to the AI.
+    [[ "$output" == joy_t_* ]]
 }
 
 @test "joy auth token add rejects non-AI member" {
@@ -238,9 +239,10 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
     joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
-    run joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" --ttl 8
+    # TTL is exposed through `--json`; plain stdout is just the bare token.
+    run joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" --ttl 8 --json
     [ "$status" -eq 0 ]
-    [[ "$output" == *"expires in 8 hours"* ]]
+    [ "$(echo "$output" | jq -r '.data.ttl_hours')" = "8" ]
 }
 
 @test "joy auth delegation rotate replaces the keypair" {
@@ -297,7 +299,7 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     joy auth init --passphrase "$TEST_PASSPHRASE"
     joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
     TOKEN=$(joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" \
-        | sed -n 's/^  \(joy_t_.*\)/\1/p')
+        | grep '^joy_t_')
     [ -n "$TOKEN" ]
     run joy auth --token "$TOKEN"
     [ "$status" -eq 0 ]
@@ -310,9 +312,11 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
     joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
-    run joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    # Default TTL is observable through `--json`; plain stdout stays bare
+    # so the operator can pipe the token straight to the AI.
+    run joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" --json
     [ "$status" -eq 0 ]
-    [[ "$output" == *"expires in 24 hours"* ]]
+    [ "$(echo "$output" | jq -r '.data.ttl_hours')" = "24" ]
 }
 
 # ============================================================
@@ -368,7 +372,7 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     echo "# test" > .claude/CLAUDE.md
     joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE"
     # Create a delegation token and authenticate as AI
-    TOKEN=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" | sed -n 's/^  \(joy_t_.*\)/\1/p')
+    TOKEN=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" | grep '^joy_t_')
     joy auth --token "$TOKEN"
     # Verify AI member exists with verify_key (set by token auth)
     grep -q "ai:claude@joy" .joy/project.yaml
@@ -445,7 +449,7 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE"
     # Create AI token scoped to project A
     TOKEN=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
-        | sed -n 's/^  \(joy_t_.*\)/\1/p')
+        | grep '^joy_t_')
     eval $(joy auth --token "$TOKEN")
     SESS="$JOY_SESSION"
     # Verify it works in project A

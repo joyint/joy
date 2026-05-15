@@ -1,8 +1,10 @@
 id: JOY-0185-66
 title: Add `--with-token` flag to `joy project member add`
 type: story
-status: new
+status: in-progress
 priority: low
+assignees:
+- member: ai:claude@joy
 deps:
 - JOY-0183-04
 capabilities:
@@ -12,7 +14,11 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-14T19:24:15.710534713Z
-updated: 2026-05-14T19:24:24.614734585Z
+updated: 2026-05-15T16:51:10.831098017Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-05-15T16:22:52.518300727Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Convenience flag for AI-member registration: `joy project member add ai:foo@joy --with-token` registers the member and immediately issues a delegation token, so the user does not have to run two commands.
 
@@ -27,3 +33,7 @@ description: |-
   Tests: `tests/integration/member_add_with_token.bats` covering display + JSON paths, single-prompt assertion, human-id rejection of the flag.
 
   Depends on JOY-0183-04 (next-steps hint shipped first; this builds on it).
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-15T16:51:10.831097062Z
+  text: '[x] Extracted create_delegation_token helper in auth.rs and added --with-token flag to MemberAddArgs in project.rs. The shared helper handles validation, session bootstrap, guard check, delegation key derivation (bootstrap or re-derive), token creation, and project.yaml persistence, returning (encoded_token, ttl_hours). The wrapper joy auth token add reads the passphrase, calls the helper, then prints just the bare token on stdout so the operator can pipe it to the AI (per follow-up feedback). joy project member add --with-token captures the passphrase once and reuses it for both attestation signing and token issuance, avoiding a double prompt. JSON output is preserved on both commands (.data.token / .data.ttl_hours). Test coverage: tests/integration/member_add_with_token.bats (4 cases) plus updates to existing token-parsing tests across auth.bats, ai.bats, identity.bats, traceability.bats, json_auth.bats, setup.bash, and member_add_ai_hint.bats. All 368 bats tests pass.'

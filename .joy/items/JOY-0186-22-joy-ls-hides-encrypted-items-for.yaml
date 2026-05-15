@@ -1,7 +1,7 @@
 id: JOY-0186-22
 title: joy ls hides encrypted items for members without zone access
 type: bug
-status: in-progress
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -11,10 +11,14 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-14T19:53:52.740602176Z
-updated: 2026-05-15T16:18:41.230361243Z
+updated: 2026-05-15T16:22:44.390727903Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-05-15T16:18:41.230361243Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-15T16:22:44.114439274Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-15T16:22:44.390727903Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Regression against JOY-0174-D3 ("render locked items in joy ls + auto ENC column"). The bats test `crypt journey: second member sees locked rows until granted` in `tests/integration/crypt.bats` line 80 reproduces it deterministically.
@@ -34,3 +38,13 @@ description: |-
   Test: `bats tests/integration/crypt.bats -f 'second member sees locked rows until granted'`.
 
   Likely cause: the filter that drops items where the caller has no zone access runs before the locked-row renderer, instead of letting locked rows through to be marked. Fix should restore JOY-0174-D3's behaviour and verify the existing bats test passes.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-15T16:22:43.952973820Z
+  text: |-
+    [x] Root cause: ls.rs short-circuited with "No matching items" when filtered.is_empty(), skipping print_table even when locked vec had entries to render.
+    [x] Fix: gate the early return on both filtered AND locked being empty. Single-line conditional change.
+    [x] Pre-existing bats test `crypt journey: second member sees locked rows until granted` now passes. Full crypt suite green (5/5).
+    [x] `just check` green.
+
+    Commit: 99f4c45 on main.

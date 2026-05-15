@@ -59,7 +59,7 @@ load setup
     ITEM=$(joy ls 2>/dev/null | grep Target | awk '{print $1}')
     joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE" >/dev/null
     OTHER_TOKEN=$(joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" \
-        | sed -n 's/^  \(joy_t_.*\)/\1/p')
+        | grep '^joy_t_')
 
     # Move to a fresh project and issue a session there.
     SECOND_DIR="$(mktemp -d)"

@@ -110,6 +110,13 @@ struct MemberAddArgs {
     /// attestation placed on the new member's entry.
     #[arg(long)]
     passphrase: Option<String>,
+
+    /// After registering an AI member, immediately issue a delegation
+    /// token. Combines `joy project member add` and `joy auth token add`
+    /// so the operator unlocks their identity once. Ignored for human
+    /// members.
+    #[arg(long = "with-token")]
+    with_token: bool,
 }
 
 #[derive(clap::Args)]
@@ -488,14 +495,27 @@ fn run_member(
             // identity key will sign the attestation placed on the new
             // member's entry (JOY-00FC-1D).
             let attester_email = joy_core::vcs::default_vcs().user_email()?;
+            let is_ai = a.id.starts_with("ai:");
+
+            // When `--with-token` is set for an AI member, the same
+            // passphrase signs the attestation *and* the delegation
+            // token. Read it once here so the operator is prompted a
+            // single time across both steps (JOY-0185-66).
+            let captured_passphrase: Option<String> = if is_ai && a.with_token {
+                Some(match a.passphrase.clone() {
+                    Some(p) => p,
+                    None => crate::commands::auth::read_passphrase(None, "Passphrase: ")?,
+                })
+            } else {
+                a.passphrase.clone()
+            };
             let attester_kp =
-                derive_acting_keypair(project, &attester_email, a.passphrase.as_deref())?;
+                derive_acting_keypair(project, &attester_email, captured_passphrase.as_deref())?;
 
             // AI members do not enrol via passphrase; they get a delegation
             // token issued by an existing operator (`joy auth token add`).
             // Skip the OTP machinery for them so the on-screen instructions
             // do not point at the wrong flow (JOY-016F-16).
-            let is_ai = a.id.starts_with("ai:");
 
             let (otp_opt, otp_hash_opt) = if is_ai {
                 (None, None)
@@ -527,20 +547,48 @@ fn run_member(
             let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
             joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
 
+            // Optional immediate token issuance for AI members
+            // (JOY-0185-66). Reuses the captured passphrase so the
+            // operator is not prompted a second time.
+            let token_result: Option<(String, i64)> = if is_ai && a.with_token {
+                let passphrase = captured_passphrase
+                    .as_deref()
+                    .expect("captured when is_ai && with_token");
+                Some(crate::commands::auth::create_delegation_token(
+                    &ctx.root,
+                    &attester_email,
+                    passphrase,
+                    &a.id,
+                    None,
+                    false,
+                )?)
+            } else {
+                None
+            };
+
             if crate::output::is_json() {
                 #[derive(serde::Serialize)]
                 struct AddPayload<'a> {
                     member: &'a str,
                     otp: Option<&'a str>,
+                    #[serde(skip_serializing_if = "Option::is_none")]
+                    token: Option<&'a str>,
+                    #[serde(skip_serializing_if = "Option::is_none")]
+                    ttl_hours: Option<i64>,
                 }
                 crate::output::emit(AddPayload {
                     member: &a.id,
                     otp: otp_opt.as_deref(),
+                    token: token_result.as_ref().map(|(t, _)| t.as_str()),
+                    ttl_hours: token_result.as_ref().map(|(_, h)| *h),
                 })?;
             } else {
                 println!("Added member {}", a.id);
-                println!();
-                if is_ai {
+                if let Some((ref token, _hours)) = token_result {
+                    println!();
+                    println!("{}", token);
+                } else if is_ai {
+                    println!();
                     println!("Next steps:");
                     println!("  1. Issue a delegation token:");
                     println!("       joy auth token add {}", a.id);
@@ -551,7 +599,10 @@ fn run_member(
                         "     and picks up `member` as its identity and `session_env` as auth."
                     );
                     println!("  4. The AI reads `joy ai tutorial` for the operational guide.");
+                    println!();
+                    println!("Tip: rerun with `--with-token` to combine the two steps next time.");
                 } else if let Some(ref otp) = otp_opt {
+                    println!();
                     println!("  One-time password: {otp}");
                     println!();
                     println!(
