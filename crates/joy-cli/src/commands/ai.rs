@@ -1426,10 +1426,19 @@ fn write_if_changed(root: &Path, path: &Path, content: &str) -> anyhow::Result<b
         fs::create_dir_all(parent)?;
     }
     fs::write(path, content)?;
-    if let Ok(rel) = path.strip_prefix(root) {
-        let rel_str = rel.to_string_lossy().into_owned();
-        joy_core::git_ops::auto_git_add(root, &[&rel_str]);
-    }
+    // No `auto_git_add` here. Every caller of `write_if_changed`
+    // targets an AI-tool artefact (`.claude/`, `.vibe/`,
+    // `.github/copilot-instructions.md`, `.github/prompts/`,
+    // `.github/agents/`, `AGENTS.md`, etc.) -- all listed in the
+    // joy-managed `.gitignore` block. Staging them would be a bug:
+    // on the first `joy ai init` it would slip past `.gitignore`
+    // (the block is rewritten *after* the tools are written), and
+    // on every subsequent `joy update` it would fight the gitignore
+    // and produce a wall of warnings. Joy-tracked artefacts
+    // (project.yaml, docs templates, .gitignore, .gitattributes,
+    // SECURITY.md, CONTRIBUTING.md) have their own explicit
+    // `auto_git_add` calls elsewhere.
+    let _ = root;
     Ok(true)
 }
 

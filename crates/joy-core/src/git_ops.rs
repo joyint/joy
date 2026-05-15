@@ -19,13 +19,27 @@ pub fn auto_git_level() -> AutoGit {
 /// Stage the given paths if auto-git >= Add.
 /// Paths are relative to the project root.
 /// Errors are printed as warnings and swallowed.
+///
+/// Paths that match `.gitignore` are silently skipped before `git
+/// add` runs. Without that filter an accidental write to an ignored
+/// path -- or a stale index entry that survived an earlier
+/// ordering bug -- would either pollute the index or print git's
+/// "paths are ignored" warning on every subsequent run.
 pub fn auto_git_add(root: &Path, paths: &[&str]) {
     let level = auto_git_level();
     if !level.should_add() || paths.is_empty() {
         return;
     }
     let vcs = default_vcs();
-    if let Err(e) = vcs.add(root, paths) {
+    let kept: Vec<&str> = paths
+        .iter()
+        .copied()
+        .filter(|p| !vcs.is_ignored(root, p))
+        .collect();
+    if kept.is_empty() {
+        return;
+    }
+    if let Err(e) = vcs.add(root, &kept) {
         eprintln!("Warning: auto-git add failed: {e}");
     }
 }

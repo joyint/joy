@@ -222,6 +222,27 @@ impl GitVcs {
         git_run(root, &args)
     }
 
+    /// True if `path` matches one of the .gitignore patterns
+    /// (regardless of whether it is currently tracked).
+    ///
+    /// `git check-ignore --quiet <path>` exits 0 when the path is
+    /// ignored, 1 when it is not, anything else on error. Errors
+    /// are treated as "not ignored" so that genuine staging
+    /// attempts surface via the regular `add` error path rather
+    /// than getting swallowed here.
+    pub fn is_ignored(&self, root: &Path, path: &str) -> bool {
+        let status = std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .arg("check-ignore")
+            .arg("--quiet")
+            .arg(path)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+        matches!(status, Ok(s) if s.code() == Some(0))
+    }
+
     /// Stage all changes (git add -A).
     pub fn add_all(&self, root: &Path) -> Result<(), JoyError> {
         git_run(root, &["add", "-A"])

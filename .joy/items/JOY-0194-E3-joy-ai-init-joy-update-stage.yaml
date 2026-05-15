@@ -1,0 +1,70 @@
+id: JOY-0194-E3
+title: joy ai init / joy update stage gitignored AI-tool files
+type: bug
+status: in-progress
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-15T22:39:22.394124826Z
+updated: 2026-05-15T22:49:33.962500305Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-05-15T22:41:14.216942042Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  JOY-0184-4A added auto-git-add to the AI tool file writer
+  (\`write_if_changed\` in \`crates/joy-cli/src/commands/ai.rs\`). That
+  helper is the path for every AI-tool artefact: \`.claude/*\`,
+  \`.vibe/*\`, \`.github/copilot-instructions.md\`, \`.github/prompts/*\`,
+  \`.github/agents/*\`, \`AGENTS.md\`, etc. All of those are listed in
+  the joy-managed \`.gitignore\` block.
+
+  Result: on first \`joy ai init\` the files get \`git add\`-ed before
+  the \`.gitignore\` block is rewritten with the AI tool patterns, so
+  they end up in the index. On every later \`joy update\` the same
+  helper runs but now \`git add\` is refused with "paths are ignored
+  by one of your .gitignore files" -- producing a wall of warnings
+  even though the files were updated correctly on disk.
+
+  Fix: \`write_if_changed\` must not stage. AI-tool files belong
+  outside the index. The original JOY-0184-4A intent ("no
+  joy-managed file is left untracked") is preserved for the files
+  that *should* be in git (\`.joy/project.yaml\`, docs templates,
+  \`.gitignore\`, \`.gitattributes\`, \`SECURITY.md\`,
+  \`CONTRIBUTING.md\`) -- those have their own explicit
+  \`auto_git_add\` calls already.
+
+  Acceptance:
+
+  - \`joy update\` finishes without any "auto-git add failed" warning
+    on a project that has the standard \`.gitignore\` block.
+  - \`joy ai init\` does not stage \`.claude/\`, \`.vibe/\`,
+    \`.github/copilot-instructions.md\`, \`.github/prompts/\`,
+    \`.github/agents/\`, or \`AGENTS.md\`.
+  - The existing \`ai_init_auto_stage.bats\` test stays green: it
+    asserts every joy-managed *trackable* file is staged and the
+    rest is gitignored, both still hold.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-15T22:41:14.265757128Z
+  text: 'Plan: add a defensive ''git check-ignore --quiet'' filter at the boundary in joy_core::git_ops::auto_git_add. Paths that match .gitignore are silently skipped before git add is called, so accidental staging of ignored AI-tool files cannot recur even if a future caller forgets the rule. Add an is_ignored helper on GitVcs that wraps the git command. Existing ai_init_auto_stage.bats test stays green: AI-tool files were never required to be staged, only the joy-managed trackable ones are.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-15T22:49:33.962498762Z
+  text: |-
+    [x] Two-part fix.
+
+    (1) Removed auto_git_add from write_if_changed in joy-cli/commands/ai.rs. Every caller writes an AI-tool artefact (.claude/, .vibe/, .github/copilot-*, .github/agents/, .github/prompts/, AGENTS.md) that the joy-managed .gitignore block excludes, so staging them was wrong by construction. JOY-0184-4A's intent (no joy-managed file left untracked) is preserved for the trackable joy artefacts (.joy/project.yaml, docs, .gitignore, .gitattributes, SECURITY.md, CONTRIBUTING.md) -- those have their own explicit auto_git_add calls.
+
+    (2) Defense-in-depth in joy_core::git_ops::auto_git_add: new is_ignored helper on GitVcs wraps 'git check-ignore --quiet'. auto_git_add now filters every input path through it before calling git add. Future callers that accidentally hand a gitignored path get a silent no-op instead of a torrent of 'paths are ignored' warnings.
+
+    New integration tests in tests/integration/update_no_ignored_staging.bats (3 cases):
+    - joy ai init does not stage any AI-tool path (regression guard for the original bug)
+    - joy update refreshes a forged-stale SKILL.md without warnings AND without staging any AI-tool path
+    - joy update on a project with every AI-tool file forged stale stays free of new staged AI-tool entries
+
+    All 398 bats tests green.
