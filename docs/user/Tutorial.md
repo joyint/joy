@@ -607,6 +607,25 @@ The recovery key (shown once at `joy auth init`) unwraps the seed via
 its own KEK and re-wraps it under the new passphrase. Same keypair,
 no re-onboarding.
 
+**Non-interactive passphrase entry:**
+
+Two flags let you supply the passphrase without typing it at the
+prompt:
+
+```sh
+joy auth --passphrase 'correct horse battery staple'   # value on the command line
+echo 'correct horse battery staple' | joy auth --passphrase-stdin
+```
+
+Use `--passphrase` for ad-hoc scripts and tests. Prefer
+`--passphrase-stdin` when a GUI frontend or CI pipeline collects the
+secret elsewhere: the value is read from a single stdin line and
+never appears in the process listing the way `--passphrase <value>`
+would. The flag is rejected together with `--passphrase`; pick one.
+Both work on every command that takes a passphrase (`joy auth init`,
+`joy auth`, `joy auth token add`, `joy auth recover`,
+`joy project member add`, `joy crypt …`, etc.).
+
 To rotate the recovery key from an authenticated session:
 
 ```sh

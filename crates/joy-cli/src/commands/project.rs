@@ -111,6 +111,10 @@ struct MemberAddArgs {
     #[arg(long)]
     passphrase: Option<String>,
 
+    /// Read the passphrase from a single line on stdin (JOY-018E-21).
+    #[arg(long = "passphrase-stdin")]
+    passphrase_stdin: bool,
+
     /// After registering an AI member, immediately issue a delegation
     /// token. Combines `joy project member add` and `joy auth token add`
     /// so the operator unlocks their identity once. Ignored for human
@@ -130,6 +134,10 @@ struct MemberRmArgs {
     /// others, so re-attestation can be signed by the remover.
     #[arg(long)]
     passphrase: Option<String>,
+
+    /// Read the passphrase from a single line on stdin (JOY-018E-21).
+    #[arg(long = "passphrase-stdin")]
+    passphrase_stdin: bool,
 }
 
 pub fn run(args: ProjectArgs) -> Result<()> {
@@ -504,13 +512,21 @@ fn run_member(
             let captured_passphrase: Option<String> = if is_ai && a.with_token {
                 Some(match a.passphrase.clone() {
                     Some(p) => p,
-                    None => crate::commands::auth::read_passphrase(None, "Passphrase: ")?,
+                    None => crate::commands::auth::read_passphrase(
+                        None,
+                        a.passphrase_stdin,
+                        "Passphrase: ",
+                    )?,
                 })
             } else {
                 a.passphrase.clone()
             };
-            let attester_kp =
-                derive_acting_keypair(project, &attester_email, captured_passphrase.as_deref())?;
+            let attester_kp = derive_acting_keypair(
+                project,
+                &attester_email,
+                captured_passphrase.as_deref(),
+                a.passphrase_stdin,
+            )?;
 
             // AI members do not enrol via passphrase; they get a delegation
             // token issued by an existing operator (`joy auth token add`).
@@ -685,6 +701,7 @@ fn run_member(
                     project,
                     &acting_email,
                     a.passphrase.as_deref(),
+                    a.passphrase_stdin,
                 )?)
             };
 
@@ -769,6 +786,7 @@ pub(crate) fn derive_acting_keypair(
     project: &Project,
     email: &str,
     passphrase_flag: Option<&str>,
+    passphrase_stdin: bool,
 ) -> Result<IdentityKeypair> {
     let member = project
         .members
@@ -780,7 +798,8 @@ pub(crate) fn derive_acting_keypair(
             email
         );
     }
-    let passphrase = crate::commands::auth::read_passphrase(passphrase_flag, "Passphrase: ")?;
+    let passphrase =
+        crate::commands::auth::read_passphrase(passphrase_flag, passphrase_stdin, "Passphrase: ")?;
     let unlocked = joy_core::auth::unlock_identity(member, &passphrase)?;
     Ok(unlocked.keypair)
 }

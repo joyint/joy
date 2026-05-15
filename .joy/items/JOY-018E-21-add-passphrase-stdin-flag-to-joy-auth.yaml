@@ -1,12 +1,22 @@
 id: JOY-018E-21
 title: Add --passphrase-stdin flag to joy auth
 type: task
-status: new
+status: in-progress
 priority: medium
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-15T11:01:04.188881006Z
-updated: 2026-05-15T11:01:04.188881006Z
+updated: 2026-05-15T19:59:16.943817941Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-05-15T19:39:41.471202130Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Add a --passphrase-stdin flag to joy auth (and related subcommands that accept --passphrase) that reads the passphrase from stdin in a single line, even when stdin is not a TTY. Pattern matches gh auth login --with-token and docker login --password-stdin. Motivation: GUI frontends (e.g. the upcoming VS Code extension, JVSC-0005) need to collect the passphrase via their own input widget and pass it to joy without exposing it in the process listing (--passphrase <value>) or requiring a real terminal (current rpassword path). Behavior: --passphrase, --passphrase-stdin, and the interactive TTY prompt are mutually exclusive. Documented in the auth tutorial.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-15T19:59:16.943816870Z
+  text: '[x] Extended read_passphrase(flag, prompt) to read_passphrase(flag, from_stdin, prompt) in joy-cli/commands/auth.rs. When from_stdin is true the helper reads a single line from stdin (lock-buffered), strips the trailing newline/CR, rejects empty input, and bails if combined with --passphrase. Added a global --passphrase-stdin flag on joy auth (covers init, auth, reset, token add, recover, delegation rotate, change-passphrase) plus equivalent flags on joy crypt (also global within the crypt subcommand), joy ai init, joy ai rotate, and joy project member add/rm. Plumbed the bool through the relevant run_*/derive_acting_keypair/unlock_zone/unlock_for_file/setup_new_tools paths. The new passphrase in joy auth passphrase and joy auth recover stays flag-only (one stdin line carries one secret). joy crypt write would conflict with the stdin content path; the precedence is: passphrase line first, content after. Tutorial updated in docs/user/Tutorial.md (synced to crates/joy-cli/docs/user/Tutorial.md). Tests: tests/integration/passphrase_stdin.bats (7 cases - init, re-login, mutual exclusion, empty input, token add, trailing-newline stripping, member add). All 382 bats tests pass.'

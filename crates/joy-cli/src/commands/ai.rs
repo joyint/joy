@@ -94,6 +94,12 @@ struct InitArgs {
     /// the acting manage member.
     #[arg(long)]
     passphrase: Option<String>,
+
+    /// Read the passphrase from a single line on stdin. See
+    /// `joy auth --help` for the rationale; same flag, same semantics
+    /// (JOY-018E-21).
+    #[arg(long = "passphrase-stdin")]
+    passphrase_stdin: bool,
 }
 
 #[derive(clap::Args)]
@@ -116,15 +122,21 @@ struct RotateArgs {
     /// Passphrase (non-interactive, for scripts and tests).
     #[arg(long)]
     passphrase: Option<String>,
+
+    /// Read the passphrase from a single line on stdin (JOY-018E-21).
+    #[arg(long = "passphrase-stdin")]
+    passphrase_stdin: bool,
 }
 
 pub fn run(args: AiArgs) -> anyhow::Result<()> {
     match args.command {
         AiCommand::Init(a) => ai_init(a),
         AiCommand::Reset(a) => reset(a),
-        AiCommand::Rotate(a) => {
-            crate::commands::auth::run_ai_rotate(&a.member, a.passphrase.as_deref())
-        }
+        AiCommand::Rotate(a) => crate::commands::auth::run_ai_rotate(
+            &a.member,
+            a.passphrase.as_deref(),
+            a.passphrase_stdin,
+        ),
         AiCommand::Tutorial(a) => ai_tutorial(a),
     }
 }
@@ -177,12 +189,13 @@ fn ai_init(args: InitArgs) -> anyhow::Result<()> {
     // Ensure project.defaults.yaml exists
     joy_core::embedded::sync_files(&root, joy_core::init::PROJECT_FILES)?;
 
-    let bootstrapped_passphrase = ensure_human_auth_initialized(&root, args.passphrase.as_deref())?;
+    let bootstrapped_passphrase =
+        ensure_human_auth_initialized(&root, args.passphrase.as_deref(), args.passphrase_stdin)?;
     let effective_passphrase = bootstrapped_passphrase
         .as_deref()
         .or(args.passphrase.as_deref());
     check_docs(&root, &args)?;
-    let configured_tools = setup_new_tools(&root, effective_passphrase)?;
+    let configured_tools = setup_new_tools(&root, effective_passphrase, args.passphrase_stdin)?;
     update_gitignore(&root, &configured_tools)?;
     check_nested_projects(&root)?;
 
@@ -218,6 +231,7 @@ struct AiInitPayload {
 fn ensure_human_auth_initialized(
     root: &Path,
     passphrase: Option<&str>,
+    passphrase_stdin: bool,
 ) -> anyhow::Result<Option<String>> {
     let project_path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
     let project = joy_core::store::read_project(&project_path)?;
@@ -240,7 +254,7 @@ fn ensure_human_auth_initialized(
             "AI tool members are attested with your project key, so authentication is required before registration."
         )
     );
-    let bootstrapped = crate::commands::auth::run_init(passphrase, None)?;
+    let bootstrapped = crate::commands::auth::run_init(passphrase, passphrase_stdin, None)?;
     dprintln!();
     Ok(Some(bootstrapped))
 }
@@ -946,7 +960,11 @@ const ALL_TOOLS: &[ToolEntry] = &[
 ];
 
 /// Set up only NEW (not yet configured) tools. Returns list of all configured tool IDs.
-fn setup_new_tools(root: &Path, passphrase: Option<&str>) -> anyhow::Result<Vec<&'static str>> {
+fn setup_new_tools(
+    root: &Path,
+    passphrase: Option<&str>,
+    passphrase_stdin: bool,
+) -> anyhow::Result<Vec<&'static str>> {
     dprintln!("{}", color::section("AI Tools"));
 
     let mut configured_tools: Vec<&'static str> = Vec::new();
@@ -1013,8 +1031,12 @@ fn setup_new_tools(root: &Path, passphrase: Option<&str>) -> anyhow::Result<Vec<
             // Derive the attesting human's keypair on first need.
             if acting.is_none() {
                 let email = joy_core::vcs::default_vcs().user_email()?;
-                let kp =
-                    crate::commands::project::derive_acting_keypair(&project, &email, passphrase)?;
+                let kp = crate::commands::project::derive_acting_keypair(
+                    &project,
+                    &email,
+                    passphrase,
+                    passphrase_stdin,
+                )?;
                 acting = Some((email, kp));
             }
             let (attester_email, attester_kp) = acting.as_ref().unwrap();

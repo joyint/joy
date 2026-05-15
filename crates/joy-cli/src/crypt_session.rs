@@ -24,8 +24,16 @@ use crate::commands::auth::read_passphrase;
 /// [`ensure_zone_keys`]. Plaintext-only projects skip the prompt via
 /// the [`ensure_zone_keys`] pre-check (JOY-0173-B3).
 pub fn load_context(passphrase: Option<&str>) -> Result<Context> {
+    load_context_with_stdin(passphrase, false)
+}
+
+/// Same as [`load_context`] but also forwards a `--passphrase-stdin`
+/// signal to the prompt helper (JOY-018E-21). The plain `load_context`
+/// wrapper covers the many callers that have no passphrase flag at
+/// all and therefore can never use stdin either.
+pub fn load_context_with_stdin(passphrase: Option<&str>, from_stdin: bool) -> Result<Context> {
     let ctx = Context::load()?;
-    ensure_zone_keys(passphrase)?;
+    ensure_zone_keys_with_stdin(passphrase, from_stdin)?;
     Ok(ctx)
 }
 
@@ -41,6 +49,13 @@ pub fn load_context(passphrase: Option<&str>) -> Result<Context> {
 ///   embedded in `JOY_SESSION` (no passphrase prompt for the AI; the
 ///   operator already typed it at token issuance).
 pub fn ensure_zone_keys(passphrase_flag: Option<&str>) -> Result<()> {
+    ensure_zone_keys_with_stdin(passphrase_flag, false)
+}
+
+/// Variant of [`ensure_zone_keys`] that accepts a `--passphrase-stdin`
+/// signal forwarded by callers that surface that flag on their clap
+/// args (JOY-018E-21).
+pub fn ensure_zone_keys_with_stdin(passphrase_flag: Option<&str>, from_stdin: bool) -> Result<()> {
     if joy_core::crypt::has_active_zone_keys() {
         return Ok(());
     }
@@ -120,7 +135,7 @@ pub fn ensure_zone_keys(passphrase_flag: Option<&str>) -> Result<()> {
     // own --passphrase argument.
     let env_passphrase = std::env::var("JOY_PASSPHRASE").ok();
     let effective_flag = passphrase_flag.or(env_passphrase.as_deref());
-    let passphrase = read_passphrase(effective_flag, "Passphrase: ")?;
+    let passphrase = read_passphrase(effective_flag, from_stdin, "Passphrase: ")?;
     let unlocked = joy_core::auth::unlock_identity(member, &passphrase)?;
     let mut keys = std::collections::BTreeMap::new();
     for (zone, wrap_hex) in &member.crypt_wraps {

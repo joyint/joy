@@ -25,6 +25,15 @@ pub struct AuthArgs {
     #[arg(long, global = true)]
     passphrase: Option<String>,
 
+    /// Read the passphrase from a single line on stdin. Pattern matches
+    /// `gh auth login --with-token` / `docker login --password-stdin` so
+    /// GUI frontends (e.g. the VS Code extension) can collect the
+    /// passphrase via their own input widget without exposing it in the
+    /// process listing the way `--passphrase <value>` would. Mutually
+    /// exclusive with `--passphrase`. (JOY-018E-21)
+    #[arg(long = "passphrase-stdin", global = true)]
+    passphrase_stdin: bool,
+
     /// Delegation token for AI auth (or set JOY_TOKEN).
     #[arg(long, global = true)]
     token: Option<String>,
@@ -157,31 +166,35 @@ struct TokenAddArgs {
 }
 
 pub fn run(args: AuthArgs) -> Result<()> {
+    let stdin = args.passphrase_stdin;
     match args.command {
         Some(AuthCommand::Init) => {
-            run_init(args.passphrase.as_deref(), args.user.as_deref()).map(|_| ())
+            run_init(args.passphrase.as_deref(), stdin, args.user.as_deref()).map(|_| ())
         }
         Some(AuthCommand::Status) => run_status(),
-        Some(AuthCommand::Reset(a)) => run_reset(a, args.passphrase.as_deref()),
+        Some(AuthCommand::Reset(a)) => run_reset(a, args.passphrase.as_deref(), stdin),
         Some(AuthCommand::Token(a)) => {
-            run_token(a, args.passphrase.as_deref(), args.user.as_deref())
+            run_token(a, args.passphrase.as_deref(), stdin, args.user.as_deref())
         }
         Some(AuthCommand::Delegation(a)) => match a.command {
             DelegationCommand::Rotate(args_) => {
-                run_ai_rotate(&args_.member, args.passphrase.as_deref())
+                run_ai_rotate(&args_.member, args.passphrase.as_deref(), stdin)
             }
             DelegationCommand::Ls(args_) => run_delegation_ls(args_.member.as_deref()),
         },
-        Some(AuthCommand::Passphrase(a)) => {
-            run_passphrase(args.passphrase.as_deref(), a.new_passphrase.as_deref())
-        }
-        Some(AuthCommand::Recover(a)) => run_recover(a, args.passphrase.as_deref()),
+        Some(AuthCommand::Passphrase(a)) => run_passphrase(
+            args.passphrase.as_deref(),
+            stdin,
+            a.new_passphrase.as_deref(),
+        ),
+        Some(AuthCommand::Recover(a)) => run_recover(a, args.passphrase.as_deref(), stdin),
         None => {
             if let Some(otp) = args.otp.as_deref() {
-                run_auth_otp(otp, args.passphrase.as_deref())
+                run_auth_otp(otp, args.passphrase.as_deref(), stdin)
             } else {
                 run_auth(
                     args.passphrase.as_deref(),
+                    stdin,
                     args.token.as_deref(),
                     args.user.as_deref(),
                 )
@@ -260,20 +273,49 @@ fn resolve_token(flag: Option<&str>) -> Option<String> {
 ///
 /// `pub(crate)` so other commands (e.g. `derive_acting_keypair` in the
 /// project module) share the same non-interactive-detection rule.
-pub(crate) fn read_passphrase(flag: Option<&str>, prompt: &str) -> Result<String> {
-    use std::io::IsTerminal;
-    match flag {
-        Some(p) => Ok(p.to_string()),
-        None => {
-            if !std::io::stdin().is_terminal() {
-                anyhow::bail!(
-                    "passphrase required: stdin is not a terminal. \
-                     Pass --passphrase <value> for non-interactive use."
-                );
-            }
-            Ok(rpassword::prompt_password(prompt)?)
+///
+/// `from_stdin` selects the `--passphrase-stdin` path: read a single
+/// line from stdin (without echoing) and strip its trailing newline.
+/// Designed for GUI frontends and CI pipelines that pipe a secret in
+/// without exposing it in the process listing the way `--passphrase
+/// <value>` would (JOY-018E-21).
+pub(crate) fn read_passphrase(
+    flag: Option<&str>,
+    from_stdin: bool,
+    prompt: &str,
+) -> Result<String> {
+    use std::io::{BufRead, IsTerminal};
+    if let Some(p) = flag {
+        if from_stdin {
+            anyhow::bail!("--passphrase and --passphrase-stdin are mutually exclusive");
         }
+        return Ok(p.to_string());
     }
+    if from_stdin {
+        let stdin = std::io::stdin();
+        let mut line = String::new();
+        let read = stdin.lock().read_line(&mut line)?;
+        if read == 0 {
+            anyhow::bail!("--passphrase-stdin: stdin closed before a passphrase was read");
+        }
+        if line.ends_with('\n') {
+            line.pop();
+            if line.ends_with('\r') {
+                line.pop();
+            }
+        }
+        if line.is_empty() {
+            anyhow::bail!("--passphrase-stdin: empty input");
+        }
+        return Ok(line);
+    }
+    if !std::io::stdin().is_terminal() {
+        anyhow::bail!(
+            "passphrase required: stdin is not a terminal. \
+             Pass --passphrase <value> or --passphrase-stdin for non-interactive use."
+        );
+    }
+    Ok(rpassword::prompt_password(prompt)?)
 }
 
 /// `joy auth init` — first-time setup for the current member.
@@ -281,7 +323,11 @@ pub(crate) fn read_passphrase(flag: Option<&str>, prompt: &str) -> Result<String
 /// Returns the validated passphrase so callers that bootstrap auth as part
 /// of a larger flow (e.g. `joy ai init`) can pass it forward to subsequent
 /// operations in the same invocation without re-prompting the user.
-pub(crate) fn run_init(passphrase_flag: Option<&str>, user_flag: Option<&str>) -> Result<String> {
+pub(crate) fn run_init(
+    passphrase_flag: Option<&str>,
+    passphrase_stdin: bool,
+    user_flag: Option<&str>,
+) -> Result<String> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
@@ -307,15 +353,16 @@ pub(crate) fn run_init(passphrase_flag: Option<&str>, user_flag: Option<&str>) -
     }
 
     // Get passphrase
-    if passphrase_flag.is_none() {
+    let interactive = passphrase_flag.is_none() && !passphrase_stdin;
+    if interactive {
         eprintln!("Setting up authentication for {}.", color::id(&email));
         eprintln!("Choose a passphrase (minimum 3 words, e.g. Diceware):");
     }
-    let passphrase = read_passphrase(passphrase_flag, "  Passphrase: ")?;
+    let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "  Passphrase: ")?;
     validate_passphrase(&passphrase)?;
 
     // Confirm (only in interactive mode)
-    if passphrase_flag.is_none() {
+    if interactive {
         let confirm = rpassword::prompt_password("  Confirm:    ")?;
         if passphrase != confirm {
             anyhow::bail!("passphrases do not match");
@@ -395,6 +442,7 @@ pub(crate) fn run_init(passphrase_flag: Option<&str>, user_flag: Option<&str>) -
 /// `joy auth` — authenticate by passphrase (human) or delegation token (AI).
 fn run_auth(
     passphrase_flag: Option<&str>,
+    passphrase_stdin: bool,
     token_flag: Option<&str>,
     user_flag: Option<&str>,
 ) -> Result<()> {
@@ -411,7 +459,14 @@ fn run_auth(
 
     // Human authentication via passphrase
     let email = resolve_user(user_flag)?;
-    auth_with_passphrase(&root, &project, &project_id, &email, passphrase_flag)
+    auth_with_passphrase(
+        &root,
+        &project,
+        &project_id,
+        &email,
+        passphrase_flag,
+        passphrase_stdin,
+    )
 }
 
 /// Authenticate a human member via passphrase.
@@ -421,6 +476,7 @@ fn auth_with_passphrase(
     project_id: &str,
     email: &str,
     passphrase_flag: Option<&str>,
+    passphrase_stdin: bool,
 ) -> Result<()> {
     let member = project.members.get(email).ok_or_else(|| {
         anyhow::anyhow!(
@@ -444,7 +500,7 @@ fn auth_with_passphrase(
     let public_key = PublicKey::from_hex(public_key_hex)?;
     let salt = Salt::from_hex(salt_hex)?;
 
-    let passphrase = read_passphrase(passphrase_flag, "Passphrase: ")?;
+    let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "Passphrase: ")?;
 
     // ADR-039: prefer the wrapped-seed path when seed_wrap_passphrase is
     // present. The legacy path (no wrap) triggers a one-time lazy
@@ -1103,7 +1159,7 @@ struct DelegatedSession {
 }
 
 /// `joy auth reset [member]` — reset authentication for yourself or another member.
-fn run_reset(args: ResetArgs, passphrase_flag: Option<&str>) -> Result<()> {
+fn run_reset(args: ResetArgs, passphrase_flag: Option<&str>, passphrase_stdin: bool) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
@@ -1128,7 +1184,7 @@ fn run_reset(args: ResetArgs, passphrase_flag: Option<&str>) -> Result<()> {
     }
 
     // Authenticate the acting user
-    let passphrase = read_passphrase(passphrase_flag, "Passphrase: ")?;
+    let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "Passphrase: ")?;
     let _ = joy_core::auth::unlock_identity(acting_member, &passphrase)?;
 
     // If resetting another member, check manage capability
@@ -1175,10 +1231,11 @@ fn run_reset(args: ResetArgs, passphrase_flag: Option<&str>) -> Result<()> {
 fn run_token(
     args: TokenArgs,
     passphrase_flag: Option<&str>,
+    passphrase_stdin: bool,
     user_flag: Option<&str>,
 ) -> Result<()> {
     match args.command {
-        TokenCommand::Add(a) => run_token_add(a, passphrase_flag, user_flag),
+        TokenCommand::Add(a) => run_token_add(a, passphrase_flag, passphrase_stdin, user_flag),
     }
 }
 
@@ -1186,12 +1243,13 @@ fn run_token(
 fn run_token_add(
     args: TokenAddArgs,
     passphrase_flag: Option<&str>,
+    passphrase_stdin: bool,
     user_flag: Option<&str>,
 ) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
     let email = resolve_user(user_flag)?;
-    let passphrase = read_passphrase(passphrase_flag, "Passphrase: ")?;
+    let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "Passphrase: ")?;
 
     let (encoded, hours) = create_delegation_token(
         &root,
@@ -1498,7 +1556,11 @@ fn run_delegation_ls(filter_member: Option<&str>) -> Result<()> {
 /// writes the new public_key and salt, and invalidates any active
 /// session for this member. Attestations on this member remain valid
 /// because `public_key` is not in the signed_fields set (JOY-00FB-58).
-fn run_passphrase(current_flag: Option<&str>, new_flag: Option<&str>) -> Result<()> {
+fn run_passphrase(
+    current_flag: Option<&str>,
+    passphrase_stdin: bool,
+    new_flag: Option<&str>,
+) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
@@ -1523,7 +1585,7 @@ fn run_passphrase(current_flag: Option<&str>, new_flag: Option<&str>) -> Result<
     let current_pub = PublicKey::from_hex(current_pub_hex)?;
     let current_salt = Salt::from_hex(current_salt_hex)?;
 
-    let current_pass = read_passphrase(current_flag, "Current passphrase: ")?;
+    let current_pass = read_passphrase(current_flag, passphrase_stdin, "Current passphrase: ")?;
 
     // ADR-039: in the wrapped-seed model the seed and keypair are stable
     // across passphrase rotation; we only re-wrap seed_wrap_passphrase.
@@ -1559,7 +1621,11 @@ fn run_passphrase(current_flag: Option<&str>, new_flag: Option<&str>) -> Result<
         migrated_seed
     };
 
-    let new_pass = read_passphrase(new_flag, "New passphrase:     ")?;
+    // The new passphrase is read separately so that --passphrase-stdin (if
+    // present) refers to the *current* passphrase only -- a single stdin
+    // line carries one secret, not two. Use --new-passphrase or the
+    // interactive prompt for the new one.
+    let new_pass = read_passphrase(new_flag, false, "New passphrase:     ")?;
     if new_pass == current_pass {
         anyhow::bail!("new passphrase must differ from the current one");
     }
@@ -1605,7 +1671,11 @@ fn run_passphrase(current_flag: Option<&str>, new_flag: Option<&str>) -> Result<
 /// the current passphrase. Joy unwraps the seed, generates a new
 /// recovery key, re-wraps the seed under the new recovery KEK, leaves
 /// the passphrase wrap untouched. Old recovery key becomes useless.
-fn run_recover(args: RecoverArgs, passphrase_flag: Option<&str>) -> Result<()> {
+fn run_recover(
+    args: RecoverArgs,
+    passphrase_flag: Option<&str>,
+    passphrase_stdin: bool,
+) -> Result<()> {
     if !args.recovery_key && !args.regenerate_key {
         anyhow::bail!(
             "specify --recovery-key (passphrase loss) or --regenerate-key (rotate recovery key)"
@@ -1644,7 +1714,11 @@ fn run_recover(args: RecoverArgs, passphrase_flag: Option<&str>) -> Result<()> {
         let recovery = seed_mod::RecoveryKey::from_user_input(&recovery_str)?;
         let seed = seed_mod::unwrap_seed_with_recovery(wrap_recovery_hex, &recovery, &salt)?;
 
-        let new_pass = read_passphrase(args.new_passphrase.as_deref(), "New passphrase: ")?;
+        let new_pass = read_passphrase(
+            args.new_passphrase.as_deref(),
+            passphrase_stdin,
+            "New passphrase: ",
+        )?;
         validate_passphrase(&new_pass)?;
         if args.new_passphrase.is_none() {
             let confirm = rpassword::prompt_password("Confirm:        ")?;
@@ -1677,7 +1751,7 @@ fn run_recover(args: RecoverArgs, passphrase_flag: Option<&str>) -> Result<()> {
             )
         })?;
 
-        let passphrase = read_passphrase(passphrase_flag, "Passphrase: ")?;
+        let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "Passphrase: ")?;
         let seed = seed_mod::unwrap_seed_with_passphrase(wrap_passphrase_hex, &passphrase, &salt)?;
 
         let new_recovery = seed_mod::RecoveryKey::generate();
@@ -1709,7 +1783,7 @@ fn run_recover(args: RecoverArgs, passphrase_flag: Option<&str>) -> Result<()> {
 /// currently has no attestation, reverse-attests the founder with the
 /// redeemer's fresh identity key (JOY-00FD-93). Closes the attestation
 /// chain implicitly, without CLI output.
-fn run_auth_otp(otp: &str, passphrase_flag: Option<&str>) -> Result<()> {
+fn run_auth_otp(otp: &str, passphrase_flag: Option<&str>, passphrase_stdin: bool) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
@@ -1737,7 +1811,7 @@ fn run_auth_otp(otp: &str, passphrase_flag: Option<&str>) -> Result<()> {
     }
     // Wrapped-seed onboarding (ADR-039): generate a random seed and
     // recovery key, wrap the seed under both KEKs.
-    let passphrase = read_passphrase(passphrase_flag, "Choose passphrase: ")?;
+    let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "Choose passphrase: ")?;
     validate_passphrase(&passphrase)?;
     let salt = generate_salt();
     let seed = seed_mod::Seed::generate();
@@ -1830,7 +1904,11 @@ fn founder_needing_reverse_attestation(
 /// Precondition: a delegation entry exists in `project.yaml` for
 /// `(acting human, member)`. For the initial delegation use
 /// `joy auth token add`, not rotate.
-pub fn run_ai_rotate(member: &str, passphrase_flag: Option<&str>) -> Result<()> {
+pub fn run_ai_rotate(
+    member: &str,
+    passphrase_flag: Option<&str>,
+    passphrase_stdin: bool,
+) -> Result<()> {
     use joy_core::model::project::is_ai_member;
 
     let cwd = std::env::current_dir()?;
@@ -1871,7 +1949,7 @@ pub fn run_ai_rotate(member: &str, passphrase_flag: Option<&str>) -> Result<()> 
         );
     }
 
-    let passphrase = read_passphrase(passphrase_flag, "Passphrase: ")?;
+    let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "Passphrase: ")?;
     let unlocked = joy_core::auth::unlock_identity(human, &passphrase)?;
     let identity_seed = unlocked.seed;
 
