@@ -794,7 +794,7 @@ fn run_member(
                 println!("Added member {}", a.id);
                 if let Some((ref token, _hours)) = token_result {
                     println!();
-                    println!("{}", token);
+                    println!("\"{}\"", token);
                 } else if is_ai {
                     println!();
                     println!("Next steps:");

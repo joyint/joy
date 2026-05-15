@@ -336,7 +336,7 @@ load setup
     MEMBER=$(joy project 2>/dev/null | grep "ai:" | head -1 | awk '{print $1}')
     [ -n "$MEMBER" ] || skip "no AI member registered"
     TOKEN=$(joy auth token add "$MEMBER" --passphrase "$TEST_PASSPHRASE" \
-        | grep '^joy_t_')
+        | tr -d '"')
     joy auth --token "$TOKEN" >/dev/null 2>&1
     for f in .claude/settings.json .qwen/settings.json .github/copilot/settings.json; do
         if [ -f "$f" ]; then
@@ -354,7 +354,7 @@ load setup
     MEMBER=$(joy project 2>/dev/null | grep "ai:" | head -1 | awk '{print $1}')
     [ -n "$MEMBER" ] || skip "no AI member registered"
     TOKEN=$(joy auth token add "$MEMBER" --passphrase "$TEST_PASSPHRASE" \
-        | grep '^joy_t_')
+        | tr -d '"')
     # `joy auth --token` prints `export JOY_SESSION=<joy_s_...>` on stdout.
     # The AI tool is responsible for capturing that value and propagating it
     # into every subshell it spawns for joy commands (ADR-034).

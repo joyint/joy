@@ -1429,7 +1429,7 @@ fn write_if_changed(root: &Path, path: &Path, content: &str) -> anyhow::Result<b
     // No `auto_git_add` here. Every caller of `write_if_changed`
     // targets an AI-tool artefact (`.claude/`, `.vibe/`,
     // `.github/copilot-instructions.md`, `.github/prompts/`,
-    // `.github/agents/`, `AGENTS.md`, etc.) -- all listed in the
+    // `.github/agents/`, `AGENTS.md`, etc.), all listed in the
     // joy-managed `.gitignore` block. Staging them would be a bug:
     // on the first `joy ai init` it would slip past `.gitignore`
     // (the block is rewritten *after* the tools are written), and

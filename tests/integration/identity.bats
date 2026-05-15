@@ -138,7 +138,7 @@ load setup
     ITEM_ID=$(joy ls 2>/dev/null | grep "No session" | awk '{print $1}')
     # Authenticate AI but do NOT set JOY_SESSION
     AI_TOKEN=$(joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" \
-        | grep '^joy_t_')
+        | tr -d '"')
     joy auth --token "$AI_TOKEN" >/dev/null 2>&1
     # Without JOY_SESSION, falls back to human session (not AI)
     joy comment "$ITEM_ID" "As human"
@@ -154,12 +154,12 @@ load setup
     ITEM_ID=$(joy ls 2>/dev/null | grep "Impersonation" | awk '{print $1}')
     # Authenticate Claude
     CLAUDE_TOKEN=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
-        | grep '^joy_t_')
+        | tr -d '"')
     eval $(joy auth --token "$CLAUDE_TOKEN")
     CLAUDE_SESSION="$JOY_SESSION"
     # Authenticate Vibe
     VIBE_TOKEN=$(joy auth token add ai:vibe@joy --passphrase "$TEST_PASSPHRASE" \
-        | grep '^joy_t_')
+        | tr -d '"')
     eval $(joy auth --token "$VIBE_TOKEN")
     # Use Claude's session -- should be attributed to Claude, not Vibe
     JOY_SESSION="$CLAUDE_SESSION" joy comment "$ITEM_ID" "From Claude session"

@@ -46,9 +46,10 @@ load setup
     grep -q "ai:copilot-chat@joy:" .joy/project.yaml
 
     # Step 2: issue a delegation token (as the next-steps hint instructs).
-    # The command now prints only the bare token on stdout.
+    # The command prints the token wrapped in double quotes; strip them
+    # for the bare value used on the next line.
     local token
-    token=$(joy auth token add ai:copilot-chat@joy --passphrase "$TEST_PASSPHRASE")
+    token=$(joy auth token add ai:copilot-chat@joy --passphrase "$TEST_PASSPHRASE" | tr -d '"')
     [[ "$token" == joy_t_* ]]
 
     # Step 3: AI redeems the token via --json and learns its identity + auth.

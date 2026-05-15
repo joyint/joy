@@ -12,9 +12,10 @@ load setup
     [ "$status" -eq 0 ]
     [[ "$output" == *"Added member ai:claude@joy"* ]]
 
-    # Token printed on its own line so the operator can copy/paste it.
+    # Token printed on its own line, wrapped in double quotes, so the
+    # operator can copy/paste it intact.
     local token
-    token=$(echo "$output" | grep '^joy_t_' | head -n 1)
+    token=$(echo "$output" | grep -o 'joy_t_[A-Za-z0-9+/=]*' | head -n 1)
     [[ "$token" == joy_t_* ]]
 
     # No second `auth token add` step is needed: the AI can redeem the

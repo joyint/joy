@@ -1,0 +1,80 @@
+id: JOY-0195-A0
+title: joy auth --token fails opaquely on chat-wrapped tokens
+type: bug
+status: in-progress
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-15T23:08:08.508245461Z
+updated: 2026-05-15T23:59:49.622370921Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-05-15T23:08:16.542736114Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  When a delegation token gets pasted from a chat client into an
+  AI tool's input, the token's single ~700-character line is
+  visually wrapped by the client. Some AI tools then re-emit only
+  the first visible \"line\" when constructing the
+  \`joy auth --token …\` command, silently truncating the payload.
+
+  Joy currently reacts to that with:
+
+      Error: authentication failed: invalid token: missing field
+      \`delegation_public_key\` at line 1 column 557
+
+  That message is technically correct but doesn't tell the AI
+  (or the operator) what really happened, so the AI guesses
+  (\"Maybe the token expired? Wrong version?\") instead of asking
+  for a fresh paste.
+
+  Fix in three parts:
+
+  1. \`joy_core::auth::token::decode_token\` strips every whitespace
+     character (spaces, newlines, tabs, CRs) from the input before
+     parsing. This recovers the common case where the chat tool
+     passed the token through verbatim with line-break artefacts.
+
+  2. Replace the raw \`serde_json\` / base64 error text with a
+     self-explanatory message that names the most likely cause:
+
+         Error: token decode failed: <underlying detail>.
+         The token from \`joy auth token add\` is a single string
+         that must be preserved verbatim. If it was copied through
+         a chat client, the visual line wrap can hide a truncation
+         -- paste the full string in one piece and retry.
+
+  3. Add a short note in \`docs/ai/Tutorial.md\` under the
+     Authentication section telling AI tools that the token may be
+     wrapped in chat clients, that whitespace should be stripped
+     before passing it on, and that on a decode/field error the
+     correct reaction is to ask the operator to re-paste, not to
+     retry with new guesses.
+
+  Tests:
+
+  - Token decode accepts \`joy_t_<base64-with-embedded-newlines>\`.
+  - Token decode of a truncated token reports the new hint.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-15T23:08:16.602997331Z
+  text: 'Plan: strip whitespace inside decode_token before base64 decode; wrap base64 + JSON errors in a hint that names chat-line-wrap truncation as the likely cause; add a short note under docs/ai/Tutorial.md Authentication that AI tools should strip whitespace before forwarding the token and treat a decode/field error as ''ask the operator to re-paste'', not as a retry-with-guess. Tests: token decode accepts embedded newlines; truncated token surfaces the new hint.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-15T23:59:49.622370145Z
+  text: |-
+    [x] joy auth token add and joy project member add --with-token now print the token wrapped in double quotes ("joy_t_..."). decode_token strips a single surrounding layer of double or single quotes before the base64 stage (whitespace stripping is also preserved as defense in depth). Chat tools treat the quoted value as one atomic string, eliminating the truncation that earlier happened when an AI re-read a visually wrapped paste.
+
+    Tutorial: the long whitespace and truncation hints removed; only the bare fact that the token comes wrapped in quotes stays in the Authentication section. The improved decode error message in joy_core::auth::token stays as a fallback when something goes wrong.
+
+    Tests:
+    - decode_accepts_double_quoted_token and decode_accepts_single_quoted_token in token.rs
+    - decode_tolerates_embedded_whitespace remains (defense in depth)
+    - truncated_token_surfaces_hint remains
+    - Bats: setup_ai_session and other token-capture sites in setup.bash, auth.bats, ai.bats, identity.bats, traceability.bats, json_auth.bats, auth_enforcement_ai.bats, member_add_ai_hint.bats, member_add_with_token.bats, passphrase_stdin.bats all updated to handle the quoted output
+
+    All 15 token unit tests and 398 bats integration tests green.

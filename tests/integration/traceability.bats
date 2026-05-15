@@ -138,9 +138,9 @@ EOF
     joy project member add ai:copilot@joy --passphrase "$TEST_PASSPHRASE"
     # Create and auth both AI members
     TOKEN_CLAUDE=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
-        | grep '^joy_t_')
+        | tr -d '"')
     TOKEN_COPILOT=$(joy auth token add ai:copilot@joy --passphrase "$TEST_PASSPHRASE" \
-        | grep '^joy_t_')
+        | tr -d '"')
     eval $(joy auth --token "$TOKEN_CLAUDE")
     SESSION_CLAUDE="$JOY_SESSION"
     eval $(joy auth --token "$TOKEN_COPILOT")
@@ -162,9 +162,9 @@ EOF
     joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE"
     joy project member add ai:copilot@joy --passphrase "$TEST_PASSPHRASE"
     TOKEN_CLAUDE=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
-        | grep '^joy_t_')
+        | tr -d '"')
     TOKEN_COPILOT=$(joy auth token add ai:copilot@joy --passphrase "$TEST_PASSPHRASE" \
-        | grep '^joy_t_')
+        | tr -d '"')
     eval $(joy auth --token "$TOKEN_CLAUDE")
     SESSION_CLAUDE="$JOY_SESSION"
     eval $(joy auth --token "$TOKEN_COPILOT")
@@ -186,7 +186,7 @@ EOF
     setup_human_auth
     joy project member add ai:claude@joy --capabilities "implement,create" --passphrase "$TEST_PASSPHRASE"
     TOKEN_CLAUDE=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
-        | grep '^joy_t_')
+        | tr -d '"')
     eval $(joy auth --token "$TOKEN_CLAUDE")
     SESSION_CLAUDE="$JOY_SESSION"
     # Claude cannot manage (no manage capability)
@@ -206,9 +206,9 @@ EOF
     # Copilot: can review and create, but NOT implement
     joy project member add ai:copilot@joy --capabilities "review,create" --passphrase "$TEST_PASSPHRASE"
     TOKEN_CLAUDE=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
-        | grep '^joy_t_')
+        | tr -d '"')
     TOKEN_COPILOT=$(joy auth token add ai:copilot@joy --passphrase "$TEST_PASSPHRASE" \
-        | grep '^joy_t_')
+        | tr -d '"')
     eval $(joy auth --token "$TOKEN_CLAUDE")
     SESSION_CLAUDE="$JOY_SESSION"
     eval $(joy auth --token "$TOKEN_COPILOT")

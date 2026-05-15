@@ -1277,7 +1277,7 @@ fn run_token_add(
     // lines around it just create noise the operator has to strip. Emit
     // only the token (JOY-0185-66 follow-up).
     let _ = hours;
-    println!("{}", encoded);
+    println!("\"{}\"", encoded);
 
     Ok(())
 }

@@ -50,8 +50,11 @@ setup_ai_session() {
     local ai_member="${1:-ai:test@joy}"
     # Add member if not already registered (idempotent)
     joy project member add "$ai_member" --passphrase "$TEST_PASSPHRASE" 2>/dev/null || true
-    AI_TOKEN=$(joy auth token add "$ai_member" --passphrase "$TEST_PASSPHRASE")
-    # Auth as AI -- eval sets JOY_SESSION
+    # joy auth token add wraps the token in double quotes; strip them
+    # for code paths that pass AI_TOKEN to other commands as a bare
+    # value. `joy auth --token` itself accepts both forms.
+    AI_TOKEN=$(joy auth token add "$ai_member" --passphrase "$TEST_PASSPHRASE" | tr -d '"')
+    # Auth as AI; eval sets JOY_SESSION
     eval $(joy auth --token "$AI_TOKEN")
     SAVED_JOY_SESSION="$JOY_SESSION"
 }

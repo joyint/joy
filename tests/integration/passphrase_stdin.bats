@@ -41,7 +41,7 @@ load setup
     joy project member add ai:stdin@joy --passphrase "$TEST_PASSPHRASE" >/dev/null
     run bash -c "echo '$TEST_PASSPHRASE' | joy auth token add ai:stdin@joy --passphrase-stdin"
     [ "$status" -eq 0 ]
-    [[ "$output" == joy_t_* ]]
+    [[ "$output" == \"joy_t_*\" ]]
 }
 
 @test "--passphrase-stdin strips the trailing newline correctly" {

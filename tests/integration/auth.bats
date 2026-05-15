@@ -204,9 +204,11 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
     run joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
-    # Output is just the token (no banner, no usage hints) so the
-    # operator can pipe it straight to the AI.
-    [[ "$output" == joy_t_* ]]
+    # Output is the bare token in double quotes (no banner, no usage
+    # hints). Quotes make chat clients treat the value as one atomic
+    # string so a visual line wrap cannot cause a truncation when an
+    # AI tool reads it back from the chat.
+    [[ "$output" == \"joy_t_*\" ]]
 }
 
 @test "joy auth token add rejects non-AI member" {
@@ -299,7 +301,7 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     joy auth init --passphrase "$TEST_PASSPHRASE"
     joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
     TOKEN=$(joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" \
-        | grep '^joy_t_')
+        | tr -d '"')
     [ -n "$TOKEN" ]
     run joy auth --token "$TOKEN"
     [ "$status" -eq 0 ]
@@ -372,7 +374,7 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     echo "# test" > .claude/CLAUDE.md
     joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE"
     # Create a delegation token and authenticate as AI
-    TOKEN=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" | grep '^joy_t_')
+    TOKEN=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" | tr -d '"')
     joy auth --token "$TOKEN"
     # Verify AI member exists with verify_key (set by token auth)
     grep -q "ai:claude@joy" .joy/project.yaml
@@ -449,7 +451,7 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE"
     # Create AI token scoped to project A
     TOKEN=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
-        | grep '^joy_t_')
+        | tr -d '"')
     eval $(joy auth --token "$TOKEN")
     SESS="$JOY_SESSION"
     # Verify it works in project A

@@ -78,7 +78,7 @@ A session is obtained by redeeming a delegation token issued by an operator (a h
 
 > "I need a delegation token to perform this action. Please run `joy auth token add <YOUR-MEMBER-ID>` and share the token with me."
 
-They will paste a string beginning with `joy_t_`. Redeem it:
+They will paste a string beginning with `joy_t_`, wrapped in double quotes. Redeem it:
 
 ```
 joy auth --token <TOKEN> --json

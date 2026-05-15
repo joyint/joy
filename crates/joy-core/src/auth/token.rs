@@ -201,14 +201,48 @@ pub fn encode_token(token: &DelegationToken) -> String {
 }
 
 /// Decode a token from its portable string representation.
+///
+/// Whitespace (spaces, newlines, tabs, CRs) is stripped before the
+/// base64 stage so a token that survived an over-eager chat client
+/// line-wrap still decodes. base64 and JSON errors are rewrapped in
+/// a hint that names the most common real cause, namely a truncation
+/// from a wrapped paste, so the operator (or an AI tool) knows to
+/// re-paste rather than retry with new guesses.
 pub fn decode_token(s: &str) -> Result<DelegationToken, JoyError> {
-    let data = s.strip_prefix(TOKEN_PREFIX).ok_or_else(|| {
+    let cleaned: String = s.chars().filter(|c| !c.is_whitespace()).collect();
+    // Strip a single layer of surrounding `"` or `'` quotes. The
+    // `joy auth token add` output wraps the token in double quotes
+    // so chat clients treat it as one atomic string instead of
+    // word-splitting on visual line wraps. Callers that re-paste
+    // the quoted form into `joy auth --token` get it accepted
+    // verbatim.
+    let trimmed = cleaned
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .or_else(|| {
+            cleaned
+                .strip_prefix('\'')
+                .and_then(|s| s.strip_suffix('\''))
+        })
+        .unwrap_or(&cleaned);
+    let data = trimmed.strip_prefix(TOKEN_PREFIX).ok_or_else(|| {
         JoyError::AuthFailed("invalid token format (missing joy_t_ prefix)".into())
     })?;
-    let json = base64_decode(data)?;
-    let token: DelegationToken = serde_json::from_slice(&json)
-        .map_err(|e| JoyError::AuthFailed(format!("invalid token: {e}")))?;
+    let json = base64_decode(data).map_err(|e| wrap_decode_error(&e.to_string()))?;
+    let token: DelegationToken =
+        serde_json::from_slice(&json).map_err(|e| wrap_decode_error(&format!("{e}")))?;
     Ok(token)
+}
+
+fn wrap_decode_error(detail: &str) -> JoyError {
+    JoyError::AuthFailed(format!(
+        "token decode failed: {detail}. \
+         A delegation token is a single base64 line. If this was forwarded \
+         through a chat tool, the visual line wrap may have hidden a \
+         truncation: re-read the operator's original message in full, strip \
+         all whitespace, and retry before asking the operator to paste it \
+         again."
+    ))
 }
 
 /// Check if a string looks like a delegation token (has the `joy_t_` prefix).
@@ -407,5 +441,68 @@ mod tests {
     #[test]
     fn invalid_prefix_rejected() {
         assert!(decode_token("invalid_prefix_data").is_err());
+    }
+
+    #[test]
+    fn decode_tolerates_embedded_whitespace() {
+        // Chat clients can visually wrap a token across multiple
+        // lines; some AI tools then forward it with the line
+        // breaks still in the string. Stripping whitespace inside
+        // decode_token recovers that case.
+        let (delegator, _) = test_keypair();
+        let (seed, delegation, _) = fresh_delegation();
+        let token = make_token(&delegator, &delegation, &seed, None, false);
+        let encoded = encode_token(&token);
+
+        // Inject newlines, spaces, and tabs at arbitrary positions.
+        let mangled: String = encoded
+            .as_bytes()
+            .chunks(40)
+            .map(|c| std::str::from_utf8(c).unwrap())
+            .collect::<Vec<_>>()
+            .join(" \n\t");
+        assert!(mangled.contains('\n'));
+        let decoded = decode_token(&mangled).expect("whitespace-mangled token should decode");
+        assert_eq!(decoded.claims.ai_member, "ai:claude@joy");
+    }
+
+    #[test]
+    fn decode_accepts_double_quoted_token() {
+        let (delegator, _) = test_keypair();
+        let (seed, delegation, _) = fresh_delegation();
+        let token = make_token(&delegator, &delegation, &seed, None, false);
+        let encoded = encode_token(&token);
+        let quoted = format!("\"{encoded}\"");
+        let decoded = decode_token(&quoted).expect("double-quoted token should decode");
+        assert_eq!(decoded.claims.ai_member, "ai:claude@joy");
+    }
+
+    #[test]
+    fn decode_accepts_single_quoted_token() {
+        let (delegator, _) = test_keypair();
+        let (seed, delegation, _) = fresh_delegation();
+        let token = make_token(&delegator, &delegation, &seed, None, false);
+        let encoded = encode_token(&token);
+        let quoted = format!("'{encoded}'");
+        let decoded = decode_token(&quoted).expect("single-quoted token should decode");
+        assert_eq!(decoded.claims.ai_member, "ai:claude@joy");
+    }
+
+    #[test]
+    fn truncated_token_surfaces_hint() {
+        let (delegator, _) = test_keypair();
+        let (seed, delegation, _) = fresh_delegation();
+        let token = make_token(&delegator, &delegation, &seed, None, false);
+        let encoded = encode_token(&token);
+
+        // Drop the tail, mimicking what happens when an AI tool
+        // grabs only the first visible line of a wrapped paste.
+        let truncated = &encoded[..encoded.len() / 2];
+        let err = decode_token(truncated).expect_err("truncated token must not decode");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("strip all whitespace"),
+            "expected re-read hint in error, got: {msg}"
+        );
     }
 }
