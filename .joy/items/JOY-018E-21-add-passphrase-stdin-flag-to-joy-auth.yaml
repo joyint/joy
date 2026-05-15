@@ -1,7 +1,7 @@
 id: JOY-018E-21
 title: Add --passphrase-stdin flag to joy auth
 type: task
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -10,10 +10,12 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-15T11:01:04.188881006Z
-updated: 2026-05-15T19:59:16.943817941Z
+updated: 2026-05-15T19:59:49.256570184Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-05-15T19:39:41.471202130Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-15T19:59:49.256570184Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Add a --passphrase-stdin flag to joy auth (and related subcommands that accept --passphrase) that reads the passphrase from stdin in a single line, even when stdin is not a TTY. Pattern matches gh auth login --with-token and docker login --password-stdin. Motivation: GUI frontends (e.g. the upcoming VS Code extension, JVSC-0005) need to collect the passphrase via their own input widget and pass it to joy without exposing it in the process listing (--passphrase <value>) or requiring a real terminal (current rpassword path). Behavior: --passphrase, --passphrase-stdin, and the interactive TTY prompt are mutually exclusive. Documented in the auth tutorial.'
 comments:
