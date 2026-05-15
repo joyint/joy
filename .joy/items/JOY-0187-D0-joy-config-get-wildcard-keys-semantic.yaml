@@ -1,8 +1,10 @@
 id: JOY-0187-D0
 title: 'joy config get: wildcard keys + semantic descriptions'
 type: story
-status: new
+status: in-progress
 priority: medium
+assignees:
+- member: ai:claude@joy
 capabilities:
 - plan
 - implement
@@ -10,7 +12,11 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-14T22:05:01.499046227Z
-updated: 2026-05-14T22:05:01.499046227Z
+updated: 2026-05-15T19:26:54.553234624Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-05-15T19:20:51.292007216Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   `joy config get <key>` today fetches a single fully-qualified key, value-only. Two gaps:
 
@@ -42,3 +48,7 @@ description: |-
   - `--describe` adds the description; `--json` exposes it as a structured field.
 
   Depends on: nothing strict, but pairs naturally with JOY-009A (`joy ai mode`) which reuses the same description source for resolved-mode output.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-15T19:26:54.553233147Z
+  text: '[x] Added describe_value(key, value) -> Option<String> and flatten_under(value, prefix) -> Vec<(key, value)> helpers in joy-core/model/config.rs. Descriptions cover modes.default, workflow.auto-git, output.color, and the boolean toggles (workflow.auto-assign, auto-sync, output.emoji/short/fortune). joy config get now accepts a trailing .* for wildcard listings under a prefix (e.g. modes.*, output.*, *) and a --describe flag that adds a one-line semantic description to each value. Display renders aligned key/value/description rows; JSON for the wildcard form returns an entries array; the legacy scalar/object JSON shape on non-wildcard keys is preserved (--describe just adds an optional description field). Tests: tests/integration/config_describe.bats (7 cases) plus three unit tests in joy-core (describe_value_modes_default, flatten_under_modes_returns_default, flatten_under_output_lists_scalars_only). All cargo + bats checks green.'

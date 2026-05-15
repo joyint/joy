@@ -176,6 +176,89 @@ impl Default for OutputConfig {
     }
 }
 
+/// One-line description for a config (key, value) pair. Returned by
+/// `joy config get --describe` so the CLI is the single source of truth
+/// for the semantics of each setting. New keys/values should be added
+/// here when introduced so the help surface stays complete.
+pub fn describe_value(key: &str, value: &serde_json::Value) -> Option<String> {
+    let s = value.as_str();
+    let b = value.as_bool();
+    let text = match (key, s, b) {
+        ("modes.default", Some("autonomous"), _) => {
+            "work independently, stop only at governance gates"
+        }
+        ("modes.default", Some("supervised"), _) => "confirm before irreversible actions",
+        ("modes.default", Some("collaborative"), _) => {
+            "propose approach, proceed after confirmation"
+        }
+        ("modes.default", Some("interactive"), _) => {
+            "present options with rationale, wait for decision"
+        }
+        ("modes.default", Some("pairing"), _) => "step by step, question by question",
+
+        ("workflow.auto-git", Some("off"), _) => "never stage, commit, or push automatically",
+        ("workflow.auto-git", Some("add"), _) => "git add changed files after each write",
+        ("workflow.auto-git", Some("commit"), _) => "add + commit after each write",
+        ("workflow.auto-git", Some("push"), _) => "add + commit + push after each write",
+
+        ("output.color", Some("auto"), _) => "color on TTY, plain when piped",
+        ("output.color", Some("always"), _) => "force color even when output is piped",
+        ("output.color", Some("never"), _) => "plain output, no ANSI escapes",
+
+        ("workflow.auto-assign", _, Some(true)) => "assign yourself when running `joy start`",
+        ("workflow.auto-assign", _, Some(false)) => "leave assignment unchanged on `joy start`",
+
+        ("auto-sync", _, Some(true)) => "reassert hooks/instructions on every joy invocation",
+        ("auto-sync", _, Some(false)) => "skip auto-sync of hooks/instructions",
+
+        ("output.emoji", _, Some(true)) => "use emoji glyphs in styled output",
+        ("output.emoji", _, Some(false)) => "no emoji in output",
+
+        ("output.short", _, Some(true)) => "compact listings (single line per item)",
+        ("output.short", _, Some(false)) => "verbose listings (multi-line per item)",
+
+        ("output.fortune", _, Some(true)) => "show a short fortune after init and on idle",
+        ("output.fortune", _, Some(false)) => "no fortune banners",
+
+        _ => return None,
+    };
+    Some(text.to_string())
+}
+
+/// Flatten the nested config tree under `prefix` into a list of
+/// `(dotted_key, leaf_value)` pairs. The prefix itself is included in
+/// the emitted keys so callers can render them verbatim. Used by
+/// `joy config get <prefix>.*`.
+pub fn flatten_under(value: &serde_json::Value, prefix: &str) -> Vec<(String, serde_json::Value)> {
+    let mut out = Vec::new();
+    let start = if prefix.is_empty() {
+        Some(value)
+    } else {
+        navigate_json(value, prefix)
+    };
+    if let Some(start) = start {
+        walk(prefix, start, &mut out);
+    }
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
+fn walk(prefix: &str, value: &serde_json::Value, out: &mut Vec<(String, serde_json::Value)>) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (k, v) in map {
+                let next = if prefix.is_empty() {
+                    k.clone()
+                } else {
+                    format!("{prefix}.{k}")
+                };
+                walk(&next, v, out);
+            }
+        }
+        scalar => out.push((prefix.to_string(), scalar.clone())),
+    }
+}
+
 /// Return a human-readable hint for a config key, listing allowed values when
 /// the field is an enum or constrained type. Derived from the Config struct
 /// rather than a hand-maintained map.
@@ -337,6 +420,31 @@ mod tests {
         let config: Config = serde_json::from_value(base).unwrap();
         // modes.default should still be the default, not pairing
         assert_eq!(config.modes.default, InteractionLevel::Collaborative);
+    }
+
+    #[test]
+    fn describe_value_modes_default() {
+        let v = serde_json::Value::String("collaborative".to_string());
+        let d = describe_value("modes.default", &v).expect("known variant");
+        assert!(d.contains("propose"));
+        let unknown = serde_json::Value::String("zzz".to_string());
+        assert!(describe_value("modes.default", &unknown).is_none());
+    }
+
+    #[test]
+    fn flatten_under_modes_returns_default() {
+        let cfg = serde_json::to_value(Config::default()).unwrap();
+        let leaves = flatten_under(&cfg, "modes");
+        let keys: Vec<&str> = leaves.iter().map(|(k, _)| k.as_str()).collect();
+        assert!(keys.contains(&"modes.default"));
+    }
+
+    #[test]
+    fn flatten_under_output_lists_scalars_only() {
+        let cfg = serde_json::to_value(Config::default()).unwrap();
+        let leaves = flatten_under(&cfg, "output");
+        assert!(leaves.iter().all(|(_, v)| !v.is_object()));
+        assert!(leaves.iter().any(|(k, _)| k == "output.color"));
     }
 
     #[test]

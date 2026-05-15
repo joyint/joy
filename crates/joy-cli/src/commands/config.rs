@@ -23,9 +23,15 @@ enum ConfigCommand {
 
 #[derive(clap::Args)]
 struct GetArgs {
-    /// Dotted key path (e.g. output.emoji, agents.architect.mode)
+    /// Dotted key path (e.g. output.emoji, agents.architect.mode). A
+    /// trailing `.*` lists every leaf under that prefix.
     #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_config_key))]
     key: String,
+
+    /// Append a one-line semantic description to each value. Useful for
+    /// AI tools that need to know what each setting actually does.
+    #[arg(long)]
+    describe: bool,
 }
 
 #[derive(clap::Args)]
@@ -44,7 +50,7 @@ pub fn run(args: ConfigArgs) -> anyhow::Result<()> {
 
     match args.command {
         None => show_all(),
-        Some(ConfigCommand::Get(a)) => get_value(&a.key),
+        Some(ConfigCommand::Get(a)) => get_value(&a.key, a.describe),
         Some(ConfigCommand::Set(a)) => set_value(&root, &a.key, &a.value),
     }
 }
@@ -154,8 +160,14 @@ fn has_key(value: &serde_json::Value, path: &[&str]) -> bool {
     true
 }
 
-fn get_value(key: &str) -> anyhow::Result<()> {
+fn get_value(key: &str, describe: bool) -> anyhow::Result<()> {
     let value = store::load_config_value();
+
+    // Wildcard form: `modes.*` lists every leaf under that prefix.
+    if let Some(prefix) = wildcard_prefix(key) {
+        return get_wildcard(&value, key, prefix, describe);
+    }
+
     let result = navigate(&value, key);
 
     if crate::output::is_json() {
@@ -163,10 +175,18 @@ fn get_value(key: &str) -> anyhow::Result<()> {
         struct GetPayload<'a> {
             key: &'a str,
             value: serde_json::Value,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            description: Option<String>,
         }
+        let description = if describe {
+            result.and_then(|v| joy_core::model::config::describe_value(key, v))
+        } else {
+            None
+        };
         return crate::output::emit(GetPayload {
             key,
             value: result.cloned().unwrap_or(serde_json::Value::Null),
+            description,
         });
     }
 
@@ -175,18 +195,120 @@ fn get_value(key: &str) -> anyhow::Result<()> {
         std::process::exit(1);
     };
 
+    let suffix = if describe {
+        joy_core::model::config::describe_value(key, result)
+            .map(|d| format!("  {} {}", color::inactive("-"), color::inactive(&d)))
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+
     match result {
-        serde_json::Value::String(s) => println!("{s}"),
-        serde_json::Value::Bool(b) => println!("{b}"),
-        serde_json::Value::Number(n) => println!("{n}"),
-        serde_json::Value::Null => println!("null"),
+        serde_json::Value::String(s) => println!("{s}{suffix}"),
+        serde_json::Value::Bool(b) => println!("{b}{suffix}"),
+        serde_json::Value::Number(n) => println!("{n}{suffix}"),
+        serde_json::Value::Null => println!("null{suffix}"),
         other => {
+            // Objects do not have a single description; render as YAML.
             let yaml = serde_yaml_ng::to_string(&other)?;
             print!("{yaml}");
         }
     }
 
     Ok(())
+}
+
+/// Strip a trailing `.*` (or bare `*`) and return the prefix. None if
+/// the key has no wildcard.
+fn wildcard_prefix(key: &str) -> Option<&str> {
+    if key == "*" {
+        Some("")
+    } else if let Some(rest) = key.strip_suffix(".*") {
+        Some(rest)
+    } else {
+        None
+    }
+}
+
+fn get_wildcard(
+    config: &serde_json::Value,
+    key: &str,
+    prefix: &str,
+    describe: bool,
+) -> anyhow::Result<()> {
+    let leaves = joy_core::model::config::flatten_under(config, prefix);
+
+    if crate::output::is_json() {
+        #[derive(serde::Serialize)]
+        struct Entry {
+            key: String,
+            value: serde_json::Value,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            description: Option<String>,
+        }
+        #[derive(serde::Serialize)]
+        struct Payload<'a> {
+            key: &'a str,
+            entries: Vec<Entry>,
+        }
+        let entries = leaves
+            .into_iter()
+            .map(|(k, v)| {
+                let description = if describe {
+                    joy_core::model::config::describe_value(&k, &v)
+                } else {
+                    None
+                };
+                Entry {
+                    key: k,
+                    value: v,
+                    description,
+                }
+            })
+            .collect();
+        return crate::output::emit(Payload { key, entries });
+    }
+
+    if leaves.is_empty() {
+        std::process::exit(1);
+    }
+
+    let max_key = leaves.iter().map(|(k, _)| k.len()).max().unwrap_or(0);
+    let max_val = leaves
+        .iter()
+        .map(|(_, v)| scalar_str(v).len())
+        .max()
+        .unwrap_or(0);
+
+    for (k, v) in &leaves {
+        let val_str = scalar_str(v);
+        if describe {
+            if let Some(desc) = joy_core::model::config::describe_value(k, v) {
+                println!(
+                    "{:<kw$}  {:<vw$}  {} {}",
+                    color::label(k),
+                    val_str,
+                    color::inactive("-"),
+                    color::inactive(&desc),
+                    kw = max_key,
+                    vw = max_val,
+                );
+                continue;
+            }
+        }
+        println!("{:<kw$}  {}", color::label(k), val_str, kw = max_key);
+    }
+    Ok(())
+}
+
+fn scalar_str(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Bool(b) => b.to_string(),
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::Null => "null".to_string(),
+        other => other.to_string(),
+    }
 }
 
 fn set_value(root: &std::path::Path, key: &str, raw_value: &str) -> anyhow::Result<()> {
