@@ -1,7 +1,7 @@
 id: JOY-0193-4F
 title: ai_init_auth_inline tests hang on TTY stdin
 type: bug
-status: in-progress
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -11,10 +11,12 @@ capabilities:
 effort: 1
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-15T21:33:25.327529769Z
-updated: 2026-05-15T21:34:33.846961238Z
+updated: 2026-05-15T21:34:33.953794771Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-05-15T21:33:31.774481085Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-15T21:34:33.953794771Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   \`tests/integration/ai_init_auth_inline.bats\` calls \`joy ai init\`
