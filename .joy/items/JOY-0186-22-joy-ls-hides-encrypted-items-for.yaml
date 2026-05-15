@@ -1,15 +1,21 @@
 id: JOY-0186-22
 title: joy ls hides encrypted items for members without zone access
 type: bug
-status: new
+status: in-progress
 priority: high
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 - review
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-14T19:53:52.740602176Z
-updated: 2026-05-14T19:53:52.740602176Z
+updated: 2026-05-15T16:18:41.230361243Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-05-15T16:18:41.230361243Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Regression against JOY-0174-D3 ("render locked items in joy ls + auto ENC column"). The bats test `crypt journey: second member sees locked rows until granted` in `tests/integration/crypt.bats` line 80 reproduces it deterministically.
 

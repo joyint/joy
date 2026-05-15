@@ -1,7 +1,7 @@
 id: JOY-0188-37
 title: Multi-value filter flags across joy commands
 type: story
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -12,10 +12,14 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-14T23:13:10.239223041Z
-updated: 2026-05-15T16:09:26.860094914Z
+updated: 2026-05-15T16:17:01.489400992Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-05-15T16:09:26.860094914Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-15T16:17:01.183969460Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-15T16:17:01.489400992Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Filter flags on joy commands (`--status`, `--type`, `--priority`, etc.) today accept a single value. Comma-separated lists (`--status closed,in-progress,review`) and repeated flags (`--status closed --status review`) both fail with errors.
@@ -41,3 +45,17 @@ description: |-
   - Single-value form continues to work.
   - Same multi-value form on `--type` and `--priority` (and any other enum-valued filter flag) supported uniformly.
   - Audit pass: every filter flag in the CLI that takes an enum value supports the multi-value form, not just `joy ls`.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-15T16:17:01.031562560Z
+  text: |-
+    [x] FilterSpec.item_type/status/priority: Option<T> -> Vec<T>. Empty = no filter, non-empty = OR-match.
+    [x] FilterArgs (clap): Option<String> -> Vec<String> with value_delimiter=','.
+    [x] to_spec parses each value individually; matches_spec uses is_empty || contains.
+    [x] hide-closed-unless-explicit rule now triggers on any non-empty status vec.
+    [x] Unit tests updated to Vec form; added multi-value-OR tests for status and type.
+    [x] Bats coverage in filter_multi_value.bats: status/type/priority CSV plus single-value preserved.
+    [x] Setter commands (joy add/edit) untouched - they take a single value by definition.
+    [x] just check green except pre-existing JOY-0186-22.
+
+    Commit: 6ed63d0 on main.

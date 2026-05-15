@@ -140,7 +140,7 @@ pub fn run(args: LsArgs) -> Result<()> {
         });
     }
 
-    if filtered.is_empty() {
+    if filtered.is_empty() && locked.is_empty() {
         println!("No matching items.");
         return Ok(());
     }
