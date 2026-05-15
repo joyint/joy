@@ -1,7 +1,7 @@
 id: JOY-0187-D0
 title: 'joy config get: wildcard keys + semantic descriptions'
 type: story
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -12,10 +12,12 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-14T22:05:01.499046227Z
-updated: 2026-05-15T19:26:54.553234624Z
+updated: 2026-05-15T19:39:36.098542208Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-05-15T19:20:51.292007216Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-15T19:39:36.098542208Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   `joy config get <key>` today fetches a single fully-qualified key, value-only. Two gaps:
