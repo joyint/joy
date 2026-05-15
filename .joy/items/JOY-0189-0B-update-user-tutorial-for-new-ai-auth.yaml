@@ -1,14 +1,20 @@
 id: JOY-0189-0B
 title: Update user Tutorial for new AI auth/session/member flow
 type: task
-status: new
+status: in-progress
 priority: medium
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-15T09:26:47.350368436Z
-updated: 2026-05-15T09:31:54.227290118Z
+updated: 2026-05-15T15:25:25.773321700Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-05-15T15:25:25.773321700Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Bring `docs/user/Tutorial.md` in sync with the AI-side changes shipped under JOY-0180-AA, JOY-0182-17, JOY-0183-04, and JOY-0181-95:
 

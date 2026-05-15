@@ -45,3 +45,7 @@
 2026-05-15T15:02:19.240Z JOY-018F-A4 comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-05-15T15:02:19.415Z JOY-018F-A4 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-05-15T15:02:19.754Z JOY-018F-A4 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-15T15:19:52.317Z JOY-0190-D0 guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-05-15T15:20:21.027Z JOY-0190-D0 guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-05-15T15:24:37.815Z JOY-0190-D0 item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-15T15:25:25.782Z JOY-0189-0B item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

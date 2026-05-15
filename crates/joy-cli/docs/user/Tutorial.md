@@ -374,13 +374,22 @@ Joy integrates with AI coding tools so they can manage the backlog alongside you
 joy ai init
 ```
 
-This does three things:
+This does four things:
 
-1. Checks if your project has `Vision.md`, `Architecture.md`, `CONTRIBUTING.md` (offers to create templates if missing)
-2. Installs AI instructions and skills into `.joy/ai/`
-3. Detects your AI tool (Claude Code, Qwen Code, Mistral Vibe, GitHub Copilot) and configures it with the right permissions and references
+1. Checks if your project has the Vision, Architecture, and Contributing docs (offers to create templates if missing).
+2. Bootstraps your authentication inline if `joy auth init` has not run yet, so the whole setup is one passphrase.
+3. Detects your installed AI tools (Claude Code, Qwen Code, Mistral Vibe, GitHub Copilot CLI) and writes their tool-specific instruction files (`.claude/CLAUDE.md`, `.qwen/QWEN.md`, `AGENTS.md`, `.github/copilot-instructions.md`) plus the `/joy` skill where the tool supports skills.
+4. Registers each detected tool as an `ai:<name>@joy` member with attested capabilities.
 
-After setup, your AI tool knows how to use Joy commands, follows your project conventions, and will offer to help fill in empty documents on first use.
+The tool-specific instruction files are intentionally short: they tell the AI its member ID, the correct `Co-Authored-By:` trailer for commits (with the canonical brand and email per tool), and point it at `joy ai tutorial` as the operational guide. `joy ai tutorial` covers the CLI surface, the authentication flow, the item lifecycle, commit conventions, and minimum hygiene rules; together with the project's authoritative docs, that is everything the AI needs.
+
+For AI tools that `joy ai init` cannot auto-detect (e.g. GitHub Copilot Chat in VS Code, Cursor's built-in chat, any other chat-only AI), register a member by hand:
+
+```sh
+joy project member add ai:copilot-chat@joy
+```
+
+`joy project member add` for an `ai:` ID skips the OTP machinery and prints the next steps for issuing a delegation token.
 
 ### The Trust Model
 
@@ -395,25 +404,17 @@ The rest of this mission covers the parts you can use today: identity (Trustship
 AI tools are registered as project members with an `ai:` prefix:
 
 ```sh
-joy project member add ai:claude@joy
+joy project member add ai:claude@joy          # detected automatically by `joy ai init`
+joy project member add ai:copilot-chat@joy    # manual entry for chat-only tools
 ```
 
-When an AI tool uses Joy commands, it identifies itself with the `--author` flag:
-
-```sh
-joy comment CB-0005 "Review complete" --author ai:claude@joy
-joy add bug "Crash on empty input" --author ai:claude@joy
-```
-
-The event log traces accountability back to the human who started the session:
+When an AI runs a Joy command, it authenticates with the delegation token you handed it; the token tells the CLI which AI member is acting and which human delegated. There is no `--author` flag, and the AI does not need to repeat its identity per call. The event log traces accountability back to that human:
 
 ```
-[ai:claude@joy delegated-by:mac@example.com]
+[ai:claude@joy delegated-by:horst@joydev.com]
 ```
 
 AI members have the same capabilities as human members, with one exception: **AI members cannot perform manage actions** (adding members, changing capabilities, modifying project settings). Management stays with humans.
-
-If your project has AI members and you run a Joy command without `--author`, Joy shows a warning reminding you to set your identity explicitly.
 
 ### Keeping Instructions Current
 
@@ -624,12 +625,36 @@ You cannot remove yourself; Joy prints the project's other manage members so you
 
 ### AI Delegation Tokens
 
-AI members authenticate via short-lived delegation tokens rather than passphrases. A human with manage capability issues a token; the AI redeems it in its own shell:
+AI members authenticate via short-lived delegation tokens rather than passphrases. A human with manage capability issues a token; the AI redeems it in its own shell.
+
+You run:
 
 ```sh
-joy auth token add ai:claude@joy           # Prints a token string
-joy auth --token <token>                    # AI runs this; gets a 24h session
+joy auth token add ai:claude@joy             # prints a joy_t_... token string
 ```
+
+Share the token string with the AI in chat. The AI runs:
+
+```sh
+joy auth --token <token> --json
+```
+
+The `--json` response carries everything the AI needs in one go: `data.session_env` (the ephemeral session credential to pass on every subsequent call), `data.member` (the AI's own member ID, used for instance in commit metadata), and `data.delegated_by` (your email, recorded as the `Delegated-By:` commit trailer).
+
+The AI then attaches the session to each command, either as a flag (recommended for AI tool runners that spawn a fresh shell per command, and for permission allowlists that prefer flags over env-var patterns):
+
+```sh
+joy ls --session <session_env>
+joy add task "Investigate failing test" --session <session_env>
+```
+
+or as an env var, when the shell persists state between calls:
+
+```sh
+export JOY_SESSION=<session_env>
+```
+
+When both are set, `--session` wins. Tokens are multi-use within their TTL (default 24h); each redemption produces an independent session so the AI can run from multiple shells against the same delegation.
 
 If you suspect a delegation keypair has been compromised, rotate it. All prior tokens for that AI immediately become invalid:
 
