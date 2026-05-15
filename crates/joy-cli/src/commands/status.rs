@@ -185,11 +185,11 @@ pub fn run(args: StatusArgs) -> Result<()> {
         }
     }
 
+    let log_user = ctx.log_user();
     item.status = new_status.clone();
     item.updated = Utc::now();
+    item.updated_by = Some(log_user.clone());
     items::update_item(&ctx.root, &item)?;
-
-    let log_user = ctx.log_user();
     joy_core::event_log::log_event_as(
         &ctx.root,
         joy_core::event_log::EventType::ItemStatusChanged,
@@ -223,6 +223,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
                     let parent_old = parent.status.clone();
                     parent.status = Status::Closed;
                     parent.updated = Utc::now();
+                    parent.updated_by = Some(log_user.clone());
                     items::update_item(&ctx.root, &parent)?;
                     joy_core::event_log::log_event_as(
                         &ctx.root,

@@ -1,0 +1,41 @@
+id: JOY-018B-5F
+title: 'joy show: comment indices + updated_by attribution'
+type: task
+status: in-progress
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-15T10:07:06.409280608Z
+updated: 2026-05-15T10:07:13.232954478Z
+description: |-
+  Two related display improvements for `joy show <ID>`, plus the item-side schema piece for the second one.
+
+  **Comment indices**
+
+  `joy comment edit <ID> <INDEX>` and `joy comment rm <ID> <INDEX>` (JOY-00A7) take a 1-based index, but `joy show` does not surface it. Operators and AIs count manually. Add an `[N]` prefix to each comment header in the `joy show` Comments section so the index is visible inline.
+
+  **`updated_by` attribution**
+
+  Items today carry `created_by` (optional) but only a bare `updated` timestamp. Add an optional `updated_by: Option<String>` field next to `created_by` in `joy_core::model::item::Item`, populate it on every site that sets `item.updated = Utc::now()` using `ctx.log_user()` (same pattern as `created_by`). Render in `joy show` as `Updated: <date> by <user>` when the field is set; fall back to `Updated: <date>` for older items where it is absent. Serde is `#[serde(default, skip_serializing_if = "Option::is_none")]` so existing YAML on disk that has no `updated_by` loads cleanly. On the next mutation the field gets populated naturally.
+
+  **Affected write sites for `updated_by`**
+
+  - `add.rs`: set at item creation
+  - `edit.rs`
+  - `assign.rs` (two sites)
+  - `comment.rs` (add, edit, rm)
+  - `deps.rs` (add, rm)
+  - `milestone.rs` (link, unlink, etc.)
+  - `status.rs` (transition; parent re-eval)
+
+  **Tests**
+
+  - Unit: deserialize an item YAML without `updated_by` succeeds, field is `None`.
+  - Bats: `joy show` of a freshly added item shows `Created: ... by X  Updated: ... by X`.
+  - Bats: after `joy comment`, `joy show` shows `Updated: <new> by <commenter>`.
+  - Bats: each comment in the output carries an `[N]` index, matching the order returned by `joy comment edit <ID> <N>`.
+  - Bats backward compat: drop a hand-written YAML fixture without `updated_by` into `.joy/items/` and confirm `joy show` falls back to `Updated: <date>` without `by`.

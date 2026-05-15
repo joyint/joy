@@ -69,7 +69,7 @@ pub fn run(args: RmArgs) -> Result<()> {
     let mut deleted_entries: Vec<DeletedEntry> = Vec::new();
     for id in &to_delete {
         let deleted = items::delete_item(&ctx.root, id)?;
-        let updated = items::remove_references(&ctx.root, id)?;
+        let updated = items::remove_references(&ctx.root, id, &log_user)?;
         joy_core::event_log::log_event_as(
             &ctx.root,
             joy_core::event_log::EventType::ItemDeleted,

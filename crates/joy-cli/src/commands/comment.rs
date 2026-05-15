@@ -109,6 +109,7 @@ fn run_add(id: String, text: Option<String>, editor: Option<&str>) -> Result<()>
     };
     item.comments.push(comment);
     item.updated = Utc::now();
+    item.updated_by = Some(ctx.log_user());
     items::update_item(&ctx.root, &item)?;
 
     joy_core::event_log::log_event_as(
@@ -154,6 +155,7 @@ fn run_edit(args: EditArgs) -> Result<()> {
     item.comments[pos].author = ctx.log_user();
     item.comments[pos].date = Utc::now();
     item.updated = Utc::now();
+    item.updated_by = Some(ctx.log_user());
     items::update_item(&ctx.root, &item)?;
 
     joy_core::event_log::log_event_as(
@@ -206,6 +208,7 @@ fn run_rm(args: RmArgs) -> Result<()> {
 
     item.comments.remove(pos);
     item.updated = Utc::now();
+    item.updated_by = Some(ctx.log_user());
     items::update_item(&ctx.root, &item)?;
 
     joy_core::event_log::log_event_as(

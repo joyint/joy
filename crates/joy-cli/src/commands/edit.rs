@@ -207,10 +207,10 @@ pub fn run(args: EditArgs) -> Result<()> {
     };
     ctx.enforce(&action, &item.id)?;
 
-    item.updated = Utc::now();
-    items::update_item(&ctx.root, &item)?;
-
     let log_user = ctx.log_user();
+    item.updated = Utc::now();
+    item.updated_by = Some(log_user.clone());
+    items::update_item(&ctx.root, &item)?;
     joy_core::event_log::log_event_as(
         &ctx.root,
         joy_core::event_log::EventType::ItemUpdated,

@@ -1,0 +1,25 @@
+id: JOY-018D-AA
+title: smoke (delete me)
+type: task
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-15T10:54:00.124097259Z
+updated: 2026-05-15T14:15:48.067656016Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: test
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-15T14:05:19.825921801Z
+  text: |-
+    First **bold** with list:
+
+    - alpha
+    - beta
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-15T14:05:19.988172836Z
+  text: Second comment

@@ -213,7 +213,9 @@ pub fn run(args: AddArgs) -> Result<()> {
 
     ctx.enforce(&Action::CreateItem, &id)?;
 
-    item.created_by = Some(ctx.log_user());
+    let log_user = ctx.log_user();
+    item.created_by = Some(log_user.clone());
+    item.updated_by = Some(log_user);
 
     items::save_item(&ctx.root, &item)?;
     joy_core::event_log::log_event_as(

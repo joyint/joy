@@ -1,7 +1,7 @@
 id: JOY-018A-C2
 title: Render item description and comments as markdown in joy show
 type: story
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -12,7 +12,7 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-15T09:36:50.690307281Z
-updated: 2026-05-15T09:36:56.718467992Z
+updated: 2026-05-15T09:45:40.298947568Z
 description: |-
   Currently `joy show <ID>` prints item description and comment bodies as raw text. They are written as markdown (with backticks, lists, headings, code fences) but rendered without formatting, which loses readability.
 
@@ -33,3 +33,13 @@ description: |-
   - Unit test: render helper turns `**bold**` into ANSI sequences when TTY, into plain prose when not.
   - Bats: `joy show <ID>` piped to a file does not emit ANSI escape sequences.
   - Bats: `joy show <ID>` description with markdown headings does not lose content (substring match).
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-15T09:45:40.151817124Z
+  text: |-
+    [x] Extracted `tutorial::render_markdown(&str) -> String` from `print_full`; same TTY-aware skin logic (default in TTY, `MadSkin::no_style()` piped).
+    [x] `show.rs`: description block and each comment body routed through the helper. Metadata, timestamps, headers stay plain.
+    [x] Bats tests in `tests/integration/show_markdown.bats`: description and comment paths preserve content, no ANSI when piped.
+    [x] `just check` green except pre-existing JOY-0186-22.
+
+    Commit: 0a92add on main.

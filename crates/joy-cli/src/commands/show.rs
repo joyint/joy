@@ -162,8 +162,11 @@ pub fn run(args: ShowArgs) -> Result<()> {
             }
             let local_dt: DateTime<Local> = comment.date.with_timezone(&Local);
             let date_str = local_dt.format("%Y-%m-%d %H:%M").to_string();
+            // 1-based index lets users locate a comment for `joy comment edit
+            // <ID> <INDEX>` or `joy comment rm <ID> <INDEX>` without counting.
             println!(
-                "{} [{}]",
+                "{} {} [{}]",
+                color::label(&format!("[{}]", i + 1)),
                 color::label(&date_str),
                 color::user(&comment.author),
             );
@@ -175,24 +178,37 @@ pub fn run(args: ShowArgs) -> Result<()> {
     }
 
     println!("{}", color::label(&"-".repeat(w)));
-    let created_info = match &item.created_by {
+    let created_date = item.created.format("%Y-%m-%d %H:%M").to_string();
+    let updated_date = item.updated.format("%Y-%m-%d %H:%M").to_string();
+    let created_part = match &item.created_by {
         Some(by) => format!(
-            "{} {} by {}  {} {}",
+            "{} {} by {}",
             color::label("Created:"),
-            color::label(&item.created.format("%Y-%m-%d %H:%M").to_string()),
+            color::label(&created_date),
             color::user(by),
-            color::label("Updated:"),
-            color::label(&item.updated.format("%Y-%m-%d %H:%M").to_string())
         ),
         None => format!(
-            "{} {}  {} {}",
+            "{} {}",
             color::label("Created:"),
-            color::label(&item.created.format("%Y-%m-%d %H:%M").to_string()),
-            color::label("Updated:"),
-            color::label(&item.updated.format("%Y-%m-%d %H:%M").to_string())
+            color::label(&created_date),
         ),
     };
-    println!("{created_info}");
+    // `updated_by` is optional so items written before the field existed
+    // still render cleanly; only the date shows in that case.
+    let updated_part = match &item.updated_by {
+        Some(by) => format!(
+            "{} {} by {}",
+            color::label("Updated:"),
+            color::label(&updated_date),
+            color::user(by),
+        ),
+        None => format!(
+            "{} {}",
+            color::label("Updated:"),
+            color::label(&updated_date),
+        ),
+    };
+    println!("{created_part}  {updated_part}");
 
     Ok(())
 }

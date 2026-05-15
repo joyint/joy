@@ -503,7 +503,13 @@ pub fn delete_item(root: &Path, id: &str) -> Result<Item, JoyError> {
 }
 
 /// Remove references to a deleted item from other items' deps and parent fields.
-pub fn remove_references(root: &Path, deleted_id: &str) -> Result<Vec<String>, JoyError> {
+/// `updated_by` is recorded on each touched item so the audit trail names
+/// the actor who triggered the dereference.
+pub fn remove_references(
+    root: &Path,
+    deleted_id: &str,
+    updated_by: &str,
+) -> Result<Vec<String>, JoyError> {
     let items = load_items(root)?;
     let mut updated = Vec::new();
     for mut item in items {
@@ -518,6 +524,7 @@ pub fn remove_references(root: &Path, deleted_id: &str) -> Result<Vec<String>, J
         }
         if changed {
             item.updated = chrono::Utc::now();
+            item.updated_by = Some(updated_by.to_string());
             update_item(root, &item)?;
             updated.push(item.id.clone());
         }

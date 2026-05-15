@@ -124,10 +124,10 @@ fn add_dep(ctx: &Context, item_id: &str, dep_id: &str) -> Result<()> {
     }
 
     item.deps.push(dep_id.to_string());
-    item.updated = Utc::now();
-    items::update_item(&ctx.root, &item)?;
-
     let log_user = ctx.log_user();
+    item.updated = Utc::now();
+    item.updated_by = Some(log_user.clone());
+    items::update_item(&ctx.root, &item)?;
     joy_core::event_log::log_event_as(
         &ctx.root,
         joy_core::event_log::EventType::DepAdded,
@@ -173,10 +173,10 @@ fn rm_dep(ctx: &Context, item_id: &str, dep_id: &str) -> Result<()> {
     }
 
     item.deps.retain(|d| d != dep_id);
-    item.updated = Utc::now();
-    items::update_item(&ctx.root, &item)?;
-
     let log_user = ctx.log_user();
+    item.updated = Utc::now();
+    item.updated_by = Some(log_user.clone());
+    items::update_item(&ctx.root, &item)?;
     joy_core::event_log::log_event_as(
         &ctx.root,
         joy_core::event_log::EventType::DepRemoved,

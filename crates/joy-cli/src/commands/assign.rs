@@ -55,6 +55,7 @@ pub fn run(args: AssignArgs) -> Result<()> {
             return Ok(());
         }
         item.updated = Utc::now();
+        item.updated_by = Some(ctx.log_user());
         items::update_item(&ctx.root, &item)?;
         joy_core::event_log::log_event_as(
             &ctx.root,
@@ -98,6 +99,7 @@ pub fn run(args: AssignArgs) -> Result<()> {
     }
 
     item.updated = Utc::now();
+    item.updated_by = Some(ctx.log_user());
     items::update_item(&ctx.root, &item)?;
 
     joy_core::event_log::log_event_as(
