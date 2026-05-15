@@ -1,0 +1,51 @@
+id: JOY-0192-79
+title: joy project shows docs.* and description in overview
+type: task
+status: in-progress
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-15T20:22:16.901434485Z
+updated: 2026-05-15T20:26:59.188582634Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-05-15T20:22:24.459989803Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  \`joy project\` (no subcommand) prints the project overview but
+  silently drops several fields that are visible via \`joy project get\`
+  and \`joy config\`:
+
+  - \`docs.architecture\`, \`docs.vision\`, \`docs.contributing\` are not
+    rendered at all, even though the tutorial flags them as mandatory
+    authoritative documents.
+  - \`description\` is only rendered when non-empty, so an unset
+    description hides the fact that the field exists.
+
+  \`joy config\` prints every key in the effective config tree (including
+  unset overrides). The project overview should behave the same way so
+  operators (and AI tools) can see at a glance which documentation paths
+  the project is wired to.
+
+  Acceptance:
+
+  - \`joy project\` lists \`docs.architecture\`, \`docs.vision\`, and
+    \`docs.contributing\` with their effective (defaulted) paths under a
+    dedicated section.
+  - \`description\` is always rendered (an empty value is shown as a
+    visible placeholder, e.g. \`(unset)\`, rather than the line vanishing).
+  - No regression on the JSON path (\`joy project --json\` already emits
+    the full struct).
+  - Bats coverage in \`tests/integration/json_project.bats\` or a new
+    \`project_overview.bats\` verifying the three docs paths appear.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-15T20:22:24.509672665Z
+  text: 'Plan: extend show_project in commands/project.rs to print a Docs section right after the existing Description/Language/Created block. Use the *_or_default() accessors so even untouched projects show the resolved fallback paths. Render description unconditionally; when project.description is None, fall back to a quiet ''(unset)'' placeholder so the line is always present. Add tests/integration/project_overview.bats with one case asserting the three docs paths are visible and one asserting the description placeholder is shown when unset.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-15T20:26:59.188581911Z
+  text: '[x] show_project in commands/project.rs now renders a dedicated Docs: section right after the Description/Language/Created block, printing the effective (defaulted) paths for architecture, vision, and contributing via the *_or_default() accessors. Description is rendered unconditionally; when project.description is None or empty, a quiet ''(unset)'' placeholder keeps the line in view. Key-value column width bumped from 12 to 14 so ''Description:'' fits in alignment with the new docs labels. Tests in tests/integration/project_overview.bats cover four cases: docs.* paths appear in the overview, description placeholder is shown when unset, the real description is shown when set (via joy project set), and an overridden docs.architecture path surfaces in the overview. All 395 bats tests pass.'

@@ -487,13 +487,16 @@ fn prune_docs_yaml(path: &std::path::Path, docs: &joy_core::model::Docs) -> Resu
 fn show_project(project: &Project, root: &std::path::Path) {
     println!("{}", color::header(&project.name));
 
-    let w = 12;
+    let w = 14;
     if let Some(ref acronym) = project.acronym {
         println!("{}", color::key_value("Acronym:", acronym, w));
     }
-    if let Some(ref description) = project.description {
-        println!("{}", color::key_value("Description:", description, w));
-    }
+    let description = project
+        .description
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .unwrap_or("(unset)");
+    println!("{}", color::key_value("Description:", description, w));
     println!("{}", color::key_value("Language:", &project.language, w));
     println!(
         "{}",
@@ -503,6 +506,33 @@ fn show_project(project: &Project, root: &std::path::Path) {
             w
         )
     );
+
+    // Docs paths. Always rendered with their effective (defaulted)
+    // values so operators see at a glance which files the project is
+    // wired to, matching what `joy project get docs.*` reports.
+    println!("\n{}:", color::label("Docs"));
+    let docs_w = 16;
+    println!(
+        "  {}",
+        color::key_value(
+            "Architecture:",
+            project.docs.architecture_or_default(),
+            docs_w
+        )
+    );
+    println!(
+        "  {}",
+        color::key_value("Vision:", project.docs.vision_or_default(), docs_w)
+    );
+    println!(
+        "  {}",
+        color::key_value(
+            "Contributing:",
+            project.docs.contributing_or_default(),
+            docs_w
+        )
+    );
+
     if !project.members.is_empty() {
         println!("\n{}:", color::label("Members"));
         print_members_table(&project.members, root);
