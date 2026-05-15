@@ -43,22 +43,26 @@ pub(crate) fn run_markdown(markdown: &str, interactive: bool, use_pager: bool) -
     print_full(markdown, use_pager)
 }
 
-fn print_full(markdown: &str, use_pager: bool) -> Result<()> {
+/// Render any markdown string for display in the terminal. Picks a
+/// styled skin when stdout is a TTY and an unstyled one otherwise, so
+/// piped output stays free of ANSI escapes. Shared with `joy show`
+/// (item descriptions, comment bodies) and any future markdown-capable
+/// output path.
+pub(crate) fn render_markdown(markdown: &str) -> String {
     let width = crate::color::terminal_width();
     let is_tty = std::io::stdout().is_terminal();
-
-    // ANSI codes only make sense if stdout is going to a real
-    // terminal. When piped or captured (`joy tutorial > file`,
-    // `joy ai tutorial | less`, AI tool capture, CI), render with
-    // an unstyled skin so the output is plain readable markdown
-    // and not raw escape sequences.
     let skin = if is_tty {
         MadSkin::default()
     } else {
         MadSkin::no_style()
     };
     let formatted = skin.area_text(markdown, &termimad::Area::new(0, 0, width as u16, u16::MAX));
-    let output = formatted.to_string();
+    formatted.to_string()
+}
+
+fn print_full(markdown: &str, use_pager: bool) -> Result<()> {
+    let is_tty = std::io::stdout().is_terminal();
+    let output = render_markdown(markdown);
 
     // Pager only when explicitly requested AND a human is reading.
     // When stdout is piped or captured, or when the caller opted out

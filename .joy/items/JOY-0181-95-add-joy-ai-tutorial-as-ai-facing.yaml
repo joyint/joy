@@ -1,7 +1,7 @@
 id: JOY-0181-95
 title: Add `joy ai tutorial` as AI-facing operational guide
 type: story
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -15,7 +15,7 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-14T18:10:33.089570872Z
-updated: 2026-05-14T20:06:25.075498528Z
+updated: 2026-05-15T09:26:14.660849900Z
 description: |-
   Introduce `joy ai tutorial` as the canonical AI-facing operational guide, covering patterns that depend on how AI tools execute commands and differ from human-facing docs:
 
@@ -92,3 +92,20 @@ comments:
     **Phase E: Tests** -- bats: `joy ai tutorial` prints expected sections; `joy ai tutorial --interactive` accepts (skip if non-TTY); generated CLAUDE.md after `joy ai init` is short (~30 lines) and points at tutorial; in-crate AiTutorial.md matches canonical.
 
     Commit per phase or one phase at a time, your call.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-15T09:26:14.508188152Z
+  text: |-
+    [x] `docs/ai/Tutorial.md` written (203 lines after review iterations).
+    [x] `joy ai tutorial` command + in-crate copy at `crates/joy-cli/docs/ai/Tutorial.md`, sync wired into `just sync-tutorial`, byte-identity test green.
+    [x] Pager opt-in: `joy ai tutorial` always plain (AI-friendly even on PTY runners); `joy tutorial` keeps TTY-aware pager. No-style skin when piped, so `| less` no longer shows raw ANSI.
+    [x] `joy --help` footer points AI tools at `joy ai tutorial` (block separated by blank line above the human tutorial lines).
+    [x] `crates/joy-core/templates/ai/instructions.md` from 168 to 6 lines (tutorial pointer + re-read trigger).
+    [x] `crates/joy-core/templates/ai/joy-block.md` reformatted: per-tool `Co-Authored-By:` (Claude / Copilot / Qwen-Coder / Mistral Vibe with canonical emails) plus `Delegated-By:` reminder. Brand names allowed in trailer only.
+    [x] `crates/joy-core/templates/ai/skills/joy/SKILL.md` from 130 to 60 lines, slash-command UX only.
+    [x] `render_joy_block` takes a `tool` parameter; all configure_* callsites updated.
+    [x] In-crate doc shipping path mirrors canonical layout (user/, ai/, dev/architecture/, dev/vision/).
+    [x] Tests: tutorial sections, help footer, per-tool coauthor, sync, slimmed instruction templates. `just check` green except pre-existing JOY-0186-22.
+
+    Commit: 2f01a81 on main.
+
+    Follow-ups out of scope here: user Tutorial / Auth.md (umbrella) / website updates -- new sibling items track those.

@@ -147,7 +147,11 @@ pub fn run(args: ShowArgs) -> Result<()> {
     }
 
     if let Some(ref desc) = item.description {
-        println!("\n{}", desc.trim_end());
+        println!();
+        print!(
+            "{}",
+            crate::commands::tutorial::render_markdown(desc.trim_end())
+        );
     }
 
     if !item.comments.is_empty() {
@@ -163,9 +167,10 @@ pub fn run(args: ShowArgs) -> Result<()> {
                 color::label(&date_str),
                 color::user(&comment.author),
             );
-            for line in comment.text.lines() {
-                println!("{line}");
-            }
+            print!(
+                "{}",
+                crate::commands::tutorial::render_markdown(&comment.text)
+            );
         }
     }
 

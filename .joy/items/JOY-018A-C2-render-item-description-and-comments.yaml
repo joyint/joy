@@ -1,0 +1,35 @@
+id: JOY-018A-C2
+title: Render item description and comments as markdown in joy show
+type: story
+status: in-progress
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- plan
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-15T09:36:50.690307281Z
+updated: 2026-05-15T09:36:56.718467992Z
+description: |-
+  Currently `joy show <ID>` prints item description and comment bodies as raw text. They are written as markdown (with backticks, lists, headings, code fences) but rendered without formatting, which loses readability.
+
+  `joy tutorial` and `joy ai tutorial` already render markdown via termimad with the same TTY-aware approach (default skin in TTY, `MadSkin::no_style()` when piped). Apply the same render to description and comment bodies in `joy show`.
+
+  Scope:
+  - `crates/joy-cli/src/commands/show.rs`: route description text and each comment body through a small render helper. The helper sits next to the existing tutorial helper or is extracted to a shared module if cleaner.
+  - TTY detection identical to `joy tutorial`: styled when stdout is a TTY, plain markdown when piped.
+  - Width: termimad's `area_text` with `color::terminal_width()`.
+  - Item metadata (Type, Status, Priority, Assignee, Tags, etc.) stays as today; only the long-form text blocks (description, comment bodies) get the markdown pass.
+  - Comment author / timestamp header stays plain.
+
+  Out of scope (later items):
+  - `joy ls --tree`, `joy log`, `joy roadmap` markdown rendering.
+  - Editor-side markdown linting/preview.
+
+  Tests:
+  - Unit test: render helper turns `**bold**` into ANSI sequences when TTY, into plain prose when not.
+  - Bats: `joy show <ID>` piped to a file does not emit ANSI escape sequences.
+  - Bats: `joy show <ID>` description with markdown headings does not lose content (substring match).

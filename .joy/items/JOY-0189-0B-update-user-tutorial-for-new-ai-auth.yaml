@@ -1,0 +1,46 @@
+id: JOY-0189-0B
+title: Update user Tutorial for new AI auth/session/member flow
+type: task
+status: new
+priority: medium
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-15T09:26:47.350368436Z
+updated: 2026-05-15T09:31:54.227290118Z
+description: |-
+  Bring `docs/user/Tutorial.md` in sync with the AI-side changes shipped under JOY-0180-AA, JOY-0182-17, JOY-0183-04, and JOY-0181-95:
+
+  - New `--session` flag (recommended over `JOY_SESSION` for AI tools, JOY-0182-17).
+  - Inline auth bootstrap in `joy ai init` (JOY-0180-AA): single passphrase for the whole flow.
+  - Generic AI member registration via `joy project member add ai:<name>@joy` for chat-only AIs (JOY-0183-04) with the new next-steps hint.
+  - `joy ai tutorial` command and its role as the canonical AI operational guide (JOY-0181-95).
+  - Token redemption with `--json` returns `member` / `session_env` / `delegated_by`; commit trailers are per-tool `Co-Authored-By:` plus `Delegated-By:`.
+
+  Keep the user tutorial human-facing: short paragraphs explaining the flow from the operator's perspective. The AI side stays in `joy ai tutorial`.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-15T09:31:54.227289450Z
+  text: |-
+    Plan:
+
+    Current user tutorial `docs/user/Tutorial.md` has two relevant sections:
+    - **§8 AI Tool Integration** (~70 lines, includes deprecated info)
+    - **§9.7 AI Delegation Tokens** (~15 lines, minimal)
+
+    Outdated items to fix:
+    - `--author` flag examples in §8 (`joy comment ... --author ai:claude@joy`) -- flag does not exist in code; identity comes from auth/session.
+    - `.joy/ai/` path for AI instructions in §8 -- actual paths are `.claude/`, `.qwen/`, `.vibe/`, `.github/`.
+    - No mention of inline auth bootstrap in `joy ai init` (single passphrase since JOY-0180-AA).
+    - No mention of `joy ai tutorial` (AI operational guide, JOY-0181-95).
+    - No mention of `--session` flag (JOY-0182-17).
+    - No mention of generic AI member registration for chat-only AIs (JOY-0183-04).
+    - §9.7 token flow lacks `--json` mention and the `session_env`/`member`/`delegated_by` pickup.
+
+    Changes (human-facing, operator perspective; AI mechanics stay in `joy ai tutorial`):
+    1. §8 `joy ai init` overview: keep three-bullet list, fix the path note, add a one-line note that auth is bootstrapped inline (single passphrase).
+    2. §8 AI Identity: drop `--author` examples; reframe as 'AI authenticates with a delegation token from you, then acts as its member identity'. Mention `joy ai tutorial` as the AI's side.
+    3. §9.7 AI Delegation Tokens: add `--json` form returning `session_env`/`member`/`delegated_by`, mention `--session` flag and `JOY_SESSION` env, mention generic AI registration for chat-only tools (`joy project member add ai:<name>@joy`).
+
+    Out of scope: §8 The Trust Model, AI Identity capabilities table, Keeping Instructions Current. Those are still correct.
