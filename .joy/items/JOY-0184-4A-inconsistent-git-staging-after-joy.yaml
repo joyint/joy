@@ -1,7 +1,7 @@
 id: JOY-0184-4A
 title: Inconsistent git staging after `joy init` and `joy ai init`
 type: bug
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -11,10 +11,14 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-14T19:16:42.106620770Z
-updated: 2026-05-15T15:52:15.350202839Z
+updated: 2026-05-15T16:09:18.550435267Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-05-15T15:52:15.350202839Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-15T16:09:18.235080747Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-15T16:09:18.550435267Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   After `joy init` followed by `joy ai init` on a fresh repo, files land in three different git states:
@@ -33,3 +37,18 @@ description: |-
   Acceptance: on a fresh `joy init && joy ai init`, `git status` shows every file joy created or modified as staged, with no joy-managed file in `Changes not staged` or `Untracked files`. Users who do not want a specific template in the first commit can `git restore --staged <file>` deliberately.
 
   The alternative of "never auto-stage anything" would also be consistent but conflicts with the existing `auto-git: add` config default and pushes friction onto every user.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-15T16:09:18.071293390Z
+  text: |-
+    [x] `write_if_changed` now takes root and auto-stages on change.
+    [x] `update_with_joy_block` and `ensure_vibe_bash_always` updated to take root.
+    [x] All write_if_changed callsites in configure_claude/qwen/vibe/copilot updated.
+    [x] check_docs auto-stages doc templates after fs::write.
+    [x] All four .joy/project.yaml writes in ai.rs now auto-stage.
+    [x] joy init's SECURITY.md render auto-stages when actually changed.
+    [x] Unit tests for ensure_vibe_bash_always and update_with_joy_block updated.
+    [x] Bats coverage in ai_init_auto_stage.bats: fresh joy init && joy ai init leaves no joy-managed file untracked/unstaged.
+    [x] `just check` green except pre-existing JOY-0186-22.
+
+    Commit: 1362353 on main.

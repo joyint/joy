@@ -31,17 +31,17 @@ pub struct FilterArgs {
     #[arg(long)]
     pub parent: Option<String>,
 
-    /// Type: epic|story|task|bug|rework|decision|idea
-    #[arg(short = 'T', long = "type")]
-    pub item_type: Option<String>,
+    /// Type: epic|story|task|bug|rework|decision|idea (CSV for multi-value)
+    #[arg(short = 'T', long = "type", value_delimiter = ',')]
+    pub item_type: Vec<String>,
 
-    /// Status: new|open|in-progress|review|closed|deferred
-    #[arg(short, long)]
-    pub status: Option<String>,
+    /// Status: new|open|in-progress|review|closed|deferred (CSV for multi-value)
+    #[arg(short, long, value_delimiter = ',')]
+    pub status: Vec<String>,
 
-    /// Priority: low|medium|high|critical|extreme
-    #[arg(short, long)]
-    pub priority: Option<String>,
+    /// Priority: low|medium|high|critical|extreme (CSV for multi-value)
+    #[arg(short, long, value_delimiter = ',')]
+    pub priority: Vec<String>,
 
     /// Filter by member (CSV; tokens: me, none, unassigned, *).
     #[arg(
@@ -80,23 +80,23 @@ impl FilterArgs {
     /// `root` is needed only when `--mine` or `me` triggers identity
     /// resolution and AI-delegation expansion.
     pub fn to_spec(&self, root: &Path, include_closed: bool) -> Result<FilterSpec> {
-        let item_type: Option<ItemType> = self
+        let item_type: Vec<ItemType> = self
             .item_type
-            .as_deref()
+            .iter()
             .map(|t| t.parse().map_err(|e: String| anyhow!("{}", e)))
-            .transpose()?;
+            .collect::<Result<_>>()?;
 
-        let status: Option<Status> = self
+        let status: Vec<Status> = self
             .status
-            .as_deref()
+            .iter()
             .map(|s| s.parse().map_err(|e: String| anyhow!("{}", e)))
-            .transpose()?;
+            .collect::<Result<_>>()?;
 
-        let priority: Option<Priority> = self
+        let priority: Vec<Priority> = self
             .priority
-            .as_deref()
+            .iter()
             .map(|p| p.parse().map_err(|e: String| anyhow!("{}", e)))
-            .transpose()?;
+            .collect::<Result<_>>()?;
 
         let members = resolve_members(&self.members, self.mine, root)?;
 

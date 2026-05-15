@@ -1,8 +1,10 @@
 id: JOY-0188-37
 title: Multi-value filter flags across joy commands
 type: story
-status: new
+status: in-progress
 priority: medium
+assignees:
+- member: ai:claude@joy
 capabilities:
 - plan
 - implement
@@ -10,7 +12,11 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-14T23:13:10.239223041Z
-updated: 2026-05-14T23:16:39.955150176Z
+updated: 2026-05-15T16:09:26.860094914Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-05-15T16:09:26.860094914Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Filter flags on joy commands (`--status`, `--type`, `--priority`, etc.) today accept a single value. Comma-separated lists (`--status closed,in-progress,review`) and repeated flags (`--status closed --status review`) both fail with errors.
 

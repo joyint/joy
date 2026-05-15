@@ -20,9 +20,15 @@ use crate::model::item::{Item, ItemType, Priority, Status};
 #[derive(Debug, Clone, Default)]
 pub struct FilterSpec {
     pub parent: Option<String>,
-    pub item_type: Option<ItemType>,
-    pub status: Option<Status>,
-    pub priority: Option<Priority>,
+    /// Item-type filter. Empty means "any type". Multiple values OR
+    /// together (e.g. `--type story,task` keeps both).
+    pub item_type: Vec<ItemType>,
+    /// Status filter. Empty means "any status" (subject to the `all`
+    /// flag, which hides closed/deferred unless an explicit value is
+    /// provided). Multiple values OR together.
+    pub status: Vec<Status>,
+    /// Priority filter. Empty means "any". Multiple values OR together.
+    pub priority: Vec<Priority>,
     pub milestone: Option<String>,
     pub tag: Option<String>,
     pub version: Option<String>,
@@ -56,7 +62,7 @@ pub fn apply<'a>(all_items: &'a [Item], spec: &FilterSpec) -> Vec<&'a Item> {
 
 fn matches_spec(item: &Item, spec: &FilterSpec, all_items: &[Item]) -> bool {
     if !spec.all
-        && spec.status.is_none()
+        && spec.status.is_empty()
         && matches!(item.status, Status::Closed | Status::Deferred)
     {
         return false;
@@ -68,22 +74,16 @@ fn matches_spec(item: &Item, spec: &FilterSpec, all_items: &[Item]) -> bool {
         }
     }
 
-    if let Some(ref t) = spec.item_type {
-        if &item.item_type != t {
-            return false;
-        }
+    if !spec.item_type.is_empty() && !spec.item_type.contains(&item.item_type) {
+        return false;
     }
 
-    if let Some(ref s) = spec.status {
-        if &item.status != s {
-            return false;
-        }
+    if !spec.status.is_empty() && !spec.status.contains(&item.status) {
+        return false;
     }
 
-    if let Some(ref p) = spec.priority {
-        if &item.priority != p {
-            return false;
-        }
+    if !spec.priority.is_empty() && !spec.priority.contains(&item.priority) {
+        return false;
     }
 
     if let Some(ref ms) = spec.milestone {
@@ -251,11 +251,27 @@ mod tests {
         let b = make("B");
         let items = vec![a, b];
         let spec = FilterSpec {
-            status: Some(Status::Closed),
+            status: vec![Status::Closed],
             ..Default::default()
         };
         let result = apply(&items, &spec);
         assert_eq!(ids(&result), vec!["A"]);
+    }
+
+    #[test]
+    fn status_filter_with_multiple_values_keeps_any_match() {
+        let mut a = make("A");
+        a.status = Status::Closed;
+        let mut b = make("B");
+        b.status = Status::Review;
+        let mut c = make("C");
+        c.status = Status::Open;
+        let items = vec![a, b, c];
+        let spec = FilterSpec {
+            status: vec![Status::Closed, Status::Review],
+            ..Default::default()
+        };
+        assert_eq!(ids(&apply(&items, &spec)), vec!["A", "B"]);
     }
 
     #[test]
@@ -265,10 +281,25 @@ mod tests {
         b.item_type = ItemType::Bug;
         let items = vec![a, b];
         let spec = FilterSpec {
-            item_type: Some(ItemType::Bug),
+            item_type: vec![ItemType::Bug],
             ..Default::default()
         };
         assert_eq!(ids(&apply(&items, &spec)), vec!["B"]);
+    }
+
+    #[test]
+    fn type_filter_with_multiple_values() {
+        let a = make("A");
+        let mut b = make("B");
+        b.item_type = ItemType::Bug;
+        let mut c = make("C");
+        c.item_type = ItemType::Decision;
+        let items = vec![a, b, c];
+        let spec = FilterSpec {
+            item_type: vec![ItemType::Bug, ItemType::Decision],
+            ..Default::default()
+        };
+        assert_eq!(ids(&apply(&items, &spec)), vec!["B", "C"]);
     }
 
     #[test]
@@ -278,7 +309,7 @@ mod tests {
         b.priority = Priority::Critical;
         let items = vec![a, b];
         let spec = FilterSpec {
-            priority: Some(Priority::Critical),
+            priority: vec![Priority::Critical],
             ..Default::default()
         };
         assert_eq!(ids(&apply(&items, &spec)), vec!["B"]);

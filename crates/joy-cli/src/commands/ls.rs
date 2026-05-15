@@ -119,7 +119,7 @@ pub fn run(args: LsArgs) -> Result<()> {
 
     let spec: FilterSpec = args
         .filter
-        .to_spec(&root, args.all || args.filter.status.is_some())?;
+        .to_spec(&root, args.all || !args.filter.status.is_empty())?;
     let mut filtered: Vec<&Item> = filter::apply(&all_items, &spec);
 
     if crate::output::is_json() {
