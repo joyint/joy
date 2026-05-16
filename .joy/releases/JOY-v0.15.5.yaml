@@ -1,0 +1,54 @@
+version: v0.15.5
+date: 2026-05-16
+previous: v0.15.4
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 131
+  items: 22
+- id: horst.schwarz@joydev.com
+  events: 2
+  items: 2
+items:
+  stories:
+  - id: JOY-0182-17
+    title: Add global `--session` flag as alternative to JOY_SESSION env var
+  - id: JOY-0180-AA
+    title: Integrate `joy auth init` into `joy ai init` flow
+  - id: JOY-0183-04
+    title: Improve `joy project member add` UX for AI members
+  - id: JOY-0181-95
+    title: Add `joy ai tutorial` as AI-facing operational guide
+  - id: JOY-018A-C2
+    title: Render item description and comments as markdown in joy show
+  - id: JOY-0188-37
+    title: Multi-value filter flags across joy commands
+  - id: JOY-0185-66
+    title: Add `--with-token` flag to `joy project member add`
+  - id: JOY-0187-D0
+    title: 'joy config get: wildcard keys + semantic descriptions'
+  tasks:
+  - id: JOY-018B-5F
+    title: 'joy show: comment indices + updated_by attribution'
+  - id: JOY-018F-A4
+    title: Audit history footer + per-comment edit list
+  - id: JOY-0189-0B
+    title: Update user Tutorial for new AI auth/session/member flow
+  - id: JOY-018E-21
+    title: Add --passphrase-stdin flag to joy auth
+  - id: JOY-0191-6E
+    title: Wildcard + --describe support for joy project get
+  - id: JOY-0192-79
+    title: joy project shows docs.* and description in overview
+  - id: JOY-0196-A4
+    title: Slim down the /joy skill to remove tutorial overlap
+  bugs:
+  - id: JOY-0184-4A
+    title: Inconsistent git staging after `joy init` and `joy ai init`
+  - id: JOY-0186-22
+    title: joy ls hides encrypted items for members without zone access
+  - id: JOY-0193-4F
+    title: ai_init_auth_inline tests hang on TTY stdin
+  - id: JOY-0194-E3
+    title: joy ai init / joy update stage gitignored AI-tool files
+  - id: JOY-0195-A0
+    title: joy auth --token fails opaquely on chat-wrapped tokens
