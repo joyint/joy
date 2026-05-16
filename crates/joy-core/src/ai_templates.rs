@@ -288,7 +288,11 @@ mod tests {
     fn render_skill_points_to_tutorial_and_exposes_commands() {
         let wf = load_workflow().unwrap();
         let skill = render_skill(&wf).unwrap();
+        // Skill must defer to the tutorial as the canonical CLI reference.
         assert!(skill.contains("joy ai tutorial"));
+        // And keep at least one status-transition mapping as an exemplar
+        // so an AI can pattern-match the shape of natural-language to
+        // command translation.
         assert!(skill.contains("joy submit"));
     }
 
@@ -474,12 +478,9 @@ mod tests {
         let skill = render_skill(&wf).unwrap();
         for section in [
             "## Before doing anything",
-            "## What `/joy` adds on top",
-            "### Viewing and navigating",
-            "### Status changes",
-            "### Editing and organizing",
-            "### Planning and creating items",
-            "### Questions and analysis",
+            "## Mapping user phrasings to commands",
+            "## Planning items from a feature description",
+            "## Analysis questions",
         ] {
             assert!(skill.contains(section), "skill missing section: {section}");
         }

@@ -1,0 +1,55 @@
+id: JOY-0196-A4
+title: Slim down the /joy skill to remove tutorial overlap
+type: task
+status: in-progress
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-16T00:03:03.942317753Z
+updated: 2026-05-16T00:09:51.241455597Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-05-16T00:03:11.654479Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  The Joy skill template at
+  \`crates/joy-core/templates/ai/skills/joy/SKILL.md\` duplicates a
+  lot of what \`joy ai tutorial\` already states:
+
+  - Item lifecycle commands (joy ls / show / add / edit / comment /
+    deps / milestone link / roadmap) are in the tutorial table.
+  - Status transitions (joy start / submit / close / reopen) are in
+    the tutorial Workflow section.
+  - Item types, priorities, effort scale are in the tutorial.
+  - AI hygiene (item before code, plan/result comments) is in the
+    tutorial Minimum AI hygiene section.
+
+  The skill should keep only what is *specific* to the slash-command
+  entry point and not redocument the CLI:
+
+  1. Natural-language to joy-command mapping (a small handful of
+     example phrasings so the AI sees the pattern).
+  2. Multi-step planning procedure for feature decomposition.
+  3. Triggering context and confirmation policy.
+
+  Acceptance:
+  - The shipped skill template is significantly shorter and points
+    to \`joy ai tutorial\` as the canonical source for the CLI surface.
+  - Existing skill rendering snapshot tests stay green (or are
+    updated where they assert against verbatim removed content).
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-16T00:03:11.702073108Z
+  text: 'Plan: rewrite crates/joy-core/templates/ai/skills/joy/SKILL.md as a thin entry point that defers to joy ai tutorial for the CLI surface. Keep the frontmatter, the slash-command framing, a few exemplar natural-language mappings, the planning procedure, and the confirmation policy. Drop the per-command tables, the per-status mappings, and the item-types/priority list that live in the tutorial. Update or regenerate snapshot tests if they pin verbatim content.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-16T00:09:51.241454790Z
+  text: |-
+    [x] Rewrote crates/joy-core/templates/ai/skills/joy/SKILL.md. The skill is now a thin entry point: frontmatter, a one-line framing of the slash-command, a 'read joy ai tutorial first' note, a handful of exemplar natural-language to command mappings, the multi-step planning procedure for feature decomposition, and a short analysis-question section. The per-command lists (status changes, editing/organizing, viewing/navigating with five examples each), the item-types/priorities/effort recital, and the AI-hygiene rules are gone since they live in the tutorial.
+
+    Skill-related unit tests updated to the new section structure (skill_contains_all_sections) while keeping the structural assertions (frontmatter, joy ai tutorial reference, joy submit exemplar, no .joy/ai/ reference, line-count cap).
+
+    All cargo + 398 bats tests green.
