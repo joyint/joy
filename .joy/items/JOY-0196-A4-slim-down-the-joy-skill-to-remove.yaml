@@ -1,7 +1,7 @@
 id: JOY-0196-A4
 title: Slim down the /joy skill to remove tutorial overlap
 type: task
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -10,10 +10,12 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-16T00:03:03.942317753Z
-updated: 2026-05-16T00:09:51.241455597Z
+updated: 2026-05-16T00:09:51.369169843Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-05-16T00:03:11.654479Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-16T00:09:51.369169843Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   The Joy skill template at
