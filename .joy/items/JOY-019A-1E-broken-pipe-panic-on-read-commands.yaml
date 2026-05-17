@@ -1,0 +1,28 @@
+id: JOY-019A-1E
+title: Broken pipe panic on read commands when stdout pipe closes early
+type: bug
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-17T15:32:46.535003538Z
+updated: 2026-05-17T15:37:47.252123331Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-05-17T15:33:22.742846729Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-17T15:37:47.252123331Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Every read command (joy show, joy ls, joy log) panics on stderr with ''failed printing to stdout: Broken pipe (os error 32)'' when the consumer of the pipe closes early -- e.g. ''joy show JOY-0197-EB | head -3'' or ''joy ls | less'' then q. Exit code stays 0 so it does not break scripts, but the panic noise pollutes stderr and looks alarming. Root cause: Rust''s default runtime ignores SIGPIPE and turns subsequent writes into EPIPE, on which println! panics. Fix with the sigpipe crate (one line at the start of main()): matches every other Unix CLI, no unsafe in our code, no nightly flag. Add a bats test that runs a piped joy command and asserts stderr is clean.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-17T15:33:21.203980606Z
+  text: 'Plan: Add sigpipe = "0.1" to crates/joy-cli/Cargo.toml dependencies. Call sigpipe::reset() as the first statement of main(). Add a bats test that runs ''joy show <ID> 2>&1 | head -1'' (and the same for joy ls) and asserts the resulting output contains no ''panicked at'' or ''Broken pipe (os error 32)'' line. Smallest possible patch, no other code touched.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-17T15:37:46.268393398Z
+  text: '[x] crates/joy-cli/Cargo.toml: sigpipe = "0.1" added. [x] crates/joy-cli/src/main.rs: sigpipe::reset() as the first statement of main() with a short comment on intent. [x] tests/integration/broken_pipe.bats: three tests (joy show, joy ls, joy log) each piped into head, asserting stderr contains neither ''panicked at'' nor ''Broken pipe''. [x] Full suite green: 332 unit + 417 bats + 2 cmd snapshot; clippy + fmt-check clean.'

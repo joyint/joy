@@ -302,6 +302,12 @@ fn auto_sync_repo() {
 }
 
 fn main() -> anyhow::Result<()> {
+    // Match every other Unix CLI: when a downstream consumer closes
+    // the pipe (e.g. `joy show ... | head`), let the next write exit
+    // the process silently instead of letting Rust's default EPIPE
+    // handling turn it into a stderr panic.
+    sigpipe::reset();
+
     clap_complete::CompleteEnv::with_factory(Cli::command).complete();
 
     let raw: Vec<String> = std::env::args().collect();
