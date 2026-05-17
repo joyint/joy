@@ -334,7 +334,17 @@ joy release publish                  # Step 3: push + forge release
 
 `joy release record` collects all items closed since the last release, groups them by type, lists contributors, and writes a snapshot to `.joy/releases/`. It commits the bumped files and creates the tag locally. At this point nothing has been pushed, so a failed check or typo can be rolled back with `git reset --hard HEAD~1 && git tag -d vX.Y.Z`.
 
-`joy release publish` pushes the commit and tag to the configured remote and creates the forge release (GitHub, GitLab, Gitea, Joyint, ...).
+`joy release publish` pushes the commit and tag to the configured remote and creates the forge release. The forge is auto-detected from your git remotes - a single supported remote is used silently, multiple supported remotes prompt on a TTY (or require `--forge` in CI). Today only GitHub (via the `gh` CLI) has a publish backend; GitLab and Gitea are detection-aware but route to no-op until their backends land.
+
+Override the auto-detection when you need to. The override lives in `project.yaml` for repeat runs, or on the command line for a one-shot:
+
+```sh
+joy project set forge github         # lock in a specific forge
+joy project set forge none           # explicit opt-out: push the tag only
+joy project set forge ""             # clear the override, return to auto-detect
+joy project get forge                # read the current value (exit 1 when unset)
+joy release publish --forge none     # one-shot opt-out for this run
+```
 
 Preview and browse without touching anything:
 
@@ -1030,10 +1040,11 @@ The shape is `{"version": 1, "data": ...}`. Within a major Joy release, fields a
 | `joy log` | Event log (audit trail) |
 | `joy release bump <BUMP>` | Step 1: patch version strings in configured files |
 | `joy release record <BUMP>` | Step 2: record, commit, tag (local only) |
-| `joy release publish` | Step 3: push + create the forge release |
+| `joy release publish [--forge VALUE]` | Step 3: push + create the forge release (auto-detects forge from git remotes; `--forge` overrides per run) |
 | `joy release show [VERSION]` | Show a release or preview the next |
 | `joy release ls` | List all releases |
 | `joy project` | View/edit project info and members |
+| `joy project get/set <KEY> [VALUE]` | Read or write a project field (e.g. `forge`, `language`, `docs.*`) |
 | `joy config` | Show or modify configuration |
 | `joy ai init` | Set up AI tool integration |
 | `joy update` | Update the joy binary and refresh joy-managed state |

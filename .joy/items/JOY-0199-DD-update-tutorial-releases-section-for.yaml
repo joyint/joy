@@ -1,0 +1,27 @@
+id: JOY-0199-DD
+title: Update Tutorial Releases section for forge auto-detection
+type: task
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-17T15:04:40.046579669Z
+updated: 2026-05-17T15:05:46.053672283Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-05-17T15:04:52.248437470Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-17T15:05:46.053672283Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'JOY-0197-EB and JOY-0198-BD changed how joy release publish discovers the forge (auto-detect from git remotes; project.yaml forge: is now an optional override) and added joy project set/get forge. docs/user/Tutorial.md still describes the old explicit-config behaviour. Update the Releases section to mention auto-detection, the --forge flag, and the joy project set forge surface (override / explicit none / clear). docs/ai/Tutorial.md does not mention release publish or forge today and does not need changes (AI agents do not typically run publish).'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-17T15:04:50.643779764Z
+  text: 'Plan: Update the Releases section in docs/user/Tutorial.md to (1) note that the forge is auto-detected from configured git remotes and that forge: in project.yaml is an optional override; (2) introduce joy project set forge <github|none>, joy project get forge, and the --forge <value> flag for one-shot overrides; (3) keep the three-step bump/record/publish narrative intact. Add joy project set forge to the command reference table. Run just sync-tutorial so the in-crate copy reflects the canonical doc. docs/ai/Tutorial.md does not mention forge today and stays untouched.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-17T15:05:45.108674491Z
+  text: '[x] docs/user/Tutorial.md: Releases section now explains the new auto-detect behaviour, lists the four CLI surfaces (joy project set/get forge plus the --forge flag for one-shot overrides), and explicitly notes that GitHub is the only forge with a working publish backend today. [x] Command reference: ''joy release publish'' row mentions [--forge VALUE] and auto-detection; new ''joy project get/set'' row covers forge along with language and docs.*. [x] Ran just sync-tutorial so crates/joy-cli/docs/user/Tutorial.md tracks the canonical file. [x] tutorial bats + cmd snapshot tests still green. docs/ai/Tutorial.md did not mention forge or release publish and was not touched.'
