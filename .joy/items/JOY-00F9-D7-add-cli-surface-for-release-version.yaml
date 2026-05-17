@@ -1,12 +1,34 @@
 id: JOY-00F9-D7
 title: Add CLI surface for release.version-files in joy project set
 type: bug
-status: new
+status: closed
 priority: medium
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 - review
 created_by: ai:claude@joy
 created: 2026-04-19T22:12:52.022118467Z
-updated: 2026-04-19T22:12:52.022118467Z
+updated: 2026-05-17T17:08:02.131784197Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-05-17T16:44:25.711515408Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-17T16:48:45.606799273Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-17T16:56:06.612932565Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-17T17:08:02.131784197Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Today ''joy project set'' only supports name, acronym, description, and language. release.version-files (list of paths that ''joy release bump'' rewrites) has no CLI surface; editing project.yaml directly is the only way. Discovered during JI-00E3-C5 rename: after renaming crates/jot-* to crates/jyn-* in the jyn workspace, project.yaml still pointed at the old paths, so ''joy release bump'' failed with ''no files matching crates/jot-core/Cargo.toml''. We had to edit .joy/project.yaml by hand (commit ab6d153 in jyn), which violates the ''Always use the Joy CLI'' rule and is invisible to governance. Fix options: (a) extend ''joy project set'' with list semantics for release.version-files (add, remove, set all); (b) dedicated ''joy release version-files {add,rm,set,ls}'' subcommand. Either way the file must roundtrip cleanly and the guard should accept the edit via the normal auth pathway.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-17T16:44:24.159719660Z
+  text: 'Plan: implement option (b) -- a dedicated ''joy release version-files {ls,add,rm,set}'' subcommand. Rationale: mirrors the existing list-management shape used by ''joy milestone'' and ''joy deps'', and keeps ''joy project set <key>'' scalar-only instead of introducing --add/--rm flag semantics. add accepts a path (idempotent: warn if already present), rm errors if absent, set replaces the whole list, ls prints the configured entries. All four support --json. The on-disk representation stays as the existing list under release.version-files in project.yaml; mapping-form entries (with explicit ''path'' field) are preserved on round-trip even though the CLI only writes string-form entries. Validation: no on-disk file-existence check at config time -- joy release bump already surfaces missing-file errors with the right context, and a file may legitimately be created later. Bats tests cover round-trip, idempotent add, error on rm of unknown entry, set replacement, mapping-form preservation, JSON shape.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-17T16:56:05.578968851Z
+  text: 'Plan correction (replacing the prior option-b plan): align with ''joy project set/get'' since release.version-files lives in project.yaml just like forge:. Surface: ''joy project get release.version-files'' (one path per line; --json -> string array), ''joy project set release.version-files <CSV>'' (replace whole list, empty string clears), ''joy project set release.version-files --add <path>'' (append, idempotent: warn on duplicate, exit 0), ''joy project set release.version-files --rm <path>'' (remove, error if not present). --add and --rm only valid for list-typed keys. Mapping-form entries ({path: ...}) preserved on round-trip even though the CLI only emits string-form. No editor-on-empty handling in this item (carved out to a separate story). Bats coverage: get (text + json), set CSV (incl. clearing), --add (incl. duplicate warning), --rm (incl. error path), round-trip with mapping-form entry.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-17T17:08:00.568954933Z
+  text: '[x] joy-cli/commands/project.rs: ''release.version-files'' added to PROJECT_KEYS plus a new LIST_KEYS registry. SetArgs now exposes optional positional value plus --add/--rm flags (clap conflicts_with prevents combining them). set_command() dispatches to scalar set_value() for plain keys and to a list_key handler for release.version-files (CSV replace, --add idempotent + warns on duplicate, --rm errors on missing). [x] Raw-YAML helpers version_files_raw / _add / _rm / _set operate on serde_yaml_ng::Value so mapping-form entries ({path: ..., extra: ...}) round-trip cleanly; clearing the list also drops the release: block when empty. [x] get_value() takes root and special-cases list keys: text form prints one entry per line (exit 1 when unset), JSON form returns {key, value: Vec<String> | null}. project_value_tree includes release.version-files so the * wildcard listing surfaces it. [x] describe_value entry + matching unit-test row. [x] 13 bats tests covering set CSV, clear, --add, duplicate, --rm, missing-rm, JSON shape, mapping-form round-trip, scalar-key rejection, value+flag conflict, --describe, wildcard. [x] just check green: 332 unit + 430 bats + 2 cmd snapshot.'

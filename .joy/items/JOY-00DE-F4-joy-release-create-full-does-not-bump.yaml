@@ -1,7 +1,7 @@
 id: JOY-00DE-F4
 title: joy release create --full does not bump internal crate dependency versions
 type: bug
-status: new
+status: closed
 priority: medium
 capabilities:
 - implement
@@ -9,4 +9,12 @@ capabilities:
 effort: 1
 created_by: ai:claude@joy
 created: 2026-04-14T17:53:46.378709197Z
-updated: 2026-04-14T17:53:46.378709197Z
+updated: 2026-05-17T16:43:55.274159789Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-05-17T16:43:55.274159789Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-17T16:43:49.713665838Z
+  text: 'Closing: the command this bug was filed against (joy release create --full) was removed entirely in JOY-00E2-93 (April 2026) in favor of the explicit bump/record/publish three-step. The item has no description body or repro, so there is no actionable carry-over. If the symptom resurfaces under joy release bump, file a fresh item with a concrete repro.'

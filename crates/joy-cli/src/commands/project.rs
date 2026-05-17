@@ -25,7 +25,18 @@ const PROJECT_KEYS: &[&str] = &[
     "docs.architecture",
     "docs.vision",
     "docs.contributing",
+    "release.version-files",
 ];
+
+/// Keys whose value is a list rather than a scalar. List keys accept
+/// `--add` / `--rm` flags on `joy project set` plus CSV form for whole-
+/// list replacement; their `get` output is one entry per line (or a
+/// JSON array under --json). Scalar keys reject `--add`/`--rm`.
+const LIST_KEYS: &[&str] = &["release.version-files"];
+
+fn is_list_key(key: &str) -> bool {
+    LIST_KEYS.contains(&key)
+}
 
 #[derive(Args)]
 pub struct ProjectArgs {
@@ -73,8 +84,18 @@ struct SetArgs {
     /// Project key
     #[arg(add = clap_complete::engine::ArgValueCompleter::new(complete_project_key))]
     key: String,
-    /// Value to set
-    value: String,
+    /// Value to set. For list-typed keys (release.version-files) a
+    /// comma-separated list replaces the whole list; an empty string
+    /// clears it. Omit when using --add or --rm.
+    value: Option<String>,
+    /// Append a single entry to a list-typed key. Idempotent: warns
+    /// and exits 0 if the entry is already configured.
+    #[arg(long, conflicts_with = "rm", conflicts_with = "value")]
+    add: Option<String>,
+    /// Remove a single entry from a list-typed key. Errors if the
+    /// entry is not configured.
+    #[arg(long, conflicts_with = "value")]
+    rm: Option<String>,
 }
 
 #[derive(clap::Args)]
@@ -155,49 +176,11 @@ pub fn run(args: ProjectArgs) -> Result<()> {
 
     match args.command {
         Some(ProjectCommand::Get(a)) => {
-            return get_value(&project, &a.key, a.describe);
+            return get_value(&ctx.root, &project, &a.key, a.describe);
         }
         Some(ProjectCommand::Set(a)) => {
             ctx.enforce(&Action::ManageProject, "project")?;
-            set_value(&mut project, &a.key, &a.value)?;
-            store::write_yaml_preserve(&project_path, &project)?;
-            // write_yaml_preserve re-adds top-level keys present in the
-            // existing file but missing from the serialized struct (so unknown
-            // keys are kept). When a `docs.*` key is unset the docs block in
-            // the struct may serialize to nothing, but a stale `docs:` block
-            // from the old file would be preserved -- prune it explicitly.
-            if a.key.starts_with("docs.") {
-                prune_docs_yaml(&project_path, &project.docs)?;
-            }
-            // Same write_yaml_preserve quirk as docs: a cleared
-            // top-level Option<String> (here, `forge`) would otherwise
-            // be re-added from the original file. Remove it explicitly
-            // when the in-memory project no longer carries a value.
-            if a.key == "forge" && project.forge.is_none() {
-                prune_yaml_key(&project_path, "forge")?;
-            }
-            let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-            joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
-            if a.key == "acronym" {
-                let stored = project.acronym.as_deref().unwrap_or(&a.value);
-                println!("{} = {}", a.key, stored);
-                println!();
-                println!("Note: existing items keep their previous ID prefix.");
-                println!("Only items created after this change use the new prefix '{stored}'.");
-                println!();
-                println!("Local delegation keys have been migrated to the new acronym.");
-                println!("Existing sessions and delegation tokens reference the old acronym");
-                println!("and are invalidated. Re-run `joy auth` and reissue any tokens.");
-            } else {
-                println!("{} = {}", a.key, a.value);
-            }
-            let log_user = ctx.log_user();
-            joy_core::git_ops::auto_git_post_command(
-                &ctx.root,
-                &format!("project set {} {}", a.key, a.value),
-                &log_user,
-            );
-            return Ok(());
+            return set_command(&ctx, &project_path, &mut project, a);
         }
         Some(ProjectCommand::Member(a)) => {
             return run_member(a, &mut project, &project_path, &ctx);
@@ -238,8 +221,8 @@ pub fn run(args: ProjectArgs) -> Result<()> {
     Ok(())
 }
 
-fn get_value(project: &Project, key: &str, describe: bool) -> Result<()> {
-    let tree = project_value_tree(project);
+fn get_value(root: &std::path::Path, project: &Project, key: &str, describe: bool) -> Result<()> {
+    let tree = project_value_tree(root, project);
 
     // Wildcard form: `docs.*` lists every leaf under that prefix.
     // Mirrors `joy config get <prefix>.*` (JOY-0187-D0).
@@ -252,6 +235,10 @@ fn get_value(project: &Project, key: &str, describe: bool) -> Result<()> {
             "unknown key: {key}\nknown keys: {}",
             PROJECT_KEYS.join(", ")
         );
+    }
+
+    if is_list_key(key) {
+        return get_list_value(root, key, describe);
     }
 
     let value = joy_core::model::config::flatten_under(&tree, "");
@@ -409,7 +396,13 @@ fn value_as_optional_string(v: &serde_json::Value) -> Option<String> {
 /// Unset optional fields (acronym, description) are represented as
 /// `null` so the existing JSON payload shape on those keys is
 /// preserved.
-fn project_value_tree(project: &Project) -> serde_json::Value {
+fn project_value_tree(root: &std::path::Path, project: &Project) -> serde_json::Value {
+    let version_files: serde_json::Value = match version_files_get(root) {
+        Ok(v) if !v.is_empty() => {
+            serde_json::Value::Array(v.into_iter().map(serde_json::Value::String).collect())
+        }
+        _ => serde_json::Value::Null,
+    };
     serde_json::json!({
         "name": project.name,
         "acronym": project.acronym,
@@ -421,8 +414,319 @@ fn project_value_tree(project: &Project) -> serde_json::Value {
             "architecture": project.docs.architecture_or_default(),
             "vision": project.docs.vision_or_default(),
             "contributing": project.docs.contributing_or_default(),
+        },
+        "release": {
+            "version-files": version_files,
         }
     })
+}
+
+/// Render `joy project get` for a list-typed key. Text form is one
+/// entry per line (exit 1 if the list is empty so tooling can detect
+/// the unset state, mirroring scalar-key behaviour). JSON form is a
+/// `{key, value}` payload where `value` is the array (or null when
+/// empty / unset, matching the existing API contract for other
+/// optional keys).
+fn get_list_value(root: &std::path::Path, key: &str, describe: bool) -> Result<()> {
+    let entries = version_files_get(root)?;
+
+    if crate::output::is_json() {
+        #[derive(serde::Serialize)]
+        struct GetListPayload<'a> {
+            key: &'a str,
+            value: Option<Vec<String>>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            description: Option<String>,
+        }
+        let description = if describe {
+            joy_core::model::project::describe_value(key, &serde_json::Value::Null)
+        } else {
+            None
+        };
+        let value = if entries.is_empty() {
+            None
+        } else {
+            Some(entries)
+        };
+        return crate::output::emit(GetListPayload {
+            key,
+            value,
+            description,
+        });
+    }
+
+    if entries.is_empty() {
+        std::process::exit(1);
+    }
+
+    let suffix = if describe {
+        joy_core::model::project::describe_value(key, &serde_json::Value::Null)
+            .map(|d| format!("  {} {}", color::inactive("-"), color::inactive(&d)))
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    for (i, entry) in entries.iter().enumerate() {
+        if i == 0 {
+            println!("{entry}{suffix}");
+        } else {
+            println!("{entry}");
+        }
+    }
+    Ok(())
+}
+
+/// Dispatch a `joy project set` invocation. Handles scalar keys via the
+/// existing set_value() path and list keys (`release.version-files`)
+/// via the dedicated version-files helpers that operate on raw YAML so
+/// mapping-form entries round-trip cleanly.
+fn set_command(
+    ctx: &Context,
+    project_path: &std::path::Path,
+    project: &mut Project,
+    args: SetArgs,
+) -> Result<()> {
+    let key = &args.key;
+
+    if is_list_key(key) {
+        return set_list_key(
+            ctx,
+            key,
+            args.value.as_deref(),
+            args.add.as_deref(),
+            args.rm.as_deref(),
+        );
+    }
+
+    if args.add.is_some() || args.rm.is_some() {
+        bail!(
+            "'{key}' is not a list-typed key; --add and --rm only apply to: {}",
+            LIST_KEYS.join(", ")
+        );
+    }
+
+    let Some(value) = args.value.as_deref() else {
+        bail!("value required for '{key}'");
+    };
+
+    set_value(project, key, value)?;
+    store::write_yaml_preserve(project_path, project)?;
+    if key.starts_with("docs.") {
+        prune_docs_yaml(project_path, &project.docs)?;
+    }
+    if key == "forge" && project.forge.is_none() {
+        prune_yaml_key(project_path, "forge")?;
+    }
+    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+    joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
+    if key == "acronym" {
+        let stored = project.acronym.as_deref().unwrap_or(value);
+        println!("{key} = {stored}");
+        println!();
+        println!("Note: existing items keep their previous ID prefix.");
+        println!("Only items created after this change use the new prefix '{stored}'.");
+        println!();
+        println!("Local delegation keys have been migrated to the new acronym.");
+        println!("Existing sessions and delegation tokens reference the old acronym");
+        println!("and are invalidated. Re-run `joy auth` and reissue any tokens.");
+    } else {
+        println!("{key} = {value}");
+    }
+    let log_user = ctx.log_user();
+    joy_core::git_ops::auto_git_post_command(
+        &ctx.root,
+        &format!("project set {key} {value}"),
+        &log_user,
+    );
+    Ok(())
+}
+
+/// Apply a list-key mutation. Exactly one of `value` (CSV replace),
+/// `add_path`, or `rm_path` carries the operation; clap's
+/// `conflicts_with` enforces that the other two are absent.
+fn set_list_key(
+    ctx: &Context,
+    key: &str,
+    value: Option<&str>,
+    add_path: Option<&str>,
+    rm_path: Option<&str>,
+) -> Result<()> {
+    assert!(is_list_key(key));
+    let (summary, display) = if let Some(path) = add_path {
+        let outcome = version_files_add(&ctx.root, path)?;
+        let summary = format!("project set {key} --add {path}");
+        let display = match outcome {
+            AddOutcome::Added => format!("{key} += {path}"),
+            AddOutcome::AlreadyPresent => {
+                println!("warning: '{path}' already configured in {key}; nothing to do");
+                format!("{key} unchanged ({path} already present)")
+            }
+        };
+        (summary, display)
+    } else if let Some(path) = rm_path {
+        version_files_rm(&ctx.root, path)?;
+        let summary = format!("project set {key} --rm {path}");
+        let display = format!("{key} -= {path}");
+        (summary, display)
+    } else {
+        let raw = value
+            .ok_or_else(|| anyhow::anyhow!("value required for '{key}' (or use --add / --rm)"))?;
+        let paths: Vec<String> = if raw.trim().is_empty() {
+            Vec::new()
+        } else {
+            raw.split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        };
+        version_files_set(&ctx.root, &paths)?;
+        let summary = format!("project set {key} {raw}");
+        let display = if paths.is_empty() {
+            format!("{key} = (cleared)")
+        } else {
+            format!("{key} = {}", paths.join(","))
+        };
+        (summary, display)
+    };
+
+    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+    joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
+    println!("{display}");
+    let log_user = ctx.log_user();
+    joy_core::git_ops::auto_git_post_command(&ctx.root, &summary, &log_user);
+    Ok(())
+}
+
+enum AddOutcome {
+    Added,
+    AlreadyPresent,
+}
+
+/// Extract the path field from a release.version-files entry. Each
+/// entry is either a bare string or a mapping with a `path` field
+/// (with optional extra fields preserved on round-trip).
+fn entry_path(entry: &serde_yaml_ng::Value) -> Option<String> {
+    use serde_yaml_ng::Value;
+    match entry {
+        Value::String(s) => Some(s.clone()),
+        Value::Mapping(m) => m
+            .get(Value::String("path".into()))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        _ => None,
+    }
+}
+
+/// Load raw release.version-files entries from project.yaml,
+/// preserving mapping-form entries verbatim.
+fn version_files_raw(root: &std::path::Path) -> Result<Vec<serde_yaml_ng::Value>> {
+    let path = store::joy_dir(root).join(store::PROJECT_FILE);
+    let raw = std::fs::read_to_string(&path)?;
+    if raw.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    let doc: serde_yaml_ng::Value = serde_yaml_ng::from_str(&raw)?;
+    let Some(map) = doc.as_mapping() else {
+        return Ok(Vec::new());
+    };
+    let Some(release) = map.get(serde_yaml_ng::Value::String("release".into())) else {
+        return Ok(Vec::new());
+    };
+    let Some(release_map) = release.as_mapping() else {
+        return Ok(Vec::new());
+    };
+    let Some(files) = release_map.get(serde_yaml_ng::Value::String("version-files".into())) else {
+        return Ok(Vec::new());
+    };
+    let Some(seq) = files.as_sequence() else {
+        bail!("release.version-files in project.yaml is not a list");
+    };
+    Ok(seq.clone())
+}
+
+/// Read the configured paths as plain strings (mapping-form entries
+/// are reduced to their `path` field).
+fn version_files_get(root: &std::path::Path) -> Result<Vec<String>> {
+    Ok(version_files_raw(root)?
+        .into_iter()
+        .filter_map(|e| entry_path(&e))
+        .collect())
+}
+
+fn version_files_add(root: &std::path::Path, path: &str) -> Result<AddOutcome> {
+    let mut entries = version_files_raw(root)?;
+    if entries
+        .iter()
+        .any(|e| entry_path(e).as_deref() == Some(path))
+    {
+        return Ok(AddOutcome::AlreadyPresent);
+    }
+    entries.push(serde_yaml_ng::Value::String(path.to_string()));
+    write_version_files_raw(root, entries)?;
+    Ok(AddOutcome::Added)
+}
+
+fn version_files_rm(root: &std::path::Path, path: &str) -> Result<()> {
+    let mut entries = version_files_raw(root)?;
+    let before = entries.len();
+    entries.retain(|e| entry_path(e).as_deref() != Some(path));
+    if entries.len() == before {
+        bail!("'{path}' is not configured in release.version-files");
+    }
+    write_version_files_raw(root, entries)?;
+    Ok(())
+}
+
+fn version_files_set(root: &std::path::Path, paths: &[String]) -> Result<()> {
+    let entries = paths
+        .iter()
+        .map(|p| serde_yaml_ng::Value::String(p.clone()))
+        .collect();
+    write_version_files_raw(root, entries)
+}
+
+/// Write the supplied entries back to release.version-files,
+/// creating the `release:` block if needed and removing
+/// `version-files` (or the entire `release:` block if it becomes
+/// empty) when entries is empty.
+fn write_version_files_raw(
+    root: &std::path::Path,
+    entries: Vec<serde_yaml_ng::Value>,
+) -> Result<()> {
+    use serde_yaml_ng::Value;
+    let path = store::joy_dir(root).join(store::PROJECT_FILE);
+    let raw = std::fs::read_to_string(&path)?;
+    let mut doc: Value = serde_yaml_ng::from_str(&raw)?;
+    let Some(top) = doc.as_mapping_mut() else {
+        bail!("project.yaml is not a mapping");
+    };
+    let release_key = Value::String("release".into());
+    let version_key = Value::String("version-files".into());
+
+    if entries.is_empty() {
+        // Remove version-files; drop the release block too if it becomes empty.
+        if let Some(release) = top.get_mut(&release_key) {
+            if let Some(release_map) = release.as_mapping_mut() {
+                release_map.remove(&version_key);
+                if release_map.is_empty() {
+                    top.remove(&release_key);
+                }
+            }
+        }
+    } else {
+        let release = top
+            .entry(release_key)
+            .or_insert_with(|| Value::Mapping(Default::default()));
+        let Some(release_map) = release.as_mapping_mut() else {
+            bail!("project.yaml release: is not a mapping");
+        };
+        release_map.insert(version_key, Value::Sequence(entries));
+    }
+
+    let yaml = serde_yaml_ng::to_string(&doc)?;
+    std::fs::write(&path, yaml)?;
+    Ok(())
 }
 
 fn set_value(project: &mut Project, key: &str, value: &str) -> Result<()> {

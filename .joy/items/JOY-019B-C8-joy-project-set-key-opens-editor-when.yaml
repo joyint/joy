@@ -1,0 +1,16 @@
+id: JOY-019B-C8
+title: joy project set <KEY> opens $EDITOR when called without VALUE
+type: story
+status: new
+priority: medium
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-17T16:55:59.225861367Z
+updated: 2026-05-17T16:55:59.225861367Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: Today joy project set <KEY> requires a positional VALUE; calling it without one fails with a clap error. Make VALUE optional and, when absent (and no other write flag is given), open $EDITOR with the current value of the key pre-populated. Saving without changes is a no-op; saving an empty buffer is equivalent to joy project set <KEY> '' (cleared field, docs.* reset to default, etc.). All existing per-key validation (forge supported values, acronym 2-8 chars, ...) runs on the editor result the same way it does on direct CLI input. For list-valued keys (release.version-files after JOY-00F9-D7), the editor shows one entry per line; blank lines and '#' comments are stripped on save. Reuse the existing editor helper used by joy comment <ID> (no text) so behaviour around $EDITOR / $VISUAL / fallback to vi stays consistent.

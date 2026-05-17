@@ -421,6 +421,9 @@ pub fn describe_value(key: &str, _value: &serde_json::Value) -> Option<String> {
         "forge" => {
             "release forge override (e.g. github, none); unset = auto-detect from git remotes"
         }
+        "release.version-files" => {
+            "paths whose version strings `joy release bump` rewrites; managed with `joy project set release.version-files --add/--rm/<csv>`"
+        }
         "created" => "ISO timestamp when the project was initialized",
         "docs.architecture" => "path to the technical architecture document",
         "docs.vision" => "path to the product-vision document",
@@ -519,6 +522,7 @@ mod tests {
             "description",
             "language",
             "forge",
+            "release.version-files",
             "created",
             "docs.architecture",
             "docs.vision",

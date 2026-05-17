@@ -1,10 +1,18 @@
 id: JOY-003F
 title: VCS and forge integration for joy release --full
 type: epic
-status: new
+status: closed
 priority: high
 milestone: JOY-MS-03
 effort: 7
 created: 2026-03-22T22:07:37.073845981Z
-updated: 2026-03-30T19:49:08.665795370Z
+updated: 2026-05-17T16:43:54.464881702Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-05-17T16:43:54.464881702Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Implement ADR-017: Git write operations and forge abstraction in joy-core. Enables joy release create --full to perform the entire release flow in Rust, eliminating platform-dependent bash scripts from justfiles.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-17T16:43:46.827294741Z
+  text: 'Closing: the epic''s original scope is delivered. ADR-017 (JOY-003E), git write ops (JOY-0040), structured version bumping (JOY-0041), Forge trait + GitHub backend (JOY-0042), and the end-to-end release flow (JOY-0043) are all closed. The ''create --full'' shape referenced in the title was deliberately removed in favor of the explicit bump/record/publish three-step (JOY-00E2-93), and the forge resolution layer that remained was just closed via JOY-0197-EB + JOY-0198-BD. Remaining open children (JOY-0044 GitLab, JOY-0045 Gitea) are speculative future backends, independent and not blocking the epic.'
