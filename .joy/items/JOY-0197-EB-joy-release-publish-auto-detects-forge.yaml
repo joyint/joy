@@ -1,0 +1,39 @@
+id: JOY-0197-EB
+title: joy release publish auto-detects forge from configured remotes
+type: bug
+status: closed
+priority: high
+parent: JOY-003F
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-17T14:42:30.216890440Z
+updated: 2026-05-17T14:50:18.793579471Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-05-17T14:45:17.354242654Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-17T14:50:18.793579471Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  joy release publish currently fails with 'no forge configured' unless forge: is set explicitly in .joy/project.yaml. Make detection the default by probing configured git remotes for supported forges (today: github via github.com host).
+
+  Selection rules:
+  - exactly one supported forge detected: use it silently
+  - multiple supported forges detected: interactive pick on TTY; on non-TTY, fail with an actionable error suggesting --forge or setting forge: in project.yaml
+  - no supported forge detected: fail with a clear message listing configured remotes and how to add one
+  - forge: in project.yaml present: respected as override, detection skipped
+  - --forge <value> flag: highest precedence
+
+  Scope: only joy release publish reads the forge. bump, record, show, ls stay forge-agnostic.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-17T14:45:16.270510126Z
+  text: 'Plan: (1) Add all_remotes() and detect_supported_forges() helpers to joy-core/vcs.rs (today only GitHub is a supported forge backend). (2) Add resolve(root, project_forge, flag_value) to joy-cli/forge.rs with precedence: --forge flag > project.yaml > auto-detect from configured remotes. Single-supported -> use silently; multi-supported -> interactive pick on TTY, hard fail on non-TTY with hint to use --forge; zero-supported -> hard fail with hint to add a remote or set forge: none. (3) PublishArgs gains --forge <value>. Resolution runs before push so the operation fails early if the forge can''t be determined. forge: none keeps publishing the tag without a forge release. (4) Tests: unit tests on the resolver covering each precedence/branch path; bats test for the error message when no supported remote is configured and forge is unset.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-17T14:50:17.832241831Z
+  text: '[x] joy-core/vcs.rs: Forge::as_config_str, GitVcs::all_remotes and GitVcs::detect_forges. [x] joy-cli/forge.rs: resolve() with precedence flag > project.yaml > auto-detect; from_value() strict for CLI inputs; from_project_value() lenient (warn + NoForge) for legacy/forward-looking project.yaml values so publish still pushes the tag. [x] joy-cli/commands/release.rs: --forge flag on PublishArgs; resolution runs before push so failures are early. [x] 7 unit tests in forge.rs covering all precedence branches plus strict/lenient handling. [x] 6 bats tests in release_publish_forge.bats: missing remote, unsupported-only remote, --forge none short-circuit, single-supported auto-detect, multi-pick (skipped today), --forge with unsupported value. All tests green.'

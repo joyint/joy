@@ -64,6 +64,13 @@ struct RecordArgs {
 struct PublishArgs {
     /// Version to publish. Defaults to the current tag on HEAD.
     version: Option<String>,
+
+    /// Override the forge for this publish. Highest precedence:
+    /// takes priority over `forge:` in project.yaml and over
+    /// auto-detection. Use `none` to push the tag without creating
+    /// a forge release.
+    #[arg(long)]
+    forge: Option<String>,
 }
 
 #[derive(clap::Args)]
@@ -302,17 +309,20 @@ fn publish(args: PublishArgs) -> Result<()> {
         anyhow::anyhow!("no release record for {version} (run `joy release record` first)")
     })?;
 
+    // Resolve the forge before pushing. Push + tag-push are not
+    // trivially reversible, so we fail early if we can't decide which
+    // forge to talk to. The publish step is still idempotent on retry
+    // because gh release create dedupes by tag.
+    let forge_choice = forge::resolve(&ctx.root, project.forge.as_deref(), args.forge.as_deref())?;
+    if let Some(note) = &forge_choice.note {
+        println!("{note}");
+    }
+
     let remote = git.default_remote(&ctx.root)?;
     println!("Pushing to {remote}...");
     git.push(&ctx.root, &remote)?;
     git.push_tag(&ctx.root, &remote, &version)?;
     println!("Pushed {version} to {remote}.");
-
-    let forge_impl = forge::from_config(project.forge.as_deref());
-    if project.forge.as_deref().is_none() || project.forge.as_deref() == Some("none") {
-        println!("No forge configured; publish done.");
-        return Ok(());
-    }
 
     let markdown_notes = render_release_markdown(&release);
     let title = release
@@ -320,7 +330,10 @@ fn publish(args: PublishArgs) -> Result<()> {
         .as_deref()
         .map(|t| format!("{version} - {t}"))
         .unwrap_or_else(|| version.clone());
-    match forge_impl.create_release(&ctx.root, &version, &title, &markdown_notes)? {
+    match forge_choice
+        .forge
+        .create_release(&ctx.root, &version, &title, &markdown_notes)?
+    {
         Some(url) => println!("Forge release created: {url}"),
         None => println!("Forge release skipped."),
     }

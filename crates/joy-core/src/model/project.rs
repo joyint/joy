@@ -418,6 +418,9 @@ pub fn describe_value(key: &str, _value: &serde_json::Value) -> Option<String> {
         "acronym" => "short prefix used in item IDs",
         "description" => "one-paragraph project description",
         "language" => "project language for written artifacts (titles, comments, commits)",
+        "forge" => {
+            "release forge override (e.g. github, none); unset = auto-detect from git remotes"
+        }
         "created" => "ISO timestamp when the project was initialized",
         "docs.architecture" => "path to the technical architecture document",
         "docs.vision" => "path to the product-vision document",
@@ -515,6 +518,7 @@ mod tests {
             "acronym",
             "description",
             "language",
+            "forge",
             "created",
             "docs.architecture",
             "docs.vision",

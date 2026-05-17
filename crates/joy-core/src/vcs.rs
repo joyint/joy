@@ -21,6 +21,19 @@ pub enum Forge {
     Unknown,
 }
 
+impl Forge {
+    /// Stable identifier as written in `project.yaml` and accepted by
+    /// `joy project set forge`. `Unknown` has no canonical form.
+    pub fn as_config_str(&self) -> Option<&'static str> {
+        match self {
+            Forge::GitHub => Some("github"),
+            Forge::GitLab => Some("gitlab"),
+            Forge::Gitea => Some("gitea"),
+            Forge::Unknown => None,
+        }
+    }
+}
+
 /// VCS read operations that Joy needs.
 pub trait Vcs {
     /// Check if the given directory is inside a VCS repository.
@@ -291,6 +304,26 @@ impl GitVcs {
         git_output(root, &["remote", "get-url", remote])
     }
 
+    /// List every configured remote as `(name, url)` pairs, in the
+    /// order `git remote` returns them. Empty when the repo has no
+    /// remotes configured.
+    pub fn all_remotes(&self, root: &Path) -> Result<Vec<(String, String)>, JoyError> {
+        let names = match git_output(root, &["remote"]) {
+            Ok(s) => s,
+            Err(_) => return Ok(Vec::new()),
+        };
+        let mut out = Vec::new();
+        for name in names.lines() {
+            if name.is_empty() {
+                continue;
+            }
+            if let Ok(url) = self.remote_url(root, name) {
+                out.push((name.to_string(), url));
+            }
+        }
+        Ok(out)
+    }
+
     /// Check if the working tree is clean.
     pub fn is_clean(&self, root: &Path) -> Result<bool, JoyError> {
         let output = git_output(root, &["status", "--porcelain"])?;
@@ -317,6 +350,18 @@ impl GitVcs {
             Err(_) => return Forge::Unknown,
         };
         parse_forge_from_url(&url)
+    }
+
+    /// Detect the forge type for every configured remote. Each entry
+    /// is `(remote_name, forge)`. Remotes with no recognisable forge
+    /// are returned as `Forge::Unknown` so callers can report what was
+    /// configured.
+    pub fn detect_forges(&self, root: &Path) -> Vec<(String, Forge)> {
+        self.all_remotes(root)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(name, url)| (name, parse_forge_from_url(&url)))
+            .collect()
     }
 }
 

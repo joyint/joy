@@ -3,13 +3,13 @@
 
 //! Forge abstraction: create releases on hosting platforms.
 //! See ADR-017 and docs/dev/vision/ForgeSync.md.
-#![allow(dead_code)] // Used by the --full release flow (JOY-0043)
 
+use std::io::{IsTerminal, Write};
 use std::path::Path;
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 
-use joy_core::vcs;
+use joy_core::vcs::{self, Forge};
 
 /// Trait for hosting platform operations.
 pub trait ForgeRelease {
@@ -36,7 +36,7 @@ impl ForgeRelease for GitHubForge {
     ) -> Result<Option<String>> {
         // Check gh is available
         let gh_ver = vcs::gh_version().map_err(|_| {
-            anyhow::anyhow!(
+            anyhow!(
                 "forge 'github' requires gh CLI\n  \
                  = help: install gh (https://cli.github.com) or run `joy forge setup` to reconfigure"
             )
@@ -79,7 +79,7 @@ impl ForgeRelease for GitHubForge {
     }
 }
 
-/// No-op forge for `forge: none` or unset.
+/// No-op forge for `forge: none` or explicit skip.
 struct NoForge;
 
 impl ForgeRelease for NoForge {
@@ -94,26 +94,182 @@ impl ForgeRelease for NoForge {
     }
 }
 
-/// Parse the forge: config value and return the appropriate implementation.
-/// Returns None if forge is not set (treated as none).
-pub fn from_config(forge_value: Option<&str>) -> Box<dyn ForgeRelease> {
-    match forge_value {
-        Some("github") => Box::new(GitHubForge),
-        Some("none") | None => Box::new(NoForge),
-        Some(other) if other.contains("@joyint") => {
-            // github@joyint, gitlab@joyint etc. -- Joyint API not yet implemented
+/// Forge values that have a working ForgeRelease backend today.
+/// Used both for auto-detection filtering and for validating
+/// user-supplied values from `--forge` and `forge:`.
+pub const SUPPORTED_FORGES: &[&str] = &["github"];
+
+/// Outcome of [`resolve`]: the forge to talk to plus a human-readable
+/// note about how the choice was made (auto-detected, override, etc.).
+/// The note is empty when the source is unambiguous (explicit `forge:`
+/// or `--forge` flag).
+pub struct Resolution {
+    pub forge: Box<dyn ForgeRelease>,
+    pub note: Option<String>,
+}
+
+/// Resolve which forge to use for a release.
+///
+/// Precedence:
+/// 1. `flag_value` (CLI `--forge`)
+/// 2. `project_forge` (project.yaml `forge:`)
+/// 3. Auto-detect from configured git remotes
+///
+/// "none" at any layer means skip the forge release step. When
+/// auto-detection finds multiple supported forges and stdin is a TTY,
+/// the user is prompted; on a non-TTY this is a hard error so CI fails
+/// loudly instead of guessing.
+pub fn resolve(
+    root: &Path,
+    project_forge: Option<&str>,
+    flag_value: Option<&str>,
+) -> Result<Resolution> {
+    if let Some(value) = flag_value {
+        return Ok(Resolution {
+            forge: from_value(value, "--forge")?,
+            note: None,
+        });
+    }
+    if let Some(value) = project_forge {
+        return Ok(Resolution {
+            forge: from_project_value(value),
+            note: None,
+        });
+    }
+    auto_detect(root)
+}
+
+/// Lenient counterpart to [`from_value`] for values read from
+/// project.yaml. A stale or forward-looking value (e.g. `gitea`
+/// before the backend lands) prints a warning and falls back to
+/// NoForge so `joy release publish` still pushes the tag instead
+/// of hard-failing. The strict path (`from_value`) is used for
+/// CLI inputs where rejecting typos early is the right behaviour.
+fn from_project_value(value: &str) -> Box<dyn ForgeRelease> {
+    match value {
+        "none" => Box::new(NoForge),
+        "github" => Box::new(GitHubForge),
+        other => {
             eprintln!(
-                "warning: forge '{other}' uses Joyint as host (not yet supported for releases)"
+                "warning: forge '{other}' from project.yaml is not yet supported for releases"
             );
-            eprintln!("  = note: falling back to git tag only");
-            Box::new(NoForge)
-        }
-        Some(other) => {
-            eprintln!("warning: forge '{other}' is not yet supported for releases");
-            eprintln!("  = note: falling back to git tag only");
+            eprintln!("  = note: falling back to git tag only (no forge release)");
             Box::new(NoForge)
         }
     }
+}
+
+/// Build a backend from an explicit config string. `source` names where
+/// the value came from so validation errors are actionable.
+fn from_value(value: &str, source: &str) -> Result<Box<dyn ForgeRelease>> {
+    match value {
+        "none" => Ok(Box::new(NoForge)),
+        "github" => Ok(Box::new(GitHubForge)),
+        other => bail!(
+            "unsupported forge '{other}' from {source}\n  \
+             = help: supported values are: {}, none",
+            SUPPORTED_FORGES.join(", ")
+        ),
+    }
+}
+
+fn auto_detect(root: &Path) -> Result<Resolution> {
+    let detected = vcs::default_vcs().detect_forges(root);
+
+    // Dedupe by canonical config string while preserving discovery order.
+    let mut unique: Vec<(String, Forge)> = Vec::new();
+    for (name, forge) in detected.iter() {
+        let canonical = forge.as_config_str();
+        if canonical.is_none() {
+            continue;
+        }
+        if !SUPPORTED_FORGES.contains(&canonical.unwrap()) {
+            continue;
+        }
+        if unique.iter().any(|(_, f)| f == forge) {
+            continue;
+        }
+        unique.push((name.clone(), forge.clone()));
+    }
+
+    match unique.len() {
+        0 => {
+            let remote_summary = if detected.is_empty() {
+                "no git remotes are configured".to_string()
+            } else {
+                let list = detected
+                    .iter()
+                    .map(|(n, _)| n.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("configured remotes: {list}")
+            };
+            bail!(
+                "no supported forge detected from git remotes ({remote_summary})\n  \
+                 = help: add a remote on a supported host ({}), pass --forge <value>, \
+                 or set `forge: none` with `joy project set forge none` to publish without a forge release",
+                SUPPORTED_FORGES.join(", ")
+            )
+        }
+        1 => {
+            let (remote, forge) = &unique[0];
+            let label = forge.as_config_str().unwrap_or("unknown");
+            Ok(Resolution {
+                forge: from_value(label, "auto-detect")?,
+                note: Some(format!(
+                    "auto-detected forge '{label}' from remote '{remote}'"
+                )),
+            })
+        }
+        _ => pick_interactive(&unique),
+    }
+}
+
+fn pick_interactive(choices: &[(String, Forge)]) -> Result<Resolution> {
+    if !std::io::stdin().is_terminal() {
+        let labels: Vec<String> = choices
+            .iter()
+            .map(|(remote, forge)| {
+                format!(
+                    "{} (remote '{remote}')",
+                    forge.as_config_str().unwrap_or("unknown")
+                )
+            })
+            .collect();
+        bail!(
+            "multiple supported forges detected: {}\n  \
+             = help: pass --forge <value> or set `forge:` in project.yaml to disambiguate",
+            labels.join(", ")
+        );
+    }
+
+    println!("Multiple supported forges detected. Pick one:");
+    for (i, (remote, forge)) in choices.iter().enumerate() {
+        println!(
+            "  [{}] {} (remote '{remote}')",
+            i + 1,
+            forge.as_config_str().unwrap_or("unknown")
+        );
+    }
+    print!("Choose [1-{}]: ", choices.len());
+    std::io::stdout().flush().ok();
+
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+    let idx: usize = input
+        .trim()
+        .parse()
+        .map_err(|_| anyhow!("invalid selection: {}", input.trim()))?;
+    if idx == 0 || idx > choices.len() {
+        bail!("selection {idx} out of range");
+    }
+
+    let (remote, forge) = &choices[idx - 1];
+    let label = forge.as_config_str().unwrap_or("unknown");
+    Ok(Resolution {
+        forge: from_value(label, "interactive selection")?,
+        note: Some(format!("using forge '{label}' from remote '{remote}'")),
+    })
 }
 
 #[cfg(test)]
@@ -121,8 +277,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn no_forge_returns_none() {
-        let forge = from_config(None);
+    fn from_value_accepts_none() {
+        let forge = from_value("none", "test").unwrap();
         let result = forge
             .create_release(Path::new("."), "v0.1.0", "test", "notes")
             .unwrap();
@@ -130,29 +286,65 @@ mod tests {
     }
 
     #[test]
-    fn explicit_none_returns_none() {
-        let forge = from_config(Some("none"));
-        let result = forge
-            .create_release(Path::new("."), "v0.1.0", "test", "notes")
-            .unwrap();
-        assert!(result.is_none());
+    fn from_value_accepts_github() {
+        // Builds a backend without invoking it. create_release would
+        // shell out to gh; we only check construction succeeds.
+        let _forge = from_value("github", "test").unwrap();
     }
 
     #[test]
-    fn unsupported_forge_warns() {
-        let forge = from_config(Some("gitlab"));
-        let result = forge
-            .create_release(Path::new("."), "v0.1.0", "test", "notes")
-            .unwrap();
-        assert!(result.is_none());
+    fn from_value_rejects_unsupported() {
+        match from_value("gitlab", "project.yaml") {
+            Ok(_) => panic!("expected an error for unsupported forge"),
+            Err(e) => {
+                let msg = e.to_string();
+                assert!(msg.contains("unsupported forge 'gitlab'"));
+                assert!(msg.contains("project.yaml"));
+                assert!(msg.contains("supported values"));
+            }
+        }
     }
 
     #[test]
-    fn joyint_forge_warns() {
-        let forge = from_config(Some("github@joyint"));
-        let result = forge
-            .create_release(Path::new("."), "v0.1.0", "test", "notes")
+    fn from_value_rejects_typo() {
+        match from_value("guthub", "--forge") {
+            Ok(_) => panic!("expected an error for typo"),
+            Err(e) => assert!(e.to_string().contains("--forge")),
+        }
+    }
+
+    #[test]
+    fn resolve_flag_beats_project_and_detection() {
+        // Pass an explicit "none" via flag; project value and any
+        // remote configuration must be ignored.
+        let res = resolve(Path::new("."), Some("github"), Some("none")).unwrap();
+        assert!(res.note.is_none());
+        let out = res
+            .forge
+            .create_release(Path::new("."), "v0.1.0", "t", "n")
             .unwrap();
-        assert!(result.is_none());
+        assert!(out.is_none(), "explicit --forge none must short-circuit");
+    }
+
+    #[test]
+    fn resolve_project_value_used_when_no_flag() {
+        let res = resolve(Path::new("."), Some("none"), None).unwrap();
+        assert!(res.note.is_none());
+        let out = res
+            .forge
+            .create_release(Path::new("."), "v0.1.0", "t", "n")
+            .unwrap();
+        assert!(out.is_none());
+    }
+
+    #[test]
+    fn from_project_value_is_lenient_about_unknown() {
+        // Legacy / forward-looking values in project.yaml must not
+        // hard-fail joy release publish; they downgrade to NoForge.
+        let forge = from_project_value("gitea");
+        let out = forge
+            .create_release(Path::new("."), "v0.1.0", "t", "n")
+            .unwrap();
+        assert!(out.is_none());
     }
 }

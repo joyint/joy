@@ -1,0 +1,30 @@
+id: JOY-0198-BD
+title: Add CLI surface for forge
+type: story
+status: closed
+priority: low
+parent: JOY-003F
+assignees:
+- member: ai:claude@joy
+capabilities:
+- plan
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-17T14:42:33.311293096Z
+updated: 2026-05-17T14:56:56.333473067Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-05-17T14:50:33.601901890Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-17T14:56:56.333473067Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Add joy project set forge <value> and joy project get forge for the optional override read by joy release publish. Validate against currently-supported forge values (today: github; none to clear). The override is optional: auto-detection from configured git remotes covers the common case, so this is only needed when CI requires determinism without flags, or when multiple supported forges exist and the user wants to lock in a choice without re-prompting.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-17T14:50:32.559962106Z
+  text: 'Plan: (1) Extend PROJECT_KEYS with ''forge'' so completion, get, get-wildcard, and set all recognize the key. (2) set_value() handles forge: empty string clears (None), ''none'' stores literal ''none'' for explicit opt-out, supported values from forge::SUPPORTED_FORGES are accepted, anything else rejected with a clear list of valid values. (3) project_value_tree includes ''forge'' for joy project get forge and the * wildcard. (4) describe_value adds a one-liner for forge. (5) show_project displays the forge in the overview when set, otherwise hidden (parity with optional acronym/description). (6) Bats tests: set/get round-trip, invalid value rejection, clearing, --describe annotation, JSON shape on get.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-17T14:56:55.335232366Z
+  text: '[x] joy-cli/commands/project.rs: ''forge'' added to PROJECT_KEYS, set_value() and project_value_tree(). Strict set-time validation via normalize_forge_value() rejecting unsupported values with a clear list. Empty string clears the field; ''none'' is the explicit opt-out and is persisted verbatim. [x] joy-core/model/project.rs: describe_value() one-liner for forge plus the matching test coverage. [x] joy-cli/commands/project.rs::show_project(): Forge: row in the overview when set, hidden when unset. [x] write_yaml_preserve workaround: new prune_yaml_key() helper called when forge is cleared (same quirk that prune_docs_yaml works around for docs.* keys). [x] 10 bats tests in project_forge.bats covering set/get round-trip, none, clear, rejection, --describe, JSON shape, overview visibility, wildcard listing. [x] Full test suite green: 332 unit + 414 bats + 2 cmd snapshot.'

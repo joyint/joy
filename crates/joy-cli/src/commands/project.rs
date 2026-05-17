@@ -20,6 +20,7 @@ const PROJECT_KEYS: &[&str] = &[
     "acronym",
     "description",
     "language",
+    "forge",
     "created",
     "docs.architecture",
     "docs.vision",
@@ -167,6 +168,13 @@ pub fn run(args: ProjectArgs) -> Result<()> {
             // from the old file would be preserved -- prune it explicitly.
             if a.key.starts_with("docs.") {
                 prune_docs_yaml(&project_path, &project.docs)?;
+            }
+            // Same write_yaml_preserve quirk as docs: a cleared
+            // top-level Option<String> (here, `forge`) would otherwise
+            // be re-added from the original file. Remove it explicitly
+            // when the in-memory project no longer carries a value.
+            if a.key == "forge" && project.forge.is_none() {
+                prune_yaml_key(&project_path, "forge")?;
             }
             let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
             joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
@@ -407,6 +415,7 @@ fn project_value_tree(project: &Project) -> serde_json::Value {
         "acronym": project.acronym,
         "description": project.description,
         "language": project.language,
+        "forge": project.forge,
         "created": project.created.format("%Y-%m-%d %H:%M").to_string(),
         "docs": {
             "architecture": project.docs.architecture_or_default(),
@@ -427,6 +436,7 @@ fn set_value(project: &mut Project, key: &str, value: &str) -> Result<()> {
             };
         }
         "language" => project.language = value.to_string(),
+        "forge" => project.forge = normalize_forge_value(value)?,
         "docs.architecture" => project.docs.architecture = normalize_docs_value(value),
         "docs.vision" => project.docs.vision = normalize_docs_value(value),
         "docs.contributing" => project.docs.contributing = normalize_docs_value(value),
@@ -445,6 +455,30 @@ fn set_value(project: &mut Project, key: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
+/// Validate and normalize a `forge:` value. Empty input clears the
+/// field (auto-detection at publish time applies). `"none"` is an
+/// explicit opt-out and is stored verbatim so the intent is visible
+/// in project.yaml. Any other value must be in
+/// [`crate::forge::SUPPORTED_FORGES`]; this rejects typos at write
+/// time, which is the right moment for strictness (read-time stays
+/// lenient so legacy values don't hard-fail publish).
+fn normalize_forge_value(value: &str) -> Result<Option<String>> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    if trimmed == "none" {
+        return Ok(Some("none".to_string()));
+    }
+    if crate::forge::SUPPORTED_FORGES.contains(&trimmed) {
+        return Ok(Some(trimmed.to_string()));
+    }
+    bail!(
+        "unsupported forge '{trimmed}'\n  = help: supported values are: {}, none (pass an empty value to clear)",
+        crate::forge::SUPPORTED_FORGES.join(", ")
+    );
+}
+
 /// Empty / "none" / "default" reset a docs path to its built-in default.
 fn normalize_docs_value(value: &str) -> Option<String> {
     let trimmed = value.trim();
@@ -456,6 +490,21 @@ fn normalize_docs_value(value: &str) -> Option<String> {
     } else {
         Some(trimmed.to_string())
     }
+}
+
+/// Remove a top-level key from the on-disk project YAML. Used after
+/// `write_yaml_preserve` to clear optional Option<String> fields that
+/// the preserve step would otherwise re-add from the original file.
+fn prune_yaml_key(path: &std::path::Path, key: &str) -> Result<()> {
+    use serde_yaml_ng::Value;
+    let raw = std::fs::read_to_string(path)?;
+    let mut value: Value = serde_yaml_ng::from_str(&raw)?;
+    if let Some(map) = value.as_mapping_mut() {
+        map.remove(Value::String(key.to_string()));
+    }
+    let yaml = serde_yaml_ng::to_string(&value)?;
+    std::fs::write(path, yaml)?;
+    Ok(())
 }
 
 /// Rewrite the project YAML so the `docs:` block exactly reflects the desired
@@ -498,6 +547,9 @@ fn show_project(project: &Project, root: &std::path::Path) {
         .unwrap_or("(unset)");
     println!("{}", color::key_value("Description:", description, w));
     println!("{}", color::key_value("Language:", &project.language, w));
+    if let Some(forge) = project.forge.as_deref() {
+        println!("{}", color::key_value("Forge:", forge, w));
+    }
     println!(
         "{}",
         color::key_value(
