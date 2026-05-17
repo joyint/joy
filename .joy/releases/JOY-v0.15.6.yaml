@@ -1,0 +1,33 @@
+version: v0.15.6
+date: 2026-05-17
+previous: v0.15.5
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 43
+  items: 9
+- id: horst.schwarz@joydev.com
+  events: 1
+  items: 1
+items:
+  epics:
+  - id: JOY-003F
+    title: VCS and forge integration for joy release --full
+  stories:
+  - id: JOY-0198-BD
+    title: Add CLI surface for forge
+  - id: JOY-019B-C8
+    title: joy project set <KEY> opens $EDITOR when called without VALUE
+  tasks:
+  - id: JOY-0199-DD
+    title: Update Tutorial Releases section for forge auto-detection
+  bugs:
+  - id: JOY-0197-EB
+    title: joy release publish auto-detects forge from configured remotes
+  - id: JOY-019A-1E
+    title: Broken pipe panic on read commands when stdout pipe closes early
+  - id: JOY-00DE-F4
+    title: joy release create --full does not bump internal crate dependency versions
+  - id: JOY-00F9-D7
+    title: Add CLI surface for release.version-files in joy project set
+  - id: JOY-019C-E2
+    title: 'joy release bump: actionable error on version mismatch and --adopt to sync from files'
