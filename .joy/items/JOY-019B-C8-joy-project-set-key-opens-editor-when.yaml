@@ -1,8 +1,10 @@
 id: JOY-019B-C8
 title: joy project set <KEY> opens $EDITOR when called without VALUE
 type: story
-status: new
+status: closed
 priority: medium
+assignees:
+- member: ai:claude@joy
 capabilities:
 - plan
 - implement
@@ -10,7 +12,18 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-17T16:55:59.225861367Z
-updated: 2026-05-17T16:55:59.225861367Z
+updated: 2026-05-17T17:14:53.838027966Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
+history:
+- date: 2026-05-17T17:09:30.071841694Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-17T17:14:53.838027966Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: Today joy project set <KEY> requires a positional VALUE; calling it without one fails with a clap error. Make VALUE optional and, when absent (and no other write flag is given), open $EDITOR with the current value of the key pre-populated. Saving without changes is a no-op; saving an empty buffer is equivalent to joy project set <KEY> '' (cleared field, docs.* reset to default, etc.). All existing per-key validation (forge supported values, acronym 2-8 chars, ...) runs on the editor result the same way it does on direct CLI input. For list-valued keys (release.version-files after JOY-00F9-D7), the editor shows one entry per line; blank lines and '#' comments are stripped on save. Reuse the existing editor helper used by joy comment <ID> (no text) so behaviour around $EDITOR / $VISUAL / fallback to vi stays consistent.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-17T17:09:29.019531249Z
+  text: 'Plan: SetArgs already has value: Option<String> (from JOY-00F9-D7). When key is given but neither value nor --add nor --rm is set, dispatch to a new editor_set() path. It reuses the existing crate::editor::edit_text(); the buffer is pre-populated with the current value (scalar: current text; list: a short ''#'' header explaining the format plus one entry per line). On save: blank lines and ''#''-prefixed lines are dropped before parsing for list keys; scalar buffer is taken as-is (trimmed). Unchanged buffer is a no-op (print ''no changes''); empty buffer is equivalent to set <KEY> '''' (cleared field / docs.* reset to default). Per-key validation runs on the editor result the same way it would on direct CLI input (forge supported values, acronym 2-8 chars, etc.). New --editor <cmd> flag on SetArgs mirroring ''joy comment''. Bats tests: cover scalar set via editor (use a fake EDITOR script that rewrites the file), list set via editor (CSV append + clear), no-op detection, validation rejection of bad editor result, --editor flag override.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-17T17:14:52.794140987Z
+  text: '[x] joy-cli/commands/project.rs: SetArgs.value already Option<String> from JOY-00F9-D7; added --editor <cmd> flag mirroring ''joy comment''. [x] set_command() now falls through to editor_scalar_value() when value/add/rm all absent for scalar keys; set_list_key() does the same via editor_list_value(). [x] Scalar editor: pre-populates with current value, applies trimmed buffer on save, NoOp when unchanged, empty buffer clears the field. [x] List editor: ''#'' header explaining the format, one entry per line, ''#''-prefixed lines and blank lines stripped on save; empty buffer clears, unchanged buffer is NoOp. [x] Per-key validation still runs on the editor result -- verified ''joy project set forge --editor <bad>'' is rejected with the same ''unsupported forge'' message as direct CLI input. [x] Side-fix: ''joy project set description '' (empty) now also actually clears in the YAML, via the same prune_yaml_key trick already used for forge -- pre-existing bug exposed by the editor-clear path. [x] 7 bats tests in project_set_editor.bats covering scalar apply/clear/no-op, list apply/clear/no-op, and validation rejection. [x] just check green: 332 unit + 437 bats + 2 cmd snapshot.'

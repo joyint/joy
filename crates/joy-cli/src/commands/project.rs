@@ -96,6 +96,10 @@ struct SetArgs {
     /// entry is not configured.
     #[arg(long, conflicts_with = "value")]
     rm: Option<String>,
+    /// Editor command to use when VALUE is omitted (overrides config /
+    /// $VISUAL / $EDITOR). Mirrors `joy comment`.
+    #[arg(long)]
+    editor: Option<String>,
 }
 
 #[derive(clap::Args)]
@@ -496,6 +500,7 @@ fn set_command(
             args.value.as_deref(),
             args.add.as_deref(),
             args.rm.as_deref(),
+            args.editor.as_deref(),
         );
     }
 
@@ -506,11 +511,18 @@ fn set_command(
         );
     }
 
-    let Some(value) = args.value.as_deref() else {
-        bail!("value required for '{key}'");
+    let value = match args.value.as_deref() {
+        Some(v) => v.to_string(),
+        None => match editor_scalar_value(project, key, args.editor.as_deref())? {
+            EditorOutcome::Apply(v) => v,
+            EditorOutcome::NoOp => {
+                println!("{key} unchanged");
+                return Ok(());
+            }
+        },
     };
 
-    set_value(project, key, value)?;
+    set_value(project, key, &value)?;
     store::write_yaml_preserve(project_path, project)?;
     if key.starts_with("docs.") {
         prune_docs_yaml(project_path, &project.docs)?;
@@ -518,10 +530,13 @@ fn set_command(
     if key == "forge" && project.forge.is_none() {
         prune_yaml_key(project_path, "forge")?;
     }
+    if key == "description" && project.description.is_none() {
+        prune_yaml_key(project_path, "description")?;
+    }
     let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
     joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
     if key == "acronym" {
-        let stored = project.acronym.as_deref().unwrap_or(value);
+        let stored = project.acronym.as_deref().unwrap_or(&value);
         println!("{key} = {stored}");
         println!();
         println!("Note: existing items keep their previous ID prefix.");
@@ -551,8 +566,15 @@ fn set_list_key(
     value: Option<&str>,
     add_path: Option<&str>,
     rm_path: Option<&str>,
+    editor_flag: Option<&str>,
 ) -> Result<()> {
     assert!(is_list_key(key));
+
+    // When no value and no flag, fall through to the editor.
+    if value.is_none() && add_path.is_none() && rm_path.is_none() {
+        return editor_list_value(ctx, key, editor_flag);
+    }
+
     let (summary, display) = if let Some(path) = add_path {
         let outcome = version_files_add(&ctx.root, path)?;
         let summary = format!("project set {key} --add {path}");
@@ -601,6 +623,118 @@ fn set_list_key(
 enum AddOutcome {
     Added,
     AlreadyPresent,
+}
+
+enum EditorOutcome {
+    /// User saved a new value (possibly an empty string to clear).
+    Apply(String),
+    /// User saved the editor buffer unchanged.
+    NoOp,
+}
+
+/// Open $EDITOR for a scalar key. Initial buffer is the current
+/// value (or empty when unset). The user's saved buffer is taken
+/// as-is (trimmed); per-key validation runs downstream when the
+/// returned value is fed into set_value(). Returns NoOp when the
+/// buffer comes back unchanged.
+fn editor_scalar_value(
+    project: &Project,
+    key: &str,
+    editor_flag: Option<&str>,
+) -> Result<EditorOutcome> {
+    let current = current_scalar_value(project, key);
+    let initial = current.clone();
+    let edited = crate::editor::edit_text(editor_flag, &initial, &editor_file_suffix(key))?;
+    let new_value = edited.unwrap_or_default();
+    if new_value.trim() == initial.trim() {
+        return Ok(EditorOutcome::NoOp);
+    }
+    Ok(EditorOutcome::Apply(new_value))
+}
+
+/// Open $EDITOR for a list-typed key. Initial buffer is a short
+/// `#`-prefixed header explaining the format, followed by the
+/// current entries one per line. On save, `#`-comment lines and
+/// blank lines are stripped; the remaining lines are the new list.
+/// Same NoOp / clear / apply semantics as the scalar path; on Apply
+/// the list goes through version_files_set() (no per-entry
+/// validation today beyond non-empty).
+fn editor_list_value(ctx: &Context, key: &str, editor_flag: Option<&str>) -> Result<()> {
+    let current = version_files_get(&ctx.root)?;
+    let initial = list_editor_buffer(key, &current);
+
+    let edited = crate::editor::edit_text(editor_flag, &initial, &editor_file_suffix(key))?;
+    let new_entries: Vec<String> = match edited {
+        None => Vec::new(),
+        Some(content) => content
+            .lines()
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .map(|l| l.to_string())
+            .collect(),
+    };
+
+    if new_entries == current {
+        println!("{key} unchanged");
+        return Ok(());
+    }
+
+    version_files_set(&ctx.root, &new_entries)?;
+    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+    joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
+    if new_entries.is_empty() {
+        println!("{key} = (cleared)");
+    } else {
+        println!("{key} = {}", new_entries.join(","));
+    }
+    let log_user = ctx.log_user();
+    joy_core::git_ops::auto_git_post_command(
+        &ctx.root,
+        &format!("project set {key} (via editor)"),
+        &log_user,
+    );
+    Ok(())
+}
+
+/// Render the editor buffer for a list-typed key: a header with the
+/// stripping rules, followed by one entry per line.
+fn list_editor_buffer(key: &str, entries: &[String]) -> String {
+    let mut buf = String::new();
+    buf.push_str(&format!("# joy project set {key}\n"));
+    buf.push_str("# One entry per line. Lines starting with # and blank lines are ignored.\n");
+    buf.push_str("# Save an empty body (no entries) to clear the list.\n");
+    for entry in entries {
+        buf.push_str(entry);
+        buf.push('\n');
+    }
+    buf
+}
+
+/// Read the current scalar value for `key` as plain text. Returns
+/// empty string for unset Option fields and for `docs.*` overrides
+/// at the built-in default (callers can tell the user this is the
+/// default by inspecting the value, but for editor pre-population
+/// the empty case is fine).
+fn current_scalar_value(project: &Project, key: &str) -> String {
+    match key {
+        "name" => project.name.clone(),
+        "acronym" => project.acronym.clone().unwrap_or_default(),
+        "description" => project.description.clone().unwrap_or_default(),
+        "language" => project.language.clone(),
+        "forge" => project.forge.clone().unwrap_or_default(),
+        "docs.architecture" => project.docs.architecture.clone().unwrap_or_default(),
+        "docs.vision" => project.docs.vision.clone().unwrap_or_default(),
+        "docs.contributing" => project.docs.contributing.clone().unwrap_or_default(),
+        _ => String::new(),
+    }
+}
+
+fn editor_file_suffix(key: &str) -> String {
+    let normalized: String = key
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    format!("project-{normalized}.txt")
 }
 
 /// Extract the path field from a release.version-files entry. Each
