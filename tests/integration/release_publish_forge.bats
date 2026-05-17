@@ -5,7 +5,12 @@
 load setup
 
 setup_publish_repo() {
-    setup_human_auth
+    # Skip joy auth init on purpose: with no registered members the
+    # guard runs permissive and lets `joy release record` create the
+    # tag without a Manage capability. release_record_empty.bats uses
+    # the same shape. We only care about the publish-time forge
+    # resolution here, not about gating.
+    joy init --name "Test" >/dev/null
     git add -A
     git commit -m "init [no-item]" --quiet
     joy release record patch </dev/null >/dev/null
