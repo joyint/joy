@@ -1,0 +1,28 @@
+id: JOY-019C-E2
+title: 'joy release bump: actionable error on version mismatch and --adopt to sync from files'
+type: bug
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-17T17:43:39.049230655Z
+updated: 2026-05-17T17:53:23.995923338Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-05-17T17:44:07.415239938Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-17T17:53:23.995923338Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'joy release bump today fails with ''no occurrences of X.Y.Z found in configured files'' when a file''s version drifts away from joy''s release ledger (common when a scaffolded template starts at 0.1.0, npm version was run by hand, etc.). The error does not say which file has what, and there is no built-in way to adopt the file''s version as the new baseline. Two changes: (1) vertical, narrow-terminal-friendly error format that lists each file''s actually-detected version next to the expected one (heuristic: ''version = "X.Y.Z"'' or ''"version": "X.Y.Z"'' line, else first quoted SemVer in the file); (2) new --adopt flag on ''joy release bump'' that detects the version in the configured files and uses it as the baseline. Requires all configured files to agree on the detected version; errors clearly when they disagree or none is detectable.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-17T17:44:06.618900569Z
+  text: 'Plan: (1) Add detect_version(path) helper to joy-cli/src/version_bump.rs: try the line-anchored package-version patterns first (''version = "X.Y.Z"'' for Cargo.toml-style, ''"version": "X.Y.Z"'' for package.json-style), fall back to the first quoted SemVer in the file. Returns Option<String>. (2) Add --adopt flag to BumpArgs. When set: scan all configured files, collect distinct detected versions; require exactly one; on success use it as the baseline for resolve_version (instead of the ledger / git tag). Errors when files disagree or no version is detectable. (3) Rewrite the bump error path with the agreed vertical layout: per-file ''expected/found'' block then ''Error: version mismatch (N of M files)'' then a ''Fix options:'' section with ''joy release bump --adopt'' and ''joy release record <detected>''. The ''detected'' value comes from the same detection helper (use the first file''s detected version, or omit the record hint if detection failed everywhere). (4) Bats tests: --adopt happy path, --adopt with disagreeing files, --adopt with no detectable version, mismatch error includes the detected version, mismatch error stays clean when detection fails. Vertical format keeps every line under ~55 chars on narrow terminals.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-17T17:53:22.499270448Z
+  text: '[x] joy-cli/src/version_bump.rs: detect_version(path) helper with line-anchored TOML ''version = "X.Y.Z"'' / JSON ''"version": "X.Y.Z"'' pass then fallback to the first quoted SemVer anywhere in the file. SemVer check covers MAJOR.MINOR.PATCH plus optional -prerelease and +build suffix; rejects 2-component versions and unquoted strings. 7 unit tests. [x] joy-cli/src/commands/release.rs: --adopt flag on BumpArgs. New adopt_baseline() scans every configured file, requires exactly one distinct detected version. Clear errors when files disagree (lists each file''s detected version) or when none can be detected. resolve_version() gained a baseline_override parameter for the override flow. [x] Mismatch error path rewritten via version_mismatch_error(): per-file ''expected/found'' block printed to stdout before the Error: line; ''Fix options:'' section names ''joy release bump --adopt'' and ''joy release record <detected-or-X.Y.Z>''. Every emitted line stays under 60 chars on narrow terminals (verified by a bats width test). [x] 6 bats tests in release_bump_adopt.bats: --adopt happy path, --adopt disagreement, --adopt no-detection, mismatch error with detected version, mismatch error without detection, line-width regression. [x] just check green: 339 unit + 443 bats + 2 cmd snapshot.'

@@ -43,6 +43,13 @@ enum ReleaseCommand {
 struct BumpArgs {
     /// Version bump: patch (default), minor, major, or an explicit X.Y.Z
     bump: Option<String>,
+    /// Use the version currently written in the configured files as
+    /// the baseline, instead of the latest release / git tag. Useful
+    /// when a scaffolded template was published with a non-default
+    /// version (e.g. Next.js projects start at 0.1.0) or when an
+    /// out-of-band `npm version` ran. All files must agree.
+    #[arg(long)]
+    adopt: bool,
 }
 
 #[derive(clap::Args)]
@@ -95,15 +102,32 @@ pub fn run(args: ReleaseArgs) -> Result<()> {
 
 /// Compute the new version from the bump argument and the previous
 /// release (or latest tag). Deterministic: `bump` and `record` call
-/// this with the same argument and land on the same version.
-fn resolve_version(root: &std::path::Path, arg: Option<&str>) -> Result<(String, String)> {
-    let previous = releases::latest_version(root)?.or_else(|| {
-        joy_core::vcs::default_vcs()
-            .latest_version_tag(root)
-            .ok()
-            .flatten()
-    });
-    let current = previous.as_deref().unwrap_or("v0.0.0").to_string();
+/// this with the same argument and land on the same version. When
+/// `baseline_override` is set, that value replaces the ledger / tag
+/// lookup (used by `joy release bump --adopt`).
+fn resolve_version(
+    root: &std::path::Path,
+    arg: Option<&str>,
+    baseline_override: Option<String>,
+) -> Result<(String, String)> {
+    let current = match baseline_override {
+        Some(v) => {
+            if v.starts_with('v') {
+                v
+            } else {
+                format!("v{v}")
+            }
+        }
+        None => {
+            let previous = releases::latest_version(root)?.or_else(|| {
+                joy_core::vcs::default_vcs()
+                    .latest_version_tag(root)
+                    .ok()
+                    .flatten()
+            });
+            previous.as_deref().unwrap_or("v0.0.0").to_string()
+        }
+    };
 
     let next = match arg {
         Some(v) if looks_like_explicit(v) => {
@@ -135,21 +159,33 @@ fn bump(args: BumpArgs) -> Result<()> {
     let ctx = crate::crypt_session::load_context(None)?;
     ctx.enforce(&Action::CreateRelease, "release")?;
 
-    let (current, next) = resolve_version(&ctx.root, args.bump.as_deref())?;
-    let current_semver = current.strip_prefix('v').unwrap_or(&current);
-    let next_semver = next.strip_prefix('v').unwrap_or(&next);
-
     let version_files = read_version_files(&ctx.root);
     if version_files.is_empty() {
+        let (_, next) = resolve_version(&ctx.root, args.bump.as_deref(), None)?;
         println!("No release.version-files configured in project.yaml -- nothing to patch.");
         println!("Next version will be {next}.");
         return Ok(());
     }
 
+    let baseline_override = if args.adopt {
+        Some(adopt_baseline(&ctx.root, &version_files)?)
+    } else {
+        None
+    };
+
+    let (current, next) = resolve_version(&ctx.root, args.bump.as_deref(), baseline_override)?;
+    let current_semver = current.strip_prefix('v').unwrap_or(&current);
+    let next_semver = next.strip_prefix('v').unwrap_or(&next);
+
     let results = version_bump::bump_all(&ctx.root, &version_files, current_semver, next_semver)?;
 
     println!("{} -> {}", color::label(&current), color::id(&next));
-    let mut total = 0usize;
+    let total: usize = results.iter().map(|r| r.replacements).sum();
+
+    if total == 0 {
+        return Err(version_mismatch_error(&ctx.root, &results, current_semver));
+    }
+
     for r in &results {
         let rel = r.path.strip_prefix(&ctx.root).unwrap_or(&r.path);
         let marker = if r.replacements == 0 { "!" } else { " " };
@@ -159,18 +195,113 @@ fn bump(args: BumpArgs) -> Result<()> {
             r.replacements,
             if r.replacements == 1 { "" } else { "s" }
         );
-        total += r.replacements;
-    }
-    if total == 0 {
-        anyhow::bail!(
-            "no occurrences of {current_semver} found in configured files\n  = help: check release.version-files and the old version string",
-        );
     }
     println!(
         "\nNext: run lockfile refresh if needed, then `joy release record {}`.",
         args.bump.as_deref().unwrap_or("patch")
     );
     Ok(())
+}
+
+/// Scan the configured files for the version they currently contain
+/// (via `version_bump::detect_version`) and return that as the new
+/// baseline for `--adopt`. All files must agree; files where detection
+/// fails are listed but tolerated as long as at least one file
+/// produces a version. Failure modes get their own clear error.
+fn adopt_baseline(
+    root: &std::path::Path,
+    version_files: &[version_bump::VersionFile],
+) -> Result<String> {
+    let mut by_version: std::collections::BTreeMap<String, Vec<std::path::PathBuf>> =
+        std::collections::BTreeMap::new();
+    let mut undetectable: Vec<std::path::PathBuf> = Vec::new();
+
+    for vf in version_files {
+        let pattern = root.join(&vf.path);
+        let paths: Vec<_> = glob::glob(&pattern.to_string_lossy())
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(|r| r.ok())
+            .collect();
+        for path in paths {
+            match version_bump::detect_version(&path) {
+                Some(v) => by_version.entry(v).or_default().push(path),
+                None => undetectable.push(path),
+            }
+        }
+    }
+
+    match by_version.len() {
+        0 => {
+            let mut msg =
+                String::from("--adopt: could not detect a version in any configured file");
+            for path in &undetectable {
+                let rel = path.strip_prefix(root).unwrap_or(path);
+                msg.push_str(&format!("\n  ! {}", rel.display()));
+            }
+            msg.push_str("\n  = help: pass an explicit X.Y.Z to bump instead");
+            anyhow::bail!("{msg}")
+        }
+        1 => {
+            let v = by_version.into_keys().next().unwrap();
+            Ok(v)
+        }
+        _ => {
+            let mut msg = String::from("--adopt: configured files disagree on the current version");
+            for (v, files) in &by_version {
+                for path in files {
+                    let rel = path.strip_prefix(root).unwrap_or(path);
+                    msg.push_str(&format!("\n  {} -> {}", rel.display(), v));
+                }
+            }
+            msg.push_str("\n  = help: align the files manually or pass an explicit X.Y.Z");
+            anyhow::bail!("{msg}")
+        }
+    }
+}
+
+/// Build the multi-line "version mismatch" error printed when
+/// `joy release bump` finds zero matches. The block per file shows
+/// what joy expected versus what it actually detected; the closing
+/// section names the two recovery commands. Designed for narrow
+/// terminals -- every emitted line stays short.
+fn version_mismatch_error(
+    root: &std::path::Path,
+    results: &[version_bump::BumpResult],
+    expected: &str,
+) -> anyhow::Error {
+    // Per-file diagnostic goes to stdout above the Error: line.
+    let mut detected_any: Option<String> = None;
+    println!();
+    for r in results {
+        let rel = r.path.strip_prefix(root).unwrap_or(&r.path);
+        let detected = version_bump::detect_version(&r.path);
+        if detected_any.is_none() {
+            detected_any = detected.clone();
+        }
+        println!("  ! {}", rel.display());
+        println!("      expected: {expected}");
+        match detected {
+            Some(v) => println!("      found:    {v}"),
+            None => println!("      found:    (no version detected)"),
+        }
+    }
+    println!();
+
+    let n = results.len();
+    let plural = if n == 1 { "" } else { "s" };
+    let mut msg = format!("version mismatch ({n} of {n} file{plural})\n\nFix options:");
+    msg.push_str("\n\n  joy release bump --adopt");
+    msg.push_str("\n      adopt the file's detected version");
+    if let Some(v) = detected_any {
+        msg.push_str(&format!("\n\n  joy release record {v}"));
+        msg.push_str("\n      skip bump, record at the detected version");
+    } else {
+        msg.push_str("\n\n  joy release record <X.Y.Z>");
+        msg.push_str("\n      skip bump, record at an explicit version");
+    }
+    anyhow::anyhow!("{msg}")
 }
 
 fn record(args: RecordArgs) -> Result<()> {
@@ -180,7 +311,7 @@ fn record(args: RecordArgs) -> Result<()> {
     let project = store::load_project(&ctx.root)?;
     let acronym = project.acronym.as_deref().unwrap_or("JOY");
 
-    let (previous, version) = resolve_version(&ctx.root, args.bump.as_deref())?;
+    let (previous, version) = resolve_version(&ctx.root, args.bump.as_deref(), None)?;
     let previous_opt = if previous == "v0.0.0" {
         None
     } else {
