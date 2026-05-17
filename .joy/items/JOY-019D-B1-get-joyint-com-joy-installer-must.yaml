@@ -1,0 +1,15 @@
+id: JOY-019D-B1
+title: get.joyint.com/joy installer must write the axoupdater install receipt
+type: bug
+status: new
+priority: medium
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-17T19:22:26.731234646Z
+updated: 2026-05-17T19:22:26.731234646Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'Users who install joy via the official ''curl -fsSL get.joyint.com/joy | sh'' currently get ''install receipt missing (managed by another installer)'' from ''joy update --check'', and ''joy update'' refuses to run. Root cause: the hand-rolled installer script served at get.joyint.com/joy downloads the release binary into ~/.local/bin but does not write the cargo-dist install receipt that axoupdater (via AxoUpdater::new_for("joy-cli").load_receipt()) expects at ~/.config/joy-cli/joy-cli-receipt.json. The receipt is the gate that distinguishes joy-managed installs from brew / cargo-install / distro-package installs (dist-workspace.toml lines 33-37), and our own installer accidentally fails it. Fix: after the binary is in place, write the same JSON shape that cargo-dist''s auto-generated installer would produce -- minimally version, install_prefix, source_repo, binaries -- so axoupdater can pick it up on the next ''joy update'' run. The installer script lives in a separate repo (likely joyint/website or joyint/get); confirm location before editing. Add a smoke test that, after running the installer, ''joy update --check'' reports ''up to date'' (or ''update available'') instead of ''install receipt missing''.'
