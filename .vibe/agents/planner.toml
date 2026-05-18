@@ -1,0 +1,6 @@
+[agent]
+display_name = "planner"
+description = "Break down work, scope items, prioritize, and estimate effort"
+safety = "medium"
+agent_type = "plan"
+enabled_tools = ["read", "search", "grep"]

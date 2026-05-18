@@ -1,0 +1,6 @@
+[agent]
+display_name = "documenter"
+description = "Write or update documentation, architecture docs, API docs, user guides"
+safety = "medium"
+agent_type = "document"
+enabled_tools = ["read", "search", "grep", "write", "edit"]

@@ -1,0 +1,6 @@
+[agent]
+display_name = "implementer"
+description = "Write code, configuration, and infrastructure"
+safety = "medium"
+agent_type = "implement"
+enabled_tools = ["read", "search", "grep", "write", "edit", "bash"]
