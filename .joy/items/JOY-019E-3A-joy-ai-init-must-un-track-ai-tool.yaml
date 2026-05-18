@@ -1,0 +1,25 @@
+id: JOY-019E-3A
+title: joy ai init must un-track AI tool files if they slipped into git
+type: bug
+status: new
+priority: medium
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-18T05:31:13.976914Z
+updated: 2026-05-18T05:31:13.976914Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: |-
+  joy ai init writes .claude/, .vibe/, AGENTS.md, .github/copilot/ and friends into the joy-managed gitignore block. If any of those paths were committed earlier (by an older joy-init that lacked the gitignore block, or because they landed on a different branch and got merged), .gitignore does not retroactively un-track them. They stay versioned, show up as modified when AI tools rewrite them, and leak into commits even though Joy's intent is the opposite.
+
+  Repro:
+    cd a joy project where .vibe/ was once committed
+    rm -rf .vibe && joy ai init
+    joy ai init recreates .vibe/, .gitignore lists it, but git status still tracks it.
+
+  Fix: at the end of joy ai init / joy ai update, for each path in the managed gitignore block, run git ls-files --error-unmatch <path>; if it returns 0 (tracked), run git rm --cached -r <path> and print a one-line notice so the user knows a follow-up commit is needed.
+
+  Related (already closed): JOY-013E-BC (gitignore additive), JOY-00D1-3C (joy-owned vs user-owned).
