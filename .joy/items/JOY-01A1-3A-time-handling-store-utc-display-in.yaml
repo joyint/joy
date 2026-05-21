@@ -1,0 +1,15 @@
+id: JOY-01A1-3A
+title: 'Time handling: store UTC, display in configured or local timezone'
+type: decision
+status: closed
+priority: high
+capabilities:
+- conceive
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-21T22:04:45.458857Z
+updated: 2026-05-21T22:05:32.613508Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-05-21T22:05:32.613508Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Ecosystem-wide convention for joy-core, joy, and jyn. Storage: all timestamps and datetimes are stored as UTC in ISO-8601 (with Z); this is already the joy-core convention (Item created/updated and comment dates are DateTime<Utc>). Calendar dates without a time (e.g. a task due date) are timezone-independent and stored as a plain date. Display: times are rendered in a timezone resolved as (1) a new timezone config key (global and project, an IANA name such as Europe/Berlin), else (2) the machine local timezone. Today both joy-cli and jyn-cli hardcode machine local via with_timezone(&Local)/Local::now() with no config override; this decision adds the config key and a shared display helper in joy-core that both CLIs use, replacing the ad-hoc conversions. Recurring tasks that carry a time-of-day must anchor their recurrence in a named zone (iCal DTSTART;TZID), not bare UTC, so a local wall-clock time such as 09:00 stays stable across DST. jyn due dates, recurrence, and reminders build on this; relates to the jyn recurrence/time decision.'
