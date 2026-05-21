@@ -12,8 +12,10 @@ load setup
 
     # Move items to distinct statuses. joy add lands in `new`, then transitions:
     # new -> open -> in-progress -> review -> closed.
-    local ids
-    mapfile -t ids < <(joy ls --type task --all --json | jq -r '.data.items[].id')
+    # Portable array read: macOS ships bash 3.2, which lacks `mapfile`.
+    local ids=()
+    while IFS= read -r line; do ids+=("$line"); done \
+        < <(joy ls --type task --all --json | jq -r '.data.items[].id')
     [ "${#ids[@]}" -eq 4 ]
     # ids[0] is the most recently added.
     joy status "${ids[3]}" open >/dev/null
