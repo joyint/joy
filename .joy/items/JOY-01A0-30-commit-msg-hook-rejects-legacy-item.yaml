@@ -1,0 +1,15 @@
+id: JOY-01A0-30
+title: commit-msg hook rejects legacy item IDs after an acronym change
+type: bug
+status: new
+priority: medium
+capabilities:
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-21T20:21:20.839260Z
+updated: 2026-05-21T20:21:20.839260Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'When a project changes its acronym via joy project set acronym, existing items keep their old-acronym IDs (e.g. JOT-XXXX after renaming the project to acronym JYN). The generated .joy/hooks/commit-msg validates commit messages only against the single current acronym read from project.yaml, so commits that reference still-valid legacy items are rejected and forced onto a [no-item] workaround. Fix: project.yaml should record previous acronyms (e.g. a previous-acronyms / acronym-aliases list, appended automatically when joy project set acronym changes it), and the commit-msg hook should accept any of the current plus previous acronyms as a valid item reference. Discovered in the jyn project (current acronym JYN, many legacy JOT- items). Current workaround in jyn: commit with [no-item] plus the legacy item ID in the message for traceability.'
