@@ -26,4 +26,6 @@ pub mod releases;
 pub mod security_md;
 pub mod store;
 pub mod templates;
+#[cfg(feature = "tutorial")]
+pub mod tutorial;
 pub mod vcs;

@@ -148,10 +148,7 @@ pub fn run(args: ShowArgs) -> Result<()> {
 
     if let Some(ref desc) = item.description {
         println!();
-        print!(
-            "{}",
-            crate::commands::tutorial::render_markdown(desc.trim_end())
-        );
+        print!("{}", joy_core::tutorial::render_markdown(desc.trim_end()));
     }
 
     if !item.comments.is_empty() {
@@ -178,8 +175,7 @@ pub fn run(args: ShowArgs) -> Result<()> {
             println!();
             let indent = "  ";
             let inner_width = w.saturating_sub(indent.len());
-            let body =
-                crate::commands::tutorial::render_markdown_with_width(&comment.text, inner_width);
+            let body = joy_core::tutorial::render_markdown_with_width(&comment.text, inner_width);
             for line in body.lines() {
                 if line.is_empty() {
                     println!();

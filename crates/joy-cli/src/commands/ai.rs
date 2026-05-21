@@ -155,7 +155,8 @@ fn ai_tutorial(args: AiTutorialArgs) -> anyhow::Result<()> {
     // runner that wires stdio through a PTY), spawning `less` would
     // block the runner waiting for keyboard input. A human who wants
     // scrolling can pipe to their own pager.
-    crate::commands::tutorial::run_markdown(AI_TUTORIAL, args.interactive, false)
+    joy_core::tutorial::run_markdown(AI_TUTORIAL, args.interactive, false)?;
+    Ok(())
 }
 
 #[cfg(test)]

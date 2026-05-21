@@ -1,0 +1,30 @@
+id: JOY-019F-50
+title: Extract tutorial markdown renderer into joy-core for cross-CLI reuse
+type: rework
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-21T14:12:27.160309Z
+updated: 2026-05-21T14:34:57.942048Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-05-21T14:22:21.580335Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-21T14:34:57.828531Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-21T14:34:57.942048Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: Move the tutorial and markdown rendering helpers (run_markdown, render_markdown, and the termimad-based skin selection) out of joy-cli into joy-core so jyn-cli and future CLIs can reuse them instead of duplicating. joy-cli keeps its tutorial and show wiring but calls into joy-core. Add the termimad dependency to joy-core and run downstream just check across all dependents per the contributing guide. Prerequisite for the jyn tutorial command (JYN-0005).
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-21T14:22:21.681743Z
+  text: 'Plan: Extract tutorial/markdown rendering and interactive browsing from joy-cli into a new joy-core module tutorial, gated behind a default-off cargo feature tutorial (optional deps termimad, inquire, terminal_size) so non-CLI consumers like joyint-server keep a lean joy-core. Move render_markdown, render_markdown_with_width, run_markdown, print_full pager logic, parse_chapters, run_interactive, chapter_loop plus a local terminal_width. Functions return std::io::Result to avoid pulling anyhow into joy-core. joy-cli enables joy-core/tutorial; its commands/tutorial.rs keeps only the embedded Tutorial.md, the drift test, and thin wrappers calling joy_core::tutorial. ai.rs and show.rs switch to joy_core::tutorial. Verify with cargo build/test in joy and downstream just check.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-21T14:34:57.733103Z
+  text: '[x] Extracted tutorial/markdown rendering and interactive browsing into joy_core::tutorial behind a default-off feature tutorial (optional deps termimad, inquire, terminal_size). Verified joy-core stays lean without the feature: termimad absent from the default dependency tree, present only with --features tutorial. joy-cli now enables the feature and its commands/tutorial.rs is a thin wrapper; ai.rs and show.rs call joy_core::tutorial; removed the now-unused direct termimad/inquire deps from joy-cli. cargo fmt --check and clippy --workspace -D warnings clean; joy-core 332 unit tests pass and the joy-cli tutorial drift tests pass; downstream jyn builds against the change.'
