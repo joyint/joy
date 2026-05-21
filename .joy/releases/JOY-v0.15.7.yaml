@@ -1,0 +1,14 @@
+version: v0.15.7
+date: 2026-05-21
+previous: v0.15.6
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 8
+  items: 2
+items:
+  reworks:
+  - id: JOY-019F-50
+    title: Extract tutorial markdown renderer into joy-core for cross-CLI reuse
+  decisions:
+  - id: JOY-01A1-3A
+    title: 'Time handling: store UTC, display in configured or local timezone'
