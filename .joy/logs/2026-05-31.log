@@ -50,3 +50,4 @@
 2026-05-31T21:25:26.227Z JOY-01A8-2E comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-05-31T21:25:26.289Z JOY-01A8-2E item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-05-31T21:25:26.514Z JOY-01A8-2E item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-05-31T21:38:07.932Z v0.15.8 release.created [horst.schwarz@joydev.com]

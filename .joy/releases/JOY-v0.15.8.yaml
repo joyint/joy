@@ -1,0 +1,20 @@
+version: v0.15.8
+date: 2026-05-31
+previous: v0.15.7
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 38
+  items: 5
+items:
+  tasks:
+  - id: JOY-01A4-5B
+    title: 'CI: add windows-latest to the test/build matrix'
+  - id: JOY-01A6-0D
+    title: 'CI: run bats integration tests on ubuntu'
+  - id: JOY-01A8-2E
+    title: 'CI: remove redundant build job; fix branch-protection contexts after matrix rename'
+  bugs:
+  - id: JOY-01A2-96
+    title: 'Windows: auth fails with ''cannot determine state directory'''
+  - id: JOY-01A5-CA
+    title: trycmd help.toml snapshot fails on Windows (joy vs joy.exe in Usage)
