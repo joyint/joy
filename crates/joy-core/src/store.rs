@@ -96,15 +96,26 @@ pub fn write_yaml_preserve<T: Serialize>(path: &Path, value: &T) -> Result<(), J
 }
 
 /// Returns the path to the personal global config: ~/.config/joy/config.yaml
+/// (Windows: %APPDATA%\joy\config.yaml).
 pub fn global_config_path() -> PathBuf {
-    let config_dir = std::env::var("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            dirs_path_home()
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join(".config")
-        });
-    config_dir.join("joy").join("config.yaml")
+    config_base_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("joy")
+        .join("config.yaml")
+}
+
+/// Personal config base dir: `$XDG_CONFIG_HOME`, else on Windows `%APPDATA%`
+/// (fallback `%USERPROFILE%\AppData\Roaming`), else on Unix `$HOME/.config`.
+fn config_base_dir() -> Option<PathBuf> {
+    resolve_base_dir(
+        std::env::var("XDG_CONFIG_HOME").ok(),
+        std::env::var("APPDATA").ok(),
+        std::env::var("HOME").ok(),
+        std::env::var("USERPROFILE").ok(),
+        cfg!(windows),
+        "Roaming",
+        ".config",
+    )
 }
 
 /// Returns the path to the personal per-project config: .joy/config.yaml
@@ -121,8 +132,154 @@ pub fn project_defaults_path(root: &Path) -> PathBuf {
     joy_dir(root).join(PROJECT_DEFAULTS_FILE)
 }
 
-fn dirs_path_home() -> Option<PathBuf> {
-    std::env::var("HOME").ok().map(PathBuf::from)
+/// Cross-platform base-directory resolver. Pure (no env access) so the
+/// Windows branches are unit-testable on any host OS. See JOY-01A2-96.
+///
+/// `xdg` (the relevant `XDG_*_HOME` value) wins on every platform when set.
+/// On Windows the base is `win_app_data` (`%LOCALAPPDATA%` for state,
+/// `%APPDATA%` for config), falling back to
+/// `<USERPROFILE|HOME>\AppData\<win_fallback>`. On Unix the base is
+/// `<HOME>/<unix_subdir>`. Empty env values are ignored. Returns `None`
+/// only when nothing resolves.
+pub(crate) fn resolve_base_dir(
+    xdg: Option<String>,
+    win_app_data: Option<String>,
+    home: Option<String>,
+    user_profile: Option<String>,
+    is_windows: bool,
+    win_fallback: &str,
+    unix_subdir: &str,
+) -> Option<PathBuf> {
+    let nonempty = |v: Option<String>| v.filter(|s| !s.is_empty());
+
+    if let Some(xdg) = nonempty(xdg) {
+        return Some(PathBuf::from(xdg));
+    }
+
+    if is_windows {
+        if let Some(app_data) = nonempty(win_app_data) {
+            return Some(PathBuf::from(app_data));
+        }
+        let base = nonempty(user_profile).or_else(|| nonempty(home))?;
+        return Some(PathBuf::from(base).join("AppData").join(win_fallback));
+    }
+
+    Some(PathBuf::from(nonempty(home)?).join(unix_subdir))
+}
+
+#[cfg(test)]
+mod platform_dir_tests {
+    use super::*;
+
+    fn s(v: &str) -> Option<String> {
+        Some(v.to_string())
+    }
+
+    #[test]
+    fn xdg_wins_on_all_platforms() {
+        for win in [false, true] {
+            let d = resolve_base_dir(
+                s("/xdg"),
+                s("C:\\AppData"),
+                s("/home/u"),
+                None,
+                win,
+                "Local",
+                ".local/state",
+            );
+            assert_eq!(d, Some(PathBuf::from("/xdg")));
+        }
+    }
+
+    #[test]
+    fn unix_uses_home_subdir() {
+        let state = resolve_base_dir(
+            None,
+            None,
+            s("/home/u"),
+            None,
+            false,
+            "Local",
+            ".local/state",
+        );
+        assert_eq!(state, Some(PathBuf::from("/home/u/.local/state")));
+        let cfg = resolve_base_dir(None, None, s("/home/u"), None, false, "Roaming", ".config");
+        assert_eq!(cfg, Some(PathBuf::from("/home/u/.config")));
+    }
+
+    #[test]
+    fn windows_uses_app_data() {
+        let state = resolve_base_dir(
+            None,
+            s("C:\\Users\\u\\AppData\\Local"),
+            None,
+            s("C:\\Users\\u"),
+            true,
+            "Local",
+            ".local/state",
+        );
+        assert_eq!(state, Some(PathBuf::from("C:\\Users\\u\\AppData\\Local")));
+        let cfg = resolve_base_dir(
+            None,
+            s("C:\\Users\\u\\AppData\\Roaming"),
+            None,
+            s("C:\\Users\\u"),
+            true,
+            "Roaming",
+            ".config",
+        );
+        assert_eq!(cfg, Some(PathBuf::from("C:\\Users\\u\\AppData\\Roaming")));
+    }
+
+    #[test]
+    fn windows_falls_back_to_user_profile_then_home() {
+        let via_profile = resolve_base_dir(
+            None,
+            None,
+            None,
+            s("C:\\Users\\u"),
+            true,
+            "Local",
+            ".local/state",
+        );
+        assert_eq!(
+            via_profile,
+            Some(PathBuf::from("C:\\Users\\u").join("AppData").join("Local"))
+        );
+        let via_home = resolve_base_dir(
+            None,
+            None,
+            s("C:\\Users\\u"),
+            None,
+            true,
+            "Roaming",
+            ".config",
+        );
+        assert_eq!(
+            via_home,
+            Some(
+                PathBuf::from("C:\\Users\\u")
+                    .join("AppData")
+                    .join("Roaming")
+            )
+        );
+    }
+
+    #[test]
+    fn empty_values_ignored_and_none_when_unresolvable() {
+        assert_eq!(
+            resolve_base_dir(s(""), s(""), s(""), s(""), false, "Local", ".local/state"),
+            None
+        );
+        assert_eq!(
+            resolve_base_dir(s(""), s(""), s(""), s(""), true, "Local", ".local/state"),
+            None
+        );
+        assert_eq!(
+            resolve_base_dir(None, None, None, None, true, "Roaming", ".config"),
+            None
+        );
+    }
 }
 
 /// Recursively merge `overlay` into `base`. Object keys are merged; all other
