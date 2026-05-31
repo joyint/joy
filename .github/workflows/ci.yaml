@@ -82,7 +82,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: joy
-      - run: cargo test --workspace
+      # --no-fail-fast: run every test binary even if an earlier one fails,
+      # so a single CI run surfaces all platform-specific failures at once
+      # (important for the slow windows-latest leg). See JOY-01A4-5B.
+      - run: cargo test --workspace --no-fail-fast
         working-directory: joy
 
   build:
