@@ -132,6 +132,7 @@ doctor:
     cargo --list 2>/dev/null | grep -q 'llvm-cov' && echo "  cargo-llvm-cov: ok" || opt "cargo-llvm-cov" "cargo install cargo-llvm-cov"
     cargo --list 2>/dev/null | grep -q watch    && echo "  cargo-watch: ok"    || opt "cargo-watch" "cargo install cargo-watch"
     command -v bats          >/dev/null && ok bats bats             || miss "bats (pacman -S bats)"
+    command -v jq            >/dev/null && ok jq jq                 || miss "jq (pacman -S jq)"
     command -v gh            >/dev/null && ok gh "gh (GitHub CLI)" || opt "gh" "https://cli.github.com"
 
 # Install cargo tools for development
