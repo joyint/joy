@@ -1,0 +1,27 @@
+id: JOY-01A6-0D
+title: 'CI: run bats integration tests on ubuntu'
+type: task
+status: in-progress
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-31T21:00:05.119386808Z
+updated: 2026-05-31T21:03:30.034713012Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-05-31T21:00:28.323537599Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  The 68 bats integration tests under tests/integration/*.bats (run locally by 'just test-int', part of 'just check') are NOT executed in GitHub CI -- ci.yaml only runs 'cargo test --workspace'. So 'green CI' currently does not cover the CLI integration suite at all.
+
+  Add a CI job that installs bats-core and runs the bats suite on ubuntu-latest: build the joy-cli debug binary (with fast-kdf for speed, as 'just test-int' does), install bats, run 'bats tests/integration/*.bats' (or 'just test-int'). Keep the joyint/crypt sibling checkout like the other jobs. The bats setup helper relies on bash, git, mktemp, sed and util-linux 'script' (PTY) -- all present on ubuntu-latest.
+
+  Acceptance: a green ubuntu bats job that actually executes the integration suite. Windows bats coverage is tracked separately (bats needs a bash env and several tests touch platform-specific paths/TTY/permissions).
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-31T21:03:30.034712389Z
+  text: '[x] Added an ''integration'' CI job (ubuntu-latest) to .github/workflows/ci.yaml: clones joyint/crypt sibling, installs bats via apt, builds joy-cli with --features fast-kdf, runs ''bats tests/integration/*.bats''. The setup helper finds the binary at target/debug/joy. Verified locally: bats auth.bats (72 ok) and ai_tutorial.bats green; YAML validates; jobs now fmt/lint/test/integration/build. Windows bats coverage tracked separately as JOY-01A7-35 (depends on this).'

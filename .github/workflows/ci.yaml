@@ -93,6 +93,34 @@ jobs:
       - run: cargo test --workspace --no-fail-fast
         working-directory: joy
 
+  integration:
+    name: Integration (bats)
+    runs-on: ubuntu-latest
+    needs: fmt
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: joy
+      - uses: actions/checkout@v4
+        with:
+          repository: joyint/crypt
+          path: crypt
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: joy
+          cache-on-failure: true
+      - name: Install bats
+        run: sudo apt-get update && sudo apt-get install -y bats
+      # The bats suite drives the debug joy binary built with fast-kdf
+      # (minimal Argon2id) for speed, matching `just test-int`. The
+      # setup helper finds it at target/debug/joy. Windows coverage is
+      # tracked separately (JOY-01A7-35).
+      - run: cargo build -p joy-cli --features fast-kdf
+        working-directory: joy
+      - run: bats tests/integration/*.bats
+        working-directory: joy
+
   build:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
