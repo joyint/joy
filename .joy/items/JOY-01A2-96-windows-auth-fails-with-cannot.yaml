@@ -11,7 +11,7 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-31T17:57:33.127856336Z
-updated: 2026-05-31T19:08:28.004716370Z
+updated: 2026-05-31T19:18:42.551025504Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-05-31T18:53:43.892141364Z
@@ -55,3 +55,6 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-05-31T19:08:28.004715734Z
   text: 'Correction to the previous result comment: when I first posted it, ''just check'' had actually FAILED on fmt-check (code was not rustfmt-formatted) -- so that ''exit 0'' claim was premature/incorrect. I have since run ''just fmt'', then ''re-ran just check'' which now genuinely passes: fmt clean, clippy -D warnings clean, all test suites ok (joy-core 211 passed, 0 failed; plus 24+6+27+24 across other suites), exit 0. The 5 new store::platform_dir_tests pass when run by name. Apologies for the inaccurate prior statement; this comment is the accurate record.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-31T19:18:42.551023930Z
+  text: '[x] Added an end-to-end integration test (crates/joy-core/tests/platform_state_dir.rs, its own test binary so its env mutation cannot race the in-src XDG test). It clears XDG_STATE_HOME and points HOME+LOCALAPPDATA at a temp dir, then does a real save/load/remove session roundtrip through the platform-NATIVE branch of dirs_state_dir() and asserts the file lands under the temp base (guards the silent-fallback-to-''.'' regression). On windows-latest CI this will exercise the %LOCALAPPDATA% path with cfg!(windows) + real backslash I/O; on Unix it covers $HOME/.local/state. Note: the pre-existing save_load_roundtrip unit test only covers the XDG branch (identical on all platforms), so this fills the native-branch gap. Branch fix/JOY-01A2-96-windows-paths: commit 0802a82 (fix+unit tests) + 4cb1c3d (integration test). just check = exit 0, 6 suites green, 0 failures. Real Windows verification still requires a windows-latest CI job (no such job exists yet -- ci.yaml is ubuntu-only); filing that next.'
