@@ -1,7 +1,7 @@
 id: JOY-01A8-2E
 title: 'CI: remove redundant build job; fix branch-protection contexts after matrix rename'
 type: task
-status: in-progress
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -10,10 +10,14 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-31T21:19:17.830679026Z
-updated: 2026-05-31T21:22:18.708808008Z
+updated: 2026-05-31T21:25:26.508727961Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-05-31T21:19:38.040009939Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-31T21:25:26.283413083Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-31T21:25:26.508727961Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Two coupled CI cleanups:
@@ -27,3 +31,6 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-05-31T21:22:18.708807271Z
   text: '[x] Removed the redundant ''build'' job from ci.yaml (cargo test already compiles the workspace; release binaries come from cargo-dist release.yml). Jobs now: fmt, lint, test (ubuntu+windows matrix), integration (bats). YAML validated. Next: update main branch-protection required contexts from [Format, Lint, Test, Build] to [Format, Lint, Test (ubuntu-latest), Test (windows-latest), Integration (bats)] so PRs are no longer permanently BLOCKED by stale context names.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-31T21:25:26.221847682Z
+  text: '[x] Branch protection on main updated: required status checks are now Format, Lint, Test (ubuntu-latest), Test (windows-latest), Integration (bats) (strict=true kept). build job removed. PR #2 merged into main (merge commit a8de1f2); branch deleted. Future PRs no longer blocked by stale Test/Build contexts.'
