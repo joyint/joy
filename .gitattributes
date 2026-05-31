@@ -8,3 +8,11 @@
 .joy/config.defaults.yaml merge=joy-yaml
 .joy/logs/*.log merge=union
 ### joy:end
+
+# Embedded build assets: compiled into the binary via include_str! and
+# generated verbatim into users' AI-tool files. Force LF so the bytes are
+# identical on every platform. Without this, a Windows checkout uses CRLF,
+# which breaks the frontmatter assertions in ai_templates tests and would
+# emit CRLF into generated files. See JOY-01A5-CA.
+crates/joy-core/data/** text eol=lf
+crates/joy-core/templates/** text eol=lf
