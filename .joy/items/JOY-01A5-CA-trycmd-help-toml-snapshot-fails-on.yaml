@@ -1,7 +1,7 @@
 id: JOY-01A5-CA
 title: trycmd help.toml snapshot fails on Windows (joy vs joy.exe in Usage)
 type: bug
-status: in-progress
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -11,10 +11,14 @@ capabilities:
 effort: 1
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-31T19:40:34.528617496Z
-updated: 2026-05-31T19:50:13.637993847Z
+updated: 2026-05-31T21:08:44.828234941Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-05-31T19:49:59.907551796Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-31T21:08:42.460414747Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-31T21:08:44.828234941Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   The trycmd snapshot crates/joy-cli/tests/cmd/help.toml hardcodes 'Usage: joy [OPTIONS] [COMMAND]'. On Windows the binary is joy.exe, so clap prints 'Usage: joy.exe ...' which trycmd normalizes to 'joy[EXE] ...'. The snapshot (authored on Linux) has plain 'joy', so cli_tests fails on windows-latest. Pre-existing latent bug, surfaced for the first time by the new Windows CI matrix (JOY-01A4-5B); unrelated to the path fix (JOY-01A2-96).

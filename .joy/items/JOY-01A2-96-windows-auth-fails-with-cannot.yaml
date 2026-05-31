@@ -1,7 +1,7 @@
 id: JOY-01A2-96
 title: 'Windows: auth fails with ''cannot determine state directory'''
 type: bug
-status: open
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -11,7 +11,7 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-31T17:57:33.127856336Z
-updated: 2026-05-31T20:48:34.514941835Z
+updated: 2026-05-31T21:08:38.215362423Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-05-31T18:53:43.892141364Z
@@ -23,6 +23,10 @@ history:
 - date: 2026-05-31T20:45:40.216224014Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 - date: 2026-05-31T20:48:34.514941835Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-31T21:08:35.940035584Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-31T21:08:38.215362423Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   On Windows 11, every auth/session operation fails with 'authentication failed: cannot determine state directory'.

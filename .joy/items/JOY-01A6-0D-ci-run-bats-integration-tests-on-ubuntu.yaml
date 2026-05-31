@@ -1,7 +1,7 @@
 id: JOY-01A6-0D
 title: 'CI: run bats integration tests on ubuntu'
 type: task
-status: in-progress
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -10,10 +10,14 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-31T21:00:05.119386808Z
-updated: 2026-05-31T21:03:30.034713012Z
+updated: 2026-05-31T21:08:49.548699669Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-05-31T21:00:28.323537599Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-31T21:08:47.236279093Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-31T21:08:49.548699669Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   The 68 bats integration tests under tests/integration/*.bats (run locally by 'just test-int', part of 'just check') are NOT executed in GitHub CI -- ci.yaml only runs 'cargo test --workspace'. So 'green CI' currently does not cover the CLI integration suite at all.
