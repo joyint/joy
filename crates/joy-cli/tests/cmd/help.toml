@@ -4,6 +4,6 @@ status.code = 0
 stdout = """
 Terminal-native product management
 
-Usage: joy [OPTIONS] [COMMAND]
+Usage: joy[EXE] [OPTIONS] [COMMAND]
 ...
 """
