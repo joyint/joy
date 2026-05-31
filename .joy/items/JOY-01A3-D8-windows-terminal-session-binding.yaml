@@ -1,0 +1,27 @@
+id: JOY-01A3-D8
+title: 'Windows: terminal-session binding silently inactive on non-Windows-Terminal consoles'
+type: bug
+status: new
+priority: medium
+capabilities:
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-31T18:59:56.722314522Z
+updated: 2026-05-31T18:59:56.722314522Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: |-
+  current_tty() in crates/joy-core/src/auth/session.rs binds a human session to its originating terminal. On Windows it only reads WT_SESSION (Windows Terminal). The libc::ttyname path is behind #[cfg(unix)] and is compiled out on Windows.
+
+  Effect: in any Windows console that does NOT set WT_SESSION (classic conhost, PowerShell launched directly, some VS Code integrated terminals, SSH), current_tty() returns None. Session creation stores tty=None and validation compares None == None, so the session stays valid. Nothing crashes -- but the TTY binding (one session bound to one terminal) is silently a no-op: any process of the same user can reuse the human's file-based session.
+
+  Scope: affects HUMAN sessions only. AI delegated sessions are unaffected (they set tty=None by design and authenticate via the ephemeral key per ADR-033). So this is a security-hardening gap, not a functional blocker.
+
+  Recommendation: replace the WT_SESSION-only Windows path with a stable per-console identifier so the binding has the same strength as Unix ttyname. Options in order of preference:
+  1. Use the Windows console identity (GetConsoleWindow HWND, or the console session id via ProcessIdToSessionId) behind a thin #[cfg(windows)] module; keep WT_SESSION when present. Needs the 'windows' or 'winapi' crate -- document the dependency decision in ADR style.
+  2. If no new dependency is desired, derive a per-terminal id from the parent console PID (weaker, but better than None).
+  3. Explicit fallback policy: when no terminal id resolves, mark the human session non-rebindable or give it a shorter TTL rather than silently unbound.
+
+  Related (informational, not a separate fix): the 0o600 permission tightening in save_session() is behind #[cfg(unix)] and does not apply on Windows; %LOCALAPPDATA% default ACLs are already user-private.

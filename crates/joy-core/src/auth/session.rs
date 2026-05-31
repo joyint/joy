@@ -395,16 +395,19 @@ pub fn project_id_of(project: &crate::model::Project) -> String {
 }
 
 pub(super) fn dirs_state_dir() -> Result<PathBuf, JoyError> {
-    // Use XDG_STATE_HOME or ~/.local/state
-    if let Ok(xdg) = std::env::var("XDG_STATE_HOME") {
-        return Ok(PathBuf::from(xdg));
-    }
-    if let Ok(home) = std::env::var("HOME") {
-        return Ok(PathBuf::from(home).join(".local").join("state"));
-    }
-    Err(JoyError::AuthFailed(
-        "cannot determine state directory".into(),
-    ))
+    // State dir: $XDG_STATE_HOME, else on Windows %LOCALAPPDATA%
+    // (fallback %USERPROFILE%\AppData\Local), else on Unix $HOME/.local/state.
+    // Shared resolver lives in `store` so config and state paths stay in sync.
+    crate::store::resolve_base_dir(
+        std::env::var("XDG_STATE_HOME").ok(),
+        std::env::var("LOCALAPPDATA").ok(),
+        std::env::var("HOME").ok(),
+        std::env::var("USERPROFILE").ok(),
+        cfg!(windows),
+        "Local",
+        ".local/state",
+    )
+    .ok_or_else(|| JoyError::AuthFailed("cannot determine state directory".into()))
 }
 
 #[cfg(test)]

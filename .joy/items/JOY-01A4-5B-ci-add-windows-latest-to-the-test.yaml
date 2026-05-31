@@ -1,0 +1,34 @@
+id: JOY-01A4-5B
+title: 'CI: add windows-latest to the test/build matrix'
+type: task
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-31T19:19:00.022024965Z
+updated: 2026-05-31T21:08:40.086408072Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-05-31T19:21:54.352873422Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-31T19:23:22.001367015Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-31T21:08:40.086408072Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  joy/.github/workflows/ci.yaml currently runs fmt/lint/test/build only on ubuntu-latest. This is why the Windows path bug (JOY-01A2-96) was never caught: joy-core is never compiled or tested on Windows in CI.
+
+  Add an OS matrix to the test (and build) jobs: runs-on matrix.os over [ubuntu-latest, windows-latest]. fmt and lint can stay ubuntu-only (formatting and clippy are platform-neutral). Keep the sibling joyint/crypt checkout step (path dependency) on both OSes; 'cargo test --workspace' is otherwise identical. This gives real windows-latest verification for the JOY-01A2-96 fix (including the new crates/joy-core/tests/platform_state_dir.rs native-branch roundtrip) and guards the whole codebase against future Windows regressions.
+
+  Acceptance: a green windows-latest test run that includes native_state_dir_roundtrip_lands_under_home_base.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-31T19:21:54.266769694Z
+  text: 'Plan: convert the test and build jobs in joy/.github/workflows/ci.yaml to an OS matrix over [ubuntu-latest, windows-latest]. fmt and lint stay ubuntu-only (platform-neutral). Keep the sibling joyint/crypt checkout on both OSes (path dependency). Use rust-cache keyed per-OS. Acceptance: green windows-latest test run that includes native_state_dir_roundtrip_lands_under_home_base. This validates the JOY-01A2-96 fix on real Windows.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-31T19:23:16.034264388Z
+  text: '[x] Done. ci.yaml test+build jobs converted to an [ubuntu-latest, windows-latest] matrix (fail-fast: false); fmt/lint stay ubuntu-only; crypt sibling checkout kept on both OSes. YAML validated (python yaml.safe_load OK). Committed as e7e02af on branch fix/JOY-01A2-96-windows-paths, alongside the JOY-01A2-96 fix (0802a82) and its integration test (fb4fd80), so the first Windows CI run validates the path fix directly. Acceptance: a green windows-latest test job that includes native_state_dir_roundtrip_lands_under_home_base -- this requires pushing the branch / opening a PR (not yet done; needs your go-ahead for the remote push).'

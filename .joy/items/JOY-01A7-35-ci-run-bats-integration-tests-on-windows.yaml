@@ -1,0 +1,23 @@
+id: JOY-01A7-35
+title: 'CI: run bats integration tests on windows'
+type: task
+status: new
+priority: medium
+deps:
+- JOY-01A6-0D
+capabilities:
+- implement
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-31T21:00:17.655885750Z
+updated: 2026-05-31T21:00:28.232806492Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-05-31T21:00:28.232806492Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Follow-up to JOY-01A6-0D (bats on ubuntu). Extend the bats integration suite to windows-latest so the CLI is exercised end-to-end on Windows, closing the gap that JOY-01A2-96 surfaced (path/state-dir behaviour is platform-specific and currently only covered by Rust tests on Windows).
+
+  Non-trivial: bats needs a bash environment (Git-Bash/MSYS2 on windows-latest), and several tests assume Unix specifics -- util-linux 'script' for PTY (pty_run), 0o600 file permissions, /dev paths, sed/mktemp behaviour, and HOME/XDG overrides in tests/integration/setup.bash (Windows uses LOCALAPPDATA/APPDATA/USERPROFILE). Expect to gate or adapt individual tests (e.g. skip PTY/permission tests on Windows) rather than a clean lift-and-shift.
+
+  Depends on JOY-01A6-0D. Related: JOY-01A3-D8 (TTY binding on non-Windows-Terminal consoles). Acceptance: a windows-latest bats job that runs the portable subset green, with platform-specific tests explicitly skipped and documented.

@@ -1,0 +1,36 @@
+id: JOY-01A5-CA
+title: trycmd help.toml snapshot fails on Windows (joy vs joy.exe in Usage)
+type: bug
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-31T19:40:34.528617496Z
+updated: 2026-05-31T21:08:44.828234941Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-05-31T19:49:59.907551796Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-31T21:08:42.460414747Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-31T21:08:44.828234941Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  The trycmd snapshot crates/joy-cli/tests/cmd/help.toml hardcodes 'Usage: joy [OPTIONS] [COMMAND]'. On Windows the binary is joy.exe, so clap prints 'Usage: joy.exe ...' which trycmd normalizes to 'joy[EXE] ...'. The snapshot (authored on Linux) has plain 'joy', so cli_tests fails on windows-latest. Pre-existing latent bug, surfaced for the first time by the new Windows CI matrix (JOY-01A4-5B); unrelated to the path fix (JOY-01A2-96).
+
+  Because cargo test is not run with --no-fail-fast, this failure aborts the whole joy-core test run before the new platform_state_dir integration test executes -- so the Windows path fix is currently unverified on CI purely due to this snapshot.
+
+  Fix: change the Usage line in help.toml to 'Usage: joy[EXE] [OPTIONS] [COMMAND]'. trycmd substitutes [EXE] with '' on Unix and '.exe' on Windows, so the snapshot matches on both. Verify no other hardcoded 'joy ' invocations in the cmd snapshots need the same treatment.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-31T19:50:13.637992783Z
+  text: |-
+    [x] Fixed: crates/joy-cli/tests/cmd/help.toml line 7 changed from 'Usage: joy [OPTIONS] [COMMAND]' to 'Usage: joy[EXE] [OPTIONS] [COMMAND]'. trycmd substitutes [EXE] with '' on Unix and '.exe' on Windows, so the snapshot matches on both platforms.
+    [x] Audited all snapshots under tests/cmd/: help.toml is the only file with a 'Usage: joy' line; no other hardcoded binary-name occurrences need the same treatment.
+    [x] Verified locally on Linux: cargo test -p joy-cli --test cmd --features fast-kdf = ok (2 passed, 0 failed) -- the [EXE] placeholder still matches with empty suffix on Unix.
+    Windows verification follows from the windows-latest CI matrix (JOY-01A4-5B) on the next push.

@@ -1,0 +1,29 @@
+id: JOY-01A8-2E
+title: 'CI: remove redundant build job; fix branch-protection contexts after matrix rename'
+type: task
+status: in-progress
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-31T21:19:17.830679026Z
+updated: 2026-05-31T21:22:18.708808008Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-05-31T21:19:38.040009939Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Two coupled CI cleanups:
+
+  1. The 'build' job (cargo build --workspace) is redundant: 'cargo test --workspace' already compiles the whole workspace, and release binaries come from cargo-dist (release.yml), not this job. Remove it.
+
+  2. The OS matrix renamed status checks to 'Test (ubuntu-latest)/(windows-latest)' and 'Build (...)', but main's branch protection still requires bare 'Test' and 'Build' contexts -> every PR is permanently BLOCKED (surfaced merging PR #2). After removing build, update required contexts to: Format, Lint, Test (ubuntu-latest), Test (windows-latest), Integration (bats).
+
+  Acceptance: PR #2 mergeable via normal (non-admin) merge; future PRs not blocked by stale contexts.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-31T21:22:18.708807271Z
+  text: '[x] Removed the redundant ''build'' job from ci.yaml (cargo test already compiles the workspace; release binaries come from cargo-dist release.yml). Jobs now: fmt, lint, test (ubuntu+windows matrix), integration (bats). YAML validated. Next: update main branch-protection required contexts from [Format, Lint, Test, Build] to [Format, Lint, Test (ubuntu-latest), Test (windows-latest), Integration (bats)] so PRs are no longer permanently BLOCKED by stale context names.'

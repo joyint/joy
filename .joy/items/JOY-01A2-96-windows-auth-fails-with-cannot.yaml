@@ -1,0 +1,70 @@
+id: JOY-01A2-96
+title: 'Windows: auth fails with ''cannot determine state directory'''
+type: bug
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-05-31T17:57:33.127856336Z
+updated: 2026-05-31T21:08:38.215362423Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-05-31T18:53:43.892141364Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-31T19:04:18.579753667Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-31T20:45:29.726790381Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-31T20:45:40.216224014Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-31T20:48:34.514941835Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-31T21:08:35.940035584Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-05-31T21:08:38.215362423Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  On Windows 11, every auth/session operation fails with 'authentication failed: cannot determine state directory'.
+
+  Root cause: dirs_state_dir() in crates/joy-core/src/auth/session.rs only resolves POSIX paths -- it checks XDG_STATE_HOME and HOME, with no Windows branch. On Windows neither variable is typically set (Windows uses USERPROFILE / LOCALAPPDATA), so both branches fall through and the function returns the error. session_dir() depends on it, so save/load session breaks entirely.
+
+  Fix: make dirs_state_dir() platform-aware -- add a Windows branch using LOCALAPPDATA, fall back to USERPROFILE for the home directory, keep XDG_STATE_HOME / ~/.local/state on Unix. Add a unit test covering the Windows resolution.
+
+  Affected: crates/joy-core/src/auth/session.rs:397-408.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-31T18:50:44.615023696Z
+  text: |-
+    Root cause is broader than the title: two places in joy-core assume POSIX paths and both break on Windows.
+
+    1. auth/session.rs dirs_state_dir() -- checks XDG_STATE_HOME then HOME, no Windows branch. Returns 'cannot determine state directory' -> all auth/session ops crash. (the reported symptom)
+
+    2. store.rs global_config_path()/dirs_path_home() -- same POSIX assumption, but instead of erroring it silently falls back to PathBuf::from('.'). On Windows the global config resolves to .\.config\joy\config.yaml relative to the CWD, so global settings move with the working directory (written in dir A, not found in dir B). Silent wrong behaviour, not a crash.
+
+    Project data under .joy/ is NOT affected (resolved via joy_dir(root), platform-independent), which is why joy add worked and wrote the item correctly.
+
+    Plan: introduce one shared platform-aware home/base-dir helper in joy-core and use it from both call sites. Resolution order: respect XDG_* when explicitly set (all platforms); on Windows use LOCALAPPDATA (state) / APPDATA (config), falling back to USERPROFILE/HOME; on Unix keep ~/.local/state and ~/.config. global_config_path() must stop falling back to '.' silently. Add unit tests for both helpers covering the Windows branches. Verify with just check-all.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-31T19:04:18.488380237Z
+  text: |-
+    [x] Done. Both POSIX-only path sites are now platform-aware via one shared resolver.
+
+    - Added pub(crate) store::resolve_base_dir(xdg, win_app_data, home, user_profile, is_windows, win_fallback, unix_subdir) -- pure, no env access, so the Windows branches are unit-testable on any host OS.
+    - store.rs global_config_path() now uses config_base_dir() -> resolve_base_dir(XDG_CONFIG_HOME, APPDATA, HOME, USERPROFILE, .., 'Roaming', '.config'). The silent PathBuf::from('.') fallback for the *base* is gone; '.' only remains as a last resort if literally nothing resolves (unchanged behaviour for a totally env-less process, but no longer the normal Windows path).
+    - auth/session.rs dirs_state_dir() now calls the same resolver: resolve_base_dir(XDG_STATE_HOME, LOCALAPPDATA, HOME, USERPROFILE, .., 'Local', '.local/state'), returning the original AuthFailed error only when nothing resolves.
+    - Tests: 5 new unit tests in store::platform_dir_tests covering xdg precedence (all platforms), unix home subdir, windows app-data, windows USERPROFILE/HOME fallback, and empty/none cases. Verified by name (all 5 ok).
+
+    Verification: 'just check' in the joy workspace = fmt clean, clippy -D warnings clean, all tests pass (211 in joy-core, 0 failed), exit 0.
+
+    Scope notes: project data under .joy/ was never affected (joy_dir(root)). TTY-binding weakness filed separately as JOY-01A3-D8.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-31T19:08:28.004715734Z
+  text: 'Correction to the previous result comment: when I first posted it, ''just check'' had actually FAILED on fmt-check (code was not rustfmt-formatted) -- so that ''exit 0'' claim was premature/incorrect. I have since run ''just fmt'', then ''re-ran just check'' which now genuinely passes: fmt clean, clippy -D warnings clean, all test suites ok (joy-core 211 passed, 0 failed; plus 24+6+27+24 across other suites), exit 0. The 5 new store::platform_dir_tests pass when run by name. Apologies for the inaccurate prior statement; this comment is the accurate record.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-31T19:18:42.551023930Z
+  text: '[x] Added an end-to-end integration test (crates/joy-core/tests/platform_state_dir.rs, its own test binary so its env mutation cannot race the in-src XDG test). It clears XDG_STATE_HOME and points HOME+LOCALAPPDATA at a temp dir, then does a real save/load/remove session roundtrip through the platform-NATIVE branch of dirs_state_dir() and asserts the file lands under the temp base (guards the silent-fallback-to-''.'' regression). On windows-latest CI this will exercise the %LOCALAPPDATA% path with cfg!(windows) + real backslash I/O; on Unix it covers $HOME/.local/state. Note: the pre-existing save_load_roundtrip unit test only covers the XDG branch (identical on all platforms), so this fills the native-branch gap. Branch fix/JOY-01A2-96-windows-paths: commit 0802a82 (fix+unit tests) + 4cb1c3d (integration test). just check = exit 0, 6 suites green, 0 failures. Real Windows verification still requires a windows-latest CI job (no such job exists yet -- ci.yaml is ubuntu-only); filing that next.'
