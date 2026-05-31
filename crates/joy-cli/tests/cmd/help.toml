@@ -3,7 +3,5 @@ args = ["--help"]
 status.code = 0
 stdout = """
 Terminal-native product management
-
-Usage: joy[EXE] [OPTIONS] [COMMAND]
 ...
 """
