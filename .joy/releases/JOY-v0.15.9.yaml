@@ -1,0 +1,11 @@
+version: v0.15.9
+date: 2026-06-02
+previous: v0.15.8
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 6
+  items: 1
+items:
+  tasks:
+  - id: JOY-01A9-D9
+    title: 'AI tutorial: clearer auth flow for unconfigured tools (Copilot/Cursor)'
