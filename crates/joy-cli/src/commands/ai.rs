@@ -197,6 +197,7 @@ fn ai_init(args: InitArgs) -> anyhow::Result<()> {
     check_docs(&root, &args)?;
     let configured_tools = setup_new_tools(&root, effective_passphrase, args.passphrase_stdin)?;
     update_gitignore(&root, &configured_tools)?;
+    untrack_gitignored_tool_files(&root);
     check_nested_projects(&root)?;
 
     if crate::output::is_json() {
@@ -1529,33 +1530,94 @@ const TOOL_GITIGNORE_ENTRIES: &[(&str, &[(&str, &str)])] = &[
     ),
 ];
 
-fn update_gitignore(root: &Path, configured_tools: &[&str]) -> anyhow::Result<()> {
+fn update_gitignore(root: &Path, _configured_tools: &[&str]) -> anyhow::Result<()> {
     use joy_core::init::GITIGNORE_BASE_ENTRIES;
 
-    // Read the current managed block so we can preserve entries for AI tools
-    // that aren't installed on this machine but were registered on another.
-    // Without this, running `joy ai init` on a machine with fewer tools
-    // silently drops entries that were committed elsewhere.
-    let existing = existing_managed_block_entries(root);
-
+    // Always write the full, fixed set: base entries plus the ignore entries
+    // for every known AI tool, regardless of which tools are configured on
+    // this machine. An ignore line for an absent directory is harmless, and
+    // writing the complete set removes all per-machine / per-tool variance --
+    // running `joy ai init` on a machine with fewer tools can no longer drop
+    // entries another machine committed (JOY-01AA-9E). Because
+    // `update_gitignore_block` is idempotent (it skips the write when the
+    // content is unchanged), the per-invocation auto-sync produces no churn.
     let mut entries: Vec<(&str, &str)> = GITIGNORE_BASE_ENTRIES.to_vec();
-
-    for (tool_id, tool_entries) in TOOL_GITIGNORE_ENTRIES {
-        let configured_now = configured_tools.contains(tool_id);
-        let previously_recorded = tool_entries
-            .iter()
-            .any(|(path, _)| existing.iter().any(|line| line == *path));
-        if configured_now || previously_recorded {
-            entries.extend_from_slice(tool_entries);
-        }
+    for (_tool_id, tool_entries) in TOOL_GITIGNORE_ENTRIES {
+        entries.extend_from_slice(tool_entries);
     }
 
     joy_core::init::update_gitignore_block(root, &entries)?;
     Ok(())
 }
 
+/// Untrack AI tool files that are listed in the joy-managed `.gitignore`
+/// block but were committed before that entry existed (JOY-019E-3A).
+///
+/// `.gitignore` does not retroactively untrack already-committed paths, so
+/// such files stay versioned and reappear as modified whenever an AI tool
+/// rewrites them. For every managed tool path that git currently tracks, run
+/// `git rm --cached -r` (the file stays on disk) and print a one-line notice
+/// so the user knows a follow-up commit is needed. No-op for paths that are
+/// not tracked.
+fn untrack_gitignored_tool_files(root: &Path) {
+    let mut untracked: Vec<&str> = Vec::new();
+    for (_tool_id, tool_entries) in TOOL_GITIGNORE_ENTRIES {
+        for (path, _comment) in *tool_entries {
+            if git_path_is_tracked(root, path) && git_rm_cached(root, path) {
+                untracked.push(path);
+            }
+        }
+    }
+    if !untracked.is_empty() {
+        dprintln!(
+            "{}",
+            color::warning(&format!(
+                "Untracked {} previously committed AI tool path(s): {}. Commit the removal to finish.",
+                untracked.len(),
+                untracked.join(", ")
+            ))
+        );
+    }
+}
+
+/// True if git currently tracks `path` (a file or a directory with tracked
+/// files) under `root`. Mirrors the lightweight `git`-shell pattern used by
+/// `joy_core::vcs::is_ignored`.
+fn git_path_is_tracked(root: &Path, path: &str) -> bool {
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["ls-files", "--error-unmatch", "--", path])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    matches!(output, Ok(s) if s.code() == Some(0))
+}
+
+/// `git rm --cached -r -- <path>`: stop tracking `path` while leaving the
+/// working-tree file in place. Returns true on success.
+fn git_rm_cached(root: &Path, path: &str) -> bool {
+    let status = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["rm", "--cached", "-r", "--quiet", "--", path])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    match status {
+        Ok(s) if s.success() => true,
+        _ => {
+            eprintln!("Warning: could not untrack {path}");
+            false
+        }
+    }
+}
+
 /// Read the lines currently inside the joy-managed `.gitignore` block.
 /// Returns an empty vec if `.gitignore` is missing or has no managed block.
+/// Test-only since `update_gitignore` now writes a fixed full set and no
+/// longer needs to inspect the existing block (JOY-01AA-9E).
+#[cfg(test)]
 fn existing_managed_block_entries(root: &Path) -> Vec<String> {
     use joy_core::init::{GITIGNORE_BLOCK_END, GITIGNORE_BLOCK_START};
 
@@ -1839,82 +1901,66 @@ mod tests {
         existing_managed_block_entries(root)
     }
 
-    #[test]
-    fn update_gitignore_preserves_other_tools_block_entries() {
-        // Drift scenario: existing block was committed from a machine with all
-        // four AI tools installed; current machine only has Claude. The block
-        // must keep the other tools' entries.
-        let tmp = tempfile::tempdir().unwrap();
-        seed_gitignore(
-            tmp.path(),
-            &[
-                ".joy/config.yaml",
-                ".joy/credentials.yaml",
-                ".joy/hooks/",
-                ".joy/project.defaults.yaml",
-                ".claude/",
-                ".qwen/",
-                ".vibe/",
-                "AGENTS.md",
-                ".github/copilot-instructions.md",
-                ".github/copilot/",
-                ".github/agents/",
-                ".github/prompts/",
-            ],
-        );
-
-        update_gitignore(tmp.path(), &["claude"]).unwrap();
-
-        let lines = read_block_lines(tmp.path());
-        assert!(lines.iter().any(|l| l == ".claude/"));
-        assert!(lines.iter().any(|l| l == ".qwen/"));
-        assert!(lines.iter().any(|l| l == ".vibe/"));
-        assert!(lines.iter().any(|l| l == "AGENTS.md"));
-        assert!(lines.iter().any(|l| l == ".github/copilot-instructions.md"));
-        assert!(lines.iter().any(|l| l == ".github/copilot/"));
-        assert!(lines.iter().any(|l| l == ".github/agents/"));
-        assert!(lines.iter().any(|l| l == ".github/prompts/"));
+    /// Every known tool entry from TOOL_GITIGNORE_ENTRIES, flattened.
+    fn all_tool_paths() -> Vec<&'static str> {
+        TOOL_GITIGNORE_ENTRIES
+            .iter()
+            .flat_map(|(_, entries)| entries.iter().map(|(p, _)| *p))
+            .collect()
     }
 
     #[test]
-    fn update_gitignore_adds_newly_configured_tool() {
-        // Existing block has only Claude; init now sees Claude + Qwen
-        // configured. Both tools' entries must be present afterwards.
+    fn update_gitignore_writes_full_set_regardless_of_configured_tools() {
+        // Even with only Claude configured (or none), the block must contain
+        // the full fixed set for all known tools, so machines never drift
+        // (JOY-01AA-9E).
         let tmp = tempfile::tempdir().unwrap();
-        seed_gitignore(
-            tmp.path(),
-            &[
-                ".joy/config.yaml",
-                ".joy/credentials.yaml",
-                ".joy/hooks/",
-                ".joy/project.defaults.yaml",
-                ".claude/",
-            ],
-        );
-
-        update_gitignore(tmp.path(), &["claude", "qwen"]).unwrap();
+        update_gitignore(tmp.path(), &["claude"]).unwrap();
 
         let lines = read_block_lines(tmp.path());
-        assert!(lines.iter().any(|l| l == ".claude/"));
-        assert!(lines.iter().any(|l| l == ".qwen/"));
+        assert!(lines.iter().any(|l| l == ".joy/credentials.yaml"));
+        for path in all_tool_paths() {
+            assert!(
+                lines.iter().any(|l| l == path),
+                "managed block must contain {path}"
+            );
+        }
+    }
+
+    #[test]
+    fn update_gitignore_full_set_even_with_no_tools_configured() {
+        let tmp = tempfile::tempdir().unwrap();
+        update_gitignore(tmp.path(), &[]).unwrap();
+
+        let lines = read_block_lines(tmp.path());
+        for path in all_tool_paths() {
+            assert!(
+                lines.iter().any(|l| l == path),
+                "managed block must contain {path} even with no tools configured"
+            );
+        }
+    }
+
+    #[test]
+    fn update_gitignore_is_idempotent() {
+        // The per-invocation auto-sync must not churn the file: writing the
+        // block twice yields byte-identical content (JOY-01AA-9E).
+        let tmp = tempfile::tempdir().unwrap();
+        update_gitignore(tmp.path(), &["claude"]).unwrap();
+        let first = fs::read_to_string(tmp.path().join(".gitignore")).unwrap();
+        update_gitignore(tmp.path(), &["claude"]).unwrap();
+        let second = fs::read_to_string(tmp.path().join(".gitignore")).unwrap();
+        assert_eq!(first, second, "repeated sync must not change .gitignore");
     }
 
     #[test]
     fn update_gitignore_does_not_resurrect_unrelated_lines() {
-        // Lines inside the block that don't correspond to a known tool entry
-        // must NOT be carried over -- the additive policy only preserves
-        // entries that Joy itself manages.
+        // Foreign lines inside the block are not preserved across a rewrite;
+        // Joy only manages its own known entries.
         let tmp = tempfile::tempdir().unwrap();
         seed_gitignore(
             tmp.path(),
-            &[
-                ".joy/config.yaml",
-                ".joy/credentials.yaml",
-                ".joy/hooks/",
-                ".joy/project.defaults.yaml",
-                ".claude/",
-                "user-injected-line.txt",
-            ],
+            &[".joy/config.yaml", ".claude/", "user-injected-line.txt"],
         );
 
         update_gitignore(tmp.path(), &["claude"]).unwrap();
@@ -1925,15 +1971,54 @@ mod tests {
     }
 
     #[test]
-    fn update_gitignore_creates_block_from_scratch_when_absent() {
-        // No existing `.gitignore`: init writes a fresh block with base
-        // entries plus configured tools. Nothing else.
+    fn untrack_gitignored_tool_files_untracks_committed_paths() {
+        // A repo where AGENTS.md was committed before the ignore entry: after
+        // untracking it is no longer tracked but stays on disk (JOY-019E-3A).
         let tmp = tempfile::tempdir().unwrap();
-        update_gitignore(tmp.path(), &["claude"]).unwrap();
-        let lines = read_block_lines(tmp.path());
-        assert!(lines.iter().any(|l| l == ".joy/credentials.yaml"));
-        assert!(lines.iter().any(|l| l == ".claude/"));
-        assert!(!lines.iter().any(|l| l == ".qwen/"));
+        let root = tmp.path();
+        let git = |args: &[&str]| {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(root)
+                .args(args)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap()
+        };
+        git(&["init", "-q"]);
+        git(&["config", "user.email", "t@example.com"]);
+        git(&["config", "user.name", "t"]);
+        fs::write(root.join("AGENTS.md"), "committed").unwrap();
+        fs::create_dir_all(root.join(".vibe")).unwrap();
+        fs::write(root.join(".vibe/config.toml"), "x").unwrap();
+        git(&["add", "AGENTS.md", ".vibe/config.toml"]);
+        git(&["commit", "-q", "-m", "seed"]);
+        assert!(git_path_is_tracked(root, "AGENTS.md"));
+        assert!(git_path_is_tracked(root, ".vibe/"));
+
+        untrack_gitignored_tool_files(root);
+
+        assert!(!git_path_is_tracked(root, "AGENTS.md"));
+        assert!(!git_path_is_tracked(root, ".vibe/"));
+        // Files remain on disk.
+        assert!(root.join("AGENTS.md").is_file());
+        assert!(root.join(".vibe/config.toml").is_file());
+    }
+
+    #[test]
+    fn untrack_gitignored_tool_files_is_noop_when_nothing_tracked() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(["init", "-q"])
+            .status()
+            .unwrap();
+        // No tool files tracked: must not panic or error.
+        untrack_gitignored_tool_files(root);
+        assert!(!git_path_is_tracked(root, "AGENTS.md"));
     }
 
     #[test]
