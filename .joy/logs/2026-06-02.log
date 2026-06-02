@@ -6,3 +6,4 @@
 2026-06-02T10:25:47.793Z JOY-01A9-D9 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-06-02T10:34:58.611Z JOY-01A9-D9 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-06-02T10:39:11.041Z release guard.denied "AI member ai:claude@joy cannot perform manage actions" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-06-02T10:53:17.752Z release guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
