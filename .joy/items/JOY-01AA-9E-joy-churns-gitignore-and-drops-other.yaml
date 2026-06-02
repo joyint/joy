@@ -1,0 +1,34 @@
+id: JOY-01AA-9E
+title: joy churns .gitignore and drops other tools' entries; manage a fixed full set
+type: bug
+status: new
+priority: high
+deps:
+- JOY-019E-3A
+capabilities:
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-02T11:54:25.570323Z
+updated: 2026-06-02T11:54:34.755118168Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-02T11:54:34.755118168Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  The joy-managed block in .gitignore is unstable. Two defects:
+
+  1. Cross-machine / cross-tool drift. update_gitignore (crates/joy-cli/src/commands/ai.rs) keeps a tool's ignore entries only if that tool is locally configured OR its entry already sits in the CURRENT working-tree block (the 'previously_recorded' check). is_tool_configured looks for joy-owned markers (.claude/skills/joy/SKILL.md etc.). So the kept set is anchored to the local working tree, not to a stable source. This is a ratchet: once an entry is gone (different branch, merge, reset, manual edit), the additive path can never restore it from the committed baseline -- it only sees the already-reduced tree and cements it. Result: a machine without tool X drops X's entries; on a machine that uses X, files like .claude/ then appear untracked and risk being committed. The earlier additive fix (JOY-013E-BC, closed) only softened the single-machine case; the architecture stays fragile.
+
+  2. Churn on every invocation. update_registry.rs:543 calls sync_gitignore_for_configured_tools() on every joy command (auto-sync), not just joy ai init. So ordinary read commands rewrite .gitignore, producing constant noise.
+
+  Observed live this session: committed block lists all tools (.claude/, .vibe/, AGENTS.md, .github/copilot-*); the working tree repeatedly showed .claude/ and the copilot entries REMOVED while .vibe/ and AGENTS.md stayed -- exactly this bug.
+
+  Goal: the joy-managed block must be STABLE and identical across machines regardless of which AI tools are locally configured.
+
+  Proposed fix (decided): Joy always writes the full, fixed set of ignore entries for ALL known tools (the union from TOOL_GITIGNORE_ENTRIES), independent of local configuration. An ignore line for an absent directory is harmless and removes all per-machine variance. Drop the configured/previously_recorded conditioning in update_gitignore. Keep the reset path (joy ai reset) able to clear the block. Ensure the per-invocation auto-sync becomes a no-op when the block already equals the canonical full set (no rewrite, no churn). Add unit tests: full set written regardless of configured tools; auto-sync is idempotent (no diff on repeated runs); reset still clears.
+
+  Couple with un-tracking already-committed tool files (see JOY-019E-3A) so files that slipped into git get git rm --cached.
+
+  Related closed: JOY-013E-BC (additive only), JOY-005E, JOY-0060, JOY-0194-E3, JOY-0184-4A, JOY-00CD-84. Related open: JOY-019E-3A.

@@ -1,6 +1,0 @@
-[agent]
-display_name = "reviewer"
-description = "Verify correctness, quality, and adherence to project standards"
-safety = "high"
-agent_type = "review"
-enabled_tools = ["read", "search", "grep", "test"]

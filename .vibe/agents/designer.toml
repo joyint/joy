@@ -1,6 +1,0 @@
-[agent]
-display_name = "designer"
-description = "Technical architecture, API design, data model decisions"
-safety = "medium"
-agent_type = "design"
-enabled_tools = ["read", "search", "grep", "write", "edit"]

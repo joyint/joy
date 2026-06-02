@@ -1,6 +1,0 @@
-[agent]
-display_name = "conceiver"
-description = "Define product vision, requirements, and process design"
-safety = "medium"
-agent_type = "conceive"
-enabled_tools = ["read", "search", "grep"]
