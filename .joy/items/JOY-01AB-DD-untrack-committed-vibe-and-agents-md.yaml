@@ -1,0 +1,31 @@
+id: JOY-01AB-DD
+title: Untrack committed .vibe/ and AGENTS.md (gitignored but versioned)
+type: bug
+status: review
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-02T11:58:54.480867673Z
+updated: 2026-06-02T12:01:50.525470583Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-02T11:59:07.530912259Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-02T12:01:50.525470583Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  The joy repo tracks AI tool files that the joy-managed .gitignore block already lists as ignored: .vibe/ (config.toml, 7 agent TOMLs, skills/joy/SKILL.md, setup.md) and AGENTS.md. They were committed before the ignore entry existed; .gitignore does not retroactively untrack, so they stay versioned and reappear as modified whenever the Vibe integration rewrites them. .claude/, .qwen/, .github/copilot* are correctly untracked.
+
+  Fix: git rm --cached -r .vibe AGENTS.md (keep the files on disk), commit, so they are no longer versioned. This is the concrete instance of JOY-019E-3A (joy ai init should do this automatically) and is caused by JOY-01AA-9E (gitignore stability). Verify afterwards: git ls-files shows no .vibe/ or AGENTS.md, working copies still present, just check green.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-02T11:59:07.446533439Z
+  text: 'Plan: on branch fix/JOY-01AB-DD, run ''git rm --cached -r .vibe AGENTS.md'' (files stay on disk), commit, PR. Verify git ls-files no longer lists them and just check is green.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-02T12:01:50.463966147Z
+  text: '[x] git rm --cached -r .vibe AGENTS.md (11 paths: .vibe/config.toml, 7 agent TOMLs, .vibe/skills/joy/SKILL.md, .vibe/skills/joy/setup.md, AGENTS.md). Files remain on disk. git ls-files no longer lists any .vibe/ or AGENTS.md. just check = exit 0, 0 failures. They stay locally available (and gitignored) but are no longer versioned.'
