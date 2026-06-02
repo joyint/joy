@@ -1,0 +1,47 @@
+id: JOY-01A9-D9
+title: 'AI tutorial: clearer auth flow for unconfigured tools (Copilot/Cursor)'
+type: task
+status: review
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-02T10:19:47.686441332Z
+updated: 2026-06-02T10:25:47.787925723Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-02T10:20:00.442949542Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-02T10:25:47.787925723Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  AI tools, especially GitHub Copilot Chat in VS Code, struggle to authenticate with Joy. The current ai tutorial assumes the AI already has a registered member identity from a tool instruction file, so chat-only tools with no joy ai init have no path to a session and get stuck.
+
+  Rework the Authentication section of crates/joy-cli/docs/ai/Tutorial.md so a cold start works in one operator interaction:
+  - Start with 'joy project member' to detect whether the AI is already registered.
+  - Not registered: ask the operator to run 'joy project member add ai:<name>@joy --with-token' (any tool, incl. chat-only) or 'joy ai init' (detectable tools). Suggest a name like ai:copilot-chat@joy / ai:cursor@joy; real ID comes back with the token.
+  - Label every command with who runs it (you vs the operator); simple technical sentences.
+  - Redeem once, then always pass --session on writes; JOY_SESSION env var only as a special case.
+  - Auth-failure guide incl. 'guard denied' = stale/missing --session.
+
+  Also add a short proactive tripwire to templates/ai/instructions.md (always loaded once joy ai init has run): read the tutorial each session; on 'must authenticate', check joy project member and bootstrap via the operator. SKILL.md keeps its existing tutorial reference.
+
+  Run just sync-tutorial and just check; the embedded copy must stay byte-identical.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-02T10:20:00.356181986Z
+  text: 'Plan: 1) Replace the ## Authentication section in crates/joy-cli/docs/ai/Tutorial.md with the cold-start flow (joy project member check -> operator member add --with-token / joy ai init -> redeem once -> always --session; JOY_SESSION as special case; auth-failure guide). 2) Add a 2-line proactive tripwire to crates/joy-core/templates/ai/instructions.md. 3) Leave SKILL.md as-is (already references the tutorial). 4) just sync-tutorial to refresh the embedded copy, then just check (fmt, clippy, tests incl. ai_templates frontmatter + in_crate_ai_tutorial_matches_canonical). Branch fix/JOY-01A9-D9; commit with trailers.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-02T10:25:41.147219998Z
+  text: |-
+    [x] Reworked the ## Authentication section in docs/ai/Tutorial.md (canonical source; synced to crates/joy-cli/docs/ai/Tutorial.md via just sync-tutorial, byte-identical).
+    - Starts with 'joy project member' so the AI detects whether it is already registered.
+    - Not registered: ask the operator for 'joy project member add ai:<name>@joy --with-token' (any tool incl. chat-only) or 'joy ai init' (detectable tools). Name suggestion ai:copilot-chat@joy / ai:cursor@joy; real ID returns with the token.
+    - Every command labelled with who runs it (you vs the operator); short technical sentences, no dashes.
+    - Redeem once, reuse session_env; always --session on writes; JOY_SESSION env var only as a special case; explicit 'guard denied' = stale/missing --session.
+    [x] Added a proactive tripwire to crates/joy-core/templates/ai/instructions.md: read the tutorial each session; on 'must authenticate', check joy project member and bootstrap via the operator, with a pointer to the full flow.
+    [x] SKILL.md left as-is (already references the tutorial).
+    [x] just check = exit 0: fmt, clippy -D warnings, all tests incl. in_crate_ai_tutorial_matches_canonical and ai_templates::tests::instructions_point_to_tutorial.

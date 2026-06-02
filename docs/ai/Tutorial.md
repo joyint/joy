@@ -70,69 +70,93 @@ After session start:
 
 ## Authentication
 
-Authentication is lazy. You start the session without a session credential and only obtain one when a write command is needed.
+A session is only needed for writes. Read-only commands work without one: `joy ls`, `joy show`, `joy find`, `joy log`, `joy roadmap`, `joy config get`, `joy project`, `joy auth status`, `joy ai tutorial`.
 
-Read-only commands work without an active session: `joy ls`, `joy find`, `joy show`, `joy log`, `joy roadmap`, `joy config get`, `joy project` (without write subcommands), `joy auth status`, `joy tutorial`, `joy ai tutorial`. Every command that creates, edits, deletes, comments, assigns, changes status, or manages project / milestone / release state requires an active session.
+### Get a session
 
-A session is obtained by redeeming a delegation token issued by an operator (a human project member with the `manage` capability). Ask the operator:
+Run this yourself to check if you are already a member:
 
-> "I need a delegation token to perform this action. Please run `joy auth token add <YOUR-MEMBER-ID>` and share the token with me."
+```
+joy project member
+```
 
-They will paste a string beginning with `joy_t_`, wrapped in double quotes. Redeem it:
+If you see your `ai:...@joy` row, you are registered. Ask the operator to create a token. The operator runs:
+
+```
+joy auth token add ai:<name>@joy
+```
+
+If you do not see your row, you are not registered. Ask the operator to register you. The operator runs one of these:
+
+```
+joy project member add ai:copilot-chat@joy --with-token
+joy ai init
+```
+
+`member add --with-token` works for any tool, including chat-only tools like Copilot or Cursor. It registers you and prints a token in one step. `joy ai init` works only for tools Joy can detect. It writes instruction files and registers you. After `joy ai init`, the operator runs `joy auth token add ai:<name>@joy` to create the token.
+
+Suggest a name based on the tool you are, for example `ai:copilot-chat@joy` or `ai:cursor@joy`. This is only a suggestion. The real ID is returned with the token.
+
+The operator gives you a token starting with `joy_t_`. Redeem it yourself, one time:
 
 ```
 joy auth --token <TOKEN> --json
 ```
 
-The response carries everything you need:
+The response contains three values:
 
 ```
-{
-  "version": 1,
-  "data": {
+{ "data": {
     "session_env": "joy_s_...",
-    "member": "ai:<name>@joy",
-    "delegated_by": "operator@example.com",
-    "project_id": "JOY"
-  }
-}
+    "member": "ai:copilot-chat@joy",
+    "delegated_by": "operator@example.com"
+} }
 ```
 
-Keep three values:
+`session_env` is your session credential. Pass it as `--session` on every write. `member` is your real ID. Use it in commit trailers and item references. `delegated_by` goes into the `Delegated-By:` trailer of every commit.
 
-- `data.session_env`: your ephemeral session credential. Use it on every subsequent `joy` call.
-- `data.member`: your member ID. This is who you are in this project; it must match the ID written in your tool-specific instruction file. If it does not, stop and surface the mismatch to the user; do not proceed under the wrong identity.
-- `data.delegated_by`: the operator who delegated to you. Goes into the `Delegated-By:` trailer of every commit you make in this session.
+Reuse the same `session_env` for the whole session. Redeeming the token again creates a new session and makes the old `session_env` invalid. The old one then fails with "guard denied".
 
-Two equivalent ways to pass the session to subsequent commands. **`--session` is recommended for AI tool runners** that spawn a fresh shell per command, and for permission allowlists that prefer flags over env-var patterns. Put `--session` at the end of the call so the meaningful action stays readable in chat output, audit logs, and shell history:
+### Use the session: always --session
+
+Run writes yourself. Put `--session` at the end of every write:
 
 ```
-joy ls --session <session_env>
 joy add task "Investigate failing test" --session <session_env>
+joy start JOY-0042-AB --session <session_env>
+joy comment JOY-0042-AB "Plan: ..." --session <session_env>
 ```
 
-For shells that persist state between commands, the env var works too:
+AI tools start a fresh shell for each command. The `--session` flag is the only reliable way to pass the session.
+
+The `JOY_SESSION` environment variable is an alternative. It only works in one shell that keeps its environment across all `joy` calls. Set it with `export JOY_SESSION=<session_env>`. If both are set, `--session` wins. Prefer `--session`.
+
+### When auth fails
+
+Run this yourself to check your identity and session:
 
 ```
-export JOY_SESSION=<session_env>
-joy ls
+joy auth status
 ```
 
-When both are set, `--session` wins.
+Read the error. Do not retry the same token.
 
-Tokens are multi-use within their TTL. Each redemption yields an independent session, so multiple shells on one machine can each redeem the same token.
+```
+guard denied: <human> must authenticate
+```
 
-When `joy auth --token` fails, read the error and react accordingly. Do not retry the same token blindly.
+Your `--session` value is missing, old, or from a later redemption. You fell back to the git identity. Pass the current `session_env`.
 
-- **Expired**: TTL is up. Ask for a fresh token via `joy auth token add <YOUR-ID>`.
-- **Wrong project**: the token was issued elsewhere. Ask for one in the current project, or run joy with `-w <path-to-other-project>` to act against the project the token is for without changing your working directory. The `-w` flag is global and works on every joy command, useful for multi-project setups.
-- **Bad signature or malformed**: the token string is corrupted. Ask for a new one.
+Other errors:
 
-When a later `joy` command fails with a session error mid-work, your session has expired or the delegation has been rotated. Request a fresh token and re-run `joy auth --token`. Do not retry the failing command without a new session.
+```
+Expired              # ask the operator for a fresh token
+Wrong project        # token is from another project; ask for one here, or use -w <path>
+Bad signature        # token is corrupted; ask for a new one
+encrypted, no access # ask the operator for: joy auth token add <YOUR-ID> --crypt
+```
 
-If the project uses Crypt zones and you encounter items marked `encrypted, no access`, your delegation token is auth-only and does not grant zone access. Ask the operator to issue one with `joy auth token add <YOUR-MEMBER-ID> --crypt` so subsequent reads can unwrap zone keys.
-
-Most joy commands accept `--json` for structured output. Use it when you need to extract specific fields programmatically; the human-readable default works well for general reading.
+Most joy commands accept `--json` for structured output. Use it to extract specific fields; the human-readable default works well for general reading.
 
 ## Capabilities and gates
 
