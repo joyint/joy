@@ -1,7 +1,7 @@
 id: JOY-01A9-D9
 title: 'AI tutorial: clearer auth flow for unconfigured tools (Copilot/Cursor)'
 type: task
-status: review
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -10,12 +10,14 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-02T10:19:47.686441332Z
-updated: 2026-06-02T10:25:47.787925723Z
+updated: 2026-06-02T10:34:58.605667906Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-02T10:20:00.442949542Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 - date: 2026-06-02T10:25:47.787925723Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-02T10:34:58.605667906Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   AI tools, especially GitHub Copilot Chat in VS Code, struggle to authenticate with Joy. The current ai tutorial assumes the AI already has a registered member identity from a tool instruction file, so chat-only tools with no joy ai init have no path to a session and get stuck.
