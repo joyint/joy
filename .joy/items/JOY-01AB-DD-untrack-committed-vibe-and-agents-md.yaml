@@ -1,7 +1,7 @@
 id: JOY-01AB-DD
 title: Untrack committed .vibe/ and AGENTS.md (gitignored but versioned)
 type: bug
-status: review
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -11,12 +11,14 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-02T11:58:54.480867673Z
-updated: 2026-06-02T12:01:50.525470583Z
+updated: 2026-06-02T14:01:56.180560645Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-02T11:59:07.530912259Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 - date: 2026-06-02T12:01:50.525470583Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-02T14:01:56.180560645Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   The joy repo tracks AI tool files that the joy-managed .gitignore block already lists as ignored: .vibe/ (config.toml, 7 agent TOMLs, skills/joy/SKILL.md, setup.md) and AGENTS.md. They were committed before the ignore entry existed; .gitignore does not retroactively untrack, so they stay versioned and reappear as modified whenever the Vibe integration rewrites them. .claude/, .qwen/, .github/copilot* are correctly untracked.

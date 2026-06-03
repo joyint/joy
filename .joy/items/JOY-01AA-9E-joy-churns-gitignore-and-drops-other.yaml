@@ -1,8 +1,10 @@
 id: JOY-01AA-9E
 title: joy churns .gitignore and drops other tools' entries; manage a fixed full set
 type: bug
-status: new
+status: review
 priority: high
+assignees:
+- member: ai:claude@joy
 deps:
 - JOY-019E-3A
 capabilities:
@@ -11,10 +13,14 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-02T11:54:25.570323Z
-updated: 2026-06-02T11:54:34.755118168Z
+updated: 2026-06-02T14:09:58.173899669Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-02T11:54:34.755118168Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-02T14:03:32.551026348Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-02T14:09:58.173899669Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   The joy-managed block in .gitignore is unstable. Two defects:
@@ -32,3 +38,10 @@ description: |-
   Couple with un-tracking already-committed tool files (see JOY-019E-3A) so files that slipped into git get git rm --cached.
 
   Related closed: JOY-013E-BC (additive only), JOY-005E, JOY-0060, JOY-0194-E3, JOY-0184-4A, JOY-00CD-84. Related open: JOY-019E-3A.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-02T14:03:32.695162244Z
+  text: 'Plan (with JOY-019E-3A in one branch, both touch ai.rs): 1) update_gitignore writes the FULL fixed set: GITIGNORE_BASE_ENTRIES + every tool in TOOL_GITIGNORE_ENTRIES, unconditionally (drop configured_now/previously_recorded). update_gitignore_block is already idempotent (skips write when unchanged), so per-invocation auto-sync becomes a no-op = no churn. Reset path (ai.rs:879) still clears to base. 2) JOY-019E-3A: after init, for each managed block path run git ls-files --error-unmatch; if tracked, git rm --cached -r and print a one-line notice. 3) Tests: full set written regardless of configured tools; auto-sync idempotent (no second-run diff); reset clears; untrack helper untracks a tracked path and is a no-op otherwise. just check.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-02T14:09:47.291408044Z
+  text: '[x] update_gitignore now writes the full fixed set (GITIGNORE_BASE_ENTRIES + all TOOL_GITIGNORE_ENTRIES) unconditionally; dropped the configured_now/previously_recorded conditioning and the now-test-only existing_managed_block_entries helper (gated #[cfg(test)]). Since update_gitignore_block already skips the write when content is unchanged, the per-invocation auto-sync (update_registry.rs:543) is now a true no-op = no churn. Reset path unchanged. Tests: writes_full_set_regardless_of_configured_tools, full_set_even_with_no_tools_configured, is_idempotent, does_not_resurrect_unrelated_lines. just check green.'

@@ -1,17 +1,23 @@
 id: JOY-019E-3A
 title: joy ai init must un-track AI tool files if they slipped into git
 type: bug
-status: new
+status: review
 priority: medium
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 - review
 effort: 1
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-18T05:31:13.976914Z
-updated: 2026-05-18T05:31:13.976914Z
+updated: 2026-06-02T14:09:58.114999833Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
+history:
+- date: 2026-06-02T14:03:32.636016235Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-02T14:09:58.114999833Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   joy ai init writes .claude/, .vibe/, AGENTS.md, .github/copilot/ and friends into the joy-managed gitignore block. If any of those paths were committed earlier (by an older joy-init that lacked the gitignore block, or because they landed on a different branch and got merged), .gitignore does not retroactively un-track them. They stay versioned, show up as modified when AI tools rewrite them, and leak into commits even though Joy's intent is the opposite.
 
@@ -23,3 +29,7 @@ description: |-
   Fix: at the end of joy ai init / joy ai update, for each path in the managed gitignore block, run git ls-files --error-unmatch <path>; if it returns 0 (tracked), run git rm --cached -r <path> and print a one-line notice so the user knows a follow-up commit is needed.
 
   Related (already closed): JOY-013E-BC (gitignore additive), JOY-00D1-3C (joy-owned vs user-owned).
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-02T14:09:47.349303854Z
+  text: '[x] Added untrack_gitignored_tool_files(root), called at the end of joy ai init after update_gitignore. For each managed tool path it runs git ls-files --error-unmatch; if tracked, git rm --cached -r (file stays on disk) and prints a one-line notice that a follow-up commit is needed. Implemented as local git-shell helpers (git_path_is_tracked, git_rm_cached) mirroring vcs::is_ignored. Tests: untracks_committed_paths (real git repo: AGENTS.md + .vibe/ untracked, files remain) and is_noop_when_nothing_tracked. just check green.'
