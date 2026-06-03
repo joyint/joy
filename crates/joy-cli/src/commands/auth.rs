@@ -316,10 +316,13 @@ pub(crate) fn read_passphrase(
     }
     let passphrase = rpassword::prompt_password(prompt)?;
     // Erase the prompt line so the lingering "Passphrase:" does not read as if
-    // Joy had echoed the secret. Only in the interactive terminal case; piped
-    // and --passphrase-stdin paths returned earlier and never printed a prompt.
+    // Joy had echoed the secret. rpassword emits a trailing CR+LF after the
+    // hidden input, so the cursor is on the line *below* the prompt: move up
+    // one line, to column 0, and clear it. Only in the interactive terminal
+    // case; piped and --passphrase-stdin paths returned earlier and never
+    // printed a prompt.
     if std::io::stderr().is_terminal() {
-        eprint!("\r\x1b[2K");
+        eprint!("\x1b[1A\r\x1b[2K");
         let _ = std::io::Write::flush(&mut std::io::stderr());
     }
     Ok(passphrase)

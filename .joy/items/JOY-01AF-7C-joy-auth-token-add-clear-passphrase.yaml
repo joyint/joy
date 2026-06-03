@@ -11,7 +11,7 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-03T19:42:02.426300233Z
-updated: 2026-06-03T19:50:26.236810558Z
+updated: 2026-06-03T20:02:55.372698752Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-03T19:42:15.093674862Z
@@ -33,3 +33,6 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-06-03T19:50:25.990610203Z
   text: '[x] read_passphrase: after a successful interactive (TTY) rpassword prompt, erase the prompt line (\r + ESC[2K on stderr, guarded by stderr.is_terminal()); piped/--passphrase-stdin paths return earlier and never print a prompt. [x] run_token_add: print ''To redeem within {hours}h: joy auth --token <TOKEN> --json'' to STDERR before the token; stdout stays exactly the quoted token (JOY-0185-66 preserved). {hours} = effective TTL, so --ttl is reflected. JSON path untouched. [x] Updated two bats tests (auth.bats, passphrase_stdin.bats) to use run --separate-stderr and assert stdout==token + hint on stderr. Verified manually: default shows 24h, --ttl 8 shows 8h, piped stdout is token-only. just check green.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-03T20:02:55.372696831Z
+  text: 'Correction: the first erase code (\r ESC[2K) cleared the wrong line. rpassword emits CR+LF after the hidden input, so the cursor sits on the line below the prompt. Fixed to ESC[1A \r ESC[2K (cursor up one line, column 0, clear line). Verified in a real PTY (python pty.fork): the rendered terminal now shows only the redeem hint + token; the ''Passphrase:'' line is gone. just check green.'
