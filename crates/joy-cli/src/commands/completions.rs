@@ -7,15 +7,19 @@ use std::io;
 
 #[derive(clap::Args)]
 #[command(after_help = "\
-For bash, the default output is a dynamic, colon-aware wrapper around
-clap_complete that supports item/milestone IDs and member IDs (including
-'ai:tool@joy'-style values that bash would otherwise split at the colon).
+Recommended setup (add the line to the shell's startup file):
 
-Recommended setup:
+  Bash:        source <(joy completions bash)                    # ~/.bashrc
+  Zsh:         source <(COMPLETE=zsh joy)                        # ~/.zshrc
+  Fish:        source (COMPLETE=fish joy | psub)                 # config.fish
+  PowerShell:  joy completions powershell | Out-String | Invoke-Expression   # $PROFILE
+  Elvish:      eval (COMPLETE=elvish joy | slurp)                # rc.elv
 
-  Bash:  source <(joy completions bash)         # add to ~/.bashrc
-  Zsh:   source <(COMPLETE=zsh joy)             # add to ~/.zshrc
-  Fish:  source (COMPLETE=fish joy | psub)      # add to config.fish
+The COMPLETE= forms (zsh, fish, elvish) and the bash wrapper are dynamic:
+they complete item/milestone IDs and member IDs (including 'ai:tool@joy'
+values that bash would otherwise split at the colon). 'joy completions
+<shell>' emits a static script instead (subcommands and flags only); on
+Windows that is the simplest route for a PowerShell profile.
 
 For fully case-insensitive completion (so 'p<TAB>' finds Peter.*) put
 
@@ -23,7 +27,7 @@ For fully case-insensitive completion (so 'p<TAB>' finds Peter.*) put
 
 into ~/.inputrc; this is a readline setting and applies to all commands.
 
-Use --static for the legacy bash output without colon handling and
+Use --static-only for the legacy bash output without colon handling and
 without item/member ID completion.")]
 pub struct CompletionsArgs {
     /// Target shell (bash, zsh, fish, powershell, elvish)
