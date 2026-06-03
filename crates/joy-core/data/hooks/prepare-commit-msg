@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Joy prepare-commit-msg hook -- pre-fills the commit message with the
+# matching Joy item ID(s) and, under an AI delegation, the commit trailers.
+# Installed via: git config core.hooksPath .joy/hooks
+# See JOY-01B1-FF. The heavy lifting lives in the joy binary; this script is
+# a thin, fail-open shim so a missing/old joy never blocks committing.
+
+set -euo pipefail
+
+# Args from git: $1 = message file, $2 = source (empty for an ordinary
+# commit), $3 = commit sha (amend). joy decides what to do based on $2.
+MSG_FILE="$1"
+SOURCE="${2:-}"
+
+# Fail open: if joy is not on PATH, do nothing and let the commit proceed.
+if ! command -v joy >/dev/null 2>&1; then
+    exit 0
+fi
+
+# Never let a hook error abort the commit; the suggestion is a convenience.
+joy prepare-commit-msg "$MSG_FILE" "$SOURCE" >/dev/null 2>&1 || true
+
+exit 0
