@@ -166,12 +166,34 @@ Status transitions may be restricted by per-project gates. `joy project` shows t
 
 ## Workflow
 
-The status flow diagram and any configured gates are visible in `joy project`. Item-shortcut commands map to status transitions:
+The status flow diagram and any configured gates are visible in `joy project`. Items move through six states:
 
-- `joy start <ID>`: open or new to in-progress.
+- `new`: the item exists or was proposed, but is not yet approved for work.
+- `open`: approved and triaged into the backlog, ready to be picked up.
+- `in-progress`: being worked on.
+- `review`: work done, awaiting acceptance.
+- `closed`: accepted and finished.
+- `deferred`: deliberately set aside; reachable from any active state.
+
+Item-shortcut commands map to the transitions:
+
+- `joy approve <ID>`: new to open.
+- `joy start <ID>`: new or open to in-progress.
 - `joy submit <ID>`: in-progress to review.
 - `joy close <ID>`: review to closed.
-- `joy reopen <ID>`: closed or deferred to open.
+- `joy rework <ID>`: review to in-progress.
+- `joy defer <ID>`: any active state to deferred.
+- `joy reopen <ID>`: closed or deferred back to open/new.
+
+### Why `open` exists, and approve
+
+`start` works straight from `new`, so a solo user never needs the `open` step. `open` earns its place with gates: a team can put a triage gate on `new -> open` so items must be approved before work starts. This matters most for AI-generated items -- a gate with `allow_ai: false` on `new -> open` means an AI can create items (`new`) but a human must `approve` them into the backlog before anyone (including the AI) starts work. So `joy approve` is the explicit human triage step, not ceremony for its own sake.
+
+Gates are how transitions are tightened; see [Capabilities and gates](#capabilities-and-gates). By default every transition is open and Joy only warns, never blocks.
+
+### Why this workflow
+
+Joy ships exactly one intentionally minimal workflow, not a templated or selectable set. More states mean more upkeep and more decisions; well-meant over-modelling quickly becomes an effort trap. Instead of adding states, teams tighten individual transitions with gates -- one process with dimmers. This is a deliberate design choice (see `docs.vision`), not a default to be reconfigured.
 
 ## Item lifecycle commands
 

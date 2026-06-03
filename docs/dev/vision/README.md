@@ -140,16 +140,22 @@ The default status flow:
 stateDiagram-v2
     [*] --> new
     new --> open : approve
-    new --> deferred : defer
+    new --> in_progress : start
     open --> in_progress : start
     state in_progress : in-progress
-    open --> deferred : defer
     in_progress --> review : submit
-    review --> closed : accept
+    review --> closed : close
     review --> in_progress : rework
+    new --> deferred : defer
+    open --> deferred : defer
+    in_progress --> deferred : defer
+    review --> deferred : defer
     deferred --> new : reopen
+    closed --> open : reopen
     closed --> [*]
 ```
+
+Each transition has a verb shortcut: `approve` (new -> open), `start` (-> in-progress, allowed straight from `new` so solo work needs no approval step), `submit` (-> review), `close` (review -> closed), `rework` (review -> in-progress), `defer` (set aside from any active state), and `reopen`.
 
 `blocked` is not a manual state - it is computed automatically from dependencies.
 
