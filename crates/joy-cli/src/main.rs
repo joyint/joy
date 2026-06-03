@@ -48,10 +48,13 @@ Core Commands:
   log        Show change history for items
 
 Shortcuts:
-  start   Set item status to in-progress
-  submit  Set item status to review
-  close   Set item status to closed
-  reopen  Reopen a closed or deferred item
+  approve  Approve a new item into the backlog (new -> open)
+  start    Start working on an item (-> in-progress)
+  submit   Send an item to review (-> review)
+  rework   Send a reviewed item back to work (review -> in-progress)
+  close    Set item status to closed
+  reopen   Reopen a closed or deferred item
+  defer    Set an item aside (-> deferred)
 
 Discovery & Reporting:
   find     Search items by text
@@ -152,14 +155,20 @@ enum Commands {
     Tutorial(commands::tutorial::TutorialArgs),
     /// Show milestone roadmap (alias for ls --tree --group milestone)
     Roadmap(RoadmapArgs),
+    /// Shortcut: approve an item (new -> open)
+    Approve(ShortcutArgs),
     /// Shortcut: set item status to in-progress
     Start(ShortcutArgs),
     /// Shortcut: set item status to review
     Submit(ShortcutArgs),
+    /// Shortcut: send a reviewed item back for rework (review -> in-progress)
+    Rework(ShortcutArgs),
     /// Shortcut: set item status to closed
     Close(ShortcutArgs),
     /// Shortcut: set item status back to open
     Reopen(ShortcutArgs),
+    /// Shortcut: defer an item (set aside from any active state)
+    Defer(ShortcutArgs),
     /// Search items by text
     Find(commands::find::FindArgs),
     /// Show release notes for a version
@@ -380,56 +389,66 @@ fn main() -> anyhow::Result<()> {
         None | Some(Commands::Ls(_)) | Some(Commands::Roadmap(_)) | Some(Commands::Show(_))
     );
 
-    let result = match cli.command {
-        Some(Commands::Init(args)) => commands::init::run(args),
-        Some(Commands::Add(args)) => commands::add::run(args),
-        Some(Commands::Ls(args)) => commands::ls::run(args),
-        Some(Commands::Show(args)) => commands::show::run(args),
-        Some(Commands::Edit(args)) => commands::edit::run(args),
-        Some(Commands::Status(args)) => commands::status::run(args),
-        Some(Commands::Rm(args)) => commands::rm::run(args),
-        Some(Commands::Comment(args)) => commands::comment::run(args),
-        Some(Commands::Deps(args)) => commands::deps::run(args),
-        Some(Commands::Milestone(args)) => commands::milestone::run(args),
-        Some(Commands::Project(args)) => commands::project::run(args),
-        Some(Commands::Assign(args)) => commands::assign::run(args),
-        Some(Commands::Log(args)) => commands::log::run(args),
-        Some(Commands::Completions(args)) => commands::completions::run(args, &mut Cli::command()),
-        Some(Commands::Tutorial(args)) => commands::tutorial::run(args),
-        Some(Commands::Roadmap(args)) => commands::ls::run(commands::ls::LsArgs::roadmap(args.all)),
-        Some(Commands::Start(args)) => commands::status::run(commands::status::StatusArgs::new(
-            args.id,
-            "in-progress".to_string(),
-        )),
-        Some(Commands::Submit(args)) => commands::status::run(commands::status::StatusArgs::new(
-            args.id,
-            "review".to_string(),
-        )),
-        Some(Commands::Close(args)) => commands::status::run(commands::status::StatusArgs::new(
-            args.id,
-            "closed".to_string(),
-        )),
-        Some(Commands::Reopen(args)) => commands::status::run(commands::status::StatusArgs::new(
-            args.id,
-            "open".to_string(),
-        )),
-        Some(Commands::Find(args)) => commands::find::run(args),
-        Some(Commands::Release(args)) => commands::release::run(args),
-        Some(Commands::Board(args)) => commands::board::run(args),
-        Some(Commands::Config(_)) => unreachable!("handled above"),
-        Some(Commands::Ai(args)) => commands::ai::run(args),
-        Some(Commands::Auth(args)) => commands::auth::run(args),
-        Some(Commands::Deauth(args)) => commands::deauth::run(args),
-        Some(Commands::Crypt(args)) => commands::crypt::run(args),
-        Some(Commands::Merge(args)) => commands::merge::run(args),
-        Some(Commands::Update(args)) => commands::update::run(args),
-        None => commands::board::run(BoardArgs {
-            filter: commands::filter_args::FilterArgs::default(),
-            short: false,
-            all: cli.all,
-            reverse: cli.reverse,
-        }),
-    };
+    let result =
+        match cli.command {
+            Some(Commands::Init(args)) => commands::init::run(args),
+            Some(Commands::Add(args)) => commands::add::run(args),
+            Some(Commands::Ls(args)) => commands::ls::run(args),
+            Some(Commands::Show(args)) => commands::show::run(args),
+            Some(Commands::Edit(args)) => commands::edit::run(args),
+            Some(Commands::Status(args)) => commands::status::run(args),
+            Some(Commands::Rm(args)) => commands::rm::run(args),
+            Some(Commands::Comment(args)) => commands::comment::run(args),
+            Some(Commands::Deps(args)) => commands::deps::run(args),
+            Some(Commands::Milestone(args)) => commands::milestone::run(args),
+            Some(Commands::Project(args)) => commands::project::run(args),
+            Some(Commands::Assign(args)) => commands::assign::run(args),
+            Some(Commands::Log(args)) => commands::log::run(args),
+            Some(Commands::Completions(args)) => {
+                commands::completions::run(args, &mut Cli::command())
+            }
+            Some(Commands::Tutorial(args)) => commands::tutorial::run(args),
+            Some(Commands::Roadmap(args)) => {
+                commands::ls::run(commands::ls::LsArgs::roadmap(args.all))
+            }
+            Some(Commands::Approve(args)) => commands::status::run(
+                commands::status::StatusArgs::new(args.id, "open".to_string()),
+            ),
+            Some(Commands::Start(args)) => commands::status::run(
+                commands::status::StatusArgs::new(args.id, "in-progress".to_string()),
+            ),
+            Some(Commands::Submit(args)) => commands::status::run(
+                commands::status::StatusArgs::new(args.id, "review".to_string()),
+            ),
+            Some(Commands::Rework(args)) => commands::status::run(
+                commands::status::StatusArgs::new(args.id, "in-progress".to_string()),
+            ),
+            Some(Commands::Close(args)) => commands::status::run(
+                commands::status::StatusArgs::new(args.id, "closed".to_string()),
+            ),
+            Some(Commands::Reopen(args)) => commands::status::run(
+                commands::status::StatusArgs::new(args.id, "open".to_string()),
+            ),
+            Some(Commands::Defer(args)) => commands::status::run(
+                commands::status::StatusArgs::new(args.id, "deferred".to_string()),
+            ),
+            Some(Commands::Find(args)) => commands::find::run(args),
+            Some(Commands::Release(args)) => commands::release::run(args),
+            Some(Commands::Board(args)) => commands::board::run(args),
+            Some(Commands::Config(_)) => unreachable!("handled above"),
+            Some(Commands::Ai(args)) => commands::ai::run(args),
+            Some(Commands::Auth(args)) => commands::auth::run(args),
+            Some(Commands::Deauth(args)) => commands::deauth::run(args),
+            Some(Commands::Crypt(args)) => commands::crypt::run(args),
+            Some(Commands::Merge(args)) => commands::merge::run(args),
+            Some(Commands::Update(args)) => commands::update::run(args),
+            None => commands::board::run(BoardArgs {
+                filter: commands::filter_args::FilterArgs::default(),
+                short: false,
+                all: cli.all,
+                reverse: cli.reverse,
+            }),
+        };
 
     if show_fortune
         && result.is_ok()

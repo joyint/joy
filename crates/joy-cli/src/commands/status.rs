@@ -21,8 +21,11 @@ Workflow:
                    \\                |
                     +-> deferred <--+
 
-  All transitions are allowed by default. Joy warns but does not block.
-  Shortcuts: joy start (in-progress), joy submit (review), joy close (closed).
+  All transitions are allowed by default. Joy warns but does not block;
+  tighten individual transitions with gates (see joy tutorial, Mission 9).
+  Shortcuts: joy approve (new -> open), joy start (-> in-progress),
+  joy submit (-> review), joy rework (review -> in-progress),
+  joy close (-> closed), joy reopen, joy defer (-> deferred).
 
 Behavior:
   - Closing an item with open children prints a warning
