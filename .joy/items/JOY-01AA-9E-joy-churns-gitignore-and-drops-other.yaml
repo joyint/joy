@@ -1,7 +1,7 @@
 id: JOY-01AA-9E
 title: joy churns .gitignore and drops other tools' entries; manage a fixed full set
 type: bug
-status: review
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -13,7 +13,7 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-02T11:54:25.570323Z
-updated: 2026-06-02T14:09:58.173899669Z
+updated: 2026-06-03T04:24:47.166305311Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-02T11:54:34.755118168Z
@@ -21,6 +21,8 @@ history:
 - date: 2026-06-02T14:03:32.551026348Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 - date: 2026-06-02T14:09:58.173899669Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-03T04:24:47.166305311Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   The joy-managed block in .gitignore is unstable. Two defects:
