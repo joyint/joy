@@ -39,8 +39,9 @@ load setup
 @test "--passphrase-stdin works for joy auth token add" {
     setup_human_auth
     joy project member add ai:stdin@joy --passphrase "$TEST_PASSPHRASE" >/dev/null
-    run bash -c "echo '$TEST_PASSPHRASE' | joy auth token add ai:stdin@joy --passphrase-stdin"
+    run --separate-stderr bash -c "echo '$TEST_PASSPHRASE' | joy auth token add ai:stdin@joy --passphrase-stdin"
     [ "$status" -eq 0 ]
+    # stdout is exactly the bare token; the redeem hint is on stderr.
     [[ "$output" == \"joy_t_*\" ]]
 }
 

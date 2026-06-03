@@ -1,0 +1,35 @@
+id: JOY-01AF-7C
+title: 'joy auth token add: clear passphrase prompt and add a redeem hint'
+type: rework
+status: review
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-03T19:42:02.426300233Z
+updated: 2026-06-03T19:50:26.236810558Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-03T19:42:15.093674862Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-03T19:50:26.236810558Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Two small UX fixes for 'joy auth token add' (crates/joy-cli/src/commands/auth.rs):
+
+  1. The interactive 'Passphrase:' prompt stays on screen after entry, making it look as if Joy printed the passphrase. In read_passphrase, after a successful interactive (TTY) prompt, clear the prompt line (ANSI \r + erase-line). Only in the terminal case; do not touch --passphrase-stdin or piped input.
+
+  2. run_token_add prints only the quoted token (intentional per JOY-0185-66 so stdout stays clean for copy/paste). Add a one-line redeem hint on STDERR before it, so stdout remains exactly the token: 'To redeem within {hours}h: joy auth --token <TOKEN> --json'. {hours} is the effective TTL (ttl_hours_override.unwrap_or(24)), so --ttl is reflected. JSON output path unchanged.
+
+  Tests: stdout is still exactly the quoted token (hint goes to stderr); hint shows the right hours for default and --ttl. just check.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-03T19:42:15.004711541Z
+  text: 'Plan: 1) read_passphrase: after rpassword::prompt_password succeeds in the TTY branch, write \r + ESC[2K to stderr to erase the prompt line. 2) run_token_add: before println of the token, eprintln the hint ''To redeem within {hours}h: joy auth --token <TOKEN> --json'' (stderr; stdout stays the bare quoted token). Keep --json path untouched. Add/adjust a cmd test asserting stdout == token only. just check.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-03T19:50:25.990610203Z
+  text: '[x] read_passphrase: after a successful interactive (TTY) rpassword prompt, erase the prompt line (\r + ESC[2K on stderr, guarded by stderr.is_terminal()); piped/--passphrase-stdin paths return earlier and never print a prompt. [x] run_token_add: print ''To redeem within {hours}h: joy auth --token <TOKEN> --json'' to STDERR before the token; stdout stays exactly the quoted token (JOY-0185-66 preserved). {hours} = effective TTL, so --ttl is reflected. JSON path untouched. [x] Updated two bats tests (auth.bats, passphrase_stdin.bats) to use run --separate-stderr and assert stdout==token + hint on stderr. Verified manually: default shows 24h, --ttl 8 shows 8h, piped stdout is token-only. just check green.'

@@ -202,13 +202,16 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
     joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
-    run joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    run --separate-stderr joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
-    # Output is the bare token in double quotes (no banner, no usage
-    # hints). Quotes make chat clients treat the value as one atomic
-    # string so a visual line wrap cannot cause a truncation when an
-    # AI tool reads it back from the chat.
+    # stdout is exactly the bare token in double quotes (no banner, no usage
+    # hints). Quotes make chat clients treat the value as one atomic string
+    # so a visual line wrap cannot cause a truncation when an AI tool reads
+    # it back from the chat.
     [[ "$output" == \"joy_t_*\" ]]
+    # The redeem hint goes to stderr, not stdout, so it never pollutes a
+    # copied or piped token.
+    [[ "$stderr" == *"joy auth --token <TOKEN> --json"* ]]
 }
 
 @test "joy auth token add rejects non-AI member" {
