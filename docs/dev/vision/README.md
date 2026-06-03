@@ -150,7 +150,7 @@ stateDiagram-v2
     open --> deferred : defer
     in_progress --> deferred : defer
     review --> deferred : defer
-    deferred --> new : reopen
+    deferred --> open : reopen
     closed --> open : reopen
     closed --> [*]
 ```
