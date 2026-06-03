@@ -188,6 +188,8 @@ enum Commands {
     Crypt(commands::crypt::CryptArgs),
     /// Internal: Git merge driver helpers (invoked via .gitattributes).
     Merge(commands::merge::MergeArgs),
+    /// Internal: prepare-commit-msg hook helper (invoked via .joy/hooks).
+    PrepareCommitMsg(commands::prepare_commit_msg::PrepareCommitMsgArgs),
     /// Update the joy binary and sync this repo's joy-managed state.
     Update(commands::update::UpdateArgs),
 }
@@ -441,6 +443,7 @@ fn main() -> anyhow::Result<()> {
             Some(Commands::Deauth(args)) => commands::deauth::run(args),
             Some(Commands::Crypt(args)) => commands::crypt::run(args),
             Some(Commands::Merge(args)) => commands::merge::run(args),
+            Some(Commands::PrepareCommitMsg(args)) => commands::prepare_commit_msg::run(args),
             Some(Commands::Update(args)) => commands::update::run(args),
             None => commands::board::run(BoardArgs {
                 filter: commands::filter_args::FilterArgs::default(),

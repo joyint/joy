@@ -9,11 +9,18 @@ use crate::model::project::{derive_acronym, Project};
 use crate::store;
 use crate::vcs::{default_vcs, Vcs};
 
-pub const HOOK_FILES: &[EmbeddedFile] = &[EmbeddedFile {
-    content: include_str!("../data/hooks/commit-msg"),
-    target: "hooks/commit-msg",
-    executable: true,
-}];
+pub const HOOK_FILES: &[EmbeddedFile] = &[
+    EmbeddedFile {
+        content: include_str!("../data/hooks/commit-msg"),
+        target: "hooks/commit-msg",
+        executable: true,
+    },
+    EmbeddedFile {
+        content: include_str!("../data/hooks/prepare-commit-msg"),
+        target: "hooks/prepare-commit-msg",
+        executable: true,
+    },
+];
 
 pub const CONFIG_FILES: &[EmbeddedFile] = &[EmbeddedFile {
     content: include_str!("../data/config.defaults.yaml"),

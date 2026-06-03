@@ -80,13 +80,29 @@ pub fn load_agents() -> Result<Vec<serde_json::Value>, JoyError> {
 /// form each tool uses in its own default commits when run standalone.
 /// Brand names are allowed in this trailer (and only this trailer); the
 /// rest of the project artifacts use the Joy member ID.
-fn coauthor_line_for_tool(tool: &str) -> &'static str {
+pub(crate) fn coauthor_line_for_tool(tool: &str) -> &'static str {
     match tool {
         "claude" => "Claude <noreply@anthropic.com>",
         "copilot" => "Copilot <copilot@github.com>",
         "qwen" => "Qwen-Coder <qwen-coder@alibabacloud.com>",
         "vibe" => "Mistral Vibe <vibe@mistral.ai>",
         _ => "",
+    }
+}
+
+/// Canonical `Co-Authored-By:` value for an AI member id, or `None` when the
+/// member is not a known tool. Maps `ai:claude@joy` -> the `claude` tool line.
+/// Used by the prepare-commit-msg hook (JOY-01B1-FF) to attribute commits made
+/// under an AI delegation.
+pub fn coauthor_line_for_member(member_id: &str) -> Option<&'static str> {
+    let tool = member_id
+        .strip_prefix("ai:")
+        .and_then(|rest| rest.split('@').next())?;
+    let line = coauthor_line_for_tool(tool);
+    if line.is_empty() {
+        None
+    } else {
+        Some(line)
     }
 }
 

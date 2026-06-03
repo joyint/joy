@@ -20,6 +20,7 @@ pub mod log;
 pub mod ls;
 pub mod merge;
 pub mod milestone;
+pub mod prepare_commit_msg;
 pub mod project;
 pub mod release;
 pub mod rm;
