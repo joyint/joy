@@ -1,7 +1,7 @@
 id: JOY-01B0-C0
 title: 'completions --help: document setup for all 5 shells incl. PowerShell'
 type: rework
-status: review
+status: closed
 priority: low
 assignees:
 - member: ai:claude@joy
@@ -11,12 +11,14 @@ capabilities:
 effort: 1
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-03T20:22:23.257090504Z
-updated: 2026-06-03T20:26:10.043001059Z
+updated: 2026-06-03T21:22:30.569237016Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-03T20:22:33.348165324Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 - date: 2026-06-03T20:26:10.043001059Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-03T21:22:30.569237016Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   joy completions --help lists all 5 shells in the <SHELL> arg (bash/zsh/fish/powershell/elvish) but the 'Recommended setup' section only covers bash/zsh/fish. Add PowerShell and Elvish, each with its idiomatic method, and a one-line dynamic-vs-static note.
