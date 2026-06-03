@@ -1,7 +1,7 @@
 id: JOY-01AC-14
 title: Add status shortcuts approve/defer/rework; start stays new-tolerant
 type: task
-status: review
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -10,12 +10,14 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-03T04:40:50.980171006Z
-updated: 2026-06-03T04:49:37.077026802Z
+updated: 2026-06-03T04:54:18.104629861Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-03T04:43:25.462207914Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 - date: 2026-06-03T04:49:37.077026802Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-03T04:54:18.104629861Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Pilot users could not tell why the 'open' status exists when an item could go straight from new to in-progress. The vision already names the transitions (new->open: approve, ->deferred: defer, review->in-progress: rework) but only start/submit/close/reopen are implemented as CLI shortcuts. Close the gap so the workflow verbs match the vision and the purpose of 'open' (triage/approval gate, esp. for AI-generated items) becomes visible.

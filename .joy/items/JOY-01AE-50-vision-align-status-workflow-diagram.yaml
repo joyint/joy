@@ -1,16 +1,22 @@
 id: JOY-01AE-50
 title: 'Vision: align status-workflow diagram verb (accept -> close) and note defer from any active state'
 type: task
-status: new
+status: review
 priority: medium
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-03T04:41:16.764602861Z
-updated: 2026-06-03T04:41:16.764602861Z
+updated: 2026-06-03T04:59:05.840046758Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
+history:
+- date: 2026-06-03T04:54:29.294040356Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-03T04:59:05.840046758Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   The status-workflow mermaid diagram in docs/dev/vision/README.md labels review->closed as 'accept', but the CLI verb is 'close' and we are keeping 'close' (no accept alias). Align the diagram and surrounding text to the implemented verbs so vision and CLI match.
 
@@ -20,3 +26,7 @@ description: |-
   - Keep the verbs consistent with JOY-01AC-14 (approve/defer/rework/start/submit/close/reopen).
 
   Pure docs. Verify mermaid renders.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-03T04:58:54.894814635Z
+  text: '[x] Updated the Status Workflow mermaid diagram in docs/dev/vision/README.md: review->closed label accept -> close (matches the CLI verb); start now shown from both new and open; defer edges from all active states (new/open/in-progress/review); added closed->open : reopen. Added a one-line verb legend under the diagram. Pure docs; just check green.'

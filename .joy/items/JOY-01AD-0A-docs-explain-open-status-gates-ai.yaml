@@ -1,8 +1,10 @@
 id: JOY-01AD-0A
 title: 'Docs: explain ''open'' status, gates, AI triage, and new workflow verbs in tutorial + joy project'
 type: task
-status: new
+status: review
 priority: high
+assignees:
+- member: ai:claude@joy
 deps:
 - JOY-01AC-14
 capabilities:
@@ -10,10 +12,14 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-03T04:41:06.154901288Z
-updated: 2026-06-03T04:41:26.151156038Z
+updated: 2026-06-03T04:59:05.900746703Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-03T04:41:26.151156038Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-03T04:54:29.208745370Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-03T04:59:05.900746703Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   The purpose of the 'open' status and the gate model is not self-evident in user-facing surfaces (joy ai tutorial, joy project workflow display, joy --help). Pilot users asked why 'open' exists and whether the workflow is arbitrary.
@@ -25,3 +31,7 @@ description: |-
   - Add a short design-rationale note: Joy uses ONE intentionally minimal workflow with gates as dimmers, not multiple configurable processes; this avoids well-meant over-modelling becoming an effort trap. Reference the existing wording in docs/dev/vision/README.md (single source of truth).
 
   Depends on JOY-01AC-14 (verbs must exist first). just check (incl. in_crate_ai_tutorial_matches_canonical).
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-03T04:58:54.697538478Z
+  text: '[x] Expanded the ## Workflow section in docs/ai/Tutorial.md (canonical; synced byte-identical to the embedded copy via just sync-tutorial): describes all six states (new/open/in-progress/review/closed/deferred) and every verb (approve/start/submit/close/rework/defer/reopen); a ''Why open exists, and approve'' subsection explaining start is new-tolerant for solo, while open + the new->open triage gate (allow_ai:false) gate AI-generated items behind human approval; and a ''Why this workflow'' subsection with the simplest-viable-workflow / anti-over-modelling rationale, cross-referencing docs.vision and the Capabilities-and-gates section. just check green (incl. in_crate_ai_tutorial_matches_canonical).'
