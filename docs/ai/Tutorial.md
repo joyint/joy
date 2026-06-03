@@ -187,13 +187,13 @@ Item-shortcut commands map to the transitions:
 
 ### Why `open` exists, and approve
 
-`start` works straight from `new`, so a solo user never needs the `open` step. `open` earns its place with gates: a team can put a triage gate on `new -> open` so items must be approved before work starts. This matters most for AI-generated items -- a gate with `allow_ai: false` on `new -> open` means an AI can create items (`new`) but a human must `approve` them into the backlog before anyone (including the AI) starts work. So `joy approve` is the explicit human triage step, not ceremony for its own sake.
+`start` works straight from `new`, so a solo user never needs the `open` step. `open` earns its place with gates: a team can put a triage gate on `new -> open` so items must be approved before work starts. This matters most for AI-generated items: a gate with `allow_ai: false` on `new -> open` means an AI can create items (`new`) but a human must `approve` them into the backlog before anyone (including the AI) starts work. So `joy approve` is the explicit human triage step, not ceremony for its own sake.
 
 Gates are how transitions are tightened; see [Capabilities and gates](#capabilities-and-gates). By default every transition is open and Joy only warns, never blocks.
 
 ### Why this workflow
 
-Joy ships exactly one intentionally minimal workflow, not a templated or selectable set. More states mean more upkeep and more decisions; well-meant over-modelling quickly becomes an effort trap. Instead of adding states, teams tighten individual transitions with gates -- one process with dimmers. This is a deliberate design choice (see `docs.vision`), not a default to be reconfigured.
+Joy ships exactly one intentionally minimal workflow, not a templated or selectable set. More states mean more upkeep and more decisions; well-meant over-modelling quickly becomes an effort trap. Instead of adding states, teams tighten individual transitions with gates: one process with dimmers. This is a deliberate design choice (see `docs.vision`), not a default to be reconfigured.
 
 ## Item lifecycle commands
 
