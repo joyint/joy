@@ -1,0 +1,25 @@
+id: JOY-01AF-2E
+title: 'Vision README status diagram: reopen from deferred targets new, should be open'
+type: bug
+status: review
+priority: low
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-03T19:22:39.476008579Z
+updated: 2026-06-03T19:23:19.073729123Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-03T19:22:39.608785408Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-03T19:23:19.073729123Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'docs/dev/vision/README.md status-workflow mermaid (~line 153) shows ''deferred --> new : reopen''. joy reopen always sets status to open (Commands::Reopen -> StatusArgs::new(id, open)), regardless of source. Fix to ''deferred --> open : reopen''. Same fix shipped on the website (JISITE-0040-82). All other transitions verified correct against the code.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-03T19:23:19.015463464Z
+  text: '[x] Fixed docs/dev/vision/README.md status diagram: ''deferred --> new : reopen'' -> ''deferred --> open : reopen''. Matches code (reopen always -> open). Verified no other ''deferred --> new'' remains in the repo docs. All other transitions in the diagram already match the code.'
