@@ -314,7 +314,18 @@ pub(crate) fn read_passphrase(
              Pass --passphrase <value> or --passphrase-stdin for non-interactive use."
         );
     }
-    Ok(rpassword::prompt_password(prompt)?)
+    let passphrase = rpassword::prompt_password(prompt)?;
+    // Erase the prompt line so the lingering "Passphrase:" does not read as if
+    // Joy had echoed the secret. rpassword emits a trailing CR+LF after the
+    // hidden input, so the cursor is on the line *below* the prompt: move up
+    // one line, to column 0, and clear it. Only in the interactive terminal
+    // case; piped and --passphrase-stdin paths returned earlier and never
+    // printed a prompt.
+    if std::io::stderr().is_terminal() {
+        eprint!("\x1b[1A\r\x1b[2K");
+        let _ = std::io::Write::flush(&mut std::io::stderr());
+    }
+    Ok(passphrase)
 }
 
 /// `joy auth init` — first-time setup for the current member.
@@ -1273,10 +1284,10 @@ fn run_token_add(
         });
     }
 
-    // The token is meant to be copy/pasted into the AI's chat; any extra
-    // lines around it just create noise the operator has to strip. Emit
-    // only the token (JOY-0185-66 follow-up).
-    let _ = hours;
+    // stdout stays exactly the quoted token so it can be copied or piped
+    // without stripping noise (JOY-0185-66). The redeem hint goes to stderr,
+    // so it is visible to the operator but not part of the captured token.
+    eprintln!("To redeem within {hours}h: joy auth --token <TOKEN> --json");
     println!("\"{}\"", encoded);
 
     Ok(())
