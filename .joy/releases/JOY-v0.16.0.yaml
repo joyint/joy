@@ -1,0 +1,31 @@
+version: v0.16.0
+date: 2026-06-03
+previous: v0.15.9
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 57
+  items: 10
+items:
+  tasks:
+  - id: JOY-01AC-14
+    title: Add status shortcuts approve/defer/rework; start stays new-tolerant
+  - id: JOY-01AD-0A
+    title: 'Docs: explain ''open'' status, gates, AI triage, and new workflow verbs in tutorial + joy project'
+  - id: JOY-01AE-50
+    title: 'Vision: align status-workflow diagram verb (accept -> close) and note defer from any active state'
+  - id: JOY-01B1-FF
+    title: 'prepare-commit-msg hook: pre-fill commit message with item ID + trailers'
+  bugs:
+  - id: JOY-01AB-DD
+    title: Untrack committed .vibe/ and AGENTS.md (gitignored but versioned)
+  - id: JOY-01AA-9E
+    title: joy churns .gitignore and drops other tools' entries; manage a fixed full set
+  - id: JOY-019E-3A
+    title: joy ai init must un-track AI tool files if they slipped into git
+  - id: JOY-01AF-2E
+    title: 'Vision README status diagram: reopen from deferred targets new, should be open'
+  reworks:
+  - id: JOY-01AF-7C
+    title: 'joy auth token add: clear passphrase prompt and add a redeem hint'
+  - id: JOY-01B0-C0
+    title: 'completions --help: document setup for all 5 shells incl. PowerShell'

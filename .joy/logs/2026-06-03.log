@@ -43,3 +43,4 @@
 2026-06-03T21:50:00.178Z JOY-01B1-FF comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-06-03T21:50:05.727Z JOY-01B1-FF item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-06-03T22:02:14.156Z JOY-01B1-FF item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-06-03T22:09:29.333Z v0.16.0 release.created [horst.schwarz@joydev.com]
