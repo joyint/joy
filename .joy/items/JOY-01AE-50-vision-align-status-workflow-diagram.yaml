@@ -1,0 +1,22 @@
+id: JOY-01AE-50
+title: 'Vision: align status-workflow diagram verb (accept -> close) and note defer from any active state'
+type: task
+status: new
+priority: medium
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-03T04:41:16.764602861Z
+updated: 2026-06-03T04:41:16.764602861Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: |-
+  The status-workflow mermaid diagram in docs/dev/vision/README.md labels review->closed as 'accept', but the CLI verb is 'close' and we are keeping 'close' (no accept alias). Align the diagram and surrounding text to the implemented verbs so vision and CLI match.
+
+  Changes in docs/dev/vision/README.md Status Workflow section:
+  - review --> closed : accept  =>  review --> closed : close
+  - Reflect that defer is available from any active state (new, open, in-progress, review) -> deferred, not only new/open. Update the diagram edges/text accordingly.
+  - Keep the verbs consistent with JOY-01AC-14 (approve/defer/rework/start/submit/close/reopen).
+
+  Pure docs. Verify mermaid renders.

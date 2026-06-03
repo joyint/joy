@@ -1,0 +1,40 @@
+id: JOY-01AC-14
+title: Add status shortcuts approve/defer/rework; start stays new-tolerant
+type: task
+status: review
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-03T04:40:50.980171006Z
+updated: 2026-06-03T04:49:37.077026802Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-03T04:43:25.462207914Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-03T04:49:37.077026802Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Pilot users could not tell why the 'open' status exists when an item could go straight from new to in-progress. The vision already names the transitions (new->open: approve, ->deferred: defer, review->in-progress: rework) but only start/submit/close/reopen are implemented as CLI shortcuts. Close the gap so the workflow verbs match the vision and the purpose of 'open' (triage/approval gate, esp. for AI-generated items) becomes visible.
+
+  Add shortcuts (crates/joy-cli/src/commands/status.rs + joy --help + the workflow diagram in joy project / status help):
+  - joy approve : new -> open (the explicit triage/approval step; relevant when the new->open gate is active, e.g. allow_ai:false for AI items)
+  - joy defer   : from ANY active state (new, open, in-progress, review) -> deferred. There can always be a reason to set something aside. (Not from closed; that is reopen.)
+  - joy rework  : review -> in-progress
+
+  Keep start tolerant: new->in-progress AND open->in-progress both allowed, so solo users without a gate never notice 'open' (zero ceremony). close stays the verb for review->closed (do NOT rename to accept).
+
+  Tests: each new shortcut performs its transition and rejects invalid source states; defer works from all four active states; start still works directly from new. Update joy --help and the workflow visualization. just check.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-03T04:43:25.376593666Z
+  text: 'Plan: add status subcommands in joy-cli (status.rs + main.rs subcommand wiring + joy --help): approve (new->open), defer (any active: new|open|in-progress|review -> deferred), rework (review->in-progress). Keep start tolerant (new|open -> in-progress). Reuse existing status-change path (guard.enforce ChangeStatus, dependency warnings, assignee handling). Update the workflow diagram in status help and joy project. Tests: each verb''s valid transition + rejection from invalid source; defer from all four active states; start still works from new. just check.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-03T04:44:29.179089140Z
+  text: 'Design correction during implementation: status::run does NOT validate source states -- the existing verbs (start/submit/close/reopen) set the target status directly; restrictions come only from optional gates, matching the vision ''one process with dimmers, not hardcoded rules''. So approve/defer/rework will be built the same way: named target-status shortcuts, no hardcoded source-state rejection. Tests assert the correct target status is set and that defer works from all active states (new/open/in-progress/review); they do NOT assert rejection (that would be inconsistent with the other verbs and contrary to the gate model).'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-03T04:49:37.018233393Z
+  text: '[x] Added shortcuts in main.rs (subcommand decls + dispatch) routing through status::run, same pattern as start/submit/close/reopen: approve (->open), rework (->in-progress), defer (->deferred). start unchanged and already new-tolerant (status::run sets target status directly; no source-state validation, consistent with the gate model). [x] Updated joy --help Shortcuts section and the status-help workflow note with the new verbs. [x] New tests/integration/workflow_shortcuts.bats (9 cases): approve new->open; start direct from new AND from open; rework review->in-progress; defer from all four active states (new/open/in-progress/review) asserted via --json from/to; approve/rework/defer present in joy --help. [x] just check green (fmt, clippy, all suites incl. the 9 new bats).'
