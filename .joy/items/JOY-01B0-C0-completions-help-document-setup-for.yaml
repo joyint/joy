@@ -1,0 +1,35 @@
+id: JOY-01B0-C0
+title: 'completions --help: document setup for all 5 shells incl. PowerShell'
+type: rework
+status: review
+priority: low
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-03T20:22:23.257090504Z
+updated: 2026-06-03T20:26:10.043001059Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-03T20:22:33.348165324Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-03T20:26:10.043001059Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  joy completions --help lists all 5 shells in the <SHELL> arg (bash/zsh/fish/powershell/elvish) but the 'Recommended setup' section only covers bash/zsh/fish. Add PowerShell and Elvish, each with its idiomatic method, and a one-line dynamic-vs-static note.
+
+  Setups (verified working):
+  - Bash: source <(joy completions bash)  (dynamic, colon-aware wrapper)
+  - Zsh:  source <(COMPLETE=zsh joy)
+  - Fish: source (COMPLETE=fish joy | psub)
+  - PowerShell: joy completions powershell | Out-String | Invoke-Expression  (add to $PROFILE)
+  - Elvish: eval (COMPLETE=elvish joy | slurp)
+
+  Note: the COMPLETE= dynamic scripts add item/milestone/member ID completion; 'joy completions <shell>' emits a static script (subcommands+flags), which is the simplest route for PowerShell profiles on Windows. Update the after_help in crates/joy-cli/src/commands/completions.rs. just check (snapshot/help).
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-03T20:26:09.983259472Z
+  text: '[x] Rewrote completions after_help: Recommended setup now lists all five shells with the idiomatic method each (Bash source<(joy completions bash), Zsh/Fish via COMPLETE=, PowerShell ''joy completions powershell | Out-String | Invoke-Expression'' for $PROFILE, Elvish ''eval (COMPLETE=elvish joy | slurp)''). Added a one-line dynamic-vs-static note (COMPLETE= forms add item/member ID completion; ''joy completions <shell>'' is the static script, simplest for Windows PowerShell). Fixed a stale ''--static'' reference to ''--static-only''. Verified the rendered --help; just check green.'
