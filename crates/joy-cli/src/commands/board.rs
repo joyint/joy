@@ -449,7 +449,7 @@ fn render_decisions_board(
     println!("{sep}");
 
     // Keep only non-empty validity columns.
-    let mut columns: Vec<(&str, Vec<&Item>)> = Vec::new();
+    let mut columns: Vec<(Validity, &str, Vec<&Item>)> = Vec::new();
     for (v, label) in VALIDITY_ORDER {
         let mut items: Vec<&Item> = visible
             .iter()
@@ -462,7 +462,7 @@ fn render_decisions_board(
         if !reverse {
             items.reverse();
         }
-        columns.push((label, items));
+        columns.push((*v, label, items));
     }
 
     if columns.is_empty() {
@@ -487,9 +487,14 @@ fn render_decisions_board(
     // Build per-column cell lines: heading, then one line per decision.
     let rendered: Vec<Vec<String>> = columns
         .iter()
-        .map(|(label, items)| {
+        .map(|(v, label, items)| {
             let mut lines: Vec<String> = Vec::new();
-            let head = format!("{} ({})", label, items.len());
+            let head = format!(
+                "{}{} ({})",
+                color::validity_indicator(v),
+                label,
+                items.len()
+            );
             lines.push(color::label(&truncate_display(&head, col_width)));
             let show = items.len().min(max_items);
             for item in items.iter().take(show) {
@@ -530,7 +535,7 @@ fn render_decisions_board(
     println!("{sep}");
     let counts: Vec<String> = columns
         .iter()
-        .map(|(label, items)| format!("{} {}", items.len(), label.to_lowercase()))
+        .map(|(_, label, items)| format!("{} {}", items.len(), label.to_lowercase()))
         .collect();
     println!("{}", color::label(&counts.join(" · ")));
 

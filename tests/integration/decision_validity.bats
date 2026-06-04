@@ -64,7 +64,9 @@ load setup
     run joy show "$ID"
     [ "$status" -eq 0 ]
     [[ "$output" == *"Validity"* ]]
-    [[ "$output" == *"proposed"* ]]
+    # Renders proposed; "pro" matches both the short and the full form,
+    # since the project's display mode may abbreviate.
+    [[ "$output" == *"pro"* ]]
 }
 
 @test "joy show hides validity for a non-decision" {

@@ -54,10 +54,11 @@ pub fn run(args: ShowArgs) -> Result<()> {
     // Decisions always show their validity; an unset value reads as proposed
     // (the decision is still being decided). Other types show it only if set.
     if matches!(item.item_type, ItemType::Decision) {
-        let validity = item.validity.unwrap_or(Validity::Proposed);
-        println!("{} {}", color::label("Validity:"), validity);
+        let (_, disp) = color::validity_display(&item.validity.unwrap_or(Validity::Proposed));
+        println!("{} {}", color::label("Validity:"), disp);
     } else if let Some(validity) = item.validity {
-        println!("{} {}", color::label("Validity:"), validity);
+        let (_, disp) = color::validity_display(&validity);
+        println!("{} {}", color::label("Validity:"), disp);
     }
     if let Some(ref replaced_by) = item.replaced_by {
         println!(

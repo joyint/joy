@@ -234,13 +234,13 @@ fn truncate_title(s: &str, max_len: usize) -> String {
 /// The `val` column cell. A decision with no recorded validity reads as
 /// `proposed` (still being decided); a non-decision shows `-` unless one
 /// was explicitly set.
-fn validity_cell(item: &Item) -> String {
+fn validity_cell(item: &Item) -> (String, String) {
     if matches!(item.item_type, ItemType::Decision) {
-        item.validity.unwrap_or(Validity::Proposed).to_string()
+        color::validity_display(&item.validity.unwrap_or(Validity::Proposed))
+    } else if let Some(v) = item.validity {
+        color::validity_display(&v)
     } else {
-        item.validity
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "-".to_string())
+        ("-".to_string(), "-".to_string())
     }
 }
 
@@ -331,7 +331,7 @@ fn print_table(
     };
 
     let w_val = if extras.validity {
-        col_raw("VAL", &|i| validity_cell(i))
+        col_raw("VAL", &|i| validity_cell(i).0)
     } else {
         0
     };
@@ -444,8 +444,8 @@ fn print_table(
         );
 
         if extras.validity {
-            let val = validity_cell(item);
-            line.push_str(&format!("  {}", pad_colored(&val, &val, w_val)));
+            let (raw, colored) = validity_cell(item);
+            line.push_str(&format!("  {}", pad_colored(&colored, &raw, w_val)));
         }
         if extras.parent {
             let parent_val = item.parent.as_deref().unwrap_or("-");

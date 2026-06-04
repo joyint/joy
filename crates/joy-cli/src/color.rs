@@ -5,7 +5,7 @@ use std::io::IsTerminal;
 use std::sync::OnceLock;
 
 use joy_core::model::config::{ColorMode, OutputConfig};
-use joy_core::model::item::{ItemType, Priority, Status};
+use joy_core::model::item::{ItemType, Priority, Status, Validity};
 
 static ENABLED: OnceLock<bool> = OnceLock::new();
 static EMOJI_ENABLED: OnceLock<bool> = OnceLock::new();
@@ -289,6 +289,68 @@ pub fn item_type(t: &ItemType) -> String {
         ItemType::Idea => wrap(INFO, &text),
         ItemType::Decision => wrap(INFO, &text),
         ItemType::Task => wrap(SECONDARY, &text),
+    }
+}
+
+pub fn validity_indicator(v: &Validity) -> &'static str {
+    if !is_emoji_enabled() {
+        return "";
+    }
+    match v {
+        Validity::Proposed => "\u{1f4ad} ",
+        Validity::Accepted => "\u{1f4dc} ",
+        Validity::Rejected => "\u{1f6ab} ",
+        Validity::Replaced => "\u{1f500} ",
+        Validity::Retired => "\u{1f4e6} ",
+    }
+}
+
+pub fn validity_short(v: &Validity) -> &'static str {
+    match v {
+        Validity::Proposed => "pro",
+        Validity::Accepted => "acc",
+        Validity::Rejected => "rej",
+        Validity::Replaced => "rep",
+        Validity::Retired => "ret",
+    }
+}
+
+pub fn validity(v: &Validity) -> String {
+    let text = v.to_string();
+    match v {
+        Validity::Accepted => wrap(SUCCESS, &text),
+        Validity::Proposed => wrap(WARNING, &text),
+        Validity::Rejected => wrap(DANGER, &text),
+        Validity::Replaced => wrap(INACTIVE, &text),
+        Validity::Retired => wrap(INACTIVE, &text),
+    }
+}
+
+pub fn validity_colored_short(v: &Validity) -> String {
+    let text = validity_short(v);
+    match v {
+        Validity::Accepted => wrap(SUCCESS, text),
+        Validity::Proposed => wrap(WARNING, text),
+        Validity::Rejected => wrap(DANGER, text),
+        Validity::Replaced => wrap(INACTIVE, text),
+        Validity::Retired => wrap(INACTIVE, text),
+    }
+}
+
+/// Combined indicator + label for validity. In short mode: emoji only or abbreviation.
+pub fn validity_display(v: &Validity) -> (String, String) {
+    if is_short() {
+        if is_emoji_enabled() {
+            let emoji = validity_indicator(v).trim();
+            (emoji.to_string(), emoji.to_string())
+        } else {
+            let abbr = validity_short(v);
+            (abbr.to_string(), validity_colored_short(v))
+        }
+    } else {
+        let raw = format!("{}{}", validity_indicator(v), v);
+        let colored = format!("{}{}", validity_indicator(v), validity(v));
+        (raw, colored)
     }
 }
 
