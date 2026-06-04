@@ -40,3 +40,12 @@ load setup
     [ "$status" -eq 0 ]
     [[ "$output" == *"VAL"* ]]
 }
+
+@test "bare joy -D shows the decisions board" {
+    setup_human_auth
+    joy add decision "Board via bare flag"
+    run joy -D --json
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.data.columns | length >= 1' >/dev/null
+    [[ "$output" == *"Board via bare flag"* ]]
+}

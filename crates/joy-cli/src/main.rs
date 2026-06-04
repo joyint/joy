@@ -109,6 +109,10 @@ pub(crate) struct Cli {
     #[arg(short, long)]
     reverse: bool,
 
+    /// Show the decisions board (validity columns) instead of the status board
+    #[arg(short = 'D', long)]
+    decisions: bool,
+
     /// Machine-readable JSON output.
     #[arg(long, global = true)]
     json: bool,
@@ -446,7 +450,10 @@ fn main() -> anyhow::Result<()> {
             Some(Commands::PrepareCommitMsg(args)) => commands::prepare_commit_msg::run(args),
             Some(Commands::Update(args)) => commands::update::run(args),
             None => commands::board::run(BoardArgs {
-                filter: commands::filter_args::FilterArgs::default(),
+                filter: commands::filter_args::FilterArgs {
+                    decisions: cli.decisions,
+                    ..Default::default()
+                },
                 short: false,
                 all: cli.all,
                 reverse: cli.reverse,
