@@ -1,7 +1,7 @@
 id: JOY-01B5-21
 title: 'decisions view: --decisions / -D filter with val column and board'
 type: task
-status: review
+status: closed
 priority: high
 parent: JOY-01B3-CA
 assignees:
@@ -11,12 +11,14 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-04T21:26:13.250915664Z
-updated: 2026-06-04T22:40:00.871044572Z
+updated: 2026-06-04T22:56:26.074088545Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-04T21:55:30.433031456Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 - date: 2026-06-04T22:02:44.709065172Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-04T22:56:26.074088545Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: Add a --decisions / -D view to the read commands (ls, board, find). It filters to decisions, shows a val column (short header for validity), and renders a dedicated decisions board with validity as columns. -a includes all as usual. -D is a deliberate one-off for the most-read type; other types stay on -T/--type. Leave -d=description on add/edit untouched.
 comments:

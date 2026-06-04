@@ -1,7 +1,7 @@
 id: JOY-01B4-65
 title: validity and replaced_by fields in item model (joy-core)
 type: task
-status: review
+status: closed
 priority: high
 parent: JOY-01B3-CA
 assignees:
@@ -11,7 +11,7 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-04T21:25:51.292397071Z
-updated: 2026-06-04T22:37:50.578917453Z
+updated: 2026-06-04T22:56:25.953163486Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-04T21:35:42.325909278Z
@@ -21,6 +21,8 @@ history:
 - date: 2026-06-04T22:22:11.831676739Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 - date: 2026-06-04T22:25:35.010447716Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-04T22:56:25.953163486Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: Add two fields to the item model in joy-core. validity with values proposed, accepted, rejected, replaced, retired; empty while a decision is still being decided. replaced_by holds the ID of the item that took over; setting it implies validity=replaced. Keep replaced_by single-meaning, distinct from deps and parent. On joy close of a decision, default validity to accepted. The reverse lookup (supersedes) is derived, like deps/dependents.
 comments:

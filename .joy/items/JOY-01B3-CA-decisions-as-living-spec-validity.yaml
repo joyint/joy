@@ -1,7 +1,7 @@
 id: JOY-01B3-CA
 title: 'decisions as living spec: validity, replaced_by, decisions view'
 type: epic
-status: new
+status: closed
 priority: high
 capabilities:
 - conceive
@@ -9,7 +9,9 @@ capabilities:
 effort: 5
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-04T21:25:18.286303257Z
-updated: 2026-06-04T21:25:18.286303257Z
+updated: 2026-06-04T22:56:26.263733608Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
+history:
+- date: 2026-06-04T22:56:26.263733608Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: Treat decisions as the project's living specification, read by humans and AI before any work to know the binding ground rules. Add a validity field (proposed, accepted, rejected, replaced, retired) and a replaced_by link to items, surface them through a --decisions/-D view (val column, own board), and define in the tutorial that a decision binds when status=closed and validity=accepted. Decisions stay normal items in the single workflow; this only extends the feature set, it does not change the architecture.
