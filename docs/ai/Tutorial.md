@@ -53,10 +53,20 @@ Re-read each file on every new session, because the contents may have changed si
 After the three docs, list the project's decisions at session start so you know what policy items exist:
 
 ```
-joy ls --type decision --all
+joy ls -D -a
 ```
 
-Decisions are project-wide policy choices that apply to all subsequent work unless the decision body restricts its scope. Read the body of a specific decision via `joy show <ID>` when your activity touches its topic. Skip items in status `new`, `open`, or `deferred` (not yet binding).
+The `-D` / `--decisions` view filters to decisions and adds a `val` (validity) column; `joy board -D` shows the same set grouped by validity. Decisions are project-wide policy choices that apply to all subsequent work unless the decision body restricts its scope. Read the body of a specific decision via `joy show <ID>` when your activity touches its topic.
+
+A decision **binds** when its status is `closed` **and** its validity is `accepted`. These are two orthogonal axes: `status` tracks the work of deciding (a `closed` decision means the deciding is finished, which is the precondition for the rule to take force), while `validity` tracks the rule itself. The validity values are:
+
+- `accepted` - in force, a binding rule
+- `proposed` - still being decided, not yet binding (also any decision not yet `closed`)
+- `rejected` - considered and declined, never in force
+- `replaced` - superseded by another decision; follow the `replaced_by` link to its successor
+- `retired` - dropped without a successor, no longer in force
+
+So the binding decisions are exactly the `closed` plus `accepted` ones. Skip `proposed`, `rejected`, `replaced`, and `retired`, and skip any decision still in `new`, `open`, `in-progress`, or `review`.
 
 ## Operational loop
 
