@@ -11,7 +11,7 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-04T21:25:51.292397071Z
-updated: 2026-06-04T22:25:35.010447716Z
+updated: 2026-06-04T22:37:50.578917453Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-04T21:35:42.325909278Z
@@ -36,3 +36,6 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-06-04T22:25:34.884649331Z
   text: '[x] Done (ai:claude@joy, rework). joy show now always shows Validity for decision items; an unset value renders as proposed. ls val column and -D board aligned to the same effective-validity rule (unset becomes proposed; the board PROPOSED column merges unset and explicit proposed). Two new show bats cases. clippy clean, 346+113 unit tests, help snapshots and all 11 decision bats green. joy-core unchanged in this rework, so no downstream impact.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-04T22:37:50.578908546Z
+  text: 'Follow-up (ai:claude@joy): joy show validity now respects the short and emoji display modes via a new color::validity_display (full word, 3-letter abbrev pro/acc/rej/rep/ret, or emoji), like Type/Status/Priority. It was printing the full word unconditionally.'

@@ -11,7 +11,7 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-04T21:26:13.250915664Z
-updated: 2026-06-04T22:25:34.947548349Z
+updated: 2026-06-04T22:37:50.639059661Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-04T21:55:30.433031456Z
@@ -29,3 +29,6 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-06-04T22:25:34.947547680Z
   text: 'Follow-up (ai:claude@joy): the val column and -D board now render a decision with no recorded validity as proposed (was - / a DRAFT column), matching joy show. Shipped in JOY-01B4-65''s rework commit; -D filtering and column behaviour otherwise unchanged.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-04T22:37:50.639059017Z
+  text: 'Follow-up (ai:claude@joy): the val column and the -D board heading now respect short/emoji modes (abbreviations and per-validity emoji: proposed 💭, accepted 📜, rejected 🚫, replaced 🔀, retired 📦), consistent with the rest of the CLI.'
