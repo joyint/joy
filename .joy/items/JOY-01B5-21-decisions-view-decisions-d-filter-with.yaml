@@ -11,7 +11,7 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-04T21:26:13.250915664Z
-updated: 2026-06-04T22:37:50.639059661Z
+updated: 2026-06-04T22:40:00.871044572Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-04T21:55:30.433031456Z
@@ -32,3 +32,6 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-06-04T22:37:50.639059017Z
   text: 'Follow-up (ai:claude@joy): the val column and the -D board heading now respect short/emoji modes (abbreviations and per-validity emoji: proposed 💭, accepted 📜, rejected 🚫, replaced 🔀, retired 📦), consistent with the rest of the CLI.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-04T22:40:00.871035789Z
+  text: 'Follow-up (ai:claude@joy): the bare joy command (default board) now accepts -D/--decisions too, so joy -D and joy --decisions show the decisions board like joy board -D. Added a top-level decisions flag wired into the default BoardArgs filter. bats covers it.'
