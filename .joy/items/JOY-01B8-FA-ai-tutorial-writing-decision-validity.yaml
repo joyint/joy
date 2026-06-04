@@ -1,0 +1,27 @@
+id: JOY-01B8-FA
+title: 'AI tutorial: writing decision validity (close, supersede, reject/retire)'
+type: task
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-04T23:18:00.780750357Z
+updated: 2026-06-04T23:19:48.362775314Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-04T23:18:00.875385478Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-04T23:19:48.362775314Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Add a terse ''writing decisions'' block to the AI tutorial decision section: joy close accepts; joy edit --replaced-by supersedes; joy edit --validity rejected/retired; never delete, supersede or retire. Keep it scannable.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-04T23:18:00.937393740Z
+  text: 'Plan (ai:claude@joy): add a terse ''Writing decisions'' subsection after the binding-rule paragraph in docs/ai/Tutorial.md. Three one-liners (close=accepts, --replaced-by=supersedes, --validity rejected/retired) plus ''never delete; supersede or retire''. Run just sync-tutorial; extend ai_tutorial.bats to assert --replaced-by.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-04T23:19:48.270413202Z
+  text: '[x] Done (ai:claude@joy). Added a terse authoring block to the AI tutorial decision section: joy close accepts, joy edit --replaced-by supersedes (validity replaced), joy edit --validity rejected/retired for the rest, never delete. Synced to the in-crate copy; ai_tutorial.bats asserts --replaced-by. Built and tested.'
