@@ -50,6 +50,16 @@ pub fn run(args: ShowArgs) -> Result<()> {
     println!("{} {}", color::label("Type:    "), type_display);
     println!("{} {}", color::label("Status:  "), status_display);
     println!("{} {}", color::label("Priority:"), priority_display);
+    if let Some(ref validity) = item.validity {
+        println!("{} {}", color::label("Validity:"), validity);
+    }
+    if let Some(ref replaced_by) = item.replaced_by {
+        println!(
+            "{} {}",
+            color::label("Replaced by:"),
+            color::id(replaced_by)
+        );
+    }
 
     if let Some(ref parent) = item.parent {
         println!("{} {}", color::label("Parent:  "), color::id(parent));

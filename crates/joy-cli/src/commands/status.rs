@@ -8,7 +8,7 @@ use clap::Args;
 
 use joy_core::guard::Action;
 use joy_core::items;
-use joy_core::model::item::{Assignee, Status};
+use joy_core::model::item::{Assignee, ItemType, Status, Validity};
 use joy_core::releases;
 use joy_core::store;
 
@@ -189,6 +189,14 @@ pub fn run(args: StatusArgs) -> Result<()> {
 
     let log_user = ctx.log_user();
     item.status = new_status.clone();
+    // A decision that is properly closed becomes the binding rule. Default its
+    // validity to accepted unless it was set explicitly (e.g. rejected).
+    if matches!(new_status, Status::Closed)
+        && matches!(item.item_type, ItemType::Decision)
+        && item.validity.is_none()
+    {
+        item.validity = Some(Validity::Accepted);
+    }
     items::touch_for_attribute_change(&mut item, &log_user);
     items::update_item(&ctx.root, &item)?;
     joy_core::event_log::log_event_as(
