@@ -1,15 +1,28 @@
 id: JOY-01B7-0A
 title: 'joy ai tutorial: a decision binds when closed and validity=accepted'
 type: task
-status: new
+status: review
 priority: high
 parent: JOY-01B3-CA
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-04T21:26:37.687254813Z
-updated: 2026-06-04T21:26:37.687254813Z
+updated: 2026-06-04T22:05:11.708972596Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
+history:
+- date: 2026-06-04T22:03:20.763174496Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-04T22:05:11.708972596Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Update joy ai tutorial: a decision binds when status=closed AND validity=accepted. Explain that closed means the deciding work is finished, which is the precondition for the rule to take force. Document the validity values and the replaced_by link, and that spec readers see validity, not status.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-04T22:03:20.823821515Z
+  text: 'Plan (ai:claude@joy): update the AI tutorial decision section. State that a decision binds when status=closed AND validity=accepted; explain that closed means the deciding work is finished, which is the precondition for the rule to take force. Document the validity values (proposed/accepted/rejected/replaced/retired) and the replaced_by link, and that spec readers use the -D/--decisions view (validity, not status). Edit the canonical source and run just sync-tutorial; add a bats assertion if the ai tutorial is covered.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-04T22:05:11.648718880Z
+  text: '[x] Done (ai:claude@joy). AI tutorial decision section updated in docs/ai/Tutorial.md and synced to the in-crate copy via just sync-tutorial. Session-start command is now joy ls -D -a. Documented: a decision binds when status=closed AND validity=accepted, with status and validity as orthogonal axes, the full validity value list (accepted/proposed/rejected/replaced/retired), and the replaced_by link. ai_tutorial.bats gains assertions for validity and accepted. ai tutorial bats and help pass.'
