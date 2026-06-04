@@ -2,6 +2,11 @@
 # Common setup for bats integration tests.
 # Sources: https://bats-core.readthedocs.io/
 
+# Require bats >= 1.5.0 so `run` accepts result-asserting flags
+# (e.g. `run -0`, `run --separate-stderr`) without a BW02 warning.
+# Loaded by every test file via `load setup`, so this applies project-wide.
+bats_require_minimum_version 1.5.0
+
 # Ensure joy binary is available (prefer debug build for speed)
 JOY_BIN="${JOY_BIN:-$(pwd)/target/debug/joy}"
 if [ ! -x "$JOY_BIN" ]; then
