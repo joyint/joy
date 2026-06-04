@@ -1,0 +1,39 @@
+id: JOY-01B5-21
+title: 'decisions view: --decisions / -D filter with val column and board'
+type: task
+status: closed
+priority: high
+parent: JOY-01B3-CA
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-04T21:26:13.250915664Z
+updated: 2026-06-04T22:56:26.074088545Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-04T21:55:30.433031456Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-04T22:02:44.709065172Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-04T22:56:26.074088545Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: Add a --decisions / -D view to the read commands (ls, board, find). It filters to decisions, shows a val column (short header for validity), and renders a dedicated decisions board with validity as columns. -a includes all as usual. -D is a deliberate one-off for the most-read type; other types stay on -T/--type. Leave -d=description on add/edit untouched.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-04T21:55:30.495149904Z
+  text: 'Plan (ai:claude@joy): 1) FilterArgs: add -D/--decisions bool; in to_spec inject ItemType Decision so the flag filters to decisions across all commands sharing FilterArgs (ls, board, find). 2) ls: when --decisions is set, show the val column (validity); keep -c validity/val working. 3) board: when --decisions is set, group columns by validity (proposed/accepted/rejected/replaced/retired) instead of status. 4) Keep -d=description on add/edit untouched; we use capital -D. 5) Tests: bats for joy ls -D and joy board -D; update help snapshots if needed; run just check plus downstream.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-04T22:02:44.646417514Z
+  text: '[x] Done (ai:claude@joy). FilterArgs gains -D/--decisions, which injects the decision type into the filter, so it works across ls, board and other views sharing FilterArgs. ls: a val column (header VAL) shows validity, on automatically under -D and via -c validity/val. board: -D renders a board grouped by validity (DRAFT/PROPOSED/ACCEPTED/REJECTED/REPLACED/RETIRED) instead of status, including closed accepted decisions by design. -d=description on add/edit untouched. Tests: joy-cli unit (column keys and decisions flag) plus integration decisions_view.bats (4 cases) plus a manual smoke test. clippy clean, all joy tests and help snapshots pass.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-04T22:25:34.947547680Z
+  text: 'Follow-up (ai:claude@joy): the val column and -D board now render a decision with no recorded validity as proposed (was - / a DRAFT column), matching joy show. Shipped in JOY-01B4-65''s rework commit; -D filtering and column behaviour otherwise unchanged.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-04T22:37:50.639059017Z
+  text: 'Follow-up (ai:claude@joy): the val column and the -D board heading now respect short/emoji modes (abbreviations and per-validity emoji: proposed 💭, accepted 📜, rejected 🚫, replaced 🔀, retired 📦), consistent with the rest of the CLI.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-04T22:40:00.871035789Z
+  text: 'Follow-up (ai:claude@joy): the bare joy command (default board) now accepts -D/--decisions too, so joy -D and joy --decisions show the decisions board like joy board -D. Added a top-level decisions flag wired into the default BoardArgs filter. bats covers it.'

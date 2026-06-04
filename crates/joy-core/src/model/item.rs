@@ -30,6 +30,19 @@ pub struct Item {
     pub effort: Option<u8>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
+    /// Validity of a decision: where the decided rule currently stands.
+    /// Orthogonal to `status`, which tracks the work of deciding. Only
+    /// meaningful for `decision` items, and absent while one is still being
+    /// decided. A decision binds when `status == closed` and
+    /// `validity == accepted` (see the AI tutorial).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub validity: Option<Validity>,
+    /// For a superseded item: the ID of the item that took its place.
+    /// Setting it implies `validity == replaced`. This is a one-way
+    /// "replaced by" pointer, distinct from `parent` (containment) and
+    /// `deps` (ordering). Used most by decisions, but valid on any item.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replaced_by: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_by: Option<String>,
     pub created: DateTime<Utc>,
@@ -139,6 +152,22 @@ pub enum Status {
     Deferred,
 }
 
+/// Where a decision's decided rule currently stands. Orthogonal to
+/// [`Status`]: `status` tracks the work of deciding, `Validity` tracks
+/// the rule. `proposed` while undecided, `accepted` once it binds,
+/// `rejected` if never adopted, `replaced` when another item supersedes
+/// it (see [`Item::replaced_by`]), `retired` when dropped without a
+/// successor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Validity {
+    Proposed,
+    Accepted,
+    Rejected,
+    Replaced,
+    Retired,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Priority {
@@ -202,6 +231,8 @@ impl Item {
             mode: None,
             effort: None,
             version: None,
+            validity: None,
+            replaced_by: None,
             created_by: None,
             created: now,
             updated: now,
@@ -347,6 +378,32 @@ impl std::str::FromStr for Priority {
             "critical" | "crt" => Ok(Priority::Critical),
             "extreme" | "ext" => Ok(Priority::Extreme),
             _ => Err(format!("unknown priority: {s}")),
+        }
+    }
+}
+
+impl std::fmt::Display for Validity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Validity::Proposed => write!(f, "proposed"),
+            Validity::Accepted => write!(f, "accepted"),
+            Validity::Rejected => write!(f, "rejected"),
+            Validity::Replaced => write!(f, "replaced"),
+            Validity::Retired => write!(f, "retired"),
+        }
+    }
+}
+
+impl std::str::FromStr for Validity {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "proposed" | "pro" => Ok(Validity::Proposed),
+            "accepted" | "acc" => Ok(Validity::Accepted),
+            "rejected" | "rej" => Ok(Validity::Rejected),
+            "replaced" | "rep" => Ok(Validity::Replaced),
+            "retired" | "ret" => Ok(Validity::Retired),
+            _ => Err(format!("unknown validity: {s}")),
         }
     }
 }
@@ -501,5 +558,34 @@ mod tests {
     fn parse_status() {
         assert_eq!("in-progress".parse::<Status>().unwrap(), Status::InProgress);
         assert!("invalid".parse::<Status>().is_err());
+    }
+
+    #[test]
+    fn parse_validity() {
+        assert_eq!("accepted".parse::<Validity>().unwrap(), Validity::Accepted);
+        assert_eq!("rep".parse::<Validity>().unwrap(), Validity::Replaced);
+        assert_eq!("Retired".parse::<Validity>().unwrap(), Validity::Retired);
+        assert!("invalid".parse::<Validity>().is_err());
+    }
+
+    #[test]
+    fn item_validity_roundtrip() {
+        let mut item = Item::new(
+            "IT-00CB".into(),
+            "Five pillars model".into(),
+            ItemType::Decision,
+            Priority::High,
+            vec![Capability::Conceive, Capability::Plan],
+        );
+        item.status = Status::Closed;
+        item.validity = Some(Validity::Replaced);
+        item.replaced_by = Some("IT-0140".into());
+
+        let yaml = serde_yaml_ng::to_string(&item).unwrap();
+        let parsed: Item = serde_yaml_ng::from_str(&yaml).unwrap();
+        assert_eq!(item, parsed);
+        // Validity serializes lowercase, like Status.
+        assert!(yaml.contains("validity: replaced"));
+        assert!(yaml.contains("replaced_by: IT-0140"));
     }
 }

@@ -6,7 +6,7 @@ use clap::Args;
 
 use joy_core::guard::Action;
 use joy_core::items;
-use joy_core::model::item::{Capability, ItemType, Priority};
+use joy_core::model::item::{Capability, ItemType, Priority, Validity};
 
 #[derive(Args)]
 pub struct EditArgs {
@@ -57,6 +57,14 @@ pub struct EditArgs {
     /// Set version tag (use "none" to remove)
     #[arg(short = 'v', long)]
     version: Option<String>,
+
+    /// Decision validity: proposed|accepted|rejected|replaced|retired (use "none" to remove)
+    #[arg(long)]
+    validity: Option<String>,
+
+    /// ID of the item that replaces this one (use "none" to remove); implies validity=replaced
+    #[arg(long = "replaced-by")]
+    replaced_by: Option<String>,
 
     /// Capabilities (CSV; replaces existing)
     #[arg(short = 'c', long)]
@@ -158,6 +166,36 @@ pub fn run(args: EditArgs) -> Result<()> {
         } else {
             Some(version.clone())
         };
+        changed = true;
+    }
+
+    if let Some(ref validity) = args.validity {
+        item.validity = if validity == "none" {
+            None
+        } else {
+            Some(
+                validity
+                    .parse::<Validity>()
+                    .map_err(|e: String| anyhow::anyhow!("{}", e))?,
+            )
+        };
+        changed = true;
+    }
+
+    if let Some(ref replaced) = args.replaced_by {
+        if replaced == "none" {
+            item.replaced_by = None;
+        } else {
+            if replaced == &item.id {
+                anyhow::bail!("an item cannot be replaced by itself.");
+            }
+            if items::load_item(&ctx.root, replaced).is_err() {
+                anyhow::bail!("replaced_by {} is not a valid item ID.", replaced);
+            }
+            item.replaced_by = Some(replaced.clone());
+            // A successor implies this item is no longer the current one.
+            item.validity = Some(Validity::Replaced);
+        }
         changed = true;
     }
 

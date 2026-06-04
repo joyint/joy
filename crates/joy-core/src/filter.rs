@@ -201,6 +201,8 @@ mod tests {
             mode: None,
             effort: None,
             version: None,
+            validity: None,
+            replaced_by: None,
             created_by: None,
             created: now,
             updated: now,

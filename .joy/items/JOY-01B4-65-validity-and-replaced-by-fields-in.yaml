@@ -1,0 +1,43 @@
+id: JOY-01B4-65
+title: validity and replaced_by fields in item model (joy-core)
+type: task
+status: closed
+priority: high
+parent: JOY-01B3-CA
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-04T21:25:51.292397071Z
+updated: 2026-06-04T22:56:25.953163486Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-04T21:35:42.325909278Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-04T21:52:47.110536560Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-04T22:22:11.831676739Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-04T22:25:35.010447716Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-04T22:56:25.953163486Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: Add two fields to the item model in joy-core. validity with values proposed, accepted, rejected, replaced, retired; empty while a decision is still being decided. replaced_by holds the ID of the item that took over; setting it implies validity=replaced. Keep replaced_by single-meaning, distinct from deps and parent. On joy close of a decision, default validity to accepted. The reverse lookup (supersedes) is derived, like deps/dependents.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-04T21:35:42.387880779Z
+  text: 'Plan (ai:claude@joy): 1) joy-core model/item.rs: add enum Validity (proposed/accepted/rejected/replaced/retired) mirroring Status (serde lowercase, Display, FromStr); add fields validity Option<Validity> and replaced_by Option<String> with serde default plus skip_serializing_if None; update Item::new to init both None; add unit and serde-roundtrip tests. 2) joy-cli add/edit: new flags --validity and --replaced-by; setting replaced-by validates the target exists and implies validity=replaced. 3) joy-cli status.rs: on close of a decision default validity to accepted when unset. 4) Tests: unit plus bats integration; run just check. Scope here: model plus ability to set and validate the fields. The --decisions/-D view and val column are the separate task JOY-01B5-21.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-04T21:44:14.484629824Z
+  text: '[x] Done (ai:claude@joy). joy-core model/item.rs: new enum Validity (proposed/accepted/rejected/replaced/retired) with serde lowercase plus Display and FromStr; Item gains optional fields validity and replaced_by; Item::new, the filter.rs test literal and the mod.rs re-export updated. joy-cli: edit gains --validity and --replaced-by (replaced-by validates the target exists, forbids self, and implies validity=replaced); the close path sets validity=accepted on a closed decision when unset; show now prints Validity and Replaced by. Tests: joy-core unit (parse and serde roundtrip) plus integration tests/integration/decision_validity.bats with 5 cases. cargo clippy clean, all joy tests pass, downstream jyn and jon build and test clean. Not yet committed. The --decisions/-D view and val column remain JOY-01B5-21.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-04T22:22:11.891963679Z
+  text: 'Rework (ai:claude@joy): joy show printed no Validity line for a decision whose validity was never set (None), e.g. JOY-013F in review. A decision that has not recorded a validity is conceptually proposed. Fix: for decision items always show the validity, rendering an unset value as proposed; non-decisions keep showing it only when set. Align the ls val column and the board to the same effective-validity rule (the board''s unset column becomes PROPOSED, merging unset and explicit proposed).'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-04T22:25:34.884649331Z
+  text: '[x] Done (ai:claude@joy, rework). joy show now always shows Validity for decision items; an unset value renders as proposed. ls val column and -D board aligned to the same effective-validity rule (unset becomes proposed; the board PROPOSED column merges unset and explicit proposed). Two new show bats cases. clippy clean, 346+113 unit tests, help snapshots and all 11 decision bats green. joy-core unchanged in this rework, so no downstream impact.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-04T22:37:50.578908546Z
+  text: 'Follow-up (ai:claude@joy): joy show validity now respects the short and emoji display modes via a new color::validity_display (full word, 3-letter abbrev pro/acc/rej/rep/ret, or emoji), like Type/Status/Priority. It was printing the full word unconditionally.'

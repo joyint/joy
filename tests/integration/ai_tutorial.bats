@@ -18,6 +18,9 @@ load setup
     [[ "$output" == *"joy auth --token"* ]]
     [[ "$output" == *"session_env"* ]]
     [[ "$output" == *"Delegated-By"* ]]
+    # Decision binding rule lives on the validity axis (JOY-01B7-0A).
+    [[ "$output" == *"validity"* ]]
+    [[ "$output" == *"accepted"* ]]
 }
 
 @test "joy --help footer points AI tools at joy ai tutorial" {
