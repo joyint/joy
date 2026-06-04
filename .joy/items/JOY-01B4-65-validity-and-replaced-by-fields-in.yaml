@@ -1,0 +1,28 @@
+id: JOY-01B4-65
+title: validity and replaced_by fields in item model (joy-core)
+type: task
+status: review
+priority: high
+parent: JOY-01B3-CA
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-04T21:25:51.292397071Z
+updated: 2026-06-04T21:52:47.110536560Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-04T21:35:42.325909278Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-04T21:52:47.110536560Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: Add two fields to the item model in joy-core. validity with values proposed, accepted, rejected, replaced, retired; empty while a decision is still being decided. replaced_by holds the ID of the item that took over; setting it implies validity=replaced. Keep replaced_by single-meaning, distinct from deps and parent. On joy close of a decision, default validity to accepted. The reverse lookup (supersedes) is derived, like deps/dependents.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-04T21:35:42.387880779Z
+  text: 'Plan (ai:claude@joy): 1) joy-core model/item.rs: add enum Validity (proposed/accepted/rejected/replaced/retired) mirroring Status (serde lowercase, Display, FromStr); add fields validity Option<Validity> and replaced_by Option<String> with serde default plus skip_serializing_if None; update Item::new to init both None; add unit and serde-roundtrip tests. 2) joy-cli add/edit: new flags --validity and --replaced-by; setting replaced-by validates the target exists and implies validity=replaced. 3) joy-cli status.rs: on close of a decision default validity to accepted when unset. 4) Tests: unit plus bats integration; run just check. Scope here: model plus ability to set and validate the fields. The --decisions/-D view and val column are the separate task JOY-01B5-21.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-04T21:44:14.484629824Z
+  text: '[x] Done (ai:claude@joy). joy-core model/item.rs: new enum Validity (proposed/accepted/rejected/replaced/retired) with serde lowercase plus Display and FromStr; Item gains optional fields validity and replaced_by; Item::new, the filter.rs test literal and the mod.rs re-export updated. joy-cli: edit gains --validity and --replaced-by (replaced-by validates the target exists, forbids self, and implies validity=replaced); the close path sets validity=accepted on a closed decision when unset; show now prints Validity and Replaced by. Tests: joy-core unit (parse and serde roundtrip) plus integration tests/integration/decision_validity.bats with 5 cases. cargo clippy clean, all joy tests pass, downstream jyn and jon build and test clean. Not yet committed. The --decisions/-D view and val column remain JOY-01B5-21.'

@@ -1,0 +1,15 @@
+id: JOY-01B7-0A
+title: 'joy ai tutorial: a decision binds when closed and validity=accepted'
+type: task
+status: new
+priority: high
+parent: JOY-01B3-CA
+capabilities:
+- implement
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-04T21:26:37.687254813Z
+updated: 2026-06-04T21:26:37.687254813Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'Update joy ai tutorial: a decision binds when status=closed AND validity=accepted. Explain that closed means the deciding work is finished, which is the precondition for the rule to take force. Document the validity values and the replaced_by link, and that spec readers see validity, not status.'

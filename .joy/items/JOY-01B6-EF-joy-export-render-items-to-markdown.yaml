@@ -1,0 +1,16 @@
+id: JOY-01B6-EF
+title: 'joy export: render items to markdown/json (e.g. --items decisions,bugs)'
+type: story
+status: new
+priority: medium
+capabilities:
+- plan
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-04T21:26:13.342147706Z
+updated: 2026-06-04T21:26:13.342147706Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: Add joy export to render items into a document, markdown or json, to the terminal. Support selecting item sets, e.g. --items decisions,bugs. For decisions this materialises the living specification. Items are the source of truth; rendered docs are generated artifacts. Separate theme from the validity/decisions-view work.
