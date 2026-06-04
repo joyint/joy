@@ -1,0 +1,29 @@
+id: JOY-01B2-01
+title: Remove stale pre-ADR-024 .joy artefacts during update and ai init
+type: task
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-04T18:46:33.645138364Z
+updated: 2026-06-04T18:54:20.238019041Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-04T18:46:45.872304564Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-04T18:54:20.143763029Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-04T18:54:20.238019041Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Repos created before ADR-024 still carry dead intermediate files under .joy/ that the current binary no longer reads or writes: .joy/ai/instructions.md, .joy/ai/instructions/setup.md, .joy/ai/skills/joy/SKILL.md and .joy/capabilities/*.md. AI tools sometimes pick these up and treat their content as authoritative. No command removes them today (ai init/update ignore them; ai reset only clears .joy/ai on full tool reset and never .joy/capabilities). Add an idempotent cleanup that hard-removes them (disk + git, staged) from both joy update (as an UpdateItem in the registry, so joy update --check reports them) and joy ai init. Preserve .joy/ai/jobs and .joy/ai/agents (current runtime data).'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-04T18:46:45.780310914Z
+  text: 'Plan: (1) joy-core init.rs: add LEGACY_AI_ARTIFACTS const (.joy/ai/instructions.md, .joy/ai/instructions, .joy/ai/skills, .joy/capabilities). (2) joy-cli commands/ai.rs: add git_rm_hard helper (git rm -r --quiet --ignore-unmatch) plus remove_legacy_ai_artifacts() and legacy_ai_artifacts_present(); reuses existing git_path_is_tracked/git_rm_cached pattern. Hard delete from disk + stage removal; fall back to fs::remove for untracked-on-disk; preserve .joy/ai/jobs and .joy/ai/agents. (3) update_registry.rs: new LegacyAiArtifactsItem (SECTION_REPO) registered in all(); gives joy update --check support. (4) Call remove_legacy_ai_artifacts in ai_init() after untrack_gitignored_tool_files with a one-line notice. (5) Integration test (temp git repo) asserting legacy removed + jobs/agents preserved + idempotent. (6) ADR-024 note. just check before commit (joy-core touched).'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-04T18:54:20.083123210Z
+  text: '[x] Implemented. joy-core init.rs: LEGACY_AI_ARTIFACTS const. joy-cli ai.rs: git_rm_hard + remove_legacy_ai_artifacts (hard delete from disk, stage removal via git rm; fs fallback for untracked; prunes empty .joy/ai; preserves jobs/agents) + legacy_ai_artifacts_present; ai_init calls it with a notice. update_registry.rs: LegacyAiArtifactsItem (SECTION_REPO) so joy update --check reports it. 3 unit tests added. just check green (fmt+clippy+unit+bats). E2E verified: update --check exits 2 when present / 0 when clean; update removes them and stages deletions; .joy/ai/jobs and .joy/ai/agents preserved. Note: ADR-024 lives in the umbrella (JI), so a doc note there is a separate follow-up.'

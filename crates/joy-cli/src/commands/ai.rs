@@ -198,6 +198,17 @@ fn ai_init(args: InitArgs) -> anyhow::Result<()> {
     let configured_tools = setup_new_tools(&root, effective_passphrase, args.passphrase_stdin)?;
     update_gitignore(&root, &configured_tools)?;
     untrack_gitignored_tool_files(&root);
+    let removed_legacy = remove_legacy_ai_artifacts(&root);
+    if !removed_legacy.is_empty() {
+        dprintln!(
+            "{}",
+            color::warning(&format!(
+                "Removed {} legacy pre-ADR-024 artefact(s): {}. Commit the removal to finish.",
+                removed_legacy.len(),
+                removed_legacy.join(", ")
+            ))
+        );
+    }
     check_nested_projects(&root)?;
 
     if crate::output::is_json() {
@@ -1613,6 +1624,75 @@ fn git_rm_cached(root: &Path, path: &str) -> bool {
     }
 }
 
+/// `git rm -r --quiet --ignore-unmatch -- <path>`: remove `path` from both
+/// the index and the working tree in one step. `--ignore-unmatch` makes it a
+/// successful no-op when the path is not tracked, so callers may run it
+/// unconditionally. Returns true on success.
+fn git_rm_hard(root: &Path, path: &str) -> bool {
+    let status = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["rm", "-r", "--quiet", "--ignore-unmatch", "--", path])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    matches!(status, Ok(s) if s.success())
+}
+
+/// True if any dead pre-ADR-024 artefact (see
+/// [`joy_core::init::LEGACY_AI_ARTIFACTS`]) still exists on disk under
+/// `root`. Read-only; drives the `joy update --check` row.
+pub(crate) fn legacy_ai_artifacts_present(root: &Path) -> bool {
+    joy_core::init::LEGACY_AI_ARTIFACTS
+        .iter()
+        .any(|rel| root.join(rel).exists())
+}
+
+/// Remove the dead pre-ADR-024 artefacts listed in
+/// [`joy_core::init::LEGACY_AI_ARTIFACTS`]. Hard removal: tracked paths are
+/// deleted from the working tree and the deletion is staged via `git rm`; a
+/// path that is present but untracked (a local-only leftover) is removed
+/// from disk directly. Idempotent -- returns the relative paths actually
+/// removed, empty when there was nothing to do.
+///
+/// The current runtime dirs `.joy/ai/jobs/` and `.joy/ai/agents/` are not in
+/// the list and are never touched. An `.joy/ai/` left empty afterwards is
+/// pruned; one that still holds jobs/agents is kept.
+pub(crate) fn remove_legacy_ai_artifacts(root: &Path) -> Vec<String> {
+    let mut removed = Vec::new();
+    for rel in joy_core::init::LEGACY_AI_ARTIFACTS {
+        let full = root.join(rel);
+        if git_path_is_tracked(root, rel) && git_rm_hard(root, rel) && !full.exists() {
+            removed.push((*rel).to_string());
+            continue;
+        }
+        // Untracked-but-present (or git rm left it behind): remove directly.
+        if full.exists() {
+            let res = if full.is_dir() {
+                fs::remove_dir_all(&full)
+            } else {
+                fs::remove_file(&full)
+            };
+            match res {
+                Ok(()) => removed.push((*rel).to_string()),
+                Err(e) => eprintln!("Warning: could not remove {rel}: {e}"),
+            }
+        }
+    }
+
+    // Prune an `.joy/ai/` that is now empty (nothing left to preserve).
+    let ai_dir = root.join(".joy/ai");
+    if ai_dir.is_dir()
+        && fs::read_dir(&ai_dir)
+            .map(|mut d| d.next().is_none())
+            .unwrap_or(false)
+    {
+        let _ = fs::remove_dir_all(&ai_dir);
+    }
+
+    removed
+}
+
 /// Read the lines currently inside the joy-managed `.gitignore` block.
 /// Returns an empty vec if `.gitignore` is missing or has no managed block.
 /// Test-only since `update_gitignore` now writes a fixed full set and no
@@ -2019,6 +2099,85 @@ mod tests {
         // No tool files tracked: must not panic or error.
         untrack_gitignored_tool_files(root);
         assert!(!git_path_is_tracked(root, "AGENTS.md"));
+    }
+
+    #[test]
+    fn remove_legacy_ai_artifacts_removes_committed_and_preserves_runtime() {
+        // Pre-ADR-024 layout committed into a repo: the legacy files are
+        // removed from disk and the deletion is staged, while the current
+        // runtime dirs .joy/ai/jobs and .joy/ai/agents survive.
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let git = |args: &[&str]| {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(root)
+                .args(args)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap()
+        };
+        git(&["init", "-q"]);
+        git(&["config", "user.email", "t@example.com"]);
+        git(&["config", "user.name", "t"]);
+
+        // Legacy artefacts.
+        fs::create_dir_all(root.join(".joy/ai/instructions")).unwrap();
+        fs::create_dir_all(root.join(".joy/ai/skills/joy")).unwrap();
+        fs::create_dir_all(root.join(".joy/capabilities")).unwrap();
+        fs::write(root.join(".joy/ai/instructions.md"), "old").unwrap();
+        fs::write(root.join(".joy/ai/instructions/setup.md"), "old").unwrap();
+        fs::write(root.join(".joy/ai/skills/joy/SKILL.md"), "old").unwrap();
+        fs::write(root.join(".joy/capabilities/plan.md"), "old").unwrap();
+        // Current runtime data that must be preserved.
+        fs::create_dir_all(root.join(".joy/ai/jobs")).unwrap();
+        fs::create_dir_all(root.join(".joy/ai/agents")).unwrap();
+        fs::write(root.join(".joy/ai/jobs/j.yaml"), "id: 1").unwrap();
+        fs::write(root.join(".joy/ai/agents/a.yaml"), "id: 2").unwrap();
+        git(&["add", "-A"]);
+        git(&["commit", "-q", "-m", "seed"]);
+
+        let removed = remove_legacy_ai_artifacts(root);
+
+        assert_eq!(removed.len(), joy_core::init::LEGACY_AI_ARTIFACTS.len());
+        // Legacy gone from disk and no longer tracked.
+        assert!(!root.join(".joy/ai/instructions.md").exists());
+        assert!(!root.join(".joy/ai/instructions").exists());
+        assert!(!root.join(".joy/ai/skills").exists());
+        assert!(!root.join(".joy/capabilities").exists());
+        assert!(!git_path_is_tracked(root, ".joy/capabilities/"));
+        // Runtime data preserved.
+        assert!(root.join(".joy/ai/jobs/j.yaml").is_file());
+        assert!(root.join(".joy/ai/agents/a.yaml").is_file());
+        assert!(root.join(".joy/ai").is_dir());
+
+        // Idempotent: a second pass finds nothing.
+        assert!(remove_legacy_ai_artifacts(root).is_empty());
+    }
+
+    #[test]
+    fn remove_legacy_ai_artifacts_prunes_empty_ai_dir() {
+        // When no jobs/agents remain, an emptied .joy/ai/ is pruned too.
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        fs::create_dir_all(root.join(".joy/ai/skills/joy")).unwrap();
+        fs::write(root.join(".joy/ai/skills/joy/SKILL.md"), "old").unwrap();
+
+        let removed = remove_legacy_ai_artifacts(root);
+
+        assert!(removed.contains(&".joy/ai/skills".to_string()));
+        assert!(!root.join(".joy/ai").exists());
+    }
+
+    #[test]
+    fn legacy_ai_artifacts_present_reflects_disk_state() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        assert!(!legacy_ai_artifacts_present(root));
+        fs::create_dir_all(root.join(".joy/capabilities")).unwrap();
+        fs::write(root.join(".joy/capabilities/plan.md"), "old").unwrap();
+        assert!(legacy_ai_artifacts_present(root));
     }
 
     #[test]

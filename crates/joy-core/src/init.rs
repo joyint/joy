@@ -34,6 +34,25 @@ pub const PROJECT_FILES: &[EmbeddedFile] = &[EmbeddedFile {
     executable: false,
 }];
 
+/// Dead pre-ADR-024 artefacts under `.joy/`. Before ADR-024 the AI
+/// integration synced intermediate instruction/skill/capability files
+/// into `.joy/ai/` and `.joy/capabilities/`; today every template is
+/// embedded in the binary and rendered straight into the tool
+/// directories (`.claude/`, `.qwen/`, `AGENTS.md`, `.github/`). The
+/// current CLI neither reads nor writes these files, but AI tools that
+/// stumble over them in an old repo treat their content as authoritative.
+/// `joy update` and `joy ai init` remove them.
+///
+/// Paths are relative to the project root. Directories are removed
+/// recursively. The current runtime data under `.joy/ai/jobs/` and
+/// `.joy/ai/agents/` is deliberately NOT listed and stays untouched.
+pub const LEGACY_AI_ARTIFACTS: &[&str] = &[
+    ".joy/ai/instructions.md",
+    ".joy/ai/instructions",
+    ".joy/ai/skills",
+    ".joy/capabilities",
+];
+
 pub struct InitOptions {
     pub root: PathBuf,
     pub name: Option<String>,

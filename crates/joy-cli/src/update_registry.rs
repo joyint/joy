@@ -122,6 +122,7 @@ pub trait UpdateItem: Sync + Send {
 pub fn all() -> Vec<Box<dyn UpdateItem>> {
     let mut v: Vec<Box<dyn UpdateItem>> = vec![
         Box::new(VersionMarkerItem),
+        Box::new(LegacyAiArtifactsItem),
         Box::new(GitignoreBlockItem),
         Box::new(GitattributesBlockItem),
         Box::new(MergeDriverItem),
@@ -193,6 +194,40 @@ impl UpdateItem for VersionMarkerItem {
         Ok(vec![RefreshRow {
             name: "version marker".into(),
             action: if was_current { None } else { Some("stamped") },
+        }])
+    }
+}
+
+/// Removes dead pre-ADR-024 artefacts under `.joy/` (legacy AI
+/// instruction/skill/capability files). See
+/// [`joy_core::init::LEGACY_AI_ARTIFACTS`] and [`ai::remove_legacy_ai_artifacts`].
+struct LegacyAiArtifactsItem;
+
+impl UpdateItem for LegacyAiArtifactsItem {
+    fn section(&self) -> &'static str {
+        SECTION_REPO
+    }
+    fn check(&self, root: &Path) -> Result<Vec<CheckRow>> {
+        let present = ai::legacy_ai_artifacts_present(root);
+        Ok(vec![CheckRow {
+            name: "legacy AI artefacts".into(),
+            mark: RowMark::from_ok(!present),
+            detail: if present {
+                "pre-ADR-024 files present (would be removed)".into()
+            } else {
+                "none".into()
+            },
+        }])
+    }
+    fn refresh(&self, root: &Path) -> Result<Vec<RefreshRow>> {
+        let removed = ai::remove_legacy_ai_artifacts(root);
+        Ok(vec![RefreshRow {
+            name: "legacy AI artefacts".into(),
+            action: if removed.is_empty() {
+                None
+            } else {
+                Some("removed")
+            },
         }])
     }
 }
