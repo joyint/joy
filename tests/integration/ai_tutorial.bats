@@ -21,6 +21,8 @@ load setup
     # Decision binding rule lives on the validity axis (JOY-01B7-0A).
     [[ "$output" == *"validity"* ]]
     [[ "$output" == *"accepted"* ]]
+    # Authoring validity is documented (JOY-01B8-FA).
+    [[ "$output" == *"--replaced-by"* ]]
 }
 
 @test "joy --help footer points AI tools at joy ai tutorial" {

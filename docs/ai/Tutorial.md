@@ -68,6 +68,14 @@ A decision **binds** when its status is `closed` **and** its validity is `accept
 
 So the binding decisions are exactly the `closed` plus `accepted` ones. Skip `proposed`, `rejected`, `replaced`, and `retired`, and skip any decision still in `new`, `open`, `in-progress`, or `review`.
 
+When you author a decision, set its validity:
+
+- `joy close <ID>` accepts it (`validity: accepted`).
+- `joy edit <ID> --replaced-by <NEW>` supersedes it (`validity: replaced`, links the successor).
+- `joy edit <ID> --validity rejected` (or `retired`) for the rest.
+
+Never delete a decision; supersede or retire it.
+
 ## Operational loop
 
 After session start:
