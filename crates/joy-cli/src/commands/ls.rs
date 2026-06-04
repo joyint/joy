@@ -7,7 +7,7 @@ use clap::Args;
 use joy_core::filter::{self, FilterSpec};
 use joy_core::items;
 use joy_core::milestones;
-use joy_core::model::item::{Item, Status};
+use joy_core::model::item::{Item, ItemType, Status, Validity};
 use joy_core::store;
 
 use crate::color;
@@ -231,6 +231,19 @@ fn truncate_title(s: &str, max_len: usize) -> String {
     format!("{}...", &s[..end])
 }
 
+/// The `val` column cell. A decision with no recorded validity reads as
+/// `proposed` (still being decided); a non-decision shows `-` unless one
+/// was explicitly set.
+fn validity_cell(item: &Item) -> String {
+    if matches!(item.item_type, ItemType::Decision) {
+        item.validity.unwrap_or(Validity::Proposed).to_string()
+    } else {
+        item.validity
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "-".to_string())
+    }
+}
+
 fn print_table(
     items: &[&Item],
     all_items: &[Item],
@@ -318,11 +331,7 @@ fn print_table(
     };
 
     let w_val = if extras.validity {
-        col_raw("VAL", &|i| {
-            i.validity
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| "-".to_string())
-        })
+        col_raw("VAL", &|i| validity_cell(i))
     } else {
         0
     };
@@ -435,10 +444,7 @@ fn print_table(
         );
 
         if extras.validity {
-            let val = item
-                .validity
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| "-".to_string());
+            let val = validity_cell(item);
             line.push_str(&format!("  {}", pad_colored(&val, &val, w_val)));
         }
         if extras.parent {

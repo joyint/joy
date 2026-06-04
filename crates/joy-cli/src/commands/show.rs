@@ -6,6 +6,7 @@ use chrono::{DateTime, Local};
 use clap::Args;
 
 use joy_core::items;
+use joy_core::model::item::{ItemType, Validity};
 use joy_core::store;
 
 use crate::color;
@@ -50,7 +51,12 @@ pub fn run(args: ShowArgs) -> Result<()> {
     println!("{} {}", color::label("Type:    "), type_display);
     println!("{} {}", color::label("Status:  "), status_display);
     println!("{} {}", color::label("Priority:"), priority_display);
-    if let Some(ref validity) = item.validity {
+    // Decisions always show their validity; an unset value reads as proposed
+    // (the decision is still being decided). Other types show it only if set.
+    if matches!(item.item_type, ItemType::Decision) {
+        let validity = item.validity.unwrap_or(Validity::Proposed);
+        println!("{} {}", color::label("Validity:"), validity);
+    } else if let Some(validity) = item.validity {
         println!("{} {}", color::label("Validity:"), validity);
     }
     if let Some(ref replaced_by) = item.replaced_by {

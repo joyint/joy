@@ -389,15 +389,15 @@ pub fn run(args: crate::BoardArgs) -> Result<()> {
     Ok(())
 }
 
-/// Validity columns for the `-D` decisions board, in reading order.
-/// `None` (a decision still being decided) groups under DRAFT.
-const VALIDITY_ORDER: &[(Option<Validity>, &str)] = &[
-    (None, "DRAFT"),
-    (Some(Validity::Proposed), "PROPOSED"),
-    (Some(Validity::Accepted), "ACCEPTED"),
-    (Some(Validity::Rejected), "REJECTED"),
-    (Some(Validity::Replaced), "REPLACED"),
-    (Some(Validity::Retired), "RETIRED"),
+/// Validity columns for the `-D` decisions board, in reading order. A
+/// decision with no recorded validity counts as `proposed` (still being
+/// decided), so unset items land in the PROPOSED column.
+const VALIDITY_ORDER: &[(Validity, &str)] = &[
+    (Validity::Proposed, "PROPOSED"),
+    (Validity::Accepted, "ACCEPTED"),
+    (Validity::Rejected, "REJECTED"),
+    (Validity::Replaced, "REPLACED"),
+    (Validity::Retired, "RETIRED"),
 ];
 
 /// Render the decisions board: columns are validities, not statuses.
@@ -416,7 +416,7 @@ fn render_decisions_board(
             let items: Vec<Item> = visible
                 .iter()
                 .copied()
-                .filter(|i| i.validity == *v)
+                .filter(|i| i.validity.unwrap_or(Validity::Proposed) == *v)
                 .cloned()
                 .collect();
             cols.push(BoardColumn {
@@ -454,7 +454,7 @@ fn render_decisions_board(
         let mut items: Vec<&Item> = visible
             .iter()
             .copied()
-            .filter(|i| i.validity == *v)
+            .filter(|i| i.validity.unwrap_or(Validity::Proposed) == *v)
             .collect();
         if items.is_empty() {
             continue;

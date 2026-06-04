@@ -56,3 +56,22 @@ load setup
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.data.validity == null' >/dev/null
 }
+
+@test "joy show always shows validity for a decision; unset reads as proposed" {
+    setup_human_auth
+    joy add decision "Still undecided"
+    ID=$(joy ls -D 2>/dev/null | grep "Still undecided" | awk '{print $1}')
+    run joy show "$ID"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Validity"* ]]
+    [[ "$output" == *"proposed"* ]]
+}
+
+@test "joy show hides validity for a non-decision" {
+    setup_human_auth
+    joy add task "Plain show task"
+    ID=$(joy ls 2>/dev/null | grep "Plain show task" | awk '{print $1}')
+    run joy show "$ID"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"Validity"* ]]
+}
