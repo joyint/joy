@@ -71,6 +71,10 @@ pub struct FilterArgs {
     /// Show only blocked items
     #[arg(short, long)]
     pub blocked: bool,
+
+    /// Filter to decisions and show the validity view (alias for --type decision)
+    #[arg(short = 'D', long)]
+    pub decisions: bool,
 }
 
 impl FilterArgs {
@@ -80,11 +84,16 @@ impl FilterArgs {
     /// `root` is needed only when `--mine` or `me` triggers identity
     /// resolution and AI-delegation expansion.
     pub fn to_spec(&self, root: &Path, include_closed: bool) -> Result<FilterSpec> {
-        let item_type: Vec<ItemType> = self
+        let mut item_type: Vec<ItemType> = self
             .item_type
             .iter()
             .map(|t| t.parse().map_err(|e: String| anyhow!("{}", e)))
             .collect::<Result<_>>()?;
+
+        // -D / --decisions is shorthand for filtering to the decision type.
+        if self.decisions && !item_type.contains(&ItemType::Decision) {
+            item_type.push(ItemType::Decision);
+        }
 
         let status: Vec<Status> = self
             .status

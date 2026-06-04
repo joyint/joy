@@ -6,7 +6,7 @@ use anyhow::Result;
 use joy_core::event_log;
 use joy_core::filter;
 use joy_core::items;
-use joy_core::model::item::{Item, Status};
+use joy_core::model::item::{Item, Status, Validity};
 use joy_core::store;
 use joy_core::vcs::Vcs;
 
@@ -54,6 +54,11 @@ pub fn run(args: crate::BoardArgs) -> Result<()> {
     // FilterSpec.all default-hide rule does not strip those items.
     let spec = args.filter.to_spec(&root, true)?;
     let visible: Vec<&Item> = filter::apply(&all_items, &spec);
+
+    // -D / --decisions: a board of decisions grouped by validity, not status.
+    if args.filter.decisions {
+        return render_decisions_board(&visible, &root, args.reverse, args.all);
+    }
 
     if crate::output::is_json() {
         let mut cols: Vec<BoardColumn> = Vec::new();
@@ -379,6 +384,154 @@ pub fn run(args: crate::BoardArgs) -> Result<()> {
     if total_blocked > 0 {
         counts.push(format!("{total_blocked} blocked"));
     }
+    println!("{}", color::label(&counts.join(" · ")));
+
+    Ok(())
+}
+
+/// Validity columns for the `-D` decisions board, in reading order.
+/// `None` (a decision still being decided) groups under DRAFT.
+const VALIDITY_ORDER: &[(Option<Validity>, &str)] = &[
+    (None, "DRAFT"),
+    (Some(Validity::Proposed), "PROPOSED"),
+    (Some(Validity::Accepted), "ACCEPTED"),
+    (Some(Validity::Rejected), "REJECTED"),
+    (Some(Validity::Replaced), "REPLACED"),
+    (Some(Validity::Retired), "RETIRED"),
+];
+
+/// Render the decisions board: columns are validities, not statuses.
+/// `visible` already contains only decisions (the `-D` filter injected the
+/// type). Closed-but-accepted decisions belong here, so closed items are
+/// included by design. Empty validity columns are skipped entirely.
+fn render_decisions_board(
+    visible: &[&Item],
+    root: &std::path::Path,
+    reverse: bool,
+    all: bool,
+) -> Result<()> {
+    if crate::output::is_json() {
+        let mut cols: Vec<BoardColumn> = Vec::new();
+        for (v, label) in VALIDITY_ORDER {
+            let items: Vec<Item> = visible
+                .iter()
+                .copied()
+                .filter(|i| i.validity == *v)
+                .cloned()
+                .collect();
+            cols.push(BoardColumn {
+                status: label.to_string(),
+                count: items.len(),
+                items,
+            });
+        }
+        return crate::output::emit(BoardPayload { columns: cols });
+    }
+
+    let term_width = terminal_width();
+    let sep = color::label(&"-".repeat(term_width));
+
+    let project = store::load_project(root).ok();
+    let project_name = project
+        .as_ref()
+        .map(|p| p.name.as_str())
+        .unwrap_or("(unnamed)");
+    let total = visible.len();
+
+    println!("{sep}");
+    println!(
+        "{}",
+        color::label(&format!(
+            "{project_name} · decisions · {}",
+            color::plural(total, "decision")
+        ))
+    );
+    println!("{sep}");
+
+    // Keep only non-empty validity columns.
+    let mut columns: Vec<(&str, Vec<&Item>)> = Vec::new();
+    for (v, label) in VALIDITY_ORDER {
+        let mut items: Vec<&Item> = visible
+            .iter()
+            .copied()
+            .filter(|i| i.validity == *v)
+            .collect();
+        if items.is_empty() {
+            continue;
+        }
+        if !reverse {
+            items.reverse();
+        }
+        columns.push((label, items));
+    }
+
+    if columns.is_empty() {
+        println!("No decisions. Run `joy add decision \"...\"` to create one.");
+        return Ok(());
+    }
+
+    let n = columns.len();
+    let gaps = n.saturating_sub(1);
+    let col_width = term_width
+        .saturating_sub(gaps)
+        .checked_div(n)
+        .map(|w| w.max(MIN_COL_WIDTH))
+        .unwrap_or(MIN_COL_WIDTH);
+
+    let max_items = if all {
+        usize::MAX
+    } else {
+        terminal_height().saturating_sub(8)
+    };
+
+    // Build per-column cell lines: heading, then one line per decision.
+    let rendered: Vec<Vec<String>> = columns
+        .iter()
+        .map(|(label, items)| {
+            let mut lines: Vec<String> = Vec::new();
+            let head = format!("{} ({})", label, items.len());
+            lines.push(color::label(&truncate_display(&head, col_width)));
+            let show = items.len().min(max_items);
+            for item in items.iter().take(show) {
+                let id_colored = color::id(&item.id);
+                let prefix = format!("{id_colored} ");
+                let title_space = col_width.saturating_sub(display_width(&prefix));
+                let title = truncate_display(&item.title, title_space);
+                lines.push(format!("{prefix}{title}"));
+            }
+            if show < items.len() {
+                lines.push(color::label(&format!("+{} more", items.len() - show)));
+            }
+            lines
+        })
+        .collect();
+
+    let max_lines = rendered.iter().map(|c| c.len()).max().unwrap_or(0);
+    for row in 0..max_lines {
+        let mut line = String::new();
+        for (i, col_lines) in rendered.iter().enumerate() {
+            if i > 0 {
+                line.push(' ');
+            }
+            if row < col_lines.len() {
+                let cell = &col_lines[row];
+                let w = display_width(cell);
+                line.push_str(cell);
+                if w < col_width {
+                    line.push_str(&" ".repeat(col_width - w));
+                }
+            } else {
+                line.push_str(&" ".repeat(col_width));
+            }
+        }
+        println!("{}", line.trim_end());
+    }
+
+    println!("{sep}");
+    let counts: Vec<String> = columns
+        .iter()
+        .map(|(label, items)| format!("{} {}", items.len(), label.to_lowercase()))
+        .collect();
     println!("{}", color::label(&counts.join(" · ")));
 
     Ok(())

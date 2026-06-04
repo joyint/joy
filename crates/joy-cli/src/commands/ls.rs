@@ -26,7 +26,7 @@ pub struct LsArgs {
     #[arg(long)]
     tree: bool,
 
-    /// Extra columns to show (comma-separated: milestone, assignee, parent)
+    /// Extra columns to show (comma-separated: milestone, assignee, parent, validity)
     #[arg(short, long, value_delimiter = ',')]
     columns: Vec<String>,
 
@@ -70,15 +70,26 @@ struct ExtraColumns {
     milestone: bool,
     assignee: bool,
     parent: bool,
+    validity: bool,
 }
 
 /// Valid column keys accepted by `-c, --columns`.
 /// `ms` is a short alias for `milestone`; `members` is an alias for
 /// `assignee` matching the `-m, --members` filter vocabulary.
-const VALID_COLUMN_KEYS: &[&str] = &["milestone", "ms", "assignee", "members", "parent"];
+const VALID_COLUMN_KEYS: &[&str] = &[
+    "milestone",
+    "ms",
+    "assignee",
+    "members",
+    "parent",
+    "validity",
+    "val",
+];
 
 impl ExtraColumns {
-    fn from_args(columns: &[String]) -> Result<Self> {
+    /// `decisions` is the `-D` / `--decisions` view flag: it forces the
+    /// validity column on, since that is the whole point of the view.
+    fn from_args(columns: &[String], decisions: bool) -> Result<Self> {
         for key in columns {
             if !VALID_COLUMN_KEYS.contains(&key.as_str()) {
                 anyhow::bail!(
@@ -91,6 +102,7 @@ impl ExtraColumns {
             milestone: columns.iter().any(|s| s == "milestone" || s == "ms"),
             assignee: columns.iter().any(|s| s == "assignee" || s == "members"),
             parent: columns.iter().any(|s| s == "parent"),
+            validity: decisions || columns.iter().any(|s| s == "validity" || s == "val"),
         })
     }
 }
@@ -149,7 +161,7 @@ pub fn run(args: LsArgs) -> Result<()> {
         filtered.reverse();
     }
 
-    let extras = ExtraColumns::from_args(&args.columns)?;
+    let extras = ExtraColumns::from_args(&args.columns, args.filter.decisions)?;
 
     if args.tree {
         match args.group.as_str() {
@@ -305,6 +317,16 @@ fn print_table(
         0
     };
 
+    let w_val = if extras.validity {
+        col_raw("VAL", &|i| {
+            i.validity
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "-".to_string())
+        })
+    } else {
+        0
+    };
+
     // Total fixed width (2 spaces between every column).
     let fixed_width = w_id
         + 2
@@ -316,6 +338,7 @@ fn print_table(
         + 2
         + w_eff
         + 2
+        + if extras.validity { w_val + 2 } else { 0 }
         + if extras.parent { w_parent + 2 } else { 0 }
         + if extras.milestone { w_ms + 2 } else { 0 }
         + if extras.assignee { w_assignee + 2 } else { 0 }
@@ -340,6 +363,12 @@ fn print_table(
         pad_colored(&color::label(h_prio), h_prio, w_prio),
         pad_colored(&color::label(h_eff), h_eff, w_eff),
     );
+    if extras.validity {
+        header.push_str(&format!(
+            "  {}",
+            pad_colored(&color::label("VAL"), "VAL", w_val)
+        ));
+    }
     if extras.parent {
         header.push_str(&format!(
             "  {}",
@@ -405,6 +434,13 @@ fn print_table(
             pad_colored(&eff_str, &eff_raw, w_eff),
         );
 
+        if extras.validity {
+            let val = item
+                .validity
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "-".to_string());
+            line.push_str(&format!("  {}", pad_colored(&val, &val, w_val)));
+        }
         if extras.parent {
             let parent_val = item.parent.as_deref().unwrap_or("-");
             line.push_str(&format!(
@@ -471,6 +507,12 @@ fn print_table(
             pad_colored(&color::inactive(stars), stars, w_prio),
             pad_colored(&color::inactive(stars), stars, w_eff),
         );
+        if extras.validity {
+            line.push_str(&format!(
+                "  {}",
+                pad_colored(&color::inactive(stars), stars, w_val)
+            ));
+        }
         if extras.parent {
             line.push_str(&format!(
                 "  {}",
@@ -1023,12 +1065,13 @@ mod tests {
 
     #[test]
     fn columns_accepts_known_keys_and_aliases() {
-        let extras = ExtraColumns::from_args(&cols(&["milestone", "assignee", "parent"])).unwrap();
+        let extras =
+            ExtraColumns::from_args(&cols(&["milestone", "assignee", "parent"]), false).unwrap();
         assert!(extras.milestone);
         assert!(extras.assignee);
         assert!(extras.parent);
 
-        let extras = ExtraColumns::from_args(&cols(&["ms", "members"])).unwrap();
+        let extras = ExtraColumns::from_args(&cols(&["ms", "members"]), false).unwrap();
         assert!(extras.milestone);
         assert!(extras.assignee);
         assert!(!extras.parent);
@@ -1036,7 +1079,7 @@ mod tests {
 
     #[test]
     fn columns_rejects_unknown_key() {
-        let err = ExtraColumns::from_args(&cols(&["bogus"])).unwrap_err();
+        let err = ExtraColumns::from_args(&cols(&["bogus"]), false).unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("unknown column 'bogus'"), "got: {msg}");
         assert!(msg.contains("milestone"), "got: {msg}");
@@ -1045,15 +1088,33 @@ mod tests {
 
     #[test]
     fn columns_rejects_when_one_value_in_a_list_is_unknown() {
-        let err = ExtraColumns::from_args(&cols(&["assignee", "wrong"])).unwrap_err();
+        let err = ExtraColumns::from_args(&cols(&["assignee", "wrong"]), false).unwrap_err();
         assert!(err.to_string().contains("unknown column 'wrong'"));
     }
 
     #[test]
     fn empty_columns_is_ok() {
-        let extras = ExtraColumns::from_args(&[]).unwrap();
+        let extras = ExtraColumns::from_args(&[], false).unwrap();
         assert!(!extras.milestone);
         assert!(!extras.assignee);
         assert!(!extras.parent);
+        assert!(!extras.validity);
+    }
+
+    #[test]
+    fn validity_column_via_key_or_decisions_flag() {
+        // Explicit -c validity / -c val turns the column on.
+        assert!(
+            ExtraColumns::from_args(&cols(&["validity"]), false)
+                .unwrap()
+                .validity
+        );
+        assert!(
+            ExtraColumns::from_args(&cols(&["val"]), false)
+                .unwrap()
+                .validity
+        );
+        // The -D / --decisions view forces it on without -c.
+        assert!(ExtraColumns::from_args(&[], true).unwrap().validity);
     }
 }
