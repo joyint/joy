@@ -1,0 +1,22 @@
+version: v0.16.1
+date: 2026-06-05
+previous: v0.16.0
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 39
+  items: 6
+items:
+  epics:
+  - id: JOY-01B3-CA
+    title: 'decisions as living spec: validity, replaced_by, decisions view'
+  tasks:
+  - id: JOY-01B2-01
+    title: Remove stale pre-ADR-024 .joy artefacts during update and ai init
+  - id: JOY-01B4-65
+    title: validity and replaced_by fields in item model (joy-core)
+  - id: JOY-01B5-21
+    title: 'decisions view: --decisions / -D filter with val column and board'
+  - id: JOY-01B7-0A
+    title: 'joy ai tutorial: a decision binds when closed and validity=accepted'
+  - id: JOY-01B8-FA
+    title: 'AI tutorial: writing decision validity (close, supersede, reject/retire)'
