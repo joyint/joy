@@ -5,16 +5,23 @@ status: new
 priority: medium
 deps:
 - JOY-01A6-0D
+milestone: JOY-MS-02
+tags:
+- windows
 capabilities:
 - implement
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-31T21:00:17.655885750Z
-updated: 2026-05-31T21:00:28.232806492Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-06-10T21:45:51.152073623Z
+updated_by: horst.schwarz@joydev.com
 history:
 - date: 2026-05-31T21:00:28.232806492Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-10T21:42:23.064236564Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-10T21:45:51.152073623Z
+  by: horst.schwarz@joydev.com
 description: |-
   Follow-up to JOY-01A6-0D (bats on ubuntu). Extend the bats integration suite to windows-latest so the CLI is exercised end-to-end on Windows, closing the gap that JOY-01A2-96 surfaced (path/state-dir behaviour is platform-specific and currently only covered by Rust tests on Windows).
 

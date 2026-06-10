@@ -3,15 +3,22 @@ title: 'Windows: terminal-session binding silently inactive on non-Windows-Termi
 type: bug
 status: new
 priority: medium
+milestone: JOY-MS-02
+tags:
+- windows
 capabilities:
 - implement
 - review
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-31T18:59:56.722314522Z
-updated: 2026-05-31T18:59:56.722314522Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
+updated: 2026-06-10T21:45:42.797309761Z
+updated_by: horst.schwarz@joydev.com
+history:
+- date: 2026-06-10T21:42:22.881141753Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-10T21:45:42.797309761Z
+  by: horst.schwarz@joydev.com
 description: |-
   current_tty() in crates/joy-core/src/auth/session.rs binds a human session to its originating terminal. On Windows it only reads WT_SESSION (Windows Terminal). The libc::ttyname path is behind #[cfg(unix)] and is compiled out on Windows.
 

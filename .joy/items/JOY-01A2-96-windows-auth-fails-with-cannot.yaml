@@ -5,13 +5,15 @@ status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
+tags:
+- windows
 capabilities:
 - implement
 - review
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-31T17:57:33.127856336Z
-updated: 2026-05-31T21:08:38.215362423Z
+updated: 2026-06-10T21:42:22.819563498Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-05-31T18:53:43.892141364Z
@@ -27,6 +29,8 @@ history:
 - date: 2026-05-31T21:08:35.940035584Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 - date: 2026-05-31T21:08:38.215362423Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-10T21:42:22.819563498Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   On Windows 11, every auth/session operation fails with 'authentication failed: cannot determine state directory'.

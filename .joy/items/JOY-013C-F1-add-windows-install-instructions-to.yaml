@@ -6,12 +6,18 @@ priority: high
 assignees:
 - member: ai:claude@joy
 milestone: JOY-MS-01
+tags:
+- windows
 capabilities:
 - implement
 effort: 1
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-04-30T21:32:01.028288660Z
-updated: 2026-04-30T21:39:48.875842629Z
+updated: 2026-06-10T21:42:22.692620160Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-10T21:42:22.692620160Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Website docs at content/joy/docs/{en,de}/index.mdx currently show only the curl Linux/macOS install line. Windows users land on the same page and have no install path. The Windows installer (get.joyint.com/joy.ps1) is deployed and must be surfaced.
 

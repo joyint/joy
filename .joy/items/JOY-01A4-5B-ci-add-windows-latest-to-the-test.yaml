@@ -5,12 +5,14 @@ status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
+tags:
+- windows
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-31T19:19:00.022024965Z
-updated: 2026-05-31T21:08:40.086408072Z
+updated: 2026-06-10T21:42:22.942804578Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-05-31T19:21:54.352873422Z
@@ -18,6 +20,8 @@ history:
 - date: 2026-05-31T19:23:22.001367015Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 - date: 2026-05-31T21:08:40.086408072Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-10T21:42:22.942804578Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   joy/.github/workflows/ci.yaml currently runs fmt/lint/test/build only on ubuntu-latest. This is why the Windows path bug (JOY-01A2-96) was never caught: joy-core is never compiled or tested on Windows in CI.

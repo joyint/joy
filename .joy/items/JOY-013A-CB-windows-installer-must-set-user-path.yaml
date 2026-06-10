@@ -6,13 +6,19 @@ priority: high
 assignees:
 - member: ai:claude@joy
 milestone: JOY-MS-01
+tags:
+- windows
 capabilities:
 - implement
 - review
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-04-30T21:32:00.978167929Z
-updated: 2026-04-30T21:37:40.638710848Z
+updated: 2026-06-10T21:42:22.629354248Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-10T21:42:22.629354248Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   The Windows install script (get.joyint.com/joy.ps1) drops the binary into ~/.local/bin but does not modify the User-PATH automatically. It only prints a grey "Note: ... not on your PATH. Add: [Environment]::SetEnvironmentVariable(...)" hint that the user has to copy and run by hand. If the user misses it, `joy` invokes Windows joy.cpl (Game Controllers applet) via PATHEXT instead of the installed binary.
 

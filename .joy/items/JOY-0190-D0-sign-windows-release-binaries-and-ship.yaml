@@ -3,6 +3,8 @@ title: Sign Windows release binaries and ship WinGet manifest
 type: story
 status: new
 priority: high
+tags:
+- windows
 capabilities:
 - plan
 - implement
@@ -10,7 +12,9 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-15T15:24:37.811081340Z
-updated: 2026-05-15T15:24:37.811081340Z
+updated: 2026-06-10T21:42:22.758775945Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
+history:
+- date: 2026-06-10T21:42:22.758775945Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Wire the shared signing action from the umbrella epic JI-00F4-20 into joy''s release CI to produce signed joy.exe artifacts for tagged releases (Authenticode via Microsoft Trusted Signing). Add a workflow that opens a PR to microsoft/winget-pkgs with an updated manifest pointing at the signed artifact when a release is published. Motivation: CyberArk and similar EPM scanners quarantine unsigned binaries, blocking enterprise installs.'
