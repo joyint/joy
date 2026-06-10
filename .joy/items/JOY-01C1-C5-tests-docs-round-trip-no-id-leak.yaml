@@ -1,0 +1,18 @@
+id: JOY-01C1-C5
+title: 'Tests + docs: round-trip, no-ID-leak, verifier, attestation validity; Tutorial/Auth.md/SECURITY.md + platform note'
+type: task
+status: new
+priority: medium
+parent: JOY-01B9-53
+deps:
+- JOY-01BF-2E
+milestone: JOY-MS-02
+capabilities:
+- implement
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-10T20:59:41.513078650Z
+updated: 2026-06-10T20:59:41.513078650Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'Tests: open<->anonymous round-trip, MemberRef never leaks a raw ID (incl. --json), email_match verifier match, erasure severs resolution, attestation stays valid across modes (e-mail bit-identical, nothing re-signed). Docs: update Tutorial, Auth.md, SECURITY.md template; flag the platform concept sentence ''Mitglieds-Eintrag traegt eine E-Mail-Adresse ... sichtbar'' for the anonymous mode. Ref ADR-042 §Deliberate limits + Related.'

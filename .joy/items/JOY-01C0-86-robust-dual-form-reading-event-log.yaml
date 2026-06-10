@@ -1,0 +1,16 @@
+id: JOY-01C0-86
+title: 'Robust dual-form reading: event log/parsers tolerate e-mail and ID actors'
+type: task
+status: new
+priority: medium
+parent: JOY-01B9-53
+milestone: JOY-MS-02
+capabilities:
+- implement
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-10T20:59:41.409669867Z
+updated: 2026-06-10T20:59:41.409669867Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: Event log and any parser that references actors must read both forms (cleartext e-mail and opaque ID) without crashing, so pre-switch data and mixed history stay readable. Display resolves as everywhere else. Ref ADR-042 §Deliberate limits (old data out of scope, read robustly).

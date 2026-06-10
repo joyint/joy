@@ -1,0 +1,18 @@
+id: JOY-01BB-79
+title: email_for(member) as single e-mail source; route all consumers through it
+type: task
+status: new
+priority: high
+parent: JOY-01B9-53
+deps:
+- JOY-01BA-7D
+milestone: JOY-MS-02
+capabilities:
+- implement
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-10T20:59:40.889741387Z
+updated: 2026-06-10T20:59:40.889741387Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'Introduce one function (email_for(member)) that resolves a member''s e-mail by mode: open -> member entry in project.yaml; anonymous -> decrypted members.yaml. Route every e-mail consumer (attestation, signatures, event log, display) through it so the rest of the code is mode-agnostic and the e-mail is bit-identical regardless of source. Ref ADR-042 §1.'

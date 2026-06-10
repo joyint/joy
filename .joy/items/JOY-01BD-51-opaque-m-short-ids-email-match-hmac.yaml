@@ -1,0 +1,18 @@
+id: JOY-01BD-51
+title: Opaque m-<short> IDs + email_match HMAC verifier in project.yaml
+type: task
+status: new
+priority: high
+parent: JOY-01B9-53
+deps:
+- JOY-01BA-7D
+milestone: JOY-MS-02
+capabilities:
+- implement
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-10T20:59:41.094245064Z
+updated: 2026-06-10T20:59:41.094245064Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'Anonymous mode: rekey the member map in project.yaml to opaque stable IDs (form m-<short>), and store a per-member email_match = HMAC-SHA256(normalize(email)) keyed by the member''s kdf_nonce (normalize = lowercase + trim). Verifier lets a member find its own entry at first auth before members.yaml is unlocked. Both are at-rest fields, no PII cleartext. Ref ADR-042 §2/§4.'

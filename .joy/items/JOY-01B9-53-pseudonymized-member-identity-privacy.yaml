@@ -1,0 +1,16 @@
+id: JOY-01B9-53
+title: Pseudonymized member identity (privacy mode) — ADR-042
+type: epic
+status: new
+priority: high
+milestone: JOY-MS-02
+capabilities:
+- conceive
+- plan
+effort: 6
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-10T20:59:40.721568248Z
+updated: 2026-06-10T20:59:40.721568248Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'Implement the ADR-042 privacy-mode model so member PII (name, e-mail) stays out of the versioned cleartext artifacts (GDPR Art. 17 erasure) without touching the immutable audit trail. Per-project setting privacy: open (default, today''s behaviour) | anonymous (e-mail in an encrypted members.yaml; project.yaml carries an opaque member ID + email_match verifier; no Joy output ever shows a raw ID). Mirrors umbrella decision JI-011F-14.'
