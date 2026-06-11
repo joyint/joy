@@ -201,7 +201,7 @@ fn unlock_zone(
             if !autocreate {
                 bail!(
                     "{} has no access to zone '{}'. Ask a member with access to grant first.",
-                    email,
+                    joy_core::member_ref::resolve_str(&email),
                     zone
                 );
             }
@@ -1006,7 +1006,8 @@ fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>, stdin: b
     );
     println!(
         "Granted {} access to zone '{}'.",
-        target_member, unlocked.zone
+        color::user(target_member),
+        unlocked.zone
     );
     Ok(())
 }
@@ -1037,7 +1038,8 @@ fn run_revoke(zone: &str, target_member: &str) -> Result<()> {
     if !removed {
         println!(
             "{} had no access to zone '{}'; nothing to revoke.",
-            target_member, zone
+            color::user(target_member),
+            zone
         );
         return Ok(());
     }
@@ -1050,7 +1052,11 @@ fn run_revoke(zone: &str, target_member: &str) -> Result<()> {
         &format!("crypt revoke {target_member} (zone {zone})"),
         &email,
     );
-    println!("Revoked {}'s access to zone '{}'.", target_member, zone);
+    println!(
+        "Revoked {}'s access to zone '{}'.",
+        color::user(target_member),
+        zone
+    );
     println!(
         "Note: rotating the zone key after a revoke is recommended; \
          previously-shared content remains decryptable to the revoked member \
@@ -1105,7 +1111,7 @@ fn run_list(zone: &str) -> Result<()> {
     let mut access_count = 0;
     for (email, member) in &project.members {
         if member.crypt_wraps.contains_key(zone) {
-            println!("  {email}");
+            println!("  {}", color::user(email));
             access_count += 1;
         }
     }

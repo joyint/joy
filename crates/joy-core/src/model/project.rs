@@ -230,9 +230,9 @@ pub struct Member {
 /// member is added, that member implicitly reverse-attests the founder.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Attestation {
-    /// Email (or AI member id) of the member who produced the signature.
-    /// Must be a manage-capable member at signing time.
-    pub attester: String,
+    /// The member who produced the signature (must be manage-capable at signing
+    /// time). Resolves to name/e-mail on display and in `--json`; raw at rest.
+    pub attester: crate::member_ref::MemberRef,
     /// The fields this signature covers. verify_key is intentionally
     /// excluded so that passphrase changes do not break existing
     /// attestations.

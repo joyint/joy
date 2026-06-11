@@ -24,7 +24,7 @@ pub fn run(args: DeauthArgs) -> Result<()> {
     };
     session::remove_session(&project_id, &member)?;
 
-    println!("Session ended for {}.", member);
+    println!("Session ended for {}.", crate::color::user(&member));
 
     Ok(())
 }

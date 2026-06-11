@@ -1215,16 +1215,22 @@ fn run_member(
             if crate::output::is_json() {
                 #[derive(serde::Serialize)]
                 struct ShowPayload<'a> {
-                    id: &'a str,
+                    id: joy_core::member_ref::MemberRef,
                     member: &'a joy_core::model::project::Member,
                 }
-                return crate::output::emit(ShowPayload { id: &a.id, member });
+                return crate::output::emit(ShowPayload {
+                    id: a.id.clone().into(),
+                    member,
+                });
             }
 
             let w = color::terminal_width();
             let wide = w >= 60;
 
-            println!("{}", color::header(&a.id));
+            println!(
+                "{}",
+                color::header(&joy_core::member_ref::resolve_str(&a.id))
+            );
 
             // Load defaults for mode resolution
             let raw_defaults = joy_core::store::load_raw_mode_defaults(&ctx.root);
@@ -1442,7 +1448,7 @@ fn run_member(
                     ttl_hours: token_result.as_ref().map(|(_, h)| *h),
                 })?;
             } else {
-                println!("Added member {}", a.id);
+                println!("Added member {}", color::user(&a.id));
                 if let Some((ref token, _hours)) = token_result {
                     println!();
                     println!("\"{}\"", token);
@@ -1531,7 +1537,7 @@ fn run_member(
                     **email != removed_id
                         && m.attestation
                             .as_ref()
-                            .map(|att| att.attester == removed_id)
+                            .map(|att| att.attester == removed_id.as_str())
                             .unwrap_or(false)
                 })
                 .map(|(email, _)| email.clone())
@@ -1588,7 +1594,7 @@ fn run_member(
                     removed_member: &a.id,
                 })?;
             } else {
-                println!("Removed member {}", a.id);
+                println!("Removed member {}", color::user(&a.id));
             }
             let log_user = ctx.log_user();
             joy_core::git_ops::auto_git_post_command(
@@ -1644,7 +1650,10 @@ fn run_member(
                      trail remain; no Joy output can resolve it to a person anymore."
                 );
             } else {
-                println!("No members.yaml entry for {}; nothing to erase.", a.id);
+                println!(
+                    "No members.yaml entry for {}; nothing to erase.",
+                    color::user(&a.id)
+                );
             }
             let log_user = ctx.log_user();
             joy_core::git_ops::auto_git_post_command(

@@ -178,7 +178,7 @@ impl Guard {
         }
 
         // Look up the member
-        let member = match self.members.get(&identity.member) {
+        let member = match self.members.get(identity.member.id()) {
             Some(m) => m,
             None => {
                 return Verdict::Deny(format!(

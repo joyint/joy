@@ -82,8 +82,8 @@ pub fn run(args: PrepareCommitMsgArgs) -> Result<()> {
     let identity = joy_core::identity::resolve_identity(&root).ok();
     let committer = match identity {
         Some(id) => Committer {
-            member: id.member,
-            delegated_by: id.delegated_by,
+            member: id.member.id().to_string(),
+            delegated_by: id.delegated_by.map(|m| m.id().to_string()),
         },
         None => Committer {
             member: String::new(),

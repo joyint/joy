@@ -188,12 +188,14 @@ fn resolve_members(tokens: &[String], mine: bool, root: &Path) -> Result<MemberF
 /// and any sibling AI the human has delegated to.
 fn resolve_self_with_delegated_ais(root: &Path) -> Result<Vec<String>> {
     let identity = identity::resolve_identity(root).map_err(|e| anyhow!("{e}"))?;
-    let mut members: Vec<String> = vec![identity.member.clone()];
+    // Raw at-rest ids: these drive internal filter matching, not output.
+    let mut members: Vec<String> = vec![identity.member.id().to_string()];
 
-    let human_id = identity
+    let human_id: String = identity
         .delegated_by
-        .clone()
-        .unwrap_or_else(|| identity.member.clone());
+        .as_ref()
+        .map(|m| m.id().to_string())
+        .unwrap_or_else(|| identity.member.id().to_string());
 
     if !members.contains(&human_id) {
         members.push(human_id.clone());

@@ -36,7 +36,7 @@ pub fn run(args: AssignArgs) -> Result<()> {
 
     let member = match args.member {
         Some(m) => m,
-        None => ctx.identity.member.clone(),
+        None => ctx.identity.member.id().to_string(),
     };
 
     ctx.enforce(&Action::AssignItem, &item.id)?;

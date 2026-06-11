@@ -13,6 +13,7 @@
 use std::path::Path;
 
 use crate::error::JoyError;
+use crate::member_ref::MemberRef;
 use crate::model::project::{is_ai_member, Project};
 use crate::store;
 use crate::vcs::Vcs;
@@ -20,10 +21,11 @@ use crate::vcs::Vcs;
 /// The resolved identity of the acting user.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Identity {
-    /// The member ID (email or `ai:tool@joy`).
-    pub member: String,
+    /// The acting member. Resolves to name/e-mail on display and in `--json`
+    /// (ADR-042); the raw at-rest value is the e-mail (open) or opaque id (anon).
+    pub member: MemberRef,
     /// If the member is an AI, the human who delegated the action.
-    pub delegated_by: Option<String>,
+    pub delegated_by: Option<MemberRef>,
     /// Whether this identity was cryptographically authenticated (session or token).
     pub authenticated: bool,
 }
@@ -31,10 +33,14 @@ pub struct Identity {
 impl Identity {
     /// Format for event log entries.
     /// Returns `"member"` or `"member delegated-by:human"`.
+    ///
+    /// This string is written to the on-disk event log and item `created_by` /
+    /// `updated_by`, so it must carry the raw id, never the resolved value: use
+    /// [`MemberRef::id`]. Resolution happens only when the log is read back.
     pub fn log_user(&self) -> String {
         match &self.delegated_by {
-            Some(human) => format!("{} delegated-by:{}", self.member, human),
-            None => self.member.clone(),
+            Some(human) => format!("{} delegated-by:{}", self.member.id(), human.id()),
+            None => self.member.id().to_string(),
         }
     }
 }
@@ -79,8 +85,11 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
                                 && ephemeral_public_matches(&sess, &ephemeral_private)
                             {
                                 return Ok(Identity {
-                                    member: sess.claims.member.clone(),
-                                    delegated_by: crate::vcs::default_vcs().user_email().ok(),
+                                    member: sess.claims.member.clone().into(),
+                                    delegated_by: crate::vcs::default_vcs()
+                                        .user_email()
+                                        .ok()
+                                        .map(Into::into),
                                     authenticated: true,
                                 });
                             }
@@ -117,7 +126,7 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
 
     // 3. Fallback: resolved member key (git email in open mode), not authenticated
     Ok(Identity {
-        member: member_key,
+        member: member_key.into(),
         delegated_by: None,
         authenticated: false,
     })
@@ -143,14 +152,17 @@ fn session_identity(
             if is_ai_member(member) {
                 // The delegating human is tracked in the event log,
                 // but for identity resolution we just mark it as delegated
-                crate::vcs::default_vcs().user_email().ok()
+                crate::vcs::default_vcs()
+                    .user_email()
+                    .ok()
+                    .map(MemberRef::from)
             } else {
                 None
             }
         });
 
     Some(Identity {
-        member: member.to_string(),
+        member: member.into(),
         delegated_by,
         authenticated: true,
     })

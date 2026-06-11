@@ -844,15 +844,18 @@ fn verify_member_attestation(
     member: &joy_core::model::project::Member,
     attestation: &joy_core::model::project::Attestation,
 ) -> Result<()> {
-    let attester_entry = project.members.get(&attestation.attester).ok_or_else(|| {
-        anyhow::anyhow!(
-            "attestation for {} names attester {} but that member is not registered. \
+    let attester_entry = project
+        .members
+        .get(attestation.attester.id())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "attestation for {} names attester {} but that member is not registered. \
              Ask a manage member to remove and re-add {}.",
-            email,
-            attestation.attester,
-            email
-        )
-    })?;
+                email,
+                attestation.attester,
+                email
+            )
+        })?;
     let attester_pubkey_hex = attester_entry.verify_key.as_ref().ok_or_else(|| {
         anyhow::anyhow!(
             "attestation for {} is signed by {} but that member has no public key. \
@@ -904,9 +907,9 @@ fn has_mutual_attestation_pair(project: &joy_core::model::project::Project) -> b
         let Some(att) = &member.attestation else {
             continue;
         };
-        if let Some(attester) = project.members.get(&att.attester) {
+        if let Some(attester) = project.members.get(att.attester.id()) {
             if let Some(attester_att) = &attester.attestation {
-                if attester_att.attester == *email {
+                if attester_att.attester == email.as_str() {
                     return true;
                 }
             }
@@ -1093,7 +1096,7 @@ fn run_status() -> Result<()> {
         .map(|s| (s.claims.expires - Utc::now()).num_seconds());
     let auth_initialized = project
         .members
-        .get(&identity.member)
+        .get(identity.member.id())
         .is_some_and(|m| m.verify_key.is_some());
 
     // Delegated AI sessions: only the human delegator's own ai_delegations
@@ -1101,7 +1104,7 @@ fn run_status() -> Result<()> {
     // humans -- that is not this caller's audit surface.
     let delegated_sessions: Vec<DelegatedSession> = project
         .members
-        .get(&identity.member)
+        .get(identity.member.id())
         .map(|m| m.ai_delegations.keys().cloned().collect::<Vec<_>>())
         .unwrap_or_default()
         .into_iter()
@@ -1113,7 +1116,7 @@ fn run_status() -> Result<()> {
                 .filter(|_| active)
                 .map(|s| (s.claims.expires - Utc::now()).num_seconds());
             DelegatedSession {
-                member: ai_id,
+                member: ai_id.into(),
                 active,
                 expires_in_seconds,
             }
@@ -1146,7 +1149,7 @@ fn run_status() -> Result<()> {
             println!(
                 "  {} {}",
                 color::label("Member:    "),
-                color::id(&identity.member)
+                color::user(&identity.member)
             );
             if let Some(ref by) = identity.delegated_by {
                 println!("  {} {}", color::label("Delegated: "), by);
@@ -1194,7 +1197,7 @@ fn run_status() -> Result<()> {
                 let minutes = (secs / 60) % 60;
                 println!(
                     "  {} {} {}h {}m",
-                    color::id(&d.member),
+                    color::user(&d.member),
                     color::check_mark(),
                     hours,
                     minutes
@@ -1202,7 +1205,7 @@ fn run_status() -> Result<()> {
             } else {
                 println!(
                     "  {} {}",
-                    color::id(&d.member),
+                    color::user(&d.member),
                     color::inactive("no active session")
                 );
             }
@@ -1221,8 +1224,8 @@ fn run_status() -> Result<()> {
 #[derive(serde::Serialize)]
 struct AuthStatusPayload {
     authenticated: bool,
-    member: String,
-    delegated_by: Option<String>,
+    member: joy_core::member_ref::MemberRef,
+    delegated_by: Option<joy_core::member_ref::MemberRef>,
     session_present: bool,
     expires_in_seconds: Option<i64>,
     auth_initialized: bool,
@@ -1231,7 +1234,7 @@ struct AuthStatusPayload {
 
 #[derive(serde::Serialize)]
 struct DelegatedSession {
-    member: String,
+    member: joy_core::member_ref::MemberRef,
     active: bool,
     expires_in_seconds: Option<i64>,
 }
@@ -1425,7 +1428,7 @@ pub(crate) fn create_delegation_token(
     // here too (otherwise resolve_identity would fall back to the git
     // email and refuse the action, JOY-00F3-AE).
     let identity = joy_core::identity::Identity {
-        member: operator_email.to_string(),
+        member: operator_email.to_string().into(),
         delegated_by: None,
         authenticated: true,
     };

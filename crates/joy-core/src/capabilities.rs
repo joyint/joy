@@ -41,7 +41,7 @@ pub fn warn_unless_capable(root: &Path, required: Capability) -> bool {
         return true;
     }
 
-    match project.members.get(&member_id) {
+    match project.members.get(member_id.id()) {
         Some(member) => {
             if member.has_capability(&required) {
                 true

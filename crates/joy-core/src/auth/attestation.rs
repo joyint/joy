@@ -30,7 +30,7 @@ pub fn sign_attestation(
     let bytes = signed_fields.canonical_bytes();
     let signature = attester_keypair.sign(&bytes);
     Attestation {
-        attester: attester_email.to_string(),
+        attester: attester_email.into(),
         signed_fields,
         signed_at: Utc::now(),
         signature: hex::encode(signature),
@@ -191,7 +191,7 @@ mod tests {
         // stored attestation (and the attester) with opaque ids; the signature
         // is deliberately NOT recomputed (frozen bytes).
         att.signed_fields.email = "m-alice".to_string();
-        att.attester = "m-horst".to_string();
+        att.attester = "m-horst".into();
 
         // Verification injects the authoritative e-mail from email_for and still
         // passes: the signed bytes are reconstructed over the real address, which
