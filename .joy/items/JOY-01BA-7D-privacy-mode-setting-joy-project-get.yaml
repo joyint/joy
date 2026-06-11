@@ -12,7 +12,7 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-10T20:59:40.791373396Z
-updated: 2026-06-11T15:29:06.634501556Z
+updated: 2026-06-11T15:44:53.460595711Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-11T15:16:36.969304546Z
@@ -25,7 +25,7 @@ description: 'Add a per-project privacy setting (open|anonymous, default open) s
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-06-11T15:16:37.030533528Z
-  text: 'Plan: Add a project-level privacy setting (enum open|anonymous, default open) as the foundation for ADR-042. (1) model/project.rs: add PrivacyMode enum + Project.privacy field (serde default, skip_serializing_if None so default stays implicit). (2) project.defaults.yaml: privacy: open. (3) joy config get/set project.privacy: wire describe_value + field_hint + validation (only open|anonymous accepted). Default open = today''s behaviour, no behavioural change yet. (4) roundtrip + omitted-when-default unit tests. Implemented on branch feat/adr-042-privacy-mode (worktree project/joy-adr042), verified with cargo test / just check in joy.'
-- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-  date: 2026-06-11T15:29:06.634500589Z
-  text: 'Correction to the plan above: the interface is joy project get/set privacy (not joy config), and the mode lives in project.yaml (not project.defaults.yaml). joy config writes only the local, gitignored config, which cannot hold a committed project-wide mode. Task-1 scope: add a PrivacyMode enum plus Project.privacy field (default open when absent) in joy-core; extend joy project get/set to handle privacy; setting anonymous is deferred to the mode-transition task JOY-01BF-2E and returns not-yet-implemented for now. Tests: serde roundtrip, default-when-absent, get/set.'
+  text: 'Plan: Add a project-level privacy setting (open|anonymous, default open) as the foundation for ADR-042. (1) joy-core model/project.rs: add PrivacyMode enum plus Project.privacy field (serde default, skip_serializing_if None so the open default stays implicit; accessor returns Open when absent). (2) joy-cli commands/project.rs: extend joy project get to return privacy and joy project set to accept privacy open|anonymous (value validated). (3) Setting open works now; setting anonymous is deferred to the mode-transition task JOY-01BF-2E and returns not-yet-implemented for now, to avoid a half-migrated state. (4) Tests: serde roundtrip, default-when-absent, get/set. Implemented on branch feat/adr-042-privacy-mode (worktree project/joy-adr042), verified with cargo test and just check. Note: not joy config, which writes the local gitignored config; the committed project-wide mode lives in project.yaml.'
+  edits:
+  - date: 2026-06-11T15:34:36.535257351Z
+    by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
