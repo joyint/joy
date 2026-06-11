@@ -22,7 +22,7 @@ jobs:
       - name: Submit joy to winget-pkgs
         uses: vedantmgoyal9/winget-releaser@v2
         with:
-          identifier: Joydev.Joy
+          identifier: joyint.joy
           # Match the signed Windows zip produced by the release workflow.
           installers-regex: 'x86_64-pc-windows-msvc\.zip$'
           # The fork of microsoft/winget-pkgs lives under the joyint org, not
