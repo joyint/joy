@@ -18,6 +18,44 @@ use joy_core::vcs::Vcs;
 
 use crate::commands::auth::read_passphrase;
 
+/// Build a member-display resolver for the current command (ADR-042).
+///
+/// In `anonymous` mode item and log records carry opaque member ids; a viewer
+/// who holds the members.yaml wrap can render them back to e-mails. Read-only
+/// commands (`joy log`, `joy show`, ...) must not block on a passphrase prompt,
+/// so resolution happens only when the viewer's passphrase is available
+/// non-interactively (`JOY_PASSPHRASE`). Open mode, a locked viewer, or any
+/// decryption failure yields a pass-through resolver that leaves ids unchanged.
+pub fn member_display(
+    root: &std::path::Path,
+    project: &joy_core::model::Project,
+) -> joy_core::privacy::MemberDisplay {
+    use joy_core::privacy::MemberDisplay;
+
+    if project.privacy_mode() != joy_core::model::project::PrivacyMode::Anonymous {
+        return MemberDisplay::passthrough();
+    }
+    let Some(passphrase) = std::env::var("JOY_PASSPHRASE")
+        .ok()
+        .filter(|s| !s.is_empty())
+    else {
+        return MemberDisplay::passthrough();
+    };
+    let Ok(email) = joy_core::vcs::default_vcs().user_email() else {
+        return MemberDisplay::passthrough();
+    };
+    let Some(viewer_id) = joy_core::privacy::member_key_for_email(project, &email) else {
+        return MemberDisplay::passthrough();
+    };
+    let Some(member) = project.members.get(&viewer_id) else {
+        return MemberDisplay::passthrough();
+    };
+    match joy_core::auth::unlock_identity(member, &passphrase) {
+        Ok(unlocked) => MemberDisplay::for_viewer(root, project, &unlocked.seed),
+        Err(_) => MemberDisplay::passthrough(),
+    }
+}
+
 /// Load the project [`Context`] and install zone keys before returning,
 /// so any subsequent read or write of items in a Crypt zone succeeds
 /// without each command having to remember to call

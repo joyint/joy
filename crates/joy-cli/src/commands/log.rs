@@ -99,6 +99,13 @@ pub fn run(args: LogArgs) -> Result<()> {
 
     let display_entries = &entries;
 
+    // In anonymous mode (ADR-042) the log records opaque member ids; resolve
+    // them back to e-mails for a viewer who holds the members.yaml wrap.
+    let resolver = store::read_project(&store::joy_dir(&root).join(store::PROJECT_FILE))
+        .ok()
+        .map(|project| crate::crypt_session::member_display(&root, &project))
+        .unwrap_or_else(joy_core::privacy::MemberDisplay::passthrough);
+
     for entry in display_entries {
         let local_time = format_local_time(&entry.timestamp);
         let details_str = entry
@@ -113,7 +120,7 @@ pub fn run(args: LogArgs) -> Result<()> {
             color::id(&entry.target),
             color::label(&entry.event_type),
             details_str,
-            color::user(&entry.user),
+            color::user(&resolver.resolve(&entry.user)),
         );
     }
 

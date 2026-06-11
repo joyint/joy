@@ -41,6 +41,13 @@ pub fn run(args: ShowArgs) -> Result<()> {
         return crate::output::emit(&item);
     }
 
+    // In anonymous mode (ADR-042) members appear as opaque ids; resolve them
+    // back to e-mails for a viewer who holds the members.yaml wrap.
+    let resolver = store::read_project(&store::joy_dir(&root).join(store::PROJECT_FILE))
+        .ok()
+        .map(|project| crate::crypt_session::member_display(&root, &project))
+        .unwrap_or_else(joy_core::privacy::MemberDisplay::passthrough);
+
     let w = color::terminal_width();
     println!("{}", color::label(&"-".repeat(w)));
     println!("{} {}", color::id(&item.id), color::label(&item.title));
@@ -73,15 +80,19 @@ pub fn run(args: ShowArgs) -> Result<()> {
     }
     if !item.assignees.is_empty() {
         if item.assignees.len() == 1 && item.assignees[0].capabilities.is_empty() {
-            println!("{} {}", color::label("Assignee:"), item.assignees[0].member);
+            println!(
+                "{} {}",
+                color::label("Assignee:"),
+                resolver.resolve(&item.assignees[0].member)
+            );
         } else {
             println!("{}:", color::label("Assignees"));
             for a in &item.assignees {
                 if a.capabilities.is_empty() {
-                    println!("  {}", a.member);
+                    println!("  {}", resolver.resolve(&a.member));
                 } else {
                     let caps: Vec<String> = a.capabilities.iter().map(|c| c.to_string()).collect();
-                    println!("  {}  {}", a.member, caps.join(", "));
+                    println!("  {}  {}", resolver.resolve(&a.member), caps.join(", "));
                 }
             }
         }
@@ -182,7 +193,7 @@ pub fn run(args: ShowArgs) -> Result<()> {
                 "{} {} [{}]",
                 color::label(&format!("[{}]", i + 1)),
                 color::label(&date_str),
-                color::user(&comment.author),
+                color::user(&resolver.resolve(&comment.author)),
             );
             // Body indented two spaces so the comment block reads as a
             // visual unit and stays separate from item-level content
@@ -212,7 +223,7 @@ pub fn run(args: ShowArgs) -> Result<()> {
                         "  {} {} by {}",
                         color::label("Updated:"),
                         color::label(&edit_str),
-                        color::user(&edit.by),
+                        color::user(&resolver.resolve(&edit.by)),
                     );
                 }
             }
@@ -228,7 +239,7 @@ pub fn run(args: ShowArgs) -> Result<()> {
             "{} {} by {}",
             color::label("Created:"),
             color::label(&created_date),
-            color::user(by),
+            color::user(&resolver.resolve(by)),
         ),
         None => format!(
             "{} {}",
@@ -250,7 +261,7 @@ pub fn run(args: ShowArgs) -> Result<()> {
                         "{} {} by {}",
                         color::label("Updated:"),
                         color::label(&updated_date),
-                        color::user(by),
+                        color::user(&resolver.resolve(by)),
                     ),
                     None => format!(
                         "{} {}",
@@ -268,7 +279,7 @@ pub fn run(args: ShowArgs) -> Result<()> {
                     "{} {} by {}",
                     color::label("Updated:"),
                     color::label(&entry_date),
-                    color::user(&entry.by),
+                    color::user(&resolver.resolve(&entry.by)),
                 );
             }
         }
