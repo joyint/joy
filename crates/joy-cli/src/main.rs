@@ -110,7 +110,7 @@ pub(crate) struct Cli {
     #[arg(short, long)]
     reverse: bool,
 
-    /// Show the decisions board (validity columns) instead of the status board
+    /// Show the decisions board (validity columns)
     #[arg(short = 'D', long)]
     decisions: bool,
 
