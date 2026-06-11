@@ -354,8 +354,12 @@ pub fn validity_display(v: &Validity) -> (String, String) {
     }
 }
 
+/// Render a member identity. This is the single chokepoint where a member
+/// string reaches output: it resolves the value through the installed resolver
+/// (ADR-042), so an opaque id is never shown (name/e-mail instead, or an auth
+/// request when locked). In open mode resolution is a pass-through.
 pub fn user(text: &str) -> String {
-    wrap(ACCENT, text)
+    wrap(ACCENT, &joy_core::member_ref::resolve_str(text))
 }
 
 pub fn blocked(text: &str) -> String {

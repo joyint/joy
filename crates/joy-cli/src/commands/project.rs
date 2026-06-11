@@ -1645,7 +1645,19 @@ fn print_members_table(
         .unwrap_or(4)
         .max(4);
 
-    let max_member = members.keys().map(|k| k.len()).max().unwrap_or(6).max(6);
+    // Resolve each member id to its display value (ADR-042): name/e-mail in
+    // anonymous mode, the key itself in open mode. Column width is sized on the
+    // resolved value so the table never lays out around a raw opaque id.
+    let display_names: Vec<String> = members
+        .keys()
+        .map(|id| joy_core::member_ref::resolve_str(id))
+        .collect();
+    let max_member = display_names
+        .iter()
+        .map(|n| n.len())
+        .max()
+        .unwrap_or(6)
+        .max(6);
     let term_width = color::terminal_width();
 
     // chmod-style capability string: cpditrw/camd (12 chars) or "all" (3 chars)
@@ -1686,8 +1698,12 @@ fn print_members_table(
     println!();
 
     // Rows
-    for ((id, member), (_, auth)) in members.iter().zip(auth_statuses.iter()) {
-        let display_id = truncate(id, w_member);
+    for (((_id, member), (_, auth)), display_name) in members
+        .iter()
+        .zip(auth_statuses.iter())
+        .zip(display_names.iter())
+    {
+        let display_id = truncate(display_name, w_member);
         print!("  {:<w$}", display_id, w = w_member);
         print!(" {}", pad_right(auth, w_auth));
 

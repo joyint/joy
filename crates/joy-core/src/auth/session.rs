@@ -45,6 +45,14 @@ pub struct SessionToken {
     pub claims: SessionClaims,
     /// Hex-encoded Ed25519 signature over the serialized claims.
     pub signature: String,
+    /// Anonymous mode (ADR-042): the hex-encoded members.yaml zone key, cached
+    /// for the life of the session so any command can resolve opaque ids to
+    /// e-mails without re-entering the passphrase (the concept's "session ⇒
+    /// resolvable"). Auxiliary local state, not part of the signed claims; the
+    /// session file is owner-only (0600), the same trust boundary as the
+    /// session credential itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub members_zone_key: Option<String>,
 }
 
 /// Default session duration: 24 hours.
@@ -130,6 +138,7 @@ pub fn create_session_for_ai(
     SessionToken {
         claims,
         signature: hex::encode(signature),
+        members_zone_key: None,
     }
 }
 
@@ -159,6 +168,7 @@ fn create_session_with_token_key(
     SessionToken {
         claims,
         signature: hex::encode(signature),
+        members_zone_key: None,
     }
 }
 

@@ -451,7 +451,11 @@ pub(crate) fn run_init(
 
     // Create initial session
     let project_id = session::project_id(&root)?;
-    let session_token = session::create_session(&keypair, &session_member, &project_id, None);
+    let mut session_token = session::create_session(&keypair, &session_member, &project_id, None);
+    // Anonymous mode (ADR-042): cache the members.yaml zone key so later commands
+    // resolve opaque ids without re-entering the passphrase.
+    session_token.members_zone_key =
+        cached_members_zone_key(&project, &session_member, seed.as_bytes());
     session::save_session(&project_id, &session_token)?;
 
     if anonymous {
@@ -602,7 +606,12 @@ fn auth_with_passphrase(
         );
     }
 
-    let session_token = session::create_session(&keypair, &member_key, project_id, None);
+    let mut session_token = session::create_session(&keypair, &member_key, project_id, None);
+    // Anonymous mode (ADR-042): cache the members.yaml zone key in the session
+    // so subsequent commands resolve opaque ids to e-mails for the life of the
+    // session without re-entering the passphrase.
+    session_token.members_zone_key =
+        cached_members_zone_key(project_view, &member_key, &keypair.to_seed_bytes());
     session::save_session(project_id, &session_token)?;
 
     // ADR-040: opportunistic re-lock. We have the seed in hand; walk
@@ -617,6 +626,23 @@ fn auth_with_passphrase(
     println!("Authenticated as {}. Session active (24h).", email);
 
     Ok(())
+}
+
+/// In anonymous mode, the hex-encoded members.yaml zone key for `member_key`,
+/// unwrapped with the member's own seed, to cache in the session (ADR-042).
+/// `None` in open mode or on any failure.
+fn cached_members_zone_key(
+    project: &joy_core::model::project::Project,
+    member_key: &str,
+    seed: &[u8; 32],
+) -> Option<String> {
+    if project.privacy_mode() != joy_core::model::project::PrivacyMode::Anonymous {
+        return None;
+    }
+    let wrap = project.members.get(member_key)?.members_wrap.as_deref()?;
+    let zk = joy_core::crypt::unwrap_for_member(wrap, joy_core::members_file::MEMBERS_ZONE, seed)
+        .ok()?;
+    Some(hex::encode(zk.as_bytes()))
 }
 
 /// Walk `crypt.zones[].paths` for every zone the member is granted to;

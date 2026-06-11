@@ -522,7 +522,12 @@ fn show(args: ShowArgs) -> Result<()> {
             if !actors.is_empty() {
                 println!("\n{}", color::label("Contributors:"));
                 for a in &actors {
-                    println!("  {} ({} events on {} items)", a.id, a.events, a.items);
+                    println!(
+                        "  {} ({} events on {} items)",
+                        color::user(&a.id),
+                        a.events,
+                        a.items
+                    );
                 }
             }
         }
@@ -690,7 +695,15 @@ fn print_release(release: &Release) {
     if !release.contributors.is_empty() {
         println!("{}", color::label("Contributors:"));
         for c in &release.contributors {
-            println!("  {} ({} events on {} items)", c.id, c.events, c.items);
+            // Local terminal view: color::user resolves the opaque id to
+            // name/e-mail (ADR-042). render_release_markdown keeps the raw id so
+            // published notes stay anonymous.
+            println!(
+                "  {} ({} events on {} items)",
+                color::user(&c.id),
+                c.events,
+                c.items
+            );
         }
         println!();
     }

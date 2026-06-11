@@ -69,16 +69,24 @@ pub fn verify_attestation(
 ) -> Result<(), JoyError> {
     let sig_bytes = hex::decode(&attestation.signature)
         .map_err(|e| JoyError::AuthFailed(format!("attestation signature is not hex: {e}")))?;
-    let canonical = attestation.signed_fields.canonical_bytes();
+
+    // Recompute the signed bytes with the authoritative e-mail supplied by the
+    // caller (the concept's `email_for`: the project.yaml key in open mode, the
+    // decrypted members.yaml in anonymous mode), not the value stored on disk.
+    // In anonymous mode (ADR-042) `signed_fields.email` on disk is an opaque-id
+    // placeholder so no e-mail sits in project.yaml; the signature stays frozen
+    // over the original e-mail and still verifies here because `email_for`
+    // yields the bit-identical address. This single cryptographic check also
+    // subsumes the old `signed_fields.email == member_email` comparison: a
+    // signature that verifies over `member_email` proves the attester signed for
+    // exactly this member.
+    let mut signed = attestation.signed_fields.clone();
+    signed.email = member_email.to_string();
+    let canonical = signed.canonical_bytes();
     attester_public_key
         .verify(&canonical, &sig_bytes)
         .map_err(|_| JoyError::AuthFailed("attestation signature does not verify".into()))?;
 
-    if attestation.signed_fields.email != member_email {
-        return Err(JoyError::AuthFailed(
-            "attestation email does not match member".into(),
-        ));
-    }
     if attestation.signed_fields.capabilities != member.capabilities {
         return Err(JoyError::AuthFailed(
             "attestation capabilities do not match member".into(),
@@ -178,8 +186,13 @@ mod tests {
         let fields = signed_fields_for("alice@example.com", &MemberCapabilities::All, None);
         let att = sign_attestation("horst@example.com", &kp, fields);
         let member = fresh_member(MemberCapabilities::All, None);
+        // The e-mail now enters the verification cryptographically: canonical
+        // bytes are recomputed from the authoritative `member_email` (email_for),
+        // so verifying for a different address fails the signature check itself
+        // rather than a separate string compare. This is the stronger binding
+        // that lets anonymous mode store an id placeholder for the e-mail on disk.
         let err = verify_attestation(&att, &pk, "bob@example.com", &member).unwrap_err();
-        assert!(matches!(err, JoyError::AuthFailed(msg) if msg.contains("email")));
+        assert!(matches!(err, JoyError::AuthFailed(msg) if msg.contains("signature")));
     }
 
     #[test]

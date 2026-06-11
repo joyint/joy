@@ -57,84 +57,30 @@ pub fn member_key_for_email(project: &Project, email: &str) -> Option<String> {
     None
 }
 
+/// The single source of a member's e-mail (the concept's `email_for`).
+///
+/// Open mode: the member-map key *is* the e-mail, returned as-is. Anonymous
+/// mode: the e-mail lives only in the decrypted `members.yaml`, looked up by
+/// the opaque id. Every consumer that needs a member's e-mail (attestation
+/// verification, display, account matching) goes through here and is otherwise
+/// oblivious to the privacy mode. Returns `None` when the member is unknown or,
+/// in anonymous mode, when `members` is not available (locked).
+pub fn email_for(
+    project: &Project,
+    member: &str,
+    members: Option<&crate::members_file::MembersFile>,
+) -> Option<String> {
+    if project.privacy_mode() != PrivacyMode::Anonymous {
+        return project
+            .members
+            .contains_key(member)
+            .then(|| member.to_string());
+    }
+    members.and_then(|m| m.email_for(member).map(str::to_string))
+}
+
 fn io_err(ctx: &str, e: std::io::Error) -> JoyError {
     JoyError::Other(format!("{ctx}: {e}"))
-}
-
-/// Resolves opaque member ids back to a human-readable display (name or
-/// e-mail) for the duration of one command's output (ADR-042).
-///
-/// In `anonymous` mode item and log records carry opaque ids (`m-...`). A
-/// viewer who holds the members.yaml zone wrap (any member, unlocked with their
-/// own seed) can decrypt it and see the real e-mails; everyone else, and any
-/// locked viewer, sees only the opaque id. This struct captures that: build it
-/// once per command, then map every member string through [`resolve`]. In open
-/// mode, or when the viewer has no access / decryption fails, it is a
-/// pass-through that returns ids unchanged -- never a crash, never a wrong name.
-///
-/// [`resolve`]: MemberDisplay::resolve
-#[derive(Debug, Clone, Default)]
-pub struct MemberDisplay {
-    members: Option<crate::members_file::MembersFile>,
-}
-
-impl MemberDisplay {
-    /// A pass-through resolver: every id maps to itself. Used in open mode and
-    /// whenever the viewer cannot (or need not) decrypt members.yaml.
-    pub fn passthrough() -> Self {
-        Self { members: None }
-    }
-
-    /// Build a resolver for `anonymous` mode using the viewing member's unlocked
-    /// `seed`. Finds the viewer's own `members_wrap` (by matching the seed's
-    /// public key against a member's `verify_key`), unwraps the members-zone key
-    /// and decrypts members.yaml. Any failure (open mode, no wrap, wrong seed,
-    /// missing file) degrades to a pass-through resolver.
-    pub fn for_viewer(root: &Path, project: &Project, viewer_seed: &[u8; 32]) -> Self {
-        if project.privacy_mode() != PrivacyMode::Anonymous {
-            return Self::passthrough();
-        }
-        let viewer_vk = Keypair::from_seed(viewer_seed).public_key().to_hex();
-        let members = project
-            .members
-            .values()
-            .find(|m| m.verify_key.as_deref() == Some(viewer_vk.as_str()))
-            .and_then(|m| m.members_wrap.clone())
-            .and_then(|wrap| crypt::unwrap_for_member(&wrap, MEMBERS_ZONE, viewer_seed).ok())
-            .and_then(|zone_key| members_file::read(root, &zone_key).ok());
-        Self { members }
-    }
-
-    /// Whether this resolver actually resolves anything (anonymous mode with
-    /// access). A pass-through resolver returns `false`.
-    pub fn is_active(&self) -> bool {
-        self.members.is_some()
-    }
-
-    /// Resolve one member id to its display string, leaving unknown ids (AI
-    /// members, ids not in members.yaml) unchanged.
-    fn resolve_one(&self, id: &str) -> String {
-        self.members
-            .as_ref()
-            .and_then(|m| m.display_for(id))
-            .unwrap_or_else(|| id.to_string())
-    }
-
-    /// Resolve a member string for display. Handles both a bare id and the
-    /// event-log `"<member> delegated-by:<human>"` form, resolving each side.
-    pub fn resolve(&self, user: &str) -> String {
-        if self.members.is_none() {
-            return user.to_string();
-        }
-        match user.split_once(" delegated-by:") {
-            Some((actor, human)) => format!(
-                "{} delegated-by:{}",
-                self.resolve_one(actor),
-                self.resolve_one(human)
-            ),
-            None => self.resolve_one(user),
-        }
-    }
 }
 
 /// Replace each `from -> to` in a single text file, if present.

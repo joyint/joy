@@ -8,6 +8,7 @@ mod crypt_session;
 mod editor;
 mod effort;
 mod forge;
+mod member_resolver;
 mod output;
 mod prompt;
 mod update_registry;
@@ -394,6 +395,11 @@ fn main() -> anyhow::Result<()> {
         &cli.command,
         None | Some(Commands::Ls(_)) | Some(Commands::Roadmap(_)) | Some(Commands::Show(_))
     );
+
+    // Install the per-command member resolver (ADR-042) so every output that
+    // names a member resolves the opaque id to a name/e-mail, fail-safe. In open
+    // mode this is a pass-through.
+    member_resolver::install_member_resolver();
 
     let result =
         match cli.command {
