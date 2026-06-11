@@ -35,6 +35,22 @@ pub struct InitArgs {
     /// Project language (ISO 639-1 code, e.g. en, de). Defaults to en.
     #[arg(long)]
     pub language: Option<String>,
+
+    /// Start the project in anonymous privacy mode (ADR-042). The founder is
+    /// recorded under an opaque id from the very first written file, so the
+    /// git e-mail never lands in a committed project. Authentication is set up
+    /// immediately, so a passphrase is required.
+    #[arg(long)]
+    pub anonymous: bool,
+
+    /// Passphrase for the founder identity (only with --anonymous). Falls back
+    /// to the JOY_PASSPHRASE env var, then an interactive prompt.
+    #[arg(long)]
+    pub passphrase: Option<String>,
+
+    /// Read the founder passphrase from stdin (only with --anonymous).
+    #[arg(long)]
+    pub passphrase_stdin: bool,
 }
 
 pub fn run(args: InitArgs) -> Result<()> {
@@ -43,8 +59,21 @@ pub fn run(args: InitArgs) -> Result<()> {
         root: root.clone(),
         name: args.name,
         acronym: args.acronym,
-        user: args.user,
+        user: args.user.clone(),
         language: args.language,
+    };
+
+    // For an anonymous start, acquire (and validate) the founder passphrase
+    // BEFORE scaffolding. A failure here (no passphrase, no TTY, mismatch)
+    // must leave nothing on disk -- otherwise init::init would have already
+    // written an e-mail-keyed, open project.
+    let anon_passphrase = if args.anonymous {
+        Some(acquire_founder_passphrase(
+            args.passphrase.as_deref(),
+            args.passphrase_stdin,
+        )?)
+    } else {
+        None
     };
 
     match init::init(options) {
@@ -69,6 +98,19 @@ pub fn run(args: InitArgs) -> Result<()> {
             ) {
                 joy_core::git_ops::auto_git_add(&root, &["SECURITY.md"]);
             }
+
+            // Anonymous onboarding (ADR-042). Done BEFORE the init auto-commit
+            // below so the first committed project.yaml is already anonymous and
+            // the git e-mail is never written to a committed file. run_init
+            // establishes the founder identity, rekeys to the opaque id, writes
+            // the encrypted members.yaml and stages the anonymized files.
+            if let Some(ref pass) = anon_passphrase {
+                println!();
+                // Pass the pre-acquired passphrase as the flag so run_init runs
+                // non-interactively and does not prompt a second time.
+                crate::commands::auth::run_init(Some(pass), false, args.user.as_deref(), true)?;
+            }
+
             println!();
             println!("Get started:");
             println!("  joy add <TYPE> <TITLE>   Create an item");
@@ -97,4 +139,29 @@ pub fn run(args: InitArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Acquire and validate the founder passphrase for `joy init --anonymous`,
+/// before any project files are written. Honors `--passphrase`, then
+/// `JOY_PASSPHRASE`, then an interactive prompt with confirmation.
+fn acquire_founder_passphrase(flag: Option<&str>, from_stdin: bool) -> Result<String> {
+    let env = std::env::var("JOY_PASSPHRASE")
+        .ok()
+        .filter(|s| !s.is_empty());
+    let effective = flag.or(env.as_deref());
+    let interactive = effective.is_none() && !from_stdin;
+    if interactive {
+        eprintln!("Starting an anonymous project (ADR-042).");
+        eprintln!("Choose a founder passphrase (minimum 3 words, e.g. Diceware):");
+    }
+    let passphrase =
+        crate::commands::auth::read_passphrase(effective, from_stdin, "  Passphrase: ")?;
+    joy_core::auth::validate_passphrase(&passphrase)?;
+    if interactive {
+        let confirm = rpassword::prompt_password("  Confirm:    ")?;
+        if passphrase != confirm {
+            anyhow::bail!("passphrases do not match");
+        }
+    }
+    Ok(passphrase)
 }

@@ -167,9 +167,13 @@ struct TokenAddArgs {
 pub fn run(args: AuthArgs) -> Result<()> {
     let stdin = args.passphrase_stdin;
     match args.command {
-        Some(AuthCommand::Init) => {
-            run_init(args.passphrase.as_deref(), stdin, args.user.as_deref()).map(|_| ())
-        }
+        Some(AuthCommand::Init) => run_init(
+            args.passphrase.as_deref(),
+            stdin,
+            args.user.as_deref(),
+            false,
+        )
+        .map(|_| ()),
         Some(AuthCommand::Status) => run_status(),
         Some(AuthCommand::Reset(a)) => run_reset(a, args.passphrase.as_deref(), stdin),
         Some(AuthCommand::Token(a)) => {
@@ -337,6 +341,7 @@ pub(crate) fn run_init(
     passphrase_flag: Option<&str>,
     passphrase_stdin: bool,
     user_flag: Option<&str>,
+    anonymous: bool,
 ) -> Result<String> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
@@ -418,17 +423,44 @@ pub(crate) fn run_init(
         }
     }
 
-    store::write_yaml_preserve(&project_path, &project)?;
-    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-    joy_core::git_ops::auto_git_add(&root, &[&rel]);
+    // Determine the on-disk member key. In anonymous mode (ADR-042) the founder
+    // is rekeyed to an opaque id before the project file is persisted, so the
+    // git e-mail never lands in a written -- let alone committed -- project.yaml.
+    // switch_to_anonymous performs the rekey and writes the email_match verifier
+    // plus the encrypted members.yaml; in open mode we just persist as-is.
+    let session_member = if anonymous {
+        let renamed = joy_core::privacy::switch_to_anonymous(&root, &mut project, seed.as_bytes())?;
+        let project_rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+        let members_rel = format!(
+            "{}/{}",
+            store::JOY_DIR,
+            joy_core::members_file::MEMBERS_FILE
+        );
+        joy_core::git_ops::auto_git_add(&root, &[&project_rel, &members_rel]);
+        renamed
+            .into_iter()
+            .find(|(e, _)| *e == email)
+            .map(|(_, id)| id)
+            .unwrap_or_else(|| email.clone())
+    } else {
+        store::write_yaml_preserve(&project_path, &project)?;
+        let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+        joy_core::git_ops::auto_git_add(&root, &[&rel]);
+        email.clone()
+    };
 
     // Create initial session
     let project_id = session::project_id(&root)?;
-    let session_token = session::create_session(&keypair, &email, &project_id, None);
+    let session_token = session::create_session(&keypair, &session_member, &project_id, None);
     session::save_session(&project_id, &session_token)?;
 
-    println!("Authentication initialized for {}.", email);
-    println!("Public key registered. Session active (24h).");
+    if anonymous {
+        println!("Authentication initialized for {email} (anonymous mode).");
+        println!("Recorded as {session_member}. Public key registered. Session active (24h).");
+    } else {
+        println!("Authentication initialized for {email}.");
+        println!("Public key registered. Session active (24h).");
+    }
     println!();
     println!("RECOVERY KEY (write this down now, it is shown only once):");
     println!();
@@ -444,7 +476,8 @@ pub(crate) fn run_init(
         joy_core::git_ops::auto_git_add(&root, &["SECURITY.md"]);
     }
 
-    joy_core::git_ops::auto_git_post_command(&root, "auth init", &email);
+    // Commit trailer must not reveal the e-mail in anonymous mode.
+    joy_core::git_ops::auto_git_post_command(&root, "auth init", &session_member);
 
     Ok(passphrase)
 }

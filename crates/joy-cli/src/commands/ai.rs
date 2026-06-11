@@ -266,7 +266,7 @@ fn ensure_human_auth_initialized(
             "AI tool members are attested with your project key, so authentication is required before registration."
         )
     );
-    let bootstrapped = crate::commands::auth::run_init(passphrase, passphrase_stdin, None)?;
+    let bootstrapped = crate::commands::auth::run_init(passphrase, passphrase_stdin, None, false)?;
     dprintln!();
     Ok(Some(bootstrapped))
 }
