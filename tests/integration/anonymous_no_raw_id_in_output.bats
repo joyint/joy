@@ -55,6 +55,22 @@ _member_id() {
     [[ "$output" != *"m-"* ]]
 }
 
+@test "self-assign works in anonymous mode and resolves the assignee, never a raw id" {
+    _anon
+    id=$(joy add task "work" | grep -oiE '[A-Z]+-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{2}' | head -1)
+
+    # Self-assign resolves the acting identity to an opaque id; that shape must be
+    # accepted (no "invalid member format") and the confirmation resolves it.
+    run joy assign "$id"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"$TEST_EMAIL"* ]]
+    [[ "$output" != *"m-"* ]]
+
+    run joy assign "$id" --unassign
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"m-"* ]]
+}
+
 @test "the on-disk event log and items keep the raw id, never an e-mail" {
     _anon
     joy add task "work" >/dev/null

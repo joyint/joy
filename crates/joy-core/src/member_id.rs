@@ -76,6 +76,19 @@ pub fn opaque_member_id(verify_key_hex: &str) -> Result<String, hex::FromHexErro
     Ok(format!("m-{}", &b32[..MEMBER_ID_SHORT_LEN]))
 }
 
+/// Whether `s` has the shape of an opaque member id: `m-` followed by exactly
+/// [`MEMBER_ID_SHORT_LEN`] base32 (lowercase, no padding) characters. Lets
+/// anonymous-mode ids be accepted wherever an e-mail or `ai:` id is otherwise
+/// expected (e.g. self-assign resolves to the opaque id).
+pub fn is_opaque_member_id(s: &str) -> bool {
+    match s.strip_prefix("m-") {
+        Some(rest) => {
+            rest.len() == MEMBER_ID_SHORT_LEN && rest.bytes().all(|b| BASE32_ALPHABET.contains(&b))
+        }
+        None => false,
+    }
+}
+
 /// Compute the non-reversible `email_match` verifier for `email`, keyed by the
 /// member's project-stable `kdf_nonce` (hex). Hex-encoded 32-byte output.
 ///

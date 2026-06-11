@@ -41,8 +41,12 @@ pub fn run(args: AssignArgs) -> Result<()> {
 
     ctx.enforce(&Action::AssignItem, &item.id)?;
 
-    // Validate format
-    if !member.contains('@') && !member.starts_with("ai:") {
+    // Validate format. In anonymous mode the acting member resolves to an opaque
+    // id (e.g. self-assign), so accept that shape too alongside e-mail / ai: ids.
+    if !member.contains('@')
+        && !member.starts_with("ai:")
+        && !joy_core::member_id::is_opaque_member_id(&member)
+    {
         bail!("invalid member format: expected email or ai:tool@joy");
     }
 
@@ -50,7 +54,11 @@ pub fn run(args: AssignArgs) -> Result<()> {
         let before = item.assignees.len();
         item.assignees.retain(|a| a.member != member.as_str());
         if item.assignees.len() == before {
-            println!("{} is not assigned to {}.", color::id(&item.id), member);
+            println!(
+                "{} is not assigned to {}.",
+                color::id(&item.id),
+                color::user(&member)
+            );
             return Ok(());
         }
         items::touch_for_attribute_change(&mut item, &ctx.log_user());
@@ -65,7 +73,11 @@ pub fn run(args: AssignArgs) -> Result<()> {
         if crate::output::is_json() {
             return crate::output::emit(&item);
         }
-        println!("Unassigned {} from {}", member, color::id(&item.id));
+        println!(
+            "Unassigned {} from {}",
+            color::user(&member),
+            color::id(&item.id)
+        );
         joy_core::git_ops::auto_git_post_command(
             &ctx.root,
             &format!("unassign {} {}", item.id, member),
@@ -114,13 +126,17 @@ pub fn run(args: AssignArgs) -> Result<()> {
     if crate::output::is_json() {
         crate::output::emit(&item)?;
     } else if caps.is_empty() {
-        println!("Assigned {} to {}", color::id(&item.id), member);
+        println!(
+            "Assigned {} to {}",
+            color::id(&item.id),
+            color::user(&member)
+        );
     } else {
         let cap_names: Vec<String> = caps.iter().map(|c| c.to_string()).collect();
         println!(
             "Assigned {} to {} as {}",
             color::id(&item.id),
-            member,
+            color::user(&member),
             cap_names.join(", ")
         );
     }
