@@ -16,6 +16,8 @@
 name: Release
 permissions:
   "contents": "write"
+  # OIDC token for Azure login in the Windows signing step (JOY-0190).
+  "id-token": "write"
 
 # This task will run whenever you push a git tag that looks like a version
 # like "1.0.0", "v0.1.0-prerelease.1", "my-app/0.1.0", "releases/v1.0.0", etc.
@@ -114,6 +116,10 @@ jobs:
       # - N "local" tasks that build each platform's binaries and platform-specific installers
       matrix: ${{ fromJson(needs.plan.outputs.val).ci.github.artifacts_matrix }}
     runs-on: ${{ matrix.runner }}
+    # JOY-0190: bind to the `release` environment so the GitHub OIDC token
+    # subject (repo:joyint/joy:environment:release) matches the Entra
+    # federated credential used by the Windows signing step.
+    environment: release
     container: ${{ matrix.container && matrix.container.image || null }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -156,6 +162,24 @@ jobs:
           # Actually do builds and make zips and whatnot
           dist build ${{ needs.plan.outputs.tag-flag }} --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
           echo "dist ran successfully"
+      # --- JOY-0190: Authenticode-sign the Windows binary, then repackage ---
+      # dist build compiles AND archives in one step and has no native Trusted
+      # Signing support. So we sign the freshly built joy.exe in place and then
+      # re-run dist build: cargo does not recompile (no source change), so it
+      # re-archives the *signed* binary and refreshes the manifest hashes.
+      # Windows + publishing only (fork PRs have no OIDC credentials).
+      - name: Sign Windows binary (Artifact Signing)
+        if: ${{ needs.plan.outputs.publishing == 'true' && contains(join(matrix.targets, ','), 'windows') }}
+        uses: ./.github/actions/sign-windows-exe
+        with:
+          files-folder: target/${{ join(matrix.targets, '_') }}/dist
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Re-archive signed Windows binary
+        if: ${{ needs.plan.outputs.publishing == 'true' && contains(join(matrix.targets, ','), 'windows') }}
+        run: |
+          dist build ${{ needs.plan.outputs.tag-flag }} --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
       - id: cargo-dist
         name: Post-build
         # We force bash here just because github makes it really hard to get values up

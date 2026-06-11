@@ -1,0 +1,30 @@
+id: JOY-01C3-90
+title: 'Windows: bare ''joy'' launches System32\joy.cpl (Game Controllers) instead of joy.exe'
+type: bug
+status: new
+priority: high
+tags:
+- windows
+capabilities:
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-11T19:10:01.687119196Z
+updated: 2026-06-11T19:10:01.687119196Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: |-
+  On Windows, typing 'joy' in cmd.exe or PowerShell can launch the legacy Game Controllers control panel (C:\Windows\System32\joy.cpl) instead of the joy CLI.
+
+  Cause: PATHEXT includes .CPL by default, and joy.cpl ships in System32. Windows builds the process PATH as System-PATH followed by User-PATH and searches left to right, first match wins. System32 sits at the front of the system PATH, so when joy.exe lives in any later PATH entry, the search hits System32\joy.cpl first. PATHEXT ordering (.EXE before .CPL) only breaks ties within the same directory, not across directories, so it does not help. PowerShell command resolution differs slightly but has the same outcome.
+
+  Not fixable by packaging or signing: winget installs the portable binary to the user-scope Links dir (%LOCALAPPDATA%\Microsoft\WinGet\Links) appended to the user PATH, i.e. after System32. winget --scope machine uses C:\Program Files\WinGet\Links appended to the system PATH, also after System32. The cargo-dist installer is likewise user-scope. So joy.cpl keeps winning regardless.
+
+  Options to resolve (decide before implementing):
+  1. Per-machine MSI installer that PREPENDS its bin dir to the system PATH ahead of System32, so joy.exe wins. Robust; needs admin and a WiX/MSI artifact; prepending before System32 is mildly aggressive but here only shadows joy.cpl, which is the goal.
+  2. Remove .CPL from the user PATHEXT at install time. Then 'joy' never matches joy.cpl. Effective but a surprising, global change to the user shell environment.
+  3. Rename the Windows command (e.g. a 'joyint' launcher, or require joy.exe). Bulletproof, costs brand/CLI ergonomics.
+  4. Document only: tell users to type 'joy.exe' (explicit extension bypasses PATHEXT) or to put joy's dir ahead of System32 manually. No real fix, poor UX.
+
+  Related: JOY-0190-D0 (Windows signing) is orthogonal. Affects all Windows consoles; PowerShell resolution differs subtly.

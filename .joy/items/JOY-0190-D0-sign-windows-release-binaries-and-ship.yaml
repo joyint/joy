@@ -1,8 +1,10 @@
 id: JOY-0190-D0
 title: Sign Windows release binaries and ship WinGet manifest
 type: story
-status: new
+status: in-progress
 priority: high
+assignees:
+- member: ai:claude@joy
 tags:
 - windows
 capabilities:
@@ -12,9 +14,52 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-15T15:24:37.811081340Z
-updated: 2026-06-10T21:42:22.758775945Z
+updated: 2026-06-11T18:32:31.518063988Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-10T21:42:22.758775945Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-11T16:47:43.690359206Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Wire the shared signing action from the umbrella epic JI-00F4-20 into joy''s release CI to produce signed joy.exe artifacts for tagged releases (Authenticode via Microsoft Trusted Signing). Add a workflow that opens a PR to microsoft/winget-pkgs with an updated manifest pointing at the signed artifact when a release is published. Motivation: CyberArk and similar EPM scanners quarantine unsigned binaries, blocking enterprise installs.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-11T16:47:43.756496159Z
+  text: |-
+    Plan: Sign Windows release binaries via Microsoft Artifact Signing (formerly Trusted Signing) and ship a WinGet manifest. Agreed with operator in collaborative mode.
+
+    Microsoft side (in progress): Azure org subscription set up (tenant Joydev GmbH). Resource provider Microsoft.CodeSigning registered; Artifact Signing account 'joydevsign' created (resource group rg-signing, region northeurope, SKU Basic, account URI https://neu.codesigning.azure.net/). Operator holds the 'Artifact Signing Identity Verifier' role. Organization Public identity validation submitted (id 518e6001-bb5a-499a-8b5c-da7f2d415689), status In Progress at Microsoft (1-20 business days). When completed: create a PublicTrust certificate profile via CLI and assign 'Artifact Signing Certificate Profile Signer' to the CI identity (GitHub OIDC service principal).
+
+    Code side (this story): joy builds via cargo-dist; joy.exe is built on windows-latest (x86_64-pc-windows-msvc) in the build-local-artifacts job of .github/workflows/release.yml. Add a shared composite action in the ci submodule (ci/.github/actions/sign-windows-exe) wrapping signtool against Trusted Signing, invoked Windows-only after 'dist build' and before artifact upload (~release.yml:171). Add a separate post-release workflow to open a WinGet manifest PR to microsoft/winget-pkgs. jyn mirrors this via JYN-0003-D0; the shared action serves both.
+
+    Ref: umbrella epic JI-00F4-20.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-11T17:17:32.623259672Z
+  text: |-
+    [x] Phase B draft written (working tree only, not committed/pushed), pending review:
+    - ci/.github/actions/sign-windows-exe/action.yml: shared composite action, OIDC (azure/login@v3) + azure/artifact-signing-action@v2, signs in place. Defaults endpoint https://neu.codesigning.azure.net/, account joydevsign, profile joydevPublicTrust.
+    - joy/.github/workflows/release.yml: added id-token: write; after dist build, sign the Windows binary (target/<triple>/dist) then re-run dist build to re-archive the signed exe and refresh manifest hashes. Windows + publishing only.
+    - joy/.github/workflows/winget-submit.yml: winget-releaser on release published (stable only), identifier Joydev.Joy, matches the signed Windows zip.
+
+    Why sign-then-re-archive: cargo-dist has no native Trusted Signing support (SSL.com only), and dist build compiles + archives in one step.
+
+    Still open before a real signed release:
+    1. Azure OIDC infra: Entra app + federated credential bound to joyint/joy + Artifact Signing Certificate Profile Signer role (can be done during the validation wait).
+    2. Repo secrets: AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, WINGET_TOKEN.
+    3. Certificate profile joydevPublicTrust created via CLI after org identity validation (id 518e6001) completes.
+    4. ci repo visibility + pin the cross-repo action ref to a SHA.
+    5. Shared action commit likely needs its own item in the ci repo (or track under epic JI-00F4-20).
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-11T18:22:20.656273046Z
+  text: |-
+    [x] Identity validation Completed on 2nd attempt (ID 7a83ef01-11a6-4395-b333-826541714894, valid to 2028-09-13). First request 518e6001 failed at the individual Verified ID step; org data was correct.
+    [x] Certificate profile joydevPublicTrust created and Active. Subject CN=Joydev GmbH, O=Joydev GmbH, L=München, S=Bavaria, C=DE.
+    [x] OIDC set up: Entra app joyint-ci-windows-signing (client id b7e67ca1-c6dd-421e-bbbc-c58027ee1464), service principal, role Artifact Signing Certificate Profile Signer at account scope, and a federated credential bound to repo:joyint/joy:environment:release (flexible claims wildcard is not supported by this tenant, so we use a GitHub environment). release.yml build-local-artifacts now declares environment: release so the OIDC subject matches.
+
+    Remaining: repo secrets AZURE_CLIENT_ID/AZURE_TENANT_ID/AZURE_SUBSCRIPTION_ID + WINGET_TOKEN; release environment (auto-creates); pin ci action @main to a SHA + ci-repo governance; then a test release tag.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-11T18:32:31.518063345Z
+  text: |-
+    [x] Correction: the umbrella 'ci' submodule is the Corporate-Identity repo (fonts/logos), not continuous-integration. The epic JI-00F4-20 wording 'shared action in the ci submodule' is misleading and led the draft astray. The signing action does NOT belong there.
+    [x] Action vendored into joy itself: .github/actions/sign-windows-exe/action.yml; release.yml now references it locally (./.github/actions/sign-windows-exe). Self-contained under JOO-0190, ci left untouched, no cross-repo visibility or SHA-pin concern. jyn gets its own copy under JYN-0003.
+    [ ] Follow-up: fix the epic JI-00F4-20 text (umbrella/JI project) to drop the 'ci submodule' phrasing.

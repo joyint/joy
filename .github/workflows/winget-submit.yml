@@ -1,0 +1,33 @@
+# Copyright (c) 2026 Joydev GmbH (joydev.com)
+# SPDX-License-Identifier: MIT
+#
+# JOY-0190: open a PR to microsoft/winget-pkgs with an updated manifest when a
+# stable release is published, pointing at the signed Windows zip asset. Signed
+# binaries let enterprise EPM scanners (CyberArk and similar) accept the install.
+name: Submit to WinGet
+
+on:
+  release:
+    types: [released]
+
+permissions:
+  contents: read
+
+jobs:
+  winget:
+    runs-on: ubuntu-22.04
+    # Skip prereleases; only ship stable versions to winget-pkgs.
+    if: ${{ !github.event.release.prerelease }}
+    steps:
+      - name: Submit joy to winget-pkgs
+        uses: vedantmgoyal9/winget-releaser@v2
+        with:
+          identifier: Joydev.Joy
+          # Match the signed Windows zip produced by the release workflow.
+          installers-regex: 'x86_64-pc-windows-msvc\.zip$'
+          # The fork of microsoft/winget-pkgs lives under the joyint org, not
+          # under the token owner's personal account.
+          fork-user: joyint
+          # Classic PAT (public_repo) with write access to joyint/winget-pkgs.
+          # The default GITHUB_TOKEN cannot push to a fork in another org.
+          token: ${{ secrets.WINGET_TOKEN }}
