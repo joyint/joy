@@ -36,6 +36,27 @@ fn is_human_key(key: &str) -> bool {
     !key.starts_with("ai:")
 }
 
+/// Resolve the member-map key for a git e-mail, honoring the privacy mode. In
+/// `open` mode the key is the e-mail itself; in `anonymous` mode it is the
+/// opaque id whose stored `email_match` verifies against the e-mail. Returns
+/// `None` when the e-mail is not a member.
+pub fn member_key_for_email(project: &Project, email: &str) -> Option<String> {
+    if project.privacy_mode() != PrivacyMode::Anonymous {
+        return project
+            .members
+            .contains_key(email)
+            .then(|| email.to_string());
+    }
+    for (id, member) in &project.members {
+        if let (Some(verifier), Some(nonce)) = (&member.email_match, &member.kdf_nonce) {
+            if email_match(email, nonce).ok().as_deref() == Some(verifier.as_str()) {
+                return Some(id.clone());
+            }
+        }
+    }
+    None
+}
+
 fn io_err(ctx: &str, e: std::io::Error) -> JoyError {
     JoyError::Other(format!("{ctx}: {e}"))
 }

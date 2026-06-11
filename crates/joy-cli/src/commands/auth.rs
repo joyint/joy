@@ -488,7 +488,12 @@ fn auth_with_passphrase(
     passphrase_flag: Option<&str>,
     passphrase_stdin: bool,
 ) -> Result<()> {
-    let member = project.members.get(email).ok_or_else(|| {
+    // In anonymous mode the member map is keyed by the opaque id, not the git
+    // e-mail (ADR-042); resolve it so the lookup, session and audit actor share
+    // one key. In open mode this is the e-mail.
+    let member_key = joy_core::privacy::member_key_for_email(project, email)
+        .unwrap_or_else(|| email.to_string());
+    let member = project.members.get(&member_key).ok_or_else(|| {
         anyhow::anyhow!(
             "{} is not a registered project member. Run `joy project member add {}`.",
             email,
@@ -546,14 +551,14 @@ fn auth_with_passphrase(
     let sealed_project = maybe_auto_seal(root, project, email, &keypair)?;
     let project_view: &joy_core::model::project::Project =
         sealed_project.as_ref().unwrap_or(project);
-    let member = project_view.members.get(email).unwrap();
+    let member = project_view.members.get(&member_key).unwrap();
 
     // JOY-0100-DA: verify the member's attestation before establishing a
     // session. Founder may be unattested during the solo phase (trust
     // root); any member without attestation after the first co-member
     // joined is suspect and rejected.
     if let Some(attestation) = member.attestation.as_ref() {
-        verify_member_attestation(project_view, email, member, attestation)?;
+        verify_member_attestation(project_view, &member_key, member, attestation)?;
     } else if founder_must_be_attested(project_view) {
         anyhow::bail!(
             "{} has no attestation and the project has multiple members. \
@@ -564,7 +569,7 @@ fn auth_with_passphrase(
         );
     }
 
-    let session_token = session::create_session(&keypair, email, project_id, None);
+    let session_token = session::create_session(&keypair, &member_key, project_id, None);
     session::save_session(project_id, &session_token)?;
 
     // ADR-040: opportunistic re-lock. We have the seed in hand; walk

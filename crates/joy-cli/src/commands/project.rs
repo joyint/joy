@@ -103,6 +103,13 @@ struct SetArgs {
     /// $VISUAL / $EDITOR). Mirrors `joy comment`.
     #[arg(long)]
     editor: Option<String>,
+    /// Passphrase for a `privacy` mode switch (non-interactive). Falls back to
+    /// JOY_PASSPHRASE or an interactive prompt.
+    #[arg(long)]
+    passphrase: Option<String>,
+    /// Read the passphrase from a single line on stdin (for `privacy` switch).
+    #[arg(long = "passphrase-stdin")]
+    passphrase_stdin: bool,
 }
 
 #[derive(clap::Args)]
@@ -515,6 +522,10 @@ fn set_command(
         );
     }
 
+    if key == "privacy" {
+        return set_privacy(ctx, project_path, project, &args);
+    }
+
     let value = match args.value.as_deref() {
         Some(v) => v.to_string(),
         None => match editor_scalar_value(project, key, args.editor.as_deref())? {
@@ -560,6 +571,88 @@ fn set_command(
         &ctx.root,
         &format!("project set {key} {value}"),
         &log_user,
+    );
+    Ok(())
+}
+
+/// Handle `joy project set privacy <none|open|anonymous>`. Switching to or from
+/// `anonymous` is an atomic working-tree migration (ADR-042) that needs the
+/// operator's unlocked seed; the manage capability is already enforced by the
+/// caller. `open`/`none` on a project that is not anonymous is a plain field
+/// normalization.
+fn set_privacy(
+    ctx: &Context,
+    project_path: &std::path::Path,
+    project: &mut Project,
+    args: &SetArgs,
+) -> Result<()> {
+    let target = args.value.as_deref().map(str::trim).unwrap_or_default();
+    let want_anon = match target {
+        "anonymous" => true,
+        "open" | "none" => false,
+        other => bail!("invalid privacy mode '{other}'; expected: none, open, or anonymous"),
+    };
+    let is_anon = project.privacy_mode() == PrivacyMode::Anonymous;
+
+    if want_anon && is_anon {
+        println!("privacy already anonymous");
+        return Ok(());
+    }
+    if !want_anon && !is_anon {
+        // Plain field normalization, no migration.
+        set_value(project, "privacy", target)?;
+        store::write_yaml_preserve(project_path, project)?;
+        if project.privacy.is_none() {
+            prune_yaml_key(project_path, "privacy")?;
+        }
+        let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+        joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
+        println!("privacy = {target}");
+        return Ok(());
+    }
+
+    // A real switch: unlock the acting member's seed (auth), then migrate.
+    let git_email = joy_core::vcs::default_vcs().user_email()?;
+    let member_key = joy_core::privacy::member_key_for_email(project, &git_email)
+        .ok_or_else(|| anyhow::anyhow!("{git_email} is not a member of this project"))?;
+    let member = project
+        .members
+        .get(&member_key)
+        .expect("member_key came from the member map");
+    if member.verify_key.is_none() {
+        bail!("{git_email} has no identity. Run `joy auth init` first.");
+    }
+    let passphrase = match args.passphrase.clone().or_else(|| {
+        std::env::var("JOY_PASSPHRASE")
+            .ok()
+            .filter(|s| !s.is_empty())
+    }) {
+        Some(p) => p,
+        None => {
+            crate::commands::auth::read_passphrase(None, args.passphrase_stdin, "Passphrase: ")?
+        }
+    };
+    let unlocked = joy_core::auth::unlock_identity(member, &passphrase)?;
+
+    let renamed = if want_anon {
+        joy_core::privacy::switch_to_anonymous(&ctx.root, project, &unlocked.seed)?
+    } else {
+        joy_core::privacy::switch_to_open(&ctx.root, project, &unlocked.seed)?
+    };
+
+    // The migration rewrote project.yaml, members.yaml, items and logs.
+    joy_core::git_ops::auto_git_add(&ctx.root, &[store::JOY_DIR]);
+    let log_user = ctx.log_user();
+    joy_core::git_ops::auto_git_post_command(
+        &ctx.root,
+        &format!("project set privacy {target}"),
+        &log_user,
+    );
+    let n = renamed.len();
+    println!(
+        "privacy = {} ({n} member{} migrated)",
+        if want_anon { "anonymous" } else { "open" },
+        if n == 1 { "" } else { "s" }
     );
     Ok(())
 }

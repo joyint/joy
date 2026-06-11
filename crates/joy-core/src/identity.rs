@@ -50,6 +50,15 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
     let project = load_project_optional(root);
     let project_id = crate::auth::session::project_id(root).ok();
 
+    // In anonymous mode (ADR-042) the member map is keyed by an opaque id, not
+    // the git e-mail; resolve the e-mail to that id so membership checks,
+    // sessions and the audit actor all use the same key. In open mode (or when
+    // the e-mail is not a member) this is just the e-mail.
+    let member_key = project
+        .as_ref()
+        .and_then(|p| crate::privacy::member_key_for_email(p, &git_email))
+        .unwrap_or_else(|| git_email.clone());
+
     // 1. JOY_SESSION: env var carries the ephemeral private key bound to
     //    the session (ADR-033). We derive the public key from it and match
     //    against `session_public_key` stored in the session file. Without
@@ -101,14 +110,14 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
 
     // 2. Human session by git email
     if let Some(ref pid) = project_id {
-        if let Some(session_identity) = session_identity(root, &git_email, pid, &project) {
+        if let Some(session_identity) = session_identity(root, &member_key, pid, &project) {
             return Ok(session_identity);
         }
     }
 
-    // 3. Fallback: git email, not authenticated
+    // 3. Fallback: resolved member key (git email in open mode), not authenticated
     Ok(Identity {
-        member: git_email,
+        member: member_key,
         delegated_by: None,
         authenticated: false,
     })
