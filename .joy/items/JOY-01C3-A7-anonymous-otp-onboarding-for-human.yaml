@@ -1,0 +1,19 @@
+id: JOY-01C3-A7
+title: Anonymous OTP onboarding for human members (no e-mail in project.yaml or history)
+type: task
+status: new
+priority: medium
+parent: JOY-01B9-53
+deps:
+- JOY-01BF-2E
+capabilities:
+- implement
+effort: 5
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-11T22:21:24.708040534Z
+updated: 2026-06-11T22:21:24.867971697Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-11T22:21:24.867971697Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Remaining open part of JOY-01BF-2E. Today a human can only be onboarded into an anonymous project by switching to open, adding them, having them redeem their OTP (joy auth init), then switching back, so the project stays open until redemption and the e-mails land in committed git history. Implement true anonymous onboarding: the project stays anonymous throughout and no cleartext e-mail ever reaches project.yaml or history. The manager creates an opaque id and email_match verifier in project.yaml and the e-mail/name in the encrypted members.yaml; the members.yaml zone key is wrapped for the new member at OTP redemption, once their verify_key exists. The core design problem is the key-wrapping timing: at add time the joiner has no verify_key, so the operator cannot wrap the zone key to them yet. Resolve via a wrap-at-redemption step (operator re-wraps once the verify_key lands, or the OTP carries a key exchange so the joiner gains access themselves). Refs ADR-042 and the concept Pseudonyme Identitaeten und Loeschrecht (Umsetzungsstand).'
