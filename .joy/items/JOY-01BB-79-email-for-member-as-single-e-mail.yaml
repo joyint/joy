@@ -1,9 +1,11 @@
 id: JOY-01BB-79
 title: email_for(member) as single e-mail source; route all consumers through it
 type: task
-status: new
+status: in-progress
 priority: high
 parent: JOY-01B9-53
+assignees:
+- member: ai:claude@joy
 deps:
 - JOY-01BA-7D
 milestone: JOY-MS-02
@@ -12,7 +14,13 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-10T20:59:40.889741387Z
-updated: 2026-06-10T20:59:40.889741387Z
+updated: 2026-06-11T17:58:30.746806718Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
+history:
+- date: 2026-06-11T17:58:30.681114468Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Introduce one function (email_for(member)) that resolves a member''s e-mail by mode: open -> member entry in project.yaml; anonymous -> decrypted members.yaml. Route every e-mail consumer (attestation, signatures, event log, display) through it so the rest of the code is mode-agnostic and the e-mail is bit-identical regardless of source. Ref ADR-042 §1.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-11T17:58:30.746805991Z
+  text: 'Plan: introduce one e-mail resolution point (email_for(member)) so every consumer (attestation sign/verify, identity resolution, event-log actor, display) reads the e-mail through it and is mode-agnostic. open -> member entry; anonymous -> decrypted members.yaml (wired in task 5). This task is the single-source refactor; first map all current member-e-mail access points.'
