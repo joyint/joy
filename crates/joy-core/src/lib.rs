@@ -19,6 +19,7 @@ pub mod guard;
 pub mod identity;
 pub mod init;
 pub mod items;
+pub mod member_id;
 pub mod merge;
 pub mod migrations;
 pub mod milestones;
