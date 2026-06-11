@@ -595,7 +595,11 @@ fn auth_with_passphrase(
     // root); any member without attestation after the first co-member
     // joined is suspect and rejected.
     if let Some(attestation) = member.attestation.as_ref() {
-        verify_member_attestation(project_view, &member_key, member, attestation)?;
+        // Pass the authoritative e-mail (the concept's email_for: here the git
+        // e-mail of the authenticating member), not the opaque map key, so the
+        // attestation's frozen signature is verified over the real address even
+        // in anonymous mode where the stored field is an id placeholder.
+        verify_member_attestation(project_view, email, member, attestation)?;
     } else if founder_must_be_attested(project_view) {
         anyhow::bail!(
             "{} has no attestation and the project has multiple members. \

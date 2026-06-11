@@ -180,6 +180,31 @@ mod tests {
     }
 
     #[test]
+    fn verify_survives_anonymous_id_placeholder() {
+        // Open mode: the founder attests alice over her real e-mail.
+        let kp = make_kp();
+        let pk = kp.public_key();
+        let fields = signed_fields_for("alice@example.com", &MemberCapabilities::All, None);
+        let mut att = sign_attestation("horst@example.com", &kp, fields);
+
+        // Switching to anonymous (ADR-042) replaces the plaintext e-mail in the
+        // stored attestation (and the attester) with opaque ids; the signature
+        // is deliberately NOT recomputed (frozen bytes).
+        att.signed_fields.email = "m-alice".to_string();
+        att.attester = "m-horst".to_string();
+
+        // Verification injects the authoritative e-mail from email_for and still
+        // passes: the signed bytes are reconstructed over the real address, which
+        // is bit-identical to what was signed. This is the case that previously
+        // broke (canonical bytes were taken from the rewritten id field).
+        let member = fresh_member(MemberCapabilities::All, None);
+        verify_attestation(&att, &pk, "alice@example.com", &member).unwrap();
+
+        // And a wrong e-mail still fails, so the binding is intact.
+        assert!(verify_attestation(&att, &pk, "mallory@example.com", &member).is_err());
+    }
+
+    #[test]
     fn verify_fails_on_email_mismatch() {
         let kp = make_kp();
         let pk = kp.public_key();

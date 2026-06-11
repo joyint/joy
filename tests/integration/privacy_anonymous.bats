@@ -140,6 +140,32 @@ _emails_present() { grep -rlq "$TEST_EMAIL" .joy/; }
     [ "$status" -ne 0 ]
 }
 
+@test "anonymous: a multi-member project still authenticates after the switch (frozen attestation)" {
+    setup_human_auth
+    # A second member with their own identity; both end up attested in open mode.
+    joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE" >/dev/null
+    setup_member_auth dev@example.com "$DEV_PASSPHRASE"
+
+    JOY_PASSPHRASE="$TEST_PASSPHRASE" joy project set privacy anonymous >/dev/null
+
+    # Founder re-authenticates: the attestation signature must verify over the
+    # real e-mail (email_for), even though project.yaml now stores an id.
+    run joy auth --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Authenticated as test@example.com"* ]]
+
+    # The co-member authenticates too.
+    git config user.email "dev@example.com"
+    run joy auth --passphrase "$DEV_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Authenticated as dev@example.com"* ]]
+    git config user.email "test@example.com"
+
+    # No member e-mail leaked into project.yaml.
+    run grep -cE 'test@example|dev@example' .joy/project.yaml
+    [ "$output" = "0" ]
+}
+
 @test "anonymous: switching to anonymous requires the manage capability" {
     setup_human_auth
     setup_ai_session ai:test@joy
