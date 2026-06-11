@@ -652,6 +652,42 @@ joy project member rm pete@example.com    # Requires your passphrase if there ar
 
 You cannot remove yourself; Joy prints the project's other manage members so you know who to ask.
 
+### Anonymous privacy mode
+
+By default a project is `open`: each member entry in `.joy/project.yaml`
+carries the member's e-mail in cleartext. A project can instead run
+`anonymous`, where no e-mail or name is written to the versioned files.
+
+```bash
+joy init --anonymous                 # start a new project anonymous (asks for a passphrase)
+joy project set privacy anonymous    # or switch an existing project (needs auth + manage)
+joy project set privacy open         # switch back
+```
+
+In anonymous mode each member is keyed by an opaque id (`m-<short>`) and
+project.yaml carries a one-way `email_match` verifier instead of the
+address; the cleartext e-mail lives only in `.joy/members.yaml`,
+encrypted per member. Joy resolves ids back to e-mails for you
+automatically while your session is active, never prints a raw id, and
+asks a viewer who cannot decrypt to authenticate.
+
+What is and is not covered:
+
+- **Anonymised:** every Joy artifact in the working tree (project.yaml,
+  items, logs) and release-note contributor lists.
+- **Out of scope:** the Git committer identity (`user.name` /
+  `user.email` in each commit) and anything already in history before
+  the switch. Joy keeps only its own files free of cleartext PII.
+
+Adding a human member while anonymous is refused (it would write the
+e-mail in cleartext); add them in open mode and switch back. To honour a
+deletion request (GDPR Art. 17), erase a member's e-mail and name from
+`members.yaml` while keeping the opaque id and the audit trail:
+
+```bash
+joy project member erase someone@example.com
+```
+
 ### AI Delegation Tokens
 
 AI members authenticate via short-lived delegation tokens rather than passphrases. A human with manage capability issues a token; the AI redeems it in its own shell.
