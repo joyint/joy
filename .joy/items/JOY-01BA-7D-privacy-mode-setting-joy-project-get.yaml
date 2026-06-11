@@ -1,7 +1,7 @@
 id: JOY-01BA-7D
 title: privacy mode setting (joy project get/set, default open)
 type: task
-status: in-progress
+status: closed
 priority: high
 parent: JOY-01B9-53
 assignees:
@@ -12,7 +12,7 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-10T20:59:40.791373396Z
-updated: 2026-06-11T15:44:53.460595711Z
+updated: 2026-06-11T16:40:34.563130424Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-11T15:16:36.969304546Z
@@ -20,6 +20,10 @@ history:
 - date: 2026-06-11T15:29:06.504024557Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 - date: 2026-06-11T15:29:06.569558973Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-11T16:40:34.466952688Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-11T16:40:34.563130424Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Add a per-project privacy setting (open|anonymous, default open) stored in project.yaml, readable and writable via joy project get/set privacy. Foundation for the mode switch; everything else branches on this value. Not joy config: that writes the personal, gitignored local config, whereas the mode must be committed and project-wide, hence project.yaml. Ref ADR-042 Decision.'
 comments:
@@ -29,3 +33,6 @@ comments:
   edits:
   - date: 2026-06-11T15:34:36.535257351Z
     by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-11T16:40:34.405397465Z
+  text: '[x] Implemented: PrivacyMode enum + Project.privacy (joy-core) and joy project get/set privacy (joy-cli). Three visible states: none (default/absent, behaves as open), open (explicit), anonymous. [x] anonymous deferred to JOY-01BF-2E (returns not-yet-implemented, so no half-migrated state). [x] Tests: 6 joy-core unit tests + bats tests/integration/project_privacy.bats (9 cases incl. default=none, get/set, --json, reject paths); cargo fmt and clippy -D warnings clean; full joy-core lib suite 352 passed. Code on branch feat/adr-042-privacy-mode, commit 685bc5f.'

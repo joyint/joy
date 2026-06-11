@@ -6,3 +6,6 @@
 2026-06-11T15:29:06.640Z JOY-01BA-7D comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-06-11T15:34:36.540Z JOY-01BA-7D comment.edited "[1]" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-06-11T15:44:53.466Z JOY-01BA-7D comment.removed "[2]" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-06-11T16:40:34.411Z JOY-01BA-7D comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-06-11T16:40:34.472Z JOY-01BA-7D item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-06-11T16:40:34.569Z JOY-01BA-7D item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
