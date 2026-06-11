@@ -1,7 +1,7 @@
 id: JOY-0190-D0
 title: Sign Windows release binaries and ship WinGet manifest
 type: story
-status: in-progress
+status: review
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -14,12 +14,14 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-15T15:24:37.811081340Z
-updated: 2026-06-11T19:31:35.077873877Z
+updated: 2026-06-11T19:58:19.324598067Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-10T21:42:22.758775945Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 - date: 2026-06-11T16:47:43.690359206Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-11T19:58:19.324598067Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Wire the shared signing action from the umbrella epic JI-00F4-20 into joy''s release CI to produce signed joy.exe artifacts for tagged releases (Authenticode via Microsoft Trusted Signing). Add a workflow that opens a PR to microsoft/winget-pkgs with an updated manifest pointing at the signed artifact when a release is published. Motivation: CyberArk and similar EPM scanners quarantine unsigned binaries, blocking enterprise installs.'
 comments:
@@ -66,3 +68,6 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-06-11T19:31:35.077872453Z
   text: '[x] Signing code committed (joy 122fef0) and pushed to joy main; umbrella pointer 6f872e1 pushed. Item stays in-progress until a pre-release tag verifies signing end to end. First Joydev.Joy WinGet submission is a one-time Komac bootstrap after the first signed release.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-11T19:58:19.260299876Z
+  text: '[x] Signing verified via the isolated smoke test (A): a Windows runner signed a PE through the composite action (OIDC -> Artifact Signing), Get-AuthenticodeSignature returned Valid, signer CN=Joydev GmbH. Submitting to review. The full cargo-dist sign-then-re-archive integration and the first Joydev.Joy WinGet entry will be exercised at the next official stable release (which provides the signed zip WinGet needs). A throwaway rc was skipped: prereleases break the internal joy-core/joy-ai/joy-cli version pins and an rc is unsuitable for WinGet.'
