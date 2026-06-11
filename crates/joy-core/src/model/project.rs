@@ -20,6 +20,14 @@ pub struct Project {
     pub language: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub forge: Option<String>,
+    /// Member-PII privacy mode (ADR-042). Absent means `Open` (today's
+    /// behaviour: cleartext e-mail in the member entry). `Anonymous` moves
+    /// member e-mail into an encrypted members.yaml and keys members by an
+    /// opaque id plus an `email_match` verifier. Read via `privacy_mode()`;
+    /// changed only by the dedicated mode-transition command, never by a
+    /// bare field write (the switch is an atomic migration).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub privacy: Option<PrivacyMode>,
     #[serde(default, skip_serializing_if = "Docs::is_empty")]
     pub docs: Docs,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -31,6 +39,30 @@ pub struct Project {
     #[serde(default, skip_serializing_if = "CryptConfig::is_empty")]
     pub crypt: CryptConfig,
     pub created: DateTime<Utc>,
+}
+
+/// Per-project member-PII privacy mode (ADR-042). Stored in project.yaml
+/// (committed, project-wide); absent means `Open`. Inspected via
+/// `joy project get privacy`; the switch to `Anonymous` is an atomic
+/// migration owned by the mode-transition command, not a bare set.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PrivacyMode {
+    /// Cleartext member e-mail in project.yaml (today's behaviour).
+    #[default]
+    Open,
+    /// Member e-mail lives in an encrypted members.yaml; project.yaml
+    /// carries an opaque member id and an `email_match` verifier.
+    Anonymous,
+}
+
+impl std::fmt::Display for PrivacyMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Open => write!(f, "open"),
+            Self::Anonymous => write!(f, "anonymous"),
+        }
+    }
 }
 
 /// Top-level Crypt configuration. Holds the zone registry; per-member
@@ -421,6 +453,9 @@ pub fn describe_value(key: &str, _value: &serde_json::Value) -> Option<String> {
         "forge" => {
             "release forge override (e.g. github, none); unset = auto-detect from git remotes"
         }
+        "privacy" => {
+            "member-PII privacy mode: none (default, behaves as open), open, or anonymous (e-mail in an encrypted members.yaml, opaque ids in project.yaml)"
+        }
         "release.version-files" => {
             "paths whose version strings `joy release bump` rewrites; managed with `joy project set release.version-files --add/--rm/<csv>`"
         }
@@ -445,11 +480,17 @@ impl Project {
             description: None,
             language: default_language(),
             forge: None,
+            privacy: None,
             docs: Docs::default(),
             members: BTreeMap::new(),
             crypt: CryptConfig::default(),
             created: Utc::now(),
         }
+    }
+
+    /// The effective privacy mode: `Open` when unset (ADR-042).
+    pub fn privacy_mode(&self) -> PrivacyMode {
+        self.privacy.unwrap_or_default()
     }
 }
 
@@ -504,6 +545,60 @@ pub fn derive_acronym(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn privacy_mode_defaults_to_open() {
+        let project = Project::new("T".into(), Some("T".into()));
+        assert_eq!(project.privacy, None);
+        assert_eq!(project.privacy_mode(), PrivacyMode::Open);
+    }
+
+    #[test]
+    fn privacy_absent_from_yaml_by_default() {
+        let project = Project::new("T".into(), Some("T".into()));
+        let yaml = serde_yaml_ng::to_string(&project).unwrap();
+        assert!(
+            !yaml.contains("privacy"),
+            "none (absent) is the default; got:\n{yaml}"
+        );
+    }
+
+    #[test]
+    fn privacy_open_serializes_explicitly() {
+        let mut project = Project::new("T".into(), Some("T".into()));
+        project.privacy = Some(PrivacyMode::Open);
+        let yaml = serde_yaml_ng::to_string(&project).unwrap();
+        assert!(yaml.contains("privacy: open"), "got:\n{yaml}");
+        let parsed: Project = serde_yaml_ng::from_str(&yaml).unwrap();
+        assert_eq!(parsed.privacy, Some(PrivacyMode::Open));
+    }
+
+    #[test]
+    fn privacy_mode_accessor_maps_none_and_open_to_open() {
+        let mut project = Project::new("T".into(), Some("T".into()));
+        assert_eq!(project.privacy_mode(), PrivacyMode::Open);
+        project.privacy = Some(PrivacyMode::Open);
+        assert_eq!(project.privacy_mode(), PrivacyMode::Open);
+        project.privacy = Some(PrivacyMode::Anonymous);
+        assert_eq!(project.privacy_mode(), PrivacyMode::Anonymous);
+    }
+
+    #[test]
+    fn privacy_anonymous_roundtrips() {
+        let mut project = Project::new("T".into(), Some("T".into()));
+        project.privacy = Some(PrivacyMode::Anonymous);
+        let yaml = serde_yaml_ng::to_string(&project).unwrap();
+        assert!(yaml.contains("privacy: anonymous"), "got:\n{yaml}");
+        let parsed: Project = serde_yaml_ng::from_str(&yaml).unwrap();
+        assert_eq!(parsed.privacy, Some(PrivacyMode::Anonymous));
+        assert_eq!(parsed.privacy_mode(), PrivacyMode::Anonymous);
+    }
+
+    #[test]
+    fn privacy_mode_display() {
+        assert_eq!(PrivacyMode::Open.to_string(), "open");
+        assert_eq!(PrivacyMode::Anonymous.to_string(), "anonymous");
+    }
 
     #[test]
     fn project_roundtrip() {

@@ -8,7 +8,9 @@ use joy_core::auth::IdentityKeypair;
 use joy_core::context::Context;
 use joy_core::guard::Action;
 use joy_core::model::item::Capability;
-use joy_core::model::project::{validate_acronym, CapabilityConfig, Member, MemberCapabilities};
+use joy_core::model::project::{
+    validate_acronym, CapabilityConfig, Member, MemberCapabilities, PrivacyMode,
+};
 use joy_core::model::Project;
 use joy_core::store;
 use joy_core::vcs::Vcs;
@@ -21,6 +23,7 @@ const PROJECT_KEYS: &[&str] = &[
     "description",
     "language",
     "forge",
+    "privacy",
     "created",
     "docs.architecture",
     "docs.vision",
@@ -413,6 +416,7 @@ fn project_value_tree(root: &std::path::Path, project: &Project) -> serde_json::
         "description": project.description,
         "language": project.language,
         "forge": project.forge,
+        "privacy": project.privacy.map(|p| p.to_string()).unwrap_or_else(|| "none".to_string()),
         "created": project.created.format("%Y-%m-%d %H:%M").to_string(),
         "docs": {
             "architecture": project.docs.architecture_or_default(),
@@ -529,6 +533,9 @@ fn set_command(
     }
     if key == "forge" && project.forge.is_none() {
         prune_yaml_key(project_path, "forge")?;
+    }
+    if key == "privacy" && project.privacy.is_none() {
+        prune_yaml_key(project_path, "privacy")?;
     }
     if key == "description" && project.description.is_none() {
         prune_yaml_key(project_path, "description")?;
@@ -722,6 +729,10 @@ fn current_scalar_value(project: &Project, key: &str) -> String {
         "description" => project.description.clone().unwrap_or_default(),
         "language" => project.language.clone(),
         "forge" => project.forge.clone().unwrap_or_default(),
+        "privacy" => project
+            .privacy
+            .map(|p| p.to_string())
+            .unwrap_or_else(|| "none".to_string()),
         "docs.architecture" => project.docs.architecture.clone().unwrap_or_default(),
         "docs.vision" => project.docs.vision.clone().unwrap_or_default(),
         "docs.contributing" => project.docs.contributing.clone().unwrap_or_default(),
@@ -875,6 +886,16 @@ fn set_value(project: &mut Project, key: &str, value: &str) -> Result<()> {
         }
         "language" => project.language = value.to_string(),
         "forge" => project.forge = normalize_forge_value(value)?,
+        "privacy" => match value.trim() {
+            "none" => project.privacy = None,
+            "open" => project.privacy = Some(PrivacyMode::Open),
+            "anonymous" => anyhow::bail!(
+                "privacy: anonymous is not yet implemented; it arrives with the mode-transition task JOY-01BF-2E"
+            ),
+            other => {
+                anyhow::bail!("invalid privacy mode '{other}'; expected: none, open, or anonymous")
+            }
+        },
         "docs.architecture" => project.docs.architecture = normalize_docs_value(value),
         "docs.vision" => project.docs.vision = normalize_docs_value(value),
         "docs.contributing" => project.docs.contributing = normalize_docs_value(value),
