@@ -1099,6 +1099,12 @@ fn show_project(project: &Project, root: &std::path::Path) {
         .unwrap_or("(unset)");
     println!("{}", color::key_value("Description:", description, w));
     println!("{}", color::key_value("Language:", &project.language, w));
+    // Privacy mode (ADR-042). Always shown so the active mode is visible at a
+    // glance; `open` is the effective default when unset.
+    println!(
+        "{}",
+        color::key_value("Privacy:", &project.privacy_mode().to_string(), w)
+    );
     if let Some(forge) = project.forge.as_deref() {
         println!("{}", color::key_value("Forge:", forge, w));
     }

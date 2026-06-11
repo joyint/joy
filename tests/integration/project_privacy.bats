@@ -89,6 +89,15 @@ load setup
     [[ "$output" == *"privacy"* ]]
 }
 
+@test "joy project overview shows the privacy mode" {
+    joy init --name "T" >/dev/null
+    run joy project
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Privacy:"* ]]
+    # Effective default is open when unset.
+    [[ "$output" == *"open"* ]]
+}
+
 @test "joy project set privacy requires the manage capability" {
     # setup_ai_session registers the AI member with default capabilities, which
     # exclude manage. An authenticated non-manage member must be denied.
