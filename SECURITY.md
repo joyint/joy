@@ -16,7 +16,9 @@ secret scanners but are public by cryptographic design.
 | `seed_wrap_recovery` | AES-256-GCM ciphertext of the same seed, encrypted under a key derived from the recovery key via Argon2id. | The recovery key is displayed once at `joy auth init` and stored externally by the user; never written to the repo. |
 | `enrollment_verifier` | Argon2id digest of a single-use onboarding password. | Cleared on first login. The plaintext OTP is shared out-of-band and never touches the repository. |
 | `delegation_verifier` | Ed25519 public verification key bound to a per-(human, AI) delegation entry. | Verifies that delegation tokens were actually authorised by the named human. The matching private key lives off-repo at `~/.local/state/joy/delegations/<project>/<ai-member>.key` with mode 0600. |
-| `attestation.signature` | Ed25519 signature by a manage-capable member over an attested member's email, capabilities, and `enrollment_verifier`. | Public proof of membership authorisation. |
+| `attestation.signature` | Ed25519 signature by a manage-capable member over an attested member's email, capabilities, and `enrollment_verifier`. | Public proof of membership authorisation. In anonymous mode the e-mail is supplied from `members.yaml` at verification time, so the signature stays valid while no address sits in this file. |
+| `email_match` | HKDF-SHA256 verifier of a member's normalized e-mail, present only in anonymous mode (ADR-042). | One-way: lets an account e-mail be matched to a project member without the e-mail ever appearing in cleartext. Not reversible to the address. |
+| `members_wrap` | Per-member wrap (X25519 + AES-256-GCM) of the `members.yaml` zone key, anonymous mode only. | Lets each member decrypt the id-to-e-mail mapping; the plaintext mapping never hits the repo. |
 
 No plaintext private key and no passphrase or recovery key is stored
 in `.joy/project.yaml`. The seed wraps are AES-256-GCM ciphertext
@@ -28,6 +30,21 @@ resistance even if the encrypted file leaks. The threat model is
 documented in detail in the
 [Auth document](https://github.com/joyint/joy/blob/main/docs/dev/vision/trustship/Auth.md)
 in the Joy repository.
+
+### Anonymous privacy mode (ADR-042)
+
+When a project runs `privacy: anonymous`, member e-mails and names are
+not stored in `.joy/project.yaml`. Each member entry is keyed by an
+opaque id (`m-<short>`) and carries an `email_match` verifier; the
+cleartext e-mail and optional name live only in `.joy/members.yaml`,
+encrypted as a Crypt zone whose key is wrapped per member
+(`members_wrap`). Joy resolves ids to e-mails only for an authenticated
+member and never prints a raw id; a viewer who cannot decrypt is asked
+to authenticate. Erasing a member (`joy project member erase`) removes
+their entry from `members.yaml` and re-encrypts, severing the
+resolution while the opaque id and the audit trail remain (GDPR
+Art. 17). Git committer identity and pre-switch history are deliberately
+out of scope: Joy keeps only its own artifacts free of cleartext PII.
 
 ### Reporting a security issue
 
