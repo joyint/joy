@@ -54,11 +54,14 @@ load setup
     [ "$status" -ne 0 ]
 }
 
-@test "joy project set privacy anonymous is rejected until the mode-transition task lands" {
+@test "joy project set privacy anonymous requires authentication" {
     joy init --name "T" >/dev/null
+    # Switching to anonymous rekeys the member map and wraps the members.yaml
+    # zone key with the operator's unlocked seed; without `joy auth init` there
+    # is no identity to do that, so the migration is refused.
     run joy project set privacy anonymous
     [ "$status" -ne 0 ]
-    [[ "$output" == *"not yet implemented"* ]]
+    [[ "$output" == *"has no identity"* ]]
 
     # Nothing was written; the project stays at the default.
     run joy project get privacy
