@@ -1,0 +1,14 @@
+id: JOY-01C4-AA
+title: Trim the --decisions board help line
+type: task
+status: new
+priority: low
+capabilities:
+- implement
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-11T23:16:52.521627126Z
+updated: 2026-06-11T23:16:52.521627126Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'The joy --help text for the global --decisions flag reads: ''Show the decisions board (validity columns) instead of the status board''. Shorten it to: ''Show the decisions board (validity columns)''. The ''instead of the status board'' tail is redundant. Source: the doc comment on the --decisions field in crates/joy-cli/src/main.rs.'
