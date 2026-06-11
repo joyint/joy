@@ -50,6 +50,19 @@ TEST_EMAIL="test@example.com"
     [ -z "$output" ]
 }
 
+@test "anonymous: adding a human member is refused rather than leaking the e-mail" {
+    JOY_PASSPHRASE="$TEST_PASSPHRASE" joy init --anonymous --name "Secret" >/dev/null
+
+    run env JOY_PASSPHRASE="$TEST_PASSPHRASE" joy project member add dev@example.com \
+        --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"anonymous"* ]]
+
+    # The e-mail never reached project.yaml.
+    run grep -c "dev@example.com" .joy/project.yaml
+    [ "$output" = "0" ]
+}
+
 @test "joy init --anonymous requires a passphrase (no silent open fallback)" {
     # No passphrase available and no TTY: identity setup must fail rather than
     # quietly creating an open, e-mail-bearing project.

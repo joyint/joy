@@ -1302,6 +1302,21 @@ fn run_member(
             if project.members.contains_key(&a.id) {
                 bail!("member {} already exists", a.id);
             }
+            // In anonymous mode a human member must be onboarded through the OTP
+            // enrollment flow (opaque id + members.yaml entry + zone-key wrap),
+            // not added by e-mail key, which would write cleartext PII into
+            // project.yaml. Until that flow lands, refuse rather than leak; the
+            // documented path is to add the member in open mode and switch back.
+            // AI members carry no PII and keep their readable id, so they are fine.
+            if project.privacy_mode() == PrivacyMode::Anonymous && !a.id.starts_with("ai:") {
+                bail!(
+                    "cannot add a human member while privacy is anonymous: it would write \
+                     the e-mail in cleartext.\nAdd them in open mode and switch back:\n  \
+                     joy project set privacy open\n  joy project member add {}\n  \
+                     joy project set privacy anonymous",
+                    a.id
+                );
+            }
             let capabilities = match a.capabilities {
                 None => default_member_capabilities(),
                 Some(ref caps_str) if caps_str.trim() == "all" => MemberCapabilities::All,
