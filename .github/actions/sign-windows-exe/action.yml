@@ -1,0 +1,64 @@
+# Copyright (c) 2026 Joydev GmbH (joydev.com)
+# SPDX-License-Identifier: MIT
+#
+# Authenticode-sign Windows artifacts with Microsoft Artifact Signing (formerly
+# Trusted Signing) via GitHub OIDC. The signing identity (Entra app + cert
+# profile) is shared across joy and jyn so enterprise trust is granted once per
+# organization; jyn keeps its own copy of this thin wrapper.
+name: "Sign Windows executable (Artifact Signing)"
+description: "Authenticode-sign Windows files in place with Microsoft Artifact Signing using GitHub OIDC."
+
+inputs:
+  files-folder:
+    description: "Directory containing the files to sign (signed in place)."
+    required: true
+  files-folder-filter:
+    description: "Comma-separated file extensions to sign."
+    required: false
+    default: "exe"
+  azure-client-id:
+    description: "Entra application (federated) client id for OIDC login."
+    required: true
+  azure-tenant-id:
+    description: "Entra tenant id."
+    required: true
+  azure-subscription-id:
+    description: "Azure subscription id."
+    required: true
+  endpoint:
+    description: "Artifact Signing account endpoint URI (region-specific)."
+    required: false
+    default: "https://neu.codesigning.azure.net/"
+  signing-account-name:
+    description: "Artifact Signing account name."
+    required: false
+    default: "joydevsign"
+  certificate-profile-name:
+    description: "Certificate profile name."
+    required: false
+    default: "joydevPublicTrust"
+
+runs:
+  using: "composite"
+  steps:
+    # Secret-less auth: the federated credential on the Entra app is bound to
+    # repo:joyint/joy:environment:release, so no client secret is stored. The
+    # calling job must grant `id-token: write` and run in the `release`
+    # environment.
+    - name: Azure login (OIDC)
+      uses: azure/login@v3
+      with:
+        client-id: ${{ inputs.azure-client-id }}
+        tenant-id: ${{ inputs.azure-tenant-id }}
+        subscription-id: ${{ inputs.azure-subscription-id }}
+    - name: Sign
+      uses: azure/artifact-signing-action@v2
+      with:
+        endpoint: ${{ inputs.endpoint }}
+        signing-account-name: ${{ inputs.signing-account-name }}
+        certificate-profile-name: ${{ inputs.certificate-profile-name }}
+        files-folder: ${{ inputs.files-folder }}
+        files-folder-filter: ${{ inputs.files-folder-filter }}
+        file-digest: SHA256
+        timestamp-rfc3161: http://timestamp.acs.microsoft.com
+        timestamp-digest: SHA256

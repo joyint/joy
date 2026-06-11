@@ -1,0 +1,11 @@
+version: v0.16.2
+date: 2026-06-11
+previous: v0.16.1
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 11
+  items: 1
+items:
+  tasks:
+  - id: JOY-01BA-7D
+    title: privacy mode setting (joy project get/set, default open)
