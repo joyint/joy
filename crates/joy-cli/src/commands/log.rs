@@ -84,6 +84,18 @@ pub fn run(args: LogArgs) -> Result<()> {
         entries.truncate(effective_limit);
     }
 
+    // Resolve any member-id details (e.g. the assignee recorded on item.assigned)
+    // for display, in both the terminal and --json. Only the opaque-id shape is
+    // touched, so comment text, statuses and other details stay verbatim. The
+    // event actor (entry.user) resolves on its own via MemberRef.
+    for entry in &mut entries {
+        if let Some(d) = &entry.details {
+            if joy_core::member_id::is_opaque_member_id(d) {
+                entry.details = Some(joy_core::member_ref::resolve_str(d));
+            }
+        }
+    }
+
     if crate::output::is_json() {
         return crate::output::emit(LogPayload {
             total: entries.len(),

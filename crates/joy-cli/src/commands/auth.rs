@@ -1298,7 +1298,7 @@ fn run_reset(args: ResetArgs, passphrase_flag: Option<&str>, passphrase_stdin: b
         session::remove_session(&project_id, target)?;
     }
 
-    println!("Authentication reset for {}.", target);
+    println!("Authentication reset for {}.", color::user(target));
     if resetting_other {
         println!("They can re-initialize with `joy auth init`.");
     } else {

@@ -71,6 +71,22 @@ _member_id() {
     [[ "$output" != *"m-"* ]]
 }
 
+@test "joy log resolves a member id in the details field too (item.assigned)" {
+    _anon
+    id=$(joy add task "work" | grep -oiE '[A-Z]+-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{2}' | head -1)
+    joy assign "$id" >/dev/null
+
+    # The assignee recorded in the event details (not just the actor) resolves.
+    run joy log --item "$id"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"item.assigned"* ]]
+    [[ "$output" != *"m-"* ]]
+
+    run joy log --json
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"m-"* ]]
+}
+
 @test "the on-disk event log and items keep the raw id, never an e-mail" {
     _anon
     joy add task "work" >/dev/null
