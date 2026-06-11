@@ -1,0 +1,38 @@
+id: JOY-01C4-C0
+title: Concurrent sessions for the same AI member overwrite each other (single-slot session file)
+type: bug
+status: new
+priority: medium
+tags:
+- auth
+capabilities:
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-11T22:44:22.867784747Z
+updated: 2026-06-11T22:44:22.867784747Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: |-
+  Two concurrent sessions sharing one AI member (e.g. ai:claude@joy) cannot both hold a valid session: the second token redemption invalidates the first, so the first session's next write fails with 'guard denied: ... must authenticate' and falls back to the git identity.
+
+  Root cause is NOT the terminal binding (that works as designed). It is that the on-disk session file is a single slot keyed by (project_id, member):
+  - Session filename = SHA256(project_id ':' member) -- crates/joy-core/src/auth/session.rs:200-217 (session_filename / session_id).
+  - save_session overwrites that file -- session.rs:314-337.
+  - Each AI redemption mints a fresh ephemeral keypair and overwrites the slot -- crates/joy-cli/src/commands/auth.rs:949-957. The returned JOY_SESSION (auth.rs:965-967) carries the new ephemeral private key, but the sid is still derived from (project, member).
+
+  The ADR-033 terminal binding is fine and intentional: the ephemeral private key lives only in that terminal's JOY_SESSION env (session.rs:30-35), and validate_session enforces proof-of-possession (session.rs:166-192). AI sessions set tty=None (session.rs:126), so this is independent of TTY / tmux.
+
+  Sequence:
+  1. Terminal A redeems -> file holds pub(Ka); A's env has priv(Ka); A works.
+  2. Terminal B redeems the same member -> file now holds pub(Kb); B works.
+  3. A writes again -> file has pub(Kb); A's priv(Ka) no longer matches -> guard denied.
+
+  So both terminals are correctly distinguished by their env-held key, but only the most-recently-redeemed session survives on disk. There is no room for multiple concurrent sessions of the same member.
+
+  Proposed fix: make the AI session sid unique per redemption (a nonce, or hash of the ephemeral public key) instead of hash(project:member), and store/load the file under <sid>.json. JOY_SESSION already carries the unique ephemeral private key and the sid; only the filename derivation must change. load_session_by_id (session.rs:356) already supports id-keyed lookup. Each terminal then writes its own file; multiple concurrent same-member sessions coexist, each still bound to its terminal via proof-of-possession.
+
+  Touches ADR-033, so may warrant an ADR note. Proper workaround today: give each concurrent agent its own member id (e.g. ai:claude-1@joy / ai:claude-2@joy) so they use separate session files. (Sharing one JOY_SESSION across terminals also makes both work but defeats the per-terminal proof-of-possession and is not a recommended fix.)
+
+  Discovered 2026-06-11 running two Claude sessions under ai:claude@joy in parallel; each new redemption kept invalidating the other's session.

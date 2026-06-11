@@ -35,3 +35,6 @@
 2026-06-11T19:58:19.330Z JOY-0190-D0 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-06-11T20:12:30.558Z release guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
 2026-06-11T20:16:31.246Z v0.16.2 release.created [horst.schwarz@joydev.com]
+2026-06-11T22:37:01.171Z JOY-01C4-C0 guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-06-11T22:44:22.793Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-06-11T22:44:22.873Z JOY-01C4-C0 item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
