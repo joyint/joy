@@ -4,6 +4,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::member_ref::MemberRef;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Item {
     pub id: String,
@@ -44,14 +46,14 @@ pub struct Item {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub replaced_by: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub created_by: Option<String>,
+    pub created_by: Option<MemberRef>,
     pub created: DateTime<Utc>,
     pub updated: DateTime<Utc>,
     /// Identity of the last writer of any kind. Stays in sync with `updated`
     /// and serves as a recency hint for sort/UI. `history` carries the
     /// full attribute-change list; this field is the legacy summary.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub updated_by: Option<String>,
+    pub updated_by: Option<MemberRef>,
     /// Append-only audit list of attribute-level mutations (status, priority,
     /// edit, deps, assignee, milestone, ...). Comment add / edit / rm do NOT
     /// append here. `None` for legacy YAML written before this field existed
@@ -180,7 +182,7 @@ pub enum Priority {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Assignee {
-    pub member: String,
+    pub member: MemberRef,
     #[serde(rename = "as", default, skip_serializing_if = "Vec::is_empty")]
     pub capabilities: Vec<Capability>,
 }
@@ -190,14 +192,14 @@ pub struct Assignee {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UpdateEntry {
     pub date: DateTime<Utc>,
-    pub by: String,
+    pub by: MemberRef,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Comment {
     /// Original author. Immutable after creation; comment edits do not
     /// overwrite this field. Editors are recorded in `edits`.
-    pub author: String,
+    pub author: MemberRef,
     /// Original creation timestamp. Immutable after creation.
     pub date: DateTime<Utc>,
     pub text: String,

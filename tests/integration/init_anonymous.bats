@@ -63,6 +63,22 @@ TEST_EMAIL="test@example.com"
     [ "$output" = "0" ]
 }
 
+@test "anonymous: --json resolves members like the terminal, never a raw id" {
+    JOY_PASSPHRASE="$TEST_PASSPHRASE" joy init --anonymous --name "Secret" >/dev/null
+    id=$(joy add task "x" | grep -oiE '[A-Z]+-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{2}' | head -1)
+
+    # Every --json surface resolves to the e-mail; none exposes a raw opaque id.
+    out=$(joy project --json; joy project member --json; joy show "$id" --json; \
+          joy log --json; joy ls --json)
+    run grep -cE 'm-[a-z2-7]{10}' <<<"$out"
+    [ "$output" = "0" ]
+    [[ "$out" == *"$TEST_EMAIL"* ]]
+
+    # On disk the id stays raw: anonymous at rest, resolved only on output.
+    run grep -cE '^  m-[a-z2-7]{10}:' .joy/project.yaml
+    [ "$output" -ge 1 ]
+}
+
 @test "joy init --anonymous requires a passphrase (no silent open fallback)" {
     # No passphrase available and no TTY: identity setup must fail rather than
     # quietly creating an open, e-mail-bearing project.

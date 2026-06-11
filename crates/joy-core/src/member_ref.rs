@@ -113,6 +113,13 @@ pub fn uninstall() {
     RESOLVER.with(|r| *r.borrow_mut() = None);
 }
 
+/// Whether serialization is currently in presentation mode (`--json` output).
+/// Lets a `serialize_with` on a map keyed by raw ids resolve its keys for
+/// output while keeping them raw on disk.
+pub fn presentation_active() -> bool {
+    PRESENTATION.with(|p| p.get())
+}
+
 /// Run `f` with serialization in presentation mode, so `MemberRef` serializes
 /// the resolved value instead of the raw id. Used by the `--json` emitter.
 pub fn with_presentation<T>(f: impl FnOnce() -> T) -> T {
@@ -172,6 +179,12 @@ impl MemberRef {
         &self.0
     }
 
+    /// Alias of [`id`](Self::id): the raw at-rest string. Inherent so it shadows
+    /// the unstable `str::as_str` reachable through `Deref`.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
     /// Consume into the raw id string.
     pub fn into_id(self) -> String {
         self.0
@@ -204,6 +217,28 @@ impl From<&str> for MemberRef {
 
 impl Borrow<str> for MemberRef {
     fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
+// Lets `BTreeMap<MemberRef, _>::get(&string)` and `contains_key(&string)` keep
+// working with a `&String` key without rewriting every call site.
+impl Borrow<String> for MemberRef {
+    fn borrow(&self) -> &String {
+        &self.0
+    }
+}
+
+// Deref to the raw id is what makes the conversion tractable: existing
+// `&str`-taking call sites (map lookups, comparisons, internal helpers) keep
+// compiling via deref coercion. This does NOT weaken the output guarantee:
+// every output channel resolves independently of Deref -- terminal via
+// `Display`/`color::user`, `--json` via the presentation-aware `Serialize`.
+// Deref yields the raw id only where code explicitly coerces to `&str`, which
+// by convention is internal use (the same role as the explicit `id()`).
+impl std::ops::Deref for MemberRef {
+    type Target = str;
+    fn deref(&self) -> &str {
         &self.0
     }
 }

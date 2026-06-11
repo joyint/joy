@@ -9,6 +9,30 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use super::config::InteractionLevel;
 use super::item::Capability;
 
+/// Serialize the member map, resolving opaque ids to their display value when
+/// in presentation mode (`--json` output, ADR-042) and keeping the raw id for
+/// on-disk persistence. The map key stays a raw id in memory; only output is
+/// resolved, so an id never leaves Joy in `--json` either.
+fn serialize_members<S>(
+    members: &BTreeMap<String, Member>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    use serde::ser::SerializeMap;
+    let present = crate::member_ref::presentation_active();
+    let mut map = serializer.serialize_map(Some(members.len()))?;
+    for (k, v) in members {
+        if present {
+            map.serialize_entry(&crate::member_ref::resolve_str(k), v)?;
+        } else {
+            map.serialize_entry(k, v)?;
+        }
+    }
+    map.end()
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Project {
     pub name: String,
@@ -30,7 +54,11 @@ pub struct Project {
     pub privacy: Option<PrivacyMode>,
     #[serde(default, skip_serializing_if = "Docs::is_empty")]
     pub docs: Docs,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        serialize_with = "serialize_members"
+    )]
     pub members: BTreeMap<String, Member>,
     /// Crypt zone registry. Empty / absent means encryption is not in
     /// use; `crypt_wraps` on members and `crypt_zone` on items only have

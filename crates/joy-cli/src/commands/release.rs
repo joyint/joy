@@ -352,7 +352,7 @@ fn record(args: RecordArgs) -> Result<()> {
     let contributors: Vec<Contributor> = actors
         .into_iter()
         .map(|a| Contributor {
-            id: a.id,
+            id: a.id.into(),
             events: a.events,
             items: a.items,
         })
@@ -633,9 +633,13 @@ fn render_release_markdown(release: &Release) -> String {
     if !release.contributors.is_empty() {
         out.push_str("\n## Contributors\n\n");
         for c in &release.contributors {
+            // Published notes stay anonymous: emit the raw id, never the
+            // resolved value (which Display would produce). ADR-042.
             out.push_str(&format!(
                 "- {} ({} events on {} items)\n",
-                c.id, c.events, c.items
+                c.id.id(),
+                c.events,
+                c.items
             ));
         }
     }
@@ -821,7 +825,9 @@ fn print_release_markdown(release: &Release) {
         println!("## Contributors");
         println!();
         for c in &release.contributors {
-            println!("- {} ({} events on {} items)", c.id, c.events, c.items);
+            // Published markdown stays anonymous: raw id, never the resolved
+            // value that Display would emit (ADR-042).
+            println!("- {} ({} events on {} items)", c.id.id(), c.events, c.items);
         }
     }
 

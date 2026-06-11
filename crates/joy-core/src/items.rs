@@ -161,12 +161,12 @@ fn normalize_id_refs(items: &mut [Item]) {
 pub fn touch_for_attribute_change(item: &mut Item, by: &str) {
     let now = chrono::Utc::now();
     item.updated = now;
-    item.updated_by = Some(by.to_string());
+    item.updated_by = Some(by.into());
     item.history
         .get_or_insert_with(Vec::new)
         .push(crate::model::item::UpdateEntry {
             date: now,
-            by: by.to_string(),
+            by: by.into(),
         });
 }
 
@@ -179,7 +179,7 @@ pub fn touch_for_attribute_change(item: &mut Item, by: &str) {
 pub fn touch_for_comment_change(item: &mut Item, by: &str) {
     let now = chrono::Utc::now();
     item.updated = now;
-    item.updated_by = Some(by.to_string());
+    item.updated_by = Some(by.into());
 }
 
 /// Save an item to .joy/items/{ID}-{slug}.yaml.

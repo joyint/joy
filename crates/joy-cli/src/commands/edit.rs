@@ -221,7 +221,7 @@ pub fn run(args: EditArgs) -> Result<()> {
         } else {
             // Simple single-assignee via edit: replaces all assignees
             item.assignees = vec![joy_core::model::item::Assignee {
-                member: assignee.clone(),
+                member: assignee.clone().into(),
                 capabilities: Vec::new(),
             }];
         }

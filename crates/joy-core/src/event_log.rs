@@ -183,7 +183,9 @@ pub struct LogEntry {
     pub event_type: String,
     pub target: String,
     pub details: Option<String>,
-    pub user: String,
+    /// The acting member. Resolves to name/e-mail on display and in `--json`
+    /// (ADR-042); the raw at-rest value is the e-mail (open) or opaque id (anon).
+    pub user: crate::member_ref::MemberRef,
 }
 
 /// Read events from .joy/log/ files, newest first.
@@ -341,7 +343,7 @@ fn parse_log_line(line: &str) -> Option<LogEntry> {
         target: parts[1].to_string(),
         event_type: parts[2].to_string(),
         details,
-        user,
+        user: user.into(),
     })
 }
 
@@ -444,9 +446,9 @@ pub fn actors_for_items(root: &Path, item_ids: &[String]) -> Result<Vec<ActorSta
             continue;
         }
         if entry.event_type.starts_with("item.") || entry.event_type.starts_with("comment.") {
-            *event_counts.entry(entry.user.clone()).or_default() += 1;
+            *event_counts.entry(entry.user.id().to_string()).or_default() += 1;
             item_sets
-                .entry(entry.user.clone())
+                .entry(entry.user.id().to_string())
                 .or_default()
                 .insert(entry.target.clone());
         }

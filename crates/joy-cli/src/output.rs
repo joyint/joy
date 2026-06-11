@@ -77,7 +77,11 @@ pub fn emit<T: Serialize>(data: T) -> anyhow::Result<()> {
         version: SCHEMA_VERSION,
         data,
     };
-    let s = serde_json::to_string(&envelope)?;
+    // Serialize in presentation mode so any MemberRef field resolves to the
+    // name/e-mail (or an auth request), identical to the terminal, and never
+    // emits a raw opaque id (ADR-042). On-disk writes do not go through here, so
+    // they keep persisting the raw id.
+    let s = joy_core::member_ref::with_presentation(|| serde_json::to_string(&envelope))?;
     println!("{s}");
     Ok(())
 }

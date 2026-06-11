@@ -48,7 +48,7 @@ pub fn run(args: AssignArgs) -> Result<()> {
 
     if args.unassign {
         let before = item.assignees.len();
-        item.assignees.retain(|a| a.member != member);
+        item.assignees.retain(|a| a.member != member.as_str());
         if item.assignees.len() == before {
             println!("{} is not assigned to {}.", color::id(&item.id), member);
             return Ok(());
@@ -87,11 +87,15 @@ pub fn run(args: AssignArgs) -> Result<()> {
     };
 
     // Update existing assignment or add new one
-    if let Some(existing) = item.assignees.iter_mut().find(|a| a.member == member) {
+    if let Some(existing) = item
+        .assignees
+        .iter_mut()
+        .find(|a| a.member == member.as_str())
+    {
         existing.capabilities = caps.clone();
     } else {
         item.assignees.push(Assignee {
-            member: member.clone(),
+            member: member.clone().into(),
             capabilities: caps.clone(),
         });
     }

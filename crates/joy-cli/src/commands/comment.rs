@@ -103,7 +103,7 @@ fn run_add(id: String, text: Option<String>, editor: Option<&str>) -> Result<()>
     ctx.enforce(&Action::AddComment, &item.id)?;
 
     let comment = Comment {
-        author: ctx.log_user(),
+        author: ctx.log_user().into(),
         date: Utc::now(),
         text,
         edits: Vec::new(),
@@ -161,7 +161,7 @@ fn run_edit(args: EditArgs) -> Result<()> {
         .edits
         .push(joy_core::model::item::UpdateEntry {
             date: now,
-            by: editor.clone(),
+            by: editor.clone().into(),
         });
     items::touch_for_comment_change(&mut item, &editor);
     items::update_item(&ctx.root, &item)?;

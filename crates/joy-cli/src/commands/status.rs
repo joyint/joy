@@ -144,7 +144,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
         let config = store::load_config();
         if config.workflow.auto_assign {
             item.assignees.push(Assignee {
-                member: ctx.identity.member.clone(),
+                member: ctx.identity.member.clone().into(),
                 capabilities: Vec::new(),
             });
             if !crate::output::is_json() {

@@ -109,7 +109,7 @@ pub fn run(args: ShowArgs) -> Result<()> {
         // Check if clamped by max-mode of first assignee
         let clamped = item.assignees.first().and_then(|a| {
             let project = joy_core::store::load_project(&root).ok()?;
-            let member = project.members.get(&a.member)?;
+            let member = project.members.get(a.member.id())?;
             match &member.capabilities {
                 joy_core::model::project::MemberCapabilities::Specific(map) => {
                     // Find the capability for the current status

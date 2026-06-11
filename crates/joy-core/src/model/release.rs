@@ -7,7 +7,10 @@ use serde::{Deserialize, Serialize};
 /// A contributor to a release with item count.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Contributor {
-    pub id: String,
+    /// The contributing member. Resolves to name/e-mail on display and in
+    /// `--json`; persisted and rendered into published notes as the raw id via
+    /// [`id`](crate::member_ref::MemberRef::id) so notes stay anonymous (ADR-042).
+    pub id: crate::member_ref::MemberRef,
     pub events: usize,
     pub items: usize,
 }

@@ -1188,7 +1188,16 @@ fn run_member(
     match args.command {
         None => {
             if crate::output::is_json() {
-                return crate::output::emit(&project.members);
+                // The members map is keyed by the at-rest id; resolve the keys
+                // for output so --json never exposes a raw opaque id, identical
+                // to the terminal (ADR-042). Value fields resolve via their own
+                // MemberRef serialization.
+                let resolved: std::collections::BTreeMap<String, &Member> = project
+                    .members
+                    .iter()
+                    .map(|(id, m)| (joy_core::member_ref::resolve_str(id), m))
+                    .collect();
+                return crate::output::emit(resolved);
             }
             // List members
             if project.members.is_empty() {

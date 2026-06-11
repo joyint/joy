@@ -110,7 +110,7 @@ fn matches_spec(item: &Item, spec: &FilterSpec, all_items: &[Item]) -> bool {
             if !item
                 .assignees
                 .iter()
-                .any(|a| ids.iter().any(|m| m == &a.member))
+                .any(|a| ids.iter().any(|m| a.member.id() == m.as_str()))
             {
                 return false;
             }
@@ -375,7 +375,7 @@ mod tests {
         item.assignees = members
             .iter()
             .map(|m| Assignee {
-                member: (*m).to_string(),
+                member: (*m).into(),
                 capabilities: vec![],
             })
             .collect();
