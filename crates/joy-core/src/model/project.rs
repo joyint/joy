@@ -178,6 +178,18 @@ pub struct Member {
     /// "crypt-member-kek" tag.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub crypt_wraps: BTreeMap<String, String>,
+    /// Non-reversible e-mail verifier (ADR-042 anonymous mode). Hex of
+    /// HKDF-SHA256 over normalize(email) keyed by `kdf_nonce`. Present only in
+    /// anonymous mode, where it replaces the cleartext e-mail map key. The
+    /// platform compares this against verified account e-mails to decide
+    /// membership without decrypting anything.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email_match: Option<String>,
+    /// Wrap of the members.yaml zone key for this member (ADR-042 anonymous
+    /// mode). Pairwise X25519 wrap (`crypt::wrap_for_member`), unwrappable with
+    /// the member's identity seed. Present only in anonymous mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub members_wrap: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attestation: Option<Attestation>,
 }
@@ -422,6 +434,8 @@ impl Member {
             enrollment_verifier: None,
             ai_delegations: BTreeMap::new(),
             crypt_wraps: BTreeMap::new(),
+            email_match: None,
+            members_wrap: None,
             attestation: None,
         }
     }
