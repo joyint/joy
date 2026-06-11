@@ -38,7 +38,7 @@ pub struct InitArgs {
     #[arg(long)]
     pub language: Option<String>,
 
-    /// Start the project in anonymous privacy mode (ADR-042). The founder is
+    /// Start the project in anonymous privacy mode. The founder is
     /// recorded under an opaque id from the very first written file, so the
     /// git e-mail never lands in a committed project. Authentication is set up
     /// immediately, so a passphrase is required.
@@ -73,7 +73,7 @@ pub fn run(args: InitArgs) -> Result<()> {
         || (!crate::output::is_json()
             && std::io::stdin().is_terminal()
             && crate::prompt::ask_yn(
-                "Start this project in anonymous privacy mode (ADR-042)?",
+                "Start this project in anonymous privacy mode (keep member e-mails out of the committed files)?",
                 false,
             )
             .unwrap_or(false));
@@ -166,7 +166,9 @@ fn acquire_founder_passphrase(flag: Option<&str>, from_stdin: bool) -> Result<St
     let effective = flag.or(env.as_deref());
     let interactive = effective.is_none() && !from_stdin;
     if interactive {
-        eprintln!("Starting an anonymous project (ADR-042).");
+        eprintln!(
+            "Starting an anonymous project. Member e-mails are kept out of the committed files."
+        );
         eprintln!("Choose a founder passphrase (minimum 3 words, e.g. Diceware):");
     }
     let passphrase =

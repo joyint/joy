@@ -460,7 +460,9 @@ pub(crate) fn run_init(
 
     if anonymous {
         println!("Authentication initialized for {email} (anonymous mode).");
-        println!("Recorded as {session_member}. Public key registered. Session active (24h).");
+        println!(
+            "Your e-mail is kept out of the committed files. Public key registered. Session active (24h)."
+        );
     } else {
         println!("Authentication initialized for {email}.");
         println!("Public key registered. Session active (24h).");
