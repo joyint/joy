@@ -83,6 +83,40 @@ fn io_err(ctx: &str, e: std::io::Error) -> JoyError {
     JoyError::Other(format!("{ctx}: {e}"))
 }
 
+/// GDPR Art. 17 erasure: remove a member's e-mail and name from the encrypted
+/// `members.yaml` and re-encrypt, severing the id -> PII resolution. The opaque
+/// id, the `email_match` verifier and the whole audit trail in the versioned
+/// files are deliberately left intact (Art. 17(3): the audit trail rests on a
+/// legitimate interest). After this, no Joy output can resolve that id to a
+/// person. Anonymous mode only; needs an operator seed with members.yaml access.
+/// Returns whether an entry was actually removed.
+pub fn erase_member(
+    root: &Path,
+    project: &Project,
+    operator_seed: &[u8; 32],
+    target_id: &str,
+) -> Result<bool, JoyError> {
+    if project.privacy_mode() != PrivacyMode::Anonymous {
+        return Err(JoyError::Other(
+            "erasure applies only to anonymous projects".into(),
+        ));
+    }
+    let operator_vk = Keypair::from_seed(operator_seed).public_key().to_hex();
+    let wrap = project
+        .members
+        .values()
+        .find(|m| m.verify_key.as_deref() == Some(operator_vk.as_str()))
+        .and_then(|m| m.members_wrap.clone())
+        .ok_or_else(|| JoyError::Other("operator has no members.yaml access wrap".into()))?;
+    let zone_key = crypt::unwrap_for_member(&wrap, MEMBERS_ZONE, operator_seed)?;
+    let mut mf = members_file::read(root, &zone_key)?;
+    let removed = mf.members.remove(target_id).is_some();
+    if removed {
+        members_file::write(root, &zone_key, &mf)?;
+    }
+    Ok(removed)
+}
+
 /// Replace each `from -> to` in a single text file, if present.
 fn rewrite_file(path: &Path, replacements: &[(String, String)]) -> Result<(), JoyError> {
     if !path.exists() {

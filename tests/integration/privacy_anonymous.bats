@@ -166,6 +166,27 @@ _emails_present() { grep -rlq "$TEST_EMAIL" .joy/; }
     [ "$output" = "0" ]
 }
 
+@test "anonymous: erase severs id->e-mail resolution but keeps the audit trail (GDPR Art. 17)" {
+    setup_human_auth
+    joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE" >/dev/null
+    setup_member_auth dev@example.com "$DEV_PASSPHRASE"
+    JOY_PASSPHRASE="$TEST_PASSPHRASE" joy project set privacy anonymous >/dev/null
+    joy auth --passphrase "$TEST_PASSPHRASE" >/dev/null
+
+    # Before erasure the co-member's e-mail resolves for the authenticated viewer.
+    run joy project
+    [[ "$output" == *"dev@example.com"* ]]
+
+    JOY_PASSPHRASE="$TEST_PASSPHRASE" joy project member erase dev@example.com
+
+    # After erasure it resolves nowhere anymore.
+    run joy project
+    [[ "$output" != *"dev@example.com"* ]]
+    # But both opaque member entries remain in project.yaml (audit trail intact).
+    run grep -cE '^  m-[a-z2-7]{10}:' .joy/project.yaml
+    [ "$output" -ge 2 ]
+}
+
 @test "anonymous: switching to anonymous requires the manage capability" {
     setup_human_auth
     setup_ai_session ai:test@joy

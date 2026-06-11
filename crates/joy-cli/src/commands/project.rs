@@ -126,6 +126,23 @@ enum MemberCommand {
     Add(MemberAddArgs),
     /// Remove a project member
     Rm(MemberRmArgs),
+    /// Erase a member's e-mail/name from the encrypted members.yaml (GDPR
+    /// Art. 17), keeping the opaque id and audit trail. Anonymous mode only.
+    Erase(MemberEraseArgs),
+}
+
+#[derive(clap::Args)]
+struct MemberEraseArgs {
+    /// Member to erase (e-mail or opaque id).
+    id: String,
+
+    /// Passphrase of the acting manage member (non-interactive).
+    #[arg(long)]
+    passphrase: Option<String>,
+
+    /// Read the passphrase from a single line on stdin.
+    #[arg(long = "passphrase-stdin")]
+    passphrase_stdin: bool,
 }
 
 #[derive(clap::Args)]
@@ -1553,6 +1570,62 @@ fn run_member(
             joy_core::git_ops::auto_git_post_command(
                 &ctx.root,
                 &format!("project member rm {}", a.id),
+                &log_user,
+            );
+        }
+        Some(MemberCommand::Erase(a)) => {
+            ctx.enforce(&Action::ManageProject, "project")?;
+            if project.privacy_mode() != PrivacyMode::Anonymous {
+                bail!("erasure applies only to anonymous projects (privacy: anonymous)");
+            }
+            // Unlock the acting manage member's seed; it grants members.yaml access.
+            let git_email = joy_core::vcs::default_vcs().user_email()?;
+            let operator_key = joy_core::privacy::member_key_for_email(project, &git_email)
+                .ok_or_else(|| anyhow::anyhow!("{git_email} is not a member of this project"))?;
+            let operator = project
+                .members
+                .get(&operator_key)
+                .expect("operator_key came from the member map");
+            let passphrase = a.passphrase.clone().or_else(|| {
+                std::env::var("JOY_PASSPHRASE")
+                    .ok()
+                    .filter(|s| !s.is_empty())
+            });
+            let passphrase = crate::commands::auth::read_passphrase(
+                passphrase.as_deref(),
+                a.passphrase_stdin,
+                "Passphrase: ",
+            )?;
+            let unlocked = joy_core::auth::unlock_identity(operator, &passphrase)?;
+
+            // The target is an opaque id already in members.yaml, or an e-mail
+            // resolved to its id via the email_match verifier.
+            let target_id = if project.members.contains_key(&a.id) {
+                a.id.clone()
+            } else {
+                joy_core::privacy::member_key_for_email(project, &a.id)
+                    .ok_or_else(|| anyhow::anyhow!("no member matches {}", a.id))?
+            };
+            let removed =
+                joy_core::privacy::erase_member(&ctx.root, project, &unlocked.seed, &target_id)?;
+            let rel = format!(
+                "{}/{}",
+                store::JOY_DIR,
+                joy_core::members_file::MEMBERS_FILE
+            );
+            joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
+            if removed {
+                println!(
+                    "Erased {target_id} from members.yaml. The opaque id, verifier and audit \
+                     trail remain; no Joy output can resolve it to a person anymore."
+                );
+            } else {
+                println!("No members.yaml entry for {}; nothing to erase.", a.id);
+            }
+            let log_user = ctx.log_user();
+            joy_core::git_ops::auto_git_post_command(
+                &ctx.root,
+                &format!("project member erase {target_id}"),
                 &log_user,
             );
         }

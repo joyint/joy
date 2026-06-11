@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
+use std::io::IsTerminal;
+
 use anyhow::Result;
 use clap::Args;
 
@@ -63,11 +65,24 @@ pub fn run(args: InitArgs) -> Result<()> {
         language: args.language,
     };
 
+    // Anonymous mode is chosen by the --anonymous flag or, interactively, by a
+    // Y/n prompt (the concept keeps both paths). The prompt is skipped for
+    // --json and non-interactive runs (CI, tests), which must stay open unless
+    // the flag is given.
+    let want_anonymous = args.anonymous
+        || (!crate::output::is_json()
+            && std::io::stdin().is_terminal()
+            && crate::prompt::ask_yn(
+                "Start this project in anonymous privacy mode (ADR-042)?",
+                false,
+            )
+            .unwrap_or(false));
+
     // For an anonymous start, acquire (and validate) the founder passphrase
     // BEFORE scaffolding. A failure here (no passphrase, no TTY, mismatch)
     // must leave nothing on disk -- otherwise init::init would have already
     // written an e-mail-keyed, open project.
-    let anon_passphrase = if args.anonymous {
+    let anon_passphrase = if want_anonymous {
         Some(acquire_founder_passphrase(
             args.passphrase.as_deref(),
             args.passphrase_stdin,
