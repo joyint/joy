@@ -33,3 +33,4 @@
 2026-06-11T19:31:35.083Z JOY-0190-D0 comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-06-11T19:58:19.266Z JOY-0190-D0 comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-06-11T19:58:19.330Z JOY-0190-D0 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-06-11T20:12:30.558Z release guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
