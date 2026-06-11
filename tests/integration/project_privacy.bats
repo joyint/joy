@@ -85,3 +85,18 @@ load setup
     [ "$status" -eq 0 ]
     [[ "$output" == *"privacy"* ]]
 }
+
+@test "joy project set privacy requires the manage capability" {
+    # setup_ai_session registers the AI member with default capabilities, which
+    # exclude manage. An authenticated non-manage member must be denied.
+    setup_human_auth
+    setup_ai_session ai:test@joy
+    run joy project set privacy open
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"cannot perform manage"* ]]
+
+    # And the change must not have happened.
+    switch_to_human
+    run joy project get privacy
+    [ "$output" = "none" ]
+}
