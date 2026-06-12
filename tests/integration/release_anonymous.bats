@@ -10,14 +10,21 @@ load setup
 TEST_EMAIL="test@example.com"
 
 # Anonymous project with one closed item and a recorded release v0.1.0.
+#
+# Every joy call detaches stdin from any TTY (`</dev/null`). A human session is
+# TTY-bound (ADR-023): if the founder session were created on the suite's
+# terminal, the piped `joy release record` below (stdin is a pipe, so no TTY)
+# would fail the session's TTY check and be denied. Detaching stdin everywhere
+# keeps the whole flow on one context (no TTY), so it passes both headless (CI)
+# and when the suite is run attached to a real terminal.
 _anon_release() {
-    JOY_PASSPHRASE="$TEST_PASSPHRASE" joy init --anonymous --name "Secret" >/dev/null
+    JOY_PASSPHRASE="$TEST_PASSPHRASE" joy init --anonymous --name "Secret" </dev/null >/dev/null
     local id
-    id=$(joy add task "ship it" | grep -oiE '[A-Z]+-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{2}' | head -1)
-    joy start "$id" >/dev/null
-    joy submit "$id" >/dev/null
-    joy approve "$id" >/dev/null 2>&1 || true
-    joy close "$id" >/dev/null 2>&1 || true
+    id=$(joy add task "ship it" </dev/null | grep -oiE '[A-Z]+-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{2}' | head -1)
+    joy start "$id" </dev/null >/dev/null
+    joy submit "$id" </dev/null >/dev/null
+    joy approve "$id" </dev/null >/dev/null 2>&1 || true
+    joy close "$id" </dev/null >/dev/null 2>&1 || true
     printf 'y\n' | joy release record v0.1.0 >/dev/null
 }
 

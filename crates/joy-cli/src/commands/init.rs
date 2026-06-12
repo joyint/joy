@@ -1,8 +1,6 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-use std::io::IsTerminal;
-
 use anyhow::Result;
 use clap::Args;
 
@@ -71,7 +69,7 @@ pub fn run(args: InitArgs) -> Result<()> {
     // the flag is given.
     let want_anonymous = args.anonymous
         || (!crate::output::is_json()
-            && std::io::stdin().is_terminal()
+            && crate::prompt::is_interactive()
             && crate::prompt::ask_yn(
                 "Start this project in anonymous privacy mode (keep member e-mails out of the committed files)?",
                 false,
