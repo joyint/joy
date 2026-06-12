@@ -61,17 +61,9 @@ const DEFAULT_TTL_HOURS: i64 = 24;
 /// Detect the current terminal device for session binding.
 ///
 /// Returns a unique identifier for the terminal window/tab:
-/// - Unix: the controlling terminal's device path (e.g. "/dev/pts/1")
+/// - Unix: TTY device path (e.g. "/dev/pts/1") via libc::ttyname
 /// - Windows Terminal: WT_SESSION GUID (unique per tab/pane)
 /// - No terminal (CI, cron, etc.): None
-///
-/// On Unix we resolve the *controlling terminal* via `/dev/tty`, not the tty of
-/// a standard stream: a joy command may have its stdin or stdout redirected
-/// (e.g. `printf y | joy ...`, `joy ... >/dev/null`) while still running in the
-/// same terminal window. Binding to fd 0 would then read `None` and wrongly
-/// invalidate the session; `/dev/tty` always refers to the controlling terminal
-/// regardless of fd redirection. For an interactively created session the two
-/// agree, so this stays backward compatible with sessions already on disk.
 pub fn current_tty() -> Option<String> {
     // Windows Terminal sets WT_SESSION to a unique GUID per tab/pane
     if let Ok(wt) = std::env::var("WT_SESSION") {
@@ -82,19 +74,13 @@ pub fn current_tty() -> Option<String> {
 
     #[cfg(unix)]
     {
-        use std::os::unix::io::AsRawFd;
-        // The controlling terminal, independent of stdin/stdout/stderr.
-        // Opening /dev/tty fails (returns Err) when there is no controlling
-        // terminal (daemon, CI, cron), which correctly yields `None`.
-        if let Ok(tty) = std::fs::File::open("/dev/tty") {
-            // SAFETY: ttyname returns a pointer to a static buffer for a valid
-            // fd; we immediately copy it into a Rust String.
-            let ptr = unsafe { libc::ttyname(tty.as_raw_fd()) };
-            if !ptr.is_null() {
-                let cstr = unsafe { std::ffi::CStr::from_ptr(ptr) };
-                if let Ok(s) = cstr.to_str() {
-                    return Some(s.to_string());
-                }
+        // SAFETY: ttyname returns a pointer to a static buffer.
+        // We immediately copy it into a Rust String.
+        let ptr = unsafe { libc::ttyname(0) };
+        if !ptr.is_null() {
+            let cstr = unsafe { std::ffi::CStr::from_ptr(ptr) };
+            if let Ok(s) = cstr.to_str() {
+                return Some(s.to_string());
             }
         }
     }
