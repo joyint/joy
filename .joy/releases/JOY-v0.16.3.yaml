@@ -1,0 +1,11 @@
+version: v0.16.3
+date: 2026-06-12
+previous: v0.16.2
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 2
+  items: 1
+items:
+  tasks:
+  - id: JOY-01C4-AA
+    title: Trim the --decisions board help line
