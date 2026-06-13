@@ -130,7 +130,10 @@ mod tests {
         // joy-internal ADR numbers and links into joy's private dev docs
         // are unreachable and meaningless. Guard against reintroducing them.
         let body = rendered_body();
-        assert!(!body.contains("ADR-"), "template must not reference internal ADRs");
+        assert!(
+            !body.contains("ADR-"),
+            "template must not reference internal ADRs"
+        );
         assert!(
             !body.contains("docs/dev"),
             "template must not link into joy's internal dev docs"
