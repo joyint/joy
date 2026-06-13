@@ -10,15 +10,22 @@ capabilities:
 - review
 created_by: horst.schwarz@joydev.com
 created: 2026-06-13T14:56:34.236480832Z
-updated: 2026-06-13T15:09:24.561056551Z
+updated: 2026-06-13T15:56:53.249113841Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-13T15:02:46.952322700Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 - date: 2026-06-13T15:09:24.561056551Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-13T15:56:28.203870403Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-13T15:56:53.249113841Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: The docs/dev/vision|architecture/README.md defaults of 'joy ai init' shall be together with CONTRIBUTION.md as VISION.md and ARCHITECTURE.md in the project resp. repo root folder. This simplified structure shall also be reflected in the joy crate with the templates in it.
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-06-13T15:09:24.514797531Z
   text: 'Implemented: defaults flattened to root VISION.md/ARCHITECTURE.md in joy-core; ai.rs candidates prefer root + include_str templates moved; joy''s own docs dogfooded to root; unit + bats tests updated. just check green (fmt + clippy + 505 integration tests).'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-13T15:56:53.202879313Z
+  text: 'Backward-compat added: migrations/repo/m_2026_06_doc_path_layout pins the on-disk legacy doc path (eras docs/dev/Vision.md and docs/dev/vision/README.md) into project.yaml during run_full_sync, so the flat-default relocation is lossless for existing projects. 6 migration unit tests + full just check green (505 integration tests).'

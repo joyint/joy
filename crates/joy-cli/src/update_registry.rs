@@ -141,6 +141,7 @@ pub fn all() -> Vec<Box<dyn UpdateItem>> {
         }),
         Box::new(SecurityMdItem),
         Box::new(ProjectYamlSchemaItem),
+        Box::new(DocPathsMigrationItem),
     ];
     for id in ai::tool_ids() {
         v.push(Box::new(AiToolItem { id }));
@@ -519,6 +520,51 @@ impl UpdateItem for ProjectYamlSchemaItem {
                 None
             },
         }])
+    }
+}
+
+/// Filesystem-aware repo-layout migrations (see
+/// `joy_core::migrations::repo`). Currently the one-shot doc-path
+/// reconcile for JOY-01C7-CB; removable once that window closes.
+struct DocPathsMigrationItem;
+
+impl UpdateItem for DocPathsMigrationItem {
+    fn section(&self) -> &'static str {
+        SECTION_AUTH
+    }
+    fn check(&self, root: &Path) -> Result<Vec<CheckRow>> {
+        let pins = joy_core::migrations::repo::pending(root)?;
+        if pins.is_empty() {
+            return Ok(vec![CheckRow {
+                name: "doc paths".into(),
+                mark: RowMark::from_ok(true),
+                detail: "up to date".into(),
+            }]);
+        }
+        Ok(pins
+            .into_iter()
+            .map(|p| CheckRow {
+                name: format!("docs.{}", p.key),
+                mark: RowMark::from_ok(false),
+                detail: format!("-> {}", p.to),
+            })
+            .collect())
+    }
+    fn refresh(&self, root: &Path) -> Result<Vec<RefreshRow>> {
+        let pins = joy_core::migrations::repo::apply(root)?;
+        if pins.is_empty() {
+            return Ok(vec![RefreshRow {
+                name: "doc paths".into(),
+                action: None,
+            }]);
+        }
+        Ok(pins
+            .into_iter()
+            .map(|p| RefreshRow {
+                name: format!("docs.{} -> {}", p.key, p.to),
+                action: Some("pinned"),
+            })
+            .collect())
     }
 }
 
