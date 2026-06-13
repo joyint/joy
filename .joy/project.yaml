@@ -3,6 +3,9 @@ acronym: JOY
 description: Terminal-native product management
 language: en
 forge: github
+docs:
+  architecture: ARCHITECTURE.md
+  vision: VISION.md
 members:
   ai:claude@joy:
     capabilities:
