@@ -13,7 +13,7 @@ load setup
     #   .joy/project.yaml, .joy/config.defaults.yaml
     #   .gitignore, .gitattributes
     #   SECURITY.md, CONTRIBUTING.md
-    #   docs/dev/vision/README.md, docs/dev/architecture/README.md
+    #   VISION.md, ARCHITECTURE.md
     #   At least one tool config dir (.claude/, .qwen/, .vibe/, AGENTS.md,
     #     .github/copilot-instructions.md) depending on what was detected.
     local staged
@@ -25,7 +25,7 @@ load setup
         fi
     done
     # Optional but joy-managed when present.
-    for f in SECURITY.md CONTRIBUTING.md docs/dev/vision/README.md docs/dev/architecture/README.md; do
+    for f in SECURITY.md CONTRIBUTING.md VISION.md ARCHITECTURE.md; do
         if [ -e "$f" ]; then
             echo "$staged" | grep -qE "^${f}$" || { echo "missing from staged: $f"; return 1; }
         fi

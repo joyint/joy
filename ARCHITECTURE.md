@@ -2,7 +2,7 @@
 
 This document defines the technical foundation for the Joy repository. It covers technology choices, repository structure, crate layout, and build configuration.
 
-For product vision, data model, and CLI design see [Vision.md](./Vision.md). For coding conventions, testing, and CI/CD see [CONTRIBUTING.md](../../CONTRIBUTING.md). For cross-project architecture and ADRs see the [umbrella repository](https://github.com/joyint/project).
+For product vision, data model, and CLI design see [VISION.md](./VISION.md). For coding conventions, testing, and CI/CD see [CONTRIBUTING.md](./CONTRIBUTING.md). For cross-project architecture and ADRs see the [umbrella repository](https://github.com/joyint/project).
 
 ---
 
@@ -160,7 +160,7 @@ All data on joyint.com is E2E-encrypted (AES-256-GCM). The key stays on the clie
 
 ### AI Governance: The Five Pillars
 
-Joy's AI Governance is an architecture built on five pillars: **Trustship** (who do I trust?), **Guardianship** (what do I protect against?), **Orchestration** (how do I steer work?), **Traceability** (what happened?), and **Settlement** (what did it cost?). Together they form the **Trust Model** - see [Vision.md](./Vision.md#ai-governance-the-five-pillars) for the full breakdown.
+Joy's AI Governance is an architecture built on five pillars: **Trustship** (who do I trust?), **Guardianship** (what do I protect against?), **Orchestration** (how do I steer work?), **Traceability** (what happened?), and **Settlement** (what did it cost?). Together they form the **Trust Model** - see [VISION.md](./VISION.md#ai-governance-the-five-pillars) for the full breakdown.
 
 ### Agent Sandboxing
 

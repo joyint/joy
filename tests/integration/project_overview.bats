@@ -10,8 +10,8 @@ load setup
     run joy project
     [ "$status" -eq 0 ]
     [[ "$output" == *"Docs"* ]]
-    [[ "$output" == *"docs/dev/architecture/README.md"* ]]
-    [[ "$output" == *"docs/dev/vision/README.md"* ]]
+    [[ "$output" == *"ARCHITECTURE.md"* ]]
+    [[ "$output" == *"VISION.md"* ]]
     [[ "$output" == *"CONTRIBUTING.md"* ]]
 }
 

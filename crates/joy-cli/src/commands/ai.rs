@@ -40,8 +40,8 @@ macro_rules! dprint {
     };
 }
 
-const VISION_TEMPLATE: &str = include_str!("../../docs/dev/vision/README.md");
-const ARCHITECTURE_TEMPLATE: &str = include_str!("../../docs/dev/architecture/README.md");
+const VISION_TEMPLATE: &str = include_str!("../../docs/VISION.md");
+const ARCHITECTURE_TEMPLATE: &str = include_str!("../../docs/ARCHITECTURE.md");
 const CONTRIBUTING_TEMPLATE: &str = include_str!("../../docs/CONTRIBUTING.md");
 
 const JOY_BLOCK_START: &str = "<!-- joy:start -->";
@@ -77,11 +77,11 @@ struct AiTutorialArgs {
 
 #[derive(clap::Args, Default)]
 struct InitArgs {
-    /// Path to the architecture doc (e.g. docs/architecture/README.md). Skips the prompt.
+    /// Path to the architecture doc (e.g. ARCHITECTURE.md). Skips the prompt.
     #[arg(long, value_hint = clap::ValueHint::FilePath)]
     architecture: Option<String>,
 
-    /// Path to the vision doc (e.g. docs/vision/README.md). Skips the prompt.
+    /// Path to the vision doc (e.g. VISION.md). Skips the prompt.
     #[arg(long, value_hint = clap::ValueHint::FilePath)]
     vision: Option<String>,
 
@@ -444,10 +444,10 @@ const DOC_SPECS: &[DocSpec] = &[
         purpose: "product goals and design decisions",
         default_path: joy_core::model::project::Docs::DEFAULT_VISION,
         candidates: &[
+            "VISION.md",
             "docs/dev/vision/README.md",
             "docs/vision/README.md",
             "docs/vision.md",
-            "VISION.md",
         ],
         template: VISION_TEMPLATE,
     },
@@ -457,10 +457,10 @@ const DOC_SPECS: &[DocSpec] = &[
         purpose: "technical stack and structure",
         default_path: joy_core::model::project::Docs::DEFAULT_ARCHITECTURE,
         candidates: &[
+            "ARCHITECTURE.md",
             "docs/dev/architecture/README.md",
             "docs/architecture/README.md",
             "docs/architecture.md",
-            "ARCHITECTURE.md",
         ],
         template: ARCHITECTURE_TEMPLATE,
     },
@@ -1942,8 +1942,8 @@ mod tests {
     #[test]
     fn suggestion_picks_first_existing_candidate() {
         let tmp = tempfile::tempdir().unwrap();
-        // ARCHITECTURE.md is later in the candidate list than
-        // docs/architecture/README.md; create only the latter and verify it wins.
+        // Root ARCHITECTURE.md is the first candidate but is absent here; only
+        // the lower-priority docs/architecture/README.md exists, so it wins.
         let dir = tmp.path().join("docs/architecture");
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("README.md"), "stub").unwrap();
@@ -1954,11 +1954,14 @@ mod tests {
     #[test]
     fn suggestion_skips_missing_candidates_in_order() {
         let tmp = tempfile::tempdir().unwrap();
-        // Only the very last candidate (ARCHITECTURE.md in root) exists -- it
-        // should be returned despite earlier candidates being absent.
-        fs::write(tmp.path().join("ARCHITECTURE.md"), "stub").unwrap();
+        // Only the last candidate (docs/architecture.md) exists -- it should be
+        // returned despite all earlier candidates (root ARCHITECTURE.md and the
+        // nested README paths) being absent.
+        let docs = tmp.path().join("docs");
+        fs::create_dir_all(&docs).unwrap();
+        fs::write(docs.join("architecture.md"), "stub").unwrap();
         let suggestion = suggested_doc_path(tmp.path(), arch_spec());
-        assert_eq!(suggestion, "ARCHITECTURE.md");
+        assert_eq!(suggestion, "docs/architecture.md");
     }
 
     /// Helper: write a `.gitignore` file with a joy-managed block

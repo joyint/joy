@@ -149,8 +149,8 @@ pub struct Docs {
 }
 
 impl Docs {
-    pub const DEFAULT_ARCHITECTURE: &'static str = "docs/dev/architecture/README.md";
-    pub const DEFAULT_VISION: &'static str = "docs/dev/vision/README.md";
+    pub const DEFAULT_ARCHITECTURE: &'static str = "ARCHITECTURE.md";
+    pub const DEFAULT_VISION: &'static str = "VISION.md";
     pub const DEFAULT_CONTRIBUTING: &'static str = "CONTRIBUTING.md";
 
     pub fn is_empty(&self) -> bool {

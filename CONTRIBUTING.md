@@ -2,7 +2,7 @@
 
 This document covers the coding conventions, testing strategy, CI/CD pipeline, and commit message format for the Joy repository.
 
-For product vision and data model see [docs/dev/vision/](docs/dev/vision/). For technology choices and architecture see [docs/dev/architecture/](docs/dev/architecture/). For cross-project architecture and ADRs see the [umbrella repository](https://github.com/joyint/project).
+For product vision and data model see [VISION.md](./VISION.md). For technology choices and architecture see [ARCHITECTURE.md](./ARCHITECTURE.md). For cross-project architecture and ADRs see the [umbrella repository](https://github.com/joyint/project).
 
 ---
 

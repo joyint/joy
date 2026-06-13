@@ -1,0 +1,24 @@
+id: JOY-01C7-CB
+title: Relocation of project document defaults
+type: rework
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+created_by: horst.schwarz@joydev.com
+created: 2026-06-13T14:56:34.236480832Z
+updated: 2026-06-13T15:09:24.561056551Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-13T15:02:46.952322700Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-13T15:09:24.561056551Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: The docs/dev/vision|architecture/README.md defaults of 'joy ai init' shall be together with CONTRIBUTION.md as VISION.md and ARCHITECTURE.md in the project resp. repo root folder. This simplified structure shall also be reflected in the joy crate with the templates in it.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-13T15:09:24.514797531Z
+  text: 'Implemented: defaults flattened to root VISION.md/ARCHITECTURE.md in joy-core; ai.rs candidates prefer root + include_str templates moved; joy''s own docs dogfooded to root; unit + bats tests updated. just check green (fmt + clippy + 505 integration tests).'

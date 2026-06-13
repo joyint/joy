@@ -232,14 +232,14 @@ load setup
     joy init --name "Test Project"
     run joy project get docs.architecture
     [ "$status" -eq 0 ]
-    [ "$output" = "docs/dev/architecture/README.md" ]
+    [ "$output" = "ARCHITECTURE.md" ]
 }
 
 @test "joy project get docs.vision returns default when unset" {
     joy init --name "Test Project"
     run joy project get docs.vision
     [ "$status" -eq 0 ]
-    [ "$output" = "docs/dev/vision/README.md" ]
+    [ "$output" = "VISION.md" ]
 }
 
 @test "joy project get docs.contributing returns default when unset" {
@@ -265,7 +265,7 @@ load setup
     joy project set docs.architecture default
     ! grep -q "architecture:" .joy/project.yaml
     run joy project get docs.architecture
-    [ "$output" = "docs/dev/architecture/README.md" ]
+    [ "$output" = "ARCHITECTURE.md" ]
 }
 
 @test "joy ai init --architecture persists custom path without prompt" {
