@@ -1,0 +1,6 @@
+2026-06-13T11:12:58.782Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-06-13T11:13:48.384Z JOY-01C5-BC item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-06-13T11:14:11.003Z JOY-01C5-BC item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-06-13T11:14:11.034Z JOY-01C5-BC comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-06-13T11:17:35.068Z JOY-01C5-BC comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-06-13T11:17:35.114Z JOY-01C5-BC item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

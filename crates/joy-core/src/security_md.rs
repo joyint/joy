@@ -125,6 +125,19 @@ mod tests {
     }
 
     #[test]
+    fn template_has_no_internal_references() {
+        // The rendered body ships into every downstream project, where
+        // joy-internal ADR numbers and links into joy's private dev docs
+        // are unreachable and meaningless. Guard against reintroducing them.
+        let body = rendered_body();
+        assert!(!body.contains("ADR-"), "template must not reference internal ADRs");
+        assert!(
+            !body.contains("docs/dev"),
+            "template must not link into joy's internal dev docs"
+        );
+    }
+
+    #[test]
     fn render_is_idempotent() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("SECURITY.md");

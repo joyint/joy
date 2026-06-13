@@ -1,0 +1,35 @@
+id: JOY-01C5-BC
+title: SECURITY.md template references internal ADR and dead Auth doc link
+type: bug
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-13T11:13:48.381247541Z
+updated: 2026-06-13T11:17:35.110533082Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-13T11:14:10.999879169Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-13T11:17:35.110533082Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  The generated SECURITY.md (rendered by joy into every downstream project) leaks joy-internal references that external users cannot reach or interpret:
+
+  1. A dead link to docs/dev/vision/trustship/Auth.md, which is not published in the public joy repository.
+  2. Two references to internal ADR-042, which downstream users cannot look up.
+  3. The block heading 'Security policy' reads as the project-wide policy, although it only documents joy's own auth artifacts.
+
+  Fix in crates/joy-core/templates/SECURITY.md: rename the heading to 'Joy Security' with a scoping intro, drop the (ADR-042) mentions, and replace the dead Auth link with the public docs at https://joyint.com/joy/docs/features/ (Authentication and Onboarding section).
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-13T11:14:11.030912605Z
+  text: 'Plan: edit crates/joy-core/templates/SECURITY.md - heading ''Security policy'' -> ''Joy Security'' plus scoping intro; remove both (ADR-042) mentions (email_match row and anonymous-mode heading); replace the dead Auth.md link with https://joyint.com/joy/docs/features/. Add a test asserting the rendered body contains no ''ADR-'' string. Run cargo test -p joy-core.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-13T11:17:35.065227553Z
+  text: 'Done in 754e8bd: heading -> ''Joy Security'' with scoping intro, both (ADR-042) removed, dead Auth.md link replaced with https://joyint.com/joy/docs/features/. Added template_has_no_internal_references test; cargo test -p joy-core green (7/7).'
