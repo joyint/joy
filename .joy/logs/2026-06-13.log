@@ -8,3 +8,4 @@
 2026-06-13T13:03:14.809Z JOY-01C6-2C item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-06-13T13:05:10.641Z JOY-01C6-2C comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-06-13T13:05:10.687Z JOY-01C6-2C item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-06-13T13:19:14.252Z v0.16.4 release.created [horst.schwarz@joydev.com]
