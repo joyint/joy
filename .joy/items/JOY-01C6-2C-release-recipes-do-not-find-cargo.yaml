@@ -1,0 +1,25 @@
+id: JOY-01C6-2C
+title: Release recipes do not find CARGO_REGISTRY_TOKEN when run from the joy submodule
+type: bug
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-13T13:03:03.623167740Z
+updated: 2026-06-13T13:05:10.684075852Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-13T13:03:14.806666730Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-13T13:05:10.684075852Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'The justfile has no dotenv-load, so ''cd joy && just publish'' (publish-crates) cannot read CARGO_REGISTRY_TOKEN from the umbrella''s .env and aborts. It only works when invoked through the umbrella''s release-all, which loads .env and passes it down. Add ''set dotenv-load'' so just searches for .env from the working directory upward: a local joy/.env wins, otherwise the umbrella''s .env is picked up. Makes standalone ''just publish'' / ''just release'' work.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-13T13:05:10.638115212Z
+  text: 'Done: added ''set dotenv-load'' to joy/justfile. Verified a recipe now sees CARGO_REGISTRY_TOKEN from the umbrella .env when run from joy/ (closest-.env-upward; local joy/.env would win).'

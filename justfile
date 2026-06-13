@@ -1,6 +1,14 @@
 # Joy -- Task Runner
 # See docs/dev/CONTRIBUTING.md for full documentation
 
+# Load `.env` so release recipes can read credentials like
+# CARGO_REGISTRY_TOKEN from the environment. just searches from the
+# working directory upward and uses the closest file, so a local
+# `joy/.env` wins and otherwise the umbrella's `.env` is picked up.
+# This makes `just publish` / `just release` work when run directly
+# inside this submodule, not only through the umbrella's release-all.
+set dotenv-load
+
 # List recipes
 default:
     @just --list
