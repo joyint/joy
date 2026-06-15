@@ -8,12 +8,14 @@ capabilities:
 validity: accepted
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-15T06:38:04.544398Z
-updated: 2026-06-15T06:38:04.671153Z
+updated: 2026-06-15T20:33:40.473144Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-15T06:38:04.671153Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-description: |-
+- date: 2026-06-15T20:33:40.473144Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |
   **Status:** Accepted (2026-04-13)
 
   ## Context
@@ -76,5 +78,3 @@ description: |-
   * JI-00D6-26 - Sync joy-core version across siblings on release-all (this ADR closes the publish gap that work created).
   * JI-00E2-49 - Atomic release-all refactor (this revision).
   * JOY-00D2-C1 / JOT-0025-C1 - cargo-dist setup for binary releases.
-
-  (Relocated from umbrella JI-0115-B9 as part of the JI-0120 architecture reconciliation.)

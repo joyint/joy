@@ -8,12 +8,14 @@ capabilities:
 validity: accepted
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-15T06:37:59.699572Z
-updated: 2026-06-15T06:37:59.827170Z
+updated: 2026-06-15T20:33:37.713013Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-15T06:37:59.827170Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-description: |-
+- date: 2026-06-15T20:33:37.713013Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |
   **Status:** Accepted (2026-03)
 
   ## Context
@@ -86,5 +88,3 @@ description: |-
   * `joy ai check` and `joy init` (onboarding) use the same mechanism with different file sets
   * A future `joy check` command can combine all registries to validate everything at once
   * Users should not edit files in `.joy/ai/` or `.joy/hooks/` -- changes will be overwritten on the next sync
-
-  (Relocated from umbrella JI-0105-4E as part of the JI-0120 architecture reconciliation.)

@@ -8,12 +8,14 @@ capabilities:
 validity: accepted
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-15T06:38:00.803453Z
-updated: 2026-06-15T06:38:00.929014Z
+updated: 2026-06-15T20:33:38.381498Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-15T06:38:00.929014Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-description: |-
+- date: 2026-06-15T20:33:38.381498Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |
   **Status:** Accepted (2026-03)
 
   ## Context
@@ -98,5 +100,3 @@ description: |-
 
   * **New dependency.** MiniJinja is well-maintained but adds to the dependency tree.
   * **Template errors at runtime.** Syntax errors in templates surface at render time, not compile time. Mitigated by tests.
-
-  (Relocated from umbrella JI-0108-0B as part of the JI-0120 architecture reconciliation.)

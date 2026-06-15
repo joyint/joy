@@ -1,0 +1,19 @@
+id: JOY-01E4-22
+title: Implement numbered error codes and source-line caret rendering for diagnostics
+type: rework
+status: new
+priority: low
+deps:
+- JOY-01D1-B6
+capabilities:
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-15T19:25:04.650525Z
+updated: 2026-06-15T19:25:04.909362Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-15T19:25:04.909362Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Open point from JOY-01D1-B6 - ADR: Error output format modeled on rustc diagnostics. Already in place: the diagnostic style (= help: / = note:), defensive parsing, and the lib/CLI error boundary. Not yet built: the numbered error codes (error[E042]) and the source-line caret (^) rendering specified in that ADR; JoyError is currently plain thiserror with no codes. Implement once the overall architecture is settled. Aligns with machine-readable output (JOY-01E2-0B - ADR: Rename auth schema fields / schema-evolution direction).'

@@ -8,13 +8,17 @@ capabilities:
 validity: accepted
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-15T06:38:05.669043Z
-updated: 2026-06-15T06:38:05.797944Z
+updated: 2026-06-15T20:38:58.004834Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-15T06:38:05.797944Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-description: |-
-  **Status:** Accepted (2026-04-25). Refines the field naming of ADR-023 (JI-010C-B1) and ADR-033 (JI-0116-52) §1. Cryptographic design from ADR-023/033/034 is unchanged.
+- date: 2026-06-15T20:33:41.156542Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-15T20:38:58.004834Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |
+  **Status:** Accepted (2026-04-25). Refines the field naming of JOY-01D8-DB and JOY-01E0-2E §1. Cryptographic design from JOY-01D8-DB/JOY-01E0-2E/JOY-01E1-E7 is unchanged.
 
   ## Revision (2026-06): unified `joy update`
 
@@ -121,7 +125,7 @@ description: |-
 
   * Additive changes survive via `#[serde(default)]`.
   * Renames survive via the dedicated migration module plus transitional read.
-  * Real structural breaks are governed by ADR-014 (JI-0103-E5) at the `.joy/` directory level, not by an in-file schema number.
+  * Real structural breaks are governed by JOY-01D0-EB at the `.joy/` directory level, not by an in-file schema number.
 
   Adding a `schema_version` line would create exactly the kind of field users forget to bump and the kind of release-time decision Joy should not be asking the project owner to make.
 
@@ -133,7 +137,7 @@ description: |-
 
   ## Properties
 
-  | Property | Before ADR-035 | After ADR-035 |
+  | Property | Before JOY-01E2-0B | After JOY-01E2-0B |
   |----------|----------------|---------------|
   | Field names match SOC default rulesets | yes            | no            |
   | Field names describe role (verifier, KDF input) | partly         | yes           |
@@ -162,15 +166,13 @@ description: |-
   ### Neutral
 
   * Joy as a tool gains nothing functional from this ADR. The work is purely about presentation and naming - which is exactly the lever the underlying problem operates on.
-  * ADR-023 and ADR-033 retain their original wording and historical field names; this ADR appends a forward reference and the rename map. Historical correctness is preserved.
+  * JOY-01D8-DB and JOY-01E0-2E retain their original wording and historical field names; this ADR appends a forward reference and the rename map. Historical correctness is preserved.
 
   ## Related
 
   * [Auth.md](https://docs.int.joydev.com/doc/auth-identity-and-authentication-for-joy-komQW0PZFp) - identity layer; field-name references updated by JOY-0110-63
-  * ADR-014 (JI-0103-E5) - directory-level versioning that subsumes any need for an in-file schema version
-  * ADR-023 (JI-010C-B1) - introduced per-delegator token entries; `token_key` later renamed `delegation_key` in ADR-033 and `delegation_verifier` here
-  * ADR-033 (JI-0116-52) - stable per-(human, AI) delegation key and ephemeral session keypair
-  * ADR-034 (JI-0117-9A) - current token lifecycle (multi-use within TTL)
+  * JOY-01D0-EB - directory-level versioning that subsumes any need for an in-file schema version
+  * JOY-01D8-DB - introduced per-delegator token entries; `token_key` later renamed `delegation_key` in JOY-01E0-2E and `delegation_verifier` here
+  * JOY-01E0-2E - stable per-(human, AI) delegation key and ephemeral session keypair
+  * JOY-01E1-E7 - current token lifecycle (multi-use within TTL)
   * [JOY-010A-34](https://github.com/joyint/joy/blob/HEAD/.joy/items/JOY-010A-34-rename-auth-schema-fields-for-scanner.yaml) - umbrella rework item
-
-  (Relocated from umbrella JI-0118-CC as part of the JI-0120 architecture reconciliation.)

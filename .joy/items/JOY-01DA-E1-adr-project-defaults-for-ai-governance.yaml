@@ -8,12 +8,16 @@ capabilities:
 validity: accepted
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-15T06:38:02.676605Z
-updated: 2026-06-15T06:38:02.804390Z
+updated: 2026-06-15T20:38:56.957383Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-15T06:38:02.804390Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-description: |-
+- date: 2026-06-15T20:33:39.606042Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-15T20:38:56.957383Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |
   **Status:** Proposed (2026-03)
 
   ## Context
@@ -170,12 +174,10 @@ description: |-
   ### Negative
 
   * **Four layers is complex.** Most projects will use at most two (Joy defaults + project override). The personal and item layers add flexibility at the cost of mental overhead. Mitigated by good defaults and transparent display.
-  * **New embedded file.** `project.defaults.yaml` adds to the sync mechanism (ADR-016). The version-based check (ADR-024) handles freshness.
+  * **New embedded file.** `project.defaults.yaml` adds to the sync mechanism (JOY-01D2-30). The version-based check (JOY-01D9-F4) handles freshness.
   * **Migration.** Existing projects created before this change will not have `project.defaults.yaml`. `joy ai setup` or `joy init --onboard` must sync it.
 
   ### Neutral
 
   * Capability-to-workflow mapping stays static. This is a conscious decision, not an omission.
   * `max-mode` only exists in `project.yaml`, never in defaults. It is a governance decision, not an opinion.
-
-  (Relocated from umbrella JI-010E-A9 as part of the JI-0120 architecture reconciliation.)

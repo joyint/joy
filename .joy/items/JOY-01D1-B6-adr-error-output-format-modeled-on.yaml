@@ -8,12 +8,14 @@ capabilities:
 validity: accepted
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-15T06:37:59.332871Z
-updated: 2026-06-15T06:37:59.459284Z
+updated: 2026-06-15T20:33:37.490917Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-15T06:37:59.459284Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-description: |-
+- date: 2026-06-15T20:33:37.490917Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |
   **Status:** Accepted (2026-03)
 
   ## Context
@@ -70,5 +72,7 @@ description: |-
   * `board.rs` uses `.get(..10)` instead of `[..10]` for timestamp extraction
   * Future parsers in joy-core must follow the same validate-before-return pattern
   * Error messages across Joy will converge on the rustc diagnostic format as code is touched
-
-  (Relocated from umbrella JI-0104-52 as part of the JI-0120 architecture reconciliation.)
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-15T19:25:04.760535Z
+  text: 'Open point (2026-06-15, JI-0120 joy pass): the numbered error codes (error[E042]) and source-line caret rendering specified here were never implemented; the = help: / = note: style, defensive parsing, and the lib/CLI error boundary are in place. Deferred until the overall architecture is settled and tracked as rework JOY-01E4-22 (linked as a dependency).'

@@ -8,41 +8,38 @@ capabilities:
 validity: accepted
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-15T06:37:57.494078Z
-updated: 2026-06-15T06:37:57.616423Z
+updated: 2026-06-15T20:38:55.088668Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-15T06:37:57.616423Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-description: |-
-  **Status:** Accepted (revised 2026-03)
-
-  Supersedes the original "Portal as source of truth" decision.
+- date: 2026-06-15T19:13:39.181113Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-15T20:33:36.405390Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-15T20:38:55.088668Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |
+  **Status:** Accepted (revised 2026-06-15)
 
   ## Context
 
-  The original decision used a centralized portal with a custom sync protocol as the canonical state. This required a full application server with a database and a custom conflict resolution layer.
-
-  The revised strategy uses Git itself as the sync backend. YAML files in `.joy/` are already versioned with Git. Using a Git remote as the sync target eliminates the need for a custom database and sync protocol.
+  Joy needs to sync project state between machines and collaborators. The choice is between a custom database with a custom sync protocol, or using the version control system that already holds the data.
 
   ## Decision
 
-  Git is the sync backend. There is no custom sync protocol and no application database.
+  Git is the sync backend for joy-core. There is no custom sync protocol and no application database.
 
-  * **CLI users** sync via `git push` / `git pull` -- no server needed
-  * **WebUI users** go through a gRPC service on joyint.com that calls joy-core on server-side Git repos (see ADR-031 (JI-0114-50))
-  * **CalDAV users** go through a CalDAV bridge that reads/writes the server-side Git repo
-  * **Notification service** watches the Git repo for due dates and status changes
+  - The `.joy/` YAML files are already versioned with Git.
+  - CLI users sync via `git push` / `git pull`; no server is required.
+  - The merge strategy is last-write-wins with file-level conflict detection. Project-management data (status, priority, assignment) does not merge well with three-way merge; Git's conflict markers cover the rare concurrent edit. See the YAML-aware merge decision (JOY-01CF-48).
 
-  The server is a gateway to Git plus a cron for notifications. Not an application server with its own state.
-
-  **Bring Your Own Git (BYOG):** Users choose where their data lives -- on joyint.com (Git hosting included) or on their own GitHub/GitLab/Gitea. Both options get the same services (WebUI, CalDAV, Notifications). This lowers the trust barrier and storage costs.
-
-  Last-write-wins with conflict detection remains the merge strategy. PM data (status, priorities, assignments) does not merge well with three-way merge. Git's file-level conflict markers are sufficient for the rare case of concurrent edits to the same item.
+  How the server side hosts repositories and where the canonical copy lives is out of scope for joy-core and is defined by the platform (see JP-002D-FF for the runtime and sync model, and JP-002F-B1 for the transport).
 
   ## Consequences
 
-  Massively reduced server complexity and operational cost. No database ops, no custom sync code, no migration tooling. The server is stateless (reads/writes Git). Self-hosting is trivial -- any Git server works for basic sync. BYOG means users can keep their data on infrastructure they already trust.
+  Greatly reduced complexity: no database, no custom sync code, no migration tooling. Self-hosting is trivial; any Git remote works for basic CLI sync. Trade-off: Git is not optimized for frequent small writes from many concurrent users, which is acceptable at the target scale (teams of 1 to 50).
 
-  Trade-off: Git is not optimized for frequent small writes from many concurrent users. For the target scale (teams of 1-50), this is not a problem. If it becomes one, a write-ahead buffer in front of Git can absorb bursts without changing the architecture.
+  ## Revision (2026-06-15, JI-0120 joy pass)
 
-  (Relocated from umbrella JI-00F9-79 as part of the JI-0120 architecture reconciliation.)
+  Trimmed to the joy-core decision. Removed the server-side description (Git-gateway-plus-cron, REST API, CalDAV bridge, and the bring-your-own-Git wording), which predated the platform's current container and sync model and belongs to the platform, not to joy. Replaced the dead cross-reference (the former JP-002F-B1 is now JP-002F-B1).

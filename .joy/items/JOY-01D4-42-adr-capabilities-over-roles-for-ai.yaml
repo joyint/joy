@@ -8,12 +8,14 @@ capabilities:
 validity: accepted
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-15T06:38:00.439487Z
-updated: 2026-06-15T06:38:00.563534Z
+updated: 2026-06-15T20:33:38.152460Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-15T06:38:00.563534Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-description: |-
+- date: 2026-06-15T20:33:38.152460Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |
   **Status:** Accepted (2026-03)
 
   ## Context
@@ -107,5 +109,3 @@ description: |-
   ### Neutral
 
   * Existing JOY-0012 children (JOY-0013 to JOY-0016) are rewritten from role-based stories to capability-based agent generation. JOY-0018 to JOY-001B (tool-specific definitions) remain but generate from capability data instead of role definitions.
-
-  (Relocated from umbrella JI-0107-E4 as part of the JI-0120 architecture reconciliation.)

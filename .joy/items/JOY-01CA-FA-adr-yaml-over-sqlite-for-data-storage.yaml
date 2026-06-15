@@ -8,12 +8,14 @@ capabilities:
 validity: accepted
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-15T06:32:18.018272Z
-updated: 2026-06-15T06:32:23.446837Z
+updated: 2026-06-15T20:33:35.949361Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-15T06:32:23.446837Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-description: |-
+- date: 2026-06-15T20:33:35.949361Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |
   **Status:** Accepted
 
   ## Context
@@ -27,5 +29,3 @@ description: |-
   ## Consequences
 
   Git-diffable, human-readable, one-file-per-item minimizes merge conflicts, no binary dependencies. Trade-off: slower for large projects (1000+ items) -- acceptable for target audience (small teams). Full-text search requires reading all files (mitigated by caching in later versions).
-
-  (Relocated from umbrella JI-00F6-84 as part of the JI-0120 architecture reconciliation.)

@@ -8,17 +8,21 @@ capabilities:
 validity: accepted
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-15T06:38:06.051001Z
-updated: 2026-06-15T06:38:06.179888Z
+updated: 2026-06-15T20:38:58.205788Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-15T06:38:06.179888Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-description: |-
-  **Status:** Proposed (2026-06). Concept basis: "Pseudonyme Identitäten und Löschrecht (DSGVO)" (Konzepte-Collection). Supersedes the cleartext-identifier portion of ADR-009 (JI-00FE-16). Builds on ADR-035 (JI-0118-CC, frozen attestation canonical form) and ADR-039 (JI-011C-EA, wrapped-seed + encrypted-artifact pattern).
+- date: 2026-06-15T20:33:41.398399Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-15T20:38:58.205788Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |
+  **Status:** Proposed (2026-06). Concept basis: "Pseudonyme Identitäten und Löschrecht (DSGVO)" (Konzepte-Collection). Supersedes the cleartext-identifier portion of JOY-01CD-DA. Builds on JOY-01E2-0B (JOY-01E2-0B, frozen attestation canonical form) and CRYPT-0010-5A (CRYPT-0010-5A, wrapped-seed + encrypted-artifact pattern).
 
   ## Context
 
-  The member entry in `project.yaml` carries an e-mail in cleartext (ADR-009); the event log and `delegated_by` reference actors by e-mail. E-mail is personal data under the GDPR, sitting unchangeably in Git history and an immutable audit trail. Art. 17 (erasure) and audit immutability are in tension.
+  The member entry in `project.yaml` carries an e-mail in cleartext (JOY-01CD-DA); the event log and `delegated_by` reference actors by e-mail. E-mail is personal data under the GDPR, sitting unchangeably in Git history and an immutable audit trail. Art. 17 (erasure) and audit immutability are in tension.
 
   Rewriting history is not an option (Judge detects gaps; rewriting project.yaml breaks signatures). The resolution is the storage format, not history cleanup: personal data does not belong in the versioned cleartext artifacts but in a separate, encrypted, deletable layer.
 
@@ -50,7 +54,7 @@ description: |-
 
   ### 5. Git-config e-mail stays a setup input
 
-  `git config user.email` is read at setup only. In anonymous mode Joy derives the `email_match` verifier into project.yaml and puts the cleartext into members.yaml. ADR-009 zero-config is fully preserved.
+  `git config user.email` is read at setup only. In anonymous mode Joy derives the `email_match` verifier into project.yaml and puts the cleartext into members.yaml. JOY-01CD-DA zero-config is fully preserved.
 
   ### 6. Mode transitions are single atomic commits
 
@@ -59,7 +63,7 @@ description: |-
   ## Deliberate limits
 
   - **Git committer identity stays open.** `user.name`/`user.email` in each commit is outside Joy's format; confidentiality is the repo operator's responsibility (private vs. public repo).
-  - **Attestation bytes stay frozen** (ADR-035). The signed canonical bytes contain the e-mail; the signature stays valid because the e-mail is bit-identical whether read from project.yaml or members.yaml. Nothing is re-signed; no ID is signed in place of the e-mail.
+  - **Attestation bytes stay frozen** (JOY-01E2-0B). The signed canonical bytes contain the e-mail; the signature stays valid because the e-mail is bit-identical whether read from project.yaml or members.yaml. Nothing is re-signed; no ID is signed in place of the e-mail.
   - **Old data in Git history is explicitly out of scope.** Cleartext in pre-switch commits, log entries, or attestations is not cleaned up. Joy must only read both forms robustly without crashing (e.g. log parsing tolerates e-mail and ID actors).
 
   In a public repo the practical gain is near zero (mapping reproducible via commits/attestation); the real value is private repos (platform, auditor, orchestration see no PII) and the right to erasure.
@@ -71,8 +75,6 @@ description: |-
   ## Related
 
   - Concept: "Pseudonyme Identitäten und Löschrecht (DSGVO)" (Konzepte)
-  - ADR-009 (JI-00FE-16): cleartext-identifier portion superseded, zero-config retained
-  - ADR-035 (JI-0118-CC): frozen attestation canonical form, preserved
-  - ADR-039 (JI-011C-EA): wrapped-seed + encrypted-artifact pattern reused by members.yaml
-
-  (Relocated from umbrella JI-011F-14 as part of the JI-0120 architecture reconciliation.)
+  - JOY-01CD-DA: cleartext-identifier portion superseded, zero-config retained
+  - JOY-01E2-0B: frozen attestation canonical form, preserved
+  - CRYPT-0010-5A: wrapped-seed + encrypted-artifact pattern reused by members.yaml

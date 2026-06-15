@@ -8,12 +8,16 @@ capabilities:
 validity: accepted
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-15T06:37:58.956804Z
-updated: 2026-06-15T06:37:59.084549Z
+updated: 2026-06-15T20:38:55.640935Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-15T06:37:59.084549Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-description: |-
+- date: 2026-06-15T20:33:37.274879Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-15T20:38:55.640935Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |
   **Status:** Accepted (2026-03)
 
   ## Context
@@ -38,7 +42,7 @@ description: |-
 
   ### Generated (gitignored)
 
-  Artifacts created by Joy commands (`joy init`, `joy ai setup`) from templates embedded in the Joy binary. Can be recreated at any time. Source of truth is `data/` in the Joy source repository. See ADR-016 for the embedded file sync mechanism.
+  Artifacts created by Joy commands (`joy init`, `joy ai setup`) from templates embedded in the Joy binary. Can be recreated at any time. Source of truth is `data/` in the Joy source repository. See JOY-01D2-30 for the embedded file sync mechanism.
 
   | Path | Content |
   |------|---------|
@@ -65,5 +69,3 @@ description: |-
   * AI tool configs (`.claude/`, `.qwen/`, `.vibe/`, etc.) are also generated and gitignored
   * The event log (`logs/`) is versioned as part of the project audit trail
   * `jobs/` lives at `.joy/jobs/` (not `.joy/ai/jobs/`) because jobs are a project-level concept, not an AI-only concept
-
-  (Relocated from umbrella JI-0103-E5 as part of the JI-0120 architecture reconciliation.)

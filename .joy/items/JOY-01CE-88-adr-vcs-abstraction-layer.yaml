@@ -8,12 +8,14 @@ capabilities:
 validity: accepted
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-15T06:37:58.226962Z
-updated: 2026-06-15T06:37:58.350569Z
+updated: 2026-06-15T20:33:36.832034Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-15T06:37:58.350569Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-description: |-
+- date: 2026-06-15T20:33:36.832034Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |
   **Status:** Accepted
 
   ## Context
@@ -29,5 +31,7 @@ description: |-
   ## Consequences
 
   Single point of change for VCS operations. No duplicated `get_git_email()` functions. Adding a new VCS backend requires implementing the trait without touching CLI code. Trade-off: slight indirection, but the trait surface is small (4-5 methods).
-
-  (Relocated from umbrella JI-00FF-19 as part of the JI-0120 architecture reconciliation.)
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-15T19:21:13.424655Z
+  text: 'Scope note (later development, 2026-06-15): the ''read-only metadata, 4-5 methods, does not cover committing or branching'' framing was accurate when this decision was made but no longer reflects the current trait. The Vcs trait was later extended with write operations (add/commit/tag/push), init/config, and forge detection. That expansion is recorded in JOY-01D3-30 - ADR: VCS and forge abstraction for release automation (linked as a dependency).'

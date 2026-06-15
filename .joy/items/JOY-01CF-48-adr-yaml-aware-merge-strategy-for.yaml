@@ -8,12 +8,14 @@ capabilities:
 validity: accepted
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-15T06:37:58.589162Z
-updated: 2026-06-15T06:37:58.714275Z
+updated: 2026-06-15T20:33:37.038710Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-15T06:37:58.714275Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-description: |-
+- date: 2026-06-15T20:33:37.038710Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |
   **Status:** Accepted
 
   ## Context
@@ -68,5 +70,3 @@ description: |-
   Trade-off: the merge driver adds a component that must be distributed with the CLI (registered via `joy init` in `.gitattributes`). BYOG users on GitHub/GitLab get the driver only when they have Joy installed locally; server-side merges on joyint.com always use it.
 
   No data is ever silently lost. Automatic merges are logged in the event log. CalDAV overwrites trigger notifications. Git history preserves all versions for manual recovery.
-
-  (Relocated from umbrella JI-0100-D1 as part of the JI-0120 architecture reconciliation.)

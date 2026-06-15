@@ -8,12 +8,14 @@ capabilities:
 validity: accepted
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-15T06:38:03.050197Z
-updated: 2026-06-15T06:38:03.181026Z
+updated: 2026-06-15T20:33:39.835291Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-15T06:38:03.181026Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-description: |-
+- date: 2026-06-15T20:33:39.835291Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |
   **Status:** Proposed (2026-03)
 
   ## Context
@@ -97,5 +99,3 @@ description: |-
 
   * The 200-line limit is based on current research (2026-03). It may change as AI tools improve their instruction processing. The quarterly review cycle accounts for this.
   * Agent definitions (`.claude/agents/*.md`) are not affected by this decision. They are loaded on demand, not as part of the base instructions.
-
-  (Relocated from umbrella JI-010F-79 as part of the JI-0120 architecture reconciliation.)

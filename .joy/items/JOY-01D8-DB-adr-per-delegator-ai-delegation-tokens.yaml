@@ -8,13 +8,15 @@ capabilities:
 validity: accepted
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-15T06:38:01.921569Z
-updated: 2026-06-15T06:38:02.050812Z
+updated: 2026-06-15T20:33:39.108116Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-15T06:38:02.050812Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-description: |-
-  **Status:** Accepted (2026-03). Data model refined by ADR-033 (JI-0116-52) §1 (stable per-(human, AI) delegation key). Token lifecycle current in ADR-034 (JI-0117-9A) (multi-use within TTL).
+- date: 2026-06-15T20:33:39.108116Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |
+  **Status:** Accepted (2026-03). Data model refined by JOY-01E0-2E §1 (stable per-(human, AI) delegation key). Token lifecycle current in JOY-01E1-E7 (multi-use within TTL).
 
   ## Context
 
@@ -119,5 +121,7 @@ description: |-
 
   * Git merges on `project.yaml` are unlikely to conflict since each member's `ai_tokens` is in their own section.
   * `joy auth --token` no longer modifies `project.yaml` (only creates a local session file).
-
-  (Relocated from umbrella JI-010C-B1 as part of the JI-0120 architecture reconciliation.)
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-15T19:27:09.241169Z
+  text: 'Supersession note (2026-06-15, JI-0120 joy pass): the per-token individual revocation and the single-use token lifecycle described here are superseded by the current model - per-session human authorization (JOY-01E0-2E) and multi-use tokens within one TTL (JOY-01E1-E7). The per-(human, AI) token storage and the dual-signature design remain current. (The body still cites the old umbrella IDs JI-010C-B1/JI-0116-52/JI-0117-9A; these are corrected in the JI-0120 reference sweep.)'

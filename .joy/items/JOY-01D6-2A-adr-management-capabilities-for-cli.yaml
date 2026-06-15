@@ -8,17 +8,21 @@ capabilities:
 validity: accepted
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-15T06:38:01.175788Z
-updated: 2026-06-15T06:38:01.306203Z
+updated: 2026-06-15T20:38:56.326793Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-15T06:38:01.306203Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-description: |-
+- date: 2026-06-15T20:33:38.609984Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-15T20:38:56.326793Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |
   **Status:** Accepted (2026-03)
 
   ## Context
 
-  Joy's capability model (ADR-018) defines seven work capabilities that describe activities in the development lifecycle: conceive, plan, design, implement, test, review, document. These control what kind of work a member does, but not what administrative actions they can perform.
+  Joy's capability model (JOY-01D4-42) defines seven work capabilities that describe activities in the development lifecycle: conceive, plan, design, implement, test, review, document. These control what kind of work a member does, but not what administrative actions they can perform.
 
   In AI automation scenarios, an AI tool with `implement` capability can currently also create items (`joy add`), assign members (`joy assign`), delete items (`joy rm`), and modify project configuration. This is a governance gap -- an AI tool could create items and assign itself to them without human oversight.
 
@@ -69,5 +73,3 @@ description: |-
 
   * **11 capabilities instead of 7.** Slightly more to learn, but the management capabilities are intuitive.
   * **Item templates must be updated.** Management capabilities are not item-type defaults -- they only appear in member configurations.
-
-  (Relocated from umbrella JI-0109-36 as part of the JI-0120 architecture reconciliation.)

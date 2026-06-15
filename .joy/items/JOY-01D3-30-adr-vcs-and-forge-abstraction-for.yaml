@@ -3,17 +3,23 @@ title: 'ADR: VCS and forge abstraction for release automation'
 type: decision
 status: closed
 priority: medium
+deps:
+- JOY-01CE-88
 capabilities:
 - conceive
 validity: accepted
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-15T06:38:00.072779Z
-updated: 2026-06-15T06:38:00.199217Z
+updated: 2026-06-15T20:33:37.934347Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-15T06:38:00.199217Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-description: |-
+- date: 2026-06-15T19:21:13.575755Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-15T20:33:37.934347Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |
   **Status:** Accepted (2026-03)
 
   ## Context
@@ -105,5 +111,3 @@ description: |-
   * `octocrab` (or equivalent) becomes an optional dependency behind a feature flag
   * GitLab and Gitea support can be added incrementally without changing the release command interface
   * The `Vcs` trait grows from read-only to read-write, which is a significant API change in joy-core
-
-  (Relocated from umbrella JI-0106-D9 as part of the JI-0120 architecture reconciliation.)

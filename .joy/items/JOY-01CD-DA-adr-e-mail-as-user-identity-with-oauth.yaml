@@ -8,14 +8,16 @@ capabilities:
 validity: accepted
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-15T06:37:57.855958Z
-updated: 2026-06-15T06:37:57.980955Z
+updated: 2026-06-15T20:33:36.621579Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-15T06:37:57.980955Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-description: |-
-  **Status:** Accepted
-
+- date: 2026-06-15T19:17:15.905268Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-15T20:33:36.621579Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |
   ## Context
 
   Joy needs a user identity model for role-based access (status rules), item assignment, change attribution, and sync authentication. Options: platform-specific handles (e.g. GitHub username), custom Joy accounts, or e-mail addresses.
@@ -30,6 +32,8 @@ description: |-
 
   ## Consequences
 
-  E-mail is provider-independent: switching from GitHub to GitLab or Gitea (or adding Google, Microsoft later) requires no migration of roles, assignments, or history. Every developer already has an e-mail in their Git config, so the CLI works without additional setup. The trade-off is that e-mail addresses can change -- but so can usernames on any platform, and e-mail changes are less frequent. The `agent:` prefix convention cleanly separates human and AI identities without a separate account system.
-
-  (Relocated from umbrella JI-00FE-16 as part of the JI-0120 architecture reconciliation.)
+  E-mail is provider-independent: switching from GitHub to GitLab or Gitea (or adding Google, Microsoft later) requires no migration of roles, assignments, or history. Every developer already has an e-mail in their Git config, so the CLI works without additional setup. The trade-off is that e-mail addresses can change -- but so can usernames on any platform, and e-mail changes are less frequent. The `ai:` prefix convention cleanly separates human and AI identities without a separate account system.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-15T19:17:16.009335Z
+  text: 'Cross-reference (later development, 2026-06-15 note): the cleartext-e-mail assumption in this decision is tempered by JOY-01E3-6B - ADR: Pseudonymized member identity for GDPR erasure, a substantially later decision that adds an anonymous/pseudonymized identity mode. Separately, an in-body typo was corrected in this pass: the consequences referred to an ''agent:'' prefix; the actual convention is the ''ai:'' prefix (ai:tool@joy).'

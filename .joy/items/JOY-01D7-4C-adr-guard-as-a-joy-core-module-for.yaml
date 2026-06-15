@@ -8,12 +8,14 @@ capabilities:
 validity: accepted
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-15T06:38:01.547114Z
-updated: 2026-06-15T06:38:01.674519Z
+updated: 2026-06-15T20:33:38.859241Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-15T06:38:01.674519Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-description: |-
+- date: 2026-06-15T20:33:38.859241Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |
   **Status:** Accepted (2026-03)
 
   ## Context
@@ -134,5 +136,3 @@ description: |-
 
   * Jyn inherits Guard as a joy-core dependency but never triggers it (no capabilities, no gates). The overhead is a no-op check. A feature flag can exclude Guard from Jyn builds if needed.
   * Judge remains a separate subproject. The event log format is the stable interface between Guard and Judge.
-
-  (Relocated from umbrella JI-010A-65 as part of the JI-0120 architecture reconciliation.)
