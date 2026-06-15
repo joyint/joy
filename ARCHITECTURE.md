@@ -1,238 +1,103 @@
 # Joy - Architecture
 
-This document defines the technical foundation for the Joy repository. It covers technology choices, repository structure, crate layout, and build configuration.
+Joy is a terminal-native, git-native product-management tool. Its data model lives in `joy-core`, a library crate shared with [Jyn](https://github.com/joyint/jyn).
 
-For product vision, data model, and CLI design see [VISION.md](./VISION.md). For coding conventions, testing, and CI/CD see [CONTRIBUTING.md](./CONTRIBUTING.md). For cross-project architecture and ADRs see the [umbrella repository](https://github.com/joyint/project).
+This document is an **orientation, not the specification**. The specification lives in the Joy items of this repository (`joy ls`, `joy show <ID>`), and the code is the ground truth; where this document and the code disagree, the code wins. Treat it as a first, comprehensive map, then read the items and the source.
 
----
+**Cross-cutting decisions:** architecture decisions that span the Joyint ecosystem (naming, open-core licensing, terminology, the five-pillar AI governance taxonomy, the documentation and source-of-truth conventions) live as decision items in the **Joyint umbrella project** and apply here as well. Consider them alongside this repository's own decisions (`joy ls -D`).
+
+For the product vision and data model see [VISION.md](./VISION.md); for conventions, testing, and release see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## Technology Stack
 
+Rust (edition 2021, latest stable toolchain), built as a single binary. Key libraries by role: **clap** (CLI and shell completion), **ratatui** (TUI), **serde** + **serde_yml** (YAML for `.joy/` files, JSON for machine output), **thiserror** (typed errors in library crates) and **anyhow** (CLI error propagation), **insta** (snapshot tests). The exact, current versions are in [`Cargo.toml`](./Cargo.toml); this document does not restate them.
+
 ### Versioning Policy
 
-Pin all dependencies to their current stable **major.minor** version. Track stable minor releases and update promptly (within 1 week of release). Major version upgrades are evaluated as ADRs.
+Dependencies are pinned to their current stable major.minor. Stable minor releases are tracked and adopted promptly; major upgrades are evaluated as architecture decisions.
 
-### Core (CLI + TUI)
+## Components
 
-| Component                    | Version              | Rationale                                                         |
-| ---------------------------- | -------------------- | ----------------------------------------------------------------- |
-| **Rust**                     | 1.85 (latest stable) | Performance, single binary, type safety, memory safety            |
-| **clap** (derive API)        | 4.5                  | De-facto CLI standard, shell completions, derive macros           |
-| **ratatui**                  | 0.29                 | TUI framework, ships in same binary as CLI                        |
-| **serde** + **serde_yml**    | 1.0 / 0.0.12         | YAML for `.joy/` files, JSON for API. 0.0.x is the current stable fork of the deprecated `serde_yaml` - re-evaluate if a breaking change occurs |
-| **tokio**                    | 1.43                 | Async runtime for server, sync, AI jobs                           |
-| **thiserror**                | 2.0                  | Explicit error types in library crates                            |
-| **anyhow**                   | 1.0                  | Convenient error handling in binary crate                         |
-| **clap_complete**            | 4.5                  | Shell completion generation (bash, zsh, fish, PowerShell, elvish) |
-| **console** / **owo-colors** | latest               | Terminal colors and styling                                       |
-| **insta**                    | 1.41                 | Snapshot testing                                                  |
+Two MIT-licensed crates (`crates/`):
 
----
+- **joy-core** - the shared foundation. Data model (`model/`), YAML storage and project-root detection (`store.rs`), item and milestone logic with collision-safe IDs and dependency-cycle detection (`items.rs`, `milestones.rs`), status workflow and capability gates (`guard.rs`), identity and delegation auth (`identity.rs`, `member_id.rs`, `members_file.rs`, `auth/`), client-side encryption usage (`crypt.rs`; the implementation is the separate [crypt](https://github.com/joyint/crypt) project), VCS and forge integration (`vcs.rs`, `git_ops.rs`), the append-only audit log (`event_log.rs`), embedded-file sync (`embedded.rs`), templating (`templates.rs`, `ai_templates.rs`), and schema migrations (`migrations/`). Jyn's `jyn-core` depends on this crate and extends `Item` with recurrence.
+- **joy-cli** - the `joy` binary: CLI commands (`commands/`, clap), the TUI (ratatui), semantic colour output, shell completion, and forge and release helpers.
 
-## Shared Logic: joy-core
-
-The `joy-core` library crate is the shared foundation for both Joy and [Jyn](https://github.com/joyint/jyn). It provides the base data model (Item), YAML I/O, status logic, dependency management, and Git integration.
-
-The Jyn repository depends on `joy-core` as an external crate dependency. `jyn-core` extends `joy-core::Item` with todo-specific features (recurring tasks, RRULE). This ensures consistent behavior across both tools while keeping Joy free of Jyn-specific code.
+AI members use Joy the way humans do: an AI agent (for example Claude Code) invokes the `joy` CLI for its work on the item store - `joy show`, `joy ls`, `joy add`, `joy comment` - and `joy-core` governs those calls exactly as it governs a human caller (capabilities, status gates and `allow_ai`, signed delegation, and the audit log). The agent's execution sandbox and orchestration, and the platform's server side, live in the separate, commercially licensed [platform](https://github.com/joyint/platform) and [app](https://github.com/joyint/app) projects.
 
 ```mermaid
 graph TD
-    CORE[joy-core<br/>data model, YAML I/O, status logic,<br/>deps, validation, ID generation, git]
-
-    CLI[joy-cli<br/>commands - clap<br/>tui - ratatui]
-    AI[joy-ai<br/>AI tool dispatch,<br/>job tracking]
+    CORE[joy-core<br/>data model, storage, status + gates,<br/>identity/auth, vcs/forge, audit log]
+    CLI[joy-cli<br/>joy binary: commands, TUI]
+    JYN[jyn-core<br/>external: extends Item with recurrence]
+    APP[app<br/>external: Tauri app]
 
     CORE --> CLI
-    AI --> CLI
+    CORE --> JYN
+    CORE --> APP
 ```
 
-`joy-ai` is a library crate used by `joy-cli` (and by the Tauri app in `joyint/app`).
-
-Note: There is no separate server binary. `joy serve` is a subcommand of the `joy` CLI binary. It serves the REST API (Git gateway), CalDAV, and the web UI. Server components are compiled behind the `server` feature flag to keep the default binary lean.
-
-Multiple CLI instances can run simultaneously - each reads/writes individual YAML files. File-level locking in `joy-core` prevents concurrent writes to the same item. The server serializes writes when running.
-
----
+Multiple CLI instances can run at once; each reads and writes individual YAML files, and file-level locking in `joy-core` prevents concurrent writes to the same item.
 
 ## Repository Structure
 
 ```
 joy/
-├── Cargo.toml                  # Workspace root
-├── Cargo.lock
-├── LICENSE                     # MIT license
-├── CONTRIBUTING.md             # Coding conventions, testing, CI/CD
-├── README.md
-├── docs/
-│   └── dev/
-│       ├── Vision.md           # Product vision, data model, CLI design
-│       └── Architecture.md     # This file
+├── Cargo.toml              # workspace root (members, shared deps)
+├── README.md  VISION.md  ARCHITECTURE.md  CONTRIBUTING.md  SECURITY.md
 ├── crates/
-│   ├── joy-core/               # Shared library: data model, YAML I/O, logic (MIT)
-│   │   ├── Cargo.toml
-│   │   └── src/
-│   │       ├── lib.rs
-│   │       ├── model/          # Item, Milestone, Project structs
-│   │       ├── store.rs        # YAML file read/write, project root detection
-│   │       ├── items.rs        # Item CRUD, ID generation, dependency cycle detection
-│   │       ├── milestones.rs   # Milestone CRUD, ID generation
-│   │       ├── init.rs         # Project initialization
-│   │       └── error.rs        # Error types (thiserror)
-│   ├── joy-cli/                # PM CLI binary (clap) - includes TUI and server (MIT)
-│   │   ├── Cargo.toml
-│   │   └── src/
-│   │       ├── main.rs
-│   │       ├── commands/       # One module per command (add, ls, status, rm, deps, ...)
-│   │       ├── color.rs        # Semantic terminal colors
-│   │       ├── tui/            # ratatui views (behind feature flag, planned)
-│   │       └── server/         # axum server, CalDAV, notifications (behind feature flag)
-│   └── joy-ai/                 # AI tool dispatch, job tracking (MIT)
-│       ├── Cargo.toml
-│       └── src/
-├── tests/                      # Integration and E2E tests
-│   ├── cli/                    # CLI integration tests
-│   └── fixtures/               # Test data (.joy/ directories)
-├── .github/
-│   └── workflows/              # CI/CD
-├── .claude/                    # Claude Code context
-│   └── CLAUDE.md
-└── justfile                    # Task runner (just)
+│   ├── joy-core/           # shared library (data model, storage, auth, vcs, guard)
+│   ├── joy-cli/            # the `joy` binary (commands, TUI)
+│   └── joy-ai/             # AI tool dispatch, job tracking
+├── docs/                   # public, longer-form docs (e.g. user/Tutorial.md)
+├── tests/                  # integration and snapshot tests
+├── .github/workflows/      # CI
+└── justfile                # task runner
 ```
 
----
+## Sync and Data Flow
 
-## Cargo Workspace
-
-```toml
-# Cargo.toml (workspace root)
-[workspace]
-resolver = "2"
-members = [
-    "crates/joy-core",
-    "crates/joy-cli",
-    "crates/joy-ai",
-]
-
-[workspace.dependencies]
-serde = { version = "1.0", features = ["derive"] }
-serde_yml = "0.0.12"
-serde_json = "1.0"
-tokio = { version = "1.43", features = ["full"] }
-thiserror = "2.0"
-anyhow = "1.0"
-clap = { version = "4.5", features = ["derive"] }
-```
-
-Feature flags in `joy-cli/Cargo.toml`:
-
-```toml
-[features]
-default = ["tui"]
-tui = ["dep:ratatui", "dep:crossterm"]
-server = ["dep:axum", "dep:tower-http"]
-full = ["tui", "server"]
-```
-
----
-
-## Licensing
-
-Joy crates (`joy-core`, `joy-cli`, `joy-ai`) are MIT-licensed. Server components (REST API, CalDAV, notifications) compiled behind the `server` feature flag are commercially licensed by Joydev GmbH. See [ADR-008](https://github.com/joyint/project/blob/main/docs/dev/adr/ADR-008-open-core-licensing.md) for rationale.
-
----
+The CLI and the Tauri app operate on a local `.joy/` directory through `joy-core` as a Rust library, reading and writing the files directly. Synchronisation uses Git directly: `git push` / `git pull` to a Git remote. Git is the sync backend - the data is versioned YAML carried as Git history (see `JOY-01CC-94 - ADR: Git as sync backend` for the rationale). The platform's server-side services (auth, billing, forge management, CalDAV, notifications, AI proxy) are a separate project reached over gRPC, and are out of scope here.
 
 ## Security
 
-### Credentials
-
-Secrets (API keys, OAuth tokens) are stored in `credentials.yaml`. Configuration (settings, AI tool config, output preferences) is stored in `config.yaml`. Both support two levels:
-
-| File | Global (`~/.config/joy/`) | Project (`.joy/`) |
-| ---- | ------------------- | ----------------- |
-| `config.yaml` | User defaults | Project-specific, committed to Git |
-| `credentials.yaml` | User defaults | Project-specific, gitignored |
-
-Project-local values override global defaults. File permissions for `credentials.yaml` are 0600.
-
-### End-to-End Encryption
-
-All data on joyint.com is E2E-encrypted (AES-256-GCM). The key stays on the client device. Server stores only encrypted blobs plus cleartext metadata (id, status, priority, due_date, timestamps) needed for notifications and CalDAV scheduling. See [ADR-006](https://github.com/joyint/project/blob/main/docs/dev/adr/ADR-006-client-side-encryption.md) for design details.
-
-### AI Governance: The Five Pillars
-
-Joy's AI Governance is an architecture built on five pillars: **Trustship** (who do I trust?), **Guardianship** (what do I protect against?), **Orchestration** (how do I steer work?), **Traceability** (what happened?), and **Settlement** (what did it cost?). Together they form the **Trust Model** - see [VISION.md](./VISION.md#ai-governance-the-five-pillars) for the full breakdown.
-
-### Agent Sandboxing
-
-AI agents executing code operate in controlled environments (Guardianship pillar). Joy tracks what each agent is allowed to do (create branch, commit, push) - no implicit permissions.
-
----
+- **Credentials and configuration.** Secrets live in `credentials.yaml` (gitignored, `0600`); settings live in `config.yaml` (committed). Both exist at a global level (`~/.config/joy/`) and a project level (`.joy/`), with project values overriding global ones.
+- **Identity and authorization.** Identity is the e-mail address (`git config user.email` locally, OAuth on the server); AI members use a synthetic `ai:tool@joy` identity. Human-to-AI delegation uses per-delegator, per-session tokens. See the auth decisions `JOY-01CD-DA`, `JOY-01E0-2E`, `JOY-01E1-E7`, and `JOY-01E3-6B` (pseudonymized identity for GDPR erasure).
+- **Encryption.** Project data can be selectively end-to-end encrypted on the client; `joy-core` consumes the encryption layer, whose implementation is the [crypt](https://github.com/joyint/crypt) project.
+- **Runtime gates.** `joy-core/src/guard.rs` is the single point that enforces status-transition gates, capabilities, and the `allow_ai` flag (for example, AI can create items but a human approves them into the backlog).
+- **AI governance.** Joy's governance rests on five pillars (Trustship, Guardianship, Orchestration, Traceability, Settlement); see [VISION.md](./VISION.md#ai-governance-the-five-pillars).
 
 ## Configuration Reference
 
-### Config (`~/.config/joy/config.yaml` and `.joy/config.yaml`)
+Configuration is data, not code, and is not restated here. The authoritative shapes are the committed template files: `.joy/project.yaml` (roles, status-rule gates) and `.joy/config.yaml` (sync, output, AI tool settings) follow the templates under `joy-core`'s `data/` (`project.defaults.yaml` and `items/_base.yaml`). Roles are e-mail addresses. Item IDs are not stored; the next ID is derived at runtime from existing filenames, prefixed with the project acronym (`ACRONYM-XXXX`, `ACRONYM-MS-XX` for milestones).
 
-```yaml
-# .joy/config.yaml (project-local, committed)
-version: 1 # Config schema version
+## Architecture Decisions
 
-sync:
-  remote: https://joyint.com/joydev/platform
-  auto: false
+Architecture decisions are Joy **decision items in this repository**, each titled `ADR: ...`. Run `joy ls -D` for the current list and `joy show <ID>` for context. Foundational ones:
 
-output:
-  color: auto # auto | always | never
-  emoji: true # true | false
+- `JOY-01CA-FA - ADR: YAML over SQLite for data storage`
+- `JOY-01CC-94 - ADR: Git as sync backend`
+- `JOY-01CE-88 - ADR: VCS abstraction layer`
+- `JOY-01CF-48 - ADR: YAML-aware merge strategy for conflict resolution`
+- `JOY-01D0-EB - ADR: .joy/ directory versioning policy`
+- `JOY-01D4-42 - ADR: Capabilities over roles for AI agent abstraction`
+- `JOY-01D7-4C - ADR: Guard as a joy-core module for centralized runtime validation`
+- `JOY-01DC-E4 - ADR: Collision-safe item IDs with title-hash suffix`
+- `JOY-01CD-DA - ADR: E-mail as user identity with OAuth authentication`
+- `JOY-01E3-6B - ADR: Pseudonymized member identity for GDPR erasure`
 
-ai:
-  tool: claude-code            # claude-code | mistral-vibe | github-copilot | qwen-code
-  command: claude              # CLI command to invoke
-  model: auto                  # model name or "auto" (tool default)
-  max_cost_per_job: 10.00
-  currency: EUR
-```
-
-### Project Roles and Status Rules (`.joy/project.yaml`)
-
-```yaml
-# .joy/project.yaml
-roles:
-  approver: [horst@joydev.com, anna@joydev.com]
-
-status_rules:
-  new -> open:
-    requires_role: approver   # only approvers can move items into the backlog
-    allow_ai: false           # AI agents cannot triage items
-  review -> closed:
-    requires_role: approver   # only approvers can accept items
-    requires_ci: true         # branch CI must be green
-    allow_ai: false           # AI agents cannot close items
-```
-
-Role members are identified by e-mail address, matching `git config user.email` locally and the OAuth-provided e-mail on the server.
-
-IDs are not stored in config. The next available ID is derived at runtime by scanning existing filenames and incrementing the highest found value. IDs use the project acronym as prefix: ACRONYM-0001 to ACRONYM-FFFF for items, ACRONYM-MS-01 to ACRONYM-MS-FF for milestones.
-
----
-
-## Architecture Decision Records
-
-ADRs are maintained in the [umbrella repository](https://github.com/joyint/project/tree/main/docs/dev/adr). Key ADRs relevant to Joy:
-
-- [ADR-001: YAML over SQLite for data storage](https://github.com/joyint/project/blob/main/docs/dev/adr/ADR-001-yaml-over-sqlite.md)
-- [ADR-002: Single binary with feature flags](https://github.com/joyint/project/blob/main/docs/dev/adr/ADR-002-single-binary.md)
-- [ADR-005: Package name `joyint`, binary name `joy`](https://github.com/joyint/project/blob/main/docs/dev/adr/ADR-005-package-name-joyint.md)
-- [ADR-008: Open Core Licensing Model](https://github.com/joyint/project/blob/main/docs/dev/adr/ADR-008-open-core-licensing.md)
-- [ADR-010: VCS abstraction layer](https://github.com/joyint/project/blob/main/docs/dev/adr/ADR-010-vcs-abstraction.md)
-- [ADR-014: .joy/ directory versioning policy](https://github.com/joyint/project/blob/main/docs/dev/adr/ADR-014-joy-directory-versioning-policy.md)
-
----
+Ecosystem-wide decisions (naming, open-core licensing, terminology, AI governance taxonomy, documentation and source-of-truth conventions) live in the Joyint umbrella project and also apply.
 
 ## Performance Targets
 
-- `joy` (overview): <100ms on a project with 100 items
-- `joy ls`: <50ms for unfiltered list
-- `joy add`: <200ms including file write and git staging
-- `joy sync`: <2s for incremental sync of 10 changed items
-- Binary size: <10MB for CLI+TUI, <20MB with server feature
-- App startup: <1s to interactive on desktop
+- `joy` overview: < 100 ms on a project with 100 items
+- `joy ls`: < 50 ms for an unfiltered list
+- `joy add`: < 200 ms including file write and Git staging
+- Binary size: < 10 MB for the CLI and TUI
+
+## References
+
+- [VISION.md](./VISION.md), [CONTRIBUTING.md](./CONTRIBUTING.md), [SECURITY.md](./SECURITY.md)
+- [Joyint umbrella project](https://github.com/joyint/project) - cross-cutting decisions and ecosystem docs
+- [Jyn](https://github.com/joyint/jyn) - consumer of `joy-core`; [crypt](https://github.com/joyint/crypt), [platform](https://github.com/joyint/platform), [app](https://github.com/joyint/app)
+- ForgeSync (Joy CLI sync concept): a public `docs/` document is being reconciled to the current sync model (tracked as `JI-013C-AC`).

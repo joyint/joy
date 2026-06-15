@@ -1,0 +1,21 @@
+id: JOY-01E6-FA
+title: 'ADR: Remove the joy-ai crate; AI execution is ACP-based (platform and app)'
+type: decision
+status: closed
+priority: medium
+capabilities:
+- conceive
+validity: accepted
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-15T21:13:32.249555Z
+updated: 2026-06-15T21:13:32.407096Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-15T21:13:32.407096Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Context: joy-ai was intended to hold AI tool dispatch and job tracking. It is an empty placeholder (lib.rs is only a license header; joy-cli depends on it but uses nothing). The AI execution model has since moved: per the Joyint App and Platform Container concepts, AI runs via ACP (Agent Client Protocol) with an AgentTransport trait and a governance Mediator, in the app's Tauri shell and in the platform's Project/Job containers (see JP-0030-E1). The joy-side AI configuration (joy ai init, agent file generation) already lives in joy-cli (commands/ai.rs) and joy-core (ai_templates.rs).
+
+  Decision: Remove the joy-ai crate. Joy (CLI and core) does not host AI execution or dispatch; that responsibility is ACP-based in the platform and the app shell. joy-side AI concerns are limited to configuration and governance metadata, which live in joy-cli and joy-core.
+
+  Consequences: Drop crates/joy-ai, its workspace membership, and the joy-cli dependency (and the test fixtures that reference it). No functionality is lost (the crate was empty). The AI execution architecture is owned by the platform (JP-0030-E1, the Platform Container concept) and the app (the Joyint App concept).

@@ -101,3 +101,7 @@
 2026-06-15T20:38:57.818Z JOY-01E1-E7 item.updated [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-06-15T20:38:58.017Z JOY-01E2-0B item.updated [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-06-15T20:38:58.218Z JOY-01E3-6B item.updated [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-06-15T21:03:33.470Z JOY-01E5-9F item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-06-15T21:13:32.271Z JOY-01E6-FA item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-06-15T21:13:32.422Z JOY-01E6-FA item.status_changed "new -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-06-15T21:13:32.538Z JOY-01E7-0E item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

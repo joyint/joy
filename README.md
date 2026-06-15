@@ -60,10 +60,12 @@ joy ai init  # optional: configure AI tool integration
 
 ## Documentation
 
-- [Tutorial](docs/user/Tutorial.md) - Getting started with an example project
-- [Contributing](docs/dev/CONTRIBUTING.md) - Joy-specific coding conventions
+- [Tutorial](docs/user/Tutorial.md) - getting started with an example project
+- [VISION.md](./VISION.md) - product vision and data model
+- [ARCHITECTURE.md](./ARCHITECTURE.md) - technical overview
+- [CONTRIBUTING.md](./CONTRIBUTING.md) - conventions, testing, release
 
-For product vision, architecture, and ADRs see the [umbrella project](https://github.com/joyint/project).
+Architecture decisions are tracked as Joy decision items in this repository; run `joy ls -D` to list them.
 
 ## Status
 

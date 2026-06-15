@@ -1,0 +1,15 @@
+id: JOY-01E5-9F
+title: Remove the vestigial server feature flag and axum/tower-http deps from joy-cli
+type: rework
+status: new
+priority: low
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-15T21:03:33.452193Z
+updated: 2026-06-15T21:03:33.452193Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: joy-cli/Cargo.toml still declares the 'server' and 'full' features and the optional axum + tower-http dependencies, but there is no server code anywhere (no use of axum/tower_http, no cfg(feature = server)). The server moved to the platform project; this is leftover from the retired decision JOY-01CB-3C. Remove the 'server' and 'full' features and the two optional deps.
