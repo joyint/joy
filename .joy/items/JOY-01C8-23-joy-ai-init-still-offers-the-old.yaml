@@ -1,0 +1,14 @@
+id: JOY-01C8-23
+title: '''joy ai init'' still offers the old default document paths'
+type: bug
+status: new
+priority: medium
+capabilities:
+- implement
+- review
+created_by: horst.schwarz@joydev.com
+created: 2026-06-15T05:36:29.620964Z
+updated: 2026-06-15T05:36:29.620964Z
+updated_by: horst.schwarz@joydev.com
+history: []
+description: We changed the default documents to README.md, ARCHITECTURE.md, and CONTRIBUTING.md in the project root. But at the moment there is still the docs/dev path proposed.

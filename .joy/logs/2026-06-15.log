@@ -1,0 +1,4 @@
+2026-06-15T05:36:10.615Z JOY-01C8-23 guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-06-15T05:36:29.632Z JOY-01C8-23 item.created [horst.schwarz@joydev.com]
+2026-06-15T05:39:12.222Z JOY-01C9-EA item.created [horst.schwarz@joydev.com]
+2026-06-15T05:51:51.720Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

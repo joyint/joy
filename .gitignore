@@ -22,12 +22,4 @@ Thumbs.db
 .joy/credentials.yaml
 .joy/hooks/
 .joy/project.defaults.yaml
-.claude/
-.qwen/
-.vibe/
-AGENTS.md
-.github/copilot-instructions.md
-.github/copilot/
-.github/agents/
-.github/prompts/
 ### joy:end
