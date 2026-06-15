@@ -1,0 +1,123 @@
+id: JOY-01D8-DB
+title: 'ADR: Per-delegator AI delegation tokens with dual signatures'
+type: decision
+status: closed
+priority: medium
+capabilities:
+- conceive
+validity: accepted
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-15T06:38:01.921569Z
+updated: 2026-06-15T06:38:02.050812Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-15T06:38:02.050812Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  **Status:** Accepted (2026-03). Data model refined by ADR-033 (JI-0116-52) §1 (stable per-(human, AI) delegation key). Token lifecycle current in ADR-034 (JI-0117-9A) (multi-use within TTL).
+
+  ## Context
+
+  AI members authenticate via delegation tokens created by human members. The initial implementation stored a derived public_key directly on the AI member in `project.yaml`. This caused:
+
+
+  1. **Multi-user conflicts:** When two humans each create a token for the same AI member, the second `joy auth --token` overwrites the first's public_key. The first user's token becomes invalid.
+  2. **No individual revocation:** All tokens were tied to the same key -- revoking one meant revoking all.
+  3. **No visibility:** `joy project` could not show who has active tokens for which AI member.
+
+  ## Decision
+
+  ### Per-delegator token entries
+
+  Each human member stores their own token entries in their `ai_tokens` map within `project.yaml`:
+
+  ```yaml
+  members:
+    alice@team.com:
+      capabilities: all
+      public_key: "alice_ed25519_pk..."
+      salt: "..."
+      ai_tokens:
+        ai:claude@joy:
+          token_key: "random_ed25519_pk..."
+          created: "2026-03-28T21:00:00Z"
+    bob@team.com:
+      capabilities: all
+      public_key: "bob_ed25519_pk..."
+      salt: "..."
+      ai_tokens:
+        ai:claude@joy:
+          token_key: "different_random_pk..."
+          created: "2026-03-28T22:00:00Z"
+  ```
+
+  ### Dual signature
+
+  Each delegation token carries two signatures:
+
+
+  1. **Delegator signature:** Signed with the human member's identity key. Proves authorization ("Alice approved this token").
+  2. **Token binding signature:** Signed with a one-time private key whose public counterpart is stored as `token_key`. Binds the token to a specific entry in `project.yaml`.
+
+  ### Token lifecycle
+
+  **Creation** (`joy auth create-token ai:claude@joy`):
+
+
+  1. Human authenticates (passphrase)
+  2. Generate a one-time Ed25519 keypair (token_key)
+  3. Store `token_key` (public) + `created` in the human's `ai_tokens` for the AI member
+  4. Sign token with human's identity key + token_key's private key
+  5. Return encoded token to human
+
+  **Validation** (`joy auth --token <token>`):
+
+
+  1. Decode token, extract `delegated_by` (human) and `ai_member`
+  2. Look up human member in `project.yaml`
+  3. Verify delegator signature against human's `public_key`
+  4. Look up `ai_tokens[ai_member].token_key` in the human's config
+  5. Verify token binding signature against `token_key`
+  6. Both must pass. Create local session for the AI member.
+
+  **Individual revocation** (`joy auth revoke-token ai:claude@joy --delegator bob@team.com`):
+
+  * Remove the `ai_tokens` entry for the AI member under the delegator
+  * The `token_key` is gone; the token's binding signature can no longer be verified
+  * Other delegators' tokens remain valid
+
+  **Global AI reset** (`joy ai reset --tool claude`):
+
+  * Remove all `ai_tokens` entries for `ai:claude@joy` from all members
+  * All tokens for that AI member become invalid
+
+  **Re-creation after revocation:**
+
+  * New `create-token` generates a new random `token_key`
+  * Old tokens have a binding signature against the old `token_key` -- they fail validation
+
+  ### No public_key on AI members
+
+  AI members no longer have `public_key` or `salt` fields in `project.yaml`. These fields are only for human members (passphrase-derived keys). AI authentication is entirely token-based.
+
+  ## Consequences
+
+  ### Positive
+
+  * **Multi-user safe:** Each human has their own `ai_tokens` section. No conflicts on `git push/pull`.
+  * **Individual revocation:** Delete one entry, one token invalid. Others unaffected.
+  * **Tamper-proof revocation:** Re-creating the entry generates a new `token_key`. Old tokens cannot be reused.
+  * **Visible:** `joy project` shows who has tokens for which AI member.
+  * **Simple project.yaml changes:** Each `create-token` only modifies the acting human's member entry.
+
+  ### Negative
+
+  * **Dual signature complexity:** Tokens carry two signatures instead of one. Slightly more code in creation and validation.
+  * **Token size:** Slightly larger tokens (two signatures = 128 bytes hex instead of 64).
+
+  ### Neutral
+
+  * Git merges on `project.yaml` are unlikely to conflict since each member's `ai_tokens` is in their own section.
+  * `joy auth --token` no longer modifies `project.yaml` (only creates a local session file).
+
+  (Relocated from umbrella JI-010C-B1 as part of the JI-0120 architecture reconciliation.)

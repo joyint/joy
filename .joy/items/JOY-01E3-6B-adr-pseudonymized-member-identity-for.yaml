@@ -1,0 +1,78 @@
+id: JOY-01E3-6B
+title: 'ADR: Pseudonymized member identity for GDPR erasure'
+type: decision
+status: closed
+priority: medium
+capabilities:
+- conceive
+validity: accepted
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-15T06:38:06.051001Z
+updated: 2026-06-15T06:38:06.179888Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-15T06:38:06.179888Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  **Status:** Proposed (2026-06). Concept basis: "Pseudonyme Identitäten und Löschrecht (DSGVO)" (Konzepte-Collection). Supersedes the cleartext-identifier portion of ADR-009 (JI-00FE-16). Builds on ADR-035 (JI-0118-CC, frozen attestation canonical form) and ADR-039 (JI-011C-EA, wrapped-seed + encrypted-artifact pattern).
+
+  ## Context
+
+  The member entry in `project.yaml` carries an e-mail in cleartext (ADR-009); the event log and `delegated_by` reference actors by e-mail. E-mail is personal data under the GDPR, sitting unchangeably in Git history and an immutable audit trail. Art. 17 (erasure) and audit immutability are in tension.
+
+  Rewriting history is not an option (Judge detects gaps; rewriting project.yaml breaks signatures). The resolution is the storage format, not history cleanup: personal data does not belong in the versioned cleartext artifacts but in a separate, encrypted, deletable layer.
+
+  Simplicity is a hard constraint (solo founder). Where a simpler option is defensible, it wins.
+
+  ## Decision
+
+  Pseudonymization is a per-project mode, set via a `privacy` setting: `open` (default, today's behavior, cleartext e-mail in the member entry) or `anonymous` (e-mail lives in an encrypted `members.yaml`; the member entry in project.yaml carries an opaque member ID and a non-reversible `email_match` verifier).
+
+  ### 1. One source for the e-mail, switched by mode
+
+  A single function (conceptually `email_for(member)`) is the only place that knows where a member's e-mail comes from. In `open` mode it reads the member entry; in `anonymous` mode it reads the decrypted `members.yaml`. Everything else that works with an e-mail (attestation, signatures, event log, display) gets it from this one function and is mode-agnostic. The e-mail is bit-identical regardless of source, so attestation signatures stay valid without re-signing and without ever signing an ID in place of the e-mail.
+
+  In `anonymous` mode the e-mail is only available after authentication (members.yaml is encrypted). This is not an extra hurdle: anonymous-mode work authenticates anyway (24h session), and auth is already required for write actions in a project with active members.
+
+  ### 2. Opaque IDs are never user-facing
+
+  The opaque member ID (`m-<short>`) is an internal / at-rest representation only. It appears in versioned files and is computed on internally, but it never leaves Joy as output, neither on the terminal nor in `--json`. Every Joy-produced output naming a member is resolved first: to the name (if present in members.yaml), else the e-mail. No Joy command emits a raw ID. If resolution is impossible because members.yaml is locked, the command requests authentication rather than printing an ID.
+
+  This is enforced by type, not per output path: the ID is wrapped in a type (e.g. `MemberRef`) whose display and serialization yield the resolved value, never the ID; raw-ID access is an explicit method used only by internal paths. A forgotten output path then fails safe (resolved value) rather than unsafe (raw ID). The guarantee covers only Joy's own output; `cat`, an editor, or `git log` show raw file contents and are outside Joy's promise.
+
+  ### 3. members.yaml as an encrypted Crypt zone
+
+  Resolution from ID to name/e-mail lives in `members.yaml`, created at `joy auth init`, stored encrypted using the existing Crypt model: one zone key encrypts the file, wrapped per member against each member's `verify_key`, exactly as Crypt wraps any zone key. No new wrap primitive. Decrypted into memory after auth; display only, never the match. Names are optional; display degrades name → e-mail. Erasure is removing the entry and re-encrypting (shared zone key, per-member wrap), not per-entry crypto-shredding.
+
+  ### 4. Account match over a verifier
+
+  `anonymous` mode stores a per-member `email_match` = HMAC-SHA256(normalize(email)) keyed by the member's `kdf_nonce` (normalize = lowercase + trim only). joyint.com computes the same HMAC over verified account e-mails and compares verifier vs. verifier, without decryption, resolving the auth-ordering chicken-and-egg. HMAC not Argon2id (fast, parameter-free; weak guess-resistance accepted because the addresses sit in the open Git commits anyway). The verifier also lets a member find its own entry at first auth before members.yaml is unlocked.
+
+  ### 5. Git-config e-mail stays a setup input
+
+  `git config user.email` is read at setup only. In anonymous mode Joy derives the `email_match` verifier into project.yaml and puts the cleartext into members.yaml. ADR-009 zero-config is fully preserved.
+
+  ### 6. Mode transitions are single atomic commits
+
+  Switching `open → anonymous` (or back) is one deliberate command, one atomic commit, never incremental (incremental would create Git-merge hell). open → anonymous (needs auth + manage): per member generate an ID, move the e-mail from project.yaml to members.yaml, rekey the member map to the ID, write the `email_match` verifier, create the encrypted members.yaml. anonymous → open: the reverse, clean because the e-mail is fully present in members.yaml. New project: `joy init --anonymous` flag AND a Y/n prompt (the flag does not replace the prompt; both exist); no cleartext ever enters project.yaml.
+
+  ## Deliberate limits
+
+  - **Git committer identity stays open.** `user.name`/`user.email` in each commit is outside Joy's format; confidentiality is the repo operator's responsibility (private vs. public repo).
+  - **Attestation bytes stay frozen** (ADR-035). The signed canonical bytes contain the e-mail; the signature stays valid because the e-mail is bit-identical whether read from project.yaml or members.yaml. Nothing is re-signed; no ID is signed in place of the e-mail.
+  - **Old data in Git history is explicitly out of scope.** Cleartext in pre-switch commits, log entries, or attestations is not cleaned up. Joy must only read both forms robustly without crashing (e.g. log parsing tolerates e-mail and ID actors).
+
+  In a public repo the practical gain is near zero (mapping reproducible via commits/attestation); the real value is private repos (platform, auditor, orchestration see no PII) and the right to erasure.
+
+  ## Open question for data-protection review
+
+  Whether the legitimate-interest argument for the audit trail (Art. 17(3)) covers the Git history and frozen attestation bytes, given erasure is offered at the members.yaml level. To be confirmed with a data-protection expert. Not legal advice.
+
+  ## Related
+
+  - Concept: "Pseudonyme Identitäten und Löschrecht (DSGVO)" (Konzepte)
+  - ADR-009 (JI-00FE-16): cleartext-identifier portion superseded, zero-config retained
+  - ADR-035 (JI-0118-CC): frozen attestation canonical form, preserved
+  - ADR-039 (JI-011C-EA): wrapped-seed + encrypted-artifact pattern reused by members.yaml
+
+  (Relocated from umbrella JI-011F-14 as part of the JI-0120 architecture reconciliation.)

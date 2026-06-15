@@ -1,0 +1,73 @@
+id: JOY-01D6-2A
+title: 'ADR: Management capabilities for CLI permission control'
+type: decision
+status: closed
+priority: medium
+capabilities:
+- conceive
+validity: accepted
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-15T06:38:01.175788Z
+updated: 2026-06-15T06:38:01.306203Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-15T06:38:01.306203Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  **Status:** Accepted (2026-03)
+
+  ## Context
+
+  Joy's capability model (ADR-018) defines seven work capabilities that describe activities in the development lifecycle: conceive, plan, design, implement, test, review, document. These control what kind of work a member does, but not what administrative actions they can perform.
+
+  In AI automation scenarios, an AI tool with `implement` capability can currently also create items (`joy add`), assign members (`joy assign`), delete items (`joy rm`), and modify project configuration. This is a governance gap -- an AI tool could create items and assign itself to them without human oversight.
+
+  Deno's permission model demonstrates that a single capability system can control both runtime behavior and administrative access. Joy should follow the same principle: one model for work and administration, not two separate concepts.
+
+  ## Decision
+
+  Extend the capability model with four management capabilities:
+
+  | Capability | Controls | CLI commands |
+  |------------|----------|--------------|
+  | `create`   | Creating items | `joy add`    |
+  | `assign`   | Assigning members to items | `joy assign`, `joy edit --assignees` |
+  | `manage`   | Project configuration and member management | `joy project member add/rm`, `joy config set` |
+  | `delete`   | Removing items | `joy rm`     |
+
+  The full capability list becomes:
+
+  ```
+  Work:       conceive, plan, design, implement, test, review, document
+  Management: create, assign, manage, delete
+  ```
+
+  ### Enforcement
+
+  Without gates, capabilities are visible guidance -- CLI commands print a warning when a member lacks the required management capability. With gates (JOY-0030), they become enforced.
+
+  `capabilities: all` grants all capabilities, including management. This is the default for the project creator and remains the low-friction starting point.
+
+  ### Combinations
+
+  Management capabilities combine with work capabilities to form meaningful roles:
+
+  * Planner: `conceive, plan, create, assign`
+  * Implementer: `implement, test`
+  * Lead: `all`
+  * AI automation: `implement, test` (cannot create, assign, or delete)
+
+  ## Consequences
+
+  ### Positive
+
+  * **Single model.** No separate permission system. Capabilities control both work and administration.
+  * **AI governance.** AI tools cannot self-assign or create items unless explicitly permitted.
+  * **Deno-like simplicity.** One capability list, visible in project.yaml, enforceable via gates.
+
+  ### Negative
+
+  * **11 capabilities instead of 7.** Slightly more to learn, but the management capabilities are intuitive.
+  * **Item templates must be updated.** Management capabilities are not item-type defaults -- they only appear in member configurations.
+
+  (Relocated from umbrella JI-0109-36 as part of the JI-0120 architecture reconciliation.)

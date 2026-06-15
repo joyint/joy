@@ -1,0 +1,96 @@
+id: JOY-01E1-E7
+title: 'ADR: Multi-use delegation tokens within a single TTL'
+type: decision
+status: closed
+priority: medium
+capabilities:
+- conceive
+validity: accepted
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-15T06:38:05.291192Z
+updated: 2026-06-15T06:38:05.417131Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-15T06:38:05.417131Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  **Status:** Accepted (2026-04-19). Supersedes ADR-033 (JI-0116-52) §3 (single-use tokens + 2h issuance TTL). ADR-033 §1 (stable per-(human, AI) delegation key) and §2 (ephemeral session keypair bound to `JOY_SESSION`) remain authoritative and unchanged.
+
+  ## Context
+
+  ADR-033 §3 made delegation tokens single-use with a 2-hour issuance TTL, on the reasoning that "every AI session = one explicit human passphrase entry within the last two hours". In practice, paired with the fresh-subshell behaviour of AI-tool harnesses (Claude Code, Qwen, Mistral Vibe, GitHub Copilot), this produced several issues:
+
+
+  1. **Harness workaround drifted from the security model.** JOY-00C5-70 added a workaround that wrote the live `JOY_SESSION` value into AI tool config files (`.claude/settings.json` etc.) so fresh subshells could pick it up. At the time of JOY-00C5-70 the env var was a lookup id; after ADR-033 §2 it became the ephemeral private key. The harness workaround therefore turned a session credential into an on-disk credential, directly contradicting §2's "file alone is not a credential" property.
+  2. **Ceremony without matching threat model.** The single-use + 2h-TTL property guarded against a same-user same-machine process reading the session file and re-using a previously issued token. That threat class is explicitly excluded by [Auth.md §Security Model](https://docs.int.joydev.com/doc/auth-identity-and-authentication-for-joy-komQW0PZFp) (same-user attackers are out of scope). The added friction (one token per AI session, often multiple per day per project) therefore bought no security we actually claimed to provide.
+  3. **Multi-shell and cross-terminal workflows broken.** Users who work with the same AI tool in multiple terminals or restart a terminal mid-session could not reuse the token they had just received; they needed a fresh passphrase entry each time, interrupting flow.
+
+  ## Decision
+
+  Relax ADR-033 §3 as follows; §1 and §2 remain in force unchanged.
+
+  ### Multi-use tokens
+
+  A delegation token may be redeemed any number of times within its TTL. Each redemption produces an independent session with its own ephemeral keypair (per §2); redemptions from different shells or at different points in time do not interfere with each other.
+
+  ### Single unified TTL, default 24 hours
+
+  The separate "2h issuance TTL" and "24h session lifetime" split from ADR-033 §3 collapses into one configurable TTL on the token itself. Default is 24 hours; the human can override via `joy auth token add --ttl <hours>`. After the token TTL expires, redemption is rejected with the existing "Token expired" error and the human must issue a new token.
+
+  ### No disk persistence of `JOY_SESSION`
+
+  `joy auth --token` writes the session file (§2 form: public key + claims) and emits `export JOY_SESSION=...` to stdout. It no longer writes the `JOY_SESSION` value into any AI tool config file. The AI tool harness is responsible for capturing the stdout export and propagating it into every subshell it spawns for joy commands. Harness-specific persistence mechanisms are out of joy's scope and, if a harness chooses to use one, the security implication is the harness user's responsibility (same class as `~/.ssh/id_ed25519`).
+
+  ### Consumed-tokens ledger removed
+
+  `~/.local/state/joy/consumed-tokens.json` and the `joy_core::auth::consumed` module are removed. Multi-use tokens make replay protection at this layer both unnecessary and incorrect (it would block legitimate re-redemption).
+
+  ## Properties
+
+  | Property | Under ADR-033 §3 | Under ADR-034 |
+  |----------|------------------|---------------|
+  | Single-use tokens | yes              | **no** (multi-use within TTL) |
+  | Token TTL default | 2h issuance + 24h session | 24h unified   |
+  | Consumed-tokens replay ledger | yes              | removed       |
+  | `JOY_SESSION` persisted to tool config | yes (JOY-00C5-70) | **no** (revert) |
+  | Ephemeral session keypair in env (§2) | yes              | yes (unchanged) |
+  | Stable per-(human, AI) delegation key (§1) | yes              | yes (unchanged) |
+  | Same-user sibling terminal cannot use session file alone (§2) | yes              | yes (unchanged) |
+  | Every AI session tied to a recent human passphrase | yes (< 2h)       | **weaker** (up to 24h) |
+
+  ## Consequences
+
+  ### Positive
+
+  * The harness ergonomics that drove JOY-00C5-70 are resolved at the design level instead of via an on-disk credential workaround.
+  * No contradiction between §2 ("file alone is not a credential") and the persisted JOY_SESSION value.
+  * Mental model simplified: one token, one TTL. The human issues a token once per working session; the AI redeems it as needed.
+  * One less module (`consumed`) and one less on-disk ledger to reason about.
+
+  ### Negative
+
+  * The "one passphrase entry per AI session" property is weakened to "one passphrase entry per AI TTL window". Within a 24h window the AI can re-redeem without further human action. This is accepted because the stricter property was guarding against a threat (same-user same-machine credential reuse) that Auth.md §Security Model already declared out of scope.
+  * Token exposure in argv/env persists for the full 24h TTL. A leaked token is usable until TTL expiry. Mitigation is operator discipline (do not paste tokens into shared logs / transcripts; shorten `--ttl` for high-risk environments) plus `joy ai rotate` to invalidate delegation and all outstanding tokens.
+
+  ### Neutral
+
+  * CLI output: `joy auth token add` announces `"Token expires in N hours. It may be redeemed multiple times within that window."` in place of `"Token is single-use and expires in 2 hours."`.
+  * AI instruction templates (`joy update`): the Authentication section no longer mentions single-use or 2h; instructs the AI tool to capture the `JOY_SESSION` export from `joy auth --token` stdout and propagate it to subshells itself.
+
+  ## Migration
+
+  No migration is required. Existing sessions written under ADR-033 §2 remain valid (the schema is unchanged). Existing `consumed-tokens.json` files become irrelevant and may be deleted; the new code does not read or write them.
+
+  Harnesses that previously relied on `JOY_SESSION` having been persisted to `.claude/settings.json` (or the corresponding file for other tools) must instead capture the stdout export from `joy auth --token`. The `joy update` templates updated in the same release instruct AI tools accordingly.
+
+  ## Related
+
+  * ADR-033 §1 (stable delegation key): unchanged, referenced.
+  * ADR-033 §2 (ephemeral session keypair): unchanged, referenced.
+  * ADR-033 §3 (single-use + 2h): **superseded by this ADR**.
+  * ADR-023 (per-delegator AI delegation tokens): predecessor data model; gains a see-also pointer.
+  * [Auth.md §AI authentication](https://docs.int.joydev.com/doc/auth-identity-and-authentication-for-joy-komQW0PZFp): patched in the same release to reflect multi-use tokens and the no-disk-persistence property.
+  * JOY-00F6-24 (joy submodule): tracks the implementation of this ADR.
+  * JOY-00C5-70: the harness-settings write pattern, reverted as part of this change.
+
+  (Relocated from umbrella JI-0117-9A as part of the JI-0120 architecture reconciliation.)

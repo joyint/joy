@@ -1,0 +1,58 @@
+id: JOY-01DE-8E
+title: 'ADR: AI item creation with gate enforcement'
+type: decision
+status: closed
+priority: medium
+capabilities:
+- conceive
+validity: accepted
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-15T06:38:04.167441Z
+updated: 2026-06-15T06:38:04.299410Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-15T06:38:04.299410Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  **Status:** Accepted
+
+  ## Context
+
+  The plan capability decomposes milestones into items. Without the ability to create items, the agent produces a text document listing suggested subtasks. The human must then manually create each item in Joy - exactly the manual work that AI automation is meant to eliminate.
+
+  At the same time, allowing an AI agent to create items without constraints introduces risks: hallucinated items, duplicates, spam, or items that bypass the team's review process.
+
+  Joy's existing gate system already provides the mechanism to control this. The status `new` serves as a draft status. The gate `new -> open` can be configured with `allow_ai: false`, requiring human approval before any work begins on an AI-proposed item.
+
+  ## Decision
+
+  **Plan jobs may create items via** `**joy add**`**.** All AI-created items are created in status `new`. The gate `new -> open` requires `allow_ai: false` by default, ensuring a human must explicitly open each item.
+
+  ### Guardrails
+
+
+  1. `**max_items_per_job**` - configurable per project, default: 20. The Dispatcher enforces this limit. If the agent attempts to create more items, subsequent `joy add` calls are rejected.
+  2. **Audit trail** - all AI-created items are tagged with the creating agent's identity (`created_by: agent:claude@joy`) in the event log.
+  3. **Visual distinction** - items in status `new` that were created by an AI agent are marked as AI-proposed in the WebUI and CLI output.
+  4. **No cascading automation** - creating an item in status `new` does not trigger the Dispatcher. The item must be opened by a human (gate enforcement), and only then can it be assigned to an AI member for implementation.
+
+  ### Tool permissions
+
+  Only the plan capability has `joy add` in its permitted tool set. Estimate, implement, and review cannot create items:
+
+  | Capability | `joy add` permitted? |
+  |------------|--------------------|
+  | plan       | Yes                |
+  | estimate   | No                 |
+  | implement  | No                 |
+  | review     | No                 |
+
+  ## Consequences
+
+  * Plan jobs produce integrated workflow items, not text suggestions. The human reviews and opens items instead of manually re-creating them.
+  * The gate system enforces human oversight without a new mechanism. `new -> open` with `allow_ai: false` is standard gate configuration.
+  * `max_items_per_job` prevents runaway creation. The limit is checked by the Dispatcher, not by the agent - the agent cannot bypass it.
+  * Guardianship docs should document `max_items_per_job` as a Guard pre-check.
+  * Status workflow docs should confirm that `new` serves as the AI-proposal status. No new status is needed.
+
+  (Relocated from umbrella JI-0113-9C as part of the JI-0120 architecture reconciliation.)

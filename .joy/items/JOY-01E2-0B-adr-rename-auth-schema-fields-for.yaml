@@ -1,0 +1,176 @@
+id: JOY-01E2-0B
+title: 'ADR: Rename auth schema fields for semantic clarity and scanner hygiene'
+type: decision
+status: closed
+priority: medium
+capabilities:
+- conceive
+validity: accepted
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-15T06:38:05.669043Z
+updated: 2026-06-15T06:38:05.797944Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-15T06:38:05.797944Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  **Status:** Accepted (2026-04-25). Refines the field naming of ADR-023 (JI-010C-B1) and ADR-033 (JI-0116-52) §1. Cryptographic design from ADR-023/033/034 is unchanged.
+
+  ## Revision (2026-06): unified `joy update`
+
+  The scoped `joy auth update` / `joy ai update` commands specified in this record were not implemented as separate verbs. As of joy 0.16 a single top-level `joy update` performs both the binary self-update and the in-repo sync of all joy-managed state (schema normalisation, SECURITY.md render, AI-artefact regeneration). `joy update --check` is the read-only dry-run (exit 2 if stale) and `joy update --no-binary` runs the in-repo sync without touching the binary. The "no generic update verb" rationale in the Decision section below is therefore superseded: the generic verb won, with `--check` / `--no-binary` flags in place of per-scope subcommands. The command invocations below now read `joy update`; the original `joy ai update` mentions are kept as the historical argument.
+
+  ## Context
+
+  `project.yaml` is checked into the repository of every Joy-managed project. With Auth active, four leaf field names appear in that file by design:
+
+  | Field | Where | What it actually is |
+  |-------|-------|---------------------|
+  | `public_key` | per human member | Ed25519 verification key (public half), used to verify the member's identity signatures |
+  | `salt` | per human member | Argon2id public input that scopes the KDF output to the project; non-secret by Auth design (see [Auth.md](https://docs.int.joydev.com/doc/auth-identity-and-authentication-for-joy-komQW0PZFp) §Identity key derivation) |
+  | `otp_hash` | per human member during onboarding | Argon2id verifier of a single-use enrollment password; invalidated on first login |
+  | `delegation_key` | per `(human, AI)` delegation entry | Ed25519 verification key (public half) bound to a stable per-delegator delegation entry |
+
+  All four are public by design. None of them is a secret, a private key, a passphrase, or a decryptable artefact. The Auth document describes this in detail; the threat model is "passphrase + private key never touch the repository" and that property holds.
+
+  ### The problem
+
+  Despite the cryptographic correctness, the field names trigger keyword-based detection in:
+
+  * SOC pipelines (e.g. Magna SOC raised an alert against a commit in `joyint/joy` after a member of a customer organisation committed under their corporate email).
+  * Generic secret scanners (gitleaks, TruffleHog, detect-secrets) and most enterprise compliance tooling. The default rulesets match leaf YAML keys such as `^[A-Za-z0-9_]*key\s*:`, `^salt\s*:`, `^otp[_-]?hash\s*:` and similar.
+
+  This is independent of cryptographic substance. It is a recurring and unbounded cost: every enterprise pilot that scans the repository will flag these fields, every SOC review will require a written explanation, and every customer that commits to a Joy-managed project under a corporate email risks dragging Joy into their internal incident process.
+
+  ### Why naming, not crypto, is the lever
+
+  The names also undersell what the fields are. `public_key` is generic - it could be an encryption key, a signing key, an identity, an attestation key. What lives in this slot is specifically the public half of an Ed25519 signing keypair used to verify signatures - a *verifier*. `salt` carries a password-hashing connotation that is correct in implementation (Argon2id is a password-hash function) but unhelpful at the schema level: what is stored is a public KDF input, not a password salt in the "defeat rainbow tables" sense. `otp_hash` reads like "password hash"; it is a *verifier* for an enrollment ceremony. `delegation_key` reads like "a key to be possessed"; it is a *verifier* of token binding signatures.
+
+  The renames in this ADR sharpen each name into the role the data actually plays. Avoiding the SOC keyword hit is a side effect of that semantic correction, not the design principle.
+
+  ## Decision
+
+  ### Rename the four leaf fields
+
+  | Old name | New name |
+  |----------|----------|
+  | `public_key` | `verify_key` |
+  | `salt`   | `kdf_nonce` |
+  | `otp_hash` | `enrollment_verifier` |
+  | `delegation_key` | `delegation_verifier` |
+
+  The names are chosen to (a) match libsodium / RustCrypto convention for verification keys, (b) describe role rather than mechanism, and (c) avoid the leaf-key patterns matched by common secret-scanner default rulesets.
+
+  `Attestation.signature` is intentionally **not** renamed. It was not flagged, the term is precise, and rewriting attestation signatures is out of scope (see canonical-form freeze below).
+
+  ### Freeze the attestation canonical form
+
+  `AttestationSignedFields::canonical_bytes` produces a JSON byte sequence whose key names are part of the signed message. Renaming `otp_hash` at the YAML layer would otherwise invalidate every existing attestation signature.
+
+  The struct field is renamed in code (`enrollment_verifier`), but its serde key is pinned to the historical name:
+
+  ```rust
+  pub struct AttestationSignedFields {
+      pub email: String,
+      pub capabilities: MemberCapabilities,
+      #[serde(default, rename = "otp_hash", skip_serializing_if = "Option::is_none")]
+      pub enrollment_verifier: Option<String>,
+  }
+  ```
+
+  Existing signatures stay bit-identically valid. Future attestations sign the same canonical bytes. The divergence between the YAML schema name (`enrollment_verifier`) and the canonical-form key (`otp_hash`) is a deliberate trade-off: a non-cryptographic rename must not invalidate cryptographic evidence.
+
+  ### Migration: dedicated module, explicit trigger
+
+  Migration logic is isolated in a single module that can be removed atomically:
+
+  ```
+  joy-core/src/migrations/
+    mod.rs
+    project_yaml/
+      mod.rs
+      2026_04_rename_auth_fields.rs
+  ```
+
+  The module exposes a pure `serde_yaml::Value -> serde_yaml::Value` transform that maps the four old keys to their new counterparts. It does not mutate model structs. It is invoked only from `joy update` (see below), never as a side effect of other write paths. After v0.13 the directory is removed and the entry from `migrations/mod.rs` deleted; nothing else changes.
+
+  The general read path accepts the old field names with a one-line deprecation warning that points at `joy update`. The general write path always emits the new names. Implicit on-save rewriting is rejected: `project.yaml` is an audit artefact, and surprise diffs hidden inside unrelated commits ("add comment to JOY-001") would conflict with the audit-trail discipline Joy itself enforces. This is the same posture taken by Cargo.toml, package.json and docker-compose.yml, all of which read deprecated field names but do not silently rewrite user files.
+
+  ### `joy update`, analog to `joy ai update`
+
+  A new CLI command brings all `joy auth`-scoped repo artefacts to the current Joy version:
+
+  ```sh
+  joy update            # render SECURITY.md + normalise project.yaml schema
+  joy update --check    # dry-run; exit 2 if anything is stale
+  ```
+
+  It is idempotent. It performs:
+
+
+  1. SECURITY.md render to repo root from a Joy-shipped template, with marker-block (`<!-- joy:security begin/end -->`) so user content is preserved.
+  2. `project.yaml` schema normalisation via the migration module.
+
+  `joy auth init` calls `joy update` at the end so first-time setup leaves the repo in current shape with no extra command.
+
+  The verb `update` is reused on purpose. `joy ai update` already established the pattern "bring this scope's Joy-managed artefacts up to current Joy version", and a session-start `--check` is part of the same pattern. The scoped form (`joy <area> update`) avoids the binary-update connotation of a bare `joy update`. No generic update verb, no `joy sync`, no `joy auth migrate`.
+
+  ### No `schema_version` field in `project.yaml`
+
+  Docker Compose v2 deprecated its `version:` field on the basis that it was rarely correct in practice and that schema state is better detected from the file's own contents. Joy adopts the same posture:
+
+  * Additive changes survive via `#[serde(default)]`.
+  * Renames survive via the dedicated migration module plus transitional read.
+  * Real structural breaks are governed by ADR-014 (JI-0103-E5) at the `.joy/` directory level, not by an in-file schema number.
+
+  Adding a `schema_version` line would create exactly the kind of field users forget to bump and the kind of release-time decision Joy should not be asking the project owner to make.
+
+  ### `SECURITY.md` rendered to repo root
+
+  SECURITY.md describes the public-by-design fields and the trust model in one page, with a link to `Auth.md`. It is rendered to the project root (not `.joy/SECURITY.md`) so that GitHub and similar forges show it in the Security policy tab, where SOC analysts look first. The marker-block pattern is the same one used for `AGENTS.md` (commit bd39f8d): if the user already maintains a SECURITY.md, the Joy block is appended within markers and never overwrites surrounding content.
+
+  The Joy-OSS repo itself ships its own SECURITY.md that combines vulnerability-reporting policy with the auth-fields explanation. The same template renders into downstream projects via `joy update`.
+
+  ## Properties
+
+  | Property | Before ADR-035 | After ADR-035 |
+  |----------|----------------|---------------|
+  | Field names match SOC default rulesets | yes            | no            |
+  | Field names describe role (verifier, KDF input) | partly         | yes           |
+  | Existing attestation signatures remain valid | yes            | yes (canonical form frozen) |
+  | Migration runs on every save | n/a            | no (only on `joy update`) |
+  | Old field names accepted on read | n/a            | yes in v0.12, removed in v0.13 |
+  | Schema version stamp in project.yaml | no             | no (unchanged) |
+  | New CLI surface | none           | `joy update` only |
+
+  ## Consequences
+
+  ### Positive
+
+  * SOC false positives are eliminated at the source. Enterprise pilots no longer hit a recurring linguistic obstacle that has nothing to do with Joy's security substance.
+  * Field names express the role of each field rather than its mechanism, which matches how a crypto reviewer reads the schema.
+  * Migration logic is a single deletable module with a calendar-stamped filename. Removal in v0.13 is a one-line change in `migrations/mod.rs` plus deleting the directory.
+  * The CLI taxonomy stays consistent: every Joy-managed scope has its own `update` verb. No generic catch-all command.
+  * Existing attestations remain bit-identically valid. Nobody re-signs anything.
+
+  ### Negative
+
+  * One-time churn: roughly 15-25 files touched (model, auth module, cli command, golden YAML in tests, three ADR cross-refs, Auth.md, Tutorial.md, SECURITY.md template, dogfood project.yaml in joy / crypt / judge).
+  * The `AttestationSignedFields` Rust field name (`enrollment_verifier`) and its canonical-form serde key (`otp_hash`) diverge. This is documented here and in code comments, but a future reader who edits the struct without reading the comment could forget the rename pin.
+  * Read-time deprecation warnings until v0.13 add a small amount of noise to workflows running on stale `project.yaml`.
+
+  ### Neutral
+
+  * Joy as a tool gains nothing functional from this ADR. The work is purely about presentation and naming - which is exactly the lever the underlying problem operates on.
+  * ADR-023 and ADR-033 retain their original wording and historical field names; this ADR appends a forward reference and the rename map. Historical correctness is preserved.
+
+  ## Related
+
+  * [Auth.md](https://docs.int.joydev.com/doc/auth-identity-and-authentication-for-joy-komQW0PZFp) - identity layer; field-name references updated by JOY-0110-63
+  * ADR-014 (JI-0103-E5) - directory-level versioning that subsumes any need for an in-file schema version
+  * ADR-023 (JI-010C-B1) - introduced per-delegator token entries; `token_key` later renamed `delegation_key` in ADR-033 and `delegation_verifier` here
+  * ADR-033 (JI-0116-52) - stable per-(human, AI) delegation key and ephemeral session keypair
+  * ADR-034 (JI-0117-9A) - current token lifecycle (multi-use within TTL)
+  * [JOY-010A-34](https://github.com/joyint/joy/blob/HEAD/.joy/items/JOY-010A-34-rename-auth-schema-fields-for-scanner.yaml) - umbrella rework item
+
+  (Relocated from umbrella JI-0118-CC as part of the JI-0120 architecture reconciliation.)

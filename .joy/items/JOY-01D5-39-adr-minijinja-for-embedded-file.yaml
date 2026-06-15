@@ -1,0 +1,102 @@
+id: JOY-01D5-39
+title: 'ADR: MiniJinja for embedded file templates'
+type: decision
+status: closed
+priority: medium
+capabilities:
+- conceive
+validity: accepted
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-15T06:38:00.803453Z
+updated: 2026-06-15T06:38:00.929014Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-15T06:38:00.929014Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  **Status:** Accepted (2026-03)
+
+  ## Context
+
+  Joy embeds data files in the binary (via `include_str!`) and deploys them to projects at runtime. Several of these files share significant structure:
+
+  * **Item templates** (`data/items/*.yaml`): 7 files for item types (epic, story, task, bug, rework, decision, idea) that differ only in the `type` and `capabilities` fields. All other fields (id, title, status, priority, parent, assignee, deps, milestone, tags, effort, version, created, updated, description, comments) are identical across types.
+  * **AI instructions and skills** (`data/ai/`): contain project-specific values (acronym, project name, language) that are currently either hardcoded or require post-processing.
+  * **Doc templates** (`data/ai/templates/`): scaffold documents with placeholder structure.
+
+  Without a template engine, each file must be a complete standalone copy, leading to duplication and inconsistency when the shared structure changes (e.g., adding a new field to the Item struct requires updating all 7 item templates).
+
+  ## Decision
+
+  Use [MiniJinja](https://github.com/mitsuhiko/minijinja) as the template engine for all embedded data files that benefit from shared structure.
+
+  ### Why MiniJinja
+
+  * **Single dependency:** serde (already in the dependency tree)
+  * **Well maintained:** by Armin Ronacher (creator of Jinja2/Flask), 2M+ downloads/month, #1 template engine on lib.rs
+  * **Supports includes:** `{% include "_base.yaml" %}` eliminates duplication across templates
+  * **Supports variables:** `{{ id }}`, `{{ title }}`, `{{ now }}` for runtime values
+  * **Supports set:** `{% set capabilities = "[implement, review]" %}` for per-template overrides
+  * **Compatible with Jinja2:** widely known syntax, low learning curve
+
+  ### Template pattern
+
+  Shared structure lives in a base template. Type-specific templates set their overrides and include the base:
+
+  ```yaml
+  # data/items/_base.yaml
+  id: {{ id }}
+  title: {{ title }}
+  type: {{ type }}
+  status: new
+  priority: medium
+  parent: null
+  assignee: null
+  deps: []
+  milestone: null
+  tags: []
+  capabilities: {{ capabilities }}
+  effort: null
+  version: null
+  created: {{ now }}
+  updated: {{ now }}
+  description: null
+  comments: []
+  ```
+
+  ```yaml
+  # data/items/bug.yaml
+  {% set capabilities = "[implement, review]" %}
+  {% include "_base.yaml" %}
+  ```
+
+  ### Scope
+
+  This decision applies to all embedded data files in `data/` that would benefit from template rendering. Files that are static and have no shared structure (e.g., `hooks/commit-msg`) remain plain text with `include_str!`.
+
+  Current candidates for templating:
+
+  * `data/items/*.yaml` -- item type templates with shared base
+  * `data/ai/instructions.md` -- project-specific values (acronym, language)
+  * `data/ai/skills/joy/SKILL.md` -- project-specific values
+  * `data/ai/templates/*.md` -- doc scaffolds
+
+  Future candidates (from JOY-0029):
+
+  * `data/capabilities/*.md` -- capability files with shared structure
+
+  ## Consequences
+
+  ### Positive
+
+  * **No duplication.** Adding a field to the Item struct means updating `_base.yaml` once.
+  * **Explicit templates.** Each type template is a complete, readable file that declares its overrides and includes the base. No hidden merging logic.
+  * **Minimal dependency cost.** MiniJinja adds only serde (already present) as a required dependency.
+  * **Consistent approach.** One template engine for all embedded files, instead of ad-hoc string replacement in different places.
+
+  ### Negative
+
+  * **New dependency.** MiniJinja is well-maintained but adds to the dependency tree.
+  * **Template errors at runtime.** Syntax errors in templates surface at render time, not compile time. Mitigated by tests.
+
+  (Relocated from umbrella JI-0108-0B as part of the JI-0120 architecture reconciliation.)

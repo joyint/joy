@@ -1,0 +1,72 @@
+id: JOY-01CF-48
+title: 'ADR: YAML-aware merge strategy for conflict resolution'
+type: decision
+status: closed
+priority: medium
+capabilities:
+- conceive
+validity: accepted
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-15T06:37:58.589162Z
+updated: 2026-06-15T06:37:58.714275Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-15T06:37:58.714275Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  **Status:** Accepted
+
+  ## Context
+
+  Joy and Jyn store all data as one YAML file per item in Git. When multiple users edit concurrently, Git's line-based merge works well for changes to different files but fails on common scenarios within the same file -- particularly when multiple users add comments to the same item. Git sees diverging additions at the same position and reports a conflict, even though the changes are semantically independent and could be merged automatically.
+
+  The target team size (1-50 users) makes true conflicts rare, but time-delayed syncs are common: a user works offline or simply does not sync for days, then pushes changes that overlap with others' work at the YAML level.
+
+  ## Decision
+
+  Conflict resolution uses a layered approach:
+
+  ### 1. Custom merge driver (automatic)
+
+  A YAML-aware Git merge driver handles the common cases without user intervention. Registered via `.gitattributes` for `.joy/` and `.jyn/` files, Git invokes it automatically during merge/pull.
+
+  The driver understands two field categories:
+
+  * **List fields** (comments, deps): union of both sides, sorted by timestamp. Duplicates removed by content hash.
+  * **Scalar fields** (status, priority, title, description): last-write-wins based on the item's `updated` timestamp.
+
+  This resolves the majority of conflicts automatically -- particularly the frequent case of parallel comment additions.
+
+  ### 2. Interactive resolution (fallback)
+
+  When the merge driver cannot resolve automatically (e.g., both sides changed the same scalar field to different values within the same second), the conflict is escalated to the user at the item level:
+
+  ```
+  JI-0003 has a conflict in: status
+    Server: review    Local: in-progress
+    [s] Keep server  [l] Keep local
+  ```
+
+  This applies uniformly across all interfaces:
+
+  | Client | Conflict UX |
+  |--------|-------------|
+  | `git push/pull` | Standard Git behavior, no Joy intervention |
+  | `joy sync` | Auto-merge via driver, interactive prompt for remaining conflicts |
+  | WebUI  | Auto-merge via driver, dialog for remaining conflicts |
+  | TUI    | Auto-merge via driver, dialog for remaining conflicts |
+  | CalDAV | Auto-merge via driver, last-write-wins for remaining conflicts (CalDAV clients have no merge UI), notification sent to overwritten user |
+
+  ### 3. Notification for CalDAV overwrites
+
+  When a CalDAV conflict is resolved via last-write-wins, the overwritten user receives a notification through the notification service (same channel as due-date reminders and status changes). The notification includes the item ID and a reference to the previous version in git history.
+
+  ## Consequences
+
+  The custom merge driver eliminates user friction for the most common conflict scenario (parallel additions to list fields). The implementation must know which fields are lists and which are scalars, coupling it to the data model -- but the surface is small and changes infrequently.
+
+  Trade-off: the merge driver adds a component that must be distributed with the CLI (registered via `joy init` in `.gitattributes`). BYOG users on GitHub/GitLab get the driver only when they have Joy installed locally; server-side merges on joyint.com always use it.
+
+  No data is ever silently lost. Automatic merges are logged in the event log. CalDAV overwrites trigger notifications. Git history preserves all versions for manual recovery.
+
+  (Relocated from umbrella JI-0100-D1 as part of the JI-0120 architecture reconciliation.)

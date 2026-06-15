@@ -1,0 +1,74 @@
+id: JOY-01D1-B6
+title: 'ADR: Error output format modeled on rustc diagnostics'
+type: decision
+status: closed
+priority: medium
+capabilities:
+- conceive
+validity: accepted
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-15T06:37:59.332871Z
+updated: 2026-06-15T06:37:59.459284Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-15T06:37:59.459284Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  **Status:** Accepted (2026-03)
+
+  ## Context
+
+  Joy's event log parser (`parse_log_line`) silently accepted malformed lines and produced `LogEntry` values with invalid fields (e.g. a timestamp of `>`). Downstream code then panicked on these garbage values (`byte index 10 is out of bounds`). The root cause was twofold: (1) multiline comment text was written unescaped into the line-based log format, and (2) the parser had no structural validation, accepting anything that happened to contain `[` and `]`.
+
+  This exposed a broader question: how should Joy handle and report data format errors? Silent acceptance leads to downstream panics. Silent rejection loses data without explanation. We need a consistent error reporting strategy.
+
+  ## Decision
+
+  ### Error output format
+
+  All Joy error messages follow the structure of Rust compiler diagnostics:
+
+  ```
+  error[E042]: invalid log entry at .joy/logs/2026-03-13.log:8
+    |
+  8 | > Die Kritik die ich sehe:
+    |   ^ line does not start with ISO 8601 timestamp
+    |
+    = help: log entries must be single-line, format: TIMESTAMP TARGET EVENT_TYPE ["DETAILS"] [USER]
+    = note: multiline details must use \n escaping
+  ```
+
+  The format has four parts:
+
+
+  1. **Level and code**: `error[CODE]:` or `warning[CODE]:` with a short summary
+  2. **Location**: file path and line number
+  3. **Pointer**: the offending line with a caret (`^`) pointing to the problem
+  4. **Context**: `= help:` for actionable guidance, `= note:` for additional information
+
+  This applies to all user-facing error output in Joy, not just log parsing. The goal is that every error message tells the user (or the AI reading it) three things: what went wrong, where it went wrong, and what to do about it.
+
+  ### Defensive parsing
+
+  Parsers for file-based formats (event log, YAML items, config) must validate structural invariants before returning data:
+
+  * **Reject early**: if a line does not match the expected structure, return `None` (for parsers) or `Err` (for loaders) immediately. Do not construct partial objects.
+  * **Validate, don't assume**: never index into strings without bounds checking. Use `.get(..n)` instead of `[..n]`. Use `is_valid_timestamp()` guards instead of assuming field content.
+  * **Escape at write time**: data that could contain format-breaking characters (newlines, backslashes, quotes) must be escaped when written. The canonical escaping for the event log: `\n` for newlines, `\\` for literal backslashes.
+
+  ### Library vs CLI error boundary
+
+  * **joy-core** (library): returns typed errors via `thiserror`. No formatting, no stderr output. Every error carries enough context (file path, line number, field name) for the CLI to format it.
+  * **joy-cli** (application): formats errors for human consumption using the diagnostic format above. Uses `anyhow` for propagation, `Display` implementations for formatting.
+
+  This separation ensures that library consumers (platform, app, tests) get structured errors, while CLI users get readable diagnostics.
+
+  ## Consequences
+
+  * `parse_log_line` rejects lines that do not start with a digit (fast path) and validates the timestamp format before returning a `LogEntry`
+  * `append_event` escapes newlines and backslashes in the details field
+  * `board.rs` uses `.get(..10)` instead of `[..10]` for timestamp extraction
+  * Future parsers in joy-core must follow the same validate-before-return pattern
+  * Error messages across Joy will converge on the rustc diagnostic format as code is touched
+
+  (Relocated from umbrella JI-0104-52 as part of the JI-0120 architecture reconciliation.)

@@ -1,0 +1,109 @@
+id: JOY-01D3-30
+title: 'ADR: VCS and forge abstraction for release automation'
+type: decision
+status: closed
+priority: medium
+capabilities:
+- conceive
+validity: accepted
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-15T06:38:00.072779Z
+updated: 2026-06-15T06:38:00.199217Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-15T06:38:00.199217Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  **Status:** Accepted (2026-03)
+
+  ## Context
+
+  Joy's release flow currently lives in Bash scripts duplicated across 6 justfiles. Each contains \~60 lines of shell code for version bumping, git operations, and optional GitHub Release creation. Changes must be synchronized manually across all repos, which has proven error-prone (multiple fixes needed during a single session to handle pipefail, exit codes, missing directories, etc.).
+
+  Joy already has a VCS abstraction trait (`joy_core::vcs::Vcs`) for read operations (is_repo, user_email, version_tags). The release flow requires write operations (commit, tag, push) that are currently done via shell scripts.
+
+  Additionally, the GitHub Release creation is hardcoded. GitLab and Gitea users need equivalent functionality.
+
+  ## Decision
+
+  ### Two-layer abstraction
+
+  **Layer 1: Git operations** (`vcs::git`)
+
+  Git write operations needed by Joy:
+
+  * `add` (stage files)
+  * `commit` (with message)
+  * `tag` (annotated, with message body)
+  * `push` (branch and tags)
+
+  Implementation via the `git2` crate (libgit2 bindings) or `gix` (pure Rust). Both avoid shell calls and work cross-platform. The existing `Vcs` trait is extended with these write operations.
+
+  **Layer 2: Forge operations** (`vcs::forge`)
+
+  A forge is a hosting platform that provides features beyond Git itself:
+
+  | Operation | GitHub | GitLab | Gitea |
+  |-----------|--------|--------|-------|
+  | Create release | `gh release create` | Releases API | Releases API |
+  | Release notes | `--notes-file` | description field | body field |
+  | Auto-detect | `github.com` in remote URL | `gitlab` in remote URL | API probe |
+
+  A `Forge` trait with implementations per platform. Auto-detection from `git remote get-url origin`, overridable via `project.yaml`:
+
+  ```yaml
+  forge: github  # or gitlab, gitea, none
+  ```
+
+  ### Version bumping
+
+  Joy updates version strings in project files by parsing the file format (not regex/search-replace) and modifying a specific key:
+
+  ```yaml
+  # .joy/project.yaml
+  release:
+    version-files:
+      - path: crates/*/Cargo.toml
+        key: package.version
+      - path: package.json
+        key: version
+  ```
+
+  Supported formats derived from file extension: `.toml` (TOML), `.json` (JSON), `.yaml`/`.yml` (YAML). No blind text replacement -- only the specified key is updated.
+
+  ### Full release command
+
+  `joy release create <bump> --full` performs the entire release flow in Rust:
+
+
+  1. Collect closed items, create release YAML (existing logic)
+  2. Bump versions in configured files
+  3. `git add` changed files
+  4. `git commit` with `[no-item]` tag
+  5. `git tag -a` with markdown release notes
+  6. `git push` (branch + tag)
+  7. Optional: create forge release (if forge detected and user confirms)
+
+  Each justfile release recipe becomes:
+
+  ```just
+  release bump="patch":
+      joy release create {{bump}} --full
+  ```
+
+  ### What Joy does NOT do
+
+  * Joy is not a generic Git client. It only performs Git operations needed for its own workflow (release, hook installation).
+  * Joy does not replace `cargo`, `npm`, or other build tools. Version bumping is file-level, not tool-level. `cargo generate-lockfile` remains a just/CI responsibility.
+  * Joy does not manage CI/CD pipelines. Forge integration is limited to releases.
+
+  ## Consequences
+
+  * Shell scripts for release are eliminated from all justfiles
+  * Release flow is platform-independent (no Bash dependency)
+  * `git2` or `gix` becomes a dependency of joy-core
+  * `octocrab` (or equivalent) becomes an optional dependency behind a feature flag
+  * GitLab and Gitea support can be added incrementally without changing the release command interface
+  * The `Vcs` trait grows from read-only to read-write, which is a significant API change in joy-core
+
+  (Relocated from umbrella JI-0106-D9 as part of the JI-0120 architecture reconciliation.)

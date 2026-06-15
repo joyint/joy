@@ -1,0 +1,90 @@
+id: JOY-01D2-30
+title: 'ADR: Embedded file sync for Joy-owned assets'
+type: decision
+status: closed
+priority: medium
+capabilities:
+- conceive
+validity: accepted
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-15T06:37:59.699572Z
+updated: 2026-06-15T06:37:59.827170Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-15T06:37:59.827170Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  **Status:** Accepted (2026-03)
+
+  ## Context
+
+  Joy ships files that need to live inside the user's project directory: AI instructions (`.joy/ai/`), Git hooks (`.joy/hooks/`), and potentially future assets like templates or agent definitions. These files are Joy-owned -- they are generated from templates embedded in the Joy binary and should not be manually edited by users.
+
+  The initial implementation had two independent mechanisms:
+
+  * `ai.rs` used its own SHA-256 hash comparison to diff and sync three AI template files
+  * `init.rs` used `include_str!` with manual `fs::write` and `chmod` to install the commit-msg hook
+
+  Both did the same thing (compare embedded content against installed files, write if different) but with duplicated logic, different error handling, and no shared abstraction.
+
+  ## Decision
+
+  ### Core module: `joy_core::embedded`
+
+  All embedded file operations go through a single module in `joy-core`:
+
+  ```rust
+  pub struct EmbeddedFile {
+      pub content: &'static str,   // include_str! content
+      pub target: &'static str,    // path relative to .joy/
+      pub executable: bool,        // chmod +x on Unix
+  }
+
+  pub fn diff_files(root, files) -> Vec<(path, FileStatus)>  // UpToDate, Outdated, Missing
+  pub fn sync_files(root, files) -> Vec<SyncAction>           // "created", "updated", "up to date"
+  ```
+
+  ### File registries
+
+  Each category of embedded files defines a const registry:
+
+  | Registry | Location | Files |
+  |----------|----------|-------|
+  | `HOOK_FILES` | `init.rs` | `hooks/commit-msg` |
+  | `AI_FILES` | `ai.rs` (CLI) | `ai/instructions.md`, `ai/instructions/setup.md`, `ai/skills/joy/SKILL.md` |
+
+  Source files live under `data/` in the Joy source tree (e.g. `data/hooks/commit-msg`, `data/ai/instructions.md`) and are included at compile time via `include_str!`.
+
+  ### Three operations
+
+  | Operation | What it does | Who calls it |
+  |-----------|--------------|--------------|
+  | **check** | Compare hashes, report outdated/missing, exit 0 or 2 | `joy ai check`, future `joy check` |
+  | **sync**  | Write only changed files, report actions | `joy ai setup`, `joy init` (onboarding) |
+  | **install** | Sync + side effects (e.g. `core.hooksPath`) | `joy init` (new project and onboarding) |
+
+  Check never writes. Sync only writes what changed. Install is sync plus environment setup.
+
+  ### Hash comparison
+
+  SHA-256 of the full file content. No partial comparison, no timestamps. If the hash matches, the file is up to date. This is deterministic and immune to filesystem metadata differences.
+
+  ### Adding new embedded files
+
+
+  1. Create the source file under `data/` (e.g. `data/hooks/pre-push`)
+  2. Add an `EmbeddedFile` entry to the appropriate registry with `include_str!`
+  3. The existing `diff_files` / `sync_files` handles the rest
+
+  No new CLI commands or special handling needed. The registry is the single point of truth for what gets installed where.
+
+  ## Consequences
+
+  * All embedded file logic lives in one place (`joy_core::embedded`), tested independently
+  * `sha2` is a dependency of `joy-core`, not of individual CLI crates
+  * Adding new embedded files is a one-line registry addition
+  * `joy ai check` and `joy init` (onboarding) use the same mechanism with different file sets
+  * A future `joy check` command can combine all registries to validate everything at once
+  * Users should not edit files in `.joy/ai/` or `.joy/hooks/` -- changes will be overwritten on the next sync
+
+  (Relocated from umbrella JI-0105-4E as part of the JI-0120 architecture reconciliation.)

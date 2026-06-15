@@ -1,0 +1,181 @@
+id: JOY-01DA-E1
+title: 'ADR: Project defaults for AI governance settings'
+type: decision
+status: closed
+priority: medium
+capabilities:
+- conceive
+validity: accepted
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-15T06:38:02.676605Z
+updated: 2026-06-15T06:38:02.804390Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-15T06:38:02.804390Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  **Status:** Proposed (2026-03)
+
+  ## Context
+
+  Joy has an established pattern for configuration defaults: `config.defaults.yaml` ships Joy's opinions (embedded in the binary, synced to `.joy/`), and `config.yaml` holds personal overrides (gitignored). This gives every user sensible defaults without requiring configuration, while allowing individual customization.
+
+  Project-level AI governance settings currently lack this pattern. Two areas are affected:
+
+  ### Interaction levels
+
+  Joy defines five interaction levels for AI members: `autonomous`, `supervised`, `collaborative`, `interactive`, `pairing`. These control how much autonomy an AI has when exercising a capability.
+
+  Currently, there is one global default (`agents.default.mode: collaborative` in `config.defaults.yaml`) and per-member per-capability limits (`max-mode` in `project.yaml`). Three gaps exist:
+
+
+  1. **No per-capability defaults.** A project cannot express "review should default to interactive, implement to collaborative" without configuring each member individually.
+  2. **No project-wide default.** The global default comes from Joy or personal config, not from the project. A team cannot agree on a shared baseline.
+  3. **No personal preference within project limits.** A junior developer who wants `autonomous` and a senior who wants `pairing` cannot both express this within the same project constraints.
+
+  The desired resolution order: Joy default → project default → personal preference → item override, all capped by project `max-mode`.
+
+  ### AI tool capabilities
+
+  When `joy ai setup` registers an AI member, it hardcodes which capabilities the member receives (all work capabilities plus `create` and `assign`, never `manage` or `delete`). This is a reasonable default, but projects cannot customize it without editing `project.yaml` after setup. A project that wants AI members without `design` capability must manually remove it every time `joy ai setup` runs for a new tool.
+
+  ### Capability-to-workflow mapping
+
+  The mapping of capabilities to workflow transitions (e.g., "transitioning to `in-progress` requires the `implement` capability") is part of Joy's process model and remains static. It is not project-configurable. Gates are the mechanism for restricting transitions beyond capability requirements.
+
+  ## Decision
+
+  ### Introduce `project.defaults.yaml`
+
+  Following the `config.defaults.yaml` / `config.yaml` pattern, add a `project.defaults.yaml` file:
+
+  | File | Shipped by | Committed | Editable by | Purpose |
+  |------|------------|-----------|-------------|---------|
+  | `project.defaults.yaml` | Joy (embedded) | No (synced to `.joy/`) | No (overwrite on sync) | Joy's default project settings |
+  | `project.yaml` | Project owner | Yes       | `manage` capability | Project-specific overrides |
+
+  `project.defaults.yaml` contains Joy's opinionated defaults for project-level settings. `project.yaml` overrides what the project wants different. The merge follows the same logic as config: project.yaml values take precedence, missing values fall back to defaults.
+
+  ### Settings in `project.defaults.yaml`
+
+  #### Interaction level defaults per capability
+
+  ```yaml
+  agents:
+    defaults:
+      mode: collaborative
+      capabilities:
+        conceive:
+          mode: pairing
+        plan:
+          mode: interactive
+        design:
+          mode: interactive
+        implement:
+          mode: collaborative
+        test:
+          mode: supervised
+        review:
+          mode: interactive
+        document:
+          mode: collaborative
+  ```
+
+  These are Joy's recommendations for how autonomous an AI should be per capability. Conceiving and planning benefit from close collaboration, testing can run more independently.
+
+  #### AI tool default capabilities
+
+  ```yaml
+  agents:
+    defaults:
+      ai-capabilities: [conceive, plan, design, implement, test, review, document, create, assign]
+  ```
+
+  This replaces the hardcoded capability list in `joy ai setup`. Projects override in `project.yaml` to restrict what AI members can do by default.
+
+  ### Project overrides in `project.yaml`
+
+  `project.yaml` adds `max-mode` (the hard ceiling) and can override any default:
+
+  ```yaml
+  agents:
+    defaults:
+      mode: interactive
+      capabilities:
+        implement:
+          max-mode: supervised
+  ```
+
+  This means: project default is `interactive`, but implementation is capped at `supervised` — no AI member can implement autonomously in this project.
+
+  ### Personal preference in `config.yaml`
+
+  The developer sets their preferred mode:
+
+  ```yaml
+  agents:
+    default:
+      mode: pairing
+  ```
+
+  This is already supported. The resolution clamps it to the project's `max-mode`.
+
+  ### Four-layer resolution
+
+  When determining the effective interaction level for a member exercising a capability on an item:
+
+
+  1. **Joy default** — `project.defaults.yaml` per-capability mode
+  2. **Project override** — `project.yaml` per-capability mode (if set)
+  3. **Personal preference** — `config.yaml` mode (if set)
+  4. **Item override** — per-item mode (if set)
+
+  Each layer can lower or raise the mode, but the result is always clamped to the project's `max-mode` for that capability. If no `max-mode` is set, there is no ceiling.
+
+  ```
+  effective = clamp(
+      item_mode || personal_mode || project_mode || joy_default,
+      max = project_max_mode || unlimited
+  )
+  ```
+
+  ### Display in `joy project` and `joy show`
+
+  `joy project` shows effective defaults with source annotation:
+
+  ```
+  Agents:
+    Default mode: interactive (project)
+    implement:    collaborative (default) max: supervised (project)
+    review:       interactive (default)
+  ```
+
+  `joy show` on an item shows the effective mode for the current member:
+
+  ```
+  Mode: supervised (project max, your preference: autonomous)
+  ```
+
+  This makes the resolution transparent — the user always sees what applies and why.
+
+  ## Consequences
+
+  ### Positive
+
+  * **Consistent pattern.** `project.defaults.yaml` / `project.yaml` mirrors the established `config.defaults.yaml` / `config.yaml` pattern. No new concepts to learn.
+  * **Progressive disclosure.** Solo developers never see these settings. Teams configure what they need. Enterprise adds `max-mode` constraints. Each level is optional.
+  * **No hardcoded capabilities.** AI tool capabilities move from code to data, customizable per project without code changes.
+  * **Transparent resolution.** `joy project` and `joy show` display effective values with source, making the four-layer resolution visible and debuggable.
+
+  ### Negative
+
+  * **Four layers is complex.** Most projects will use at most two (Joy defaults + project override). The personal and item layers add flexibility at the cost of mental overhead. Mitigated by good defaults and transparent display.
+  * **New embedded file.** `project.defaults.yaml` adds to the sync mechanism (ADR-016). The version-based check (ADR-024) handles freshness.
+  * **Migration.** Existing projects created before this change will not have `project.defaults.yaml`. `joy ai setup` or `joy init --onboard` must sync it.
+
+  ### Neutral
+
+  * Capability-to-workflow mapping stays static. This is a conscious decision, not an omission.
+  * `max-mode` only exists in `project.yaml`, never in defaults. It is a governance decision, not an opinion.
+
+  (Relocated from umbrella JI-010E-A9 as part of the JI-0120 architecture reconciliation.)

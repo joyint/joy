@@ -1,0 +1,80 @@
+id: JOY-01DF-6C
+title: 'ADR: Local-first release recipes with env-injected secrets'
+type: decision
+status: closed
+priority: medium
+capabilities:
+- conceive
+validity: accepted
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-15T06:38:04.544398Z
+updated: 2026-06-15T06:38:04.671153Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-15T06:38:04.671153Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  **Status:** Accepted (2026-04-13)
+
+  ## Context
+
+  Joyint's product values are explicitly anti-lock-in (Git-native, multi-forge intent, Crypt for E2E so the platform never sees plaintext). The build and release infrastructure has been gradually drifting in the opposite direction: cargo-dist generates GitHub-Actions-only release workflows, and the natural next step ("turn on cargo-dist's `publish-jobs = [\"crates-io\"]` and store the token in a GitHub Organisation Secret") would couple the entire publish pipeline to one vendor.
+
+  The discomfort is not GitHub itself - GitHub is the current home for the public repos and that is fine for now. The discomfort is that critical operations (build, publish, version sync) would only work inside one vendor's CI, with secrets only retrievable via that vendor's UI. Migrating, even partially, would mean rewriting the pipeline from scratch instead of swapping one wrapper.
+
+  A separate gap reinforces this: JI-00D6-26 made `just release-all` synchronise the joy-core version across siblings (jyn, platform, future), but nothing in our flow actually publishes joy-core to crates.io. cargo-dist's GitHub publish job would have plugged that gap in the most lock-in-prone way.
+
+  ## Decision
+
+  Release operations live in `just` recipes. Secrets they need (today: `CARGO_REGISTRY_TOKEN`) come from the environment. CI, when it exists, is a thin wrapper that exports the right env vars from its secret store and invokes the recipe. CI never reimplements the work.
+
+  Concretely:
+
+  * `just publish` in joy and jyn wraps `cargo publish` for the workspace's crates in the right order. It reads `CARGO_REGISTRY_TOKEN` from the environment.
+  * The umbrella `justfile` declares `set dotenv-load` so a developer's gitignored `.env` populates env vars automatically when a recipe runs locally. `.env.example` documents which vars are needed.
+  * `just release-all` calls `just publish` for each sub after its release step; a publish failure for one sub warns but does not abort the whole run.
+  * cargo-dist's `publish-jobs = ["crates-io"]` is **not** enabled. cargo-dist remains responsible only for building binaries and uploading them to GitHub Releases.
+  * A future GitHub Actions (or Gitea Actions, or self-hosted) wrapper workflow does nothing more than:
+
+    ```yaml
+    env:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+    steps:
+      - run: just publish
+    ```
+
+    The recipe itself stays unchanged. Migrating CI venues = changing one wrapper file.
+
+  ## Consequences
+
+  ### Positive
+
+  * Releases stay debuggable: a developer can reproduce a failing publish step locally with the same recipe CI runs.
+  * No new lock-in beyond what cargo-dist already pulls in for binary builds (which is bounded and replaceable).
+  * The paradigm composes: any future operation that needs a credentialed step (signing, package upload, deploy) follows the same shape.
+  * Aligns infrastructure choices with the product story we tell users.
+
+  ### Negative / accepted trade-offs
+
+  * Slightly more code than turning on cargo-dist's built-in publish job. We reimplement crate ordering and idempotency in our own recipe instead of trusting an upstream's. The cost is small (one short recipe per repo) and offsets a much larger cost later.
+  * Local `.env` files are an extra setup step for new contributors. `.env.example` plus an entry in CONTRIBUTING.md mitigates this.
+
+  ### Operational rule going forward
+
+  For any new infrastructure capability that needs a secret or external credential: write the work as a `just` recipe that reads from env, document the env var in `.env.example`, then add the wrapper for whichever runner needs it. **Do not** put the logic inside a CI workflow file as the primary location.
+
+  ## Revision (2026-04, JI-00E2-49)
+
+  Between the ADR's acceptance and 2026-04-16 the implementation drifted: `release-all` gained `-p`/`-P` flags that made publish optional, and a redundant `publish-all` alias. The optional-publish mode produced three concrete bugs (JI-00E1-03, JI-00D4-4A, JI-00D5-BC) because dep-only commits in subs were pushed without their upstream published, causing CI failures and dangling submodule pointers.
+
+  Restored to the original intent: `release-all` always publishes, no flags. Per sub the flow is: `just release` (local tag) -> unconditional `git push` (even without tag, so dep-only commits reach the remote) -> conditional `just publish` (cargo + forge, only when tagged). `git push` runs before the umbrella stages the sub pointer, guaranteeing the pointer never references an unpushed commit.
+
+  The `-p`/`-P` flags and `publish-all` were removed.
+
+  ## Related
+
+  * JI-00D6-26 - Sync joy-core version across siblings on release-all (this ADR closes the publish gap that work created).
+  * JI-00E2-49 - Atomic release-all refactor (this revision).
+  * JOY-00D2-C1 / JOT-0025-C1 - cargo-dist setup for binary releases.
+
+  (Relocated from umbrella JI-0115-B9 as part of the JI-0120 architecture reconciliation.)

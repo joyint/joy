@@ -1,0 +1,111 @@
+id: JOY-01D4-42
+title: 'ADR: Capabilities over roles for AI agent abstraction'
+type: decision
+status: closed
+priority: medium
+capabilities:
+- conceive
+validity: accepted
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-15T06:38:00.439487Z
+updated: 2026-06-15T06:38:00.563534Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-15T06:38:00.563534Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  **Status:** Accepted (2026-03)
+
+  ## Context
+
+  Joy defines a fixed set of capabilities (conceive, plan, design, implement, test, review, document) that describe activities in the software development lifecycle. AI coding tools (Claude Code, GitHub Copilot, Mistral Vibe, Qwen Code) use "agent" definitions -- files that configure an AI with a system prompt, tool permissions, and behavioral constraints.
+
+  The initial design (JOY-0012) defined agent roles: Architect, Implementer, Reviewer, Planner. Each role bundled multiple capabilities into a persona. This mirrors how most AI tools and multi-agent frameworks think -- role-based, with named actors.
+
+  However, the Process vision document explicitly states: "Capabilities describe activities, not titles. Architect is not a job title in Joy -- it is a capability that someone exercises when making structural decisions." Roles introduce a second abstraction layer that duplicates and potentially contradicts the capability model.
+
+  ### Research findings (2026-03)
+
+  Analysis of the four supported AI tools revealed:
+
+  * **All tools separate instructions (always loaded) from agents (on-demand specialists).** Capability rules belong in instructions. Agent files are an optional mechanism for hard constraints (tool permissions, model selection, context isolation).
+  * **No tool requires role-based agents.** Agent files are task-scoped or activity-scoped, not role-scoped. Claude Code recommends "code-reviewer" over "Reviewer". GitHub Copilot supports `@docs-agent`, `@test-agent` -- activity-based naming.
+  * **Tool permissions are the only capability that instructions alone cannot provide.** A review agent restricted to read-only tools is a hard constraint that a prompt cannot reliably enforce.
+
+  ## Decision
+
+  ### Two-layer architecture
+
+  **Layer 1: Capability files (tool-agnostic, Joy-native)**
+
+  Joy ships embedded capability files deployed to `.joy/capabilities/`:
+
+  ```
+  .joy/capabilities/
+    implement.md
+    review.md
+    plan.md
+    design.md
+    test.md
+    conceive.md
+    document.md
+  ```
+
+  Each file contains:
+
+  * Human-readable description of the activity, its constraints, and its place in the status flow
+  * A constraints table (readable by humans and AI)
+  * A YAML block with machine-parseable agent configuration (permissions, applicable tools)
+
+  Example structure:
+
+  ```yaml
+  agent:
+    name: reviewer
+    permissions:
+      allowed: [read, search, grep, test]
+      denied: [write, edit, delete]
+    applicable_tools: [claude-code, github-copilot, mistral-vibe]
+  ```
+
+  These files are the single source of truth for capability-specific AI behavior. They are referenced by the AI instructions so that all AI tools -- regardless of whether they support agent files -- know the rules.
+
+  **Layer 2: Agent files (tool-specific, generated)**
+
+  `joy ai setup` reads the YAML blocks from capability files and generates tool-specific agent definitions:
+
+  * `.claude/agents/reviewer.md` (Claude Code)
+  * `.github/agents/reviewer.agent.md` (GitHub Copilot)
+  * `~/.vibe/agents/reviewer.toml` (Mistral Vibe)
+
+  Agent files use the actor-form of the capability name (implement -> implementer, review -> reviewer). This is a grammatical derivation, not a separate concept. The mapping is deterministic and lives in joy-core.
+
+  Agent files are generated artifacts. They are not manually edited. `joy ai setup` regenerates them when capability definitions change.
+
+  ### What stays where
+
+  | Data | Location | Reason |
+  |------|----------|--------|
+  | Capability definitions (permissions, constraints) | `.joy/capabilities/*.md` (embedded) | Universal, tool-agnostic, single source of truth |
+  | Member-specific limits (max-mode, max-cost-per-job) | `.joy/project.yaml` | Project-specific, not capability-specific |
+  | Tool-specific agent config | `.claude/agents/`, `.github/agents/`, etc. (generated) | Tool-native format, derived from capabilities |
+
+  ## Consequences
+
+  ### Positive
+
+  * **Single source of truth.** Capability rules are defined once, projected into tool-specific formats.
+  * **No role/capability vocabulary split.** The capability model stays pure. Agent files are a tool-level projection with deterministic naming.
+  * **Incremental.** Layer 1 works without Layer 2. AI tools that do not support agent files still benefit from capability rules in instructions.
+  * **Hard constraints preserved.** Generated agent files provide tool-level permission enforcement (read-only for review, no item creation for test).
+
+  ### Negative
+
+  * **Generation complexity.** `joy ai setup` must parse capability YAML and generate multiple output formats. Each supported AI tool adds a generator.
+  * **Actor-form naming requires a mapping table.** Trivial (7 entries), but it exists.
+
+  ### Neutral
+
+  * Existing JOY-0012 children (JOY-0013 to JOY-0016) are rewritten from role-based stories to capability-based agent generation. JOY-0018 to JOY-001B (tool-specific definitions) remain but generate from capability data instead of role definitions.
+
+  (Relocated from umbrella JI-0107-E4 as part of the JI-0120 architecture reconciliation.)

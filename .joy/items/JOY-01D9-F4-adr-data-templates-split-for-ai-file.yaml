@@ -1,0 +1,211 @@
+id: JOY-01D9-F4
+title: 'ADR: Data/templates split for AI file generation'
+type: decision
+status: closed
+priority: medium
+capabilities:
+- conceive
+validity: accepted
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-15T06:38:02.300966Z
+updated: 2026-06-15T06:38:02.430567Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-15T06:38:02.430567Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  **Status:** Proposed (2026-03)
+
+  ## Context
+
+  Joy generates AI tool integration files via `joy ai setup`: instructions, skills, and (planned) agent definitions. These files are embedded in the binary and deployed to the user's project at runtime (ADR-016). MiniJinja renders templates with project-specific values (ADR-019). Capability files are the single source of truth for agent behavior (ADR-018).
+
+  The current `data/` directory in the Joy source tree mixes three concerns:
+
+
+  1. **Content** -- reusable text blocks, capability definitions, process rules (what to say)
+  2. **Templates** -- rendering frames with MiniJinja syntax that produce tool-specific output files (how to say it)
+  3. **Static files** -- hooks, config defaults, fortunes (no rendering needed)
+
+  Currently, `joy ai setup` deploys AI files into `.joy/ai/` and `.joy/capabilities/` inside the user's project. Tool-specific instruction files (e.g. `CLAUDE.md`) then reference these Joy-internal files. This creates an intermediate layer that is neither Joy-native data nor tool-native configuration.
+
+  As `joy ai setup` grows to generate agent files for four AI tools (Claude Code, Qwen Code, Mistral Vibe, GitHub Copilot), process documentation, and an extended `/joy` skill, two problems compound:
+
+
+  1. **Ambiguity in the source tree.** A capability description is not a template. A MiniJinja frame for a Mistral TOML agent file is not data. The single `data/` directory conflates both.
+  2. **Unnecessary indirection in the project.** AI tools work best with self-contained documents. Research (docs/dev/research/ai/instructions/) shows that following file references requires tool-calls with no guarantee the AI will resolve them. The `.joy/ai/` intermediate layer forces exactly this pattern.
+
+  ### Process knowledge
+
+  Joy's status flow (new -> open -> in-progress -> review -> closed), transitions, and gates are currently implicit in code and the Process vision document. AI needs this knowledge to enforce workflow rules. Defining process elements as structured data enables both:
+
+  * The `/joy` skill to include a complete workflow description
+  * Agent generators to select only the relevant process elements per capability
+
+  ### Single skill, not per-capability skills
+
+  Research confirms that one `/joy` skill with runtime workflow awareness (querying `joy show` and `joy project member show`) is superior to separate skills per capability. The skill determines the right behavior from item status, member capabilities, and gate configuration. Agent files provide hard constraints (tool permissions) that the skill cannot enforce alone.
+
+  ## Decision
+
+  ### Split `data/` into `data/` and `templates/`
+
+  `**data/**` contains content that the template engine consumes as input:
+
+  * `data/capabilities/*.md` -- capability definitions (existing, unchanged)
+  * `data/process/workflow.yaml` -- complete status flow, transitions, gates as structured data
+  * `data/process/statuses/*.yaml` -- per-status definitions (description, allowed transitions, applicable capabilities)
+  * `data/process/gates/*.yaml` -- gate definitions (trigger transition, required conditions)
+  * `data/ai/agents/*.yaml` -- tool-agnostic agent definitions (name, capabilities, permissions, behavioral rules)
+  * `data/items/*.yaml` -- item type templates (existing, unchanged)
+  * `data/config.defaults.yaml` -- config defaults (existing, unchanged)
+  * Static files that need no rendering remain in `data/` (hooks, fortunes)
+
+  `**templates/**` contains MiniJinja frames that produce output files:
+
+  * `templates/ai/skills/joy/SKILL.md` -- the `/joy` skill (moved from `data/ai/`)
+  * `templates/ai/tools/claude-code/CLAUDE.md` -- instructions for Claude Code
+  * `templates/ai/tools/claude-code/agents/*.md` -- Claude Code agent frames
+  * `templates/ai/tools/qwen-code/QWEN.md` -- instructions for Qwen Code
+  * `templates/ai/tools/qwen-code/agents/*.md` -- Qwen Code agent frames
+  * `templates/ai/tools/mistral-vibe/config.toml` -- instructions for Mistral Vibe
+  * `templates/ai/tools/mistral-vibe/agents/*.toml` -- Mistral Vibe agent frames
+  * `templates/ai/tools/github-copilot/copilot-instructions.md` -- instructions for Copilot
+  * `templates/ai/tools/github-copilot/agents/*.agent.md` -- GitHub Copilot agent frames
+  * `templates/ai/tools/github-copilot/prompts/joy.prompt.md` -- Copilot-specific skill wrapper
+  * `templates/process/workflow.md` -- renders the complete workflow document from `data/process/` YAML files
+
+  ### Generate directly into tool directories, not into `.joy/`
+
+  `.joy/` contains only Joy-native data: items, project config, hooks. No AI files.
+
+  `joy ai setup` renders all AI content directly into tool-specific directories:
+
+  ```
+  .claude/
+    CLAUDE.md                    (instructions, complete, self-contained)
+    skills/joy/SKILL.md          (Agent Skills standard)
+    agents/reviewer.md           (generated from data + template)
+    agents/implementer.md
+  .qwen/
+    QWEN.md
+    skills/joy/SKILL.md          (identical to .claude/ copy)
+    agents/reviewer.md
+    agents/implementer.md
+  .vibe/
+    config.toml
+    skills/joy/SKILL.md          (identical to .claude/ copy)
+    agents/reviewer.toml
+    agents/implementer.toml
+  .github/
+    copilot-instructions.md
+    prompts/joy.prompt.md        (Copilot skill wrapper)
+    agents/reviewer.agent.md
+    agents/implementer.agent.md
+  ```
+
+  The `/joy` skill SKILL.md is identical for Claude Code, Qwen Code, and Mistral Vibe (Agent Skills standard). GitHub Copilot gets a separate `.prompt.md` wrapper with identical content. The skill is rendered once from one template and placed in each tool's directory.
+
+  ### Version-based freshness check, not hash comparison
+
+  Generated files include the Joy version in their header:
+
+  ```markdown
+  <!-- Generated by Joy v0.5.2 -- do not edit manually -->
+  ```
+
+  `joy ai check` compares the version in each generated file against the running Joy binary version. If the binary is newer, files are stale. This replaces the SHA-256 hash comparison from ADR-016 for AI files.
+
+  Consequences:
+
+  * Files may be regenerated even when templates did not change between versions. This is harmless.
+  * Every change that affects generated output requires at least a patch version bump. This is good practice for a CLI tool regardless.
+  * The `joy_core::embedded` module (ADR-016) continues to handle hooks and other static files via hash comparison. Only AI-generated files move to version-based checking.
+
+  ### Human-editable documents remain references, not inlined content
+
+  Documents that project members can modify -- CONTRIBUTING.md, vision docs, architecture docs -- are versioned in Git and must not be duplicated into generated files. Generated instructions and agents *reference* these documents ("See CONTRIBUTING.md") but do not inline their content.
+
+  This is the deliberate exception to the "no runtime references" rule. The referenced documents are project-level files that AI tools load into context through their own mechanisms (directory scanning, explicit file lists). They are not Joy-internal fragments that require resolution.
+
+  ### Generation pipeline
+
+  ```
+  data/process/*.yaml ─────────────────┐
+  data/ai/agents/*.yaml ───────────────┤
+  data/capabilities/*.md ──────────────┤
+  project.yaml (runtime) ─────────────┤
+  Joy binary version ──────────────────┤
+                                        ▼
+                                MiniJinja render
+                                        │
+          templates/ai/skills/joy/      │     templates/ai/tools/claude-code/
+          templates/process/workflow.md  │     templates/ai/tools/mistral-vibe/
+                                        │     templates/ai/tools/github-copilot/
+                                        │     templates/ai/tools/qwen-code/
+                                        ▼
+                                Output files
+                                        │
+          .claude/CLAUDE.md ────────────┤     (complete, self-contained)
+          .claude/skills/joy/SKILL.md ──┤     (Agent Skills standard)
+          .claude/agents/*.md ──────────┤     (tool-specific format)
+          .qwen/QWEN.md ───────────────┤
+          .qwen/skills/joy/SKILL.md ────┤
+          .qwen/agents/*.md ────────────┤
+          .vibe/config.toml ───────────┤
+          .vibe/skills/joy/SKILL.md ────┤
+          .vibe/agents/*.toml ──────────┤
+          .github/copilot-instructions.md┤
+          .github/prompts/joy.prompt.md ─┤
+          .github/agents/*.agent.md ─────┘
+  ```
+
+  ### Build-time composition, not runtime references
+
+  The template engine combines data files into complete output documents at generation time. The generated `CLAUDE.md` contains all instructions inline. Agent files contain all relevant process rules and capability constraints for their scope. The AI reads one file and has everything it needs.
+
+  Data is intentionally duplicated in output files. The source of truth remains the YAML files in `data/` and the templates in `templates/`. The duplication is a build artifact, not a maintenance burden. `joy ai setup` regenerates all output files when the Joy version changes.
+
+  ### Tool-agnostic agent data, tool-specific templates
+
+  Agent definitions in `data/ai/agents/*.yaml` contain:
+
+  * Name (actor-form of capability, per ADR-018)
+  * Linked capabilities
+  * Permission set (allowed/denied tools)
+  * Behavioral rules (text blocks)
+
+  Tool-specific templates add format and configuration:
+
+  * Claude Code: markdown with frontmatter
+  * Qwen Code: markdown with YAML frontmatter (runConfig, modelConfig)
+  * Mistral Vibe: TOML with safety level, agent_type
+  * GitHub Copilot: `.agent.md` with tool declarations
+
+  The behavioral content is identical across tools. Only the envelope changes.
+
+  ## Consequences
+
+  ### Positive
+
+  * `**.joy/**` **is purely Joy-native.** No AI tool files, no intermediate layer. Items, config, hooks -- nothing else.
+  * **Clear separation in source tree.** `data/` is input, `templates/` is transformation, tool directories are output. Each concern has one home.
+  * **No AI runtime resolution.** Generated files are self-contained. AI tools read one file, not a graph of references.
+  * **Tool-specific features without data pollution.** Mistral's `safety` field lives in the Mistral template, not in the agent data. Adding a new tool means adding templates, not changing data.
+  * **Simpler freshness check.** Version comparison replaces per-file SHA-256 hashing for AI files. One comparison instead of N.
+  * **Process knowledge becomes first-class data.** Status flow, transitions, and gates are machine-readable YAML, usable by both the template engine and future `joy` commands.
+
+  ### Negative
+
+  * **More files in the source tree.** The `templates/` directory adds \~20 files (4 tools x \~5 agents + instructions). Manageable but noticeable.
+  * **Duplication in output.** The same process rules appear in each tool's instructions and in each agent file. This is intentional but increases the total size of generated files.
+  * **Migration effort.** Existing files in `data/ai/` must move to `templates/`. `.joy/ai/` and `.joy/capabilities/` deployment must be removed. Requires updating `include_str!` paths, the embedded file registry, and `joy ai check` logic. Repos created before this change still carry the old `.joy/ai/` (`instructions.md`, `instructions/setup.md`, `skills/`) and `.joy/capabilities/` files in Git. Because the current binary no longer reads them, AI tools that stumble over them can treat their stale content as authoritative. `joy update` and `joy ai init` now remove these artifacts automatically: a `LegacyAiArtifactsItem` in the update registry (surfaced by `joy update --check`) hard-removes the files and stages the deletion, while preserving the current runtime data under `.joy/ai/jobs/` and `.joy/ai/agents/` (JOY-01B2-01).
+  * **Version discipline.** Every template or data change requires a version bump. Forgetting to bump means `joy ai check` will not detect stale files.
+
+  ### Neutral
+
+  * Static files (hooks, fortunes, config defaults) stay in `data/` unchanged. The split only affects files that participate in the template rendering pipeline.
+  * The `/joy` skill remains a single SKILL.md following the Agent Skills standard. It works in Claude Code, Qwen Code, and Mistral Vibe without modification. GitHub Copilot gets a separate `.prompt.md` wrapper with identical content.
+  * Human-editable documents (CONTRIBUTING.md, vision, architecture) are referenced, not inlined. This is intentional and consistent with their role as project-owned, versioned artifacts.
+
+  (Relocated from umbrella JI-010D-D7 as part of the JI-0120 architecture reconciliation.)

@@ -1,0 +1,138 @@
+id: JOY-01D7-4C
+title: 'ADR: Guard as a joy-core module for centralized runtime validation'
+type: decision
+status: closed
+priority: medium
+capabilities:
+- conceive
+validity: accepted
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-15T06:38:01.547114Z
+updated: 2026-06-15T06:38:01.674519Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-15T06:38:01.674519Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  **Status:** Accepted (2026-03)
+
+  ## Context
+
+  Joy's AI Governance architecture is built on five pillars (JOY-007E): Trustship, Guardianship, Orchestration, Traceability, and Settlement. The Guardianship pillar answers the question "What do I protect against?" -- runtime enforcement of gates, capability checks, and input validation.
+
+  Today, validation logic is scattered across individual CLI commands:
+
+  * **Gate enforcement** (`allow_ai`, `requires_role`, `requires_ci`) lives in the `status` command
+  * **Capability validation** is checked in `add`, `comment`, and other write commands
+  * **Member permission checks** are duplicated across commands that accept `--author`
+
+  This scattering creates several problems:
+
+
+  1. **Inconsistency.** Each command implements its own validation. A new command can forget a check, or implement it differently.
+  2. **Untestable as a whole.** There is no way to verify "all write operations enforce the Trust Model" -- each command must be tested individually.
+  3. **Hard to extend.** New checks (prompt injection resilience, budget pre-checks, sandbox enforcement) would need to be wired into every command separately.
+  4. **No structured enforcement events.** When a check blocks an operation, the error is ad-hoc. Judge (Traceability pillar) needs structured events to audit enforcement decisions.
+
+  The question is where Guard should live: as a module in joy-core, or as a separate subproject/repo.
+
+  ### Analysis
+
+  **Who needs Guard?**
+
+  | Consumer | Needs Guard? | How? |
+  |----------|--------------|------|
+  | joy-cli  | Yes          | Every write operation |
+  | platform/server | Yes          | API requests that modify items |
+  | app (Tauri) | Yes          | Uses joy-core |
+  | jyn      | No           | No capabilities, no AI members, no gates |
+  | judge    | No           | Reads event log, does not enforce at runtime |
+
+  All consumers that need Guard already depend on joy-core. Jyn (which also depends on joy-core) does not need Guard -- it has no capability model, no AI members, and no gates. Guard can be compiled behind a feature flag if Jyn's binary size is a concern, though a passthrough Guard adds negligible overhead.
+
+  Judge communicates with Guard through the event log format, not through shared code. Guard writes enforcement events; Judge reads them. This is the same boundary as between any other joy-core module and Judge.
+
+  ## Decision
+
+  **Guard is a module in joy-core** (`joy_core::guard`), not a separate subproject.
+
+  ### Design
+
+  Guard is a validation layer that all write operations pass through. It receives a proposed action and the current project context (members, capabilities, gates), and returns either approval or a structured rejection.
+
+  ```rust
+  // Conceptual API
+  pub struct Guard { /* project config, members, gates */ }
+
+  pub enum Verdict {
+      Allow,
+      Deny { reason: DenyReason, context: String },
+      Warn { reason: WarnReason, context: String },
+  }
+
+  impl Guard {
+      pub fn check(&self, action: &Action, author: &MemberId) -> Verdict;
+  }
+  ```
+
+  ### Progressive activation
+
+  Guard follows Joy's "dimmers, not switches" philosophy:
+
+  | Setup | Guard behavior |
+  |-------|----------------|
+  | Solo (1 member, `capabilities: all`, no gates) | Passthrough -- all checks pass trivially |
+  | Team (multiple members, explicit capabilities) | Capability checks active |
+  | Team with AI | Capability checks + `allow_ai` enforcement |
+  | Enterprise (gates configured) | Full enforcement: capabilities, gates, CI checks, budget pre-checks |
+
+  No configuration needed to activate Guard. It reads the project's Trust Model and enforces whatever is defined. Empty config means empty enforcement.
+
+  ### Checks consolidated into Guard
+
+  **Existing (moved from commands):**
+
+  * Gate enforcement: `allow_ai`, `requires_role`, `requires_ci`
+  * Capability validation: does this member have the required capability for this action?
+  * Member permission checks: `manage` capability for project-level operations
+
+  **New (enabled by centralization):**
+
+  * Prompt injection resilience (JOY-0011): validate AI-authored content before writing
+  * Budget pre-checks: reject job start if cost would exceed `max-cost-per-job`
+  * Sandbox enforcement: verify AI is operating within allowed scope
+  * Input validation: structured checks on item content authored by AI members
+
+  ### Event log integration
+
+  Every `Deny` and `Warn` verdict produces a structured event in the log:
+
+  ```
+  2026-04-01T10:00:00Z JOY-002A guard.denied "ai:claude@joy attempted review->closed, allow_ai=false on gate" [ai:claude@joy]
+  2026-04-01T10:01:00Z JOY-002A guard.warned "starting item with 2 open dependencies" [dev@example.com]
+  ```
+
+  Judge consumes these events for compliance reports and anomaly detection. The event format is the contract between Guard and Judge.
+
+  ## Consequences
+
+  ### Positive
+
+  * **Single validation point.** All write operations go through Guard. New commands get enforcement for free.
+  * **Testable.** Guard can be unit-tested with project configs and actions, independent of CLI plumbing.
+  * **Extensible.** New checks (prompt injection, budget) are added in one place, not wired into every command.
+  * **Progressive.** Zero overhead for simple setups. Full enforcement for enterprise. Same code path.
+  * **Audit-ready.** Structured enforcement events feed directly into Judge.
+  * **No new dependency.** All consumers already depend on joy-core.
+
+  ### Negative
+
+  * **Migration effort.** Existing validation logic in commands must be refactored to delegate to Guard. This touches most write commands.
+  * **Indirection.** Commands no longer validate directly -- developers must understand that Guard is the validation layer.
+
+  ### Neutral
+
+  * Jyn inherits Guard as a joy-core dependency but never triggers it (no capabilities, no gates). The overhead is a no-op check. A feature flag can exclude Guard from Jyn builds if needed.
+  * Judge remains a separate subproject. The event log format is the stable interface between Guard and Judge.
+
+  (Relocated from umbrella JI-010A-65 as part of the JI-0120 architecture reconciliation.)

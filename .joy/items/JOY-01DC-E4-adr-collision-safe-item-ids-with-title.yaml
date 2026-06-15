@@ -1,0 +1,120 @@
+id: JOY-01DC-E4
+title: 'ADR: Collision-safe item IDs with title-hash suffix'
+type: decision
+status: closed
+priority: medium
+capabilities:
+- conceive
+validity: accepted
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-15T06:38:03.429415Z
+updated: 2026-06-15T06:38:03.556272Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-15T06:38:03.556272Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  **Status:** Proposed (2026-03)
+
+  ## Context
+
+  Joy uses sequential hex IDs for items (e.g. `JOY-0042`). The next ID is determined by scanning `.joy/items/` for the highest existing ID and incrementing by one.
+
+  This breaks in distributed scenarios: when two people (or two machines) run `joy add` without syncing in between, both get the same next ID. After the merge, two different items share the same ID in different files. Git does not detect this as a conflict because the files have different names (different title slugs).
+
+  This was discovered in production: `JI-00B8` existed as both "Dynamic CLI table sizes" (closed) and "joy report to generate markdown/pdf file" (new). The first was created on 2026-03-19, the second on 2026-03-20 on a different machine, both receiving `JI-00B8` because the first was not yet pushed.
+
+  The problem is fundamental: **without a central coordination point, sequential IDs in a distributed system cannot be guaranteed unique.** This affects all team usage and multi-machine scenarios.
+
+  ## Decision
+
+  ### New ID format: sequential counter + title-hash suffix
+
+  New items get a 7-character ID: 4 hex digits (sequential counter, as before) plus a dash and 2 hex digits derived from a hash of the item title.
+
+  ```
+  JOY-0100-5C
+      ^^^^  ^^
+      |     |
+      |     └── 2 hex digits from hash of title
+      └──────── 4 hex digits, sequential counter
+  ```
+
+  If two machines independently assign `JOY-0100`, the different titles produce different suffixes: `JOY-0100-5C` vs `JOY-0100-A3`. Collision probability at the same counter value: 1:65,536 (both same counter AND same title hash).
+
+  The suffix is derived deterministically from the title using a hash function (e.g. first 2 bytes of SHA-256 of the title, as hex). Same title = same suffix. This makes the ID reproducible and predictable.
+
+  ### ID generation
+
+  ```rust
+  fn generate_id(root, acronym, title) -> String {
+      let counter = next_sequential_counter(root, acronym);  // existing logic
+      let hash = sha256(title);
+      let suffix = &hex(hash)[..2];  // first 2 hex chars
+      format!("{acronym}-{counter:04X}-{suffix}")
+  }
+  ```
+
+  Local collision check: after generating the ID, verify no file with that exact ID exists. If it does (astronomically unlikely), increment counter and retry.
+
+  ### Backward compatibility: old IDs stay as-is
+
+  Existing items with 4-digit IDs (`JOY-0042`) are **not migrated**. Their files, YAML content, and all references (deps, parents, milestones, commit messages, release notes) remain unchanged.
+
+  Old IDs continue to work in all commands. The sequential counter starts above the highest existing ID, so new IDs never collide with old ones.
+
+  ### Display: padding, not fake suffixes
+
+  In tabular output (`joy ls`, `joy roadmap`), old and new IDs are padded to the same column width with spaces:
+
+  ```
+  JOY-0042     Fix login bug
+  JOY-0100-5C  New feature with collision safety
+  ```
+
+  Old IDs are NOT displayed with a `-00` suffix or any other synthetic extension. They are simply shorter.
+
+  ### Short-form input
+
+  All commands accept the short form (first 4 digits only) as long as it is unambiguous:
+
+  ```
+  joy show JOY-0100-5C  -- always works (exact match)
+  joy show JOY-0100     -- works if only one JOY-0100-xx exists
+  joy show JOY-0100     -- error if JOY-0100-5C and JOY-0100-A3 both exist:
+                            "ambiguous ID: JOY-0100-5C, JOY-0100-A3"
+  ```
+
+  This follows the same pattern as git commit hashes: the full reference is canonical, but users can type a unique prefix.
+
+  ### Sorting
+
+  Items sort by filename, which sorts by counter first, then suffix. Within the same counter value (collision case only), items sort by title hash rather than creation time. This is acceptable because:
+
+  * Collisions are rare (distributed add without sync)
+  * Items with the same counter were created near-simultaneously
+  * The chronological order within a collision has no practical significance
+
+  ## Consequences
+
+  ### Positive
+
+  * **No more duplicate IDs.** The title-hash suffix makes same-counter collisions virtually impossible (1:65,536).
+  * **No migration needed.** Old IDs work unchanged. No files renamed, no references updated, no broken release notes.
+  * **No central coordinator.** Works fully distributed, no server needed for ID uniqueness.
+  * **Familiar pattern.** Short-form lookup works like git commit hashes — known to every developer.
+  * **Chronological sorting preserved.** The sequential counter remains the primary sort key.
+
+  ### Negative
+
+  * **IDs are 3 characters longer.** `JOY-0042` (8 chars) vs `JOY-0100-5C` (11 chars). Slightly more to type, but tab completion mitigates this.
+  * **Mixed ID lengths in display.** Old 4-digit and new 7-digit IDs coexist. Padding handles alignment.
+  * **Title changes after creation.** If an item title is edited, the suffix no longer matches the current title. This is acceptable — the suffix is set at creation time and never changes, like a git commit hash does not change when you amend the message. The ID is an identifier, not a descriptor.
+
+  ### Neutral
+
+  * The suffix is deterministic (same title = same suffix). This is a property, not a feature — it simply makes the ID predictable.
+  * Tab completion already works and will autocomplete the full ID including suffix.
+  * The commit-msg hook validates item IDs in commit messages. It must be updated to accept both 4-digit and 7-digit formats.
+
+  (Relocated from umbrella JI-0110-D9 as part of the JI-0120 architecture reconciliation.)

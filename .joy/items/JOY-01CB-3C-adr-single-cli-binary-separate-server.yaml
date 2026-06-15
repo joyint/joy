@@ -1,0 +1,50 @@
+id: JOY-01CB-3C
+title: 'ADR: Single CLI binary, separate server binary'
+type: decision
+status: closed
+priority: medium
+capabilities:
+- conceive
+validity: accepted
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-15T06:37:57.123013Z
+updated: 2026-06-15T06:37:57.254571Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-15T06:37:57.254571Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  **Status:** Accepted (revised 2026-03)
+
+  Supersedes the original decision to include the server behind a Cargo feature flag in the CLI binary.
+
+  ## Context
+
+  The original decision bundled CLI, TUI, and server into a single `joy` binary using Cargo feature flags (`tui`, `server`). This created a licensing conflict: `joy-cli` is MIT, but the server is commercially licensed (see ADR-008 (JI-00FD-EA)). Building `joy --features server` from the open-source code would produce a commercial component from an MIT-licensed crate.
+
+  Additionally, a server binary has different operational requirements than a CLI tool: daemon mode, systemd integration, PID files, configuration files, graceful shutdown, and log management.
+
+  ## Decision
+
+  Two separate binaries with a clean licensing boundary:
+
+  `**joy**` **(MIT, joy-cli crate):** CLI commands and TUI. The `tui` feature flag remains for users who want a lean CLI-only build. This is the free, open-source tool.
+
+  `**joyint-server**` **(Commercial, platform crate):** REST API, Git gateway, CalDAV server, notification service, dispatch service, web frontend. A standalone daemon built from the `platform/` repository with full server operational features:
+
+  * Daemon mode (foreground and background)
+  * systemd notify and socket activation support
+  * Configuration file (`/etc/joyint/server.toml` or `--config`)
+  * PID file management
+  * Graceful shutdown (SIGTERM handling)
+  * Structured logging (JSON or human-readable)
+
+  Both binaries depend on `joy-core` (MIT) for the shared data model.
+
+  ## Consequences
+
+  Clean licensing: no commercial code in the MIT-licensed repository. The server binary can include everything a production daemon needs without bloating the CLI. Distribution is two install steps instead of one, but for server operators this is expected. CLI users are unaffected -- they never needed the server flag.
+
+  The `joy serve` subcommand is removed from joy-cli. Users who previously expected `joy serve` will use `joyint-server` instead. `joy sync` continues to work against any running server (joyint.com or self-hosted).
+
+  (Relocated from umbrella JI-00F7-F9 as part of the JI-0120 architecture reconciliation.)
