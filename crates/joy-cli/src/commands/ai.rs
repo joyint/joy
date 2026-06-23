@@ -248,13 +248,19 @@ fn ensure_human_auth_initialized(
     let project_path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
     let project = joy_core::store::read_project(&project_path)?;
     let email = joy_core::vcs::default_vcs().user_email()?;
-    let member = project.members.get(&email).ok_or_else(|| {
-        anyhow::anyhow!(
-            "{} is not a registered project member. Run `joy project member add {}` first.",
-            email,
-            email
-        )
-    })?;
+    // Resolve the member honoring the project's privacy mode. In anonymous
+    // mode (ADR-042) the member map is keyed by an opaque id, not the
+    // cleartext e-mail, so a direct `members.get(&email)` would spuriously
+    // report the founder as unregistered right after `joy init --anonymous`.
+    let member_key =
+        joy_core::privacy::member_key_for_email(&project, &email).ok_or_else(|| {
+            anyhow::anyhow!(
+                "{} is not a registered project member. Run `joy project member add {}` first.",
+                email,
+                email
+            )
+        })?;
+    let member = &project.members[&member_key];
     if member.verify_key.is_some() {
         return Ok(None);
     }

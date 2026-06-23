@@ -37,6 +37,26 @@ load setup
     [[ "$output" != *"RECOVERY KEY"* ]]
 }
 
+@test "joy ai init succeeds in an anonymous project (founder keyed by opaque id)" {
+    # Regression: in anonymous mode (ADR-042) the member map is keyed by an
+    # opaque id, not the cleartext e-mail. A direct `members.get(&email)`
+    # lookup wrongly reported the founder as "not a registered project member"
+    # right after `joy init --anonymous`. ai init must resolve via the
+    # privacy-aware member_key_for_email instead.
+    joy init --name "Test Project" --anonymous --passphrase "$TEST_PASSPHRASE" 2>/dev/null
+    # The founder is already authenticated by the anonymous init, so ai init
+    # must NOT re-prompt for auth and must NOT fail on member resolution.
+    PATH_OVERRIDE="$(dirname "$JOY_BIN"):/usr/bin:/bin"
+    run env PATH="$PATH_OVERRIDE" joy ai init --passphrase "$TEST_PASSPHRASE" </dev/null
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"not a registered project member"* ]]
+    # Auth was already initialised by `init --anonymous`, so the auth-bootstrap
+    # section must be skipped.
+    [[ "$output" != *"Setting up authentication"* ]]
+    # The cleartext e-mail must never appear in the committed project.yaml.
+    ! grep -q "test@example.com" .joy/project.yaml
+}
+
 @test "joy ai init fails clearly when caller is not a project member" {
     joy init --name "Test Project" 2>/dev/null
     # Switch git identity to someone who has never been added to the project.
