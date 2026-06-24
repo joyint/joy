@@ -1397,8 +1397,12 @@ fn run_member(
                 &capabilities,
                 otp_hash_opt.as_deref(),
             );
+            // Reference the attester by their on-disk member key so anonymous
+            // mode (ADR-042) records the opaque id, never the cleartext e-mail.
+            let attester_id = joy_core::privacy::member_key_for_email(project, &attester_email)
+                .unwrap_or_else(|| attester_email.clone());
             let attestation = joy_core::auth::attestation::sign_attestation(
-                &attester_email,
+                &attester_id,
                 &attester_kp,
                 signed_fields,
             );
@@ -1696,10 +1700,15 @@ pub(crate) fn derive_acting_keypair(
     passphrase_flag: Option<&str>,
     passphrase_stdin: bool,
 ) -> Result<IdentityKeypair> {
-    let member = project
-        .members
-        .get(email)
-        .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member", email))?;
+    let member = {
+        // Resolve the member honoring the privacy mode: in anonymous mode
+        // (ADR-042) the member map is keyed by an opaque id, not the cleartext
+        // e-mail, so a direct `members.get(email)` would miss the founder when
+        // `joy ai init` registers an AI member in an anonymous project.
+        let member_key = joy_core::privacy::member_key_for_email(project, email)
+            .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member", email))?;
+        &project.members[&member_key]
+    };
     if member.verify_key.is_none() {
         anyhow::bail!(
             "{} has no registered public key. Run `joy auth init` first.",

@@ -37,6 +37,38 @@ load setup
     [[ "$output" != *"RECOVERY KEY"* ]]
 }
 
+@test "joy ai init succeeds in an anonymous project (founder keyed by opaque id)" {
+    # Regression: in anonymous mode (ADR-042) the member map is keyed by an
+    # opaque id, not the cleartext e-mail. Direct `members.get(&email)` lookups
+    # in ai init wrongly reported the founder as "not a registered project
+    # member" right after `joy init --anonymous` -- both when checking the
+    # caller's auth (ensure_human_auth_initialized) and when deriving the
+    # founder's keypair to attest a detected AI member (derive_acting_keypair).
+    # Both paths must resolve via the privacy-aware member_key_for_email.
+    joy init --name "Test Project" --anonymous --passphrase "$TEST_PASSPHRASE" 2>/dev/null
+
+    # Force a deterministic AI-tool detection (a stub `copilot` makes Copilot
+    # "installed") so the run also exercises AI member registration -- which
+    # derives the founder's keypair and writes an attestation -- regardless of
+    # which AI binaries the host happens to have. Without this the path is
+    # environment-dependent.
+    mkdir -p "$TEST_DIR/fakebin"
+    printf '#!/bin/sh\nexit 0\n' > "$TEST_DIR/fakebin/copilot"
+    chmod +x "$TEST_DIR/fakebin/copilot"
+
+    PATH_OVERRIDE="$(dirname "$JOY_BIN"):$TEST_DIR/fakebin:/usr/bin:/bin"
+    run env PATH="$PATH_OVERRIDE" joy ai init --passphrase "$TEST_PASSPHRASE" </dev/null
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"not a registered project member"* ]]
+    # Auth was already initialised by `init --anonymous`, so the auth-bootstrap
+    # section must be skipped.
+    [[ "$output" != *"Setting up authentication"* ]]
+    # The detected AI member was registered despite the anonymous keying.
+    [[ "$output" == *"ai:copilot@joy"* ]]
+    # The cleartext e-mail must never appear in the committed project.yaml.
+    ! grep -q "test@example.com" .joy/project.yaml
+}
+
 @test "joy ai init fails clearly when caller is not a project member" {
     joy init --name "Test Project" 2>/dev/null
     # Switch git identity to someone who has never been added to the project.

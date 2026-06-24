@@ -176,11 +176,11 @@ load setup
 @test "joy ai init registers all configured AI members in one run" {
     setup_human_auth
 
-    # joy ai init detects tools by shelling out to `which`. Fake claude and gh
-    # shims so detect_claude / detect_copilot both succeed in the test env.
+    # joy ai init detects tools by shelling out to `which`. Fake claude and
+    # copilot shims so detect_claude / detect_copilot both succeed in the test env.
     BIN_DIR="$TEST_DIR/fake-bin"
     mkdir -p "$BIN_DIR"
-    for cmd in claude gh; do
+    for cmd in claude copilot; do
         printf '#!/bin/sh\nexit 0\n' > "$BIN_DIR/$cmd"
         chmod +x "$BIN_DIR/$cmd"
     done
@@ -204,7 +204,7 @@ load setup
     # Fake binaries so detection succeeds.
     BIN_DIR="$TEST_DIR/fake-bin"
     mkdir -p "$BIN_DIR"
-    for cmd in claude gh; do
+    for cmd in claude copilot; do
         printf '#!/bin/sh\nexit 0\n' > "$BIN_DIR/$cmd"
         chmod +x "$BIN_DIR/$cmd"
     done

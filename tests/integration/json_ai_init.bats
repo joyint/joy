@@ -6,7 +6,7 @@ load setup
 setup_fake_ai_tools() {
     BIN_DIR="$TEST_DIR/fake-bin"
     mkdir -p "$BIN_DIR"
-    for cmd in claude gh; do
+    for cmd in claude copilot; do
         printf '#!/bin/sh\nexit 0\n' > "$BIN_DIR/$cmd"
         chmod +x "$BIN_DIR/$cmd"
     done

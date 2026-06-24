@@ -6,12 +6,12 @@
 
 load setup
 
-# Fake claude+gh on PATH so the AI-tool detector finds something
+# Fake claude+copilot on PATH so the AI-tool detector finds something
 # during these tests.
 setup_fake_ai_tools() {
     BIN_DIR="$TEST_DIR/fake-bin"
     mkdir -p "$BIN_DIR"
-    for cmd in claude gh; do
+    for cmd in claude copilot; do
         printf '#!/bin/sh\nexit 0\n' > "$BIN_DIR/$cmd"
         chmod +x "$BIN_DIR/$cmd"
     done
