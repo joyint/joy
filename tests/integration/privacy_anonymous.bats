@@ -166,6 +166,33 @@ _emails_present() { grep -rlq "$TEST_EMAIL" .joy/; }
     [ "$output" = "0" ]
 }
 
+@test "anonymous: adding an AI member after the switch keeps project.yaml e-mail-free" {
+    # Regression: registering a member in an anonymous project must resolve the
+    # founder via the privacy-aware member key, not a direct members.get(email)
+    # lookup. In anonymous mode the map is keyed by an opaque id, so the direct
+    # lookup (1) failed to find the founder when deriving the keypair to sign the
+    # attestation, and (2) recorded the founder's cleartext e-mail as the
+    # attester, leaking it back into the committed project.yaml. Unlike the
+    # multi-member case above (member added in open mode, then frozen by the
+    # switch), this adds the member while the project is already anonymous, which
+    # is the path that exercises both fixes.
+    setup_human_auth
+    _go_anonymous
+
+    run joy project member add ai:copilot@joy --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"not a registered project member"* ]]
+
+    # The AI member is registered ...
+    run env JOY_PASSPHRASE="$TEST_PASSPHRASE" joy project member
+    [[ "$output" == *"ai:copilot@joy"* ]]
+
+    # ... and the founder's e-mail never appears anywhere under .joy/ -- in
+    # particular not as the attester inside project.yaml's attestation block.
+    run grep -rl "$TEST_EMAIL" .joy/
+    [ "$status" -ne 0 ]
+}
+
 @test "anonymous: erase severs id->e-mail resolution but keeps the audit trail (GDPR Art. 17)" {
     setup_human_auth
     joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE" >/dev/null
