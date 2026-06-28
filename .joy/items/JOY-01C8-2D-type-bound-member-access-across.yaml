@@ -1,0 +1,58 @@
+id: JOY-01C8-2D
+title: Type-bound member access across privacy modes (seal map, gate lookup/write/display)
+type: rework
+status: closed
+priority: high
+parent: JOY-01B9-53
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 6
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-27T08:57:43.080373162Z
+updated: 2026-06-28T10:08:52.236251132Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-27T08:58:51.840379865Z
+  by: horst.schwarz@joydev.com
+- date: 2026-06-27T09:00:00.353572942Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-27T09:52:43.250899363Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-28T10:08:52.236251132Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Problem: project.members is a public BTreeMap<String, Member> whose key is polymorphic by privacy mode (cleartext e-mail in open, opaque id in anonymous, ADR-042). The compiler cannot tell an e-mail from a map key, so every members.get(&email) compiles but is silently wrong in anonymous mode. 135 direct accesses exist (90 in joy-cli, 45 in joy-core); the anonymous-mode fix on branch claude/anonymous-mode-copilot-fix-23lcpx patched only 4 of them. Confirmed reproduction: 'joy auth token add' and 'joy project member add --with-token' (shared create_delegation_token, auth.rs:1404) still fail with 'is not a registered project member' in an anonymous project even on the fixed binary, because that call site was not among the four. Point-fixing never closes the class: each new feature reintroduces the foot-gun.
+
+  Worse, the write/creation direction is unguarded and higher-stakes: member creation is duplicated (init.rs:137, project.rs:1413, ai.rs:1083), the anonymous PII-placement invariant (human -> opaque id + email_match + encrypted members.yaml) lives only in switch_to_anonymous, and a naive insert(email, member) in anonymous mode would leak cleartext PII into the committed project.yaml -- a privacy breach, not just an error. The privacy field also carries a 'never by a bare field write' comment but is written directly at project.rs:1000-1001 (set privacy open/none), bypassing the switch_to_open migration.
+
+  Goal: bind the guarantee to the type system, mirroring what MemberRef already does for the display direction. Scope:
+  - Seal joy-core: make members, members.insert/remove, and privacy private so direct keyed access does not compile outside the model.
+  - Provide privacy-aware gates: member_by_email[_mut], member_by_key[_mut], resolve_member(email)->ResolvedMember{key,member,email}, and register_member(identity,caps,keys) that sets key + PII placement per mode (open: e-mail key; anonymous: opaque id + email_match + members.yaml). This completes the intent of JOY-01BB-79 (single e-mail source, route all consumers) rather than leaving it half-done.
+  - privacy writes only through switch_to_anonymous/switch_to_open (incl. set privacy open/none).
+  - Lint/test backstop: fail CI when any serializable model field carries a member as a raw String instead of MemberRef, so the display/--json guarantee is as airtight against future code as the sealed-map lookup guarantee.
+  - bats matrix: every member-touching command (auth token add, member add --with-token, ai init, crypt grant/revoke, auth recover, set privacy) exercised in BOTH open and anonymous mode.
+  - Migrate the ~135 call sites onto the gates; the .unwrap() panics fall away because the accessors return Option.
+
+  Sequence: joy-core API + register_member -> compile-driven joy-cli migration -> lint -> bats matrix -> full test run. Relates to JOY-01BB-79 (absorbs its goal) and JOY-01C3-A7 (anonymous human onboarding becomes possible once register_member exists).
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-27T09:00:00.288996704Z
+  text: 'Plan: (1) joy-core foundation -- add privacy-aware gates on Project (member_by_email[_mut], member_by_key[_mut], resolve_member, register_member), keep behaviour identical; (2) seal the members field and the privacy field, leaving a single clearly-named privileged accessor for the switch_to_* migration; (3) compile-driven migration of all call sites (joy-cli first across the sealed boundary, then joy-core internals) onto the gates -- the .unwrap() panics fall away as accessors return Option; (4) lint/test backstop rejecting raw String member fields on serializable models; (5) open+anonymous bats matrix for every member-touching command; (6) full test run. Working on branch claude/anonymous-mode-copilot-fix-23lcpx.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-27T09:52:43.208663556Z
+  text: |-
+    [x] Done. joy-core: sealed Project.members and Project.privacy (private); added typed gates member_by_email[_mut], member_by_key[_mut], has_member_key, members()/member_keys()/member_values()/member_count()/has_members(), member_key_for_email, register_member (mode-correct creation: ai: id either mode, e-mail in open, refuses human-in-anonymous to avoid PII leak -> JOY-01C3-A7), remove_member, privacy() read + set_privacy_non_anonymous (privacy writes otherwise only via switch_to_anonymous/open). Migrated all ~135 call sites (joy-core + joy-cli); the member-lookup .unwrap() panics are gone.
+
+    The 4-site branch patch was confirmed insufficient: beyond create_delegation_token, the guard identity and the session keying in the token path also used the cleartext e-mail, so 'joy auth token add' / 'member add --with-token' still failed in anonymous mode ('guard denied'). Now fixed end to end (token issued, redeemed, AI acts; no operator e-mail in project.yaml).
+
+    Backstop: crates/joy-core/tests/member_field_lint.rs fails the build if a persisted-model field naming a member is a raw String instead of MemberRef. bats: tests/integration/anonymous_member_commands.bats (auth token add, member add --with-token, full redeem round-trip, register_member human-in-anonymous guard) + a member-add-after-switch case in privacy_anonymous.bats.
+
+    Tests: 379 lib + 113 integration rust + lint + trycmd, all green; 511 bats, 0 failures; no clippy warnings.
+
+    Out of scope, newly surfaced: once the AI acts, its delegated-by (operator) is recorded into items/logs from the token's cleartext delegated_by claim -> a separate anonymous-mode leak (delegation-identity propagation through token claim/identity/audit-trail/git-trailer), not the member-map sealing. Needs a follow-up bug; the relevant bats assertion is deliberately relaxed with a pointer.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-28T10:02:06.854993214Z
+  text: 'Update: the delegated-by audit-trail leak (initially flagged as a separate follow-up) is fixed within this work -- it is the same ADR-042 no-PII guarantee. Root cause: the delegating operator was recorded from the cleartext git e-mail / token claim at three at-rest writers -- the JOY_SESSION AI path and the human-session path in resolve_identity (item created_by/updated_by, item-event logs, commit trailer) and the hand-built actor of the auth.session_created log event. Centralized the policy in joy_core::privacy::delegated_by_at_rest(project, operator_email): the operator''s at-rest member key (opaque id in anonymous, e-mail in open), returning None in anonymous mode rather than ever falling back to a cleartext e-mail. Applied at all three writers. Verified end to end: no operator e-mail in any .joy file in anonymous mode; at-rest actor is ''ai:x delegated-by:m-<id>'', resolved back to the e-mail for an authorized viewer (joy show). bats tightened (no-leak + resolves-on-display). Full ''just check'' green: fmt, clippy -D warnings, 379 lib + integration + lint + trycmd, 511 bats.'
