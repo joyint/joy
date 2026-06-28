@@ -1,15 +1,28 @@
 id: JOY-019D-B1
 title: get.joyint.com/joy installer must write the axoupdater install receipt
 type: bug
-status: new
+status: closed
 priority: medium
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 - review
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-17T19:22:26.731234646Z
-updated: 2026-05-17T19:22:26.731234646Z
+updated: 2026-06-28T19:30:47.486719919Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
+history:
+- date: 2026-06-28T19:26:26.731345520Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-28T19:30:47.486719919Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Users who install joy via the official ''curl -fsSL get.joyint.com/joy | sh'' currently get ''install receipt missing (managed by another installer)'' from ''joy update --check'', and ''joy update'' refuses to run. Root cause: the hand-rolled installer script served at get.joyint.com/joy downloads the release binary into ~/.local/bin but does not write the cargo-dist install receipt that axoupdater (via AxoUpdater::new_for("joy-cli").load_receipt()) expects at ~/.config/joy-cli/joy-cli-receipt.json. The receipt is the gate that distinguishes joy-managed installs from brew / cargo-install / distro-package installs (dist-workspace.toml lines 33-37), and our own installer accidentally fails it. Fix: after the binary is in place, write the same JSON shape that cargo-dist''s auto-generated installer would produce -- minimally version, install_prefix, source_repo, binaries -- so axoupdater can pick it up on the next ''joy update'' run. The installer script lives in a separate repo (likely joyint/website or joyint/get); confirm location before editing. Add a smoke test that, after running the installer, ''joy update --check'' reports ''up to date'' (or ''update available'') instead of ''install receipt missing''.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-28T19:26:26.784711374Z
+  text: Fix lives in the website repo (public/install/joy.sh + joy.ps1), tracked there as a JISITE item. The installer now writes the cargo-dist install receipt so 'joy update' recognizes the install.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-28T19:30:47.405401546Z
+  text: '[x] Fixed in the website installer (public/install/joy.{sh,ps1}); tracked there as JISITE-004B-BA. The installer now writes the cargo-dist receipt (${XDG_CONFIG_HOME:-$HOME/.config}/joy-cli/joy-cli-receipt.json; %LOCALAPPDATA%\joy-cli on Windows). E2E verified on Linux: after install, ''joy update --check'' reports ''up to date (0.16.5)'' instead of ''install receipt missing''.'
