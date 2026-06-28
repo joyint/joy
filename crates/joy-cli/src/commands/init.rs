@@ -54,6 +54,10 @@ pub struct InitArgs {
 }
 
 pub fn run(args: InitArgs) -> Result<()> {
+    // Until joy embeds libgit2, init needs system git. Check before any prompt
+    // or write so we never run the wizard only to abort late (JOY-01CC-BE).
+    joy_core::vcs::ensure_git_available()?;
+
     let root = std::env::current_dir()?;
     let options = InitOptions {
         root: root.clone(),

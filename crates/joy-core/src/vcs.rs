@@ -120,6 +120,13 @@ fn git_run(root: &Path, args: &[&str]) -> Result<(), JoyError> {
     Ok(())
 }
 
+/// Fail fast when git is unavailable, before any prompts or writes. Until joy
+/// embeds libgit2, every `joy init` needs system git on PATH; checking up front
+/// avoids running a whole init wizard only to abort at the first git call.
+pub fn ensure_git_available() -> Result<(), JoyError> {
+    git_output(Path::new("."), &["--version"]).map(|_| ())
+}
+
 impl Vcs for GitVcs {
     fn is_repo(&self, root: &Path) -> bool {
         Command::new("git")

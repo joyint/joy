@@ -656,6 +656,10 @@ fn welcome_and_maybe_init(cwd: &std::path::Path) -> Result<()> {
         return Ok(());
     }
 
+    // Until joy embeds libgit2, init needs system git. Check before the wizard
+    // prompts so we never collect everything only to abort late (JOY-01CC-BE).
+    joy_core::vcs::ensure_git_available()?;
+
     let default_name = cwd
         .file_name()
         .and_then(|n| n.to_str())

@@ -79,3 +79,12 @@ load setup
     [[ "$output" == *"no founding member"* ]]
     ! grep -q "@example.com" .joy/project.yaml
 }
+
+@test "joy init fails fast and writes nothing when git is missing" {
+    # A PATH that contains joy but not git (JOY-01CC-BE). Until joy embeds
+    # libgit2, init must check for git before any prompt or write.
+    run env PATH="$(dirname "$JOY_BIN")" joy init --name "No Git"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"git is not installed or not in PATH"* ]]
+    [ ! -d .joy ]
+}

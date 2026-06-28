@@ -1,0 +1,28 @@
+id: JOY-01CC-BE
+title: joy init prompts for everything then fails late when git is missing
+type: bug
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-28T18:17:56.093494329Z
+updated: 2026-06-28T18:23:43.945049200Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-28T18:18:46.182013358Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-28T18:23:43.945049200Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Until joy embeds libgit2, init needs system git on PATH. Today ''joy init'' (and the bare-joy welcome wizard) ask for name, acronym, user, language and the anonymous-mode question, and only then fail with ''git error: git is not installed or not in PATH'', discarding all the input. Fail fast: check git availability before any prompt or write, with the same discipline as JOY-01CA-AF. Add joy_core::vcs::ensure_git_available() (runs git --version, maps NotFound to the friendly message) and call it at the very start of the CLI init flow and of the welcome wizard before prompting.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-28T18:18:46.269394063Z
+  text: 'Plan: add joy_core::vcs::ensure_git_available() (runs ''git --version'' via git_output; NotFound -> the existing friendly ''git is not installed or not in PATH''). Call it as the first statement of the CLI init flow (commands::init::run) and in the bare-joy welcome wizard right after the user opts to initialize, before any name/acronym/user/anonymous prompt or write. bats: joy init with git off PATH fails fast with that message and creates no .joy.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-28T18:23:43.838219109Z
+  text: '[x] Done. Added joy_core::vcs::ensure_git_available() and call it before any prompt/write in both init entry points (commands::init::run and the bare-joy welcome wizard, right after the user opts to initialize). Missing git now aborts immediately with ''git is not installed or not in PATH'' and writes nothing, instead of after the full wizard. bats covers it; just check green.'
