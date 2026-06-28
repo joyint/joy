@@ -1,0 +1,28 @@
+id: JOY-01CB-8B
+title: 'joy update: unhelpful message for package-manager installs; give the upgrade command'
+type: bug
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-28T14:31:39.868277852Z
+updated: 2026-06-28T14:37:10.777823370Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-28T14:31:49.696834620Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-28T14:37:10.777823370Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'When joy was installed by a foreign package manager (no axoupdater receipt, e.g. winget), ''joy update'' only prints ''managed by another installer'' and gives the user no way forward. Infer the manager from the binary path (std::env::current_exe) and print the exact upgrade command (winget: ''winget upgrade -s winget joyint.joy''; cargo: ''cargo install joy-cli''; else a winget example), plus a line clarifying that the managed files re-sync automatically after the upgrade. Inform-only: joy never shells out to the foreign manager (a failing winget must not entangle joy; the receipt-gating in JOY-0164-B5 stands). The in-repo managed-files sync already runs regardless of the receipt, and only ever matches the currently installed version, so there is no extra step. Same change applies to jyn in its own repo.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-28T14:31:49.743917790Z
+  text: 'Plan: add foreign_install() -> Option<(manager, upgrade_cmd)> inferred from current_exe path (winget/cargo/other), gated on a missing axoupdater receipt. Use it in the human ''joy update'' binary line and in ''joy update --check'' to print ''managed by <mgr>'', the exact upgrade command, and ''managed files are re-synced automatically after you upgrade.'' Inform-only. bats assertion for the message.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-28T14:37:10.502070376Z
+  text: '[x] Done. foreign_install() infers the package manager from current_exe (winget/cargo/other) when no axoupdater receipt is present, and ''joy update'' / ''joy update --check'' now print ''managed by <mgr>'', the exact ''upgrade with: ...'' command (winget: ''winget upgrade -s winget joyint.joy''), and ''managed files are re-synced automatically after you upgrade.'' Inform-only; joy never runs the foreign manager. In-repo sync is unchanged (not receipt-gated, only ever matches the installed version). bats coverage added in update_command.bats. just check green.'

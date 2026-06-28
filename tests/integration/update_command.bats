@@ -3,11 +3,25 @@
 
 load setup
 
-@test "joy update --check reports binary receipt missing for non-cargo-dist build" {
+@test "joy update --check guides a package-manager install to the right upgrade command" {
+    # The test binary has no axoupdater receipt, so it reads as foreign-managed.
     joy init --name "Test"
     git add -A && git commit -m "init [no-item]" --quiet
     run joy update --check
-    [[ "$output" == *"install receipt missing"* ]]
+    [[ "$output" == *"managed by"* ]]
+    [[ "$output" == *"upgrade with:"* ]]
+    [[ "$output" == *"winget upgrade -s winget joyint.joy"* ]]
+    [[ "$output" == *"re-synced automatically"* ]]
+}
+
+@test "joy update points a package-manager install at the upgrade command, no binary swap" {
+    joy init --name "Test"
+    git add -A && git commit -m "init [no-item]" --quiet
+    run joy update
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"managed by"* ]]
+    [[ "$output" == *"upgrade with: winget upgrade -s winget joyint.joy"* ]]
+    [[ "$output" == *"re-synced automatically after you upgrade"* ]]
 }
 
 @test "joy update --check reports the version marker in sync after a fresh init" {

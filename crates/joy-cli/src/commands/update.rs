@@ -85,6 +85,20 @@ pub fn run(args: UpdateArgs) -> Result<()> {
             "binary",
             color::inactive("skipped (--no-binary)")
         );
+    } else if let Some((manager, cmd)) = foreign_install() {
+        // Foreign-managed binary (e.g. winget): never touch it, just point the
+        // user at the right command. Managed files re-sync on the next run.
+        println!(
+            "  {}{:<24} {}",
+            color::empty_mark(),
+            "binary",
+            color::inactive(&format!("managed by {manager} ({CURRENT_VERSION})"))
+        );
+        println!("      upgrade with: {cmd}");
+        println!(
+            "      {}",
+            color::inactive("managed files are re-synced automatically after you upgrade.")
+        );
     } else {
         let (mark, status) = swap_binary_status();
         println!("  {mark}{:<24} {}", "binary", status);
@@ -177,11 +191,16 @@ fn run_check() -> Result<()> {
 
     println!("{}", color::section("Binary"));
     let mut updater = AxoUpdater::new_for(PKG_NAME);
-    if updater.load_receipt().is_err() {
+    if let Some((manager, cmd)) = foreign_install() {
         println!(
-            "  {}install receipt missing {}",
+            "  {}{}",
             color::empty_mark(),
-            color::inactive("(managed by another installer)")
+            color::inactive(&format!("managed by {manager} ({CURRENT_VERSION})"))
+        );
+        println!("      upgrade with: {cmd}");
+        println!(
+            "      {}",
+            color::inactive("managed files are re-synced automatically after you upgrade.")
         );
     } else if updater.is_update_needed_sync().unwrap_or(false) {
         stale = true;
@@ -502,6 +521,34 @@ fn run_update_json(args: UpdateArgs) -> Result<()> {
         downgrade_blocked,
     })?;
     Ok(())
+}
+
+/// When the running binary has no axoupdater receipt it was installed by a
+/// foreign package manager, so `joy update` must not touch it. Infer that
+/// manager from the binary's own path and return `(display name, upgrade
+/// command)` for an actionable hint. `None` when a receipt is present (the
+/// binary is self-update capable). joy never runs the command itself: a failing
+/// foreign upgrade must not entangle joy (the receipt-gating of JOY-0164-B5).
+fn foreign_install() -> Option<(&'static str, String)> {
+    let mut updater = AxoUpdater::new_for(PKG_NAME);
+    if updater.load_receipt().is_ok() {
+        return None;
+    }
+    let path = std::env::current_exe()
+        .map(|p| p.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    let info = if path.contains("microsoft\\winget") || path.contains("microsoft/winget") {
+        ("winget", "winget upgrade -s winget joyint.joy".to_string())
+    } else if path.contains("/.cargo/") || path.contains("\\.cargo\\") {
+        ("cargo", "cargo install joy-cli".to_string())
+    } else {
+        // Unknown manager; winget is by far the most common foreign install.
+        (
+            "another installer",
+            "winget upgrade -s winget joyint.joy".to_string(),
+        )
+    };
+    Some(info)
 }
 
 /// One-line binary swap result: (mark, status detail).
