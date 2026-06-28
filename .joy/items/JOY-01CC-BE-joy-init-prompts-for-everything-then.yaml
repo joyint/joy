@@ -11,12 +11,18 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-28T18:17:56.093494329Z
-updated: 2026-06-28T18:23:43.945049200Z
+updated: 2026-06-28T18:48:31.164917707Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-28T18:18:46.182013358Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 - date: 2026-06-28T18:23:43.945049200Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-28T18:44:04.374264054Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-28T18:44:04.446900264Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-28T18:48:31.164917707Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Until joy embeds libgit2, init needs system git on PATH. Today ''joy init'' (and the bare-joy welcome wizard) ask for name, acronym, user, language and the anonymous-mode question, and only then fail with ''git error: git is not installed or not in PATH'', discarding all the input. Fail fast: check git availability before any prompt or write, with the same discipline as JOY-01CA-AF. Add joy_core::vcs::ensure_git_available() (runs git --version, maps NotFound to the friendly message) and call it at the very start of the CLI init flow and of the welcome wizard before prompting.'
 comments:
@@ -26,3 +32,9 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-06-28T18:23:43.838219109Z
   text: '[x] Done. Added joy_core::vcs::ensure_git_available() and call it before any prompt/write in both init entry points (commands::init::run and the bare-joy welcome wizard, right after the user opts to initialize). Missing git now aborts immediately with ''git is not installed or not in PATH'' and writes nothing, instead of after the full wizard. bats covers it; just check green.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-28T18:44:04.489244503Z
+  text: 'Follow-up from Windows E2E: the abort works but the message is dry and doubled (''Error: git error: git is not installed or not in PATH''). Replace with a typed JoyError::GitMissing whose message names Joy''s need for Git and how to fix it (install + https://git-scm.com/downloads), so ensure_git_available returns that instead of the generic git-wrapped string.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-28T18:48:31.098873807Z
+  text: '[x] Message polished: typed JoyError::GitMissing -> ''Joy needs Git, but it was not found on your PATH.'' No more doubled ''git error: git'', and no install how-to (users install git their own way). bats + just check green.'

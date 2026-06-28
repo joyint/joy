@@ -124,7 +124,11 @@ fn git_run(root: &Path, args: &[&str]) -> Result<(), JoyError> {
 /// embeds libgit2, every `joy init` needs system git on PATH; checking up front
 /// avoids running a whole init wizard only to abort at the first git call.
 pub fn ensure_git_available() -> Result<(), JoyError> {
-    git_output(Path::new("."), &["--version"]).map(|_| ())
+    match Command::new("git").arg("--version").output() {
+        Ok(_) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(JoyError::GitMissing),
+        Err(e) => Err(JoyError::Git(format!("failed to run git --version: {e}"))),
+    }
 }
 
 impl Vcs for GitVcs {

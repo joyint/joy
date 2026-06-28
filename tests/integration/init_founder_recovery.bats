@@ -85,6 +85,6 @@ load setup
     # libgit2, init must check for git before any prompt or write.
     run env PATH="$(dirname "$JOY_BIN")" joy init --name "No Git"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"git is not installed or not in PATH"* ]]
+    [[ "$output" == *"Joy needs Git"* ]]
     [ ! -d .joy ]
 }

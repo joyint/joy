@@ -15,6 +15,9 @@ pub enum JoyError {
     )]
     NoFounderIdentity,
 
+    #[error("Joy needs Git, but it was not found on your PATH.")]
+    GitMissing,
+
     #[error("no Joy project found (run `joy init` first)")]
     NotInitialized,
 
