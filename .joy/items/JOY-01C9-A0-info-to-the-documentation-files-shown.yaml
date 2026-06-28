@@ -1,0 +1,27 @@
+id: JOY-01C9-A0
+title: Info to the documentation files shown too late
+type: bug
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+created_by: horst.schwarz@joydev.com
+created: 2026-06-28T09:55:06.947568043Z
+updated: 2026-06-28T10:32:56.247754453Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-28T10:25:15.153368449Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-28T10:32:56.247754453Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: When one calls 'joy ai init' is only shown 'Vision doc path [VISION.md]:' initially, only when confirmed with Enter the info 'VISION.md helps AI understand your product goals and design decisions. Create template?' is shown. It would be better if before selecting the file the user gets explained what he has to look for.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-28T10:25:15.261837363Z
+  text: 'Plan: in joy ai init, print the doc''s purpose line (The <label> doc helps AI understand your <purpose>.) immediately BEFORE the interactive ''<label> doc path [..]:'' prompt, so the user knows what the document is for before choosing a path. Today that explanation only appears afterwards, attached to the ''Create template?'' line. One-line addition in resolve_doc_path; no behavior change to the path resolution itself.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-28T10:32:56.046661661Z
+  text: '[x] Done. joy ai init now prints ''The <label> doc helps AI understand your <purpose>.'' immediately before the ''<label> doc path [..]:'' prompt, so the user understands the document before choosing a path. Removed the now-redundant purpose text from the ''Create template?'' line (it became ''Create <file> template?''). Verified visually for all three docs; full just check green (fmt, clippy -D warnings, 379 lib + integration + trycmd, 511 bats).'

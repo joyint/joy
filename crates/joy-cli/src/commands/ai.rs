@@ -596,11 +596,9 @@ fn check_docs(root: &Path, args: &InitArgs) -> anyhow::Result<()> {
         } else {
             dprintln!("  {}{}", color::cross_mark(), color::warning(&chosen));
             let name = chosen.rsplit('/').next().unwrap_or(&chosen);
-            dprint!(
-                "    {} helps AI understand your {}. Create template? [Y/n] ",
-                name,
-                spec.purpose
-            );
+            // The doc's purpose is explained before the path prompt now
+            // (JOY-01C9-A0), so this only needs to offer the action.
+            dprint!("    Create {} template? [Y/n] ", name);
             std::io::stdout().flush()?;
             let mut input = String::new();
             std::io::stdin().read_line(&mut input)?;
@@ -699,6 +697,16 @@ fn resolve_doc_path(
         });
     }
 
+    // Explain what the document is for BEFORE asking for its path, so the user
+    // knows what to point at while choosing -- not only afterwards on the
+    // "Create template?" line (JOY-01C9-A0).
+    dprintln!(
+        "    {}",
+        color::inactive(&format!(
+            "The {} doc helps AI understand your {}.",
+            spec.label, spec.purpose
+        ))
+    );
     dprint!("    {} doc path [{}]: ", spec.label, suggestion);
     std::io::stdout().flush()?;
     let mut input = String::new();
