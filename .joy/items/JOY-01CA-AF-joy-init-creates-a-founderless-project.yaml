@@ -1,0 +1,37 @@
+id: JOY-01CA-AF
+title: joy init creates a founderless project when no git user.email is set, with no recovery path
+type: bug
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-06-28T13:10:25.056591257Z
+updated: 2026-06-28T13:28:15.786898449Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-06-28T13:10:38.237006792Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-28T13:28:15.786898449Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Repro: in a repo with no git user.email, run joy init; then set git config user.email; then joy project member add <self> -> 'Error: <email> is not a registered project member'. Reversing the order (git identity first, then joy init) works.
+
+  Root cause: init registers the founding member from git user.email (or --user) at init time, but silently skips it when neither is available, leaving a member-less project. joy project member add then fails because it signs the new member's attestation with the CALLER's keypair (derive_acting_keypair), and the caller is not a member yet -- a chicken-and-egg with no escape, since re-running joy init only sets up the local environment ('already initialized') and never registers the missing founder.
+
+  Fix (founder bootstrap belongs to init and must be robust):
+  1. Fail-fast: a fresh joy init with no git user.email and no --user aborts before writing any files, with guidance (set git config user.email / pass --user).
+  2. Self-heal: re-running joy init on an already-initialized but member-less project registers the founder from the now-available identity (git email or --user) and persists it -- matching the user's intuition that re-running init fixes it.
+
+  Add a bats regression test for the exact sequence: init without identity, set identity, recover.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-28T13:10:38.276446Z
+  text: 'Plan: (1) joy-core init_project resolves the founder identity (--user or git user.email) BEFORE any filesystem writes and fails fast with guidance when absent, so a fresh init never produces a member-less project nor a partial .joy. (2) Extract register_founder so both fresh-init and the recovery path share one founder-bootstrap. (3) CLI already-initialized branch: load the project; if member-less and an identity is now available, register the founder and persist (self-heal); if still none, print a clear hint. (4) bats: init without git identity -> set identity -> recovery via re-init, asserting the founder is then registered and project.yaml carries it.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-28T13:28:15.696909596Z
+  text: '[x] Done. joy-core: init resolves the founder identity (--user or git user.email) before any write and fails fast with JoyError::NoFounderIdentity (clear guidance) when absent, so a fresh init never leaves a member-less project; founder is then registered unconditionally. Added ensure_founder + FounderHeal for the recovery path. joy-cli: the already-initialized branch self-heals a member-less project (registers the founder from the now-available identity) or warns clearly when none is available. 11 existing core init tests made hermetic (explicit --user instead of relying on ambient git config). bats: tests/integration/init_founder_recovery.bats (fail-fast + no partial .joy, retry, --user, self-heal, warn). Full just check green (fmt, clippy -D warnings, lib + integration + 516 bats).'

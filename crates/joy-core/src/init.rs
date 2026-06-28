@@ -83,6 +83,15 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
         return Err(JoyError::AlreadyInitialized(joy_dir));
     }
 
+    // A Joy project must have a founding member: the root of the attestation
+    // chain. `joy project member add` later attests new members with the
+    // CALLER's key, so without a founder there is no way to bootstrap one. Resolve
+    // the founder's identity (--user or git user.email) BEFORE writing anything,
+    // and fail fast with guidance rather than leave a member-less project on disk
+    // that cannot be recovered without re-init (JOY-01CA-AF).
+    let founder_email =
+        resolve_founder_email(options.user.as_deref()).ok_or(JoyError::NoFounderIdentity)?;
+
     // Detect or initialize git
     let vcs = default_vcs();
     let git_existed = vcs.is_repo(root);
@@ -127,20 +136,13 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
         project.language = lang;
     }
 
-    // Register the project creator as a member with all capabilities.
-    // Prefer an explicit override, fall back to git config user.email.
-    let creator_email = options
-        .user
-        .filter(|s| !s.is_empty())
-        .or_else(|| vcs.user_email().ok().filter(|s| !s.is_empty()));
-    if let Some(email) = creator_email {
-        // A fresh project is always `open`, so the founder is keyed by e-mail
-        // here; `joy init --anonymous` migrates afterwards via switch_to_anonymous.
-        project.register_member(
-            &email,
-            crate::model::project::Member::new(crate::model::project::MemberCapabilities::All),
-        )?;
-    }
+    // Register the founder resolved above with all capabilities. A fresh project
+    // is always `open`, so they are keyed by e-mail here; `joy init --anonymous`
+    // migrates afterwards via switch_to_anonymous.
+    project.register_member(
+        &founder_email,
+        crate::model::project::Member::new(crate::model::project::MemberCapabilities::All),
+    )?;
 
     store::write_yaml(&joy_dir.join(store::PROJECT_FILE), &project)?;
     let project_rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
@@ -168,6 +170,50 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
         git_initialized,
         git_existed,
     })
+}
+
+/// Resolve the founding member's e-mail: an explicit `--user` override, else the
+/// git `user.email`. `None` when neither is available.
+fn resolve_founder_email(user_override: Option<&str>) -> Option<String> {
+    user_override
+        .map(str::to_string)
+        .filter(|s| !s.is_empty())
+        .or_else(|| default_vcs().user_email().ok().filter(|s| !s.is_empty()))
+}
+
+/// Outcome of [`ensure_founder`].
+pub enum FounderHeal {
+    /// The project already had at least one member; nothing changed.
+    AlreadyPresent,
+    /// A founder was registered now; carries their e-mail.
+    Registered(String),
+    /// The project has no members and no identity was available to register one.
+    NoIdentity,
+}
+
+/// Register a founding member on an already-initialized project that has none.
+///
+/// Recovers a project that an older Joy `init`ed before a git identity was
+/// configured, when the founder step was silently skipped (JOY-01CA-AF). New
+/// projects can no longer reach that state because [`init`] now fails fast.
+/// Idempotent: does nothing when the project already has members.
+pub fn ensure_founder(root: &Path, user_override: Option<&str>) -> Result<FounderHeal, JoyError> {
+    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
+    let mut project = store::read_project(&project_path)?;
+    if project.has_members() {
+        return Ok(FounderHeal::AlreadyPresent);
+    }
+    let Some(email) = resolve_founder_email(user_override) else {
+        return Ok(FounderHeal::NoIdentity);
+    };
+    project.register_member(
+        &email,
+        crate::model::project::Member::new(crate::model::project::MemberCapabilities::All),
+    )?;
+    store::write_yaml(&project_path, &project)?;
+    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+    crate::git_ops::auto_git_add(root, &[&rel]);
+    Ok(FounderHeal::Registered(email))
 }
 
 /// Onboard an existing project: set up local environment (hooks, etc.).
@@ -451,7 +497,7 @@ mod tests {
             root: dir.path().to_path_buf(),
             name: Some("Test Project".into()),
             acronym: Some("TP".into()),
-            user: None,
+            user: Some("test@example.com".to_string()),
             language: None,
         })
         .unwrap();
@@ -472,7 +518,7 @@ mod tests {
             root: dir.path().to_path_buf(),
             name: Some("My App".into()),
             acronym: Some("MA".into()),
-            user: None,
+            user: Some("test@example.com".to_string()),
             language: None,
         })
         .unwrap();
@@ -490,7 +536,7 @@ mod tests {
             root: dir.path().to_path_buf(),
             name: None,
             acronym: None,
-            user: None,
+            user: Some("test@example.com".to_string()),
             language: None,
         })
         .unwrap();
@@ -509,7 +555,7 @@ mod tests {
             root: dir.path().to_path_buf(),
             name: Some("Test".into()),
             acronym: None,
-            user: None,
+            user: Some("test@example.com".to_string()),
             language: None,
         })
         .unwrap();
@@ -518,7 +564,7 @@ mod tests {
             root: dir.path().to_path_buf(),
             name: Some("Test".into()),
             acronym: None,
-            user: None,
+            user: Some("test@example.com".to_string()),
             language: None,
         })
         .unwrap_err();
@@ -533,7 +579,7 @@ mod tests {
             root: dir.path().to_path_buf(),
             name: Some("Test".into()),
             acronym: None,
-            user: None,
+            user: Some("test@example.com".to_string()),
             language: None,
         })
         .unwrap();
@@ -551,7 +597,7 @@ mod tests {
             root: dir.path().to_path_buf(),
             name: Some("Test".into()),
             acronym: None,
-            user: None,
+            user: Some("test@example.com".to_string()),
             language: None,
         })
         .unwrap();
@@ -572,7 +618,7 @@ mod tests {
             root: dir.path().to_path_buf(),
             name: Some("Test".into()),
             acronym: None,
-            user: None,
+            user: Some("test@example.com".to_string()),
             language: None,
         })
         .unwrap();
@@ -597,7 +643,7 @@ mod tests {
             root: dir.path().to_path_buf(),
             name: Some("Test".into()),
             acronym: None,
-            user: None,
+            user: Some("test@example.com".to_string()),
             language: None,
         })
         .unwrap();
@@ -617,7 +663,7 @@ mod tests {
             root: dir.path().to_path_buf(),
             name: Some("Test".into()),
             acronym: None,
-            user: None,
+            user: Some("test@example.com".to_string()),
             language: None,
         })
         .unwrap();
@@ -638,7 +684,7 @@ mod tests {
             root: dir.path().to_path_buf(),
             name: Some("Test".into()),
             acronym: None,
-            user: None,
+            user: Some("test@example.com".to_string()),
             language: None,
         })
         .unwrap();

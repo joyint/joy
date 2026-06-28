@@ -8,6 +8,13 @@ pub enum JoyError {
     #[error("project already initialized at {0}")]
     AlreadyInitialized(PathBuf),
 
+    #[error(
+        "cannot register the founding member: no git user.email is set and no --user was given.\n\
+         Set your identity first, then re-run:\n  git config user.email \"you@example.com\"\n  \
+         git config user.name \"Your Name\"\nor: joy init --user you@example.com"
+    )]
+    NoFounderIdentity,
+
     #[error("no Joy project found (run `joy init` first)")]
     NotInitialized,
 

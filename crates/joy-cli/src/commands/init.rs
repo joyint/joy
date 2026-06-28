@@ -145,6 +145,24 @@ pub fn run(args: InitArgs) -> Result<()> {
             } else {
                 println!("  Commit-msg hook ... installed");
             }
+            // Self-heal a member-less project: an older Joy could init a project
+            // before a git identity was set, leaving no founder and no way to
+            // bootstrap one (`joy project member add` attests with the caller's
+            // key). Register the founder now that an identity is available
+            // (JOY-01CA-AF).
+            match init::ensure_founder(&root, args.user.as_deref())? {
+                init::FounderHeal::Registered(email) => {
+                    println!("  Registered {email} as the founding member.");
+                }
+                init::FounderHeal::NoIdentity => {
+                    println!();
+                    println!("This project has no founding member and no git user.email is set.");
+                    println!("  Set your identity and re-run, or pass --user:");
+                    println!("    git config user.email \"you@example.com\"");
+                    println!("    joy init");
+                }
+                init::FounderHeal::AlreadyPresent => {}
+            }
             println!();
             println!("Local environment ready.");
         }
