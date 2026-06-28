@@ -1,0 +1,19 @@
+version: v0.16.5
+date: 2026-06-28
+previous: v0.16.4
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 17
+  items: 3
+- id: horst.schwarz@joydev.com
+  events: 3
+  items: 3
+items:
+  bugs:
+  - id: JOY-01C9-A0
+    title: Info to the documentation files shown too late
+  reworks:
+  - id: JOY-01C7-CB
+    title: Relocation of project document defaults
+  - id: JOY-01C8-2D
+    title: Type-bound member access across privacy modes (seal map, gate lookup/write/display)
