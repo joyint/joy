@@ -1,8 +1,10 @@
 id: JOY-01C3-90
 title: 'Windows: bare ''joy'' launches System32\joy.cpl (Game Controllers) instead of joy.exe'
 type: bug
-status: new
+status: review
 priority: high
+assignees:
+- member: ai:claude@joy
 tags:
 - windows
 capabilities:
@@ -11,9 +13,13 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-11T19:10:01.687119196Z
-updated: 2026-06-11T19:10:01.687119196Z
+updated: 2026-06-28T15:08:25.232606585Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
+history:
+- date: 2026-06-28T14:54:10.069668711Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-28T15:08:25.232606585Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   On Windows, typing 'joy' in cmd.exe or PowerShell can launch the legacy Game Controllers control panel (C:\Windows\System32\joy.cpl) instead of the joy CLI.
 
@@ -28,3 +34,10 @@ description: |-
   4. Document only: tell users to type 'joy.exe' (explicit extension bypasses PATHEXT) or to put joy's dir ahead of System32 manually. No real fix, poor UX.
 
   Related: JOY-0190-D0 (Windows signing) is orthogonal. Affects all Windows consoles; PowerShell resolution differs subtly.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-28T14:54:10.114086773Z
+  text: 'Plan: new ps_alias module. Cross-platform pure core (unit-tested everywhere): alias-present regex, PowerShell-version-from-exe-name, profile-path builder, append-payload (blank-line rule). Thin #[cfg(windows)] glue: parent-process exe via sysinfo (windows-only dep), USERPROFILE-based profile path, read/write (UTF-8 BOM). Surfaces: (1) board ''No joy project here'' Y/n prompt, (2) joy update Y/n prompt, (3) joy help passive tip via try_parse_from DisplayHelp interception in main. Inform/prompt only. Verify: unit + just check on Linux; cargo check --target x86_64-pc-windows-gnu for the cfg(windows) paths. Runtime E2E validated manually on Windows by the operator.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-28T15:08:25.187487379Z
+  text: '[x] Implemented. New ps_alias module: cross-platform pure core (alias regex, profile-path, edition-from-exe, append-payload) with 4 unit tests; thin #[cfg(windows)] glue (parent process via sysinfo 0.33, USERPROFILE-based $PROFILE, UTF-8 BOM write). Surfaces wired: (1) joy help/-h passive tip via try_parse_from DisplayHelp interception in main; (2) board ''No joy project here'' Y/n prompt; (3) joy update Y/n prompt. Inform/prompt-only, never runs anything; no-op off Windows. Verification: host build + just check green (clippy -D warnings, fmt, 517 bats + unit tests); help/-h/--version still exit 0 on Linux with no tip. The full windows cross-check is blocked by aws-lc-sys needing a mingw C toolchain, so the cfg(windows) glue was compile-verified in a minimal sysinfo+regex crate against x86_64-pc-windows-gnu (clean), and the sysinfo 0.33.1 API checked against its source. Submitting for runtime E2E validation on Windows (operator).'

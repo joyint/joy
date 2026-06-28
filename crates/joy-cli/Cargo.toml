@@ -42,6 +42,14 @@ hex = "0.4"
 # brew / cargo-install / distro-package builds opt out gracefully.
 # See JOY-0164-B5.
 axoupdater = { version = "0.10", features = ["blocking"] }
+# Loose match of an existing `Set-Alias joy ...` line in the PowerShell
+# $PROFILE for the Windows alias hint (JOY-01C3-90).
+regex = "1"
+
+# Parent-process detection for the Windows PowerShell alias hint
+# (JOY-01C3-90). Windows-only, so non-Windows builds pull nothing extra.
+[target.'cfg(windows)'.dependencies]
+sysinfo = { version = "0.33", default-features = false, features = ["system"] }
 
 [dev-dependencies]
 assert_cmd = "2"

@@ -643,6 +643,11 @@ fn welcome_and_maybe_init(cwd: &std::path::Path) -> Result<()> {
     println!("Docs: https://joyint.com/en/joy/docs");
     println!();
 
+    // Windows-only: offer to add the PowerShell `joy` alias so bare `joy`
+    // launches this tool instead of the Game Controllers panel (JOY-01C3-90).
+    // No-op off Windows / outside PowerShell / when already set.
+    crate::ps_alias::offer_alias_fix();
+
     if !prompt::is_interactive() {
         return Ok(());
     }

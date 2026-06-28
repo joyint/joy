@@ -11,6 +11,7 @@ mod forge;
 mod member_resolver;
 mod output;
 mod prompt;
+mod ps_alias;
 mod update_registry;
 mod version_bump;
 
@@ -327,7 +328,19 @@ fn main() -> anyhow::Result<()> {
     clap_complete::CompleteEnv::with_factory(Cli::command).complete();
 
     let raw: Vec<String> = std::env::args().collect();
-    let cli = Cli::parse_from(rewrite_trailing_help(raw, &Cli::command()));
+    // Use try_parse_from so we can append the Windows PowerShell alias tip to
+    // the very end of `joy help` / `joy -h` output (JOY-01C3-90). clap prints
+    // help/version and would otherwise exit before we get a chance.
+    let cli = match Cli::try_parse_from(rewrite_trailing_help(raw, &Cli::command())) {
+        Ok(cli) => cli,
+        Err(e) => {
+            let _ = e.print();
+            if e.kind() == clap::error::ErrorKind::DisplayHelp {
+                ps_alias::print_help_tip();
+            }
+            std::process::exit(e.exit_code());
+        }
+    };
 
     // --session overrides JOY_SESSION. Setting the env var here keeps all
     // downstream readers (joy-core identity resolution, crypt_session)

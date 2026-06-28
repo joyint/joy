@@ -138,6 +138,10 @@ pub fn run(args: UpdateArgs) -> Result<()> {
         );
     }
 
+    // Windows-only: offer the PowerShell `joy` alias if missing (JOY-01C3-90).
+    // No-op off Windows / outside PowerShell / when already set.
+    crate::ps_alias::offer_alias_fix();
+
     Ok(())
 }
 
