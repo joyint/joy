@@ -202,7 +202,7 @@ fn resolve_self_with_delegated_ais(root: &Path) -> Result<Vec<String>> {
     }
 
     if let Ok(project) = store::load_project(root) {
-        if let Some(member) = project.members.get(&human_id) {
+        if let Some(member) = project.member_by_key(&human_id) {
             for ai_id in member.ai_delegations.keys() {
                 if !members.contains(ai_id) {
                     members.push(ai_id.clone());

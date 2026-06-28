@@ -351,7 +351,7 @@ pub(crate) fn run_init(
 
     // Determine who we are
     let email = resolve_user(user_flag)?;
-    let member = project.members.get(&email);
+    let member = project.member_by_email(&email);
     if member.is_none() {
         anyhow::bail!(
             "{} is not a registered project member. Run `joy project member add {}`.",
@@ -397,7 +397,7 @@ pub(crate) fn run_init(
     let public_key = keypair.public_key();
 
     // Store salt, public key, and both wraps in project.yaml
-    let m = project.members.get_mut(&email).unwrap();
+    let m = project.member_by_email_mut(&email).unwrap();
     m.kdf_nonce = Some(salt.to_hex());
     m.verify_key = Some(public_key.to_hex());
     m.seed_wrap_passphrase = Some(wrap_passphrase);
@@ -411,7 +411,7 @@ pub(crate) fn run_init(
     // signature verifies against a member's public_key.
     if let Some(founder_email) = founder_needing_reverse_attestation(&project) {
         if founder_email != email {
-            let founder_member = project.members.get(&founder_email).cloned().unwrap();
+            let founder_member = project.member_by_key(&founder_email).cloned().unwrap();
             let signed_fields = joy_core::auth::attestation::signed_fields_for(
                 &founder_email,
                 &founder_member.capabilities,
@@ -419,7 +419,10 @@ pub(crate) fn run_init(
             );
             let attestation =
                 joy_core::auth::attestation::sign_attestation(&email, &keypair, signed_fields);
-            project.members.get_mut(&founder_email).unwrap().attestation = Some(attestation);
+            project
+                .member_by_key_mut(&founder_email)
+                .unwrap()
+                .attestation = Some(attestation);
         }
     }
 
@@ -532,7 +535,7 @@ fn auth_with_passphrase(
     // one key. In open mode this is the e-mail.
     let member_key = joy_core::privacy::member_key_for_email(project, email)
         .unwrap_or_else(|| email.to_string());
-    let member = project.members.get(&member_key).ok_or_else(|| {
+    let member = project.member_by_key(&member_key).ok_or_else(|| {
         anyhow::anyhow!(
             "{} is not a registered project member. Run `joy project member add {}`.",
             email,
@@ -590,7 +593,7 @@ fn auth_with_passphrase(
     let sealed_project = maybe_auto_seal(root, project, email, &keypair)?;
     let project_view: &joy_core::model::project::Project =
         sealed_project.as_ref().unwrap_or(project);
-    let member = project_view.members.get(&member_key).unwrap();
+    let member = project_view.member_by_key(&member_key).unwrap();
 
     // JOY-0100-DA: verify the member's attestation before establishing a
     // session. Founder may be unattested during the solo phase (trust
@@ -645,7 +648,7 @@ fn cached_members_zone_key(
     if project.privacy_mode() != joy_core::model::project::PrivacyMode::Anonymous {
         return None;
     }
-    let wrap = project.members.get(member_key)?.members_wrap.as_deref()?;
+    let wrap = project.member_by_key(member_key)?.members_wrap.as_deref()?;
     let zk = joy_core::crypt::unwrap_for_member(wrap, joy_core::members_file::MEMBERS_ZONE, seed)
         .ok()?;
     Some(hex::encode(zk.as_bytes()))
@@ -661,7 +664,7 @@ fn relock_unlocked_files(
     email: &str,
     seed: &[u8; 32],
 ) -> usize {
-    let Some(member) = project.members.get(email) else {
+    let Some(member) = project.member_by_email(email) else {
         return 0;
     };
     let mut relocked = 0;
@@ -765,8 +768,7 @@ fn migrate_to_wrapped_seed(
     let wrap_recovery = seed_mod::wrap_seed_with_recovery(&seed, &recovery, kdf_nonce)?;
 
     let m = project
-        .members
-        .get_mut(email)
+        .member_by_email_mut(email)
         .ok_or_else(|| anyhow::anyhow!("member {} disappeared mid-migration", email))?;
     m.seed_wrap_passphrase = Some(wrap_passphrase);
     m.seed_wrap_recovery = Some(wrap_recovery);
@@ -801,8 +803,8 @@ fn maybe_auto_seal(
     acting_email: &str,
     acting_keypair: &IdentityKeypair,
 ) -> Result<Option<joy_core::model::project::Project>> {
-    let has_any_attestation = project.members.values().any(|m| m.attestation.is_some());
-    if has_any_attestation || project.members.len() < 2 {
+    let has_any_attestation = project.member_values().any(|m| m.attestation.is_some());
+    if has_any_attestation || project.member_count() < 2 {
         return Ok(None);
     }
 
@@ -810,13 +812,12 @@ fn maybe_auto_seal(
     let mut sealed = store::read_project(&project_path)?;
 
     let targets: Vec<String> = sealed
-        .members
-        .keys()
+        .member_keys()
         .filter(|email| email.as_str() != acting_email)
         .cloned()
         .collect();
     for target_email in targets {
-        let target = sealed.members.get(&target_email).cloned().unwrap();
+        let target = sealed.member_by_key(&target_email).cloned().unwrap();
         let signed_fields = joy_core::auth::attestation::signed_fields_for(
             &target_email,
             &target.capabilities,
@@ -827,7 +828,7 @@ fn maybe_auto_seal(
             acting_keypair,
             signed_fields,
         );
-        sealed.members.get_mut(&target_email).unwrap().attestation = Some(attestation);
+        sealed.member_by_key_mut(&target_email).unwrap().attestation = Some(attestation);
     }
 
     store::write_yaml_preserve(&project_path, &sealed)?;
@@ -847,8 +848,7 @@ fn verify_member_attestation(
     attestation: &joy_core::model::project::Attestation,
 ) -> Result<()> {
     let attester_entry = project
-        .members
-        .get(attestation.attester.id())
+        .member_by_key(attestation.attester.id())
         .ok_or_else(|| {
             anyhow::anyhow!(
                 "attestation for {} names attester {} but that member is not registered. \
@@ -889,8 +889,7 @@ fn verify_member_attestation(
 /// entry that appears after closure is tampering.
 fn founder_must_be_attested(project: &joy_core::model::project::Project) -> bool {
     let unattested = project
-        .members
-        .values()
+        .member_values()
         .filter(|m| m.attestation.is_none())
         .count();
     if unattested > 1 {
@@ -905,11 +904,11 @@ fn founder_must_be_attested(project: &joy_core::model::project::Project) -> bool
 }
 
 fn has_mutual_attestation_pair(project: &joy_core::model::project::Project) -> bool {
-    for (email, member) in &project.members {
+    for (email, member) in project.members() {
         let Some(att) = &member.attestation else {
             continue;
         };
-        if let Some(attester) = project.members.get(att.attester.id()) {
+        if let Some(attester) = project.member_by_key(att.attester.id()) {
             if let Some(attester_att) = &attester.attestation {
                 if attester_att.attester == email.as_str() {
                     return true;
@@ -932,9 +931,11 @@ fn auth_with_token(
 
     // Look up the delegating human
     let human = &delegation.claims.delegated_by;
+    // `delegated_by` is the operator's git e-mail recorded at token issuance
+    // (create_delegation_token passes `operator_email` as `human`), so resolve
+    // it privacy-aware rather than as a raw map key (ADR-042).
     let human_member = project
-        .members
-        .get(human)
+        .member_by_email(human)
         .ok_or_else(|| anyhow::anyhow!("Delegating member {} is not registered.", human))?;
     let human_pk_hex = human_member.verify_key.as_ref().ok_or_else(|| {
         anyhow::anyhow!("Delegating member {} has no public key registered.", human)
@@ -963,7 +964,7 @@ fn auth_with_token(
     let claims = token::validate_token(&delegation, &human_pk, &delegation_pk, project_id)?;
 
     // Verify the AI member is registered
-    if !project.members.contains_key(&claims.ai_member) {
+    if !project.has_member_key(&claims.ai_member) {
         anyhow::bail!(
             "AI member {} is not registered in this project.",
             claims.ai_member
@@ -1061,6 +1062,13 @@ fn auth_with_token(
         );
     }
 
+    // Record the delegating operator by their at-rest member key (opaque id in
+    // anonymous mode), never the cleartext e-mail from the token claim, so this
+    // committed log line carries no PII in anonymous mode (ADR-042).
+    let actor = match joy_core::privacy::delegated_by_at_rest(project, &claims.delegated_by) {
+        Some(operator) => format!("{} delegated-by:{}", claims.ai_member, operator),
+        None => claims.ai_member.clone(),
+    };
     joy_core::event_log::log_event_as(
         root,
         joy_core::event_log::EventType::AuthSessionCreated,
@@ -1069,7 +1077,7 @@ fn auth_with_token(
             "session created for {} via delegation token",
             claims.ai_member
         )),
-        &format!("{} delegated-by:{}", claims.ai_member, claims.delegated_by),
+        &actor,
     );
 
     Ok(())
@@ -1097,16 +1105,14 @@ fn run_status() -> Result<()> {
         .as_ref()
         .map(|s| (s.claims.expires - Utc::now()).num_seconds());
     let auth_initialized = project
-        .members
-        .get(identity.member.id())
+        .member_by_key(identity.member.id())
         .is_some_and(|m| m.verify_key.is_some());
 
     // Delegated AI sessions: only the human delegator's own ai_delegations
     // are surfaced here. We do not enumerate sessions delegated by other
     // humans -- that is not this caller's audit surface.
     let delegated_sessions: Vec<DelegatedSession> = project
-        .members
-        .get(identity.member.id())
+        .member_by_key(identity.member.id())
         .map(|m| m.ai_delegations.keys().cloned().collect::<Vec<_>>())
         .unwrap_or_default()
         .into_iter()
@@ -1255,8 +1261,7 @@ fn run_reset(args: ResetArgs, passphrase_flag: Option<&str>, passphrase_stdin: b
 
     // Verify the acting user's identity via passphrase
     let acting_member = project
-        .members
-        .get(&email)
+        .member_by_email(&email)
         .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member.", email))?;
 
     if acting_member.verify_key.is_none() {
@@ -1275,13 +1280,15 @@ fn run_reset(args: ResetArgs, passphrase_flag: Option<&str>, passphrase_stdin: b
         joy_core::guard::enforce(&root, &joy_core::guard::Action::ManageProject, "project")?;
     }
 
-    // Verify target member exists
-    if !project.members.contains_key(target) {
+    // Verify target member exists. `target` is consumed throughout this
+    // function as an at-rest member key (session removal, audit, display all
+    // key off it), so it is resolved by key here too (ADR-042).
+    if !project.has_member_key(target) {
         anyhow::bail!("member not found: {}", target);
     }
 
     // Reset target member's auth fields
-    let m = project.members.get_mut(target).unwrap();
+    let m = project.member_by_key_mut(target).unwrap();
     m.verify_key = None;
     m.kdf_nonce = None;
     m.seed_wrap_passphrase = None;
@@ -1388,7 +1395,7 @@ pub(crate) fn create_delegation_token(
     if !is_ai_member(ai_member) {
         anyhow::bail!("{} is not an AI member (must start with ai:)", ai_member);
     }
-    if !project.members.contains_key(ai_member) {
+    if !project.has_member_key(ai_member) {
         anyhow::bail!(
             "{} is not a registered project member. Run `joy project member add {}`.",
             ai_member,
@@ -1401,10 +1408,15 @@ pub(crate) fn create_delegation_token(
     // running `joy auth` separately: the passphrase entered here covers
     // both signing the delegation and bootstrapping the session
     // (JOY-00EF-E5).
-    let member = project
-        .members
-        .get(operator_email)
+    // Resolve the operator's at-rest map key (the e-mail in open mode, the
+    // opaque id in anonymous mode, ADR-042). Sessions, the guard identity and
+    // the attestation are all keyed by this id, never by the cleartext e-mail.
+    let member_key = project
+        .member_key_for_email(operator_email)
         .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member.", operator_email))?;
+    let member = project
+        .member_by_key(&member_key)
+        .expect("member_key came from the member map");
     if member.verify_key.is_none() {
         anyhow::bail!(
             "Authentication not initialized for {}. Run `joy auth init`.",
@@ -1420,8 +1432,8 @@ pub(crate) fn create_delegation_token(
     // The guard check below then succeeds in the same invocation, so the
     // user does not have to run `joy auth` separately.
     let project_id = session::project_id(root)?;
-    if session::load_session(&project_id, operator_email)?.is_none() {
-        let session_token = session::create_session(&keypair, operator_email, &project_id, None);
+    if session::load_session(&project_id, &member_key)?.is_none() {
+        let session_token = session::create_session(&keypair, &member_key, &project_id, None);
         session::save_session(&project_id, &session_token)?;
     }
 
@@ -1430,7 +1442,7 @@ pub(crate) fn create_delegation_token(
     // here too (otherwise resolve_identity would fall back to the git
     // email and refuse the action, JOY-00F3-AE).
     let identity = joy_core::identity::Identity {
-        member: operator_email.to_string().into(),
+        member: member_key.clone().into(),
         delegated_by: None,
         authenticated: true,
     };
@@ -1529,7 +1541,7 @@ pub(crate) fn create_delegation_token(
     let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
     let mut project_mut = store::read_project(&project_path)?;
     if new_entry {
-        if let Some(m) = project_mut.members.get_mut(operator_email) {
+        if let Some(m) = project_mut.member_by_email_mut(operator_email) {
             m.ai_delegations.insert(
                 ai_member.to_string(),
                 joy_core::model::project::AiDelegationEntry {
@@ -1577,7 +1589,7 @@ fn run_delegation_ls(filter_member: Option<&str>) -> Result<()> {
     }
 
     let mut rows: Vec<Row<'_>> = Vec::new();
-    for (operator, member) in &project.members {
+    for (operator, member) in project.members() {
         for (ai, entry) in &member.ai_delegations {
             if let Some(filter) = filter_member {
                 if filter != ai {
@@ -1652,8 +1664,7 @@ fn run_passphrase(
 
     let email = joy_core::vcs::default_vcs().user_email()?;
     let member = project
-        .members
-        .get(&email)
+        .member_by_email(&email)
         .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member", email))?;
     let current_pub_hex = member.verify_key.as_ref().ok_or_else(|| {
         anyhow::anyhow!(
@@ -1686,7 +1697,7 @@ fn run_passphrase(
         // becomes the seed.
         let migrated_seed = seed_mod::Seed::from_derived_key(&current_key);
         let recovery = seed_mod::RecoveryKey::generate();
-        let m = project.members.get_mut(&email).unwrap();
+        let m = project.member_by_email_mut(&email).unwrap();
         m.seed_wrap_passphrase = Some(seed_mod::wrap_seed_for_migration(&migrated_seed));
         m.seed_wrap_recovery = Some(seed_mod::wrap_seed_with_recovery(
             &migrated_seed,
@@ -1726,7 +1737,7 @@ fn run_passphrase(
     // keypair derives from the unchanged seed.
     let new_wrap_passphrase = seed_mod::wrap_seed_with_passphrase(&seed, &new_pass, &current_salt)?;
 
-    let m = project.members.get_mut(&email).unwrap();
+    let m = project.member_by_email_mut(&email).unwrap();
     m.seed_wrap_passphrase = Some(new_wrap_passphrase);
     store::write_yaml_preserve(&project_path, &project)?;
     let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
@@ -1772,8 +1783,7 @@ fn run_recover(
 
     let email = joy_core::vcs::default_vcs().user_email()?;
     let member = project
-        .members
-        .get(&email)
+        .member_by_email(&email)
         .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member", email))?;
     let salt_hex = member
         .kdf_nonce
@@ -1811,7 +1821,7 @@ fn run_recover(
         }
 
         let new_wrap_passphrase = seed_mod::wrap_seed_with_passphrase(&seed, &new_pass, &salt)?;
-        let m = project.members.get_mut(&email).unwrap();
+        let m = project.member_by_email_mut(&email).unwrap();
         m.seed_wrap_passphrase = Some(new_wrap_passphrase);
         store::write_yaml_preserve(&project_path, &project)?;
         let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
@@ -1839,7 +1849,7 @@ fn run_recover(
 
         let new_recovery = seed_mod::RecoveryKey::generate();
         let new_wrap_recovery = seed_mod::wrap_seed_with_recovery(&seed, &new_recovery, &salt)?;
-        let m = project.members.get_mut(&email).unwrap();
+        let m = project.member_by_email_mut(&email).unwrap();
         m.seed_wrap_recovery = Some(new_wrap_recovery);
         store::write_yaml_preserve(&project_path, &project)?;
         let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
@@ -1874,7 +1884,7 @@ fn run_auth_otp(otp: &str, passphrase_flag: Option<&str>, passphrase_stdin: bool
     let mut project = store::read_project(&project_path)?;
 
     let email = joy_core::vcs::default_vcs().user_email()?;
-    let member = project.members.get(&email).ok_or_else(|| {
+    let member = project.member_by_email(&email).ok_or_else(|| {
         anyhow::anyhow!(
             "{} is not a registered project member. A manage member must add you first.",
             email
@@ -1905,7 +1915,7 @@ fn run_auth_otp(otp: &str, passphrase_flag: Option<&str>, passphrase_stdin: bool
 
     // Apply to project.yaml: set public_key/salt/wraps, clear otp_hash.
     {
-        let m = project.members.get_mut(&email).unwrap();
+        let m = project.member_by_email_mut(&email).unwrap();
         m.verify_key = Some(keypair.public_key().to_hex());
         m.kdf_nonce = Some(salt.to_hex());
         m.seed_wrap_passphrase = Some(wrap_passphrase);
@@ -1920,7 +1930,7 @@ fn run_auth_otp(otp: &str, passphrase_flag: Option<&str>, passphrase_stdin: bool
     // of capabilities) can close the attestation chain on first join.
     if let Some(founder_email) = founder_needing_reverse_attestation(&project) {
         if founder_email != email {
-            let founder_member = project.members.get(&founder_email).cloned().unwrap();
+            let founder_member = project.member_by_key(&founder_email).cloned().unwrap();
             let signed_fields = joy_core::auth::attestation::signed_fields_for(
                 &founder_email,
                 &founder_member.capabilities,
@@ -1928,7 +1938,10 @@ fn run_auth_otp(otp: &str, passphrase_flag: Option<&str>, passphrase_stdin: bool
             );
             let attestation =
                 joy_core::auth::attestation::sign_attestation(&email, &keypair, signed_fields);
-            project.members.get_mut(&founder_email).unwrap().attestation = Some(attestation);
+            project
+                .member_by_key_mut(&founder_email)
+                .unwrap()
+                .attestation = Some(attestation);
         }
     }
 
@@ -1962,8 +1975,7 @@ fn founder_needing_reverse_attestation(
     project: &joy_core::model::project::Project,
 ) -> Option<String> {
     let mut unattested: Vec<&String> = project
-        .members
-        .iter()
+        .members()
         .filter(|(_, m)| m.attestation.is_none())
         .map(|(email, _)| email)
         .collect();
@@ -2003,15 +2015,14 @@ pub fn run_ai_rotate(
     if !is_ai_member(member) {
         anyhow::bail!("{} is not an AI member (must start with ai:)", member);
     }
-    if !project.members.contains_key(member) {
+    if !project.has_member_key(member) {
         anyhow::bail!("{} is not a registered project member.", member);
     }
 
     joy_core::guard::enforce(&root, &joy_core::guard::Action::ManageProject, "project")?;
 
     let human = project
-        .members
-        .get(&email)
+        .member_by_email(&email)
         .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member.", email))?;
     if human.verify_key.is_none() {
         anyhow::bail!(
@@ -2053,8 +2064,7 @@ pub fn run_ai_rotate(
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
     let mut project_mut = store::read_project(&project_path)?;
     let entry = project_mut
-        .members
-        .get_mut(&email)
+        .member_by_email_mut(&email)
         .and_then(|m| m.ai_delegations.get_mut(member))
         .expect("delegation entry exists -- validated above");
     entry.delegation_verifier = new_kp.public_key().to_hex();

@@ -70,7 +70,7 @@ pub fn ensure_zone_keys_with_stdin(passphrase_flag: Option<&str>, from_stdin: bo
         Ok(e) => e,
         Err(_) => return Ok(()),
     };
-    let Some(member) = project.members.get(&email) else {
+    let Some(member) = project.member_by_email(&email) else {
         return Ok(());
     };
 

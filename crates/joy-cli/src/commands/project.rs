@@ -440,7 +440,7 @@ fn project_value_tree(root: &std::path::Path, project: &Project) -> serde_json::
         "description": project.description,
         "language": project.language,
         "forge": project.forge,
-        "privacy": project.privacy.map(|p| p.to_string()).unwrap_or_else(|| "none".to_string()),
+        "privacy": project.privacy().map(|p| p.to_string()).unwrap_or_else(|| "none".to_string()),
         "created": project.created.format("%Y-%m-%d %H:%M").to_string(),
         "docs": {
             "architecture": project.docs.architecture_or_default(),
@@ -562,7 +562,7 @@ fn set_command(
     if key == "forge" && project.forge.is_none() {
         prune_yaml_key(project_path, "forge")?;
     }
-    if key == "privacy" && project.privacy.is_none() {
+    if key == "privacy" && project.privacy().is_none() {
         prune_yaml_key(project_path, "privacy")?;
     }
     if key == "description" && project.description.is_none() {
@@ -619,7 +619,7 @@ fn set_privacy(
         // Plain field normalization, no migration.
         set_value(project, "privacy", target)?;
         store::write_yaml_preserve(project_path, project)?;
-        if project.privacy.is_none() {
+        if project.privacy().is_none() {
             prune_yaml_key(project_path, "privacy")?;
         }
         let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
@@ -633,8 +633,7 @@ fn set_privacy(
     let member_key = joy_core::privacy::member_key_for_email(project, &git_email)
         .ok_or_else(|| anyhow::anyhow!("{git_email} is not a member of this project"))?;
     let member = project
-        .members
-        .get(&member_key)
+        .member_by_key(&member_key)
         .expect("member_key came from the member map");
     if member.verify_key.is_none() {
         bail!("{git_email} has no identity. Run `joy auth init` first.");
@@ -840,7 +839,7 @@ fn current_scalar_value(project: &Project, key: &str) -> String {
         "language" => project.language.clone(),
         "forge" => project.forge.clone().unwrap_or_default(),
         "privacy" => project
-            .privacy
+            .privacy()
             .map(|p| p.to_string())
             .unwrap_or_else(|| "none".to_string()),
         "docs.architecture" => project.docs.architecture.clone().unwrap_or_default(),
@@ -997,8 +996,8 @@ fn set_value(project: &mut Project, key: &str, value: &str) -> Result<()> {
         "language" => project.language = value.to_string(),
         "forge" => project.forge = normalize_forge_value(value)?,
         "privacy" => match value.trim() {
-            "none" => project.privacy = None,
-            "open" => project.privacy = Some(PrivacyMode::Open),
+            "none" => project.set_privacy_non_anonymous(None)?,
+            "open" => project.set_privacy_non_anonymous(Some(PrivacyMode::Open))?,
             "anonymous" => anyhow::bail!(
                 "privacy: anonymous is not yet implemented; it arrives with the mode-transition task JOY-01BF-2E"
             ),
@@ -1160,9 +1159,9 @@ fn show_project(project: &Project, root: &std::path::Path) {
         )
     );
 
-    if !project.members.is_empty() {
+    if project.has_members() {
         println!("\n{}:", color::label("Members"));
-        print_members_table(&project.members, root);
+        print_members_table(project, root);
     }
 
     // Workflow visualization with gates
@@ -1171,7 +1170,7 @@ fn show_project(project: &Project, root: &std::path::Path) {
     println!("{}", color::label(&"-".repeat(color::terminal_width())));
 
     // Hint about member modes if AI members exist
-    if project.members.keys().any(|id| id.starts_with("ai:")) {
+    if project.member_keys().any(|id| id.starts_with("ai:")) {
         println!(
             "{}",
             color::label("Use `joy project member show <ID>` to see interaction modes")
@@ -1193,23 +1192,29 @@ fn run_member(
                 // to the terminal (ADR-042). Value fields resolve via their own
                 // MemberRef serialization.
                 let resolved: std::collections::BTreeMap<String, &Member> = project
-                    .members
-                    .iter()
+                    .members()
                     .map(|(id, m)| (joy_core::member_ref::resolve_str(id), m))
                     .collect();
                 return crate::output::emit(resolved);
             }
             // List members
-            if project.members.is_empty() {
+            if !project.has_members() {
                 println!("No members configured.");
             } else {
-                print_members_table(&project.members, &ctx.root);
+                print_members_table(project, &ctx.root);
             }
         }
         Some(MemberCommand::Show(a)) => {
+            // `a.id` is a user-supplied identifier. It may be an at-rest map key
+            // (an `ai:` id, or the opaque `m-...` id a user reads from
+            // project.yaml in anonymous mode, or a cleartext e-mail in open mode
+            // where the key *is* the e-mail) or a human e-mail in anonymous mode.
+            // Try the key space first (preserves the original by-key lookup, incl.
+            // the opaque-id case the no-raw-id test exercises), then fall back to
+            // resolving an e-mail. (ADR-042)
             let member = project
-                .members
-                .get(&a.id)
+                .member_by_key(&a.id)
+                .or_else(|| project.member_by_email(&a.id))
                 .ok_or_else(|| anyhow::anyhow!("member not found: {}", a.id))?;
 
             if crate::output::is_json() {
@@ -1314,7 +1319,7 @@ fn run_member(
         }
         Some(MemberCommand::Add(a)) => {
             ctx.enforce(&Action::ManageProject, "project")?;
-            if project.members.contains_key(&a.id) {
+            if project.has_member_key(&a.id) {
                 bail!("member {} already exists", a.id);
             }
             // In anonymous mode a human member must be onboarded through the OTP
@@ -1410,7 +1415,7 @@ fn run_member(
             let mut new_member = Member::new(capabilities);
             new_member.enrollment_verifier = otp_hash_opt;
             new_member.attestation = Some(attestation);
-            project.members.insert(a.id.clone(), new_member);
+            project.register_member(&a.id, new_member)?;
 
             store::write_yaml_preserve(project_path, project)?;
             let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
@@ -1497,8 +1502,7 @@ fn run_member(
             let acting_email = joy_core::vcs::default_vcs().user_email()?;
             if a.id == acting_email {
                 let others: Vec<&String> = project
-                    .members
-                    .iter()
+                    .members()
                     .filter(|(email, m)| {
                         **email != acting_email && m.has_capability(&Capability::Manage)
                     })
@@ -1535,8 +1539,7 @@ fn run_member(
             // member so the attestation chain stays intact.
             let removed_id = a.id.clone();
             let orphans: Vec<String> = project
-                .members
-                .iter()
+                .members()
                 .filter(|(email, m)| {
                     **email != removed_id
                         && m.attestation
@@ -1558,7 +1561,7 @@ fn run_member(
                 )?)
             };
 
-            if project.members.remove(&a.id).is_none() {
+            if project.remove_member(&a.id).is_none() {
                 bail!("member not found: {}", a.id);
             }
 
@@ -1567,8 +1570,7 @@ fn run_member(
             if let Some(kp) = acting_kp {
                 for orphan_email in &orphans {
                     let orphan = project
-                        .members
-                        .get(orphan_email)
+                        .member_by_key(orphan_email)
                         .cloned()
                         .expect("orphan exists - just collected");
                     let signed_fields = joy_core::auth::attestation::signed_fields_for(
@@ -1581,7 +1583,7 @@ fn run_member(
                         &kp,
                         signed_fields,
                     );
-                    project.members.get_mut(orphan_email).unwrap().attestation =
+                    project.member_by_key_mut(orphan_email).unwrap().attestation =
                         Some(new_attestation);
                 }
             }
@@ -1617,8 +1619,7 @@ fn run_member(
             let operator_key = joy_core::privacy::member_key_for_email(project, &git_email)
                 .ok_or_else(|| anyhow::anyhow!("{git_email} is not a member of this project"))?;
             let operator = project
-                .members
-                .get(&operator_key)
+                .member_by_key(&operator_key)
                 .expect("operator_key came from the member map");
             let passphrase = a.passphrase.clone().or_else(|| {
                 std::env::var("JOY_PASSPHRASE")
@@ -1634,7 +1635,7 @@ fn run_member(
 
             // The target is an opaque id already in members.yaml, or an e-mail
             // resolved to its id via the email_match verifier.
-            let target_id = if project.members.contains_key(&a.id) {
+            let target_id = if project.has_member_key(&a.id) {
                 a.id.clone()
             } else {
                 joy_core::privacy::member_key_for_email(project, &a.id)
@@ -1707,7 +1708,9 @@ pub(crate) fn derive_acting_keypair(
         // `joy ai init` registers an AI member in an anonymous project.
         let member_key = joy_core::privacy::member_key_for_email(project, email)
             .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member", email))?;
-        &project.members[&member_key]
+        project
+            .member_by_key(&member_key)
+            .expect("member_key resolved from email must exist")
     };
     if member.verify_key.is_none() {
         anyhow::bail!(
@@ -1721,10 +1724,7 @@ pub(crate) fn derive_acting_keypair(
     Ok(unlocked.keypair)
 }
 
-fn print_members_table(
-    members: &std::collections::BTreeMap<String, Member>,
-    root: &std::path::Path,
-) {
+fn print_members_table(project: &Project, root: &std::path::Path) {
     use joy_core::model::item::Capability;
 
     let cap_headers: &[(&str, Capability)] = &[
@@ -1745,10 +1745,10 @@ fn print_members_table(
 
     // Resolve auth status for each member
     let project_id = joy_core::auth::session::project_id(root).unwrap_or_default();
-    let auth_statuses: Vec<(&str, String)> = members
-        .iter()
+    let auth_statuses: Vec<(&str, String)> = project
+        .members()
         .map(|(id, member)| {
-            let auth = member_auth_status(id, member, members, &project_id, use_emoji);
+            let auth = member_auth_status(id, member, project, &project_id, use_emoji);
             (id.as_str(), auth)
         })
         .collect();
@@ -1763,8 +1763,8 @@ fn print_members_table(
     // Resolve each member id to its display value (ADR-042): name/e-mail in
     // anonymous mode, the key itself in open mode. Column width is sized on the
     // resolved value so the table never lays out around a raw opaque id.
-    let display_names: Vec<String> = members
-        .keys()
+    let display_names: Vec<String> = project
+        .member_keys()
         .map(|id| joy_core::member_ref::resolve_str(id))
         .collect();
     let max_member = display_names
@@ -1813,8 +1813,8 @@ fn print_members_table(
     println!();
 
     // Rows
-    for (((_id, member), (_, auth)), display_name) in members
-        .iter()
+    for (((_id, member), (_, auth)), display_name) in project
+        .members()
         .zip(auth_statuses.iter())
         .zip(display_names.iter())
     {
@@ -2024,7 +2024,7 @@ fn truncate(s: &str, max: usize) -> String {
 fn member_auth_status(
     id: &str,
     member: &Member,
-    all_members: &std::collections::BTreeMap<String, Member>,
+    all_members: &Project,
     project_id: &str,
     use_emoji: bool,
 ) -> String {
@@ -2036,7 +2036,7 @@ fn member_auth_status(
     // For AI: has any human registered an ai_delegations entry for this AI?
     let has_auth = if is_ai {
         all_members
-            .values()
+            .member_values()
             .any(|m| m.ai_delegations.contains_key(id))
     } else {
         member.verify_key.is_some()
@@ -2059,7 +2059,7 @@ fn member_auth_status(
             .map(|(sid, _)| sid);
 
         let current_delegation_keys: Vec<&str> = all_members
-            .values()
+            .member_values()
             .filter_map(|m| m.ai_delegations.get(id))
             .map(|entry| entry.delegation_verifier.as_str())
             .collect();

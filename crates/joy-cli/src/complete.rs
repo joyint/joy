@@ -176,7 +176,7 @@ fn complete_with_predicate(
         Ok(p) => p,
         Err(_) => return Vec::new(),
     };
-    member_candidates(project.members.keys(), prefix, predicate)
+    member_candidates(project.member_keys(), prefix, predicate)
         .into_iter()
         .map(CompletionCandidate::new)
         .collect()

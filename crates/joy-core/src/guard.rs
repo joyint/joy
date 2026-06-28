@@ -144,7 +144,10 @@ impl Guard {
     /// Create a Guard from a loaded project (no gates).
     pub fn new(project: &Project) -> Self {
         Self {
-            members: project.members.clone(),
+            members: project
+                .members()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
             gates: BTreeMap::new(),
         }
     }
@@ -152,7 +155,10 @@ impl Guard {
     /// Create a Guard with gates.
     pub fn with_gates(project: &Project, gates: BTreeMap<String, GateConfig>) -> Self {
         Self {
-            members: project.members.clone(),
+            members: project
+                .members()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
             gates,
         }
     }
@@ -374,7 +380,7 @@ mod tests {
     fn project_with_members(members: Vec<(&str, MemberCapabilities)>) -> Project {
         let mut project = Project::new("Test".into(), Some("TST".into()));
         for (name, caps) in members {
-            project.members.insert(name.into(), Member::new(caps));
+            project.register_member(name, Member::new(caps)).unwrap();
         }
         project
     }

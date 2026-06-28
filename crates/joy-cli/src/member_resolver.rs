@@ -68,7 +68,7 @@ fn passphrase_members_key(root: &std::path::Path, project: &Project) -> Option<Z
         .filter(|s| !s.is_empty())?;
     let email = joy_core::vcs::default_vcs().user_email().ok()?;
     let member_key = joy_core::privacy::member_key_for_email(project, &email)?;
-    let member = project.members.get(&member_key)?;
+    let member = project.member_by_key(&member_key)?;
     let unlocked = auth::unlock_identity(member, &passphrase).ok()?;
     let wrap = member.members_wrap.as_deref()?;
     let _ = root;

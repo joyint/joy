@@ -41,20 +41,7 @@ fn is_human_key(key: &str) -> bool {
 /// opaque id whose stored `email_match` verifies against the e-mail. Returns
 /// `None` when the e-mail is not a member.
 pub fn member_key_for_email(project: &Project, email: &str) -> Option<String> {
-    if project.privacy_mode() != PrivacyMode::Anonymous {
-        return project
-            .members
-            .contains_key(email)
-            .then(|| email.to_string());
-    }
-    for (id, member) in &project.members {
-        if let (Some(verifier), Some(nonce)) = (&member.email_match, &member.kdf_nonce) {
-            if email_match(email, nonce).ok().as_deref() == Some(verifier.as_str()) {
-                return Some(id.clone());
-            }
-        }
-    }
-    None
+    project.member_key_for_email(email)
 }
 
 /// The single source of a member's e-mail (the concept's `email_for`).
@@ -71,12 +58,29 @@ pub fn email_for(
     members: Option<&crate::members_file::MembersFile>,
 ) -> Option<String> {
     if project.privacy_mode() != PrivacyMode::Anonymous {
-        return project
-            .members
-            .contains_key(member)
-            .then(|| member.to_string());
+        return project.has_member_key(member).then(|| member.to_string());
     }
     members.and_then(|m| m.email_for(member).map(str::to_string))
+}
+
+/// The at-rest representation of a delegating operator for the audit trail.
+///
+/// `operator_email` is the cleartext e-mail recorded in a delegation token
+/// (create_delegation_token stores `operator_email` as the token's `delegated_by`
+/// for the human-readable git trailer). When an AI acts under that delegation,
+/// the operator is recorded as the `delegated-by:` part of the actor in items
+/// (`created_by`/`updated_by`), logs, and the commit trailer. In `open` mode the
+/// member key *is* the e-mail, returned as-is. In `anonymous` mode it resolves to
+/// the operator's opaque member id, so no cleartext e-mail is written into a
+/// committed file; `MemberRef` resolves it back for authorized display. Returns
+/// `None` in anonymous mode when the operator is not a resolvable member, so a
+/// cleartext e-mail is never written even as a fallback (ADR-042).
+pub fn delegated_by_at_rest(project: &Project, operator_email: &str) -> Option<String> {
+    match project.member_key_for_email(operator_email) {
+        Some(key) => Some(key),
+        None if project.privacy_mode() == PrivacyMode::Anonymous => None,
+        None => Some(operator_email.to_string()),
+    }
 }
 
 fn io_err(ctx: &str, e: std::io::Error) -> JoyError {
@@ -103,8 +107,7 @@ pub fn erase_member(
     }
     let operator_vk = Keypair::from_seed(operator_seed).public_key().to_hex();
     let wrap = project
-        .members
-        .values()
+        .member_values()
         .find(|m| m.verify_key.as_deref() == Some(operator_vk.as_str()))
         .and_then(|m| m.members_wrap.clone())
         .ok_or_else(|| JoyError::Other("operator has no members.yaml access wrap".into()))?;
@@ -199,7 +202,7 @@ pub fn switch_to_anonymous(
     let mut new_members: BTreeMap<String, Member> = BTreeMap::new();
     let mut mf = MembersFile::default();
 
-    for (key, mut member) in std::mem::take(&mut project.members) {
+    for (key, mut member) in project.take_members() {
         if !is_human_key(&key) {
             // AI member: keep synthetic id and entry as-is.
             new_members.insert(key, member);
@@ -244,8 +247,8 @@ pub fn switch_to_anonymous(
         new_members.insert(id, member);
     }
 
-    project.members = new_members;
-    project.privacy = Some(PrivacyMode::Anonymous);
+    project.replace_members(new_members);
+    project.set_privacy_mode(Some(PrivacyMode::Anonymous));
 
     // Persist the structural changes, then scrub residual e-mails (attestation
     // fields in project.yaml, item bodies, logs) by textual substitution.
@@ -274,8 +277,7 @@ pub fn switch_to_open(
     // members.yaml wrap, then unwrap the zone key with the operator's seed.
     let operator_vk = Keypair::from_seed(operator_seed).public_key().to_hex();
     let wrap = project
-        .members
-        .values()
+        .member_values()
         .find(|m| m.verify_key.as_deref() == Some(operator_vk.as_str()))
         .and_then(|m| m.members_wrap.clone())
         .ok_or_else(|| JoyError::Other("operator has no members.yaml access wrap".into()))?;
@@ -285,7 +287,7 @@ pub fn switch_to_open(
     let mut renamed: Vec<(String, String)> = Vec::new();
     let mut new_members: BTreeMap<String, Member> = BTreeMap::new();
 
-    for (key, mut member) in std::mem::take(&mut project.members) {
+    for (key, mut member) in project.take_members() {
         if !is_human_key(&key) && !mf.members.contains_key(&key) {
             new_members.insert(key, member);
             continue;
@@ -304,8 +306,8 @@ pub fn switch_to_open(
         }
     }
 
-    project.members = new_members;
-    project.privacy = None;
+    project.replace_members(new_members);
+    project.set_privacy_mode(None);
 
     let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
     store::write_yaml_preserve(&project_path, project)?;
@@ -339,7 +341,7 @@ mod tests {
         member.kdf_nonce = Some(NONCE.to_string());
 
         let mut project = Project::new("Test".into(), Some("T".into()));
-        project.members.insert(EMAIL.to_string(), member);
+        project.register_member(EMAIL, member).unwrap();
         store::write_yaml_preserve(&joy.join(store::PROJECT_FILE), &project).unwrap();
 
         // An item assigned to the human, and a log line naming them.
@@ -407,9 +409,9 @@ mod tests {
         // project.yaml now keyed by opaque id, carries email_match.
         let pj: Project =
             store::read_yaml(&store::joy_dir(root).join(store::PROJECT_FILE)).unwrap();
-        assert!(pj.members.contains_key(&id));
-        assert_eq!(pj.privacy, Some(PrivacyMode::Anonymous));
-        assert!(pj.members[&id].email_match.is_some());
+        assert!(pj.has_member_key(&id));
+        assert_eq!(pj.privacy_mode(), PrivacyMode::Anonymous);
+        assert!(pj.member_by_key(&id).unwrap().email_match.is_some());
 
         // Switch back: e-mails restored, members.yaml gone.
         switch_to_open(root, &mut project, &seed).unwrap();
@@ -417,8 +419,8 @@ mod tests {
         assert!(!members_file::exists(root));
         let pj2: Project =
             store::read_yaml(&store::joy_dir(root).join(store::PROJECT_FILE)).unwrap();
-        assert!(pj2.members.contains_key(EMAIL));
-        assert_eq!(pj2.privacy, None);
-        assert!(pj2.members[EMAIL].email_match.is_none());
+        assert!(pj2.has_member_key(EMAIL));
+        assert_eq!(pj2.privacy_mode(), PrivacyMode::Open);
+        assert!(pj2.member_by_key(EMAIL).unwrap().email_match.is_none());
     }
 }

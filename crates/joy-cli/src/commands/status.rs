@@ -158,7 +158,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
             // Warn if member lacks item capabilities
             let project_path = store::joy_dir(&ctx.root).join(store::PROJECT_FILE);
             if let Ok(project) = store::read_project(&project_path) {
-                if let Some(member) = project.members.get(ctx.identity.member.id()) {
+                if let Some(member) = project.member_by_key(ctx.identity.member.id()) {
                     if !matches!(
                         member.capabilities,
                         joy_core::model::project::MemberCapabilities::All

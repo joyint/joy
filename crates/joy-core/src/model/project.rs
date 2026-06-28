@@ -8,6 +8,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::config::InteractionLevel;
 use super::item::Capability;
+use crate::error::JoyError;
 
 /// Serialize the member map, resolving opaque ids to their display value when
 /// in presentation mode (`--json` output, ADR-042) and keeping the raw id for
@@ -51,7 +52,7 @@ pub struct Project {
     /// changed only by the dedicated mode-transition command, never by a
     /// bare field write (the switch is an atomic migration).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub privacy: Option<PrivacyMode>,
+    privacy: Option<PrivacyMode>,
     #[serde(default, skip_serializing_if = "Docs::is_empty")]
     pub docs: Docs,
     #[serde(
@@ -59,7 +60,7 @@ pub struct Project {
         skip_serializing_if = "BTreeMap::is_empty",
         serialize_with = "serialize_members"
     )]
-    pub members: BTreeMap<String, Member>,
+    members: BTreeMap<String, Member>,
     /// Crypt zone registry. Empty / absent means encryption is not in
     /// use; `crypt_wraps` on members and `crypt_zone` on items only have
     /// meaning relative to the zones declared here. See ADR-038 and
@@ -533,6 +534,166 @@ impl Project {
     /// The effective privacy mode: `Open` when unset (ADR-042).
     pub fn privacy_mode(&self) -> PrivacyMode {
         self.privacy.unwrap_or_default()
+    }
+
+    /// The raw privacy field. `None` means unset (which is `Open`). Prefer
+    /// [`Self::privacy_mode`] unless you must distinguish an explicit `open`
+    /// from an unset field, e.g. deciding whether to prune the key on disk.
+    pub fn privacy(&self) -> Option<PrivacyMode> {
+        self.privacy
+    }
+
+    /// Set the privacy field to a non-anonymous value (`open` or unset). This is
+    /// the only public privacy writer: it refuses to set `Anonymous` and refuses
+    /// to write when the project is already anonymous, because both directions of
+    /// the anonymous boundary are atomic migrations
+    /// ([`crate::privacy::switch_to_anonymous`] / [`switch_to_open`]), never a
+    /// bare field write. Used by `joy project set privacy open|none` on an
+    /// already-open project.
+    pub fn set_privacy_non_anonymous(&mut self, mode: Option<PrivacyMode>) -> Result<(), JoyError> {
+        if matches!(mode, Some(PrivacyMode::Anonymous)) {
+            return Err(JoyError::Other(
+                "switching to anonymous is a migration; use switch_to_anonymous".into(),
+            ));
+        }
+        if self.privacy_mode() == PrivacyMode::Anonymous {
+            return Err(JoyError::Other(
+                "leaving anonymous is a migration; use switch_to_open, not a field write".into(),
+            ));
+        }
+        self.privacy = mode;
+        Ok(())
+    }
+
+    // --- Member access (ADR-042) -------------------------------------------
+    //
+    // The member map is keyed by a value that depends on the privacy mode: the
+    // cleartext e-mail in `open` mode, an opaque id in `anonymous` mode. The map
+    // itself is private so no call site can index it by a raw e-mail (which only
+    // works in `open` mode and silently fails in `anonymous` mode). All access
+    // goes through the methods below, which state in their name which key space
+    // the caller holds. This is the lookup-direction counterpart to `MemberRef`
+    // guarding the display direction: the privacy guarantee is bound to the
+    // type, not to each call site remembering to resolve.
+
+    /// Resolve the member-map key for a git e-mail, honoring the privacy mode.
+    /// `open`: the key is the e-mail itself; `anonymous`: the opaque id whose
+    /// stored `email_match` verifies against the e-mail. `None` when the e-mail
+    /// is not a member.
+    pub fn member_key_for_email(&self, email: &str) -> Option<String> {
+        if self.privacy_mode() != PrivacyMode::Anonymous {
+            return self.members.contains_key(email).then(|| email.to_string());
+        }
+        for (id, member) in &self.members {
+            if let (Some(verifier), Some(nonce)) = (&member.email_match, &member.kdf_nonce) {
+                if crate::member_id::email_match(email, nonce).ok().as_deref()
+                    == Some(verifier.as_str())
+                {
+                    return Some(id.clone());
+                }
+            }
+        }
+        None
+    }
+
+    /// Look up a member by their git e-mail, honoring the privacy mode.
+    pub fn member_by_email(&self, email: &str) -> Option<&Member> {
+        let key = self.member_key_for_email(email)?;
+        self.members.get(&key)
+    }
+
+    /// Mutable lookup by git e-mail, honoring the privacy mode.
+    pub fn member_by_email_mut(&mut self, email: &str) -> Option<&mut Member> {
+        let key = self.member_key_for_email(email)?;
+        self.members.get_mut(&key)
+    }
+
+    /// Look up a member by their at-rest map key (an `ai:` id, or an already
+    /// resolved key). Use [`Self::member_by_email`] when you only have an
+    /// e-mail.
+    pub fn member_by_key(&self, key: &str) -> Option<&Member> {
+        self.members.get(key)
+    }
+
+    /// Mutable lookup by at-rest map key.
+    pub fn member_by_key_mut(&mut self, key: &str) -> Option<&mut Member> {
+        self.members.get_mut(key)
+    }
+
+    /// Whether a member with this at-rest map key exists.
+    pub fn has_member_key(&self, key: &str) -> bool {
+        self.members.contains_key(key)
+    }
+
+    /// Iterate `(key, member)` pairs. Keys are raw at-rest ids; wrap them in a
+    /// [`crate::member_ref::MemberRef`] before any output.
+    pub fn members(&self) -> impl Iterator<Item = (&String, &Member)> {
+        self.members.iter()
+    }
+
+    /// Iterate the at-rest member keys.
+    pub fn member_keys(&self) -> impl Iterator<Item = &String> {
+        self.members.keys()
+    }
+
+    /// Iterate the member entries.
+    pub fn member_values(&self) -> impl Iterator<Item = &Member> {
+        self.members.values()
+    }
+
+    /// Number of registered members.
+    pub fn member_count(&self) -> usize {
+        self.members.len()
+    }
+
+    /// Whether the project has any members.
+    pub fn has_members(&self) -> bool {
+        !self.members.is_empty()
+    }
+
+    /// Register a brand-new member, placing it correctly for the privacy mode.
+    ///
+    /// `id` is the caller-facing identity: an `ai:` synthetic id (no PII,
+    /// identical in both modes) or a cleartext e-mail for a human. AI members
+    /// are inserted under their synthetic id in either mode; human members under
+    /// their e-mail in `open` mode. Adding a *human* to an `anonymous` project is
+    /// refused: the opaque id derives from a verify_key the new member does not
+    /// have yet, and a naive e-mail insert would leak cleartext PII into the
+    /// committed project.yaml. That onboarding flow is tracked separately
+    /// (JOY-01C3-A7). The caller owns any duplicate-key policy.
+    pub fn register_member(&mut self, id: &str, member: Member) -> Result<(), JoyError> {
+        if !is_ai_member(id) && self.privacy_mode() == PrivacyMode::Anonymous {
+            return Err(JoyError::Other(format!(
+                "cannot register human member {id} in an anonymous project: \
+                 anonymous human onboarding is not yet supported (JOY-01C3-A7)"
+            )));
+        }
+        self.members.insert(id.to_string(), member);
+        Ok(())
+    }
+
+    /// Remove a member by at-rest map key, returning the removed entry.
+    pub fn remove_member(&mut self, key: &str) -> Option<Member> {
+        self.members.remove(key)
+    }
+
+    /// Privileged: take the whole member map out, leaving it empty. Only the
+    /// privacy-mode migration ([`crate::privacy`]) rekeys the map wholesale;
+    /// every other caller uses the typed accessors above.
+    pub(crate) fn take_members(&mut self) -> BTreeMap<String, Member> {
+        std::mem::take(&mut self.members)
+    }
+
+    /// Privileged: replace the whole member map. See [`Self::take_members`].
+    pub(crate) fn replace_members(&mut self, members: BTreeMap<String, Member>) {
+        self.members = members;
+    }
+
+    /// Privileged: set the privacy mode field directly. Only the migration in
+    /// [`crate::privacy`] may flip this; it is an atomic part of rekeying the
+    /// member map, never a bare field write elsewhere.
+    pub(crate) fn set_privacy_mode(&mut self, mode: Option<PrivacyMode>) {
+        self.privacy = mode;
     }
 }
 

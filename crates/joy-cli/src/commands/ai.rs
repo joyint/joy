@@ -260,7 +260,7 @@ fn ensure_human_auth_initialized(
                 email
             )
         })?;
-    let member = &project.members[&member_key];
+    let member = project.member_by_key(&member_key).unwrap();
     if member.verify_key.is_some() {
         return Ok(None);
     }
@@ -785,7 +785,7 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
             let mut cleaned = false;
             for (_, id, _) in &tools {
                 let member_id = format!("ai:{id}@joy");
-                if project.members.remove(&member_id).is_some() {
+                if project.remove_member(&member_id).is_some() {
                     dprintln!(
                         "  {}{:<24} orphaned member removed",
                         color::check_mark(),
@@ -860,7 +860,7 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
                 .any(|p| to_remove.iter().any(|(_, tp)| tp == p));
             if was_removed {
                 let member_id = format!("ai:{id}@joy");
-                if project.members.remove(&member_id).is_some() {
+                if project.remove_member(&member_id).is_some() {
                     dprintln!("  {}{:<24} member removed", color::check_mark(), member_id);
                     project_changed = true;
                     // Remove the AI member's local session file. The
@@ -872,8 +872,11 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
                     }
                     // Remove delegation entries for this AI member from all
                     // human members in project.yaml.
-                    for (_, m) in project.members.iter_mut() {
-                        m.ai_delegations.remove(&member_id);
+                    let member_keys: Vec<String> = project.member_keys().cloned().collect();
+                    for k in &member_keys {
+                        if let Some(m) = project.member_by_key_mut(k) {
+                            m.ai_delegations.remove(&member_id);
+                        }
                     }
                 }
             }
@@ -1034,7 +1037,7 @@ fn setup_new_tools(
             }
         }
 
-        if should_register && !project.members.contains_key(&member_id) {
+        if should_register && !project.has_member_key(&member_id) {
             let ai_defaults = joy_core::store::load_ai_defaults(root);
             let ai_caps = if ai_defaults.capabilities.is_empty() {
                 joy_core::model::item::Capability::work_capabilities()
@@ -1080,7 +1083,7 @@ fn setup_new_tools(
 
             let mut new_member = joy_core::model::project::Member::new(capabilities);
             new_member.attestation = Some(attestation);
-            project.members.insert(member_id.clone(), new_member);
+            project.register_member(&member_id, new_member)?;
 
             project_changed = true;
             dprintln!(

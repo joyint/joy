@@ -81,15 +81,19 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
                         .unwrap_or(false);
                     if session_matches_project {
                         if let Some(ref project) = project {
-                            if project.members.contains_key(&sess.claims.member)
+                            if project.has_member_key(&sess.claims.member)
                                 && ephemeral_public_matches(&sess, &ephemeral_private)
                             {
                                 return Ok(Identity {
                                     member: sess.claims.member.clone().into(),
-                                    delegated_by: crate::vcs::default_vcs()
-                                        .user_email()
-                                        .ok()
-                                        .map(Into::into),
+                                    // Record the delegating operator by their
+                                    // at-rest member key (opaque id in anonymous
+                                    // mode), never the cleartext git e-mail, so
+                                    // the audit trail carries no PII (ADR-042).
+                                    delegated_by: crate::privacy::delegated_by_at_rest(
+                                        project, &git_email,
+                                    )
+                                    .map(Into::into),
                                     authenticated: true,
                                 });
                             }
@@ -148,14 +152,17 @@ fn session_identity(
         .ok()
         .flatten()
         .and_then(|_sess| {
-            // AI sessions have delegated_by from the token auth event
+            // AI sessions are delegated by a human operator. Record that operator
+            // as the at-rest member key (the opaque id in anonymous mode), never
+            // their cleartext e-mail, so the audit trail and commit trailer carry
+            // no PII in anonymous mode (ADR-042). MemberRef resolves it back for
+            // authorized display.
             if is_ai_member(member) {
-                // The delegating human is tracked in the event log,
-                // but for identity resolution we just mark it as delegated
-                crate::vcs::default_vcs()
-                    .user_email()
-                    .ok()
-                    .map(MemberRef::from)
+                let email = crate::vcs::default_vcs().user_email().ok()?;
+                match project.as_ref() {
+                    Some(p) => crate::privacy::delegated_by_at_rest(p, &email).map(MemberRef::from),
+                    None => Some(MemberRef::from(email)),
+                }
             } else {
                 None
             }
@@ -172,7 +179,7 @@ fn session_identity(
 pub fn has_ai_members(root: &Path) -> bool {
     let project = load_project_optional(root);
     match project {
-        Some(p) => p.members.keys().any(|k| is_ai_member(k)),
+        Some(p) => p.member_keys().any(|k| is_ai_member(k)),
         None => false,
     }
 }
@@ -182,7 +189,7 @@ fn check_session(root: &Path, member: &str, project: &Option<Project>) -> bool {
     let Some(project) = project else {
         return false;
     };
-    if !project.members.contains_key(member) {
+    if !project.has_member_key(member) {
         return false;
     };
     let Ok(project_id) = crate::auth::session::project_id(root) else {
@@ -199,7 +206,7 @@ fn check_session(root: &Path, member: &str, project: &Option<Project>) -> bool {
 
     // For human members: validate session signature against public key + TTY binding
     if !is_ai_member(member) {
-        let m = project.members.get(member).unwrap();
+        let m = project.member_by_key(member).unwrap();
         let Some(ref pk_hex) = m.verify_key else {
             return false;
         };
@@ -266,10 +273,10 @@ fn validate_member(member: &str, project: &Option<Project>) -> Result<(), JoyErr
     let Some(project) = project else {
         return Ok(());
     };
-    if project.members.is_empty() {
+    if !project.has_members() {
         return Ok(());
     }
-    if !project.members.contains_key(member) {
+    if !project.has_member_key(member) {
         return Err(JoyError::Other(format!(
             "'{}' is not a registered project member. \
              Use `joy member add {}` to register.",

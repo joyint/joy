@@ -134,10 +134,12 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
         .filter(|s| !s.is_empty())
         .or_else(|| vcs.user_email().ok().filter(|s| !s.is_empty()));
     if let Some(email) = creator_email {
-        project.members.insert(
-            email,
+        // A fresh project is always `open`, so the founder is keyed by e-mail
+        // here; `joy init --anonymous` migrates afterwards via switch_to_anonymous.
+        project.register_member(
+            &email,
             crate::model::project::Member::new(crate::model::project::MemberCapabilities::All),
-        );
+        )?;
     }
 
     store::write_yaml(&joy_dir.join(store::PROJECT_FILE), &project)?;

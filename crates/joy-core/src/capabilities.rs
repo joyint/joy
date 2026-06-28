@@ -37,11 +37,11 @@ pub fn warn_unless_capable(root: &Path, required: Capability) -> bool {
     };
 
     // No members configured means no restrictions
-    if project.members.is_empty() {
+    if !project.has_members() {
         return true;
     }
 
-    match project.members.get(member_id.id()) {
+    match project.member_by_key(member_id.id()) {
         Some(member) => {
             if member.has_capability(&required) {
                 true

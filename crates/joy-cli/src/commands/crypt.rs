@@ -183,8 +183,7 @@ fn unlock_zone(
 ) -> Result<UnlockedZone> {
     let (root, project, email) = load_context()?;
     let acting = project
-        .members
-        .get(&email)
+        .member_by_email(&email)
         .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member", email))?;
     if acting.verify_key.is_none() {
         bail!(
@@ -240,7 +239,10 @@ impl UnlockedZone {
             .entry(self.zone.clone())
             .or_default();
         let wrap_hex = core_crypt::wrap_for_self(&self.zone_key, &self.zone, &self.acting_seed);
-        let m = self.project.members.get_mut(&self.acting_email).unwrap();
+        let m = self
+            .project
+            .member_by_email_mut(&self.acting_email)
+            .unwrap();
         m.crypt_wraps.insert(self.zone.clone(), wrap_hex);
 
         let project_path = store::joy_dir(&self.root).join(store::PROJECT_FILE);
@@ -452,8 +454,7 @@ fn unlock_for_file(
     let project = store::read_project(&project_path)?;
     let email = joy_core::vcs::default_vcs().user_email()?;
     let acting = project
-        .members
-        .get(&email)
+        .member_by_email(&email)
         .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member", email))?;
 
     // Determine the zone: either from the blob magic on disk or from
@@ -802,8 +803,7 @@ fn run_zone_list() -> Result<()> {
             .filter(|m| m.zone() == Some(name.as_str()))
             .count();
         let member_count = project
-            .members
-            .values()
+            .member_values()
             .filter(|m| m.crypt_wraps.contains_key(name))
             .count();
         println!(
@@ -833,8 +833,7 @@ fn run_zone_rm(name: &str) -> Result<()> {
     let metas = joy_core::items::list_item_metadata(&root).unwrap_or_default();
     let item_count = metas.iter().filter(|m| m.zone() == Some(name)).count();
     let member_count = project
-        .members
-        .values()
+        .member_values()
         .filter(|m| m.crypt_wraps.contains_key(name))
         .count();
     if item_count > 0 || member_count > 0 {
@@ -861,16 +860,20 @@ fn run_zone_rm(name: &str) -> Result<()> {
 fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>, stdin: bool) -> Result<()> {
     use joy_core::model::project::is_ai_member;
     let unlocked = unlock_zone(zone, passphrase, stdin, false)?;
-    let target = unlocked
-        .project
-        .members
-        .get(target_member)
-        .ok_or_else(|| anyhow::anyhow!("member '{}' not found", target_member))?;
+    // `target_member` is a user-supplied identifier that is polymorphic by
+    // kind: an `ai:` synthetic id for AI tools (always the at-rest map key),
+    // or a git e-mail for humans (privacy-dependent map key). Resolve each via
+    // the matching accessor so anonymous-mode lookups stay correct (ADR-042).
+    let target = if is_ai_member(target_member) {
+        unlocked.project.member_by_key(target_member)
+    } else {
+        unlocked.project.member_by_email(target_member)
+    }
+    .ok_or_else(|| anyhow::anyhow!("member '{}' not found", target_member))?;
 
     let granter_verify_hex = unlocked
         .project
-        .members
-        .get(&unlocked.acting_email)
+        .member_by_email(&unlocked.acting_email)
         .and_then(|m| m.verify_key.clone())
         .ok_or_else(|| anyhow::anyhow!("granter has no verify_key registered"))?;
     let granter_verify_key = joy_core::auth::PublicKey::from_hex(&granter_verify_hex)?;
@@ -898,7 +901,7 @@ fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>, stdin: b
         let ai_id = target_member;
         let _ = target; // target lookup was for existence check; not used further on AI path
         let mut wraps: Vec<(String, String)> = Vec::new();
-        for (operator_email, member) in &project.members {
+        for (operator_email, member) in project.members() {
             let Some(entry) = member.ai_delegations.get(ai_id) else {
                 continue;
             };
@@ -937,7 +940,7 @@ fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>, stdin: b
             &unlocked.zone,
             &unlocked.acting_seed,
         );
-        let g = project.members.get_mut(&unlocked.acting_email).unwrap();
+        let g = project.member_by_email_mut(&unlocked.acting_email).unwrap();
         g.crypt_wraps
             .entry(unlocked.zone.clone())
             .or_insert(granter_wrap);
@@ -982,8 +985,7 @@ fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>, stdin: b
     );
 
     let m = project
-        .members
-        .get_mut(target_member)
+        .member_by_email_mut(target_member)
         .expect("target member existed at unwrap time");
     m.crypt_wraps.insert(unlocked.zone.clone(), wrap_hex);
 
@@ -991,7 +993,7 @@ fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>, stdin: b
     // when this is the first add+grant in the same session).
     let granter_wrap =
         joy_core::crypt::wrap_for_self(&unlocked.zone_key, &unlocked.zone, &unlocked.acting_seed);
-    let g = project.members.get_mut(&unlocked.acting_email).unwrap();
+    let g = project.member_by_email_mut(&unlocked.acting_email).unwrap();
     g.crypt_wraps
         .entry(unlocked.zone.clone())
         .or_insert(granter_wrap);
@@ -1015,7 +1017,14 @@ fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>, stdin: b
 fn run_revoke(zone: &str, target_member: &str) -> Result<()> {
     use joy_core::model::project::is_ai_member;
     let (root, mut project, email) = load_context()?;
-    if !project.members.contains_key(target_member) {
+    // `target_member` is polymorphic (see run_grant): resolve AI ids by at-rest
+    // key, human identifiers by privacy-aware e-mail lookup (ADR-042).
+    let target_exists = if is_ai_member(target_member) {
+        project.has_member_key(target_member)
+    } else {
+        project.member_by_email(target_member).is_some()
+    };
+    if !target_exists {
         bail!("member '{}' not found", target_member);
     }
 
@@ -1030,8 +1039,7 @@ fn run_revoke(zone: &str, target_member: &str) -> Result<()> {
         }
     } else {
         project
-            .members
-            .get_mut(target_member)
+            .member_by_email_mut(target_member)
             .map(|m| m.crypt_wraps.remove(zone).is_some())
             .unwrap_or(false)
     };
@@ -1070,7 +1078,7 @@ fn run_list(zone: &str) -> Result<()> {
     let cfg = &project.crypt;
     println!("{}", color::header(&format!("Crypt zone: {zone}")));
     println!();
-    if cfg.is_empty() && project.members.values().all(|m| m.crypt_wraps.is_empty()) {
+    if cfg.is_empty() && project.member_values().all(|m| m.crypt_wraps.is_empty()) {
         println!("{}", color::footer("No Crypt zones configured."));
         return Ok(());
     }
@@ -1109,7 +1117,7 @@ fn run_list(zone: &str) -> Result<()> {
     println!();
     println!("{}", color::section("Members with access"));
     let mut access_count = 0;
-    for (email, member) in &project.members {
+    for (email, member) in project.members() {
         if member.crypt_wraps.contains_key(zone) {
             println!("  {}", color::user(email));
             access_count += 1;
@@ -1137,8 +1145,7 @@ fn run_status() -> Result<()> {
     let metas = joy_core::items::list_item_metadata(&root).unwrap_or_default();
     let item_count_total = metas.iter().filter(|m| m.zone().is_some()).count();
     let me_access = project
-        .members
-        .get(&email)
+        .member_by_email(&email)
         .map(|m| m.crypt_wraps.len())
         .unwrap_or(0);
 
