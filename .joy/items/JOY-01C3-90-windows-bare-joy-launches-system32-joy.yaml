@@ -1,7 +1,7 @@
 id: JOY-01C3-90
 title: 'Windows: bare ''joy'' launches System32\joy.cpl (Game Controllers) instead of joy.exe'
 type: bug
-status: review
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -13,12 +13,16 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-11T19:10:01.687119196Z
-updated: 2026-06-28T15:08:25.232606585Z
+updated: 2026-06-28T18:15:59.571729663Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-28T14:54:10.069668711Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 - date: 2026-06-28T15:08:25.232606585Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-28T17:40:52.822917311Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-28T18:15:59.571729663Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   On Windows, typing 'joy' in cmd.exe or PowerShell can launch the legacy Game Controllers control panel (C:\Windows\System32\joy.cpl) instead of the joy CLI.
@@ -41,3 +45,9 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-06-28T15:08:25.187487379Z
   text: '[x] Implemented. New ps_alias module: cross-platform pure core (alias regex, profile-path, edition-from-exe, append-payload) with 4 unit tests; thin #[cfg(windows)] glue (parent process via sysinfo 0.33, USERPROFILE-based $PROFILE, UTF-8 BOM write). Surfaces wired: (1) joy help/-h passive tip via try_parse_from DisplayHelp interception in main; (2) board ''No joy project here'' Y/n prompt; (3) joy update Y/n prompt. Inform/prompt-only, never runs anything; no-op off Windows. Verification: host build + just check green (clippy -D warnings, fmt, 517 bats + unit tests); help/-h/--version still exit 0 on Linux with no tip. The full windows cross-check is blocked by aws-lc-sys needing a mingw C toolchain, so the cfg(windows) glue was compile-verified in a minimal sysinfo+regex crate against x86_64-pc-windows-gnu (clean), and the sysinfo 0.33.1 API checked against its source. Submitting for runtime E2E validation on Windows (operator).'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-28T17:40:52.893920531Z
+  text: 'E2E on Windows: feature works (PS5.1 detected, correct $PROFILE path, alias written). Found: on a fresh box ExecutionPolicy=Restricted blocks $PROFILE from loading, so the alias never takes effect. Rework: after the user confirms the alias but BEFORE writing it, detect whether scripts are disabled (Get-ExecutionPolicy in {Restricted,AllSigned}); only then offer a separate y/N (default No) to run ''Set-ExecutionPolicy -Scope CurrentUser RemoteSigned''. Consent-gated; GPO-locked failure is reported, not faked; joy never changes the policy silently. No prompt when scripts are already allowed.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-06-28T18:15:59.417681666Z
+  text: 'Rework done + E2E-validated on Windows. Added the ExecutionPolicy step (consent-gated, only when scripts are blocked, before writing the alias; GPO failure reported not faked). Root-caused the re-offer bug: we wrote the profile with a UTF-8 BOM and the ASCII alias then sat behind it, which the detection regex (U+FEFF is not whitespace) missed. Fix is at the root: write the alias as plain UTF-8 without a BOM (pure ASCII, every PowerShell edition reads it) - no strip/special-case. Unit tests + just check green; cfg(windows) compiles for msvc.'

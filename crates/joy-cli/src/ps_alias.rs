@@ -109,43 +109,83 @@ mod platform {
     }
 
     /// `(profile path for the calling shell, whether the alias is already
-    /// present)`. `None` when the calling shell is not PowerShell or the user
-    /// profile directory is unknown.
-    fn target_profile() -> Option<(PathBuf, bool)> {
+    /// present, the PowerShell edition)`. `None` when the calling shell is not
+    /// PowerShell or the user profile directory is unknown.
+    fn target_profile() -> Option<(PathBuf, bool, PsEdition)> {
         let edition = parent_ps_edition()?;
         let user_profile = std::env::var_os("USERPROFILE")?;
         let path = profile_path(Path::new(&user_profile), edition);
         let present = std::fs::read_to_string(&path)
             .map(|c| alias_present(&c))
             .unwrap_or(false);
-        Some((path, present))
+        Some((path, present, edition))
+    }
+
+    /// The PowerShell executable name for an edition.
+    fn ps_exe(edition: PsEdition) -> &'static str {
+        match edition {
+            PsEdition::Core => "pwsh",
+            PsEdition::WindowsPowerShell => "powershell",
+        }
+    }
+
+    /// Whether the effective execution policy blocks an unsigned local script
+    /// like `$PROFILE` (so the alias would never load). Reads it via the calling
+    /// edition's own `Get-ExecutionPolicy`; on any error we assume not blocked so
+    /// as not to nag.
+    fn scripts_disabled(edition: PsEdition) -> bool {
+        let out = std::process::Command::new(ps_exe(edition))
+            .args(["-NoProfile", "-Command", "Get-ExecutionPolicy"])
+            .output();
+        match out {
+            Ok(o) => {
+                let policy = String::from_utf8_lossy(&o.stdout)
+                    .trim()
+                    .to_ascii_lowercase();
+                policy == "restricted" || policy == "allsigned"
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. Returns whether
+    /// it succeeded plus any error text (e.g. when a group policy locks it).
+    fn enable_local_scripts(edition: PsEdition) -> (bool, String) {
+        let out = std::process::Command::new(ps_exe(edition))
+            .args([
+                "-NoProfile",
+                "-Command",
+                "Set-ExecutionPolicy -Scope CurrentUser RemoteSigned -Force",
+            ])
+            .output();
+        match out {
+            Ok(o) if o.status.success() => (true, String::new()),
+            Ok(o) => (false, String::from_utf8_lossy(&o.stderr).trim().to_string()),
+            Err(e) => (false, e.to_string()),
+        }
     }
 
     /// Append the alias line to the profile, creating the file and its parent
-    /// directory if needed. A freshly created file gets a UTF-8 BOM (Windows
-    /// PowerShell 5.1 still expects one for profile files; PowerShell 7
-    /// tolerates it).
+    /// directory if needed. Written as plain UTF-8 without a BOM: the line is
+    /// pure ASCII, which every PowerShell edition reads correctly, and a BOM
+    /// would otherwise sit in front of the alias and defeat our own detection.
     fn write_alias(path: &Path) -> std::io::Result<()> {
         use std::io::Write;
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let creating = !path.exists();
         let existing = std::fs::read_to_string(path).unwrap_or_default();
         let mut file = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(path)?;
-        if creating {
-            file.write_all(&[0xEF, 0xBB, 0xBF])?;
-        }
         file.write_all(append_payload(&existing).as_bytes())
     }
 
     /// Passive help tip: printed at the end of `joy help` / `joy -h` when the
     /// alias is missing. No prompt.
     pub fn print_help_tip() {
-        if let Some((_, present)) = target_profile() {
+        if let Some((_, present, _)) = target_profile() {
             if !present {
                 println!();
                 println!(
@@ -163,7 +203,7 @@ mod platform {
         if !crate::prompt::is_interactive() {
             return;
         }
-        let Some((path, present)) = target_profile() else {
+        let Some((path, present, edition)) = target_profile() else {
             return;
         };
         if present {
@@ -172,12 +212,50 @@ mod platform {
         println!();
         println!("Tip: 'joy' alone opens Windows Game Controllers. Add `{ALIAS_LINE}`");
         println!("to your PowerShell $PROFILE so 'joy' launches this tool.");
-        match crate::prompt::ask_yn("Do it now?", true) {
-            Ok(true) => match write_alias(&path) {
-                Ok(()) => println!("Done. Restart your shell."),
-                Err(e) => eprintln!("Could not update {}: {e}", path.display()),
-            },
-            _ => {}
+        if !matches!(crate::prompt::ask_yn("Do it now?", true), Ok(true)) {
+            return;
+        }
+
+        // The alias lives in $PROFILE, which only runs if the execution policy
+        // allows local scripts. On a default-Restricted box it would never load,
+        // so offer to allow local scripts first -- only when actually needed, and
+        // only on explicit consent (it changes a Windows security setting).
+        if scripts_disabled(edition) {
+            println!();
+            println!(
+                "PowerShell currently blocks scripts, so $PROFILE (and the alias) will not load."
+            );
+            if matches!(
+                crate::prompt::ask_yn(
+                    "Allow local scripts (Set-ExecutionPolicy -Scope CurrentUser RemoteSigned) now?",
+                    false,
+                ),
+                Ok(true)
+            ) {
+                match enable_local_scripts(edition) {
+                    (true, _) => println!("Execution policy set to RemoteSigned (current user)."),
+                    (false, err) => {
+                        println!(
+                            "Could not change the execution policy (it may be locked by your \
+                             administrator). Set it manually:"
+                        );
+                        println!("  Set-ExecutionPolicy -Scope CurrentUser RemoteSigned");
+                        if !err.is_empty() {
+                            println!("  ({err})");
+                        }
+                    }
+                }
+            } else {
+                println!(
+                    "Skipped. The alias will not load until you run: \
+                     Set-ExecutionPolicy -Scope CurrentUser RemoteSigned"
+                );
+            }
+        }
+
+        match write_alias(&path) {
+            Ok(()) => println!("Done. Restart your shell."),
+            Err(e) => eprintln!("Could not update {}: {e}", path.display()),
         }
     }
 }
