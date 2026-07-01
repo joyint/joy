@@ -378,6 +378,17 @@ pub fn load_session_by_id(id: &str) -> Result<Option<SessionToken>, JoyError> {
     Ok(Some(token))
 }
 
+/// Whether a non-expired session for `member` exists on disk for this project.
+///
+/// Used by `joy ai reset` to warn before removing a member that is still in
+/// active use, instead of silently invalidating a live session.
+pub fn has_active_session(project_id: &str, member: &str) -> bool {
+    matches!(
+        load_session(project_id, member),
+        Ok(Some(token)) if token.claims.expires > Utc::now()
+    )
+}
+
 /// Remove a session token from disk for a specific member.
 pub fn remove_session(project_id: &str, member: &str) -> Result<(), JoyError> {
     let dir = session_dir()?;

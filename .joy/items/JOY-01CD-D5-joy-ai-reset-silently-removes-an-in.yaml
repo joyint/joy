@@ -1,0 +1,52 @@
+id: JOY-01CD-D5
+title: joy ai reset silently removes an in-use AI member from project.yaml
+type: bug
+status: review
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-01T19:25:41.179050009Z
+updated: 2026-07-01T19:36:44.724612267Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-07-01T19:25:55.464683995Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-01T19:36:44.724612267Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  joy ai reset --tool <t> removes the AI member (e.g. ai:claude@joy) from the versioned project.yaml, not just local per-developer config files, and in the 'no local files' branch it does so with no confirmation at all.
+
+  Two defects in commands/ai.rs reset():
+  1. The 'orphaned member' branch (no config files present) removes the member from project.yaml without a [y/N] prompt, and leaves the ai_delegations entries dangling (does not clean them up). 'Orphaned' is wrongly inferred from the absence of local config files, not from the absence of delegations.
+  2. The main branch's [y/N] only covers file deletion; the member is removed as a side effect, even when it is actively delegated and carries a live session.
+
+  Root cause: reset conflates per-developer local config cleanup with mutation of shared, versioned project state (the member entry in project.yaml).
+
+  Fix direction:
+  - Define 'orphaned' by delegations, not by files: a member is removable only when no ai_delegations reference it.
+  - reset removes only the caller's own delegation; keep the member entry while any delegation remains.
+  - Any project.yaml mutation must be confirmed ([y/N]); non-interactive runs require --force/--yes (same is_interactive rule as init).
+  - Refuse or explicitly warn when the target member has an active (unexpired) session.
+  - When a member is removed, also clean up its ai_delegations across all members (fix the dangling-delegation leak).
+  - Removing a shared member entry should be consistent with joy project member rm.
+
+  Repro: in a project with ai:claude@joy delegated and an active session, run 'joy ai reset --tool claude' after the local .claude config was already gone; the member disappears from project.yaml with no prompt while the operator's delegation keypair stays.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-01T19:36:44.660766028Z
+  text: |-
+    Fixed in commands/ai.rs reset() + joy_core session helper.
+
+    - project.yaml member change is computed separately from local config cleanup; a member is removed only when orphaned (no delegation remains), driven by delegations, not by the presence of config files.
+    - reset drops only the caller's own delegation; the shared member entry is kept while any other operator still delegates it.
+    - any project.yaml mutation now requires [y/N]; a non-interactive run refuses instead of mutating silently (needs --force), same is_interactive rule as init.
+    - active session on the target member is surfaced as a warning in the plan.
+    - ai_delegations are cleaned up on member removal, so no dangling entry is left (the leak from the old orphaned path).
+    - new joy_core::auth::session::has_active_session.
+
+    Tests: 5 unit tests for plan_member_reset (decision matrix) + 3 e2e bats in ai_reset_member_safety.bats; ai_init_reset_ownership.bats still green. joy-core 379 + joy-cli 122 tests green; clippy -D warnings clean.

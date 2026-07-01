@@ -723,6 +723,62 @@ fn resolve_doc_path(
     })
 }
 
+/// One AI member's planned `project.yaml` change during `joy ai reset`.
+struct MemberResetPlan {
+    member_id: String,
+    /// Drop the calling operator's own delegation to this AI.
+    drop_caller_delegation: bool,
+    /// Remove the shared member entry, because no delegation to this AI remains
+    /// once the caller's is gone (the member is truly orphaned).
+    remove_member: bool,
+    /// A non-expired session for this member exists on this machine.
+    active_session: bool,
+    /// Delegations to this AI held by members other than the caller.
+    other_delegators: usize,
+}
+
+/// Decide what `joy ai reset` may safely do to `member_id` in `project.yaml`.
+///
+/// The member entry is versioned, shared state, so it is removed only when it is
+/// orphaned (no operator delegates it any more); while any delegation remains
+/// the entry is kept and only the caller's own delegation is dropped. This is
+/// the fix for JOY-01CD-D5, where reset removed an in-use member merely because
+/// the local config files were gone. `caller_key` is the acting operator's
+/// at-rest member key, or None when the identity cannot be resolved (then no
+/// delegation is attributed to the caller and only an already delegation-free
+/// member is removable). Returns None when there is nothing to change.
+fn plan_member_reset(
+    project: &joy_core::model::Project,
+    root: &Path,
+    member_id: &str,
+    caller_key: Option<&str>,
+) -> Option<MemberResetPlan> {
+    if !project.has_member_key(member_id) {
+        return None;
+    }
+    let delegators: Vec<String> = project
+        .members()
+        .filter(|(_, m)| m.ai_delegations.contains_key(member_id))
+        .map(|(k, _)| k.clone())
+        .collect();
+    let drop_caller_delegation =
+        caller_key.is_some_and(|ck| delegators.iter().any(|d| d.as_str() == ck));
+    let other_delegators = delegators
+        .iter()
+        .filter(|d| Some(d.as_str()) != caller_key)
+        .count();
+    let active_session = joy_core::auth::session::project_id(root)
+        .ok()
+        .is_some_and(|pid| joy_core::auth::session::has_active_session(&pid, member_id));
+    Some(MemberResetPlan {
+        member_id: member_id.to_string(),
+        drop_caller_delegation,
+        remove_member: other_delegators == 0,
+        active_session,
+        other_delegators,
+    })
+}
+
 fn reset(args: ResetArgs) -> anyhow::Result<()> {
     let root = joy_core::store::find_project_root(&std::env::current_dir()?)
         .ok_or_else(|| anyhow::anyhow!("No Joy project found (run `joy init` first)"))?;
@@ -775,7 +831,7 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
         all_tools.to_vec()
     };
 
-    // Collect what exists
+    // Collect the local config files that exist for the selected tools.
     let mut to_remove: Vec<(&str, &str)> = Vec::new();
     for (name, _, paths) in &tools {
         for path in *paths {
@@ -786,59 +842,94 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
         }
     }
 
-    if to_remove.is_empty() {
-        // No files to remove, but check for orphaned members
-        let project_path = joy_core::store::joy_dir(&root).join(joy_core::store::PROJECT_FILE);
-        if let Ok(mut project) = joy_core::store::read_project(&project_path) {
-            let mut cleaned = false;
-            for (_, id, _) in &tools {
-                let member_id = format!("ai:{id}@joy");
-                if project.remove_member(&member_id).is_some() {
-                    dprintln!(
-                        "  {}{:<24} orphaned member removed",
-                        color::check_mark(),
-                        member_id
-                    );
-                    cleaned = true;
+    // Compute the shared project.yaml changes, if any. Removing a member is a
+    // mutation of versioned, shared state, so it is deliberately kept separate
+    // from deleting per-developer config files: a member is only ever removed
+    // when it is orphaned (no operator still delegates it), never merely because
+    // the local config happens to be gone (JOY-01CD-D5).
+    let project_path = joy_core::store::joy_dir(&root).join(joy_core::store::PROJECT_FILE);
+    let mut project = joy_core::store::read_project(&project_path).ok();
+    let caller_key = project.as_ref().and_then(|_| {
+        joy_core::identity::resolve_identity(&root)
+            .ok()
+            .map(|id| id.member.id().to_string())
+    });
+    let mut plans: Vec<MemberResetPlan> = Vec::new();
+    if let Some(ref p) = project {
+        for (_, id, _) in &tools {
+            let member_id = format!("ai:{id}@joy");
+            if let Some(plan) = plan_member_reset(p, &root, &member_id, caller_key.as_deref()) {
+                if plan.drop_caller_delegation || plan.remove_member {
+                    plans.push(plan);
                 }
             }
-            if cleaned {
-                joy_core::store::write_yaml_preserve(&project_path, &project)?;
-                let rel = format!(
-                    "{}/{}",
-                    joy_core::store::JOY_DIR,
-                    joy_core::store::PROJECT_FILE
-                );
-                joy_core::git_ops::auto_git_add(&root, &[&rel]);
-            } else {
-                dprintln!("{}No AI tool configurations found.", color::check_mark());
-            }
-        } else {
-            dprintln!("{}No AI tool configurations found.", color::check_mark());
         }
+    }
+
+    if to_remove.is_empty() && plans.is_empty() {
+        dprintln!("{}No AI tool configurations found.", color::check_mark());
         return Ok(());
     }
 
+    // Show the full plan before touching anything.
     dprintln!("{}", color::header("AI Reset"));
     dprintln!();
-    dprintln!("Will remove:");
-    for (name, path) in &to_remove {
-        dprintln!("  {}{:<24} {}", color::cross_mark(), name, path);
+    if !to_remove.is_empty() {
+        dprintln!("Will remove (local config):");
+        for (name, path) in &to_remove {
+            dprintln!("  {}{:<24} {}", color::cross_mark(), name, path);
+        }
+    }
+    if !plans.is_empty() {
+        if !to_remove.is_empty() {
+            dprintln!();
+        }
+        dprintln!("Will change project.yaml (shared, versioned):");
+        for plan in &plans {
+            if plan.remove_member {
+                let warn = if plan.active_session {
+                    "  [has an ACTIVE session]"
+                } else {
+                    ""
+                };
+                dprintln!(
+                    "  {}{:<24} remove member (orphaned){}",
+                    color::cross_mark(),
+                    plan.member_id,
+                    warn
+                );
+            } else {
+                dprintln!(
+                    "  {}{:<24} drop your delegation ({} other kept)",
+                    color::cross_mark(),
+                    plan.member_id,
+                    plan.other_delegators
+                );
+            }
+        }
     }
 
+    // Any change here needs consent. In a non-interactive run we refuse rather
+    // than silently mutate shared state; the caller must pass --force.
     if !args.force {
+        if !crate::prompt::is_interactive() {
+            anyhow::bail!(
+                "joy ai reset would delete files or change project.yaml but stdin/stdout is not a \
+                 terminal; re-run with --force to confirm non-interactively"
+            );
+        }
         dprintln!();
         dprint!("Proceed? [y/N] ");
         std::io::stdout().flush()?;
         let mut input = String::new();
         std::io::stdin().read_line(&mut input)?;
-        let trimmed = input.trim();
-        if !trimmed.eq_ignore_ascii_case("y") {
+        if !input.trim().eq_ignore_ascii_case("y") {
             dprintln!("Aborted.");
             return Ok(());
         }
     }
 
+    // 1) Remove local config files.
     for (name, path) in &to_remove {
         let full = root.join(path);
         // Shared instruction files: strip the joy-block but keep the rest
@@ -858,39 +949,55 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
         dprintln!("  {}{:<24} removed", color::check_mark(), name);
     }
 
-    // Remove AI members from project.yaml for reset tools
-    let project_path = joy_core::store::joy_dir(&root).join(joy_core::store::PROJECT_FILE);
-    if let Ok(mut project) = joy_core::store::read_project(&project_path) {
+    // 2) Apply the project.yaml changes: drop the caller's own delegation, and
+    // remove the member only when it is thereby orphaned.
+    if let Some(ref mut p) = project {
         let mut project_changed = false;
-        for (_, id, paths) in &tools {
-            let was_removed = paths
-                .iter()
-                .any(|p| to_remove.iter().any(|(_, tp)| tp == p));
-            if was_removed {
-                let member_id = format!("ai:{id}@joy");
-                if project.remove_member(&member_id).is_some() {
-                    dprintln!("  {}{:<24} member removed", color::check_mark(), member_id);
-                    project_changed = true;
-                    // Remove the AI member's local session file. The
-                    // delegation private key is not persisted on disk
-                    // (it is re-derived from the operator's passphrase
-                    // at issuance), so there is nothing else to clean.
-                    if let Ok(project_id) = joy_core::auth::session::project_id(&root) {
-                        let _ = joy_core::auth::session::remove_session(&project_id, &member_id);
-                    }
-                    // Remove delegation entries for this AI member from all
-                    // human members in project.yaml.
-                    let member_keys: Vec<String> = project.member_keys().cloned().collect();
-                    for k in &member_keys {
-                        if let Some(m) = project.member_by_key_mut(k) {
-                            m.ai_delegations.remove(&member_id);
+        for plan in &plans {
+            if plan.drop_caller_delegation {
+                if let Some(ck) = caller_key.as_deref() {
+                    if let Some(m) = p.member_by_key_mut(ck) {
+                        if m.ai_delegations.remove(&plan.member_id).is_some() {
+                            project_changed = true;
                         }
                     }
                 }
             }
+            if plan.remove_member {
+                if p.remove_member(&plan.member_id).is_some() {
+                    project_changed = true;
+                    // Drop the local session so a removed member cannot keep
+                    // acting from a cached credential.
+                    if let Ok(project_id) = joy_core::auth::session::project_id(&root) {
+                        let _ =
+                            joy_core::auth::session::remove_session(&project_id, &plan.member_id);
+                    }
+                    // Defensive: clear any delegation still pointing at the now
+                    // removed member so no entry is left dangling.
+                    let member_keys: Vec<String> = p.member_keys().cloned().collect();
+                    for k in &member_keys {
+                        if let Some(m) = p.member_by_key_mut(k) {
+                            m.ai_delegations.remove(&plan.member_id);
+                        }
+                    }
+                    dprintln!("  {}{:<24} member removed", color::check_mark(), plan.member_id);
+                } else if plan.drop_caller_delegation {
+                    dprintln!(
+                        "  {}{:<24} delegation removed (member kept)",
+                        color::check_mark(),
+                        plan.member_id
+                    );
+                }
+            } else if plan.drop_caller_delegation {
+                dprintln!(
+                    "  {}{:<24} delegation removed (member kept)",
+                    color::check_mark(),
+                    plan.member_id
+                );
+            }
         }
         if project_changed {
-            joy_core::store::write_yaml_preserve(&project_path, &project)?;
+            joy_core::store::write_yaml_preserve(&project_path, p)?;
             let rel = format!(
                 "{}/{}",
                 joy_core::store::JOY_DIR,
@@ -1844,6 +1951,90 @@ mod tests {
 
     fn arch_spec() -> &'static DocSpec {
         DOC_SPECS.iter().find(|s| s.key == "architecture").unwrap()
+    }
+
+    // --- JOY-01CD-D5: joy ai reset member-removal safety ---
+    //
+    // A member is removed only when it is orphaned (no operator delegates it);
+    // while any delegation remains the shared entry is kept and only the
+    // caller's own delegation is dropped. The decision must not depend on local
+    // config files. `project_id` on a non-existent root fails, so `active_session`
+    // is always false in these unit tests (no session on disk).
+
+    fn deleg() -> joy_core::model::project::AiDelegationEntry {
+        joy_core::model::project::AiDelegationEntry {
+            delegation_verifier: "cc".repeat(32),
+            delegation_salt: None,
+            created: chrono::DateTime::parse_from_rfc3339("2026-04-15T10:00:00Z")
+                .unwrap()
+                .with_timezone(&chrono::Utc),
+            rotated: None,
+        }
+    }
+
+    fn project_with(ai: &str, delegators: &[&str]) -> joy_core::model::Project {
+        use joy_core::model::{Member, MemberCapabilities, Project};
+        let mut p = Project::new("Test".to_string(), Some("TS".to_string()));
+        p.register_member(ai, Member::new(MemberCapabilities::All))
+            .unwrap();
+        for d in delegators {
+            let mut m = Member::new(MemberCapabilities::All);
+            m.ai_delegations.insert(ai.to_string(), deleg());
+            p.register_member(d, m).unwrap();
+        }
+        p
+    }
+
+    fn no_root() -> &'static Path {
+        Path::new("/joy-nonexistent-root-for-unit-test")
+    }
+
+    #[test]
+    fn plan_absent_member_is_none() {
+        let p = project_with("ai:claude@joy", &[]);
+        assert!(plan_member_reset(&p, no_root(), "ai:qwen@joy", None).is_none());
+    }
+
+    #[test]
+    fn plan_sole_delegator_removes_member() {
+        let p = project_with("ai:claude@joy", &["op1@example.com"]);
+        let plan =
+            plan_member_reset(&p, no_root(), "ai:claude@joy", Some("op1@example.com")).unwrap();
+        assert!(plan.drop_caller_delegation);
+        assert_eq!(plan.other_delegators, 0);
+        assert!(plan.remove_member);
+        assert!(!plan.active_session);
+    }
+
+    #[test]
+    fn plan_other_delegator_keeps_member() {
+        let p = project_with("ai:claude@joy", &["op1@example.com", "op2@example.com"]);
+        let plan =
+            plan_member_reset(&p, no_root(), "ai:claude@joy", Some("op1@example.com")).unwrap();
+        assert!(plan.drop_caller_delegation);
+        assert_eq!(plan.other_delegators, 1);
+        assert!(!plan.remove_member, "member kept while op2 still delegates");
+    }
+
+    #[test]
+    fn plan_unknown_caller_keeps_delegated_member() {
+        let p = project_with("ai:claude@joy", &["op1@example.com"]);
+        let plan = plan_member_reset(&p, no_root(), "ai:claude@joy", None).unwrap();
+        assert!(!plan.drop_caller_delegation);
+        assert_eq!(plan.other_delegators, 1);
+        assert!(!plan.remove_member);
+    }
+
+    #[test]
+    fn plan_orphan_member_removed_even_with_unknown_caller() {
+        // Member present but delegated by nobody (e.g. the delegation was
+        // already removed): orphaned and removable, but only via the confirmed
+        // path in reset(), never silently.
+        let p = project_with("ai:claude@joy", &[]);
+        let plan = plan_member_reset(&p, no_root(), "ai:claude@joy", None).unwrap();
+        assert!(!plan.drop_caller_delegation);
+        assert_eq!(plan.other_delegators, 0);
+        assert!(plan.remove_member);
     }
 
     #[test]
