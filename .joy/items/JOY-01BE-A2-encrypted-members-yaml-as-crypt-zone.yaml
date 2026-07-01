@@ -1,9 +1,11 @@
 id: JOY-01BE-A2
 title: 'Encrypted members.yaml as Crypt zone: create/unlock/display/erase'
 type: task
-status: new
+status: closed
 priority: high
 parent: JOY-01B9-53
+assignees:
+- member: ai:claude@joy
 deps:
 - JOY-01BD-51
 milestone: JOY-MS-02
@@ -12,7 +14,13 @@ capabilities:
 effort: 5
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-10T20:59:41.195103903Z
-updated: 2026-06-10T20:59:41.195103903Z
+updated: 2026-07-01T19:19:44.792066877Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
+history:
+- date: 2026-06-12T00:59:58.060259216Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-12T00:59:58.122185665Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-01T19:19:44.792066877Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: Create members.yaml at joy auth init, stored encrypted via the existing Crypt model (one zone key, wrapped per member against verify_key; no new primitive). Decrypt into memory after auth; display only (name -> e-mail fallback), never the match. Erasure = remove the entry and re-encrypt (shared zone key, per-member wrap), not per-entry crypto-shredding. Ref ADR-042 §3.

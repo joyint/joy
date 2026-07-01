@@ -1,9 +1,11 @@
 id: JOY-01C2-36
 title: Anonymous-mode acceptance bats (no e-mail in files, name-or-email display)
 type: task
-status: new
+status: closed
 priority: high
 parent: JOY-01B9-53
+assignees:
+- member: ai:claude@joy
 deps:
 - JOY-01BC-A9
 - JOY-01BE-A2
@@ -14,7 +16,7 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-11T17:11:16.766306688Z
-updated: 2026-06-11T17:11:17.195364098Z
+updated: 2026-07-01T19:19:45.303978699Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-11T17:11:16.937725017Z
@@ -22,5 +24,11 @@ history:
 - date: 2026-06-11T17:11:17.066560590Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 - date: 2026-06-11T17:11:17.195364098Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-12T00:59:58.692670505Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-12T00:59:58.756115822Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-01T19:19:45.303978699Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'TDD acceptance suite for the activated anonymous privacy mode (ADR-042), written test-first. Asserts: (1) after switching a project to privacy=anonymous and exercising it, no member e-mail appears in any generated .joy file (project.yaml including attestation, items, logs; members.yaml encrypted). (2) joy log and joy show resolve a member to the name when set, else the e-mail, and never show a raw opaque id. Both variants covered. Red until JOY-01BD-51, JOY-01BE-A2, JOY-01BF-2E and display resolution land. File: tests/integration/privacy_anonymous.bats.'

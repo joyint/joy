@@ -1,9 +1,11 @@
 id: JOY-01BC-A9
 title: 'MemberRef type: opaque IDs never user-facing (terminal and --json), fail-safe'
 type: task
-status: new
+status: closed
 priority: high
 parent: JOY-01B9-53
+assignees:
+- member: ai:claude@joy
 deps:
 - JOY-01BA-7D
 milestone: JOY-MS-02
@@ -12,7 +14,13 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-10T20:59:40.995149595Z
-updated: 2026-06-10T20:59:40.995149595Z
+updated: 2026-07-01T19:19:44.539783253Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
+history:
+- date: 2026-06-12T00:59:57.746392935Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-06-12T00:59:57.814674324Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-01T19:19:44.539783253Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: Wrap the opaque member ID in a MemberRef type whose Display/serialization yields the resolved value (name, else e-mail), never the raw ID; raw-ID access only via an explicit method used on internal paths. Guarantee no Joy command emits a raw ID on the terminal or in --json; when resolution is impossible (members.yaml locked) request authentication instead of printing an ID. Ref ADR-042 §2.
