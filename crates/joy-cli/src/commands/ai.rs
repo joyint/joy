@@ -980,7 +980,11 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
                             m.ai_delegations.remove(&plan.member_id);
                         }
                     }
-                    dprintln!("  {}{:<24} member removed", color::check_mark(), plan.member_id);
+                    dprintln!(
+                        "  {}{:<24} member removed",
+                        color::check_mark(),
+                        plan.member_id
+                    );
                 } else if plan.drop_caller_delegation {
                     dprintln!(
                         "  {}{:<24} delegation removed (member kept)",
