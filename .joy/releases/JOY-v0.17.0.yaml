@@ -1,0 +1,36 @@
+version: v0.17.0
+date: 2026-07-02
+previous: v0.16.5
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 71
+  items: 13
+items:
+  tasks:
+  - id: JOY-01BB-79
+    title: email_for(member) as single e-mail source; route all consumers through it
+  - id: JOY-01BC-A9
+    title: 'MemberRef type: opaque IDs never user-facing (terminal and --json), fail-safe'
+  - id: JOY-01BD-51
+    title: Opaque m-<short> IDs + email_match HKDF verifier in project.yaml
+  - id: JOY-01BE-A2
+    title: 'Encrypted members.yaml as Crypt zone: create/unlock/display/erase'
+  - id: JOY-01BF-2E
+    title: 'Mode transitions: open<->anonymous atomic commits, joy init --anonymous + prompt, anonymous onboarding'
+  - id: JOY-01C0-86
+    title: 'Robust dual-form reading: event log/parsers tolerate e-mail and ID actors'
+  - id: JOY-01C1-C5
+    title: 'Tests + docs: round-trip, no-ID-leak, verifier, attestation validity; Tutorial/Auth.md/SECURITY.md + platform note'
+  - id: JOY-01C2-36
+    title: Anonymous-mode acceptance bats (no e-mail in files, name-or-email display)
+  bugs:
+  - id: JOY-01CA-AF
+    title: joy init creates a founderless project when no git user.email is set, with no recovery path
+  - id: JOY-01CB-8B
+    title: 'joy update: unhelpful message for package-manager installs; give the upgrade command'
+  - id: JOY-01C3-90
+    title: 'Windows: bare ''joy'' launches System32\joy.cpl (Game Controllers) instead of joy.exe'
+  - id: JOY-01CC-BE
+    title: joy init prompts for everything then fails late when git is missing
+  - id: JOY-019D-B1
+    title: get.joyint.com/joy installer must write the axoupdater install receipt
