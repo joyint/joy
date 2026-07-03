@@ -1,0 +1,15 @@
+id: JOY-01EF-D9
+title: Schema ADR and docs for .joy/ai/jobs and .joy/ai/agents
+type: task
+status: new
+priority: medium
+parent: JOY-01E9-94
+capabilities:
+- implement
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-03T22:59:01.152962Z
+updated: 2026-07-03T22:59:01.152962Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: Document the job and agent YAML schemas and the lifecycle in joy docs/dev and the vision, as the shared reference for CLI/app/platform.

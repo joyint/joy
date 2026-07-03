@@ -1,0 +1,17 @@
+id: JOY-01ED-32
+title: joy CLI commands for jobs and agents
+type: story
+status: new
+priority: high
+parent: JOY-01E9-94
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-03T22:59:00.900172Z
+updated: 2026-07-03T22:59:00.900172Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'CLI over the model so it is git-native without the platform: create/list/show/cancel a job, review verbs (approve / request-changes) as governed writes, agent list/show/set; joy show <item> surfaces the item''s jobs and status. bats integration tests.'

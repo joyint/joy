@@ -1,0 +1,15 @@
+id: JOY-01EA-2C
+title: 'ADR: git-native AI job and agent data model'
+type: decision
+status: new
+priority: high
+parent: JOY-01E9-94
+capabilities:
+- conceive
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-03T22:59:00.521664Z
+updated: 2026-07-03T22:59:00.521664Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'DECISION: AI jobs and agents are git-native Joy data in joy-core. A job is .joy/ai/jobs/<id>.yaml holding CURRENT state (id, item, type, actor, delegated_by, status, branch, budget, cost, created, updated, result/error, review rounds); audit in .joy/logs, history in git, product in the forge branch. An agent is .joy/ai/agents/<member>.yaml with shared execution config (adapter, model, provider, default_mode, budget_default); the API key is a referenced secret, NEVER in the repo. Committed+pushed on every meaningful status change so the item shows current status. REJECTED: a Postgres jobs table (Postgres is chat pub/sub + accounts only), a separate activity/pub-sub store (audit is .joy/logs, history is git). Signed like items. Refs: App concept https://docs.int.joydev.com/doc/joyint-app-CENsubhWLG (Mermaid: Postgres=chat pub/sub only, all data in .joy/); Vision https://docs.int.joydev.com/doc/vision-YwqVtDpJO5 ; Automations https://docs.int.joydev.com/doc/joy-automations-execution-layer-fuer-ai-gesteuerte-entwicklung-ynJRnxaFE9 (its PostgreSQL joy_jobs is superseded by git-native .joy/ai/jobs).'
