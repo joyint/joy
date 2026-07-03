@@ -166,8 +166,8 @@ fn ai_jobs(args: JobsArgs) -> anyhow::Result<()> {
         return Ok(());
     }
     println!(
-        "{:<14} {:<10} {:<18} {:<16} {}",
-        "ID", "ITEM", "STATUS", "ACTOR", "SUMMARY"
+        "{:<14} {:<10} {:<18} {:<16} SUMMARY",
+        "ID", "ITEM", "STATUS", "ACTOR"
     );
     for j in jobs {
         let euro = format!("€{:.2}", j.cost.spent_cents as f64 / 100.0);
@@ -195,10 +195,7 @@ fn ai_agents() -> anyhow::Result<()> {
         );
         return Ok(());
     }
-    println!(
-        "{:<18} {:<14} {:<20} {}",
-        "MEMBER", "ADAPTER", "MODEL", "MODE"
-    );
+    println!("{:<18} {:<14} {:<20} MODE", "MEMBER", "ADAPTER", "MODEL");
     for a in agents {
         println!(
             "{:<18} {:<14} {:<20} {}",

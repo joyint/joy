@@ -58,7 +58,7 @@ pub fn load_jobs(root: &Path) -> Result<Vec<Job>, JoyError> {
         }
         jobs.push(store::read_yaml::<Job>(&path)?);
     }
-    jobs.sort_by(|a, b| b.created.cmp(&a.created));
+    jobs.sort_by_key(|j| std::cmp::Reverse(j.created));
     Ok(jobs)
 }
 
