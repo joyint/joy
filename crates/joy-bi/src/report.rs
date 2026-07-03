@@ -71,10 +71,10 @@ pub fn milestone(root: &Path, id: &str) -> Result<Node> {
     };
 
     let mut children = vec![
-        Node::value_with_unit("Fortschritt", progress, "%"),
+        Node::value_with_unit("Progress", progress, "%"),
         Node::value("Items", format!("{closed}/{total}")),
         Node::table(
-            "Nach Status",
+            "By status",
             &["status", "count"],
             tally(in_milestone.iter().map(|it| {
                 let s = enum_str(&it.status);
@@ -83,7 +83,7 @@ pub fn milestone(root: &Path, id: &str) -> Result<Node> {
             "bar",
         ),
         Node::table(
-            "Nach Typ",
+            "By type",
             &["type", "count"],
             tally(in_milestone.iter().map(|it| {
                 let s = enum_str(&it.item_type);
@@ -99,9 +99,9 @@ pub fn milestone(root: &Path, id: &str) -> Result<Node> {
         ));
     }
     if let Some(date) = milestone.and_then(|m| m.date) {
-        children.push(Node::value("Zieldatum", date.to_string()));
+        children.push(Node::value("Target date", date.to_string()));
     }
-    Ok(Node::group(&format!("Meilenstein {label}"), children))
+    Ok(Node::group(&format!("Milestone {label}"), children))
 }
 
 /// Parse a window like "2w" into (buckets, bucket duration, unit label).
@@ -114,10 +114,10 @@ fn parse_window(window: &str) -> Result<(i64, Duration, &'static str)> {
         bail!("window out of range: {window}");
     }
     Ok(match unit {
-        "h" => (count, Duration::hours(1), "Stunde"),
-        "d" => (count, Duration::days(1), "Tag"),
-        "w" => (count, Duration::weeks(1), "Woche"),
-        "m" => (count, Duration::days(30), "Monat"),
+        "h" => (count, Duration::hours(1), "hour"),
+        "d" => (count, Duration::days(1), "day"),
+        "w" => (count, Duration::weeks(1), "week"),
+        "m" => (count, Duration::days(30), "month"),
         _ => bail!("unknown window unit: {window} (h, d, w, m)"),
     })
 }
@@ -173,7 +173,7 @@ pub fn velocity(root: &Path, window: &str) -> Result<Node> {
         .map(|(i, count)| {
             let bucket_start = span_start + bucket_len * (i as i32);
             let label = match unit_label {
-                "Stunde" => bucket_start.format("%H:%M").to_string(),
+                "hour" => bucket_start.format("%H:%M").to_string(),
                 _ => bucket_start.format("%d.%m.").to_string(),
             };
             vec![Scalar::Text(label), Scalar::from(*count)]
@@ -188,13 +188,13 @@ pub fn velocity(root: &Path, window: &str) -> Result<Node> {
     Ok(Node::group(
         &format!("Velocity ({window})"),
         vec![
-            Node::value("Geschlossen gesamt", total),
+            Node::value("Closed total", total),
             Node::value_with_unit(
-                &format!("Pro {unit_label}"),
+                &format!("Per {unit_label}"),
                 (per_bucket * 10.0).round() / 10.0,
                 "Items",
             ),
-            Node::table("Verlauf", &["bucket", "closed"], rows, "bar"),
+            Node::table("History", &["bucket", "closed"], rows, "bar"),
         ],
     ))
 }
@@ -252,7 +252,7 @@ mod tests {
         let json = serde_json::to_value(&node).unwrap();
         assert_eq!(json["kind"], "group");
         let children = json["children"].as_array().unwrap();
-        assert_eq!(children[0]["label"], "Fortschritt");
+        assert_eq!(children[0]["label"], "Progress");
         assert_eq!(children[0]["value"], 50.0);
         assert_eq!(children[1]["value"], "1/2");
         assert_eq!(children[2]["view"], "bar");
