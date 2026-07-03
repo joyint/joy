@@ -888,35 +888,8 @@ fn verify_member_attestation(
 /// former trust root - must carry an attestation. A lone unattested
 /// entry that appears after closure is tampering.
 fn founder_must_be_attested(project: &joy_core::model::project::Project) -> bool {
-    let unattested = project
-        .member_values()
-        .filter(|m| m.attestation.is_none())
-        .count();
-    if unattested > 1 {
-        return true;
-    }
-    // If a mutual-attestation pair exists, the reverse-attestation step
-    // has happened; no unattested member is permitted anymore.
-    if unattested == 1 && has_mutual_attestation_pair(project) {
-        return true;
-    }
-    false
-}
-
-fn has_mutual_attestation_pair(project: &joy_core::model::project::Project) -> bool {
-    for (email, member) in project.members() {
-        let Some(att) = &member.attestation else {
-            continue;
-        };
-        if let Some(attester) = project.member_by_key(att.attester.id()) {
-            if let Some(attester_att) = &attester.attestation {
-                if attester_att.attester == email.as_str() {
-                    return true;
-                }
-            }
-        }
-    }
-    false
+    // Shared with the desktop app (JOY-01E9): one posture everywhere.
+    joy_core::auth::attestation::founder_must_be_attested(project)
 }
 
 /// Authenticate an AI member via delegation token.

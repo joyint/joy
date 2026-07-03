@@ -5,3 +5,6 @@
 2026-07-03T08:19:41.730Z JOY-01E8-4D comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-07-03T08:19:41.832Z JOY-01E8-4D item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-07-03T08:19:41.958Z JOY-01E8-4D item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-03T17:44:07.593Z JOY-01E9-39 guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-07-03T17:44:59.318Z JOY-01E9-39 guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-07-03T17:45:27.612Z JOY-01E9-39 guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
