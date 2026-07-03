@@ -3,6 +3,7 @@
 
 #![deny(clippy::all)]
 
+pub mod agents;
 pub mod ai_templates;
 pub mod auth;
 pub mod capabilities;
@@ -19,6 +20,7 @@ pub mod guard;
 pub mod identity;
 pub mod init;
 pub mod items;
+pub mod jobs;
 pub mod member_id;
 pub mod member_ref;
 pub mod members_file;

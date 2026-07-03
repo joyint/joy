@@ -34,11 +34,17 @@ pub enum EventType {
     GuardDenied,
     GuardWarned,
     AuthSessionCreated,
+    JobDelegated,
+    JobStatusChanged,
+    JobReviewed,
 }
 
 impl fmt::Display for EventType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
+            Self::JobDelegated => "job.delegated",
+            Self::JobStatusChanged => "job.status_changed",
+            Self::JobReviewed => "job.reviewed",
             Self::ItemCreated => "item.created",
             Self::ItemUpdated => "item.updated",
             Self::ItemStatusChanged => "item.status_changed",
