@@ -20,6 +20,7 @@
 
 pub mod attestation;
 pub mod delegation;
+pub mod login;
 pub mod otp;
 pub mod seed;
 pub mod session;

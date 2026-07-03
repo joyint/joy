@@ -525,7 +525,7 @@ fn run_auth(
 fn auth_with_passphrase(
     root: &std::path::Path,
     project: &joy_core::model::project::Project,
-    project_id: &str,
+    _project_id: &str,
     email: &str,
     passphrase_flag: Option<&str>,
     passphrase_stdin: bool,
@@ -559,79 +559,23 @@ fn auth_with_passphrase(
 
     let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "Passphrase: ")?;
 
-    // ADR-039: prefer the wrapped-seed path when seed_wrap_passphrase is
-    // present. The legacy path (no wrap) triggers a one-time lazy
-    // migration that preserves the existing keypair.
-    let keypair = if let Some(wrap_hex) = member.seed_wrap_passphrase.as_deref() {
-        let seed = seed_mod::unwrap_seed_with_passphrase(wrap_hex, &passphrase, &salt)?;
-        let kp = IdentityKeypair::from_seed(seed.as_bytes());
-        if kp.public_key() != public_key {
-            anyhow::bail!("incorrect passphrase");
-        }
-        kp
-    } else {
+    // ADR-039: legacy entries (no seed_wrap_*) migrate here first, with
+    // the interactive recovery-key printout; the shared core login below
+    // then finds a wrapped seed. JOY-01EA: the flow itself lives in
+    // joy_core::auth::login so the desktop app runs the exact same code.
+    if member.seed_wrap_passphrase.is_none() {
         let key = derive_key(&passphrase, &salt)?;
         let kp = IdentityKeypair::from_derived_key(&key);
         if kp.public_key() != public_key {
             anyhow::bail!("incorrect passphrase");
         }
-        // JOY-014C-29 lazy migration: legacy member entry has no
-        // seed_wrap_*. Use the derived_key as the seed (it produced
-        // the existing verify_key), generate a fresh recovery key,
-        // wrap the seed under both KEKs, persist. Identity keypair
-        // stays the same; existing Crypt wraps remain valid.
         migrate_to_wrapped_seed(root, email, &key, &salt, &passphrase)?;
-        kp
-    };
-
-    // JOY-0101-78: silent auto-seal for pre-feature projects. If no
-    // member anywhere has an attestation yet, treat the current state as
-    // legitimate and sign attestations for every other member using the
-    // acting member's fresh keypair. The acting member becomes the trust
-    // root and remains unattested until a future joiner reverse-attests
-    // them via the normal path. Runs at most once per project, silent.
-    let sealed_project = maybe_auto_seal(root, project, email, &keypair)?;
-    let project_view: &joy_core::model::project::Project =
-        sealed_project.as_ref().unwrap_or(project);
-    let member = project_view.member_by_key(&member_key).unwrap();
-
-    // JOY-0100-DA: verify the member's attestation before establishing a
-    // session. Founder may be unattested during the solo phase (trust
-    // root); any member without attestation after the first co-member
-    // joined is suspect and rejected.
-    if let Some(attestation) = member.attestation.as_ref() {
-        // Pass the authoritative e-mail (the concept's email_for: here the git
-        // e-mail of the authenticating member), not the opaque map key, so the
-        // attestation's frozen signature is verified over the real address even
-        // in anonymous mode where the stored field is an id placeholder.
-        verify_member_attestation(project_view, email, member, attestation)?;
-    } else if founder_must_be_attested(project_view) {
-        anyhow::bail!(
-            "{} has no attestation and the project has multiple members. \
-             The entry appears to have been tampered with. Ask a manage member \
-             to remove and re-add {}.",
-            email,
-            email
-        );
     }
 
-    let mut session_token = session::create_session(&keypair, &member_key, project_id, None);
-    // Anonymous mode (ADR-042): cache the members.yaml zone key in the session
-    // so subsequent commands resolve opaque ids to e-mails for the life of the
-    // session without re-entering the passphrase.
-    session_token.members_zone_key =
-        cached_members_zone_key(project_view, &member_key, &keypair.to_seed_bytes());
-    session::save_session(project_id, &session_token)?;
-
-    // ADR-040: opportunistic re-lock. We have the seed in hand; walk
-    // every zone this member has a wrap for and re-encrypt any
-    // plaintext file under crypt.zones[<zone>].paths that the user
-    // forgot to lock.
-    let relocked = relock_unlocked_files(root, project_view, email, &keypair.to_seed_bytes());
-    if relocked > 0 {
-        println!("Re-locked {} unlocked file(s).", relocked);
+    let outcome = joy_core::auth::login::login(root, email, &passphrase)?;
+    if outcome.relocked > 0 {
+        println!("Re-locked {} unlocked file(s).", outcome.relocked);
     }
-
     println!("Authenticated as {}. Session active (24h).", email);
 
     Ok(())
@@ -652,96 +596,6 @@ fn cached_members_zone_key(
     let zk = joy_core::crypt::unwrap_for_member(wrap, joy_core::members_file::MEMBERS_ZONE, seed)
         .ok()?;
     Some(hex::encode(zk.as_bytes()))
-}
-
-/// Walk `crypt.zones[].paths` for every zone the member is granted to;
-/// any file currently in plaintext gets re-encrypted with the
-/// matching zone key. Best-effort: errors per file are logged but the
-/// walk continues. Returns the number of files re-locked.
-fn relock_unlocked_files(
-    root: &std::path::Path,
-    project: &joy_core::model::project::Project,
-    email: &str,
-    seed: &[u8; 32],
-) -> usize {
-    let Some(member) = project.member_by_email(email) else {
-        return 0;
-    };
-    let mut relocked = 0;
-    for (zone, wrap_hex) in &member.crypt_wraps {
-        let Ok(zone_key) = joy_core::crypt::unwrap_for_member(wrap_hex, zone, seed) else {
-            continue;
-        };
-        let Some(zone_cfg) = project.crypt.zones.get(zone) else {
-            continue;
-        };
-        for pattern in &zone_cfg.paths {
-            relock_path(root, &zone_key, zone, pattern, &mut relocked);
-        }
-    }
-    relocked
-}
-
-fn relock_path(
-    root: &std::path::Path,
-    zone_key: &joy_core::crypt::ZoneKey,
-    zone: &str,
-    pattern: &str,
-    relocked: &mut usize,
-) {
-    let abs = root.join(pattern);
-    if abs.is_file() {
-        if relock_file(&abs, zone_key, zone) {
-            *relocked += 1;
-        }
-    } else if abs.is_dir() {
-        relock_dir(&abs, zone_key, zone, relocked);
-    }
-}
-
-fn relock_dir(
-    dir: &std::path::Path,
-    zone_key: &joy_core::crypt::ZoneKey,
-    zone: &str,
-    relocked: &mut usize,
-) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let p = entry.path();
-        if p.is_dir() {
-            relock_dir(&p, zone_key, zone, relocked);
-        } else if p.is_file() && relock_file(&p, zone_key, zone) {
-            *relocked += 1;
-        }
-    }
-}
-
-fn relock_file(path: &std::path::Path, zone_key: &joy_core::crypt::ZoneKey, zone: &str) -> bool {
-    let Ok(bytes) = std::fs::read(path) else {
-        return false;
-    };
-    if joy_core::crypt::looks_like_blob(&bytes) {
-        return false;
-    }
-    let blob = joy_core::crypt::encrypt_blob(zone, zone_key, &bytes);
-    let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
-    let tmp = parent.join(format!(
-        ".{}.tmp.{}",
-        path.file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("relock"),
-        std::process::id()
-    ));
-    if std::fs::write(&tmp, &blob).is_err() {
-        return false;
-    }
-    if std::fs::rename(&tmp, path).is_err() {
-        let _ = std::fs::remove_file(&tmp);
-        return false;
-    }
-    true
 }
 
 /// JOY-014C-29 lazy migration: convert a legacy member entry (no
@@ -788,108 +642,6 @@ fn migrate_to_wrapped_seed(
     println!();
 
     Ok(())
-}
-
-/// JOY-0101-78: Silent auto-seal for projects that existed before the
-/// attestation feature landed. If no member carries an attestation, sign
-/// attestations for every other member using the acting member's keypair,
-/// write project.yaml once, and return the sealed state. Otherwise no-op.
-///
-/// This is a one-shot migration aid; JOY-0105-65 tracks removal of the
-/// code path once the deprecation window has passed.
-fn maybe_auto_seal(
-    root: &std::path::Path,
-    project: &joy_core::model::project::Project,
-    acting_email: &str,
-    acting_keypair: &IdentityKeypair,
-) -> Result<Option<joy_core::model::project::Project>> {
-    let has_any_attestation = project.member_values().any(|m| m.attestation.is_some());
-    if has_any_attestation || project.member_count() < 2 {
-        return Ok(None);
-    }
-
-    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-    let mut sealed = store::read_project(&project_path)?;
-
-    let targets: Vec<String> = sealed
-        .member_keys()
-        .filter(|email| email.as_str() != acting_email)
-        .cloned()
-        .collect();
-    for target_email in targets {
-        let target = sealed.member_by_key(&target_email).cloned().unwrap();
-        let signed_fields = joy_core::auth::attestation::signed_fields_for(
-            &target_email,
-            &target.capabilities,
-            target.enrollment_verifier.as_deref(),
-        );
-        let attestation = joy_core::auth::attestation::sign_attestation(
-            acting_email,
-            acting_keypair,
-            signed_fields,
-        );
-        sealed.member_by_key_mut(&target_email).unwrap().attestation = Some(attestation);
-    }
-
-    store::write_yaml_preserve(&project_path, &sealed)?;
-    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-    joy_core::git_ops::auto_git_add(root, &[&rel]);
-
-    Ok(Some(sealed))
-}
-
-/// Verify the attestation against the attester's public_key in project.yaml
-/// and against the member's current fields. Produces user-facing error
-/// messages aligned with the CLI UX (not bare JoyError strings).
-fn verify_member_attestation(
-    project: &joy_core::model::project::Project,
-    email: &str,
-    member: &joy_core::model::project::Member,
-    attestation: &joy_core::model::project::Attestation,
-) -> Result<()> {
-    let attester_entry = project
-        .member_by_key(attestation.attester.id())
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "attestation for {} names attester {} but that member is not registered. \
-             Ask a manage member to remove and re-add {}.",
-                email,
-                attestation.attester,
-                email
-            )
-        })?;
-    let attester_pubkey_hex = attester_entry.verify_key.as_ref().ok_or_else(|| {
-        anyhow::anyhow!(
-            "attestation for {} is signed by {} but that member has no public key. \
-             Ask a manage member to remove and re-add {}.",
-            email,
-            attestation.attester,
-            email
-        )
-    })?;
-    let attester_pubkey = PublicKey::from_hex(attester_pubkey_hex)?;
-    joy_core::auth::attestation::verify_attestation(attestation, &attester_pubkey, email, member)
-        .map_err(|e| {
-            anyhow::anyhow!(
-                "attestation for {} is not valid ({}). \
-                 The entry appears to have been tampered with. \
-                 Ask a manage member to remove and re-add {}.",
-                email,
-                e,
-                email
-            )
-        })
-}
-
-/// An unattested member is legitimate only as the sole trust root in a
-/// project that has not yet completed the reverse-attestation closure.
-/// Once any pair of members mutually attests each other (A attested B,
-/// B attested A), the chain has closed and every member - including any
-/// former trust root - must carry an attestation. A lone unattested
-/// entry that appears after closure is tampering.
-fn founder_must_be_attested(project: &joy_core::model::project::Project) -> bool {
-    // Shared with the desktop app (JOY-01E9): one posture everywhere.
-    joy_core::auth::attestation::founder_must_be_attested(project)
 }
 
 /// Authenticate an AI member via delegation token.
