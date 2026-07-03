@@ -106,6 +106,20 @@ impl std::fmt::Display for InteractionLevel {
     }
 }
 
+impl std::str::FromStr for InteractionLevel {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "autonomous" => Ok(Self::Autonomous),
+            "supervised" => Ok(Self::Supervised),
+            "collaborative" => Ok(Self::Collaborative),
+            "interactive" => Ok(Self::Interactive),
+            "pairing" => Ok(Self::Pairing),
+            other => Err(format!("unknown interaction level: {other}")),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SyncConfig {
     pub remote: String,
