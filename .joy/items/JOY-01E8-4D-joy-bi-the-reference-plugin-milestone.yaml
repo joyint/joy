@@ -1,0 +1,31 @@
+id: JOY-01E8-4D
+title: 'joy-bi: the reference plugin (milestone and velocity)'
+type: story
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- plan
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-03T07:39:02.843894Z
+updated: 2026-07-03T08:19:41.945501Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-07-03T07:39:26.063362Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-03T08:19:41.819901Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-03T08:19:41.945501Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'The first real Joy plugin and the reference for plugin authors (app ADR JAPP-0088): a joy-bi crate whose binary computes on the project via joy-core and prints a JoyNode tree as JSON on stdout. Commands: joy-bi milestone <MS-ID> (progress, per-type and per-status breakdown, the mockup milestone chart) and joy-bi velocity <window> with h/d/w/m units (closed items per bucket from the event log). Errors go to stderr with a non-zero exit. Ships with author documentation (docs/plugins.md): protocol, node kinds, versioning, how a joy-<name> binary becomes available in the app and CLI.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-03T07:39:26.158716Z
+  text: 'Plan: crates/joy-bi with a small node module mirroring the app''s plugin-schema JoyNode (kinds: section, kpis, bars, list, text), milestone command (items under the milestone: closed share, per-status counts, per-type bars, effort sum) and velocity command (event-log ItemStatusChanged to closed, bucketed by the window unit), JSON to stdout, clap CLI, unit tests on a temp project; docs/plugins.md as the author guide, linked from the README.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-03T08:19:41.714415Z
+  text: '[x] Done: crates/joy-bi with the canonical node contract (value/table/list/text/group, kind-tagged, mirroring @joyint/plugin-schema), milestone report (progress %, closed/total, status bars, type pie, effort, target date) and velocity report (event-log item.status_changed to closed, bucketed by h/d/w/m windows with range guard), JSON on stdout, errors on stderr with exit codes. 4 unit tests on temp projects plus a live smoke on this repo (velocity 2w: 16 closed). docs/plugins.md is the author guide (contract, node kinds, discovery), linked from the README; just install now ships joy-bi next to joy. Suites individually green, just check green.'

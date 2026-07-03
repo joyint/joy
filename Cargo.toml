@@ -4,6 +4,7 @@ members = [
     "crates/joy-core",
     "crates/joy-cli",
     "crates/joy-ai",
+    "crates/joy-bi",
 ]
 
 [workspace.dependencies]
