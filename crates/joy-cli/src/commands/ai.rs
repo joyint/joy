@@ -66,6 +66,17 @@ enum AiCommand {
     Rotate(RotateArgs),
     /// Read the AI operational guide (CLI reference for AI assistants)
     Tutorial(AiTutorialArgs),
+    /// List AI jobs (git-native .joy/ai/jobs), newest first
+    Jobs(JobsArgs),
+    /// List AI agent configs (git-native .joy/ai/agents)
+    Agents,
+}
+
+#[derive(clap::Args)]
+struct JobsArgs {
+    /// Only jobs for this item id.
+    #[arg(long)]
+    item: Option<String>,
 }
 
 #[derive(clap::Args)]
@@ -137,7 +148,69 @@ pub fn run(args: AiArgs) -> anyhow::Result<()> {
             a.passphrase_stdin,
         ),
         AiCommand::Tutorial(a) => ai_tutorial(a),
+        AiCommand::Jobs(a) => ai_jobs(a),
+        AiCommand::Agents => ai_agents(),
     }
+}
+
+/// List AI jobs from `.joy/ai/jobs`, newest first (git-native inspection).
+fn ai_jobs(args: JobsArgs) -> anyhow::Result<()> {
+    let root = joy_core::store::find_project_root(&std::env::current_dir()?)
+        .ok_or_else(|| anyhow::anyhow!("not inside a Joy project"))?;
+    let jobs = match &args.item {
+        Some(item) => joy_core::jobs::jobs_for_item(&root, item)?,
+        None => joy_core::jobs::load_jobs(&root)?,
+    };
+    if jobs.is_empty() {
+        println!("No AI jobs.");
+        return Ok(());
+    }
+    println!(
+        "{:<14} {:<10} {:<18} {:<16} {}",
+        "ID", "ITEM", "STATUS", "ACTOR", "SUMMARY"
+    );
+    for j in jobs {
+        let euro = format!("€{:.2}", j.cost.spent_cents as f64 / 100.0);
+        println!(
+            "{:<14} {:<10} {:<18} {:<16} {} ({})",
+            j.id,
+            j.item,
+            j.status.to_string(),
+            j.actor.id(),
+            j.result.as_deref().unwrap_or(""),
+            euro,
+        );
+    }
+    Ok(())
+}
+
+/// List AI agent configs from `.joy/ai/agents` (the API key is never here).
+fn ai_agents() -> anyhow::Result<()> {
+    let root = joy_core::store::find_project_root(&std::env::current_dir()?)
+        .ok_or_else(|| anyhow::anyhow!("not inside a Joy project"))?;
+    let agents = joy_core::agents::load_agents(&root)?;
+    if agents.is_empty() {
+        println!(
+            "No AI agent configs. The platform or app writes them; a key is never stored here."
+        );
+        return Ok(());
+    }
+    println!(
+        "{:<18} {:<14} {:<20} {}",
+        "MEMBER", "ADAPTER", "MODEL", "MODE"
+    );
+    for a in agents {
+        println!(
+            "{:<18} {:<14} {:<20} {}",
+            a.member.id(),
+            a.adapter,
+            a.model.as_deref().unwrap_or("-"),
+            a.default_mode
+                .map(|m| m.to_string())
+                .unwrap_or_else(|| "-".into()),
+        );
+    }
+    Ok(())
 }
 
 // The canonical AI Tutorial lives at docs/ai/Tutorial.md in the repo
