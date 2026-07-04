@@ -149,6 +149,22 @@ pub fn ensure_general(root: &Path, now: DateTime<Utc>) -> Result<Chat, JoyError>
     Ok(chat)
 }
 
+/// The chat's effective participants: General carries an empty list that
+/// means "every project member" — resolve it for display and turn logic.
+pub fn effective_participants(
+    root: &Path,
+    chat: &Chat,
+) -> Result<Vec<crate::member_ref::MemberRef>, JoyError> {
+    if chat.kind == ChatKind::General && chat.participants.is_empty() {
+        let project = crate::store::load_project(root)?;
+        return Ok(project
+            .members()
+            .map(|(key, _)| crate::member_ref::MemberRef::new(key.clone()))
+            .collect());
+    }
+    Ok(chat.participants.clone())
+}
+
 fn guard_not_general(chat: &Chat, action: &str) -> Result<(), JoyError> {
     if chat.kind == ChatKind::General {
         return Err(JoyError::GuardDenied(format!(

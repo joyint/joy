@@ -41,3 +41,5 @@
 2026-07-04T11:14:22.274Z JOY-01F7-D0 item.status_changed "review -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-07-04T11:14:22.353Z JOY-01F4-A9 item.status_changed "new -> closed (all children closed)" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-07-04T13:12:53.705Z JOY-01F8-53 item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-04T14:34:55.343Z JOY-01F9-9E item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-04T14:34:55.489Z JOY-01FA-C6 item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
