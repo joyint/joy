@@ -43,3 +43,5 @@
 2026-07-04T13:12:53.705Z JOY-01F8-53 item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-07-04T14:34:55.343Z JOY-01F9-9E item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-07-04T14:34:55.489Z JOY-01FA-C6 item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-04T15:25:27.514Z JOY-01FA-C6 guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-07-04T15:25:27.599Z JOY-01FA-C6 guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
