@@ -74,6 +74,7 @@ Project & Members:
   project  View or edit project metadata
   config   Show or modify configuration
   ai       AI tool integration
+  chat     Inspect the project chats (.joy/chats)
 
 Maintenance:
   update       Update the joy binary and sync this repo's joy-managed state
