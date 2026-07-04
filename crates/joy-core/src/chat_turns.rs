@@ -95,6 +95,49 @@ pub fn decide(chat: &Chat, newest: &ChatMessage, ai_member: &str) -> TurnDecisio
     }
 }
 
+/// A human's @mention of a PROJECT AI that is not a participant yet adds
+/// it to the chat (the messenger convention, and the reason a fresh
+/// personal chat can talk to @claude at all). Returns whether anyone was
+/// added; General needs no adds (everyone is in it).
+pub fn add_mentioned_ais(
+    root: &std::path::Path,
+    chat: &mut Chat,
+    newest: &ChatMessage,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<bool, crate::error::JoyError> {
+    if chat.kind == crate::model::chat::ChatKind::General
+        || chat.read_only
+        || newest.kind == MessageKind::Notice
+        || is_ai(newest.author.id())
+    {
+        return Ok(false);
+    }
+    let project = crate::store::load_project(root)?;
+    let project_ais: Vec<String> = project
+        .members()
+        .map(|(key, _)| key.clone())
+        .filter(|key| is_ai(key))
+        .collect();
+    let mentioned: Vec<String> = mentions(&newest.text, &project_ais)
+        .into_iter()
+        .cloned()
+        .collect();
+    let mut added = false;
+    for member in mentioned {
+        if !chat.participants.iter().any(|p| p.id() == member) {
+            crate::chats::add_participant(
+                root,
+                chat,
+                crate::member_ref::MemberRef::new(member),
+                &newest.author,
+                now,
+            )?;
+            added = true;
+        }
+    }
+    Ok(added)
+}
+
 /// Whether the moderation notice is already the newest notice (post once).
 pub fn moderation_already_posted(chat: &Chat) -> bool {
     chat.messages
@@ -231,6 +274,55 @@ mod tests {
             decide(&chat3, newest3, "ai:claude@joy"),
             TurnDecision::Respond
         );
+    }
+
+    #[test]
+    fn human_mentions_add_project_ais_to_the_chat() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".joy")).unwrap();
+        // a real project with one AI member
+        let mut project = crate::model::Project::new("T".to_string(), Some("T".to_string()));
+        for member in ["ai:claude@joy", "horst@example.com"] {
+            project
+                .register_member(
+                    member,
+                    crate::model::project::Member::new(
+                        crate::model::project::MemberCapabilities::All,
+                    ),
+                )
+                .unwrap();
+        }
+        crate::store::write_yaml(
+            &crate::store::joy_dir(dir.path()).join(crate::store::PROJECT_FILE),
+            &project,
+        )
+        .unwrap();
+        let now = Utc.with_ymd_and_hms(2026, 7, 4, 19, 0, 0).unwrap();
+        let mut chat = crate::chats::open_chat(
+            dir.path(),
+            vec![MemberRef::new("horst@example.com")],
+            Some("New chat".into()),
+            now,
+        )
+        .unwrap();
+        let msg = crate::chats::append_message(
+            dir.path(),
+            &mut chat,
+            MemberRef::new("horst@example.com"),
+            "@claude how many items?",
+            now,
+        )
+        .unwrap();
+        let added = add_mentioned_ais(dir.path(), &mut chat, &msg, now).unwrap();
+        assert!(added);
+        assert!(chat.participants.iter().any(|p| p.id() == "ai:claude@joy"));
+        assert_eq!(
+            decide(&chat, &msg, "ai:claude@joy"),
+            TurnDecision::Respond,
+            "the added AI answers the very message that added it"
+        );
+        // idempotent
+        assert!(!add_mentioned_ais(dir.path(), &mut chat, &msg, now).unwrap());
     }
 
     #[test]
