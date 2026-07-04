@@ -1,0 +1,15 @@
+id: JOY-01F0-12
+title: Git-native persistent chats in joy-core (.joy/chats)
+type: epic
+status: new
+priority: high
+capabilities:
+- conceive
+- plan
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-04T08:11:37.290696Z
+updated: 2026-07-04T08:11:37.290696Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'The chat truth lives in the repo (App concept: ''Repo (.joy/ inkl. chat)''): a chat is .joy/chats/<id>.yaml holding participants (member refs), the AI session ids of participating AIs, and the messages; committed like items so the forge stays the source of truth. Postgres pub/sub on the platform is ONLY the real-time delivery optimization, never the data home (git-native rule). Consumers: platform chat service (JP), app chat UI (JAPP).'

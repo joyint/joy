@@ -1,0 +1,15 @@
+id: JOY-01F1-B0
+title: 'ADR: chat record schema and persistence cadence'
+type: decision
+status: new
+priority: high
+parent: JOY-01F0-12
+capabilities:
+- conceive
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-04T08:11:37.411977Z
+updated: 2026-07-04T08:11:37.411977Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'A chat is .joy/chats/<chat-id>.yaml: id, created, participants (member refs), ai_sessions (member -> ACP session id, so an AI participant''s thread survives restarts), messages (at, author member-ref, text). Written through joy-core with the same governed-write/signing posture as items. Cadence: append persists per message in this slice (honest and simple); batching/debounce is a later optimization item, NOT a different data home. Display of authors follows the no-raw-ID rule (MemberRef resolution).'

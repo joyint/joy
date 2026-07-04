@@ -1,0 +1,17 @@
+id: JOY-01F2-5C
+title: Chat model + read/write/append in joy-core
+type: story
+status: new
+priority: high
+parent: JOY-01F0-12
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-04T08:11:37.557339Z
+updated: 2026-07-04T08:11:37.557339Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: Chat/ChatMessage types, load/list/save/append, ai_sessions map maintenance, unit tests (roundtrip, append ordering, member-ref authors).

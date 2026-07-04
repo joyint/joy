@@ -1,0 +1,17 @@
+id: JOY-01F3-99
+title: 'joy CLI: chat list/show'
+type: story
+status: new
+priority: medium
+parent: JOY-01F0-12
+capabilities:
+- plan
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-04T08:11:37.707557Z
+updated: 2026-07-04T08:11:37.707557Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: Terminal inspection of .joy/chats (list chats, show a chat with resolved member names), consistent with joy ai jobs. bats test.
