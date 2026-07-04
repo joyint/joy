@@ -40,6 +40,22 @@ pub fn save_agent(root: &Path, agent: &Agent) -> Result<(), JoyError> {
     Ok(())
 }
 
+/// Remove an agent config file (the platform's part of `joy ai reset`;
+/// the CLI additionally removes tool files and member registration).
+pub fn remove_agent(root: &Path, member: &MemberRef) -> Result<(), JoyError> {
+    let filename = format!("{}.yaml", agent_file_stem(member));
+    let path = agents_dir(root).join(&filename);
+    if path.exists() {
+        std::fs::remove_file(&path).map_err(|e| JoyError::WriteFile {
+            path: path.clone(),
+            source: e,
+        })?;
+        let rel = format!("{}/{}/{}", store::JOY_DIR, store::AI_AGENTS_DIR, filename);
+        crate::git_ops::auto_git_add(root, &[&rel]);
+    }
+    Ok(())
+}
+
 /// Load the agent config for a member, if present.
 pub fn load_agent(root: &Path, member: &MemberRef) -> Result<Option<Agent>, JoyError> {
     let path = agents_dir(root).join(format!("{}.yaml", agent_file_stem(member)));
