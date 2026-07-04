@@ -1,7 +1,7 @@
 id: JOY-01EE-62
 title: 'Audit integration: job actions to .joy/logs'
 type: story
-status: new
+status: closed
 priority: medium
 parent: JOY-01E9-94
 capabilities:
@@ -11,7 +11,11 @@ capabilities:
 effort: 1
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-03T22:59:01.026131Z
-updated: 2026-07-03T22:59:01.026131Z
+updated: 2026-07-04T00:02:56.348346Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
+history:
+- date: 2026-07-04T00:02:56.229597Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-04T00:02:56.348346Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: Every job lifecycle action writes a signed .joy/logs entry via joy's existing audit path, so traceability needs no new store. Tests assert the entries.

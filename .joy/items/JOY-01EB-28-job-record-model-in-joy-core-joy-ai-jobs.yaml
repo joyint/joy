@@ -1,7 +1,7 @@
 id: JOY-01EB-28
 title: Job record model in joy-core (.joy/ai/jobs)
 type: story
-status: new
+status: closed
 priority: high
 parent: JOY-01E9-94
 capabilities:
@@ -11,7 +11,11 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-03T22:59:00.646791Z
-updated: 2026-07-03T22:59:00.646791Z
+updated: 2026-07-04T00:02:55.623040Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
+history:
+- date: 2026-07-04T00:02:55.504271Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-04T00:02:55.623040Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'The Job type + read/write/list/sign in joy-core: load by id, list (optionally by item), create, update status, record cost/result/error and review rounds, via the same governed-write + signature path as items. Unit tests for roundtrip, transitions, item filtering.'

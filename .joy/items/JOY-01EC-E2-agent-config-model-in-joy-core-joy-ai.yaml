@@ -1,7 +1,7 @@
 id: JOY-01EC-E2
 title: Agent config model in joy-core (.joy/ai/agents)
 type: story
-status: new
+status: closed
 priority: high
 parent: JOY-01E9-94
 capabilities:
@@ -11,7 +11,11 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-03T22:59:00.773355Z
-updated: 2026-07-03T22:59:00.773355Z
+updated: 2026-07-04T00:02:55.866353Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
+history:
+- date: 2026-07-04T00:02:55.746340Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-04T00:02:55.866353Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: The Agent execution-config type + read/write in joy-core (adapter, model, provider, default_mode, budget_default) keyed by member; API key referenced, never stored. Consolidate with mode storage in .joy/app, no duplication. Unit tests.
