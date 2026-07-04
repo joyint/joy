@@ -1,7 +1,7 @@
 id: JOY-01F7-D0
 title: 'CLI: joy chat send/add/leave/delete/rename'
 type: story
-status: new
+status: closed
 priority: high
 parent: JOY-01F4-A9
 capabilities:
@@ -11,7 +11,11 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-04T11:04:29.671124Z
-updated: 2026-07-04T11:04:29.671124Z
+updated: 2026-07-04T11:14:22.261165Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
+history:
+- date: 2026-07-04T11:14:22.130363Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-04T11:14:22.261165Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Chats from the terminal without joyint.com: joy chat send <id|general> <text>, add <id> <member>, leave <id>, delete <id> [--for-all], rename <id> <title>. Governed writes with notices; bats tests.'
