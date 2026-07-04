@@ -633,9 +633,7 @@ fn check_docs(root: &Path, args: &InitArgs) -> anyhow::Result<()> {
                     ))
                 );
                 dprint!("    Switch to {}? [Y/n] ", suggestion);
-                std::io::stdout().flush()?;
-                let mut input = String::new();
-                std::io::stdin().read_line(&mut input)?;
+                let input = ask_line()?.unwrap_or_default();
                 let trimmed = input.trim();
                 if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("y") {
                     resolved = ResolvedDoc {
@@ -686,9 +684,7 @@ fn check_docs(root: &Path, args: &InitArgs) -> anyhow::Result<()> {
             // The doc's purpose is explained before the path prompt now
             // (JOY-01C9-A0), so this only needs to offer the action.
             dprint!("    Create {} template? [Y/n] ", name);
-            std::io::stdout().flush()?;
-            let mut input = String::new();
-            std::io::stdin().read_line(&mut input)?;
+            let input = ask_line()?.unwrap_or_default();
             let trimmed = input.trim();
             if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("y") {
                 if let Some(parent) = full.parent() {
@@ -795,9 +791,7 @@ fn resolve_doc_path(
         ))
     );
     dprint!("    {} doc path [{}]: ", spec.label, suggestion);
-    std::io::stdout().flush()?;
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input)?;
+    let input = ask_line()?.unwrap_or_default();
     let trimmed = input.trim();
     let path = if trimmed.is_empty() {
         suggestion.to_string()
@@ -1006,6 +1000,9 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
             );
         }
         dprintln!();
+        if non_interactive() {
+            anyhow::bail!("refusing to reset without --force in non-interactive mode");
+        }
         dprint!("Proceed? [y/N] ");
         std::io::stdout().flush()?;
         let mut input = String::new();
@@ -1742,10 +1739,36 @@ fn update_with_joy_block(root: &Path, path: &Path, content: &str) -> anyhow::Res
     write_if_changed(root, path, &new_content)
 }
 
-fn confirm_default_yes() -> anyhow::Result<bool> {
+/// Library callers (the desktop app) run with prompts DISABLED: every
+/// question takes its default instead of blocking on a stdin that no one
+/// answers (JAPP settings hang, 2026-07-05).
+static NON_INTERACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn non_interactive() -> bool {
+    NON_INTERACTIVE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub(crate) fn set_non_interactive(value: bool) {
+    NON_INTERACTIVE.store(value, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Read one answer line, or None for "take the default" in
+/// non-interactive mode.
+fn ask_line() -> anyhow::Result<Option<String>> {
+    // no terminal (GUI start) means no one can answer either
+    if non_interactive() || !crate::prompt::is_interactive() {
+        return Ok(None);
+    }
     std::io::stdout().flush()?;
     let mut input = String::new();
     std::io::stdin().read_line(&mut input)?;
+    Ok(Some(input))
+}
+
+fn confirm_default_yes() -> anyhow::Result<bool> {
+    let Some(input) = ask_line()? else {
+        return Ok(true);
+    };
     let trimmed = input.trim();
     Ok(trimmed.is_empty() || trimmed.eq_ignore_ascii_case("y"))
 }
@@ -2598,11 +2621,13 @@ mod tests {
 pub fn init_single_tool(root: &Path, tool: &str, passphrase: &str) -> anyhow::Result<()> {
     let previous = std::env::current_dir().ok();
     std::env::set_current_dir(root)?;
+    set_non_interactive(true);
     let result = ai_init(InitArgs {
         tool: Some(tool.to_string()),
         passphrase: Some(passphrase.to_string()),
         ..InitArgs::default()
     });
+    set_non_interactive(false);
     if let Some(dir) = previous {
         let _ = std::env::set_current_dir(dir);
     }
@@ -2614,10 +2639,12 @@ pub fn init_single_tool(root: &Path, tool: &str, passphrase: &str) -> anyhow::Re
 pub fn reset_single_tool(root: &Path, tool: &str) -> anyhow::Result<()> {
     let previous = std::env::current_dir().ok();
     std::env::set_current_dir(root)?;
+    set_non_interactive(true);
     let result = reset(ResetArgs {
         tool: Some(tool.to_string()),
         force: true,
     });
+    set_non_interactive(false);
     if let Some(dir) = previous {
         let _ = std::env::set_current_dir(dir);
     }
