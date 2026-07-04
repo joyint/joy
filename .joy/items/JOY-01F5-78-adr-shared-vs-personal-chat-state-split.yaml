@@ -1,0 +1,15 @@
+id: JOY-01F5-78
+title: 'ADR: shared vs personal chat state split'
+type: decision
+status: new
+priority: high
+parent: JOY-01F4-A9
+capabilities:
+- conceive
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-04T11:04:29.399750Z
+updated: 2026-07-04T11:04:29.399750Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: Shared chat file carries only member-identical state (membership, lifecycle, messages); per-member preferences (pinned/order/last_read/hidden) go to gitignored .joy/chat-state.yaml — a drag or a read must never create a commit or merge war. Leave = remove from participants + notice message; delete-for-all = read_only:true + notice, file garbage-collected once deleted_for covers all participants; General (id 'general') is not deletable/leavable, enforced in joy-core APIs.

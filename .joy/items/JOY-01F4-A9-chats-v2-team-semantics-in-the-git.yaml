@@ -1,0 +1,15 @@
+id: JOY-01F4-A9
+title: 'Chats v2: team semantics in the git-native model'
+type: epic
+status: new
+priority: high
+capabilities:
+- conceive
+- plan
+effort: 5
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-04T11:04:29.284403Z
+updated: 2026-07-04T11:04:29.284403Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'Product management of the 21st century needs chats that live with the project: a non-deletable General chat for all members, team chats with leave/delete-for-all semantics, notices, and CLI participation without joyint.com. Shared state stays in .joy/chats (kind general|team, subtitle, created_by, read_only, deleted_for, message kind text|notice; General has fixed id ''general'' and participants=[] meaning all members); personal state (pinned, sidebar order, last_read, hidden) lives in gitignored .joy/chat-state.yaml so reading/pinning/dragging never commits.'

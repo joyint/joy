@@ -36,3 +36,17 @@ YAML
     [[ "$output" == *"moin"* ]]
     [[ "$output" == *"hi Horst"* ]]
 }
+
+@test "joy chat send/leave/delete lifecycle from the terminal" {
+    joy init --name "Chat Life" 2>/dev/null
+    run joy chat send general "moin team"
+    [ "$status" -eq 0 ]
+    run joy chat show general
+    [[ "$output" == *"moin team"* ]]
+
+    # general is protected
+    run joy chat leave general
+    [ "$status" -ne 0 ]
+    run joy chat delete general --for-all
+    [ "$status" -ne 0 ]
+}

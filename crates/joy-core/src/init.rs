@@ -255,6 +255,10 @@ pub const GITIGNORE_BLOCK_END: &str = "### joy:end";
 
 pub const GITIGNORE_BASE_ENTRIES: &[(&str, &str)] = &[
     (".joy/config.yaml", "personal config"),
+    (
+        ".joy/chat-state.yaml",
+        "personal chat state (pins, order, last read)",
+    ),
     (".joy/credentials.yaml", "secrets"),
     (".joy/hooks/", "git hooks"),
     (".joy/project.defaults.yaml", "embedded project defaults"),

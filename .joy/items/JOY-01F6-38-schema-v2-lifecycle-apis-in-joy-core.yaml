@@ -1,0 +1,17 @@
+id: JOY-01F6-38
+title: Schema v2 + lifecycle APIs in joy-core
+type: story
+status: new
+priority: high
+parent: JOY-01F4-A9
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-04T11:04:29.534187Z
+updated: 2026-07-04T11:04:29.534187Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: Extend Chat/ChatMessage (kind, subtitle, created_by, read_only, deleted_for; message kind text|notice), ensure_general(), leave/add participant with notices, delete_for_all, delete_for_me + GC, rename/subtitle setters, refuse appends on read_only and General protections. Personal chat-state module (read/write .joy/chat-state.yaml, gitignore block entry). Unit tests for every lifecycle rule.

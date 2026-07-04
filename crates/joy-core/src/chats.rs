@@ -11,7 +11,7 @@ use chrono::{DateTime, Utc};
 
 use crate::error::JoyError;
 use crate::member_ref::MemberRef;
-use crate::model::chat::{Chat, ChatMessage};
+use crate::model::chat::{Chat, ChatKind, ChatMessage, MessageKind};
 use crate::store;
 
 /// Subdir of `.joy/` holding chats.
@@ -80,7 +80,8 @@ pub fn open_chat(
     Ok(chat)
 }
 
-/// Append a message and persist. Returns the appended message.
+/// Append a member message and persist. Refuses on a frozen
+/// (delete-for-all) chat. Returns the appended message.
 pub fn append_message(
     root: &Path,
     chat: &mut Chat,
@@ -88,15 +89,193 @@ pub fn append_message(
     text: impl Into<String>,
     now: DateTime<Utc>,
 ) -> Result<ChatMessage, JoyError> {
+    if chat.read_only {
+        return Err(JoyError::GuardDenied(format!(
+            "chat {} was deleted for everyone and is read-only",
+            chat.id
+        )));
+    }
+    append_kind(root, chat, author, text, MessageKind::Text, now)
+}
+
+/// Append a system notice ("@xy left"); allowed even on read-only chats
+/// (the delete-for-all notice itself must land).
+pub fn append_notice(
+    root: &Path,
+    chat: &mut Chat,
+    author: MemberRef,
+    text: impl Into<String>,
+    now: DateTime<Utc>,
+) -> Result<ChatMessage, JoyError> {
+    append_kind(root, chat, author, text, MessageKind::Notice, now)
+}
+
+fn append_kind(
+    root: &Path,
+    chat: &mut Chat,
+    author: MemberRef,
+    text: impl Into<String>,
+    kind: MessageKind,
+    now: DateTime<Utc>,
+) -> Result<ChatMessage, JoyError> {
     let message = ChatMessage {
         at: now,
         author,
         text: text.into(),
+        kind,
     };
     chat.messages.push(message.clone());
     chat.updated = now;
     save_chat(root, chat)?;
     Ok(message)
+}
+
+// ---- lifecycle (JOY-01F6) ------------------------------------------------
+
+/// The fixed id of the team-wide General chat.
+pub const GENERAL_CHAT_ID: &str = "general";
+
+/// Ensure the General chat exists (fixed id, participants = all project
+/// members, expressed as an empty list). Returns it.
+pub fn ensure_general(root: &Path, now: DateTime<Utc>) -> Result<Chat, JoyError> {
+    if let Some(chat) = load_chat(root, GENERAL_CHAT_ID)? {
+        return Ok(chat);
+    }
+    let mut chat = Chat::new(GENERAL_CHAT_ID, Vec::new(), now);
+    chat.kind = ChatKind::General;
+    chat.title = Some("General".into());
+    chat.subtitle = Some("for all team members".into());
+    save_chat(root, &chat)?;
+    Ok(chat)
+}
+
+fn guard_not_general(chat: &Chat, action: &str) -> Result<(), JoyError> {
+    if chat.kind == ChatKind::General {
+        return Err(JoyError::GuardDenied(format!(
+            "the General chat cannot be {action}"
+        )));
+    }
+    Ok(())
+}
+
+/// Leave a chat: drop the member from participants and post the notice.
+pub fn leave(
+    root: &Path,
+    chat: &mut Chat,
+    member: &MemberRef,
+    now: DateTime<Utc>,
+) -> Result<(), JoyError> {
+    guard_not_general(chat, "left")?;
+    chat.participants.retain(|p| p.id() != member.id());
+    append_notice(
+        root,
+        chat,
+        member.clone(),
+        format!("@{} left", member.id()),
+        now,
+    )?;
+    Ok(())
+}
+
+/// Add (or re-add) a member and post the notice.
+pub fn add_participant(
+    root: &Path,
+    chat: &mut Chat,
+    member: MemberRef,
+    added_by: &MemberRef,
+    now: DateTime<Utc>,
+) -> Result<(), JoyError> {
+    guard_not_general(chat, "changed: everyone is in it")?;
+    if chat.read_only {
+        return Err(JoyError::GuardDenied(format!(
+            "chat {} was deleted for everyone and is read-only",
+            chat.id
+        )));
+    }
+    if !chat.participants.iter().any(|p| p.id() == member.id()) {
+        chat.participants.push(member.clone());
+        append_notice(
+            root,
+            chat,
+            added_by.clone(),
+            format!("@{} was added", member.id()),
+            now,
+        )?;
+    }
+    Ok(())
+}
+
+/// Rename a chat (General keeps its identity).
+pub fn rename(
+    root: &Path,
+    chat: &mut Chat,
+    title: impl Into<String>,
+    now: DateTime<Utc>,
+) -> Result<(), JoyError> {
+    guard_not_general(chat, "renamed")?;
+    chat.title = Some(title.into());
+    chat.updated = now;
+    save_chat(root, chat)
+}
+
+/// Set the subtitle (General keeps its identity).
+pub fn set_subtitle(
+    root: &Path,
+    chat: &mut Chat,
+    subtitle: impl Into<String>,
+    now: DateTime<Utc>,
+) -> Result<(), JoyError> {
+    guard_not_general(chat, "changed")?;
+    chat.subtitle = Some(subtitle.into());
+    chat.updated = now;
+    save_chat(root, chat)
+}
+
+/// Delete for everyone: freeze the chat and post the notice. The file
+/// stays until every participant also deleted it locally.
+pub fn delete_for_all(
+    root: &Path,
+    chat: &mut Chat,
+    by: &MemberRef,
+    now: DateTime<Utc>,
+) -> Result<(), JoyError> {
+    guard_not_general(chat, "deleted")?;
+    chat.read_only = true;
+    append_notice(
+        root,
+        chat,
+        by.clone(),
+        format!("@{} deleted this chat", by.id()),
+        now,
+    )?;
+    Ok(())
+}
+
+/// A member's local delete of a frozen chat. Once every participant did,
+/// the file itself is removed (garbage collection).
+pub fn delete_for_me(
+    root: &Path,
+    chat: &mut Chat,
+    member: &MemberRef,
+    now: DateTime<Utc>,
+) -> Result<(), JoyError> {
+    guard_not_general(chat, "deleted")?;
+    if !chat.deleted_for.iter().any(|m| m.id() == member.id()) {
+        chat.deleted_for.push(member.clone());
+        chat.updated = now;
+        save_chat(root, chat)?;
+    }
+    let everyone_done = chat
+        .participants
+        .iter()
+        .all(|p| chat.deleted_for.iter().any(|m| m.id() == p.id()));
+    if everyone_done {
+        let path = chats_dir(root).join(format!("{}.yaml", chat.id));
+        let _ = std::fs::remove_file(&path);
+        let rel = format!("{}/{}/{}.yaml", store::JOY_DIR, CHATS_DIR, chat.id);
+        crate::git_ops::auto_git_add(root, &[&rel]);
+    }
+    Ok(())
 }
 
 /// Record the ACP session id of an AI participant and persist.
@@ -153,5 +332,83 @@ mod tests {
 
         let all = load_chats(dir.path()).unwrap();
         assert_eq!(all.len(), 1);
+    }
+
+    #[test]
+    fn general_is_protected_and_lazily_created() {
+        let dir = tempdir().unwrap();
+        let g = ensure_general(dir.path(), ts(0)).unwrap();
+        assert_eq!(g.id, GENERAL_CHAT_ID);
+        assert_eq!(g.subtitle.as_deref(), Some("for all team members"));
+        // idempotent
+        let again = ensure_general(dir.path(), ts(1)).unwrap();
+        assert_eq!(again.created, g.created);
+
+        let mut g = again;
+        let horst = MemberRef::new("horst@example.com");
+        assert!(leave(dir.path(), &mut g, &horst, ts(2)).is_err());
+        assert!(rename(dir.path(), &mut g, "X", ts(2)).is_err());
+        assert!(delete_for_all(dir.path(), &mut g, &horst, ts(2)).is_err());
+    }
+
+    #[test]
+    fn leave_readd_and_delete_semantics() {
+        let dir = tempdir().unwrap();
+        let horst = MemberRef::new("horst@example.com");
+        let geordi = MemberRef::new("geordi@example.org");
+        let mut chat = open_chat(
+            dir.path(),
+            vec![horst.clone(), geordi.clone()],
+            Some("Release".into()),
+            ts(0),
+        )
+        .unwrap();
+        chat.created_by = Some(horst.clone());
+        save_chat(dir.path(), &chat).unwrap();
+
+        // leave posts the notice and drops the member
+        leave(dir.path(), &mut chat, &geordi, ts(1)).unwrap();
+        assert_eq!(chat.participants.len(), 1);
+        assert!(matches!(
+            chat.messages.last().unwrap().kind,
+            MessageKind::Notice
+        ));
+        assert!(chat.messages.last().unwrap().text.contains("left"));
+
+        // re-add restores membership with a notice
+        add_participant(dir.path(), &mut chat, geordi.clone(), &horst, ts(2)).unwrap();
+        assert_eq!(chat.participants.len(), 2);
+        assert!(chat.messages.last().unwrap().text.contains("was added"));
+
+        // delete-for-all freezes it: member messages refuse, notices work
+        delete_for_all(dir.path(), &mut chat, &horst, ts(3)).unwrap();
+        assert!(chat.read_only);
+        assert!(append_message(dir.path(), &mut chat, horst.clone(), "hi", ts(4)).is_err());
+        assert!(add_participant(
+            dir.path(),
+            &mut chat,
+            MemberRef::new("x@y.z"),
+            &horst,
+            ts(4)
+        )
+        .is_err());
+
+        // per-member local delete; file is GCed when everyone did
+        delete_for_me(dir.path(), &mut chat, &horst, ts(5)).unwrap();
+        assert!(load_chat(dir.path(), &chat.id).unwrap().is_some());
+        delete_for_me(dir.path(), &mut chat, &geordi, ts(6)).unwrap();
+        assert!(load_chat(dir.path(), &chat.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn rename_and_subtitle() {
+        let dir = tempdir().unwrap();
+        let horst = MemberRef::new("horst@example.com");
+        let mut chat = open_chat(dir.path(), vec![horst], None, ts(0)).unwrap();
+        rename(dir.path(), &mut chat, "Sprint 13", ts(1)).unwrap();
+        set_subtitle(dir.path(), &mut chat, "countdown", ts(2)).unwrap();
+        let loaded = load_chat(dir.path(), &chat.id).unwrap().unwrap();
+        assert_eq!(loaded.title.as_deref(), Some("Sprint 13"));
+        assert_eq!(loaded.subtitle.as_deref(), Some("countdown"));
     }
 }
