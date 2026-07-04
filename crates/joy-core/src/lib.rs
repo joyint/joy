@@ -7,6 +7,7 @@ pub mod agents;
 pub mod ai_templates;
 pub mod auth;
 pub mod capabilities;
+pub mod chats;
 pub mod commit_msg;
 pub mod context;
 pub mod crypt;

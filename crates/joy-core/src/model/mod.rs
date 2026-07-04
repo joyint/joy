@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 pub mod agent;
+pub mod chat;
 pub mod config;
 pub mod item;
 pub mod job;
@@ -10,6 +11,7 @@ pub mod project;
 pub mod release;
 
 pub use agent::Agent;
+pub use chat::{Chat, ChatMessage};
 pub use config::{ColorMode, Config, InteractionLevel, OutputConfig};
 pub use item::{Assignee, Capability, Comment, Item, ItemType, Priority, Status, Validity};
 pub use job::{Budget, Cost, Job, JobStatus, JobType, ReviewDecision, ReviewRound};
