@@ -265,9 +265,12 @@ pub fn delete_for_me(
         chat.updated = now;
         save_chat(root, chat)?;
     }
+    // AI members never "delete" a chat; garbage collection waits for the
+    // humans only.
     let everyone_done = chat
         .participants
         .iter()
+        .filter(|p| !p.id().starts_with("ai:"))
         .all(|p| chat.deleted_for.iter().any(|m| m.id() == p.id()));
     if everyone_done {
         let path = chats_dir(root).join(format!("{}.yaml", chat.id));

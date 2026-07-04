@@ -1,0 +1,14 @@
+id: JOY-01F8-53
+title: 'Flaky: PTY session test fails under suite load'
+type: task
+status: new
+priority: low
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-04T13:12:53.692572Z
+updated: 2026-07-04T13:12:53.692572Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: tests/integration/auth_status_consistency.bats test 1 (session created via PTY does not show as authenticated outside that PTY) fails when the whole file or suite runs under load, passes in isolation with the same binary. Environment-dependent (PTY allocation timing); stabilize the harness.
