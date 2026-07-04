@@ -186,6 +186,8 @@ enum Commands {
     Config(commands::config::ConfigArgs),
     /// AI tool integration
     Ai(commands::ai::AiArgs),
+    /// Inspect the project chats (.joy/chats)
+    Chat(commands::chat::ChatArgs),
     /// Authenticate (enter passphrase to start a session)
     Auth(commands::auth::AuthArgs),
     /// End the current session
@@ -462,6 +464,7 @@ fn main() -> anyhow::Result<()> {
             Some(Commands::Board(args)) => commands::board::run(args),
             Some(Commands::Config(_)) => unreachable!("handled above"),
             Some(Commands::Ai(args)) => commands::ai::run(args),
+            Some(Commands::Chat(args)) => commands::chat::run(args),
             Some(Commands::Auth(args)) => commands::auth::run(args),
             Some(Commands::Deauth(args)) => commands::deauth::run(args),
             Some(Commands::Crypt(args)) => commands::crypt::run(args),
