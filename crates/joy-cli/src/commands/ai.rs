@@ -110,6 +110,11 @@ struct InitArgs {
     /// `joy auth --help` for the rationale; same flag, same semantics.
     #[arg(long = "passphrase-stdin")]
     passphrase_stdin: bool,
+
+    /// Only set up a specific tool (claude, qwen, vibe, copilot) — even
+    /// when it is not auto-detected. Skips the docs prompts.
+    #[arg(long)]
+    tool: Option<String>,
 }
 
 #[derive(clap::Args)]
@@ -264,8 +269,20 @@ fn ai_init(args: InitArgs) -> anyhow::Result<()> {
     let effective_passphrase = bootstrapped_passphrase
         .as_deref()
         .or(args.passphrase.as_deref());
-    check_docs(&root, &args)?;
-    let configured_tools = setup_new_tools(&root, effective_passphrase, args.passphrase_stdin)?;
+    if let Some(filter) = args.tool.as_deref() {
+        if !ALL_TOOLS.iter().any(|(_, id, _, _)| *id == filter) {
+            let valid: Vec<&str> = ALL_TOOLS.iter().map(|(_, id, _, _)| *id).collect();
+            anyhow::bail!("unknown tool: {filter}\nknown tools: {}", valid.join(", "));
+        }
+    } else {
+        check_docs(&root, &args)?;
+    }
+    let configured_tools = setup_new_tools(
+        &root,
+        effective_passphrase,
+        args.passphrase_stdin,
+        args.tool.as_deref(),
+    )?;
     update_gitignore(&root, &configured_tools)?;
     untrack_gitignored_tool_files(&root);
     let removed_legacy = remove_legacy_ai_artifacts(&root);
@@ -1178,6 +1195,7 @@ fn setup_new_tools(
     root: &Path,
     passphrase: Option<&str>,
     passphrase_stdin: bool,
+    only: Option<&str>,
 ) -> anyhow::Result<Vec<&'static str>> {
     dprintln!("{}", color::section("AI Tools"));
 
@@ -1196,8 +1214,19 @@ fn setup_new_tools(
     let mut acting: Option<(String, joy_core::auth::IdentityKeypair)> = None;
 
     for (name, id, detect, configure) in ALL_TOOLS {
-        if !detect() {
-            continue;
+        match only {
+            // an explicit --tool wins over auto-detection: the operator
+            // (or the app's settings toggle) asked for exactly this one
+            Some(filter) => {
+                if *id != filter {
+                    continue;
+                }
+            }
+            None => {
+                if !detect() {
+                    continue;
+                }
+            }
         }
         let already = is_tool_configured(root, id);
         let member_id = format!("ai:{id}@joy");
@@ -2562,4 +2591,41 @@ mod tests {
         let content = fs::read_to_string(&path).unwrap();
         assert_eq!(content, "pure user content\n");
     }
+}
+
+/// Set up ONE tool non-interactively (the desktop settings toggle and
+/// scripts): the `joy ai init --tool <id> --passphrase ...` equivalent.
+pub fn init_single_tool(root: &Path, tool: &str, passphrase: &str) -> anyhow::Result<()> {
+    let previous = std::env::current_dir().ok();
+    std::env::set_current_dir(root)?;
+    let result = ai_init(InitArgs {
+        tool: Some(tool.to_string()),
+        passphrase: Some(passphrase.to_string()),
+        ..InitArgs::default()
+    });
+    if let Some(dir) = previous {
+        let _ = std::env::set_current_dir(dir);
+    }
+    result
+}
+
+/// Reset ONE tool non-interactively (the desktop settings toggle): the
+/// `joy ai reset --tool <id> --force` equivalent.
+pub fn reset_single_tool(root: &Path, tool: &str) -> anyhow::Result<()> {
+    let previous = std::env::current_dir().ok();
+    std::env::set_current_dir(root)?;
+    let result = reset(ResetArgs {
+        tool: Some(tool.to_string()),
+        force: true,
+    });
+    if let Some(dir) = previous {
+        let _ = std::env::set_current_dir(dir);
+    }
+    result
+}
+
+/// Whether a tool is set up in this project (files + member), the truth
+/// behind the settings checkbox.
+pub fn tool_is_configured(root: &Path, tool: &str) -> bool {
+    is_tool_configured(root, tool)
 }
