@@ -44,9 +44,12 @@ YAML
     run joy chat show general
     [[ "$output" == *"moin team"* ]]
 
-    # general is protected
+    # general cannot be left, but IS deletable since 2026-07 (operator):
+    # for-all freezes it read-only
     run joy chat leave general
     [ "$status" -ne 0 ]
     run joy chat delete general --for-all
+    [ "$status" -eq 0 ]
+    run joy chat send general "after freeze"
     [ "$status" -ne 0 ]
 }
