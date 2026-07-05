@@ -7,3 +7,4 @@
 2026-07-05T06:43:32.069Z JOY-01F9-9E item.status_changed "new -> closed (all children closed)" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-07-05T06:43:32.205Z JOY-01F9-9E item.status_changed "closed -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-07-05T21:23:25.170Z v0.18.0 release.created [horst.schwarz@joydev.com]
+2026-07-05T21:44:10.986Z release guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
