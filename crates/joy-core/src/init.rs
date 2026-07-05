@@ -339,6 +339,7 @@ pub const GITATTRIBUTES_BASE_ENTRIES: &[&str] = &[
     ".joy/milestones/*.yaml merge=joy-yaml",
     ".joy/releases/*.yaml merge=joy-yaml",
     ".joy/ai/agents/*.yaml merge=joy-yaml",
+    ".joy/chats/*.yaml merge=joy-yaml",
     ".joy/ai/jobs/*.yaml merge=joy-yaml",
     ".joy/project.yaml merge=joy-yaml",
     ".joy/config.defaults.yaml merge=joy-yaml",

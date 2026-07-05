@@ -22,7 +22,7 @@ rand = "0.8"
 hex = "0.4"
 zeroize = { version = "1", features = ["derive"] }
 base64ct = { version = "1", features = ["alloc"] }
-uuid = { version = "1", features = ["v4", "serde"] }
+uuid = { version = "1", features = ["v4", "v7", "serde"] }
 minijinja = { workspace = true }
 
 # Terminal rendering for the optional `tutorial` module. Kept optional so

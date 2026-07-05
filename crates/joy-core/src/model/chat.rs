@@ -28,24 +28,51 @@ pub enum ChatKind {
 }
 
 /// Message kinds: `Text` is a member message; `Notice` is a system line
-/// ("@xy left", "@xy was added"), rendered centered and muted.
+/// ("@xy left", "@xy was added"), rendered centered and muted; `Error`
+/// persists a failed command's answer (the yellow box) so a call never
+/// stands answerless after a reload (operator rule, 2026-07-05).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum MessageKind {
     #[default]
     Text,
     Notice,
+    Error,
 }
 
 /// One message in a chat. The author is a member ref and resolves for
 /// display via the no-raw-ID rule.
+///
+/// `id` is the channel's exact identity (ADR JAPP-00C9): the CLIENT mints
+/// it (UUIDv7) the moment the message is written, it persists in the
+/// file, and every delivery path dedupes on it — no timestamp
+/// heuristics. Messages from before the channel load without one and get
+/// a deterministic synthetic id (same on every client).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChatMessage {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub id: String,
     pub at: DateTime<Utc>,
     pub author: MemberRef,
     pub text: String,
     #[serde(default, skip_serializing_if = "is_default_kind")]
     pub kind: MessageKind,
+}
+
+impl ChatMessage {
+    /// The deterministic fallback id for pre-channel messages: every
+    /// client derives the SAME id from the message's content.
+    pub fn synthetic_id(&self) -> String {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(self.at.to_rfc3339().as_bytes());
+        hasher.update(b"|");
+        hasher.update(self.author.id().as_bytes());
+        hasher.update(b"|");
+        hasher.update(self.text.as_bytes());
+        let digest = hasher.finalize();
+        format!("legacy-{}", hex::encode(&digest[..12]))
+    }
 }
 
 fn is_default_kind(kind: &MessageKind) -> bool {

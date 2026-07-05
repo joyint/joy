@@ -190,6 +190,7 @@ mod tests {
         chat.messages = messages
             .into_iter()
             .map(|(author, text, kind)| ChatMessage {
+                id: uuid::Uuid::now_v7().to_string(),
                 at: now,
                 author: MemberRef::new(author),
                 text: text.into(),
@@ -330,6 +331,7 @@ mod tests {
         let mut chat = chat_with(vec![("ai:claude@joy", "@vibe q", MessageKind::Text)]);
         assert!(!moderation_already_posted(&chat));
         chat.messages.push(ChatMessage {
+            id: uuid::Uuid::now_v7().to_string(),
             at: chat.updated,
             author: MemberRef::new("ai:claude@joy"),
             text: MODERATION_NOTICE.into(),

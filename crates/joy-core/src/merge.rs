@@ -237,6 +237,16 @@ fn list_identity(path: &str, item: &Value) -> Value {
         ("assignees", Value::Mapping(m)) => {
             m.get(string_key("member")).cloned().unwrap_or(Value::Null)
         }
+        // chat timelines (ADR JAPP-00C9): the message id IS the identity;
+        // pre-channel messages fall back to (at, author, text)
+        ("messages", Value::Mapping(m)) => match m.get(string_key("id")) {
+            Some(id) => id.clone(),
+            None => Value::Sequence(vec![
+                m.get(string_key("at")).cloned().unwrap_or(Value::Null),
+                m.get(string_key("author")).cloned().unwrap_or(Value::Null),
+                m.get(string_key("text")).cloned().unwrap_or(Value::Null),
+            ]),
+        },
         _ => item.clone(),
     }
 }

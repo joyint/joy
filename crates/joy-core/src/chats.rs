@@ -46,7 +46,9 @@ pub fn load_chat(root: &Path, id: &str) -> Result<Option<Chat>, JoyError> {
     if !path.is_file() {
         return Ok(None);
     }
-    Ok(Some(store::read_yaml(&path)?))
+    let mut chat: Chat = store::read_yaml(&path)?;
+    normalize(&mut chat);
+    Ok(Some(chat))
 }
 
 /// Load every chat, newest-updated first.
@@ -61,7 +63,9 @@ pub fn load_chats(root: &Path) -> Result<Vec<Chat>, JoyError> {
         if path.extension().and_then(|e| e.to_str()) != Some("yaml") {
             continue;
         }
-        chats.push(store::read_yaml::<Chat>(&path)?);
+        let mut chat = store::read_yaml::<Chat>(&path)?;
+        normalize(&mut chat);
+        chats.push(chat);
     }
     chats.sort_by_key(|c| std::cmp::Reverse(c.updated));
     Ok(chats)
@@ -118,7 +122,27 @@ fn append_kind(
     kind: MessageKind,
     now: DateTime<Utc>,
 ) -> Result<ChatMessage, JoyError> {
+    append_kind_with_id(root, chat, author, text, kind, now, None)
+}
+
+/// The channel append (ADR JAPP-00C9): a caller that minted the message
+/// id client-side passes it through, making retries idempotent — an id
+/// already in the chat is a successful no-op returning the stored copy.
+pub fn append_kind_with_id(
+    root: &Path,
+    chat: &mut Chat,
+    author: MemberRef,
+    text: impl Into<String>,
+    kind: MessageKind,
+    now: DateTime<Utc>,
+    id: Option<String>,
+) -> Result<ChatMessage, JoyError> {
+    let id = id.unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
+    if let Some(existing) = chat.messages.iter().find(|m| m.id == id) {
+        return Ok(existing.clone());
+    }
     let message = ChatMessage {
+        id,
         at: now,
         author,
         text: text.into(),
@@ -128,6 +152,20 @@ fn append_kind(
     chat.updated = now;
     save_chat(root, chat)?;
     Ok(message)
+}
+
+/// Every load path funnels through here: pre-channel messages get their
+/// deterministic synthetic id and the timeline is ordered by time (a
+/// merge unions divergent appends; the order must be identical on every
+/// client because seq = position).
+fn normalize(chat: &mut Chat) {
+    for m in &mut chat.messages {
+        if m.id.is_empty() {
+            m.id = m.synthetic_id();
+        }
+    }
+    chat.messages
+        .sort_by(|a, b| a.at.cmp(&b.at).then_with(|| a.id.cmp(&b.id)));
 }
 
 // ---- lifecycle (JOY-01F6) ------------------------------------------------
@@ -429,5 +467,86 @@ mod tests {
         let loaded = load_chat(dir.path(), &chat.id).unwrap().unwrap();
         assert_eq!(loaded.title.as_deref(), Some("Sprint 13"));
         assert_eq!(loaded.subtitle.as_deref(), Some("countdown"));
+    }
+}
+
+#[cfg(test)]
+mod channel_tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    fn now() -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(2026, 7, 5, 3, 0, 0).unwrap()
+    }
+
+    #[test]
+    fn append_mints_a_uuid_and_is_idempotent_per_id() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".joy")).unwrap();
+        let mut chat = open_chat(dir.path(), vec![MemberRef::new("a@x")], None, now()).unwrap();
+        let m1 = append_message(dir.path(), &mut chat, MemberRef::new("a@x"), "hi", now()).unwrap();
+        assert!(!m1.id.is_empty());
+        // a retry with the SAME id (outbox resend) must not duplicate
+        let again = append_kind_with_id(
+            dir.path(),
+            &mut chat,
+            MemberRef::new("a@x"),
+            "hi",
+            MessageKind::Text,
+            now(),
+            Some(m1.id.clone()),
+        )
+        .unwrap();
+        assert_eq!(again.id, m1.id);
+        assert_eq!(chat.messages.len(), 1);
+    }
+
+    #[test]
+    fn legacy_messages_get_stable_synthetic_ids_and_time_order() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".joy/chats")).unwrap();
+        std::fs::write(
+            dir.path().join(".joy/chats/aaaa.yaml"),
+            "id: aaaa\ntitle: T\ncreated_by: a@x\ncreated: 2026-07-05T02:00:00Z\nupdated: 2026-07-05T02:00:00Z\nparticipants:\n- a@x\nmessages:\n- at: 2026-07-05T02:00:02Z\n  author: a@x\n  text: second\n- at: 2026-07-05T02:00:01Z\n  author: a@x\n  text: first\n",
+        )
+        .unwrap();
+        let chat = load_chat(dir.path(), "aaaa").unwrap().unwrap();
+        assert_eq!(chat.messages[0].text, "first");
+        assert!(chat.messages[0].id.starts_with("legacy-"));
+        // deterministic: a second load derives the SAME ids
+        let chat2 = load_chat(dir.path(), "aaaa").unwrap().unwrap();
+        assert_eq!(chat.messages[0].id, chat2.messages[0].id);
+    }
+
+    #[test]
+    fn divergent_appends_merge_without_duplicates() {
+        // the joy-yaml driver unions messages by id — simulate the merge
+        let base = "id: c\ntitle: T\ncreated_by: a@x\ncreated: 2026-07-05T02:00:00Z\nupdated: 2026-07-05T02:00:00Z\nparticipants:\n- a@x\nmessages:\n- id: m1\n  at: 2026-07-05T02:00:01Z\n  author: a@x\n  text: hello\n";
+        let ours = "id: c\ntitle: T\ncreated_by: a@x\ncreated: 2026-07-05T02:00:00Z\nupdated: 2026-07-05T02:00:02Z\nparticipants:\n- a@x\nmessages:\n- id: m1\n  at: 2026-07-05T02:00:01Z\n  author: a@x\n  text: hello\n- id: m2\n  at: 2026-07-05T02:00:02Z\n  author: a@x\n  text: ours\n";
+        let theirs = "id: c\ntitle: T\ncreated_by: a@x\ncreated: 2026-07-05T02:00:00Z\nupdated: 2026-07-05T02:00:03Z\nparticipants:\n- a@x\nmessages:\n- id: m1\n  at: 2026-07-05T02:00:01Z\n  author: a@x\n  text: hello\n- id: m3\n  at: 2026-07-05T02:00:03Z\n  author: b@x\n  text: theirs\n";
+        let merged = crate::merge::merge_yaml_doc(base, ours, theirs).unwrap();
+        let chat: crate::model::chat::Chat = serde_yaml_ng::from_str(&merged).unwrap();
+        let ids: Vec<&str> = chat.messages.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(ids.len(), 3);
+        assert!(ids.contains(&"m2") && ids.contains(&"m3"));
+    }
+
+    #[test]
+    fn error_kind_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".joy")).unwrap();
+        let mut chat = open_chat(dir.path(), vec![MemberRef::new("a@x")], None, now()).unwrap();
+        append_kind_with_id(
+            dir.path(),
+            &mut chat,
+            MemberRef::new("a@x"),
+            "joy auth failed: not implemented",
+            MessageKind::Error,
+            now(),
+            None,
+        )
+        .unwrap();
+        let loaded = load_chat(dir.path(), &chat.id).unwrap().unwrap();
+        assert_eq!(loaded.messages[0].kind, MessageKind::Error);
     }
 }
