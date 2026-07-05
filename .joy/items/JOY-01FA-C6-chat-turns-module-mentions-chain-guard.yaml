@@ -1,9 +1,11 @@
 id: JOY-01FA-C6
 title: 'chat_turns module: mentions, chain guard, context prompt'
 type: story
-status: new
+status: closed
 priority: high
 parent: JOY-01F9-9E
+assignees:
+- member: ai:claude@joy
 capabilities:
 - plan
 - implement
@@ -11,7 +13,13 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-04T14:34:55.446439Z
-updated: 2026-07-04T14:34:55.446439Z
+updated: 2026-07-05T06:43:31.974479Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
+history:
+- date: 2026-07-05T06:43:31.730990Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-05T06:43:31.838072Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-05T06:43:31.974479Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'joy-core chat_turns: resolve @mentions (full ref ai:claude@joy and short alias @claude) against participants/members; decide Respond | Silent | NeedsModeration (an AI may post at most 2 messages since the last human message when addressed by an AI); moderation notice text; build the agent prompt from the chat history (author-attributed transcript + role instruction). Unit tests for every rule.'

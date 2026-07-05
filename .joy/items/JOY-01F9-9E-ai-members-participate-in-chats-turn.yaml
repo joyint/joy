@@ -1,15 +1,25 @@
 id: JOY-01F9-9E
 title: AI members participate in chats (turn rules in joy-core)
 type: epic
-status: new
+status: in-progress
 priority: high
+assignees:
+- member: ai:claude@joy
 capabilities:
 - conceive
 - plan
 effort: 5
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-04T14:34:55.326656Z
-updated: 2026-07-04T14:34:55.326656Z
+updated: 2026-07-05T06:43:32.193414Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
+history:
+- date: 2026-07-05T06:43:32.057166Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-05T06:43:32.193414Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'AIs are chat participants with full context: they answer only when @mentioned; between AIs at most two follow-up turns each since the last human message, then the system posts a notice (the leave-notice format) that a human must moderate on. Only the member who configured an AI (locally or with an API key) may address it — everyone else reads along until they configure it themselves (their use is then delegated-by them). The shared rule module (mention resolution against participants, the AI-chain guard, the moderation notice, the context prompt from the chat history) lives in joy-core so desktop and platform behave identically.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-05T06:43:01.855249Z
+  text: 'Chat channel foundation shipped (2026-07-05): message ids (UUIDv7, synthetic for legacy), idempotent append_kind_with_id, time-order normalize (seq=position), joy-yaml merge identity for messages, MessageKind::Error, .joy/chats in gitattributes. Auch geliefert: add_mentioned_ais, non-blocking library entries, ai_setup engine extraction (CLI ist nur noch Schale).'

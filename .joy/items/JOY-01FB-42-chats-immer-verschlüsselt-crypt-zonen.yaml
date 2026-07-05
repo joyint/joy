@@ -1,0 +1,14 @@
+id: JOY-01FB-42
+title: 'Chats immer verschlüsselt: Crypt-Zonen für .joy/chats'
+type: epic
+status: new
+priority: high
+capabilities:
+- conceive
+- plan
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-05T06:43:01.750118Z
+updated: 2026-07-05T06:43:01.750118Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'Operator-Direktive (2026-07-04): Alle Chats sind IMMER verschlüsselt, entschlüsselbar nur durch die Teilnehmer (Crypt-Zonen/Grants je Chat); Anmeldung beim Öffnen eines Projekts; auch online werden alle Chats verschlüsselt persistiert (Web via wasm, KI-Keys im Container). Gegenstücke: JAPP-00C8-3E (App), JP-0064-C1 (Plattform). Aufbauend auf dem Chat-Kanal (message ids, JAPP-00C9-80): Verschlüsselung pro Nachricht mit Zonen-Key, Merge-Filter bleibt id-basiert funktionsfähig.'
