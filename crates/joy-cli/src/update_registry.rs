@@ -221,7 +221,7 @@ impl UpdateItem for LegacyAiArtifactsItem {
         }])
     }
     fn refresh(&self, root: &Path) -> Result<Vec<RefreshRow>> {
-        let removed = ai::remove_legacy_ai_artifacts(root);
+        let removed = joy_core::ai_setup::remove_legacy_ai_artifacts(root);
         Ok(vec![RefreshRow {
             name: "legacy AI artefacts".into(),
             action: if removed.is_empty() {

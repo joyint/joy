@@ -13,6 +13,7 @@ joy-crypt = { workspace = true }
 serde = { workspace = true }
 serde_yaml_ng = { workspace = true }
 serde_json = { workspace = true }
+toml_edit = "0.25.5"
 thiserror = { workspace = true }
 chrono = { workspace = true }
 sha2 = "0.10.9"

@@ -105,6 +105,41 @@ pub fn verify_attestation(
     Ok(())
 }
 
+/// Must every member -- including a former trust root -- carry an
+/// attestation? The founder may stay unattested during the solo phase;
+/// once any pair of members mutually attests each other the chain has
+/// closed and a lone unattested entry is tampering. Shared by the CLI
+/// and the desktop app so both enforce the same posture (JOY-01E9).
+pub fn founder_must_be_attested(project: &crate::model::project::Project) -> bool {
+    let unattested = project
+        .member_values()
+        .filter(|m| m.attestation.is_none())
+        .count();
+    if unattested > 1 {
+        return true;
+    }
+    if unattested == 1 && has_mutual_attestation_pair(project) {
+        return true;
+    }
+    false
+}
+
+fn has_mutual_attestation_pair(project: &crate::model::project::Project) -> bool {
+    for (email, member) in project.members() {
+        let Some(att) = &member.attestation else {
+            continue;
+        };
+        if let Some(attester) = project.member_by_key(att.attester.id()) {
+            if let Some(attester_att) = &attester.attestation {
+                if attester_att.attester.id() == email {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -230,39 +265,4 @@ mod tests {
         let err = verify_attestation(&att, &pk, "alice@example.com", &member).unwrap_err();
         assert!(matches!(err, JoyError::AuthFailed(msg) if msg.contains("enrollment_verifier")));
     }
-}
-
-/// Must every member -- including a former trust root -- carry an
-/// attestation? The founder may stay unattested during the solo phase;
-/// once any pair of members mutually attests each other the chain has
-/// closed and a lone unattested entry is tampering. Shared by the CLI
-/// and the desktop app so both enforce the same posture (JOY-01E9).
-pub fn founder_must_be_attested(project: &crate::model::project::Project) -> bool {
-    let unattested = project
-        .member_values()
-        .filter(|m| m.attestation.is_none())
-        .count();
-    if unattested > 1 {
-        return true;
-    }
-    if unattested == 1 && has_mutual_attestation_pair(project) {
-        return true;
-    }
-    false
-}
-
-fn has_mutual_attestation_pair(project: &crate::model::project::Project) -> bool {
-    for (email, member) in project.members() {
-        let Some(att) = &member.attestation else {
-            continue;
-        };
-        if let Some(attester) = project.member_by_key(att.attester.id()) {
-            if let Some(attester_att) = &attester.attestation {
-                if attester_att.attester.id() == email {
-                    return true;
-                }
-            }
-        }
-    }
-    false
 }

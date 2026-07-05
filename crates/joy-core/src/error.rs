@@ -78,6 +78,12 @@ pub enum JoyError {
     #[error("guard denied: {0}")]
     GuardDenied(String),
 
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("json error: {0}")]
+    Json(#[from] serde_json::Error),
+
     #[error("{0}")]
     Other(String),
 }

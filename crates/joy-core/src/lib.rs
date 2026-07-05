@@ -4,6 +4,7 @@
 #![deny(clippy::all)]
 
 pub mod agents;
+pub mod ai_setup;
 pub mod ai_templates;
 pub mod auth;
 pub mod capabilities;

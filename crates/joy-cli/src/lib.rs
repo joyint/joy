@@ -605,5 +605,3 @@ mod tests {
         );
     }
 }
-
-pub use commands::ai::{init_single_tool, reset_single_tool, tool_is_configured};

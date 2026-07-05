@@ -4,9 +4,15 @@
 use std::fs;
 use std::io::Write;
 use std::path::Path;
+
+use joy_core::ai_setup::{
+    is_tool_configured, is_tool_stale, plan_member_reset, remove_joy_block_or_file,
+    remove_legacy_ai_artifacts, untrack_gitignored_tool_files, update_gitignore, MemberResetPlan,
+    TOOLS as ALL_TOOLS,
+};
+
 use std::sync::atomic::AtomicBool;
 
-use joy_core::ai_templates;
 use joy_core::vcs::Vcs;
 
 use crate::color;
@@ -43,9 +49,6 @@ macro_rules! dprint {
 const VISION_TEMPLATE: &str = include_str!("../../docs/VISION.md");
 const ARCHITECTURE_TEMPLATE: &str = include_str!("../../docs/ARCHITECTURE.md");
 const CONTRIBUTING_TEMPLATE: &str = include_str!("../../docs/CONTRIBUTING.md");
-
-const JOY_BLOCK_START: &str = "<!-- joy:start -->";
-const JOY_BLOCK_END: &str = "<!-- joy:end -->";
 
 #[derive(clap::Args)]
 #[command(
@@ -391,7 +394,7 @@ pub(crate) fn is_tool_configured_pub(root: &Path, id: &str) -> bool {
 }
 
 pub(crate) fn is_tool_stale_pub(root: &Path, id: &str, member_id: &str) -> anyhow::Result<bool> {
-    is_tool_stale(root, id, member_id)
+    is_tool_stale(root, id, member_id).map_err(Into::into)
 }
 
 /// Sync the joy-managed `.gitignore` block with the entries needed for
@@ -402,7 +405,7 @@ pub(crate) fn sync_gitignore_for_configured_tools(root: &Path) -> anyhow::Result
         .filter(|(_, id, _, _)| is_tool_configured(root, id))
         .map(|(_, id, _, _)| *id)
         .collect();
-    update_gitignore(root, &configured)
+    update_gitignore(root, &configured).map_err(Into::into)
 }
 
 /// Refresh a single AI tool by id. Used by the update registry.
@@ -413,104 +416,10 @@ pub(crate) fn refresh_tool_by_id(root: &Path, id: &str, member_id: &str) -> anyh
         .ok_or_else(|| anyhow::anyhow!("unknown ai tool id: {id}"))?;
     let configure = entry.3;
     QUIET.store(true, std::sync::atomic::Ordering::Relaxed);
-    let changed = configure(root, member_id);
+    let mut report = |line: String| qprintln!("    {}{}", color::check_mark(), line);
+    let changed = configure(root, member_id, &mut report);
     QUIET.store(false, std::sync::atomic::Ordering::Relaxed);
-    changed
-}
-
-fn is_tool_stale(root: &Path, tool: &str, member_id: &str) -> anyhow::Result<bool> {
-    let workflow = ai_templates::load_workflow()?;
-    let agents = ai_templates::load_agents()?;
-
-    // Check SKILL.md (all tools except copilot)
-    let skill_path = match tool {
-        "claude" => Some(root.join(".claude/skills/joy/SKILL.md")),
-        "qwen" => Some(root.join(".qwen/skills/joy/SKILL.md")),
-        "vibe" => Some(root.join(".vibe/skills/joy/SKILL.md")),
-        _ => None,
-    };
-    if let Some(path) = skill_path {
-        let expected = ai_templates::render_skill(&workflow)?;
-        if !file_matches(&path, &expected) {
-            return Ok(true);
-        }
-    }
-
-    // Check setup.md (all tools except copilot)
-    let setup_path = match tool {
-        "claude" => Some(root.join(".claude/skills/joy/setup.md")),
-        "qwen" => Some(root.join(".qwen/skills/joy/setup.md")),
-        "vibe" => Some(root.join(".vibe/skills/joy/setup.md")),
-        _ => None,
-    };
-    if let Some(path) = setup_path {
-        if !file_matches(&path, ai_templates::setup_instructions()) {
-            return Ok(true);
-        }
-    }
-
-    // Check instruction files (joy-block content)
-    let block_path = match tool {
-        "claude" => Some(root.join(".claude/CLAUDE.md")),
-        "qwen" => Some(root.join(".qwen/QWEN.md")),
-        "copilot" => Some(root.join(".github/copilot-instructions.md")),
-        _ => None,
-    };
-    if let Some(path) = block_path {
-        let has_skill = tool != "copilot";
-        let expected_block = render_managed_block(member_id, has_skill, tool)?;
-        if !joy_block_matches(&path, &expected_block) {
-            return Ok(true);
-        }
-    }
-
-    // Check copilot prompt
-    if tool == "copilot" {
-        let expected = ai_templates::render_copilot_prompt(&workflow)?;
-        if !file_matches(&root.join(".github/prompts/joy.prompt.md"), &expected) {
-            return Ok(true);
-        }
-    }
-
-    // Check agent files
-    for agent in &agents {
-        if !ai_templates::agent_applicable_to_tool(agent, tool) {
-            continue;
-        }
-        if let Some(filename) = ai_templates::agent_filename(agent, tool) {
-            let expected = ai_templates::render_agent(agent, &workflow, tool)?;
-            let agents_dir = match tool {
-                "claude" => ".claude/agents",
-                "qwen" => ".qwen/agents",
-                "vibe" => ".vibe/agents",
-                "copilot" => ".github/agents",
-                _ => continue,
-            };
-            if !file_matches(&root.join(agents_dir).join(&filename), &expected) {
-                return Ok(true);
-            }
-        }
-    }
-
-    Ok(false)
-}
-
-/// Check if a file's content matches the expected content exactly.
-fn file_matches(path: &Path, expected: &str) -> bool {
-    match fs::read_to_string(path) {
-        Ok(content) => content == expected,
-        Err(_) => false,
-    }
-}
-
-/// Check if the joy-block inside a file matches the expected block content.
-fn joy_block_matches(path: &Path, expected_block: &str) -> bool {
-    let content = match fs::read_to_string(path) {
-        Ok(c) => c,
-        Err(_) => return false,
-    };
-    let expected_wrapped = format!("{}\n{}\n{}", JOY_BLOCK_START, expected_block, JOY_BLOCK_END);
-    content.contains(&expected_wrapped)
+    changed.map_err(Into::into)
 }
 
 /// One configurable doc the project tracks for AI tools.
@@ -804,62 +713,6 @@ fn resolve_doc_path(
     })
 }
 
-/// One AI member's planned `project.yaml` change during `joy ai reset`.
-struct MemberResetPlan {
-    member_id: String,
-    /// Drop the calling operator's own delegation to this AI.
-    drop_caller_delegation: bool,
-    /// Remove the shared member entry, because no delegation to this AI remains
-    /// once the caller's is gone (the member is truly orphaned).
-    remove_member: bool,
-    /// A non-expired session for this member exists on this machine.
-    active_session: bool,
-    /// Delegations to this AI held by members other than the caller.
-    other_delegators: usize,
-}
-
-/// Decide what `joy ai reset` may safely do to `member_id` in `project.yaml`.
-///
-/// The member entry is versioned, shared state, so it is removed only when it is
-/// orphaned (no operator delegates it any more); while any delegation remains
-/// the entry is kept and only the caller's own delegation is dropped. This is
-/// the fix for JOY-01CD-D5, where reset removed an in-use member merely because
-/// the local config files were gone. `caller_key` is the acting operator's
-/// at-rest member key, or None when the identity cannot be resolved (then no
-/// delegation is attributed to the caller and only an already delegation-free
-/// member is removable). Returns None when there is nothing to change.
-fn plan_member_reset(
-    project: &joy_core::model::Project,
-    root: &Path,
-    member_id: &str,
-    caller_key: Option<&str>,
-) -> Option<MemberResetPlan> {
-    if !project.has_member_key(member_id) {
-        return None;
-    }
-    let delegators: Vec<String> = project
-        .members()
-        .filter(|(_, m)| m.ai_delegations.contains_key(member_id))
-        .map(|(k, _)| k.clone())
-        .collect();
-    let drop_caller_delegation =
-        caller_key.is_some_and(|ck| delegators.iter().any(|d| d.as_str() == ck));
-    let other_delegators = delegators
-        .iter()
-        .filter(|d| Some(d.as_str()) != caller_key)
-        .count();
-    let active_session = joy_core::auth::session::project_id(root)
-        .ok()
-        .is_some_and(|pid| joy_core::auth::session::has_active_session(&pid, member_id));
-    Some(MemberResetPlan {
-        member_id: member_id.to_string(),
-        drop_caller_delegation,
-        remove_member: other_delegators == 0,
-        active_session,
-        other_delegators,
-    })
-}
-
 fn reset(args: ResetArgs) -> anyhow::Result<()> {
     let root = joy_core::store::find_project_root(&std::env::current_dir()?)
         .ok_or_else(|| anyhow::anyhow!("No Joy project found (run `joy init` first)"))?;
@@ -1000,9 +853,6 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
             );
         }
         dprintln!();
-        if non_interactive() {
-            anyhow::bail!("refusing to reset without --force in non-interactive mode");
-        }
         dprint!("Proceed? [y/N] ");
         std::io::stdout().flush()?;
         let mut input = String::new();
@@ -1151,42 +1001,6 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-type ToolEntry = (
-    &'static str,                            // display name
-    &'static str,                            // id
-    fn() -> bool,                            // detect: is the tool installed?
-    fn(&Path, &str) -> anyhow::Result<bool>, // configure
-);
-
-fn detect_claude() -> bool {
-    which("claude")
-}
-fn detect_qwen() -> bool {
-    which("qwen") || which("qwen-code")
-}
-fn detect_vibe() -> bool {
-    which("vibe")
-}
-fn detect_copilot() -> bool {
-    // Only the dedicated Copilot CLI counts. `gh` (the GitHub CLI) is present on
-    // virtually every CI runner and many dev machines and says nothing about
-    // whether Copilot is in use, so keying detection off it produced spurious
-    // `ai:copilot@joy` registrations.
-    which("copilot")
-}
-
-const ALL_TOOLS: &[ToolEntry] = &[
-    ("Claude Code", "claude", detect_claude, configure_claude),
-    ("Qwen Code", "qwen", detect_qwen, configure_qwen),
-    ("Mistral Vibe", "vibe", detect_vibe, configure_vibe),
-    (
-        "GitHub Copilot",
-        "copilot",
-        detect_copilot,
-        configure_copilot,
-    ),
-];
-
 /// Set up only NEW (not yet configured) tools. Returns list of all configured tool IDs.
 fn setup_new_tools(
     root: &Path,
@@ -1243,7 +1057,8 @@ fn setup_new_tools(
         } else {
             dprint!("  {}{:<24} configure? [Y/n] ", color::warn_mark(), name);
             if confirm_default_yes()? {
-                configure(root, &member_id)?;
+                let mut report = |line: String| qprintln!("    {}{}", color::check_mark(), line);
+                configure(root, &member_id, &mut report)?;
                 configured_tools.push(*id);
                 newly_configured += 1;
                 should_register = true;
@@ -1342,421 +1157,10 @@ fn setup_new_tools(
     Ok(configured_tools)
 }
 
-/// Render the managed block (identity + instructions with workflow) for a tool's instruction file.
-fn render_managed_block(member_id: &str, has_skill: bool, tool: &str) -> anyhow::Result<String> {
-    let workflow = ai_templates::load_workflow()?;
-    let joy_block = ai_templates::render_joy_block(member_id, has_skill, tool)?;
-    let instructions = ai_templates::render_instructions(&workflow)?;
-    Ok(format!("{}\n\n{}", joy_block, instructions))
-}
-
-/// Render SKILL.md with workflow context.
-fn render_skill() -> anyhow::Result<String> {
-    let workflow = ai_templates::load_workflow()?;
-    ai_templates::render_skill(&workflow).map_err(Into::into)
-}
-
-/// Remove and recreate Joy-managed subdirectories for a tool.
-/// Preserves user-owned files (instruction files, settings.json).
-fn clean_managed_dirs(root: &Path, dirs: &[&str]) {
-    for dir in dirs {
-        let path = root.join(dir);
-        if path.is_dir() {
-            let _ = fs::remove_dir_all(&path);
-        }
-    }
-}
-
-/// Generate agent files for a tool into the given directory.
-fn generate_agents(root: &Path, tool: &str, agents_dir: &str) -> anyhow::Result<bool> {
-    let workflow = ai_templates::load_workflow()?;
-    let agents = ai_templates::load_agents()?;
-    let mut changed = false;
-
-    for agent in &agents {
-        if !ai_templates::agent_applicable_to_tool(agent, tool) {
-            continue;
-        }
-        if let Some(filename) = ai_templates::agent_filename(agent, tool) {
-            let content = ai_templates::render_agent(agent, &workflow, tool)?;
-            let path = root.join(agents_dir).join(&filename);
-            changed |= write_if_changed(root, &path, &content)?;
-            qprintln!("    {}{}/{}", color::check_mark(), agents_dir, filename);
-        }
-    }
-    Ok(changed)
-}
-
-fn configure_claude(root: &Path, member_id: &str) -> anyhow::Result<bool> {
-    if !is_tool_stale(root, "claude", member_id)? {
-        return Ok(false);
-    }
-    let claude_dir = root.join(".claude");
-    fs::create_dir_all(&claude_dir)?;
-    clean_managed_dirs(root, &[".claude/agents", ".claude/skills/joy"]);
-    let mut changed = false;
-
-    let claude_md = claude_dir.join("CLAUDE.md");
-    changed |= update_with_joy_block(
-        root,
-        &claude_md,
-        &render_managed_block(member_id, true, "claude")?,
-    )?;
-    qprintln!("    {}.claude/CLAUDE.md", color::check_mark());
-
-    let skill_path = claude_dir.join("skills/joy/SKILL.md");
-    changed |= write_if_changed(root, &skill_path, &render_skill()?)?;
-    qprintln!("    {}.claude/skills/joy/SKILL.md", color::check_mark());
-
-    let setup_path = claude_dir.join("skills/joy/setup.md");
-    changed |= write_if_changed(root, &setup_path, ai_templates::setup_instructions())?;
-    qprintln!("    {}.claude/skills/joy/setup.md", color::check_mark());
-
-    changed |= generate_agents(root, "claude", ".claude/agents")?;
-    changed |= update_claude_permissions(root, member_id)?;
-
-    Ok(changed)
-}
-
-fn update_claude_permissions(root: &Path, _member_id: &str) -> anyhow::Result<bool> {
-    let settings_path = root.join(".claude/settings.json");
-
-    let mut settings: serde_json::Value = if settings_path.is_file() {
-        let content = fs::read_to_string(&settings_path)?;
-        serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}))
-    } else {
-        serde_json::json!({})
-    };
-
-    // Permissions
-    let permissions = settings
-        .as_object_mut()
-        .unwrap()
-        .entry("permissions")
-        .or_insert_with(|| serde_json::json!({}));
-    let allow = permissions
-        .as_object_mut()
-        .unwrap()
-        .entry("allow")
-        .or_insert_with(|| serde_json::json!([]));
-    let allow_arr = allow.as_array_mut().unwrap();
-    for perm in ["Bash(joy *)", "Bash(jyn *)"] {
-        if !allow_arr.iter().any(|v| v.as_str() == Some(perm)) {
-            allow_arr.push(serde_json::json!(perm));
-        }
-    }
-
-    let json = serde_json::to_string_pretty(&settings)?;
-    let changed = write_if_changed(root, &settings_path, &format!("{json}\n"))?;
-    qprintln!("    {}.claude/settings.json", color::check_mark());
-
-    Ok(changed)
-}
-
-fn configure_qwen(root: &Path, member_id: &str) -> anyhow::Result<bool> {
-    if !is_tool_stale(root, "qwen", member_id)? {
-        return Ok(false);
-    }
-    let qwen_dir = root.join(".qwen");
-    fs::create_dir_all(&qwen_dir)?;
-    clean_managed_dirs(root, &[".qwen/agents", ".qwen/skills/joy"]);
-    let mut changed = false;
-
-    let qwen_md = qwen_dir.join("QWEN.md");
-    changed |= update_with_joy_block(
-        root,
-        &qwen_md,
-        &render_managed_block(member_id, true, "qwen")?,
-    )?;
-    qprintln!("    {}.qwen/QWEN.md", color::check_mark());
-
-    let skill_path = qwen_dir.join("skills/joy/SKILL.md");
-    changed |= write_if_changed(root, &skill_path, &render_skill()?)?;
-    qprintln!("    {}.qwen/skills/joy/SKILL.md", color::check_mark());
-
-    let setup_path = qwen_dir.join("skills/joy/setup.md");
-    changed |= write_if_changed(root, &setup_path, ai_templates::setup_instructions())?;
-    qprintln!("    {}.qwen/skills/joy/setup.md", color::check_mark());
-
-    changed |= generate_agents(root, "qwen", ".qwen/agents")?;
-    changed |= update_qwen_permissions(root, member_id)?;
-
-    Ok(changed)
-}
-
-fn update_qwen_permissions(root: &Path, _member_id: &str) -> anyhow::Result<bool> {
-    let settings_path = root.join(".qwen/settings.json");
-
-    let mut settings: serde_json::Value = if settings_path.is_file() {
-        let content = fs::read_to_string(&settings_path)?;
-        serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}))
-    } else {
-        serde_json::json!({})
-    };
-
-    // Permissions
-    let tools = settings
-        .as_object_mut()
-        .unwrap()
-        .entry("tools")
-        .or_insert_with(|| serde_json::json!({}));
-    let allowed = tools
-        .as_object_mut()
-        .unwrap()
-        .entry("allowed")
-        .or_insert_with(|| serde_json::json!([]));
-    let allowed_arr = allowed.as_array_mut().unwrap();
-    for perm in ["run_shell_command(joy)", "run_shell_command(jyn)"] {
-        if !allowed_arr.iter().any(|v| v.as_str() == Some(perm)) {
-            allowed_arr.push(serde_json::json!(perm));
-        }
-    }
-
-    let json = serde_json::to_string_pretty(&settings)?;
-    let changed = write_if_changed(root, &settings_path, &format!("{json}\n"))?;
-    qprintln!("    {}.qwen/settings.json", color::check_mark());
-
-    Ok(changed)
-}
-
-fn configure_vibe(root: &Path, member_id: &str) -> anyhow::Result<bool> {
-    if !is_tool_stale(root, "vibe", member_id)? {
-        return Ok(false);
-    }
-    let vibe_dir = root.join(".vibe");
-    fs::create_dir_all(&vibe_dir)?;
-    clean_managed_dirs(root, &[".vibe/agents", ".vibe/skills/joy"]);
-    let mut changed = false;
-
-    // Vibe reads {root}/AGENTS.md as "Project instructions" into its system
-    // prompt (see mistral-vibe vibe/core/config/harness_files). `.vibe/AGENTS.md`
-    // is NOT scanned, so the file must live at the workspace root.
-    let agents_md = root.join("AGENTS.md");
-    changed |= update_with_joy_block(
-        root,
-        &agents_md,
-        &render_managed_block(member_id, true, "vibe")?,
-    )?;
-    qprintln!("    {}AGENTS.md", color::check_mark());
-
-    let skill_path = vibe_dir.join("skills/joy/SKILL.md");
-    changed |= write_if_changed(root, &skill_path, &render_skill()?)?;
-    qprintln!("    {}.vibe/skills/joy/SKILL.md", color::check_mark());
-
-    let setup_path = vibe_dir.join("skills/joy/setup.md");
-    changed |= write_if_changed(root, &setup_path, ai_templates::setup_instructions())?;
-    qprintln!("    {}.vibe/skills/joy/setup.md", color::check_mark());
-
-    changed |= generate_agents(root, "vibe", ".vibe/agents")?;
-
-    let config_path = vibe_dir.join("config.toml");
-    changed |= ensure_vibe_bash_always(root, &config_path)?;
-    qprintln!("    {}.vibe/config.toml", color::check_mark());
-
-    Ok(changed)
-}
-
-/// Make sure .vibe/config.toml declares `[tools.bash] permission = "always"`.
-/// Creates the file if missing. If the key already exists we respect the
-/// user's value and leave the file alone, so a deliberate override is
-/// not clobbered on every `joy ai init`.
-fn ensure_vibe_bash_always(root: &Path, path: &Path) -> anyhow::Result<bool> {
-    use toml_edit::{value, DocumentMut, Item, Table};
-
-    let mut doc: DocumentMut = if path.is_file() {
-        fs::read_to_string(path)?.parse()?
-    } else {
-        DocumentMut::new()
-    };
-
-    let tools = doc
-        .entry("tools")
-        .or_insert_with(|| Item::Table(Table::new()))
-        .as_table_mut()
-        .ok_or_else(|| anyhow::anyhow!(".vibe/config.toml: [tools] is not a table"))?;
-    tools.set_implicit(true);
-
-    let bash = tools
-        .entry("bash")
-        .or_insert_with(|| Item::Table(Table::new()))
-        .as_table_mut()
-        .ok_or_else(|| anyhow::anyhow!(".vibe/config.toml: [tools.bash] is not a table"))?;
-
-    if bash.get("permission").is_some() {
-        return Ok(false);
-    }
-    bash["permission"] = value("always");
-
-    write_if_changed(root, path, &doc.to_string())
-}
-
-fn configure_copilot(root: &Path, member_id: &str) -> anyhow::Result<bool> {
-    if !is_tool_stale(root, "copilot", member_id)? {
-        return Ok(false);
-    }
-    let github_dir = root.join(".github");
-    fs::create_dir_all(&github_dir)?;
-    clean_managed_dirs(root, &[".github/agents", ".github/prompts"]);
-    let mut changed = false;
-
-    let instructions_md = github_dir.join("copilot-instructions.md");
-    changed |= update_with_joy_block(
-        root,
-        &instructions_md,
-        &render_managed_block(member_id, false, "copilot")?,
-    )?;
-    qprintln!("    {}.github/copilot-instructions.md", color::check_mark());
-
-    // Copilot skill wrapper
-    let workflow = ai_templates::load_workflow()?;
-    let prompt = ai_templates::render_copilot_prompt(&workflow)?;
-    let prompt_path = github_dir.join("prompts/joy.prompt.md");
-    changed |= write_if_changed(root, &prompt_path, &prompt)?;
-    qprintln!("    {}.github/prompts/joy.prompt.md", color::check_mark());
-
-    changed |= generate_agents(root, "copilot", ".github/agents")?;
-    changed |= update_copilot_permissions(root, member_id)?;
-
-    Ok(changed)
-}
-
-fn update_copilot_permissions(root: &Path, _member_id: &str) -> anyhow::Result<bool> {
-    let copilot_dir = root.join(".github/copilot");
-    fs::create_dir_all(&copilot_dir)?;
-    let settings_path = copilot_dir.join("settings.json");
-
-    let mut settings: serde_json::Value = if settings_path.is_file() {
-        let content = fs::read_to_string(&settings_path)?;
-        serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}))
-    } else {
-        serde_json::json!({})
-    };
-
-    let allow = settings
-        .as_object_mut()
-        .unwrap()
-        .entry("allowTools")
-        .or_insert_with(|| serde_json::json!([]));
-
-    let allow_arr = allow.as_array_mut().unwrap();
-
-    for perm in ["shell(joy:*)", "shell(jyn:*)"] {
-        if !allow_arr.iter().any(|v| v.as_str() == Some(perm)) {
-            allow_arr.push(serde_json::json!(perm));
-        }
-    }
-
-    let json = serde_json::to_string_pretty(&settings)?;
-    let changed = write_if_changed(root, &settings_path, &format!("{json}\n"))?;
-    qprintln!("    {}.github/copilot/settings.json", color::check_mark());
-
-    Ok(changed)
-}
-
-/// Write content to a file only if it differs.
-/// Write `content` to `path` if the existing file content differs (or the
-/// file is missing). Returns true when the file was actually changed.
-///
-/// Whenever the write happens, the path is auto-staged via Joy's
-/// `workflow.auto-git` so a subsequent `git commit` picks it up
-/// alongside the rest of joy-managed state. Without this, `joy ai init`
-/// would leave doc templates, AI tool configs, and the like as
-/// untracked clutter, inconsistent with `joy init` and `joy auth init`
-/// which already stage their writes (JOY-0184-4A).
-fn write_if_changed(root: &Path, path: &Path, content: &str) -> anyhow::Result<bool> {
-    if path.is_file() {
-        let existing = fs::read_to_string(path)?;
-        if existing == content {
-            return Ok(false);
-        }
-    }
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(path, content)?;
-    // No `auto_git_add` here. Every caller of `write_if_changed`
-    // targets an AI-tool artefact (`.claude/`, `.vibe/`,
-    // `.github/copilot-instructions.md`, `.github/prompts/`,
-    // `.github/agents/`, `AGENTS.md`, etc.), all listed in the
-    // joy-managed `.gitignore` block. Staging them would be a bug:
-    // on the first `joy ai init` it would slip past `.gitignore`
-    // (the block is rewritten *after* the tools are written), and
-    // on every subsequent `joy update` it would fight the gitignore
-    // and produce a wall of warnings. Joy-tracked artefacts
-    // (project.yaml, docs templates, .gitignore, .gitattributes,
-    // SECURITY.md, CONTRIBUTING.md) have their own explicit
-    // `auto_git_add` calls elsewhere.
-    let _ = root;
-    Ok(true)
-}
-
-/// Remove the Joy-managed block from a shared file. If the file contains only
-/// the Joy block (and whitespace), the file is deleted. If user content exists
-/// outside the markers, that content is preserved and the file remains.
-/// No-op if the file has no Joy block (never touch files Joy did not author).
-fn remove_joy_block_or_file(path: &Path) -> anyhow::Result<()> {
-    if !path.is_file() {
-        return Ok(());
-    }
-    let existing = fs::read_to_string(path)?;
-    let (Some(start), Some(end_pos)) =
-        (existing.find(JOY_BLOCK_START), existing.find(JOY_BLOCK_END))
-    else {
-        return Ok(());
-    };
-    let end = end_pos + JOY_BLOCK_END.len();
-    let mut remaining = String::new();
-    remaining.push_str(&existing[..start]);
-    remaining.push_str(&existing[end..]);
-    if remaining.trim().is_empty() {
-        fs::remove_file(path)?;
-    } else {
-        fs::write(path, format!("{}\n", remaining.trim_end()))?;
-    }
-    Ok(())
-}
-
-fn update_with_joy_block(root: &Path, path: &Path, content: &str) -> anyhow::Result<bool> {
-    let block = format!("{}\n{}\n{}", JOY_BLOCK_START, content, JOY_BLOCK_END);
-
-    let new_content = if path.is_file() {
-        let existing = fs::read_to_string(path)?;
-        if existing.contains(JOY_BLOCK_START) && existing.contains(JOY_BLOCK_END) {
-            let start = existing.find(JOY_BLOCK_START).unwrap();
-            let end = existing.find(JOY_BLOCK_END).unwrap() + JOY_BLOCK_END.len();
-            let mut updated = String::new();
-            updated.push_str(&existing[..start]);
-            updated.push_str(&block);
-            updated.push_str(&existing[end..]);
-            updated
-        } else {
-            format!("{}\n\n{}", existing.trim_end(), block)
-        }
-    } else {
-        format!("{}\n", block)
-    };
-
-    write_if_changed(root, path, &new_content)
-}
-
-/// Library callers (the desktop app) run with prompts DISABLED: every
-/// question takes its default instead of blocking on a stdin that no one
-/// answers (JAPP settings hang, 2026-07-05).
-static NON_INTERACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-fn non_interactive() -> bool {
-    NON_INTERACTIVE.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-pub(crate) fn set_non_interactive(value: bool) {
-    NON_INTERACTIVE.store(value, std::sync::atomic::Ordering::Relaxed);
-}
-
-/// Read one answer line, or None for "take the default" in
-/// non-interactive mode.
+/// Read one answer line, or None for "take the default" when no terminal
+/// is attached (GUI starts must never block on stdin).
 fn ask_line() -> anyhow::Result<Option<String>> {
-    // no terminal (GUI start) means no one can answer either
-    if non_interactive() || !crate::prompt::is_interactive() {
+    if !crate::prompt::is_interactive() {
         return Ok(None);
     }
     std::io::stdout().flush()?;
@@ -1773,133 +1177,9 @@ fn confirm_default_yes() -> anyhow::Result<bool> {
     Ok(trimmed.is_empty() || trimmed.eq_ignore_ascii_case("y"))
 }
 
-fn which(binary: &str) -> bool {
-    std::process::Command::new("which")
-        .arg(binary)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
-
-/// Gitignore entries per AI tool.
-const TOOL_GITIGNORE_ENTRIES: &[(&str, &[(&str, &str)])] = &[
-    ("claude", &[(".claude/", "Claude Code")]),
-    ("qwen", &[(".qwen/", "Qwen Code")]),
-    (
-        "vibe",
-        &[(".vibe/", "Mistral Vibe"), ("AGENTS.md", "Mistral Vibe")],
-    ),
-    (
-        "copilot",
-        &[
-            (".github/copilot-instructions.md", "GitHub Copilot"),
-            (".github/copilot/", "GitHub Copilot"),
-            (".github/agents/", "GitHub Copilot"),
-            (".github/prompts/", "GitHub Copilot"),
-        ],
-    ),
-];
-
-fn update_gitignore(root: &Path, _configured_tools: &[&str]) -> anyhow::Result<()> {
-    use joy_core::init::GITIGNORE_BASE_ENTRIES;
-
-    // Always write the full, fixed set: base entries plus the ignore entries
-    // for every known AI tool, regardless of which tools are configured on
-    // this machine. An ignore line for an absent directory is harmless, and
-    // writing the complete set removes all per-machine / per-tool variance --
-    // running `joy ai init` on a machine with fewer tools can no longer drop
-    // entries another machine committed (JOY-01AA-9E). Because
-    // `update_gitignore_block` is idempotent (it skips the write when the
-    // content is unchanged), the per-invocation auto-sync produces no churn.
-    let mut entries: Vec<(&str, &str)> = GITIGNORE_BASE_ENTRIES.to_vec();
-    for (_tool_id, tool_entries) in TOOL_GITIGNORE_ENTRIES {
-        entries.extend_from_slice(tool_entries);
-    }
-
-    joy_core::init::update_gitignore_block(root, &entries)?;
-    Ok(())
-}
-
 /// Untrack AI tool files that are listed in the joy-managed `.gitignore`
 /// block but were committed before that entry existed (JOY-019E-3A).
 ///
-/// `.gitignore` does not retroactively untrack already-committed paths, so
-/// such files stay versioned and reappear as modified whenever an AI tool
-/// rewrites them. For every managed tool path that git currently tracks, run
-/// `git rm --cached -r` (the file stays on disk) and print a one-line notice
-/// so the user knows a follow-up commit is needed. No-op for paths that are
-/// not tracked.
-fn untrack_gitignored_tool_files(root: &Path) {
-    let mut untracked: Vec<&str> = Vec::new();
-    for (_tool_id, tool_entries) in TOOL_GITIGNORE_ENTRIES {
-        for (path, _comment) in *tool_entries {
-            if git_path_is_tracked(root, path) && git_rm_cached(root, path) {
-                untracked.push(path);
-            }
-        }
-    }
-    if !untracked.is_empty() {
-        dprintln!(
-            "{}",
-            color::warning(&format!(
-                "Untracked {} previously committed AI tool path(s): {}. Commit the removal to finish.",
-                untracked.len(),
-                untracked.join(", ")
-            ))
-        );
-    }
-}
-
-/// True if git currently tracks `path` (a file or a directory with tracked
-/// files) under `root`. Mirrors the lightweight `git`-shell pattern used by
-/// `joy_core::vcs::is_ignored`.
-fn git_path_is_tracked(root: &Path, path: &str) -> bool {
-    let output = std::process::Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(["ls-files", "--error-unmatch", "--", path])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
-    matches!(output, Ok(s) if s.code() == Some(0))
-}
-
-/// `git rm --cached -r -- <path>`: stop tracking `path` while leaving the
-/// working-tree file in place. Returns true on success.
-fn git_rm_cached(root: &Path, path: &str) -> bool {
-    let status = std::process::Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(["rm", "--cached", "-r", "--quiet", "--", path])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
-    match status {
-        Ok(s) if s.success() => true,
-        _ => {
-            eprintln!("Warning: could not untrack {path}");
-            false
-        }
-    }
-}
-
-/// `git rm -r --quiet --ignore-unmatch -- <path>`: remove `path` from both
-/// the index and the working tree in one step. `--ignore-unmatch` makes it a
-/// successful no-op when the path is not tracked, so callers may run it
-/// unconditionally. Returns true on success.
-fn git_rm_hard(root: &Path, path: &str) -> bool {
-    let status = std::process::Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(["rm", "-r", "--quiet", "--ignore-unmatch", "--", path])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
-    matches!(status, Ok(s) if s.success())
-}
-
 /// True if any dead pre-ADR-024 artefact (see
 /// [`joy_core::init::LEGACY_AI_ARTIFACTS`]) still exists on disk under
 /// `root`. Read-only; drives the `joy update --check` row.
@@ -1914,74 +1194,6 @@ pub(crate) fn legacy_ai_artifacts_present(root: &Path) -> bool {
 /// deleted from the working tree and the deletion is staged via `git rm`; a
 /// path that is present but untracked (a local-only leftover) is removed
 /// from disk directly. Idempotent -- returns the relative paths actually
-/// removed, empty when there was nothing to do.
-///
-/// The current runtime dirs `.joy/ai/jobs/` and `.joy/ai/agents/` are not in
-/// the list and are never touched. An `.joy/ai/` left empty afterwards is
-/// pruned; one that still holds jobs/agents is kept.
-pub(crate) fn remove_legacy_ai_artifacts(root: &Path) -> Vec<String> {
-    let mut removed = Vec::new();
-    for rel in joy_core::init::LEGACY_AI_ARTIFACTS {
-        let full = root.join(rel);
-        if git_path_is_tracked(root, rel) && git_rm_hard(root, rel) && !full.exists() {
-            removed.push((*rel).to_string());
-            continue;
-        }
-        // Untracked-but-present (or git rm left it behind): remove directly.
-        if full.exists() {
-            let res = if full.is_dir() {
-                fs::remove_dir_all(&full)
-            } else {
-                fs::remove_file(&full)
-            };
-            match res {
-                Ok(()) => removed.push((*rel).to_string()),
-                Err(e) => eprintln!("Warning: could not remove {rel}: {e}"),
-            }
-        }
-    }
-
-    // Prune an `.joy/ai/` that is now empty (nothing left to preserve).
-    let ai_dir = root.join(".joy/ai");
-    if ai_dir.is_dir()
-        && fs::read_dir(&ai_dir)
-            .map(|mut d| d.next().is_none())
-            .unwrap_or(false)
-    {
-        let _ = fs::remove_dir_all(&ai_dir);
-    }
-
-    removed
-}
-
-/// Read the lines currently inside the joy-managed `.gitignore` block.
-/// Returns an empty vec if `.gitignore` is missing or has no managed block.
-/// Test-only since `update_gitignore` now writes a fixed full set and no
-/// longer needs to inspect the existing block (JOY-01AA-9E).
-#[cfg(test)]
-fn existing_managed_block_entries(root: &Path) -> Vec<String> {
-    use joy_core::init::{GITIGNORE_BLOCK_END, GITIGNORE_BLOCK_START};
-
-    let path = root.join(".gitignore");
-    let Ok(content) = std::fs::read_to_string(&path) else {
-        return Vec::new();
-    };
-    let Some(start) = content.find(GITIGNORE_BLOCK_START) else {
-        return Vec::new();
-    };
-    let after_start = start + GITIGNORE_BLOCK_START.len();
-    let Some(end_offset) = content[after_start..].find(GITIGNORE_BLOCK_END) else {
-        return Vec::new();
-    };
-    let block_body = &content[after_start..after_start + end_offset];
-    block_body
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .map(str::to_string)
-        .collect()
-}
-
 /// Scan subdirectories (max 2 levels) for nested Joy projects that lack AI tool config.
 fn check_nested_projects(root: &Path) -> anyhow::Result<()> {
     let mut unconfigured: Vec<String> = Vec::new();
@@ -2056,21 +1268,6 @@ fn check_nested_at(dir: &Path, root: &Path, tools: &[&str], unconfigured: &mut V
     }
 }
 
-fn is_tool_configured(root: &Path, tool: &str) -> bool {
-    // Joy-only markers: paths that exist only because joy created them.
-    // Generic instruction files (CLAUDE.md, QWEN.md, copilot-instructions.md)
-    // can exist without any joy involvement and must not be detected as
-    // "configured" -- otherwise joy ai init silently skips setup
-    // (JOY-00D1-3C).
-    match tool {
-        "claude" => root.join(".claude/skills/joy/SKILL.md").is_file(),
-        "qwen" => root.join(".qwen/skills/joy/SKILL.md").is_file(),
-        "vibe" => root.join(".vibe/skills/joy/SKILL.md").is_file(),
-        "copilot" => root.join(".github/agents/conceiver.agent.md").is_file(),
-        _ => false,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2086,117 +1283,6 @@ mod tests {
     // caller's own delegation is dropped. The decision must not depend on local
     // config files. `project_id` on a non-existent root fails, so `active_session`
     // is always false in these unit tests (no session on disk).
-
-    fn deleg() -> joy_core::model::project::AiDelegationEntry {
-        joy_core::model::project::AiDelegationEntry {
-            delegation_verifier: "cc".repeat(32),
-            delegation_salt: None,
-            created: chrono::DateTime::parse_from_rfc3339("2026-04-15T10:00:00Z")
-                .unwrap()
-                .with_timezone(&chrono::Utc),
-            rotated: None,
-        }
-    }
-
-    fn project_with(ai: &str, delegators: &[&str]) -> joy_core::model::Project {
-        use joy_core::model::{Member, MemberCapabilities, Project};
-        let mut p = Project::new("Test".to_string(), Some("TS".to_string()));
-        p.register_member(ai, Member::new(MemberCapabilities::All))
-            .unwrap();
-        for d in delegators {
-            let mut m = Member::new(MemberCapabilities::All);
-            m.ai_delegations.insert(ai.to_string(), deleg());
-            p.register_member(d, m).unwrap();
-        }
-        p
-    }
-
-    fn no_root() -> &'static Path {
-        Path::new("/joy-nonexistent-root-for-unit-test")
-    }
-
-    #[test]
-    fn plan_absent_member_is_none() {
-        let p = project_with("ai:claude@joy", &[]);
-        assert!(plan_member_reset(&p, no_root(), "ai:qwen@joy", None).is_none());
-    }
-
-    #[test]
-    fn plan_sole_delegator_removes_member() {
-        let p = project_with("ai:claude@joy", &["op1@example.com"]);
-        let plan =
-            plan_member_reset(&p, no_root(), "ai:claude@joy", Some("op1@example.com")).unwrap();
-        assert!(plan.drop_caller_delegation);
-        assert_eq!(plan.other_delegators, 0);
-        assert!(plan.remove_member);
-        assert!(!plan.active_session);
-    }
-
-    #[test]
-    fn plan_other_delegator_keeps_member() {
-        let p = project_with("ai:claude@joy", &["op1@example.com", "op2@example.com"]);
-        let plan =
-            plan_member_reset(&p, no_root(), "ai:claude@joy", Some("op1@example.com")).unwrap();
-        assert!(plan.drop_caller_delegation);
-        assert_eq!(plan.other_delegators, 1);
-        assert!(!plan.remove_member, "member kept while op2 still delegates");
-    }
-
-    #[test]
-    fn plan_unknown_caller_keeps_delegated_member() {
-        let p = project_with("ai:claude@joy", &["op1@example.com"]);
-        let plan = plan_member_reset(&p, no_root(), "ai:claude@joy", None).unwrap();
-        assert!(!plan.drop_caller_delegation);
-        assert_eq!(plan.other_delegators, 1);
-        assert!(!plan.remove_member);
-    }
-
-    #[test]
-    fn plan_orphan_member_removed_even_with_unknown_caller() {
-        // Member present but delegated by nobody (e.g. the delegation was
-        // already removed): orphaned and removable, but only via the confirmed
-        // path in reset(), never silently.
-        let p = project_with("ai:claude@joy", &[]);
-        let plan = plan_member_reset(&p, no_root(), "ai:claude@joy", None).unwrap();
-        assert!(!plan.drop_caller_delegation);
-        assert_eq!(plan.other_delegators, 0);
-        assert!(plan.remove_member);
-    }
-
-    #[test]
-    fn ensure_vibe_bash_always_creates_new_file() {
-        let tmp = tempfile::tempdir().unwrap();
-        let path = tmp.path().join("config.toml");
-        let changed = ensure_vibe_bash_always(tmp.path(), &path).unwrap();
-        assert!(changed);
-        let content = std::fs::read_to_string(&path).unwrap();
-        assert!(content.contains("[tools.bash]"));
-        assert!(content.contains("permission = \"always\""));
-    }
-
-    #[test]
-    fn ensure_vibe_bash_always_adds_to_existing_unrelated_config() {
-        let tmp = tempfile::tempdir().unwrap();
-        let path = tmp.path().join("config.toml");
-        std::fs::write(&path, "[models]\ndefault = \"mistral-large\"\n").unwrap();
-        let changed = ensure_vibe_bash_always(tmp.path(), &path).unwrap();
-        assert!(changed);
-        let content = std::fs::read_to_string(&path).unwrap();
-        assert!(content.contains("default = \"mistral-large\""));
-        assert!(content.contains("permission = \"always\""));
-    }
-
-    #[test]
-    fn ensure_vibe_bash_always_preserves_user_override() {
-        let tmp = tempfile::tempdir().unwrap();
-        let path = tmp.path().join("config.toml");
-        std::fs::write(&path, "[tools.bash]\npermission = \"ask\"\n").unwrap();
-        let changed = ensure_vibe_bash_always(tmp.path(), &path).unwrap();
-        assert!(!changed);
-        let content = std::fs::read_to_string(&path).unwrap();
-        assert!(content.contains("permission = \"ask\""));
-        assert!(!content.contains("\"always\""));
-    }
 
     #[test]
     fn flag_overrides_configured_and_scan() {
@@ -2311,212 +1397,10 @@ mod tests {
 
     /// Helper: write a `.gitignore` file with a joy-managed block
     /// containing the given path lines.
-    fn seed_gitignore(root: &Path, managed_paths: &[&str]) {
-        use joy_core::init::{GITIGNORE_BLOCK_END, GITIGNORE_BLOCK_START};
-        let mut body = String::from(GITIGNORE_BLOCK_START);
-        body.push('\n');
-        for p in managed_paths {
-            body.push_str(p);
-            body.push('\n');
-        }
-        body.push_str(GITIGNORE_BLOCK_END);
-        body.push('\n');
-        fs::write(root.join(".gitignore"), body).unwrap();
-    }
 
     /// Read the joy-managed block lines from the given `.gitignore` file.
-    fn read_block_lines(root: &Path) -> Vec<String> {
-        existing_managed_block_entries(root)
-    }
 
     /// Every known tool entry from TOOL_GITIGNORE_ENTRIES, flattened.
-    fn all_tool_paths() -> Vec<&'static str> {
-        TOOL_GITIGNORE_ENTRIES
-            .iter()
-            .flat_map(|(_, entries)| entries.iter().map(|(p, _)| *p))
-            .collect()
-    }
-
-    #[test]
-    fn update_gitignore_writes_full_set_regardless_of_configured_tools() {
-        // Even with only Claude configured (or none), the block must contain
-        // the full fixed set for all known tools, so machines never drift
-        // (JOY-01AA-9E).
-        let tmp = tempfile::tempdir().unwrap();
-        update_gitignore(tmp.path(), &["claude"]).unwrap();
-
-        let lines = read_block_lines(tmp.path());
-        assert!(lines.iter().any(|l| l == ".joy/credentials.yaml"));
-        for path in all_tool_paths() {
-            assert!(
-                lines.iter().any(|l| l == path),
-                "managed block must contain {path}"
-            );
-        }
-    }
-
-    #[test]
-    fn update_gitignore_full_set_even_with_no_tools_configured() {
-        let tmp = tempfile::tempdir().unwrap();
-        update_gitignore(tmp.path(), &[]).unwrap();
-
-        let lines = read_block_lines(tmp.path());
-        for path in all_tool_paths() {
-            assert!(
-                lines.iter().any(|l| l == path),
-                "managed block must contain {path} even with no tools configured"
-            );
-        }
-    }
-
-    #[test]
-    fn update_gitignore_is_idempotent() {
-        // The per-invocation auto-sync must not churn the file: writing the
-        // block twice yields byte-identical content (JOY-01AA-9E).
-        let tmp = tempfile::tempdir().unwrap();
-        update_gitignore(tmp.path(), &["claude"]).unwrap();
-        let first = fs::read_to_string(tmp.path().join(".gitignore")).unwrap();
-        update_gitignore(tmp.path(), &["claude"]).unwrap();
-        let second = fs::read_to_string(tmp.path().join(".gitignore")).unwrap();
-        assert_eq!(first, second, "repeated sync must not change .gitignore");
-    }
-
-    #[test]
-    fn update_gitignore_does_not_resurrect_unrelated_lines() {
-        // Foreign lines inside the block are not preserved across a rewrite;
-        // Joy only manages its own known entries.
-        let tmp = tempfile::tempdir().unwrap();
-        seed_gitignore(
-            tmp.path(),
-            &[".joy/config.yaml", ".claude/", "user-injected-line.txt"],
-        );
-
-        update_gitignore(tmp.path(), &["claude"]).unwrap();
-
-        let lines = read_block_lines(tmp.path());
-        assert!(lines.iter().any(|l| l == ".claude/"));
-        assert!(!lines.iter().any(|l| l == "user-injected-line.txt"));
-    }
-
-    #[test]
-    fn untrack_gitignored_tool_files_untracks_committed_paths() {
-        // A repo where AGENTS.md was committed before the ignore entry: after
-        // untracking it is no longer tracked but stays on disk (JOY-019E-3A).
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        let git = |args: &[&str]| {
-            std::process::Command::new("git")
-                .arg("-C")
-                .arg(root)
-                .args(args)
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status()
-                .unwrap()
-        };
-        git(&["init", "-q"]);
-        git(&["config", "user.email", "t@example.com"]);
-        git(&["config", "user.name", "t"]);
-        fs::write(root.join("AGENTS.md"), "committed").unwrap();
-        fs::create_dir_all(root.join(".vibe")).unwrap();
-        fs::write(root.join(".vibe/config.toml"), "x").unwrap();
-        git(&["add", "AGENTS.md", ".vibe/config.toml"]);
-        git(&["commit", "-q", "-m", "seed"]);
-        assert!(git_path_is_tracked(root, "AGENTS.md"));
-        assert!(git_path_is_tracked(root, ".vibe/"));
-
-        untrack_gitignored_tool_files(root);
-
-        assert!(!git_path_is_tracked(root, "AGENTS.md"));
-        assert!(!git_path_is_tracked(root, ".vibe/"));
-        // Files remain on disk.
-        assert!(root.join("AGENTS.md").is_file());
-        assert!(root.join(".vibe/config.toml").is_file());
-    }
-
-    #[test]
-    fn untrack_gitignored_tool_files_is_noop_when_nothing_tracked() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        std::process::Command::new("git")
-            .arg("-C")
-            .arg(root)
-            .args(["init", "-q"])
-            .status()
-            .unwrap();
-        // No tool files tracked: must not panic or error.
-        untrack_gitignored_tool_files(root);
-        assert!(!git_path_is_tracked(root, "AGENTS.md"));
-    }
-
-    #[test]
-    fn remove_legacy_ai_artifacts_removes_committed_and_preserves_runtime() {
-        // Pre-ADR-024 layout committed into a repo: the legacy files are
-        // removed from disk and the deletion is staged, while the current
-        // runtime dirs .joy/ai/jobs and .joy/ai/agents survive.
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        let git = |args: &[&str]| {
-            std::process::Command::new("git")
-                .arg("-C")
-                .arg(root)
-                .args(args)
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status()
-                .unwrap()
-        };
-        git(&["init", "-q"]);
-        git(&["config", "user.email", "t@example.com"]);
-        git(&["config", "user.name", "t"]);
-
-        // Legacy artefacts.
-        fs::create_dir_all(root.join(".joy/ai/instructions")).unwrap();
-        fs::create_dir_all(root.join(".joy/ai/skills/joy")).unwrap();
-        fs::create_dir_all(root.join(".joy/capabilities")).unwrap();
-        fs::write(root.join(".joy/ai/instructions.md"), "old").unwrap();
-        fs::write(root.join(".joy/ai/instructions/setup.md"), "old").unwrap();
-        fs::write(root.join(".joy/ai/skills/joy/SKILL.md"), "old").unwrap();
-        fs::write(root.join(".joy/capabilities/plan.md"), "old").unwrap();
-        // Current runtime data that must be preserved.
-        fs::create_dir_all(root.join(".joy/ai/jobs")).unwrap();
-        fs::create_dir_all(root.join(".joy/ai/agents")).unwrap();
-        fs::write(root.join(".joy/ai/jobs/j.yaml"), "id: 1").unwrap();
-        fs::write(root.join(".joy/ai/agents/a.yaml"), "id: 2").unwrap();
-        git(&["add", "-A"]);
-        git(&["commit", "-q", "-m", "seed"]);
-
-        let removed = remove_legacy_ai_artifacts(root);
-
-        assert_eq!(removed.len(), joy_core::init::LEGACY_AI_ARTIFACTS.len());
-        // Legacy gone from disk and no longer tracked.
-        assert!(!root.join(".joy/ai/instructions.md").exists());
-        assert!(!root.join(".joy/ai/instructions").exists());
-        assert!(!root.join(".joy/ai/skills").exists());
-        assert!(!root.join(".joy/capabilities").exists());
-        assert!(!git_path_is_tracked(root, ".joy/capabilities/"));
-        // Runtime data preserved.
-        assert!(root.join(".joy/ai/jobs/j.yaml").is_file());
-        assert!(root.join(".joy/ai/agents/a.yaml").is_file());
-        assert!(root.join(".joy/ai").is_dir());
-
-        // Idempotent: a second pass finds nothing.
-        assert!(remove_legacy_ai_artifacts(root).is_empty());
-    }
-
-    #[test]
-    fn remove_legacy_ai_artifacts_prunes_empty_ai_dir() {
-        // When no jobs/agents remain, an emptied .joy/ai/ is pruned too.
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        fs::create_dir_all(root.join(".joy/ai/skills/joy")).unwrap();
-        fs::write(root.join(".joy/ai/skills/joy/SKILL.md"), "old").unwrap();
-
-        let removed = remove_legacy_ai_artifacts(root);
-
-        assert!(removed.contains(&".joy/ai/skills".to_string()));
-        assert!(!root.join(".joy/ai").exists());
-    }
 
     #[test]
     fn legacy_ai_artifacts_present_reflects_disk_state() {
@@ -2529,82 +1413,9 @@ mod tests {
     }
 
     #[test]
-    fn existing_managed_block_entries_returns_empty_when_no_block() {
-        let tmp = tempfile::tempdir().unwrap();
-        fs::write(tmp.path().join(".gitignore"), "*.log\nnode_modules/\n").unwrap();
-        assert!(existing_managed_block_entries(tmp.path()).is_empty());
-    }
-
     #[test]
-    fn existing_managed_block_entries_returns_empty_when_no_gitignore() {
-        let tmp = tempfile::tempdir().unwrap();
-        assert!(existing_managed_block_entries(tmp.path()).is_empty());
-    }
-
     #[test]
-    fn update_with_joy_block_creates_agents_md() {
-        let tmp = tempfile::tempdir().unwrap();
-        let path = tmp.path().join("AGENTS.md");
-        let changed = update_with_joy_block(tmp.path(), &path, "hello world").unwrap();
-        assert!(changed);
-        let content = fs::read_to_string(&path).unwrap();
-        assert!(content.starts_with(JOY_BLOCK_START));
-        assert!(content.contains("hello world"));
-        assert!(content.contains(JOY_BLOCK_END));
-    }
-
     #[test]
-    fn update_with_joy_block_preserves_user_content_above_and_below() {
-        let tmp = tempfile::tempdir().unwrap();
-        let path = tmp.path().join("AGENTS.md");
-        fs::write(
-            &path,
-            format!(
-                "user header\n\n{}\nold\n{}\n\nuser footer\n",
-                JOY_BLOCK_START, JOY_BLOCK_END
-            ),
-        )
-        .unwrap();
-        update_with_joy_block(tmp.path(), &path, "new content").unwrap();
-        let content = fs::read_to_string(&path).unwrap();
-        assert!(content.starts_with("user header"));
-        assert!(content.contains("new content"));
-        assert!(!content.contains("old"));
-        assert!(content.trim_end().ends_with("user footer"));
-    }
-
-    #[test]
-    fn remove_joy_block_deletes_file_when_only_block() {
-        let tmp = tempfile::tempdir().unwrap();
-        let path = tmp.path().join("AGENTS.md");
-        fs::write(
-            &path,
-            format!("{}\nmanaged\n{}\n", JOY_BLOCK_START, JOY_BLOCK_END),
-        )
-        .unwrap();
-        remove_joy_block_or_file(&path).unwrap();
-        assert!(!path.exists());
-    }
-
-    #[test]
-    fn remove_joy_block_preserves_user_content() {
-        let tmp = tempfile::tempdir().unwrap();
-        let path = tmp.path().join("AGENTS.md");
-        fs::write(
-            &path,
-            format!(
-                "user rule\n\n{}\nmanaged\n{}\n",
-                JOY_BLOCK_START, JOY_BLOCK_END
-            ),
-        )
-        .unwrap();
-        remove_joy_block_or_file(&path).unwrap();
-        let content = fs::read_to_string(&path).unwrap();
-        assert!(content.contains("user rule"));
-        assert!(!content.contains("managed"));
-        assert!(!content.contains(JOY_BLOCK_START));
-    }
-
     #[test]
     fn remove_joy_block_leaves_unmanaged_file_untouched() {
         let tmp = tempfile::tempdir().unwrap();
@@ -2614,45 +1425,4 @@ mod tests {
         let content = fs::read_to_string(&path).unwrap();
         assert_eq!(content, "pure user content\n");
     }
-}
-
-/// Set up ONE tool non-interactively (the desktop settings toggle and
-/// scripts): the `joy ai init --tool <id> --passphrase ...` equivalent.
-pub fn init_single_tool(root: &Path, tool: &str, passphrase: &str) -> anyhow::Result<()> {
-    let previous = std::env::current_dir().ok();
-    std::env::set_current_dir(root)?;
-    set_non_interactive(true);
-    let result = ai_init(InitArgs {
-        tool: Some(tool.to_string()),
-        passphrase: Some(passphrase.to_string()),
-        ..InitArgs::default()
-    });
-    set_non_interactive(false);
-    if let Some(dir) = previous {
-        let _ = std::env::set_current_dir(dir);
-    }
-    result
-}
-
-/// Reset ONE tool non-interactively (the desktop settings toggle): the
-/// `joy ai reset --tool <id> --force` equivalent.
-pub fn reset_single_tool(root: &Path, tool: &str) -> anyhow::Result<()> {
-    let previous = std::env::current_dir().ok();
-    std::env::set_current_dir(root)?;
-    set_non_interactive(true);
-    let result = reset(ResetArgs {
-        tool: Some(tool.to_string()),
-        force: true,
-    });
-    set_non_interactive(false);
-    if let Some(dir) = previous {
-        let _ = std::env::set_current_dir(dir);
-    }
-    result
-}
-
-/// Whether a tool is set up in this project (files + member), the truth
-/// behind the settings checkbox.
-pub fn tool_is_configured(root: &Path, tool: &str) -> bool {
-    is_tool_configured(root, tool)
 }
