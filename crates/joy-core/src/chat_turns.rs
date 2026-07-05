@@ -191,6 +191,9 @@ mod tests {
             .into_iter()
             .map(|(author, text, kind)| ChatMessage {
                 id: uuid::Uuid::now_v7().to_string(),
+                delegated_by: None,
+                turn_ms: None,
+                tool_steps: None,
                 at: now,
                 author: MemberRef::new(author),
                 text: text.into(),
@@ -332,6 +335,9 @@ mod tests {
         assert!(!moderation_already_posted(&chat));
         chat.messages.push(ChatMessage {
             id: uuid::Uuid::now_v7().to_string(),
+            delegated_by: None,
+            turn_ms: None,
+            tool_steps: None,
             at: chat.updated,
             author: MemberRef::new("ai:claude@joy"),
             text: MODERATION_NOTICE.into(),

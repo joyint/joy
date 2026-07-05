@@ -57,6 +57,16 @@ pub struct ChatMessage {
     pub text: String,
     #[serde(default, skip_serializing_if = "is_default_kind")]
     pub kind: MessageKind,
+    /// AI replies: the human whose delegation this turn ran under —
+    /// PERSISTED so the attribution survives reloads (operator rule).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delegated_by: Option<String>,
+    /// AI replies: wall time of the turn in milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_ms: Option<u32>,
+    /// AI replies: number of tool steps the turn took.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_steps: Option<u32>,
 }
 
 impl ChatMessage {

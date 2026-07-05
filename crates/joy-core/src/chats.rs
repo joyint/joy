@@ -147,11 +147,43 @@ pub fn append_kind_with_id(
         author,
         text: text.into(),
         kind,
+        delegated_by: None,
+        turn_ms: None,
+        tool_steps: None,
     };
     chat.messages.push(message.clone());
     chat.updated = now;
     save_chat(root, chat)?;
     Ok(message)
+}
+
+/// Persist an AI turn's reply WITH its attribution and cost metadata
+/// (delegated-by, wall time, tool steps): the info icon must survive a
+/// reload like everything else in the chat (ADR JAPP-00C9).
+#[allow(clippy::too_many_arguments)]
+pub fn append_ai_reply(
+    root: &Path,
+    chat: &mut Chat,
+    author: MemberRef,
+    text: impl Into<String>,
+    now: DateTime<Utc>,
+    id: Option<String>,
+    delegated_by: Option<String>,
+    turn_ms: Option<u32>,
+    tool_steps: Option<u32>,
+) -> Result<ChatMessage, JoyError> {
+    let message = append_kind_with_id(root, chat, author, text, MessageKind::Text, now, id)?;
+    let stored = chat
+        .messages
+        .iter_mut()
+        .find(|m| m.id == message.id)
+        .expect("just appended");
+    stored.delegated_by = delegated_by;
+    stored.turn_ms = turn_ms;
+    stored.tool_steps = tool_steps;
+    let enriched = stored.clone();
+    save_chat(root, chat)?;
+    Ok(enriched)
 }
 
 /// Every load path funnels through here: pre-channel messages get their
