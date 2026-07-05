@@ -500,3 +500,28 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod delete_marks_tests {
+    use super::*;
+
+    #[test]
+    fn deleted_for_marks_survive_a_conflicting_merge() {
+        // the operator's fear (2026-07-05): a merge must never resurrect a
+        // chat by dropping delete-for-me marks — even when BOTH sides
+        // changed the file and the tiebreaker points at the other side
+        let base = "id: c\ntitle: T\nupdated: 2026-07-05T10:00:00Z\nparticipants: []\nmessages: []\n";
+        let ours = "id: c\ntitle: T\nupdated: 2026-07-05T10:00:01Z\ndeleted_for:\n- horst@example.com\nparticipants: []\nmessages: []\n";
+        let theirs = "id: c\ntitle: T\nupdated: 2026-07-05T11:00:00Z\nparticipants: []\nmessages:\n- id: m9\n  at: 2026-07-05T11:00:00Z\n  author: geordi@example.org\n  text: newer over there\n";
+        let merged = merge_yaml_doc(base, ours, theirs).unwrap();
+        assert!(merged.contains("horst@example.com"), "mark lost: {merged}");
+        assert!(merged.contains("newer over there"), "message lost: {merged}");
+
+        // and both sides' marks union when both deleted for themselves
+        let ours2 = "id: c\ntitle: T\nupdated: 2026-07-05T10:00:01Z\ndeleted_for:\n- horst@example.com\nparticipants: []\nmessages: []\n";
+        let theirs2 = "id: c\ntitle: T\nupdated: 2026-07-05T10:00:02Z\ndeleted_for:\n- geordi@example.org\nparticipants: []\nmessages: []\n";
+        let merged2 = merge_yaml_doc(base, ours2, theirs2).unwrap();
+        assert!(merged2.contains("horst@example.com"), "ours mark lost: {merged2}");
+        assert!(merged2.contains("geordi@example.org"), "theirs mark lost: {merged2}");
+    }
+}
