@@ -45,11 +45,13 @@ YAML
     [[ "$output" == *"moin team"* ]]
 
     # general cannot be left, but IS deletable since 2026-07 (operator):
-    # for-all freezes it read-only
+    # for-all freezes it AND marks the deleter; as the only human that
+    # completes the set, the file is collected, and a FRESH empty General
+    # takes its place (ensure_general)
     run joy chat leave general
     [ "$status" -ne 0 ]
     run joy chat delete general --for-all
     [ "$status" -eq 0 ]
-    run joy chat send general "after freeze"
-    [ "$status" -ne 0 ]
+    run joy chat show general
+    [[ "$output" != *"moin team"* ]]
 }

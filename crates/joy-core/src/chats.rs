@@ -390,7 +390,6 @@ pub fn delete_for_all(
     by: &MemberRef,
     now: DateTime<Utc>,
 ) -> Result<(), JoyError> {
-    chat.read_only = true;
     append_notice(
         root,
         chat,
@@ -398,6 +397,16 @@ pub fn delete_for_all(
         format!("@{} deleted this chat", by.id()),
         now,
     )?;
+    chat.read_only = true;
+    // the deleter never sees the chat again (operator rule): deleting for
+    // everyone deletes for me too; the OTHERS keep it read-only until
+    // each removed it for themselves
+    if !chat.deleted_for.iter().any(|m| m.id() == by.id()) {
+        chat.deleted_for.push(by.clone());
+    }
+    chat.updated = now;
+    save_chat(root, chat)?;
+    collect_if_everyone_deleted(root, chat);
     Ok(())
 }
 
@@ -410,24 +419,49 @@ pub fn delete_for_me(
     now: DateTime<Utc>,
 ) -> Result<(), JoyError> {
     if !chat.deleted_for.iter().any(|m| m.id() == member.id()) {
+        // the others learn about it, like "deleted this chat" for
+        // everyone-deletes (operator rule); frozen chats take no writes
+        if !chat.read_only {
+            append_notice(
+                root,
+                chat,
+                member.clone(),
+                format!("@{} left this chat", member.id()),
+                now,
+            )?;
+        }
         chat.deleted_for.push(member.clone());
         chat.updated = now;
         save_chat(root, chat)?;
     }
-    // AI members never "delete" a chat; garbage collection waits for the
-    // humans only.
-    let everyone_done = chat
-        .participants
+    collect_if_everyone_deleted(root, chat);
+    Ok(())
+}
+
+/// Garbage collection: once every HUMAN of the chat's EFFECTIVE
+/// membership deleted it for themselves, the file leaves the repo. The
+/// effective view matters — a team chat's empty participant list means
+/// the whole project (the raw list made all() vacuously true and the
+/// FIRST delete-for-me removed the file for everyone). An unreadable
+/// project only skips the check (conservative: the file stays).
+fn collect_if_everyone_deleted(root: &Path, chat: &Chat) {
+    let Ok(members) = effective_participants(root, chat) else {
+        return;
+    };
+    let humans: Vec<_> = members
         .iter()
         .filter(|p| !p.id().starts_with("ai:"))
-        .all(|p| chat.deleted_for.iter().any(|m| m.id() == p.id()));
+        .collect();
+    let everyone_done = !humans.is_empty()
+        && humans
+            .iter()
+            .all(|p| chat.deleted_for.iter().any(|m| m.id() == p.id()));
     if everyone_done {
         let path = chats_dir(root).join(format!("{}.yaml", chat.id));
         let _ = std::fs::remove_file(&path);
         let rel = format!("{}/{}/{}.yaml", store::JOY_DIR, CHATS_DIR, chat.id);
         crate::git_ops::auto_git_add(root, &[&rel]);
     }
-    Ok(())
 }
 
 /// Record the ACP session id of an AI participant and persist.
@@ -529,6 +563,59 @@ mod tests {
         };
         assert!(visible_to(&direct, &horst));
         assert!(!visible_to(&direct, &geordi));
+    }
+
+    #[test]
+    fn delete_semantics_deleter_vanishes_others_keep_read_only() {
+        let dir = tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".joy")).unwrap();
+        let mut project = crate::model::Project::new("T".to_string(), Some("T".to_string()));
+        for member in ["horst@example.com", "geordi@example.org", "ai:claude@joy"] {
+            project
+                .register_member(
+                    member,
+                    crate::model::project::Member::new(
+                        crate::model::project::MemberCapabilities::All,
+                    ),
+                )
+                .unwrap();
+        }
+        crate::store::write_yaml(
+            &crate::store::joy_dir(dir.path()).join(crate::store::PROJECT_FILE),
+            &project,
+        )
+        .unwrap();
+        let horst = MemberRef::new("horst@example.com");
+        let geordi = MemberRef::new("geordi@example.org");
+
+        // a TEAM chat (empty list = everyone)
+        let mut team = open_chat(dir.path(), Vec::new(), Some("Warp".into()), ts(0)).unwrap();
+
+        // delete for me posts the "left" notice and hides only me
+        delete_for_me(dir.path(), &mut team, &geordi, ts(1)).unwrap();
+        assert!(team
+            .messages
+            .iter()
+            .any(|m| m.text.contains("left this chat")));
+        assert!(!visible_to(&team, &geordi));
+        assert!(visible_to(&team, &horst));
+        // the file survives: horst has not deleted yet (the raw empty
+        // participant list once made the FIRST delete remove the file)
+        assert!(load_chat(dir.path(), &team.id).unwrap().is_some());
+
+        // delete for everyone: freezes AND vanishes for the deleter
+        delete_for_all(dir.path(), &mut team, &horst, ts(2)).unwrap();
+        assert!(team.read_only);
+        assert!(!visible_to(&team, &horst));
+        assert!(team
+            .messages
+            .iter()
+            .any(|m| m.text.contains("deleted this chat")));
+
+        // geordi already deleted for himself; horst is marked by the
+        // for-all: every human done -> the file is gone
+        delete_for_me(dir.path(), &mut team, &horst, ts(3)).unwrap();
+        assert!(load_chat(dir.path(), &team.id).unwrap().is_none());
     }
 
     #[test]
