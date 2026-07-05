@@ -1066,6 +1066,7 @@ pub fn apply_reset(root: &Path, plan: &ResetPlan, report: Report) -> Result<usiz
 mod setup_tests {
     use super::*;
 
+    #[test]
     fn existing_managed_block_entries_returns_empty_when_no_gitignore() {
         let tmp = tempfile::tempdir().unwrap();
         assert!(existing_managed_block_entries(tmp.path()).is_empty());
@@ -1084,6 +1085,7 @@ mod setup_tests {
         fs::write(root.join(".gitignore"), body).unwrap();
     }
 
+    #[test]
     fn remove_joy_block_preserves_user_content() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("AGENTS.md");
@@ -1109,12 +1111,14 @@ mod setup_tests {
             .collect()
     }
 
+    #[test]
     fn existing_managed_block_entries_returns_empty_when_no_block() {
         let tmp = tempfile::tempdir().unwrap();
         fs::write(tmp.path().join(".gitignore"), "*.log\nnode_modules/\n").unwrap();
         assert!(existing_managed_block_entries(tmp.path()).is_empty());
     }
 
+    #[test]
     fn remove_joy_block_deletes_file_when_only_block() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("AGENTS.md");
