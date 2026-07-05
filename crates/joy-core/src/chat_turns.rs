@@ -105,11 +105,15 @@ pub fn add_mentioned_ais(
     newest: &ChatMessage,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Result<bool, crate::error::JoyError> {
-    if chat.kind == crate::model::chat::ChatKind::General
+    if matches!(
+        chat.kind,
+        crate::model::chat::ChatKind::General | crate::model::chat::ChatKind::Team
+    ) && chat.participants.is_empty()
         || chat.read_only
         || newest.kind == MessageKind::Notice
         || is_ai(newest.author.id())
     {
+        // empty team/General lists mean "everyone is already here"
         return Ok(false);
     }
     let project = crate::store::load_project(root)?;

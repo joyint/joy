@@ -219,13 +219,15 @@ pub fn ensure_general(root: &Path, now: DateTime<Utc>) -> Result<Chat, JoyError>
     Ok(chat)
 }
 
-/// The chat's effective participants: General carries an empty list that
-/// means "every project member" — resolve it for display and turn logic.
+/// The chat's effective participants: General AND team chats carry an
+/// empty list that means "every project member" (a team chat belongs to
+/// the team — new members see it automatically) — resolve it for
+/// display and turn logic. Direct chats list their members explicitly.
 pub fn effective_participants(
     root: &Path,
     chat: &Chat,
 ) -> Result<Vec<crate::member_ref::MemberRef>, JoyError> {
-    if chat.kind == ChatKind::General && chat.participants.is_empty() {
+    if matches!(chat.kind, ChatKind::General | ChatKind::Team) && chat.participants.is_empty() {
         let project = crate::store::load_project(root)?;
         return Ok(project
             .members()
@@ -233,6 +235,69 @@ pub fn effective_participants(
             .collect());
     }
     Ok(chat.participants.clone())
+}
+
+/// Whether a member sees this chat in their list: team and General
+/// chats are visible to EVERY project member (the team owns them);
+/// direct chats only to their participants. Deleting for yourself hides
+/// any chat until an @mention pulls you back (see
+/// [`readd_mentioned_humans`]).
+pub fn visible_to(chat: &Chat, member: &crate::member_ref::MemberRef) -> bool {
+    if chat.deleted_for.iter().any(|m| m.id() == member.id()) {
+        return false;
+    }
+    match chat.kind {
+        ChatKind::General | ChatKind::Team => true,
+        ChatKind::Direct => chat.participants.iter().any(|p| p.id() == member.id()),
+    }
+}
+
+/// An @mention pulls a human back: it clears their delete-for-me mark
+/// (team chats) and re-adds them to a direct chat's participants. AI
+/// mentions are handled by [`crate::chat_turns::add_mentioned_ais`].
+pub fn readd_mentioned_humans(
+    root: &Path,
+    chat: &mut Chat,
+    text: &str,
+    by: &crate::member_ref::MemberRef,
+    now: DateTime<Utc>,
+) -> Result<bool, JoyError> {
+    if chat.read_only {
+        return Ok(false);
+    }
+    let project = crate::store::load_project(root)?;
+    let humans: Vec<String> = project
+        .members()
+        .map(|(key, _)| key.clone())
+        .filter(|key| !key.starts_with("ai:"))
+        .collect();
+    let mentioned: Vec<String> = crate::chat_turns::mentions(text, &humans)
+        .into_iter()
+        .cloned()
+        .collect();
+    let mut changed = false;
+    for member in mentioned {
+        let before = chat.deleted_for.len();
+        chat.deleted_for.retain(|m| m.id() != member);
+        if chat.deleted_for.len() != before {
+            changed = true;
+        }
+        if chat.kind == ChatKind::Direct && !chat.participants.iter().any(|p| p.id() == member) {
+            add_participant(
+                root,
+                chat,
+                crate::member_ref::MemberRef::new(member),
+                by,
+                now,
+            )?;
+            changed = true;
+        }
+    }
+    if changed {
+        chat.updated = now;
+        save_chat(root, chat)?;
+    }
+    Ok(changed)
 }
 
 fn guard_not_general(chat: &Chat, action: &str) -> Result<(), JoyError> {
@@ -441,6 +506,66 @@ mod tests {
         assert!(g.deleted_for.iter().any(|m| m.id() == horst.id()));
         delete_for_all(dir.path(), &mut g, &horst, ts(3)).unwrap();
         assert!(g.read_only);
+    }
+
+    #[test]
+    fn team_chats_are_visible_to_everyone_until_self_deleted() {
+        let dir = tempdir().unwrap();
+        let horst = MemberRef::new("horst@example.com");
+        let geordi = MemberRef::new("geordi@example.org");
+        // a team chat: empty participants = the whole team, dynamically
+        let mut team = open_chat(dir.path(), Vec::new(), Some("Warp".into()), ts(0)).unwrap();
+        assert!(visible_to(&team, &horst));
+        assert!(visible_to(&team, &geordi));
+        delete_for_me(dir.path(), &mut team, &geordi, ts(1)).unwrap();
+        assert!(visible_to(&team, &horst));
+        assert!(!visible_to(&team, &geordi));
+        // a direct chat is participants-only
+        let direct = {
+            let mut c = open_chat(dir.path(), vec![horst.clone()], None, ts(2)).unwrap();
+            c.kind = ChatKind::Direct;
+            save_chat(dir.path(), &c).unwrap();
+            c
+        };
+        assert!(visible_to(&direct, &horst));
+        assert!(!visible_to(&direct, &geordi));
+    }
+
+    #[test]
+    fn mention_pulls_a_self_deleted_human_back() {
+        let dir = tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".joy")).unwrap();
+        let mut project = crate::model::Project::new("T".to_string(), Some("T".to_string()));
+        for member in ["horst@example.com", "geordi@example.org"] {
+            project
+                .register_member(
+                    member,
+                    crate::model::project::Member::new(
+                        crate::model::project::MemberCapabilities::All,
+                    ),
+                )
+                .unwrap();
+        }
+        crate::store::write_yaml(
+            &crate::store::joy_dir(dir.path()).join(crate::store::PROJECT_FILE),
+            &project,
+        )
+        .unwrap();
+        let horst = MemberRef::new("horst@example.com");
+        let geordi = MemberRef::new("geordi@example.org");
+        let mut team = open_chat(dir.path(), Vec::new(), Some("Warp".into()), ts(0)).unwrap();
+        delete_for_me(dir.path(), &mut team, &geordi, ts(1)).unwrap();
+        assert!(!visible_to(&team, &geordi));
+        let changed = readd_mentioned_humans(
+            dir.path(),
+            &mut team,
+            "@geordi@example.org schau mal",
+            &horst,
+            ts(2),
+        )
+        .unwrap();
+        assert!(changed);
+        assert!(visible_to(&team, &geordi));
     }
 
     #[test]
