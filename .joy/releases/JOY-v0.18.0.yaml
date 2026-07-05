@@ -1,0 +1,48 @@
+version: v0.18.0
+date: 2026-07-05
+previous: v0.17.0
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 62
+  items: 18
+items:
+  epics:
+  - id: JOY-01E9-94
+    title: Git-native AI jobs and agents in joy-core
+  - id: JOY-01F0-12
+    title: Git-native persistent chats in joy-core (.joy/chats)
+  - id: JOY-01F4-A9
+    title: 'Chats v2: team semantics in the git-native model'
+  - id: JOY-01F9-9E
+    title: AI members participate in chats (turn rules in joy-core)
+  stories:
+  - id: JOY-01E8-4D
+    title: 'joy-bi: the reference plugin (milestone and velocity)'
+  - id: JOY-01EB-28
+    title: Job record model in joy-core (.joy/ai/jobs)
+  - id: JOY-01EC-E2
+    title: Agent config model in joy-core (.joy/ai/agents)
+  - id: JOY-01ED-32
+    title: joy CLI commands for jobs and agents
+  - id: JOY-01EE-62
+    title: 'Audit integration: job actions to .joy/logs'
+  - id: JOY-01F2-5C
+    title: Chat model + read/write/append in joy-core
+  - id: JOY-01F3-99
+    title: 'joy CLI: chat list/show'
+  - id: JOY-01F6-38
+    title: Schema v2 + lifecycle APIs in joy-core
+  - id: JOY-01F7-D0
+    title: 'CLI: joy chat send/add/leave/delete/rename'
+  - id: JOY-01FA-C6
+    title: 'chat_turns module: mentions, chain guard, context prompt'
+  tasks:
+  - id: JOY-01EF-D9
+    title: Schema ADR and docs for .joy/ai/jobs and .joy/ai/agents
+  decisions:
+  - id: JOY-01EA-2C
+    title: 'ADR: git-native AI job and agent data model'
+  - id: JOY-01F1-B0
+    title: 'ADR: chat record schema and persistence cadence'
+  - id: JOY-01F5-78
+    title: 'ADR: shared vs personal chat state split'
