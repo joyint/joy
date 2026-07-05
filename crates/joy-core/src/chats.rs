@@ -325,7 +325,6 @@ pub fn delete_for_all(
     by: &MemberRef,
     now: DateTime<Utc>,
 ) -> Result<(), JoyError> {
-    guard_not_general(chat, "deleted")?;
     chat.read_only = true;
     append_notice(
         root,
@@ -345,7 +344,6 @@ pub fn delete_for_me(
     member: &MemberRef,
     now: DateTime<Utc>,
 ) -> Result<(), JoyError> {
-    guard_not_general(chat, "deleted")?;
     if !chat.deleted_for.iter().any(|m| m.id() == member.id()) {
         chat.deleted_for.push(member.clone());
         chat.updated = now;
@@ -437,7 +435,12 @@ mod tests {
         let horst = MemberRef::new("horst@example.com");
         assert!(leave(dir.path(), &mut g, &horst, ts(2)).is_err());
         assert!(rename(dir.path(), &mut g, "X", ts(2)).is_err());
-        assert!(delete_for_all(dir.path(), &mut g, &horst, ts(2)).is_err());
+        // deleting IS allowed since 2026-07 (operator): for-me hides it per
+        // member, for-all freezes it; ensure_general recreates only after GC
+        delete_for_me(dir.path(), &mut g, &horst, ts(2)).unwrap();
+        assert!(g.deleted_for.iter().any(|m| m.id() == horst.id()));
+        delete_for_all(dir.path(), &mut g, &horst, ts(3)).unwrap();
+        assert!(g.read_only);
     }
 
     #[test]
