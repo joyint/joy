@@ -28,7 +28,11 @@ minijinja = { workspace = true }
 # is never checked out, so it needs git plumbing (blob/tree/commit/ref)
 # that the CLI cannot express cleanly. Local-only, so no network transport
 # features (push/fetch stay with the platform and desktop git2 layers).
-git2 = { version = "0.20", default-features = false }
+# `vendored-libgit2` compiles the bundled libgit2 from source and links it
+# statically: nothing external is expected on the system, so the single
+# binary/library stays self-contained and cross-compiles cleanly (no
+# openssl/libssh2 here since there is no network feature).
+git2 = { version = "0.20", default-features = false, features = ["vendored-libgit2"] }
 
 # Terminal rendering for the optional `tutorial` module. Kept optional so
 # non-CLI consumers (e.g. joyint-server) do not pull in terminal UI crates.
