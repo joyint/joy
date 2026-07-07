@@ -24,6 +24,11 @@ zeroize = { version = "1", features = ["derive"] }
 base64ct = { version = "1", features = ["alloc"] }
 uuid = { version = "1", features = ["v4", "v7", "serde"] }
 minijinja = { workspace = true }
+# Chats live on a dedicated ref (refs/joy/chats, ADR JAPP-00DC-FC), which
+# is never checked out, so it needs git plumbing (blob/tree/commit/ref)
+# that the CLI cannot express cleanly. Local-only, so no network transport
+# features (push/fetch stay with the platform and desktop git2 layers).
+git2 = { version = "0.20", default-features = false }
 
 # Terminal rendering for the optional `tutorial` module. Kept optional so
 # non-CLI consumers (e.g. joyint-server) do not pull in terminal UI crates.

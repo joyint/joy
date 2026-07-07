@@ -1,0 +1,16 @@
+id: JOY-01FD-ED
+title: Migrate the whole joy-core git layer (GitVcs) from CLI subprocess to git2
+type: story
+status: new
+priority: medium
+capabilities:
+- plan
+- implement
+- review
+effort: 5
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-07T06:54:37.517173Z
+updated: 2026-07-07T06:54:37.517173Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: Stage 2 of the git2 move (stage 1 = JOY-01FC-4B, chats on refs/joy/chats). Once git2 is a joy-core dependency for refs/joy/chats, migrate the remaining CLI-subprocess git away from GitVcs in vcs.rs (add, add_all, commit, push, push_tag, is_ignored, is_clean, config_get/set, remotes, version tags, forge detection, init_repo, user_email) and the direct Command::new("git") calls in ai_setup.rs (git rm --cached, ls-files) onto git2, so joy-core has a single git engine. Verify release/version-tag and ai-setup paths keep working. Avoids a permanent CLI/git2 hybrid.

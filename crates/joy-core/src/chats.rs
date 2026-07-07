@@ -12,60 +12,38 @@ use chrono::{DateTime, Utc};
 use crate::error::JoyError;
 use crate::member_ref::MemberRef;
 use crate::model::chat::{Chat, ChatKind, ChatMessage, MessageKind};
-use crate::store;
 
-/// Subdir of `.joy/` holding chats.
+/// Legacy subdir under `.joy/` where chats lived before they moved to the
+/// dedicated ref (ADR JAPP-00DC-FC). Kept only so the one-time migration
+/// can find and remove the stale working-tree files.
 pub const CHATS_DIR: &str = "chats";
-
-fn chats_dir(root: &Path) -> std::path::PathBuf {
-    store::joy_dir(root).join(CHATS_DIR)
-}
 
 /// A fresh, short, file-safe chat id.
 pub fn new_chat_id() -> String {
     uuid::Uuid::new_v4().simple().to_string()[..12].to_string()
 }
 
-/// Save a chat to `.joy/chats/<id>.yaml` and stage it.
+/// Save a chat onto the `refs/joy/chats` ref (never the working branch).
 pub fn save_chat(root: &Path, chat: &Chat) -> Result<(), JoyError> {
-    let dir = chats_dir(root);
-    std::fs::create_dir_all(&dir).map_err(|e| JoyError::CreateDir {
-        path: dir.clone(),
-        source: e,
-    })?;
-    let filename = format!("{}.yaml", chat.id);
-    store::write_yaml(&dir.join(&filename), chat)?;
-    let rel = format!("{}/{}/{}", store::JOY_DIR, CHATS_DIR, filename);
-    crate::git_ops::auto_git_add(root, &[&rel]);
-    Ok(())
+    crate::chat_ref::save_chat(root, chat)
 }
 
-/// Load one chat by id, if present.
+/// Load one chat by id from the ref, if present.
 pub fn load_chat(root: &Path, id: &str) -> Result<Option<Chat>, JoyError> {
-    let path = chats_dir(root).join(format!("{id}.yaml"));
-    if !path.is_file() {
-        return Ok(None);
+    match crate::chat_ref::load_chat(root, id)? {
+        Some(mut chat) => {
+            normalize(&mut chat);
+            Ok(Some(chat))
+        }
+        None => Ok(None),
     }
-    let mut chat: Chat = store::read_yaml(&path)?;
-    normalize(&mut chat);
-    Ok(Some(chat))
 }
 
-/// Load every chat, newest-updated first.
+/// Load every chat from the ref, newest-updated first.
 pub fn load_chats(root: &Path) -> Result<Vec<Chat>, JoyError> {
-    let dir = chats_dir(root);
-    let mut chats = Vec::new();
-    let Ok(entries) = std::fs::read_dir(&dir) else {
-        return Ok(chats);
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("yaml") {
-            continue;
-        }
-        let mut chat = store::read_yaml::<Chat>(&path)?;
-        normalize(&mut chat);
-        chats.push(chat);
+    let mut chats = crate::chat_ref::load_chats(root)?;
+    for chat in &mut chats {
+        normalize(chat);
     }
     chats.sort_by_key(|c| std::cmp::Reverse(c.updated));
     Ok(chats)
@@ -457,10 +435,7 @@ fn collect_if_everyone_deleted(root: &Path, chat: &Chat) {
             .iter()
             .all(|p| chat.deleted_for.iter().any(|m| m.id() == p.id()));
     if everyone_done {
-        let path = chats_dir(root).join(format!("{}.yaml", chat.id));
-        let _ = std::fs::remove_file(&path);
-        let rel = format!("{}/{}/{}.yaml", store::JOY_DIR, CHATS_DIR, chat.id);
-        crate::git_ops::auto_git_add(root, &[&rel]);
+        let _ = crate::chat_ref::remove_chat(root, &chat.id);
     }
 }
 
@@ -487,9 +462,18 @@ mod tests {
         format!("2026-07-04T00:00:{sec:02}Z").parse().unwrap()
     }
 
+    /// A tempdir that is a real git repo. Chats live on `refs/joy/chats`
+    /// now (ADR JAPP-00DC-FC), so persistence needs a repo, not just a
+    /// directory.
+    fn repo() -> tempfile::TempDir {
+        let dir = tempdir().expect("tempdir");
+        git2::Repository::init(dir.path()).unwrap();
+        dir
+    }
+
     #[test]
     fn chat_roundtrip_append_and_ai_session() {
-        let dir = tempdir().unwrap();
+        let dir = repo();
         let horst = MemberRef::new("horst@example.com");
         let geordi = MemberRef::new("geordi@example.org");
         let claude = MemberRef::new("ai:claude@joy");
@@ -522,7 +506,7 @@ mod tests {
 
     #[test]
     fn general_is_protected_and_lazily_created() {
-        let dir = tempdir().unwrap();
+        let dir = repo();
         let g = ensure_general(dir.path(), ts(0)).unwrap();
         assert_eq!(g.id, GENERAL_CHAT_ID);
         assert_eq!(g.subtitle.as_deref(), Some("for all team members"));
@@ -544,7 +528,7 @@ mod tests {
 
     #[test]
     fn team_chats_are_visible_to_everyone_until_self_deleted() {
-        let dir = tempdir().unwrap();
+        let dir = repo();
         let horst = MemberRef::new("horst@example.com");
         let geordi = MemberRef::new("geordi@example.org");
         // a team chat: empty participants = the whole team, dynamically
@@ -567,7 +551,7 @@ mod tests {
 
     #[test]
     fn delete_semantics_deleter_vanishes_others_keep_read_only() {
-        let dir = tempdir().unwrap();
+        let dir = repo();
         std::fs::create_dir_all(dir.path().join(".joy")).unwrap();
         let mut project = crate::model::Project::new("T".to_string(), Some("T".to_string()));
         for member in ["horst@example.com", "geordi@example.org", "ai:claude@joy"] {
@@ -620,7 +604,7 @@ mod tests {
 
     #[test]
     fn mention_pulls_a_self_deleted_human_back() {
-        let dir = tempdir().unwrap();
+        let dir = repo();
         std::fs::create_dir_all(dir.path().join(".joy")).unwrap();
         let mut project = crate::model::Project::new("T".to_string(), Some("T".to_string()));
         for member in ["horst@example.com", "geordi@example.org"] {
@@ -657,7 +641,7 @@ mod tests {
 
     #[test]
     fn leave_readd_and_delete_semantics() {
-        let dir = tempdir().unwrap();
+        let dir = repo();
         let horst = MemberRef::new("horst@example.com");
         let geordi = MemberRef::new("geordi@example.org");
         let mut chat = open_chat(
@@ -706,7 +690,7 @@ mod tests {
 
     #[test]
     fn rename_and_subtitle() {
-        let dir = tempdir().unwrap();
+        let dir = repo();
         let horst = MemberRef::new("horst@example.com");
         let mut chat = open_chat(dir.path(), vec![horst], None, ts(0)).unwrap();
         rename(dir.path(), &mut chat, "Sprint 13", ts(1)).unwrap();
@@ -726,10 +710,16 @@ mod channel_tests {
         Utc.with_ymd_and_hms(2026, 7, 5, 3, 0, 0).unwrap()
     }
 
+    /// A tempdir that is a real git repo (chats live on a ref now).
+    fn repo() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        git2::Repository::init(dir.path()).unwrap();
+        dir
+    }
+
     #[test]
     fn append_mints_a_uuid_and_is_idempotent_per_id() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(".joy")).unwrap();
+        let dir = repo();
         let mut chat = open_chat(dir.path(), vec![MemberRef::new("a@x")], None, now()).unwrap();
         let m1 = append_message(dir.path(), &mut chat, MemberRef::new("a@x"), "hi", now()).unwrap();
         assert!(!m1.id.is_empty());
@@ -750,18 +740,30 @@ mod channel_tests {
 
     #[test]
     fn legacy_messages_get_stable_synthetic_ids_and_time_order() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(".joy/chats")).unwrap();
-        std::fs::write(
-            dir.path().join(".joy/chats/aaaa.yaml"),
-            "id: aaaa\ntitle: T\ncreated_by: a@x\ncreated: 2026-07-05T02:00:00Z\nupdated: 2026-07-05T02:00:00Z\nparticipants:\n- a@x\nmessages:\n- at: 2026-07-05T02:00:02Z\n  author: a@x\n  text: second\n- at: 2026-07-05T02:00:01Z\n  author: a@x\n  text: first\n",
-        )
-        .unwrap();
-        let chat = load_chat(dir.path(), "aaaa").unwrap().unwrap();
+        // A message stored without an id (pre-channel) gets a
+        // deterministic synthetic id on load and the timeline stays
+        // time-ordered on every client.
+        let dir = repo();
+        let mut chat = open_chat(dir.path(), vec![MemberRef::new("a@x")], None, now()).unwrap();
+        let mk = |sec: u32, text: &str| ChatMessage {
+            id: String::new(),
+            at: format!("2026-07-05T02:00:{sec:02}Z").parse().unwrap(),
+            author: MemberRef::new("a@x"),
+            text: text.into(),
+            kind: MessageKind::Text,
+            delegated_by: None,
+            turn_ms: None,
+            tool_steps: None,
+        };
+        chat.messages.push(mk(2, "second"));
+        chat.messages.push(mk(1, "first"));
+        save_chat(dir.path(), &chat).unwrap();
+
+        let chat = load_chat(dir.path(), &chat.id).unwrap().unwrap();
         assert_eq!(chat.messages[0].text, "first");
         assert!(chat.messages[0].id.starts_with("legacy-"));
         // deterministic: a second load derives the SAME ids
-        let chat2 = load_chat(dir.path(), "aaaa").unwrap().unwrap();
+        let chat2 = load_chat(dir.path(), &chat.id).unwrap().unwrap();
         assert_eq!(chat.messages[0].id, chat2.messages[0].id);
     }
 
@@ -780,8 +782,7 @@ mod channel_tests {
 
     #[test]
     fn error_kind_round_trips() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(".joy")).unwrap();
+        let dir = repo();
         let mut chat = open_chat(dir.path(), vec![MemberRef::new("a@x")], None, now()).unwrap();
         append_kind_with_id(
             dir.path(),

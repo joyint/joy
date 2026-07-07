@@ -287,6 +287,8 @@ mod tests {
     #[test]
     fn human_mentions_add_project_ais_to_the_chat() {
         let dir = tempfile::tempdir().unwrap();
+        // chats live on refs/joy/chats now, so persistence needs a repo
+        git2::Repository::init(dir.path()).unwrap();
         std::fs::create_dir_all(dir.path().join(".joy")).unwrap();
         // a real project with one AI member
         let mut project = crate::model::Project::new("T".to_string(), Some("T".to_string()));
