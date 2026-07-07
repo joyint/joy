@@ -1,7 +1,7 @@
 id: JOY-01FC-4B
 title: Chat persistence on refs/joy/chats in joy-core
 type: story
-status: new
+status: review
 priority: high
 capabilities:
 - plan
@@ -10,7 +10,13 @@ capabilities:
 effort: 5
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-07T06:45:08.559794Z
-updated: 2026-07-07T06:45:08.559794Z
+updated: 2026-07-07T09:02:37.632132Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
+history:
+- date: 2026-07-07T09:02:37.632132Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: Part of JAPP-00DD-98 (app), implementing ADR JAPP-00DC-FC. joy-core gets a single chat-persistence module that reads and writes chat blobs on the dedicated ref refs/joy/chats through git2 (build tree, commit against the ref, update it) with no working-tree checkout. Append-only per message so merges union by message id; reuse merge_yaml_doc on blob contents. Expose one API for open/append/delete/rename/list that platform and the desktop app call. Working-branch .joy/chats files are removed.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-07T09:02:37.529738Z
+  text: 'Done. joy-core now stores chats on refs/joy/chats via git2 (chat_ref module): per-message blobs under <id>/messages/ + <id>/meta.yaml, no working-tree checkout, three-way message-union merge (merge_refs). chats.rs delegates its four storage chokepoints; mutation/delete semantics unchanged. git2 pinned to statically-linked vendored-libgit2 (no external lib). 14 chat unit tests green. Working-tree general.yaml removed.'

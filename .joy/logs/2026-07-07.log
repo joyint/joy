@@ -1,3 +1,5 @@
 2026-07-07T06:40:31.957Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-07-07T06:45:08.583Z JOY-01FC-4B item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-07-07T06:54:37.540Z JOY-01FD-ED item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-07T09:02:37.546Z JOY-01FC-4B comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-07T09:02:37.645Z JOY-01FC-4B item.status_changed "new -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
