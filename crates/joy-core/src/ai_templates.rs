@@ -44,6 +44,7 @@ const INSTRUCTIONS_TMPL: &str = include_str!("../templates/ai/instructions.md");
 const SETUP_TMPL: &str = include_str!("../templates/ai/instructions/setup.md");
 const SKILL_TMPL: &str = include_str!("../templates/ai/skills/joy/SKILL.md");
 const JOY_BLOCK_TMPL: &str = include_str!("../templates/ai/joy-block.md");
+const APP_SESSION_TMPL: &str = include_str!("../templates/ai/app-session.md");
 
 const CLAUDE_AGENT_TMPL: &str = include_str!("../templates/ai/tools/claude-code/agent.md");
 const QWEN_AGENT_TMPL: &str = include_str!("../templates/ai/tools/qwen-code/agent.md");
@@ -155,6 +156,14 @@ pub fn render_skill(workflow: &serde_json::Value) -> Result<String, JoyError> {
 /// Get the setup instructions content (no templating needed).
 pub fn setup_instructions() -> &'static str {
     SETUP_TMPL
+}
+
+/// Preamble the APP (not the terminal) prepends to every agent turn: the
+/// messenger convention (reach participants only by @mention, never a
+/// direct/subagent call) and the in-app posture (use Joy only on demand).
+/// Static and tool-agnostic; the terminal never sees it.
+pub fn app_session_preamble() -> &'static str {
+    APP_SESSION_TMPL
 }
 
 /// Agent template name for each supported tool.

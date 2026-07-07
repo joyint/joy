@@ -156,12 +156,27 @@ pub fn moderation_already_posted(chat: &Chat) -> bool {
 /// prompt has everything either AI has said.
 pub fn context_prompt(chat: &Chat, ai_member: &str) -> String {
     let title = chat.title.as_deref().unwrap_or("Team chat");
-    let mut prompt = format!(
-        "You are {ai_member}, a member of the team chat \"{title}\".\n\
-         Below is the full conversation. Reply with your next chat message\n\
-         only — no preamble, no markdown headings. Address teammates with\n\
-         @name when you need one of them; a human moderates the room.\n\n\
-         --- conversation ---\n"
+    // The roster is rebuilt every turn from the chat's live participants
+    // (the host resolves team/General to the full project membership first),
+    // so members added over time appear automatically, no stale list.
+    let roster: Vec<String> = chat
+        .participants
+        .iter()
+        .map(|p| format!("@{}", alias(p.id())))
+        .collect();
+    let mut prompt = format!("You are {ai_member}, a member of the chat \"{title}\".\n");
+    if !roster.is_empty() {
+        prompt.push_str(&format!(
+            "Members you can reach here by @name: {}.\n",
+            roster.join(", ")
+        ));
+    }
+    prompt.push_str(
+        "To bring anyone in, @mention them in your reply: that is the only way\n\
+         to reach a participant, there is no direct call. Reply with your next\n\
+         chat message only, no preamble and no markdown headings. A human\n\
+         moderates the room.\n\n\
+         --- conversation ---\n",
     );
     for message in &chat.messages {
         if message.kind == MessageKind::Notice {
@@ -232,6 +247,24 @@ mod tests {
             TurnDecision::Respond
         );
         assert_eq!(decide(&chat, newest, "ai:vibe@joy"), TurnDecision::Silent);
+    }
+
+    #[test]
+    fn context_prompt_lists_the_live_roster_and_the_mention_only_rule() {
+        let chat = chat_with(vec![(
+            "horst@example.com",
+            "@vibe which model?",
+            MessageKind::Text,
+        )]);
+        let prompt = context_prompt(&chat, "ai:vibe@joy");
+        // roster is built from the live participants: AIs by short alias,
+        // humans by their id, so members added over time appear on their own
+        assert!(prompt.contains("@horst@example.com"));
+        assert!(prompt.contains("@claude"));
+        assert!(prompt.contains("@vibe"));
+        // the sharpened rule: @mention is the only way in, no direct call
+        assert!(prompt.contains("the only way"));
+        assert!(prompt.contains("no direct call"));
     }
 
     #[test]
