@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# joy chat list/show reads the git-native .joy/chats (JOY-01F3).
+# joy chat list/show reads the git-native chats on refs/joy/chats
+# (JOY-01F3, ADR JAPP-00DC-FC).
 
 load setup
 
@@ -9,29 +10,19 @@ load setup
     [ "$status" -eq 0 ]
     [[ "$output" == *"No chats."* ]]
 
-    mkdir -p .joy/chats
-    cat > .joy/chats/abc123def456.yaml <<YAML
-id: abc123def456
-title: Standup
-created: 2026-07-04T08:00:00Z
-updated: 2026-07-04T08:05:00Z
-participants:
-  - horst@example.com
-  - geordi@example.org
-messages:
-  - at: 2026-07-04T08:01:00Z
-    author: horst@example.com
-    text: moin
-  - at: 2026-07-04T08:02:00Z
-    author: geordi@example.org
-    text: hi Horst
-YAML
+    # chats live on refs/joy/chats now, not a working-tree file: create one
+    # through the CLI (which writes the ref) and read it back
+    run joy chat send general "moin"
+    [ "$status" -eq 0 ]
+    run joy chat send general "hi Horst"
+    [ "$status" -eq 0 ]
+
     run joy chat list
     [ "$status" -eq 0 ]
-    [[ "$output" == *"abc123def456"* ]]
-    [[ "$output" == *"Standup"* ]]
+    [[ "$output" == *"general"* ]]
+    [[ "$output" == *"General"* ]]
 
-    run joy chat show abc123def456
+    run joy chat show general
     [ "$status" -eq 0 ]
     [[ "$output" == *"moin"* ]]
     [[ "$output" == *"hi Horst"* ]]
