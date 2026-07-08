@@ -10,7 +10,7 @@ load setup
     run joy update --check
     [[ "$output" == *"managed by"* ]]
     [[ "$output" == *"upgrade with:"* ]]
-    [[ "$output" == *"winget upgrade -s winget joyint.joy"* ]]
+    [[ "$output" == *"curl -fsSL get.joyint.com/joy | sh"* ]]
     [[ "$output" == *"re-synced automatically"* ]]
 }
 
@@ -20,7 +20,7 @@ load setup
     run joy update
     [ "$status" -eq 0 ]
     [[ "$output" == *"managed by"* ]]
-    [[ "$output" == *"upgrade with: winget upgrade -s winget joyint.joy"* ]]
+    [[ "$output" == *"upgrade with: curl -fsSL get.joyint.com/joy | sh"* ]]
     [[ "$output" == *"re-synced automatically after you upgrade"* ]]
 }
 
