@@ -19,15 +19,8 @@ Thumbs.db
 
 ### joy:start -- managed by joy, do not edit manually
 .joy/config.yaml
+.joy/chat-state.yaml
 .joy/credentials.yaml
 .joy/hooks/
 .joy/project.defaults.yaml
-.claude/
-.qwen/
-.vibe/
-AGENTS.md
-.github/copilot-instructions.md
-.github/copilot/
-.github/agents/
-.github/prompts/
 ### joy:end
