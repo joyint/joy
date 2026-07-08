@@ -17,7 +17,7 @@
 use std::path::Path;
 
 use anyhow::Result;
-use axoupdater::AxoUpdater;
+use axoupdater::{AxoUpdater, AxoupdateError, ReleaseSource, ReleaseSourceType, Version};
 use clap::Args;
 
 use joy_core::store;
@@ -194,7 +194,7 @@ fn run_check() -> Result<()> {
     println!();
 
     println!("{}", color::section("Binary"));
-    let mut updater = AxoUpdater::new_for(PKG_NAME);
+    let mut updater = configured_updater();
     if let Some((manager, cmd)) = foreign_install() {
         println!(
             "  {}{}",
@@ -353,8 +353,8 @@ struct BinaryAction {
 
 fn run_check_json() -> Result<()> {
     let cwd = std::env::current_dir()?;
-    let mut updater = AxoUpdater::new_for(PKG_NAME);
-    let binary = if updater.load_receipt().is_err() {
+    let mut updater = configured_updater();
+    let binary = if foreign_install().is_some() {
         BinaryStatus {
             state: "unmanaged",
             current_version: CURRENT_VERSION,
@@ -442,8 +442,8 @@ fn run_update_json(args: UpdateArgs) -> Result<()> {
             new_version: None,
         }
     } else {
-        let mut updater = AxoUpdater::new_for(PKG_NAME);
-        if updater.load_receipt().is_err() {
+        let mut updater = configured_updater();
+        if foreign_install().is_some() {
             BinaryAction {
                 state: "unmanaged",
                 current_version: CURRENT_VERSION,
@@ -461,6 +461,18 @@ fn run_update_json(args: UpdateArgs) -> Result<()> {
                     new_version: Some(format!("{:?}", result.new_version)),
                 },
                 Ok(None) => BinaryAction {
+                    state: "already_current",
+                    current_version: CURRENT_VERSION,
+                    error: None,
+                    old_version: None,
+                    new_version: None,
+                },
+                // No newer (or no) release is not a failure: already current.
+                Err(
+                    AxoupdateError::NoStableReleases { .. }
+                    | AxoupdateError::ReleaseNotFound { .. }
+                    | AxoupdateError::VersionNotFound { .. },
+                ) => BinaryAction {
                     state: "already_current",
                     current_version: CURRENT_VERSION,
                     error: None,
@@ -533,37 +545,56 @@ fn run_update_json(args: UpdateArgs) -> Result<()> {
 /// command)` for an actionable hint. `None` when a receipt is present (the
 /// binary is self-update capable). joy never runs the command itself: a failing
 /// foreign upgrade must not entangle joy (the receipt-gating of JOY-0164-B5).
+/// winget- and cargo-managed binaries are upgraded by their own package
+/// manager; infer which from the running binary's path. `None` means joy
+/// manages the binary itself (the cargo-dist install dir, e.g. `~/.local/bin`),
+/// so it is swapped in place.
 fn foreign_install() -> Option<(&'static str, String)> {
-    let mut updater = AxoUpdater::new_for(PKG_NAME);
-    if updater.load_receipt().is_ok() {
-        return None;
-    }
     let path = std::env::current_exe()
         .map(|p| p.to_string_lossy().to_lowercase())
         .unwrap_or_default();
-    let info = if path.contains("microsoft\\winget") || path.contains("microsoft/winget") {
-        ("winget", "winget upgrade -s winget joyint.joy".to_string())
+    if path.contains("microsoft\\winget") || path.contains("microsoft/winget") {
+        Some(("winget", "winget upgrade -s winget joyint.joy".to_string()))
     } else if path.contains("/.cargo/") || path.contains("\\.cargo\\") {
-        ("cargo", "cargo install joy-cli".to_string())
+        Some(("cargo", "cargo install joy-cli".to_string()))
     } else {
-        // Unknown manager; winget is by far the most common foreign install.
-        (
-            "another installer",
-            "winget upgrade -s winget joyint.joy".to_string(),
-        )
-    };
-    Some(info)
+        None
+    }
 }
 
-/// One-line binary swap result: (mark, status detail).
-fn swap_binary_status() -> (&'static str, String) {
+/// An updater ready to run. Uses the cargo-dist install receipt when present;
+/// otherwise points at the GitHub release source and the running binary's
+/// directory, so a receipt-less build (e.g. `just install` into `~/.local/bin`)
+/// still checks-and-swaps, overwriting an older local build.
+fn configured_updater() -> AxoUpdater {
     let mut updater = AxoUpdater::new_for(PKG_NAME);
     if updater.load_receipt().is_err() {
-        return (
-            color::empty_mark(),
-            color::inactive(&format!("managed by another installer ({CURRENT_VERSION})")),
-        );
+        updater.set_release_source(ReleaseSource {
+            release_type: ReleaseSourceType::GitHub,
+            owner: "joyint".to_string(),
+            // repo is joyint/joy, but cargo-dist publishes artifacts under the
+            // crate/app name joy-cli (joy-cli-installer.sh, joy-cli-*.tar.xz).
+            name: "joy".to_string(),
+            app_name: "joy-cli".to_string(),
+        });
+        if let Ok(version) = CURRENT_VERSION.parse::<Version>() {
+            let _ = updater.set_current_version(version);
+        }
+        if let Some(dir) = std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|d| d.to_string_lossy().into_owned()))
+        {
+            updater.set_install_dir(dir);
+        }
     }
+    updater
+}
+
+/// One-line binary swap result: (mark, status detail). Downloads and swaps in
+/// place when a newer release exists; a no-op when up to date. Only genuine
+/// problems are reported as failures, never axoupdater's raw wording.
+fn swap_binary_status() -> (&'static str, String) {
+    let mut updater = configured_updater();
     match updater.run_sync() {
         Ok(Some(result)) => {
             let old = result
@@ -581,6 +612,18 @@ fn swap_binary_status() -> (&'static str, String) {
             color::check_mark(),
             color::inactive(&format!("up to date ({CURRENT_VERSION})")),
         ),
-        Err(e) => (color::warn_mark(), color::warning(&format!("failed: {e}"))),
+        // No newer (or no) release is not a failure: we already have the latest.
+        Err(
+            AxoupdateError::NoStableReleases { .. }
+            | AxoupdateError::ReleaseNotFound { .. }
+            | AxoupdateError::VersionNotFound { .. },
+        ) => (
+            color::check_mark(),
+            color::inactive(&format!("up to date ({CURRENT_VERSION})")),
+        ),
+        Err(e) => (
+            color::warn_mark(),
+            color::warning(&format!("update failed: {e}")),
+        ),
     }
 }
