@@ -44,8 +44,10 @@ pub const PROJECT_FILES: &[EmbeddedFile] = &[EmbeddedFile {
 /// `joy update` and `joy ai init` remove them.
 ///
 /// Paths are relative to the project root. Directories are removed
-/// recursively. The current runtime data under `.joy/ai/jobs/` and
-/// `.joy/ai/agents/` is deliberately NOT listed and stays untouched.
+/// recursively. The current runtime data under `.joy/ai/agents/` is
+/// deliberately NOT listed and stays untouched; legacy `.joy/ai/jobs/`
+/// records are handled by the 2026-07 repo migration instead
+/// (JOY-0207-DC), which stages their deletion.
 pub const LEGACY_AI_ARTIFACTS: &[&str] = &[
     ".joy/ai/instructions.md",
     ".joy/ai/instructions",
@@ -101,13 +103,15 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
         git_initialized = true;
     }
 
-    // Create directory structure
+    // Create directory structure. `.joy/ai/jobs/` is deliberately absent:
+    // jobs are items in `.joy/jobs/` (JOY-01FE-37) and the legacy record
+    // dir is removed by the 2026-07 repo migration -- creating it here
+    // would flag every fresh project as pending that migration.
     let dirs = [
         store::ITEMS_DIR,
         store::MILESTONES_DIR,
         store::RELEASES_DIR,
         store::AI_AGENTS_DIR,
-        store::AI_JOBS_DIR,
         store::LOG_DIR,
     ];
     for dir in &dirs {
@@ -510,7 +514,10 @@ mod tests {
         assert!(result.project_dir.join("items").is_dir());
         assert!(result.project_dir.join("milestones").is_dir());
         assert!(result.project_dir.join("ai/agents").is_dir());
-        assert!(result.project_dir.join("ai/jobs").is_dir());
+        // Legacy job record dir: retired by JOY-01FE-37 / JOY-0207-DC, a
+        // fresh init must not create it (it would be flagged as pending
+        // the 2026-07 remove-ai-jobs migration).
+        assert!(!result.project_dir.join("ai/jobs").exists());
         assert!(result.project_dir.join("logs").is_dir());
         assert!(result.project_dir.join("config.defaults.yaml").is_file());
         assert!(result.project_dir.join("project.yaml").is_file());
