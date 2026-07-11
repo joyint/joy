@@ -57,6 +57,7 @@ fn conventional_type(t: &ItemType) -> &'static str {
         ItemType::Rework => "rework",
         ItemType::Story | ItemType::Epic | ItemType::Task => "feat",
         ItemType::Decision | ItemType::Idea => "docs",
+        ItemType::Job => "chore",
     }
 }
 

@@ -69,6 +69,12 @@ pub struct Item {
     /// project's `crypt.zones` registry. See ADR-038 and Crypt.md.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub crypt_zone: Option<String>,
+    /// Job payload: scope, budget, window and execution attempts. Only
+    /// present on `job` items; invisible to every other type. Live
+    /// execution telemetry never enters this field -- attempts carry
+    /// condensed terminal results only. See JOY-01FE-37.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub job: Option<JobSpec>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub comments: Vec<Comment>,
 }
@@ -83,6 +89,11 @@ pub enum ItemType {
     Rework,
     Decision,
     Idea,
+    /// An assignment of work over a scope of items, executed by an AI or
+    /// human assignee. Stored under `.joy/jobs/` (not `.joy/items/`) with
+    /// `<ACRONYM>-JOB-xxxx-<hash>` IDs and excluded from default views.
+    /// Type-specific data lives in [`Item::job`]. See JOY-01FE-37.
+    Job,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -96,6 +107,12 @@ pub enum Capability {
     Test,
     Review,
     Document,
+    /// Direct delegated work: move `job` items through their gates --
+    /// approving a job at triage authorizes its spend, reviewing it
+    /// accepts the delivered work. Deliberately separate from `Review`
+    /// so job acceptance and item acceptance can belong to different
+    /// people. See JOY-01FE-37.
+    Jobs,
     // Management capabilities
     Create,
     Assign,
@@ -113,6 +130,7 @@ impl Capability {
         Capability::Test,
         Capability::Review,
         Capability::Document,
+        Capability::Jobs,
         Capability::Create,
         Capability::Assign,
         Capability::Manage,
@@ -187,6 +205,98 @@ pub struct Assignee {
     pub capabilities: Vec<Capability>,
 }
 
+/// Type-specific payload of a `job` item: what to work on (scope), the
+/// limits (budget, window), and the condensed record of execution
+/// attempts. Plan data and terminal attempt results are git-native
+/// here; live telemetry (progress, running counters) stays with the
+/// executor (platform or local runner). See JOY-01FE-37.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct JobSpec {
+    /// Target item IDs. Required at creation -- a job without scope is
+    /// just a prompt with a lifecycle. A container reference (epic or
+    /// milestone-scoped item) means its subtree; plan jobs reference
+    /// the container they create items in.
+    pub scope: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub budget: Option<JobBudget>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<JobWindow>,
+    /// Append-only list of execution loops. Retries and rework rounds
+    /// are entries here, not separate objects and not a second status
+    /// axis: a job being retried simply stays `in-progress`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attempts: Vec<JobAttempt>,
+}
+
+/// Spend limits for a job. `max_cents` mirrors the platform's budget
+/// unit; `max_tokens` caps raw model usage independently of price.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct JobBudget {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_cents: Option<u64>,
+    #[serde(default = "default_currency")]
+    pub currency: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<u64>,
+}
+
+fn default_currency() -> String {
+    "EUR".to_string()
+}
+
+/// Execution window for a job: earliest start and latest acceptable end.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct JobWindow {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub not_before: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deadline: Option<DateTime<Utc>>,
+}
+
+/// One terminal execution loop of a job. Written once, at the loop's
+/// end (success, failure, or abort via `joy stop`), with the cost that
+/// actually accrued -- aborts cost money too.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct JobAttempt {
+    pub started: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ended: Option<DateTime<Utc>>,
+    pub outcome: AttemptOutcome,
+    #[serde(default)]
+    pub tokens: u64,
+    #[serde(default)]
+    pub cost_cents: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<MemberRef>,
+}
+
+/// How an execution loop ended. `Failed` lives here, not in the item
+/// status: the job stays `in-progress` while a retry is pending and
+/// lands in `review` (carrying the error) when finally given up.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AttemptOutcome {
+    Succeeded,
+    Failed,
+    Aborted,
+}
+
+impl std::fmt::Display for AttemptOutcome {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AttemptOutcome::Succeeded => write!(f, "succeeded"),
+            AttemptOutcome::Failed => write!(f, "failed"),
+            AttemptOutcome::Aborted => write!(f, "aborted"),
+        }
+    }
+}
+
 /// One entry in an item's `history` or a comment's `edits` audit list.
 /// Records who touched the artifact and when.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -242,6 +352,7 @@ impl Item {
             history: Some(Vec::new()),
             description: None,
             crypt_zone: None,
+            job: None,
             comments: Vec::new(),
         }
     }
@@ -272,6 +383,7 @@ impl std::fmt::Display for Capability {
             Capability::Test => write!(f, "test"),
             Capability::Review => write!(f, "review"),
             Capability::Document => write!(f, "document"),
+            Capability::Jobs => write!(f, "jobs"),
             Capability::Create => write!(f, "create"),
             Capability::Assign => write!(f, "assign"),
             Capability::Manage => write!(f, "manage"),
@@ -291,6 +403,7 @@ impl std::str::FromStr for Capability {
             "test" | "tst" => Ok(Capability::Test),
             "review" | "rev" => Ok(Capability::Review),
             "document" | "doc" => Ok(Capability::Document),
+            "jobs" | "job" => Ok(Capability::Jobs),
             "create" | "crt" => Ok(Capability::Create),
             "assign" | "asg" => Ok(Capability::Assign),
             "manage" | "mng" => Ok(Capability::Manage),
@@ -310,6 +423,7 @@ impl std::fmt::Display for ItemType {
             ItemType::Rework => write!(f, "rework"),
             ItemType::Decision => write!(f, "decision"),
             ItemType::Idea => write!(f, "idea"),
+            ItemType::Job => write!(f, "job"),
         }
     }
 }
@@ -350,6 +464,7 @@ impl std::str::FromStr for ItemType {
             "rework" | "rwk" => Ok(ItemType::Rework),
             "decision" | "dec" => Ok(ItemType::Decision),
             "idea" | "ide" => Ok(ItemType::Idea),
+            "job" => Ok(ItemType::Job),
             _ => Err(format!("unknown item type: {s}")),
         }
     }

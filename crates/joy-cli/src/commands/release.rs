@@ -345,6 +345,9 @@ fn record(args: RecordArgs) -> Result<()> {
             ItemType::Rework => release_items.reworks.push(ri),
             ItemType::Decision => release_items.decisions.push(ri),
             ItemType::Idea => release_items.ideas.push(ri),
+            // Jobs are assignments, not product work; they never appear
+            // in release notes (and live outside .joy/items/ anyway).
+            ItemType::Job => {}
         }
     }
 

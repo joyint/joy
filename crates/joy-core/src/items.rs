@@ -4,8 +4,25 @@
 use std::path::Path;
 
 use crate::error::JoyError;
-use crate::model::item::{item_filename, Item};
+use crate::model::item::{item_filename, Item, ItemType};
 use crate::store;
+
+/// Whether an ID names a job item (`<ACRONYM>-JOB-xxxx[-YY]`). The ID
+/// shape routes deterministically between `.joy/items/` and
+/// `.joy/jobs/`; no lookup ever scans both directories. JOY-01FE-37.
+pub fn is_job_id(id: &str) -> bool {
+    id.to_uppercase().contains("-JOB-")
+}
+
+/// The storage directory for an item, routed by its type.
+fn dir_for_type(root: &Path, item_type: &ItemType) -> std::path::PathBuf {
+    let sub = if *item_type == ItemType::Job {
+        store::JOBS_DIR
+    } else {
+        store::ITEMS_DIR
+    };
+    store::joy_dir(root).join(sub)
+}
 
 /// Lightweight placeholder for an encrypted item the caller cannot
 /// decrypt. ID is read from the filename, zone from the JOYCRYPT magic
@@ -59,6 +76,40 @@ pub fn load_items_with_locked(root: &Path) -> Result<(Vec<Item>, Vec<LockedItem>
 pub fn load_items(root: &Path) -> Result<Vec<Item>, JoyError> {
     let (items, _) = load_items_with_locked(root)?;
     Ok(items)
+}
+
+/// Load all job items from `.joy/jobs/`. Jobs are deliberately absent
+/// from [`load_items`]: default views never touch this directory, the
+/// `-J` views and job-targeted lookups do. JOY-01FE-37.
+pub fn load_jobs(root: &Path) -> Result<Vec<Item>, JoyError> {
+    let mut metas = list_job_metadata(root)?;
+    metas.sort_by(|a, b| a.path.file_name().cmp(&b.path.file_name()));
+    let mut jobs: Vec<Item> = Vec::new();
+    for meta in metas {
+        if let Some(zone) = meta.encrypted_zone.as_deref() {
+            if crate::crypt::active_zone_key(zone).is_none() {
+                continue;
+            }
+        }
+        let item: Item = store::read_yaml(&meta.path)?;
+        jobs.push(item);
+    }
+    Ok(jobs)
+}
+
+/// Load the jobs whose scope contains `item_id` (current and past).
+/// This is the one reverse lookup that scans `.joy/jobs/`: items carry
+/// no job references so that creating a job never touches its targets.
+pub fn jobs_for_item(root: &Path, item_id: &str) -> Result<Vec<Item>, JoyError> {
+    let jobs = load_jobs(root)?;
+    Ok(jobs
+        .into_iter()
+        .filter(|j| {
+            j.job
+                .as_ref()
+                .is_some_and(|spec| spec.scope.iter().any(|s| s == item_id))
+        })
+        .collect())
 }
 
 /// Return the short form of a full item ID, or None if the ID is not
@@ -182,13 +233,19 @@ pub fn touch_for_comment_change(item: &mut Item, by: &str) {
     item.updated_by = Some(by.into());
 }
 
-/// Save an item to .joy/items/{ID}-{slug}.yaml.
+/// Save an item to .joy/items/{ID}-{slug}.yaml (job items go to
+/// .joy/jobs/ instead).
 pub fn save_item(root: &Path, item: &Item) -> Result<(), JoyError> {
-    let items_dir = store::joy_dir(root).join(store::ITEMS_DIR);
+    let dir = dir_for_type(root, &item.item_type);
     let filename = item_filename(&item.id, &item.title);
-    let path = items_dir.join(&filename);
+    let path = dir.join(&filename);
     write_item_file(&path, item)?;
-    let rel = format!("{}/{}/{}", store::JOY_DIR, store::ITEMS_DIR, filename);
+    let sub = if item.item_type == ItemType::Job {
+        store::JOBS_DIR
+    } else {
+        store::ITEMS_DIR
+    };
+    let rel = format!("{}/{}/{}", store::JOY_DIR, sub, filename);
     crate::git_ops::auto_git_add(root, &[&rel]);
     Ok(())
 }
@@ -243,7 +300,16 @@ impl ItemMeta {
 /// Never prompts, never decrypts. Use `load_items` when you need
 /// full Item objects.
 pub fn list_item_metadata(root: &Path) -> Result<Vec<ItemMeta>, JoyError> {
-    let items_dir = store::joy_dir(root).join(store::ITEMS_DIR);
+    list_metadata_in(root, store::ITEMS_DIR)
+}
+
+/// Walk `.joy/jobs/` and return one `ItemMeta` per job file.
+pub fn list_job_metadata(root: &Path) -> Result<Vec<ItemMeta>, JoyError> {
+    list_metadata_in(root, store::JOBS_DIR)
+}
+
+fn list_metadata_in(root: &Path, sub: &str) -> Result<Vec<ItemMeta>, JoyError> {
+    let items_dir = store::joy_dir(root).join(sub);
     if !items_dir.is_dir() {
         return Ok(Vec::new());
     }
@@ -289,6 +355,22 @@ fn id_from_filename(name: &str) -> Option<String> {
     // match the ID shape.
     let stem = name.strip_suffix(".yaml")?;
     let parts: Vec<&str> = stem.split('-').collect();
+    // Job filenames: ACRONYM-JOB-XXXX[-YY]-slug (JOY-01FE-37).
+    if parts.len() >= 3
+        && parts[1] == "JOB"
+        && parts[2].chars().all(|c| c.is_ascii_hexdigit())
+        && parts[2].len() == 4
+    {
+        let id_end = if parts.len() >= 4
+            && parts[3].chars().all(|c| c.is_ascii_hexdigit())
+            && parts[3].len() == 2
+        {
+            4
+        } else {
+            3
+        };
+        return Some(parts[..id_end].join("-"));
+    }
     if parts.len() >= 2 && parts[1].chars().all(|c| c.is_ascii_hexdigit()) && parts[1].len() == 4 {
         // ACRONYM-XXXX[-YY]-...
         let id_end = if parts.len() >= 3
@@ -398,6 +480,38 @@ pub fn next_id(root: &Path, acronym: &str, title: &str) -> Result<String, JoyErr
     Ok(format!("{prefix}-{next:04X}-{suffix}"))
 }
 
+/// Generate the next job item ID by scanning `.joy/jobs/`. Jobs count
+/// in their own number space: `<ACRONYM>-JOB-0001-YY`, same collision
+/// hash as items (ADR-027). JOY-01FE-37.
+pub fn next_job_id(root: &Path, acronym: &str, title: &str) -> Result<String, JoyError> {
+    let prefix = format!("{acronym}-JOB");
+    let jobs_dir = store::joy_dir(root).join(store::JOBS_DIR);
+    let suffix = title_hash_suffix(title);
+    if !jobs_dir.is_dir() {
+        return Ok(format!("{prefix}-0001-{suffix}"));
+    }
+    let mut max_num: u16 = 0;
+    let entries = std::fs::read_dir(&jobs_dir).map_err(|e| JoyError::ReadFile {
+        path: jobs_dir.clone(),
+        source: e,
+    })?;
+    for entry in entries.filter_map(|e| e.ok()) {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if let Some(hex_part) = name.strip_prefix(&format!("{prefix}-")) {
+            if let Some(hex_str) = hex_part.get(..4) {
+                if let Ok(num) = u16::from_str_radix(hex_str, 16) {
+                    max_num = max_num.max(num);
+                }
+            }
+        }
+    }
+    let next = max_num.checked_add(1).ok_or_else(|| {
+        JoyError::Other(format!("{prefix} ID space exhausted (max {prefix}-FFFF)"))
+    })?;
+    Ok(format!("{prefix}-{next:04X}-{suffix}"))
+}
+
 /// Generate 2 hex digits from the title for collision-safe IDs (ADR-027).
 pub fn title_hash_suffix(title: &str) -> String {
     use sha2::{Digest, Sha256};
@@ -411,7 +525,17 @@ pub fn title_hash_suffix(title: &str) -> String {
 /// Accepts both full IDs (JOY-0042-A3) and short-form (JOY-0042).
 /// Short-form returns an error if ambiguous (multiple matches).
 pub fn find_item_file(root: &Path, id: &str) -> Result<std::path::PathBuf, JoyError> {
-    let items_dir = store::joy_dir(root).join(store::ITEMS_DIR);
+    // The -JOB- segment routes to .joy/jobs/; everything else lives in
+    // .joy/items/. Never scans both. JOY-01FE-37.
+    let sub = if is_job_id(id) {
+        store::JOBS_DIR
+    } else {
+        store::ITEMS_DIR
+    };
+    let items_dir = store::joy_dir(root).join(sub);
+    if is_job_id(id) && !items_dir.is_dir() {
+        return Err(JoyError::ItemNotFound(id.to_string()));
+    }
 
     // Normalize: uppercase the ID for matching
     let id_upper = id.to_uppercase();
@@ -479,6 +603,23 @@ fn extract_full_id(filename: &str) -> Option<String> {
     let acronym = parts[0];
     let rest = parts[1];
 
+    // Job format: JOB-XXXX[-YY]-slug (JOY-01FE-37)
+    if let Some(job_rest) = rest.strip_prefix("JOB-") {
+        let hex4 = job_rest.get(..4)?;
+        if u16::from_str_radix(hex4, 16).is_err() {
+            return None;
+        }
+        if job_rest.len() >= 7 && job_rest.as_bytes()[4] == b'-' {
+            let maybe_suffix = &job_rest[5..7];
+            if u8::from_str_radix(maybe_suffix, 16).is_ok()
+                && (job_rest.len() == 7 || job_rest.as_bytes()[7] == b'-')
+            {
+                return Some(format!("{acronym}-JOB-{hex4}-{maybe_suffix}").to_uppercase());
+            }
+        }
+        return Some(format!("{acronym}-JOB-{hex4}").to_uppercase());
+    }
+
     // Check if it's new format: XXXX-YY-slug or legacy: XXXX-slug
     if rest.len() >= 7 && rest.as_bytes()[4] == b'-' {
         // Could be XXXX-YY-slug (new) or XXXX-slug with short slug
@@ -511,7 +652,11 @@ fn extract_full_id(filename: &str) -> Option<String> {
 pub fn load_item(root: &Path, id: &str) -> Result<Item, JoyError> {
     let path = find_item_file(root, id)?;
     let target_id: String = store::read_yaml::<Item>(&path)?.id;
-    let items = load_items(root)?;
+    let items = if is_job_id(id) {
+        load_jobs(root)?
+    } else {
+        load_items(root)?
+    };
     items
         .into_iter()
         .find(|i| i.id == target_id)
@@ -600,9 +745,7 @@ pub fn update_item(root: &Path, item: &Item) -> Result<(), JoyError> {
     // Write new file first to avoid data loss if write fails
     save_item(root, item)?;
     // Remove old file if the filename changed (title may have changed)
-    let new_path = store::joy_dir(root)
-        .join(store::ITEMS_DIR)
-        .join(item_filename(&item.id, &item.title));
+    let new_path = dir_for_type(root, &item.item_type).join(item_filename(&item.id, &item.title));
     if old_path != new_path {
         let _ = std::fs::remove_file(&old_path);
         let old_rel = old_path

@@ -15,6 +15,10 @@ pub const PROJECT_FILE: &str = "project.yaml";
 pub const PROJECT_DEFAULTS_FILE: &str = "project.defaults.yaml";
 pub const CREDENTIALS_FILE: &str = "credentials.yaml";
 pub const ITEMS_DIR: &str = "items";
+/// Job items live apart from product items: deletable without touching
+/// the backlog, invisible to default views, lower merge contention.
+/// The `-JOB-` ID segment routes between the two directories (JOY-01FE-37).
+pub const JOBS_DIR: &str = "jobs";
 pub const MILESTONES_DIR: &str = "milestones";
 pub const AI_DIR: &str = "ai";
 pub const AI_AGENTS_DIR: &str = "ai/agents";

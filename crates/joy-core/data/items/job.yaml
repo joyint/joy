@@ -1,0 +1,3 @@
+{% set type = "job" %}
+{% set capabilities = "[jobs]" %}
+{% include "_base.yaml" %}

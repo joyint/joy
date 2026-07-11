@@ -210,6 +210,7 @@ mod tests {
             history: Some(vec![]),
             description: None,
             crypt_zone: None,
+            job: None,
             comments: vec![],
         }
     }

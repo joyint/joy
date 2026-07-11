@@ -30,6 +30,16 @@ pub enum Action {
         from: Status,
         to: Status,
     },
+    /// Status change on a `job` item. Separate from [`Action::ChangeStatus`]
+    /// because the whole job lifecycle is governed by the `jobs`
+    /// capability, and the triage gate (`new -> open`) denies AI members
+    /// by default -- approving a job authorizes its spend, and that
+    /// release belongs to a human unless a `job: new -> open` status
+    /// rule explicitly says otherwise. See JOY-01FE-37.
+    ChangeJobStatus {
+        from: Status,
+        to: Status,
+    },
     AssignItem,
     AddComment,
     ManageProject,
@@ -62,6 +72,7 @@ impl Action {
                 Status::Open => Capability::Plan,
                 Status::New => Capability::Create,
             },
+            Action::ChangeJobStatus { .. } => Capability::Jobs,
             Action::StartJob { capability, .. } => *capability,
         }
     }
@@ -216,6 +227,23 @@ impl Guard {
                             identity.member, key
                         ));
                     }
+                }
+            }
+
+            // Job gates use `job: `-prefixed status_rules keys. The triage
+            // gate defaults to allow_ai: false -- approving a job is the
+            // human release that authorizes spend.
+            if let Action::ChangeJobStatus { from, to } = action {
+                let key = format!("job: {} -> {}", status_str(from), status_str(to));
+                let allow_ai = match self.gates.get(&key) {
+                    Some(gate) => gate.allow_ai,
+                    None => !matches!((from, to), (Status::New, Status::Open)),
+                };
+                if !allow_ai {
+                    return Verdict::Deny(format!(
+                        "AI member {} blocked by job gate on {} (allow_ai: false)",
+                        identity.member, key
+                    ));
                 }
             }
         }

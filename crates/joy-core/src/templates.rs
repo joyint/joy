@@ -16,6 +16,7 @@ const BUG_TEMPLATE: &str = include_str!("../data/items/bug.yaml");
 const REWORK_TEMPLATE: &str = include_str!("../data/items/rework.yaml");
 const DECISION_TEMPLATE: &str = include_str!("../data/items/decision.yaml");
 const IDEA_TEMPLATE: &str = include_str!("../data/items/idea.yaml");
+const JOB_TEMPLATE: &str = include_str!("../data/items/job.yaml");
 
 fn template_for_type(item_type: &ItemType) -> (&'static str, &'static str) {
     match item_type {
@@ -26,6 +27,7 @@ fn template_for_type(item_type: &ItemType) -> (&'static str, &'static str) {
         ItemType::Rework => ("rework.yaml", REWORK_TEMPLATE),
         ItemType::Decision => ("decision.yaml", DECISION_TEMPLATE),
         ItemType::Idea => ("idea.yaml", IDEA_TEMPLATE),
+        ItemType::Job => ("job.yaml", JOB_TEMPLATE),
     }
 }
 

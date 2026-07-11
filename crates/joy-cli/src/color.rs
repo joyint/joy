@@ -62,6 +62,7 @@ pub fn item_type_indicator(t: &ItemType) -> &'static str {
         ItemType::Rework => "\u{1f504} ",
         ItemType::Decision => "\u{1f4a1} ",
         ItemType::Idea => "\u{2728} ",
+        ItemType::Job => "\u{1f916} ",
     }
 }
 
@@ -209,6 +210,7 @@ pub fn item_type_colored_short(t: &ItemType) -> String {
         ItemType::Idea => wrap(INFO, text),
         ItemType::Decision => wrap(INFO, text),
         ItemType::Task => wrap(SECONDARY, text),
+        ItemType::Job => wrap(ACCENT, text),
     }
 }
 
@@ -244,6 +246,7 @@ pub fn item_type_short(t: &ItemType) -> &'static str {
         ItemType::Rework => "rwk",
         ItemType::Decision => "dec",
         ItemType::Idea => "ide",
+        ItemType::Job => "job",
     }
 }
 
@@ -289,6 +292,7 @@ pub fn item_type(t: &ItemType) -> String {
         ItemType::Idea => wrap(INFO, &text),
         ItemType::Decision => wrap(INFO, &text),
         ItemType::Task => wrap(SECONDARY, &text),
+        ItemType::Job => wrap(ACCENT, &text),
     }
 }
 
