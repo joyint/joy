@@ -244,8 +244,8 @@ A `job` is an assignment of work over a scope of items, executed by its assignee
 
 - Create: `joy add job "Title" JOY-0001,JOY-0002` — the comma-separated scope is a third positional that only jobs accept and require. A container reference (epic) means its subtree.
 - List: `joy ls -J` (open jobs), `joy ls -Ja` (including closed), `joy board -J`.
-- `joy show <JOB-ID>` shows scope, budget, window, and the recorded execution attempts; `joy show <ITEM-ID>` shows which jobs an item belongs to.
-- Edit: `joy edit <JOB-ID> --scope +ID,-ID`, `--max-cost`, `--max-tokens`, `--not-before`, `--deadline`.
+- `joy show <JOB-ID>` shows scope, budget, window, feedback, and the recorded execution attempts; `joy show <ITEM-ID>` shows which jobs an item belongs to.
+- Edit: `joy edit <JOB-ID> --scope +ID,-ID`, `--max-cost`, `--max-tokens`, `--not-before`, `--deadline`, `--feedback awaited|received|none`. The `feedback` field is the job's dialog axis, orthogonal to status like `validity` on decisions: to ask the operator a question mid-job, post it as a normal comment and run `joy edit <JOB-ID> --feedback awaited`; the operator answers with a comment plus `--feedback received`; absent means no dialog is open.
 - You may propose jobs (`joy add job` leaves them in `new`), but the `new -> open` triage gate on jobs denies AI members by default: approving a job authorizes its execution and spend, and that release belongs to a human. Do not attempt to approve your own jobs.
 - Job gates require the `jobs` capability, deliberately separate from `review`: accepting delivered job work and accepting the product items can be different people.
 - Closing a job does not close its scope items; `joy close <JOB-ID>` asks per item (`--items` / `--no-items` in scripts). A job whose execution finally failed sits in `review` carrying the error.
