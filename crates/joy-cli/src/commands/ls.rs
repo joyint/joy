@@ -115,6 +115,11 @@ pub fn run(args: LsArgs) -> Result<()> {
     // transparently. No-op when the project has no Crypt activity.
     crate::crypt_session::ensure_zone_keys(args.passphrase.as_deref())?;
 
+    // -J / --jobs: list only jobs; they never appear in the default listing.
+    if args.filter.jobs {
+        return run_jobs(args, &root);
+    }
+
     let (all_items, locked) = items::load_items_with_locked(&root)?;
 
     if all_items.is_empty() && locked.is_empty() {
@@ -179,6 +184,144 @@ pub fn run(args: LsArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// The `-J` listing: jobs from `.joy/jobs/` with job-specific columns.
+fn run_jobs(args: LsArgs, root: &std::path::Path) -> Result<()> {
+    let jobs = items::load_jobs(root)?;
+    let spec: FilterSpec = args
+        .filter
+        .to_spec(root, args.all || !args.filter.status.is_empty())?;
+    let mut filtered: Vec<&Item> = filter::apply(&jobs, &spec);
+
+    if args.reverse {
+        filtered.reverse();
+    }
+
+    if crate::output::is_json() {
+        let total = filtered.len();
+        return crate::output::emit(LsPayload {
+            items: filtered.into_iter().cloned().collect(),
+            total,
+            locked: Vec::new(),
+        });
+    }
+
+    if filtered.is_empty() {
+        println!("No jobs. Run `joy add job \"Title\" <SCOPE>` to create one.");
+        return Ok(());
+    }
+
+    print_jobs_table(&filtered);
+    Ok(())
+}
+
+/// Cents to a display amount: 123 -> "1.23 EUR".
+fn cents_display(cents: u64, currency: &str) -> String {
+    format!("{}.{:02} {}", cents / 100, cents % 100, currency)
+}
+
+/// The COST cell: total of all attempt costs, empty while nothing ran.
+fn job_cost_cell(item: &Item) -> String {
+    let Some(job) = item.job.as_ref() else {
+        return String::new();
+    };
+    if job.attempts.is_empty() {
+        return String::new();
+    }
+    let total: u64 = job.attempts.iter().map(|a| a.cost_cents).sum();
+    let currency = job
+        .budget
+        .as_ref()
+        .map(|b| b.currency.as_str())
+        .unwrap_or("EUR");
+    cents_display(total, currency)
+}
+
+fn print_jobs_table(jobs: &[&Item]) {
+    let term_width = terminal_width();
+
+    let assignee_cell = |i: &Item| -> String {
+        i.assignees
+            .first()
+            .map(|a| a.member.as_str().to_string())
+            .unwrap_or_else(|| "-".to_string())
+    };
+    let scope_cell = |i: &Item| -> String {
+        let n = i.job.as_ref().map(|j| j.scope.len()).unwrap_or(0);
+        color::plural(n, "item")
+    };
+    let last_cell = |i: &Item| -> String {
+        i.job
+            .as_ref()
+            .and_then(|j| j.attempts.last())
+            .map(|a| a.outcome.to_string())
+            .unwrap_or_else(|| "-".to_string())
+    };
+
+    let col_raw = |header: &str, f: &dyn Fn(&Item) -> String| -> usize {
+        jobs.iter()
+            .map(|i| display_width(&f(i)))
+            .max()
+            .unwrap_or(0)
+            .max(display_width(header))
+    };
+
+    let w_id = col_raw("ID", &|i| i.id.clone());
+    let w_status = col_raw("STA", &|i| color::status_display(&i.status).0);
+    let w_prio = col_raw("PRI", &|i| color::priority_display(&i.priority).0);
+    let w_assignee = col_raw("ASSIGNEE", &assignee_cell);
+    let w_scope = col_raw("SCOPE", &scope_cell);
+    let w_cost = col_raw("COST", &job_cost_cell);
+    let w_last = col_raw("LAST", &last_cell);
+
+    let fixed_width =
+        w_id + 2 + w_status + 2 + w_prio + 2 + w_assignee + 2 + w_scope + 2 + w_cost + 2 + w_last
+            + 2;
+    let min_title_width = 20;
+    let title_width = if term_width > fixed_width {
+        (term_width - fixed_width).max(min_title_width)
+    } else {
+        min_title_width
+    };
+    let sep_len = term_width.min(fixed_width + title_width);
+
+    println!("{}", color::label(&"-".repeat(sep_len)));
+    println!(
+        "{}  {}  {}  {}  {}  {}  {}  {}",
+        pad_colored(&color::label("ID"), "ID", w_id),
+        pad_colored(&color::label("STA"), "STA", w_status),
+        pad_colored(&color::label("PRI"), "PRI", w_prio),
+        pad_colored(&color::label("ASSIGNEE"), "ASSIGNEE", w_assignee),
+        pad_colored(&color::label("SCOPE"), "SCOPE", w_scope),
+        pad_colored(&color::label("COST"), "COST", w_cost),
+        pad_colored(&color::label("LAST"), "LAST", w_last),
+        color::label("TITLE"),
+    );
+    println!("{}", color::label(&"-".repeat(sep_len)));
+
+    for item in jobs {
+        let (status_raw, status_str) = color::status_display(&item.status);
+        let (prio_raw, prio_str) = color::priority_display(&item.priority);
+        let assignee = assignee_cell(item);
+        let scope = scope_cell(item);
+        let cost = job_cost_cell(item);
+        let last = last_cell(item);
+        println!(
+            "{}  {}  {}  {}  {}  {}  {}  {}",
+            pad_colored(&color::id(&item.id), &item.id, w_id),
+            pad_colored(&status_str, &status_raw, w_status),
+            pad_colored(&prio_str, &prio_raw, w_prio),
+            pad_colored(&assignee, &assignee, w_assignee),
+            pad_colored(&scope, &scope, w_scope),
+            pad_colored(&cost, &cost, w_cost),
+            pad_colored(&last, &last, w_last),
+            truncate_title(&item.title, title_width),
+        );
+    }
+
+    println!("{}", color::label(&"-".repeat(sep_len)));
+    println!("{}", color::label(&color::plural(jobs.len(), "job")));
 }
 
 #[derive(serde::Serialize)]

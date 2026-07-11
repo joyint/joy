@@ -117,6 +117,10 @@ pub(crate) struct Cli {
     #[arg(short = 'D', long)]
     decisions: bool,
 
+    /// Show the jobs board (status columns over jobs)
+    #[arg(short = 'J', long)]
+    jobs: bool,
+
     /// Machine-readable JSON output.
     #[arg(long, global = true)]
     json: bool,
@@ -483,6 +487,7 @@ pub fn cli_main() -> anyhow::Result<()> {
             None => commands::board::run(BoardArgs {
                 filter: commands::filter_args::FilterArgs {
                     decisions: cli.decisions,
+                    jobs: cli.jobs,
                     ..Default::default()
                 },
                 short: false,

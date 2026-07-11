@@ -75,6 +75,10 @@ pub struct FilterArgs {
     /// Filter to decisions and show the validity view (alias for --type decision)
     #[arg(short = 'D', long)]
     pub decisions: bool,
+
+    /// Show jobs (they never appear in the default views)
+    #[arg(short = 'J', long)]
+    pub jobs: bool,
 }
 
 impl FilterArgs {

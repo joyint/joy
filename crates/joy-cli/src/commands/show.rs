@@ -26,6 +26,11 @@ pub struct ShowArgs {
     passphrase: Option<String>,
 }
 
+/// Cents to a display amount: 123 -> "1.23 EUR".
+fn cents_display(cents: u64, currency: &str) -> String {
+    format!("{}.{:02} {}", cents / 100, cents % 100, currency)
+}
+
 pub fn run(args: ShowArgs) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
@@ -164,6 +169,94 @@ pub fn run(args: ShowArgs) -> Result<()> {
                 blocker.title,
                 color::status(&blocker.status)
             );
+        }
+    }
+
+    // Job payload: scope, limits, and the attempt record.
+    if let Some(ref job) = item.job {
+        println!("\n{}:", color::label("Scope"));
+        for scope_id in &job.scope {
+            match all_items.iter().find(|i| &i.id == scope_id) {
+                Some(s) => println!(
+                    "  {} {} {}",
+                    color::id(scope_id),
+                    color::status(&s.status),
+                    s.title
+                ),
+                None => println!("  {} (missing)", color::id(scope_id)),
+            }
+        }
+        let currency = job
+            .budget
+            .as_ref()
+            .map(|b| b.currency.as_str())
+            .unwrap_or("EUR");
+        if let Some(ref budget) = job.budget {
+            let mut parts: Vec<String> = Vec::new();
+            if let Some(cents) = budget.max_cents {
+                parts.push(format!("max {}", cents_display(cents, currency)));
+            }
+            if let Some(tokens) = budget.max_tokens {
+                parts.push(format!("max {tokens} tokens"));
+            }
+            if !parts.is_empty() {
+                println!("{} {}", color::label("Budget:  "), parts.join(", "));
+            }
+        }
+        if let Some(ref window) = job.window {
+            let mut parts: Vec<String> = Vec::new();
+            if let Some(not_before) = window.not_before {
+                parts.push(format!("not before {}", not_before.format("%Y-%m-%d %H:%M")));
+            }
+            if let Some(deadline) = window.deadline {
+                parts.push(format!("deadline {}", deadline.format("%Y-%m-%d %H:%M")));
+            }
+            if !parts.is_empty() {
+                println!("{} {}", color::label("Window:  "), parts.join(", "));
+            }
+        }
+        if !job.attempts.is_empty() {
+            println!("\n{}:", color::label("Attempts"));
+            for (n, attempt) in job.attempts.iter().enumerate() {
+                println!(
+                    "  #{} {} {} tokens={} cost={} branch={}",
+                    n + 1,
+                    attempt.started.format("%Y-%m-%d %H:%M"),
+                    attempt.outcome,
+                    attempt.tokens,
+                    cents_display(attempt.cost_cents, currency),
+                    attempt.branch.as_deref().unwrap_or("-"),
+                );
+                if let Some(ref result) = attempt.result {
+                    println!("     {result}");
+                }
+                if let Some(ref error) = attempt.error {
+                    println!("     {error}");
+                }
+            }
+        }
+    }
+
+    // Reverse view on a regular item: the jobs that target it.
+    if !matches!(item.item_type, ItemType::Job) {
+        let jobs = items::jobs_for_item(&root, &item.id)?;
+        if !jobs.is_empty() {
+            println!("\n{}:", color::label("Jobs"));
+            for job_item in &jobs {
+                let latest = job_item
+                    .job
+                    .as_ref()
+                    .and_then(|j| j.attempts.last())
+                    .map(|a| format!(" ({})", a.outcome))
+                    .unwrap_or_default();
+                println!(
+                    "  {} {} {}{}",
+                    color::id(&job_item.id),
+                    color::status(&job_item.status),
+                    job_item.title,
+                    latest
+                );
+            }
         }
     }
 

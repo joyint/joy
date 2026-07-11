@@ -38,6 +38,11 @@ pub fn run(args: crate::BoardArgs) -> Result<()> {
         }
     };
 
+    // -J / --jobs: a board of jobs; they never appear on the default board.
+    if args.filter.jobs {
+        return render_jobs_board(&root, &args);
+    }
+
     let all_items = items::load_items(&root)?;
 
     if all_items.is_empty() {
@@ -496,6 +501,145 @@ fn render_decisions_board(
                 items.len()
             );
             lines.push(color::label(&truncate_display(&head, col_width)));
+            let show = items.len().min(max_items);
+            for item in items.iter().take(show) {
+                let id_colored = color::id(&item.id);
+                let prefix = format!("{id_colored} ");
+                let title_space = col_width.saturating_sub(display_width(&prefix));
+                let title = truncate_display(&item.title, title_space);
+                lines.push(format!("{prefix}{title}"));
+            }
+            if show < items.len() {
+                lines.push(color::label(&format!("+{} more", items.len() - show)));
+            }
+            lines
+        })
+        .collect();
+
+    let max_lines = rendered.iter().map(|c| c.len()).max().unwrap_or(0);
+    for row in 0..max_lines {
+        let mut line = String::new();
+        for (i, col_lines) in rendered.iter().enumerate() {
+            if i > 0 {
+                line.push(' ');
+            }
+            if row < col_lines.len() {
+                let cell = &col_lines[row];
+                let w = display_width(cell);
+                line.push_str(cell);
+                if w < col_width {
+                    line.push_str(&" ".repeat(col_width - w));
+                }
+            } else {
+                line.push_str(&" ".repeat(col_width));
+            }
+        }
+        println!("{}", line.trim_end());
+    }
+
+    println!("{sep}");
+    let counts: Vec<String> = columns
+        .iter()
+        .map(|(_, label, items)| format!("{} {}", items.len(), label.to_lowercase()))
+        .collect();
+    println!("{}", color::label(&counts.join(" · ")));
+
+    Ok(())
+}
+
+/// Render the jobs board: the six status columns over `.joy/jobs/`.
+/// Empty status columns are skipped entirely, like on the decisions
+/// board -- most projects have few jobs at a time.
+fn render_jobs_board(root: &std::path::Path, args: &crate::BoardArgs) -> Result<()> {
+    let jobs = items::load_jobs(root)?;
+    let spec = args.filter.to_spec(root, true)?;
+    let visible: Vec<&Item> = filter::apply(&jobs, &spec);
+
+    if crate::output::is_json() {
+        let mut cols: Vec<BoardColumn> = Vec::new();
+        for (status, label) in STATUS_ORDER {
+            let items: Vec<Item> = visible
+                .iter()
+                .copied()
+                .filter(|i| &i.status == status)
+                .cloned()
+                .collect();
+            cols.push(BoardColumn {
+                status: label.to_string(),
+                count: items.len(),
+                items,
+            });
+        }
+        return crate::output::emit(BoardPayload { columns: cols });
+    }
+
+    let term_width = terminal_width();
+    let sep = color::label(&"-".repeat(term_width));
+
+    let project = store::load_project(root).ok();
+    let project_name = project
+        .as_ref()
+        .map(|p| p.name.as_str())
+        .unwrap_or("(unnamed)");
+    let total = visible.len();
+
+    println!("{sep}");
+    println!(
+        "{}",
+        color::label(&format!(
+            "{project_name} · jobs · {}",
+            color::plural(total, "job")
+        ))
+    );
+    println!("{sep}");
+
+    // Keep only non-empty status columns.
+    let mut columns: Vec<(Status, &str, Vec<&Item>)> = Vec::new();
+    for (status, label) in STATUS_ORDER {
+        let mut items: Vec<&Item> = visible
+            .iter()
+            .copied()
+            .filter(|i| &i.status == status)
+            .collect();
+        if items.is_empty() {
+            continue;
+        }
+        if !args.reverse {
+            items.reverse();
+        }
+        columns.push((status.clone(), label, items));
+    }
+
+    if columns.is_empty() {
+        println!("No jobs. Run `joy add job \"Title\" <SCOPE>` to create one.");
+        return Ok(());
+    }
+
+    let n = columns.len();
+    let gaps = n.saturating_sub(1);
+    let col_width = term_width
+        .saturating_sub(gaps)
+        .checked_div(n)
+        .map(|w| w.max(MIN_COL_WIDTH))
+        .unwrap_or(MIN_COL_WIDTH);
+
+    let max_items = if args.all {
+        usize::MAX
+    } else {
+        terminal_height().saturating_sub(8)
+    };
+
+    // Build per-column cell lines: heading, then one line per job.
+    let rendered: Vec<Vec<String>> = columns
+        .iter()
+        .map(|(status, label, items)| {
+            let mut lines: Vec<String> = Vec::new();
+            let count_str = format!("{} ({})", label, items.len());
+            lines.push(format!(
+                "{}{}",
+                color::status_indicator(status),
+                color::status_heading(status, &count_str)
+            ));
             let show = items.len().min(max_items);
             for item in items.iter().take(show) {
                 let id_colored = color::id(&item.id);
