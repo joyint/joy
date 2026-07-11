@@ -7,48 +7,54 @@ capabilities:
 - conceive
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-11T14:28:59.397290401Z
-updated: 2026-07-11T17:29:55.518992027Z
+updated: 2026-07-11T18:57:28.035194588Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
+history:
+- date: 2026-07-11T18:57:28.035194588Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
-  DECISION: Jobs become first-class Joy items of a new type `job`. A job is the assignment of work (to an AI or a human) over a set of target items, governed by the standard item machinery: six statuses, transition verbs, gates, priorities, deps, description, comments. This replaces the separate `.joy/ai/jobs` record model, which had re-implemented the item lifecycle in parallel (own status enum, own review rounds, own approve/request-changes verbs) while lacking description, comments, priority, deps, and gates — and which hard-bound one job to exactly one item.
+  DECISION: Jobs are first-class Joy items of type `job`. A job is the assignment of work (to an AI or a human) over a scope of items, governed by the standard item machinery: six statuses, transition verbs, gates, priorities, deps, description, comments. The separate `.joy/ai/jobs` record model (own status enum, own review rounds, own approve/request-changes verbs) is retired.
 
   STORAGE AND IDS
-  - Jobs live in `.joy/jobs/<id>.yaml`, same Item schema as `.joy/items/`. They are excluded from default views; `-J` on `joy ls` / `joy board` shows them (analogous to `-D`, but decisions appear in default `ls` while jobs do not). Deleting `.joy/jobs/` leaves the product backlog intact.
-  - IDs: `<ACRONYM>-JOB-xxxx-<hash>` — own counter over `.joy/jobs/`, collision-hash suffix per JOY-01DC-E4, project acronym kept for nested-project addressing. The ID pattern routes deterministically to the directory; no command scans both directories. Single exception: the reverse lookup "which jobs contain item X" in `joy show <ITEM>` scans `.joy/jobs/`.
+  - Jobs live in `.joy/jobs/<id>.yaml`, same Item schema as `.joy/items/`. They are excluded from default views; `-J` on `joy ls` / `joy board` shows them (`-Ja` includes closed). Deleting `.joy/jobs/` leaves the product backlog intact.
+  - IDs: `<ACRONYM>-JOB-xxxx-<hash>` -- own counter over `.joy/jobs/`, collision-hash suffix per JOY-01DC-E4, project acronym kept for nested-project addressing. The ID pattern routes deterministically to the directory; no command scans both. Single exception: the reverse lookup "which jobs contain item X" in `joy show <ITEM>` scans `.joy/jobs/`.
 
   TYPE-SPECIFIC PAYLOAD
-  One optional nested field `job:` on Item (precedent: `validity` on decisions; invisible to all other types, no migration):
-  - `scope`: list of item IDs; REQUIRED at creation (a job without scope is just a prompt with a lifecycle). A container reference (epic/milestone) means its subtree; plan jobs scope the container they create items in.
-  - `budget`: max tokens / max cost, currency. `window`: not_before, deadline.
-  - `attempts`: append-only list of execution loops (started, ended, tokens, cost, branch, result/error, outcome). Retries and abort loops are attempts DATA on the job — not separate run entities and not a second status axis. A job being retried stays `in-progress`; `joy show` surfaces the latest attempt.
-  - Live telemetry (progress %, running token counters) is platform/runner state and never enters git; condensed results are written back as attempt entries at lifecycle transitions only. This LOWERS commit frequency vs. the old record (which pushed on every transition).
-
-  SCOPE MODELING
-  Scope must NOT use `parent` (strict tree, one parent) or `deps` (`is_blocked_by` would permanently block a job on its own open targets). `deps` on jobs keeps normal semantics — job ordering, with computed `blocked` working correctly.
+  One optional nested field `job:` on Item (precedent: `validity` on decisions; invisible to every other type, no migration):
+  - `scope`: list of item IDs; REQUIRED at creation. A container reference (epic/milestone-scoped item) means its subtree; plan jobs reference the container they create items in. Scope must NOT use `parent` (strict tree) or `deps` (`is_blocked_by` would permanently block a job on its own open targets); `deps` on jobs keeps normal semantics -- job ordering with computed `blocked`.
+  - `budget`: max cents / max tokens, currency. `window`: not_before, deadline.
+  - `attempts`: append-only list of execution rounds, written EXCLUSIVELY by the platform at each round's terminal point (started, ended, outcome succeeded/failed/aborted, tokens, cost_cents, branch, result/error, by). Retries and rework rounds are attempts, not statuses: a job being retried stays `in-progress`. Live telemetry never enters git.
+  - `feedback`: the dialog axis, orthogonal to `status` exactly like `validity` on decisions. `awaited` = the assignee asked and the operator is up; `received` = the answer is in, the assignee is up; absent = no dialog open. Set via the standard edit grammar (`joy edit <JOB> --feedback awaited|received`), shown as a column in `-J` views.
 
   LIFECYCLE AND VERBS (no new grammar, one gap-filling verb)
-  - `new` (proposable by AI) -> triage gate `new -> open` with `allow_ai: false` is the human release and authorizes spend -> `open` -> `start` hands the job to the assignee (on-platform: launches execution; this deliberate side effect of a status verb is part of this decision) -> `in-progress` -> `review` (result awaits acceptance; a FINALLY FAILED job also lands in `review` carrying the error, so nothing dies silently) -> `closed` / `rework` / `defer`.
-  - NEW VERB `stop`: generic `in-progress -> open`, filling the existing verb gap symmetric to `start`, valid for any item. On a running job it aborts the current attempt, records an aborted attempt entry WITH partial cost, and leaves the triage approval intact (revoking approval is `defer`). Without a platform (and before a local runner exists), `start`/`stop` on a job refuse with a hint.
-  - The platform MUST watch status changes on in-progress jobs so `joy stop` from the CLI (arriving via git push) actually kills the container — not only the App RPC path.
-
-  CAPABILITY AND ACCEPTANCE
-  - New capability `jobs`, set as template default on the job type (precedent: `conceive` on decisions). It governs job gates — triage approval (spend authorization) and job review (accepting delivered work) — separately from item review (`rev`). A member may hold `jobs` without `rev` and vice versa.
-  - Closing a job does NOT auto-close scope items: job acceptance (the delivered work, e.g. the branch) and item acceptance (the product result, possibly a different person/gate) are distinct. `joy close <JOB>` interactively offers `Close JOY-xxxx "..."? y/N` per scope item (`--items` / `--no-items` for scripts and the App).
+  - `new` (proposable by AI) -> triage gate `new -> open` with allow_ai:false BY DEFAULT for jobs: approving a job is the human release that authorizes execution and spend (status_rules key `job: new -> open` can override) -> `open` -> `start` hands the job to the assignee and launches execution -> `in-progress` -> `review` (result awaits acceptance; a FINALLY FAILED round also lands the job in `review` carrying the error, so nothing dies silently) -> `closed` / rework / defer.
+  - VERB `stop`: generic `in-progress -> open` for any item, symmetric to `start`. On a running job it aborts the current round; the attempt is recorded with the cost that actually accrued. Triage approval stays intact (revoking it is `defer`). The platform watches pushed status changes on in-progress jobs so a CLI-side `stop` kills the container too.
+  - Capability `jobs` (template default on the type, precedent: `conceive` on decisions) governs the job gates -- triage approval (spend) and job review (accepting delivered work) -- deliberately separate from item `review`: who accepts AI work and who accepts the product items can differ.
+  - Closing a job does NOT auto-close scope items: `joy close <JOB>` offers `Close <ID> "..."? [y/N]` per active scope item (`--items` / `--no-items` for scripts and the app).
 
   CLI GRAMMAR
-  - `joy add job "Title" JOY-0001,JOY-0002` — title stays the second positional like every other type; the scope is a third positional that exists only for (and is required by) the job type, with existence check on the IDs; `--scope` as explicit alternative.
-  - `joy edit <JOB> --scope +ID,-ID --budget ... --window ...`; `joy show <JOB>` shows spec, resolved scope (titles+statuses), attempts, costs; `joy show <ITEM>` gains a Jobs section (current and past membership); `joy ls -J` / `joy board -J` with job columns (assignee, scope size, cost, latest attempt).
-  - REJECTED: a `joy jobs` command namespace, `joy delegate` — the value of this decision is that jobs speak the ONE existing grammar. An alias for `ls -J` may come later, an alias only.
+  - `joy add job "Title" JOY-0001,JOY-0002` -- title stays the second positional like every type; the comma-separated scope is a third positional that only the job type accepts and requires (IDs existence-checked, jobs rejected in scope).
+  - `joy edit <JOB> --scope +ID,-ID | list --max-cost --max-tokens --not-before --deadline --feedback ...`; `joy show <JOB>` shows spec, resolved scope, attempts, costs; `joy show <ITEM>` gains a Jobs section; `joy ls -J` / `joy board -J`.
+  - REJECTED: a `joy jobs` command namespace, `joy delegate` -- jobs speak the ONE existing grammar.
 
-  APP (after CLI; the App follows the CLI model)
-  Project-level Jobs board (rendered `board -J`) as the primary surface, with a composer (title, description, scope picker, assignee AI or human, budget/window, priority) = `add job`; approve visible to holders of `jobs`. Multi-select in list/board feeds the same composer. Item detail shows a slim reference to containing jobs (state, link); the per-item AiJobs panel and the one-click Delegate that fires a 1:1 job are REMOVED — delegation always passes the composer and the explicit approve (the triage gate).
+  EXECUTION MODEL (rounds, sandbox, no back-channel)
+  - One round = one fresh, atomic agent process on current git state; completion is process exit (the platform awaits it -- no polling, no in-flight signaling). The job workspace SURVIVES rounds and carries the agent session (the provider conversation file), so a follow-up round resumes where the agent stopped instead of re-reading anything; only the container is fresh.
+  - Sandbox layout, built by the runner, backend-agnostic across AgentRunner backends: `jobs/<id>/worktree` = the job-branch checkout, CODE only; `jobs/<id>/joywork` = a job-owned checkout of MAIN state where the agent's joy CLI reads and writes item state (`JOY_WORKING_DIR` routes every joy invocation there; `JOY_SESSION` comes platform-injected -- job-bound session minting is JOY-020B-D2). The agent never leaves its container; there is NO platform back-channel for writes and no ACP semantics beyond starting the process and collecting its outcome -- the joy CLI (Guard, gates, identity in-process) is the agent's single write interface.
+  - Agents commit their code themselves (they know when a unit is done). After process exit the platform VALIDATES the branch commits: any commit touching `.joy/` fails the attempt and the branch is not pushed; uncommitted leftovers are committed by the platform excluding `.joy/`. The platform pushes the branch and lands joywork's `.joy` changes on main (yaml-aware merge) in the same gate-locked step as the attempt write -- one push of main covers both. No forge credentials ever enter the container.
+  - `AcceptJob` (review -> closed, merges the result branch) refuses any branch whose diff touches `.joy/` -- job branches never carry item state, `.joy` changes ride main. This also catches commits pushed directly to the branch on the forge.
+  - The job branch is platform-owned and deterministic: `joy/<member>/<job-id>`, created before the agent runs, recorded per attempt. Agents need no knowledge of it. Review happens on the forge via the branch link from the latest attempt; the app needs no branch switcher (item state never forks per branch).
+
+  DIALOG (the feedback axis in motion)
+  An agent with a question posts it as a normal job comment and sets `feedback: awaited`, then ends its round; the platform lands both on main in one commit and the job shows "awaiting feedback" everywhere. The operator answers with a comment and sets `feedback: received` (one action in the app). The platform's job watcher -- the same tick that serves CLI stop/start parity -- starts the next round when a job is `in-progress` with `feedback: received` and no live attempt, clearing the field as part of the start. The new round resumes the agent session from the workspace and reads question and answer via `joy show`. Waiting is pure git state: visible in `ls -J`, hand-repairable via `joy edit`, nothing running, no state to orphan.
+
+  APP (follows the CLI model)
+  Project-level Jobs board (`board -J` rendered) as the primary surface with a composer (title, description, scope picker, assignee AI or human, budget/window, priority) = `add job`; approve visible to holders of `jobs`; multi-select in list/board feeds the composer. Job detail shows scope, attempts, the forge link to the latest attempt's branch, and the feedback state with a Reply action. Item detail shows a slim reference to containing jobs. The per-item one-click Delegate that fires a 1:1 job is REMOVED -- delegation always passes the composer and the explicit approve.
 
   CONSEQUENCES / SUPERSESSION
-  - Amends JOY-01EA-2C: its job-record half (`.joy/ai/jobs/<id>.yaml` with own status machine and review rounds) is replaced by job items + attempts; its agent half (`.joy/ai/agents/<member>.yaml`) stands unchanged. Git-native remains the principle; no database store.
-  - Platform follow-ups (JP backlog): runner binds to job items/attempts, multi-item worktree execution, DelegateJob RPC replaced by job-item flow, status watcher for `stop`, reconciliation notes on JP-004C-A0 / JP-004D-3A, `docs/dev/job-delegation.md` cleanup.
-  - Crypt: job-bound zone grants (Crypt doc; not yet implemented in code) attach to attempt/session context held by the platform, keeping the job YAML free of key material; the Crypt document needs a corresponding update.
-  - Terminology: `budget` on a job is expected AI cost; `effort` stays unused on jobs rather than being re-interpreted.
+  - Amends JOY-01EA-2C: its job-record half (`.joy/ai/jobs/<id>.yaml` with own status machine and review rounds) is replaced by job items + attempts; its agent half (`.joy/ai/agents/`) stands. Git-native remains the principle; no database store. A repo migration removes leftover `.joy/ai/jobs/` (JOY-0207-DC).
+  - Supersedes JP-004C-A0 (queued/running/awaiting-approval lifecycle and the record-committed-per-transition model); reconciles JP-004D-3A (backend seam and mock stand; the runner drives job items) and JP-0030-E1 (single surface stands; scoping runs over the job's scope list; ACP is process drive only, never a write channel).
+  - Crypt: job-bound zone grants (not yet implemented) attach to the platform-held attempt/session context, never to the job item YAML.
+  - Terminology: `budget` on a job is expected execution cost; `effort` stays unused on jobs rather than being re-interpreted.
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-07-11T17:29:55.518990756Z

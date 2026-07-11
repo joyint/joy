@@ -10,7 +10,7 @@ effort: 1
 validity: accepted
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-03T22:59:00.521664Z
-updated: 2026-07-04T00:02:55.381822Z
+updated: 2026-07-11T18:57:28.106912034Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-07-04T00:02:55.262337Z
@@ -22,3 +22,6 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-07-04T00:02:55.164315Z
   text: '[x] Accepted and implemented: git-native .joy/ai/jobs + .joy/ai/agents in joy-core, no database, no invented store.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-11T18:57:28.106911443Z
+  text: 'Amended by JOY-01FE-37 (jobs as first-class items): the job-record half of this ADR -- .joy/ai/jobs/<id>.yaml with its own status machine (queued/running/awaiting-approval/...) and review rounds -- is replaced by job items in .joy/jobs/ with attempts data; a repo migration (JOY-0207-DC) removes leftover .joy/ai/jobs/ directories. The agent half (.joy/ai/agents/) stands unchanged, as does the git-native principle (no database store).'
