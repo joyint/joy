@@ -11,12 +11,16 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-11T10:23:49.733712Z
-updated: 2026-07-11T10:28:13.837418Z
+updated: 2026-07-11T11:02:23.452115Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-07-11T10:23:49.871617Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 - date: 2026-07-11T10:28:13.837418Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-11T10:51:22.991581Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-11T11:02:23.452115Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'JOY-01AA-9E made ai_setup::update_gitignore write the full fixed set (base entries plus every tool''s ignore entries) so joy ai init no longer drops tool lines. The joy update path was not aligned: GitignoreBlockItem in crates/joy-cli/src/update_registry.rs checks and refreshes the managed block against GITIGNORE_BASE_ENTRIES only, and its refresh calls update_gitignore_block(root, GITIGNORE_BASE_ENTRIES), which replaces the whole block and drops the per-tool entries (.claude/, .vibe/, AGENTS.md, .qwen/, .github/copilot*). They are only restored when a tool is stale (AiToolItem::fix -> sync_gitignore_for_configured_tools). So on any repo whose AI tools are up to date, joy update un-ignores the local AI scaffolding, and joy update --check still reports the block OK because it only checks the base entries. Fix: GitignoreBlockItem must manage the same canonical set as update_gitignore.'
 comments:
@@ -26,3 +30,9 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-07-11T10:28:13.694512Z
   text: '[x] Fixed. Added ai_setup::managed_gitignore_entries() as the single source of truth (base + all TOOL_GITIGNORE_ENTRIES); update_gitignore now derives from it, and GitignoreBlockItem (joy update check + refresh) uses it instead of GITIGNORE_BASE_ENTRIES, so joy update no longer strips the per-tool lines. Added a regression test. Verified: cargo check + 23 ai_setup tests + joy-cli update tests pass; the fixed binary''s joy update --check now reports the .gitignore block out of date on a repo whose managed block lacks the tool entries (was a false OK before).'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-11T10:51:23.103364Z
+  text: 'Correction: the first fix made GitignoreBlockItem require the full set unconditionally, which regressed ''joy update --check up to date after a fresh init'' (base-only is correct when no AI tool is configured; ai.bats/update_command.bats caught it in CI). Reworked to be AI-tool aware and all-or-nothing: if any tool is configured the block carries the full fixed set, otherwise the base-only set joy init writes. Verified locally: manual e2e (no-tool init stays up to date; configured-tool repo gets entries added and a second joy update does not strip them) and both bats files (update_command.bats + ai.bats) pass 33/0.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-11T11:02:23.318081Z
+  text: 'Validated with the full local gate (just check on rustc 1.97, matching CI): fmt-check, clippy --workspace -D warnings, all unit/cmd tests, and 525 bats integration tests pass, 0 failures.'

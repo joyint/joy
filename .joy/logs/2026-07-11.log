@@ -4,3 +4,7 @@
 2026-07-11T10:23:49.984Z JOY-01FE-98 comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-07-11T10:28:13.712Z JOY-01FE-98 comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-07-11T10:28:13.852Z JOY-01FE-98 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-11T10:51:23.011Z JOY-01FE-98 item.status_changed "closed -> open" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-11T10:51:23.115Z JOY-01FE-98 comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-11T11:02:23.334Z JOY-01FE-98 comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-11T11:02:23.465Z JOY-01FE-98 item.status_changed "open -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
