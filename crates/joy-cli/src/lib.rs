@@ -52,6 +52,7 @@ Core Commands:
 Shortcuts:
   approve  Approve a new item into the backlog (new -> open)
   start    Start working on an item (-> in-progress)
+  stop     Stop working on an item (in-progress -> open)
   submit   Send an item to review (-> review)
   rework   Send a reviewed item back to work (review -> in-progress)
   close    Set item status to closed
@@ -166,6 +167,8 @@ enum Commands {
     Approve(ShortcutArgs),
     /// Shortcut: set item status to in-progress
     Start(ShortcutArgs),
+    /// Shortcut: stop an in-progress item (in-progress -> open)
+    Stop(ShortcutArgs),
     /// Shortcut: set item status to review
     Submit(ShortcutArgs),
     /// Shortcut: send a reviewed item back for rework (review -> in-progress)
@@ -447,6 +450,9 @@ pub fn cli_main() -> anyhow::Result<()> {
             Some(Commands::Start(args)) => commands::status::run(
                 commands::status::StatusArgs::new(args.id, "in-progress".to_string()),
             ),
+            Some(Commands::Stop(args)) => {
+                commands::status::run(commands::status::StatusArgs::stop(args.id))
+            }
             Some(Commands::Submit(args)) => commands::status::run(
                 commands::status::StatusArgs::new(args.id, "review".to_string()),
             ),

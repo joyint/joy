@@ -24,8 +24,9 @@ Workflow:
   All transitions are allowed by default. Joy warns but does not block;
   tighten individual transitions with gates (see joy tutorial, Mission 9).
   Shortcuts: joy approve (new -> open), joy start (-> in-progress),
-  joy submit (-> review), joy rework (review -> in-progress),
-  joy close (-> closed), joy reopen, joy defer (-> deferred).
+  joy stop (in-progress -> open), joy submit (-> review),
+  joy rework (review -> in-progress), joy close (-> closed),
+  joy reopen, joy defer (-> deferred).
 
 Behavior:
   - Closing an item with open children prints a warning
@@ -39,11 +40,28 @@ pub struct StatusArgs {
 
     /// New status: new|open|in-progress|review|closed|deferred
     status: String,
+
+    /// Set when invoked via `joy stop`: restricts the transition to
+    /// in-progress -> open (the symmetric counterpart of `joy start`).
+    #[arg(skip)]
+    via_stop: bool,
 }
 
 impl StatusArgs {
     pub fn new(id: String, status: String) -> Self {
-        Self { id, status }
+        Self {
+            id,
+            status,
+            via_stop: false,
+        }
+    }
+
+    pub fn stop(id: String) -> Self {
+        Self {
+            id,
+            status: "open".to_string(),
+            via_stop: true,
+        }
     }
 }
 
@@ -58,13 +76,29 @@ pub fn run(args: StatusArgs) -> Result<()> {
     let mut item = items::load_item(&ctx.root, &args.id)?;
     let old_status = item.status.clone();
 
-    ctx.enforce(
-        &Action::ChangeStatus {
+    if args.via_stop && !matches!(old_status, Status::InProgress) {
+        anyhow::bail!(
+            "joy stop moves an in-progress item back to open; {} is {}.\n  Use `joy status {} <STATUS>` for other transitions.",
+            item.id,
+            old_status,
+            item.id
+        );
+    }
+
+    // The whole job lifecycle is governed by the `jobs` capability and
+    // its own gate keys, so job items route to a separate guard action.
+    let action = if matches!(item.item_type, ItemType::Job) {
+        Action::ChangeJobStatus {
             from: old_status.clone(),
             to: new_status.clone(),
-        },
-        &item.id,
-    )?;
+        }
+    } else {
+        Action::ChangeStatus {
+            from: old_status.clone(),
+            to: new_status.clone(),
+        }
+    };
+    ctx.enforce(&action, &item.id)?;
 
     // Warn when reopening a released item
     if matches!(old_status, Status::Closed | Status::Deferred)
@@ -215,6 +249,12 @@ pub fn run(args: StatusArgs) -> Result<()> {
             color::id(&item.id),
             color::status(&old_status),
             color::status(&new_status)
+        );
+    }
+
+    if args.via_stop && matches!(item.item_type, ItemType::Job) {
+        eprintln!(
+            "note: a running execution is aborted by the platform watcher; the attempt is recorded with its partial cost"
         );
     }
 
