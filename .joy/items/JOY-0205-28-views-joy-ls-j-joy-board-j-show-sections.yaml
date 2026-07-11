@@ -1,9 +1,11 @@
 id: JOY-0205-28
 title: 'views: joy ls -J, joy board -J, show sections'
 type: story
-status: new
+status: review
 priority: high
 parent: JOY-01FF-9D
+assignees:
+- member: ai:claude@joy
 capabilities:
 - plan
 - implement
@@ -11,7 +13,11 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-11T15:15:58.465592677Z
-updated: 2026-07-11T15:15:58.465592677Z
+updated: 2026-07-11T15:46:18.417300754Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
+history:
+- date: 2026-07-11T15:46:18.348512341Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-11T15:46:18.417300754Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'ls -J / board -J with job columns (assignee, scope size, cost, latest attempt state); jobs hidden from default views, -Ja includes closed. joy show JOB: spec, resolved scope with titles+statuses, attempts, costs. joy show ITEM: Jobs section (current and past membership, reverse scan over .joy/jobs/).'
