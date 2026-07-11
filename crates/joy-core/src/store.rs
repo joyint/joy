@@ -553,6 +553,49 @@ mod tests {
     }
 
     #[test]
+    fn write_yaml_preserve_keeps_unknown_top_level_fields() {
+        // Guards the schema-evolution contract for project.yaml: a binary
+        // whose `Project` struct does not model a top-level key (e.g. an
+        // older joy rewriting a file that carries the newer `platform`
+        // field, or any future addition) must not drop it on write.
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("project.yaml");
+        let project = crate::model::project::Project::new("test".into(), Some("TST".into()));
+        write_yaml(&path, &project).unwrap();
+
+        // Simulate a newer schema adding top-level fields this struct
+        // does not know about.
+        let mut content = std::fs::read_to_string(&path).unwrap();
+        content.push_str(
+            "unknown_future_field: keep-me\nunknown_future_map:\n  verify_key: abc123\n",
+        );
+        std::fs::write(&path, &content).unwrap();
+
+        // A modeled-field rewrite must preserve both unknown keys.
+        let mut reread: crate::model::project::Project = read_yaml(&path).unwrap();
+        reread.description = Some("changed".into());
+        write_yaml_preserve(&path, &reread).unwrap();
+
+        let value: serde_yaml_ng::Value =
+            serde_yaml_ng::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(
+            value.get("unknown_future_field").and_then(|v| v.as_str()),
+            Some("keep-me")
+        );
+        assert_eq!(
+            value
+                .get("unknown_future_map")
+                .and_then(|v| v.get("verify_key"))
+                .and_then(|v| v.as_str()),
+            Some("abc123")
+        );
+        assert_eq!(
+            value.get("description").and_then(|v| v.as_str()),
+            Some("changed")
+        );
+    }
+
+    #[test]
     fn is_initialized_empty_dir() {
         let dir = tempdir().unwrap();
         assert!(!is_initialized(dir.path()));

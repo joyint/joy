@@ -67,7 +67,28 @@ pub struct Project {
     /// vision/guardianship/Crypt.md.
     #[serde(default, skip_serializing_if = "CryptConfig::is_empty")]
     pub crypt: CryptConfig,
+    /// The platform's session-signing identity (JOY-020B-D2). When
+    /// registered, the platform can mint job-bound sessions for sandboxed
+    /// AI agents that joy commands verify against this key at command
+    /// time. Absent means no platform is registered and job-bound
+    /// sessions are rejected. Written only by `joy project platform-key`
+    /// (Manage-guarded); it is not a member entry, so it never enters
+    /// attestation or guard membership logic.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platform: Option<PlatformInfo>,
     pub created: DateTime<Utc>,
+}
+
+/// The registered execution platform's verification key (JOY-020B-D2).
+/// The matching Ed25519 private key never enters the repository; the
+/// platform keeps it and signs job-bound session claims with it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PlatformInfo {
+    /// Hex-encoded Ed25519 public key the platform signs job-bound
+    /// session claims with.
+    pub verify_key: String,
+    /// When this key was (last) registered.
+    pub registered: DateTime<Utc>,
 }
 
 /// Per-project member-PII privacy mode (ADR-042). Stored in project.yaml
@@ -527,8 +548,36 @@ impl Project {
             docs: Docs::default(),
             members: BTreeMap::new(),
             crypt: CryptConfig::default(),
+            platform: None,
             created: Utc::now(),
         }
+    }
+
+    /// Register (or rotate) the platform's session verify key
+    /// (JOY-020B-D2). Validates that `verify_key` is a well-formed
+    /// hex-encoded Ed25519 public key. Returns `true` when the project
+    /// changed, `false` when the identical key was already registered
+    /// (idempotent re-registration keeps the original `registered`
+    /// timestamp). The write is Manage-guarded at the call site.
+    pub fn set_platform_key(&mut self, verify_key: &str) -> Result<bool, JoyError> {
+        let key = verify_key.trim();
+        crate::auth::PublicKey::from_hex(key).map_err(|e| {
+            JoyError::Other(format!(
+                "invalid platform verify key (expected a hex-encoded Ed25519 public key): {e}"
+            ))
+        })?;
+        if self
+            .platform
+            .as_ref()
+            .is_some_and(|p| p.verify_key == key)
+        {
+            return Ok(false);
+        }
+        self.platform = Some(PlatformInfo {
+            verify_key: key.to_string(),
+            registered: Utc::now(),
+        });
+        Ok(true)
     }
 
     /// The effective privacy mode: `Open` when unset (ADR-042).
@@ -801,6 +850,66 @@ mod tests {
     fn privacy_mode_display() {
         assert_eq!(PrivacyMode::Open.to_string(), "open");
         assert_eq!(PrivacyMode::Anonymous.to_string(), "anonymous");
+    }
+
+    fn platform_key_hex(seed_byte: u8) -> String {
+        crate::auth::IdentityKeypair::from_seed(&[seed_byte; 32])
+            .public_key()
+            .to_hex()
+    }
+
+    #[test]
+    fn platform_absent_from_yaml_by_default() {
+        let project = Project::new("T".into(), Some("T".into()));
+        let yaml = serde_yaml_ng::to_string(&project).unwrap();
+        assert!(!yaml.contains("platform"), "got:\n{yaml}");
+        // Legacy files without the field parse to None.
+        let parsed: Project = serde_yaml_ng::from_str(&yaml).unwrap();
+        assert!(parsed.platform.is_none());
+    }
+
+    #[test]
+    fn platform_field_roundtrips() {
+        let mut project = Project::new("T".into(), Some("T".into()));
+        let key = platform_key_hex(7);
+        assert!(project.set_platform_key(&key).unwrap());
+        let yaml = serde_yaml_ng::to_string(&project).unwrap();
+        let parsed: Project = serde_yaml_ng::from_str(&yaml).unwrap();
+        let platform = parsed.platform.expect("platform survives roundtrip");
+        assert_eq!(platform.verify_key, key);
+        assert_eq!(
+            platform.registered,
+            project.platform.as_ref().unwrap().registered
+        );
+    }
+
+    #[test]
+    fn set_platform_key_rejects_invalid_key() {
+        let mut project = Project::new("T".into(), Some("T".into()));
+        assert!(project.set_platform_key("not-hex").is_err());
+        assert!(project.set_platform_key("abcd").is_err(), "wrong length");
+        assert!(project.platform.is_none());
+    }
+
+    #[test]
+    fn set_platform_key_is_idempotent_and_rotates() {
+        let mut project = Project::new("T".into(), Some("T".into()));
+        let key_a = platform_key_hex(1);
+        let key_b = platform_key_hex(2);
+
+        assert!(project.set_platform_key(&key_a).unwrap());
+        let first_registered = project.platform.as_ref().unwrap().registered;
+
+        // Same key again: no change, original registration timestamp kept.
+        assert!(!project.set_platform_key(&key_a).unwrap());
+        assert_eq!(
+            project.platform.as_ref().unwrap().registered,
+            first_registered
+        );
+
+        // A different key replaces the registration.
+        assert!(project.set_platform_key(&key_b).unwrap());
+        assert_eq!(project.platform.as_ref().unwrap().verify_key, key_b);
     }
 
     #[test]
