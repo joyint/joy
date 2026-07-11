@@ -8,3 +8,8 @@
 2026-07-11T10:51:23.115Z JOY-01FE-98 comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-07-11T11:02:23.334Z JOY-01FE-98 comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-07-11T11:02:23.465Z JOY-01FE-98 item.status_changed "open -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-11T13:02:41.811Z JOY-01FF-36 item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-11T13:02:41.937Z JOY-01FF-36 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-11T13:02:42.034Z JOY-01FF-36 comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-11T13:09:58.082Z JOY-01FF-36 comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-11T13:09:58.208Z JOY-01FF-36 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

@@ -1,0 +1,28 @@
+id: JOY-01FF-36
+title: auto-sync pollutes --json stdout with its summary table
+type: bug
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-11T13:02:41.791451Z
+updated: 2026-07-11T13:09:58.194922Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-07-11T13:02:41.925768Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-11T13:09:58.194922Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'auto_sync_repo (crates/joy-cli/src/lib.rs) runs run_full_sync on the first invocation after a joy upgrade, which prints its per-item summary to stdout via println!. Under --json this corrupts the payload: e.g. joy --json auth status emits the ''Repo state / version marker stamped'' table before the JSON object, so JSON.parse fails for any --json consumer (VS Code extension, AI tools). The ''synced this repo'' banner is already on stderr (eprintln). Fix: the incidental auto-sync summary must not go to stdout; run it quietly during auto-sync (the stderr banner already signals the sync), keep the explicit joy update verbose.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-11T13:02:42.022627Z
+  text: 'Plan: add a verbose flag to run_full_sync; gate the println! summary on it. auto_sync_repo passes false (quiet, stdout stays clean for --json; the eprintln ''synced this repo'' banner remains), the explicit joy update command passes true (unchanged). Verify with a bats test asserting joy --json auth status stdout is parseable JSON right after a forced stale marker.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-11T13:09:58.064110Z
+  text: '[x] Fixed. run_full_sync gained a verbose flag; auto_sync_repo passes false so the summary no longer reaches stdout, the explicit joy update passes true (unchanged). Verified with the full local just check (rustc 1.97): fmt-check, clippy -D warnings, all unit/cmd tests, and 526 bats tests pass including the new ''auto-sync keeps --json stdout clean'' regression test. Manual e2e: joy --json auth status stdout stays parseable JSON during a forced auto-sync.'

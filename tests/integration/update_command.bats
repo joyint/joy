@@ -56,6 +56,21 @@ load setup
     [ "$stamped" != "0.0.0-stale" ]
 }
 
+@test "auto-sync keeps --json stdout clean (JOY-01FF-36)" {
+    joy init --name "Test"
+    git add -A && git commit -m "init [no-item]" --quiet
+    joy ls >/dev/null  # initial stamp
+    # Force a stale marker so the auto-sync fires on the next invocation.
+    git config --local joy.last-sync-version "0.0.0-stale"
+    # Capture stdout only: the auto-sync summary must not corrupt the payload.
+    out=$(joy --json ls 2>/dev/null)
+    [ "${out:0:1}" = "{" ]
+    [ "${out: -1}" = "}" ]
+    [[ "$out" != *"version marker"* ]] || bats_lib_diag "sync summary leaked to --json stdout: $out"
+    # The sync still ran (marker refreshed), just without the stdout table.
+    [ "$(git config --local joy.last-sync-version)" != "0.0.0-stale" ]
+}
+
 @test "joy update --check does not write any files even with stale marker (JOY-0165-1F)" {
     joy init --name "Test"
     git add -A && git commit -m "init [no-item]" --quiet

@@ -122,7 +122,7 @@ pub fn run(args: UpdateArgs) -> Result<()> {
             );
             return Ok(());
         }
-        let changed = run_full_sync(&root);
+        let changed = run_full_sync(&root, true);
         println!();
         let summary = match changed {
             0 => "Joy update complete -- nothing to refresh.".to_string(),
@@ -149,7 +149,15 @@ pub fn run(args: UpdateArgs) -> Result<()> {
 /// rows ONLY for items that actually changed (terse by design); section
 /// headers are printed lazily when the first changed row appears.
 /// Returns the total number of refreshed artefacts.
-pub(crate) fn run_full_sync(root: &Path) -> u32 {
+/// Run every registry refresh and return the number of artefacts changed.
+///
+/// `verbose` controls only the stdout summary. The explicit `joy update`
+/// command passes `true` to print the per-section table. The incidental
+/// auto-sync (see `auto_sync_repo`) passes `false`: the summary must not reach
+/// stdout, or it corrupts the payload of a `--json` command that happens to
+/// trigger the one-time sync (JOY-01FF-36). The "synced this repo" banner on
+/// stderr already signals the sync to interactive users.
+pub(crate) fn run_full_sync(root: &Path, verbose: bool) -> u32 {
     let items = update_registry::all();
     let mut changed = 0u32;
     for section in SECTION_ORDER {
@@ -164,25 +172,26 @@ pub(crate) fn run_full_sync(root: &Path) -> u32 {
             };
             for row in rows {
                 if let Some(action) = row.action {
-                    if !header_printed {
-                        println!("{}", color::section(section));
-                        header_printed = true;
-                    }
-                    println!(
-                        "  {}{:<24} {}",
-                        color::check_mark(),
-                        row.name,
-                        color::success(action)
-                    );
                     changed += 1;
+                    if verbose {
+                        if !header_printed {
+                            println!("{}", color::section(section));
+                            header_printed = true;
+                        }
+                        println!(
+                            "  {}{:<24} {}",
+                            color::check_mark(),
+                            row.name,
+                            color::success(action)
+                        );
+                    }
                 }
             }
         }
-        if header_printed {
+        if verbose && header_printed {
             println!();
         }
     }
-    // Trim the trailing blank line we always add after the last section.
     changed
 }
 

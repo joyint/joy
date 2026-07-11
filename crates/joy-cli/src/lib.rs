@@ -314,7 +314,7 @@ fn auto_sync_repo() {
             // update + stamp marker). Each routine prints its own
             // summary; the trailing one-liner ties them together so the
             // user / AI can spot the version transition.
-            let _ = commands::update::run_full_sync(&root);
+            let _ = commands::update::run_full_sync(&root, false);
             let prev = recorded.unwrap_or_else(|| "(never)".to_string());
             eprintln!("joy {current}: synced this repo (previous marker: {prev}).");
         }
