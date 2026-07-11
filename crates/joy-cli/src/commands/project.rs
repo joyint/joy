@@ -67,6 +67,17 @@ enum ProjectCommand {
     Set(SetArgs),
     /// Manage project members
     Member(MemberArgs),
+    /// Register the execution platform's session verify key. Job-bound
+    /// AI sessions minted by the platform are accepted only when signed
+    /// by the matching private key (JOY-020B-D2).
+    PlatformKey(PlatformKeyArgs),
+}
+
+#[derive(clap::Args)]
+struct PlatformKeyArgs {
+    /// Hex-encoded Ed25519 public key the platform signs job-bound
+    /// sessions with.
+    key: String,
 }
 
 #[derive(clap::Args)]
@@ -215,6 +226,10 @@ pub fn run(args: ProjectArgs) -> Result<()> {
         }
         Some(ProjectCommand::Member(a)) => {
             return run_member(a, &mut project, &project_path, &ctx);
+        }
+        Some(ProjectCommand::PlatformKey(a)) => {
+            ctx.enforce(&Action::ManageProject, "project")?;
+            return set_platform_key(&ctx, &project_path, &mut project, &a.key);
         }
         None => {}
     }
@@ -1178,6 +1193,58 @@ fn show_project(project: &Project, root: &std::path::Path) {
     }
 }
 
+/// `joy project platform-key <hex>`: register (or rotate) the execution
+/// platform's session verify key (JOY-020B-D2). Manage-guarded by the
+/// caller; the write goes through write_yaml_preserve and is event-logged.
+fn set_platform_key(
+    ctx: &Context,
+    project_path: &std::path::Path,
+    project: &mut Project,
+    key: &str,
+) -> Result<()> {
+    let changed = project.set_platform_key(key)?;
+    let registered = project
+        .platform
+        .as_ref()
+        .expect("set_platform_key leaves a platform entry")
+        .registered;
+    if changed {
+        store::write_yaml_preserve(project_path, project)?;
+        let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+        joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
+        let log_user = ctx.log_user();
+        joy_core::event_log::log_event_as(
+            &ctx.root,
+            joy_core::event_log::EventType::ProjectUpdated,
+            "project",
+            Some("platform verify key registered"),
+            &log_user,
+        );
+        joy_core::git_ops::auto_git_post_command(&ctx.root, "project platform-key", &log_user);
+    }
+
+    if crate::output::is_json() {
+        #[derive(serde::Serialize)]
+        struct PlatformKeyPayload<'a> {
+            verify_key: &'a str,
+            registered: chrono::DateTime<chrono::Utc>,
+            changed: bool,
+        }
+        return crate::output::emit(PlatformKeyPayload {
+            verify_key: key.trim(),
+            registered,
+            changed,
+        });
+    }
+
+    if changed {
+        println!("Platform verify key registered.");
+    } else {
+        println!("Platform verify key unchanged (already registered).");
+    }
+    Ok(())
+}
+
 fn run_member(
     args: MemberArgs,
     project: &mut Project,
@@ -1748,7 +1815,7 @@ fn print_members_table(project: &Project, root: &std::path::Path) {
     let auth_statuses: Vec<(&str, String)> = project
         .members()
         .map(|(id, member)| {
-            let auth = member_auth_status(id, member, project, &project_id, use_emoji);
+            let auth = member_auth_status(id, member, project, &project_id, root, use_emoji);
             (id.as_str(), auth)
         })
         .collect();
@@ -2026,6 +2093,7 @@ fn member_auth_status(
     member: &Member,
     all_members: &Project,
     project_id: &str,
+    root: &std::path::Path,
     use_emoji: bool,
 ) -> String {
     use joy_core::model::project::is_ai_member;
@@ -2033,14 +2101,21 @@ fn member_auth_status(
     let is_ai = is_ai_member(id);
 
     // For humans: has passphrase key?
-    // For AI: has any human registered an ai_delegations entry for this AI?
-    let has_auth = if is_ai {
-        all_members
+    // For AI: either a human registered an ai_delegations entry (token
+    // channel) or the project registered a platform key (job-bound
+    // session channel, JOY-020B-D2).
+    let has_delegation = is_ai
+        && all_members
             .member_values()
-            .any(|m| m.ai_delegations.contains_key(id))
+            .any(|m| m.ai_delegations.contains_key(id));
+    let has_auth = if is_ai {
+        has_delegation || all_members.platform.is_some()
     } else {
         member.verify_key.is_some()
     };
+
+    // When the active AI session is job-bound, the job id it is bound to.
+    let mut job_binding: Option<String> = None;
 
     // Session check: must mirror what resolve_identity (joy-core) actually
     // accepts at runtime. A check mark that the runtime would reject is
@@ -2071,17 +2146,30 @@ fn member_auth_status(
                     let _ = joy_core::auth::session::remove_session(project_id, id);
                     return None;
                 }
-                match &sess.claims.token_key {
-                    Some(tk) if current_delegation_keys.contains(&tk.as_str()) => Some(()),
-                    Some(_) => {
-                        // Delegation rotated — previous session is no longer trusted.
-                        let _ = joy_core::auth::session::remove_session(project_id, id);
-                        None
-                    }
-                    None => None,
-                }?;
+                if sess.claims.job_id.is_some() {
+                    // Job-bound platform session (JOY-020B-D2): active
+                    // exactly when the runtime accept rule passes --
+                    // display and runtime share validate_job_session
+                    // (JOY-00F4-CF). A rejected session (job left
+                    // in-progress, key rotated, ...) is kept on disk: the
+                    // binding is enforced at command time, not by file
+                    // presence.
+                    joy_core::identity::validate_job_session(root, all_members, project_id, &sess)
+                        .ok()?;
+                } else {
+                    match &sess.claims.token_key {
+                        Some(tk) if current_delegation_keys.contains(&tk.as_str()) => Some(()),
+                        Some(_) => {
+                            // Delegation rotated — previous session is no longer trusted.
+                            let _ = joy_core::auth::session::remove_session(project_id, id);
+                            None
+                        }
+                        None => None,
+                    }?;
+                }
                 let expected_sid = joy_core::auth::session::session_id(project_id, id);
                 if current_session_id.as_deref() == Some(expected_sid.as_str()) {
+                    job_binding = sess.claims.job_id.clone();
                     Some(())
                 } else {
                     None
@@ -2117,10 +2205,10 @@ fn member_auth_status(
         if !has_auth {
             "· ·".to_string()
         } else if is_ai {
-            if has_session {
-                "✓ 🎟️".to_string()
-            } else {
-                "· 🎟️".to_string()
+            match (has_session, &job_binding) {
+                (true, Some(job)) => format!("✓ 🎟️ job: {job}"),
+                (true, None) => "✓ 🎟️".to_string(),
+                (false, _) => "· 🎟️".to_string(),
             }
         } else if has_session {
             "✓ 🔐".to_string()
@@ -2130,11 +2218,25 @@ fn member_auth_status(
     } else if !has_auth {
         "--".to_string()
     } else {
-        let kind = if is_ai { "tok" } else { "key" };
-        if has_session {
+        // `tok` = delegation-token channel, `job` = platform job-session
+        // channel (either the active session is job-bound, or the only
+        // registered auth path is the platform key), `key` = human
+        // passphrase key.
+        let kind = if !is_ai {
+            "key"
+        } else if job_binding.is_some() || !has_delegation {
+            "job"
+        } else {
+            "tok"
+        };
+        let base = if has_session {
             color::warning(&format!("{kind}+s"))
         } else {
             color::warning(kind)
+        };
+        match &job_binding {
+            Some(job) => format!("{base} job: {job}"),
+            None => base,
         }
     }
 }

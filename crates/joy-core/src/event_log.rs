@@ -37,6 +37,10 @@ pub enum EventType {
     JobDelegated,
     JobStatusChanged,
     JobReviewed,
+    /// Project-level configuration change (e.g. platform key
+    /// registration). Details carry a structural description, never
+    /// user-authored content.
+    ProjectUpdated,
 }
 
 impl fmt::Display for EventType {
@@ -65,6 +69,7 @@ impl fmt::Display for EventType {
             Self::GuardDenied => "guard.denied",
             Self::GuardWarned => "guard.warned",
             Self::AuthSessionCreated => "auth.session_created",
+            Self::ProjectUpdated => "project.updated",
         };
         write!(f, "{s}")
     }
@@ -113,6 +118,7 @@ impl EventType {
             "guard.denied" => Some(Self::GuardDenied),
             "guard.warned" => Some(Self::GuardWarned),
             "auth.session_created" => Some(Self::AuthSessionCreated),
+            "project.updated" => Some(Self::ProjectUpdated),
             _ => None,
         }
     }
