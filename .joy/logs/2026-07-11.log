@@ -32,3 +32,4 @@
 2026-07-11T15:46:18.606Z JOY-0206-C6 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-07-11T17:28:19.700Z JOY-020A-C5 item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-07-11T17:28:42.865Z JOY-020A-C5 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-11T17:28:42.982Z JOY-020A-C5 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
