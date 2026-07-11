@@ -87,8 +87,7 @@ pub fn mint_job_session(
     };
     if platform_keypair.public_key().to_hex() != platform.verify_key {
         return Err(JoyError::AuthFailed(
-            "platform signing key does not match the verify key registered in project.yaml"
-                .into(),
+            "platform signing key does not match the verify key registered in project.yaml".into(),
         ));
     }
 
@@ -107,9 +106,7 @@ pub fn mint_job_session(
     // and assignees are enforced at command time (see module docs).
     let item = crate::items::load_item(root, job_id)?;
     if item.item_type != ItemType::Job {
-        return Err(JoyError::AuthFailed(format!(
-            "{job_id} is not a job item"
-        )));
+        return Err(JoyError::AuthFailed(format!("{job_id} is not a job item")));
     }
 
     // Record the approving human at rest: an at-rest member key passes
@@ -239,10 +236,7 @@ mod tests {
             Duration::hours(1),
         )
         .unwrap_err();
-        assert!(
-            err.to_string().contains("does not match"),
-            "got: {err}"
-        );
+        assert!(err.to_string().contains("does not match"), "got: {err}");
     }
 
     #[test]

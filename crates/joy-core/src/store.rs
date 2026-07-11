@@ -566,9 +566,8 @@ mod tests {
         // Simulate a newer schema adding top-level fields this struct
         // does not know about.
         let mut content = std::fs::read_to_string(&path).unwrap();
-        content.push_str(
-            "unknown_future_field: keep-me\nunknown_future_map:\n  verify_key: abc123\n",
-        );
+        content
+            .push_str("unknown_future_field: keep-me\nunknown_future_map:\n  verify_key: abc123\n");
         std::fs::write(&path, &content).unwrap();
 
         // A modeled-field rewrite must preserve both unknown keys.

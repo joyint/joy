@@ -118,10 +118,7 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
                                             });
                                         }
                                         Err(reason) => {
-                                            eprintln!(
-                                                "{}",
-                                                job_session_rejection_hint(&reason)
-                                            );
+                                            eprintln!("{}", job_session_rejection_hint(&reason));
                                         }
                                     }
                                 } else {

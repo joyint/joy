@@ -91,15 +91,8 @@ fn mint_then_resolve_identity_full_flow() {
     assert!(!identity.authenticated, "no session yet");
 
     // --- Mint and resolve: the accept path. ---
-    let env_value = mint_job_session(
-        root,
-        &PLATFORM_SEED,
-        AI,
-        JOB,
-        OPERATOR,
-        Duration::hours(2),
-    )
-    .unwrap();
+    let env_value =
+        mint_job_session(root, &PLATFORM_SEED, AI, JOB, OPERATOR, Duration::hours(2)).unwrap();
     assert!(env_value.starts_with("joy_s_"), "got: {env_value}");
     set_env("JOY_SESSION", &env_value);
 
@@ -146,8 +139,7 @@ fn mint_then_resolve_identity_full_flow() {
 
     // --- Wrong JOY_SESSION private key fails proof of possession. ---
     let rogue = IdentityKeypair::from_random();
-    let forged_env =
-        joy_core::auth::session::encode_session_env(&sid, &rogue.to_seed_bytes());
+    let forged_env = joy_core::auth::session::encode_session_env(&sid, &rogue.to_seed_bytes());
     set_env("JOY_SESSION", &forged_env);
     let identity = resolve_identity(root).unwrap();
     assert!(

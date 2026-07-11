@@ -566,11 +566,7 @@ impl Project {
                 "invalid platform verify key (expected a hex-encoded Ed25519 public key): {e}"
             ))
         })?;
-        if self
-            .platform
-            .as_ref()
-            .is_some_and(|p| p.verify_key == key)
-        {
+        if self.platform.as_ref().is_some_and(|p| p.verify_key == key) {
             return Ok(false);
         }
         self.platform = Some(PlatformInfo {
