@@ -218,6 +218,10 @@ pub fn run(args: ShowArgs) -> Result<()> {
                 println!("{} {}", color::label("Window:  "), parts.join(", "));
             }
         }
+        // The dialog axis: only shown while a dialog is open.
+        if let Some(feedback) = job.feedback {
+            println!("{} {}", color::label("Feedback:"), feedback);
+        }
         if !job.attempts.is_empty() {
             println!("\n{}:", color::label("Attempts"));
             for (n, attempt) in job.attempts.iter().enumerate() {

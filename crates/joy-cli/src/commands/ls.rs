@@ -258,6 +258,14 @@ fn print_jobs_table(jobs: &[&Item]) {
             .map(|a| a.outcome.to_string())
             .unwrap_or_else(|| "-".to_string())
     };
+    // The dialog axis; empty while no dialog is open.
+    let fbk_cell = |i: &Item| -> String {
+        i.job
+            .as_ref()
+            .and_then(|j| j.feedback)
+            .map(|f| f.to_string())
+            .unwrap_or_default()
+    };
 
     let col_raw = |header: &str, f: &dyn Fn(&Item) -> String| -> usize {
         jobs.iter()
@@ -273,6 +281,7 @@ fn print_jobs_table(jobs: &[&Item]) {
     let w_assignee = col_raw("ASSIGNEE", &assignee_cell);
     let w_scope = col_raw("SCOPE", &scope_cell);
     let w_cost = col_raw("COST", &job_cost_cell);
+    let w_fbk = col_raw("FBK", &fbk_cell);
     let w_last = col_raw("LAST", &last_cell);
 
     let fixed_width = w_id
@@ -287,6 +296,8 @@ fn print_jobs_table(jobs: &[&Item]) {
         + 2
         + w_cost
         + 2
+        + w_fbk
+        + 2
         + w_last
         + 2;
     let min_title_width = 20;
@@ -299,13 +310,14 @@ fn print_jobs_table(jobs: &[&Item]) {
 
     println!("{}", color::label(&"-".repeat(sep_len)));
     println!(
-        "{}  {}  {}  {}  {}  {}  {}  {}",
+        "{}  {}  {}  {}  {}  {}  {}  {}  {}",
         pad_colored(&color::label("ID"), "ID", w_id),
         pad_colored(&color::label("STA"), "STA", w_status),
         pad_colored(&color::label("PRI"), "PRI", w_prio),
         pad_colored(&color::label("ASSIGNEE"), "ASSIGNEE", w_assignee),
         pad_colored(&color::label("SCOPE"), "SCOPE", w_scope),
         pad_colored(&color::label("COST"), "COST", w_cost),
+        pad_colored(&color::label("FBK"), "FBK", w_fbk),
         pad_colored(&color::label("LAST"), "LAST", w_last),
         color::label("TITLE"),
     );
@@ -317,15 +329,17 @@ fn print_jobs_table(jobs: &[&Item]) {
         let assignee = assignee_cell(item);
         let scope = scope_cell(item);
         let cost = job_cost_cell(item);
+        let fbk = fbk_cell(item);
         let last = last_cell(item);
         println!(
-            "{}  {}  {}  {}  {}  {}  {}  {}",
+            "{}  {}  {}  {}  {}  {}  {}  {}  {}",
             pad_colored(&color::id(&item.id), &item.id, w_id),
             pad_colored(&status_str, &status_raw, w_status),
             pad_colored(&prio_str, &prio_raw, w_prio),
             pad_colored(&assignee, &assignee, w_assignee),
             pad_colored(&scope, &scope, w_scope),
             pad_colored(&cost, &cost, w_cost),
+            pad_colored(&fbk, &fbk, w_fbk),
             pad_colored(&last, &last, w_last),
             truncate_title(&item.title, title_width),
         );

@@ -61,3 +61,44 @@ make_job() {
     run joy show "$ID" --json
     echo "$output" | jq -e '.data.job == null' >/dev/null
 }
+
+@test "ls -J has an FBK column showing the feedback value" {
+    setup_human_auth
+    make_job
+    joy edit "$JOB_ID" --feedback awaited
+    run joy ls -J
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"FBK"* ]]
+    [[ "$output" == *"awaited"* ]]
+}
+
+@test "ls -J leaves the FBK cell empty while no dialog is open" {
+    setup_human_auth
+    make_job
+    run joy ls -J
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"FBK"* ]]
+    [[ "$output" != *"awaited"* ]]
+    [[ "$output" != *"received"* ]]
+}
+
+@test "board -J marks a job with an open dialog" {
+    setup_human_auth
+    make_job
+    joy edit "$JOB_ID" --feedback awaited
+    run joy board -J
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"[awaited]"* ]]
+}
+
+@test "joy show prints a Feedback line only while a dialog is open" {
+    setup_human_auth
+    make_job
+    run joy show "$JOB_ID"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"Feedback:"* ]]
+    joy edit "$JOB_ID" --feedback received
+    run joy show "$JOB_ID"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Feedback: received"* ]]
+}

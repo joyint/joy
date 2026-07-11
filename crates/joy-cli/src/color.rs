@@ -5,7 +5,7 @@ use std::io::IsTerminal;
 use std::sync::OnceLock;
 
 use joy_core::model::config::{ColorMode, OutputConfig};
-use joy_core::model::item::{ItemType, Priority, Status, Validity};
+use joy_core::model::item::{ItemType, JobFeedback, Priority, Status, Validity};
 
 static ENABLED: OnceLock<bool> = OnceLock::new();
 static EMOJI_ENABLED: OnceLock<bool> = OnceLock::new();
@@ -368,6 +368,12 @@ pub fn user(text: &str) -> String {
 
 pub fn blocked(text: &str) -> String {
     wrap(ACCENT, text)
+}
+
+/// Marker for a job's open dialog (`[awaited]` / `[received]`), appended
+/// to jobs-board card lines like the blocked `!` on the items board.
+pub fn feedback_marker(f: &JobFeedback) -> String {
+    wrap(ACCENT, &format!("[{f}]"))
 }
 
 pub fn label(text: &str) -> String {

@@ -644,9 +644,18 @@ fn render_jobs_board(root: &std::path::Path, args: &crate::BoardArgs) -> Result<
             for item in items.iter().take(show) {
                 let id_colored = color::id(&item.id);
                 let prefix = format!("{id_colored} ");
-                let title_space = col_width.saturating_sub(display_width(&prefix));
+                // Open dialog marker, appended after the truncated
+                // title like the blocked "!" on the items board.
+                let feedback_suffix = item
+                    .job
+                    .as_ref()
+                    .and_then(|j| j.feedback)
+                    .map(|f| format!(" {}", color::feedback_marker(&f)))
+                    .unwrap_or_default();
+                let title_space = col_width
+                    .saturating_sub(display_width(&prefix) + display_width(&feedback_suffix));
                 let title = truncate_display(&item.title, title_space);
-                lines.push(format!("{prefix}{title}"));
+                lines.push(format!("{prefix}{title}{feedback_suffix}"));
             }
             if show < items.len() {
                 lines.push(color::label(&format!("+{} more", items.len() - show)));
