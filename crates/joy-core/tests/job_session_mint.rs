@@ -148,6 +148,39 @@ fn mint_then_resolve_identity_full_flow() {
     );
     set_env("JOY_SESSION", &env_value);
 
+    // --- A rogue platform key never authenticates, even with an
+    // otherwise fully self-consistent session: platform issuer, valid
+    // signature (by the WRONG key), matching ephemeral proof of
+    // possession, and a job that is in progress. Only the signature
+    // check against the registered verify key stands between an
+    // attacker with write access to the state dir and a session. ---
+    let rogue_platform = IdentityKeypair::from_seed(&[7u8; 32]);
+    let rogue_ephemeral = IdentityKeypair::from_random();
+    let rogue_token = joy_core::auth::session::create_session_for_job(
+        &rogue_platform,
+        &rogue_ephemeral,
+        AI,
+        project_id,
+        JOB,
+        Some(OPERATOR.to_string()),
+        Duration::hours(2),
+    );
+    joy_core::auth::session::save_session(project_id, &rogue_token).unwrap();
+    let rogue_env =
+        joy_core::auth::session::encode_session_env(&sid, &rogue_ephemeral.to_seed_bytes());
+    set_env("JOY_SESSION", &rogue_env);
+    let identity = resolve_identity(root).unwrap();
+    assert!(
+        !identity.authenticated,
+        "session signed by an unregistered platform key must be rejected"
+    );
+    // Restore the legitimate session file (save_session overwrote it —
+    // one file per (project, member)).
+    std::fs::write(&session_path, &original).unwrap();
+    set_env("JOY_SESSION", &env_value);
+    let identity = resolve_identity(root).unwrap();
+    assert!(identity.authenticated, "legitimate session restored");
+
     // --- An expired mint never authenticates. ---
     let expired_env = mint_job_session(
         root,
