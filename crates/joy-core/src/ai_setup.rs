@@ -673,9 +673,21 @@ pub fn update_with_joy_block(root: &Path, path: &Path, content: &str) -> Result<
     write_if_changed(root, path, &new_content)
 }
 
-pub fn update_gitignore(root: &Path, _configured_tools: &[&str]) -> Result<(), JoyError> {
-    use crate::init::GITIGNORE_BASE_ENTRIES;
+/// The full, fixed set of entries in the joy-managed `.gitignore` block: the
+/// base entries plus the ignore entries for every known AI tool. This is the
+/// single source of truth for the block, shared by the `joy ai init` writer
+/// ([`update_gitignore`]) and the `joy update` registry item that checks and
+/// refreshes it, so the two paths can never drift (JOY-01FE-98).
+pub fn managed_gitignore_entries() -> Vec<(&'static str, &'static str)> {
+    let mut entries: Vec<(&'static str, &'static str)> =
+        crate::init::GITIGNORE_BASE_ENTRIES.to_vec();
+    for (_tool_id, tool_entries) in TOOL_GITIGNORE_ENTRIES {
+        entries.extend_from_slice(tool_entries);
+    }
+    entries
+}
 
+pub fn update_gitignore(root: &Path, _configured_tools: &[&str]) -> Result<(), JoyError> {
     // Always write the full, fixed set: base entries plus the ignore entries
     // for every known AI tool, regardless of which tools are configured on
     // this machine. An ignore line for an absent directory is harmless, and
@@ -684,12 +696,7 @@ pub fn update_gitignore(root: &Path, _configured_tools: &[&str]) -> Result<(), J
     // entries another machine committed (JOY-01AA-9E). Because
     // `update_gitignore_block` is idempotent (it skips the write when the
     // content is unchanged), the per-invocation auto-sync produces no churn.
-    let mut entries: Vec<(&str, &str)> = GITIGNORE_BASE_ENTRIES.to_vec();
-    for (_tool_id, tool_entries) in TOOL_GITIGNORE_ENTRIES {
-        entries.extend_from_slice(tool_entries);
-    }
-
-    crate::init::update_gitignore_block(root, &entries)?;
+    crate::init::update_gitignore_block(root, &managed_gitignore_entries())?;
     Ok(())
 }
 
@@ -1070,6 +1077,32 @@ mod setup_tests {
     fn existing_managed_block_entries_returns_empty_when_no_gitignore() {
         let tmp = tempfile::tempdir().unwrap();
         assert!(existing_managed_block_entries(tmp.path()).is_empty());
+    }
+
+    #[test]
+    fn managed_gitignore_entries_cover_base_and_every_tool() {
+        // The single source of truth for the managed block must contain the
+        // base entries and every AI tool's ignore entries, so the `joy update`
+        // registry (which now derives its check/refresh from this set) can no
+        // longer strip the per-tool lines (JOY-01FE-98).
+        let paths: Vec<&str> = managed_gitignore_entries()
+            .iter()
+            .map(|(p, _)| *p)
+            .collect();
+        for (base, _) in crate::init::GITIGNORE_BASE_ENTRIES {
+            assert!(
+                paths.contains(base),
+                "managed set missing base entry {base}"
+            );
+        }
+        for (_tool, entries) in TOOL_GITIGNORE_ENTRIES {
+            for (p, _) in *entries {
+                assert!(paths.contains(p), "managed set missing tool entry {p}");
+            }
+        }
+        for p in [".claude/", ".vibe/", "AGENTS.md"] {
+            assert!(paths.contains(&p), "managed set missing {p}");
+        }
     }
 
     fn seed_gitignore(root: &Path, managed_paths: &[&str]) {

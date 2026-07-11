@@ -248,14 +248,16 @@ impl UpdateItem for GitignoreBlockItem {
         SECTION_GIT
     }
     fn check(&self, root: &Path) -> Result<Vec<CheckRow>> {
-        let entries: Vec<&str> = init::GITIGNORE_BASE_ENTRIES
-            .iter()
-            .map(|(p, _)| *p)
-            .collect();
+        // Manage the same canonical set the `joy ai init` writer produces
+        // (base entries plus every AI tool's ignore entries). Checking only
+        // the base entries let `refresh` strip the per-tool lines that
+        // `ai_setup::update_gitignore` writes (JOY-01FE-98).
+        let entries = joy_core::ai_setup::managed_gitignore_entries();
+        let paths: Vec<&str> = entries.iter().map(|(p, _)| *p).collect();
         let ok = block_present(
             &root.join(".gitignore"),
             init::GITIGNORE_BLOCK_START,
-            &entries,
+            &paths,
         );
         Ok(vec![CheckRow {
             name: ".gitignore block".into(),
@@ -269,7 +271,7 @@ impl UpdateItem for GitignoreBlockItem {
     }
     fn refresh(&self, root: &Path) -> Result<Vec<RefreshRow>> {
         let before = matches!(self.check(root)?[0].mark, RowMark::Ok);
-        init::update_gitignore_block(root, init::GITIGNORE_BASE_ENTRIES)?;
+        joy_core::ai_setup::update_gitignore(root, &[])?;
         Ok(vec![RefreshRow {
             name: ".gitignore block".into(),
             action: if before { None } else { Some("registered") },
