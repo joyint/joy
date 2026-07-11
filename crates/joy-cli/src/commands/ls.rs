@@ -275,9 +275,20 @@ fn print_jobs_table(jobs: &[&Item]) {
     let w_cost = col_raw("COST", &job_cost_cell);
     let w_last = col_raw("LAST", &last_cell);
 
-    let fixed_width =
-        w_id + 2 + w_status + 2 + w_prio + 2 + w_assignee + 2 + w_scope + 2 + w_cost + 2 + w_last
-            + 2;
+    let fixed_width = w_id
+        + 2
+        + w_status
+        + 2
+        + w_prio
+        + 2
+        + w_assignee
+        + 2
+        + w_scope
+        + 2
+        + w_cost
+        + 2
+        + w_last
+        + 2;
     let min_title_width = 20;
     let title_width = if term_width > fixed_width {
         (term_width - fixed_width).max(min_title_width)

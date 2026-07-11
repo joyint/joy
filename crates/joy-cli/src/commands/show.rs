@@ -206,7 +206,10 @@ pub fn run(args: ShowArgs) -> Result<()> {
         if let Some(ref window) = job.window {
             let mut parts: Vec<String> = Vec::new();
             if let Some(not_before) = window.not_before {
-                parts.push(format!("not before {}", not_before.format("%Y-%m-%d %H:%M")));
+                parts.push(format!(
+                    "not before {}",
+                    not_before.format("%Y-%m-%d %H:%M")
+                ));
             }
             if let Some(deadline) = window.deadline {
                 parts.push(format!("deadline {}", deadline.format("%Y-%m-%d %H:%M")));

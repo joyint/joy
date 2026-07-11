@@ -350,8 +350,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
                 false
             };
             if accepted {
-                if let Err(e) = run(StatusArgs::new(scope_item.id.clone(), "closed".to_string()))
-                {
+                if let Err(e) = run(StatusArgs::new(scope_item.id.clone(), "closed".to_string())) {
                     eprintln!("error: could not close {}: {e}", scope_item.id);
                 }
             }
