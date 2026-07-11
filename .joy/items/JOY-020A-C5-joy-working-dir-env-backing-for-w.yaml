@@ -1,0 +1,19 @@
+id: JOY-020A-C5
+title: JOY_WORKING_DIR env backing for -w/--working-dir
+type: task
+status: in-progress
+priority: high
+parent: JOY-01FF-9D
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-11T17:28:19.653340688Z
+updated: 2026-07-11T17:28:42.859472192Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-07-11T17:28:42.859472192Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: clap env fallback on the global -w flag (flag wins). Lets the platform runner point every joy invocation of a sandboxed job agent at its joywork item checkout without the agent knowing the workspace anatomy. Companion of the platform job-sandbox item.

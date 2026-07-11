@@ -95,13 +95,17 @@ Run 'joy tutorial' for the full guide.
 Run 'joy tutorial --interactive' for a chapter menu.\n"
 )]
 pub(crate) struct Cli {
-    /// Run as if joy was started in <PATH>
+    /// Run as if joy was started in <PATH> (env: JOY_WORKING_DIR; the
+    /// flag wins). Lets a runner point every joy invocation of a
+    /// sandboxed agent at its item checkout without the agent knowing
+    /// the workspace anatomy (JOY-01FE-37).
     #[arg(
         short = 'w',
         long = "working-dir",
         global = true,
         value_name = "PATH",
-        value_hint = clap::ValueHint::DirPath
+        value_hint = clap::ValueHint::DirPath,
+        env = "JOY_WORKING_DIR"
     )]
     working_dir: Option<std::path::PathBuf>,
 
