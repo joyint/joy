@@ -11,6 +11,7 @@
 //! file and its entry in [`apply`] / [`pending`].
 
 mod m_2026_06_doc_path_layout;
+mod m_2026_07_remove_ai_jobs;
 
 use std::path::Path;
 
@@ -27,10 +28,14 @@ pub struct Reconciled {
 
 /// Read-only: the reconciles the repo migrations would apply at `root`.
 pub fn pending(root: &Path) -> Result<Vec<Reconciled>, JoyError> {
-    m_2026_06_doc_path_layout::pending(root)
+    let mut out = m_2026_06_doc_path_layout::pending(root)?;
+    out.extend(m_2026_07_remove_ai_jobs::pending(root)?);
+    Ok(out)
 }
 
 /// Apply every repo migration in order. Returns the reconciles performed.
 pub fn apply(root: &Path) -> Result<Vec<Reconciled>, JoyError> {
-    m_2026_06_doc_path_layout::migrate(root)
+    let mut out = m_2026_06_doc_path_layout::migrate(root)?;
+    out.extend(m_2026_07_remove_ai_jobs::migrate(root)?);
+    Ok(out)
 }
