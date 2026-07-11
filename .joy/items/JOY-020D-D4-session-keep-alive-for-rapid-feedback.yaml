@@ -1,0 +1,11 @@
+id: JOY-020D-D4
+title: session keep-alive for rapid feedback cycles
+type: idea
+status: new
+priority: medium
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-11T19:13:22.155610092Z
+updated: 2026-07-11T19:13:22.155610092Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'Optimization idea, deliberately NOT built (JOY-01FE-37 dialog design): keep the job container alive across very short question/answer cycles instead of ending the round, to skip even the cheap session-resume. Only worth revisiting if provider session resume + prompt caching ever proves too costly in practice. The round-based model stays the default: waiting is git state, not a process.'
