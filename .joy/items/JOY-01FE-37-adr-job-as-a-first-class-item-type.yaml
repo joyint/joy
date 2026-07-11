@@ -7,7 +7,7 @@ capabilities:
 - conceive
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-11T14:28:59.397290401Z
-updated: 2026-07-11T14:28:59.397290401Z
+updated: 2026-07-11T17:29:55.518992027Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history: []
 description: |-
@@ -49,3 +49,7 @@ description: |-
   - Platform follow-ups (JP backlog): runner binds to job items/attempts, multi-item worktree execution, DelegateJob RPC replaced by job-item flow, status watcher for `stop`, reconciliation notes on JP-004C-A0 / JP-004D-3A, `docs/dev/job-delegation.md` cleanup.
   - Crypt: job-bound zone grants (Crypt doc; not yet implemented in code) attach to attempt/session context held by the platform, keeping the job YAML free of key material; the Crypt document needs a corresponding update.
   - Terminology: `budget` on a job is expected AI cost; `effort` stays unused on jobs rather than being re-interpreted.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-11T17:29:55.518990756Z
+  text: 'Clarifications from the sandbox design discussion (2026-07-11, operator-approved): (1) Job agents never leave their container and never talk to the platform for writes - no ACP write back-channel; item state is written exclusively via the joy CLI (Guard/gates in-process) against a job-owned checkout of main (joywork/) inside the job workspace; code is edited in the branch worktree. (2) Agents commit their code themselves (they know when a unit is done); the platform validates after process exit (any branch commit touching .joy fails the attempt), pushes branch and .joy changes (no forge credentials in the container, completion = process exit, no polling). (3) AcceptJob refuses branches whose diff touches .joy. (4) The job branch is platform-owned and deterministic (joy/<member>/<job-id>), recorded per attempt; agents need no knowledge of it. (5) The app needs no branch switcher: review happens on the forge via the branch link from the latest attempt. (6) Enforcement lives at seams the platform owns (attempt end, merge), backend-agnostic across AgentRunner backends; container mounts may add hardening but never carry the policy (no sparse checkout - libgit2 lacks it).'

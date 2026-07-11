@@ -33,3 +33,5 @@
 2026-07-11T17:28:19.700Z JOY-020A-C5 item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-07-11T17:28:42.865Z JOY-020A-C5 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-07-11T17:28:42.982Z JOY-020A-C5 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-11T17:29:55.454Z JOY-020B-D2 item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-11T17:29:55.525Z JOY-01FE-37 comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
