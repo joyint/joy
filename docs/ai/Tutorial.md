@@ -198,6 +198,7 @@ Item-shortcut commands map to the transitions:
 - `joy approve <ID>`: new to open.
 - `joy start <ID>`: new or open to in-progress.
 - `joy submit <ID>`: in-progress to review.
+- `joy stop <ID>`: in-progress back to open (symmetric to `start`; on a running job this aborts the execution).
 - `joy close <ID>`: review to closed.
 - `joy rework <ID>`: review to in-progress.
 - `joy defer <ID>`: any active state to deferred.
@@ -231,11 +232,24 @@ Run `joy <command> --help` for the full surface.
 
 ## Item types, priorities, effort
 
-Types: `epic`, `story`, `task`, `bug`, `rework`, `decision`, `idea`.
+Types: `epic`, `story`, `task`, `bug`, `rework`, `decision`, `idea`, `job` (see [Jobs](#jobs)).
 
 Priorities: `critical`, `high`, `medium`, `low`.
 
 Effort, both numeric and t-shirt size accepted: `1=xxs`, `2=xs`, `3=s`, `4=m`, `5=l`, `6=xl`, `7=xxl`.
+
+## Jobs
+
+A `job` is an assignment of work over a scope of items, executed by its assignee (an AI member or a human) once a human approves it. Jobs use the normal six statuses and verbs; they live in `.joy/jobs/` with IDs like `JOY-JOB-0001-A3` and never appear in default views.
+
+- Create: `joy add job "Title" JOY-0001,JOY-0002` — the comma-separated scope is a third positional that only jobs accept and require. A container reference (epic) means its subtree.
+- List: `joy ls -J` (open jobs), `joy ls -Ja` (including closed), `joy board -J`.
+- `joy show <JOB-ID>` shows scope, budget, window, and the recorded execution attempts; `joy show <ITEM-ID>` shows which jobs an item belongs to.
+- Edit: `joy edit <JOB-ID> --scope +ID,-ID`, `--max-cost`, `--max-tokens`, `--not-before`, `--deadline`.
+- You may propose jobs (`joy add job` leaves them in `new`), but the `new -> open` triage gate on jobs denies AI members by default: approving a job authorizes its execution and spend, and that release belongs to a human. Do not attempt to approve your own jobs.
+- Job gates require the `jobs` capability, deliberately separate from `review`: accepting delivered job work and accepting the product items can be different people.
+- Closing a job does not close its scope items; `joy close <JOB-ID>` asks per item (`--items` / `--no-items` in scripts). A job whose execution finally failed sits in `review` carrying the error.
+- Execution loops are recorded as attempts on the job (outcome, tokens, cost, branch); retries stay `in-progress`, there is no extra status axis.
 
 ## Commit messages
 

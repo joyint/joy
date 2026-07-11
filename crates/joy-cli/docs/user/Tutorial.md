@@ -134,8 +134,17 @@ Estimate work with `--effort` on a 1-7 scale: 1=trivial, 2=small, 3=medium, 4=la
 | `rework` | Refactoring or improvement of existing code |
 | `decision` | Architecture or product decision to document |
 | `idea` | Not yet refined - just capture it before it escapes |
+| `job` | An assignment of work over a scope of items, executed by an AI or human assignee |
 
 All items start with status `new`. Priorities: `extreme`, `critical`, `high`, `medium` (default), `low`.
+
+Jobs take the scope as a third positional argument (required, comma-separated item IDs; an epic means its subtree):
+
+```sh
+joy add job "Implement recipe basics" CB-0002,CB-0003
+```
+
+Jobs live in `.joy/jobs/` with IDs like `CB-JOB-0001-A3` and stay out of the normal views; `joy ls -J` and `joy board -J` show them (`-Ja` includes closed ones). Approving a job (`joy approve`) is the release that authorizes its execution - on the Joyint platform, `joy start` then hands it to the assignee. `joy show` on a job lists its scope, budget, window, and recorded execution attempts; `joy show` on an item lists the jobs it belongs to. Closing a job asks per scope item whether to close that item too. Moving jobs through their gates is governed by the `jobs` capability, separate from `review`, so who accepts AI work and who accepts the product items can differ.
 
 ---
 
@@ -226,6 +235,7 @@ Move items through the pipeline:
 joy status CB-0005 open          # Approve for work
 joy start CB-0005                # Shortcut: set to in-progress
 joy submit CB-0005               # Shortcut: set to review
+joy stop CB-0005                 # Shortcut: back to open (aborts a running job)
 joy close CB-0005                # Shortcut: set to closed
 joy reopen CB-0005               # Reopen a closed/deferred item
 ```
