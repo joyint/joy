@@ -34,6 +34,12 @@ minijinja = { workspace = true }
 # openssl/libssh2 here since there is no network feature).
 git2 = { version = "0.20", default-features = false, features = ["vendored-libgit2"] }
 
+# TypeScript binding generation for the canonical wire types the desktop
+# consumes (e.g. AgentMode). Optional so library consumers stay lean; the
+# app enables the `ts` feature and ts-rs writes the bindings during ITS
+# `cargo test` run (TS_RS_EXPORT_DIR lives in the app repo).
+ts-rs = { version = "12", features = ["serde-compat"], optional = true }
+
 # Terminal rendering for the optional `tutorial` module. Kept optional so
 # non-CLI consumers (e.g. joyint-server) do not pull in terminal UI crates.
 termimad = { version = "0.31", optional = true }
@@ -49,6 +55,9 @@ fast-kdf = ["joy-crypt/fast-kdf"]   # Use minimal Argon2id params (for testing o
 # reused by joy-cli and jyn-cli. Off by default so library-only consumers
 # stay lean.
 tutorial = ["dep:termimad", "dep:inquire", "dep:terminal_size"]
+# ts-rs derives on canonical wire types (AgentMode), so the generated TS
+# unions come from the single Rust definition. Off by default.
+ts = ["dep:ts-rs"]
 
 [dev-dependencies]
 insta = { version = "1.41", features = ["yaml"] }
