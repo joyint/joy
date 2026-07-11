@@ -1,0 +1,15 @@
+id: JOY-0208-CF
+title: retire legacy job store (jobs.rs, model/job.rs)
+type: task
+status: new
+priority: high
+parent: JOY-01FF-9D
+capabilities:
+- implement
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-11T15:15:58.792602758Z
+updated: 2026-07-11T15:15:58.792602758Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'After the platform consumes job items + attempts: remove joy-core jobs.rs and model/job.rs (the parallel lifecycle: JobStatus, ReviewRound, approve/request_changes). Keep agents.rs (.joy/ai/agents stands per JOY-01EA-2C).'

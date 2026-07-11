@@ -1,0 +1,17 @@
+id: JOY-0204-F2
+title: 'CLI grammar: add job scope positional, edit scope/budget/window'
+type: story
+status: new
+priority: high
+parent: JOY-01FF-9D
+capabilities:
+- plan
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-11T15:15:58.354044291Z
+updated: 2026-07-11T15:15:58.354044291Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: joy add job "Title" JOY-0001,JOY-0002 — title stays second positional, scope is a third positional that only the job type accepts (and requires), ids existence-checked; --scope explicit alternative. joy edit --scope +ID,-ID --budget --window.

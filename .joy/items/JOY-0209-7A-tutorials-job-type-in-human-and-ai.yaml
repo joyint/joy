@@ -1,0 +1,15 @@
+id: JOY-0209-7A
+title: 'tutorials: job type in human and AI tutorial'
+type: task
+status: new
+priority: high
+parent: JOY-01FF-9D
+capabilities:
+- implement
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-11T15:15:58.898506111Z
+updated: 2026-07-11T15:15:58.898506111Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'joy tutorial and joy ai tutorial: job type, add job grammar, stop verb, ls -J/-Ja, jobs capability, separated job/item acceptance.'

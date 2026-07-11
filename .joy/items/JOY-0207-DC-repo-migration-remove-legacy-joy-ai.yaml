@@ -1,0 +1,15 @@
+id: JOY-0207-DC
+title: 'repo migration: remove legacy .joy/ai job records'
+type: task
+status: new
+priority: high
+parent: JOY-01FF-9D
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-11T15:15:58.685862155Z
+updated: 2026-07-11T15:15:58.685862155Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'Atomic m_2026_07 repo migration (migrations/repo/): delete .joy/ai/jobs/, drop .joy/ai/ when empty afterwards. Removable in one step after the deprecation window like m_2026_06_doc_path_layout.'

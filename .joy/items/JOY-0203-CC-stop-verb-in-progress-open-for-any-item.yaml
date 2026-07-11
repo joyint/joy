@@ -1,0 +1,17 @@
+id: JOY-0203-CC
+title: 'stop verb: in-progress -> open for any item'
+type: story
+status: new
+priority: high
+parent: JOY-01FF-9D
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-11T15:15:58.247243373Z
+updated: 2026-07-11T15:15:58.247243373Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: New generic transition verb stop filling the verb gap symmetric to start. On a running job it aborts the current attempt and records an aborted attempt entry with partial cost; triage approval stays intact (defer revokes). Without platform/local runner, start/stop on a job refuse with a hint.

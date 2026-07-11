@@ -1,0 +1,17 @@
+id: JOY-0201-9B
+title: 'job payload field: scope, budget, window, attempts'
+type: story
+status: new
+priority: high
+parent: JOY-01FF-9D
+capabilities:
+- plan
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-11T15:15:58.033526931Z
+updated: 2026-07-11T15:15:58.033526931Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'One optional nested job: field on Item (precedent: validity). scope = list of item ids, REQUIRED at creation, container ref means its subtree; budget (max tokens/cost, currency); window (not_before, deadline); attempts = append-only list (started, ended, tokens, cost, branch, result/error, outcome). Live telemetry never enters git; condensed write-back at lifecycle transitions only.'
