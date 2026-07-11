@@ -41,6 +41,14 @@ pub struct StatusArgs {
     /// New status: new|open|in-progress|review|closed|deferred
     status: String,
 
+    /// When closing a job: close all scope items without prompting
+    #[arg(long)]
+    items: bool,
+
+    /// When closing a job: leave the scope items untouched
+    #[arg(long, conflicts_with = "items")]
+    no_items: bool,
+
     /// Set when invoked via `joy stop`: restricts the transition to
     /// in-progress -> open (the symmetric counterpart of `joy start`).
     #[arg(skip)]
@@ -52,15 +60,24 @@ impl StatusArgs {
         Self {
             id,
             status,
+            items: false,
+            no_items: false,
             via_stop: false,
         }
     }
 
     pub fn stop(id: String) -> Self {
         Self {
-            id,
-            status: "open".to_string(),
             via_stop: true,
+            ..Self::new(id, "open".to_string())
+        }
+    }
+
+    pub fn close(id: String, items: bool, no_items: bool) -> Self {
+        Self {
+            items,
+            no_items,
+            ..Self::new(id, "closed".to_string())
         }
     }
 }
@@ -294,6 +311,48 @@ pub fn run(args: StatusArgs) -> Result<()> {
                             color::status(&parent.status)
                         );
                     }
+                }
+            }
+        }
+    }
+
+    // Closing a job offers to close its scope items too: the job being
+    // done usually means the work items it covered are done. Each close
+    // runs through the normal status change so guards apply per item.
+    if matches!(new_status, Status::Closed)
+        && matches!(item.item_type, ItemType::Job)
+        && !args.no_items
+    {
+        use std::io::IsTerminal;
+        let scope: Vec<String> = item
+            .job
+            .as_ref()
+            .map(|j| j.scope.clone())
+            .unwrap_or_default();
+        let interactive = std::io::stdin().is_terminal();
+        for scope_id in &scope {
+            let Ok(scope_item) = items::load_item(&ctx.root, scope_id) else {
+                continue;
+            };
+            if !scope_item.is_active() {
+                continue;
+            }
+            let accepted = if args.items {
+                true
+            } else if interactive {
+                eprint!("Close {} \"{}\"? [y/N] ", scope_item.id, scope_item.title);
+                std::io::stderr().flush()?;
+                let mut input = String::new();
+                std::io::stdin().read_line(&mut input)?;
+                input.trim().eq_ignore_ascii_case("y")
+            } else {
+                // Non-interactive default: leave the scope item open.
+                false
+            };
+            if accepted {
+                if let Err(e) = run(StatusArgs::new(scope_item.id.clone(), "closed".to_string()))
+                {
+                    eprintln!("error: could not close {}: {e}", scope_item.id);
                 }
             }
         }

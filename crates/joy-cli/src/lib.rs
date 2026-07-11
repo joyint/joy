@@ -178,7 +178,7 @@ enum Commands {
     /// Shortcut: send a reviewed item back for rework (review -> in-progress)
     Rework(ShortcutArgs),
     /// Shortcut: set item status to closed
-    Close(ShortcutArgs),
+    Close(CloseShortcutArgs),
     /// Shortcut: set item status back to open
     Reopen(ShortcutArgs),
     /// Shortcut: defer an item (set aside from any active state)
@@ -272,6 +272,21 @@ struct ShortcutArgs {
     /// Item ID (e.g. IT-0001)
     #[arg(add = clap_complete::engine::ArgValueCompleter::new(complete::complete_item_id))]
     id: String,
+}
+
+#[derive(clap::Args)]
+struct CloseShortcutArgs {
+    /// Item ID (e.g. IT-0001)
+    #[arg(add = clap_complete::engine::ArgValueCompleter::new(complete::complete_item_id))]
+    id: String,
+
+    /// When closing a job: close all scope items without prompting
+    #[arg(long)]
+    items: bool,
+
+    /// When closing a job: leave the scope items untouched
+    #[arg(long, conflicts_with = "items")]
+    no_items: bool,
 }
 
 /// Detect a binary-version mismatch against the per-clone marker and,
@@ -464,7 +479,7 @@ pub fn cli_main() -> anyhow::Result<()> {
                 commands::status::StatusArgs::new(args.id, "in-progress".to_string()),
             ),
             Some(Commands::Close(args)) => commands::status::run(
-                commands::status::StatusArgs::new(args.id, "closed".to_string()),
+                commands::status::StatusArgs::close(args.id, args.items, args.no_items),
             ),
             Some(Commands::Reopen(args)) => commands::status::run(
                 commands::status::StatusArgs::new(args.id, "open".to_string()),
