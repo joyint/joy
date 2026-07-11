@@ -1,9 +1,11 @@
 id: JOY-0202-58
 title: jobs capability and job gate defaults
 type: story
-status: new
+status: review
 priority: high
 parent: JOY-01FF-9D
+assignees:
+- member: ai:claude@joy
 capabilities:
 - plan
 - implement
@@ -11,7 +13,11 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-11T15:15:58.140826053Z
-updated: 2026-07-11T15:15:58.140826053Z
+updated: 2026-07-11T15:32:16.848685762Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
+history:
+- date: 2026-07-11T15:32:16.440949027Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-11T15:32:16.848685762Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'New capability jobs as template default on the job type (precedent: conceive on decisions). Governs job triage approval (spend authorization) and job review (accepting delivered work) separately from item rev. allow_ai:false default on the job new->open gate.'
