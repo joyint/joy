@@ -1487,13 +1487,6 @@ mod tests {
         assert_eq!(suggestion, "docs/architecture.md");
     }
 
-    /// Helper: write a `.gitignore` file with a joy-managed block
-    /// containing the given path lines.
-
-    /// Read the joy-managed block lines from the given `.gitignore` file.
-
-    /// Every known tool entry from TOOL_GITIGNORE_ENTRIES, flattened.
-
     #[test]
     fn legacy_ai_artifacts_present_reflects_disk_state() {
         let tmp = tempfile::tempdir().unwrap();
