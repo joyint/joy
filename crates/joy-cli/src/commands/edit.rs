@@ -2,11 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use clap::Args;
 
 use joy_core::guard::Action;
 use joy_core::items;
-use joy_core::model::item::{Capability, ItemType, Priority, Validity};
+use joy_core::model::item::{
+    Capability, Item, ItemType, JobBudget, JobSpec, JobWindow, Priority, Validity,
+};
 
 #[derive(Args)]
 pub struct EditArgs {
@@ -69,6 +72,26 @@ pub struct EditArgs {
     /// Capabilities (CSV; replaces existing)
     #[arg(short = 'c', long)]
     capabilities: Option<String>,
+
+    /// Job scope (CSV replaces; +ID/-ID entries add/remove)
+    #[arg(long, allow_hyphen_values = true)]
+    scope: Option<String>,
+
+    /// Job budget: maximum cost as a decimal, e.g. 12.50
+    #[arg(long = "max-cost")]
+    max_cost: Option<String>,
+
+    /// Job budget: maximum model tokens
+    #[arg(long = "max-tokens")]
+    max_tokens: Option<u64>,
+
+    /// Job window: earliest start (YYYY-MM-DD or RFC3339)
+    #[arg(long = "not-before")]
+    not_before: Option<String>,
+
+    /// Job window: latest acceptable end (YYYY-MM-DD or RFC3339)
+    #[arg(long)]
+    deadline: Option<String>,
 }
 
 pub fn run(args: EditArgs) -> Result<()> {
@@ -215,6 +238,50 @@ pub fn run(args: EditArgs) -> Result<()> {
         changed = true;
     }
 
+    let job_flags = args.scope.is_some()
+        || args.max_cost.is_some()
+        || args.max_tokens.is_some()
+        || args.not_before.is_some()
+        || args.deadline.is_some();
+    if job_flags && !matches!(item.item_type, ItemType::Job) {
+        anyhow::bail!(
+            "--scope, --max-cost, --max-tokens, --not-before and --deadline are only valid for job items"
+        );
+    }
+
+    if let Some(ref spec) = args.scope {
+        let current = item
+            .job
+            .as_ref()
+            .map(|j| j.scope.clone())
+            .unwrap_or_default();
+        let scope = apply_scope_spec(&ctx.root, &current, spec)?;
+        item.job.get_or_insert_with(empty_job_spec).scope = scope;
+        changed = true;
+    }
+
+    if let Some(ref cost) = args.max_cost {
+        let cents = parse_decimal_cents(cost)
+            .map_err(|e| anyhow::anyhow!("invalid --max-cost: {}", e))?;
+        job_budget(&mut item).max_cents = Some(cents);
+        changed = true;
+    }
+
+    if let Some(tokens) = args.max_tokens {
+        job_budget(&mut item).max_tokens = Some(tokens);
+        changed = true;
+    }
+
+    if let Some(ref when) = args.not_before {
+        job_window(&mut item).not_before = Some(parse_when(when, "--not-before")?);
+        changed = true;
+    }
+
+    if let Some(ref when) = args.deadline {
+        job_window(&mut item).deadline = Some(parse_when(when, "--deadline")?);
+        changed = true;
+    }
+
     if let Some(ref assignee) = args.assignee {
         if assignee == "none" {
             item.assignees.clear();
@@ -268,4 +335,169 @@ pub fn run(args: EditArgs) -> Result<()> {
     );
 
     Ok(())
+}
+
+fn empty_job_spec() -> JobSpec {
+    JobSpec {
+        scope: Vec::new(),
+        budget: None,
+        window: None,
+        attempts: Vec::new(),
+    }
+}
+
+fn job_budget(item: &mut Item) -> &mut JobBudget {
+    item.job
+        .get_or_insert_with(empty_job_spec)
+        .budget
+        .get_or_insert_with(|| JobBudget {
+            max_cents: None,
+            currency: "EUR".to_string(),
+            max_tokens: None,
+        })
+}
+
+fn job_window(item: &mut Item) -> &mut JobWindow {
+    item.job
+        .get_or_insert_with(empty_job_spec)
+        .window
+        .get_or_insert_with(|| JobWindow {
+            not_before: None,
+            deadline: None,
+        })
+}
+
+/// Apply a `--scope` spec to the current scope list. The spec is either
+/// a plain comma list (replace) or +ID/-ID entries (add/remove); mixing
+/// the two forms is rejected.
+fn apply_scope_spec(
+    root: &std::path::Path,
+    current: &[String],
+    spec: &str,
+) -> Result<Vec<String>> {
+    let entries: Vec<&str> = spec
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if entries.is_empty() {
+        anyhow::bail!("a job needs at least one scope item");
+    }
+
+    let delta = entries
+        .iter()
+        .any(|e| e.starts_with('+') || e.starts_with('-'));
+    let mut scope: Vec<String>;
+    if delta {
+        if !entries
+            .iter()
+            .all(|e| e.starts_with('+') || e.starts_with('-'))
+        {
+            anyhow::bail!("--scope cannot mix +/- entries with plain IDs; use one form");
+        }
+        scope = current.to_vec();
+        for entry in &entries {
+            let (op, sid) = entry.split_at(1);
+            let sid = sid.trim();
+            if op == "+" {
+                let full = resolve_scope_item(root, sid)?;
+                if !scope.contains(&full) {
+                    scope.push(full);
+                }
+            } else {
+                // Normalize a short form when it still resolves; a stale
+                // ID that no longer loads is matched verbatim.
+                let full = items::load_item(root, sid)
+                    .map(|i| i.id)
+                    .unwrap_or_else(|_| sid.to_string());
+                let before = scope.len();
+                scope.retain(|s| s != &full && s != sid);
+                if scope.len() == before {
+                    anyhow::bail!("{} is not in the scope of this job", sid);
+                }
+            }
+        }
+    } else {
+        scope = Vec::new();
+        for sid in &entries {
+            let full = resolve_scope_item(root, sid)?;
+            if !scope.contains(&full) {
+                scope.push(full);
+            }
+        }
+    }
+
+    if scope.is_empty() {
+        anyhow::bail!("a job needs at least one scope item");
+    }
+    Ok(scope)
+}
+
+/// Validate one scope addition: must resolve to an existing non-job
+/// item; returns the full (normalized) item ID.
+fn resolve_scope_item(root: &std::path::Path, sid: &str) -> Result<String> {
+    if items::is_job_id(sid) {
+        anyhow::bail!("a job cannot scope another job; use deps for job ordering");
+    }
+    let scope_item = items::load_item(root, sid)
+        .map_err(|_| anyhow::anyhow!("scope item {} is not a valid item ID.", sid))?;
+    if scope_item.item_type == ItemType::Job {
+        anyhow::bail!("a job cannot scope another job; use deps for job ordering");
+    }
+    Ok(scope_item.id)
+}
+
+/// Parse a decimal money amount ("12", "12.5", "12.50") into cents.
+fn parse_decimal_cents(s: &str) -> Result<u64> {
+    let err = || anyhow::anyhow!("'{}' is not a decimal amount like 12.50", s);
+    let (whole, frac) = s.split_once('.').unwrap_or((s, ""));
+    if whole.is_empty()
+        || frac.len() > 2
+        || !whole.chars().all(|c| c.is_ascii_digit())
+        || !frac.chars().all(|c| c.is_ascii_digit())
+    {
+        return Err(err());
+    }
+    let whole: u64 = whole.parse().map_err(|_| err())?;
+    let frac_cents = match frac.len() {
+        0 => 0,
+        1 => frac.parse::<u64>().map_err(|_| err())? * 10,
+        _ => frac.parse::<u64>().map_err(|_| err())?,
+    };
+    Ok(whole * 100 + frac_cents)
+}
+
+/// Parse `YYYY-MM-DD` (midnight UTC) or a full RFC3339 timestamp.
+fn parse_when(s: &str, flag: &str) -> Result<DateTime<Utc>> {
+    if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
+        return Ok(dt.with_timezone(&Utc));
+    }
+    if let Ok(date) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+        if let Some(dt) = date.and_hms_opt(0, 0, 0) {
+            return Ok(DateTime::from_naive_utc_and_offset(dt, Utc));
+        }
+    }
+    anyhow::bail!("invalid {} '{}': expected YYYY-MM-DD or RFC3339", flag, s)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_decimal_cents;
+
+    #[test]
+    fn decimal_cents_accepts_common_forms() {
+        assert_eq!(parse_decimal_cents("12").unwrap(), 1200);
+        assert_eq!(parse_decimal_cents("12.5").unwrap(), 1250);
+        assert_eq!(parse_decimal_cents("12.50").unwrap(), 1250);
+        assert_eq!(parse_decimal_cents("0.07").unwrap(), 7);
+    }
+
+    #[test]
+    fn decimal_cents_rejects_garbage() {
+        assert!(parse_decimal_cents("").is_err());
+        assert!(parse_decimal_cents(".50").is_err());
+        assert!(parse_decimal_cents("12.505").is_err());
+        assert!(parse_decimal_cents("-3").is_err());
+        assert!(parse_decimal_cents("12,50").is_err());
+    }
 }

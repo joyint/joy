@@ -12,7 +12,7 @@ use joy_core::templates;
 
 #[derive(Args)]
 #[command(
-    override_usage = "joy add [TYPE] [TITLE] [OPTIONS]",
+    override_usage = "joy add [TYPE] [TITLE] [SCOPE] [OPTIONS]",
     after_help = "\
 Item IDs use the project acronym as prefix and are auto-generated:
   ACRONYM-0001 to ACRONYM-FFFF (e.g. JOY-0001, JOY-00AF)
@@ -20,7 +20,7 @@ Item IDs use the project acronym as prefix and are auto-generated:
 Use --id to assign a specific ID manually."
 )]
 pub struct AddArgs {
-    /// Item type: epic|story|task|bug|rework|decision|idea
+    /// Item type: epic|story|task|bug|rework|decision|idea|job
     #[arg(index = 1, value_name = "TYPE")]
     pos_type: Option<String>,
 
@@ -28,11 +28,19 @@ pub struct AddArgs {
     #[arg(index = 2, value_name = "TITLE")]
     pos_title: Option<String>,
 
+    /// Scope item IDs for a job (comma-separated)
+    #[arg(index = 3, value_name = "SCOPE")]
+    pos_scope: Option<String>,
+
     /// Item title (alternative to positional)
     #[arg(short, long, hide = true)]
     title: Option<String>,
 
-    /// Item type (alt to positional): epic|story|task|bug|rework|decision|idea
+    /// Scope item IDs (alternative to positional; job only)
+    #[arg(long, hide = true)]
+    scope: Option<String>,
+
+    /// Item type (alt to positional): epic|story|task|bug|rework|decision|idea|job
     #[arg(short = 'T', long = "type", hide = true)]
     item_type: Option<String>,
 
@@ -116,6 +124,47 @@ pub fn run(args: AddArgs) -> Result<()> {
         .parse()
         .map_err(|e: String| anyhow::anyhow!("{}", e))?;
 
+    // Scope is the job's defining attribute: required there, meaningless
+    // (and rejected) everywhere else.
+    let scope_str = args.scope.or(args.pos_scope);
+    let scope: Option<Vec<String>> = if item_type == ItemType::Job {
+        let spec = scope_str.ok_or_else(|| {
+            anyhow::anyhow!("a job needs a scope: joy add job \"Title\" JOY-0001,JOY-0002")
+        })?;
+        let mut scope: Vec<String> = Vec::new();
+        for raw in spec.split(',') {
+            let sid = raw.trim();
+            if sid.is_empty() {
+                continue;
+            }
+            if items::is_job_id(sid) {
+                bail!("a job cannot scope another job; use deps for job ordering");
+            }
+            // load_item also normalizes short forms to full IDs.
+            let scope_item = items::load_item(&ctx.root, sid)
+                .map_err(|_| anyhow::anyhow!("scope item {} is not a valid item ID.", sid))?;
+            if scope_item.item_type == ItemType::Job {
+                bail!("a job cannot scope another job; use deps for job ordering");
+            }
+            if !scope.contains(&scope_item.id) {
+                scope.push(scope_item.id);
+            }
+        }
+        if scope.is_empty() {
+            bail!("a job needs a scope: joy add job \"Title\" JOY-0001,JOY-0002");
+        }
+        Some(scope)
+    } else {
+        if scope_str.is_some() {
+            bail!("scope is only valid for job items");
+        }
+        None
+    };
+
+    if item_type == ItemType::Job && args.milestone.is_some() {
+        bail!("a job cannot be linked to a milestone");
+    }
+
     // Refuse to silently create a second item with an identical title;
     // downstream tools (and humans) cannot disambiguate by title once
     // duplicates exist. See JOY-0170-08.
@@ -149,11 +198,24 @@ pub fn run(args: AddArgs) -> Result<()> {
         }
         None => {
             let acronym = store::load_acronym(&ctx.root)?;
-            items::next_id(&ctx.root, &acronym, &title)?
+            if item_type == ItemType::Job {
+                items::next_job_id(&ctx.root, &acronym, &title)?
+            } else {
+                items::next_id(&ctx.root, &acronym, &title)?
+            }
         }
     };
 
     let mut item = templates::render_item(&item_type, &id, &title)?;
+
+    if let Some(scope) = scope {
+        item.job = Some(joy_core::model::item::JobSpec {
+            scope,
+            budget: None,
+            window: None,
+            attempts: vec![],
+        });
+    }
 
     item.priority = priority;
     item.parent = args.parent;
