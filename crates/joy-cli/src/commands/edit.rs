@@ -383,7 +383,7 @@ fn job_window(item: &mut Item) -> &mut JobWindow {
     item.job
         .get_or_insert_with(empty_job_spec)
         .window
-        .get_or_insert_with(|| JobWindow {
+        .get_or_insert(JobWindow {
             not_before: None,
             deadline: None,
         })
