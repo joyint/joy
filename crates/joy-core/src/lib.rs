@@ -6,6 +6,7 @@
 pub mod agents;
 pub mod ai_setup;
 pub mod ai_templates;
+pub mod app_settings;
 pub mod auth;
 pub mod capabilities;
 pub mod chat_ref;
