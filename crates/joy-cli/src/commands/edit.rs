@@ -8,7 +8,7 @@ use clap::Args;
 use joy_core::guard::Action;
 use joy_core::items;
 use joy_core::model::item::{
-    Capability, Item, ItemType, JobBudget, JobSpec, JobWindow, Priority, Validity,
+    Capability, Item, ItemType, JobBudget, JobFeedback, JobSpec, JobWindow, Priority, Validity,
 };
 
 #[derive(Args)]
@@ -92,6 +92,10 @@ pub struct EditArgs {
     /// Job window: latest acceptable end (YYYY-MM-DD or RFC3339)
     #[arg(long)]
     deadline: Option<String>,
+
+    /// Job dialog state: awaited|received (use "none" to remove)
+    #[arg(long)]
+    feedback: Option<String>,
 }
 
 pub fn run(args: EditArgs) -> Result<()> {
@@ -242,10 +246,11 @@ pub fn run(args: EditArgs) -> Result<()> {
         || args.max_cost.is_some()
         || args.max_tokens.is_some()
         || args.not_before.is_some()
-        || args.deadline.is_some();
+        || args.deadline.is_some()
+        || args.feedback.is_some();
     if job_flags && !matches!(item.item_type, ItemType::Job) {
         anyhow::bail!(
-            "--scope, --max-cost, --max-tokens, --not-before and --deadline are only valid for job items"
+            "--scope, --max-cost, --max-tokens, --not-before, --deadline and --feedback are only valid for job items"
         );
     }
 
@@ -279,6 +284,22 @@ pub fn run(args: EditArgs) -> Result<()> {
 
     if let Some(ref when) = args.deadline {
         job_window(&mut item).deadline = Some(parse_when(when, "--deadline")?);
+        changed = true;
+    }
+
+    if let Some(ref feedback) = args.feedback {
+        if feedback == "none" {
+            // Closing a dialog on a job without a spec is a no-op; do
+            // not materialize an empty spec just to hold a None.
+            if let Some(job) = item.job.as_mut() {
+                job.feedback = None;
+            }
+        } else {
+            let parsed = feedback
+                .parse::<JobFeedback>()
+                .map_err(|e: String| anyhow::anyhow!("{}", e))?;
+            item.job.get_or_insert_with(empty_job_spec).feedback = Some(parsed);
+        }
         changed = true;
     }
 
