@@ -143,10 +143,8 @@ fn parse_package_version_line(line: &str) -> Option<String> {
 fn read_quoted_semver(s: &str) -> Option<String> {
     let (quote, rest) = if let Some(r) = s.strip_prefix('"') {
         ('"', r)
-    } else if let Some(r) = s.strip_prefix('\'') {
-        ('\'', r)
     } else {
-        return None;
+        ('\'', s.strip_prefix('\'')?)
     };
     let end = rest.find(quote)?;
     let candidate = &rest[..end];
