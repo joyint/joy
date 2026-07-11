@@ -3,7 +3,8 @@
 
 //! The chat model (git-native, JOY-01F1). A chat is `.joy/chats/<id>.yaml`:
 //! its participants (member refs), the ACP session ids of participating AI
-//! members (so an AI's thread survives restarts), and the messages. The
+//! members (so an AI's thread survives restarts), per-delegator agent
+//! permission mode overrides (ADR JAPP-00F3-E8), and the messages. The
 //! repo is the source of truth; any real-time delivery layer (platform
 //! pub/sub) is an optimization, never the data home.
 
@@ -13,6 +14,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::member_ref::MemberRef;
+use crate::model::agent_mode::AgentMode;
 
 /// What kind of chat this is (JOY-01F4). `General` is the singleton
 /// team-wide chat (fixed id `general`, participants = every project
@@ -121,6 +123,16 @@ pub struct Chat {
     /// so the AI-side conversation thread survives restarts.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub ai_sessions: BTreeMap<String, String>,
+    /// Per-delegator agent permission mode overrides (ADR JAPP-00F3-E8):
+    /// outer key = AI participant member id, inner key = delegating
+    /// member id (at-rest form), value = the mode that delegator's turns
+    /// run under in THIS chat. Nested maps rather than a composite key so
+    /// the YAML merge unions entries per delegator. Plain `String` keys
+    /// on purpose: `MemberRef`'s Serialize is presentation-aware (see
+    /// [`ai_sessions`](Self::ai_sessions)). Resolve a turn's actual mode
+    /// with [`crate::model::agent_mode::effective_mode`].
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub modes: BTreeMap<String, BTreeMap<String, AgentMode>>,
     #[serde(default)]
     pub messages: Vec<ChatMessage>,
 }
@@ -139,7 +151,54 @@ impl Chat {
             updated: now,
             participants,
             ai_sessions: BTreeMap::new(),
+            modes: BTreeMap::new(),
             messages: Vec::new(),
         }
+    }
+
+    /// The stored per-chat mode override for the (`agent`, `delegator`)
+    /// member-id pair, if any. Feed the result to
+    /// [`crate::model::agent_mode::effective_mode`].
+    pub fn mode_override(&self, agent: &str, delegator: &str) -> Option<AgentMode> {
+        self.modes
+            .get(agent)
+            .and_then(|per_delegator| per_delegator.get(delegator))
+            .copied()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn modes_map_round_trips_and_is_skipped_when_empty() {
+        let now = "2026-07-11T00:00:00Z".parse().unwrap();
+        let mut chat = Chat::new("c", vec![MemberRef::new("horst@example.com")], now);
+        let yaml = serde_yaml_ng::to_string(&chat).unwrap();
+        assert!(!yaml.contains("modes"), "empty map must not serialize");
+
+        chat.modes
+            .entry("ai:claude@joy".to_string())
+            .or_default()
+            .insert("horst@example.com".to_string(), AgentMode::AcceptEdits);
+        let yaml = serde_yaml_ng::to_string(&chat).unwrap();
+        assert!(yaml.contains("modes:"));
+        assert!(yaml.contains("accept-edits"), "kebab-case on the wire");
+
+        let back: Chat = serde_yaml_ng::from_str(&yaml).unwrap();
+        assert_eq!(back, chat);
+        assert_eq!(
+            back.mode_override("ai:claude@joy", "horst@example.com"),
+            Some(AgentMode::AcceptEdits)
+        );
+        assert_eq!(
+            back.mode_override("ai:claude@joy", "geordi@example.org"),
+            None
+        );
+        assert_eq!(
+            back.mode_override("ai:copilot@joy", "horst@example.com"),
+            None
+        );
     }
 }

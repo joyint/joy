@@ -11,6 +11,7 @@ use chrono::{DateTime, Utc};
 
 use crate::error::JoyError;
 use crate::member_ref::MemberRef;
+use crate::model::agent_mode::AgentMode;
 use crate::model::chat::{Chat, ChatKind, ChatMessage, MessageKind};
 
 /// Legacy subdir under `.joy/` where chats lived before they moved to the
@@ -439,6 +440,62 @@ fn collect_if_everyone_deleted(root: &Path, chat: &Chat) {
     }
 }
 
+/// Set (`Some`) or clear (`None`) the agent permission mode that
+/// `delegator`'s turns of `agent` run under in this chat (ADR
+/// JAPP-00F3-E8), and post the change as a notice authored by the
+/// delegator — switching a mode is an explicit human action and must be
+/// visible to everyone in the chat. The notice append persists the chat,
+/// landing the mode mutation and its notice in one commit.
+///
+/// Refused on a frozen (delete-for-all) chat, like [`append_message`]:
+/// notices themselves stay allowed there so the freeze can announce
+/// itself, but a mode change is chat CONFIGURATION and a dead chat takes
+/// no configuration. Setting the value that is already stored is a
+/// successful no-op WITHOUT a notice — repeated menu clicks must not
+/// spam the timeline or bump `updated` (which drives unread markers and
+/// the merge tiebreaker).
+pub fn set_agent_mode(
+    root: &Path,
+    chat: &mut Chat,
+    agent: &MemberRef,
+    delegator: &MemberRef,
+    mode: Option<AgentMode>,
+    now: DateTime<Utc>,
+) -> Result<(), JoyError> {
+    if chat.read_only {
+        return Err(JoyError::GuardDenied(format!(
+            "chat {} was deleted for everyone and is read-only",
+            chat.id
+        )));
+    }
+    if chat.mode_override(agent.id(), delegator.id()) == mode {
+        return Ok(());
+    }
+    match mode {
+        Some(mode) => {
+            chat.modes
+                .entry(agent.id().to_string())
+                .or_default()
+                .insert(delegator.id().to_string(), mode);
+        }
+        None => {
+            if let Some(per_delegator) = chat.modes.get_mut(agent.id()) {
+                per_delegator.remove(delegator.id());
+                if per_delegator.is_empty() {
+                    chat.modes.remove(agent.id());
+                }
+            }
+        }
+    }
+    chat.updated = now;
+    let text = match mode {
+        Some(mode) => format!("@{} set @{} to {}", delegator.id(), agent.id(), mode),
+        None => format!("@{} cleared the mode for @{}", delegator.id(), agent.id()),
+    };
+    append_notice(root, chat, delegator.clone(), text, now)?;
+    Ok(())
+}
+
 /// Record the ACP session id of an AI participant and persist.
 pub fn set_ai_session(
     root: &Path,
@@ -686,6 +743,124 @@ mod tests {
         assert!(load_chat(dir.path(), &chat.id).unwrap().is_some());
         delete_for_me(dir.path(), &mut chat, &geordi, ts(6)).unwrap();
         assert!(load_chat(dir.path(), &chat.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn set_agent_mode_posts_notice_and_is_idempotent() {
+        let dir = repo();
+        let horst = MemberRef::new("horst@example.com");
+        let claude = MemberRef::new("ai:claude@joy");
+        let mut chat =
+            open_chat(dir.path(), vec![horst.clone(), claude.clone()], None, ts(0)).unwrap();
+
+        set_agent_mode(
+            dir.path(),
+            &mut chat,
+            &claude,
+            &horst,
+            Some(AgentMode::AcceptEdits),
+            ts(1),
+        )
+        .unwrap();
+        assert_eq!(
+            chat.mode_override("ai:claude@joy", "horst@example.com"),
+            Some(AgentMode::AcceptEdits)
+        );
+        assert_eq!(chat.messages.len(), 1);
+        let notice = chat.messages.last().unwrap();
+        assert_eq!(notice.kind, MessageKind::Notice);
+        assert_eq!(
+            notice.text,
+            "@horst@example.com set @ai:claude@joy to accept-edits"
+        );
+        assert_eq!(notice.author, horst);
+
+        // setting the SAME value again: no notice, no updated bump
+        set_agent_mode(
+            dir.path(),
+            &mut chat,
+            &claude,
+            &horst,
+            Some(AgentMode::AcceptEdits),
+            ts(2),
+        )
+        .unwrap();
+        assert_eq!(chat.messages.len(), 1);
+        assert_eq!(chat.updated, ts(1));
+
+        // the mode and its notice round-trip through the ref
+        let loaded = load_chat(dir.path(), &chat.id).unwrap().unwrap();
+        assert_eq!(loaded, chat);
+
+        // clearing removes the entry, prunes the empty inner map, notices
+        set_agent_mode(dir.path(), &mut chat, &claude, &horst, None, ts(3)).unwrap();
+        assert!(chat.modes.is_empty());
+        assert_eq!(
+            chat.messages.last().unwrap().text,
+            "@horst@example.com cleared the mode for @ai:claude@joy"
+        );
+        assert_eq!(chat.messages.len(), 2);
+
+        // clearing what is not stored is a silent no-op
+        set_agent_mode(dir.path(), &mut chat, &claude, &horst, None, ts(4)).unwrap();
+        assert_eq!(chat.messages.len(), 2);
+        assert_eq!(chat.updated, ts(3));
+    }
+
+    #[test]
+    fn set_agent_mode_keeps_other_delegators_and_refuses_frozen_chats() {
+        let dir = repo();
+        let horst = MemberRef::new("horst@example.com");
+        let geordi = MemberRef::new("geordi@example.org");
+        let claude = MemberRef::new("ai:claude@joy");
+        let mut chat = open_chat(
+            dir.path(),
+            vec![horst.clone(), geordi.clone(), claude.clone()],
+            None,
+            ts(0),
+        )
+        .unwrap();
+
+        set_agent_mode(
+            dir.path(),
+            &mut chat,
+            &claude,
+            &horst,
+            Some(AgentMode::Autonomous),
+            ts(1),
+        )
+        .unwrap();
+        set_agent_mode(
+            dir.path(),
+            &mut chat,
+            &claude,
+            &geordi,
+            Some(AgentMode::Plan),
+            ts(2),
+        )
+        .unwrap();
+        // clearing one delegator's override leaves the other's intact
+        set_agent_mode(dir.path(), &mut chat, &claude, &horst, None, ts(3)).unwrap();
+        assert_eq!(
+            chat.mode_override("ai:claude@joy", "horst@example.com"),
+            None
+        );
+        assert_eq!(
+            chat.mode_override("ai:claude@joy", "geordi@example.org"),
+            Some(AgentMode::Plan)
+        );
+
+        // a frozen (delete-for-all) chat takes no mode changes
+        delete_for_all(dir.path(), &mut chat, &horst, ts(4)).unwrap();
+        let denied = set_agent_mode(
+            dir.path(),
+            &mut chat,
+            &claude,
+            &geordi,
+            Some(AgentMode::Autonomous),
+            ts(5),
+        );
+        assert!(denied.is_err());
     }
 
     #[test]
