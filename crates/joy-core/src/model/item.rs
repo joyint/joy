@@ -221,6 +221,9 @@ pub struct JobSpec {
     pub budget: Option<JobBudget>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub window: Option<JobWindow>,
+    /// The dialog axis; see [`JobFeedback`]. Absent = no dialog open.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feedback: Option<JobFeedback>,
     /// Append-only list of execution loops. Retries and rework rounds
     /// are entries here, not separate objects and not a second status
     /// axis: a job being retried simply stays `in-progress`.
@@ -293,6 +296,39 @@ impl std::fmt::Display for AttemptOutcome {
             AttemptOutcome::Succeeded => write!(f, "succeeded"),
             AttemptOutcome::Failed => write!(f, "failed"),
             AttemptOutcome::Aborted => write!(f, "aborted"),
+        }
+    }
+}
+
+/// Where a job's open dialog currently stands: the dialog axis,
+/// orthogonal to [`Status`] exactly like [`Validity`] on decisions.
+/// `awaited` = the assignee asked and the operator is up; `received` =
+/// the answer is in, the assignee is up; absent = no dialog open.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum JobFeedback {
+    Awaited,
+    Received,
+}
+
+impl std::fmt::Display for JobFeedback {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            JobFeedback::Awaited => write!(f, "awaited"),
+            JobFeedback::Received => write!(f, "received"),
+        }
+    }
+}
+
+impl std::str::FromStr for JobFeedback {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "awaited" => Ok(JobFeedback::Awaited),
+            "received" => Ok(JobFeedback::Received),
+            // "none" clears the field and lives at the CLI layer, like
+            // `--validity none`; the enum itself rejects it.
+            _ => Err(format!("unknown feedback: {s}")),
         }
     }
 }
@@ -704,5 +740,51 @@ mod tests {
         // Validity serializes lowercase, like Status.
         assert!(yaml.contains("validity: replaced"));
         assert!(yaml.contains("replaced_by: IT-0140"));
+    }
+
+    #[test]
+    fn parse_feedback() {
+        assert_eq!(
+            "awaited".parse::<JobFeedback>().unwrap(),
+            JobFeedback::Awaited
+        );
+        assert_eq!(
+            "Received".parse::<JobFeedback>().unwrap(),
+            JobFeedback::Received
+        );
+        // "none" clears the field at the CLI layer; the enum rejects it.
+        assert!("none".parse::<JobFeedback>().is_err());
+        assert!("invalid".parse::<JobFeedback>().is_err());
+    }
+
+    #[test]
+    fn job_feedback_roundtrip() {
+        let mut item = Item::new(
+            "IT-JOB-0001-AA".into(),
+            "Deliver the login page".into(),
+            ItemType::Job,
+            Priority::High,
+            vec![Capability::Implement],
+        );
+        item.job = Some(JobSpec {
+            scope: vec!["IT-0001".into()],
+            budget: None,
+            window: None,
+            feedback: Some(JobFeedback::Awaited),
+            attempts: Vec::new(),
+        });
+
+        let yaml = serde_yaml_ng::to_string(&item).unwrap();
+        let parsed: Item = serde_yaml_ng::from_str(&yaml).unwrap();
+        assert_eq!(item, parsed);
+        assert!(yaml.contains("feedback: awaited"));
+
+        // Absent feedback stays off the wire, keeping existing job YAML
+        // stable and the field invisible until a dialog opens.
+        item.job.as_mut().unwrap().feedback = None;
+        let yaml = serde_yaml_ng::to_string(&item).unwrap();
+        assert!(!yaml.contains("feedback"));
+        let parsed: Item = serde_yaml_ng::from_str(&yaml).unwrap();
+        assert_eq!(parsed.job.unwrap().feedback, None);
     }
 }

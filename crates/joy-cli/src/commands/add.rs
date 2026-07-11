@@ -213,6 +213,7 @@ pub fn run(args: AddArgs) -> Result<()> {
             scope,
             budget: None,
             window: None,
+            feedback: None,
             attempts: vec![],
         });
     }

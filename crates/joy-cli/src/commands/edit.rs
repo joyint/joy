@@ -261,8 +261,8 @@ pub fn run(args: EditArgs) -> Result<()> {
     }
 
     if let Some(ref cost) = args.max_cost {
-        let cents = parse_decimal_cents(cost)
-            .map_err(|e| anyhow::anyhow!("invalid --max-cost: {}", e))?;
+        let cents =
+            parse_decimal_cents(cost).map_err(|e| anyhow::anyhow!("invalid --max-cost: {}", e))?;
         job_budget(&mut item).max_cents = Some(cents);
         changed = true;
     }
@@ -342,6 +342,7 @@ fn empty_job_spec() -> JobSpec {
         scope: Vec::new(),
         budget: None,
         window: None,
+        feedback: None,
         attempts: Vec::new(),
     }
 }
@@ -370,11 +371,7 @@ fn job_window(item: &mut Item) -> &mut JobWindow {
 /// Apply a `--scope` spec to the current scope list. The spec is either
 /// a plain comma list (replace) or +ID/-ID entries (add/remove); mixing
 /// the two forms is rejected.
-fn apply_scope_spec(
-    root: &std::path::Path,
-    current: &[String],
-    spec: &str,
-) -> Result<Vec<String>> {
+fn apply_scope_spec(root: &std::path::Path, current: &[String], spec: &str) -> Result<Vec<String>> {
     let entries: Vec<&str> = spec
         .split(',')
         .map(|s| s.trim())
