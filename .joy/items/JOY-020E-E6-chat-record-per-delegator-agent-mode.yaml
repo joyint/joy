@@ -1,14 +1,20 @@
 id: JOY-020E-E6
 title: 'chat record: per-delegator agent mode overrides and effective-mode resolution (JAPP-00F3-E8)'
 type: task
-status: new
+status: review
 priority: high
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-11T19:39:33.301183296Z
-updated: 2026-07-11T19:39:33.301183296Z
+updated: 2026-07-11T22:14:06.187433640Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
+history:
+- date: 2026-07-11T22:14:06.088122005Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-11T22:14:06.187433640Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'The chat record under .joy/chats/<id> gains a modes map keyed by (AI participant, delegating member) storing an AgentMode (plan | accept-edits | autonomous). joy-core provides: (1) read/write of the override with the governed write posting a notice message into the chat (existing notice kind); (2) a resolution helper effective_mode(ceiling, override, default) -> AgentMode used by desktop and platform; (3) the AgentMode enum stays the single canonical definition (ts-rs exported; the app consumes it as the generated AgentMode TS type). Mind the YAML merge behaviour (map entries per member merge cleanly) and keep the record shape documented in the chat schema docs. Desktop tauri layer will call these via joy_chat_set_mode(project_path, chat_id, agent_member, mode) -> effective AgentMode; joy_agent_set_mode (participant default in .joy/app) stays as is.'

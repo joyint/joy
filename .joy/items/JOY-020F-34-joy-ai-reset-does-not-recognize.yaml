@@ -1,14 +1,20 @@
 id: JOY-020F-34
 title: joy ai reset does not recognize platform-written agent config
 type: task
-status: new
+status: review
 priority: medium
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-11T19:39:33.372755375Z
-updated: 2026-07-11T19:39:33.372755375Z
+updated: 2026-07-11T22:14:06.597601327Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
+history:
+- date: 2026-07-11T22:14:06.520839645Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-11T22:14:06.597601327Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: joy ai reset --tool vibe in a checkout whose agent config was written by the PLATFORM (joy_core::agents::save_agent via add_project_agent) reported '0 tools reset'. Either the two write different shapes/locations or reset filters too narrowly; make joy ai reset and the platform agent config symmetric.

@@ -1,9 +1,11 @@
 id: JOY-020B-D2
 title: platform-issued job-bound joy sessions for sandboxed agents
 type: story
-status: new
+status: review
 priority: high
 parent: JOY-01FF-9D
+assignees:
+- member: ai:claude@joy
 capabilities:
 - plan
 - implement
@@ -11,7 +13,11 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-11T17:29:55.412541621Z
-updated: 2026-07-11T17:29:55.412541621Z
+updated: 2026-07-11T22:14:06.412050262Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
+history:
+- date: 2026-07-11T22:14:06.336121113Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-11T22:14:06.412050262Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'The job agent''s joy CLI inside the container must act as ai:<member> and pass the Guard auth wall without an operator token (AI Automation track, ADR-038: the job is the unit of grant, no TTL, validity state-based on the job lifecycle). Design + implement how the platform mints a session env for the duration of an attempt: bound to the job item (assignee + in-progress status checked at use), revoked by the attempt ending. Prereq for real ACP agents writing item state via CLI in joywork; the mock needs none.'
