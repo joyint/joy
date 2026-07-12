@@ -87,6 +87,13 @@ jobs:
         with:
           workspaces: joy
           cache-on-failure: true
+      # joy-core's identity resolution reads git user.email as the local
+      # fallback identity; GitHub-hosted runners have none configured, so set
+      # one (dev machines and the self-hosted runner image already have it).
+      - name: Configure a git identity for the tests
+        run: |
+          git config --global user.email "ci@joyint.dev"
+          git config --global user.name "Joyint CI"
       # --no-fail-fast: run every test binary even if an earlier one fails,
       # so a single CI run surfaces all platform-specific failures at once
       # (important for the slow windows-latest leg). See JOY-01A4-5B.
