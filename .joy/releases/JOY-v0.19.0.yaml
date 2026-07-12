@@ -1,0 +1,13 @@
+version: v0.19.0
+date: 2026-07-12
+previous: v0.18.0
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 14
+  items: 2
+items:
+  bugs:
+  - id: JOY-01FE-98
+    title: joy update strips per-tool .gitignore entries that joy ai init writes
+  - id: JOY-01FF-36
+    title: auto-sync pollutes --json stdout with its summary table
