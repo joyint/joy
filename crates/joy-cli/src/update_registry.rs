@@ -243,19 +243,36 @@ fn block_present(path: &Path, marker: &str, entries: &[&str]) -> bool {
 
 struct GitignoreBlockItem;
 
+impl GitignoreBlockItem {
+    /// The entries the managed block should carry for this repo. All or
+    /// nothing, never per-tool: once any AI tool is configured the block holds
+    /// the full fixed set (base entries plus every tool's ignore entries), so
+    /// `joy update` stops stripping the per-tool lines `joy ai init` writes;
+    /// with no AI tool configured it stays the base-only set `joy init`
+    /// produces (JOY-01FE-98).
+    fn expected_entries(root: &Path) -> Vec<(&'static str, &'static str)> {
+        if ai::tool_ids()
+            .iter()
+            .any(|&id| ai::is_tool_configured_pub(root, id))
+        {
+            joy_core::ai_setup::managed_gitignore_entries()
+        } else {
+            init::GITIGNORE_BASE_ENTRIES.to_vec()
+        }
+    }
+}
+
 impl UpdateItem for GitignoreBlockItem {
     fn section(&self) -> &'static str {
         SECTION_GIT
     }
     fn check(&self, root: &Path) -> Result<Vec<CheckRow>> {
-        let entries: Vec<&str> = init::GITIGNORE_BASE_ENTRIES
-            .iter()
-            .map(|(p, _)| *p)
-            .collect();
+        let entries = Self::expected_entries(root);
+        let paths: Vec<&str> = entries.iter().map(|(p, _)| *p).collect();
         let ok = block_present(
             &root.join(".gitignore"),
             init::GITIGNORE_BLOCK_START,
-            &entries,
+            &paths,
         );
         Ok(vec![CheckRow {
             name: ".gitignore block".into(),
@@ -269,7 +286,7 @@ impl UpdateItem for GitignoreBlockItem {
     }
     fn refresh(&self, root: &Path) -> Result<Vec<RefreshRow>> {
         let before = matches!(self.check(root)?[0].mark, RowMark::Ok);
-        init::update_gitignore_block(root, init::GITIGNORE_BASE_ENTRIES)?;
+        init::update_gitignore_block(root, &Self::expected_entries(root))?;
         Ok(vec![RefreshRow {
             name: ".gitignore block".into(),
             action: if before { None } else { Some("registered") },
