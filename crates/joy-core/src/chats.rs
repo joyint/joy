@@ -129,6 +129,9 @@ pub fn append_kind_with_id(
         delegated_by: None,
         turn_ms: None,
         tool_steps: None,
+        tool: None,
+        payload: None,
+        details: None,
     };
     chat.messages.push(message.clone());
     chat.updated = now;
@@ -150,6 +153,7 @@ pub fn append_ai_reply(
     delegated_by: Option<String>,
     turn_ms: Option<u32>,
     tool_steps: Option<u32>,
+    details: Option<String>,
 ) -> Result<ChatMessage, JoyError> {
     let message = append_kind_with_id(root, chat, author, text, MessageKind::Text, now, id)?;
     let stored = chat
@@ -160,6 +164,42 @@ pub fn append_ai_reply(
     stored.delegated_by = delegated_by;
     stored.turn_ms = turn_ms;
     stored.tool_steps = tool_steps;
+    stored.details = details;
+    let enriched = stored.clone();
+    save_chat(root, chat)?;
+    Ok(enriched)
+}
+
+/// Persist a tool's own answer (JAPP-010D-B0): the frozen result snapshot
+/// of a command. The author stays the initiating member (audit: WHO ran
+/// it); rendering keys on the kind and never shows it as a person's
+/// message. `text` is the plain-text fallback for renderers that do not
+/// understand the payload.
+#[allow(clippy::too_many_arguments)]
+pub fn append_tool_result(
+    root: &Path,
+    chat: &mut Chat,
+    author: MemberRef,
+    tool: impl Into<String>,
+    payload: impl Into<String>,
+    text: impl Into<String>,
+    now: DateTime<Utc>,
+    id: Option<String>,
+) -> Result<ChatMessage, JoyError> {
+    if chat.read_only {
+        return Err(JoyError::GuardDenied(format!(
+            "chat {} was deleted for everyone and is read-only",
+            chat.id
+        )));
+    }
+    let message = append_kind_with_id(root, chat, author, text, MessageKind::Tool, now, id)?;
+    let stored = chat
+        .messages
+        .iter_mut()
+        .find(|m| m.id == message.id)
+        .expect("just appended");
+    stored.tool = Some(tool.into());
+    stored.payload = Some(payload.into());
     let enriched = stored.clone();
     save_chat(root, chat)?;
     Ok(enriched)
@@ -929,6 +969,9 @@ mod channel_tests {
             delegated_by: None,
             turn_ms: None,
             tool_steps: None,
+            tool: None,
+            payload: None,
+            details: None,
         };
         chat.messages.push(mk(2, "second"));
         chat.messages.push(mk(1, "first"));

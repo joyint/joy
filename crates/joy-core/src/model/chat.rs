@@ -32,7 +32,9 @@ pub enum ChatKind {
 /// Message kinds: `Text` is a member message; `Notice` is a system line
 /// ("@xy left", "@xy was added"), rendered centered and muted; `Error`
 /// persists a failed command's answer (the yellow box) so a call never
-/// stands answerless after a reload (operator rule, 2026-07-05).
+/// stands answerless after a reload (operator rule, 2026-07-05); `Tool`
+/// is a tool's own persisted answer (JAPP-010D-B0): the frozen result
+/// snapshot of a command, never attributed to a person on render.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum MessageKind {
@@ -40,6 +42,7 @@ pub enum MessageKind {
     Text,
     Notice,
     Error,
+    Tool,
 }
 
 /// One message in a chat. The author is a member ref and resolves for
@@ -69,6 +72,22 @@ pub struct ChatMessage {
     /// AI replies: number of tool steps the turn took.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_steps: Option<u32>,
+    /// Tool messages (JAPP-010D-B0): which tool answered, e.g. "/joy".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool: Option<String>,
+    /// Tool messages: the frozen result snapshot, an opaque versioned
+    /// JSON string minted by the sending client at completion time. The
+    /// view NEVER reconstructs a result from the live store (a later
+    /// reconstruction shows different content and breaks the discussion
+    /// that referred to it).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub payload: Option<String>,
+    /// AI replies: the turn's activity details (thinking, tool steps,
+    /// answered permissions) as an opaque versioned JSON string — the
+    /// collapsed block must survive a reload like the text (operator
+    /// decision 2026-07-16).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub details: Option<String>,
 }
 
 impl ChatMessage {

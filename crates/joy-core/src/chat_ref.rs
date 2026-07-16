@@ -383,6 +383,9 @@ mod tests {
             delegated_by: None,
             turn_ms: None,
             tool_steps: None,
+            tool: None,
+            payload: None,
+            details: None,
         }
     }
 
