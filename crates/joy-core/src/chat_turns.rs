@@ -42,15 +42,19 @@ pub fn alias(member_id: &str) -> &str {
         .unwrap_or(member_id)
 }
 
-/// Member ids among `candidates` that `text` @mentions, by full ref or by
-/// short alias.
-pub fn mentions<'a>(text: &str, candidates: &'a [String]) -> Vec<&'a String> {
-    let tokens: Vec<&str> = text
-        .split(|c: char| c.is_whitespace() || c == ',' || c == ';' || c == '!' || c == '?')
+/// The raw @mention tokens of `text` (cleaned like [`mentions`]).
+fn mention_tokens(text: &str) -> Vec<&str> {
+    text.split(|c: char| c.is_whitespace() || c == ',' || c == ';' || c == '!' || c == '?')
         .filter_map(|w| w.strip_prefix('@'))
         .map(|w| w.trim_end_matches(['.', ':', ')']))
         .filter(|w| !w.is_empty())
-        .collect();
+        .collect()
+}
+
+/// Member ids among `candidates` that `text` @mentions, by full ref or by
+/// short alias.
+pub fn mentions<'a>(text: &str, candidates: &'a [String]) -> Vec<&'a String> {
+    let tokens = mention_tokens(text);
     candidates
         .iter()
         .filter(|candidate| {
@@ -58,6 +62,22 @@ pub fn mentions<'a>(text: &str, candidates: &'a [String]) -> Vec<&'a String> {
                 .iter()
                 .any(|t| *t == candidate.as_str() || *t == alias(candidate))
         })
+        .collect()
+}
+
+/// The @mention tokens of `text` that match NOBODY in `candidates`
+/// (JAPP-010D-B0: an unknown @name must answer with a visible error, not
+/// silently do nothing). Matching mirrors [`mentions`]: full ref or short
+/// alias.
+pub fn unknown_mentions(text: &str, candidates: &[String]) -> Vec<String> {
+    mention_tokens(text)
+        .into_iter()
+        .filter(|t| {
+            !candidates
+                .iter()
+                .any(|candidate| *t == candidate.as_str() || *t == alias(candidate))
+        })
+        .map(str::to_string)
         .collect()
 }
 
@@ -369,6 +389,26 @@ mod tests {
         );
         // idempotent
         assert!(!add_mentioned_ais(dir.path(), &mut chat, &msg, now).unwrap());
+    }
+
+    #[test]
+    fn unknown_mentions_surface_and_known_ones_do_not() {
+        let candidates = vec!["ai:claude@joy".to_string(), "horst@example.com".to_string()];
+        // known by alias and by full ref: no error
+        assert!(unknown_mentions("@claude please check", &candidates).is_empty());
+        assert!(unknown_mentions("cc @horst@example.com", &candidates).is_empty());
+        // an @name nobody carries answers with the unknown token
+        assert_eq!(
+            unknown_mentions("@nobody take a look", &candidates),
+            vec!["nobody".to_string()]
+        );
+        // punctuation-cleaned, several at once, dupes preserved in order
+        assert_eq!(
+            unknown_mentions("@ghost: hi, @claude and @phantom.", &candidates),
+            vec!["ghost".to_string(), "phantom".to_string()]
+        );
+        // a bare @ is noise, not a mention
+        assert!(unknown_mentions("meet @ 5pm", &candidates).is_empty());
     }
 
     #[test]
