@@ -99,6 +99,7 @@ pub fn run(args: AssignArgs) -> Result<()> {
     };
 
     // Update existing assignment or add new one
+    let before = item.clone();
     if let Some(existing) = item
         .assignees
         .iter_mut()
@@ -112,7 +113,19 @@ pub fn run(args: AssignArgs) -> Result<()> {
         });
     }
 
-    items::touch_for_attribute_change(&mut item, &ctx.log_user());
+    // Re-assigning an identical assignment is a no-op: no touch, no
+    // history entry, no commit.
+    if !items::touch_if_changed(&mut item, &before, &ctx.log_user()) {
+        if crate::output::is_json() {
+            return crate::output::emit(&item);
+        }
+        println!(
+            "{} is already assigned to {}.",
+            color::id(&item.id),
+            color::user(&member)
+        );
+        return Ok(());
+    }
     items::update_item(&ctx.root, &item)?;
 
     joy_core::event_log::log_event_as(

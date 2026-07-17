@@ -221,6 +221,29 @@ pub fn touch_for_attribute_change(item: &mut Item, by: &str) {
         });
 }
 
+/// `touch_for_attribute_change`, but only when the item actually differs
+/// from `before` (its state prior to the edit). Returns whether it
+/// touched. Re-sending an item's current values is not a change: without
+/// this guard every replayed edit bumps `updated`, swaps `updated_by` to
+/// an actor who changed nothing, and appends a history entry (a looping
+/// client once flooded a job with 600+ such entries). Callers snapshot
+/// the item right after loading it, mutate, then let this decide:
+///
+/// ```ignore
+/// let before = item.clone();
+/// // ... apply the requested edits ...
+/// if touch_if_changed(&mut item, &before, &user) {
+///     update_item(root, &item)?;
+/// }
+/// ```
+pub fn touch_if_changed(item: &mut Item, before: &Item, by: &str) -> bool {
+    if item == before {
+        return false;
+    }
+    touch_for_attribute_change(item, by);
+    true
+}
+
 /// Bump an item's `updated` / `updated_by` for sort recency without
 /// appending to its attribute history. Use this for comment add / edit
 /// / rm: the item is touched but no attribute changed, so the audit
@@ -767,6 +790,28 @@ mod tests {
     fn setup_project(dir: &Path) {
         let joy_dir = dir.join(".joy");
         std::fs::create_dir_all(joy_dir.join("items")).unwrap();
+    }
+
+    #[test]
+    fn touch_if_changed_skips_no_op_edits() {
+        let mut item = Item::new(
+            "JOY-0001".into(),
+            "Stable".into(),
+            ItemType::Task,
+            Priority::Low,
+            vec![],
+        );
+        let before = item.clone();
+
+        // replaying identical values: no history entry, no last-editor swap
+        assert!(!touch_if_changed(&mut item, &before, "b@example.com"));
+        assert_eq!(item, before);
+
+        // a real change touches: updated_by moves, history grows
+        item.title = "Changed".into();
+        assert!(touch_if_changed(&mut item, &before, "b@example.com"));
+        assert_eq!(item.updated_by.as_deref(), Some("b@example.com"));
+        assert_eq!(item.history.as_ref().map(Vec::len), Some(1));
     }
 
     #[test]

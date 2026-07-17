@@ -479,8 +479,22 @@ fn run_link(args: LinkArgs) -> Result<()> {
 
     let mut item = items::load_item(&ctx.root, &args.item_id)?;
     let log_user = ctx.log_user();
+    let before = item.clone();
     item.milestone = Some(args.ms_id.clone());
-    items::touch_for_attribute_change(&mut item, &log_user);
+    // Linking the milestone the item already has is a no-op: no touch,
+    // no history entry, no commit.
+    if !items::touch_if_changed(&mut item, &before, &log_user) {
+        if crate::output::is_json() {
+            return crate::output::emit(&item);
+        }
+        println!(
+            "{} is already linked to {} {}",
+            color::id(&item.id),
+            color::id(&ms.id),
+            ms.title
+        );
+        return Ok(());
+    }
     items::update_item(&ctx.root, &item)?;
     joy_core::event_log::log_event_as(
         &ctx.root,

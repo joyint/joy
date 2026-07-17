@@ -102,6 +102,7 @@ pub fn run(args: EditArgs) -> Result<()> {
     let ctx = crate::crypt_session::load_context(None)?;
 
     let mut item = items::load_item(&ctx.root, &args.id)?;
+    let before = item.clone();
     let mut changed = false;
 
     if let Some(title) = args.title {
@@ -333,7 +334,15 @@ pub fn run(args: EditArgs) -> Result<()> {
     ctx.enforce(&action, &item.id)?;
 
     let log_user = ctx.log_user();
-    items::touch_for_attribute_change(&mut item, &log_user);
+    // Flags that replay the current values are a no-op: nothing to
+    // write, no history entry, no last-editor swap, no commit.
+    if !items::touch_if_changed(&mut item, &before, &log_user) {
+        if crate::output::is_json() {
+            return crate::output::emit(&item);
+        }
+        println!("No effective change to {} {}", item.id, item.title);
+        return Ok(());
+    }
     items::update_item(&ctx.root, &item)?;
     joy_core::event_log::log_event_as(
         &ctx.root,

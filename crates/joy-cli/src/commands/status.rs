@@ -239,6 +239,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
     }
 
     let log_user = ctx.log_user();
+    let before = item.clone();
     item.status = new_status.clone();
     // A decision that is properly closed becomes the binding rule. Default its
     // validity to accepted unless it was set explicitly (e.g. rejected).
@@ -248,7 +249,19 @@ pub fn run(args: StatusArgs) -> Result<()> {
     {
         item.validity = Some(Validity::Accepted);
     }
-    items::touch_for_attribute_change(&mut item, &log_user);
+    // Setting the status it already has is a no-op: no touch, no history
+    // entry, no commit, and nothing to cascade.
+    if !items::touch_if_changed(&mut item, &before, &log_user) {
+        if crate::output::is_json() {
+            return crate::output::emit(&item);
+        }
+        println!(
+            "{} is already {}",
+            color::id(&item.id),
+            color::status(&new_status)
+        );
+        return Ok(());
+    }
     items::update_item(&ctx.root, &item)?;
     joy_core::event_log::log_event_as(
         &ctx.root,
