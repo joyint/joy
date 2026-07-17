@@ -1,0 +1,25 @@
+id: JOY-0210-E1
+title: 'Chat model: tool snapshot messages, turn details, unknown mentions'
+type: story
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- plan
+- implement
+- review
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-17T14:24:28.885626373Z
+updated: 2026-07-17T14:24:38.624297107Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-07-17T14:24:38.312934487Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-17T14:24:38.624297107Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: Backfill for commits cb0f940 and bb9cad4 (tagged no-item at commit time). joy-core chat model gains MessageKind::Tool with tool/payload/details fields, append_tool_result and the details parameter on append_ai_reply, so clients persist a command result as the tool's own frozen snapshot message and AI turns keep their activity log. chat_turns gains mention_tokens/unknown_mentions so an @name matching no project member gets a persisted error answer instead of silence. Consumed by the app (JAPP-010D-B0) and the platform chat surface (JP backfill).
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-17T14:24:38.510897887Z
+  text: '[x] Shipped in cb0f940 (tool snapshots + details) and bb9cad4 (unknown mentions); full workspace test suite green.'

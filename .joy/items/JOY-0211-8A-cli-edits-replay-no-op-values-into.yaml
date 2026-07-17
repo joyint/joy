@@ -1,0 +1,24 @@
+id: JOY-0211-8A
+title: CLI edits replay no-op values into history and swap the last editor
+type: bug
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-17T14:24:28.969806116Z
+updated: 2026-07-17T14:24:38.825739994Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-07-17T14:24:38.440043647Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-17T14:24:38.825739994Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: Backfill for commit ee66414 (tagged no-item at commit time). touch_for_attribute_change touches unconditionally; the CLI commands used flag presence as change detection, so joy edit X --priority high on an already-high item bumped updated, swapped updated_by to an actor who changed nothing and appended a history entry (a looping web client once flooded a job with 600+ such entries through the analogous platform path). joy-core gains touch_if_changed(item, &before, by); edit, assign, status and milestone link snapshot after load and touch only on a real difference. deps, unassign, unlink and the milestone-delete sweep already checked real values.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-17T14:24:38.701980978Z
+  text: '[x] Shipped in ee66414: touch_if_changed in joy-core (unit test) plus the four CLI conversions; workspace tests green (463 core + 103).'
