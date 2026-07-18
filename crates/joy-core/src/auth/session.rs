@@ -516,7 +516,7 @@ pub fn list_member_sessions(
         }
     }
     // Newest first, so "the" session of a member is the most recent one.
-    sessions.sort_by(|(_, a), (_, b)| b.claims.created.cmp(&a.claims.created));
+    sessions.sort_by_key(|(_, token)| std::cmp::Reverse(token.claims.created));
     Ok(sessions)
 }
 
