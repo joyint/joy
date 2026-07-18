@@ -32,20 +32,29 @@ pub fn new_chat_id() -> String {
 /// plaintext either: the chat stays ephemeral until someone
 /// authenticates. Only a checkout without a Joy project (bare library
 /// use) or a project without any identity persists as before.
-pub fn save_chat(root: &Path, chat: &Chat) -> Result<(), JoyError> {
+/// Sealing mutates the CALLER's chat too (crypt header, per-message
+/// envelopes next to the opened fields), so a publisher right after the
+/// save holds the exact sealed form the wire needs.
+pub fn save_chat(root: &Path, chat: &mut Chat) -> Result<(), JoyError> {
     if let Some(seed) = crate::chat_crypt::custodian_seed() {
         if let Ok(project) = crate::store::load_project(root) {
-            let mut sealed = chat.clone();
-            match crate::chat_crypt::ensure_crypt(&project, &mut sealed, &seed) {
+            match crate::chat_crypt::ensure_crypt(&project, chat, &seed) {
                 Ok(key) => {
-                    crate::chat_crypt::seal_messages(&mut sealed, &key);
+                    // participant upkeep (rotate on leave, backfill on
+                    // arrival/enrollment) before sealing new messages
+                    let key = crate::chat_crypt::maintain_wraps(&project, chat, &seed, key)?;
+                    crate::chat_crypt::seal_messages(&mut *chat, &key);
+                    // sealing emptied the sensitive fields; keep the
+                    // in-memory copy OPENED like a fresh load would be
+                    let key_for = |_epoch: u32| Some(key);
+                    crate::chat_crypt::open_messages(chat, key_for);
                     return crate::chat_ref::save_chat(
                         root,
-                        &crate::chat_crypt::sealed_for_save(&sealed),
+                        &crate::chat_crypt::sealed_for_save(chat),
                     );
                 }
                 Err(e) => {
-                    if sealed.crypt.is_some() {
+                    if chat.crypt.is_some() {
                         // an encrypted chat this seed cannot open: never
                         // write (and never write plaintext into it)
                         return Err(e);
@@ -104,7 +113,7 @@ pub fn open_chat(
 ) -> Result<Chat, JoyError> {
     let mut chat = Chat::new(new_chat_id(), participants, now);
     chat.title = title;
-    save_chat(root, &chat)?;
+    save_chat(root, &mut chat)?;
     Ok(chat)
 }
 
@@ -281,7 +290,7 @@ pub fn ensure_general(root: &Path, now: DateTime<Utc>) -> Result<Chat, JoyError>
     chat.kind = ChatKind::General;
     chat.title = Some("General".into());
     chat.subtitle = Some("for all team members".into());
-    save_chat(root, &chat)?;
+    save_chat(root, &mut chat)?;
     Ok(chat)
 }
 
@@ -681,7 +690,7 @@ mod tests {
         let direct = {
             let mut c = open_chat(dir.path(), vec![horst.clone()], None, ts(2)).unwrap();
             c.kind = ChatKind::Direct;
-            save_chat(dir.path(), &c).unwrap();
+            save_chat(dir.path(), &mut c).unwrap();
             c
         };
         assert!(visible_to(&direct, &horst));
@@ -791,7 +800,7 @@ mod tests {
         )
         .unwrap();
         chat.created_by = Some(horst.clone());
-        save_chat(dir.path(), &chat).unwrap();
+        save_chat(dir.path(), &mut chat).unwrap();
 
         // leave posts the notice and drops the member
         leave(dir.path(), &mut chat, &geordi, ts(1)).unwrap();
@@ -1022,7 +1031,7 @@ mod channel_tests {
         };
         chat.messages.push(mk(2, "second"));
         chat.messages.push(mk(1, "first"));
-        save_chat(dir.path(), &chat).unwrap();
+        save_chat(dir.path(), &mut chat).unwrap();
 
         let chat = load_chat(dir.path(), &chat.id).unwrap().unwrap();
         assert_eq!(chat.messages[0].text, "first");
