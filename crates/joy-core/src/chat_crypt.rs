@@ -35,8 +35,9 @@ fn wrap_name(chat_id: &str, epoch: u32) -> String {
 }
 
 /// AAD binding a sealed message to its chat, epoch and message id.
+/// The FORMAT lives in joy-crypt (shared with the browser WASM).
 fn aad_for(chat_id: &str, epoch: u32, msg_id: &str) -> Vec<u8> {
-    format!("JOYCHAT:{chat_id}#{epoch}:{msg_id}").into_bytes()
+    joy_crypt::chat::aad(chat_id, epoch, msg_id)
 }
 
 /// The sensitive fields of a message, sealed as one JSON envelope.
@@ -63,16 +64,30 @@ pub fn active_epoch(chat: &Chat) -> Option<u32> {
 /// on the platform side (the container model's custodial pattern).
 fn wrap_recipients(project: &Project, chat: &Chat) -> Vec<(String, crate::auth::PublicKey)> {
     let mut out = Vec::new();
-    for participant in &chat.participants {
-        let id = participant.id();
-        if let Some(public) = recipient_public(project, id) {
-            out.push((id.to_string(), public));
+    for id in effective_recipient_ids(project, chat) {
+        if let Some(public) = recipient_public(project, &id) {
+            out.push((id, public));
         }
     }
     if let Some(public) = recipient_public(project, PLATFORM_RECIPIENT) {
         out.push((PLATFORM_RECIPIENT.to_string(), public));
     }
     out
+}
+
+/// The member ids the key must be wrapped for: the stored participant
+/// list, EXCEPT that an empty team/General list means "everyone in the
+/// project" (the chats module's convention).
+fn effective_recipient_ids(project: &Project, chat: &Chat) -> Vec<String> {
+    use crate::model::chat::ChatKind;
+    if chat.participants.is_empty() && matches!(chat.kind, ChatKind::General | ChatKind::Team) {
+        project.members().map(|(id, _)| id.clone()).collect()
+    } else {
+        chat.participants
+            .iter()
+            .map(|p| p.id().to_string())
+            .collect()
+    }
 }
 
 /// The verify_key on record for a wrap recipient: a member's own key,
@@ -153,8 +168,10 @@ pub fn open_key(
         .get(epoch as usize)
         .and_then(|e| e.wraps.get(recipient_id))
         .ok_or_else(|| JoyError::AuthFailed(format!("no chat wrap for {recipient_id}")))?;
-    let name = wrap_name(&chat.id, epoch);
-    Ok(*crate::crypt::unwrap_for_member(entry, &name, seed)?.as_bytes())
+    // the SHARED unwrap (joy-crypt): byte-identical with the browser
+    let secret = IdentityKeypair::from_seed(seed).to_x25519_secret_bytes();
+    joy_crypt::chat::unwrap_content_key(&secret, entry, &chat.id, epoch)
+        .map_err(|e| JoyError::AuthFailed(format!("chat wrap would not open: {e}")))
 }
 
 /// Open the key of `epoch` with whatever wrap this seed can unwrap
@@ -298,6 +315,80 @@ fn open_envelope(
     let plain =
         joy_crypt::aead::open(key, &nonce, &aad_for(chat_id, epoch, &id), &blob[12..]).ok()?;
     serde_json::from_slice(&plain).ok()
+}
+
+/// The wrap upkeep every persist runs (ADR JAPP-002A-30, the two
+/// participant rules in one place):
+/// - someone LEFT (a wrap-holder is no longer a recipient): rotate the
+///   key forward; past epochs stay readable to them, new messages not.
+/// - someone ARRIVED or enrolled (a recipient has a key but no wrap,
+///   e.g. General chats cover every project member, or a member set up
+///   their identity after the chat existed): one new wrap, same key.
+///
+/// Returns the key new messages seal under.
+pub fn maintain_wraps(
+    project: &Project,
+    chat: &mut Chat,
+    granter_seed: &[u8; 32],
+    key: [u8; 32],
+) -> Result<[u8; 32], JoyError> {
+    let Some(epoch) = active_epoch(chat) else {
+        return Ok(key);
+    };
+    let recipients = wrap_recipients(project, chat);
+    let recipient_ids: std::collections::BTreeSet<&str> =
+        recipients.iter().map(|(id, _)| id.as_str()).collect();
+    let holders: Vec<String> = chat.crypt.as_ref().map_or_else(Vec::new, |c| {
+        c.epochs[epoch as usize].wraps.keys().cloned().collect()
+    });
+    if holders
+        .iter()
+        .any(|id| id != PLATFORM_RECIPIENT && !recipient_ids.contains(id.as_str()))
+    {
+        return rotate_for_removal(project, chat, granter_seed);
+    }
+    let granter = IdentityKeypair::from_seed(granter_seed);
+    let granter_pk = granter.public_key();
+    let name = wrap_name(&chat.id, epoch);
+    let zone_key = crate::crypt::ZoneKey::from_bytes(key);
+    if let Some(entry) = chat
+        .crypt
+        .as_mut()
+        .and_then(|c| c.epochs.get_mut(epoch as usize))
+    {
+        for (id, public) in recipients {
+            entry.wraps.entry(id).or_insert_with(|| {
+                crate::crypt::wrap_for_member(&zone_key, &name, granter_seed, &granter_pk, &public)
+            });
+        }
+    }
+    Ok(key)
+}
+
+/// Whether a persist would change the active epoch's wraps (the startup
+/// sweep uses this to re-save only chats that need it).
+pub fn wraps_stale(project: &Project, chat: &Chat) -> bool {
+    let Some(epoch) = active_epoch(chat) else {
+        return false;
+    };
+    let Some(entry) = chat
+        .crypt
+        .as_ref()
+        .and_then(|c| c.epochs.get(epoch as usize))
+    else {
+        return false;
+    };
+    let recipients = wrap_recipients(project, chat);
+    let recipient_ids: std::collections::BTreeSet<&str> =
+        recipients.iter().map(|(id, _)| id.as_str()).collect();
+    let missing = recipients
+        .iter()
+        .any(|(id, _)| !entry.wraps.contains_key(id));
+    let stale_holder = entry
+        .wraps
+        .keys()
+        .any(|id| id != PLATFORM_RECIPIENT && !recipient_ids.contains(id.as_str()));
+    missing || stale_holder
 }
 
 /// Add one wrap for a NEW participant to the active epoch (ADR: adding
@@ -572,10 +663,10 @@ mod tests {
         // plaintext persistence (the ADR's ephemeral rule)
         set_custodian_seed(None);
         let mut chat = chat_with_message();
-        assert!(crate::chats::save_chat(&dir, &chat).is_err());
+        assert!(crate::chats::save_chat(&dir, &mut chat).is_err());
 
         set_custodian_seed(Some(platform_seed));
-        crate::chats::save_chat(&dir, &chat).unwrap();
+        crate::chats::save_chat(&dir, &mut chat).unwrap();
         // reflect what persistence added (the caller reloads in product
         // paths); at rest the text is sealed
         let raw = crate::chat_ref::load_chat(&dir, &chat.id).unwrap().unwrap();
@@ -588,6 +679,63 @@ mod tests {
         assert!(chat.crypt.is_some());
         set_custodian_seed(None);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_general_chat_wraps_every_project_member() {
+        let (mut project, horst_seed, platform_seed) = project_with_keys("general");
+        let anna_seed = [3u8; 32];
+        let mut anna =
+            crate::model::project::Member::new(crate::model::project::MemberCapabilities::All);
+        anna.verify_key = Some(IdentityKeypair::from_seed(&anna_seed).public_key().to_hex());
+        project.register_member("anna@example.com", anna).unwrap();
+        // General: EMPTY participant list means everyone
+        let now = chrono::Utc::now();
+        let mut chat = Chat::new("general", Vec::new(), now);
+        chat.kind = crate::model::chat::ChatKind::General;
+        let _ = ensure_crypt(&project, &mut chat, &platform_seed).unwrap();
+        assert!(open_key(&chat, "horst@example.com", &horst_seed, 0).is_ok());
+        assert!(open_key(&chat, "anna@example.com", &anna_seed, 0).is_ok());
+    }
+
+    #[test]
+    fn late_enrollment_backfills_and_leaving_rotates() {
+        let (mut project, _horst, platform_seed) = project_with_keys("upkeep");
+        let mut chat = chat_with_message();
+        chat.participants
+            .push(crate::member_ref::MemberRef::new("ben@example.com"));
+        // ben exists but has NO key yet: no wrap for him
+        project
+            .register_member(
+                "ben@example.com",
+                crate::model::project::Member::new(crate::model::project::MemberCapabilities::All),
+            )
+            .unwrap();
+        let key = ensure_crypt(&project, &mut chat, &platform_seed).unwrap();
+        assert!(!wraps_stale(&project, &chat), "nothing to do yet");
+
+        // ben enrolls: the next upkeep backfills his wrap, SAME key
+        let ben_seed = [4u8; 32];
+        project
+            .member_by_key_mut("ben@example.com")
+            .unwrap()
+            .verify_key = Some(IdentityKeypair::from_seed(&ben_seed).public_key().to_hex());
+        assert!(wraps_stale(&project, &chat));
+        let kept = maintain_wraps(&project, &mut chat, &platform_seed, key).unwrap();
+        assert_eq!(kept, key);
+        assert!(open_key(&chat, "ben@example.com", &ben_seed, 0).is_ok());
+
+        // ben leaves: the upkeep rotates forward
+        chat.participants.retain(|p| p.id() != "ben@example.com");
+        assert!(wraps_stale(&project, &chat));
+        let rotated = maintain_wraps(&project, &mut chat, &platform_seed, kept).unwrap();
+        assert_ne!(rotated, kept);
+        assert_eq!(active_epoch(&chat), Some(1));
+        assert!(open_key(&chat, "ben@example.com", &ben_seed, 1).is_err());
+        assert!(
+            open_key(&chat, "ben@example.com", &ben_seed, 0).is_ok(),
+            "past stays"
+        );
     }
 
     #[test]

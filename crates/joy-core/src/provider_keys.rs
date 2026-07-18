@@ -576,6 +576,6 @@ mod tests {
         assert_eq!(report.recipient_wraps, 1);
         let ai = project.member_by_key("ai:mistral@joy").unwrap();
         assert_eq!(ai.provider_keys.len(), 1);
-        assert!(ai.provider_keys.get("bob@example.com").is_some());
+        assert!(ai.provider_keys.contains_key("bob@example.com"));
     }
 }
