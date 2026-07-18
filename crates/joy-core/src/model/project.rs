@@ -155,6 +155,15 @@ pub struct CryptZone {
     /// AI uses to unwrap (ADR-041 §5).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub delegations: BTreeMap<String, BTreeMap<String, String>>,
+    /// The zone key wrapped for the registered PLATFORM
+    /// (`project.platform.verify_key`), granted explicitly by a zone
+    /// member (`joy crypt grant <zone> platform`). With it the platform
+    /// serves the zone's content to joy-unlocked app sessions and can
+    /// provision job containers — the container concept's "Zonen-Grant
+    /// an die Plattform"; the user decides per zone. Absent means the
+    /// platform cannot read the zone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platform_wrap: Option<String>,
 }
 
 /// Configurable paths to the project's reference documentation, relative to

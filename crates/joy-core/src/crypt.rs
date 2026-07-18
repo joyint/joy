@@ -268,6 +268,26 @@ pub fn unwrap_for_member(
     Ok(ZoneKey::from_bytes(arr))
 }
 
+/// Every zone the PLATFORM was granted (`crypt.zones.*.platform_wrap`,
+/// written by `joy crypt grant <zone> platform`), unwrapped with the
+/// platform's seed. A wrap that does not open (e.g. the platform key
+/// rotated after the grant) is skipped — the zone simply stays closed
+/// until re-granted.
+pub fn platform_zone_keys(
+    project: &crate::model::Project,
+    platform_seed: &[u8; 32],
+) -> BTreeMap<String, [u8; 32]> {
+    let mut keys = BTreeMap::new();
+    for (zone, entry) in &project.crypt.zones {
+        if let Some(wrap_hex) = entry.platform_wrap.as_deref() {
+            if let Ok(zone_key) = unwrap_for_member(wrap_hex, zone, platform_seed) {
+                keys.insert(zone.clone(), *zone_key.as_bytes());
+            }
+        }
+    }
+    keys
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -388,5 +408,41 @@ mod tests {
         let a = unwrap_for_member(&wrap_hex, DEFAULT_ZONE, &seed).unwrap();
         let b = unwrap_for_member(&wrap_hex, DEFAULT_ZONE, &seed).unwrap();
         assert_eq!(a.as_bytes(), b.as_bytes());
+    }
+
+    #[test]
+    fn a_platform_grant_opens_the_zone_with_the_platform_seed() {
+        let granter_seed = [1u8; 32];
+        let platform_seed = [2u8; 32];
+        let granter_kp = Keypair::from_seed(&granter_seed);
+        let platform_kp = Keypair::from_seed(&platform_seed);
+        let zk = ZoneKey::generate();
+        let wrap_hex = wrap_for_member(
+            &zk,
+            "geheim",
+            &granter_seed,
+            &granter_kp.public_key(),
+            &platform_kp.public_key(),
+        );
+
+        let mut project = crate::model::Project::new("t".into(), None);
+        project
+            .crypt
+            .zones
+            .entry("geheim".into())
+            .or_default()
+            .platform_wrap = Some(wrap_hex);
+
+        let keys = platform_zone_keys(&project, &platform_seed);
+        assert_eq!(keys.get("geheim"), Some(zk.as_bytes()));
+        // the wrong seed opens nothing
+        assert!(platform_zone_keys(&project, &[9u8; 32]).is_empty());
+
+        // and the key actually decrypts zone content
+        let blob = encrypt_blob("geheim", &zk, b"item: yaml");
+        set_active_zone_keys(keys);
+        let (zone, plain) = decrypt_blob(active_zone_key, &blob).unwrap();
+        assert_eq!(zone, "geheim");
+        assert_eq!(plain, b"item: yaml");
     }
 }

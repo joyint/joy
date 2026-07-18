@@ -878,6 +878,68 @@ fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>, stdin: b
         .ok_or_else(|| anyhow::anyhow!("granter has no verify_key registered"))?;
     let granter_verify_key = joy_core::auth::PublicKey::from_hex(&granter_verify_hex)?;
 
+    // The PLATFORM grant (container concept: "Zonen-Grant an die
+    // Plattform", user-decided per zone): the zone key wrapped against
+    // the registered platform verify_key, stored zone-major. With it the
+    // platform serves the zone to joy-unlocked app sessions.
+    if target_member.eq_ignore_ascii_case("platform") {
+        let platform_verify_hex = unlocked
+            .project
+            .platform
+            .as_ref()
+            .map(|p| p.verify_key.clone())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "no platform is registered in this project (joy project platform-key);                      nothing to grant to"
+                )
+            })?;
+        let platform_verify_key = joy_core::auth::PublicKey::from_hex(&platform_verify_hex)?;
+        let granter_verify_hex = unlocked
+            .project
+            .member_by_email(&unlocked.acting_email)
+            .and_then(|m| m.verify_key.clone())
+            .ok_or_else(|| anyhow::anyhow!("granter has no verify_key registered"))?;
+        let granter_verify_key = joy_core::auth::PublicKey::from_hex(&granter_verify_hex)?;
+        let wrap_hex = joy_core::crypt::wrap_for_member(
+            &unlocked.zone_key,
+            &unlocked.zone,
+            &unlocked.acting_seed,
+            &granter_verify_key,
+            &platform_verify_key,
+        );
+        let project_path = store::joy_dir(&unlocked.root).join(store::PROJECT_FILE);
+        let mut project = store::read_project(&project_path)?;
+        project
+            .crypt
+            .zones
+            .entry(unlocked.zone.clone())
+            .or_default()
+            .platform_wrap = Some(wrap_hex);
+        // the granter keeps their own wrap (first add+grant session)
+        let granter_wrap = joy_core::crypt::wrap_for_self(
+            &unlocked.zone_key,
+            &unlocked.zone,
+            &unlocked.acting_seed,
+        );
+        let g = project.member_by_email_mut(&unlocked.acting_email).unwrap();
+        g.crypt_wraps
+            .entry(unlocked.zone.clone())
+            .or_insert(granter_wrap);
+        store::write_yaml_preserve(&project_path, &project)?;
+        let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+        joy_core::git_ops::auto_git_add(&unlocked.root, &[&rel]);
+        joy_core::git_ops::auto_git_post_command(
+            &unlocked.root,
+            &format!("crypt grant platform (zone {})", unlocked.zone),
+            &unlocked.acting_email,
+        );
+        println!(
+            "Granted the platform access to zone '{}'. It serves the zone's content to              authenticated app sessions; revoke by removing crypt.zones.{}.platform_wrap.",
+            unlocked.zone, unlocked.zone
+        );
+        return Ok(());
+    }
+
     // ADR-041 §4: AI Tool grants target one wrap per (operator, AI),
     // stored zone-major under crypt.zones.<zone>.delegations.<ai>.<op>.
     // Human grants stay member-major under members.<who>.crypt_wraps as
