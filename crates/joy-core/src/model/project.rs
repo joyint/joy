@@ -221,6 +221,15 @@ pub struct Member {
     pub enrollment_verifier: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub ai_delegations: BTreeMap<String, AiDelegationEntry>,
+    /// Provider API keys powering THIS AI member (only meaningful on
+    /// ai:* members), keyed by the OWNER's member key. Each entry holds
+    /// pairwise wraps (X25519, joy-crypt provider_key) per recipient:
+    /// the owner themselves, the reserved "platform" recipient (the
+    /// project's platform key, so server-run containers work while the
+    /// owner is offline), and — on a team key — every member with an
+    /// identity key. The repo carries only ciphertext.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub provider_keys: BTreeMap<String, ProviderKeyEntry>,
     /// Per-member Crypt zone-key wraps. Map from zone name to the
     /// hex-encoded `nonce || ciphertext || tag` produced by
     /// `joy_crypt::wrap::wrap` over the zone key. The KEK derives from
@@ -243,6 +252,23 @@ pub struct Member {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attestation: Option<Attestation>,
 }
+
+/// One owner's provider key for an AI member: released for the whole
+/// team or personal, with the pairwise wraps per recipient (member keys
+/// plus the reserved "platform" recipient) and an optional monthly
+/// budget in cents.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProviderKeyEntry {
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub for_all: bool,
+    pub wraps: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub budget_cents_month: Option<u64>,
+}
+
+/// The reserved recipient id of the platform in provider-key wraps: its
+/// public key is `project.platform.verify_key`, not a member entry.
+pub const PLATFORM_RECIPIENT: &str = "platform";
 
 /// Per-member attestation: a signature by a manage member over a stable
 /// subset of the member's fields (email, capabilities, enrollment_verifier).
@@ -483,6 +509,7 @@ impl Member {
             seed_wrap_recovery: None,
             enrollment_verifier: None,
             ai_delegations: BTreeMap::new(),
+            provider_keys: BTreeMap::new(),
             crypt_wraps: BTreeMap::new(),
             email_match: None,
             members_wrap: None,

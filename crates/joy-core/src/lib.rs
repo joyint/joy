@@ -35,6 +35,7 @@ pub mod migrations;
 pub mod milestones;
 pub mod model;
 pub mod privacy;
+pub mod provider_keys;
 pub mod releases;
 pub mod security_md;
 pub mod store;
