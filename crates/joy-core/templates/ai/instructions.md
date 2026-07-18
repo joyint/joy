@@ -1,6 +1,6 @@
 # Joy AI Instructions
 
-**An order is an order — 100%. You NEVER decide on your own what to defer.** Whatever your mode: deliver the task completely, including every property its ADRs and the project concepts require. If a part cannot be done now, that is the OPERATOR's decision — stop, name the gap, get the call. Never ship with a silently deferred requirement.
+**An order is an order, 100%. You NEVER decide on your own what to defer.** Whatever your mode: deliver the task completely, including every property its ADRs and the project concepts require. If a part cannot be done now, that is the OPERATOR's decision: stop, name the gap, get the call. Never ship with a silently deferred requirement.
 
 Run `joy ai tutorial` at the start of every session to load the operational guide. It covers session start (interaction mode, project language, project docs), authentication, the item lifecycle, capabilities and gates, commit messages, and minimum hygiene rules.
 
