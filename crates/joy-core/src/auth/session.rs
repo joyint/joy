@@ -3,9 +3,17 @@
 
 //! Session management for authenticated Joy operations.
 //!
-//! Sessions are time-limited tokens stored locally in `~/.config/joy/sessions/`.
-//! They prove that the user has entered their passphrase and derived the correct
+//! Sessions are time-limited tokens stored locally in
+//! `~/.local/state/joy/sessions/` (honoring `XDG_STATE_HOME`). They prove
+//! that the user has entered their passphrase and derived the correct
 //! identity key within the configured time window.
+//!
+//! Human sessions occupy one deterministic slot per (project, member):
+//! re-authenticating replaces the previous session. AI sessions get one
+//! file per session, keyed by the ephemeral session public key, because
+//! every token redemption is an independent session (JOY-01E1-E7) and a
+//! redemption in one terminal must not displace the session another
+//! terminal is still using. Expired files are swept lazily on save.
 
 use std::path::{Path, PathBuf};
 
@@ -14,6 +22,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{IdentityKeypair, PublicKey};
 use crate::error::JoyError;
+use crate::model::project::is_ai_member;
 
 /// Claims encoded in a session token.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -291,9 +300,10 @@ fn session_filename(project_id: &str, member: &str) -> String {
     format!("{}.json", session_id(project_id, member))
 }
 
-/// The session ID: a short, deterministic, opaque identifier for a session.
-/// Used as the filename stub for the session file and as part of the
-/// `JOY_SESSION` env var payload.
+/// The session ID of the single per-member slot: deterministic, opaque.
+/// Human sessions live under this id. AI sessions use
+/// [`session_storage_id`] instead, which mixes in the ephemeral session
+/// public key so each session gets its own file.
 pub fn session_id(project_id: &str, member: &str) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
@@ -302,6 +312,31 @@ pub fn session_id(project_id: &str, member: &str) -> String {
     hasher.update(member.as_bytes());
     let hash = hasher.finalize();
     hex::encode(&hash[..SESSION_ID_LEN])
+}
+
+/// The storage ID of a session: the filename stub of its file on disk and
+/// the sid carried in the `JOY_SESSION` env payload.
+///
+/// AI sessions (token-redeemed and job-bound alike) are keyed by the
+/// ephemeral session public key, so every session occupies its own file
+/// and concurrent sessions for the same member coexist (JOY-01E1-E7).
+/// Human sessions keep the deterministic per-member slot: their lookup
+/// runs by (project, member), not by an env-carried sid.
+pub fn session_storage_id(project_id: &str, claims: &SessionClaims) -> String {
+    match &claims.session_public_key {
+        Some(session_pk) if is_ai_member(&claims.member) => {
+            use sha2::{Digest, Sha256};
+            let mut hasher = Sha256::new();
+            hasher.update(project_id.as_bytes());
+            hasher.update(b":");
+            hasher.update(claims.member.as_bytes());
+            hasher.update(b":");
+            hasher.update(session_pk.as_bytes());
+            let hash = hasher.finalize();
+            hex::encode(&hash[..SESSION_ID_LEN])
+        }
+        _ => session_id(project_id, &claims.member),
+    }
 }
 
 /// Prefix for the `JOY_SESSION` env var value (ADR-033).
@@ -398,14 +433,23 @@ pub fn parse_session_env_full(
     Some((sid_hex, session_priv, delegation_priv))
 }
 
-/// Save a session token to disk.
+/// Save a session token to disk, under its [`session_storage_id`].
+///
+/// Saving never displaces another live session: AI sessions land in their
+/// own per-session file, human sessions replace only the caller's own
+/// per-member slot. Expired session files are swept as a side effect so
+/// the directory does not accumulate dead files.
 pub fn save_session(project_id: &str, token: &SessionToken) -> Result<(), JoyError> {
     let dir = session_dir()?;
     std::fs::create_dir_all(&dir).map_err(|e| JoyError::CreateDir {
         path: dir.clone(),
         source: e,
     })?;
-    let path = dir.join(session_filename(project_id, &token.claims.member));
+    sweep_expired_sessions(&dir);
+    let path = dir.join(format!(
+        "{}.json",
+        session_storage_id(project_id, &token.claims)
+    ));
     let json = serde_json::to_string_pretty(token).expect("session serialize");
     std::fs::write(&path, &json).map_err(|e| JoyError::WriteFile {
         path: path.clone(),
@@ -424,7 +468,11 @@ pub fn save_session(project_id: &str, token: &SessionToken) -> Result<(), JoyErr
     Ok(())
 }
 
-/// Load a session token from disk for a specific member, if it exists.
+/// Load the per-member slot session from disk, if it exists.
+///
+/// This resolves only the deterministic (project, member) slot — the home
+/// of human sessions. AI sessions live in per-session files; resolve them
+/// via [`load_session_by_id`] (env sid) or [`list_member_sessions`].
 pub fn load_session(project_id: &str, member: &str) -> Result<Option<SessionToken>, JoyError> {
     let dir = session_dir()?;
     let path = dir.join(session_filename(project_id, member));
@@ -438,6 +486,76 @@ pub fn load_session(project_id: &str, member: &str) -> Result<Option<SessionToke
     let token: SessionToken =
         serde_json::from_str(&json).map_err(|e| JoyError::AuthFailed(format!("{e}")))?;
     Ok(Some(token))
+}
+
+/// All session files belonging to (project, member), with their on-disk
+/// paths: the per-member slot plus every per-session AI file. Unreadable
+/// or foreign files are skipped; a missing directory yields an empty list.
+pub fn list_member_sessions(
+    project_id: &str,
+    member: &str,
+) -> Result<Vec<(PathBuf, SessionToken)>, JoyError> {
+    let dir = session_dir()?;
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Ok(Vec::new());
+    };
+    let mut sessions = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let Ok(json) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(token) = serde_json::from_str::<SessionToken>(&json) else {
+            continue;
+        };
+        if token.claims.project_id == project_id && token.claims.member == member {
+            sessions.push((path, token));
+        }
+    }
+    // Newest first, so "the" session of a member is the most recent one.
+    sessions.sort_by_key(|(_, token)| std::cmp::Reverse(token.claims.created));
+    Ok(sessions)
+}
+
+/// The session the current environment points at: parses `JOY_SESSION`,
+/// loads the file it references, and returns it if it belongs to
+/// (project, member). Possession of the matching ephemeral private key is
+/// NOT checked here — that stays with `resolve_identity`; this is a
+/// display/lookup helper.
+pub fn current_env_session(project_id: &str, member: &str) -> Option<SessionToken> {
+    let env_value = std::env::var("JOY_SESSION")
+        .ok()
+        .filter(|s| !s.is_empty())?;
+    let (sid, _) = parse_session_env(&env_value)?;
+    let token = load_session_by_id(&sid).ok().flatten()?;
+    (token.claims.project_id == project_id && token.claims.member == member).then_some(token)
+}
+
+/// Remove every expired session file in `dir`. Best effort: unreadable or
+/// unparseable files are left alone (they may belong to a newer joy).
+fn sweep_expired_sessions(dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let now = Utc::now();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let Ok(json) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(token) = serde_json::from_str::<SessionToken>(&json) else {
+            continue;
+        };
+        if token.claims.expires < now {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
 }
 
 /// Load a session by its opaque ID (the JOY_SESSION value).
@@ -461,16 +579,36 @@ pub fn load_session_by_id(id: &str) -> Result<Option<SessionToken>, JoyError> {
 /// Used by `joy ai reset` to warn before removing a member that is still in
 /// active use, instead of silently invalidating a live session.
 pub fn has_active_session(project_id: &str, member: &str) -> bool {
-    matches!(
-        load_session(project_id, member),
-        Ok(Some(token)) if token.claims.expires > Utc::now()
-    )
+    let now = Utc::now();
+    list_member_sessions(project_id, member)
+        .map(|sessions| sessions.iter().any(|(_, t)| t.claims.expires > now))
+        .unwrap_or(false)
 }
 
-/// Remove a session token from disk for a specific member.
+/// Remove ALL of a member's sessions from disk for this project: the
+/// per-member slot and every per-session AI file. Deauth and delegation
+/// rotation mean "this member is signed out", not "one shell is".
 pub fn remove_session(project_id: &str, member: &str) -> Result<(), JoyError> {
     let dir = session_dir()?;
-    let path = dir.join(session_filename(project_id, member));
+    let slot = dir.join(session_filename(project_id, member));
+    if slot.exists() {
+        std::fs::remove_file(&slot).map_err(|e| JoyError::WriteFile {
+            path: slot,
+            source: e,
+        })?;
+    }
+    for (path, _) in list_member_sessions(project_id, member)? {
+        std::fs::remove_file(&path).map_err(|e| JoyError::WriteFile { path, source: e })?;
+    }
+    Ok(())
+}
+
+/// Remove a single session file, addressed by its storage id. Used to
+/// drop one stale session (e.g. bound to a rotated delegation key)
+/// without signing out the member's other sessions.
+pub fn remove_session_by_id(id: &str) -> Result<(), JoyError> {
+    let dir = session_dir()?;
+    let path = dir.join(format!("{id}.json"));
     if path.exists() {
         std::fs::remove_file(&path).map_err(|e| JoyError::WriteFile { path, source: e })?;
     }
@@ -516,6 +654,14 @@ mod tests {
     use tempfile::tempdir;
 
     const TEST_PASSPHRASE: &str = "correct horse battery staple extra words";
+
+    /// Serializes tests that mutate process-global env vars
+    /// (`XDG_STATE_HOME`, `JOY_SESSION`): cargo runs tests on threads.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
 
     fn test_keypair() -> (IdentityKeypair, PublicKey) {
         let salt =
@@ -736,12 +882,13 @@ mod tests {
 
     #[test]
     fn save_load_roundtrip() {
+        let _guard = env_lock();
         let (kp, pk) = test_keypair();
         let token = create_session(&kp, "test@example.com", "TST", None);
 
         let dir = tempdir().unwrap();
         // Override session dir via env
-        // SAFETY: test is single-threaded, setting env var for session dir override
+        // SAFETY: env mutation serialized via ENV_LOCK
         unsafe { std::env::set_var("XDG_STATE_HOME", dir.path()) };
 
         save_session("TST", &token).unwrap();
@@ -751,6 +898,185 @@ mod tests {
 
         remove_session("TST", "test@example.com").unwrap();
         assert!(load_session("TST", "test@example.com").unwrap().is_none());
+
+        // SAFETY: test cleanup
+        unsafe { std::env::remove_var("XDG_STATE_HOME") };
+    }
+
+    #[test]
+    fn ai_sessions_coexist_one_file_per_session() {
+        let _guard = env_lock();
+        let dir = tempdir().unwrap();
+        // SAFETY: env mutation serialized via ENV_LOCK
+        unsafe { std::env::set_var("XDG_STATE_HOME", dir.path()) };
+
+        let first_kp = IdentityKeypair::from_random();
+        let second_kp = IdentityKeypair::from_random();
+        let first = create_session_for_ai(&first_kp, "ai:claude@joy", "TST", None, "dkey", None);
+        let second = create_session_for_ai(&second_kp, "ai:claude@joy", "TST", None, "dkey", None);
+        save_session("TST", &first).unwrap();
+        save_session("TST", &second).unwrap();
+
+        let first_sid = session_storage_id("TST", &first.claims);
+        let second_sid = session_storage_id("TST", &second.claims);
+        assert_ne!(first_sid, second_sid, "each session gets its own id");
+
+        // Saving the second session must not displace the first
+        // (JOY-01E1-E7: redemptions are independent sessions).
+        let loaded_first = load_session_by_id(&first_sid).unwrap().unwrap();
+        assert_eq!(
+            loaded_first.claims.session_public_key,
+            first.claims.session_public_key
+        );
+        let loaded_second = load_session_by_id(&second_sid).unwrap().unwrap();
+        assert_eq!(
+            loaded_second.claims.session_public_key,
+            second.claims.session_public_key
+        );
+
+        assert_eq!(
+            list_member_sessions("TST", "ai:claude@joy").unwrap().len(),
+            2
+        );
+        assert!(has_active_session("TST", "ai:claude@joy"));
+
+        // remove_session signs the member out everywhere.
+        remove_session("TST", "ai:claude@joy").unwrap();
+        assert!(list_member_sessions("TST", "ai:claude@joy")
+            .unwrap()
+            .is_empty());
+        assert!(!has_active_session("TST", "ai:claude@joy"));
+
+        // SAFETY: test cleanup
+        unsafe { std::env::remove_var("XDG_STATE_HOME") };
+    }
+
+    #[test]
+    fn expired_sessions_swept_on_save() {
+        let _guard = env_lock();
+        let dir = tempdir().unwrap();
+        // SAFETY: env mutation serialized via ENV_LOCK
+        unsafe { std::env::set_var("XDG_STATE_HOME", dir.path()) };
+
+        let expired_kp = IdentityKeypair::from_random();
+        let expired = create_session_for_ai(
+            &expired_kp,
+            "ai:claude@joy",
+            "TST",
+            Some(Duration::seconds(-1)),
+            "dkey",
+            None,
+        );
+        save_session("TST", &expired).unwrap();
+
+        let fresh_kp = IdentityKeypair::from_random();
+        let fresh = create_session_for_ai(&fresh_kp, "ai:claude@joy", "TST", None, "dkey", None);
+        save_session("TST", &fresh).unwrap();
+
+        let sessions = list_member_sessions("TST", "ai:claude@joy").unwrap();
+        assert_eq!(sessions.len(), 1, "expired session swept on save");
+        assert_eq!(
+            sessions[0].1.claims.session_public_key,
+            fresh.claims.session_public_key
+        );
+
+        // SAFETY: test cleanup
+        unsafe { std::env::remove_var("XDG_STATE_HOME") };
+    }
+
+    #[test]
+    fn human_sessions_keep_single_slot() {
+        let _guard = env_lock();
+        let dir = tempdir().unwrap();
+        // SAFETY: env mutation serialized via ENV_LOCK
+        unsafe { std::env::set_var("XDG_STATE_HOME", dir.path()) };
+
+        let (kp, _) = test_keypair();
+        let first = create_session(&kp, "test@example.com", "TST", None);
+        let second = create_session(&kp, "test@example.com", "TST", None);
+        save_session("TST", &first).unwrap();
+        save_session("TST", &second).unwrap();
+
+        // Re-authenticating replaces the slot instead of accumulating.
+        assert_eq!(
+            list_member_sessions("TST", "test@example.com")
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(load_session("TST", "test@example.com").unwrap().is_some());
+
+        // SAFETY: test cleanup
+        unsafe { std::env::remove_var("XDG_STATE_HOME") };
+    }
+
+    #[test]
+    fn legacy_ai_session_slot_still_resolves_and_removes() {
+        // Sessions written by a pre-JOY-01E1-E7-fix joy live under the
+        // deterministic per-member filename, and live JOY_SESSION values
+        // carry that legacy sid. They must stay resolvable across the
+        // upgrade and disappear on remove_session.
+        let _guard = env_lock();
+        let tmp = tempdir().unwrap();
+        // SAFETY: env mutation serialized via ENV_LOCK
+        unsafe { std::env::set_var("XDG_STATE_HOME", tmp.path()) };
+
+        let kp = IdentityKeypair::from_random();
+        let token = create_session_for_ai(&kp, "ai:claude@joy", "TST", None, "dkey", None);
+        let dir = session_dir().unwrap();
+        std::fs::create_dir_all(&dir).unwrap();
+        let legacy_sid = session_id("TST", "ai:claude@joy");
+        std::fs::write(
+            dir.join(format!("{legacy_sid}.json")),
+            serde_json::to_string(&token).unwrap(),
+        )
+        .unwrap();
+
+        assert!(load_session_by_id(&legacy_sid).unwrap().is_some());
+        assert_eq!(
+            list_member_sessions("TST", "ai:claude@joy").unwrap().len(),
+            1
+        );
+        assert!(has_active_session("TST", "ai:claude@joy"));
+
+        remove_session("TST", "ai:claude@joy").unwrap();
+        assert!(load_session_by_id(&legacy_sid).unwrap().is_none());
+        assert!(!has_active_session("TST", "ai:claude@joy"));
+
+        // SAFETY: test cleanup
+        unsafe { std::env::remove_var("XDG_STATE_HOME") };
+    }
+
+    #[test]
+    fn current_env_session_resolves_the_env_referenced_session() {
+        let _guard = env_lock();
+        let dir = tempdir().unwrap();
+        // SAFETY: env mutation serialized via ENV_LOCK
+        unsafe { std::env::set_var("XDG_STATE_HOME", dir.path()) };
+
+        let first_kp = IdentityKeypair::from_random();
+        let second_kp = IdentityKeypair::from_random();
+        let first = create_session_for_ai(&first_kp, "ai:claude@joy", "TST", None, "dkey", None);
+        let second = create_session_for_ai(&second_kp, "ai:claude@joy", "TST", None, "dkey", None);
+        save_session("TST", &first).unwrap();
+        save_session("TST", &second).unwrap();
+
+        let second_sid = session_storage_id("TST", &second.claims);
+        let env_value = encode_session_env(&second_sid, &second_kp.to_seed_bytes());
+        // SAFETY: env mutation serialized via ENV_LOCK
+        unsafe { std::env::set_var("JOY_SESSION", &env_value) };
+
+        let resolved = current_env_session("TST", "ai:claude@joy").unwrap();
+        assert_eq!(
+            resolved.claims.session_public_key, second.claims.session_public_key,
+            "env resolves to the session the env points at, not the newest"
+        );
+        assert!(current_env_session("TST", "ai:other@joy").is_none());
+        assert!(current_env_session("OTHER", "ai:claude@joy").is_none());
+
+        // SAFETY: test cleanup
+        unsafe { std::env::remove_var("JOY_SESSION") };
+        assert!(current_env_session("TST", "ai:claude@joy").is_none());
 
         // SAFETY: test cleanup
         unsafe { std::env::remove_var("XDG_STATE_HOME") };

@@ -761,7 +761,7 @@ fn auth_with_token(
     // intentionally not persisted to any tool config file: disk persistence
     // would contradict the proof-of-possession property. The AI tool is
     // responsible for propagating the env value into its subshells.
-    let sid = session::session_id(project_id, &claims.ai_member);
+    let sid = session::session_storage_id(project_id, &session_token.claims);
     let env_value =
         session::encode_session_env_full(&sid, &ephemeral_private, delegation_private.as_ref());
 
@@ -819,10 +819,14 @@ fn run_status() -> Result<()> {
     let project = store::load_project(&root)?;
     let project_id = session::project_id(&root)?;
 
+    // AI identities authenticate via the env-carried session (per-session
+    // file); humans via their per-member slot. Try env first, slot second.
     let own_session = if identity.authenticated {
-        session::load_session(&project_id, &identity.member)
-            .ok()
-            .flatten()
+        session::current_env_session(&project_id, identity.member.id()).or_else(|| {
+            session::load_session(&project_id, &identity.member)
+                .ok()
+                .flatten()
+        })
     } else {
         None
     };
@@ -842,11 +846,20 @@ fn run_status() -> Result<()> {
         .unwrap_or_default()
         .into_iter()
         .map(|ai_id| {
-            let sess = session::load_session(&project_id, &ai_id).ok().flatten();
-            let active = sess.as_ref().is_some_and(|s| s.claims.expires > Utc::now());
+            // Newest live session wins the display; an AI may hold several
+            // concurrent sessions (one per redemption, JOY-01E1-E7).
+            let sess = session::list_member_sessions(&project_id, &ai_id)
+                .ok()
+                .and_then(|sessions| {
+                    let now = Utc::now();
+                    sessions
+                        .into_iter()
+                        .map(|(_, t)| t)
+                        .find(|t| t.claims.expires > now)
+                });
+            let active = sess.is_some();
             let expires_in_seconds = sess
                 .as_ref()
-                .filter(|_| active)
                 .map(|s| (s.claims.expires - Utc::now()).num_seconds());
             DelegatedSession {
                 member: ai_id.into(),

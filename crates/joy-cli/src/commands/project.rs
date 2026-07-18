@@ -2166,54 +2166,66 @@ fn member_auth_status(
     } else if is_ai {
         // AI sessions (ADR-033): a session file alone is not enough; the
         // caller must hold the matching ephemeral private key in
-        // JOY_SESSION. Otherwise the session is "present on disk but not
-        // usable from this shell".
-        let current_session_id = std::env::var("JOY_SESSION")
-            .ok()
-            .and_then(|v| joy_core::auth::session::parse_session_env(&v))
-            .map(|(sid, _)| sid);
-
+        // JOY_SESSION. Otherwise sessions are "present on disk but not
+        // usable from this shell". The env sid names the session file
+        // directly (one file per session, JOY-01E1-E7), so the check is a
+        // straight lookup of the env-referenced session.
         let current_delegation_keys: Vec<&str> = all_members
             .member_values()
             .filter_map(|m| m.ai_delegations.get(id))
             .map(|entry| entry.delegation_verifier.as_str())
             .collect();
-        joy_core::auth::session::load_session(project_id, id)
+
+        // Drop this member's dead sessions: expired ones, and
+        // token-redeemed ones bound to a rotated delegation key. Rejected
+        // job-bound sessions are kept on disk: their binding is enforced
+        // at command time, not by file presence (JOY-020B-D2).
+        if let Ok(sessions) = joy_core::auth::session::list_member_sessions(project_id, id) {
+            for (path, sess) in &sessions {
+                let rotated = sess.claims.job_id.is_none()
+                    && !matches!(
+                        &sess.claims.token_key,
+                        Some(tk) if current_delegation_keys.contains(&tk.as_str())
+                    );
+                if sess.claims.expires <= chrono::Utc::now() || rotated {
+                    if let Some(sid) = path.file_stem().and_then(|s| s.to_str()) {
+                        let _ = joy_core::auth::session::remove_session_by_id(sid);
+                    }
+                }
+            }
+        }
+
+        std::env::var("JOY_SESSION")
             .ok()
-            .flatten()
+            .and_then(|v| joy_core::auth::session::parse_session_env(&v))
+            .and_then(|(sid, _)| {
+                joy_core::auth::session::load_session_by_id(&sid)
+                    .ok()
+                    .flatten()
+            })
             .and_then(|sess| {
-                if sess.claims.expires <= chrono::Utc::now() || sess.claims.member != id {
-                    let _ = joy_core::auth::session::remove_session(project_id, id);
+                if sess.claims.expires <= chrono::Utc::now()
+                    || sess.claims.member != id
+                    || sess.claims.project_id != project_id
+                {
                     return None;
                 }
                 if sess.claims.job_id.is_some() {
                     // Job-bound platform session (JOY-020B-D2): active
                     // exactly when the runtime accept rule passes --
                     // display and runtime share validate_job_session
-                    // (JOY-00F4-CF). A rejected session (job left
-                    // in-progress, key rotated, ...) is kept on disk: the
-                    // binding is enforced at command time, not by file
-                    // presence.
+                    // (JOY-00F4-CF).
                     joy_core::identity::validate_job_session(root, all_members, project_id, &sess)
                         .ok()?;
                 } else {
                     match &sess.claims.token_key {
                         Some(tk) if current_delegation_keys.contains(&tk.as_str()) => Some(()),
-                        Some(_) => {
-                            // Delegation rotated — previous session is no longer trusted.
-                            let _ = joy_core::auth::session::remove_session(project_id, id);
-                            None
-                        }
-                        None => None,
+                        // Delegation rotated — the session is no longer trusted.
+                        _ => None,
                     }?;
                 }
-                let expected_sid = joy_core::auth::session::session_id(project_id, id);
-                if current_session_id.as_deref() == Some(expected_sid.as_str()) {
-                    job_binding = sess.claims.job_id.clone();
-                    Some(())
-                } else {
-                    None
-                }
+                job_binding = sess.claims.job_id.clone();
+                Some(())
             })
             .is_some()
     } else if let Some(pk_hex) = member.verify_key.as_ref() {

@@ -148,7 +148,7 @@ pub fn mint_job_session(
         &actor,
     );
 
-    let sid = session::session_id(&project_id, member);
+    let sid = session::session_storage_id(&project_id, &token.claims);
     Ok(session::encode_session_env(
         &sid,
         &ephemeral_keypair.to_seed_bytes(),

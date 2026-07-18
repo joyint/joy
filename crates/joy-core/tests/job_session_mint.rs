@@ -106,6 +106,21 @@ fn mint_then_resolve_identity_full_flow() {
     );
     assert_eq!(identity.log_user(), format!("{AI} delegated-by:{OPERATOR}"));
 
+    // --- A second mint gets its own session file: it must not displace
+    // the first session (one file per session, JOY-01E1-E7). ---
+    let second_env =
+        mint_job_session(root, &PLATFORM_SEED, AI, JOB, OPERATOR, Duration::hours(2)).unwrap();
+    assert_ne!(second_env, env_value, "each mint is an independent session");
+    set_env("JOY_SESSION", &second_env);
+    let identity = resolve_identity(root).unwrap();
+    assert!(identity.authenticated, "second session authenticates");
+    set_env("JOY_SESSION", &env_value);
+    let identity = resolve_identity(root).unwrap();
+    assert!(
+        identity.authenticated,
+        "first session must survive the second mint"
+    );
+
     // --- The job leaves in-progress: same session stops authenticating. ---
     seed_job(root, Status::Review);
     let identity = resolve_identity(root).unwrap();
@@ -123,7 +138,9 @@ fn mint_then_resolve_identity_full_flow() {
 
     // --- Tampering with the stored claims breaks the signature. ---
     let project_id = "TST";
-    let sid = joy_core::auth::session::session_id(project_id, AI);
+    // The env value carries the session's storage id (one file per
+    // session); the file path follows from it.
+    let (sid, _) = joy_core::auth::session::parse_session_env(&env_value).unwrap();
     let session_path = state_dir
         .path()
         .join("joy")
@@ -166,20 +183,20 @@ fn mint_then_resolve_identity_full_flow() {
         Duration::hours(2),
     );
     joy_core::auth::session::save_session(project_id, &rogue_token).unwrap();
+    let rogue_sid = joy_core::auth::session::session_storage_id(project_id, &rogue_token.claims);
     let rogue_env =
-        joy_core::auth::session::encode_session_env(&sid, &rogue_ephemeral.to_seed_bytes());
+        joy_core::auth::session::encode_session_env(&rogue_sid, &rogue_ephemeral.to_seed_bytes());
     set_env("JOY_SESSION", &rogue_env);
     let identity = resolve_identity(root).unwrap();
     assert!(
         !identity.authenticated,
         "session signed by an unregistered platform key must be rejected"
     );
-    // Restore the legitimate session file (save_session overwrote it —
-    // one file per (project, member)).
-    std::fs::write(&session_path, &original).unwrap();
+    // The rogue session lives in its own file; the legitimate session is
+    // untouched and still works.
     set_env("JOY_SESSION", &env_value);
     let identity = resolve_identity(root).unwrap();
-    assert!(identity.authenticated, "legitimate session restored");
+    assert!(identity.authenticated, "legitimate session unaffected");
 
     // --- An expired mint never authenticates. ---
     let expired_env = mint_job_session(
