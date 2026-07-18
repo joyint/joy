@@ -95,7 +95,40 @@ pub fn decide(chat: &Chat, newest: &ChatMessage, ai_member: &str) -> TurnDecisio
         .iter()
         .any(|m| m.as_str() == ai_member);
     if !addressed {
-        return TurnDecision::Silent;
+        // The messenger convention beyond explicit mentions (operator
+        // 2026-07-18: a follow-up right after the AI's answer got NO
+        // reply). A HUMAN message also addresses this AI when
+        //  - the chat is a solo conversation with exactly this AI, or
+        //  - the human is answering it: the latest conversational text
+        //    by anyone ELSE is this AI's reply (another human or AI
+        //    interjecting breaks the chain).
+        if is_ai(newest.author.id()) {
+            return TurnDecision::Silent;
+        }
+        let humans = participant_ids.iter().filter(|id| !is_ai(id)).count();
+        let ais: Vec<&String> = participant_ids.iter().filter(|id| is_ai(id)).collect();
+        let solo = humans == 1 && ais.len() == 1 && ais[0] == ai_member;
+        // `newest` is the chat's last message on the run_turns path;
+        // walk the history BEFORE it.
+        let follow_up = chat
+            .messages
+            .iter()
+            .rev()
+            .skip_while(|m| {
+                if newest.id.is_empty() {
+                    m.at == newest.at && m.author.id() == newest.author.id()
+                } else {
+                    m.id == newest.id
+                }
+            })
+            .filter(|m| m.kind == MessageKind::Text && m.author.id() != newest.author.id())
+            .map(|m| m.author.id().to_string())
+            .next()
+            .is_some_and(|id| id == ai_member);
+        if !(solo || follow_up) {
+            return TurnDecision::Silent;
+        }
+        return TurnDecision::Respond;
     }
     // Humans reset the chain; an AI addressing an AI is bounded.
     if !is_ai(newest.author.id()) {
@@ -278,6 +311,88 @@ mod tests {
         assert_eq!(found.len(), 2);
         assert!(mentions("no at all", &candidates).is_empty());
         assert!(mentions("mail me claude@joy", &candidates).is_empty());
+    }
+
+    #[test]
+    fn a_follow_up_after_the_ais_reply_needs_no_mention() {
+        // operator 2026-07-18: "Kannst du mir das ins README.md
+        // schreiben?" right after vibe's answer got NO reply
+        let chat = chat_with(vec![
+            ("horst@example.com", "@vibe which model?", MessageKind::Text),
+            ("ai:vibe@joy", "mistral-medium-3.5.", MessageKind::Text),
+            (
+                "horst@example.com",
+                "write that into README.md?",
+                MessageKind::Text,
+            ),
+        ]);
+        let newest = chat.messages.last().unwrap();
+        assert_eq!(decide(&chat, newest, "ai:vibe@joy"), TurnDecision::Respond);
+        // the OTHER AI stays silent: the human is answering vibe
+        assert_eq!(decide(&chat, newest, "ai:claude@joy"), TurnDecision::Silent);
+    }
+
+    #[test]
+    fn consecutive_human_messages_keep_the_exchange_alive() {
+        let chat = chat_with(vec![
+            ("horst@example.com", "@vibe which model?", MessageKind::Text),
+            ("ai:vibe@joy", "mistral-medium-3.5.", MessageKind::Text),
+            ("horst@example.com", "ok", MessageKind::Text),
+            (
+                "horst@example.com",
+                "and into README.md please",
+                MessageKind::Text,
+            ),
+        ]);
+        let newest = chat.messages.last().unwrap();
+        assert_eq!(decide(&chat, newest, "ai:vibe@joy"), TurnDecision::Respond);
+    }
+
+    #[test]
+    fn another_voice_breaks_the_unmentioned_chain() {
+        let chat = chat_with(vec![
+            ("horst@example.com", "@vibe which model?", MessageKind::Text),
+            ("ai:vibe@joy", "mistral-medium-3.5.", MessageKind::Text),
+            ("geordi@example.org", "interesting!", MessageKind::Text),
+            (
+                "horst@example.com",
+                "write it into README.md?",
+                MessageKind::Text,
+            ),
+        ]);
+        let newest = chat.messages.last().unwrap();
+        assert_eq!(decide(&chat, newest, "ai:vibe@joy"), TurnDecision::Silent);
+        assert_eq!(decide(&chat, newest, "ai:claude@joy"), TurnDecision::Silent);
+    }
+
+    #[test]
+    fn a_solo_chat_needs_no_mention_at_all() {
+        let now = Utc.with_ymd_and_hms(2026, 7, 4, 12, 0, 0).unwrap();
+        let mut chat = Chat::new(
+            "solo",
+            vec![
+                MemberRef::new("horst@example.com"),
+                MemberRef::new("ai:vibe@joy"),
+            ],
+            now,
+        );
+        chat.messages.push(ChatMessage {
+            id: "m1".into(),
+            at: now,
+            author: MemberRef::new("horst@example.com"),
+            text: "which model do you use?".into(),
+            kind: MessageKind::Text,
+            delegated_by: None,
+            turn_ms: None,
+            tool_steps: None,
+            tool: None,
+            payload: None,
+            details: None,
+            enc: None,
+            epoch: None,
+        });
+        let newest = chat.messages.last().unwrap();
+        assert_eq!(decide(&chat, newest, "ai:vibe@joy"), TurnDecision::Respond);
     }
 
     #[test]

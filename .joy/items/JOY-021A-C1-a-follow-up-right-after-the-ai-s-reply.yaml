@@ -1,0 +1,20 @@
+id: JOY-021A-C1
+title: A follow-up right after the AI's reply gets no answer
+type: bug
+status: in-progress
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-18T13:46:30.094958118Z
+updated: 2026-07-18T13:46:30.291826350Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-07-18T13:46:30.173665108Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-18T13:46:30.291826350Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Operator 2026-07-18: ''Kannst du mir das ins README.md schreiben?'' directly after vibe''s reply stayed unanswered; decide() demanded an @mention on EVERY message. New messenger rules: a solo chat with exactly this AI needs no mention at all, and a human message counts as addressing the AI whose reply is the latest conversational text by anyone else (another voice breaks the chain). Four tests pin the rules.'

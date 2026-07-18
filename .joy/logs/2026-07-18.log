@@ -23,3 +23,6 @@
 2026-07-18T13:05:30.223Z JOY-0219-CC item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-07-18T13:05:30.307Z JOY-0219-CC item.status_changed "new -> open" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-07-18T13:05:30.431Z JOY-0219-CC item.status_changed "open -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-18T13:46:30.100Z JOY-021A-C1 item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-18T13:46:30.179Z JOY-021A-C1 item.status_changed "new -> open" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-18T13:46:30.298Z JOY-021A-C1 item.status_changed "open -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
