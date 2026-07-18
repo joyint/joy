@@ -1,0 +1,21 @@
+id: JOY-0218-E8
+title: Per-chat content encryption (ADR JAPP-002A-30 core)
+type: story
+status: in-progress
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- plan
+- implement
+- review
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-18T13:05:29.946605555Z
+updated: 2026-07-18T13:05:30.139984995Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-07-18T13:05:30.025642757Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-18T13:05:30.139984995Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'chat_crypt module: AES-256-GCM content key per chat, X25519 pairwise wraps in the chat object (recipient header, no zone), epochs with rotation forward on removal, add as one wrap, sealed envelope over text/payload/details with chat+epoch+message AAD, custodian seed (platform or signed-in person) sealing at the chats::save_chat choke point and opening on load, no plaintext at rest, identity precondition (ephemeral otherwise). Regression test for the custodian roundtrip.'

@@ -88,6 +88,16 @@ pub struct ChatMessage {
     /// decision 2026-07-16).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub details: Option<String>,
+    /// ADR JAPP-002A-30: the encrypted content envelope, hex
+    /// `nonce(12) || AES-256-GCM(ct)` over the JSON of the sensitive
+    /// fields (text, payload, details). When set, those fields are
+    /// EMPTY at rest and [`crate::chat_crypt`] restores them in memory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enc: Option<String>,
+    /// The key epoch `enc` was sealed under (index into
+    /// [`ChatCrypt::epochs`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub epoch: Option<u32>,
 }
 
 impl ChatMessage {
@@ -152,8 +162,31 @@ pub struct Chat {
     /// with [`crate::model::agent_mode::effective_mode`].
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub modes: BTreeMap<String, BTreeMap<String, AgentMode>>,
+    /// ADR JAPP-002A-30: the participant-wrapped content-key header.
+    /// None only for a legacy plaintext chat (migrated on next persist)
+    /// or a chat that was never persisted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub crypt: Option<ChatCrypt>,
     #[serde(default)]
     pub messages: Vec<ChatMessage>,
+}
+
+/// The chat's content-key header (ADR JAPP-002A-30): one AES-256-GCM
+/// key per epoch, wrapped X25519-pairwise for every participant who can
+/// hold one. Lives IN the chat object, never in project.yaml; there is
+/// no chat Crypt zone. Removing a participant appends a new epoch
+/// (rotation forward): past messages stay under their old epoch.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ChatCrypt {
+    /// Key epochs, oldest first; the LAST is the active one.
+    pub epochs: Vec<ChatKeyEpoch>,
+}
+
+/// One content-key epoch: recipient id (member id or the reserved
+/// "platform" custodian) -> hex wrap (granter verify_key prefixed).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ChatKeyEpoch {
+    pub wraps: std::collections::BTreeMap<String, String>,
 }
 
 impl Chat {
@@ -171,6 +204,7 @@ impl Chat {
             participants,
             ai_sessions: BTreeMap::new(),
             modes: BTreeMap::new(),
+            crypt: None,
             messages: Vec::new(),
         }
     }

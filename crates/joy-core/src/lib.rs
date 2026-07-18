@@ -9,6 +9,7 @@ pub mod ai_templates;
 pub mod app_settings;
 pub mod auth;
 pub mod capabilities;
+pub mod chat_crypt;
 pub mod chat_ref;
 pub mod chat_state;
 pub mod chat_turns;
