@@ -324,6 +324,7 @@ fn open_envelope(
 /// - someone ARRIVED or enrolled (a recipient has a key but no wrap,
 ///   e.g. General chats cover every project member, or a member set up
 ///   their identity after the chat existed): one new wrap, same key.
+///
 /// Returns the key new messages seal under.
 pub fn maintain_wraps(
     project: &Project,
