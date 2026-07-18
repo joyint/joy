@@ -1,0 +1,19 @@
+id: JOY-0216-ED
+title: chat_turns::delta_prompt for live agent sessions
+type: task
+status: in-progress
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-18T11:51:50.753382907Z
+updated: 2026-07-18T11:51:58.705671003Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-07-18T11:51:58.584171823Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-18T11:51:58.705671003Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: The platform keeps live ACP sessions per chat (JP-0085-F4 in the platform repo). A session that already carries the transcript only needs what happened since the AI member's own last message. delta_prompt(chat, ai_member) renders exactly that block; None when the member has not spoken yet, so the caller replays the full transcript instead.

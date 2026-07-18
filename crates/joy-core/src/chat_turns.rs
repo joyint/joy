@@ -209,6 +209,27 @@ pub fn context_prompt(chat: &Chat, ai_member: &str) -> String {
     prompt
 }
 
+/// The DELTA prompt for a LIVE session (JP-0085-F4): only what happened
+/// since the member's own last message; the session already carries
+/// everything before it. None when the member has not spoken yet (the
+/// caller replays the full transcript into a fresh session instead).
+pub fn delta_prompt(chat: &Chat, ai_member: &str) -> Option<String> {
+    let last_own = chat
+        .messages
+        .iter()
+        .rposition(|m| m.author.id() == ai_member)?;
+    let mut prompt = String::from("--- new messages ---\n");
+    for message in &chat.messages[last_own + 1..] {
+        if message.kind == MessageKind::Notice {
+            prompt.push_str(&format!("[notice] {}\n", message.text));
+        } else {
+            prompt.push_str(&format!("{}: {}\n", message.author.id(), message.text));
+        }
+    }
+    prompt.push_str("--- end ---\nReply with your next chat message only.\n");
+    Some(prompt)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -441,5 +462,23 @@ mod tests {
         assert!(prompt.contains("You are ai:claude@joy"));
         assert!(prompt.contains("horst@example.com: hello"));
         assert!(prompt.contains("ai:vibe@joy: hi @claude"));
+    }
+
+    #[test]
+    fn the_delta_prompt_carries_only_whats_new_to_the_member() {
+        let chat = chat_with(vec![
+            ("horst@example.com", "hi claude", MessageKind::Text),
+            ("ai:claude@joy", "hello!", MessageKind::Text),
+            ("horst@example.com", "and now?", MessageKind::Text),
+            ("ai:vibe@joy", "vibe here", MessageKind::Text),
+        ]);
+        let delta = delta_prompt(&chat, "ai:claude@joy").expect("spoke before");
+        assert!(delta.contains("and now?"));
+        assert!(delta.contains("vibe here"));
+        assert!(!delta.contains("hi claude"), "already in the session");
+        assert!(!delta.contains("hello!"), "own message never repeats");
+        // a member who never spoke gets NO delta: full replay instead
+        let chat2 = chat_with(vec![("horst@example.com", "hi", MessageKind::Text)]);
+        assert!(delta_prompt(&chat2, "ai:claude@joy").is_none());
     }
 }
