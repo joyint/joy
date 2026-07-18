@@ -1,7 +1,7 @@
 id: JOY-021B-8C
 title: Token redemption displaces concurrent AI sessions
 type: bug
-status: review
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -10,12 +10,14 @@ capabilities:
 - review
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-18T15:13:35.619005915Z
-updated: 2026-07-18T15:13:54.743739451Z
+updated: 2026-07-18T15:34:07.400970472Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-07-18T15:13:44.006793871Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 - date: 2026-07-18T15:13:54.743739451Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-18T15:34:07.400970472Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
