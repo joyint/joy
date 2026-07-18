@@ -1,0 +1,15 @@
+id: JOY-021B-2B
+title: Model selection in joy ai init and joy ai edit
+type: epic
+status: new
+priority: medium
+capabilities:
+- conceive
+- plan
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-18T15:39:43.324842386Z
+updated: 2026-07-18T15:39:43.324842386Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'Today the tool decides its default model: AiConfig carries a model field, but neither joy ai init nor joy ai edit lets the user choose one, and clients follow suit (the app sends an empty model when saving an agent). Add per-tool model selection to joy ai init and joy ai edit so that clients (project settings, the Jon PDA New-project flow) can offer a tool dropdown with a dependent model dropdown on top of it. Requested by horst.schwarz@joydev.com on 2026-07-18 and deliberately kept out of the Jon PDA MVP (JON-0004-44).'
