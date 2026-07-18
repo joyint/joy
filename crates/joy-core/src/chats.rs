@@ -24,8 +24,51 @@ pub fn new_chat_id() -> String {
     uuid::Uuid::new_v4().simple().to_string()[..12].to_string()
 }
 
-/// Save a chat onto the `refs/joy/chats` ref (never the working branch).
+/// Save a chat onto the `refs/joy/chats` ref (never the working branch),
+/// SEALED (ADR JAPP-002A-30): with a custodian seed set, the content key
+/// is ensured, pending messages are sealed and only the at-rest form is
+/// written. Without a custodian, writing an encrypted chat is refused,
+/// and a project that COULD encrypt (any identity on record) never gets
+/// plaintext either: the chat stays ephemeral until someone
+/// authenticates. Only a checkout without a Joy project (bare library
+/// use) or a project without any identity persists as before.
 pub fn save_chat(root: &Path, chat: &Chat) -> Result<(), JoyError> {
+    if let Some(seed) = crate::chat_crypt::custodian_seed() {
+        if let Ok(project) = crate::store::load_project(root) {
+            let mut sealed = chat.clone();
+            match crate::chat_crypt::ensure_crypt(&project, &mut sealed, &seed) {
+                Ok(key) => {
+                    crate::chat_crypt::seal_messages(&mut sealed, &key);
+                    return crate::chat_ref::save_chat(
+                        root,
+                        &crate::chat_crypt::sealed_for_save(&sealed),
+                    );
+                }
+                Err(e) => {
+                    if sealed.crypt.is_some() {
+                        // an encrypted chat this seed cannot open: never
+                        // write (and never write plaintext into it)
+                        return Err(e);
+                    }
+                    // nobody wrappable: fall through to the no-identity rule
+                }
+            }
+        }
+    }
+    if chat.crypt.is_some() {
+        return Err(JoyError::AuthFailed(
+            "chat is encrypted; authenticate to write (ADR JAPP-002A-30)".into(),
+        ));
+    }
+    if let Ok(project) = crate::store::load_project(root) {
+        let encryptable =
+            project.platform.is_some() || project.members().any(|(_, m)| m.verify_key.is_some());
+        if encryptable {
+            return Err(JoyError::AuthFailed(
+                "chat not persisted: authenticate first (ADR JAPP-002A-30)".into(),
+            ));
+        }
+    }
     crate::chat_ref::save_chat(root, chat)
 }
 
@@ -34,6 +77,7 @@ pub fn load_chat(root: &Path, id: &str) -> Result<Option<Chat>, JoyError> {
     match crate::chat_ref::load_chat(root, id)? {
         Some(mut chat) => {
             normalize(&mut chat);
+            crate::chat_crypt::open_with_custodian(&mut chat);
             Ok(Some(chat))
         }
         None => Ok(None),
@@ -45,6 +89,7 @@ pub fn load_chats(root: &Path) -> Result<Vec<Chat>, JoyError> {
     let mut chats = crate::chat_ref::load_chats(root)?;
     for chat in &mut chats {
         normalize(chat);
+        crate::chat_crypt::open_with_custodian(chat);
     }
     chats.sort_by_key(|c| std::cmp::Reverse(c.updated));
     Ok(chats)
@@ -132,6 +177,8 @@ pub fn append_kind_with_id(
         tool: None,
         payload: None,
         details: None,
+        enc: None,
+        epoch: None,
     };
     chat.messages.push(message.clone());
     chat.updated = now;
@@ -376,28 +423,23 @@ pub fn add_participant(
 }
 
 /// Rename a chat (General keeps its identity).
-pub fn rename(
-    root: &Path,
-    chat: &mut Chat,
-    title: impl Into<String>,
-    now: DateTime<Utc>,
-) -> Result<(), JoyError> {
+pub fn rename(root: &Path, chat: &mut Chat, title: impl Into<String>) -> Result<(), JoyError> {
     guard_not_general(chat, "renamed")?;
     chat.title = Some(title.into());
-    chat.updated = now;
+    // `updated` is MESSAGE activity (the recency sort key): renaming must
+    // not push a chat up the list (operator 2026-07-18)
     save_chat(root, chat)
 }
 
-/// Set the subtitle (General keeps its identity).
+/// Set the subtitle (General keeps its identity). Like [`rename`], not
+/// an activity bump.
 pub fn set_subtitle(
     root: &Path,
     chat: &mut Chat,
     subtitle: impl Into<String>,
-    now: DateTime<Utc>,
 ) -> Result<(), JoyError> {
     guard_not_general(chat, "changed")?;
     chat.subtitle = Some(subtitle.into());
-    chat.updated = now;
     save_chat(root, chat)
 }
 
@@ -614,7 +656,7 @@ mod tests {
         let mut g = again;
         let horst = MemberRef::new("horst@example.com");
         assert!(leave(dir.path(), &mut g, &horst, ts(2)).is_err());
-        assert!(rename(dir.path(), &mut g, "X", ts(2)).is_err());
+        assert!(rename(dir.path(), &mut g, "X").is_err());
         // deleting IS allowed since 2026-07 (operator): for-me hides it per
         // member, for-all freezes it; ensure_general recreates only after GC
         delete_for_me(dir.path(), &mut g, &horst, ts(2)).unwrap();
@@ -908,11 +950,14 @@ mod tests {
         let dir = repo();
         let horst = MemberRef::new("horst@example.com");
         let mut chat = open_chat(dir.path(), vec![horst], None, ts(0)).unwrap();
-        rename(dir.path(), &mut chat, "Sprint 13", ts(1)).unwrap();
-        set_subtitle(dir.path(), &mut chat, "countdown", ts(2)).unwrap();
+        rename(dir.path(), &mut chat, "Sprint 13").unwrap();
+        set_subtitle(dir.path(), &mut chat, "countdown").unwrap();
         let loaded = load_chat(dir.path(), &chat.id).unwrap().unwrap();
         assert_eq!(loaded.title.as_deref(), Some("Sprint 13"));
         assert_eq!(loaded.subtitle.as_deref(), Some("countdown"));
+        // renaming is NOT activity: the recency sort key stays put
+        // (operator 2026-07-18)
+        assert_eq!(loaded.updated, ts(0));
     }
 }
 
@@ -972,6 +1017,8 @@ mod channel_tests {
             tool: None,
             payload: None,
             details: None,
+            enc: None,
+            epoch: None,
         };
         chat.messages.push(mk(2, "second"));
         chat.messages.push(mk(1, "first"));

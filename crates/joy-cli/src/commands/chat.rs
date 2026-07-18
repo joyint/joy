@@ -113,7 +113,7 @@ pub fn run(args: ChatArgs) -> Result<()> {
         }
         ChatCommand::Rename { id, title } => {
             let mut chat = load_or_general(&root, &id)?;
-            joy_core::chats::rename(&root, &mut chat, title.join(" "), chrono::Utc::now())?;
+            joy_core::chats::rename(&root, &mut chat, title.join(" "))?;
             println!("renamed");
         }
         ChatCommand::Show { id } => {
