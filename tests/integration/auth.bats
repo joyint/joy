@@ -313,6 +313,36 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     [ "$status" -eq 0 ]
 }
 
+@test "second redemption does not displace the first session" {
+    # JOY-01E1-E7: redemptions from different shells produce independent
+    # sessions. A tool that redeems the token later must not silently
+    # sign out a tool that redeemed it earlier.
+    setup_human_auth
+    joy add task "Displacement target"
+    ITEM=$(joy ls 2>/dev/null | grep Displacement | awk '{print $1}')
+
+    setup_ai_session ai:test@joy
+    FIRST="$JOY_SESSION"
+
+    # Second redemption of the same token, as another shell would do it.
+    eval $(joy auth --token "$AI_TOKEN")
+    SECOND="$JOY_SESSION"
+    [ -n "$FIRST" ]
+    [ -n "$SECOND" ]
+    [ "$FIRST" != "$SECOND" ]
+
+    # The first session keeps working after the second redemption.
+    export JOY_SESSION="$FIRST"
+    run joy comment "$ITEM" "first session still writes"
+    [ "$status" -eq 0 ]
+    grep -q "author: ai:test@joy" .joy/items/${ITEM}-*.yaml
+
+    # And so does the second.
+    export JOY_SESSION="$SECOND"
+    run joy comment "$ITEM" "second session writes too"
+    [ "$status" -eq 0 ]
+}
+
 @test "delegation token announces 24h default TTL" {
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
