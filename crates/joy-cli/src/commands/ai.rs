@@ -73,6 +73,33 @@ enum AiCommand {
     Jobs(JobsArgs),
     /// List AI agent configs (git-native .joy/ai/agents)
     Agents,
+    /// Manage repo-stored provider API keys (encrypted in project.yaml)
+    Key(KeyArgs),
+}
+
+#[derive(clap::Args)]
+struct KeyArgs {
+    #[command(subcommand)]
+    command: KeyCommand,
+}
+
+#[derive(clap::Subcommand)]
+enum KeyCommand {
+    /// Re-wrap team keys so every enrolled member is covered. Run this
+    /// after a member gains an identity key; a registered platform also
+    /// closes the gap automatically.
+    Rewrap(KeyRewrapArgs),
+}
+
+#[derive(clap::Args)]
+struct KeyRewrapArgs {
+    /// Passphrase (non-interactive, for scripts and tests).
+    #[arg(long)]
+    passphrase: Option<String>,
+
+    /// Read the passphrase from a single line on stdin.
+    #[arg(long = "passphrase-stdin")]
+    passphrase_stdin: bool,
 }
 
 #[derive(clap::Args)]
@@ -158,7 +185,87 @@ pub fn run(args: AiArgs) -> anyhow::Result<()> {
         AiCommand::Tutorial(a) => ai_tutorial(a),
         AiCommand::Jobs(a) => ai_jobs(a),
         AiCommand::Agents => ai_agents(),
+        AiCommand::Key(a) => match a.command {
+            KeyCommand::Rewrap(r) => key_rewrap(r),
+        },
     }
+}
+
+/// Close team-key coverage gaps as the acting member: unwrap with their
+/// own wrap, wrap for every enrolled-but-uncovered recipient. The
+/// plaintext key exists only inside this process for the duration.
+fn key_rewrap(args: KeyRewrapArgs) -> anyhow::Result<()> {
+    use joy_core::store;
+    let root = store::find_project_root(&std::env::current_dir()?)
+        .ok_or_else(|| anyhow::anyhow!("not inside a Joy project"))?;
+    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
+    let mut project: joy_core::model::Project = store::read_project(&project_path)?;
+
+    let gaps = joy_core::provider_keys::team_coverage_gaps(&project);
+    if gaps.is_empty() {
+        dprintln!("All team keys cover every enrolled member. Nothing to re-wrap.");
+        return Ok(());
+    }
+
+    let email = joy_core::vcs::default_vcs().user_email()?;
+    let passphrase = crate::commands::auth::read_passphrase(
+        args.passphrase.as_deref(),
+        args.passphrase_stdin,
+        "Passphrase: ",
+    )?;
+    let (actor_key, keypair) =
+        joy_core::ai_setup::unlock_acting_keypair(&project, &email, &passphrase)
+            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+    let reports = joy_core::provider_keys::rewrap_team_keys(
+        &mut project,
+        &actor_key,
+        &keypair.to_x25519_secret_bytes(),
+    )
+    .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+
+    let changed = reports.iter().any(|r| !r.added.is_empty());
+    if changed {
+        store::write_yaml_preserve(&project_path, &project)?;
+        let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+        joy_core::git_ops::auto_git_add(&root, &[&rel]);
+        joy_core::git_ops::auto_git_post_command(&root, "ai key rewrap", &email);
+    }
+    if crate::output::is_json() {
+        #[derive(serde::Serialize)]
+        struct Entry {
+            ai_member: String,
+            added: Vec<String>,
+            missing: Vec<String>,
+        }
+        crate::output::emit(
+            reports
+                .into_iter()
+                .map(|r| Entry {
+                    ai_member: r.ai_member,
+                    added: r.added,
+                    missing: r.missing,
+                })
+                .collect::<Vec<_>>(),
+        )?;
+        return Ok(());
+    }
+    for r in &reports {
+        if !r.added.is_empty() {
+            dprintln!(
+                "{}: re-wrapped for {}",
+                color::user(&r.ai_member),
+                r.added.join(", ")
+            );
+        }
+        if !r.missing.is_empty() {
+            dprintln!(
+                "{}: cannot cover {} — you hold no wrap for this team key; ask a covered member (or the platform) to re-wrap",
+                color::user(&r.ai_member),
+                r.missing.join(", ")
+            );
+        }
+    }
+    Ok(())
 }
 
 /// List AI jobs from `.joy/ai/jobs`, newest first (git-native inspection).

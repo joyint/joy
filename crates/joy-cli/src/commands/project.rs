@@ -1551,6 +1551,20 @@ fn run_member(
                         a.id
                     );
                     println!("  joy auth --otp {otp}");
+                    // Team provider keys cannot cover the new member until
+                    // they hold an identity key; say so now, not when a
+                    // job fails for them later.
+                    let has_team_keys = project.members().any(|(k, m)| {
+                        k.starts_with("ai:") && m.provider_keys.values().any(|e| e.for_all)
+                    });
+                    if has_team_keys {
+                        println!();
+                        println!(
+                            "This project has team AI keys. After {} enrols, cover them with \
+                             `joy ai key rewrap` (a registered platform does this automatically).",
+                            a.id
+                        );
+                    }
                 }
             }
 
@@ -1628,6 +1642,12 @@ fn run_member(
                 )?)
             };
 
+            // Provider-key hygiene first, while the member is still
+            // resolvable: drop entries they own and wraps addressed to
+            // them. Bookkeeping, not revocation — a team-key recipient
+            // knew the plaintext.
+            let key_purge = joy_core::provider_keys::purge_member_wraps(project, &a.id);
+
             if project.remove_member(&a.id).is_none() {
                 bail!("member not found: {}", a.id);
             }
@@ -1668,6 +1688,26 @@ fn run_member(
                 })?;
             } else {
                 println!("Removed member {}", color::user(&a.id));
+                if key_purge.owned_entries + key_purge.recipient_wraps > 0 {
+                    println!(
+                        "Dropped {} provider-key entr{} and {} wrap{} of {}. A former team-key \
+                         recipient knew the key itself: rotate it at the provider and set the \
+                         new one in the project settings.",
+                        key_purge.owned_entries,
+                        if key_purge.owned_entries == 1 {
+                            "y"
+                        } else {
+                            "ies"
+                        },
+                        key_purge.recipient_wraps,
+                        if key_purge.recipient_wraps == 1 {
+                            ""
+                        } else {
+                            "s"
+                        },
+                        a.id,
+                    );
+                }
             }
             let log_user = ctx.log_user();
             joy_core::git_ops::auto_git_post_command(
