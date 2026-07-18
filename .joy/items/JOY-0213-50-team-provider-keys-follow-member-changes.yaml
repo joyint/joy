@@ -1,7 +1,7 @@
 id: JOY-0213-50
 title: Team provider keys follow member changes
 type: task
-status: in-progress
+status: review
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -9,9 +9,11 @@ capabilities:
 - implement
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-18T05:48:25.538090959Z
-updated: 2026-07-18T05:48:34.056590404Z
+updated: 2026-07-18T07:33:27.178716177Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-07-18T05:48:34.056590404Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-18T07:33:27.178716177Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'A member who enrols after a team key is set holds no wrap; a departing member leaves stale entries. joy-core: team_coverage_gaps, rewrap_team_keys (owner extends in place, foreign actor stores its own complete entry), purge_member_wraps. CLI: joy ai key rewrap; member rm purges wraps and names the rotation duty; member add hints at the enrolment gap. The platform closes gaps automatically as recipient (JP side).'
