@@ -1,0 +1,25 @@
+id: JOY-0212-4D
+title: 'Member model: repo-stored provider keys (pairwise wraps)'
+type: story
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- plan
+- implement
+- review
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-18T05:01:43.109419046Z
+updated: 2026-07-18T05:01:57.806702216Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-07-18T05:01:57.619636489Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-18T05:01:57.806702216Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Backfill for e1a9dd1: Member.provider_keys on the AI member (owner-keyed entries: for_all flag, pairwise wraps per recipient incl. the reserved platform recipient, optional monthly budget) plus the provider_keys module: resolve_wrap (team key wins, personal keys bind to the acting person), wrap_recipients (owner + platform + team; identity-less members reported), owner_public, store_entry. Crypto in the sibling crypt repo (provider_key module); consumed by the platform (JP-0081-D2) and the app.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-18T05:01:57.692741919Z
+  text: '[x] Shipped in e1a9dd1; resolve-order unit test (team over personal, actor binding) green; full workspace suite green.'
