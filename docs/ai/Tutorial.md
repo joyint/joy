@@ -270,6 +270,7 @@ The exact `Co-Authored-By:` line is set in your tool-specific instruction file (
 
 The rules in `docs.contributing` take precedence over everything below. If `docs.contributing` is empty or template-only, or silent on a particular point, the following minimums apply (in addition to the commit-message rules in [Commit messages](#commit-messages)):
 
+0. **An order is an order — 100%. The AI NEVER decides on its own what to defer.** Whatever the mode (plan, accept-edits, autonomous): a task is delivered completely, including every property the task, its ADRs and the project concepts require — encryption, tests, migrations, documentation, all of it. If a part cannot or should not be done now, that is the OPERATOR's decision alone: stop, name the gap explicitly, and get the call. Shipping while silently deferring a required property (a "future work" comment, a stub, a default that hides the gap) is a violation, not progress.
 1. **Item before code.** Never write code without first running `joy start <ID>` on an open Joy item. If no item exists for the work, a new one must be added (`joy add <type> "<title>"`) before starting.
 2. **Plan before, result after.** A plan comment (`joy comment <ID> "Plan: ..."`) must be added to the item before writing code, and a result comment (`joy comment <ID> "[x] what was done"`) after.
 3. **Close before final commit.** The item must be closed with `joy close <ID>` (or submitted with `joy submit <ID>` if your mode keeps you out of the closing step) before the final `git commit`.

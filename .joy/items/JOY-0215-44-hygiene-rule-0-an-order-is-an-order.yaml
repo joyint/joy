@@ -1,0 +1,17 @@
+id: JOY-0215-44
+title: 'Hygiene rule 0: an order is an order, the AI never defers on its own'
+type: task
+status: in-progress
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-18T10:28:02.870198060Z
+updated: 2026-07-18T10:28:16.237167787Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-07-18T10:28:16.237167787Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Operator rule 2026-07-18, permanent: whatever the mode, the AI never decides on its own what to defer. A task is delivered 100% including every ADR/concept-required property; any gap is the operator''s explicit call. Written into the AI tutorial (hygiene rule 0) and the per-repo AI instructions template.'
