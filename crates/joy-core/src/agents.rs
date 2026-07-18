@@ -17,6 +17,28 @@ fn agents_dir(root: &Path) -> std::path::PathBuf {
     store::joy_dir(root).join(store::AI_AGENTS_DIR)
 }
 
+/// The tool id an ACP adapter belongs to (`mistral-vibe` -> `vibe`).
+/// THE naming rule behind canonical AI members (`ai:<tool>@joy`): every
+/// surface that derives a member from an adapter must use this mapping,
+/// never a string split (the platform once derived `ai:mistral@joy` from
+/// `mistral-vibe` that way). `mock` and unknown adapters have no tool.
+pub fn adapter_tool_id(adapter: &str) -> Option<&'static str> {
+    match adapter {
+        "claude-code" => Some("claude"),
+        "qwen-code" => Some("qwen"),
+        "mistral-vibe" => Some("vibe"),
+        "copilot" => Some("copilot"),
+        _ => None,
+    }
+}
+
+/// The canonical member id registered for an adapter (`ai:vibe@joy` for
+/// `mistral-vibe`); adapters without a tool id (e.g. `mock`) use the
+/// adapter name itself.
+pub fn canonical_member_id(adapter: &str) -> String {
+    format!("ai:{}@joy", adapter_tool_id(adapter).unwrap_or(adapter))
+}
+
 /// File-safe stem for a member ref (e.g. `ai:claude@joy` -> `ai-claude-joy`).
 pub fn agent_file_stem(member: &MemberRef) -> String {
     member
@@ -86,6 +108,14 @@ pub fn load_agents(root: &Path) -> Result<Vec<Agent>, JoyError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_canonical_member_follows_the_tool_not_the_provider() {
+        assert_eq!(canonical_member_id("mistral-vibe"), "ai:vibe@joy");
+        assert_eq!(canonical_member_id("claude-code"), "ai:claude@joy");
+        assert_eq!(canonical_member_id("qwen-code"), "ai:qwen@joy");
+        assert_eq!(canonical_member_id("mock"), "ai:mock@joy");
+    }
     use crate::model::config::InteractionLevel;
     use crate::model::job::Budget;
     use tempfile::tempdir;

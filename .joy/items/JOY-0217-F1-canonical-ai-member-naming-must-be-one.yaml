@@ -1,0 +1,20 @@
+id: JOY-0217-F1
+title: Canonical AI member naming must be one shared rule
+type: bug
+status: in-progress
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-18T12:13:02.185173212Z
+updated: 2026-07-18T12:13:15.380399558Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-07-18T12:13:15.264609384Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-18T12:13:15.380399558Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'The platform derived the AI member id from the adapter with a dash split: mistral-vibe became ai:mistral@joy while joy ai init and every doc, test and chat use ai:vibe@joy. The operator hit it live: @vibe answered ''no such member''. joy-core now owns adapter_tool_id and canonical_member_id (mistral-vibe -> vibe); joy-cli reset and the platform add flow both call it.'

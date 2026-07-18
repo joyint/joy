@@ -1171,15 +1171,10 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
 }
 
 /// The reset tool id an ACP adapter corresponds to, if any (`mock` and
-/// unknown adapters correspond to none).
+/// unknown adapters correspond to none). The mapping itself is joy-core's
+/// canonical naming rule, shared with the platform.
 fn adapter_tool_id(adapter: &str) -> Option<&'static str> {
-    match adapter {
-        "claude-code" => Some("claude"),
-        "qwen-code" => Some("qwen"),
-        "mistral-vibe" => Some("vibe"),
-        "copilot" => Some("copilot"),
-        _ => None,
-    }
+    joy_core::agents::adapter_tool_id(adapter)
 }
 
 /// Whether `joy ai reset --tool <tool_id>` selects this agent config:
