@@ -203,11 +203,32 @@ pub fn open_any(chat: &Chat, seed: &[u8; 32]) -> Option<[u8; 32]> {
 /// is authenticated: encrypted chats stay sealed and cannot be written.
 static CUSTODIAN_SEED: std::sync::RwLock<Option<[u8; 32]>> = std::sync::RwLock::new(None);
 
+thread_local! {
+    /// A per-thread override of the custodian seed. When set (outer
+    /// `Some`), it WINS over the process-wide seed for this thread, so a
+    /// server can gate chat reads per request exactly as it gates zone keys
+    /// (a locked session installs `Some(None)` — fail closed: sealed chats
+    /// stay sealed). CLI/desktop never set it and keep the global.
+    static CUSTODIAN_OVERRIDE: std::cell::Cell<Option<Option<[u8; 32]>>> =
+        const { std::cell::Cell::new(None) };
+}
+
 pub fn set_custodian_seed(seed: Option<[u8; 32]>) {
     *CUSTODIAN_SEED.write().unwrap_or_else(|e| e.into_inner()) = seed;
 }
 
+/// Install (outer `Some`) or drop (`None`) a per-thread override of the
+/// custodian seed. A server sets it around each request off the session's
+/// unlock posture and clears it after (blocking threads are reused), the
+/// same discipline as [`crate::crypt::set_active_zone_keys`].
+pub fn set_custodian_override(value: Option<Option<[u8; 32]>>) {
+    CUSTODIAN_OVERRIDE.with(|c| c.set(value));
+}
+
 pub fn custodian_seed() -> Option<[u8; 32]> {
+    if let Some(override_seed) = CUSTODIAN_OVERRIDE.with(std::cell::Cell::get) {
+        return override_seed;
+    }
     *CUSTODIAN_SEED.read().unwrap_or_else(|e| e.into_inner())
 }
 
@@ -680,6 +701,21 @@ mod tests {
         assert_eq!(opened.messages[0].text, "the secret plan");
         set_custodian_seed(None);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_thread_local_override_wins_and_fails_closed() {
+        // The override is thread-local and wins over the global regardless
+        // of its value, so this test never races the global other tests
+        // touch. An override pins THIS thread's seed...
+        set_custodian_override(Some(Some([1u8; 32])));
+        assert_eq!(custodian_seed(), Some([1u8; 32]));
+        // ...and a locked override fails closed (the server's per-request
+        // gate for a not-yet-unlocked session).
+        set_custodian_override(Some(None));
+        assert_eq!(custodian_seed(), None, "locked override must fail closed");
+        // Clearing the override restores the global fallback.
+        set_custodian_override(None);
     }
 
     #[test]
