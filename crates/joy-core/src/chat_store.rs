@@ -239,22 +239,22 @@ pub fn save(root: &std::path::Path, chat: &Chat, seed: &[u8; 32]) -> Result<(), 
         None => None,
     };
     let chat_tree = root_tree.as_ref().and_then(|t| subtree(&repo, t, &cid));
-    if let Some(t) = &chat_tree {
-        if !is_new_format(&repo, t) {
-            return Err(JoyError::AuthFailed(
-                "legacy chat: migrate before sealed save".into(),
-            ));
-        }
-    }
+    // A legacy (meta.yaml) subtree migrates in place: read nothing from it
+    // (the caller passes the already-opened legacy chat), start from an
+    // empty baseline, and the fresh <cid>/ tree built below carries only
+    // keys/ + log/ so the old meta.yaml/messages are dropped in the same
+    // commit. This is the "migrate on next save" path.
     let stored = match &chat_tree {
-        Some(t) => read_subtree(&repo, &cid, t, seed),
-        None => Stored {
+        Some(t) if is_new_format(&repo, t) => read_subtree(&repo, &cid, t, seed),
+        _ => Stored {
             events: Vec::new(),
             epoch_keys: BTreeMap::new(),
             log_rids: BTreeSet::new(),
             slot_ids: BTreeSet::new(),
         },
     };
+    // never inherit a legacy subtree's blobs when building the new tree.
+    let base_tree = chat_tree.as_ref().filter(|t| is_new_format(&repo, t));
 
     let created = created_of(&stored.events).unwrap_or(chat.created);
     let baseline = chat_events::fold(&cid, created, &stored.events);
@@ -407,7 +407,7 @@ pub fn save(root: &std::path::Path, chat: &Chat, seed: &[u8; 32]) -> Result<(), 
     write_tree(
         &repo,
         &cid,
-        chat_tree.as_ref(),
+        base_tree,
         &stored.slot_ids,
         &new_slots,
         &stored.log_rids,
@@ -774,6 +774,40 @@ mod tests {
         let got = load(dir.path(), &chat.id, &horst_new).unwrap().unwrap();
         assert_eq!(got.messages.len(), 1);
         assert_eq!(got.messages[0].text, "hi");
+    }
+
+    #[test]
+    fn divergent_sealed_saves_merge_keylessly() {
+        let (dir, platform, horst, _anna) = project();
+        let mut chat = Chat::new("99998888999988889999888899998888", vec![], ts(0));
+        chat.participants = vec![MemberRef::new("horst@example.com")];
+        chat.messages
+            .push(msg("m1", 1, "horst@example.com", "base"));
+        save(dir.path(), &chat, &platform).unwrap();
+        let repo = Repository::open(dir.path()).unwrap();
+        let base_tip = repo.refname_to_id(chat_ref::CHATS_REF).unwrap();
+
+        // lane A: add m2
+        let mut a = load(dir.path(), &chat.id, &platform).unwrap().unwrap();
+        a.messages.push(msg("m2", 2, "horst@example.com", "from A"));
+        save(dir.path(), &a, &platform).unwrap();
+        let a_tip = repo.refname_to_id(chat_ref::CHATS_REF).unwrap();
+
+        // reset to base and diverge on lane B: add m3
+        repo.reference(chat_ref::CHATS_REF, base_tip, true, "reset")
+            .unwrap();
+        let mut b = load(dir.path(), &chat.id, &platform).unwrap().unwrap();
+        b.messages.push(msg("m3", 3, "horst@example.com", "from B"));
+        save(dir.path(), &b, &platform).unwrap();
+        let b_tip = repo.refname_to_id(chat_ref::CHATS_REF).unwrap();
+
+        // keyless union of the two lanes
+        chat_ref::merge_refs(dir.path(), a_tip, b_tip).unwrap();
+        let merged = load(dir.path(), &chat.id, &horst).unwrap().unwrap();
+        let texts: Vec<&str> = merged.messages.iter().map(|m| m.text.as_str()).collect();
+        assert!(texts.contains(&"base"), "{texts:?}");
+        assert!(texts.contains(&"from A"), "{texts:?}");
+        assert!(texts.contains(&"from B"), "{texts:?}");
     }
 
     fn assert_no_plaintext(root: &std::path::Path, needles: &[&str]) {

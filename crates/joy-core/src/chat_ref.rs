@@ -279,6 +279,72 @@ pub fn remove_chat(root: &Path, id: &str) -> Result<(), JoyError> {
 /// merge. A chat GC'd on one side but still present on the other is kept
 /// with its delete marks and re-collected on the next GC pass — the
 /// deleted_for marks are the source of truth, so this self-heals.
+/// A named subtree of `parent`, if present.
+fn named_tree<'a>(repo: &'a Repository, parent: &Tree<'a>, name: &str) -> Option<Tree<'a>> {
+    parent
+        .get_name(name)
+        .and_then(|e| e.to_object(repo).ok())
+        .and_then(|o| o.peel_to_tree().ok())
+}
+
+/// Whether a `<cid>/` subtree is the sealed new format (keys/ + log/); a
+/// legacy chat carries `meta.yaml` instead.
+fn subtree_is_new_format(chat_tree: &Tree) -> bool {
+    chat_tree.get_name("keys").is_some() || chat_tree.get_name("log").is_some()
+}
+
+/// Union the entries of two leaf subtrees by name. Content-addressed
+/// filenames mean identical names carry identical bytes, so the union is
+/// keyless and conflict-free. `None` when both are absent.
+fn union_leaf(
+    repo: &Repository,
+    a: Option<&Tree>,
+    b: Option<&Tree>,
+) -> Result<Option<Oid>, JoyError> {
+    if a.is_none() && b.is_none() {
+        return Ok(None);
+    }
+    let mut tb = repo.treebuilder(None).map_err(git)?;
+    for t in [a, b].into_iter().flatten() {
+        for e in t.iter() {
+            if let Some(name) = e.name() {
+                tb.insert(name, e.id(), e.filemode()).map_err(git)?;
+            }
+        }
+    }
+    Ok(Some(tb.write().map_err(git)?))
+}
+
+/// Keyless union of two sealed `<cid>/` subtrees (keys/ + log/). Never
+/// decrypts; the forge, a seedless peer and the platform all produce the
+/// identical merge. All chat-state resolution happens at read-time fold.
+fn union_chat_subtrees(
+    repo: &Repository,
+    ours: Option<&Tree>,
+    theirs: Option<&Tree>,
+) -> Result<Oid, JoyError> {
+    let keys = union_leaf(
+        repo,
+        ours.and_then(|t| named_tree(repo, t, "keys")).as_ref(),
+        theirs.and_then(|t| named_tree(repo, t, "keys")).as_ref(),
+    )?;
+    let log = union_leaf(
+        repo,
+        ours.and_then(|t| named_tree(repo, t, "log")).as_ref(),
+        theirs.and_then(|t| named_tree(repo, t, "log")).as_ref(),
+    )?;
+    let mut tb = repo.treebuilder(None).map_err(git)?;
+    if let Some(k) = keys {
+        tb.insert("keys", k, i32::from(FileMode::Tree))
+            .map_err(git)?;
+    }
+    if let Some(l) = log {
+        tb.insert("log", l, i32::from(FileMode::Tree))
+            .map_err(git)?;
+    }
+    tb.write().map_err(git)
+}
+
 pub fn merge_refs(root: &Path, ours: Oid, theirs: Oid) -> Result<Oid, JoyError> {
     let repo = open_repo(root)?;
     let ours_c = repo.find_commit(ours).map_err(git)?;
@@ -300,6 +366,22 @@ pub fn merge_refs(root: &Path, ours: Oid, theirs: Oid) -> Result<Oid, JoyError> 
 
     let mut rb = repo.treebuilder(None).map_err(git)?;
     for id in &ids {
+        let ours_ct = named_tree(&repo, &ours_tree, id);
+        let theirs_ct = named_tree(&repo, &theirs_tree, id);
+        // A sealed chat (keys/+log/) merges by pure keyless union of its
+        // content-addressed sets; a legacy (meta.yaml) chat on either
+        // side still takes the field-level merge until it is migrated.
+        let sealed = ours_ct.as_ref().map(subtree_is_new_format).unwrap_or(true)
+            && theirs_ct
+                .as_ref()
+                .map(subtree_is_new_format)
+                .unwrap_or(true)
+            && (ours_ct.is_some() || theirs_ct.is_some());
+        if sealed {
+            let oid = union_chat_subtrees(&repo, ours_ct.as_ref(), theirs_ct.as_ref())?;
+            rb.insert(id, oid, i32::from(FileMode::Tree)).map_err(git)?;
+            continue;
+        }
         let ours_chat = read_chat_at(&repo, &ours_tree, id)?;
         let theirs_chat = read_chat_at(&repo, &theirs_tree, id)?;
         let base_chat = match &base_tree {
