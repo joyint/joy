@@ -323,27 +323,23 @@ pub fn session_id(project_id: &str, member: &str) -> String {
 /// Human sessions keep the deterministic per-member slot: their lookup
 /// runs by (project, member), not by an env-carried sid.
 pub fn session_storage_id(project_id: &str, claims: &SessionClaims) -> String {
-    let scoped = |tag: &[u8], scope: &str| -> String {
-        use sha2::{Digest, Sha256};
-        let mut hasher = Sha256::new();
-        hasher.update(project_id.as_bytes());
-        hasher.update(b":");
-        hasher.update(claims.member.as_bytes());
-        hasher.update(b":");
-        hasher.update(tag);
-        hasher.update(scope.as_bytes());
-        hex::encode(&hasher.finalize()[..SESSION_ID_LEN])
-    };
-    match (&claims.job_id, &claims.session_public_key) {
-        // A job-bound platform session is keyed by (project, member, JOB):
-        // a re-mint each round DISPLACES the previous round's file, so the
-        // sandbox always holds exactly the current round's fresh session,
-        // bound to its job (no stale round session lingers to be replayed,
-        // and the file stays correlated to the job).
-        (Some(job), _) if is_ai_member(&claims.member) => scoped(b"job:", job),
-        // Other AI sessions (chat) get a PER-SESSION file so the same AI
-        // can hold several at once (one per chat).
-        (None, Some(session_pk)) if is_ai_member(&claims.member) => scoped(b"sess:", session_pk),
+    match &claims.session_public_key {
+        // AI sessions get a PER-SESSION file (keyed by the ephemeral
+        // session public key), so an AI can hold several at once (one per
+        // chat, and one per job round) and each survives independently
+        // (JOY-01E1-E7). The session is bound to its job by
+        // `claims.job_id`, not by the filename.
+        Some(session_pk) if is_ai_member(&claims.member) => {
+            use sha2::{Digest, Sha256};
+            let mut hasher = Sha256::new();
+            hasher.update(project_id.as_bytes());
+            hasher.update(b":");
+            hasher.update(claims.member.as_bytes());
+            hasher.update(b":");
+            hasher.update(session_pk.as_bytes());
+            let hash = hasher.finalize();
+            hex::encode(&hash[..SESSION_ID_LEN])
+        }
         _ => session_id(project_id, &claims.member),
     }
 }
