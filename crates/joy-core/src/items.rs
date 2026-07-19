@@ -14,6 +14,100 @@ pub fn is_job_id(id: &str) -> bool {
     id.to_uppercase().contains("-JOB-")
 }
 
+/// Apply a `joy edit --scope` spec to a job's CURRENT scope. The ONE
+/// definition shared by the CLI, the desktop shell and the platform (ADR
+/// JAPP-011A-9F: no divergent second implementation, e.g. the TS copy in
+/// the web wiring or the desktop shell's own copy). A plain CSV replaces
+/// the scope; `+ID`/`-ID` entries add/remove; mixing the two forms is
+/// rejected; an addition must resolve to an existing non-job item; the
+/// result is never empty.
+pub fn apply_scope_spec(
+    root: &Path,
+    current: &[String],
+    spec: &str,
+) -> Result<Vec<String>, JoyError> {
+    let entries: Vec<&str> = spec
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if entries.is_empty() {
+        return Err(JoyError::GuardDenied(
+            "a job needs at least one scope item".into(),
+        ));
+    }
+    let delta = entries
+        .iter()
+        .any(|e| e.starts_with('+') || e.starts_with('-'));
+    let mut scope: Vec<String>;
+    if delta {
+        if !entries
+            .iter()
+            .all(|e| e.starts_with('+') || e.starts_with('-'))
+        {
+            return Err(JoyError::GuardDenied(
+                "--scope cannot mix +/- entries with plain IDs; use one form".into(),
+            ));
+        }
+        scope = current.to_vec();
+        for entry in &entries {
+            let (op, sid) = entry.split_at(1);
+            let sid = sid.trim();
+            if op == "+" {
+                let full = resolve_scope_item(root, sid)?;
+                if !scope.contains(&full) {
+                    scope.push(full);
+                }
+            } else {
+                // Normalize a short form when it still resolves; a stale ID
+                // that no longer loads is matched verbatim.
+                let full = load_item(root, sid)
+                    .map(|i| i.id)
+                    .unwrap_or_else(|_| sid.to_string());
+                let before = scope.len();
+                scope.retain(|s| s != &full && s != sid);
+                if scope.len() == before {
+                    return Err(JoyError::GuardDenied(format!(
+                        "{sid} is not in the scope of this job"
+                    )));
+                }
+            }
+        }
+    } else {
+        scope = Vec::new();
+        for sid in &entries {
+            let full = resolve_scope_item(root, sid)?;
+            if !scope.contains(&full) {
+                scope.push(full);
+            }
+        }
+    }
+    if scope.is_empty() {
+        return Err(JoyError::GuardDenied(
+            "a job needs at least one scope item".into(),
+        ));
+    }
+    Ok(scope)
+}
+
+/// Validate one scope addition: must resolve to an existing NON-job item;
+/// returns the full (normalized) item id.
+pub fn resolve_scope_item(root: &Path, sid: &str) -> Result<String, JoyError> {
+    if is_job_id(sid) {
+        return Err(JoyError::GuardDenied(
+            "a job cannot scope another job; use deps for job ordering".into(),
+        ));
+    }
+    let scope_item = load_item(root, sid)
+        .map_err(|_| JoyError::GuardDenied(format!("scope item {sid} is not a valid item ID.")))?;
+    if scope_item.item_type == ItemType::Job {
+        return Err(JoyError::GuardDenied(
+            "a job cannot scope another job; use deps for job ordering".into(),
+        ));
+    }
+    Ok(scope_item.id)
+}
+
 /// The storage directory for an item, routed by its type.
 fn dir_for_type(root: &Path, item_type: &ItemType) -> std::path::PathBuf {
     let sub = if *item_type == ItemType::Job {
@@ -812,6 +906,47 @@ mod tests {
         assert!(touch_if_changed(&mut item, &before, "b@example.com"));
         assert_eq!(item.updated_by.as_deref(), Some("b@example.com"));
         assert_eq!(item.history.as_ref().map(Vec::len), Some(1));
+    }
+
+    #[test]
+    fn apply_scope_spec_replaces_adds_removes_and_validates() {
+        let dir = tempdir().unwrap();
+        setup_project(dir.path());
+        let root = dir.path();
+        for id in ["JOY-0001", "JOY-0002"] {
+            save_item(
+                root,
+                &Item::new(id.into(), "T".into(), ItemType::Task, Priority::Low, vec![]),
+            )
+            .unwrap();
+        }
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+
+        // a plain list REPLACES the whole scope
+        assert_eq!(
+            apply_scope_spec(root, &s(&["JOY-0009"]), "JOY-0001,JOY-0002").unwrap(),
+            s(&["JOY-0001", "JOY-0002"])
+        );
+        // +/- entries ADJUST the current scope
+        assert_eq!(
+            apply_scope_spec(root, &s(&["JOY-0001"]), "+JOY-0002").unwrap(),
+            s(&["JOY-0001", "JOY-0002"])
+        );
+        assert_eq!(
+            apply_scope_spec(root, &s(&["JOY-0001", "JOY-0002"]), "-JOY-0001").unwrap(),
+            s(&["JOY-0002"])
+        );
+
+        // mixing plain IDs with +/- is rejected
+        assert!(apply_scope_spec(root, &[], "JOY-0001,+JOY-0002").is_err());
+        // adding a non-existent item is rejected
+        assert!(apply_scope_spec(root, &[], "JOY-9999").is_err());
+        // a job id can never be a scope item (a job cannot scope a job)
+        assert!(apply_scope_spec(root, &[], "JOY-JOB-0001").is_err());
+        // removing a non-member is rejected
+        assert!(apply_scope_spec(root, &s(&["JOY-0001"]), "-JOY-0002").is_err());
+        // the scope may never end up empty
+        assert!(apply_scope_spec(root, &s(&["JOY-0001"]), "-JOY-0001").is_err());
     }
 
     #[test]

@@ -261,7 +261,7 @@ pub fn run(args: EditArgs) -> Result<()> {
             .as_ref()
             .map(|j| j.scope.clone())
             .unwrap_or_default();
-        let scope = apply_scope_spec(&ctx.root, &current, spec)?;
+        let scope = items::apply_scope_spec(&ctx.root, &current, spec)?;
         item.job.get_or_insert_with(empty_job_spec).scope = scope;
         changed = true;
     }
@@ -396,82 +396,6 @@ fn job_window(item: &mut Item) -> &mut JobWindow {
             not_before: None,
             deadline: None,
         })
-}
-
-/// Apply a `--scope` spec to the current scope list. The spec is either
-/// a plain comma list (replace) or +ID/-ID entries (add/remove); mixing
-/// the two forms is rejected.
-fn apply_scope_spec(root: &std::path::Path, current: &[String], spec: &str) -> Result<Vec<String>> {
-    let entries: Vec<&str> = spec
-        .split(',')
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .collect();
-    if entries.is_empty() {
-        anyhow::bail!("a job needs at least one scope item");
-    }
-
-    let delta = entries
-        .iter()
-        .any(|e| e.starts_with('+') || e.starts_with('-'));
-    let mut scope: Vec<String>;
-    if delta {
-        if !entries
-            .iter()
-            .all(|e| e.starts_with('+') || e.starts_with('-'))
-        {
-            anyhow::bail!("--scope cannot mix +/- entries with plain IDs; use one form");
-        }
-        scope = current.to_vec();
-        for entry in &entries {
-            let (op, sid) = entry.split_at(1);
-            let sid = sid.trim();
-            if op == "+" {
-                let full = resolve_scope_item(root, sid)?;
-                if !scope.contains(&full) {
-                    scope.push(full);
-                }
-            } else {
-                // Normalize a short form when it still resolves; a stale
-                // ID that no longer loads is matched verbatim.
-                let full = items::load_item(root, sid)
-                    .map(|i| i.id)
-                    .unwrap_or_else(|_| sid.to_string());
-                let before = scope.len();
-                scope.retain(|s| s != &full && s != sid);
-                if scope.len() == before {
-                    anyhow::bail!("{} is not in the scope of this job", sid);
-                }
-            }
-        }
-    } else {
-        scope = Vec::new();
-        for sid in &entries {
-            let full = resolve_scope_item(root, sid)?;
-            if !scope.contains(&full) {
-                scope.push(full);
-            }
-        }
-    }
-
-    if scope.is_empty() {
-        anyhow::bail!("a job needs at least one scope item");
-    }
-    Ok(scope)
-}
-
-/// Validate one scope addition: must resolve to an existing non-job
-/// item; returns the full (normalized) item ID.
-fn resolve_scope_item(root: &std::path::Path, sid: &str) -> Result<String> {
-    if items::is_job_id(sid) {
-        anyhow::bail!("a job cannot scope another job; use deps for job ordering");
-    }
-    let scope_item = items::load_item(root, sid)
-        .map_err(|_| anyhow::anyhow!("scope item {} is not a valid item ID.", sid))?;
-    if scope_item.item_type == ItemType::Job {
-        anyhow::bail!("a job cannot scope another job; use deps for job ordering");
-    }
-    Ok(scope_item.id)
 }
 
 /// Parse a decimal money amount ("12", "12.5", "12.50") into cents.
