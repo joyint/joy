@@ -414,16 +414,15 @@ mod tests {
             let r = Repository::open(dir.path()).unwrap();
             let mut cfg = r.config().unwrap();
             cfg.set_str("user.name", "Horst Schwarz").unwrap();
-            cfg.set_str("user.email", "horst.schwarz@joydev.com").unwrap();
+            cfg.set_str("user.email", "horst.schwarz@joydev.com")
+                .unwrap();
         }
         let mut chat = Chat::new("c1", vec![MemberRef::new("horst@example.com")], ts(0));
         chat.messages.push(msg("m1", 1, "secret"));
         save_chat(dir.path(), &chat).unwrap();
 
         let r = Repository::open(dir.path()).unwrap();
-        let commit = r
-            .find_commit(r.refname_to_id(CHATS_REF).unwrap())
-            .unwrap();
+        let commit = r.find_commit(r.refname_to_id(CHATS_REF).unwrap()).unwrap();
         for sig in [commit.author(), commit.committer()] {
             assert_eq!(sig.name(), Some("joy"));
             assert_eq!(sig.email(), Some("joy@localhost"));
