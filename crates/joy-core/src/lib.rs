@@ -12,6 +12,7 @@ pub mod capabilities;
 pub mod chat_crypt;
 pub mod chat_events;
 pub mod chat_ref;
+pub mod chat_seal;
 pub mod chat_state;
 pub mod chat_turns;
 pub mod chat_wrap;

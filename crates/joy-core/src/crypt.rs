@@ -44,15 +44,29 @@ pub const FILTER_VERSION: u8 = 1;
 /// the textconv path can short-circuit on already-plaintext history
 /// objects.
 pub fn encrypt_blob(zone_name: &str, zone_key: &ZoneKey, plaintext: &[u8]) -> Vec<u8> {
+    let mut nonce = [0u8; 12];
+    rand::thread_rng().fill_bytes(&mut nonce);
+    encrypt_blob_with_nonce(zone_name, zone_key, &nonce, plaintext)
+}
+
+/// [`encrypt_blob`] with an EXPLICIT nonce. Sealed chats use a nonce
+/// derived from the plaintext ([`crate::chat_seal`]) so re-sealing an
+/// unchanged event yields byte-identical output: the log is
+/// content-addressed and a re-save produces no new git objects. Safe
+/// because a content-derived nonce only repeats for identical plaintext.
+pub fn encrypt_blob_with_nonce(
+    zone_name: &str,
+    zone_key: &ZoneKey,
+    nonce: &[u8; 12],
+    plaintext: &[u8],
+) -> Vec<u8> {
     let zone_bytes = zone_name.as_bytes();
     assert!(
         zone_bytes.len() <= 255,
         "zone name too long for blob format"
     );
-    let mut nonce = [0u8; 12];
-    rand::thread_rng().fill_bytes(&mut nonce);
     let aad = aad_for(zone_bytes);
-    let ct = joy_crypt::aead::seal(zone_key.as_bytes(), &nonce, &aad, plaintext)
+    let ct = joy_crypt::aead::seal(zone_key.as_bytes(), nonce, &aad, plaintext)
         .expect("AES-256-GCM seal with valid 32-byte key never fails");
 
     let mut out = Vec::with_capacity(8 + 1 + 1 + zone_bytes.len() + 12 + ct.len());
@@ -60,7 +74,7 @@ pub fn encrypt_blob(zone_name: &str, zone_key: &ZoneKey, plaintext: &[u8]) -> Ve
     out.push(FILTER_VERSION);
     out.push(zone_bytes.len() as u8);
     out.extend_from_slice(zone_bytes);
-    out.extend_from_slice(&nonce);
+    out.extend_from_slice(nonce);
     out.extend_from_slice(&ct);
     out
 }
