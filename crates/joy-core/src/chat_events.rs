@@ -59,6 +59,12 @@ pub fn hlc_at(at: DateTime<Utc>) -> Hlc {
     (ms << 16) | counter
 }
 
+/// The wall instant an HLC encodes (its millisecond component). Used to
+/// recover a chat's `created` from its founding epoch event.
+pub fn hlc_to_datetime(hlc: Hlc) -> DateTime<Utc> {
+    DateTime::from_timestamp_millis((hlc >> 16) as i64).unwrap_or_else(Utc::now)
+}
+
 /// A last-writer-wins stamp: the HLC plus a stable per-writer tag so two
 /// concurrent writes at the same HLC still resolve deterministically and
 /// identically on every device. `writer` is an opaque tag (a hash of the
@@ -132,6 +138,26 @@ pub enum ChatEvent {
     /// An immutable message. Unioned by message id (conflict-free); the
     /// carried `at` is its timeline clock.
     Message { msg: Box<ChatMessage> },
+    /// A key-epoch node in the rotation DAG (sealed under its own CK, so
+    /// the custodian and epoch holders can read it). `created` orders the
+    /// tips; `parents` are the epochs it rotated from. Consumed by
+    /// [`crate::chat_store`], not by [`fold`].
+    Epoch {
+        epoch_id: String,
+        #[serde(default)]
+        parents: Vec<String>,
+        created: Hlc,
+        #[serde(default)]
+        reason: String,
+    },
+    /// Coverage hint: `epoch_id`'s CK was wrapped for `member` under
+    /// `vk_hex`. The custodian folds these to decide rotation and
+    /// key-change re-wraps ([`crate::chat_store`]); [`fold`] ignores it.
+    Cover {
+        epoch_id: String,
+        member: String,
+        vk_hex: String,
+    },
 }
 
 /// The stable storage id of a message (its own id, or the deterministic
@@ -214,6 +240,8 @@ pub fn fold(id: impl Into<String>, created: DateTime<Utc>, events: &[ChatEvent])
             ChatEvent::Message { msg } => {
                 messages.insert(message_key(msg), (**msg).clone());
             }
+            // crypto-plane events carry no semantic chat state.
+            ChatEvent::Epoch { .. } | ChatEvent::Cover { .. } => {}
         }
     }
 

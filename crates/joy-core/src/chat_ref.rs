@@ -60,7 +60,7 @@ fn git(e: git2::Error) -> JoyError {
 }
 
 /// Open the repository containing `root` (walks up like git does).
-fn open_repo(root: &Path) -> Result<Repository, JoyError> {
+pub(crate) fn open_repo(root: &Path) -> Result<Repository, JoyError> {
     Repository::discover(root).map_err(git)
 }
 
@@ -72,13 +72,13 @@ fn open_repo(root: &Path) -> Result<Repository, JoyError> {
 /// (opaque) chat regardless of how sealed the tree was. Chat ordering is
 /// by the in-chat data (message `at`, `updated`), never by git
 /// author/time, so a constant identity and coarse time lose nothing.
-fn signature(_repo: &Repository) -> Result<Signature<'static>, JoyError> {
+pub(crate) fn signature(_repo: &Repository) -> Result<Signature<'static>, JoyError> {
     let day = (Utc::now().timestamp() / 86_400) * 86_400;
     Signature::new("joy", "joy@localhost", &Time::new(day, 0)).map_err(git)
 }
 
 /// The current `refs/joy/chats` commit, or `None` if the ref is unborn.
-fn ref_commit(repo: &Repository) -> Result<Option<Commit<'_>>, JoyError> {
+pub(crate) fn ref_commit(repo: &Repository) -> Result<Option<Commit<'_>>, JoyError> {
     match repo.refname_to_id(CHATS_REF) {
         Ok(oid) => Ok(Some(repo.find_commit(oid).map_err(git)?)),
         Err(e) if e.code() == ErrorCode::NotFound => Ok(None),
@@ -181,7 +181,7 @@ fn read_chat_at(repo: &Repository, root_tree: &Tree, id: &str) -> Result<Option<
 }
 
 /// Commit `root_tree` onto `refs/joy/chats` with the given parent.
-fn commit_root(
+pub(crate) fn commit_root(
     repo: &Repository,
     parent: Option<&Commit>,
     root_tree: &Tree,
