@@ -8,16 +8,31 @@
 use anyhow::Result;
 use clap::{Args, Subcommand};
 
+use joy_core::vcs::Vcs;
+
 #[derive(Args)]
 pub struct ChatArgs {
     #[command(subcommand)]
     command: ChatCommand,
+
+    /// Passphrase of the acting member, to read/write sealed chats
+    /// (non-interactive). Without it the CLI only sees unsealed chats.
+    #[arg(long, global = true)]
+    passphrase: Option<String>,
+
+    /// Read the passphrase from a single line on stdin.
+    #[arg(long = "passphrase-stdin", global = true)]
+    passphrase_stdin: bool,
 }
 
 #[derive(Subcommand)]
 enum ChatCommand {
     /// List chats, newest first
-    List,
+    List {
+        /// Also list chats you left or deleted that still exist.
+        #[arg(long, short)]
+        all: bool,
+    },
     /// Show a chat's messages
     Show { id: String },
     /// Send a message to a chat (use `general` for the team-wide chat)
@@ -51,24 +66,74 @@ fn load_or_general(root: &std::path::Path, id: &str) -> Result<joy_core::model::
     joy_core::chats::load_chat(root, id)?.ok_or_else(|| anyhow::anyhow!("no chat with id {id}"))
 }
 
+/// Reading or writing a sealed chat needs the caller's identity seed. When
+/// a passphrase is supplied (and the acting member has an identity), unlock
+/// it and set it as the reader/writer seed. Without a passphrase we stay on
+/// the legacy/plaintext path, so a bare `joy init` project (no identity)
+/// keeps working with no prompt.
+fn establish_reader_seed(
+    root: &std::path::Path,
+    passphrase: Option<&str>,
+    stdin: bool,
+) -> Result<()> {
+    if passphrase.is_none() && !stdin {
+        return Ok(());
+    }
+    let Ok(project) = joy_core::store::load_project(root) else {
+        return Ok(());
+    };
+    let Ok(email) = joy_core::vcs::default_vcs().user_email() else {
+        return Ok(());
+    };
+    let Some(member) = project.member_by_email(&email) else {
+        return Ok(());
+    };
+    if member.verify_key.is_none() {
+        return Ok(());
+    }
+    let pass = crate::commands::auth::read_passphrase(passphrase, stdin, "Passphrase: ")?;
+    let unlocked = joy_core::auth::unlock_identity(member, &pass)?;
+    joy_core::chat_crypt::set_custodian_seed(Some(unlocked.seed));
+    Ok(())
+}
+
 pub fn run(args: ChatArgs) -> Result<()> {
     let root = joy_core::store::find_project_root(&std::env::current_dir()?)
         .ok_or_else(|| anyhow::anyhow!("not inside a Joy project"))?;
+    establish_reader_seed(&root, args.passphrase.as_deref(), args.passphrase_stdin)?;
     match args.command {
-        ChatCommand::List => {
+        ChatCommand::List { all } => {
+            let me = acting_member(&root).ok();
             let chats = joy_core::chats::load_chats(&root)?;
-            if chats.is_empty() {
+            // Default: only chats you are a member of and have not deleted.
+            // `--all` also shows chats you left or deleted that still exist.
+            let rows: Vec<_> = chats
+                .into_iter()
+                .filter(|c| {
+                    all || me
+                        .as_ref()
+                        .map(|me| joy_core::chats::visible_to(c, me))
+                        .unwrap_or(true)
+                })
+                .collect();
+            if rows.is_empty() {
                 println!("No chats.");
                 return Ok(());
             }
             println!("{:<14} {:<22} {:<9} TITLE", "ID", "UPDATED", "MESSAGES");
-            for c in chats {
+            for c in rows {
+                let left = me
+                    .as_ref()
+                    .map(|me| !joy_core::chats::visible_to(&c, me))
+                    .unwrap_or(false);
+                let title = c.title.as_deref().unwrap_or("-");
                 println!(
-                    "{:<14} {:<22} {:<9} {}",
+                    "{:<14} {:<22} {:<9} {}{}",
                     c.id,
                     c.updated.format("%Y-%m-%d %H:%M"),
                     c.messages.len(),
-                    c.title.as_deref().unwrap_or("-"),
+                    title,
+                    if left { " [left]" } else { "" },
                 );
             }
         }
