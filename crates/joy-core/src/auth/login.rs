@@ -61,9 +61,67 @@ pub fn login(root: &Path, email: &str, passphrase: &str) -> Result<LoginOutcome,
         ))
     })?;
     let seed = seed_mod::unwrap_seed_with_passphrase(wrap_hex, passphrase, &salt)?;
+    finish_login(
+        root,
+        project,
+        member_key,
+        email,
+        seed,
+        &public_key,
+        "incorrect passphrase",
+    )
+}
+
+/// Authenticate with an ALREADY unlocked seed (the app's OS-keystore
+/// remember, JAPP-0026): everything `login` does after the passphrase
+/// unwrap — identity check, attestation posture, session, relock. The
+/// seed must still derive the member's registered verify key.
+pub fn login_with_seed(
+    root: &Path,
+    email: &str,
+    seed_bytes: &[u8; 32],
+) -> Result<LoginOutcome, JoyError> {
+    let project = store::load_project(root)?;
+    let member_key =
+        crate::privacy::member_key_for_email(&project, email).unwrap_or_else(|| email.to_string());
+    let member = project.member_by_key(&member_key).ok_or_else(|| {
+        JoyError::AuthFailed(format!(
+            "{email} is not a registered project member. Run `joy project member add {email}`."
+        ))
+    })?;
+    let public_key_hex = member.verify_key.as_ref().ok_or_else(|| {
+        JoyError::AuthFailed(format!(
+            "Authentication not initialized for {email}. Run `joy auth init`."
+        ))
+    })?;
+    let public_key = PublicKey::from_hex(public_key_hex)?;
+    let seed = seed_mod::Seed::from_bytes(*seed_bytes);
+    finish_login(
+        root,
+        project,
+        member_key,
+        email,
+        seed,
+        &public_key,
+        "the stored seed no longer matches the registered identity",
+    )
+}
+
+/// The shared back half of both login flows: identity check against the
+/// registered verify key, auto-seal, attestation posture, session
+/// creation, opportunistic re-lock.
+fn finish_login(
+    root: &Path,
+    project: Project,
+    member_key: String,
+    email: &str,
+    seed: seed_mod::Seed,
+    public_key: &PublicKey,
+    mismatch_error: &str,
+) -> Result<LoginOutcome, JoyError> {
     let keypair = IdentityKeypair::from_seed(seed.as_bytes());
-    if keypair.public_key() != public_key {
-        return Err(JoyError::AuthFailed("incorrect passphrase".into()));
+    if keypair.public_key() != *public_key {
+        return Err(JoyError::AuthFailed(mismatch_error.into()));
     }
 
     // JOY-0101-78: silent auto-seal for pre-feature projects.
