@@ -59,7 +59,8 @@ fn det_nonce(zone: &str, plaintext: &[u8]) -> [u8; 12] {
 }
 
 /// Seal one event under `epoch_id`'s content key. The blob is in the
-/// standard Crypt format, so `joy crypt open` decrypts it to raw YAML.
+/// standard Crypt format, so `joy crypt read` decrypts it to raw YAML by
+/// following the `chat:<cid>#<epoch_id>` zone header to the key in the ref.
 pub fn seal_event(
     cid: &str,
     epoch_id: &str,

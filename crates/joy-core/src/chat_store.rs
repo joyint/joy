@@ -554,6 +554,33 @@ pub fn load_all(root: &std::path::Path, seed: &[u8; 32]) -> Result<Vec<Chat>, Jo
     Ok(out)
 }
 
+/// The content key of one chat epoch, resolved from the reader's seed
+/// against the chat's key slots on `refs/joy/chats`. `None` if the chat is
+/// absent or the reader holds no slot for that epoch (not a participant).
+///
+/// This is the key source `joy crypt` uses for a chat blob: the blob's own
+/// zone header is `chat:<cid>#<epoch_id>`, so crypt follows that header to
+/// the key here, exactly as a zone file follows its header to project.yaml.
+pub fn epoch_content_key(
+    root: &std::path::Path,
+    cid: &str,
+    epoch_id: &str,
+    seed: &[u8; 32],
+) -> Result<Option<ContentKey>, JoyError> {
+    let repo = chat_ref::open_repo(root)?;
+    let Some(commit) = chat_ref::ref_commit(&repo)? else {
+        return Ok(None);
+    };
+    let root_tree = commit.tree().map_err(git)?;
+    let Some(chat_tree) = subtree(&repo, &root_tree, cid) else {
+        return Ok(None);
+    };
+    Ok(read_subtree(&repo, cid, &chat_tree, seed)
+        .epoch_keys
+        .get(epoch_id)
+        .copied())
+}
+
 fn fold_subtree(repo: &Repository, id: &str, chat_tree: &Tree, seed: &[u8; 32]) -> Option<Chat> {
     let stored = read_subtree(repo, id, chat_tree, seed);
     if stored.epoch_keys.is_empty() {
@@ -818,6 +845,77 @@ mod tests {
         assert!(texts.contains(&"base"), "{texts:?}");
         assert!(texts.contains(&"from A"), "{texts:?}");
         assert!(texts.contains(&"from B"), "{texts:?}");
+    }
+
+    #[test]
+    fn a_chat_event_blob_decrypts_with_the_key_from_the_ref() {
+        // Proves the `joy crypt` key source: a chat log blob is a standard
+        // Crypt blob whose zone header is `chat:<cid>#<epoch>`; a participant
+        // resolves the key from refs/joy/chats (not project.yaml) and
+        // decrypt_blob yields the raw event YAML. A non-participant gets no
+        // key. This is exactly what crypt's unlock_for_file does.
+        let (dir, platform, horst, anna) = project();
+        let mut chat = Chat::new("7777aaaa7777aaaa7777aaaa7777aaaa", vec![], ts(0));
+        chat.title = Some("Ops".into());
+        chat.participants = vec![MemberRef::new("horst@example.com")]; // NOT anna
+        chat.messages
+            .push(msg("m1", 1, "horst@example.com", "top secret"));
+        save(dir.path(), &chat, &platform).unwrap();
+
+        let repo = Repository::open(dir.path()).unwrap();
+        let commit = repo
+            .find_commit(repo.refname_to_id(chat_ref::CHATS_REF).unwrap())
+            .unwrap();
+        let chat_tree = subtree(&repo, &commit.tree().unwrap(), &chat.id).unwrap();
+        let log_tree = subtree(&repo, &chat_tree, LOG_DIR).unwrap();
+        // any sealed blob names the chat+epoch in its Crypt header
+        let sample = log_tree
+            .iter()
+            .next()
+            .unwrap()
+            .to_object(&repo)
+            .unwrap()
+            .peel_to_blob()
+            .unwrap()
+            .content()
+            .to_vec();
+        assert!(crate::crypt::looks_like_blob(&sample));
+        let zone_len = sample[9] as usize;
+        let zone = std::str::from_utf8(&sample[10..10 + zone_len]).unwrap();
+        let (cid, epoch) = zone
+            .strip_prefix("chat:")
+            .unwrap()
+            .rsplit_once('#')
+            .unwrap();
+        assert_eq!(cid, chat.id);
+
+        // a participant resolves the key FROM THE REF and reads raw YAML
+        let ck = epoch_content_key(dir.path(), cid, epoch, &horst)
+            .unwrap()
+            .unwrap();
+        let mut all = String::new();
+        for e in log_tree.iter() {
+            let b = e
+                .to_object(&repo)
+                .unwrap()
+                .peel_to_blob()
+                .unwrap()
+                .content()
+                .to_vec();
+            let (_z, pt) =
+                crate::crypt::decrypt_blob(|_| Some(crate::crypt::ZoneKey::from_bytes(ck)), &b)
+                    .unwrap();
+            all.push_str(&String::from_utf8(pt).unwrap());
+        }
+        assert!(
+            all.contains("top secret"),
+            "raw event YAML via ref key: {all}"
+        );
+
+        // a non-participant holds no slot: no key from the ref
+        assert!(epoch_content_key(dir.path(), cid, epoch, &anna)
+            .unwrap()
+            .is_none());
     }
 
     fn assert_no_plaintext(root: &std::path::Path, needles: &[&str]) {

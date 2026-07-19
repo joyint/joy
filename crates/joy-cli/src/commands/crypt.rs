@@ -477,6 +477,24 @@ fn unlock_for_file(
         })?,
     };
 
+    // Chat zones keep their key in the chat itself on refs/joy/chats, not
+    // in project.yaml: follow the blob's own `chat:<cid>#<epoch>` header to
+    // the key, the same way a zone file follows its header to project.yaml.
+    if let Some((cid, epoch)) = zone_name
+        .strip_prefix("chat:")
+        .and_then(|r| r.rsplit_once('#'))
+    {
+        let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "Passphrase: ")?;
+        let unlocked = joy_core::auth::unlock_identity(acting, &passphrase)?;
+        let ck = joy_core::chat_store::epoch_content_key(&root, cid, epoch, &unlocked.seed)?
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "no key for chat zone '{zone_name}': not a participant, or chat/epoch absent"
+                )
+            })?;
+        return Ok((root, zone_name, core_crypt::ZoneKey::from_bytes(ck)));
+    }
+
     let wrap_hex = acting.crypt_wraps.get(&zone_name).ok_or_else(|| {
         joy_core::error::JoyError::ZoneAccessDenied {
             zone: zone_name.clone(),
