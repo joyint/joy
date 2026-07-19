@@ -83,7 +83,12 @@ pub fn unknown_mentions(text: &str, candidates: &[String]) -> Vec<String> {
 
 /// Decide what `ai_member` should do about the newest message.
 pub fn decide(chat: &Chat, newest: &ChatMessage, ai_member: &str) -> TurnDecision {
-    if newest.kind == MessageKind::Notice || newest.author.id() == ai_member {
+    // Only a CONVERSATIONAL text can address an AI (App-Konzept 5.1/5.2:
+    // `/` addresses a tool, `@` addresses an actor). Notices, tool results,
+    // and persisted errors are never an address — a tool's own answer
+    // (kind=Tool, authored by the human who ran it) once slipped through
+    // the solo rule and triggered a turn per command result.
+    if newest.kind != MessageKind::Text || newest.author.id() == ai_member {
         return TurnDecision::Silent;
     }
     // A slash line addresses a TOOL, not the room's AI: no implicit turn
@@ -356,6 +361,26 @@ mod tests {
         )]);
         let newest = arg.messages.last().unwrap().clone();
         assert_eq!(decide(&arg, &newest, "ai:vibe@joy"), TurnDecision::Silent);
+    }
+
+    #[test]
+    fn only_conversational_text_can_address_an_ai() {
+        // A tool's persisted RESULT (kind=Tool, authored by the human who
+        // ran the command) and a persisted error are never an address —
+        // the result of `/joy ls` once triggered a turn via the solo rule.
+        for kind in [MessageKind::Tool, MessageKind::Error] {
+            let mut solo = chat_with(vec![("horst@example.com", "[tree result]", kind)]);
+            solo.participants = vec![
+                MemberRef::new("horst@example.com"),
+                MemberRef::new("ai:vibe@joy"),
+            ];
+            let newest = solo.messages.last().unwrap().clone();
+            assert_eq!(
+                decide(&solo, &newest, "ai:vibe@joy"),
+                TurnDecision::Silent,
+                "{kind:?} must not trigger a turn"
+            );
+        }
     }
 
     #[test]
