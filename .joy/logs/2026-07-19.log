@@ -1,2 +1,6 @@
 2026-07-19T09:24:25.939Z JOY-0216-ED comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-07-19T09:25:17.509Z JOY-0216-ED comment.removed "[1]" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-19T09:28:12.048Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-19T09:51:42.097Z JOY-021C-81 item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-19T09:51:42.191Z JOY-021C-81 item.status_changed "new -> open" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-19T09:51:42.368Z JOY-021C-81 item.status_changed "open -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

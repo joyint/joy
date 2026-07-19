@@ -42,7 +42,8 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use git2::{Commit, ErrorCode, FileMode, Oid, Repository, Signature, Tree};
+use chrono::Utc;
+use git2::{Commit, ErrorCode, FileMode, Oid, Repository, Signature, Time, Tree};
 
 use crate::error::JoyError;
 use crate::model::chat::{Chat, ChatMessage};
@@ -63,13 +64,17 @@ fn open_repo(root: &Path) -> Result<Repository, JoyError> {
     Repository::discover(root).map_err(git)
 }
 
-/// A signature for chat commits. Uses the repo's configured identity,
-/// falling back to a fixed one when there is none (fresh clones, tests).
-fn signature(repo: &Repository) -> Result<Signature<'static>, JoyError> {
-    match repo.signature() {
-        Ok(sig) => Ok(sig),
-        Err(_) => Signature::now("joy", "joy@localhost").map_err(git),
-    }
+/// The signature for EVERY chat-ref commit, on every device: a FIXED
+/// neutral identity plus a day-coarsened time (ADR JAPP-002A-30). A chat
+/// must leak nothing to a keyless repo reader, including WHO touched it:
+/// `repo.signature()` stamped each commit with the writer's real
+/// name/email, so `git log --stat refs/joy/chats` mapped a member to an
+/// (opaque) chat regardless of how sealed the tree was. Chat ordering is
+/// by the in-chat data (message `at`, `updated`), never by git
+/// author/time, so a constant identity and coarse time lose nothing.
+fn signature(_repo: &Repository) -> Result<Signature<'static>, JoyError> {
+    let day = (Utc::now().timestamp() / 86_400) * 86_400;
+    Signature::new("joy", "joy@localhost", &Time::new(day, 0)).map_err(git)
 }
 
 /// The current `refs/joy/chats` commit, or `None` if the ref is unborn.
@@ -396,6 +401,39 @@ mod tests {
     fn reset_ref(root: &Path, oid: Oid) {
         let repo = Repository::discover(root).unwrap();
         repo.reference(CHATS_REF, oid, true, "test reset").unwrap();
+    }
+
+    #[test]
+    fn chat_ref_commits_carry_a_neutral_identity_not_the_writer() {
+        // ADR JAPP-002A-30: a keyless reader of refs/joy/chats must not
+        // learn WHO touched a chat. Even in a repo with a real developer
+        // identity, every chat commit is authored+committed by the fixed
+        // neutral identity with a day-coarsened time.
+        let dir = repo();
+        {
+            let r = Repository::open(dir.path()).unwrap();
+            let mut cfg = r.config().unwrap();
+            cfg.set_str("user.name", "Horst Schwarz").unwrap();
+            cfg.set_str("user.email", "horst.schwarz@joydev.com").unwrap();
+        }
+        let mut chat = Chat::new("c1", vec![MemberRef::new("horst@example.com")], ts(0));
+        chat.messages.push(msg("m1", 1, "secret"));
+        save_chat(dir.path(), &chat).unwrap();
+
+        let r = Repository::open(dir.path()).unwrap();
+        let commit = r
+            .find_commit(r.refname_to_id(CHATS_REF).unwrap())
+            .unwrap();
+        for sig in [commit.author(), commit.committer()] {
+            assert_eq!(sig.name(), Some("joy"));
+            assert_eq!(sig.email(), Some("joy@localhost"));
+            assert_eq!(sig.when().seconds() % 86_400, 0, "day-coarsened time");
+            let blob = format!("{} {}", sig.name().unwrap(), sig.email().unwrap());
+            assert!(
+                !blob.to_lowercase().contains("horst"),
+                "writer identity leaked into the commit: {blob}"
+            );
+        }
     }
 
     #[test]
