@@ -86,6 +86,13 @@ pub fn decide(chat: &Chat, newest: &ChatMessage, ai_member: &str) -> TurnDecisio
     if newest.kind == MessageKind::Notice || newest.author.id() == ai_member {
         return TurnDecision::Silent;
     }
+    // A slash line addresses a TOOL, not the room's AI: no implicit turn
+    // (solo/follow-up), and no turn for an @ref used as a command ARGUMENT
+    // either (`/joy edit X -A @vibe`). Operator find 2026-07-19: `/joy ls`
+    // in a 1:1 chat made the AI answer "not configured" per command.
+    if newest.text.trim_start().starts_with('/') {
+        return TurnDecision::Silent;
+    }
     let participant_ids: Vec<String> = chat
         .participants
         .iter()
@@ -311,6 +318,44 @@ mod tests {
         assert_eq!(found.len(), 2);
         assert!(mentions("no at all", &candidates).is_empty());
         assert!(mentions("mail me claude@joy", &candidates).is_empty());
+    }
+
+    #[test]
+    fn a_slash_command_never_triggers_a_turn() {
+        // operator find 2026-07-19: `/joy ls` in a 1:1 chat with vibe made
+        // it answer "not configured" for every command. A slash line talks
+        // to a TOOL: silent even in a solo chat, even right after the AI's
+        // reply, and even with an @ref as a command ARGUMENT.
+        let mut solo = chat_with(vec![(
+            "horst@example.com",
+            "/joy ls --tree",
+            MessageKind::Text,
+        )]);
+        solo.participants = vec![
+            MemberRef::new("horst@example.com"),
+            MemberRef::new("ai:vibe@joy"),
+        ];
+        let newest = solo.messages.last().unwrap().clone();
+        assert_eq!(decide(&solo, &newest, "ai:vibe@joy"), TurnDecision::Silent);
+
+        let follow = chat_with(vec![
+            ("horst@example.com", "@vibe which model?", MessageKind::Text),
+            ("ai:vibe@joy", "mistral-medium-3.5.", MessageKind::Text),
+            ("horst@example.com", "/joy ls", MessageKind::Text),
+        ]);
+        let newest = follow.messages.last().unwrap().clone();
+        assert_eq!(
+            decide(&follow, &newest, "ai:vibe@joy"),
+            TurnDecision::Silent
+        );
+
+        let arg = chat_with(vec![(
+            "horst@example.com",
+            "/joy edit VC-0001 -A @vibe",
+            MessageKind::Text,
+        )]);
+        let newest = arg.messages.last().unwrap().clone();
+        assert_eq!(decide(&arg, &newest, "ai:vibe@joy"), TurnDecision::Silent);
     }
 
     #[test]
