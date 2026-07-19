@@ -83,6 +83,16 @@ fn recipients(project: &Project, chat: &Chat) -> Vec<(String, crate::auth::Publi
     out
 }
 
+/// Whether this chat can be sealed here: a Joy project with at least one
+/// wrap recipient (a participant with a verify_key, or the platform
+/// custodian). When false, the chat has no identity to encrypt for and
+/// the caller keeps it plaintext / ephemeral per the ADR.
+pub fn can_seal(root: &std::path::Path, chat: &Chat) -> bool {
+    crate::store::load_project(root)
+        .map(|p| !recipients(&p, chat).is_empty())
+        .unwrap_or(false)
+}
+
 // ---- reading a stored chat ------------------------------------------------
 
 struct Stored {

@@ -667,16 +667,17 @@ mod tests {
 
         set_custodian_seed(Some(platform_seed));
         crate::chats::save_chat(&dir, &mut chat).unwrap();
-        // reflect what persistence added (the caller reloads in product
-        // paths); at rest the text is sealed
-        let raw = crate::chat_ref::load_chat(&dir, &chat.id).unwrap().unwrap();
-        assert_eq!(raw.messages[0].text, "", "sealed at rest");
-        assert!(raw.messages[0].enc.is_some());
-        // ...and the custodian load opens it again
+        // at rest it is the sealed new format: the plaintext reader finds
+        // no meta.yaml chat at all (nothing readable without a key)
+        assert!(
+            crate::chat_ref::load_chat(&dir, &chat.id)
+                .unwrap()
+                .is_none(),
+            "no plaintext chat at rest"
+        );
+        // ...and the custodian load opens it
         let opened = crate::chats::load_chat(&dir, &chat.id).unwrap().unwrap();
         assert_eq!(opened.messages[0].text, "the secret plan");
-        chat = opened;
-        assert!(chat.crypt.is_some());
         set_custodian_seed(None);
         std::fs::remove_dir_all(&dir).ok();
     }

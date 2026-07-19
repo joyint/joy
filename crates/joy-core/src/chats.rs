@@ -21,7 +21,10 @@ pub const CHATS_DIR: &str = "chats";
 
 /// A fresh, short, file-safe chat id.
 pub fn new_chat_id() -> String {
-    uuid::Uuid::new_v4().simple().to_string()[..12].to_string()
+    // A full 128-bit opaque id (32 hex chars). The tree name is the only
+    // plaintext a chat leaks, so it carries no structure a keyless reader
+    // could read (ADR JAPP-002A-30).
+    uuid::Uuid::new_v4().simple().to_string()
 }
 
 /// Save a chat onto the `refs/joy/chats` ref (never the working branch),
@@ -36,39 +39,18 @@ pub fn new_chat_id() -> String {
 /// envelopes next to the opened fields), so a publisher right after the
 /// save holds the exact sealed form the wire needs.
 pub fn save_chat(root: &Path, chat: &mut Chat) -> Result<(), JoyError> {
+    // Sealed whole-file storage (ADR JAPP-002A-30): with a custodian seed
+    // and a project that has an identity to wrap for, persist through
+    // [`crate::chat_store`] (opaque keys/log tree; migrates a legacy chat
+    // in place). The in-memory `chat` stays OPENED for the caller.
     if let Some(seed) = crate::chat_crypt::custodian_seed() {
-        if let Ok(project) = crate::store::load_project(root) {
-            match crate::chat_crypt::ensure_crypt(&project, chat, &seed) {
-                Ok(key) => {
-                    // participant upkeep (rotate on leave, backfill on
-                    // arrival/enrollment) before sealing new messages
-                    let key = crate::chat_crypt::maintain_wraps(&project, chat, &seed, key)?;
-                    crate::chat_crypt::seal_messages(&mut *chat, &key);
-                    // sealing emptied the sensitive fields; keep the
-                    // in-memory copy OPENED like a fresh load would be
-                    let key_for = |_epoch: u32| Some(key);
-                    crate::chat_crypt::open_messages(chat, key_for);
-                    return crate::chat_ref::save_chat(
-                        root,
-                        &crate::chat_crypt::sealed_for_save(chat),
-                    );
-                }
-                Err(e) => {
-                    if chat.crypt.is_some() {
-                        // an encrypted chat this seed cannot open: never
-                        // write (and never write plaintext into it)
-                        return Err(e);
-                    }
-                    // nobody wrappable: fall through to the no-identity rule
-                }
-            }
+        if crate::chat_store::can_seal(root, chat) {
+            return crate::chat_store::save(root, chat, &seed);
         }
     }
-    if chat.crypt.is_some() {
-        return Err(JoyError::AuthFailed(
-            "chat is encrypted; authenticate to write (ADR JAPP-002A-30)".into(),
-        ));
-    }
+    // No custodian, or nothing to wrap: a project that COULD encrypt never
+    // gets plaintext (it stays ephemeral until someone authenticates);
+    // only a project with no identity at all persists in the clear.
     if let Ok(project) = crate::store::load_project(root) {
         let encryptable =
             project.platform.is_some() || project.members().any(|(_, m)| m.verify_key.is_some());
@@ -81,8 +63,16 @@ pub fn save_chat(root: &Path, chat: &mut Chat) -> Result<(), JoyError> {
     crate::chat_ref::save_chat(root, chat)
 }
 
-/// Load one chat by id from the ref, if present.
+/// Load one chat by id, opened. New-format (sealed) chats fold through
+/// [`crate::chat_store`]; a legacy (unmigrated) chat falls back to the old
+/// reader plus the custodian open.
 pub fn load_chat(root: &Path, id: &str) -> Result<Option<Chat>, JoyError> {
+    if let Some(seed) = crate::chat_crypt::custodian_seed() {
+        if let Some(mut chat) = crate::chat_store::load(root, id, &seed)? {
+            normalize(&mut chat);
+            return Ok(Some(chat));
+        }
+    }
     match crate::chat_ref::load_chat(root, id)? {
         Some(mut chat) => {
             normalize(&mut chat);
@@ -93,15 +83,29 @@ pub fn load_chat(root: &Path, id: &str) -> Result<Option<Chat>, JoyError> {
     }
 }
 
-/// Load every chat from the ref, newest-updated first.
+/// Load every chat, opened, newest-updated first. Sealed chats come from
+/// [`crate::chat_store`]; any legacy chat not yet migrated is added from
+/// the old reader.
 pub fn load_chats(root: &Path) -> Result<Vec<Chat>, JoyError> {
-    let mut chats = crate::chat_ref::load_chats(root)?;
-    for chat in &mut chats {
-        normalize(chat);
-        crate::chat_crypt::open_with_custodian(chat);
+    let mut out: Vec<Chat> = Vec::new();
+    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    if let Some(seed) = crate::chat_crypt::custodian_seed() {
+        for mut chat in crate::chat_store::load_all(root, &seed)? {
+            normalize(&mut chat);
+            seen.insert(chat.id.clone());
+            out.push(chat);
+        }
     }
-    chats.sort_by_key(|c| std::cmp::Reverse(c.updated));
-    Ok(chats)
+    for mut chat in crate::chat_ref::load_chats(root)? {
+        if seen.contains(&chat.id) {
+            continue;
+        }
+        normalize(&mut chat);
+        crate::chat_crypt::open_with_custodian(&mut chat);
+        out.push(chat);
+    }
+    out.sort_by_key(|c| std::cmp::Reverse(c.updated));
+    Ok(out)
 }
 
 /// Open (or create) a chat and persist it.
