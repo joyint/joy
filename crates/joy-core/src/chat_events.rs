@@ -179,6 +179,15 @@ fn message_key(m: &ChatMessage) -> String {
     }
 }
 
+/// A total order over message VERSIONS of the same id: (serialized length,
+/// serialization). The enriched follow-up copy (payload, attribution)
+/// serializes longer than the bare append, so it wins deterministically on
+/// every device regardless of merge order.
+fn message_rank(m: &ChatMessage) -> (usize, String) {
+    let s = serde_yaml_ng::to_string(m).unwrap_or_default();
+    (s.len(), s)
+}
+
 /// Reduce a set of events into a [`Chat`]. Order-independent: the same
 /// events in any order (any git merge outcome) fold to the same chat.
 ///
@@ -249,7 +258,22 @@ pub fn fold(id: impl Into<String>, created: DateTime<Utc>, events: &[ChatEvent])
                 present,
             } => win_map(&mut deleted_for, member.clone(), stamp, present),
             ChatEvent::Message { msg } => {
-                messages.insert(message_key(msg), (**msg).clone());
+                // A message id can appear in more than one event: the bare
+                // append first, then the ENRICHED copy (tool result payload,
+                // AI attribution) from the follow-up save. Pick per id by a
+                // total order — the larger canonical serialization wins (the
+                // enriched copy carries more fields), tie-broken lexically —
+                // so every merge order folds to the same chat.
+                match messages.entry(message_key(msg)) {
+                    std::collections::btree_map::Entry::Vacant(v) => {
+                        v.insert((**msg).clone());
+                    }
+                    std::collections::btree_map::Entry::Occupied(mut o) => {
+                        if message_rank(msg) > message_rank(o.get()) {
+                            o.insert((**msg).clone());
+                        }
+                    }
+                }
             }
             ChatEvent::Read { member, upto, .. } => {
                 let slot = read_max.entry(member.clone()).or_insert(0);
@@ -410,12 +434,23 @@ pub fn diff(base: &Chat, next: &Chat, writer: &str) -> Vec<ChatEvent> {
         }
     }
 
-    // messages: emit each new (by union key) message once.
-    let mut seen: std::collections::BTreeSet<String> =
-        base.messages.iter().map(message_key).collect();
+    // messages: emit each new message once — and a CHANGED copy of a known
+    // id too (append_tool_result / append_ai_reply enrich the message in a
+    // follow-up save; dropping that emitted the bare copy only and tool
+    // results lost their payload). The fold picks per id by message_rank.
+    let base_by_key: std::collections::BTreeMap<String, &ChatMessage> =
+        base.messages.iter().map(|m| (message_key(m), m)).collect();
+    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for m in &next.messages {
         let key = message_key(m);
-        if seen.insert(key) {
+        if !seen.insert(key.clone()) {
+            continue;
+        }
+        let changed = match base_by_key.get(&key) {
+            None => true,
+            Some(b) => *b != m,
+        };
+        if changed {
             out.push(ChatEvent::Message {
                 msg: Box::new(m.clone()),
             });

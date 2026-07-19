@@ -848,6 +848,62 @@ mod tests {
     }
 
     #[test]
+    fn a_tool_result_enrichment_survives_the_second_save() {
+        // append_tool_result / append_ai_reply persist TWICE: first the bare
+        // message, then the enriched copy (tool+payload / attribution). The
+        // event log must carry the enrichment — a diff that only emits NEW
+        // message ids silently dropped it ("[tree result]" fallback bug).
+        let (dir, platform, horst, _anna) = project();
+        let mut chat = Chat::new("5555cccc5555cccc5555cccc5555cccc", vec![], ts(0));
+        chat.participants = vec![MemberRef::new("horst@example.com")];
+        let mut m = msg("t1", 1, "horst@example.com", "[tree result]");
+        m.kind = MessageKind::Tool;
+        chat.messages.push(m);
+        save(dir.path(), &chat, &platform).unwrap();
+
+        // the enrichment save: same id, now with the frozen snapshot
+        let mut next = load(dir.path(), &chat.id, &platform).unwrap().unwrap();
+        next.messages[0].tool = Some("/joy".into());
+        next.messages[0].payload = Some("{\"v\":1,\"result\":{\"kind\":\"tree\"}}".into());
+        save(dir.path(), &next, &platform).unwrap();
+
+        let got = load(dir.path(), &chat.id, &horst).unwrap().unwrap();
+        assert_eq!(got.messages.len(), 1);
+        assert_eq!(got.messages[0].tool.as_deref(), Some("/joy"));
+        assert_eq!(
+            got.messages[0].payload.as_deref(),
+            Some("{\"v\":1,\"result\":{\"kind\":\"tree\"}}"),
+            "the enriched payload must survive the second save"
+        );
+    }
+
+    #[test]
+    fn a_sealed_read_marker_round_trips() {
+        let (dir, platform, horst, _anna) = project();
+        let mut chat = Chat::new("6666bbbb6666bbbb6666bbbb6666bbbb", vec![], ts(0));
+        chat.participants = vec![MemberRef::new("horst@example.com")];
+        chat.messages.push(msg("m1", 1, "horst@example.com", "hi"));
+        save(dir.path(), &chat, &platform).unwrap();
+
+        // horst reads it back and advances his read marker, then re-saves
+        let mut h = load(dir.path(), &chat.id, &horst).unwrap().unwrap();
+        h.read_markers.insert("horst@example.com".into(), ts(9));
+        save(dir.path(), &h, &horst).unwrap();
+
+        // the custodian reloads and sees horst's sealed watermark; nothing
+        // about the marker is in plaintext
+        let reloaded = load(dir.path(), &chat.id, &platform).unwrap().unwrap();
+        assert_eq!(
+            reloaded
+                .read_markers
+                .get("horst@example.com")
+                .map(|d| d.timestamp()),
+            Some(ts(9).timestamp())
+        );
+        assert_no_plaintext(dir.path(), &["horst@example.com"]);
+    }
+
+    #[test]
     fn a_chat_event_blob_decrypts_with_the_key_from_the_ref() {
         // Proves the `joy crypt` key source: a chat log blob is a standard
         // Crypt blob whose zone header is `chat:<cid>#<epoch>`; a participant
