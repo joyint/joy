@@ -170,8 +170,7 @@ pub struct Chat {
     /// Per-member read watermark (ADR JAPP-002A-30, sealed read markers):
     /// member id -> the instant up to which they have read. Held IN the
     /// chat (a sealed `Read` event per advance), never a server-side DB, so
-    /// a desktop clone carries its own markers. Seeded to a member's join
-    /// instant so pre-join history is not "unread". A member's EFFECTIVE
+    /// a desktop clone carries its own markers. A member's EFFECTIVE
     /// watermark also advances to their own last authored message (you have
     /// read what you wrote); use [`Chat::effective_watermark`].
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -244,8 +243,8 @@ impl Chat {
     }
 
     /// How many messages `member` has not yet read: those strictly after
-    /// their effective watermark. Pre-join history does not count because
-    /// joining seeds the watermark to the join instant.
+    /// their effective watermark (an unread message is one they neither
+    /// wrote nor have marked read past).
     pub fn unread_count(&self, member: &str) -> usize {
         let watermark = self.effective_watermark(member);
         self.messages

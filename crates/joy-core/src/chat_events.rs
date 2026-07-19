@@ -161,8 +161,7 @@ pub enum ChatEvent {
     /// MAX register: `member`'s read watermark, the HLC up to which they
     /// have read. Merges by MAX so a later/higher watermark always wins and
     /// a stale concurrent write never regresses it (a read marker only ever
-    /// moves forward). Seeded to a member's join instant, advanced by
-    /// `joy chat read` and the clients.
+    /// moves forward). Advanced by `joy chat read` and the clients.
     Read {
         stamp: Stamp,
         member: String,

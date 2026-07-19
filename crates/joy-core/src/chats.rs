@@ -424,10 +424,6 @@ pub fn add_participant(
     }
     if !chat.participants.iter().any(|p| p.id() == member.id()) {
         chat.participants.push(member.clone());
-        // Seed their read watermark to the join instant: a joining member's
-        // unread count starts from here, not from the chat's history (ADR
-        // JAPP-002A-30, the joined marker). append_notice persists it.
-        chat.read_markers.insert(member.id().to_string(), now);
         append_notice(
             root,
             chat,
