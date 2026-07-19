@@ -16,9 +16,12 @@ default:
 # Run all tests (unit + snapshot + integration)
 test: test-unit test-cmd test-int
 
-# Rust unit tests only (fast-kdf: minimal Argon2id for speed)
+# Rust tests: lib AND integration tests (crates/*/tests/*.rs) — matches
+# what CI runs (cargo test --workspace). Do NOT re-add --lib: it silently
+# skips the integration tests (e.g. job_session_mint) and lets a red CI
+# slip past a green local check. fast-kdf keeps Argon2id minimal for speed.
 test-unit:
-    cargo test --workspace --lib --features fast-kdf
+    cargo test --workspace --features fast-kdf
 
 # Snapshot tests (trycmd)
 test-cmd:
