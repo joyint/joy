@@ -50,6 +50,10 @@ enum ChatCommand {
     },
     /// Rename a chat
     Rename { id: String, title: Vec<String> },
+    /// Mark a chat read up to now (advance your read marker)
+    Read { id: String },
+    /// Show read state: who has read the latest message and unread counts
+    Info { id: String },
 }
 
 fn acting_member(root: &std::path::Path) -> Result<joy_core::member_ref::MemberRef> {
@@ -180,6 +184,39 @@ pub fn run(args: ChatArgs) -> Result<()> {
             let mut chat = load_or_general(&root, &id)?;
             joy_core::chats::rename(&root, &mut chat, title.join(" "))?;
             println!("renamed");
+        }
+        ChatCommand::Read { id } => {
+            let me = acting_member(&root)?;
+            let mut chat = load_or_general(&root, &id)?;
+            joy_core::chats::mark_read(&root, &mut chat, &me, chrono::Utc::now())?;
+            println!("marked read");
+        }
+        ChatCommand::Info { id } => {
+            let me = acting_member(&root)?;
+            let chat = load_or_general(&root, &id)?;
+            println!(
+                "{} — {} participant(s), {} message(s)",
+                chat.title.as_deref().unwrap_or("(untitled)"),
+                chat.participants.len(),
+                chat.messages.len(),
+            );
+            println!("your unread: {}", chat.unread_count(me.id()));
+            if let Some(last) = chat.messages.last() {
+                let readers = chat.read_by(last);
+                println!(
+                    "latest read by {}/{}: {}",
+                    readers.len(),
+                    chat.participants.len(),
+                    if readers.is_empty() {
+                        "(nobody yet)".to_string()
+                    } else {
+                        readers.join(", ")
+                    },
+                );
+            }
+            for p in &chat.participants {
+                println!("  {:<28} {} unread", p.id(), chat.unread_count(p.id()));
+            }
         }
         ChatCommand::Show { id } => {
             let chat = joy_core::chats::load_chat(&root, &id)?

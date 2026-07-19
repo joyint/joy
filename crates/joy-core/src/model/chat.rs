@@ -167,6 +167,15 @@ pub struct Chat {
     /// or a chat that was never persisted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub crypt: Option<ChatCrypt>,
+    /// Per-member read watermark (ADR JAPP-002A-30, sealed read markers):
+    /// member id -> the instant up to which they have read. Held IN the
+    /// chat (a sealed `Read` event per advance), never a server-side DB, so
+    /// a desktop clone carries its own markers. Seeded to a member's join
+    /// instant so pre-join history is not "unread". A member's EFFECTIVE
+    /// watermark also advances to their own last authored message (you have
+    /// read what you wrote); use [`Chat::effective_watermark`].
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub read_markers: BTreeMap<String, DateTime<Utc>>,
     #[serde(default)]
     pub messages: Vec<ChatMessage>,
 }
@@ -205,8 +214,44 @@ impl Chat {
             ai_sessions: BTreeMap::new(),
             modes: BTreeMap::new(),
             crypt: None,
+            read_markers: BTreeMap::new(),
             messages: Vec::new(),
         }
+    }
+
+    /// The instant up to which `member` has read: the max of their sealed
+    /// read watermark and their own last authored message (you have read
+    /// what you wrote). `None` if they have neither read nor written.
+    pub fn effective_watermark(&self, member: &str) -> Option<DateTime<Utc>> {
+        let explicit = self.read_markers.get(member).copied();
+        let authored = self
+            .messages
+            .iter()
+            .filter(|m| m.author.id() == member)
+            .map(|m| m.at)
+            .max();
+        explicit.into_iter().chain(authored).max()
+    }
+
+    /// The participant member ids (humans AND AI) who have read `msg`:
+    /// their effective watermark is at or past the message instant.
+    pub fn read_by(&self, msg: &ChatMessage) -> Vec<String> {
+        self.participants
+            .iter()
+            .map(|p| p.id().to_string())
+            .filter(|id| self.effective_watermark(id).is_some_and(|w| w >= msg.at))
+            .collect()
+    }
+
+    /// How many messages `member` has not yet read: those strictly after
+    /// their effective watermark. Pre-join history does not count because
+    /// joining seeds the watermark to the join instant.
+    pub fn unread_count(&self, member: &str) -> usize {
+        let watermark = self.effective_watermark(member);
+        self.messages
+            .iter()
+            .filter(|m| watermark.is_none_or(|w| m.at > w))
+            .count()
     }
 
     /// The stored per-chat mode override for the (`agent`, `delegator`)
@@ -253,5 +298,55 @@ mod tests {
             back.mode_override("ai:copilot@joy", "horst@example.com"),
             None
         );
+    }
+
+    #[test]
+    fn read_by_and_unread_use_watermark_and_authorship() {
+        let now: DateTime<Utc> = "2026-07-11T00:00:00Z".parse().unwrap();
+        let mut chat = Chat::new(
+            "c",
+            vec![
+                MemberRef::new("a@e"),
+                MemberRef::new("b@e"),
+                MemberRef::new("ai:v@joy"),
+            ],
+            now,
+        );
+        let mk = |sec: u32, who: &str| ChatMessage {
+            id: format!("m{sec}"),
+            at: format!("2026-07-11T00:00:0{sec}Z").parse().unwrap(),
+            author: MemberRef::new(who),
+            text: "x".into(),
+            kind: MessageKind::Text,
+            delegated_by: None,
+            turn_ms: None,
+            tool_steps: None,
+            tool: None,
+            payload: None,
+            details: None,
+            enc: None,
+            epoch: None,
+        };
+        chat.messages = vec![mk(1, "a@e"), mk(2, "b@e"), mk(3, "ai:v@joy")];
+        // b@e has an explicit read marker up to t2; a@e and the AI only have
+        // authorship (a authored t1, the AI authored the last at t3).
+        chat.read_markers.insert("b@e".into(), chat.messages[1].at);
+
+        // effective watermark = max(explicit, own last authored)
+        assert_eq!(chat.effective_watermark("a@e"), Some(chat.messages[0].at));
+        assert_eq!(chat.effective_watermark("b@e"), Some(chat.messages[1].at));
+        assert_eq!(
+            chat.effective_watermark("ai:v@joy"),
+            Some(chat.messages[2].at)
+        );
+
+        // only the AI (author of the last, t3) has read the latest message
+        let last = chat.messages.last().unwrap().clone();
+        assert_eq!(chat.read_by(&last), vec!["ai:v@joy".to_string()]);
+
+        // unread = messages strictly after the effective watermark
+        assert_eq!(chat.unread_count("a@e"), 2); // m2, m3
+        assert_eq!(chat.unread_count("b@e"), 1); // m3
+        assert_eq!(chat.unread_count("ai:v@joy"), 0);
     }
 }

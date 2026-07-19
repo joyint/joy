@@ -158,6 +158,16 @@ pub enum ChatEvent {
         member: String,
         vk_hex: String,
     },
+    /// MAX register: `member`'s read watermark, the HLC up to which they
+    /// have read. Merges by MAX so a later/higher watermark always wins and
+    /// a stale concurrent write never regresses it (a read marker only ever
+    /// moves forward). Seeded to a member's join instant, advanced by
+    /// `joy chat read` and the clients.
+    Read {
+        stamp: Stamp,
+        member: String,
+        upto: Hlc,
+    },
 }
 
 /// The stable storage id of a message (its own id, or the deterministic
@@ -188,6 +198,8 @@ pub fn fold(id: impl Into<String>, created: DateTime<Utc>, events: &[ChatEvent])
     let mut sessions: BTreeMap<String, (Stamp, String)> = BTreeMap::new();
     let mut deleted_for: BTreeMap<String, (Stamp, bool)> = BTreeMap::new();
     let mut messages: BTreeMap<String, ChatMessage> = BTreeMap::new();
+    // Read watermarks merge by MAX, never by stamp: a marker only advances.
+    let mut read_max: BTreeMap<String, Hlc> = BTreeMap::new();
 
     // Replace the register winner iff the new stamp is strictly greater.
     fn win<T: Clone>(slot: &mut Option<(Stamp, T)>, stamp: &Stamp, value: &T) {
@@ -240,6 +252,10 @@ pub fn fold(id: impl Into<String>, created: DateTime<Utc>, events: &[ChatEvent])
             ChatEvent::Message { msg } => {
                 messages.insert(message_key(msg), (**msg).clone());
             }
+            ChatEvent::Read { member, upto, .. } => {
+                let slot = read_max.entry(member.clone()).or_insert(0);
+                *slot = (*slot).max(*upto);
+            }
             // crypto-plane events carry no semantic chat state.
             ChatEvent::Epoch { .. } | ChatEvent::Cover { .. } => {}
         }
@@ -266,6 +282,10 @@ pub fn fold(id: impl Into<String>, created: DateTime<Utc>, events: &[ChatEvent])
         .into_iter()
         .filter(|(_, (_, present))| *present)
         .map(|(m, _)| crate::member_ref::MemberRef::new(m))
+        .collect();
+    chat.read_markers = read_max
+        .into_iter()
+        .map(|(m, hlc)| (m, hlc_to_datetime(hlc)))
         .collect();
 
     // Messages in timeline order: by `at`, then by id for a stable tie.
@@ -399,6 +419,24 @@ pub fn diff(base: &Chat, next: &Chat, writer: &str) -> Vec<ChatEvent> {
         if seen.insert(key) {
             out.push(ChatEvent::Message {
                 msg: Box::new(m.clone()),
+            });
+        }
+    }
+
+    // read markers: MAX register per member; emit only when a watermark
+    // advances. Compare at millisecond granularity — the fold stores the
+    // watermark's millisecond, so a re-save of an unchanged chat must not
+    // emit a spurious Read (idempotency, see chat_store::save).
+    for (member, at) in &next.read_markers {
+        let advanced = base
+            .read_markers
+            .get(member)
+            .is_none_or(|b| at.timestamp_millis() > b.timestamp_millis());
+        if advanced {
+            out.push(ChatEvent::Read {
+                stamp: stamp(),
+                member: member.clone(),
+                upto: hlc_at(*at),
             });
         }
     }
@@ -553,6 +591,64 @@ mod tests {
             "B's subtitle kept"
         );
         assert_eq!(merged.messages.len(), 2, "no message lost");
+    }
+
+    /// Read watermarks fold by MAX: the highest wins regardless of order,
+    /// and a stale lower watermark never regresses it.
+    #[test]
+    fn read_markers_fold_by_max_order_independent() {
+        let events = vec![
+            ChatEvent::Read {
+                stamp: Stamp::at(hlc_at(ts(5)), "w"),
+                member: "x@e".into(),
+                upto: hlc_at(ts(5)),
+            },
+            ChatEvent::Read {
+                stamp: Stamp::at(hlc_at(ts(3)), "w"),
+                member: "x@e".into(),
+                upto: hlc_at(ts(3)),
+            },
+            ChatEvent::Read {
+                stamp: Stamp::at(hlc_at(ts(9)), "w"),
+                member: "x@e".into(),
+                upto: hlc_at(ts(9)),
+            },
+        ];
+        let forward = fold("c", ts(0), &events);
+        let mut rev = events.clone();
+        rev.reverse();
+        let backward = fold("c", ts(0), &rev);
+        assert_eq!(
+            forward.read_markers.get("x@e").map(|d| d.timestamp()),
+            Some(ts(9).timestamp())
+        );
+        assert_eq!(forward.read_markers, backward.read_markers);
+    }
+
+    /// A save emits a Read only when the watermark advances; a re-save at
+    /// the same (or lower) watermark emits none (idempotency).
+    #[test]
+    fn diff_emits_read_only_on_advance() {
+        let base = Chat::new("c", vec![MemberRef::new("x@e")], ts(0));
+        let mut a = base.clone();
+        a.read_markers.insert("x@e".into(), ts(5));
+        let ev = diff(&base, &a, "w1");
+        assert_eq!(
+            ev.iter()
+                .filter(|e| matches!(e, ChatEvent::Read { .. }))
+                .count(),
+            1
+        );
+        // re-diff at the same watermark: no Read event
+        let ev_same = diff(&a, &a, "w1");
+        assert!(ev_same.iter().all(|e| !matches!(e, ChatEvent::Read { .. })));
+        // a lower watermark does not emit (never regress)
+        let mut lower = a.clone();
+        lower.read_markers.insert("x@e".into(), ts(3));
+        let ev_lower = diff(&a, &lower, "w1");
+        assert!(ev_lower
+            .iter()
+            .all(|e| !matches!(e, ChatEvent::Read { .. })));
     }
 
     /// Leaving is an LWW-element-set removal that a later re-add can undo.

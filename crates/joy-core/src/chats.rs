@@ -424,6 +424,10 @@ pub fn add_participant(
     }
     if !chat.participants.iter().any(|p| p.id() == member.id()) {
         chat.participants.push(member.clone());
+        // Seed their read watermark to the join instant: a joining member's
+        // unread count starts from here, not from the chat's history (ADR
+        // JAPP-002A-30, the joined marker). append_notice persists it.
+        chat.read_markers.insert(member.id().to_string(), now);
         append_notice(
             root,
             chat,
@@ -433,6 +437,27 @@ pub fn add_participant(
         )?;
     }
     Ok(())
+}
+
+/// Advance `member`'s sealed read watermark to `now` (the "read up to
+/// here" marker held IN the chat, ADR JAPP-002A-30). No-op that skips the
+/// save when the marker would not move forward. Reading is not activity,
+/// so `updated` is untouched and the chat never bumps up the recency list.
+pub fn mark_read(
+    root: &Path,
+    chat: &mut Chat,
+    member: &MemberRef,
+    now: DateTime<Utc>,
+) -> Result<(), JoyError> {
+    let advances = chat
+        .read_markers
+        .get(member.id())
+        .is_none_or(|w| now.timestamp_millis() > w.timestamp_millis());
+    if !advances {
+        return Ok(());
+    }
+    chat.read_markers.insert(member.id().to_string(), now);
+    save_chat(root, chat)
 }
 
 /// Rename a chat (General keeps its identity).
