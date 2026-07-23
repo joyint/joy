@@ -16,7 +16,6 @@
 use anyhow::{bail, Result};
 use clap::{Args, Subcommand};
 
-use joy_core::crypt as core_crypt;
 use joy_core::model::project::Project;
 use joy_core::store;
 use joy_core::vcs::Vcs;
@@ -134,7 +133,7 @@ struct ZoneRmArgs {
 pub fn run(args: CryptArgs) -> Result<()> {
     let zone = args
         .zone
-        .unwrap_or_else(|| core_crypt::DEFAULT_ZONE.to_string());
+        .unwrap_or_else(|| joy_crypt::zone::DEFAULT_ZONE.to_string());
     let stdin = args.passphrase_stdin;
     let pp = args.passphrase.as_deref();
     match args.command {
@@ -195,7 +194,7 @@ fn unlock_zone(
     let unlocked = joy_core::auth::unlock_identity(acting, &passphrase)?;
 
     let zone_key = match acting.crypt_wraps.get(zone) {
-        Some(wrap_hex) => core_crypt::unwrap_for_member(wrap_hex, zone, &unlocked.seed)?,
+        Some(wrap_hex) => joy_crypt::zone::unwrap_for_member(wrap_hex, zone, &unlocked.seed)?,
         None => {
             if !autocreate {
                 bail!(
@@ -204,7 +203,7 @@ fn unlock_zone(
                     zone
                 );
             }
-            core_crypt::ZoneKey::generate()
+            joy_crypt::zone::ZoneKey::generate()
         }
     };
 
@@ -224,7 +223,7 @@ struct UnlockedZone {
     acting_email: String,
     acting_seed: [u8; 32],
     zone: String,
-    zone_key: core_crypt::ZoneKey,
+    zone_key: joy_crypt::zone::ZoneKey,
 }
 
 impl UnlockedZone {
@@ -238,7 +237,8 @@ impl UnlockedZone {
             .zones
             .entry(self.zone.clone())
             .or_default();
-        let wrap_hex = core_crypt::wrap_for_self(&self.zone_key, &self.zone, &self.acting_seed);
+        let wrap_hex =
+            joy_crypt::zone::wrap_for_self(&self.zone_key, &self.zone, &self.acting_seed);
         let m = self
             .project
             .member_by_email_mut(&self.acting_email)
@@ -370,24 +370,24 @@ fn walk_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) -> Resul
 fn encrypt_file_in_place(
     path: &std::path::Path,
     zone: &str,
-    zone_key: &joy_core::crypt::ZoneKey,
+    zone_key: &joy_crypt::zone::ZoneKey,
 ) -> Result<()> {
     let bytes = std::fs::read(path)?;
-    if joy_core::crypt::looks_like_blob(&bytes) {
+    if joy_crypt::zone::looks_like_blob(&bytes) {
         return Ok(());
     }
-    let blob = joy_core::crypt::encrypt_blob(zone, zone_key, &bytes);
+    let blob = joy_crypt::zone::encrypt_blob(zone, zone_key, &bytes);
     write_atomic(path, &blob)
 }
 
 /// Decrypt a file in place. No-op when the file is already plaintext.
 fn decrypt_file_in_place(path: &std::path::Path) -> Result<()> {
     let bytes = std::fs::read(path)?;
-    if !joy_core::crypt::looks_like_blob(&bytes) {
+    if !joy_crypt::zone::looks_like_blob(&bytes) {
         return Ok(());
     }
     let (_zone, plaintext) =
-        joy_core::crypt::decrypt_blob(joy_core::crypt::active_zone_key, &bytes)?;
+        joy_crypt::zone::decrypt_blob(joy_core::crypt::active_zone_key, &bytes)?;
     write_atomic(path, &plaintext)
 }
 
@@ -447,7 +447,7 @@ fn unlock_for_file(
     abs_path: &std::path::Path,
     passphrase_flag: Option<&str>,
     passphrase_stdin: bool,
-) -> Result<(std::path::PathBuf, String, core_crypt::ZoneKey)> {
+) -> Result<(std::path::PathBuf, String, joy_crypt::zone::ZoneKey)> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
@@ -460,7 +460,7 @@ fn unlock_for_file(
     // Determine the zone: either from the blob magic on disk or from
     // the project's zones[].paths registry.
     let zone_name = match std::fs::read(abs_path) {
-        Ok(bytes) if joy_core::crypt::looks_like_blob(&bytes) => {
+        Ok(bytes) if joy_crypt::zone::looks_like_blob(&bytes) => {
             // Peek the zone-name from the header.
             let zone_len = bytes.get(9).copied().unwrap_or(0) as usize;
             let end = 10 + zone_len;
@@ -486,13 +486,13 @@ fn unlock_for_file(
     {
         let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "Passphrase: ")?;
         let unlocked = joy_core::auth::unlock_identity(acting, &passphrase)?;
-        let ck = joy_core::chat_store::epoch_content_key(&root, cid, epoch, &unlocked.seed)?
+        let ck = joy_chat::chat_store::epoch_content_key(&root, cid, epoch, &unlocked.seed)?
             .ok_or_else(|| {
                 anyhow::anyhow!(
                     "no key for chat zone '{zone_name}': not a participant, or chat/epoch absent"
                 )
             })?;
-        return Ok((root, zone_name, core_crypt::ZoneKey::from_bytes(ck)));
+        return Ok((root, zone_name, joy_crypt::zone::ZoneKey::from_bytes(ck)));
     }
 
     let wrap_hex = acting.crypt_wraps.get(&zone_name).ok_or_else(|| {
@@ -503,7 +503,7 @@ fn unlock_for_file(
 
     let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "Passphrase: ")?;
     let unlocked = joy_core::auth::unlock_identity(acting, &passphrase)?;
-    let zone_key = core_crypt::unwrap_for_member(wrap_hex, &zone_name, &unlocked.seed)?;
+    let zone_key = joy_crypt::zone::unwrap_for_member(wrap_hex, &zone_name, &unlocked.seed)?;
     Ok((root, zone_name, zone_key))
 }
 
@@ -512,7 +512,7 @@ fn run_read(file: &str, passphrase: Option<&str>, stdin: bool) -> Result<()> {
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
     let abs = resolve_file_path(&root, file)?;
     let bytes = std::fs::read(&abs)?;
-    if !joy_core::crypt::looks_like_blob(&bytes) {
+    if !joy_crypt::zone::looks_like_blob(&bytes) {
         // Already plaintext - just stream it.
         use std::io::Write;
         std::io::stdout().write_all(&bytes)?;
@@ -525,7 +525,7 @@ fn run_read(file: &str, passphrase: Option<&str>, stdin: bool) -> Result<()> {
     keys.insert(zone_name, *zone_key.as_bytes());
     joy_core::crypt::set_active_zone_keys(keys);
     let (_zone, plaintext) =
-        joy_core::crypt::decrypt_blob(joy_core::crypt::active_zone_key, &bytes)?;
+        joy_crypt::zone::decrypt_blob(joy_core::crypt::active_zone_key, &bytes)?;
     joy_core::crypt::clear_active_zone_keys();
     use std::io::Write;
     std::io::stdout().write_all(&plaintext)?;
@@ -541,7 +541,7 @@ fn run_write(file: &str, passphrase: Option<&str>, stdin: bool) -> Result<()> {
     use std::io::Read;
     let mut input = Vec::new();
     std::io::stdin().read_to_end(&mut input)?;
-    let blob = joy_core::crypt::encrypt_blob(&zone, &zone_key, &input);
+    let blob = joy_crypt::zone::encrypt_blob(&zone, &zone_key, &input);
     write_atomic(&abs, &blob)?;
     if let Ok(rel) = abs.strip_prefix(&root) {
         joy_core::git_ops::auto_git_add(&root, &[&rel.to_string_lossy()]);
@@ -560,7 +560,7 @@ fn run_unlock(file: &str, passphrase: Option<&str>, stdin: bool) -> Result<()> {
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
     let abs = resolve_file_path(&root, file)?;
     let bytes = std::fs::read(&abs)?;
-    if !joy_core::crypt::looks_like_blob(&bytes) {
+    if !joy_crypt::zone::looks_like_blob(&bytes) {
         bail!(
             "{} is already plaintext (or not encrypted by Crypt).",
             abs.display()
@@ -573,7 +573,7 @@ fn run_unlock(file: &str, passphrase: Option<&str>, stdin: bool) -> Result<()> {
     keys.insert(zone_name.clone(), *zone_key.as_bytes());
     joy_core::crypt::set_active_zone_keys(keys);
     let (_zone, plaintext) =
-        joy_core::crypt::decrypt_blob(joy_core::crypt::active_zone_key, &bytes)?;
+        joy_crypt::zone::decrypt_blob(joy_core::crypt::active_zone_key, &bytes)?;
     joy_core::crypt::clear_active_zone_keys();
     write_atomic(&abs, &plaintext)?;
     println!(
@@ -590,12 +590,12 @@ fn run_lock(file: &str, passphrase: Option<&str>, stdin: bool) -> Result<()> {
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
     let abs = resolve_file_path(&root, file)?;
     let bytes = std::fs::read(&abs)?;
-    if joy_core::crypt::looks_like_blob(&bytes) {
+    if joy_crypt::zone::looks_like_blob(&bytes) {
         println!("{} is already encrypted; nothing to do.", abs.display());
         return Ok(());
     }
     let (_root, zone, zone_key) = unlock_for_file(&abs, passphrase, stdin)?;
-    let blob = joy_core::crypt::encrypt_blob(&zone, &zone_key, &bytes);
+    let blob = joy_crypt::zone::encrypt_blob(&zone, &zone_key, &bytes);
     write_atomic(&abs, &blob)?;
     if let Ok(rel) = abs.strip_prefix(&root) {
         joy_core::git_ops::auto_git_add(&root, &[&rel.to_string_lossy()]);
@@ -612,11 +612,11 @@ fn run_edit(file: &str, passphrase: Option<&str>, stdin: bool) -> Result<()> {
 
     // Decrypt to a temp file in $TMPDIR, open editor, re-encrypt.
     let plaintext = match std::fs::read(&abs) {
-        Ok(b) if joy_core::crypt::looks_like_blob(&b) => {
+        Ok(b) if joy_crypt::zone::looks_like_blob(&b) => {
             let mut keys = std::collections::BTreeMap::new();
             keys.insert(zone.clone(), *zone_key.as_bytes());
             joy_core::crypt::set_active_zone_keys(keys);
-            let (_z, pt) = joy_core::crypt::decrypt_blob(joy_core::crypt::active_zone_key, &b)?;
+            let (_z, pt) = joy_crypt::zone::decrypt_blob(joy_core::crypt::active_zone_key, &b)?;
             joy_core::crypt::clear_active_zone_keys();
             pt
         }
@@ -656,7 +656,7 @@ fn run_edit(file: &str, passphrase: Option<&str>, stdin: bool) -> Result<()> {
     let edited = std::fs::read(&tmp)?;
     let _ = std::fs::remove_file(&tmp);
 
-    let blob = joy_core::crypt::encrypt_blob(&zone, &zone_key, &edited);
+    let blob = joy_crypt::zone::encrypt_blob(&zone, &zone_key, &edited);
     write_atomic(&abs, &blob)?;
     if let Ok(rel) = abs.strip_prefix(&root) {
         joy_core::git_ops::auto_git_add(&root, &[&rel.to_string_lossy()]);
@@ -918,7 +918,7 @@ fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>, stdin: b
             .and_then(|m| m.verify_key.clone())
             .ok_or_else(|| anyhow::anyhow!("granter has no verify_key registered"))?;
         let granter_verify_key = joy_core::auth::PublicKey::from_hex(&granter_verify_hex)?;
-        let wrap_hex = joy_core::crypt::wrap_for_member(
+        let wrap_hex = joy_crypt::zone::wrap_for_member(
             &unlocked.zone_key,
             &unlocked.zone,
             &unlocked.acting_seed,
@@ -934,7 +934,7 @@ fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>, stdin: b
             .or_default()
             .platform_wrap = Some(wrap_hex);
         // the granter keeps their own wrap (first add+grant session)
-        let granter_wrap = joy_core::crypt::wrap_for_self(
+        let granter_wrap = joy_crypt::zone::wrap_for_self(
             &unlocked.zone_key,
             &unlocked.zone,
             &unlocked.acting_seed,
@@ -986,7 +986,7 @@ fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>, stdin: b
                 continue;
             };
             let delegation_pk = joy_core::auth::PublicKey::from_hex(&entry.delegation_verifier)?;
-            let wrap_hex = joy_core::crypt::wrap_for_member(
+            let wrap_hex = joy_crypt::zone::wrap_for_member(
                 &unlocked.zone_key,
                 &unlocked.zone,
                 &unlocked.acting_seed,
@@ -1015,7 +1015,7 @@ fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>, stdin: b
 
         // Ensure the granter's own (human) wrap is also present so they
         // do not lose access by being the first in the zone.
-        let granter_wrap = joy_core::crypt::wrap_for_self(
+        let granter_wrap = joy_crypt::zone::wrap_for_self(
             &unlocked.zone_key,
             &unlocked.zone,
             &unlocked.acting_seed,
@@ -1056,7 +1056,7 @@ fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>, stdin: b
     // Wrap the zone key for the target. The granter's verify_key
     // travels in the wrap header so the target can locate the right
     // X25519 public for ECDH.
-    let wrap_hex = joy_core::crypt::wrap_for_member(
+    let wrap_hex = joy_crypt::zone::wrap_for_member(
         &unlocked.zone_key,
         &unlocked.zone,
         &unlocked.acting_seed,
@@ -1072,7 +1072,7 @@ fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>, stdin: b
     // Ensure the granter's own wrap is also present (auto-create path
     // when this is the first add+grant in the same session).
     let granter_wrap =
-        joy_core::crypt::wrap_for_self(&unlocked.zone_key, &unlocked.zone, &unlocked.acting_seed);
+        joy_crypt::zone::wrap_for_self(&unlocked.zone_key, &unlocked.zone, &unlocked.acting_seed);
     let g = project.member_by_email_mut(&unlocked.acting_email).unwrap();
     g.crypt_wraps
         .entry(unlocked.zone.clone())

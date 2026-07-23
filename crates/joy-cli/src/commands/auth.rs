@@ -593,7 +593,7 @@ fn cached_members_zone_key(
         return None;
     }
     let wrap = project.member_by_key(member_key)?.members_wrap.as_deref()?;
-    let zk = joy_core::crypt::unwrap_for_member(wrap, joy_core::members_file::MEMBERS_ZONE, seed)
+    let zk = joy_crypt::zone::unwrap_for_member(wrap, joy_core::members_file::MEMBERS_ZONE, seed)
         .ok()?;
     Some(hex::encode(zk.as_bytes()))
 }

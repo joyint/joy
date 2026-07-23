@@ -8,7 +8,7 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 @test "joy init creates project.defaults.yaml" {
     joy init --name "Test Project"
     [ -f ".joy/project.defaults.yaml" ]
-    grep -q "modes:" .joy/project.defaults.yaml
+    grep -q "interaction:" .joy/project.defaults.yaml
     grep -q "default: collaborative" .joy/project.defaults.yaml
 }
 
@@ -32,17 +32,17 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     grep -q "project.defaults.yaml" .gitignore
 }
 
-@test "joy config get modes.default returns collaborative" {
+@test "joy config get interaction.default returns collaborative" {
     joy init --name "Test Project"
-    run joy config get modes.default
+    run joy config get interaction.default
     [ "$status" -eq 0 ]
     [[ "$output" == "collaborative" ]]
 }
 
-@test "joy config set modes.default changes the default" {
+@test "joy config set interaction.default changes the default" {
     joy init --name "Test Project"
-    joy config set modes.default pairing
-    run joy config get modes.default
+    joy config set interaction.default pairing
+    run joy config get interaction.default
     [ "$status" -eq 0 ]
     [[ "$output" == "pairing" ]]
 }
@@ -82,10 +82,10 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     joy auth init --passphrase "$TEST_PASSPHRASE"
     joy project member add ai:test@joy --capabilities implement,review --passphrase "$TEST_PASSPHRASE"
 
-    # Override implement mode in project.yaml
+    # Override implement interaction level in project.yaml
     cat >> .joy/project.yaml <<EOF
 
-modes:
+interaction:
   implement: pairing
 EOF
 
@@ -95,29 +95,63 @@ EOF
     [[ "$output" == *"implement"*"pairing"*"[project]"* ]]
 }
 
-@test "max-mode clamps effective mode" {
+@test "max-interaction clamps effective interaction" {
     setup_human_auth
     joy project member add ai:test@joy --capabilities implement --passphrase "$TEST_PASSPHRASE"
 
-    # Set max-mode on the member's implement capability
-    # We need to manually edit project.yaml for this
-    # awk for BSD/GNU portability: replace the single-line implement entry
-    # with a block that adds a max-mode override.
-    awk '
-        /^      implement: \{\}/ {
-            print "      implement:";
-            print "        max-mode: interactive";
-            next
-        }
-        { print }
-    ' .joy/project.yaml > .joy/project.yaml.tmp \
-        && mv .joy/project.yaml.tmp .joy/project.yaml
+    # Set the max-interaction floor via the CLI (JI-0161-C2). This replaces the old
+    # manual project.yaml awk edit; the command re-signs the member's
+    # attestation over the new fields.
+    run joy project member edit ai:test@joy --max-interaction implement=interactive --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
 
     run joy project member show ai:test@joy
     [ "$status" -eq 0 ]
-    # Default for implement is collaborative, but max-mode is interactive (more restrictive)
+    # Default for implement is collaborative, but max-interaction is interactive (more restrictive)
     # collaborative < interactive, so it gets clamped up to interactive
     [[ "$output" == *"interactive"*"[project max]"* ]]
+}
+
+@test "member edit --max-interaction on an unheld capability fails" {
+    setup_human_auth
+    joy project member add ai:test@joy --capabilities implement --passphrase "$TEST_PASSPHRASE"
+
+    run joy project member edit ai:test@joy --max-interaction review=interactive --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"does not have capability"* ]]
+}
+
+@test "member edit --capabilities replaces the set and re-signs" {
+    setup_human_auth
+    joy project member add ai:test@joy --capabilities implement,review --passphrase "$TEST_PASSPHRASE"
+
+    run joy project member edit ai:test@joy --capabilities plan,implement --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+
+    run joy project member show ai:test@joy
+    [ "$status" -eq 0 ]
+    # plan is now held (shows a mode), review is dropped (shows the deny mark)
+    [[ "$output" == *"plan"* ]]
+    [[ "$output" == *"review"*"-"* ]]
+
+    # The re-signed attestation still covers the new capability set: the
+    # signed_fields block in project.yaml now lists plan, not review.
+    run grep -A20 "signed_fields:" .joy/project.yaml
+    [[ "$output" == *"plan"* ]]
+}
+
+@test "member edit --add-capability and --rm-capability are incremental" {
+    setup_human_auth
+    joy project member add ai:test@joy --capabilities implement --passphrase "$TEST_PASSPHRASE"
+
+    run joy project member edit ai:test@joy --add-capability review --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    run joy project member edit ai:test@joy --rm-capability implement --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+
+    run joy project member show ai:test@joy
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"review"* ]]
 }
 
 @test "joy show displays mode when item has explicit mode override" {

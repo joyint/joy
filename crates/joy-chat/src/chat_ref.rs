@@ -31,7 +31,7 @@
 //!     horst@example.com: accept-edits
 //! ```
 //!
-//! Nested YAML maps merge key by key ([`crate::merge`]), so concurrent
+//! Nested YAML maps merge key by key ([`joy_core::merge`]), so concurrent
 //! writes to DIFFERENT delegator entries union cleanly; a concurrent
 //! write to the SAME entry resolves by the chat's `updated` timestamp.
 //!
@@ -45,8 +45,8 @@ use std::path::Path;
 use chrono::Utc;
 use git2::{Commit, ErrorCode, FileMode, Oid, Repository, Signature, Time, Tree};
 
-use crate::error::JoyError;
 use crate::model::chat::{Chat, ChatMessage};
+use joy_core::error::JoyError;
 
 /// The dedicated ref chats live on. Outside `refs/heads/`, so it never
 /// appears in `git log`, `git branch`, or a plain `git pull`.
@@ -426,7 +426,7 @@ fn merge_two_chats(base: Option<&Chat>, ours: &Chat, theirs: &Chat) -> Result<Ch
     let our_meta = meta_yaml(ours)?;
     let their_meta = meta_yaml(theirs)?;
     let merged_meta = match base {
-        Some(b) => crate::merge::merge_yaml_doc(&meta_yaml(b)?, &our_meta, &their_meta)?,
+        Some(b) => joy_core::merge::merge_yaml_doc(&meta_yaml(b)?, &our_meta, &their_meta)?,
         None if ours.updated >= theirs.updated => our_meta,
         None => their_meta,
     };
@@ -446,9 +446,9 @@ fn merge_two_chats(base: Option<&Chat>, ours: &Chat, theirs: &Chat) -> Result<Ch
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::member_ref::MemberRef;
     use crate::model::chat::MessageKind;
     use chrono::{DateTime, Utc};
+    use joy_core::member_ref::MemberRef;
 
     fn ts(sec: u32) -> DateTime<Utc> {
         format!("2026-07-05T00:00:{sec:02}Z").parse().unwrap()

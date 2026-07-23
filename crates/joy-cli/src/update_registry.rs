@@ -141,6 +141,7 @@ pub fn all() -> Vec<Box<dyn UpdateItem>> {
         }),
         Box::new(SecurityMdItem),
         Box::new(ProjectYamlSchemaItem),
+        Box::new(AiMemberAdapterItem),
         Box::new(DocPathsMigrationItem),
     ];
     for id in ai::tool_ids() {
@@ -221,7 +222,7 @@ impl UpdateItem for LegacyAiArtifactsItem {
         }])
     }
     fn refresh(&self, root: &Path) -> Result<Vec<RefreshRow>> {
-        let removed = joy_core::ai_setup::remove_legacy_ai_artifacts(root);
+        let removed = joy_ai::ai_setup::remove_legacy_ai_artifacts(root);
         Ok(vec![RefreshRow {
             name: "legacy AI artefacts".into(),
             action: if removed.is_empty() {
@@ -255,7 +256,7 @@ impl GitignoreBlockItem {
             .iter()
             .any(|&id| ai::is_tool_configured_pub(root, id))
         {
-            joy_core::ai_setup::managed_gitignore_entries()
+            joy_ai::ai_setup::managed_gitignore_entries()
         } else {
             init::GITIGNORE_BASE_ENTRIES.to_vec()
         }
@@ -535,6 +536,78 @@ impl UpdateItem for ProjectYamlSchemaItem {
                 Some("normalised")
             } else {
                 None
+            },
+        }])
+    }
+}
+
+/// Backfill the ACP adapter onto project.yaml AI members that predate the
+/// adapter moving there (JI-0164). Members registered before that carry no
+/// adapter, so the platform cannot route their turns; `joy update` sets it
+/// from the member's tool id. Removable once no such members remain.
+struct AiMemberAdapterItem;
+
+impl AiMemberAdapterItem {
+    /// AI members missing an adapter that a known tool id supplies.
+    fn missing(root: &Path) -> Vec<String> {
+        let Ok(project) = joy_core::store::load_project(root) else {
+            return Vec::new();
+        };
+        project
+            .members()
+            .filter(|(key, m)| {
+                key.starts_with("ai:")
+                    && m.adapter.as_deref().unwrap_or("").trim().is_empty()
+                    && Self::adapter_for(key).is_some()
+            })
+            .map(|(key, _)| key.clone())
+            .collect()
+    }
+    /// The adapter for an `ai:<tool>@joy` member key, if the tool is known.
+    fn adapter_for(member_key: &str) -> Option<&'static str> {
+        let tool = member_key.strip_prefix("ai:")?.split('@').next()?;
+        joy_ai::naming::tool_adapter(tool)
+    }
+}
+
+impl UpdateItem for AiMemberAdapterItem {
+    fn section(&self) -> &'static str {
+        SECTION_AI
+    }
+    fn check(&self, root: &Path) -> Result<Vec<CheckRow>> {
+        let missing = Self::missing(root);
+        Ok(vec![CheckRow {
+            name: "AI member adapters".into(),
+            mark: RowMark::from_ok(missing.is_empty()),
+            detail: if missing.is_empty() {
+                "set on project.yaml members".into()
+            } else {
+                format!("{} member(s) missing an adapter", missing.len())
+            },
+        }])
+    }
+    fn refresh(&self, root: &Path) -> Result<Vec<RefreshRow>> {
+        let missing = Self::missing(root);
+        if !missing.is_empty() {
+            let mut project = joy_core::store::load_project(root)?;
+            for key in &missing {
+                if let (Some(adapter), Some(m)) =
+                    (Self::adapter_for(key), project.member_by_key_mut(key))
+                {
+                    m.adapter = Some(adapter.to_string());
+                }
+            }
+            joy_core::store::write_yaml_preserve(
+                &joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE),
+                &project,
+            )?;
+        }
+        Ok(vec![RefreshRow {
+            name: "AI member adapters".into(),
+            action: if missing.is_empty() {
+                None
+            } else {
+                Some("backfilled")
             },
         }])
     }

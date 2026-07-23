@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 /// `Plan < AcceptEdits < Autonomous` — so capping a mode by a ceiling is
 /// plain [`Ord::min`] (see [`effective_mode`]). Do not reorder variants.
 ///
-/// Not to be confused with [`crate::model::config::InteractionLevel`],
+/// Not to be confused with [`joy_core::model::config::InteractionLevel`],
 /// a different axis whose `Autonomous` variant sorts LOWEST.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]

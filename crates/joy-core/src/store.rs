@@ -419,8 +419,8 @@ pub fn read_yaml<T: DeserializeOwned>(path: &Path) -> Result<T, JoyError> {
     // populated by joy-cli after passphrase verification. If the
     // blob's zone is not in that context, surface ZoneAccessDenied
     // rather than a YAML parse error.
-    let plaintext = if crate::crypt::looks_like_blob(&bytes) {
-        let (_zone, plain) = crate::crypt::decrypt_blob(crate::crypt::active_zone_key, &bytes)?;
+    let plaintext = if joy_crypt::zone::looks_like_blob(&bytes) {
+        let (_zone, plain) = joy_crypt::zone::decrypt_blob(crate::crypt::active_zone_key, &bytes)?;
         plain
     } else {
         bytes
@@ -481,28 +481,30 @@ pub fn load_project(root: &Path) -> Result<crate::model::project::Project, crate
     read_project(&project_path)
 }
 
-/// Load mode defaults by merging project.defaults.yaml with project.yaml modes section.
-pub fn load_mode_defaults(root: &Path) -> crate::model::project::ModeDefaults {
+/// Load interaction defaults by merging project.defaults.yaml with project.yaml interaction section.
+pub fn load_interaction_defaults(root: &Path) -> crate::model::project::InteractionDefaults {
     let defaults_path = project_defaults_path(root);
     let mut base = read_yaml_value(&defaults_path)
-        .and_then(|v| v.get("modes").cloned())
+        .and_then(|v| v.get("interaction").cloned())
         .unwrap_or(serde_json::json!({}));
 
-    // Overlay from project.yaml modes section
+    // Overlay from project.yaml interaction section
     let project_path = joy_dir(root).join(PROJECT_FILE);
-    if let Some(overlay) = read_yaml_value(&project_path).and_then(|v| v.get("modes").cloned()) {
+    if let Some(overlay) =
+        read_yaml_value(&project_path).and_then(|v| v.get("interaction").cloned())
+    {
         deep_merge(&mut base, &overlay);
     }
 
     serde_json::from_value(base).unwrap_or_default()
 }
 
-/// Load the raw mode defaults from project.defaults.yaml (before project.yaml merge).
-/// Used for source tracking in resolve_mode().
-pub fn load_raw_mode_defaults(root: &Path) -> crate::model::project::ModeDefaults {
+/// Load the raw interaction defaults from project.defaults.yaml (before project.yaml merge).
+/// Used for source tracking in resolve_interaction().
+pub fn load_raw_interaction_defaults(root: &Path) -> crate::model::project::InteractionDefaults {
     let path = project_defaults_path(root);
     read_yaml_value(&path)
-        .and_then(|v| v.get("modes").cloned())
+        .and_then(|v| v.get("interaction").cloned())
         .and_then(|v| serde_json::from_value(v).ok())
         .unwrap_or_default()
 }
@@ -670,11 +672,11 @@ mod tests {
     }
 
     #[test]
-    fn load_mode_defaults_from_file() {
+    fn load_interaction_defaults_from_file() {
         let dir = tempdir().unwrap();
         setup_project_dir(dir.path());
         let defaults_content = r#"
-modes:
+interaction:
   default: interactive
   implement: collaborative
   review: pairing
@@ -685,7 +687,7 @@ modes:
         )
         .unwrap();
 
-        let defaults = load_mode_defaults(dir.path());
+        let defaults = load_interaction_defaults(dir.path());
         assert_eq!(defaults.default, InteractionLevel::Interactive);
         assert_eq!(
             defaults.capabilities[&Capability::Implement],
@@ -698,21 +700,21 @@ modes:
     }
 
     #[test]
-    fn load_mode_defaults_missing_file_returns_default() {
+    fn load_interaction_defaults_missing_file_returns_default() {
         let dir = tempdir().unwrap();
         setup_project_dir(dir.path());
-        let defaults = load_mode_defaults(dir.path());
+        let defaults = load_interaction_defaults(dir.path());
         assert_eq!(defaults.default, InteractionLevel::Collaborative);
         assert!(defaults.capabilities.is_empty());
     }
 
     #[test]
-    fn load_mode_defaults_project_yaml_overrides() {
+    fn load_interaction_defaults_project_yaml_overrides() {
         let dir = tempdir().unwrap();
         setup_project_dir(dir.path());
 
         let defaults_content = r#"
-modes:
+interaction:
   default: collaborative
   implement: collaborative
 "#;
@@ -729,12 +731,12 @@ acronym: TST
 language: en
 created: "2026-01-01T00:00:00+00:00"
 members: {}
-modes:
+interaction:
   implement: interactive
 "#;
         std::fs::write(dir.path().join(JOY_DIR).join(PROJECT_FILE), project_content).unwrap();
 
-        let defaults = load_mode_defaults(dir.path());
+        let defaults = load_interaction_defaults(dir.path());
         assert_eq!(
             defaults.capabilities[&Capability::Implement],
             InteractionLevel::Interactive
@@ -742,12 +744,12 @@ modes:
     }
 
     #[test]
-    fn load_raw_mode_defaults_ignores_project_overrides() {
+    fn load_raw_interaction_defaults_ignores_project_overrides() {
         let dir = tempdir().unwrap();
         setup_project_dir(dir.path());
 
         let defaults_content = r#"
-modes:
+interaction:
   implement: collaborative
 "#;
         std::fs::write(
@@ -762,12 +764,12 @@ acronym: TST
 language: en
 created: "2026-01-01T00:00:00+00:00"
 members: {}
-modes:
+interaction:
   implement: interactive
 "#;
         std::fs::write(dir.path().join(JOY_DIR).join(PROJECT_FILE), project_content).unwrap();
 
-        let raw = load_raw_mode_defaults(dir.path());
+        let raw = load_raw_interaction_defaults(dir.path());
         assert_eq!(
             raw.capabilities[&Capability::Implement],
             InteractionLevel::Collaborative

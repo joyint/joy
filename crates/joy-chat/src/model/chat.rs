@@ -13,8 +13,8 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::member_ref::MemberRef;
 use crate::model::agent_mode::AgentMode;
+use joy_core::member_ref::MemberRef;
 
 /// What kind of chat this is (JOY-01F4). `General` is the singleton
 /// team-wide chat (fixed id `general`, participants = every project

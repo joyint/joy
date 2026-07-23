@@ -9,7 +9,7 @@
 //! is allowed to address the AI (local adapter installed, API key set) is
 //! host-specific and checked by the caller.
 
-use crate::model::chat::{Chat, ChatMessage, MessageKind};
+use joy_chat::model::chat::{Chat, ChatMessage, MessageKind};
 
 /// How many messages one AI may post since the last human message before
 /// a human has to moderate on ("ask, then react to the answer").
@@ -34,52 +34,7 @@ fn is_ai(id: &str) -> bool {
     id.starts_with("ai:")
 }
 
-/// The short alias an AI is @mentioned by: `ai:claude@joy` -> `claude`.
-pub fn alias(member_id: &str) -> &str {
-    member_id
-        .strip_prefix("ai:")
-        .and_then(|rest| rest.split('@').next())
-        .unwrap_or(member_id)
-}
-
-/// The raw @mention tokens of `text` (cleaned like [`mentions`]).
-fn mention_tokens(text: &str) -> Vec<&str> {
-    text.split(|c: char| c.is_whitespace() || c == ',' || c == ';' || c == '!' || c == '?')
-        .filter_map(|w| w.strip_prefix('@'))
-        .map(|w| w.trim_end_matches(['.', ':', ')']))
-        .filter(|w| !w.is_empty())
-        .collect()
-}
-
-/// Member ids among `candidates` that `text` @mentions, by full ref or by
-/// short alias.
-pub fn mentions<'a>(text: &str, candidates: &'a [String]) -> Vec<&'a String> {
-    let tokens = mention_tokens(text);
-    candidates
-        .iter()
-        .filter(|candidate| {
-            tokens
-                .iter()
-                .any(|t| *t == candidate.as_str() || *t == alias(candidate))
-        })
-        .collect()
-}
-
-/// The @mention tokens of `text` that match NOBODY in `candidates`
-/// (JAPP-010D-B0: an unknown @name must answer with a visible error, not
-/// silently do nothing). Matching mirrors [`mentions`]: full ref or short
-/// alias.
-pub fn unknown_mentions(text: &str, candidates: &[String]) -> Vec<String> {
-    mention_tokens(text)
-        .into_iter()
-        .filter(|t| {
-            !candidates
-                .iter()
-                .any(|candidate| *t == candidate.as_str() || *t == alias(candidate))
-        })
-        .map(str::to_string)
-        .collect()
-}
+pub use joy_chat::mentions::{alias, mentions, unknown_mentions};
 
 /// Decide what `ai_member` should do about the newest message.
 pub fn decide(chat: &Chat, newest: &ChatMessage, ai_member: &str) -> TurnDecision {
@@ -169,10 +124,10 @@ pub fn add_mentioned_ais(
     chat: &mut Chat,
     newest: &ChatMessage,
     now: chrono::DateTime<chrono::Utc>,
-) -> Result<bool, crate::error::JoyError> {
+) -> Result<bool, joy_core::error::JoyError> {
     if matches!(
         chat.kind,
-        crate::model::chat::ChatKind::General | crate::model::chat::ChatKind::Team
+        joy_chat::model::chat::ChatKind::General | joy_chat::model::chat::ChatKind::Team
     ) && chat.participants.is_empty()
         || chat.read_only
         || newest.kind == MessageKind::Notice
@@ -181,7 +136,7 @@ pub fn add_mentioned_ais(
         // empty team/General lists mean "everyone is already here"
         return Ok(false);
     }
-    let project = crate::store::load_project(root)?;
+    let project = joy_core::store::load_project(root)?;
     let project_ais: Vec<String> = project
         .members()
         .map(|(key, _)| key.clone())
@@ -194,10 +149,10 @@ pub fn add_mentioned_ais(
     let mut added = false;
     for member in mentioned {
         if !chat.participants.iter().any(|p| p.id() == member) {
-            crate::chats::add_participant(
+            joy_chat::chats::add_participant(
                 root,
                 chat,
-                crate::member_ref::MemberRef::new(member),
+                joy_core::member_ref::MemberRef::new(member),
                 &newest.author,
                 now,
             )?;
@@ -240,7 +195,19 @@ pub fn context_prompt(chat: &Chat, ai_member: &str) -> String {
         "To bring anyone in, @mention them in your reply: that is the only way\n\
          to reach a participant, there is no direct call. Reply with your next\n\
          chat message only, no preamble and no markdown headings. A human\n\
-         moderates the room.\n\n\
+         moderates the room.\n\n",
+    );
+    // Both vibe models otherwise print the command as text instead of running
+    // it (their built-in system prompt nudges them to "give the user the
+    // command"): make execution explicit, and pin the joy operating rules.
+    prompt.push_str(
+        "You have a shell in this project's checkout, and this project is managed\n\
+         with Joy. The operating guide is `joy ai tutorial`; its rules apply to you\n\
+         here. When a message needs item data or a change, RUN the joy CLI yourself\n\
+         with your shell tool (for example `joy show <id>` or `joy ls`) and report\n\
+         the result. Never print a command as text for the human to run: if you\n\
+         decide to run something, actually run it. Item state changes only through\n\
+         the joy CLI, never by editing files under .joy/.\n\n\
          --- conversation ---\n",
     );
     for message in &chat.messages {
@@ -278,8 +245,8 @@ pub fn delta_prompt(chat: &Chat, ai_member: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::member_ref::MemberRef;
     use chrono::{TimeZone, Utc};
+    use joy_core::member_ref::MemberRef;
 
     fn chat_with(messages: Vec<(&str, &str, MessageKind)>) -> Chat {
         let now = Utc.with_ymd_and_hms(2026, 7, 4, 12, 0, 0).unwrap();
@@ -555,31 +522,31 @@ mod tests {
         git2::Repository::init(dir.path()).unwrap();
         std::fs::create_dir_all(dir.path().join(".joy")).unwrap();
         // a real project with one AI member
-        let mut project = crate::model::Project::new("T".to_string(), Some("T".to_string()));
+        let mut project = joy_core::model::Project::new("T".to_string(), Some("T".to_string()));
         for member in ["ai:claude@joy", "horst@example.com"] {
             project
                 .register_member(
                     member,
-                    crate::model::project::Member::new(
-                        crate::model::project::MemberCapabilities::All,
+                    joy_core::model::project::Member::new(
+                        joy_core::model::project::MemberCapabilities::All,
                     ),
                 )
                 .unwrap();
         }
-        crate::store::write_yaml(
-            &crate::store::joy_dir(dir.path()).join(crate::store::PROJECT_FILE),
+        joy_core::store::write_yaml(
+            &joy_core::store::joy_dir(dir.path()).join(joy_core::store::PROJECT_FILE),
             &project,
         )
         .unwrap();
         let now = Utc.with_ymd_and_hms(2026, 7, 4, 19, 0, 0).unwrap();
-        let mut chat = crate::chats::open_chat(
+        let mut chat = joy_chat::chats::open_chat(
             dir.path(),
             vec![MemberRef::new("horst@example.com")],
             Some("New chat".into()),
             now,
         )
         .unwrap();
-        let msg = crate::chats::append_message(
+        let msg = joy_chat::chats::append_message(
             dir.path(),
             &mut chat,
             MemberRef::new("horst@example.com"),

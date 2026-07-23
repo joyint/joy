@@ -1677,11 +1677,24 @@ dependencies = [
 name = "joy-ai"
 version = "0.19.0"
 dependencies = [
+ "chrono",
+ "git2",
+ "hex",
+ "insta",
+ "joy-chat",
  "joy-core",
+ "joy-crypt",
+ "minijinja",
+ "rand 0.8.7",
  "serde",
  "serde_json",
+ "serde_yaml_ng",
+ "sha2",
+ "tempfile",
  "thiserror",
- "tokio",
+ "toml_edit 0.25.12+spec-1.1.0",
+ "ts-rs",
+ "uuid",
 ]
 
 [[package]]
@@ -1694,6 +1707,29 @@ dependencies = [
  "joy-core",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "joy-chat"
+version = "0.19.0"
+dependencies = [
+ "base64ct",
+ "chrono",
+ "git2",
+ "hex",
+ "insta",
+ "joy-core",
+ "joy-crypt",
+ "rand 0.8.7",
+ "serde",
+ "serde_json",
+ "serde_yaml_ng",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "ts-rs",
+ "uuid",
+ "zeroize",
 ]
 
 [[package]]
@@ -1711,7 +1747,9 @@ dependencies = [
  "glob",
  "hex",
  "joy-ai",
+ "joy-chat",
  "joy-core",
+ "joy-crypt",
  "minijinja",
  "predicates",
  "ratatui",

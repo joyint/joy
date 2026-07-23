@@ -169,7 +169,8 @@ pub fn cached_members_zone_key(
         return None;
     }
     let wrap = project.member_by_key(member_key)?.members_wrap.as_deref()?;
-    let zk = crate::crypt::unwrap_for_member(wrap, crate::members_file::MEMBERS_ZONE, seed).ok()?;
+    let zk =
+        joy_crypt::zone::unwrap_for_member(wrap, crate::members_file::MEMBERS_ZONE, seed).ok()?;
     Some(hex::encode(zk.as_bytes()))
 }
 
@@ -258,7 +259,7 @@ pub fn relock_unlocked_files(
     };
     let mut relocked = 0;
     for (zone, wrap_hex) in &member.crypt_wraps {
-        let Ok(zone_key) = crate::crypt::unwrap_for_member(wrap_hex, zone, seed) else {
+        let Ok(zone_key) = joy_crypt::zone::unwrap_for_member(wrap_hex, zone, seed) else {
             continue;
         };
         let Some(zone_cfg) = project.crypt.zones.get(zone) else {
@@ -273,7 +274,7 @@ pub fn relock_unlocked_files(
 
 fn relock_path(
     root: &Path,
-    zone_key: &crate::crypt::ZoneKey,
+    zone_key: &joy_crypt::zone::ZoneKey,
     zone: &str,
     pattern: &str,
     relocked: &mut usize,
@@ -288,7 +289,7 @@ fn relock_path(
     }
 }
 
-fn relock_dir(dir: &Path, zone_key: &crate::crypt::ZoneKey, zone: &str, relocked: &mut usize) {
+fn relock_dir(dir: &Path, zone_key: &joy_crypt::zone::ZoneKey, zone: &str, relocked: &mut usize) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
@@ -302,14 +303,14 @@ fn relock_dir(dir: &Path, zone_key: &crate::crypt::ZoneKey, zone: &str, relocked
     }
 }
 
-fn relock_file(path: &Path, zone_key: &crate::crypt::ZoneKey, zone: &str) -> bool {
+fn relock_file(path: &Path, zone_key: &joy_crypt::zone::ZoneKey, zone: &str) -> bool {
     let Ok(bytes) = std::fs::read(path) else {
         return false;
     };
-    if crate::crypt::looks_like_blob(&bytes) {
+    if joy_crypt::zone::looks_like_blob(&bytes) {
         return false;
     }
-    let blob = crate::crypt::encrypt_blob(zone, zone_key, &bytes);
+    let blob = joy_crypt::zone::encrypt_blob(zone, zone_key, &bytes);
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     let tmp = parent.join(format!(
         ".{}.tmp.{}",

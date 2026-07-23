@@ -5,7 +5,7 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 
-use joy_core::ai_setup::{
+use joy_ai::ai_setup::{
     is_tool_configured, is_tool_stale, plan_member_reset, remove_joy_block_or_file,
     remove_legacy_ai_artifacts, untrack_gitignored_tool_files, update_gitignore, MemberResetPlan,
     TOOLS as ALL_TOOLS,
@@ -69,44 +69,6 @@ enum AiCommand {
     Rotate(RotateArgs),
     /// Read the AI operational guide (CLI reference for AI assistants)
     Tutorial(AiTutorialArgs),
-    /// List AI jobs (git-native .joy/ai/jobs), newest first
-    Jobs(JobsArgs),
-    /// List AI agent configs (git-native .joy/ai/agents)
-    Agents,
-    /// Manage repo-stored provider API keys (encrypted in project.yaml)
-    Key(KeyArgs),
-}
-
-#[derive(clap::Args)]
-struct KeyArgs {
-    #[command(subcommand)]
-    command: KeyCommand,
-}
-
-#[derive(clap::Subcommand)]
-enum KeyCommand {
-    /// Re-wrap team keys so every enrolled member is covered. Run this
-    /// after a member gains an identity key; a registered platform also
-    /// closes the gap automatically.
-    Rewrap(KeyRewrapArgs),
-}
-
-#[derive(clap::Args)]
-struct KeyRewrapArgs {
-    /// Passphrase (non-interactive, for scripts and tests).
-    #[arg(long)]
-    passphrase: Option<String>,
-
-    /// Read the passphrase from a single line on stdin.
-    #[arg(long = "passphrase-stdin")]
-    passphrase_stdin: bool,
-}
-
-#[derive(clap::Args)]
-struct JobsArgs {
-    /// Only jobs for this item id.
-    #[arg(long)]
-    item: Option<String>,
 }
 
 #[derive(clap::Args)]
@@ -183,146 +145,7 @@ pub fn run(args: AiArgs) -> anyhow::Result<()> {
             a.passphrase_stdin,
         ),
         AiCommand::Tutorial(a) => ai_tutorial(a),
-        AiCommand::Jobs(a) => ai_jobs(a),
-        AiCommand::Agents => ai_agents(),
-        AiCommand::Key(a) => match a.command {
-            KeyCommand::Rewrap(r) => key_rewrap(r),
-        },
     }
-}
-
-/// Close team-key coverage gaps as the acting member: unwrap with their
-/// own wrap, wrap for every enrolled-but-uncovered recipient. The
-/// plaintext key exists only inside this process for the duration.
-fn key_rewrap(args: KeyRewrapArgs) -> anyhow::Result<()> {
-    use joy_core::store;
-    let root = store::find_project_root(&std::env::current_dir()?)
-        .ok_or_else(|| anyhow::anyhow!("not inside a Joy project"))?;
-    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
-    let mut project: joy_core::model::Project = store::read_project(&project_path)?;
-
-    let gaps = joy_core::provider_keys::team_coverage_gaps(&project);
-    if gaps.is_empty() {
-        dprintln!("All team keys cover every enrolled member. Nothing to re-wrap.");
-        return Ok(());
-    }
-
-    let email = joy_core::vcs::default_vcs().user_email()?;
-    let passphrase = crate::commands::auth::read_passphrase(
-        args.passphrase.as_deref(),
-        args.passphrase_stdin,
-        "Passphrase: ",
-    )?;
-    let (actor_key, keypair) =
-        joy_core::ai_setup::unlock_acting_keypair(&project, &email, &passphrase)
-            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-    let reports = joy_core::provider_keys::rewrap_team_keys(
-        &mut project,
-        &actor_key,
-        &keypair.to_x25519_secret_bytes(),
-    )
-    .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-
-    let changed = reports.iter().any(|r| !r.added.is_empty());
-    if changed {
-        store::write_yaml_preserve(&project_path, &project)?;
-        let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-        joy_core::git_ops::auto_git_add(&root, &[&rel]);
-        joy_core::git_ops::auto_git_post_command(&root, "ai key rewrap", &email);
-    }
-    if crate::output::is_json() {
-        #[derive(serde::Serialize)]
-        struct Entry {
-            ai_member: String,
-            added: Vec<String>,
-            missing: Vec<String>,
-        }
-        crate::output::emit(
-            reports
-                .into_iter()
-                .map(|r| Entry {
-                    ai_member: r.ai_member,
-                    added: r.added,
-                    missing: r.missing,
-                })
-                .collect::<Vec<_>>(),
-        )?;
-        return Ok(());
-    }
-    for r in &reports {
-        if !r.added.is_empty() {
-            dprintln!(
-                "{}: re-wrapped for {}",
-                color::user(&r.ai_member),
-                r.added.join(", ")
-            );
-        }
-        if !r.missing.is_empty() {
-            dprintln!(
-                "{}: cannot cover {} — you hold no wrap for this team key; ask a covered member (or the platform) to re-wrap",
-                color::user(&r.ai_member),
-                r.missing.join(", ")
-            );
-        }
-    }
-    Ok(())
-}
-
-/// List AI jobs from `.joy/ai/jobs`, newest first (git-native inspection).
-fn ai_jobs(args: JobsArgs) -> anyhow::Result<()> {
-    let root = joy_core::store::find_project_root(&std::env::current_dir()?)
-        .ok_or_else(|| anyhow::anyhow!("not inside a Joy project"))?;
-    let jobs = match &args.item {
-        Some(item) => joy_core::jobs::jobs_for_item(&root, item)?,
-        None => joy_core::jobs::load_jobs(&root)?,
-    };
-    if jobs.is_empty() {
-        println!("No AI jobs.");
-        return Ok(());
-    }
-    println!(
-        "{:<14} {:<10} {:<18} {:<16} SUMMARY",
-        "ID", "ITEM", "STATUS", "ACTOR"
-    );
-    for j in jobs {
-        let euro = format!("€{:.2}", j.cost.spent_cents as f64 / 100.0);
-        println!(
-            "{:<14} {:<10} {:<18} {:<16} {} ({})",
-            j.id,
-            j.item,
-            j.status.to_string(),
-            j.actor.id(),
-            j.result.as_deref().unwrap_or(""),
-            euro,
-        );
-    }
-    Ok(())
-}
-
-/// List AI agent configs from `.joy/ai/agents` (the API key is never here).
-fn ai_agents() -> anyhow::Result<()> {
-    let root = joy_core::store::find_project_root(&std::env::current_dir()?)
-        .ok_or_else(|| anyhow::anyhow!("not inside a Joy project"))?;
-    let agents = joy_core::agents::load_agents(&root)?;
-    if agents.is_empty() {
-        println!(
-            "No AI agent configs. The platform or app writes them; a key is never stored here."
-        );
-        return Ok(());
-    }
-    println!("{:<18} {:<14} {:<20} MODE", "MEMBER", "ADAPTER", "MODEL");
-    for a in agents {
-        println!(
-            "{:<18} {:<14} {:<20} {}",
-            a.member.id(),
-            a.adapter,
-            a.model.as_deref().unwrap_or("-"),
-            a.default_mode
-                .map(|m| m.to_string())
-                .unwrap_or_else(|| "-".into()),
-        );
-    }
-    Ok(())
 }
 
 // The canonical AI Tutorial lives at docs/ai/Tutorial.md in the repo
@@ -883,23 +706,6 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
         }
     }
 
-    // Agent configs (.joy/ai/agents/<member>.yaml) are written by the
-    // platform or desktop app via joy_core::agents, not by `joy ai init`:
-    // they create none of the per-tool marker paths above and their member
-    // may carry any name (e.g. ai:worker@joy), so the tool table cannot see
-    // them (JOY-020F-34). Match them separately: `--tool` selects an agent
-    // whose member id or adapter corresponds to the tool.
-    let agent_configs: Vec<joy_core::model::Agent> = {
-        let all = joy_core::agents::load_agents(&root)?;
-        match args.tool {
-            Some(ref t) => all
-                .into_iter()
-                .filter(|a| agent_matches_tool(a, t))
-                .collect(),
-            None => all,
-        }
-    };
-
     // Compute the shared project.yaml changes, if any. Removing a member is a
     // mutation of versioned, shared state, so it is deliberately kept separate
     // from deleting per-developer config files: a member is only ever removed
@@ -914,18 +720,11 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
     });
     let mut plans: Vec<MemberResetPlan> = Vec::new();
     if let Some(ref p) = project {
-        // Canonical tool members (ai:<tool>@joy) plus the members of the
-        // matched agent configs, which may carry any name.
-        let mut member_ids: Vec<String> = tools
+        // Canonical tool members (ai:<tool>@joy).
+        let member_ids: Vec<String> = tools
             .iter()
             .map(|(_, id, _)| format!("ai:{id}@joy"))
             .collect();
-        for agent in &agent_configs {
-            let id = agent.member.id().to_string();
-            if !member_ids.contains(&id) {
-                member_ids.push(id);
-            }
-        }
         for member_id in &member_ids {
             if let Some(plan) = plan_member_reset(p, &root, member_id, caller_key.as_deref()) {
                 if plan.drop_caller_delegation || plan.remove_member {
@@ -935,7 +734,7 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
         }
     }
 
-    if to_remove.is_empty() && plans.is_empty() && agent_configs.is_empty() {
+    if to_remove.is_empty() && plans.is_empty() {
         dprintln!("{}No AI tool configurations found.", color::check_mark());
         return Ok(());
     }
@@ -949,22 +748,8 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
             dprintln!("  {}{:<24} {}", color::cross_mark(), name, path);
         }
     }
-    if !agent_configs.is_empty() {
-        if !to_remove.is_empty() {
-            dprintln!();
-        }
-        dprintln!("Will remove (agent config):");
-        for agent in &agent_configs {
-            dprintln!(
-                "  {}{:<24} {}",
-                color::cross_mark(),
-                agent.member.id(),
-                agent_config_rel_path(agent)
-            );
-        }
-    }
     if !plans.is_empty() {
-        if !to_remove.is_empty() || !agent_configs.is_empty() {
+        if !to_remove.is_empty() {
             dprintln!();
         }
         dprintln!("Will change project.yaml (shared, versioned):");
@@ -1032,17 +817,6 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
         dprintln!("  {}{:<24} removed", color::check_mark(), name);
     }
 
-    // 1b) Remove the matched agent configs (the platform's execution config
-    // for a member; member registration is handled by the plans below).
-    for agent in &agent_configs {
-        joy_core::agents::remove_agent(&root, &agent.member)?;
-        dprintln!(
-            "  {}{:<24} agent config removed",
-            color::check_mark(),
-            agent.member.id()
-        );
-    }
-
     // 2) Apply the project.yaml changes: drop the caller's own delegation, and
     // remove the member only when it is thereby orphaned.
     if let Some(ref mut p) = project {
@@ -1106,12 +880,9 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
     }
 
     // If no AI tools remain, update gitignore and clean up .joy/ai/.
-    // Agent configs surviving a filtered reset count as remaining AI
-    // configuration: wiping .joy/ai/ wholesale would delete them.
     let any_remaining = all_tools
         .iter()
-        .any(|(_, id, _)| is_tool_configured(&root, id))
-        || !joy_core::agents::load_agents(&root)?.is_empty();
+        .any(|(_, id, _)| is_tool_configured(&root, id));
     if !any_remaining {
         joy_core::init::update_gitignore_block(&root, joy_core::init::GITIGNORE_BASE_ENTRIES)?;
 
@@ -1157,42 +928,9 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
                 .any(|p| to_remove.iter().any(|(_, tp)| tp == p))
         })
         .count();
-    let summary = if agent_configs.is_empty() {
-        format!("{} reset", color::plural(count, "tool"))
-    } else {
-        format!(
-            "{} reset, {} removed",
-            color::plural(count, "tool"),
-            color::plural(agent_configs.len(), "agent config")
-        )
-    };
+    let summary = format!("{} reset", color::plural(count, "tool"));
     dprintln!("{}", color::footer(&summary));
     Ok(())
-}
-
-/// The reset tool id an ACP adapter corresponds to, if any (`mock` and
-/// unknown adapters correspond to none). The mapping itself is joy-core's
-/// canonical naming rule, shared with the platform.
-fn adapter_tool_id(adapter: &str) -> Option<&'static str> {
-    joy_core::agents::adapter_tool_id(adapter)
-}
-
-/// Whether `joy ai reset --tool <tool_id>` selects this agent config:
-/// either the member is the tool's canonical member (ai:<tool>@joy) or the
-/// agent's adapter is the tool (JOY-020F-34).
-fn agent_matches_tool(agent: &joy_core::model::Agent, tool_id: &str) -> bool {
-    agent.member.id() == format!("ai:{tool_id}@joy")
-        || adapter_tool_id(&agent.adapter) == Some(tool_id)
-}
-
-/// Repo-relative path of an agent config file, for display in the plan.
-fn agent_config_rel_path(agent: &joy_core::model::Agent) -> String {
-    format!(
-        "{}/{}/{}.yaml",
-        joy_core::store::JOY_DIR,
-        joy_core::store::AI_AGENTS_DIR,
-        joy_core::agents::agent_file_stem(&agent.member)
-    )
 }
 
 /// Set up only NEW (not yet configured) tools. Returns list of all configured tool IDs.
@@ -1307,6 +1045,10 @@ fn setup_new_tools(
 
             let mut new_member = joy_core::model::project::Member::new(capabilities);
             new_member.attestation = Some(attestation);
+            // Record the ACP adapter on the member (JI-0164): the adapter lives
+            // in project.yaml now, so the platform can route turns without a
+            // per-member agent file.
+            new_member.adapter = joy_ai::naming::tool_adapter(id).map(String::from);
             project.register_member(&member_id, new_member)?;
 
             project_changed = true;
@@ -1607,39 +1349,5 @@ mod tests {
         remove_joy_block_or_file(&path).unwrap();
         let content = fs::read_to_string(&path).unwrap();
         assert_eq!(content, "pure user content\n");
-    }
-
-    // JOY-020F-34: `--tool` must select platform-provisioned agent configs
-    // by canonical member id or by the tool's ACP adapter.
-    #[test]
-    fn agent_matches_tool_by_member_id_or_adapter() {
-        use joy_core::member_ref::MemberRef;
-        use joy_core::model::Agent;
-
-        // Canonical member id matches its tool regardless of adapter.
-        let canonical = Agent::new(MemberRef::new("ai:claude@joy"), "mock");
-        assert!(agent_matches_tool(&canonical, "claude"));
-        assert!(!agent_matches_tool(&canonical, "qwen"));
-
-        // A platform-named member matches through the adapter mapping.
-        let platform = Agent::new(MemberRef::new("ai:worker@joy"), "claude-code");
-        assert!(agent_matches_tool(&platform, "claude"));
-        assert!(!agent_matches_tool(&platform, "vibe"));
-
-        for (adapter, tool) in [
-            ("claude-code", "claude"),
-            ("qwen-code", "qwen"),
-            ("mistral-vibe", "vibe"),
-            ("copilot", "copilot"),
-        ] {
-            let agent = Agent::new(MemberRef::new("ai:worker@joy"), adapter);
-            assert!(agent_matches_tool(&agent, tool), "{adapter} -> {tool}");
-        }
-
-        // `mock` (and unknown adapters) match no tool filter.
-        let mock = Agent::new(MemberRef::new("ai:worker@joy"), "mock");
-        for tool in ["claude", "qwen", "vibe", "copilot"] {
-            assert!(!agent_matches_tool(&mock, tool));
-        }
     }
 }

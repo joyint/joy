@@ -379,7 +379,7 @@ fn write_item_file(path: &Path, item: &Item) -> Result<(), JoyError> {
                 crate::crypt::active_zone_key(zone).ok_or_else(|| JoyError::ZoneAccessDenied {
                     zone: zone.to_string(),
                 })?;
-            crate::crypt::encrypt_blob(zone, &zone_key, yaml.as_bytes())
+            joy_crypt::zone::encrypt_blob(zone, &zone_key, yaml.as_bytes())
         }
         None => yaml.into_bytes(),
     };
@@ -450,7 +450,7 @@ fn list_metadata_in(root: &Path, sub: &str) -> Result<Vec<ItemMeta>, JoyError> {
             path: path.clone(),
             source: e,
         })?;
-        let (encrypted_zone, plaintext_crypt_zone) = if crate::crypt::looks_like_blob(&bytes) {
+        let (encrypted_zone, plaintext_crypt_zone) = if joy_crypt::zone::looks_like_blob(&bytes) {
             (parse_blob_zone(&bytes), None)
         } else {
             (None, parse_plaintext_crypt_zone(&bytes))

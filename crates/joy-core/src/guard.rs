@@ -319,6 +319,13 @@ impl Guard {
 
     /// Check if removing a member would leave no one with manage capability.
     pub fn is_last_manager(&self, member_id: &str) -> bool {
+        // An AI member is never a real manager (Guard hard-denies AI the manage
+        // action, and manager_count below excludes AI), so an AI holding a
+        // nominal manage grant is never "the last manager"; revoking it is
+        // harmless and must not be blocked.
+        if is_ai_member(member_id) {
+            return false;
+        }
         let manager_count = self
             .members
             .iter()
@@ -900,7 +907,7 @@ mod tests {
         caps.insert(
             Capability::Implement,
             crate::model::project::CapabilityConfig {
-                max_mode: None,
+                max_interaction: None,
                 max_cost_per_job: Some(5.0),
             },
         );
@@ -940,7 +947,7 @@ mod tests {
         caps.insert(
             Capability::Implement,
             crate::model::project::CapabilityConfig {
-                max_mode: None,
+                max_interaction: None,
                 max_cost_per_job: Some(5.0),
             },
         );
@@ -992,7 +999,7 @@ mod tests {
         caps.insert(
             Capability::Implement,
             crate::model::project::CapabilityConfig {
-                max_mode: None,
+                max_interaction: None,
                 max_cost_per_job: Some(5.0),
             },
         );
@@ -1041,6 +1048,18 @@ mod tests {
         let guard = Guard::new(&project);
         // AI members don't count as managers (Guard blocks AI from manage)
         assert!(guard.is_last_manager("lead@example.com"));
+    }
+
+    #[test]
+    fn is_last_manager_false_for_ai_target() {
+        // Revoking an AI member's nominal manage grant is never "removing the
+        // last manager": the human manager still stands (JI-0161-C2).
+        let project = project_with_members(vec![
+            ("lead@example.com", MemberCapabilities::All),
+            ("ai:vibe@joy", MemberCapabilities::All),
+        ]);
+        let guard = Guard::new(&project);
+        assert!(!guard.is_last_manager("ai:vibe@joy"));
     }
 
     #[test]

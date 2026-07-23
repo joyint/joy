@@ -111,7 +111,7 @@ pub fn run(args: ShowArgs) -> Result<()> {
 
     // Show item-level mode override (only if explicitly set on the item)
     if let Some(ref mode) = item.mode {
-        // Check if clamped by max-mode of first assignee
+        // Check if clamped by max-interaction of first assignee
         let clamped = item.assignees.first().and_then(|a| {
             let project = joy_core::store::load_project(&root).ok()?;
             let member = project.member_by_key(a.member.id())?;
@@ -120,7 +120,7 @@ pub fn run(args: ShowArgs) -> Result<()> {
                     // Find the capability for the current status
                     item.capabilities.iter().find_map(|cap| {
                         let config = map.get(cap)?;
-                        let max = config.max_mode?;
+                        let max = config.max_interaction?;
                         if mode < &max {
                             Some((max, *mode))
                         } else {

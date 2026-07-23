@@ -6,7 +6,7 @@
 //! the CLI wraps it with questions and colored printing, the desktop app
 //! calls it directly. `report` receives one line per touched path.
 
-use crate::error::JoyError;
+use joy_core::error::JoyError;
 use std::fs;
 use std::path::Path;
 
@@ -219,7 +219,7 @@ fn git_rm_hard(root: &Path, path: &str) -> bool {
 
 #[cfg(test)]
 fn existing_managed_block_entries(root: &Path) -> Vec<String> {
-    use crate::init::{GITIGNORE_BLOCK_END, GITIGNORE_BLOCK_START};
+    use joy_core::init::{GITIGNORE_BLOCK_END, GITIGNORE_BLOCK_START};
 
     let path = root.join(".gitignore");
     let Ok(content) = std::fs::read_to_string(&path) else {
@@ -335,7 +335,7 @@ pub struct MemberResetPlan {
 }
 
 pub fn plan_member_reset(
-    project: &crate::model::Project,
+    project: &joy_core::model::Project,
     root: &Path,
     member_id: &str,
     caller_key: Option<&str>,
@@ -354,9 +354,9 @@ pub fn plan_member_reset(
         .iter()
         .filter(|d| Some(d.as_str()) != caller_key)
         .count();
-    let active_session = crate::auth::session::project_id(root)
+    let active_session = joy_core::auth::session::project_id(root)
         .ok()
-        .is_some_and(|pid| crate::auth::session::has_active_session(&pid, member_id));
+        .is_some_and(|pid| joy_core::auth::session::has_active_session(&pid, member_id));
     Some(MemberResetPlan {
         member_id: member_id.to_string(),
         drop_caller_delegation,
@@ -680,7 +680,7 @@ pub fn update_with_joy_block(root: &Path, path: &Path, content: &str) -> Result<
 /// refreshes it, so the two paths can never drift (JOY-01FE-98).
 pub fn managed_gitignore_entries() -> Vec<(&'static str, &'static str)> {
     let mut entries: Vec<(&'static str, &'static str)> =
-        crate::init::GITIGNORE_BASE_ENTRIES.to_vec();
+        joy_core::init::GITIGNORE_BASE_ENTRIES.to_vec();
     for (_tool_id, tool_entries) in TOOL_GITIGNORE_ENTRIES {
         entries.extend_from_slice(tool_entries);
     }
@@ -696,7 +696,7 @@ pub fn update_gitignore(root: &Path, _configured_tools: &[&str]) -> Result<(), J
     // entries another machine committed (JOY-01AA-9E). Because
     // `update_gitignore_block` is idempotent (it skips the write when the
     // content is unchanged), the per-invocation auto-sync produces no churn.
-    crate::init::update_gitignore_block(root, &managed_gitignore_entries())?;
+    joy_core::init::update_gitignore_block(root, &managed_gitignore_entries())?;
     Ok(())
 }
 
@@ -714,7 +714,7 @@ pub fn untrack_gitignored_tool_files(root: &Path) {
 
 pub fn remove_legacy_ai_artifacts(root: &Path) -> Vec<String> {
     let mut removed = Vec::new();
-    for rel in crate::init::LEGACY_AI_ARTIFACTS {
+    for rel in joy_core::init::LEGACY_AI_ARTIFACTS {
         let full = root.join(rel);
         if git_path_is_tracked(root, rel) && git_rm_hard(root, rel) && !full.exists() {
             removed.push((*rel).to_string());
@@ -775,11 +775,11 @@ pub fn is_tool_configured(root: &Path, tool: &str) -> bool {
 /// The acting human's identity, unlocked for attestations. No prompt:
 /// the passphrase comes from the caller.
 pub fn unlock_acting_keypair(
-    project: &crate::model::Project,
+    project: &joy_core::model::Project,
     email: &str,
     passphrase: &str,
-) -> Result<(String, crate::auth::IdentityKeypair), JoyError> {
-    let member_key = crate::privacy::member_key_for_email(project, email)
+) -> Result<(String, joy_core::auth::IdentityKeypair), JoyError> {
+    let member_key = joy_core::privacy::member_key_for_email(project, email)
         .ok_or_else(|| JoyError::Other(format!("{email} is not a registered project member")))?;
     let member = project
         .member_by_key(&member_key)
@@ -789,7 +789,7 @@ pub fn unlock_acting_keypair(
             "{email} has no registered public key. Run `joy auth init` first."
         )));
     }
-    let unlocked = crate::auth::unlock_identity(member, passphrase)
+    let unlocked = joy_core::auth::unlock_identity(member, passphrase)
         .map_err(|e| JoyError::Other(e.to_string()))?;
     Ok((member_key, unlocked.keypair))
 }
@@ -797,33 +797,34 @@ pub fn unlock_acting_keypair(
 /// Register the tool's AI member with an attestation when missing.
 /// Returns whether project.yaml changed.
 pub fn register_tool_member(
-    project: &mut crate::model::Project,
+    project: &mut joy_core::model::Project,
     root: &Path,
     member_id: &str,
-    attester: &(String, crate::auth::IdentityKeypair),
+    attester: &(String, joy_core::auth::IdentityKeypair),
 ) -> Result<bool, JoyError> {
     if project.has_member_key(member_id) {
         return Ok(false);
     }
-    let ai_defaults = crate::store::load_ai_defaults(root);
+    let ai_defaults = joy_core::store::load_ai_defaults(root);
     let ai_caps = if ai_defaults.capabilities.is_empty() {
-        crate::model::item::Capability::work_capabilities()
+        joy_core::model::item::Capability::work_capabilities()
     } else {
         ai_defaults.capabilities.clone()
     };
     let capabilities = {
-        use crate::model::project::CapabilityConfig;
+        use joy_core::model::project::CapabilityConfig;
         let mut map = std::collections::BTreeMap::new();
         for cap in ai_caps {
             map.insert(cap, CapabilityConfig::default());
         }
-        crate::model::project::MemberCapabilities::Specific(map)
+        joy_core::model::project::MemberCapabilities::Specific(map)
     };
     let (attester_id, attester_kp) = attester;
-    let signed_fields = crate::auth::attestation::signed_fields_for(member_id, &capabilities, None);
+    let signed_fields =
+        joy_core::auth::attestation::signed_fields_for(member_id, &capabilities, None);
     let attestation =
-        crate::auth::attestation::sign_attestation(attester_id, attester_kp, signed_fields);
-    let mut new_member = crate::model::project::Member::new(capabilities);
+        joy_core::auth::attestation::sign_attestation(attester_id, attester_kp, signed_fields);
+    let mut new_member = joy_core::model::project::Member::new(capabilities);
     new_member.attestation = Some(attestation);
     project
         .register_member(member_id, new_member)
@@ -849,19 +850,23 @@ pub fn init_tool(
     passphrase: &str,
     report: Report,
 ) -> Result<(), JoyError> {
-    crate::embedded::sync_files(root, crate::init::PROJECT_FILES)?;
+    joy_core::embedded::sync_files(root, joy_core::init::PROJECT_FILES)?;
     configure_tool(root, tool, report)?;
 
-    let project_path = crate::store::joy_dir(root).join(crate::store::PROJECT_FILE);
-    let mut project = crate::store::read_project(&project_path)?;
+    let project_path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
+    let mut project = joy_core::store::read_project(&project_path)?;
     let member_id = format!("ai:{tool}@joy");
     if !project.has_member_key(&member_id) {
-        let email = crate::event_log::get_git_email()?;
+        let email = joy_core::event_log::get_git_email()?;
         let attester = unlock_acting_keypair(&project, &email, passphrase)?;
         if register_tool_member(&mut project, root, &member_id, &attester)? {
-            crate::store::write_yaml_preserve(&project_path, &project)?;
-            let rel = format!("{}/{}", crate::store::JOY_DIR, crate::store::PROJECT_FILE);
-            crate::git_ops::auto_git_add(root, &[&rel]);
+            joy_core::store::write_yaml_preserve(&project_path, &project)?;
+            let rel = format!(
+                "{}/{}",
+                joy_core::store::JOY_DIR,
+                joy_core::store::PROJECT_FILE
+            );
+            joy_core::git_ops::auto_git_add(root, &[&rel]);
             report(format!("{member_id} registered as member"));
         }
     }
@@ -940,11 +945,12 @@ pub fn plan_reset(root: &Path, only: Option<&str>) -> Result<ResetPlan, JoyError
             }
         }
     }
-    let project =
-        crate::store::read_project(&crate::store::joy_dir(root).join(crate::store::PROJECT_FILE))
-            .ok();
+    let project = joy_core::store::read_project(
+        &joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE),
+    )
+    .ok();
     let caller_key = project.as_ref().and_then(|_| {
-        crate::identity::resolve_identity(root)
+        joy_core::identity::resolve_identity(root)
             .ok()
             .map(|id| id.member.id().to_string())
     });
@@ -968,10 +974,10 @@ pub fn plan_reset(root: &Path, only: Option<&str>) -> Result<ResetPlan, JoyError
 
 /// Execute a consented reset plan. Returns the number of tools touched.
 pub fn apply_reset(root: &Path, plan: &ResetPlan, report: Report) -> Result<usize, JoyError> {
-    let project_path = crate::store::joy_dir(root).join(crate::store::PROJECT_FILE);
-    let mut project = crate::store::read_project(&project_path).ok();
+    let project_path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
+    let mut project = joy_core::store::read_project(&project_path).ok();
     let caller_key = project.as_ref().and_then(|_| {
-        crate::identity::resolve_identity(root)
+        joy_core::identity::resolve_identity(root)
             .ok()
             .map(|id| id.member.id().to_string())
     });
@@ -1005,8 +1011,8 @@ pub fn apply_reset(root: &Path, plan: &ResetPlan, report: Report) -> Result<usiz
             if mp.remove_member {
                 if p.remove_member(&mp.member_id).is_some() {
                     project_changed = true;
-                    if let Ok(project_id) = crate::auth::session::project_id(root) {
-                        let _ = crate::auth::session::remove_session(&project_id, &mp.member_id);
+                    if let Ok(project_id) = joy_core::auth::session::project_id(root) {
+                        let _ = joy_core::auth::session::remove_session(&project_id, &mp.member_id);
                     }
                     let member_keys: Vec<String> = p.member_keys().cloned().collect();
                     for k in &member_keys {
@@ -1021,17 +1027,21 @@ pub fn apply_reset(root: &Path, plan: &ResetPlan, report: Report) -> Result<usiz
             }
         }
         if project_changed {
-            crate::store::write_yaml_preserve(&project_path, p)?;
-            let rel = format!("{}/{}", crate::store::JOY_DIR, crate::store::PROJECT_FILE);
-            crate::git_ops::auto_git_add(root, &[&rel]);
+            joy_core::store::write_yaml_preserve(&project_path, p)?;
+            let rel = format!(
+                "{}/{}",
+                joy_core::store::JOY_DIR,
+                joy_core::store::PROJECT_FILE
+            );
+            joy_core::git_ops::auto_git_add(root, &[&rel]);
         }
     }
     let any_remaining = RESET_PATHS
         .iter()
         .any(|(_, id, _)| is_tool_configured(root, id));
     if !any_remaining {
-        crate::init::update_gitignore_block(root, crate::init::GITIGNORE_BASE_ENTRIES)?;
-        let ai_dir = crate::store::joy_dir(root).join("ai");
+        joy_core::init::update_gitignore_block(root, joy_core::init::GITIGNORE_BASE_ENTRIES)?;
+        let ai_dir = joy_core::store::joy_dir(root).join("ai");
         if ai_dir.exists() {
             let jobs_dir = ai_dir.join("jobs");
             let jobs_has_content = jobs_dir.is_dir()
@@ -1089,7 +1099,7 @@ mod setup_tests {
             .iter()
             .map(|(p, _)| *p)
             .collect();
-        for (base, _) in crate::init::GITIGNORE_BASE_ENTRIES {
+        for (base, _) in joy_core::init::GITIGNORE_BASE_ENTRIES {
             assert!(
                 paths.contains(base),
                 "managed set missing base entry {base}"
@@ -1106,7 +1116,7 @@ mod setup_tests {
     }
 
     fn seed_gitignore(root: &Path, managed_paths: &[&str]) {
-        use crate::init::{GITIGNORE_BLOCK_END, GITIGNORE_BLOCK_START};
+        use joy_core::init::{GITIGNORE_BLOCK_END, GITIGNORE_BLOCK_START};
         let mut body = String::from(GITIGNORE_BLOCK_START);
         body.push('\n');
         for p in managed_paths {
@@ -1164,8 +1174,8 @@ mod setup_tests {
         assert!(!path.exists());
     }
 
-    fn deleg() -> crate::model::project::AiDelegationEntry {
-        crate::model::project::AiDelegationEntry {
+    fn deleg() -> joy_core::model::project::AiDelegationEntry {
+        joy_core::model::project::AiDelegationEntry {
             delegation_verifier: "cc".repeat(32),
             delegation_salt: None,
             created: chrono::DateTime::parse_from_rfc3339("2026-04-15T10:00:00Z")
@@ -1179,8 +1189,8 @@ mod setup_tests {
         existing_managed_block_entries(root)
     }
 
-    fn project_with(ai: &str, delegators: &[&str]) -> crate::model::Project {
-        use crate::model::{Member, MemberCapabilities, Project};
+    fn project_with(ai: &str, delegators: &[&str]) -> joy_core::model::Project {
+        use joy_core::model::{Member, MemberCapabilities, Project};
         let mut p = Project::new("Test".to_string(), Some("TS".to_string()));
         p.register_member(ai, Member::new(MemberCapabilities::All))
             .unwrap();
@@ -1430,7 +1440,7 @@ mod setup_tests {
 
         let removed = remove_legacy_ai_artifacts(root);
 
-        assert_eq!(removed.len(), crate::init::LEGACY_AI_ARTIFACTS.len());
+        assert_eq!(removed.len(), joy_core::init::LEGACY_AI_ARTIFACTS.len());
         // Legacy gone from disk and no longer tracked.
         assert!(!root.join(".joy/ai/instructions.md").exists());
         assert!(!root.join(".joy/ai/instructions").exists());

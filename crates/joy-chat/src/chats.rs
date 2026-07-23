@@ -9,10 +9,10 @@ use std::path::Path;
 
 use chrono::{DateTime, Utc};
 
-use crate::error::JoyError;
-use crate::member_ref::MemberRef;
 use crate::model::agent_mode::AgentMode;
 use crate::model::chat::{Chat, ChatKind, ChatMessage, MessageKind};
+use joy_core::error::JoyError;
+use joy_core::member_ref::MemberRef;
 
 /// Legacy subdir under `.joy/` where chats lived before they moved to the
 /// dedicated ref (ADR JAPP-00DC-FC). Kept only so the one-time migration
@@ -51,7 +51,7 @@ pub fn save_chat(root: &Path, chat: &mut Chat) -> Result<(), JoyError> {
     // No custodian, or nothing to wrap: a project that COULD encrypt never
     // gets plaintext (it stays ephemeral until someone authenticates);
     // only a project with no identity at all persists in the clear.
-    if let Ok(project) = crate::store::load_project(root) {
+    if let Ok(project) = joy_core::store::load_project(root) {
         let encryptable =
             project.platform.is_some() || project.members().any(|(_, m)| m.verify_key.is_some());
         if encryptable {
@@ -305,12 +305,12 @@ pub fn ensure_general(root: &Path, now: DateTime<Utc>) -> Result<Chat, JoyError>
 pub fn effective_participants(
     root: &Path,
     chat: &Chat,
-) -> Result<Vec<crate::member_ref::MemberRef>, JoyError> {
+) -> Result<Vec<joy_core::member_ref::MemberRef>, JoyError> {
     if matches!(chat.kind, ChatKind::General | ChatKind::Team) && chat.participants.is_empty() {
-        let project = crate::store::load_project(root)?;
+        let project = joy_core::store::load_project(root)?;
         return Ok(project
             .members()
-            .map(|(key, _)| crate::member_ref::MemberRef::new(key.clone()))
+            .map(|(key, _)| joy_core::member_ref::MemberRef::new(key.clone()))
             .collect());
     }
     Ok(chat.participants.clone())
@@ -321,7 +321,7 @@ pub fn effective_participants(
 /// direct chats only to their participants. Deleting for yourself hides
 /// any chat until an @mention pulls you back (see
 /// [`readd_mentioned_humans`]).
-pub fn visible_to(chat: &Chat, member: &crate::member_ref::MemberRef) -> bool {
+pub fn visible_to(chat: &Chat, member: &joy_core::member_ref::MemberRef) -> bool {
     if chat.deleted_for.iter().any(|m| m.id() == member.id()) {
         return false;
     }
@@ -333,24 +333,24 @@ pub fn visible_to(chat: &Chat, member: &crate::member_ref::MemberRef) -> bool {
 
 /// An @mention pulls a human back: it clears their delete-for-me mark
 /// (team chats) and re-adds them to a direct chat's participants. AI
-/// mentions are handled by [`crate::chat_turns::add_mentioned_ais`].
+/// mentions are handled by `chat_turns::add_mentioned_ais` (joy-ai).
 pub fn readd_mentioned_humans(
     root: &Path,
     chat: &mut Chat,
     text: &str,
-    by: &crate::member_ref::MemberRef,
+    by: &joy_core::member_ref::MemberRef,
     now: DateTime<Utc>,
 ) -> Result<bool, JoyError> {
     if chat.read_only {
         return Ok(false);
     }
-    let project = crate::store::load_project(root)?;
+    let project = joy_core::store::load_project(root)?;
     let humans: Vec<String> = project
         .members()
         .map(|(key, _)| key.clone())
         .filter(|key| !key.starts_with("ai:"))
         .collect();
-    let mentioned: Vec<String> = crate::chat_turns::mentions(text, &humans)
+    let mentioned: Vec<String> = crate::mentions::mentions(text, &humans)
         .into_iter()
         .cloned()
         .collect();
@@ -365,7 +365,7 @@ pub fn readd_mentioned_humans(
             add_participant(
                 root,
                 chat,
-                crate::member_ref::MemberRef::new(member),
+                joy_core::member_ref::MemberRef::new(member),
                 by,
                 now,
             )?;
@@ -573,7 +573,7 @@ fn collect_if_everyone_deleted(root: &Path, chat: &Chat) {
 pub fn set_agent_mode(
     root: &Path,
     chat: &mut Chat,
-    agent: &MemberRef,
+    member: &MemberRef,
     delegator: &MemberRef,
     mode: Option<AgentMode>,
     now: DateTime<Utc>,
@@ -584,29 +584,29 @@ pub fn set_agent_mode(
             chat.id
         )));
     }
-    if chat.mode_override(agent.id(), delegator.id()) == mode {
+    if chat.mode_override(member.id(), delegator.id()) == mode {
         return Ok(());
     }
     match mode {
         Some(mode) => {
             chat.modes
-                .entry(agent.id().to_string())
+                .entry(member.id().to_string())
                 .or_default()
                 .insert(delegator.id().to_string(), mode);
         }
         None => {
-            if let Some(per_delegator) = chat.modes.get_mut(agent.id()) {
+            if let Some(per_delegator) = chat.modes.get_mut(member.id()) {
                 per_delegator.remove(delegator.id());
                 if per_delegator.is_empty() {
-                    chat.modes.remove(agent.id());
+                    chat.modes.remove(member.id());
                 }
             }
         }
     }
     chat.updated = now;
     let text = match mode {
-        Some(mode) => format!("@{} set @{} to {}", delegator.id(), agent.id(), mode),
-        None => format!("@{} cleared the mode for @{}", delegator.id(), agent.id()),
+        Some(mode) => format!("@{} set @{} to {}", delegator.id(), member.id(), mode),
+        None => format!("@{} cleared the mode for @{}", delegator.id(), member.id()),
     };
     append_notice(root, chat, delegator.clone(), text, now)?;
     Ok(())
@@ -726,19 +726,19 @@ mod tests {
     fn delete_semantics_deleter_vanishes_others_keep_read_only() {
         let dir = repo();
         std::fs::create_dir_all(dir.path().join(".joy")).unwrap();
-        let mut project = crate::model::Project::new("T".to_string(), Some("T".to_string()));
+        let mut project = joy_core::model::Project::new("T".to_string(), Some("T".to_string()));
         for member in ["horst@example.com", "geordi@example.org", "ai:claude@joy"] {
             project
                 .register_member(
                     member,
-                    crate::model::project::Member::new(
-                        crate::model::project::MemberCapabilities::All,
+                    joy_core::model::project::Member::new(
+                        joy_core::model::project::MemberCapabilities::All,
                     ),
                 )
                 .unwrap();
         }
-        crate::store::write_yaml(
-            &crate::store::joy_dir(dir.path()).join(crate::store::PROJECT_FILE),
+        joy_core::store::write_yaml(
+            &joy_core::store::joy_dir(dir.path()).join(joy_core::store::PROJECT_FILE),
             &project,
         )
         .unwrap();
@@ -779,19 +779,19 @@ mod tests {
     fn mention_pulls_a_self_deleted_human_back() {
         let dir = repo();
         std::fs::create_dir_all(dir.path().join(".joy")).unwrap();
-        let mut project = crate::model::Project::new("T".to_string(), Some("T".to_string()));
+        let mut project = joy_core::model::Project::new("T".to_string(), Some("T".to_string()));
         for member in ["horst@example.com", "geordi@example.org"] {
             project
                 .register_member(
                     member,
-                    crate::model::project::Member::new(
-                        crate::model::project::MemberCapabilities::All,
+                    joy_core::model::project::Member::new(
+                        joy_core::model::project::MemberCapabilities::All,
                     ),
                 )
                 .unwrap();
         }
-        crate::store::write_yaml(
-            &crate::store::joy_dir(dir.path()).join(crate::store::PROJECT_FILE),
+        joy_core::store::write_yaml(
+            &joy_core::store::joy_dir(dir.path()).join(joy_core::store::PROJECT_FILE),
             &project,
         )
         .unwrap();
@@ -1072,7 +1072,7 @@ mod channel_tests {
         let base = "id: c\ntitle: T\ncreated_by: a@x\ncreated: 2026-07-05T02:00:00Z\nupdated: 2026-07-05T02:00:00Z\nparticipants:\n- a@x\nmessages:\n- id: m1\n  at: 2026-07-05T02:00:01Z\n  author: a@x\n  text: hello\n";
         let ours = "id: c\ntitle: T\ncreated_by: a@x\ncreated: 2026-07-05T02:00:00Z\nupdated: 2026-07-05T02:00:02Z\nparticipants:\n- a@x\nmessages:\n- id: m1\n  at: 2026-07-05T02:00:01Z\n  author: a@x\n  text: hello\n- id: m2\n  at: 2026-07-05T02:00:02Z\n  author: a@x\n  text: ours\n";
         let theirs = "id: c\ntitle: T\ncreated_by: a@x\ncreated: 2026-07-05T02:00:00Z\nupdated: 2026-07-05T02:00:03Z\nparticipants:\n- a@x\nmessages:\n- id: m1\n  at: 2026-07-05T02:00:01Z\n  author: a@x\n  text: hello\n- id: m3\n  at: 2026-07-05T02:00:03Z\n  author: b@x\n  text: theirs\n";
-        let merged = crate::merge::merge_yaml_doc(base, ours, theirs).unwrap();
+        let merged = joy_core::merge::merge_yaml_doc(base, ours, theirs).unwrap();
         let chat: crate::model::chat::Chat = serde_yaml_ng::from_str(&merged).unwrap();
         let ids: Vec<&str> = chat.messages.iter().map(|m| m.id.as_str()).collect();
         assert_eq!(ids.len(), 3);

@@ -277,6 +277,11 @@ pub struct JobAttempt {
     pub error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub by: Option<MemberRef>,
+    /// The AI model this attempt ran under (the resolved ai_secrets model,
+    /// JI-0164), for cost attribution and audit. None when the adapter's
+    /// own default ran or the model was not recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 /// How an execution loop ended. `Failed` lives here, not in the item

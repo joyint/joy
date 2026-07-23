@@ -115,10 +115,10 @@ pub enum ChatEvent {
         member: String,
         present: bool,
     },
-    /// LWW register for a per-(agent, delegator) permission mode.
+    /// LWW register for a per-(member, delegator) permission mode.
     Mode {
         stamp: Stamp,
-        agent: String,
+        member: String,
         delegator: String,
         value: AgentMode,
     },
@@ -243,10 +243,15 @@ pub fn fold(id: impl Into<String>, created: DateTime<Utc>, events: &[ChatEvent])
             } => win_map(&mut participants, member.clone(), stamp, present),
             ChatEvent::Mode {
                 stamp,
-                agent,
+                member,
                 delegator,
                 value,
-            } => win_map(&mut modes, (agent.clone(), delegator.clone()), stamp, value),
+            } => win_map(
+                &mut modes,
+                (member.clone(), delegator.clone()),
+                stamp,
+                value,
+            ),
             ChatEvent::Session {
                 stamp,
                 member,
@@ -293,18 +298,18 @@ pub fn fold(id: impl Into<String>, created: DateTime<Utc>, events: &[ChatEvent])
     chat.read_only = read_only.map(|(_, v)| v).unwrap_or(false);
     chat.created_by = created_by
         .and_then(|(_, v)| v)
-        .map(crate::member_ref::MemberRef::new);
+        .map(joy_core::member_ref::MemberRef::new);
     chat.participants = participants
         .into_iter()
         .filter(|(_, (_, present))| *present)
-        .map(|(m, _)| crate::member_ref::MemberRef::new(m))
+        .map(|(m, _)| joy_core::member_ref::MemberRef::new(m))
         .collect();
     chat.modes = fold_modes(modes);
     chat.ai_sessions = sessions.into_iter().map(|(m, (_, v))| (m, v)).collect();
     chat.deleted_for = deleted_for
         .into_iter()
         .filter(|(_, (_, present))| *present)
-        .map(|(m, _)| crate::member_ref::MemberRef::new(m))
+        .map(|(m, _)| joy_core::member_ref::MemberRef::new(m))
         .collect();
     chat.read_markers = read_max
         .into_iter()
@@ -415,18 +420,18 @@ pub fn diff(base: &Chat, next: &Chat, writer: &str) -> Vec<ChatEvent> {
             });
         }
     }
-    // modes: LWW register per (agent, delegator).
-    for (agent, per) in &next.modes {
+    // modes: LWW register per (member, delegator).
+    for (member, per) in &next.modes {
         for (delegator, mode) in per {
             let unchanged = base
                 .modes
-                .get(agent)
+                .get(member)
                 .and_then(|p| p.get(delegator))
                 .is_some_and(|m| m == mode);
             if !unchanged {
                 out.push(ChatEvent::Mode {
                     stamp: stamp(),
-                    agent: agent.clone(),
+                    member: member.clone(),
                     delegator: delegator.clone(),
                     value: *mode,
                 });
@@ -478,7 +483,7 @@ pub fn diff(base: &Chat, next: &Chat, writer: &str) -> Vec<ChatEvent> {
     out
 }
 
-fn member_ids(members: &[crate::member_ref::MemberRef]) -> std::collections::BTreeSet<String> {
+fn member_ids(members: &[joy_core::member_ref::MemberRef]) -> std::collections::BTreeSet<String> {
     members.iter().map(|m| m.id().to_string()).collect()
 }
 
@@ -500,8 +505,8 @@ fn diff_set(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::member_ref::MemberRef;
     use crate::model::chat::MessageKind;
+    use joy_core::member_ref::MemberRef;
 
     fn ts(sec: u32) -> DateTime<Utc> {
         format!("2026-07-19T00:00:{sec:02}Z").parse().unwrap()

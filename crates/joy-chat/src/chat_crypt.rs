@@ -23,10 +23,10 @@ use std::collections::BTreeMap;
 
 use rand::RngCore;
 
-use crate::auth::IdentityKeypair;
-use crate::error::JoyError;
 use crate::model::chat::{Chat, ChatCrypt, ChatKeyEpoch, ChatMessage};
-use crate::model::project::{Project, PLATFORM_RECIPIENT};
+use joy_core::auth::IdentityKeypair;
+use joy_core::error::JoyError;
+use joy_core::model::project::{Project, PLATFORM_RECIPIENT};
 
 /// The wrap context for one chat epoch; feeds the pairwise KEK info so
 /// a wrap can never be replayed for another chat or epoch.
@@ -62,7 +62,7 @@ pub fn active_epoch(chat: &Chat) -> Option<u32> {
 /// is registered. AI members rarely hold their own verify_key; the
 /// platform wrap covers reading and writing FOR them, session-scoped
 /// on the platform side (the container model's custodial pattern).
-fn wrap_recipients(project: &Project, chat: &Chat) -> Vec<(String, crate::auth::PublicKey)> {
+fn wrap_recipients(project: &Project, chat: &Chat) -> Vec<(String, joy_core::auth::PublicKey)> {
     let mut out = Vec::new();
     for id in effective_recipient_ids(project, chat) {
         if let Some(public) = recipient_public(project, &id) {
@@ -92,13 +92,13 @@ fn effective_recipient_ids(project: &Project, chat: &Chat) -> Vec<String> {
 
 /// The verify_key on record for a wrap recipient: a member's own key,
 /// or the platform's registered key for the reserved custodian id.
-fn recipient_public(project: &Project, id: &str) -> Option<crate::auth::PublicKey> {
+fn recipient_public(project: &Project, id: &str) -> Option<joy_core::auth::PublicKey> {
     let hex = if id == PLATFORM_RECIPIENT {
         project.platform.as_ref().map(|p| p.verify_key.clone())
     } else {
         project.member_by_key(id).and_then(|m| m.verify_key.clone())
     }?;
-    crate::auth::PublicKey::from_hex(&hex).ok()
+    joy_core::auth::PublicKey::from_hex(&hex).ok()
 }
 
 /// Start encryption for a chat that has none yet: mint the content key
@@ -141,12 +141,12 @@ fn seal_epoch(
     let granter = IdentityKeypair::from_seed(granter_seed);
     let granter_pk = granter.public_key();
     let name = wrap_name(&chat.id, epoch);
-    let zone_key = crate::crypt::ZoneKey::from_bytes(*key);
+    let zone_key = joy_crypt::zone::ZoneKey::from_bytes(*key);
     let mut wraps = BTreeMap::new();
     for (id, public) in recipients {
         wraps.insert(
             id,
-            crate::crypt::wrap_for_member(&zone_key, &name, granter_seed, &granter_pk, &public),
+            joy_crypt::zone::wrap_for_member(&zone_key, &name, granter_seed, &granter_pk, &public),
         );
     }
     Ok(ChatKeyEpoch { wraps })
@@ -199,7 +199,7 @@ pub fn open_any(chat: &Chat, seed: &[u8; 32]) -> Option<[u8; 32]> {
 /// The process-wide custodian seed (the platform's key, or the signed-in
 /// person's identity seed on desktop): whoever holds it persists chats
 /// sealed and reads them opened. The same pattern as the active zone
-/// keys in [`crate::crypt`]. None (default) means no persistence surface
+/// keys in [`joy_core::crypt`]. None (default) means no persistence surface
 /// is authenticated: encrypted chats stay sealed and cannot be written.
 static CUSTODIAN_SEED: std::sync::RwLock<Option<[u8; 32]>> = std::sync::RwLock::new(None);
 
@@ -220,7 +220,7 @@ pub fn set_custodian_seed(seed: Option<[u8; 32]>) {
 /// Install (outer `Some`) or drop (`None`) a per-thread override of the
 /// custodian seed. A server sets it around each request off the session's
 /// unlock posture and clears it after (blocking threads are reused), the
-/// same discipline as [`crate::crypt::set_active_zone_keys`].
+/// same discipline as [`joy_core::crypt::set_active_zone_keys`].
 pub fn set_custodian_override(value: Option<Option<[u8; 32]>>) {
     CUSTODIAN_OVERRIDE.with(|c| c.set(value));
 }
@@ -371,7 +371,7 @@ pub fn maintain_wraps(
     let granter = IdentityKeypair::from_seed(granter_seed);
     let granter_pk = granter.public_key();
     let name = wrap_name(&chat.id, epoch);
-    let zone_key = crate::crypt::ZoneKey::from_bytes(key);
+    let zone_key = joy_crypt::zone::ZoneKey::from_bytes(key);
     if let Some(entry) = chat
         .crypt
         .as_mut()
@@ -379,7 +379,13 @@ pub fn maintain_wraps(
     {
         for (id, public) in recipients {
             entry.wraps.entry(id).or_insert_with(|| {
-                crate::crypt::wrap_for_member(&zone_key, &name, granter_seed, &granter_pk, &public)
+                joy_crypt::zone::wrap_for_member(
+                    &zone_key,
+                    &name,
+                    granter_seed,
+                    &granter_pk,
+                    &public,
+                )
             });
         }
     }
@@ -428,8 +434,8 @@ pub fn add_participant_wrap(
         .ok_or_else(|| JoyError::AuthFailed(format!("{member_id} has no identity key")))?;
     let granter = IdentityKeypair::from_seed(granter_seed);
     let name = wrap_name(&chat.id, epoch);
-    let zone_key = crate::crypt::ZoneKey::from_bytes(key);
-    let wrap = crate::crypt::wrap_for_member(
+    let zone_key = joy_crypt::zone::ZoneKey::from_bytes(key);
+    let wrap = joy_crypt::zone::wrap_for_member(
         &zone_key,
         &name,
         granter_seed,
@@ -473,13 +479,13 @@ pub fn rotate_for_removal(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::member_ref::MemberRef;
+    use joy_core::member_ref::MemberRef;
 
     fn project_with_keys(tag: &str) -> (Project, [u8; 32], [u8; 32]) {
         let dir = std::env::temp_dir().join(format!("jc-chatcrypt-{tag}-{}", std::process::id()));
         std::fs::remove_dir_all(&dir).ok();
         std::fs::create_dir_all(&dir).unwrap();
-        crate::init::init(crate::init::InitOptions {
+        joy_core::init::init(joy_core::init::InitOptions {
             root: dir.clone(),
             name: Some("ChatCrypt".into()),
             acronym: Some("CC".into()),
@@ -487,7 +493,7 @@ mod tests {
             language: None,
         })
         .unwrap();
-        let mut project = crate::store::load_project(&dir).unwrap();
+        let mut project = joy_core::store::load_project(&dir).unwrap();
         let horst_seed = [1u8; 32];
         let platform_seed = [2u8; 32];
         project
@@ -498,7 +504,7 @@ mod tests {
                 .public_key()
                 .to_hex(),
         );
-        project.platform = Some(crate::model::project::PlatformInfo {
+        project.platform = Some(joy_core::model::project::PlatformInfo {
             verify_key: IdentityKeypair::from_seed(&platform_seed)
                 .public_key()
                 .to_hex(),
@@ -507,7 +513,9 @@ mod tests {
         project
             .register_member(
                 "ai:vibe@joy",
-                crate::model::project::Member::new(crate::model::project::MemberCapabilities::All),
+                joy_core::model::project::Member::new(
+                    joy_core::model::project::MemberCapabilities::All,
+                ),
             )
             .unwrap();
         std::fs::remove_dir_all(&dir).ok();
@@ -580,8 +588,9 @@ mod tests {
         let (mut project, horst_seed, platform_seed) = project_with_keys("rotate");
         // second person, so removal leaves someone besides the platform
         let anna_seed = [3u8; 32];
-        let mut anna =
-            crate::model::project::Member::new(crate::model::project::MemberCapabilities::All);
+        let mut anna = joy_core::model::project::Member::new(
+            joy_core::model::project::MemberCapabilities::All,
+        );
         anna.verify_key = Some(IdentityKeypair::from_seed(&anna_seed).public_key().to_hex());
         project.register_member("anna@example.com", anna).unwrap();
         let mut chat = chat_with_message();
@@ -638,8 +647,9 @@ mod tests {
         let _ = ensure_crypt(&project, &mut chat, &platform_seed).unwrap();
 
         let ben_seed = [4u8; 32];
-        let mut ben =
-            crate::model::project::Member::new(crate::model::project::MemberCapabilities::All);
+        let mut ben = joy_core::model::project::Member::new(
+            joy_core::model::project::MemberCapabilities::All,
+        );
         ben.verify_key = Some(IdentityKeypair::from_seed(&ben_seed).public_key().to_hex());
         project.register_member("ben@example.com", ben).unwrap();
         chat.participants.push(MemberRef::new("ben@example.com"));
@@ -658,7 +668,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("jc-custodian-{}", std::process::id()));
         std::fs::remove_dir_all(&dir).ok();
         std::fs::create_dir_all(&dir).unwrap();
-        crate::init::init(crate::init::InitOptions {
+        joy_core::init::init(joy_core::init::InitOptions {
             root: dir.clone(),
             name: Some("Custodian".into()),
             acronym: Some("CU".into()),
@@ -667,15 +677,15 @@ mod tests {
         })
         .unwrap();
         let platform_seed = [7u8; 32];
-        let mut project = crate::store::load_project(&dir).unwrap();
-        project.platform = Some(crate::model::project::PlatformInfo {
+        let mut project = joy_core::store::load_project(&dir).unwrap();
+        project.platform = Some(joy_core::model::project::PlatformInfo {
             verify_key: IdentityKeypair::from_seed(&platform_seed)
                 .public_key()
                 .to_hex(),
             registered: chrono::Utc::now(),
         });
-        crate::store::write_yaml(
-            &crate::store::joy_dir(&dir).join(crate::store::PROJECT_FILE),
+        joy_core::store::write_yaml(
+            &joy_core::store::joy_dir(&dir).join(joy_core::store::PROJECT_FILE),
             &project,
         )
         .unwrap();
@@ -722,8 +732,9 @@ mod tests {
     fn a_general_chat_wraps_every_project_member() {
         let (mut project, horst_seed, platform_seed) = project_with_keys("general");
         let anna_seed = [3u8; 32];
-        let mut anna =
-            crate::model::project::Member::new(crate::model::project::MemberCapabilities::All);
+        let mut anna = joy_core::model::project::Member::new(
+            joy_core::model::project::MemberCapabilities::All,
+        );
         anna.verify_key = Some(IdentityKeypair::from_seed(&anna_seed).public_key().to_hex());
         project.register_member("anna@example.com", anna).unwrap();
         // General: EMPTY participant list means everyone
@@ -740,12 +751,14 @@ mod tests {
         let (mut project, _horst, platform_seed) = project_with_keys("upkeep");
         let mut chat = chat_with_message();
         chat.participants
-            .push(crate::member_ref::MemberRef::new("ben@example.com"));
+            .push(joy_core::member_ref::MemberRef::new("ben@example.com"));
         // ben exists but has NO key yet: no wrap for him
         project
             .register_member(
                 "ben@example.com",
-                crate::model::project::Member::new(crate::model::project::MemberCapabilities::All),
+                joy_core::model::project::Member::new(
+                    joy_core::model::project::MemberCapabilities::All,
+                ),
             )
             .unwrap();
         let key = ensure_crypt(&project, &mut chat, &platform_seed).unwrap();

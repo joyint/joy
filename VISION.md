@@ -469,16 +469,16 @@ members:
   ai:claude@joy:
     capabilities:
       conceive:
-        max-mode: pairing
+        max-interaction: pairing
         max-cost-per-job: 10.00
       plan:
-        max-mode: interactive
+        max-interaction: interactive
         max-cost-per-job: 5.00
       implement:
-        max-mode: collaborative
+        max-interaction: collaborative
         max-cost-per-job: 3.00
       review:
-        max-mode: interactive
+        max-interaction: interactive
         max-cost-per-job: 5.00
 ```
 

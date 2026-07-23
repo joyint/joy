@@ -1,6 +1,6 @@
 # Joy AI Tutorial
 
-This is the CLI reference for AI assistants working in a Joy project. It tells you how to talk to the `joy` binary. It does not tell you how to behave in this project. Behavior is governed by [Joy's interaction modes](#session-start), the project's [authoritative docs](#reading-the-project), and the user's direction in chat. "Session" in this tutorial means one conversation between you and the user, from greeting to disconnect.
+This is the CLI reference for AI assistants working in a Joy project. It tells you how to talk to the `joy` binary. It does not tell you how to behave in this project. Behavior is governed by [Joy's interaction levels](#session-start), the project's [authoritative docs](#reading-the-project), and the user's direction in chat. "Session" in this tutorial means one conversation between you and the user, from greeting to disconnect.
 
 Re-run `joy ai tutorial` whenever a `joy` invocation prints `joy X.Y.Z: synced this repo (...)` mentioning this file, because operational details may have moved with the version.
 
@@ -9,10 +9,10 @@ Re-run `joy ai tutorial` whenever a `joy` invocation prints `joy X.Y.Z: synced t
 At session start, run two `joy` commands yourself to pick up project context:
 
 ```
-joy config get modes.default
+joy config get interaction.default
 ```
 
-returns your default interaction mode for this project. Treat the resolved value as authoritative; do not guess. The five levels, from least to most oversight:
+returns your default interaction level for this project. Treat the resolved value as authoritative; do not guess. The five levels, from least to most oversight:
 
 - `autonomous` - work independently; only stop at governance gates
 - `supervised` - confirm before irreversible actions

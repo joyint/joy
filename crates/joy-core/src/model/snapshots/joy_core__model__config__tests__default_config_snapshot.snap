@@ -12,6 +12,6 @@ output:
 workflow:
   auto-assign: true
   auto-git: add
-modes:
+interaction:
   default: collaborative
 auto-sync: true

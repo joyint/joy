@@ -12,8 +12,8 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::error::JoyError;
-use crate::store;
+use joy_core::error::JoyError;
+use joy_core::store;
 
 pub const CHAT_STATE_FILE: &str = "chat-state.yaml";
 

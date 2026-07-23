@@ -5,7 +5,7 @@
 //!
 //! Each [`ChatEvent`](crate::chat_events::ChatEvent) is sealed as its own
 //! Crypt blob under its epoch's content key, in the SAME on-disk format
-//! [`crate::crypt::decrypt_blob`] reads, so `joy crypt open` yields raw
+//! [`joy_crypt::zone::decrypt_blob`] reads, so `joy crypt open` yields raw
 //! event YAML. The blob's AAD zone is `chat:<cid>#<epoch_id>`, binding an
 //! event to its chat and epoch (it cannot be replayed elsewhere). The
 //! nonce is DERIVED from the plaintext, so re-sealing an unchanged event
@@ -23,8 +23,8 @@ use sha2::{Digest, Sha256};
 
 use crate::chat_events::ChatEvent;
 use crate::chat_wrap::ContentKey;
-use crate::crypt::{self, ZoneKey};
-use crate::error::JoyError;
+use joy_core::error::JoyError;
+use joy_crypt::zone::{decrypt_blob, encrypt_blob_with_nonce, ZoneKey};
 
 /// The subtree that holds the anonymous key slots.
 pub const KEYS_DIR: &str = "keys";
@@ -70,7 +70,7 @@ pub fn seal_event(
     let yaml = serde_yaml_ng::to_string(event)?;
     let zone = event_zone(cid, epoch_id);
     let nonce = det_nonce(&zone, yaml.as_bytes());
-    Ok(crypt::encrypt_blob_with_nonce(
+    Ok(encrypt_blob_with_nonce(
         &zone,
         &ZoneKey::from_bytes(*ck),
         &nonce,
@@ -88,7 +88,7 @@ pub fn rid(blob: &[u8]) -> String {
 /// holds. `None` when no held key opens it (foreign epoch, tampered),
 /// which the caller treats as a still-sealed event, never an error.
 pub fn open_event(blob: &[u8], keys: &BTreeMap<String, ContentKey>) -> Option<ChatEvent> {
-    let (_, plain) = crypt::decrypt_blob(
+    let (_, plain) = decrypt_blob(
         |zone| {
             epoch_of_zone(zone)
                 .and_then(|epoch| keys.get(epoch))
@@ -117,9 +117,9 @@ mod tests {
     use super::*;
     use crate::chat_events::{diff, fold};
     use crate::chat_wrap::{anon_wrap_slot, new_content_key, new_epoch_id, resolve_epoch_keys};
-    use crate::member_ref::MemberRef;
     use crate::model::chat::{Chat, ChatKind, ChatMessage, MessageKind};
     use chrono::{DateTime, Utc};
+    use joy_core::member_ref::MemberRef;
 
     fn ts(s: u32) -> DateTime<Utc> {
         format!("2026-07-19T00:00:{s:02}Z").parse().unwrap()
@@ -141,8 +141,8 @@ mod tests {
             epoch: None,
         }
     }
-    fn kp(seed: u8) -> crate::auth::IdentityKeypair {
-        crate::auth::IdentityKeypair::from_seed(&[seed; 32])
+    fn kp(seed: u8) -> joy_core::auth::IdentityKeypair {
+        joy_core::auth::IdentityKeypair::from_seed(&[seed; 32])
     }
 
     /// The FULL sealed-storage path minus git: a chat becomes sealed

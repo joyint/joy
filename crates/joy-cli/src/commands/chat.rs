@@ -63,11 +63,11 @@ fn acting_member(root: &std::path::Path) -> Result<joy_core::member_ref::MemberR
     Ok(joy_core::member_ref::MemberRef::new(email))
 }
 
-fn load_or_general(root: &std::path::Path, id: &str) -> Result<joy_core::model::chat::Chat> {
-    if id == joy_core::chats::GENERAL_CHAT_ID {
-        return Ok(joy_core::chats::ensure_general(root, chrono::Utc::now())?);
+fn load_or_general(root: &std::path::Path, id: &str) -> Result<joy_chat::model::chat::Chat> {
+    if id == joy_chat::chats::GENERAL_CHAT_ID {
+        return Ok(joy_chat::chats::ensure_general(root, chrono::Utc::now())?);
     }
-    joy_core::chats::load_chat(root, id)?.ok_or_else(|| anyhow::anyhow!("no chat with id {id}"))
+    joy_chat::chats::load_chat(root, id)?.ok_or_else(|| anyhow::anyhow!("no chat with id {id}"))
 }
 
 /// Reading or writing a sealed chat needs the caller's identity seed. When
@@ -97,7 +97,7 @@ fn establish_reader_seed(
     }
     let pass = crate::commands::auth::read_passphrase(passphrase, stdin, "Passphrase: ")?;
     let unlocked = joy_core::auth::unlock_identity(member, &pass)?;
-    joy_core::chat_crypt::set_custodian_seed(Some(unlocked.seed));
+    joy_chat::chat_crypt::set_custodian_seed(Some(unlocked.seed));
     Ok(())
 }
 
@@ -108,7 +108,7 @@ pub fn run(args: ChatArgs) -> Result<()> {
     match args.command {
         ChatCommand::List { all } => {
             let me = acting_member(&root).ok();
-            let chats = joy_core::chats::load_chats(&root)?;
+            let chats = joy_chat::chats::load_chats(&root)?;
             // Default: only chats you are a member of and have not deleted.
             // `--all` also shows chats you left or deleted that still exist.
             let rows: Vec<_> = chats
@@ -116,7 +116,7 @@ pub fn run(args: ChatArgs) -> Result<()> {
                 .filter(|c| {
                     all || me
                         .as_ref()
-                        .map(|me| joy_core::chats::visible_to(c, me))
+                        .map(|me| joy_chat::chats::visible_to(c, me))
                         .unwrap_or(true)
                 })
                 .collect();
@@ -128,7 +128,7 @@ pub fn run(args: ChatArgs) -> Result<()> {
             for c in rows {
                 let left = me
                     .as_ref()
-                    .map(|me| !joy_core::chats::visible_to(&c, me))
+                    .map(|me| !joy_chat::chats::visible_to(&c, me))
                     .unwrap_or(false);
                 let title = c.title.as_deref().unwrap_or("-");
                 println!(
@@ -148,13 +148,13 @@ pub fn run(args: ChatArgs) -> Result<()> {
             if text.trim().is_empty() {
                 anyhow::bail!("nothing to send");
             }
-            joy_core::chats::append_message(&root, &mut chat, me, text, chrono::Utc::now())?;
+            joy_chat::chats::append_message(&root, &mut chat, me, text, chrono::Utc::now())?;
             println!("sent to {}", chat.title.as_deref().unwrap_or(&chat.id));
         }
         ChatCommand::Add { id, member } => {
             let me = acting_member(&root)?;
             let mut chat = load_or_general(&root, &id)?;
-            joy_core::chats::add_participant(
+            joy_chat::chats::add_participant(
                 &root,
                 &mut chat,
                 joy_core::member_ref::MemberRef::new(member),
@@ -166,29 +166,29 @@ pub fn run(args: ChatArgs) -> Result<()> {
         ChatCommand::Leave { id } => {
             let me = acting_member(&root)?;
             let mut chat = load_or_general(&root, &id)?;
-            joy_core::chats::leave(&root, &mut chat, &me, chrono::Utc::now())?;
+            joy_chat::chats::leave(&root, &mut chat, &me, chrono::Utc::now())?;
             println!("left {}", chat.title.as_deref().unwrap_or(&chat.id));
         }
         ChatCommand::Delete { id, for_all } => {
             let me = acting_member(&root)?;
             let mut chat = load_or_general(&root, &id)?;
             if for_all {
-                joy_core::chats::delete_for_all(&root, &mut chat, &me, chrono::Utc::now())?;
+                joy_chat::chats::delete_for_all(&root, &mut chat, &me, chrono::Utc::now())?;
                 println!("deleted for everyone (read-only until each member removes it)");
             } else {
-                joy_core::chats::delete_for_me(&root, &mut chat, &me, chrono::Utc::now())?;
+                joy_chat::chats::delete_for_me(&root, &mut chat, &me, chrono::Utc::now())?;
                 println!("deleted for you");
             }
         }
         ChatCommand::Rename { id, title } => {
             let mut chat = load_or_general(&root, &id)?;
-            joy_core::chats::rename(&root, &mut chat, title.join(" "))?;
+            joy_chat::chats::rename(&root, &mut chat, title.join(" "))?;
             println!("renamed");
         }
         ChatCommand::Read { id } => {
             let me = acting_member(&root)?;
             let mut chat = load_or_general(&root, &id)?;
-            joy_core::chats::mark_read(&root, &mut chat, &me, chrono::Utc::now())?;
+            joy_chat::chats::mark_read(&root, &mut chat, &me, chrono::Utc::now())?;
             println!("marked read");
         }
         ChatCommand::Info { id } => {
@@ -219,7 +219,7 @@ pub fn run(args: ChatArgs) -> Result<()> {
             }
         }
         ChatCommand::Show { id } => {
-            let chat = joy_core::chats::load_chat(&root, &id)?
+            let chat = joy_chat::chats::load_chat(&root, &id)?
                 .ok_or_else(|| anyhow::anyhow!("no chat with id {id}"))?;
             println!(
                 "{} — {} participant(s)",

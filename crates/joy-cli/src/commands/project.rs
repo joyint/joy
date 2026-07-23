@@ -135,6 +135,8 @@ enum MemberCommand {
     Show(MemberShowArgs),
     /// Add a project member
     Add(MemberAddArgs),
+    /// Edit a member's capabilities and per-capability interaction modes
+    Edit(MemberEditArgs),
     /// Remove a project member
     Rm(MemberRmArgs),
     /// Erase a member's e-mail/name from the encrypted members.yaml (GDPR
@@ -202,6 +204,42 @@ struct MemberRmArgs {
     /// Passphrase of the acting manage member (non-interactive, for
     /// scripts and tests). Required when the removed member attested
     /// others, so re-attestation can be signed by the remover.
+    #[arg(long)]
+    passphrase: Option<String>,
+
+    /// Read the passphrase from a single line on stdin.
+    #[arg(long = "passphrase-stdin")]
+    passphrase_stdin: bool,
+}
+
+#[derive(clap::Args)]
+struct MemberEditArgs {
+    /// Member ID (email or ai:tool@joy)
+    #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_member))]
+    id: String,
+
+    /// Replace the whole capability set: a comma-separated list, or the
+    /// keyword `all`. Surviving capabilities keep their max-interaction/max-cost.
+    #[arg(short = 'c', long, conflicts_with_all = ["add_capability", "rm_capability"])]
+    capabilities: Option<String>,
+
+    /// Grant one capability, keeping the rest (repeatable).
+    #[arg(long = "add-capability", value_name = "CAP")]
+    add_capability: Vec<String>,
+
+    /// Revoke one capability, keeping the rest (repeatable).
+    #[arg(long = "rm-capability", value_name = "CAP")]
+    rm_capability: Vec<String>,
+
+    /// Set a per-capability max-interaction floor: `CAP=LEVEL` (repeatable);
+    /// `CAP=` clears it. LEVEL is one of
+    /// autonomous|supervised|collaborative|interactive|pairing.
+    #[arg(long = "max-interaction", value_name = "CAP=LEVEL")]
+    max_interaction: Vec<String>,
+
+    /// Passphrase of the acting manage member (non-interactive, for
+    /// scripts and tests). Any capability or interaction change invalidates the
+    /// member's attestation, so the acting member re-signs it.
     #[arg(long)]
     passphrase: Option<String>,
 
@@ -1304,18 +1342,19 @@ fn run_member(
                 color::header(&joy_core::member_ref::resolve_str(&a.id))
             );
 
-            // Load defaults for mode resolution
-            let raw_defaults = joy_core::store::load_raw_mode_defaults(&ctx.root);
-            let effective_defaults = joy_core::store::load_mode_defaults(&ctx.root);
+            // Load defaults for interaction resolution
+            let raw_defaults = joy_core::store::load_raw_interaction_defaults(&ctx.root);
+            let effective_defaults = joy_core::store::load_interaction_defaults(&ctx.root);
             let config = joy_core::store::load_config();
-            let personal_mode =
-                if config.modes.default != joy_core::model::config::InteractionLevel::default() {
-                    Some(config.modes.default)
-                } else {
-                    None
-                };
+            let personal_interaction = if config.interaction.default
+                != joy_core::model::config::InteractionLevel::default()
+            {
+                Some(config.interaction.default)
+            } else {
+                None
+            };
 
-            // Build capability list with has/denied and mode info
+            // Build capability list with has/denied and interaction info
             let all_caps = joy_core::model::item::Capability::ALL;
             let is_all = matches!(&member.capabilities, MemberCapabilities::All);
             let specific_map = match &member.capabilities {
@@ -1335,14 +1374,14 @@ fn run_member(
 
                 if has && cap.is_work_capability() {
                     let cap_config = specific_map.and_then(|m| m.get(cap));
-                    let (mode, source) = joy_core::model::project::resolve_mode(
+                    let (interaction, source) = joy_core::model::project::resolve_interaction(
                         cap,
                         &raw_defaults,
                         &effective_defaults,
-                        personal_mode,
+                        personal_interaction,
                         cap_config,
                     );
-                    let mode_text = format!("{mode} [{source}]");
+                    let mode_text = format!("{interaction} [{source}]");
                     let mut line = if wide {
                         format!(
                             "  {:<12} {}   {}",
@@ -1358,18 +1397,18 @@ fn run_member(
                             color::inactive(&mode_text)
                         )
                     };
-                    // Show max-mode hint if clamped
-                    if source == joy_core::model::project::ModeSource::ProjectMax {
-                        if let Some(personal) = personal_mode {
+                    // Show max-interaction hint if clamped
+                    if source == joy_core::model::project::InteractionSource::ProjectMax {
+                        if let Some(personal) = personal_interaction {
                             line.push_str(&color::inactive(&format!(
                                 "  (your preference: {personal})"
                             )));
                         }
                     }
-                    // Show max-mode from cap config
+                    // Show max-interaction from cap config
                     if let Some(cc) = cap_config {
-                        if let Some(ref max) = cc.max_mode {
-                            if source != joy_core::model::project::ModeSource::ProjectMax {
+                        if let Some(ref max) = cc.max_interaction {
+                            if source != joy_core::model::project::InteractionSource::ProjectMax {
                                 line.push_str(&color::inactive(&format!("  max: {max}")));
                             }
                         }
@@ -1551,20 +1590,6 @@ fn run_member(
                         a.id
                     );
                     println!("  joy auth --otp {otp}");
-                    // Team provider keys cannot cover the new member until
-                    // they hold an identity key; say so now, not when a
-                    // job fails for them later.
-                    let has_team_keys = project.members().any(|(k, m)| {
-                        k.starts_with("ai:") && m.provider_keys.values().any(|e| e.for_all)
-                    });
-                    if has_team_keys {
-                        println!();
-                        println!(
-                            "This project has team AI keys. After {} enrols, cover them with \
-                             `joy ai key rewrap` (a registered platform does this automatically).",
-                            a.id
-                        );
-                    }
                 }
             }
 
@@ -1572,6 +1597,168 @@ fn run_member(
             joy_core::git_ops::auto_git_post_command(
                 &ctx.root,
                 &format!("project member add {}", a.id),
+                &log_user,
+            );
+        }
+        Some(MemberCommand::Edit(a)) => {
+            ctx.enforce(&Action::ManageProject, "project")?;
+
+            if a.capabilities.is_none()
+                && a.add_capability.is_empty()
+                && a.rm_capability.is_empty()
+                && a.max_interaction.is_empty()
+            {
+                bail!(
+                    "nothing to edit: pass --capabilities, --add-capability, \
+                     --rm-capability, or --max-interaction"
+                );
+            }
+
+            // Resolve the target to its at-rest map key: an ai:/opaque id is
+            // used as-is, a cleartext e-mail resolves via the privacy layer
+            // (ADR-042) so anonymous mode never needs the e-mail here.
+            let key = if project.has_member_key(&a.id) {
+                a.id.clone()
+            } else if let Some(k) = joy_core::privacy::member_key_for_email(project, &a.id) {
+                k
+            } else {
+                bail!("member not found: {}", a.id);
+            };
+            let mut member = project
+                .member_by_key(&key)
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("member not found: {}", a.id))?;
+            let had_manage = member.has_capability(&Capability::Manage);
+
+            // 1. Capability-set changes. --capabilities replaces wholesale
+            //    (carrying over surviving configs); --add/--rm-capability are
+            //    incremental and mutually exclusive with it (clap-enforced).
+            if let Some(caps_str) = a.capabilities.as_deref() {
+                let target = if caps_str.trim() == "all" {
+                    MemberCapabilities::All
+                } else {
+                    let mut map = std::collections::BTreeMap::new();
+                    for s in caps_str.split(',') {
+                        let cap: Capability = s
+                            .trim()
+                            .parse()
+                            .map_err(|e: String| anyhow::anyhow!("{}", e))?;
+                        map.insert(cap, CapabilityConfig::default());
+                    }
+                    MemberCapabilities::Specific(map)
+                };
+                member.set_capabilities(target);
+            }
+            for s in &a.add_capability {
+                let cap: Capability = s
+                    .trim()
+                    .parse()
+                    .map_err(|e: String| anyhow::anyhow!("{}", e))?;
+                match &mut member.capabilities {
+                    MemberCapabilities::All => {}
+                    MemberCapabilities::Specific(map) => {
+                        map.entry(cap).or_default();
+                    }
+                }
+            }
+            for s in &a.rm_capability {
+                let cap: Capability = s
+                    .trim()
+                    .parse()
+                    .map_err(|e: String| anyhow::anyhow!("{}", e))?;
+                match &mut member.capabilities {
+                    MemberCapabilities::All => bail!(
+                        "member has 'capabilities: all'; replace the set with \
+                         --capabilities <list> before removing individual capabilities"
+                    ),
+                    MemberCapabilities::Specific(map) => {
+                        map.remove(&cap);
+                    }
+                }
+            }
+
+            // 2. Per-capability max-interaction floors (CAP=LEVEL, CAP= clears).
+            for spec in &a.max_interaction {
+                let (cap_str, level_str) = spec.split_once('=').ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "--max-interaction expects CAP=LEVEL (or CAP= to clear), got '{spec}'"
+                    )
+                })?;
+                let cap: Capability = cap_str
+                    .trim()
+                    .parse()
+                    .map_err(|e: String| anyhow::anyhow!("{}", e))?;
+                let max_interaction = if level_str.trim().is_empty() {
+                    None
+                } else {
+                    Some(
+                        level_str
+                            .trim()
+                            .parse::<joy_core::model::config::InteractionLevel>()
+                            .map_err(|e| anyhow::anyhow!("{}", e))?,
+                    )
+                };
+                member
+                    .set_capability_max_interaction(cap, max_interaction)
+                    .map_err(|e| anyhow::anyhow!("{}", e))?;
+            }
+
+            // 3. Anti-brick: never strip manage from the last manager.
+            if had_manage && !member.has_capability(&Capability::Manage) {
+                let guard = joy_core::guard::Guard::new(project);
+                if guard.is_last_manager(&key) {
+                    bail!(
+                        "cannot remove manage from {}: last member with manage \
+                         capability. Grant another member manage first.",
+                        a.id
+                    );
+                }
+            }
+
+            // 4. Re-sign: any capability or max-interaction change invalidates the
+            //    stored attestation (it covers `capabilities`), so the acting
+            //    manage member re-signs over the new fields.
+            let acting_email = joy_core::vcs::default_vcs().user_email()?;
+            let acting_kp = derive_acting_keypair(
+                project,
+                &acting_email,
+                a.passphrase.as_deref(),
+                a.passphrase_stdin,
+            )?;
+            let signed_fields = joy_core::auth::attestation::signed_fields_for(
+                &key,
+                &member.capabilities,
+                member.enrollment_verifier.as_deref(),
+            );
+            let attester_id = joy_core::privacy::member_key_for_email(project, &acting_email)
+                .unwrap_or_else(|| acting_email.clone());
+            member.attestation = Some(joy_core::auth::attestation::sign_attestation(
+                &attester_id,
+                &acting_kp,
+                signed_fields,
+            ));
+
+            // 5. Apply + persist + audit (mirrors add/rm).
+            *project
+                .member_by_key_mut(&key)
+                .expect("member key resolved above") = member;
+            store::write_yaml_preserve(project_path, project)?;
+            let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+            joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
+
+            if crate::output::is_json() {
+                #[derive(serde::Serialize)]
+                struct EditPayload<'a> {
+                    member: &'a str,
+                }
+                crate::output::emit(EditPayload { member: &a.id })?;
+            } else {
+                println!("Updated member {}", color::user(&a.id));
+            }
+            let log_user = ctx.log_user();
+            joy_core::git_ops::auto_git_post_command(
+                &ctx.root,
+                &format!("project member edit {}", a.id),
                 &log_user,
             );
         }
@@ -1642,12 +1829,6 @@ fn run_member(
                 )?)
             };
 
-            // Provider-key hygiene first, while the member is still
-            // resolvable: drop entries they own and wraps addressed to
-            // them. Bookkeeping, not revocation — a team-key recipient
-            // knew the plaintext.
-            let key_purge = joy_core::provider_keys::purge_member_wraps(project, &a.id);
-
             if project.remove_member(&a.id).is_none() {
                 bail!("member not found: {}", a.id);
             }
@@ -1688,26 +1869,6 @@ fn run_member(
                 })?;
             } else {
                 println!("Removed member {}", color::user(&a.id));
-                if key_purge.owned_entries + key_purge.recipient_wraps > 0 {
-                    println!(
-                        "Dropped {} provider-key entr{} and {} wrap{} of {}. A former team-key \
-                         recipient knew the key itself: rotate it at the provider and set the \
-                         new one in the project settings.",
-                        key_purge.owned_entries,
-                        if key_purge.owned_entries == 1 {
-                            "y"
-                        } else {
-                            "ies"
-                        },
-                        key_purge.recipient_wraps,
-                        if key_purge.recipient_wraps == 1 {
-                            ""
-                        } else {
-                            "s"
-                        },
-                        a.id,
-                    );
-                }
             }
             let log_user = ctx.log_user();
             joy_core::git_ops::auto_git_post_command(

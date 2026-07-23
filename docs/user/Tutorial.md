@@ -523,7 +523,7 @@ The effective level for a `(member, capability)` pair is resolved across four la
 
 1. **Project defaults** (`.joy/project.defaults.yaml`) - ship with sensible defaults per capability (e.g. `pairing` for `conceive`, `collaborative` for `implement`).
 2. **Project overrides** (`.joy/project.yaml`) - per-capability settings the team agrees on for this project.
-3. **Personal preference** (`.joy/config.yaml`) - per-user override under `modes.default`, applied to capabilities the project hasn't pinned.
+3. **Personal preference** (`.joy/config.yaml`) - per-user override under `interaction.default`, applied to capabilities the project hasn't pinned.
 4. **Item override** - a single item can request a different level via its `mode` field, taking effect only for that item.
 
 Inspect what is in force with:

@@ -211,6 +211,13 @@ impl Docs {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Member {
     pub capabilities: MemberCapabilities,
+    /// The ACP adapter/tool that runs an AI member (claude-code | mistral-vibe
+    /// | qwen-code | mock). Only meaningful on `ai:*` members. Set when the AI
+    /// member is added; the rest of its key-bound ACP config (key, model,
+    /// agent_mode, budget, guardrail) lives in the platform DB, not the repo
+    /// (JI-0164). None on human members and on AI members with no adapter yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adapter: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verify_key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -230,15 +237,6 @@ pub struct Member {
     pub enrollment_verifier: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub ai_delegations: BTreeMap<String, AiDelegationEntry>,
-    /// Provider API keys powering THIS AI member (only meaningful on
-    /// ai:* members), keyed by the OWNER's member key. Each entry holds
-    /// pairwise wraps (X25519, joy-crypt provider_key) per recipient:
-    /// the owner themselves, the reserved "platform" recipient (the
-    /// project's platform key, so server-run containers work while the
-    /// owner is offline), and — on a team key — every member with an
-    /// identity key. The repo carries only ciphertext.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub provider_keys: BTreeMap<String, ProviderKeyEntry>,
     /// Per-member Crypt zone-key wraps. Map from zone name to the
     /// hex-encoded `nonce || ciphertext || tag` produced by
     /// `joy_crypt::wrap::wrap` over the zone key. The KEK derives from
@@ -262,21 +260,8 @@ pub struct Member {
     pub attestation: Option<Attestation>,
 }
 
-/// One owner's provider key for an AI member: released for the whole
-/// team or personal, with the pairwise wraps per recipient (member keys
-/// plus the reserved "platform" recipient) and an optional monthly
-/// budget in cents.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ProviderKeyEntry {
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub for_all: bool,
-    pub wraps: BTreeMap<String, String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub budget_cents_month: Option<u64>,
-}
-
-/// The reserved recipient id of the platform in provider-key wraps: its
-/// public key is `project.platform.verify_key`, not a member entry.
+/// The reserved recipient id of the platform in wraps: its public key is
+/// `project.platform.verify_key`, not a member entry.
 pub const PLATFORM_RECIPIENT: &str = "platform";
 
 /// Per-member attestation: a signature by a manage member over a stable
@@ -366,8 +351,12 @@ pub enum MemberCapabilities {
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct CapabilityConfig {
-    #[serde(rename = "max-mode", default, skip_serializing_if = "Option::is_none")]
-    pub max_mode: Option<InteractionLevel>,
+    #[serde(
+        rename = "max-interaction",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub max_interaction: Option<InteractionLevel>,
     #[serde(
         rename = "max-cost-per-job",
         default,
@@ -377,17 +366,17 @@ pub struct CapabilityConfig {
 }
 
 // ---------------------------------------------------------------------------
-// Mode defaults (from project.defaults.yaml, overridable in project.yaml)
+// Interaction defaults (from project.defaults.yaml, overridable in project.yaml)
 // ---------------------------------------------------------------------------
 
-/// Interaction mode defaults: a global default plus optional per-capability overrides.
+/// Interaction-level defaults: a global default plus optional per-capability overrides.
 /// Deserializes from flat YAML like: `{ default: collaborative, implement: autonomous }`.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct ModeDefaults {
-    /// Fallback mode when no per-capability mode is set.
+pub struct InteractionDefaults {
+    /// Fallback interaction level when no per-capability override is set.
     #[serde(default)]
     pub default: InteractionLevel,
-    /// Per-capability mode overrides (flattened into the same map).
+    /// Per-capability interaction-level overrides (flattened into the same map).
     #[serde(flatten, default)]
     pub capabilities: BTreeMap<Capability, InteractionLevel>,
 }
@@ -400,22 +389,22 @@ pub struct AiDefaults {
     pub capabilities: Vec<Capability>,
 }
 
-/// Source of a resolved interaction mode.
+/// Source of a resolved interaction level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ModeSource {
+pub enum InteractionSource {
     /// From project.defaults.yaml (Joy's recommendation).
     Default,
-    /// From project.yaml agents.defaults override.
+    /// From project.yaml interaction section override.
     Project,
     /// From config.yaml personal preference.
     Personal,
     /// From item-level override (future).
     Item,
-    /// Clamped by max-mode from project.yaml member config.
+    /// Clamped by max-interaction from project.yaml member config.
     ProjectMax,
 }
 
-impl std::fmt::Display for ModeSource {
+impl std::fmt::Display for InteractionSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Default => write!(f, "default"),
@@ -427,57 +416,57 @@ impl std::fmt::Display for ModeSource {
     }
 }
 
-/// Resolve the effective interaction mode for a given capability.
+/// Resolve the effective interaction level for a given capability.
 ///
 /// Resolution order (later wins):
-/// 1. Effective defaults global mode (project.defaults.yaml merged with project.yaml)
-/// 2. Effective defaults per-capability mode
+/// 1. Effective defaults global level (project.defaults.yaml merged with project.yaml)
+/// 2. Effective defaults per-capability level
 /// 3. Personal config preference
 ///
-/// All clamped by max-mode from the member's CapabilityConfig.
-pub fn resolve_mode(
+/// All clamped by max-interaction from the member's CapabilityConfig.
+pub fn resolve_interaction(
     capability: &Capability,
-    raw_defaults: &ModeDefaults,
-    effective_defaults: &ModeDefaults,
-    personal_mode: Option<InteractionLevel>,
+    raw_defaults: &InteractionDefaults,
+    effective_defaults: &InteractionDefaults,
+    personal_interaction: Option<InteractionLevel>,
     member_cap_config: Option<&CapabilityConfig>,
-) -> (InteractionLevel, ModeSource) {
+) -> (InteractionLevel, InteractionSource) {
     // 1. Global fallback from effective defaults
-    let mut mode = effective_defaults.default;
+    let mut interaction = effective_defaults.default;
     let mut source = if effective_defaults.default != raw_defaults.default {
-        ModeSource::Project
+        InteractionSource::Project
     } else {
-        ModeSource::Default
+        InteractionSource::Default
     };
 
     // 2. Per-capability default
-    if let Some(&cap_mode) = effective_defaults.capabilities.get(capability) {
-        mode = cap_mode;
-        let from_raw = raw_defaults.capabilities.get(capability) == Some(&cap_mode);
+    if let Some(&cap_interaction) = effective_defaults.capabilities.get(capability) {
+        interaction = cap_interaction;
+        let from_raw = raw_defaults.capabilities.get(capability) == Some(&cap_interaction);
         source = if from_raw {
-            ModeSource::Default
+            InteractionSource::Default
         } else {
-            ModeSource::Project
+            InteractionSource::Project
         };
     }
 
     // 3. Personal preference
-    if let Some(personal) = personal_mode {
-        mode = personal;
-        source = ModeSource::Personal;
+    if let Some(personal) = personal_interaction {
+        interaction = personal;
+        source = InteractionSource::Personal;
     }
 
-    // 4. Clamp by max-mode (minimum interactivity required)
+    // 4. Clamp by max-interaction (minimum interactivity required)
     if let Some(cap_config) = member_cap_config {
-        if let Some(max) = cap_config.max_mode {
-            if mode < max {
-                mode = max;
-                source = ModeSource::ProjectMax;
+        if let Some(max) = cap_config.max_interaction {
+            if interaction < max {
+                interaction = max;
+                source = InteractionSource::ProjectMax;
             }
         }
     }
 
-    (mode, source)
+    (interaction, source)
 }
 
 // Custom serde for MemberCapabilities: "all" string or map of capabilities
@@ -512,13 +501,13 @@ impl Member {
     pub fn new(capabilities: MemberCapabilities) -> Self {
         Self {
             capabilities,
+            adapter: None,
             verify_key: None,
             kdf_nonce: None,
             seed_wrap_passphrase: None,
             seed_wrap_recovery: None,
             enrollment_verifier: None,
             ai_delegations: BTreeMap::new(),
-            provider_keys: BTreeMap::new(),
             crypt_wraps: BTreeMap::new(),
             email_match: None,
             members_wrap: None,
@@ -531,6 +520,58 @@ impl Member {
         match &self.capabilities {
             MemberCapabilities::All => true,
             MemberCapabilities::Specific(map) => map.contains_key(cap),
+        }
+    }
+
+    /// Replace the whole capability set. Capabilities present in both the
+    /// old and new set keep their existing [`CapabilityConfig`] (max-interaction /
+    /// max-cost floors); newly granted capabilities start from the default
+    /// (no floors). Switching to or from [`MemberCapabilities::All`]
+    /// replaces the set wholesale.
+    ///
+    /// Editing capabilities invalidates any stored attestation; callers
+    /// must re-sign (see `joy project member edit`).
+    pub fn set_capabilities(&mut self, caps: MemberCapabilities) {
+        self.capabilities = match (&self.capabilities, caps) {
+            (MemberCapabilities::Specific(old), MemberCapabilities::Specific(mut next)) => {
+                for (cap, cfg) in next.iter_mut() {
+                    if let Some(prev) = old.get(cap) {
+                        *cfg = prev.clone();
+                    }
+                }
+                MemberCapabilities::Specific(next)
+            }
+            (_, other) => other,
+        };
+    }
+
+    /// Set (`Some`) or clear (`None`) the per-capability max-interaction floor for
+    /// `cap`. The floor clamps the resolved interaction level upward (see
+    /// [`resolve_interaction`]). Errors if the member does not currently hold
+    /// `cap`, or holds [`MemberCapabilities::All`] (which has no
+    /// per-capability slots to attach a floor to).
+    ///
+    /// Editing a floor invalidates any stored attestation; callers must
+    /// re-sign.
+    pub fn set_capability_max_interaction(
+        &mut self,
+        cap: Capability,
+        max_interaction: Option<InteractionLevel>,
+    ) -> Result<(), crate::error::JoyError> {
+        match &mut self.capabilities {
+            MemberCapabilities::All => Err(crate::error::JoyError::Other(format!(
+                "member has 'capabilities: all'; grant an explicit capability set before \
+                 setting a per-capability max-interaction for '{cap}'"
+            ))),
+            MemberCapabilities::Specific(map) => match map.get_mut(&cap) {
+                Some(cfg) => {
+                    cfg.max_interaction = max_interaction;
+                    Ok(())
+                }
+                None => Err(crate::error::JoyError::Other(format!(
+                    "member does not have capability '{cap}'"
+                ))),
+            },
         }
     }
 }
@@ -1275,7 +1316,7 @@ created: 2026-01-01T00:00:00Z
     }
 
     // -----------------------------------------------------------------------
-    // ModeDefaults deserialization tests
+    // InteractionDefaults deserialization tests
     // -----------------------------------------------------------------------
 
     #[test]
@@ -1285,7 +1326,7 @@ default: interactive
 implement: collaborative
 review: pairing
 "#;
-        let parsed: ModeDefaults = serde_yaml_ng::from_str(yaml).unwrap();
+        let parsed: InteractionDefaults = serde_yaml_ng::from_str(yaml).unwrap();
         assert_eq!(parsed.default, InteractionLevel::Interactive);
         assert_eq!(
             parsed.capabilities[&Capability::Implement],
@@ -1300,7 +1341,7 @@ review: pairing
     #[test]
     fn mode_defaults_empty_yaml() {
         let yaml = "{}";
-        let parsed: ModeDefaults = serde_yaml_ng::from_str(yaml).unwrap();
+        let parsed: InteractionDefaults = serde_yaml_ng::from_str(yaml).unwrap();
         assert_eq!(parsed.default, InteractionLevel::Collaborative);
         assert!(parsed.capabilities.is_empty());
     }
@@ -1308,7 +1349,7 @@ review: pairing
     #[test]
     fn mode_defaults_only_default() {
         let yaml = "default: pairing";
-        let parsed: ModeDefaults = serde_yaml_ng::from_str(yaml).unwrap();
+        let parsed: InteractionDefaults = serde_yaml_ng::from_str(yaml).unwrap();
         assert_eq!(parsed.default, InteractionLevel::Pairing);
         assert!(parsed.capabilities.is_empty());
     }
@@ -1326,55 +1367,57 @@ capabilities:
     }
 
     // -----------------------------------------------------------------------
-    // resolve_mode tests
+    // resolve_interaction tests
     // -----------------------------------------------------------------------
 
-    fn defaults_with_mode(mode: InteractionLevel) -> ModeDefaults {
-        ModeDefaults {
+    fn defaults_with_mode(mode: InteractionLevel) -> InteractionDefaults {
+        InteractionDefaults {
             default: mode,
             ..Default::default()
         }
     }
 
-    fn defaults_with_cap_mode(cap: Capability, mode: InteractionLevel) -> ModeDefaults {
-        let mut d = ModeDefaults::default();
+    fn defaults_with_cap_mode(cap: Capability, mode: InteractionLevel) -> InteractionDefaults {
+        let mut d = InteractionDefaults::default();
         d.capabilities.insert(cap, mode);
         d
     }
 
     #[test]
-    fn resolve_mode_uses_global_default() {
+    fn resolve_interaction_uses_global_default() {
         let raw = defaults_with_mode(InteractionLevel::Collaborative);
         let effective = raw.clone();
-        let (mode, source) = resolve_mode(&Capability::Implement, &raw, &effective, None, None);
+        let (mode, source) =
+            resolve_interaction(&Capability::Implement, &raw, &effective, None, None);
         assert_eq!(mode, InteractionLevel::Collaborative);
-        assert_eq!(source, ModeSource::Default);
+        assert_eq!(source, InteractionSource::Default);
     }
 
     #[test]
-    fn resolve_mode_uses_per_capability_default() {
+    fn resolve_interaction_uses_per_capability_default() {
         let raw = defaults_with_cap_mode(Capability::Review, InteractionLevel::Interactive);
         let effective = raw.clone();
-        let (mode, source) = resolve_mode(&Capability::Review, &raw, &effective, None, None);
+        let (mode, source) = resolve_interaction(&Capability::Review, &raw, &effective, None, None);
         assert_eq!(mode, InteractionLevel::Interactive);
-        assert_eq!(source, ModeSource::Default);
+        assert_eq!(source, InteractionSource::Default);
     }
 
     #[test]
-    fn resolve_mode_project_override_detected() {
+    fn resolve_interaction_project_override_detected() {
         let raw = defaults_with_cap_mode(Capability::Implement, InteractionLevel::Collaborative);
         let effective =
             defaults_with_cap_mode(Capability::Implement, InteractionLevel::Interactive);
-        let (mode, source) = resolve_mode(&Capability::Implement, &raw, &effective, None, None);
+        let (mode, source) =
+            resolve_interaction(&Capability::Implement, &raw, &effective, None, None);
         assert_eq!(mode, InteractionLevel::Interactive);
-        assert_eq!(source, ModeSource::Project);
+        assert_eq!(source, InteractionSource::Project);
     }
 
     #[test]
-    fn resolve_mode_personal_overrides_default() {
+    fn resolve_interaction_personal_overrides_default() {
         let raw = defaults_with_mode(InteractionLevel::Collaborative);
         let effective = raw.clone();
-        let (mode, source) = resolve_mode(
+        let (mode, source) = resolve_interaction(
             &Capability::Implement,
             &raw,
             &effective,
@@ -1382,18 +1425,18 @@ capabilities:
             None,
         );
         assert_eq!(mode, InteractionLevel::Pairing);
-        assert_eq!(source, ModeSource::Personal);
+        assert_eq!(source, InteractionSource::Personal);
     }
 
     #[test]
-    fn resolve_mode_max_mode_clamps_upward() {
+    fn resolve_interaction_max_interaction_clamps_upward() {
         let raw = defaults_with_mode(InteractionLevel::Autonomous);
         let effective = raw.clone();
         let cap_config = CapabilityConfig {
-            max_mode: Some(InteractionLevel::Supervised),
+            max_interaction: Some(InteractionLevel::Supervised),
             ..Default::default()
         };
-        let (mode, source) = resolve_mode(
+        let (mode, source) = resolve_interaction(
             &Capability::Implement,
             &raw,
             &effective,
@@ -1401,18 +1444,18 @@ capabilities:
             Some(&cap_config),
         );
         assert_eq!(mode, InteractionLevel::Supervised);
-        assert_eq!(source, ModeSource::ProjectMax);
+        assert_eq!(source, InteractionSource::ProjectMax);
     }
 
     #[test]
-    fn resolve_mode_max_mode_does_not_lower() {
+    fn resolve_interaction_max_interaction_does_not_lower() {
         let raw = defaults_with_mode(InteractionLevel::Pairing);
         let effective = raw.clone();
         let cap_config = CapabilityConfig {
-            max_mode: Some(InteractionLevel::Supervised),
+            max_interaction: Some(InteractionLevel::Supervised),
             ..Default::default()
         };
-        let (mode, source) = resolve_mode(
+        let (mode, source) = resolve_interaction(
             &Capability::Implement,
             &raw,
             &effective,
@@ -1421,18 +1464,104 @@ capabilities:
         );
         // Pairing > Supervised, so no clamping
         assert_eq!(mode, InteractionLevel::Pairing);
-        assert_eq!(source, ModeSource::Default);
+        assert_eq!(source, InteractionSource::Default);
     }
 
     #[test]
-    fn resolve_mode_personal_clamped_by_max() {
+    fn set_capability_max_interaction_sets_and_clears_on_held_capability() {
+        let mut m = Member::new(MemberCapabilities::Specific(
+            [(Capability::Implement, CapabilityConfig::default())].into(),
+        ));
+        m.set_capability_max_interaction(
+            Capability::Implement,
+            Some(InteractionLevel::Interactive),
+        )
+        .unwrap();
+        let held = |m: &Member, cap| match &m.capabilities {
+            MemberCapabilities::Specific(map) => map.get(cap).and_then(|c| c.max_interaction),
+            _ => None,
+        };
+        assert_eq!(
+            held(&m, &Capability::Implement),
+            Some(InteractionLevel::Interactive)
+        );
+        m.set_capability_max_interaction(Capability::Implement, None)
+            .unwrap();
+        assert_eq!(held(&m, &Capability::Implement), None);
+    }
+
+    #[test]
+    fn set_capability_max_interaction_errors_when_capability_absent_or_all() {
+        let mut specific = Member::new(MemberCapabilities::Specific(
+            [(Capability::Implement, CapabilityConfig::default())].into(),
+        ));
+        assert!(specific
+            .set_capability_max_interaction(Capability::Review, Some(InteractionLevel::Pairing))
+            .is_err());
+
+        let mut all = Member::new(MemberCapabilities::All);
+        assert!(all
+            .set_capability_max_interaction(Capability::Implement, Some(InteractionLevel::Pairing))
+            .is_err());
+    }
+
+    #[test]
+    fn set_capabilities_carries_over_surviving_configs() {
+        let mut m = Member::new(MemberCapabilities::Specific(
+            [
+                (
+                    Capability::Implement,
+                    CapabilityConfig {
+                        max_interaction: Some(InteractionLevel::Interactive),
+                        ..Default::default()
+                    },
+                ),
+                (Capability::Review, CapabilityConfig::default()),
+            ]
+            .into(),
+        ));
+        // Replace with plan+implement: implement keeps its floor, plan is new
+        // (no floor), review is dropped.
+        m.set_capabilities(MemberCapabilities::Specific(
+            [
+                (Capability::Plan, CapabilityConfig::default()),
+                (Capability::Implement, CapabilityConfig::default()),
+            ]
+            .into(),
+        ));
+        match &m.capabilities {
+            MemberCapabilities::Specific(map) => {
+                assert!(map.contains_key(&Capability::Plan));
+                assert!(map.contains_key(&Capability::Implement));
+                assert!(!map.contains_key(&Capability::Review));
+                assert_eq!(
+                    map[&Capability::Implement].max_interaction,
+                    Some(InteractionLevel::Interactive)
+                );
+                assert_eq!(map[&Capability::Plan].max_interaction, None);
+            }
+            _ => panic!("expected specific capabilities"),
+        }
+    }
+
+    #[test]
+    fn set_capabilities_to_all_replaces_wholesale() {
+        let mut m = Member::new(MemberCapabilities::Specific(
+            [(Capability::Implement, CapabilityConfig::default())].into(),
+        ));
+        m.set_capabilities(MemberCapabilities::All);
+        assert!(matches!(m.capabilities, MemberCapabilities::All));
+    }
+
+    #[test]
+    fn resolve_interaction_personal_clamped_by_max() {
         let raw = defaults_with_mode(InteractionLevel::Collaborative);
         let effective = raw.clone();
         let cap_config = CapabilityConfig {
-            max_mode: Some(InteractionLevel::Interactive),
+            max_interaction: Some(InteractionLevel::Interactive),
             ..Default::default()
         };
-        let (mode, source) = resolve_mode(
+        let (mode, source) = resolve_interaction(
             &Capability::Implement,
             &raw,
             &effective,
@@ -1441,7 +1570,7 @@ capabilities:
         );
         // Personal is Autonomous but max is Interactive, clamp up
         assert_eq!(mode, InteractionLevel::Interactive);
-        assert_eq!(source, ModeSource::ProjectMax);
+        assert_eq!(source, InteractionSource::ProjectMax);
     }
 
     // -----------------------------------------------------------------------
@@ -1509,7 +1638,7 @@ updated: "2026-01-01T00:00:00+00:00"
     // -----------------------------------------------------------------------
 
     #[test]
-    fn resolve_mode_full_scenario() {
+    fn resolve_interaction_full_scenario() {
         // Joy default: implement = collaborative
         let raw = defaults_with_cap_mode(Capability::Implement, InteractionLevel::Collaborative);
         // Project override: implement = interactive
@@ -1517,13 +1646,13 @@ updated: "2026-01-01T00:00:00+00:00"
             defaults_with_cap_mode(Capability::Implement, InteractionLevel::Interactive);
         // Personal preference: autonomous
         let personal = Some(InteractionLevel::Autonomous);
-        // Project max-mode: supervised (minimum interactivity)
+        // Project max-interaction: supervised (minimum interactivity)
         let cap_config = CapabilityConfig {
-            max_mode: Some(InteractionLevel::Supervised),
+            max_interaction: Some(InteractionLevel::Supervised),
             ..Default::default()
         };
 
-        let (mode, source) = resolve_mode(
+        let (mode, source) = resolve_interaction(
             &Capability::Implement,
             &raw,
             &effective,
@@ -1533,11 +1662,11 @@ updated: "2026-01-01T00:00:00+00:00"
 
         // Personal (autonomous) < max (supervised), so clamped up to supervised
         assert_eq!(mode, InteractionLevel::Supervised);
-        assert_eq!(source, ModeSource::ProjectMax);
+        assert_eq!(source, InteractionSource::ProjectMax);
     }
 
     #[test]
-    fn resolve_mode_all_layers_no_clamping() {
+    fn resolve_interaction_all_layers_no_clamping() {
         // Joy default: implement = collaborative
         let raw = defaults_with_cap_mode(Capability::Implement, InteractionLevel::Collaborative);
         // Project override: implement = interactive
@@ -1545,10 +1674,10 @@ updated: "2026-01-01T00:00:00+00:00"
             defaults_with_cap_mode(Capability::Implement, InteractionLevel::Interactive);
         // Personal preference: pairing (more interactive than project)
         let personal = Some(InteractionLevel::Pairing);
-        // No max-mode
+        // No max-interaction
         let cap_config = CapabilityConfig::default();
 
-        let (mode, source) = resolve_mode(
+        let (mode, source) = resolve_interaction(
             &Capability::Implement,
             &raw,
             &effective,
@@ -1558,6 +1687,6 @@ updated: "2026-01-01T00:00:00+00:00"
 
         // Personal wins, no clamping
         assert_eq!(mode, InteractionLevel::Pairing);
-        assert_eq!(source, ModeSource::Personal);
+        assert_eq!(source, InteractionSource::Personal);
     }
 }

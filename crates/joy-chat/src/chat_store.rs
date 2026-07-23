@@ -32,9 +32,9 @@ use crate::chat_events::{self, ChatEvent};
 use crate::chat_ref;
 use crate::chat_seal::{self, KEYS_DIR, LOG_DIR};
 use crate::chat_wrap::{self, ContentKey, SLOT_LEN};
-use crate::error::JoyError;
 use crate::model::chat::Chat;
-use crate::model::project::{Project, PLATFORM_RECIPIENT};
+use joy_core::error::JoyError;
+use joy_core::model::project::{Project, PLATFORM_RECIPIENT};
 
 fn git(e: git2::Error) -> JoyError {
     JoyError::Git(e.to_string())
@@ -59,18 +59,18 @@ fn effective_recipient_ids(project: &Project, chat: &Chat) -> Vec<String> {
 
 /// The verify_key on record for a recipient (a member, or the platform
 /// custodian under the reserved id).
-fn recipient_public(project: &Project, id: &str) -> Option<crate::auth::PublicKey> {
+fn recipient_public(project: &Project, id: &str) -> Option<joy_core::auth::PublicKey> {
     let hex = if id == PLATFORM_RECIPIENT {
         project.platform.as_ref().map(|p| p.verify_key.clone())
     } else {
         project.member_by_key(id).and_then(|m| m.verify_key.clone())
     }?;
-    crate::auth::PublicKey::from_hex(&hex).ok()
+    joy_core::auth::PublicKey::from_hex(&hex).ok()
 }
 
 /// (recipient id, verify_key) for every current recipient PLUS the
 /// platform custodian, skipping anyone without a verify_key on record.
-fn recipients(project: &Project, chat: &Chat) -> Vec<(String, crate::auth::PublicKey)> {
+fn recipients(project: &Project, chat: &Chat) -> Vec<(String, joy_core::auth::PublicKey)> {
     let mut out = Vec::new();
     for id in effective_recipient_ids(project, chat) {
         if let Some(pk) = recipient_public(project, &id) {
@@ -88,7 +88,7 @@ fn recipients(project: &Project, chat: &Chat) -> Vec<(String, crate::auth::Publi
 /// custodian). When false, the chat has no identity to encrypt for and
 /// the caller keeps it plaintext / ephemeral per the ADR.
 pub fn can_seal(root: &std::path::Path, chat: &Chat) -> bool {
-    crate::store::load_project(root)
+    joy_core::store::load_project(root)
         .map(|p| !recipients(&p, chat).is_empty())
         .unwrap_or(false)
 }
@@ -237,7 +237,7 @@ fn coverage(events: &[ChatEvent]) -> BTreeMap<(String, String), BTreeSet<String>
 /// Idempotent: re-saving an unchanged chat writes no new objects.
 pub fn save(root: &std::path::Path, chat: &Chat, seed: &[u8; 32]) -> Result<(), JoyError> {
     let repo = chat_ref::open_repo(root)?;
-    let project = crate::store::load_project(root)
+    let project = joy_core::store::load_project(root)
         .map_err(|_| JoyError::AuthFailed("sealed chats need a Joy project".into()))?;
     let cid = chat.id.clone();
     let writer_tag = writer_tag(seed);
@@ -344,7 +344,7 @@ pub fn save(root: &std::path::Path, chat: &Chat, seed: &[u8; 32]) -> Result<(), 
     let grant = |epoch: &str,
                  ck: &ContentKey,
                  member: &str,
-                 vk: &crate::auth::PublicKey,
+                 vk: &joy_core::auth::PublicKey,
                  ne: &mut Vec<(String, ChatEvent)>,
                  ns: &mut Vec<[u8; SLOT_LEN]>|
      -> Result<(), JoyError> {
@@ -432,7 +432,7 @@ pub fn save(root: &std::path::Path, chat: &Chat, seed: &[u8; 32]) -> Result<(), 
 /// truncated. Sealed with each event, so it leaks nothing.
 fn writer_tag(seed: &[u8; 32]) -> String {
     use sha2::{Digest, Sha256};
-    let vk = crate::auth::IdentityKeypair::from_seed(seed)
+    let vk = joy_core::auth::IdentityKeypair::from_seed(seed)
         .public_key()
         .as_bytes();
     hex::encode(&Sha256::digest(vk)[..8])
@@ -593,10 +593,10 @@ fn fold_subtree(repo: &Repository, id: &str, chat_tree: &Tree, seed: &[u8; 32]) 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::auth::IdentityKeypair;
-    use crate::member_ref::MemberRef;
     use crate::model::chat::{ChatMessage, MessageKind};
-    use crate::model::project::{Member, MemberCapabilities, PlatformInfo};
+    use joy_core::auth::IdentityKeypair;
+    use joy_core::member_ref::MemberRef;
+    use joy_core::model::project::{Member, MemberCapabilities, PlatformInfo};
 
     fn ts(s: u32) -> DateTime<Utc> {
         format!("2026-07-19T00:00:{s:02}Z").parse().unwrap()
@@ -623,7 +623,7 @@ mod tests {
     /// identity keys; returns (root, platform_seed, horst_seed, anna_seed).
     fn project() -> (tempfile::TempDir, [u8; 32], [u8; 32], [u8; 32]) {
         let dir = tempfile::tempdir().unwrap();
-        crate::init::init(crate::init::InitOptions {
+        joy_core::init::init(joy_core::init::InitOptions {
             root: dir.path().to_path_buf(),
             name: Some("Sealed".into()),
             acronym: Some("SL".into()),
@@ -632,7 +632,7 @@ mod tests {
         })
         .unwrap();
         let (platform_seed, horst_seed, anna_seed) = ([2u8; 32], [1u8; 32], [3u8; 32]);
-        let mut project = crate::store::load_project(dir.path()).unwrap();
+        let mut project = joy_core::store::load_project(dir.path()).unwrap();
         project.platform = Some(PlatformInfo {
             verify_key: IdentityKeypair::from_seed(&platform_seed)
                 .public_key()
@@ -650,8 +650,8 @@ mod tests {
         let mut anna = Member::new(MemberCapabilities::All);
         anna.verify_key = Some(IdentityKeypair::from_seed(&anna_seed).public_key().to_hex());
         project.register_member("anna@example.com", anna).unwrap();
-        crate::store::write_yaml(
-            &crate::store::joy_dir(dir.path()).join(crate::store::PROJECT_FILE),
+        joy_core::store::write_yaml(
+            &joy_core::store::joy_dir(dir.path()).join(joy_core::store::PROJECT_FILE),
             &project,
         )
         .unwrap();
@@ -791,13 +791,13 @@ mod tests {
 
         // horst rotates his identity key in project.yaml
         let horst_new = [77u8; 32];
-        let mut project = crate::store::load_project(dir.path()).unwrap();
+        let mut project = joy_core::store::load_project(dir.path()).unwrap();
         project
             .member_by_key_mut("horst@example.com")
             .unwrap()
             .verify_key = Some(IdentityKeypair::from_seed(&horst_new).public_key().to_hex());
-        crate::store::write_yaml(
-            &crate::store::joy_dir(dir.path()).join(crate::store::PROJECT_FILE),
+        joy_core::store::write_yaml(
+            &joy_core::store::joy_dir(dir.path()).join(joy_core::store::PROJECT_FILE),
             &project,
         )
         .unwrap();
@@ -935,7 +935,7 @@ mod tests {
             .unwrap()
             .content()
             .to_vec();
-        assert!(crate::crypt::looks_like_blob(&sample));
+        assert!(joy_crypt::zone::looks_like_blob(&sample));
         let zone_len = sample[9] as usize;
         let zone = std::str::from_utf8(&sample[10..10 + zone_len]).unwrap();
         let (cid, epoch) = zone
@@ -958,9 +958,11 @@ mod tests {
                 .unwrap()
                 .content()
                 .to_vec();
-            let (_z, pt) =
-                crate::crypt::decrypt_blob(|_| Some(crate::crypt::ZoneKey::from_bytes(ck)), &b)
-                    .unwrap();
+            let (_z, pt) = joy_crypt::zone::decrypt_blob(
+                |_| Some(joy_crypt::zone::ZoneKey::from_bytes(ck)),
+                &b,
+            )
+            .unwrap();
             all.push_str(&String::from_utf8(pt).unwrap());
         }
         assert!(

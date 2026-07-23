@@ -7,7 +7,7 @@
 //! the app writes it (as JSON-compatible YAML) and keeps its own full
 //! reader/writer. This module extracts only what the PLATFORM needs to
 //! resolve a turn's effective agent mode: the participant's project-wide
-//! default mode (see [`crate::model::agent_mode::effective_mode`]).
+//! default mode (see [`joy_chat::model::agent_mode::effective_mode`]).
 //!
 //! The known shape (any unknown or malformed field is ignored):
 //!
@@ -21,7 +21,7 @@
 
 use std::path::Path;
 
-use crate::model::agent_mode::AgentMode;
+use joy_chat::model::agent_mode::AgentMode;
 
 /// The participant's default agent mode from `.joy/app/app.yaml`, if the
 /// file exists and carries one for `member`. Every miss — no file, a

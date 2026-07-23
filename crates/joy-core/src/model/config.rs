@@ -16,7 +16,7 @@ pub struct Config {
     #[serde(default)]
     pub workflow: WorkflowConfig,
     #[serde(default)]
-    pub modes: ModesConfig,
+    pub interaction: InteractionConfig,
     #[serde(default = "default_auto_sync", rename = "auto-sync")]
     pub auto_sync: bool,
     /// Editor invoked when a Joy command needs free-form input (e.g.
@@ -78,7 +78,7 @@ fn default_true() -> bool {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct ModesConfig {
+pub struct InteractionConfig {
     #[serde(default)]
     pub default: InteractionLevel,
 }
@@ -171,7 +171,7 @@ impl Default for Config {
             output: OutputConfig::default(),
             ai: None,
             workflow: WorkflowConfig::default(),
-            modes: ModesConfig::default(),
+            interaction: InteractionConfig::default(),
             auto_sync: default_auto_sync(),
             editor: None,
         }
@@ -198,17 +198,17 @@ pub fn describe_value(key: &str, value: &serde_json::Value) -> Option<String> {
     let s = value.as_str();
     let b = value.as_bool();
     let text = match (key, s, b) {
-        ("modes.default", Some("autonomous"), _) => {
+        ("interaction.default", Some("autonomous"), _) => {
             "work independently, stop only at governance gates"
         }
-        ("modes.default", Some("supervised"), _) => "confirm before irreversible actions",
-        ("modes.default", Some("collaborative"), _) => {
+        ("interaction.default", Some("supervised"), _) => "confirm before irreversible actions",
+        ("interaction.default", Some("collaborative"), _) => {
             "propose approach, proceed after confirmation"
         }
-        ("modes.default", Some("interactive"), _) => {
+        ("interaction.default", Some("interactive"), _) => {
             "present options with rationale, wait for decision"
         }
-        ("modes.default", Some("pairing"), _) => "step by step, question by question",
+        ("interaction.default", Some("pairing"), _) => "step by step, question by question",
 
         ("workflow.auto-git", Some("off"), _) => "never stage, commit, or push automatically",
         ("workflow.auto-git", Some("add"), _) => "git add changed files after each write",
@@ -410,47 +410,47 @@ mod tests {
     }
 
     #[test]
-    fn modes_config_get_default() {
+    fn interaction_config_get_default() {
         let config = Config::default();
-        assert_eq!(config.modes.default, InteractionLevel::Collaborative);
+        assert_eq!(config.interaction.default, InteractionLevel::Collaborative);
     }
 
     #[test]
-    fn modes_config_set_default() {
-        let yaml = "modes:\n  default: pairing\n";
+    fn interaction_config_set_default() {
+        let yaml = "interaction:\n  default: pairing\n";
         let mut base = serde_json::to_value(Config::default()).unwrap();
         let overlay: serde_json::Value = serde_yaml_ng::from_str(yaml).unwrap();
         crate::store::deep_merge_value(&mut base, &overlay);
         let config: Config = serde_json::from_value(base).unwrap();
-        assert_eq!(config.modes.default, InteractionLevel::Pairing);
+        assert_eq!(config.interaction.default, InteractionLevel::Pairing);
     }
 
     #[test]
-    fn old_agents_key_does_not_deserialize_to_modes() {
+    fn old_agents_key_does_not_deserialize_to_interaction() {
         let yaml = "agents:\n  default:\n    mode: pairing\n";
         let mut base = serde_json::to_value(Config::default()).unwrap();
         let overlay: serde_json::Value = serde_yaml_ng::from_str(yaml).unwrap();
         crate::store::deep_merge_value(&mut base, &overlay);
         let config: Config = serde_json::from_value(base).unwrap();
-        // modes.default should still be the default, not pairing
-        assert_eq!(config.modes.default, InteractionLevel::Collaborative);
+        // interaction.default should still be the default, not pairing
+        assert_eq!(config.interaction.default, InteractionLevel::Collaborative);
     }
 
     #[test]
-    fn describe_value_modes_default() {
+    fn describe_value_interaction_default() {
         let v = serde_json::Value::String("collaborative".to_string());
-        let d = describe_value("modes.default", &v).expect("known variant");
+        let d = describe_value("interaction.default", &v).expect("known variant");
         assert!(d.contains("propose"));
         let unknown = serde_json::Value::String("zzz".to_string());
-        assert!(describe_value("modes.default", &unknown).is_none());
+        assert!(describe_value("interaction.default", &unknown).is_none());
     }
 
     #[test]
-    fn flatten_under_modes_returns_default() {
+    fn flatten_under_interaction_returns_default() {
         let cfg = serde_json::to_value(Config::default()).unwrap();
-        let leaves = flatten_under(&cfg, "modes");
+        let leaves = flatten_under(&cfg, "interaction");
         let keys: Vec<&str> = leaves.iter().map(|(k, _)| k.as_str()).collect();
-        assert!(keys.contains(&"modes.default"));
+        assert!(keys.contains(&"interaction.default"));
     }
 
     #[test]
@@ -462,8 +462,8 @@ mod tests {
     }
 
     #[test]
-    fn field_hint_modes_default() {
-        let hint = field_hint("modes.default");
+    fn field_hint_interaction_default() {
+        let hint = field_hint("interaction.default");
         assert!(hint.is_some());
         let values = hint.unwrap();
         assert!(values.contains("collaborative"));
@@ -471,14 +471,14 @@ mod tests {
     }
 
     #[test]
-    fn old_agents_key_has_no_effect_on_modes() {
-        // Even if agents key is present in YAML, it should not affect modes
-        let yaml = "agents:\n  default:\n    mode: pairing\nmodes:\n  default: interactive\n";
+    fn old_agents_key_has_no_effect_on_interaction() {
+        // Even if agents key is present in YAML, it should not affect interaction
+        let yaml = "agents:\n  default:\n    mode: pairing\ninteraction:\n  default: interactive\n";
         let mut base = serde_json::to_value(Config::default()).unwrap();
         let overlay: serde_json::Value = serde_yaml_ng::from_str(yaml).unwrap();
         crate::store::deep_merge_value(&mut base, &overlay);
         let config: Config = serde_json::from_value(base).unwrap();
-        // modes.default takes the explicit value, agents is ignored
-        assert_eq!(config.modes.default, InteractionLevel::Interactive);
+        // interaction.default takes the explicit value, agents is ignored
+        assert_eq!(config.interaction.default, InteractionLevel::Interactive);
     }
 }

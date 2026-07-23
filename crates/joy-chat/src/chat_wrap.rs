@@ -7,7 +7,7 @@
 //! participant WITHOUT the stored bytes revealing who a slot is for: a
 //! keyless repo reader, even one holding every public `verify_key`, must
 //! not be able to tell who is in which chat. The current per-member wrap
-//! ([`crate::crypt::wrap_for_member`]) prefixes the granter's verify_key
+//! ([`joy_crypt::zone::wrap_for_member`]) prefixes the granter's verify_key
 //! and keys the map by recipient id, both of which leak membership.
 //!
 //! The fix is an EPHEMERAL-sender wrap. Each grant mints a throwaway
@@ -37,8 +37,8 @@ use std::collections::BTreeMap;
 use rand::RngCore;
 use sha2::{Digest, Sha256};
 
-use crate::auth::{IdentityKeypair, PublicKey};
-use crate::error::JoyError;
+use joy_core::auth::{IdentityKeypair, PublicKey};
+use joy_core::error::JoyError;
 
 /// HKDF info domain for chat content-key wraps. Binds a slot to its chat
 /// (a slot cannot be replayed into another chat) without naming a

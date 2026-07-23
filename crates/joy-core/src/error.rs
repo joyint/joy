@@ -67,7 +67,7 @@ pub enum JoyError {
     AuthFailed(String),
 
     #[error("crypto error: {0}")]
-    Crypto(#[from] joy_crypt::Error),
+    Crypto(joy_crypt::Error),
 
     #[error("no access to zone '{zone}': ask a member with access to run `joy crypt grant`")]
     ZoneAccessDenied { zone: String },
@@ -86,4 +86,18 @@ pub enum JoyError {
 
     #[error("{0}")]
     Other(String),
+}
+
+impl From<joy_crypt::Error> for JoyError {
+    /// Map crypt-level errors onto joy-core's domain errors. A missing
+    /// zone key surfaces the domain `ZoneAccessDenied` (with its
+    /// actionable "ask a member to run `joy crypt grant`" message),
+    /// exactly as before the primitives moved to joy-crypt (JI-014D-D8);
+    /// every other crypto failure wraps as `Crypto`.
+    fn from(e: joy_crypt::Error) -> Self {
+        match e {
+            joy_crypt::Error::ZoneKeyUnavailable { zone } => JoyError::ZoneAccessDenied { zone },
+            other => JoyError::Crypto(other),
+        }
+    }
 }

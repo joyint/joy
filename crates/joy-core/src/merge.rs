@@ -27,7 +27,7 @@ use serde_yaml_ng::{Mapping, Value};
 use crate::error::JoyError;
 
 /// Returns true if the given file content is a Joy encrypted blob (see
-/// `crypt::FILTER_MAGIC`). Encrypted blobs must never go through YAML
+/// `joy_crypt::zone::FILTER_MAGIC`). Encrypted blobs must never go through YAML
 /// field-level merge: their internal structure is opaque ciphertext.
 pub fn is_joycrypt_blob(bytes: &[u8]) -> bool {
     bytes.starts_with(b"JOYCRYPT")

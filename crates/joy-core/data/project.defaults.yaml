@@ -1,4 +1,4 @@
-modes:
+interaction:
   default: collaborative
   conceive: pairing
   plan: interactive

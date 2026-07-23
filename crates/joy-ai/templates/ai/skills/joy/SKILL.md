@@ -5,7 +5,7 @@ description: Joy product management assistant - use when the user asks about bac
 
 # /joy - Joy product management assistant
 
-Slash-command entry point for Joy. The user phrases what they want in natural language; you translate it into the right `joy` command and confirm before any write per your current interaction mode.
+Slash-command entry point for Joy. The user phrases what they want in natural language; you translate it into the right `joy` command and confirm before any write per your current interaction level.
 
 ## Before doing anything
 
