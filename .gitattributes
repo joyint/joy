@@ -17,3 +17,5 @@
 # emit CRLF into generated files. See JOY-01A5-CA.
 crates/joy-core/data/** text eol=lf
 crates/joy-core/templates/** text eol=lf
+crates/joy-ai/data/** text eol=lf
+crates/joy-ai/templates/** text eol=lf
