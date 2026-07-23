@@ -396,37 +396,25 @@ pub(crate) fn run_init(
     let keypair = IdentityKeypair::from_seed(seed.as_bytes());
     let public_key = keypair.public_key();
 
-    // Store salt, public key, and both wraps in project.yaml
-    let m = project.member_by_email_mut(&email).unwrap();
-    m.kdf_nonce = Some(salt.to_hex());
-    m.verify_key = Some(public_key.to_hex());
-    m.seed_wrap_passphrase = Some(wrap_passphrase);
-    m.seed_wrap_recovery = Some(wrap_recovery);
-
-    // JOY-00FD-93 (also applies to the legacy auth init path): if the
-    // founder is the only unattested member, reverse-attest them
-    // silently. Closes the attestation chain regardless of the
-    // redeemer's capabilities - attestation verification does not
-    // require the attester to have manage capability, only that the
-    // signature verifies against a member's public_key.
-    if let Some(founder_email) =
-        joy_core::auth::enroll::founder_needing_reverse_attestation(&project)
-    {
-        if founder_email != email {
-            let founder_member = project.member_by_key(&founder_email).cloned().unwrap();
-            let signed_fields = joy_core::auth::attestation::signed_fields_for(
-                &founder_email,
-                &founder_member.capabilities,
-                founder_member.enrollment_verifier.as_deref(),
-            );
-            let attestation =
-                joy_core::auth::attestation::sign_attestation(&email, &keypair, signed_fields);
-            project
-                .member_by_key_mut(&founder_email)
-                .unwrap()
-                .attestation = Some(attestation);
-        }
-    }
+    // ONE enrollment implementation with the desktop app and the platform:
+    // the already-enrolled guard, the invitation posture and the four fields.
+    // A member who WAS invited is refused here, so an invited slot cannot be
+    // claimed with a self-chosen key instead of the OTP (the attestation signs
+    // the verifier, not the verify key, and would not catch it).
+    joy_core::auth::enroll::apply_enrollment(
+        &mut project,
+        &email,
+        joy_core::auth::enroll::Proof::FirstContact,
+        joy_core::auth::enroll::EnrollmentMaterial {
+            verify_key: public_key.to_hex(),
+            kdf_nonce: salt.to_hex(),
+            seed_wrap_passphrase: wrap_passphrase,
+            seed_wrap_recovery: wrap_recovery,
+        },
+    )?;
+    // JOY-00FD-93: close the attestation chain while the founder is the only
+    // unattested member.
+    joy_core::auth::enroll::reverse_attest_founder(&mut project, &email, &keypair);
 
     // Determine the on-disk member key. In anonymous mode (ADR-042) the founder
     // is rekeyed to an opaque id before the project file is persisted, so the

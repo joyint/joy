@@ -167,10 +167,10 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 @test "joy auth reset other member requires manage capability" {
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add dev@example.com --capabilities "implement,create" --passphrase "$TEST_PASSPHRASE"
+    DEV_OTP=$(joy project member add dev@example.com --capabilities "implement,create" --passphrase "$TEST_PASSPHRASE" | extract_otp)
     # Dev cannot reset others (no manage capability)
     git config user.email dev@example.com
-    joy auth init --passphrase "alpha bravo charlie delta echo foxtrot"
+    joy auth --otp "$DEV_OTP" --passphrase "alpha bravo charlie delta echo foxtrot"
     run joy auth reset test@example.com --passphrase "alpha bravo charlie delta echo foxtrot"
     [ "$status" -ne 0 ]
     [[ "$output" == *"manage"* ]]
@@ -180,12 +180,12 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 @test "joy auth reset other member as manage user" {
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE"
-    # Dev initializes auth
+    DEV_OTP=$(joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE" | extract_otp)
+    # Dev redeems their invitation
     git config user.email dev@example.com
-    joy auth init --passphrase "alpha bravo charlie delta echo foxtrot"
+    joy auth --otp "$DEV_OTP" --passphrase "alpha bravo charlie delta echo foxtrot"
     git config user.email test@example.com
-    # Re-authenticate as lead (dev's auth init overwrote the session)
+    # Re-authenticate as lead (dev's redemption overwrote the session)
     joy auth --passphrase "$TEST_PASSPHRASE"
     # Lead (manage user) resets dev
     run joy auth reset dev@example.com --passphrase "$TEST_PASSPHRASE"
@@ -361,10 +361,10 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 @test "two members can have independent sessions" {
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE"
-    # Dev initializes auth
+    DEV_OTP=$(joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE" | extract_otp)
+    # Dev redeems their invitation
     git config user.email dev@example.com
-    joy auth init --passphrase "alpha bravo charlie delta echo foxtrot"
+    joy auth --otp "$DEV_OTP" --passphrase "alpha bravo charlie delta echo foxtrot"
     # Both should have active sessions
     run joy auth status
     [ "$status" -eq 0 ]
@@ -381,9 +381,9 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 @test "deauth only removes own session" {
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE"
+    DEV_OTP=$(joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE" | extract_otp)
     git config user.email dev@example.com
-    joy auth init --passphrase "alpha bravo charlie delta echo foxtrot"
+    joy auth --otp "$DEV_OTP" --passphrase "alpha bravo charlie delta echo foxtrot"
     # Dev deauths
     joy deauth
     run joy auth status

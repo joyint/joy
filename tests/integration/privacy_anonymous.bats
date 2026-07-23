@@ -143,7 +143,7 @@ _emails_present() { grep -rlq "$TEST_EMAIL" .joy/; }
 @test "anonymous: a multi-member project still authenticates after the switch (frozen attestation)" {
     setup_human_auth
     # A second member with their own identity; both end up attested in open mode.
-    joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE" >/dev/null
+    DEV_OTP=$(joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE" | extract_otp)
     setup_member_auth dev@example.com "$DEV_PASSPHRASE"
 
     JOY_PASSPHRASE="$TEST_PASSPHRASE" joy project set privacy anonymous >/dev/null
@@ -195,7 +195,7 @@ _emails_present() { grep -rlq "$TEST_EMAIL" .joy/; }
 
 @test "anonymous: erase severs id->e-mail resolution but keeps the audit trail (GDPR Art. 17)" {
     setup_human_auth
-    joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE" >/dev/null
+    DEV_OTP=$(joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE" | extract_otp)
     setup_member_auth dev@example.com "$DEV_PASSPHRASE"
     JOY_PASSPHRASE="$TEST_PASSPHRASE" joy project set privacy anonymous >/dev/null
     joy auth --passphrase "$TEST_PASSPHRASE" >/dev/null

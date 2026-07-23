@@ -57,7 +57,7 @@ load setup
     joy comment "$id" "original body" >/dev/null
 
     # Edit as a different identity.
-    joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE" >/dev/null
+    DEV_OTP=$(joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE" | extract_otp)
     setup_member_auth "dev@example.com" "$DEV_PASSPHRASE"
     git config user.email "dev@example.com"
     joy comment edit "$id" 1 "edited body" >/dev/null

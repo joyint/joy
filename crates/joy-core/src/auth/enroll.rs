@@ -65,13 +65,29 @@ pub fn pending_for_local_identity(root: &Path) -> Result<Option<String>, JoyErro
     Ok(is_pending(&project, &member_key).then_some(member_key))
 }
 
-/// Verify the OTP and write the material onto the member, clearing the
-/// invitation. Mutates the project in memory; persisting it is the caller's
-/// job (the platform writes through its own commit path).
+/// What the enrolling member presents about their invitation.
+pub enum Proof<'a> {
+    /// An invitation is on file and is proven with this one-time password.
+    Otp(&'a str),
+    /// No invitation: the founder, or a member a manager added without one.
+    /// Refused when an invitation IS on file, so an invited slot can never be
+    /// claimed without its OTP.
+    FirstContact,
+}
+
+/// Check the invitation posture and write the material onto the member,
+/// clearing the invitation when one was redeemed. Mutates the project in
+/// memory; persisting it is the caller's job (the platform and the CLI's
+/// anonymous mode write through their own paths).
+///
+/// The pairing of `proof` with what is on file is the security boundary: the
+/// attestation signs e-mail, capabilities and the enrollment verifier, but NOT
+/// the verify key, so nothing downstream would notice a member who set their
+/// own key without ever proving the OTP. This is the one place that refuses it.
 pub fn apply_enrollment(
     project: &mut Project,
     member_key: &str,
-    otp: &str,
+    proof: Proof<'_>,
     material: EnrollmentMaterial,
 ) -> Result<(), JoyError> {
     let (stored, already_enrolled) = {
@@ -91,15 +107,27 @@ pub fn apply_enrollment(
             "{member_key} already completed setup."
         )));
     }
-    let stored = stored.ok_or_else(|| {
-        JoyError::AuthFailed(format!(
-            "no pending invitation for {member_key}. Either setup is already done \
-             or the member was added without an OTP."
-        ))
-    })?;
-    if !crate::auth::otp::verify_otp(otp, &stored)? {
-        return Err(JoyError::AuthFailed("incorrect OTP".into()));
-    }
+    let redeemed = match (stored, proof) {
+        (Some(stored), Proof::Otp(otp)) => {
+            if !crate::auth::otp::verify_otp(otp, &stored)? {
+                return Err(JoyError::AuthFailed("incorrect OTP".into()));
+            }
+            true
+        }
+        (Some(_), Proof::FirstContact) => {
+            return Err(JoyError::AuthFailed(format!(
+                "{member_key} was invited: the one-time password is required. \
+                 Redeem it instead of setting up a fresh identity."
+            )));
+        }
+        (None, Proof::Otp(_)) => {
+            return Err(JoyError::AuthFailed(format!(
+                "no pending invitation for {member_key}. Either setup is already done \
+                 or the member was added without an OTP."
+            )));
+        }
+        (None, Proof::FirstContact) => false,
+    };
 
     let m = project
         .member_by_key_mut(member_key)
@@ -108,7 +136,11 @@ pub fn apply_enrollment(
     m.kdf_nonce = Some(material.kdf_nonce);
     m.seed_wrap_passphrase = Some(material.seed_wrap_passphrase);
     m.seed_wrap_recovery = Some(material.seed_wrap_recovery);
-    m.enrollment_verifier = None;
+    if redeemed {
+        // The invitation is spent; `is_pending` now reports false and the
+        // attestation's verifier check falls through to its post-redemption arm.
+        m.enrollment_verifier = None;
+    }
     Ok(())
 }
 
@@ -176,7 +208,7 @@ pub fn redeem_with_passphrase(
     apply_enrollment(
         &mut project,
         &member_key,
-        otp,
+        Proof::Otp(otp),
         EnrollmentMaterial {
             verify_key: keypair.public_key().to_hex(),
             kdf_nonce: salt.to_hex(),
