@@ -53,18 +53,6 @@ pub fn is_pending(project: &Project, member_key: &str) -> bool {
     m.enrollment_verifier.is_some() && !enrolled
 }
 
-/// The local git identity's member key when it holds an open invitation.
-/// `None` when that e-mail is not a member, or is one that already enrolled.
-/// This is what lets the project window prompt for an OTP after a local repo
-/// is picked, without the user knowing they were invited.
-pub fn pending_for_local_identity(root: &Path) -> Result<Option<String>, JoyError> {
-    let email = crate::vcs::default_vcs().user_email()?;
-    let project = store::load_project(root)?;
-    let member_key =
-        crate::privacy::member_key_for_email(&project, &email).unwrap_or_else(|| email.clone());
-    Ok(is_pending(&project, &member_key).then_some(member_key))
-}
-
 /// What the enrolling member presents about their invitation.
 pub enum Proof<'a> {
     /// An invitation is on file and is proven with this one-time password.
@@ -232,4 +220,82 @@ pub fn redeem_with_passphrase(
         recovery_key,
         member_key,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::auth::otp;
+    use crate::model::project::{Member, MemberCapabilities, Project};
+
+    fn material() -> EnrollmentMaterial {
+        EnrollmentMaterial {
+            verify_key: "aa".into(),
+            kdf_nonce: "bb".into(),
+            seed_wrap_passphrase: "cc".into(),
+            seed_wrap_recovery: "dd".into(),
+        }
+    }
+
+    fn project_with(verifier: Option<String>) -> (Project, String) {
+        let mut project = Project::new("T".into(), Some("T".into()));
+        let mut m = Member::new(MemberCapabilities::All);
+        m.enrollment_verifier = verifier;
+        let key = "alice@example.com".to_string();
+        project.register_member(&key, m).unwrap();
+        (project, key)
+    }
+
+    #[test]
+    fn first_contact_is_refused_while_an_invitation_is_pending() {
+        // The security boundary: an invited slot must not be claimable with a
+        // self-chosen key. The attestation does not cover the verify key, so
+        // this is the only thing that catches it.
+        let otp = otp::generate_otp();
+        let (mut project, key) = project_with(Some(otp::hash_otp(&otp).unwrap()));
+        let err =
+            apply_enrollment(&mut project, &key, Proof::FirstContact, material()).unwrap_err();
+        assert!(err.to_string().contains("one-time password is required"));
+        assert!(is_pending(&project, &key));
+        assert!(project.member_by_key(&key).unwrap().verify_key.is_none());
+    }
+
+    #[test]
+    fn the_right_otp_enrolls_and_clears_the_invitation() {
+        let otp = otp::generate_otp();
+        let (mut project, key) = project_with(Some(otp::hash_otp(&otp).unwrap()));
+        apply_enrollment(&mut project, &key, Proof::Otp(&otp), material()).unwrap();
+        let m = project.member_by_key(&key).unwrap();
+        assert_eq!(m.verify_key.as_deref(), Some("aa"));
+        assert!(m.enrollment_verifier.is_none());
+        assert!(!is_pending(&project, &key));
+    }
+
+    #[test]
+    fn a_wrong_otp_is_refused() {
+        let otp = otp::generate_otp();
+        let (mut project, key) = project_with(Some(otp::hash_otp(&otp).unwrap()));
+        let err = apply_enrollment(&mut project, &key, Proof::Otp("WRNG-OTPX-0000"), material())
+            .unwrap_err();
+        assert!(err.to_string().contains("incorrect OTP"));
+        assert!(project.member_by_key(&key).unwrap().verify_key.is_none());
+    }
+
+    #[test]
+    fn first_contact_enrolls_a_founder_without_an_invitation() {
+        let (mut project, key) = project_with(None);
+        apply_enrollment(&mut project, &key, Proof::FirstContact, material()).unwrap();
+        assert_eq!(
+            project.member_by_key(&key).unwrap().verify_key.as_deref(),
+            Some("aa")
+        );
+    }
+
+    #[test]
+    fn an_otp_without_an_invitation_is_refused() {
+        let (mut project, key) = project_with(None);
+        let err =
+            apply_enrollment(&mut project, &key, Proof::Otp("anything"), material()).unwrap_err();
+        assert!(err.to_string().contains("no pending invitation"));
+    }
 }
