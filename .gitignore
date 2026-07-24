@@ -24,3 +24,6 @@ Thumbs.db
 .joy/hooks/
 .joy/project.defaults.yaml
 ### joy:end
+
+# AI tool configs and Claude Code worktrees are generated (JOY-01D0-EB)
+.claude/
