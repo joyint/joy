@@ -108,14 +108,14 @@ jobs:
       - run: cargo test --workspace --no-fail-fast
         working-directory: joy
 
-  # The windows leg runs only on GitHub: a private mirror (internal Gitea)
-  # has no windows runner, and a job with no matching runner sits blocked
-  # forever. Same steps as `test`, split out so the gate stays job-level.
+  # Split out of the matrix so the windows leg can differ from linux when a
+  # venue needs it. It runs everywhere: GitHub uses hosted runners, the
+  # internal Gitea mirror serves windows-latest from the Windows VM on zara
+  # (infra: win-provision-gitea).
   test-windows:
     name: Test (windows-latest)
     runs-on: windows-latest
     needs: fmt
-    if: ${{ !contains(github.server_url, 'gitea') }}
     steps:
       - uses: actions/checkout@v4
         with:
