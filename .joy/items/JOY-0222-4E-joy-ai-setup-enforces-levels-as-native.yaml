@@ -1,15 +1,28 @@
 id: JOY-0222-4E
 title: joy ai setup enforces levels as native agent modes
 type: task
-status: new
+status: closed
 priority: high
 parent: JOY-021F-E2
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-24T18:28:19.535980534Z
-updated: 2026-07-24T18:28:19.535980534Z
+updated: 2026-07-24T23:40:27.575475869Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
+history:
+- date: 2026-07-24T23:29:04.683943574Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-24T23:40:27.575475869Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Enforcement per JI-0166-D8: the level-to-agent-mode mapping lives entirely in the per-tool adapter layer. joy ai setup resolves the effective level per member/capability and writes the derived native agent mode into the generated tool configurations and agent files (claude-code permission-mode plan / default / bypassPermissions-acceptEdits; copilot plan/ask, edit confirmation, auto-approve; mistral-vibe read-only, confirm, auto profiles; qwen equivalents). Derivation is one-way: never parsed back, never persisted. Instruction templates shrink to the three-level behaviour tables (Chat context / Job context wording).'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-24T23:29:04.568675967Z
+  text: 'Plan. (1) New joy-ai module level_enforcement: resolves the member''s effective levels from project data (member entry + per-capability, via resolve_interaction_level, deliberately WITHOUT the personal config layer - setup artifacts are project truth) and holds the one-way native maps: claude permissions.defaultMode plan/acceptEdits/bypassPermissions, qwen approvalMode plan/auto-edit/yolo, vibe [tools.bash] permission ask/ask/always. Mapping note vs the ADR example string: confirmed derives acceptEdits, not default - acceptEdits is literally confirm-the-irreversible (bash prompts stay) while auto-accepting reversible edits; claude default would demand confirmation for reversible edits too, which is proposing territory. Operator veto welcome. (2) ai_setup: update_claude_permissions/update_qwen_permissions write the derived mode key (enforced, overwriting); ensure_vibe_bash_always becomes level-driven (always only for autonomous, ask otherwise); copilot gets NO invented settings key (no verified native mode surface) - its enforcement stays instructional, recorded as tool limit. (3) The managed joy block gains a terse Interaction-levels section (member global level + per-capability deviations + the three one-liners), so is_tool_stale picks up level changes and re-renders configs; render_managed_block/is_tool_stale gain the root param to load project data. (4) Template wording: instructions.md ''Whatever your mode'' -> ''Whatever your interaction level''; app-session.md (chat context) stays, the effective-level surfacing there is the platform turn header per JI-0166-D8 section 5. (5) Tests: mapping unit tests, setup fixtures per level incl. staleness-on-level-change, vibe overwrite semantics. Derivation is never parsed back and never persisted in joy data.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-24T23:40:27.459779691Z
+  text: 'Result: new joy-ai module level_enforcement holds the one-way maps and the member resolution (project data only, no personal layer). Enforced at setup: claude .claude/settings.json permissions.defaultMode = plan/acceptEdits/bypassPermissions; qwen .qwen/settings.json approvalMode = plan/auto-edit/yolo; vibe .vibe/config.toml [tools.bash] permission = ask/ask/always, now level-driven and overwriting hand edits (project.yaml is the authority; the old keep-if-present behavior is gone). Copilot deliberately gets no invented settings key (no verified native mode surface); its levels are instructional via the managed block, recorded as a tool limit. The managed joy block gains a terse Interaction-levels section (global level + native enforcement line + per-capability deviations + the three one-liners); because it is member- and level-dependent, is_tool_stale now re-renders all tool artifacts on any level change in project.yaml. instructions.md wording moved off the word mode. Nothing native is ever parsed back or persisted in joy data. Tests: mapping totality, member-over-defaults resolution, claude/qwen settings per level, vibe overwrite + idempotence, managed-block change tracking; just check green (540 int tests). Note: the ACP/chat side (joy-agent JOY_CHAT_MODE, platform adapter) already speaks the neutral plan/accept-edits/autonomous axis and is covered by the platform items, not here.'

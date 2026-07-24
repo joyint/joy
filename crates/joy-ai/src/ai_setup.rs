@@ -70,11 +70,7 @@ fn joy_block_matches(path: &Path, expected_block: &str) -> bool {
     content.contains(&expected_wrapped)
 }
 
-fn update_qwen_permissions(
-    root: &Path,
-    _member_id: &str,
-    report: Report,
-) -> Result<bool, JoyError> {
+fn update_qwen_permissions(root: &Path, member_id: &str, report: Report) -> Result<bool, JoyError> {
     let settings_path = root.join(".qwen/settings.json");
 
     let mut settings: serde_json::Value = if settings_path.is_file() {
@@ -102,6 +98,14 @@ fn update_qwen_permissions(
         }
     }
 
+    // Enforced level -> native approval mode (JOY-0222-4E). Overwrites a
+    // hand-edited value on purpose: project.yaml is the authority here.
+    let levels = crate::level_enforcement::resolve_for_member(root, member_id);
+    settings.as_object_mut().unwrap().insert(
+        "approvalMode".into(),
+        serde_json::json!(crate::level_enforcement::qwen_approval_mode(levels.global)),
+    );
+
     let json = serde_json::to_string_pretty(&settings)?;
     let changed = write_if_changed(root, &settings_path, &format!("{json}\n"))?;
     report(".qwen/settings.json".into());
@@ -109,7 +113,11 @@ fn update_qwen_permissions(
     Ok(changed)
 }
 
-fn ensure_vibe_bash_always(root: &Path, path: &Path) -> Result<bool, JoyError> {
+fn ensure_vibe_bash_permission(
+    root: &Path,
+    path: &Path,
+    member_id: &str,
+) -> Result<bool, JoyError> {
     use toml_edit::{value, DocumentMut, Item, Table};
 
     let mut doc: DocumentMut = if path.is_file() {
@@ -133,10 +141,16 @@ fn ensure_vibe_bash_always(root: &Path, path: &Path) -> Result<bool, JoyError> {
         .as_table_mut()
         .ok_or_else(|| JoyError::Other(".vibe/config.toml: [tools.bash] is not a table".into()))?;
 
-    if bash.get("permission").is_some() {
+    // Enforced level -> bash permission (JOY-0222-4E): `always` only for an
+    // autonomous member, everyone else confirms each shell command. This
+    // overwrites a hand-edited value on purpose (project.yaml is the
+    // authority), which replaces the old keep-if-present behavior.
+    let levels = crate::level_enforcement::resolve_for_member(root, member_id);
+    let permission = crate::level_enforcement::vibe_bash_permission(levels.global);
+    if bash.get("permission").and_then(|i| i.as_str()) == Some(permission) {
         return Ok(false);
     }
-    bash["permission"] = value("always");
+    bash["permission"] = value(permission);
 
     write_if_changed(root, path, &doc.to_string())
 }
@@ -284,7 +298,7 @@ pub fn is_tool_stale(root: &Path, tool: &str, member_id: &str) -> Result<bool, J
     };
     if let Some(path) = block_path {
         let has_skill = tool != "copilot";
-        let expected_block = render_managed_block(member_id, has_skill, tool)?;
+        let expected_block = render_managed_block(root, member_id, has_skill, tool)?;
         if !joy_block_matches(&path, &expected_block) {
             return Ok(true);
         }
@@ -406,11 +420,26 @@ pub const TOOLS: &[ToolEntry] = &[
 ];
 
 /// Set up only NEW (not yet configured) tools. Returns list of all configured tool IDs.
-fn render_managed_block(member_id: &str, has_skill: bool, tool: &str) -> Result<String, JoyError> {
+fn render_managed_block(
+    root: &Path,
+    member_id: &str,
+    has_skill: bool,
+    tool: &str,
+) -> Result<String, JoyError> {
     let workflow = crate::ai_templates::load_workflow()?;
     let joy_block = crate::ai_templates::render_joy_block(member_id, has_skill, tool)?;
+    // The member's enforced levels live inside the managed block, so
+    // `is_tool_stale` re-renders every tool artefact when a level changes
+    // in project.yaml (JOY-0222-4E).
+    let levels = crate::level_enforcement::resolve_for_member(root, member_id);
+    let levels_section = crate::level_enforcement::managed_block_section(&levels, tool);
     let instructions = crate::ai_templates::render_instructions(&workflow)?;
-    Ok(format!("{}\n\n{}", joy_block, instructions))
+    Ok(format!(
+        "{}\n\n{}\n\n{}",
+        joy_block,
+        levels_section.trim_end(),
+        instructions
+    ))
 }
 
 /// Render SKILL.md with workflow context.
@@ -468,7 +497,7 @@ fn configure_claude(root: &Path, member_id: &str, report: Report) -> Result<bool
     changed |= update_with_joy_block(
         root,
         &claude_md,
-        &render_managed_block(member_id, true, "claude")?,
+        &render_managed_block(root, member_id, true, "claude")?,
     )?;
     report(".claude/CLAUDE.md".into());
 
@@ -488,7 +517,7 @@ fn configure_claude(root: &Path, member_id: &str, report: Report) -> Result<bool
 
 fn update_claude_permissions(
     root: &Path,
-    _member_id: &str,
+    member_id: &str,
     report: Report,
 ) -> Result<bool, JoyError> {
     let settings_path = root.join(".claude/settings.json");
@@ -518,6 +547,16 @@ fn update_claude_permissions(
         }
     }
 
+    // Enforced level -> native permission mode (JOY-0222-4E). Overwrites a
+    // hand-edited value on purpose: project.yaml is the authority here.
+    let levels = crate::level_enforcement::resolve_for_member(root, member_id);
+    permissions.as_object_mut().unwrap().insert(
+        "defaultMode".into(),
+        serde_json::json!(crate::level_enforcement::claude_permission_mode(
+            levels.global
+        )),
+    );
+
     let json = serde_json::to_string_pretty(&settings)?;
     let changed = write_if_changed(root, &settings_path, &format!("{json}\n"))?;
     report(".claude/settings.json".into());
@@ -538,7 +577,7 @@ fn configure_qwen(root: &Path, member_id: &str, report: Report) -> Result<bool, 
     changed |= update_with_joy_block(
         root,
         &qwen_md,
-        &render_managed_block(member_id, true, "qwen")?,
+        &render_managed_block(root, member_id, true, "qwen")?,
     )?;
     report(".qwen/QWEN.md".into());
 
@@ -572,7 +611,7 @@ fn configure_vibe(root: &Path, member_id: &str, report: Report) -> Result<bool, 
     changed |= update_with_joy_block(
         root,
         &agents_md,
-        &render_managed_block(member_id, true, "vibe")?,
+        &render_managed_block(root, member_id, true, "vibe")?,
     )?;
     report("AGENTS.md".into());
 
@@ -587,7 +626,7 @@ fn configure_vibe(root: &Path, member_id: &str, report: Report) -> Result<bool, 
     changed |= generate_agents(root, "vibe", ".vibe/agents", report)?;
 
     let config_path = vibe_dir.join("config.toml");
-    changed |= ensure_vibe_bash_always(root, &config_path)?;
+    changed |= ensure_vibe_bash_permission(root, &config_path, member_id)?;
     report(".vibe/config.toml".into());
 
     Ok(changed)
@@ -606,7 +645,7 @@ fn configure_copilot(root: &Path, member_id: &str, report: Report) -> Result<boo
     changed |= update_with_joy_block(
         root,
         &instructions_md,
-        &render_managed_block(member_id, false, "copilot")?,
+        &render_managed_block(root, member_id, false, "copilot")?,
     )?;
     report(".github/copilot-instructions.md".into());
 
@@ -1254,11 +1293,23 @@ mod setup_tests {
         assert!(plan.remove_member);
     }
 
+    /// Write project defaults so the enforced global level is `level`.
+    fn write_level_defaults(root: &Path, level: &str) {
+        let joy = joy_core::store::joy_dir(root);
+        std::fs::create_dir_all(&joy).unwrap();
+        std::fs::write(
+            joy.join("project.defaults.yaml"),
+            format!("interaction-level:\n  default: {level}\n"),
+        )
+        .unwrap();
+    }
+
     #[test]
-    fn ensure_vibe_bash_always_creates_new_file() {
+    fn vibe_bash_permission_always_for_autonomous_member() {
         let tmp = tempfile::tempdir().unwrap();
+        write_level_defaults(tmp.path(), "autonomous");
         let path = tmp.path().join("config.toml");
-        let changed = ensure_vibe_bash_always(tmp.path(), &path).unwrap();
+        let changed = ensure_vibe_bash_permission(tmp.path(), &path, "ai:test@joy").unwrap();
         assert!(changed);
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("[tools.bash]"));
@@ -1266,11 +1317,12 @@ mod setup_tests {
     }
 
     #[test]
-    fn ensure_vibe_bash_always_adds_to_existing_unrelated_config() {
+    fn vibe_bash_permission_adds_to_existing_unrelated_config() {
         let tmp = tempfile::tempdir().unwrap();
+        write_level_defaults(tmp.path(), "autonomous");
         let path = tmp.path().join("config.toml");
         std::fs::write(&path, "[models]\ndefault = \"mistral-large\"\n").unwrap();
-        let changed = ensure_vibe_bash_always(tmp.path(), &path).unwrap();
+        let changed = ensure_vibe_bash_permission(tmp.path(), &path, "ai:test@joy").unwrap();
         assert!(changed);
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("default = \"mistral-large\""));
@@ -1278,15 +1330,77 @@ mod setup_tests {
     }
 
     #[test]
-    fn ensure_vibe_bash_always_preserves_user_override() {
+    fn vibe_bash_permission_enforces_level_over_hand_edit() {
+        // A confirmed member's config hand-edited to `always` is pulled back
+        // to `ask`: project.yaml is the authority (JOY-0222-4E).
         let tmp = tempfile::tempdir().unwrap();
+        write_level_defaults(tmp.path(), "confirmed");
         let path = tmp.path().join("config.toml");
-        std::fs::write(&path, "[tools.bash]\npermission = \"ask\"\n").unwrap();
-        let changed = ensure_vibe_bash_always(tmp.path(), &path).unwrap();
-        assert!(!changed);
+        std::fs::write(&path, "[tools.bash]\npermission = \"always\"\n").unwrap();
+        let changed = ensure_vibe_bash_permission(tmp.path(), &path, "ai:test@joy").unwrap();
+        assert!(changed);
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("permission = \"ask\""));
         assert!(!content.contains("\"always\""));
+    }
+
+    #[test]
+    fn vibe_bash_permission_noop_when_already_enforced() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_level_defaults(tmp.path(), "confirmed");
+        let path = tmp.path().join("config.toml");
+        std::fs::write(&path, "[tools.bash]\npermission = \"ask\"\n").unwrap();
+        let changed = ensure_vibe_bash_permission(tmp.path(), &path, "ai:test@joy").unwrap();
+        assert!(!changed);
+    }
+
+    #[test]
+    fn claude_settings_default_mode_follows_level() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_level_defaults(tmp.path(), "autonomous");
+        let mut lines = Vec::new();
+        let mut report = |l: String| lines.push(l);
+        update_claude_permissions(tmp.path(), "ai:test@joy", &mut report).unwrap();
+        let content = std::fs::read_to_string(tmp.path().join(".claude/settings.json")).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(v["permissions"]["defaultMode"], "bypassPermissions");
+
+        write_level_defaults(tmp.path(), "proposing");
+        update_claude_permissions(tmp.path(), "ai:test@joy", &mut report).unwrap();
+        let content = std::fs::read_to_string(tmp.path().join(".claude/settings.json")).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(v["permissions"]["defaultMode"], "plan");
+        // The joy allowlist survives the enforcement.
+        assert!(content.contains("Bash(joy *)"));
+    }
+
+    #[test]
+    fn qwen_settings_approval_mode_follows_level() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_level_defaults(tmp.path(), "confirmed");
+        let mut lines = Vec::new();
+        let mut report = |l: String| lines.push(l);
+        update_qwen_permissions(tmp.path(), "ai:test@joy", &mut report).unwrap();
+        let content = std::fs::read_to_string(tmp.path().join(".qwen/settings.json")).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(v["approvalMode"], "auto-edit");
+    }
+
+    #[test]
+    fn managed_block_carries_levels_and_tracks_changes() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_level_defaults(tmp.path(), "proposing");
+        let before = render_managed_block(tmp.path(), "ai:test@joy", true, "claude").unwrap();
+        assert!(before.contains("## Interaction levels"));
+        assert!(before.contains("Your interaction level: proposing"));
+        assert!(before.contains("permission mode `plan`"));
+
+        // A level change in the project data re-renders the block, which is
+        // what makes is_tool_stale pick it up.
+        write_level_defaults(tmp.path(), "autonomous");
+        let after = render_managed_block(tmp.path(), "ai:test@joy", true, "claude").unwrap();
+        assert_ne!(before, after);
+        assert!(after.contains("permission mode `bypassPermissions`"));
     }
 
     #[test]
