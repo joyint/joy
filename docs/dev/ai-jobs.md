@@ -37,10 +37,11 @@ leftover.
 
 Two distinct oversight concepts, easy to confuse:
 
-- **Interaction level** (`InteractionLevel`): the project's five-step
-  oversight ladder — `autonomous`, `supervised`, `collaborative`,
-  `interactive`, `pairing`. The per-project default is `interaction.default`
-  in config; per-capability defaults live in `project.defaults.yaml`.
+- **Interaction level** (`InteractionLevel`): the project's three-step
+  oversight ladder (JI-0166-D8): `autonomous`, `confirmed`, `proposing`.
+  The per-project default is `interaction-level.default` in config;
+  per-capability defaults live in `project.defaults.yaml`, member defaults
+  next to the capabilities in `project.yaml`.
 - **Agent mode** (`AgentMode`): the ACP permission mode a chat turn runs
   under (`plan` / `accept-edits` / `autonomous`). It is per-(member,
   delegator) on a chat, never a project-wide interaction level.

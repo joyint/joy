@@ -420,8 +420,8 @@ mod tests {
                 "{name} missing description"
             );
             assert!(
-                agent["default_mode"].as_str().is_some(),
-                "{name} missing default_mode"
+                agent["default-interaction-level"].as_str().is_some(),
+                "{name} missing default-interaction-level"
             );
             assert!(
                 agent["permissions"]["allowed"].as_array().is_some(),

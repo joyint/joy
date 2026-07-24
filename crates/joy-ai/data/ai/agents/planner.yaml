@@ -2,7 +2,7 @@ name: planner
 capability: plan
 description: "Break down work, scope items, prioritize, and estimate effort"
 phase: new
-default_mode: interactive
+default-interaction-level: proposing
 
 permissions:
   allowed: [read, search, grep]

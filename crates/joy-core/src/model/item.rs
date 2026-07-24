@@ -26,8 +26,14 @@ pub struct Item {
     pub tags: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub capabilities: Vec<Capability>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mode: Option<super::config::InteractionLevel>,
+    /// Item-level interaction-level override (the "item" layer of the
+    /// resolution in [`super::project::resolve_interaction_level`]).
+    #[serde(
+        default,
+        rename = "interaction-level",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub interaction_level: Option<super::config::InteractionLevel>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort: Option<u8>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -381,7 +387,7 @@ impl Item {
             milestone: None,
             tags: Vec::new(),
             capabilities,
-            mode: None,
+            interaction_level: None,
             effort: None,
             version: None,
             validity: None,

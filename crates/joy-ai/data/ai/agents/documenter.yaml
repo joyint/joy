@@ -2,7 +2,7 @@ name: documenter
 capability: document
 description: "Write or update documentation, architecture docs, API docs, user guides"
 phase: in-progress
-default_mode: collaborative
+default-interaction-level: confirmed
 
 permissions:
   allowed: [read, search, grep, write, edit]

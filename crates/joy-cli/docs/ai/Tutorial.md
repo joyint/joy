@@ -9,18 +9,16 @@ Re-run `joy ai tutorial` whenever a `joy` invocation prints `joy X.Y.Z: synced t
 At session start, run two `joy` commands yourself to pick up project context:
 
 ```
-joy config get interaction.default
+joy config get interaction-level.default
 ```
 
-returns your default interaction level for this project. Treat the resolved value as authoritative; do not guess. The five levels, from least to most oversight:
+returns your default interaction level for this project. Treat the resolved value as authoritative; do not guess. The three levels, from least to most oversight:
 
 - `autonomous` - work independently; only stop at governance gates
-- `supervised` - confirm before irreversible actions
-- `collaborative` - propose approach, proceed after confirmation
-- `interactive` - present options with rationale, wait for user decision
-- `pairing` - step by step, question by question
+- `confirmed` - work independently; confirm before irreversible actions
+- `proposing` - propose; the human decides every step
 
-Confirm the resolved mode to the user in one line at session start, e.g. "Working in collaborative mode. Want to change that for this session?". Accept natural language overrides at any time (e.g. "be more autonomous", "let's work through this together", "just do it").
+Confirm the resolved level to the user in one line at session start, e.g. "Working at the proposing level. Want to change that for this session?". Accept natural language overrides at any time (e.g. "be more autonomous", "just do it").
 
 ```
 joy project get language
@@ -83,7 +81,7 @@ After session start:
 1. User asks. If purely informational, answer with read-only commands.
 2. For changes: obtain a session if missing (see [Authentication](#authentication)), find or create the relevant Joy item.
 3. Plan-comment, `joy start <ID>`, do the work.
-4. Result-comment, `joy close <ID>` (or `joy submit <ID>` per your mode).
+4. Result-comment, `joy close <ID>` (or `joy submit <ID>` per your interaction level).
 5. Commit with `[JOY-XXXX-XX]` in the subject and the `Co-Authored-By:` + `Delegated-By:` trailers (see [Commit messages](#commit-messages)).
 
 ## Authentication
@@ -178,7 +176,7 @@ Most joy commands accept `--json` for structured output. Use it to extract speci
 
 ## Capabilities and gates
 
-Your capabilities (what kind of work you are allowed to do) and the per-capability interaction mode are shown in full form by `joy project member show <YOUR-MEMBER-ID>`. The `joy project` member table is the compact overview of the same data for all members. You discover a missing capability when a `joy` command refuses with a capability warning. **A capability warning is a hard stop.** Surface it to the user, do not attempt a workaround.
+Your capabilities (what kind of work you are allowed to do) and the per-capability interaction level are shown in full form by `joy project member show <YOUR-MEMBER-ID>`. The `joy project` member table is the compact overview of the same data for all members. You discover a missing capability when a `joy` command refuses with a capability warning. **A capability warning is a hard stop.** Surface it to the user, do not attempt a workaround.
 
 Status transitions may be restricted by per-project gates. `joy project` shows the workflow diagram and the list of configured gates. When a gate blocks an AI-initiated transition, the CLI refuses with a clear message. Tell the user and stop; do not search for another path.
 
@@ -273,7 +271,7 @@ The rules in `docs.contributing` take precedence over everything below. If `docs
 0. **An order is an order, 100%. The AI NEVER decides on its own what to defer.** Whatever the mode (plan, accept-edits, autonomous): a task is delivered completely, including every property the task, its ADRs and the project concepts require (encryption, tests, migrations, documentation, all of it). If a part cannot or should not be done now, that is the OPERATOR's decision alone: stop, name the gap explicitly, and get the call. Shipping while silently deferring a required property (a "future work" comment, a stub, a default that hides the gap) is a violation, not progress.
 1. **Item before code.** Never write code without first running `joy start <ID>` on an open Joy item. If no item exists for the work, a new one must be added (`joy add <type> "<title>"`) before starting.
 2. **Plan before, result after.** A plan comment (`joy comment <ID> "Plan: ..."`) must be added to the item before writing code, and a result comment (`joy comment <ID> "[x] what was done"`) after.
-3. **Close before final commit.** The item must be closed with `joy close <ID>` (or submitted with `joy submit <ID>` if your mode keeps you out of the closing step) before the final `git commit`.
+3. **Close before final commit.** The item must be closed with `joy close <ID>` (or submitted with `joy submit <ID>` if your interaction level keeps you out of the closing step) before the final `git commit`.
 
 ## Where Joy data lives
 

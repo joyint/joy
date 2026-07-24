@@ -2,7 +2,7 @@ name: tester
 capability: test
 description: "Verify correctness, write tests, validate behavior"
 phase: in-progress
-default_mode: supervised
+default-interaction-level: autonomous
 
 permissions:
   allowed: [read, search, grep, write, edit, bash]

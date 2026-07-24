@@ -2,7 +2,7 @@ name: implementer
 capability: implement
 description: "Write code, configuration, and infrastructure"
 phase: in-progress
-default_mode: collaborative
+default-interaction-level: confirmed
 
 permissions:
   allowed: [read, search, grep, write, edit, bash]

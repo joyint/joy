@@ -198,7 +198,7 @@ mod tests {
             milestone: None,
             tags: vec![],
             capabilities: vec![],
-            mode: None,
+            interaction_level: None,
             effort: None,
             version: None,
             validity: None,

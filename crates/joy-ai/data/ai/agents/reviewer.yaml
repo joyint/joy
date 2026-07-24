@@ -2,7 +2,7 @@ name: reviewer
 capability: review
 description: "Verify correctness, quality, and adherence to project standards"
 phase: review
-default_mode: interactive
+default-interaction-level: proposing
 
 permissions:
   allowed: [read, search, grep, test]

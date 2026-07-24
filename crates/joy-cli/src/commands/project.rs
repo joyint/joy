@@ -37,6 +37,18 @@ const PROJECT_KEYS: &[&str] = &[
 /// JSON array under --json). Scalar keys reject `--add`/`--rm`.
 const LIST_KEYS: &[&str] = &["release.version-files"];
 
+/// Parse an interaction-level argument value; an empty string means "clear"
+/// (`None`), anything else must be one of the three level names.
+fn parse_optional_level(s: &str) -> Result<Option<joy_core::model::config::InteractionLevel>> {
+    let s = s.trim();
+    if s.is_empty() {
+        return Ok(None);
+    }
+    s.parse::<joy_core::model::config::InteractionLevel>()
+        .map(Some)
+        .map_err(|e| anyhow::anyhow!("{}", e))
+}
+
 fn is_list_key(key: &str) -> bool {
     LIST_KEYS.contains(&key)
 }
@@ -135,7 +147,7 @@ enum MemberCommand {
     Show(MemberShowArgs),
     /// Add a project member
     Add(MemberAddArgs),
-    /// Edit a member's capabilities and per-capability interaction modes
+    /// Edit a member's capabilities and interaction levels
     Edit(MemberEditArgs),
     /// Remove a project member
     Rm(MemberRmArgs),
@@ -219,7 +231,8 @@ struct MemberEditArgs {
     id: String,
 
     /// Replace the whole capability set: a comma-separated list, or the
-    /// keyword `all`. Surviving capabilities keep their max-interaction/max-cost.
+    /// keyword `all`. Surviving capabilities keep their
+    /// interaction-level/max-interaction-level/max-cost settings.
     #[arg(short = 'c', long, conflicts_with_all = ["add_capability", "rm_capability"])]
     capabilities: Option<String>,
 
@@ -231,11 +244,17 @@ struct MemberEditArgs {
     #[arg(long = "rm-capability", value_name = "CAP")]
     rm_capability: Vec<String>,
 
-    /// Set a per-capability max-interaction floor: `CAP=LEVEL` (repeatable);
-    /// `CAP=` clears it. LEVEL is one of
-    /// autonomous|supervised|collaborative|interactive|pairing.
-    #[arg(long = "max-interaction", value_name = "CAP=LEVEL")]
-    max_interaction: Vec<String>,
+    /// Set the member default interaction level: `LEVEL` for the global
+    /// default, `CAP=LEVEL` per capability (repeatable); `=` resp. `CAP=`
+    /// clears. LEVEL is one of proposing|confirmed|autonomous.
+    #[arg(long = "interaction-level", value_name = "[CAP=]LEVEL")]
+    interaction_level: Vec<String>,
+
+    /// Set a per-capability max-interaction-level floor: `CAP=LEVEL`
+    /// (repeatable); `CAP=` clears it. LEVEL is one of
+    /// proposing|confirmed|autonomous.
+    #[arg(long = "max-interaction-level", value_name = "CAP=LEVEL")]
+    max_interaction_level: Vec<String>,
 
     /// Passphrase of the acting manage member (non-interactive, for
     /// scripts and tests). Any capability or interaction change invalidates the
@@ -1226,7 +1245,7 @@ fn show_project(project: &Project, root: &std::path::Path) {
     if project.member_keys().any(|id| id.starts_with("ai:")) {
         println!(
             "{}",
-            color::label("Use `joy project member show <ID>` to see interaction modes")
+            color::label("Use `joy project member show <ID>` to see interaction levels")
         );
     }
 }
@@ -1342,14 +1361,14 @@ fn run_member(
                 color::header(&joy_core::member_ref::resolve_str(&a.id))
             );
 
-            // Load defaults for interaction resolution
-            let raw_defaults = joy_core::store::load_raw_interaction_defaults(&ctx.root);
-            let effective_defaults = joy_core::store::load_interaction_defaults(&ctx.root);
+            // Load defaults for interaction-level resolution
+            let raw_defaults = joy_core::store::load_raw_interaction_level_defaults(&ctx.root);
+            let effective_defaults = joy_core::store::load_interaction_level_defaults(&ctx.root);
             let config = joy_core::store::load_config();
-            let personal_interaction = if config.interaction.default
+            let personal_level = if config.interaction_level.default
                 != joy_core::model::config::InteractionLevel::default()
             {
-                Some(config.interaction.default)
+                Some(config.interaction_level.default)
             } else {
                 None
             };
@@ -1374,41 +1393,44 @@ fn run_member(
 
                 if has && cap.is_work_capability() {
                     let cap_config = specific_map.and_then(|m| m.get(cap));
-                    let (interaction, source) = joy_core::model::project::resolve_interaction(
+                    let (level, source) = joy_core::model::project::resolve_interaction_level(
                         cap,
                         &raw_defaults,
                         &effective_defaults,
-                        personal_interaction,
+                        member.interaction_level,
+                        personal_level,
                         cap_config,
                     );
-                    let mode_text = format!("{interaction} [{source}]");
+                    let level_text = format!("{level} [{source}]");
                     let mut line = if wide {
                         format!(
                             "  {:<12} {}   {}",
                             cap_label,
                             mark,
-                            color::inactive(&mode_text)
+                            color::inactive(&level_text)
                         )
                     } else {
                         format!(
                             "  {:<5} {}   {}",
                             cap_label,
                             mark,
-                            color::inactive(&mode_text)
+                            color::inactive(&level_text)
                         )
                     };
-                    // Show max-interaction hint if clamped
-                    if source == joy_core::model::project::InteractionSource::ProjectMax {
-                        if let Some(personal) = personal_interaction {
+                    // Show the clamped-away preference if the floor won
+                    if source == joy_core::model::project::InteractionLevelSource::ProjectMax {
+                        if let Some(personal) = personal_level {
                             line.push_str(&color::inactive(&format!(
                                 "  (your preference: {personal})"
                             )));
                         }
                     }
-                    // Show max-interaction from cap config
+                    // Show max-interaction-level from cap config
                     if let Some(cc) = cap_config {
-                        if let Some(ref max) = cc.max_interaction {
-                            if source != joy_core::model::project::InteractionSource::ProjectMax {
+                        if let Some(ref max) = cc.max_interaction_level {
+                            if source
+                                != joy_core::model::project::InteractionLevelSource::ProjectMax
+                            {
                                 line.push_str(&color::inactive(&format!("  max: {max}")));
                             }
                         }
@@ -1606,11 +1628,12 @@ fn run_member(
             if a.capabilities.is_none()
                 && a.add_capability.is_empty()
                 && a.rm_capability.is_empty()
-                && a.max_interaction.is_empty()
+                && a.interaction_level.is_empty()
+                && a.max_interaction_level.is_empty()
             {
                 bail!(
                     "nothing to edit: pass --capabilities, --add-capability, \
-                     --rm-capability, or --max-interaction"
+                     --rm-capability, --interaction-level, or --max-interaction-level"
                 );
             }
 
@@ -1677,33 +1700,45 @@ fn run_member(
                 }
             }
 
-            // 2. Per-capability max-interaction floors (CAP=LEVEL, CAP= clears).
-            for spec in &a.max_interaction {
+            // 2. Member default interaction levels: `LEVEL` sets the member's
+            //    global default, `CAP=LEVEL` the per-capability default; an
+            //    empty level clears the respective setting.
+            for spec in &a.interaction_level {
+                match spec.split_once('=') {
+                    Some((cap_str, level_str)) => {
+                        let cap: Capability = cap_str
+                            .trim()
+                            .parse()
+                            .map_err(|e: String| anyhow::anyhow!("{}", e))?;
+                        let level = parse_optional_level(level_str)?;
+                        member
+                            .set_capability_interaction_level(cap, level)
+                            .map_err(|e| anyhow::anyhow!("{}", e))?;
+                    }
+                    None => {
+                        member.interaction_level = parse_optional_level(spec)?;
+                    }
+                }
+            }
+
+            // 3. Per-capability max-interaction-level floors (CAP=LEVEL, CAP= clears).
+            for spec in &a.max_interaction_level {
                 let (cap_str, level_str) = spec.split_once('=').ok_or_else(|| {
                     anyhow::anyhow!(
-                        "--max-interaction expects CAP=LEVEL (or CAP= to clear), got '{spec}'"
+                        "--max-interaction-level expects CAP=LEVEL (or CAP= to clear), got '{spec}'"
                     )
                 })?;
                 let cap: Capability = cap_str
                     .trim()
                     .parse()
                     .map_err(|e: String| anyhow::anyhow!("{}", e))?;
-                let max_interaction = if level_str.trim().is_empty() {
-                    None
-                } else {
-                    Some(
-                        level_str
-                            .trim()
-                            .parse::<joy_core::model::config::InteractionLevel>()
-                            .map_err(|e| anyhow::anyhow!("{}", e))?,
-                    )
-                };
+                let max_interaction_level = parse_optional_level(level_str)?;
                 member
-                    .set_capability_max_interaction(cap, max_interaction)
+                    .set_capability_max_interaction_level(cap, max_interaction_level)
                     .map_err(|e| anyhow::anyhow!("{}", e))?;
             }
 
-            // 3. Anti-brick: never strip manage from the last manager.
+            // 4. Anti-brick: never strip manage from the last manager.
             if had_manage && !member.has_capability(&Capability::Manage) {
                 let guard = joy_core::guard::Guard::new(project);
                 if guard.is_last_manager(&key) {
@@ -1715,9 +1750,9 @@ fn run_member(
                 }
             }
 
-            // 4. Re-sign: any capability or max-interaction change invalidates the
-            //    stored attestation (it covers `capabilities`), so the acting
-            //    manage member re-signs over the new fields.
+            // 5. Re-sign: any capability or interaction-level change invalidates
+            //    the stored attestation (it covers `capabilities`), so the
+            //    acting manage member re-signs over the new fields.
             let acting_email = joy_core::vcs::default_vcs().user_email()?;
             let acting_kp = derive_acting_keypair(
                 project,

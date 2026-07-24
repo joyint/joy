@@ -25,5 +25,5 @@ agent:
 
 ## Interaction
 
-Default mode: pairing. Conceiving is a co-creation activity where
-human and AI explore ideas together step by step.
+Default interaction level: proposing. Conceiving is a co-creation
+activity: the AI proposes ideas and directions, the human decides.

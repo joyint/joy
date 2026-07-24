@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Integration tests for interaction mode defaults, resolution, and display.
+# Integration tests for interaction-level defaults, resolution, and display.
 
 load setup
 
@@ -8,16 +8,16 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 @test "joy init creates project.defaults.yaml" {
     joy init --name "Test Project"
     [ -f ".joy/project.defaults.yaml" ]
-    grep -q "interaction:" .joy/project.defaults.yaml
-    grep -q "default: collaborative" .joy/project.defaults.yaml
+    grep -q "interaction-level:" .joy/project.defaults.yaml
+    grep -q "default: proposing" .joy/project.defaults.yaml
 }
 
-@test "project.defaults.yaml contains per-capability modes" {
+@test "project.defaults.yaml contains per-capability levels" {
     joy init --name "Test Project"
-    grep -q "conceive: pairing" .joy/project.defaults.yaml
-    grep -q "implement: collaborative" .joy/project.defaults.yaml
-    grep -q "review: interactive" .joy/project.defaults.yaml
-    grep -q "test: supervised" .joy/project.defaults.yaml
+    grep -q "conceive: proposing" .joy/project.defaults.yaml
+    grep -q "implement: confirmed" .joy/project.defaults.yaml
+    grep -q "review: proposing" .joy/project.defaults.yaml
+    grep -q "test: autonomous" .joy/project.defaults.yaml
 }
 
 @test "project.defaults.yaml contains ai-defaults capabilities" {
@@ -32,19 +32,26 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     grep -q "project.defaults.yaml" .gitignore
 }
 
-@test "joy config get interaction.default returns collaborative" {
+@test "joy config get interaction-level.default returns proposing" {
     joy init --name "Test Project"
-    run joy config get interaction.default
+    run joy config get interaction-level.default
     [ "$status" -eq 0 ]
-    [[ "$output" == "collaborative" ]]
+    [[ "$output" == "proposing" ]]
 }
 
-@test "joy config set interaction.default changes the default" {
+@test "joy config set interaction-level.default changes the default" {
     joy init --name "Test Project"
-    joy config set interaction.default pairing
-    run joy config get interaction.default
+    joy config set interaction-level.default autonomous
+    run joy config get interaction-level.default
     [ "$status" -eq 0 ]
-    [[ "$output" == "pairing" ]]
+    [[ "$output" == "autonomous" ]]
+}
+
+@test "pre-2.0 level value is rejected by config set" {
+    joy init --name "Test Project"
+    run joy config set interaction-level.default collaborative
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"allowed values: autonomous, confirmed, proposing"* ]]
 }
 
 @test "old agents.default.mode key is rejected" {
@@ -53,70 +60,95 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     [ "$status" -ne 0 ]
 }
 
-@test "joy project member show displays modes for AI member" {
+@test "joy project member show displays levels for AI member" {
     joy init --name "Test Project"
     joy auth init --passphrase "$TEST_PASSPHRASE"
     joy project member add ai:test@joy --capabilities conceive,plan,implement,review --passphrase "$TEST_PASSPHRASE"
     run joy project member show ai:test@joy
     [ "$status" -eq 0 ]
-    [[ "$output" == *"pairing"* ]]
-    [[ "$output" == *"interactive"* ]]
-    [[ "$output" == *"collaborative"* ]]
+    [[ "$output" == *"proposing"* ]]
+    [[ "$output" == *"confirmed"* ]]
     [[ "$output" == *"[default]"* ]]
 }
 
-@test "joy project member show displays modes for all-capabilities member" {
+@test "joy project member show displays levels for all-capabilities member" {
     joy init --name "Test Project"
     joy auth init --passphrase "$TEST_PASSPHRASE"
     joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
     run joy project member show ai:test@joy
     [ "$status" -eq 0 ]
     [[ "$output" == *"conceive"* ]]
-    [[ "$output" == *"pairing"* ]]
+    [[ "$output" == *"proposing"* ]]
     [[ "$output" == *"implement"* ]]
-    [[ "$output" == *"collaborative"* ]]
+    [[ "$output" == *"confirmed"* ]]
 }
 
-@test "project.yaml modes override defaults" {
+@test "project.yaml interaction-level section overrides defaults" {
     joy init --name "Test Project"
     joy auth init --passphrase "$TEST_PASSPHRASE"
     joy project member add ai:test@joy --capabilities implement,review --passphrase "$TEST_PASSPHRASE"
 
-    # Override implement interaction level in project.yaml
+    # Override the implement level in project.yaml
     cat >> .joy/project.yaml <<EOF
 
-interaction:
-  implement: pairing
+interaction-level:
+  implement: proposing
 EOF
 
     run joy project member show ai:test@joy
     [ "$status" -eq 0 ]
-    # implement should now be pairing [project], not collaborative [default]
-    [[ "$output" == *"implement"*"pairing"*"[project]"* ]]
+    # implement should now be proposing [project], not confirmed [default]
+    [[ "$output" == *"implement"*"proposing"*"[project]"* ]]
 }
 
-@test "max-interaction clamps effective interaction" {
+@test "member edit --interaction-level sets the member default" {
     setup_human_auth
-    joy project member add ai:test@joy --capabilities implement --passphrase "$TEST_PASSPHRASE"
+    joy project member add ai:test@joy --capabilities implement,review --passphrase "$TEST_PASSPHRASE"
 
-    # Set the max-interaction floor via the CLI (JI-0161-C2). This replaces the old
-    # manual project.yaml awk edit; the command re-signs the member's
-    # attestation over the new fields.
-    run joy project member edit ai:test@joy --max-interaction implement=interactive --passphrase "$TEST_PASSPHRASE"
+    run joy project member edit ai:test@joy --interaction-level autonomous --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    grep -q "interaction-level: autonomous" .joy/project.yaml
+
+    run joy project member show ai:test@joy
+    [ "$status" -eq 0 ]
+    # Both held capabilities resolve to the member default now
+    [[ "$output" == *"autonomous"*"[member]"* ]]
+}
+
+@test "member edit --interaction-level CAP=LEVEL beats the member global" {
+    setup_human_auth
+    joy project member add ai:test@joy --capabilities implement,review --passphrase "$TEST_PASSPHRASE"
+
+    run joy project member edit ai:test@joy --interaction-level autonomous --interaction-level review=proposing --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
 
     run joy project member show ai:test@joy
     [ "$status" -eq 0 ]
-    # Default for implement is collaborative, but max-interaction is interactive (more restrictive)
-    # collaborative < interactive, so it gets clamped up to interactive
-    [[ "$output" == *"interactive"*"[project max]"* ]]
+    [[ "$output" == *"implement"*"autonomous"*"[member]"* ]]
+    [[ "$output" == *"review"*"proposing"*"[member]"* ]]
 }
 
-@test "member edit --max-interaction on an unheld capability fails" {
+@test "max-interaction-level clamps the effective level" {
+    setup_human_auth
+    joy project member add ai:test@joy --capabilities test --passphrase "$TEST_PASSPHRASE"
+
+    # Set the floor via the CLI (JI-0161-C2); the command re-signs the
+    # member's attestation over the new fields.
+    run joy project member edit ai:test@joy --max-interaction-level test=confirmed --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+
+    run joy project member show ai:test@joy
+    [ "$status" -eq 0 ]
+    # Default for test is autonomous, but the floor demands confirmed
+    # (more oversight), so it gets clamped up to confirmed
+    [[ "$output" == *"confirmed"*"[project max]"* ]]
+}
+
+@test "member edit --max-interaction-level on an unheld capability fails" {
     setup_human_auth
     joy project member add ai:test@joy --capabilities implement --passphrase "$TEST_PASSPHRASE"
 
-    run joy project member edit ai:test@joy --max-interaction review=interactive --passphrase "$TEST_PASSPHRASE"
+    run joy project member edit ai:test@joy --max-interaction-level review=proposing --passphrase "$TEST_PASSPHRASE"
     [ "$status" -ne 0 ]
     [[ "$output" == *"does not have capability"* ]]
 }
@@ -130,7 +162,7 @@ EOF
 
     run joy project member show ai:test@joy
     [ "$status" -eq 0 ]
-    # plan is now held (shows a mode), review is dropped (shows the deny mark)
+    # plan is now held (shows a level), review is dropped (shows the deny mark)
     [[ "$output" == *"plan"* ]]
     [[ "$output" == *"review"*"-"* ]]
 
@@ -154,29 +186,29 @@ EOF
     [[ "$output" == *"review"* ]]
 }
 
-@test "joy show displays mode when item has explicit mode override" {
+@test "joy show displays the level when the item has an explicit override" {
     joy init --name "Test Project"
     joy add task "Test task"
     ITEM_ID=$(joy ls 2>/dev/null | grep "Test task" | awk '{print $1}')
 
-    # Add mode field to item YAML (awk for BSD/GNU portability).
+    # Add the interaction-level field to the item YAML (awk for BSD/GNU portability).
     for f in ".joy/items/${ITEM_ID}-"*.yaml; do
-        awk '/^status:/ { print; print "mode: pairing"; next } { print }' "$f" > "${f}.tmp" \
+        awk '/^status:/ { print; print "interaction-level: proposing"; next } { print }' "$f" > "${f}.tmp" \
             && mv "${f}.tmp" "$f"
     done
 
     run joy show "$ITEM_ID"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Mode:"*"pairing"* ]]
+    [[ "$output" == *"Interaction level:"*"proposing"* ]]
 }
 
-@test "joy show does not display mode when no override set" {
+@test "joy show does not display the level when no override set" {
     joy init --name "Test Project"
     joy add task "Test task"
     ITEM_ID=$(joy ls 2>/dev/null | grep "Test task" | awk '{print $1}')
     run joy show "$ITEM_ID"
     [ "$status" -eq 0 ]
-    [[ "$output" != *"Mode:"* ]]
+    [[ "$output" != *"Interaction level:"* ]]
 }
 
 @test "joy ai init syncs project.defaults.yaml" {
@@ -188,7 +220,7 @@ EOF
     [ -f ".joy/project.defaults.yaml" ]
 }
 
-@test "joy project shows hint for member modes" {
+@test "joy project shows hint for member levels" {
     joy init --name "Test Project"
     joy auth init --passphrase "$TEST_PASSPHRASE"
     joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"

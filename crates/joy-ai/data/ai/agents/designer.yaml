@@ -2,7 +2,7 @@ name: designer
 capability: design
 description: "Technical architecture, API design, data model decisions"
 phase: open
-default_mode: interactive
+default-interaction-level: proposing
 
 permissions:
   allowed: [read, search, grep, write, edit]

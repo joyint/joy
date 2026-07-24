@@ -907,7 +907,8 @@ mod tests {
         caps.insert(
             Capability::Implement,
             crate::model::project::CapabilityConfig {
-                max_interaction: None,
+                interaction_level: None,
+                max_interaction_level: None,
                 max_cost_per_job: Some(5.0),
             },
         );
@@ -947,7 +948,8 @@ mod tests {
         caps.insert(
             Capability::Implement,
             crate::model::project::CapabilityConfig {
-                max_interaction: None,
+                interaction_level: None,
+                max_interaction_level: None,
                 max_cost_per_job: Some(5.0),
             },
         );
@@ -999,7 +1001,8 @@ mod tests {
         caps.insert(
             Capability::Implement,
             crate::model::project::CapabilityConfig {
-                max_interaction: None,
+                interaction_level: None,
+                max_interaction_level: None,
                 max_cost_per_job: Some(5.0),
             },
         );

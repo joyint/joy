@@ -25,6 +25,6 @@ agent:
 
 ## Interaction
 
-Default mode: interactive. Design decisions have lasting impact.
-The designer presents architectural options with trade-offs and
-waits for the user to decide.
+Default interaction level: proposing. Design decisions have lasting
+impact. The designer proposes architectural options with trade-offs
+and waits for the human to decide.

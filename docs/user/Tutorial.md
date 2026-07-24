@@ -511,20 +511,21 @@ Joy defines eleven capabilities across two groups.
 
 ### Interaction Levels
 
-Each capability also carries an interaction level that tells AI tools how much autonomy they have. Joy defines five levels, from least to most oversight:
+Each capability also carries an interaction level that tells AI tools how much autonomy they have. Levels apply to every member; for humans they are a team agreement, for AI members they are enforced through the tools. Joy defines three levels, from least to most oversight:
 
 - `autonomous` - work independently; only stop at governance gates
-- `supervised` - confirm before irreversible actions
-- `collaborative` - propose approach, proceed after confirmation
-- `interactive` - present options with rationale, wait for user decision
-- `pairing` - step by step, question by question
+- `confirmed` - work independently; confirm before irreversible actions
+- `proposing` - propose; the human decides every step
 
-The effective level for a `(member, capability)` pair is resolved across four layers, each overriding the previous:
+The effective level for a `(member, capability)` pair is resolved across these layers, each overriding the previous:
 
-1. **Project defaults** (`.joy/project.defaults.yaml`) - ship with sensible defaults per capability (e.g. `pairing` for `conceive`, `collaborative` for `implement`).
-2. **Project overrides** (`.joy/project.yaml`) - per-capability settings the team agrees on for this project.
-3. **Personal preference** (`.joy/config.yaml`) - per-user override under `interaction.default`, applied to capabilities the project hasn't pinned.
-4. **Item override** - a single item can request a different level via its `mode` field, taking effect only for that item.
+1. **Project defaults** (`.joy/project.defaults.yaml`) - ship with sensible defaults per capability (e.g. `proposing` for `conceive`, `confirmed` for `implement`, `autonomous` for `test`).
+2. **Project overrides** (`.joy/project.yaml`) - per-capability settings the team agrees on for this project, under `interaction-level`.
+3. **Member defaults** (`.joy/project.yaml`) - the member's own default next to its capabilities: a global `interaction-level` on the member entry, plus per-capability values in the expert view.
+4. **Personal preference** (`.joy/config.yaml`) - per-user override under `interaction-level.default`, applied to capabilities the project hasn't pinned.
+5. **Item override** - a single item can request a different level via its `interaction-level` field, taking effect only for that item.
+
+A per-capability `max-interaction-level` on the member entry acts as a floor on oversight: the resolved level is clamped toward `proposing`, never relaxed.
 
 Inspect what is in force with:
 

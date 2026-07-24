@@ -25,5 +25,5 @@ agent:
 
 ## Interaction
 
-Default mode: collaborative. The implementer proposes an approach,
-proceeds after confirmation, and works independently on the code.
+Default interaction level: confirmed. The implementer works
+independently on the code and confirms before irreversible actions.

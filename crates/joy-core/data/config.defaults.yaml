@@ -7,5 +7,5 @@ output:
 workflow:
   auto-assign: true
   auto-git: add
-interaction:
-  default: collaborative
+interaction-level:
+  default: proposing

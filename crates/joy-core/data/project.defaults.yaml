@@ -1,12 +1,12 @@
-interaction:
-  default: collaborative
-  conceive: pairing
-  plan: interactive
-  design: interactive
-  implement: collaborative
-  test: supervised
-  review: interactive
-  document: collaborative
+interaction-level:
+  default: proposing
+  conceive: proposing
+  plan: proposing
+  design: proposing
+  implement: confirmed
+  test: autonomous
+  review: proposing
+  document: confirmed
 ai-defaults:
   capabilities:
     - conceive

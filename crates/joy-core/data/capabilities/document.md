@@ -26,5 +26,5 @@ agent:
 
 ## Interaction
 
-Default mode: collaborative. The documenter proposes structure and content,
-proceeds after confirmation.
+Default interaction level: confirmed. The documenter works independently
+on structure and content and confirms before irreversible actions.

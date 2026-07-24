@@ -2,7 +2,7 @@ name: conceiver
 capability: conceive
 description: "Define product vision, requirements, and process design"
 phase: new
-default_mode: pairing
+default-interaction-level: proposing
 
 permissions:
   allowed: [read, search, grep]

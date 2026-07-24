@@ -16,19 +16,19 @@ load setup
 
 @test "joy config get --describe adds a one-line description to scalar values" {
     joy init --name "T" >/dev/null
-    run joy config get interaction.default --describe
+    run joy config get interaction-level.default --describe
     [ "$status" -eq 0 ]
-    [[ "$output" == *"collaborative"* ]]
-    [[ "$output" == *"propose approach"* ]]
+    [[ "$output" == *"proposing"* ]]
+    [[ "$output" == *"propose"* ]]
 }
 
 @test "joy config get <prefix>.* --describe annotates each leaf" {
     joy init --name "T" >/dev/null
-    run joy config get interaction.* --describe
+    run joy config get interaction-level.* --describe
     [ "$status" -eq 0 ]
-    [[ "$output" == *"interaction.default"* ]]
-    [[ "$output" == *"collaborative"* ]]
-    [[ "$output" == *"propose approach"* ]]
+    [[ "$output" == *"interaction-level.default"* ]]
+    [[ "$output" == *"proposing"* ]]
+    [[ "$output" == *"propose"* ]]
 }
 
 @test "joy config get <prefix>.* --describe --json returns entries array" {

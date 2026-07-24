@@ -442,23 +442,23 @@ Joy ships embedded capability files deployed to `.joy/ai/capabilities/` via `joy
 
 For AI tools that support agent definitions (Claude Code, GitHub Copilot, Mistral Vibe), `joy ai init` generates tool-specific agent files from the capability YAML blocks. Agent files use the actor-form of the capability name (review -> reviewer, implement -> implementer). They are generated artifacts, not manually maintained. See [ADR-018](https://github.com/joyint/project/blob/main/docs/dev/adr/ADR-018-capabilities-over-roles.md) for the full rationale.
 
-### Interaction modes
+### Interaction levels
 
-AI agents in Joy operate at one of five interaction levels, configurable per member per capability in `project.yaml`:
+Members in Joy operate at one of three enforceable interaction levels (JI-0166-D8), configurable per member per capability in `project.yaml`. For humans they are a team agreement; for AI members the tools enforce them:
 
 | Level | Behavior | Example capabilities |
 |-------|----------|---------------------|
-| autonomous | Work independently, only governance gates as checkpoints | - |
-| supervised | Work independently, confirm before irreversible actions | test, implement (routine) |
-| collaborative | Propose approach, proceed after confirmation | implement |
-| interactive | Present options with rationale, wait for decision | review, plan |
-| pairing | Question-by-question, co-creation mode | conceive, design |
+| autonomous | Work independently, only governance gates as checkpoints | test |
+| confirmed | Work independently, confirm before irreversible actions | implement, document |
+| proposing | Propose, the human decides every step | conceive, plan, design, review |
 
-The effective mode for a specific job is determined by three layers:
+The effective level for a specific piece of work is determined by these layers:
 
-1. **Joy defaults** (`config.defaults.yaml`): sensible starting points per capability
-2. **Project max** (`project.yaml`): upper bound per member per capability - cannot be exceeded
-3. **Item override**: can lower the level for a specific item, but never raise it above the project max
+1. **Joy defaults** (`project.defaults.yaml`): sensible starting points per capability
+2. **Project overrides** (`project.yaml` `interaction-level` section): the team's shared baseline
+3. **Member defaults** (`project.yaml` member entry): the member's own level, global and per capability
+4. **Item override**: can adjust the level for a specific item, within the floor below
+5. **Project max** (`max-interaction-level` per member capability): a floor on oversight that clamps the result toward `proposing`, never relaxes it
 
 ```yaml
 # .joy/project.yaml (members section)
@@ -467,22 +467,23 @@ members:
     capabilities: all
 
   ai:claude@joy:
+    interaction-level: confirmed
     capabilities:
       conceive:
-        max-interaction: pairing
+        max-interaction-level: proposing
         max-cost-per-job: 10.00
       plan:
-        max-interaction: interactive
+        max-interaction-level: proposing
         max-cost-per-job: 5.00
       implement:
-        max-interaction: collaborative
+        max-interaction-level: confirmed
         max-cost-per-job: 3.00
       review:
-        max-interaction: interactive
+        max-interaction-level: proposing
         max-cost-per-job: 5.00
 ```
 
-Teams adjust levels per member and capability as needed. A solo founder uses `capabilities: all` with no limits. A team restricts AI agents to specific capabilities with cost budgets. The same capability can have different modes for different members.
+Teams adjust levels per member and capability as needed. A solo founder uses `capabilities: all` with no limits. A team restricts AI agents to specific capabilities with cost budgets. The same capability can have different levels for different members.
 
 ### Agent mode (MS-05): Joy dispatches to AI
 

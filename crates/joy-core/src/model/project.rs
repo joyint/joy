@@ -211,11 +211,22 @@ impl Docs {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Member {
     pub capabilities: MemberCapabilities,
+    /// Member default interaction level (JI-0166-D8): this member's fallback
+    /// level before per-capability overrides, for human and AI members alike.
+    /// `None` falls back to the project/Joy defaults in the resolution chain
+    /// (see [`resolve_interaction_level`]).
+    #[serde(
+        default,
+        rename = "interaction-level",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub interaction_level: Option<InteractionLevel>,
     /// The ACP adapter/tool that runs an AI member (claude-code | mistral-vibe
     /// | qwen-code | mock). Only meaningful on `ai:*` members. Set when the AI
     /// member is added; the rest of its key-bound ACP config (key, model,
-    /// agent_mode, budget, guardrail) lives in the platform DB, not the repo
-    /// (JI-0164). None on human members and on AI members with no adapter yet.
+    /// budget, guardrail) lives in the platform DB, not the repo (JI-0164 as
+    /// revised by JI-0166-D8: no agent mode is stored anywhere). None on human
+    /// members and on AI members with no adapter yet.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub adapter: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -351,12 +362,22 @@ pub enum MemberCapabilities {
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct CapabilityConfig {
+    /// Per-capability member default level (expert view, JI-0166-D8). Beats
+    /// the member's global `interaction-level` for this capability.
     #[serde(
-        rename = "max-interaction",
+        rename = "interaction-level",
         default,
         skip_serializing_if = "Option::is_none"
     )]
-    pub max_interaction: Option<InteractionLevel>,
+    pub interaction_level: Option<InteractionLevel>,
+    /// Floor on human oversight: the resolved level is clamped up to this
+    /// (toward `Proposing`), never relaxed below it.
+    #[serde(
+        rename = "max-interaction-level",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub max_interaction_level: Option<InteractionLevel>,
     #[serde(
         rename = "max-cost-per-job",
         default,
@@ -370,9 +391,9 @@ pub struct CapabilityConfig {
 // ---------------------------------------------------------------------------
 
 /// Interaction-level defaults: a global default plus optional per-capability overrides.
-/// Deserializes from flat YAML like: `{ default: collaborative, implement: autonomous }`.
+/// Deserializes from flat YAML like: `{ default: proposing, implement: confirmed }`.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct InteractionDefaults {
+pub struct InteractionLevelDefaults {
     /// Fallback interaction level when no per-capability override is set.
     #[serde(default)]
     pub default: InteractionLevel,
@@ -391,24 +412,27 @@ pub struct AiDefaults {
 
 /// Source of a resolved interaction level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InteractionSource {
+pub enum InteractionLevelSource {
     /// From project.defaults.yaml (Joy's recommendation).
     Default,
-    /// From project.yaml interaction section override.
+    /// From project.yaml interaction-level section override.
     Project,
+    /// From the member entry in project.yaml (global or per-capability default).
+    Member,
     /// From config.yaml personal preference.
     Personal,
     /// From item-level override (future).
     Item,
-    /// Clamped by max-interaction from project.yaml member config.
+    /// Clamped by max-interaction-level from project.yaml member config.
     ProjectMax,
 }
 
-impl std::fmt::Display for InteractionSource {
+impl std::fmt::Display for InteractionLevelSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Default => write!(f, "default"),
             Self::Project => write!(f, "project"),
+            Self::Member => write!(f, "member"),
             Self::Personal => write!(f, "personal"),
             Self::Item => write!(f, "item"),
             Self::ProjectMax => write!(f, "project max"),
@@ -421,52 +445,66 @@ impl std::fmt::Display for InteractionSource {
 /// Resolution order (later wins):
 /// 1. Effective defaults global level (project.defaults.yaml merged with project.yaml)
 /// 2. Effective defaults per-capability level
-/// 3. Personal config preference
+/// 3. Member default level from the member entry (global, then per-capability)
+/// 4. Personal config preference
 ///
-/// All clamped by max-interaction from the member's CapabilityConfig.
-pub fn resolve_interaction(
+/// All clamped by max-interaction-level from the member's CapabilityConfig
+/// (a floor on human oversight, never a relaxation).
+pub fn resolve_interaction_level(
     capability: &Capability,
-    raw_defaults: &InteractionDefaults,
-    effective_defaults: &InteractionDefaults,
-    personal_interaction: Option<InteractionLevel>,
+    raw_defaults: &InteractionLevelDefaults,
+    effective_defaults: &InteractionLevelDefaults,
+    member_level: Option<InteractionLevel>,
+    personal_level: Option<InteractionLevel>,
     member_cap_config: Option<&CapabilityConfig>,
-) -> (InteractionLevel, InteractionSource) {
+) -> (InteractionLevel, InteractionLevelSource) {
     // 1. Global fallback from effective defaults
-    let mut interaction = effective_defaults.default;
+    let mut level = effective_defaults.default;
     let mut source = if effective_defaults.default != raw_defaults.default {
-        InteractionSource::Project
+        InteractionLevelSource::Project
     } else {
-        InteractionSource::Default
+        InteractionLevelSource::Default
     };
 
     // 2. Per-capability default
-    if let Some(&cap_interaction) = effective_defaults.capabilities.get(capability) {
-        interaction = cap_interaction;
-        let from_raw = raw_defaults.capabilities.get(capability) == Some(&cap_interaction);
+    if let Some(&cap_level) = effective_defaults.capabilities.get(capability) {
+        level = cap_level;
+        let from_raw = raw_defaults.capabilities.get(capability) == Some(&cap_level);
         source = if from_raw {
-            InteractionSource::Default
+            InteractionLevelSource::Default
         } else {
-            InteractionSource::Project
+            InteractionLevelSource::Project
         };
     }
 
-    // 3. Personal preference
-    if let Some(personal) = personal_interaction {
-        interaction = personal;
-        source = InteractionSource::Personal;
+    // 3. Member default from the member entry: global first, then the
+    //    per-capability override next to the capability grant.
+    if let Some(member) = member_level {
+        level = member;
+        source = InteractionLevelSource::Member;
+    }
+    if let Some(cap_level) = member_cap_config.and_then(|c| c.interaction_level) {
+        level = cap_level;
+        source = InteractionLevelSource::Member;
     }
 
-    // 4. Clamp by max-interaction (minimum interactivity required)
+    // 4. Personal preference
+    if let Some(personal) = personal_level {
+        level = personal;
+        source = InteractionLevelSource::Personal;
+    }
+
+    // 5. Clamp by max-interaction-level (minimum oversight required)
     if let Some(cap_config) = member_cap_config {
-        if let Some(max) = cap_config.max_interaction {
-            if interaction < max {
-                interaction = max;
-                source = InteractionSource::ProjectMax;
+        if let Some(max) = cap_config.max_interaction_level {
+            if level < max {
+                level = max;
+                source = InteractionLevelSource::ProjectMax;
             }
         }
     }
 
-    (interaction, source)
+    (level, source)
 }
 
 // Custom serde for MemberCapabilities: "all" string or map of capabilities
@@ -501,6 +539,7 @@ impl Member {
     pub fn new(capabilities: MemberCapabilities) -> Self {
         Self {
             capabilities,
+            interaction_level: None,
             adapter: None,
             verify_key: None,
             kdf_nonce: None,
@@ -524,9 +563,10 @@ impl Member {
     }
 
     /// Replace the whole capability set. Capabilities present in both the
-    /// old and new set keep their existing [`CapabilityConfig`] (max-interaction /
-    /// max-cost floors); newly granted capabilities start from the default
-    /// (no floors). Switching to or from [`MemberCapabilities::All`]
+    /// old and new set keep their existing [`CapabilityConfig`]
+    /// (interaction-level default, max-interaction-level / max-cost floors);
+    /// newly granted capabilities start from the default (no floors).
+    /// Switching to or from [`MemberCapabilities::All`]
     /// replaces the set wholesale.
     ///
     /// Editing capabilities invalidates any stored attestation; callers
@@ -545,27 +585,53 @@ impl Member {
         };
     }
 
-    /// Set (`Some`) or clear (`None`) the per-capability max-interaction floor for
-    /// `cap`. The floor clamps the resolved interaction level upward (see
-    /// [`resolve_interaction`]). Errors if the member does not currently hold
-    /// `cap`, or holds [`MemberCapabilities::All`] (which has no
-    /// per-capability slots to attach a floor to).
+    /// Set (`Some`) or clear (`None`) the per-capability max-interaction-level
+    /// floor for `cap`. The floor clamps the resolved interaction level upward
+    /// (see [`resolve_interaction_level`]). Errors if the member does not
+    /// currently hold `cap`, or holds [`MemberCapabilities::All`] (which has
+    /// no per-capability slots to attach a floor to).
     ///
     /// Editing a floor invalidates any stored attestation; callers must
     /// re-sign.
-    pub fn set_capability_max_interaction(
+    pub fn set_capability_max_interaction_level(
         &mut self,
         cap: Capability,
-        max_interaction: Option<InteractionLevel>,
+        max_interaction_level: Option<InteractionLevel>,
     ) -> Result<(), crate::error::JoyError> {
         match &mut self.capabilities {
             MemberCapabilities::All => Err(crate::error::JoyError::Other(format!(
                 "member has 'capabilities: all'; grant an explicit capability set before \
-                 setting a per-capability max-interaction for '{cap}'"
+                 setting a per-capability max-interaction-level for '{cap}'"
             ))),
             MemberCapabilities::Specific(map) => match map.get_mut(&cap) {
                 Some(cfg) => {
-                    cfg.max_interaction = max_interaction;
+                    cfg.max_interaction_level = max_interaction_level;
+                    Ok(())
+                }
+                None => Err(crate::error::JoyError::Other(format!(
+                    "member does not have capability '{cap}'"
+                ))),
+            },
+        }
+    }
+
+    /// Set (`Some`) or clear (`None`) the per-capability member default level
+    /// for `cap` (the expert view of JI-0166-D8). Same holding rules as
+    /// [`Self::set_capability_max_interaction_level`]; editing invalidates any
+    /// stored attestation, callers must re-sign.
+    pub fn set_capability_interaction_level(
+        &mut self,
+        cap: Capability,
+        interaction_level: Option<InteractionLevel>,
+    ) -> Result<(), crate::error::JoyError> {
+        match &mut self.capabilities {
+            MemberCapabilities::All => Err(crate::error::JoyError::Other(format!(
+                "member has 'capabilities: all'; grant an explicit capability set before \
+                 setting a per-capability interaction-level for '{cap}'"
+            ))),
+            MemberCapabilities::Specific(map) => match map.get_mut(&cap) {
+                Some(cfg) => {
+                    cfg.interaction_level = interaction_level;
                     Ok(())
                 }
                 None => Err(crate::error::JoyError::Other(format!(
@@ -1316,41 +1382,41 @@ created: 2026-01-01T00:00:00Z
     }
 
     // -----------------------------------------------------------------------
-    // InteractionDefaults deserialization tests
+    // InteractionLevelDefaults deserialization tests
     // -----------------------------------------------------------------------
 
     #[test]
-    fn mode_defaults_flat_yaml_roundtrip() {
+    fn level_defaults_flat_yaml_roundtrip() {
         let yaml = r#"
-default: interactive
-implement: collaborative
-review: pairing
+default: proposing
+implement: confirmed
+test: autonomous
 "#;
-        let parsed: InteractionDefaults = serde_yaml_ng::from_str(yaml).unwrap();
-        assert_eq!(parsed.default, InteractionLevel::Interactive);
+        let parsed: InteractionLevelDefaults = serde_yaml_ng::from_str(yaml).unwrap();
+        assert_eq!(parsed.default, InteractionLevel::Proposing);
         assert_eq!(
             parsed.capabilities[&Capability::Implement],
-            InteractionLevel::Collaborative
+            InteractionLevel::Confirmed
         );
         assert_eq!(
-            parsed.capabilities[&Capability::Review],
-            InteractionLevel::Pairing
+            parsed.capabilities[&Capability::Test],
+            InteractionLevel::Autonomous
         );
     }
 
     #[test]
-    fn mode_defaults_empty_yaml() {
+    fn level_defaults_empty_yaml() {
         let yaml = "{}";
-        let parsed: InteractionDefaults = serde_yaml_ng::from_str(yaml).unwrap();
-        assert_eq!(parsed.default, InteractionLevel::Collaborative);
+        let parsed: InteractionLevelDefaults = serde_yaml_ng::from_str(yaml).unwrap();
+        assert_eq!(parsed.default, InteractionLevel::Proposing);
         assert!(parsed.capabilities.is_empty());
     }
 
     #[test]
-    fn mode_defaults_only_default() {
-        let yaml = "default: pairing";
-        let parsed: InteractionDefaults = serde_yaml_ng::from_str(yaml).unwrap();
-        assert_eq!(parsed.default, InteractionLevel::Pairing);
+    fn level_defaults_only_default() {
+        let yaml = "default: confirmed";
+        let parsed: InteractionLevelDefaults = serde_yaml_ng::from_str(yaml).unwrap();
+        assert_eq!(parsed.default, InteractionLevel::Confirmed);
         assert!(parsed.capabilities.is_empty());
     }
 
@@ -1367,142 +1433,231 @@ capabilities:
     }
 
     // -----------------------------------------------------------------------
-    // resolve_interaction tests
+    // resolve_interaction_level tests
     // -----------------------------------------------------------------------
 
-    fn defaults_with_mode(mode: InteractionLevel) -> InteractionDefaults {
-        InteractionDefaults {
-            default: mode,
+    fn defaults_with_level(level: InteractionLevel) -> InteractionLevelDefaults {
+        InteractionLevelDefaults {
+            default: level,
             ..Default::default()
         }
     }
 
-    fn defaults_with_cap_mode(cap: Capability, mode: InteractionLevel) -> InteractionDefaults {
-        let mut d = InteractionDefaults::default();
-        d.capabilities.insert(cap, mode);
+    fn defaults_with_cap_level(
+        cap: Capability,
+        level: InteractionLevel,
+    ) -> InteractionLevelDefaults {
+        let mut d = InteractionLevelDefaults::default();
+        d.capabilities.insert(cap, level);
         d
     }
 
     #[test]
-    fn resolve_interaction_uses_global_default() {
-        let raw = defaults_with_mode(InteractionLevel::Collaborative);
+    fn resolve_level_uses_global_default() {
+        let raw = defaults_with_level(InteractionLevel::Proposing);
         let effective = raw.clone();
-        let (mode, source) =
-            resolve_interaction(&Capability::Implement, &raw, &effective, None, None);
-        assert_eq!(mode, InteractionLevel::Collaborative);
-        assert_eq!(source, InteractionSource::Default);
+        let (level, source) =
+            resolve_interaction_level(&Capability::Implement, &raw, &effective, None, None, None);
+        assert_eq!(level, InteractionLevel::Proposing);
+        assert_eq!(source, InteractionLevelSource::Default);
     }
 
     #[test]
-    fn resolve_interaction_uses_per_capability_default() {
-        let raw = defaults_with_cap_mode(Capability::Review, InteractionLevel::Interactive);
+    fn resolve_level_uses_per_capability_default() {
+        let raw = defaults_with_cap_level(Capability::Test, InteractionLevel::Autonomous);
         let effective = raw.clone();
-        let (mode, source) = resolve_interaction(&Capability::Review, &raw, &effective, None, None);
-        assert_eq!(mode, InteractionLevel::Interactive);
-        assert_eq!(source, InteractionSource::Default);
+        let (level, source) =
+            resolve_interaction_level(&Capability::Test, &raw, &effective, None, None, None);
+        assert_eq!(level, InteractionLevel::Autonomous);
+        assert_eq!(source, InteractionLevelSource::Default);
     }
 
     #[test]
-    fn resolve_interaction_project_override_detected() {
-        let raw = defaults_with_cap_mode(Capability::Implement, InteractionLevel::Collaborative);
-        let effective =
-            defaults_with_cap_mode(Capability::Implement, InteractionLevel::Interactive);
-        let (mode, source) =
-            resolve_interaction(&Capability::Implement, &raw, &effective, None, None);
-        assert_eq!(mode, InteractionLevel::Interactive);
-        assert_eq!(source, InteractionSource::Project);
+    fn resolve_level_project_override_detected() {
+        let raw = defaults_with_cap_level(Capability::Implement, InteractionLevel::Confirmed);
+        let effective = defaults_with_cap_level(Capability::Implement, InteractionLevel::Proposing);
+        let (level, source) =
+            resolve_interaction_level(&Capability::Implement, &raw, &effective, None, None, None);
+        assert_eq!(level, InteractionLevel::Proposing);
+        assert_eq!(source, InteractionLevelSource::Project);
     }
 
     #[test]
-    fn resolve_interaction_personal_overrides_default() {
-        let raw = defaults_with_mode(InteractionLevel::Collaborative);
+    fn resolve_level_member_default_overrides_project() {
+        let raw = defaults_with_level(InteractionLevel::Proposing);
         let effective = raw.clone();
-        let (mode, source) = resolve_interaction(
+        let (level, source) = resolve_interaction_level(
             &Capability::Implement,
             &raw,
             &effective,
-            Some(InteractionLevel::Pairing),
+            Some(InteractionLevel::Confirmed),
+            None,
             None,
         );
-        assert_eq!(mode, InteractionLevel::Pairing);
-        assert_eq!(source, InteractionSource::Personal);
+        assert_eq!(level, InteractionLevel::Confirmed);
+        assert_eq!(source, InteractionLevelSource::Member);
     }
 
     #[test]
-    fn resolve_interaction_max_interaction_clamps_upward() {
-        let raw = defaults_with_mode(InteractionLevel::Autonomous);
+    fn resolve_level_member_cap_default_beats_member_global() {
+        let raw = defaults_with_level(InteractionLevel::Proposing);
         let effective = raw.clone();
         let cap_config = CapabilityConfig {
-            max_interaction: Some(InteractionLevel::Supervised),
+            interaction_level: Some(InteractionLevel::Autonomous),
             ..Default::default()
         };
-        let (mode, source) = resolve_interaction(
-            &Capability::Implement,
+        let (level, source) = resolve_interaction_level(
+            &Capability::Test,
             &raw,
             &effective,
+            Some(InteractionLevel::Confirmed),
             None,
             Some(&cap_config),
         );
-        assert_eq!(mode, InteractionLevel::Supervised);
-        assert_eq!(source, InteractionSource::ProjectMax);
+        assert_eq!(level, InteractionLevel::Autonomous);
+        assert_eq!(source, InteractionLevelSource::Member);
     }
 
     #[test]
-    fn resolve_interaction_max_interaction_does_not_lower() {
-        let raw = defaults_with_mode(InteractionLevel::Pairing);
+    fn resolve_level_personal_overrides_member() {
+        let raw = defaults_with_level(InteractionLevel::Proposing);
+        let effective = raw.clone();
+        let (level, source) = resolve_interaction_level(
+            &Capability::Implement,
+            &raw,
+            &effective,
+            Some(InteractionLevel::Autonomous),
+            Some(InteractionLevel::Proposing),
+            None,
+        );
+        assert_eq!(level, InteractionLevel::Proposing);
+        assert_eq!(source, InteractionLevelSource::Personal);
+    }
+
+    #[test]
+    fn resolve_level_max_clamps_upward() {
+        let raw = defaults_with_level(InteractionLevel::Autonomous);
         let effective = raw.clone();
         let cap_config = CapabilityConfig {
-            max_interaction: Some(InteractionLevel::Supervised),
+            max_interaction_level: Some(InteractionLevel::Confirmed),
             ..Default::default()
         };
-        let (mode, source) = resolve_interaction(
+        let (level, source) = resolve_interaction_level(
             &Capability::Implement,
             &raw,
             &effective,
             None,
+            None,
             Some(&cap_config),
         );
-        // Pairing > Supervised, so no clamping
-        assert_eq!(mode, InteractionLevel::Pairing);
-        assert_eq!(source, InteractionSource::Default);
+        assert_eq!(level, InteractionLevel::Confirmed);
+        assert_eq!(source, InteractionLevelSource::ProjectMax);
     }
 
     #[test]
-    fn set_capability_max_interaction_sets_and_clears_on_held_capability() {
+    fn resolve_level_max_does_not_lower() {
+        let raw = defaults_with_level(InteractionLevel::Proposing);
+        let effective = raw.clone();
+        let cap_config = CapabilityConfig {
+            max_interaction_level: Some(InteractionLevel::Confirmed),
+            ..Default::default()
+        };
+        let (level, source) = resolve_interaction_level(
+            &Capability::Implement,
+            &raw,
+            &effective,
+            None,
+            None,
+            Some(&cap_config),
+        );
+        // Proposing > Confirmed, so no clamping
+        assert_eq!(level, InteractionLevel::Proposing);
+        assert_eq!(source, InteractionLevelSource::Default);
+    }
+
+    #[test]
+    fn set_capability_max_interaction_level_sets_and_clears_on_held_capability() {
         let mut m = Member::new(MemberCapabilities::Specific(
             [(Capability::Implement, CapabilityConfig::default())].into(),
         ));
-        m.set_capability_max_interaction(
+        m.set_capability_max_interaction_level(
             Capability::Implement,
-            Some(InteractionLevel::Interactive),
+            Some(InteractionLevel::Confirmed),
         )
         .unwrap();
         let held = |m: &Member, cap| match &m.capabilities {
-            MemberCapabilities::Specific(map) => map.get(cap).and_then(|c| c.max_interaction),
+            MemberCapabilities::Specific(map) => map.get(cap).and_then(|c| c.max_interaction_level),
             _ => None,
         };
         assert_eq!(
             held(&m, &Capability::Implement),
-            Some(InteractionLevel::Interactive)
+            Some(InteractionLevel::Confirmed)
         );
-        m.set_capability_max_interaction(Capability::Implement, None)
+        m.set_capability_max_interaction_level(Capability::Implement, None)
             .unwrap();
         assert_eq!(held(&m, &Capability::Implement), None);
     }
 
     #[test]
-    fn set_capability_max_interaction_errors_when_capability_absent_or_all() {
+    fn set_capability_max_interaction_level_errors_when_capability_absent_or_all() {
         let mut specific = Member::new(MemberCapabilities::Specific(
             [(Capability::Implement, CapabilityConfig::default())].into(),
         ));
         assert!(specific
-            .set_capability_max_interaction(Capability::Review, Some(InteractionLevel::Pairing))
+            .set_capability_max_interaction_level(
+                Capability::Review,
+                Some(InteractionLevel::Proposing)
+            )
             .is_err());
 
         let mut all = Member::new(MemberCapabilities::All);
         assert!(all
-            .set_capability_max_interaction(Capability::Implement, Some(InteractionLevel::Pairing))
+            .set_capability_max_interaction_level(
+                Capability::Implement,
+                Some(InteractionLevel::Proposing)
+            )
             .is_err());
+    }
+
+    #[test]
+    fn set_capability_interaction_level_sets_clears_and_errors() {
+        let mut m = Member::new(MemberCapabilities::Specific(
+            [(Capability::Implement, CapabilityConfig::default())].into(),
+        ));
+        m.set_capability_interaction_level(
+            Capability::Implement,
+            Some(InteractionLevel::Autonomous),
+        )
+        .unwrap();
+        let held = |m: &Member, cap| match &m.capabilities {
+            MemberCapabilities::Specific(map) => map.get(cap).and_then(|c| c.interaction_level),
+            _ => None,
+        };
+        assert_eq!(
+            held(&m, &Capability::Implement),
+            Some(InteractionLevel::Autonomous)
+        );
+        m.set_capability_interaction_level(Capability::Implement, None)
+            .unwrap();
+        assert_eq!(held(&m, &Capability::Implement), None);
+        assert!(m
+            .set_capability_interaction_level(Capability::Review, Some(InteractionLevel::Confirmed))
+            .is_err());
+    }
+
+    #[test]
+    fn member_interaction_level_yaml_roundtrip() {
+        let mut m = Member::new(MemberCapabilities::All);
+        m.interaction_level = Some(InteractionLevel::Confirmed);
+        let yaml = serde_yaml_ng::to_string(&m).unwrap();
+        assert!(yaml.contains("interaction-level: confirmed"));
+        let parsed: Member = serde_yaml_ng::from_str(&yaml).unwrap();
+        assert_eq!(parsed.interaction_level, Some(InteractionLevel::Confirmed));
+
+        // Absent when unset.
+        let bare = Member::new(MemberCapabilities::All);
+        let yaml = serde_yaml_ng::to_string(&bare).unwrap();
+        assert!(!yaml.contains("interaction-level"));
     }
 
     #[test]
@@ -1512,7 +1667,7 @@ capabilities:
                 (
                     Capability::Implement,
                     CapabilityConfig {
-                        max_interaction: Some(InteractionLevel::Interactive),
+                        max_interaction_level: Some(InteractionLevel::Confirmed),
                         ..Default::default()
                     },
                 ),
@@ -1535,10 +1690,10 @@ capabilities:
                 assert!(map.contains_key(&Capability::Implement));
                 assert!(!map.contains_key(&Capability::Review));
                 assert_eq!(
-                    map[&Capability::Implement].max_interaction,
-                    Some(InteractionLevel::Interactive)
+                    map[&Capability::Implement].max_interaction_level,
+                    Some(InteractionLevel::Confirmed)
                 );
-                assert_eq!(map[&Capability::Plan].max_interaction, None);
+                assert_eq!(map[&Capability::Plan].max_interaction_level, None);
             }
             _ => panic!("expected specific capabilities"),
         }
@@ -1554,31 +1709,32 @@ capabilities:
     }
 
     #[test]
-    fn resolve_interaction_personal_clamped_by_max() {
-        let raw = defaults_with_mode(InteractionLevel::Collaborative);
+    fn resolve_level_personal_clamped_by_max() {
+        let raw = defaults_with_level(InteractionLevel::Proposing);
         let effective = raw.clone();
         let cap_config = CapabilityConfig {
-            max_interaction: Some(InteractionLevel::Interactive),
+            max_interaction_level: Some(InteractionLevel::Confirmed),
             ..Default::default()
         };
-        let (mode, source) = resolve_interaction(
+        let (level, source) = resolve_interaction_level(
             &Capability::Implement,
             &raw,
             &effective,
+            None,
             Some(InteractionLevel::Autonomous),
             Some(&cap_config),
         );
-        // Personal is Autonomous but max is Interactive, clamp up
-        assert_eq!(mode, InteractionLevel::Interactive);
-        assert_eq!(source, InteractionSource::ProjectMax);
+        // Personal is Autonomous but max is Confirmed, clamp up
+        assert_eq!(level, InteractionLevel::Confirmed);
+        assert_eq!(source, InteractionLevelSource::ProjectMax);
     }
 
     // -----------------------------------------------------------------------
-    // Item mode serialization
+    // Item interaction-level serialization
     // -----------------------------------------------------------------------
 
     #[test]
-    fn item_mode_field_roundtrip() {
+    fn item_interaction_level_field_roundtrip() {
         use crate::model::item::{Item, ItemType, Priority};
 
         let mut item = Item::new(
@@ -1588,17 +1744,20 @@ capabilities:
             Priority::Medium,
             vec![],
         );
-        item.mode = Some(InteractionLevel::Pairing);
+        item.interaction_level = Some(InteractionLevel::Proposing);
 
         let yaml = serde_yaml_ng::to_string(&item).unwrap();
-        assert!(yaml.contains("mode: pairing"), "mode field not serialized");
+        assert!(
+            yaml.contains("interaction-level: proposing"),
+            "interaction-level field not serialized"
+        );
 
         let parsed: Item = serde_yaml_ng::from_str(&yaml).unwrap();
-        assert_eq!(parsed.mode, Some(InteractionLevel::Pairing));
+        assert_eq!(parsed.interaction_level, Some(InteractionLevel::Proposing));
     }
 
     #[test]
-    fn item_mode_field_absent_when_none() {
+    fn item_interaction_level_field_absent_when_none() {
         use crate::model::item::{Item, ItemType, Priority};
 
         let item = Item::new(
@@ -1608,85 +1767,89 @@ capabilities:
             Priority::Medium,
             vec![],
         );
-        assert_eq!(item.mode, None);
+        assert_eq!(item.interaction_level, None);
 
         let yaml = serde_yaml_ng::to_string(&item).unwrap();
         assert!(
-            !yaml.contains("mode:"),
-            "mode field should not appear when None"
+            !yaml.contains("interaction-level:"),
+            "interaction-level field should not appear when None"
         );
     }
 
     #[test]
-    fn item_mode_deserialized_from_existing_yaml() {
+    fn item_interaction_level_deserialized_from_existing_yaml() {
         let yaml = r#"
 id: TST-0003
 title: Test
 type: task
 status: new
 priority: medium
-mode: interactive
+interaction-level: confirmed
 created: "2026-01-01T00:00:00+00:00"
 updated: "2026-01-01T00:00:00+00:00"
 "#;
         let item: crate::model::item::Item = serde_yaml_ng::from_str(yaml).unwrap();
-        assert_eq!(item.mode, Some(InteractionLevel::Interactive));
+        assert_eq!(item.interaction_level, Some(InteractionLevel::Confirmed));
     }
 
     // -----------------------------------------------------------------------
-    // Full four-layer resolution scenario
+    // Full resolution scenario
     // -----------------------------------------------------------------------
 
     #[test]
-    fn resolve_interaction_full_scenario() {
-        // Joy default: implement = collaborative
-        let raw = defaults_with_cap_mode(Capability::Implement, InteractionLevel::Collaborative);
-        // Project override: implement = interactive
+    fn resolve_level_full_scenario() {
+        // Joy default: implement = confirmed
+        let raw = defaults_with_cap_level(Capability::Implement, InteractionLevel::Confirmed);
+        // Project override: implement = autonomous
         let effective =
-            defaults_with_cap_mode(Capability::Implement, InteractionLevel::Interactive);
-        // Personal preference: autonomous
+            defaults_with_cap_level(Capability::Implement, InteractionLevel::Autonomous);
+        // Member default: autonomous; personal preference: autonomous
+        let member = Some(InteractionLevel::Autonomous);
         let personal = Some(InteractionLevel::Autonomous);
-        // Project max-interaction: supervised (minimum interactivity)
+        // Project max-interaction-level: confirmed (minimum oversight)
         let cap_config = CapabilityConfig {
-            max_interaction: Some(InteractionLevel::Supervised),
+            max_interaction_level: Some(InteractionLevel::Confirmed),
             ..Default::default()
         };
 
-        let (mode, source) = resolve_interaction(
+        let (level, source) = resolve_interaction_level(
             &Capability::Implement,
             &raw,
             &effective,
+            member,
             personal,
             Some(&cap_config),
         );
 
-        // Personal (autonomous) < max (supervised), so clamped up to supervised
-        assert_eq!(mode, InteractionLevel::Supervised);
-        assert_eq!(source, InteractionSource::ProjectMax);
+        // Personal (autonomous) < max (confirmed), so clamped up to confirmed
+        assert_eq!(level, InteractionLevel::Confirmed);
+        assert_eq!(source, InteractionLevelSource::ProjectMax);
     }
 
     #[test]
-    fn resolve_interaction_all_layers_no_clamping() {
-        // Joy default: implement = collaborative
-        let raw = defaults_with_cap_mode(Capability::Implement, InteractionLevel::Collaborative);
-        // Project override: implement = interactive
+    fn resolve_level_all_layers_no_clamping() {
+        // Joy default: implement = confirmed
+        let raw = defaults_with_cap_level(Capability::Implement, InteractionLevel::Confirmed);
+        // Project override: implement = autonomous
         let effective =
-            defaults_with_cap_mode(Capability::Implement, InteractionLevel::Interactive);
-        // Personal preference: pairing (more interactive than project)
-        let personal = Some(InteractionLevel::Pairing);
-        // No max-interaction
+            defaults_with_cap_level(Capability::Implement, InteractionLevel::Autonomous);
+        // Member default: confirmed; personal preference: proposing (most oversight)
+        let member = Some(InteractionLevel::Confirmed);
+        let personal = Some(InteractionLevel::Proposing);
+        // No max-interaction-level
         let cap_config = CapabilityConfig::default();
 
-        let (mode, source) = resolve_interaction(
+        let (level, source) = resolve_interaction_level(
             &Capability::Implement,
             &raw,
             &effective,
+            member,
             personal,
             Some(&cap_config),
         );
 
         // Personal wins, no clamping
-        assert_eq!(mode, InteractionLevel::Pairing);
-        assert_eq!(source, InteractionSource::Personal);
+        assert_eq!(level, InteractionLevel::Proposing);
+        assert_eq!(source, InteractionLevelSource::Personal);
     }
 }

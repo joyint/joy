@@ -5,7 +5,7 @@ description: {{ agent.description }}
 
 # {{ agent.name }}
 
-{{ agent.description }}. Default mode: {{ agent.default_mode }}.
+{{ agent.description }}. Default interaction level: {{ agent["default-interaction-level"] }}.
 
 ## Permissions
 

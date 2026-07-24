@@ -25,5 +25,5 @@ agent:
 
 ## Interaction
 
-Default mode: supervised. The tester works independently but confirms
-before irreversible actions like modifying production code.
+Default interaction level: autonomous. The tester works independently;
+governance gates remain the only checkpoints.
