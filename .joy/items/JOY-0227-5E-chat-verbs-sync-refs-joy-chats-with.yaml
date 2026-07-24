@@ -1,0 +1,14 @@
+id: JOY-0227-5E
+title: Chat verbs sync refs/joy/chats with the forge
+type: task
+status: new
+priority: high
+capabilities:
+- implement
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-24T21:43:04.522810254Z
+updated: 2026-07-24T21:43:04.522810254Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'Implements the CLI half of JAPP-00DC-FC (the CLI and apps sync the ref explicitly) and the chats three-layer concept. joy chat send: append and commit locally first (truth in the repo, nothing lost), then in the same invocation fetch refs/joy/chats from the configured remote, merge by message-id union (append-only, merges ciphertext), push. On push failure: message stays committed, clear error text, transient vs permanent classification like the app sync worker; the next send or read retries. joy chat ls/show/info fetch the ref first (occasion-based pull) so replies from the platform or other members become visible. No manual git push refs/joy/* ever required.'

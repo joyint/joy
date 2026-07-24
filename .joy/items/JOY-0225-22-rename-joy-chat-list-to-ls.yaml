@@ -1,0 +1,15 @@
+id: JOY-0225-22
+title: Rename joy chat list to ls
+type: rework
+status: new
+priority: medium
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-24T21:43:04.375612868Z
+updated: 2026-07-24T21:43:04.375612868Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'Operator 2026-07-24: every other list verb in the CLI is ls; joy chat is the outlier with list. Rename the subcommand to ls (pre-1.0, breaking is allowed; optionally keep list as a hidden alias for one release). Adjust completions, tutorial, and docs mentions.'

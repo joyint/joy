@@ -1,0 +1,20 @@
+id: JOY-0226-27
+title: 'joy chat ls: last column and --mine mention inbox'
+type: story
+status: new
+priority: medium
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-24T21:43:04.446872167Z
+updated: 2026-07-24T21:47:44.246784811Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'Operator request 2026-07-24. (1) joy chat ls gains a last column: timestamp plus a short snippet of the newest message (snippet only when the chat is readable, i.e. passphrase given; otherwise timestamp only). (2) --mine filters to chats that carry an @-mention of the acting member; interpretation to confirm with the operator: unread mentions only (inbox semantics, based on the existing read markers) vs any mention. Builds on joy chat read/info state.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-24T21:47:44.246781492Z
+  text: 'Spec finalized with the operator 2026-07-24: joy chat ls always shows two new columns, last and unread. Default: last = timestamp plus snippet of the newest message (snippet only when readable), unread = count of ALL unread messages for the acting member (read markers). With --mine: the list filters to chats carrying an @-mention of the acting member, last = date of the last mention TO ME (not the last message overall), unread = count of unread messages that mention me only.'
