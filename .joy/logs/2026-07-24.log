@@ -4,3 +4,7 @@
 2026-07-24T18:28:19.470Z JOY-0221-09 item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-07-24T18:28:19.580Z JOY-0222-4E item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-07-24T18:28:19.689Z JOY-0223-D7 item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-24T19:49:12.073Z JOY-0224-33 item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-24T19:49:12.191Z JOY-0224-33 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-24T19:50:12.001Z JOY-0224-33 comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-24T19:50:12.212Z JOY-0224-33 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

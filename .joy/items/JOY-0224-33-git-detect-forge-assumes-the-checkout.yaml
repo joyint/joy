@@ -1,0 +1,25 @@
+id: JOY-0224-33
+title: git_detect_forge assumes the checkout lives on GitHub
+type: bug
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-24T19:49:12.067468994Z
+updated: 2026-07-24T19:50:12.194857943Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-07-24T19:49:12.184905730Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-24T19:50:12.194857943Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'vcs::tests::git_detect_forge calls detect_forge(Path::new(".")) on the actual working checkout and asserts Forge::GitHub (comment: We''re on GitHub). The assertion encodes the hosting of the moment: it fails on any clone whose origin is not github.com, e.g. the private Gitea mirror used during the 2026-07 embargo week, a GitLab fork, or a bare-git checkout. Fix: build a temp repo with an explicit github origin so the plumbing path (default_remote + remote_url + parse) is tested deterministically; the per-forge URL parsing is already covered by the forge_detection_* unit tests.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-24T19:50:11.947146617Z
+  text: '[x] git_detect_forge builds a tempfile fixture repo (init_repo + explicit github origin) and asserts the plumbing path deterministically; no dependency on where the checkout is hosted. Verified: the single test passes locally; per-forge URL parsing remains covered by forge_detection_*.'
