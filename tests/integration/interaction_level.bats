@@ -211,6 +211,46 @@ EOF
     [[ "$output" != *"Interaction level:"* ]]
 }
 
+@test "joy update migrates a pre-2.0 repo to interaction-level keys and values" {
+    joy init --name "Test Project"
+    joy add task "Legacy task"
+    ITEM_ID=$(joy ls 2>/dev/null | grep "Legacy task" | awk '{print $1}')
+
+    # Rebuild the pre-2.0 state: old section key, five-level values, item mode.
+    cat > .joy/config.yaml <<EOF
+version: 1
+interaction:
+  default: collaborative
+EOF
+    cat >> .joy/project.yaml <<EOF
+
+interaction:
+  implement: supervised
+EOF
+    for f in ".joy/items/${ITEM_ID}-"*.yaml; do
+        awk '/^status:/ { print; print "mode: pairing"; next } { print }' "$f" > "${f}.tmp" \
+            && mv "${f}.tmp" "$f"
+    done
+
+    run joy update
+    [ "$status" -eq 0 ]
+
+    grep -q "interaction-level:" .joy/config.yaml
+    grep -q "default: proposing" .joy/config.yaml
+    ! grep -q "^interaction:" .joy/config.yaml
+    grep -q "interaction-level:" .joy/project.yaml
+    grep -q "implement: confirmed" .joy/project.yaml
+    for f in ".joy/items/${ITEM_ID}-"*.yaml; do
+        grep -q "interaction-level: proposing" "$f"
+        ! grep -q "^mode:" "$f"
+    done
+
+    # And the migrated repo resolves cleanly.
+    run joy config get interaction-level.default
+    [ "$status" -eq 0 ]
+    [[ "$output" == "proposing" ]]
+}
+
 @test "joy ai init syncs project.defaults.yaml" {
     joy init --name "Test Project"
     rm .joy/project.defaults.yaml

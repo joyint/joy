@@ -634,7 +634,7 @@ impl UpdateItem for DocPathsMigrationItem {
         Ok(pins
             .into_iter()
             .map(|p| CheckRow {
-                name: format!("docs.{}", p.key),
+                name: p.key.to_string(),
                 mark: RowMark::from_ok(false),
                 detail: format!("-> {}", p.to),
             })
@@ -651,7 +651,7 @@ impl UpdateItem for DocPathsMigrationItem {
         Ok(pins
             .into_iter()
             .map(|p| RefreshRow {
-                name: format!("docs.{} -> {}", p.key, p.to),
+                name: format!("{} -> {}", p.key, p.to),
                 action: Some("pinned"),
             })
             .collect())
