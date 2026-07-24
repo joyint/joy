@@ -1,0 +1,15 @@
+id: JOY-0223-D7
+title: 'Decision hygiene: supersede JOY-0047, amend JOY-01DA-E1 and JOY-01DB-B1'
+type: task
+status: new
+priority: medium
+parent: JOY-021F-E2
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-24T18:28:19.645551678Z
+updated: 2026-07-24T18:28:19.645551678Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'Per JI-0166-D8 and the ADR conventions (JI-0134): retire/supersede JOY-0047 (five named levels) with a reference to JI-0166-D8; amend JOY-01DA-E1 in place (resolution stands, value set and key names level/max-level, new default table); amend JOY-01DB-B1 in place (contexts renamed Chat context and Job context, behaviour table shrinks to three rows, shorter templates pay into the 200-line budget). Add cross-reference comments rather than rewriting history.'

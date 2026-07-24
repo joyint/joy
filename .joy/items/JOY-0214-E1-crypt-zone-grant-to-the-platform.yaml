@@ -1,7 +1,7 @@
 id: JOY-0214-E1
 title: Crypt zone grant to the platform
 type: task
-status: review
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -9,11 +9,13 @@ capabilities:
 - implement
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-18T07:30:07.175728779Z
-updated: 2026-07-18T07:33:27.256472708Z
+updated: 2026-07-21T08:45:06.032620690Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-07-18T07:30:20.073925328Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 - date: 2026-07-18T07:33:27.256472708Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-21T08:45:06.032620690Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'The container concept''s ''Zonen-Grant an die Plattform'', user-decided per zone: joy crypt grant <zone> platform wraps the zone key against the registered platform verify_key (zone-major, crypt.zones.<zone>.platform_wrap). joy-core platform_zone_keys unwraps every granted zone from the platform seed. With it the platform serves zone content to joy-unlocked app sessions and can later provision job containers. Revoke by removing the wrap; real revocation of a leaked key means re-keying the zone.'

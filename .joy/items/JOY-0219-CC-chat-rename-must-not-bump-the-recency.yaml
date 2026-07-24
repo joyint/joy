@@ -1,7 +1,7 @@
 id: JOY-0219-CC
 title: Chat rename must not bump the recency sort
 type: bug
-status: review
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -10,7 +10,7 @@ capabilities:
 - review
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-18T13:05:30.217799558Z
-updated: 2026-07-18T15:39:18.157229928Z
+updated: 2026-07-21T08:45:06.676168024Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-07-18T13:05:30.301633702Z
@@ -18,5 +18,7 @@ history:
 - date: 2026-07-18T13:05:30.424601907Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 - date: 2026-07-18T15:39:18.157229928Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-21T08:45:06.676168024Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: chats::rename and set_subtitle stamped chat.updated, so a rename pushed the chat to the top of the list. updated is MESSAGE activity only (operator 2026-07-18); both now leave it untouched, callers lose the now parameter, test pins it.

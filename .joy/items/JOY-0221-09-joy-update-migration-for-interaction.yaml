@@ -1,0 +1,15 @@
+id: JOY-0221-09
+title: joy update migration for Interaction Levels 2.0
+type: task
+status: new
+priority: high
+parent: JOY-021F-E2
+capabilities:
+- implement
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-24T18:28:19.426584492Z
+updated: 2026-07-24T18:28:19.426584492Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'Hard-switch migration per JI-0166-D8: joy update rewrites project.yaml, project.defaults.yaml, and config.yaml (value map pairing/interactive/collaborative -> proposing, supervised -> confirmed, autonomous unchanged; key renames mode -> level, max-mode -> max-level) and regenerates all joy ai setup artifacts from the three-level templates. After migration, old values and keys are a hard error with a clear message pointing at joy update; no fallback, no warning-and-continue. The existing downgrade guard covers old binaries on migrated repos. Migration code lives in the dedicated migrations module so it can be removed later.'

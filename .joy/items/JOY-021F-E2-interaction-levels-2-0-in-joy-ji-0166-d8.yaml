@@ -1,0 +1,14 @@
+id: JOY-021F-E2
+title: Interaction Levels 2.0 in joy (JI-0166-D8)
+type: epic
+status: new
+priority: high
+capabilities:
+- conceive
+- plan
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-24T18:28:19.243468559Z
+updated: 2026-07-24T18:28:19.243468559Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'Implement the umbrella ADR JI-0166-D8 (Interaction Levels 2.0) in joy: three enforceable levels (proposing, confirmed, autonomous) replace the five, the word mode leaves the product vocabulary, levels live in project.yaml only, and adapters derive their native agent modes one-way from the effective level. Children cover the core model change, the joy update migration, the setup enforcement, and the decision hygiene on the affected joy ADRs. Hard switch, no alias layer (alpha stage).'

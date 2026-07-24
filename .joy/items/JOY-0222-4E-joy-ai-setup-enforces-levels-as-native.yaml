@@ -1,0 +1,15 @@
+id: JOY-0222-4E
+title: joy ai setup enforces levels as native agent modes
+type: task
+status: new
+priority: high
+parent: JOY-021F-E2
+capabilities:
+- implement
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-24T18:28:19.535980534Z
+updated: 2026-07-24T18:28:19.535980534Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'Enforcement per JI-0166-D8: the level-to-agent-mode mapping lives entirely in the per-tool adapter layer. joy ai setup resolves the effective level per member/capability and writes the derived native agent mode into the generated tool configurations and agent files (claude-code permission-mode plan / default / bypassPermissions-acceptEdits; copilot plan/ask, edit confirmation, auto-approve; mistral-vibe read-only, confirm, auto profiles; qwen equivalents). Derivation is one-way: never parsed back, never persisted. Instruction templates shrink to the three-level behaviour tables (Chat context / Job context wording).'

@@ -1,0 +1,15 @@
+id: JOY-0220-CE
+title: Shrink InteractionLevel to three values, keys mode -> level
+type: task
+status: new
+priority: high
+parent: JOY-021F-E2
+capabilities:
+- implement
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-24T18:28:19.313438341Z
+updated: 2026-07-24T18:28:19.313438341Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'Core model change per JI-0166-D8: InteractionLevel becomes proposing | confirmed | autonomous (ordering preserved for clamping; off handling per settings, representation is an implementation detail). Config keys rename mode -> level and max-mode -> max-level everywhere (project.yaml, project.defaults.yaml, config.yaml, CLI flags, JSON output). The member default level (global and per capability) is stored in project.yaml next to the capabilities, for human and AI members. The four-layer resolution from JOY-01DA-E1 stands; the default table is re-populated (conceive/plan/design/review: proposing, implement/document: confirmed, test: autonomous). No agent_mode is stored anywhere in joy data.'

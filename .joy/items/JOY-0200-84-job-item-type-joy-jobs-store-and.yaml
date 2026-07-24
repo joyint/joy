@@ -1,7 +1,7 @@
 id: JOY-0200-84
 title: job item type, .joy/jobs/ store and ACRONYM-JOB id scheme
 type: story
-status: review
+status: closed
 priority: high
 parent: JOY-01FF-9D
 assignees:
@@ -13,11 +13,13 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-11T15:15:57.922308777Z
-updated: 2026-07-11T15:32:16.708684051Z
+updated: 2026-07-21T08:45:03.514846497Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-07-11T15:20:20.053310103Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 - date: 2026-07-11T15:32:16.708684051Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-21T08:45:03.514846497Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: ItemType::Job (closed enum, ~8 match sites), storage in .joy/jobs/<id>.yaml with the standard Item schema, own id counter with JOB segment and collision hash (<ACRONYM>-JOB-xxxx-<hash>, JOY-01DC-E4 mechanism). ID pattern routes deterministically between .joy/items/ and .joy/jobs/; jobs excluded from default views. Template data/items/job.yaml.
