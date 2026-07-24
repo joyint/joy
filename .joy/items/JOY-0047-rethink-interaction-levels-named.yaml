@@ -4,8 +4,13 @@ type: decision
 status: closed
 priority: high
 effort: 3
+validity: retired
 created: 2026-03-23T06:00:14.961554322Z
-updated: 2026-03-23T21:14:53.788397625Z
+updated: 2026-07-24T23:41:05.568474178Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-07-24T23:40:51.895097687Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Evaluate replacing numeric interaction levels (1-5) with named levels (e.g. autonomous, normal, intensive). Current numbers are abstract and hard to remember for both humans and AI agents. Define each level clearly: what the agent does autonomously, when it asks, when it waits. Document per level when Joy data (items, comments, status) may be changed without confirmation. Consider impact on project.yaml schema, AI instructions, JoyProcess vision, and config commands.'
 comments:
 - author: horst.schwarz@joydev.com
@@ -23,3 +28,6 @@ comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-23T21:14:53.764039604Z
   text: '[x] InteractionLevel enum: Autonomous, Supervised, Collaborative, Interactive, Pairing. [x] Renamed to mode everywhere (JOY-004B). [x] AI instructions updated with named level descriptions, finalized with user. [x] All docs (Vision, JoyProcess, WhitePapers) updated. [x] Config defaults and all deployed files updated. [x] Styled output for config/project/ai-setup (JOY-004C).'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-24T23:41:05.568472979Z
+  text: 'Retired 2026-07-25 per JI-0166-D8 (Interaction Levels 2.0) and JOY-0223-D7. The five named levels (pairing, interactive, collaborative, supervised, autonomous) are replaced by three enforceable levels: proposing, confirmed, autonomous. The naming insight of this decision (names over numbers, ordering preserved for clamping) carries over; the value set does not. Successor decision lives in the umbrella project as JI-0166-D8.'

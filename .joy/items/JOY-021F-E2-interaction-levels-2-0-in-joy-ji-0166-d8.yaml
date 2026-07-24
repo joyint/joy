@@ -1,14 +1,20 @@
 id: JOY-021F-E2
 title: Interaction Levels 2.0 in joy (JI-0166-D8)
 type: epic
-status: new
+status: closed
 priority: high
 capabilities:
 - conceive
 - plan
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-24T18:28:19.243468559Z
-updated: 2026-07-24T18:28:19.243468559Z
+updated: 2026-07-24T23:41:15.877287657Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
+history:
+- date: 2026-07-24T23:41:15.802923103Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Implement the umbrella ADR JI-0166-D8 (Interaction Levels 2.0) in joy: three enforceable levels (proposing, confirmed, autonomous) replace the five, the word mode leaves the product vocabulary, levels live in project.yaml only, and adapters derive their native agent modes one-way from the effective level. Children cover the core model change, the joy update migration, the setup enforcement, and the decision hygiene on the affected joy ADRs. Hard switch, no alias layer (alpha stage).'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-24T23:41:15.877286747Z
+  text: 'Epic result: all four children closed (JOY-0220-CE core model, JOY-0221-09 migration, JOY-0222-4E setup enforcement, JOY-0223-D7 decision hygiene). Platform consumer renames landed as JP-008D-34. OPEN POINTS for operator triage, deliberately outside this epic: (1) joy-chat Chat.modes still persists an AgentMode per (chat, AI, delegator); JI-0166-D8 section 5 turns that stored value into a level - belongs with the chat/app IL2.0 work (JI-0163/0165 cluster). (2) Rolling the migration over our own repos plus reinstalling the joy binary (joy update per repo with the new build). (3) The proto wire field Item.mode keeps its name until the app-side pass renames the surface end to end. (4) Website/tutorial/whitepaper follow-ups tracked as JI-0170-F2 under JI-0120-CD.'
