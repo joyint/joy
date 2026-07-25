@@ -1287,6 +1287,27 @@ pub(crate) fn create_delegation_token(
                 },
             );
         }
+    }
+
+    // F4 (JI-0175-B0): give the AI member its own verify_key so chats wrap
+    // for it via the ordinary member path, replacing the platform
+    // custodian. The FIRST delegation sets it; further delegators (or a
+    // second operator) leave an existing key alone, so the member has one
+    // stable wrapping key. On revocation the takeover is handled by the
+    // rotate path, not here. Doing this at token issuance means the key is
+    // in place exactly when the platform gains the delegation to read as
+    // the AI.
+    let ai_verify = delegation_keypair.public_key().to_hex();
+    let set_ai_verify = project_mut
+        .member_by_key(ai_member)
+        .is_some_and(|m| m.verify_key.is_none());
+    if set_ai_verify {
+        if let Some(m) = project_mut.member_by_key_mut(ai_member) {
+            m.verify_key = Some(ai_verify);
+        }
+    }
+
+    if new_entry || set_ai_verify {
         store::write_yaml_preserve(&project_path, &project_mut)?;
         let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
         joy_core::git_ops::auto_git_add(root, &[&rel]);
