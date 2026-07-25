@@ -18,17 +18,18 @@
 //! ```
 //!
 //! `meta.yaml` is the [`Chat`] minus its messages: identity, title,
-//! participants, `ai_sessions` (ACP session per AI member), and `modes`
-//! — the per-delegator agent permission overrides (ADR JAPP-00F3-E8), a
-//! nested map of AI participant id to delegating member id to
-//! `plan | accept-edits | autonomous`:
+//! participants, `ai_sessions` (ACP session per AI member), and
+//! `interaction-levels` — the per-delegator level overrides (ADR
+//! JAPP-00F3-E8 as revised by JI-0166-D8), a nested map of AI
+//! participant id to delegating member id to
+//! `proposing | confirmed | autonomous`:
 //!
 //! ```text
 //! ai_sessions:
 //!   ai:claude@joy: acp-session-42
-//! modes:
+//! interaction-levels:
 //!   ai:claude@joy:
-//!     horst@example.com: accept-edits
+//!     horst@example.com: confirmed
 //! ```
 //!
 //! Nested YAML maps merge key by key ([`joy_core::merge`]), so concurrent
@@ -593,9 +594,9 @@ mod tests {
 
     #[test]
     fn diverging_mode_writes_union_per_delegator() {
-        use crate::model::agent_mode::AgentMode;
+        use joy_core::model::config::InteractionLevel;
 
-        // Two chats derived from one base, each storing a mode for a
+        // Two chats derived from one base, each storing a level for a
         // DIFFERENT delegator under the SAME agent: the nested-map merge
         // must keep both entries (ADR JAPP-00F3-E8).
         let dir = repo();
@@ -613,10 +614,10 @@ mod tests {
         let base_oid = ref_target(root).unwrap().unwrap();
 
         let mut ours = base.clone();
-        ours.modes
+        ours.interaction_levels
             .entry("ai:claude@joy".to_string())
             .or_default()
-            .insert("a@x".to_string(), AgentMode::AcceptEdits);
+            .insert("a@x".to_string(), InteractionLevel::Confirmed);
         ours.updated = ts(2);
         save_chat(root, &ours).unwrap();
         let ours_oid = ref_target(root).unwrap().unwrap();
@@ -624,10 +625,10 @@ mod tests {
         reset_ref(root, base_oid);
         let mut theirs = base.clone();
         theirs
-            .modes
+            .interaction_levels
             .entry("ai:claude@joy".to_string())
             .or_default()
-            .insert("b@x".to_string(), AgentMode::Autonomous);
+            .insert("b@x".to_string(), InteractionLevel::Autonomous);
         theirs.updated = ts(1);
         save_chat(root, &theirs).unwrap();
         let theirs_oid = ref_target(root).unwrap().unwrap();
@@ -635,12 +636,12 @@ mod tests {
         merge_refs(root, ours_oid, theirs_oid).unwrap();
         let merged = load_chat(root, "c").unwrap().unwrap();
         assert_eq!(
-            merged.mode_override("ai:claude@joy", "a@x"),
-            Some(AgentMode::AcceptEdits)
+            merged.interaction_level_override("ai:claude@joy", "a@x"),
+            Some(InteractionLevel::Confirmed)
         );
         assert_eq!(
-            merged.mode_override("ai:claude@joy", "b@x"),
-            Some(AgentMode::Autonomous)
+            merged.interaction_level_override("ai:claude@joy", "b@x"),
+            Some(InteractionLevel::Autonomous)
         );
     }
 }

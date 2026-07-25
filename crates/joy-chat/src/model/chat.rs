@@ -3,18 +3,19 @@
 
 //! The chat model (git-native, JOY-01F1). A chat is `.joy/chats/<id>.yaml`:
 //! its participants (member refs), the ACP session ids of participating AI
-//! members (so an AI's thread survives restarts), per-delegator agent
-//! permission mode overrides (ADR JAPP-00F3-E8), and the messages. The
-//! repo is the source of truth; any real-time delivery layer (platform
-//! pub/sub) is an optimization, never the data home.
+//! members (so an AI's thread survives restarts), per-delegator
+//! interaction-level overrides (ADR JAPP-00F3-E8, revised by JI-0166-D8),
+//! and the messages. The repo is the source of truth; any real-time
+//! delivery layer (platform pub/sub) is an optimization, never the data
+//! home.
 
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::model::agent_mode::AgentMode;
 use joy_core::member_ref::MemberRef;
+use joy_core::model::config::InteractionLevel;
 
 /// What kind of chat this is (JOY-01F4). `General` is the singleton
 /// team-wide chat (fixed id `general`, participants = every project
@@ -152,16 +153,26 @@ pub struct Chat {
     /// so the AI-side conversation thread survives restarts.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub ai_sessions: BTreeMap<String, String>,
-    /// Per-delegator agent permission mode overrides (ADR JAPP-00F3-E8):
-    /// outer key = AI participant member id, inner key = delegating
-    /// member id (at-rest form), value = the mode that delegator's turns
-    /// run under in THIS chat. Nested maps rather than a composite key so
-    /// the YAML merge unions entries per delegator. Plain `String` keys
-    /// on purpose: `MemberRef`'s Serialize is presentation-aware (see
-    /// [`ai_sessions`](Self::ai_sessions)). Resolve a turn's actual mode
-    /// with [`crate::model::agent_mode::effective_mode`].
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub modes: BTreeMap<String, BTreeMap<String, AgentMode>>,
+    /// Per-delegator interaction-level overrides (ADR JAPP-00F3-E8 as
+    /// revised by JI-0166-D8 §5): outer key = AI participant member id,
+    /// inner key = delegating member id (at-rest form), value = the level
+    /// that delegator's turns run under in THIS chat. Nested maps rather
+    /// than a composite key so the YAML merge unions entries per
+    /// delegator. Plain `String` keys on purpose: `MemberRef`'s Serialize
+    /// is presentation-aware (see [`ai_sessions`](Self::ai_sessions)).
+    /// Resolve a turn's actual level with
+    /// [`crate::model::interaction::effective_level`]; the ACP agent mode
+    /// is derived from it one-way and never stored. The `modes` alias and
+    /// the compat deserializer read pre-2.0 blobs that still carry agent
+    /// modes.
+    #[serde(
+        default,
+        rename = "interaction-levels",
+        alias = "modes",
+        deserialize_with = "crate::model::interaction::de_level_nested_map",
+        skip_serializing_if = "BTreeMap::is_empty"
+    )]
+    pub interaction_levels: BTreeMap<String, BTreeMap<String, InteractionLevel>>,
     /// ADR JAPP-002A-30: the participant-wrapped content-key header.
     /// None only for a legacy plaintext chat (migrated on next persist)
     /// or a chat that was never persisted.
@@ -211,7 +222,7 @@ impl Chat {
             updated: now,
             participants,
             ai_sessions: BTreeMap::new(),
-            modes: BTreeMap::new(),
+            interaction_levels: BTreeMap::new(),
             crypt: None,
             read_markers: BTreeMap::new(),
             messages: Vec::new(),
@@ -253,11 +264,15 @@ impl Chat {
             .count()
     }
 
-    /// The stored per-chat mode override for the (`agent`, `delegator`)
-    /// member-id pair, if any. Feed the result to
-    /// [`crate::model::agent_mode::effective_mode`].
-    pub fn mode_override(&self, agent: &str, delegator: &str) -> Option<AgentMode> {
-        self.modes
+    /// The stored per-chat interaction-level override for the
+    /// (`agent`, `delegator`) member-id pair, if any. Feed the result to
+    /// [`crate::model::interaction::effective_level`].
+    pub fn interaction_level_override(
+        &self,
+        agent: &str,
+        delegator: &str,
+    ) -> Option<InteractionLevel> {
+        self.interaction_levels
             .get(agent)
             .and_then(|per_delegator| per_delegator.get(delegator))
             .copied()
@@ -273,30 +288,54 @@ mod tests {
         let now = "2026-07-11T00:00:00Z".parse().unwrap();
         let mut chat = Chat::new("c", vec![MemberRef::new("horst@example.com")], now);
         let yaml = serde_yaml_ng::to_string(&chat).unwrap();
-        assert!(!yaml.contains("modes"), "empty map must not serialize");
+        assert!(
+            !yaml.contains("interaction-levels"),
+            "empty map must not serialize"
+        );
 
-        chat.modes
+        chat.interaction_levels
             .entry("ai:claude@joy".to_string())
             .or_default()
-            .insert("horst@example.com".to_string(), AgentMode::AcceptEdits);
+            .insert("horst@example.com".to_string(), InteractionLevel::Confirmed);
         let yaml = serde_yaml_ng::to_string(&chat).unwrap();
-        assert!(yaml.contains("modes:"));
-        assert!(yaml.contains("accept-edits"), "kebab-case on the wire");
+        assert!(yaml.contains("interaction-levels:"));
+        assert!(yaml.contains("confirmed"), "level names on the wire");
 
         let back: Chat = serde_yaml_ng::from_str(&yaml).unwrap();
         assert_eq!(back, chat);
         assert_eq!(
-            back.mode_override("ai:claude@joy", "horst@example.com"),
-            Some(AgentMode::AcceptEdits)
+            back.interaction_level_override("ai:claude@joy", "horst@example.com"),
+            Some(InteractionLevel::Confirmed)
         );
         assert_eq!(
-            back.mode_override("ai:claude@joy", "geordi@example.org"),
+            back.interaction_level_override("ai:claude@joy", "geordi@example.org"),
             None
         );
         assert_eq!(
-            back.mode_override("ai:copilot@joy", "horst@example.com"),
+            back.interaction_level_override("ai:copilot@joy", "horst@example.com"),
             None
         );
+    }
+
+    #[test]
+    fn legacy_modes_map_reads_as_levels() {
+        // A pre-2.0 sealed blob carries `modes:` with agent-mode names;
+        // deserialization maps it and the next persist writes level names.
+        let yaml = "id: c\ncreated: 2026-07-11T00:00:00Z\nupdated: 2026-07-11T00:00:00Z\n\
+                    participants:\n  - horst@example.com\nmodes:\n  ai:claude@joy:\n    \
+                    horst@example.com: accept-edits\n    geordi@example.org: plan\n";
+        let chat: Chat = serde_yaml_ng::from_str(yaml).unwrap();
+        assert_eq!(
+            chat.interaction_level_override("ai:claude@joy", "horst@example.com"),
+            Some(InteractionLevel::Confirmed)
+        );
+        assert_eq!(
+            chat.interaction_level_override("ai:claude@joy", "geordi@example.org"),
+            Some(InteractionLevel::Proposing)
+        );
+        let rewritten = serde_yaml_ng::to_string(&chat).unwrap();
+        assert!(rewritten.contains("interaction-levels:"));
+        assert!(!rewritten.contains("accept-edits"));
     }
 
     #[test]

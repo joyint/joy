@@ -1,0 +1,27 @@
+id: JOY-0228-8C
+title: Chat override stores an interaction level (joy-chat, joy-ai follow-through)
+type: task
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-24T23:48:25.673114036Z
+updated: 2026-07-25T00:02:19.922757555Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-07-24T23:49:32.957388602Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-25T00:02:19.922757555Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'JI-0171-6D / JI-0166-D8 section 5. joy-chat: Chat.modes becomes interaction-levels (per AI participant, per delegator, value InteractionLevel); ChatEvent Mode carries a level; read-compat for existing sealed blobs and events maps the stored agent-mode names plan->proposing, accept-edits->confirmed (autonomous parses as level), new persists write only levels; set_agent_mode becomes set_interaction_level with the notice line naming the level; effective_mode lattice is replaced by effective_level (floor semantics on the level Ord: effective = max(chat override else default, floor)); AgentMode stays as the ACP mechanics type, no longer persisted. joy-ai: app_settings participant default reads interaction-level (compat for the old mode key/values); chat_ref docs follow.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-24T23:49:32.840708964Z
+  text: 'Plan: (1) new joy-chat module model/interaction.rs with effective_level (floor semantics on the level Ord: effective = max(override else default, floor)) and the lenient read-compat parser (plan -> proposing, accept-edits -> confirmed, else strict level parse) used ONLY when deserializing persisted chat state - sealed blobs cannot be batch-migrated like repo YAML, so read-compat replaces a joy update reconcile here, documented in the module header. (2) chat.rs: modes -> interaction_levels (wire key interaction-levels, serde alias modes, deserialize_with compat), mode_override -> interaction_level_override. (3) chat_events.rs: variant Mode -> Level (wire alias Mode, value compat), fold/diff follow. (4) chats.rs: set_agent_mode -> set_interaction_level, notice names the level. (5) agent_mode.rs: type and lattice stay as ACP mechanics, effective_mode and its truth table are removed (superseded by effective_level). (6) joy-ai app_settings: participant default reads interaction-level with mode-key/value compat, name follows. Tests per module incl. legacy-blob deserialization.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-25T00:02:19.800729348Z
+  text: 'Result: Chat.modes is now interaction-levels (per AI participant, per delegator, InteractionLevel values; wire alias modes plus lenient value parse reads pre-2.0 sealed blobs, next persist writes level names only - documented in model/interaction.rs why read-compat replaces a joy update reconcile for encrypted replicated blobs). ChatEvent::Mode became ChatEvent::Level (wire alias Mode, same compat), fold/diff follow. set_agent_mode -> set_interaction_level, notice says ''set @x to confirmed'' / ''cleared the interaction level for @x''. effective_mode and its 48-row truth table are gone; effective_level (max(override else default, floor)) replaces it, and agent_mode.rs gained from_level, the one canonical neutral derivation level -> plan/accept-edits/autonomous for the ACP boundary. app_settings reads participants.<m>.interaction-level with mode-key/value compat (participant_default_mode -> participant_default_level). chat_ref merge tests and docs updated. just check green (540 int tests). Platform and app follow as JP-008E-05 / JAPP-0121-C5.'

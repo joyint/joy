@@ -3,6 +3,8 @@
 
 pub mod agent_mode;
 pub mod chat;
+pub mod interaction;
 
-pub use agent_mode::{effective_mode, AgentMode};
+pub use agent_mode::AgentMode;
 pub use chat::{Chat, ChatMessage};
+pub use interaction::effective_level;

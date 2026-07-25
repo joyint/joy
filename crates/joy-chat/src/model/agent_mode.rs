@@ -1,22 +1,25 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The agent permission mode and its resolution lattice (ADR
-//! JAPP-00F3-E8). This is the single canonical definition — the desktop
-//! app consumes it as the ts-rs-generated `AgentMode` TS union (enable
-//! the `ts` cargo feature), the platform uses it directly.
+//! The agent permission mode (ADR JAPP-00F3-E8, revised by JI-0166-D8):
+//! the MECHANICS vocabulary of AI tools and ACP. Since Interaction Levels
+//! 2.0 it is never persisted in joy data; adapters derive it one-way from
+//! the effective interaction level at setup and turn time. This is the
+//! single canonical definition — the desktop app consumes it as the
+//! ts-rs-generated `AgentMode` TS union (enable the `ts` cargo feature),
+//! the platform uses it directly at the ACP boundary.
 
 use serde::{Deserialize, Serialize};
 
-/// Permission mode of an AI participant (ADR JAPP-0032): how far a turn
+/// Permission mode of an AI tool session (ADR JAPP-0032): how far a turn
 /// may act on its own before asking a human.
 ///
-/// The variant order IS the permission lattice — most restrictive first,
-/// `Plan < AcceptEdits < Autonomous` — so capping a mode by a ceiling is
-/// plain [`Ord::min`] (see [`effective_mode`]). Do not reorder variants.
+/// The variant order is the permission lattice — most restrictive first,
+/// `Plan < AcceptEdits < Autonomous`. Do not reorder variants.
 ///
 /// Not to be confused with [`joy_core::model::config::InteractionLevel`],
-/// a different axis whose `Autonomous` variant sorts LOWEST.
+/// the governed axis this mode is DERIVED from (one-way, see
+/// [`from_level`]); the level's `Autonomous` variant sorts LOWEST.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
@@ -51,20 +54,17 @@ impl std::str::FromStr for AgentMode {
     }
 }
 
-/// Resolve the mode a turn actually runs under (ADR JAPP-00F3-E8): the
-/// per-chat, per-delegator override when one is stored (else the
-/// participant's project default), capped by the project-wide ceiling
-/// when a manage member set one.
-///
-/// Pure lattice math on [`AgentMode`]'s `Ord`:
-/// `min(ceiling or Autonomous, override or default)`.
-pub fn effective_mode(
-    ceiling: Option<AgentMode>,
-    override_mode: Option<AgentMode>,
-    default_mode: AgentMode,
-) -> AgentMode {
-    let chosen = override_mode.unwrap_or(default_mode);
-    ceiling.map_or(chosen, |c| chosen.min(c))
+/// Derive the neutral agent mode from an effective interaction level
+/// (JI-0166-D8 §4). One-way by design: never parse a mode back into a
+/// level, never persist the result. Resolve the level first with
+/// [`crate::model::interaction::effective_level`].
+pub fn from_level(level: joy_core::model::config::InteractionLevel) -> AgentMode {
+    use joy_core::model::config::InteractionLevel;
+    match level {
+        InteractionLevel::Proposing => AgentMode::Plan,
+        InteractionLevel::Confirmed => AgentMode::AcceptEdits,
+        InteractionLevel::Autonomous => AgentMode::Autonomous,
+    }
 }
 
 #[cfg(test)]
@@ -104,70 +104,10 @@ mod tests {
     }
 
     #[test]
-    fn effective_mode_full_truth_table() {
-        // (ceiling, override, default) -> effective, hand-computed as
-        // min(ceiling or Autonomous, override or default).
-        #[rustfmt::skip]
-        let table: &[(Option<AgentMode>, Option<AgentMode>, AgentMode, AgentMode)] = &[
-            // default = Plan
-            (None,             None,             Plan, Plan),
-            (Some(Plan),       None,             Plan, Plan),
-            (Some(AcceptEdits),None,             Plan, Plan),
-            (Some(Autonomous), None,             Plan, Plan),
-            (None,             Some(Plan),       Plan, Plan),
-            (Some(Plan),       Some(Plan),       Plan, Plan),
-            (Some(AcceptEdits),Some(Plan),       Plan, Plan),
-            (Some(Autonomous), Some(Plan),       Plan, Plan),
-            (None,             Some(AcceptEdits),Plan, AcceptEdits),
-            (Some(Plan),       Some(AcceptEdits),Plan, Plan),
-            (Some(AcceptEdits),Some(AcceptEdits),Plan, AcceptEdits),
-            (Some(Autonomous), Some(AcceptEdits),Plan, AcceptEdits),
-            (None,             Some(Autonomous), Plan, Autonomous),
-            (Some(Plan),       Some(Autonomous), Plan, Plan),
-            (Some(AcceptEdits),Some(Autonomous), Plan, AcceptEdits),
-            (Some(Autonomous), Some(Autonomous), Plan, Autonomous),
-            // default = AcceptEdits
-            (None,             None,             AcceptEdits, AcceptEdits),
-            (Some(Plan),       None,             AcceptEdits, Plan),
-            (Some(AcceptEdits),None,             AcceptEdits, AcceptEdits),
-            (Some(Autonomous), None,             AcceptEdits, AcceptEdits),
-            (None,             Some(Plan),       AcceptEdits, Plan),
-            (Some(Plan),       Some(Plan),       AcceptEdits, Plan),
-            (Some(AcceptEdits),Some(Plan),       AcceptEdits, Plan),
-            (Some(Autonomous), Some(Plan),       AcceptEdits, Plan),
-            (None,             Some(AcceptEdits),AcceptEdits, AcceptEdits),
-            (Some(Plan),       Some(AcceptEdits),AcceptEdits, Plan),
-            (Some(AcceptEdits),Some(AcceptEdits),AcceptEdits, AcceptEdits),
-            (Some(Autonomous), Some(AcceptEdits),AcceptEdits, AcceptEdits),
-            (None,             Some(Autonomous), AcceptEdits, Autonomous),
-            (Some(Plan),       Some(Autonomous), AcceptEdits, Plan),
-            (Some(AcceptEdits),Some(Autonomous), AcceptEdits, AcceptEdits),
-            (Some(Autonomous), Some(Autonomous), AcceptEdits, Autonomous),
-            // default = Autonomous
-            (None,             None,             Autonomous, Autonomous),
-            (Some(Plan),       None,             Autonomous, Plan),
-            (Some(AcceptEdits),None,             Autonomous, AcceptEdits),
-            (Some(Autonomous), None,             Autonomous, Autonomous),
-            (None,             Some(Plan),       Autonomous, Plan),
-            (Some(Plan),       Some(Plan),       Autonomous, Plan),
-            (Some(AcceptEdits),Some(Plan),       Autonomous, Plan),
-            (Some(Autonomous), Some(Plan),       Autonomous, Plan),
-            (None,             Some(AcceptEdits),Autonomous, AcceptEdits),
-            (Some(Plan),       Some(AcceptEdits),Autonomous, Plan),
-            (Some(AcceptEdits),Some(AcceptEdits),Autonomous, AcceptEdits),
-            (Some(Autonomous), Some(AcceptEdits),Autonomous, AcceptEdits),
-            (None,             Some(Autonomous), Autonomous, Autonomous),
-            (Some(Plan),       Some(Autonomous), Autonomous, Plan),
-            (Some(AcceptEdits),Some(Autonomous), Autonomous, AcceptEdits),
-            (Some(Autonomous), Some(Autonomous), Autonomous, Autonomous),
-        ];
-        assert_eq!(table.len(), 48, "4 ceilings x 4 overrides x 3 defaults");
-        for &(ceiling, override_mode, default_mode, expected) in table {
-            assert_eq!(
-                effective_mode(ceiling, override_mode, default_mode),
-                expected,
-                "ceiling={ceiling:?} override={override_mode:?} default={default_mode:?}"
-            );
-        }
+    fn from_level_is_the_one_way_derivation() {
+        use joy_core::model::config::InteractionLevel;
+        assert_eq!(from_level(InteractionLevel::Proposing), Plan);
+        assert_eq!(from_level(InteractionLevel::Confirmed), AcceptEdits);
+        assert_eq!(from_level(InteractionLevel::Autonomous), Autonomous);
     }
 }

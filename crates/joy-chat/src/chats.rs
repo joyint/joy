@@ -9,10 +9,10 @@ use std::path::Path;
 
 use chrono::{DateTime, Utc};
 
-use crate::model::agent_mode::AgentMode;
 use crate::model::chat::{Chat, ChatKind, ChatMessage, MessageKind};
 use joy_core::error::JoyError;
 use joy_core::member_ref::MemberRef;
+use joy_core::model::config::InteractionLevel;
 
 /// Legacy subdir under `.joy/` where chats lived before they moved to the
 /// dedicated ref (ADR JAPP-00DC-FC). Kept only so the one-time migration
@@ -556,26 +556,27 @@ fn collect_if_everyone_deleted(root: &Path, chat: &Chat) {
     }
 }
 
-/// Set (`Some`) or clear (`None`) the agent permission mode that
+/// Set (`Some`) or clear (`None`) the interaction level that
 /// `delegator`'s turns of `agent` run under in this chat (ADR
-/// JAPP-00F3-E8), and post the change as a notice authored by the
-/// delegator — switching a mode is an explicit human action and must be
-/// visible to everyone in the chat. The notice append persists the chat,
-/// landing the mode mutation and its notice in one commit.
+/// JAPP-00F3-E8 as revised by JI-0166-D8 §5), and post the change as a
+/// notice authored by the delegator — switching a level is an explicit
+/// human action and must be visible to everyone in the chat. The notice
+/// append persists the chat, landing the level mutation and its notice
+/// in one commit.
 ///
 /// Refused on a frozen (delete-for-all) chat, like [`append_message`]:
 /// notices themselves stay allowed there so the freeze can announce
-/// itself, but a mode change is chat CONFIGURATION and a dead chat takes
-/// no configuration. Setting the value that is already stored is a
+/// itself, but a level change is chat CONFIGURATION and a dead chat
+/// takes no configuration. Setting the value that is already stored is a
 /// successful no-op WITHOUT a notice — repeated menu clicks must not
 /// spam the timeline or bump `updated` (which drives unread markers and
 /// the merge tiebreaker).
-pub fn set_agent_mode(
+pub fn set_interaction_level(
     root: &Path,
     chat: &mut Chat,
     member: &MemberRef,
     delegator: &MemberRef,
-    mode: Option<AgentMode>,
+    level: Option<InteractionLevel>,
     now: DateTime<Utc>,
 ) -> Result<(), JoyError> {
     if chat.read_only {
@@ -584,29 +585,33 @@ pub fn set_agent_mode(
             chat.id
         )));
     }
-    if chat.mode_override(member.id(), delegator.id()) == mode {
+    if chat.interaction_level_override(member.id(), delegator.id()) == level {
         return Ok(());
     }
-    match mode {
-        Some(mode) => {
-            chat.modes
+    match level {
+        Some(level) => {
+            chat.interaction_levels
                 .entry(member.id().to_string())
                 .or_default()
-                .insert(delegator.id().to_string(), mode);
+                .insert(delegator.id().to_string(), level);
         }
         None => {
-            if let Some(per_delegator) = chat.modes.get_mut(member.id()) {
+            if let Some(per_delegator) = chat.interaction_levels.get_mut(member.id()) {
                 per_delegator.remove(delegator.id());
                 if per_delegator.is_empty() {
-                    chat.modes.remove(member.id());
+                    chat.interaction_levels.remove(member.id());
                 }
             }
         }
     }
     chat.updated = now;
-    let text = match mode {
-        Some(mode) => format!("@{} set @{} to {}", delegator.id(), member.id(), mode),
-        None => format!("@{} cleared the mode for @{}", delegator.id(), member.id()),
+    let text = match level {
+        Some(level) => format!("@{} set @{} to {}", delegator.id(), member.id(), level),
+        None => format!(
+            "@{} cleared the interaction level for @{}",
+            delegator.id(),
+            member.id()
+        ),
     };
     append_notice(root, chat, delegator.clone(), text, now)?;
     Ok(())
@@ -862,69 +867,69 @@ mod tests {
     }
 
     #[test]
-    fn set_agent_mode_posts_notice_and_is_idempotent() {
+    fn set_interaction_level_posts_notice_and_is_idempotent() {
         let dir = repo();
         let horst = MemberRef::new("horst@example.com");
         let claude = MemberRef::new("ai:claude@joy");
         let mut chat =
             open_chat(dir.path(), vec![horst.clone(), claude.clone()], None, ts(0)).unwrap();
 
-        set_agent_mode(
+        set_interaction_level(
             dir.path(),
             &mut chat,
             &claude,
             &horst,
-            Some(AgentMode::AcceptEdits),
+            Some(InteractionLevel::Confirmed),
             ts(1),
         )
         .unwrap();
         assert_eq!(
-            chat.mode_override("ai:claude@joy", "horst@example.com"),
-            Some(AgentMode::AcceptEdits)
+            chat.interaction_level_override("ai:claude@joy", "horst@example.com"),
+            Some(InteractionLevel::Confirmed)
         );
         assert_eq!(chat.messages.len(), 1);
         let notice = chat.messages.last().unwrap();
         assert_eq!(notice.kind, MessageKind::Notice);
         assert_eq!(
             notice.text,
-            "@horst@example.com set @ai:claude@joy to accept-edits"
+            "@horst@example.com set @ai:claude@joy to confirmed"
         );
         assert_eq!(notice.author, horst);
 
         // setting the SAME value again: no notice, no updated bump
-        set_agent_mode(
+        set_interaction_level(
             dir.path(),
             &mut chat,
             &claude,
             &horst,
-            Some(AgentMode::AcceptEdits),
+            Some(InteractionLevel::Confirmed),
             ts(2),
         )
         .unwrap();
         assert_eq!(chat.messages.len(), 1);
         assert_eq!(chat.updated, ts(1));
 
-        // the mode and its notice round-trip through the ref
+        // the level and its notice round-trip through the ref
         let loaded = load_chat(dir.path(), &chat.id).unwrap().unwrap();
         assert_eq!(loaded, chat);
 
         // clearing removes the entry, prunes the empty inner map, notices
-        set_agent_mode(dir.path(), &mut chat, &claude, &horst, None, ts(3)).unwrap();
-        assert!(chat.modes.is_empty());
+        set_interaction_level(dir.path(), &mut chat, &claude, &horst, None, ts(3)).unwrap();
+        assert!(chat.interaction_levels.is_empty());
         assert_eq!(
             chat.messages.last().unwrap().text,
-            "@horst@example.com cleared the mode for @ai:claude@joy"
+            "@horst@example.com cleared the interaction level for @ai:claude@joy"
         );
         assert_eq!(chat.messages.len(), 2);
 
         // clearing what is not stored is a silent no-op
-        set_agent_mode(dir.path(), &mut chat, &claude, &horst, None, ts(4)).unwrap();
+        set_interaction_level(dir.path(), &mut chat, &claude, &horst, None, ts(4)).unwrap();
         assert_eq!(chat.messages.len(), 2);
         assert_eq!(chat.updated, ts(3));
     }
 
     #[test]
-    fn set_agent_mode_keeps_other_delegators_and_refuses_frozen_chats() {
+    fn set_interaction_level_keeps_other_delegators_and_refuses_frozen_chats() {
         let dir = repo();
         let horst = MemberRef::new("horst@example.com");
         let geordi = MemberRef::new("geordi@example.org");
@@ -937,43 +942,43 @@ mod tests {
         )
         .unwrap();
 
-        set_agent_mode(
+        set_interaction_level(
             dir.path(),
             &mut chat,
             &claude,
             &horst,
-            Some(AgentMode::Autonomous),
+            Some(InteractionLevel::Autonomous),
             ts(1),
         )
         .unwrap();
-        set_agent_mode(
+        set_interaction_level(
             dir.path(),
             &mut chat,
             &claude,
             &geordi,
-            Some(AgentMode::Plan),
+            Some(InteractionLevel::Proposing),
             ts(2),
         )
         .unwrap();
         // clearing one delegator's override leaves the other's intact
-        set_agent_mode(dir.path(), &mut chat, &claude, &horst, None, ts(3)).unwrap();
+        set_interaction_level(dir.path(), &mut chat, &claude, &horst, None, ts(3)).unwrap();
         assert_eq!(
-            chat.mode_override("ai:claude@joy", "horst@example.com"),
+            chat.interaction_level_override("ai:claude@joy", "horst@example.com"),
             None
         );
         assert_eq!(
-            chat.mode_override("ai:claude@joy", "geordi@example.org"),
-            Some(AgentMode::Plan)
+            chat.interaction_level_override("ai:claude@joy", "geordi@example.org"),
+            Some(InteractionLevel::Proposing)
         );
 
-        // a frozen (delete-for-all) chat takes no mode changes
+        // a frozen (delete-for-all) chat takes no level changes
         delete_for_all(dir.path(), &mut chat, &horst, ts(4)).unwrap();
-        let denied = set_agent_mode(
+        let denied = set_interaction_level(
             dir.path(),
             &mut chat,
             &claude,
             &geordi,
-            Some(AgentMode::Autonomous),
+            Some(InteractionLevel::Autonomous),
             ts(5),
         );
         assert!(denied.is_err());

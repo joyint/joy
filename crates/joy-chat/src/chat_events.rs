@@ -33,8 +33,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::model::agent_mode::AgentMode;
 use crate::model::chat::{Chat, ChatKind, ChatMessage};
+use joy_core::model::config::InteractionLevel;
 
 /// A hybrid logical clock: `wall_ms << 16 | counter`. Sealed inside every
 /// event, it is the TOTAL order for last-writer-wins, so the fold is
@@ -115,12 +115,16 @@ pub enum ChatEvent {
         member: String,
         present: bool,
     },
-    /// LWW register for a per-(member, delegator) permission mode.
-    Mode {
+    /// LWW register for a per-(member, delegator) interaction-level
+    /// override (JI-0166-D8 §5). The wire alias `Mode` plus the lenient
+    /// value parse read pre-2.0 events that still carry agent modes.
+    #[serde(alias = "Mode")]
+    Level {
         stamp: Stamp,
         member: String,
         delegator: String,
-        value: AgentMode,
+        #[serde(deserialize_with = "crate::model::interaction::de_level_compat")]
+        value: InteractionLevel,
     },
     /// LWW register for an AI member's ACP session id.
     Session {
@@ -202,7 +206,7 @@ pub fn fold(id: impl Into<String>, created: DateTime<Utc>, events: &[ChatEvent])
     let mut read_only: Option<(Stamp, bool)> = None;
     let mut created_by: Option<(Stamp, Option<String>)> = None;
     let mut participants: BTreeMap<String, (Stamp, bool)> = BTreeMap::new();
-    let mut modes: BTreeMap<(String, String), (Stamp, AgentMode)> = BTreeMap::new();
+    let mut levels: BTreeMap<(String, String), (Stamp, InteractionLevel)> = BTreeMap::new();
     let mut sessions: BTreeMap<String, (Stamp, String)> = BTreeMap::new();
     let mut deleted_for: BTreeMap<String, (Stamp, bool)> = BTreeMap::new();
     let mut messages: BTreeMap<String, ChatMessage> = BTreeMap::new();
@@ -241,13 +245,13 @@ pub fn fold(id: impl Into<String>, created: DateTime<Utc>, events: &[ChatEvent])
                 member,
                 present,
             } => win_map(&mut participants, member.clone(), stamp, present),
-            ChatEvent::Mode {
+            ChatEvent::Level {
                 stamp,
                 member,
                 delegator,
                 value,
             } => win_map(
-                &mut modes,
+                &mut levels,
                 (member.clone(), delegator.clone()),
                 stamp,
                 value,
@@ -304,7 +308,7 @@ pub fn fold(id: impl Into<String>, created: DateTime<Utc>, events: &[ChatEvent])
         .filter(|(_, (_, present))| *present)
         .map(|(m, _)| joy_core::member_ref::MemberRef::new(m))
         .collect();
-    chat.modes = fold_modes(modes);
+    chat.interaction_levels = fold_levels(levels);
     chat.ai_sessions = sessions.into_iter().map(|(m, (_, v))| (m, v)).collect();
     chat.deleted_for = deleted_for
         .into_iter()
@@ -335,12 +339,12 @@ pub fn fold(id: impl Into<String>, created: DateTime<Utc>, events: &[ChatEvent])
     chat
 }
 
-fn fold_modes(
-    modes: BTreeMap<(String, String), (Stamp, AgentMode)>,
-) -> BTreeMap<String, BTreeMap<String, AgentMode>> {
-    let mut out: BTreeMap<String, BTreeMap<String, AgentMode>> = BTreeMap::new();
-    for ((agent, delegator), (_, mode)) in modes {
-        out.entry(agent).or_default().insert(delegator, mode);
+fn fold_levels(
+    levels: BTreeMap<(String, String), (Stamp, InteractionLevel)>,
+) -> BTreeMap<String, BTreeMap<String, InteractionLevel>> {
+    let mut out: BTreeMap<String, BTreeMap<String, InteractionLevel>> = BTreeMap::new();
+    for ((agent, delegator), (_, level)) in levels {
+        out.entry(agent).or_default().insert(delegator, level);
     }
     out
 }
@@ -420,20 +424,20 @@ pub fn diff(base: &Chat, next: &Chat, writer: &str) -> Vec<ChatEvent> {
             });
         }
     }
-    // modes: LWW register per (member, delegator).
-    for (member, per) in &next.modes {
-        for (delegator, mode) in per {
+    // interaction levels: LWW register per (member, delegator).
+    for (member, per) in &next.interaction_levels {
+        for (delegator, level) in per {
             let unchanged = base
-                .modes
+                .interaction_levels
                 .get(member)
                 .and_then(|p| p.get(delegator))
-                .is_some_and(|m| m == mode);
+                .is_some_and(|l| l == level);
             if !unchanged {
-                out.push(ChatEvent::Mode {
+                out.push(ChatEvent::Level {
                     stamp: stamp(),
                     member: member.clone(),
                     delegator: delegator.clone(),
-                    value: *mode,
+                    value: *level,
                 });
             }
         }
@@ -543,10 +547,10 @@ mod tests {
         ];
         next.ai_sessions
             .insert("ai:vibe@joy".into(), "acp-42".into());
-        next.modes
+        next.interaction_levels
             .entry("ai:vibe@joy".into())
             .or_default()
-            .insert("horst@example.com".into(), AgentMode::AcceptEdits);
+            .insert("horst@example.com".into(), InteractionLevel::Confirmed);
         next.messages.push(msg("m1", 1, "horst@example.com", "hi"));
         next.messages.push(msg("m2", 2, "ai:vibe@joy", "hello"));
 
@@ -562,8 +566,8 @@ mod tests {
             Some("acp-42")
         );
         assert_eq!(
-            folded.mode_override("ai:vibe@joy", "horst@example.com"),
-            Some(AgentMode::AcceptEdits)
+            folded.interaction_level_override("ai:vibe@joy", "horst@example.com"),
+            Some(InteractionLevel::Confirmed)
         );
         assert_eq!(folded.messages.len(), 2);
         assert_eq!(folded.messages[0].id, "m1");
