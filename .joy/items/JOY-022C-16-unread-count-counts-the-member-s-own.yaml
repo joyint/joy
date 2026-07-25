@@ -1,0 +1,25 @@
+id: JOY-022C-16
+title: unread_count counts the member's own messages
+type: bug
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-25T05:30:56.783941866Z
+updated: 2026-07-25T05:31:50.720381914Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-07-25T05:31:01.679478797Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-25T05:31:50.720381914Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Sibling of JAPP-0125-ED (own messages briefly flagged unread in the app). joy-chat''s Chat::unread_count counts every message above the member''s effective watermark, including messages the member wrote themselves. Writing does not always advance the watermark in time (the app debounces the server mark-read; the CLI has no implicit mark on send), so ''joy chat ls'' shows UNREAD>0 for your own last words. Own messages are read by definition: exclude author==member from the count at the model level so every surface (ls column, chat read display, platform) inherits the rule.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-25T05:31:50.608862247Z
+  text: 'Checked and NOT a defect on this side: Chat::effective_watermark is max(explicit read marker, own last authored timestamp), so a member''s own messages can never sit above their own watermark and unread_count never counts them (pinned by the existing read_state unit test: a@e authored m1 and counts only m2/m3). The app sighting (JAPP-0125-ED) has a different mechanism entirely: the web unread LEDGER excludes own messages by comparing against chat.self(), and self() resolved asynchronously, returning an empty string for the first renders, so every message counted briefly. Fixed app-side under JAPP-0125-ED (identity resolved before the App renders plus an empty-self guard). No joy-chat change needed.'
