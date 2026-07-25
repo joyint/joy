@@ -89,6 +89,7 @@ pub struct InteractionLevelConfig {
 /// the resolved level toward `Proposing`, never lowers it.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub enum InteractionLevel {
     Autonomous,
     Confirmed,
