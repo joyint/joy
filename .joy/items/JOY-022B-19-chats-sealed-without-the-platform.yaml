@@ -1,7 +1,7 @@
 id: JOY-022B-19
 title: chats sealed without the platform custodian stay unreadable for the platform; no healing for non-active or foreign epochs
 type: bug
-status: new
+status: closed
 priority: medium
 capabilities:
 - implement
@@ -9,7 +9,13 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-25T03:01:41.684602950Z
-updated: 2026-07-25T03:01:41.684602950Z
+updated: 2026-07-25T09:50:55.011226255Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
+history:
+- date: 2026-07-25T09:50:55.011226255Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Sibling of JOY-022A-4D, the structural seam behind it. Two gaps: (1) A chat epoch created while project.yaml has no platform entry (offline-created chat, or a clone that never pulled the registration commit) carries no custodian wrap, so the platform can never read those events; once the writer''s checkout learns the platform entry, a write should heal the missing wraps. (2) maintain_wraps/wraps_stale only consider the ACTIVE epoch; after a union merge carries two epochs (JOY-022A-4D), the non-active epoch is never re-wrapped even by a writer who can open it. Healing rule to design: on every sealed persist, for EVERY epoch the writer can open, add wraps for current recipients (incl. the custodian) that are missing; rotation stays reserved for removals. Needs a decision on whether history sealed before the platform entry existed SHOULD become platform-readable at all (custody semantics), so this is deliberately not folded into the ordering fix.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-25T09:50:54.895412503Z
+  text: 'Operator decision 2026-07-25: history becomes platform-readable AUTOMATICALLY (registering the project is the consent). Finding: the sealed store already implements exactly this as the read-all invariant — on every sealed save, the writer grants the platform a slot in EVERY epoch its seed can open, and members are re-wrapped for epochs they held. The repro only looked like a missing feature because the seed clone''s project.yaml predated the registration and had no platform entry, so the writer could not name the platform as a recipient. Verified live on the forked repro chat: after ''git pull'' brought the platform entry into the clone, one ''joy chat send'' added the missing platform slot for the old epoch and the custodian now resolves BOTH epochs (probe: platform reads the full history). Inherent condition, documented here: healing needs a writer whose checkout knows the platform entry and whose seed opens the old epoch, i.e. a human member device; the platform cannot heal itself into an epoch it cannot read. No code change needed.'
