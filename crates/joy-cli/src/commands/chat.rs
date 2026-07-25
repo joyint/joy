@@ -245,15 +245,18 @@ pub fn run(args: ChatArgs) -> Result<()> {
     let root = joy_core::store::find_project_root(&std::env::current_dir()?)
         .ok_or_else(|| anyhow::anyhow!("not inside a Joy project"))?;
     establish_reader_seed(&root, args.passphrase.as_deref(), args.passphrase_stdin)?;
-    // Reads pull first so replies from the platform or other members are
-    // visible; writes sync after the local persist (JOY-0227-5E).
+    // EVERY verb pulls first (JOY-022A-4D): reads see replies from the
+    // platform and other members, and writes append on the ADOPTED
+    // remote state — sealing under the chat's existing crypt epoch. A
+    // write on an unmerged local ref would build the chat from scratch
+    // and mint a parallel epoch other holders (notably the platform
+    // custodian) have no slot for. Writes sync again after the persist
+    // to push the appended ref (JOY-0227-5E).
     let is_read = matches!(
         args.command,
         ChatCommand::Ls { .. } | ChatCommand::Show { .. } | ChatCommand::Info { .. }
     );
-    if is_read {
-        sync_ref(&root);
-    }
+    sync_ref(&root);
     let result = run_command(&root, args.command);
     if result.is_ok() && !is_read {
         sync_ref(&root);
