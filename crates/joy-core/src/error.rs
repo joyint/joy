@@ -101,3 +101,12 @@ impl From<joy_crypt::Error> for JoyError {
         }
     }
 }
+
+impl From<joy_token::TokenError> for JoyError {
+    /// Delegation-token validation/decoding failures carry a user-facing
+    /// hint; surface them as `AuthFailed` (JI-0175-B0), the same variant
+    /// the token code used before it moved to the wasm-portable crate.
+    fn from(e: joy_token::TokenError) -> Self {
+        JoyError::AuthFailed(e.0)
+    }
+}
