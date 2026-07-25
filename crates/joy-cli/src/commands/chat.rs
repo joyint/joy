@@ -1,9 +1,13 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! `joy chat` -- terminal inspection of the git-native chats in
-//! `.joy/chats` (JOY-01F3). Authors resolve through MemberRef display
-//! (no-raw-ID rule); list and show only, sending happens in the app.
+//! `joy chat` -- the git-native chats on `refs/joy/chats` in the
+//! terminal (JOY-01F3, JOY-0227-5E). Authors resolve through MemberRef
+//! display (no-raw-ID rule). Every verb syncs the chat ref itself
+//! (ADR JAPP-00DC-FC): reads fetch first so platform/app replies are
+//! visible, writes persist locally first (truth in the repo) and then
+//! fetch/merge/push in the same invocation -- no manual
+//! `git push refs/joy/...` ever.
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
@@ -28,10 +32,15 @@ pub struct ChatArgs {
 #[derive(Subcommand)]
 enum ChatCommand {
     /// List chats, newest first
-    List {
+    #[command(alias = "list")]
+    Ls {
         /// Also list chats you left or deleted that still exist.
         #[arg(long, short)]
         all: bool,
+        /// Only chats with an @mention at me; LAST/UNREAD scope to those
+        /// mentions (my mention inbox).
+        #[arg(long)]
+        mine: bool,
     },
     /// Show a chat's messages
     Show { id: String },
@@ -61,6 +70,137 @@ fn acting_member(root: &std::path::Path) -> Result<joy_core::member_ref::MemberR
         .map_err(|e| anyhow::anyhow!("cannot determine your identity: {e}"))?;
     let _ = root; // identity refinement (anonymous mode) happens in joy-core resolution
     Ok(joy_core::member_ref::MemberRef::new(email))
+}
+
+/// Sync `refs/joy/chats` with the project's remote (JOY-0227-5E): fetch
+/// into the tracking ref, reconcile locally through joy-chat (adopt /
+/// fast-forward / message-union merge), push when the local ref is
+/// ahead. Network runs through the git CLI so the user's ambient auth
+/// (ssh agent, credential helper) applies -- no token plumbing.
+///
+/// NEVER fatal: a chat is committed locally before any network I/O, so a
+/// failed sync only delays visibility. Failures classify like the app
+/// sync worker: a missing remote ref is the normal first sync; auth
+/// errors are permanent (fix access); everything else is transient and
+/// the next send or read retries.
+fn sync_ref(root: &std::path::Path) {
+    let remote = joy_core::store::load_config()
+        .sync
+        .map(|s| s.remote)
+        .unwrap_or_else(|| "origin".to_string());
+    let git = |args: &[&str]| {
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(args)
+            .output()
+    };
+    // A project without this remote is local-only: chats stay local.
+    match git(&["remote", "get-url", &remote]) {
+        Ok(out) if out.status.success() => {}
+        _ => return,
+    }
+    let fetch_spec = format!(
+        "+{}:{}",
+        joy_chat::chat_ref::CHATS_REF,
+        joy_chat::chat_ref::CHATS_TRACKING_REF
+    );
+    match git(&["fetch", "--quiet", &remote, &fetch_spec]) {
+        Ok(out) if out.status.success() => {}
+        Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            // No remote chats yet: the normal first sync, nothing to merge.
+            if !stderr.contains("couldn't find remote ref") {
+                eprintln!(
+                    "chats not fetched ({}); local state shown, the next send or read retries",
+                    classify_sync_error(&stderr)
+                );
+            }
+        }
+        Err(e) => {
+            eprintln!("chats not fetched (git unavailable: {e}); local state shown");
+            return;
+        }
+    }
+    let push_needed = match joy_chat::chat_ref::reconcile_with_tracking(root) {
+        Ok(needed) => needed,
+        Err(e) => {
+            eprintln!("chat ref reconcile failed: {e}");
+            return;
+        }
+    };
+    if !push_needed {
+        return;
+    }
+    let push_spec = format!(
+        "{}:{}",
+        joy_chat::chat_ref::CHATS_REF,
+        joy_chat::chat_ref::CHATS_REF
+    );
+    match git(&["push", "--quiet", &remote, &push_spec]) {
+        Ok(out) if out.status.success() => {}
+        Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            eprintln!(
+                "chat stays committed locally, push failed ({}); the next send or read retries",
+                classify_sync_error(&stderr)
+            );
+        }
+        Err(e) => eprintln!("chat stays committed locally, push failed (git unavailable: {e})"),
+    }
+}
+
+/// One-line failure classification, mirroring the app sync worker's
+/// transient/permanent split.
+fn classify_sync_error(stderr: &str) -> String {
+    let s = stderr.to_lowercase();
+    if s.contains("permission denied")
+        || s.contains("authentication")
+        || s.contains("403")
+        || s.contains("401")
+        || s.contains("access denied")
+    {
+        "no access to the remote -- check your credentials".to_string()
+    } else if s.contains("could not resolve")
+        || s.contains("unable to access")
+        || s.contains("connection")
+    {
+        "offline?".to_string()
+    } else {
+        let line = stderr.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
+        format!("transient: {}", line.trim())
+    }
+}
+
+/// The @mention view of one chat for `me` (JOY-0226-27): when the newest
+/// mention happened, computed once per row.
+struct MentionInbox {
+    last: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+impl MentionInbox {
+    /// Unread mentions at me: mention messages strictly after my
+    /// effective read watermark.
+    fn unread_mentions(&self, chat: &joy_chat::model::chat::Chat, me: &str) -> usize {
+        let watermark = chat.effective_watermark(me);
+        let me_key = [me.to_string()];
+        chat.messages
+            .iter()
+            .filter(|m| !joy_chat::mentions::mentions(&m.text, &me_key).is_empty())
+            .filter(|m| watermark.is_none_or(|w| m.at > w))
+            .count()
+    }
+}
+
+fn mention_inbox(chat: &joy_chat::model::chat::Chat, me: &str) -> MentionInbox {
+    let me_key = [me.to_string()];
+    let last = chat
+        .messages
+        .iter()
+        .filter(|m| !joy_chat::mentions::mentions(&m.text, &me_key).is_empty())
+        .map(|m| m.at)
+        .max();
+    MentionInbox { last }
 }
 
 fn load_or_general(root: &std::path::Path, id: &str) -> Result<joy_chat::model::chat::Chat> {
@@ -105,10 +245,30 @@ pub fn run(args: ChatArgs) -> Result<()> {
     let root = joy_core::store::find_project_root(&std::env::current_dir()?)
         .ok_or_else(|| anyhow::anyhow!("not inside a Joy project"))?;
     establish_reader_seed(&root, args.passphrase.as_deref(), args.passphrase_stdin)?;
-    match args.command {
-        ChatCommand::List { all } => {
-            let me = acting_member(&root).ok();
-            let chats = joy_chat::chats::load_chats(&root)?;
+    // Reads pull first so replies from the platform or other members are
+    // visible; writes sync after the local persist (JOY-0227-5E).
+    let is_read = matches!(
+        args.command,
+        ChatCommand::Ls { .. } | ChatCommand::Show { .. } | ChatCommand::Info { .. }
+    );
+    if is_read {
+        sync_ref(&root);
+    }
+    let result = run_command(&root, args.command);
+    if result.is_ok() && !is_read {
+        sync_ref(&root);
+    }
+    result
+}
+
+fn run_command(root: &std::path::Path, command: ChatCommand) -> Result<()> {
+    match command {
+        ChatCommand::Ls { all, mine } => {
+            let me = acting_member(root).ok();
+            if mine && me.is_none() {
+                anyhow::bail!("--mine needs an identity (run joy auth init or pass a passphrase)");
+            }
+            let chats = joy_chat::chats::load_chats(root)?;
             // Default: only chats you are a member of and have not deleted.
             // `--all` also shows chats you left or deleted that still exist.
             let rows: Vec<_> = chats
@@ -119,43 +279,71 @@ pub fn run(args: ChatArgs) -> Result<()> {
                         .map(|me| joy_chat::chats::visible_to(c, me))
                         .unwrap_or(true)
                 })
+                .filter_map(|c| {
+                    let inbox = me.as_ref().map(|me| mention_inbox(&c, me.id()));
+                    if mine && inbox.as_ref().is_none_or(|i| i.last.is_none()) {
+                        return None;
+                    }
+                    Some((c, inbox))
+                })
                 .collect();
             if rows.is_empty() {
-                println!("No chats.");
+                println!("{}", if mine { "No mentions." } else { "No chats." });
                 return Ok(());
             }
-            println!("{:<14} {:<22} {:<9} TITLE", "ID", "UPDATED", "MESSAGES");
-            for c in rows {
+            println!(
+                "{:<14} {:<17} {:<5} {:<17} {:<7} TITLE",
+                "ID", "UPDATED", "MSGS", "LAST@ME", "UNREAD"
+            );
+            for (c, inbox) in rows {
                 let left = me
                     .as_ref()
                     .map(|me| !joy_chat::chats::visible_to(&c, me))
                     .unwrap_or(false);
                 let title = c.title.as_deref().unwrap_or("-");
+                // UNREAD: with --mine only the unread mentions at me, else
+                // every message after my effective watermark (JOY-0226-27).
+                let unread = match (&me, &inbox) {
+                    (Some(me), Some(inbox)) if mine => inbox.unread_mentions(&c, me.id()),
+                    (Some(me), _) => c.unread_count(me.id()),
+                    (None, _) => 0,
+                };
+                let last = inbox
+                    .as_ref()
+                    .and_then(|i| i.last)
+                    .map(|at| at.format("%Y-%m-%d %H:%M").to_string())
+                    .unwrap_or_else(|| "-".into());
                 println!(
-                    "{:<14} {:<22} {:<9} {}{}",
+                    "{:<14} {:<17} {:<5} {:<17} {:<7} {}{}",
                     c.id,
                     c.updated.format("%Y-%m-%d %H:%M"),
                     c.messages.len(),
+                    last,
+                    if me.is_some() {
+                        unread.to_string()
+                    } else {
+                        "-".into()
+                    },
                     title,
                     if left { " [left]" } else { "" },
                 );
             }
         }
         ChatCommand::Send { id, text } => {
-            let me = acting_member(&root)?;
-            let mut chat = load_or_general(&root, &id)?;
+            let me = acting_member(root)?;
+            let mut chat = load_or_general(root, &id)?;
             let text = text.join(" ");
             if text.trim().is_empty() {
                 anyhow::bail!("nothing to send");
             }
-            joy_chat::chats::append_message(&root, &mut chat, me, text, chrono::Utc::now())?;
+            joy_chat::chats::append_message(root, &mut chat, me, text, chrono::Utc::now())?;
             println!("sent to {}", chat.title.as_deref().unwrap_or(&chat.id));
         }
         ChatCommand::Add { id, member } => {
-            let me = acting_member(&root)?;
-            let mut chat = load_or_general(&root, &id)?;
+            let me = acting_member(root)?;
+            let mut chat = load_or_general(root, &id)?;
             joy_chat::chats::add_participant(
-                &root,
+                root,
                 &mut chat,
                 joy_core::member_ref::MemberRef::new(member),
                 &me,
@@ -164,36 +352,36 @@ pub fn run(args: ChatArgs) -> Result<()> {
             println!("added");
         }
         ChatCommand::Leave { id } => {
-            let me = acting_member(&root)?;
-            let mut chat = load_or_general(&root, &id)?;
-            joy_chat::chats::leave(&root, &mut chat, &me, chrono::Utc::now())?;
+            let me = acting_member(root)?;
+            let mut chat = load_or_general(root, &id)?;
+            joy_chat::chats::leave(root, &mut chat, &me, chrono::Utc::now())?;
             println!("left {}", chat.title.as_deref().unwrap_or(&chat.id));
         }
         ChatCommand::Delete { id, for_all } => {
-            let me = acting_member(&root)?;
-            let mut chat = load_or_general(&root, &id)?;
+            let me = acting_member(root)?;
+            let mut chat = load_or_general(root, &id)?;
             if for_all {
-                joy_chat::chats::delete_for_all(&root, &mut chat, &me, chrono::Utc::now())?;
+                joy_chat::chats::delete_for_all(root, &mut chat, &me, chrono::Utc::now())?;
                 println!("deleted for everyone (read-only until each member removes it)");
             } else {
-                joy_chat::chats::delete_for_me(&root, &mut chat, &me, chrono::Utc::now())?;
+                joy_chat::chats::delete_for_me(root, &mut chat, &me, chrono::Utc::now())?;
                 println!("deleted for you");
             }
         }
         ChatCommand::Rename { id, title } => {
-            let mut chat = load_or_general(&root, &id)?;
-            joy_chat::chats::rename(&root, &mut chat, title.join(" "))?;
+            let mut chat = load_or_general(root, &id)?;
+            joy_chat::chats::rename(root, &mut chat, title.join(" "))?;
             println!("renamed");
         }
         ChatCommand::Read { id } => {
-            let me = acting_member(&root)?;
-            let mut chat = load_or_general(&root, &id)?;
-            joy_chat::chats::mark_read(&root, &mut chat, &me, chrono::Utc::now())?;
+            let me = acting_member(root)?;
+            let mut chat = load_or_general(root, &id)?;
+            joy_chat::chats::mark_read(root, &mut chat, &me, chrono::Utc::now())?;
             println!("marked read");
         }
         ChatCommand::Info { id } => {
-            let me = acting_member(&root)?;
-            let chat = load_or_general(&root, &id)?;
+            let me = acting_member(root)?;
+            let chat = load_or_general(root, &id)?;
             println!(
                 "{} — {} participant(s), {} message(s)",
                 chat.title.as_deref().unwrap_or("(untitled)"),
@@ -219,7 +407,7 @@ pub fn run(args: ChatArgs) -> Result<()> {
             }
         }
         ChatCommand::Show { id } => {
-            let chat = joy_chat::chats::load_chat(&root, &id)?
+            let chat = joy_chat::chats::load_chat(root, &id)?
                 .ok_or_else(|| anyhow::anyhow!("no chat with id {id}"))?;
             println!(
                 "{} — {} participant(s)",

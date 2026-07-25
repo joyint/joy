@@ -53,6 +53,11 @@ use joy_core::error::JoyError;
 /// appears in `git log`, `git branch`, or a plain `git pull`.
 pub const CHATS_REF: &str = "refs/joy/chats";
 
+/// The local tracking ref a fetch of [`CHATS_REF`] lands on before the
+/// reconcile (every sync path uses the same name, so a half-finished sync
+/// never leaks state between callers).
+pub const CHATS_TRACKING_REF: &str = "refs/joy/chats-remote";
+
 const META_FILE: &str = "meta.yaml";
 const MESSAGES_DIR: &str = "messages";
 
@@ -346,6 +351,48 @@ fn union_chat_subtrees(
     tb.write().map_err(git)
 }
 
+/// Reconcile the local [`CHATS_REF`] with an already-fetched
+/// [`CHATS_TRACKING_REF`] (ADR JAPP-00DC-FC): adopt the remote ref when
+/// none exists locally (a fresh clone carries no custom refs),
+/// fast-forward when behind, or message-union merge (via [`merge_refs`])
+/// when diverged. Pure local ref surgery — the caller owns fetch and
+/// push (each transport plumbs credentials differently). Returns whether
+/// the local ref now carries commits the remote still needs (push it).
+///
+/// This is THE decision tree every sync path runs; the platform server
+/// and the desktop shell carry historical private copies that should
+/// converge on this helper.
+pub fn reconcile_with_tracking(root: &Path) -> Result<bool, JoyError> {
+    let repo = open_repo(root)?;
+    let local = repo.refname_to_id(CHATS_REF).ok();
+    let remote = repo.refname_to_id(CHATS_TRACKING_REF).ok();
+    match (local, remote) {
+        (None, None) => Ok(false),
+        (Some(_), None) => Ok(true), // only local: the remote needs it
+        (None, Some(r)) => {
+            repo.reference(CHATS_REF, r, true, "joy: adopt chats ref")
+                .map_err(git)?;
+            Ok(false)
+        }
+        (Some(l), Some(r)) if l == r => Ok(false),
+        (Some(l), Some(r)) => {
+            let base = repo.merge_base(l, r).ok();
+            if base == Some(l) {
+                // local behind: fast-forward, nothing to push back
+                repo.reference(CHATS_REF, r, true, "joy: fast-forward chats ref")
+                    .map_err(git)?;
+                Ok(false)
+            } else if base == Some(r) {
+                Ok(true) // local ahead: push only
+            } else {
+                // diverged: union messages, three-way-merge metadata
+                merge_refs(root, l, r)?;
+                Ok(true)
+            }
+        }
+    }
+}
+
 pub fn merge_refs(root: &Path, ours: Oid, theirs: Oid) -> Result<Oid, JoyError> {
     let repo = open_repo(root)?;
     let ours_c = repo.find_commit(ours).map_err(git)?;
@@ -484,6 +531,74 @@ mod tests {
     fn reset_ref(root: &Path, oid: Oid) {
         let repo = Repository::discover(root).unwrap();
         repo.reference(CHATS_REF, oid, true, "test reset").unwrap();
+    }
+
+    /// Point the tracking ref at `oid`, as a fetch would.
+    fn set_tracking(root: &Path, oid: Oid) {
+        let repo = Repository::discover(root).unwrap();
+        repo.reference(CHATS_TRACKING_REF, oid, true, "test fetch")
+            .unwrap();
+    }
+
+    #[test]
+    fn reconcile_covers_every_lane() {
+        // absent everywhere: nothing to do, nothing to push
+        let dir = repo();
+        assert!(!reconcile_with_tracking(dir.path()).unwrap());
+
+        // local only: the remote needs it
+        let mut chat = Chat::new("c", vec![MemberRef::new("a@x")], ts(0));
+        chat.messages.push(msg("m1", 1, "hello"));
+        save_chat(dir.path(), &chat).unwrap();
+        let first = ref_target(dir.path()).unwrap().unwrap();
+        assert!(reconcile_with_tracking(dir.path()).unwrap());
+
+        // in sync: no push
+        set_tracking(dir.path(), first);
+        assert!(!reconcile_with_tracking(dir.path()).unwrap());
+
+        // local behind (tracking ahead): fast-forward, no push
+        chat.messages.push(msg("m2", 2, "world"));
+        save_chat(dir.path(), &chat).unwrap();
+        let second = ref_target(dir.path()).unwrap().unwrap();
+        reset_ref(dir.path(), first);
+        set_tracking(dir.path(), second);
+        assert!(!reconcile_with_tracking(dir.path()).unwrap());
+        assert_eq!(ref_target(dir.path()).unwrap().unwrap(), second);
+
+        // local ahead: push only, ref untouched
+        set_tracking(dir.path(), first);
+        assert!(reconcile_with_tracking(dir.path()).unwrap());
+        assert_eq!(ref_target(dir.path()).unwrap().unwrap(), second);
+
+        // diverged: message-union merge, then push
+        let mut ours = chat.clone();
+        ours.messages.push(msg("m3", 3, "ours"));
+        save_chat(dir.path(), &ours).unwrap();
+        let ours_oid = ref_target(dir.path()).unwrap().unwrap();
+        reset_ref(dir.path(), second);
+        let mut theirs = chat.clone();
+        theirs.messages.push(msg("m4", 4, "theirs"));
+        save_chat(dir.path(), &theirs).unwrap();
+        set_tracking(dir.path(), ours_oid);
+        assert!(reconcile_with_tracking(dir.path()).unwrap());
+        let merged = load_chat(dir.path(), "c").unwrap().unwrap();
+        let texts: Vec<_> = merged.messages.iter().map(|m| m.text.as_str()).collect();
+        assert!(texts.contains(&"ours") && texts.contains(&"theirs"));
+
+        // adopt: a fresh clone (no local ref) takes the tracking ref
+        let fresh = repo();
+        let donor = Repository::discover(dir.path()).unwrap();
+        let target = Repository::discover(fresh.path()).unwrap();
+        // copy the object into the fresh repo via a local fetch
+        target
+            .remote_anonymous(dir.path().to_str().unwrap())
+            .unwrap()
+            .fetch(&[&format!("+{CHATS_REF}:{CHATS_TRACKING_REF}")], None, None)
+            .unwrap();
+        drop(donor);
+        assert!(!reconcile_with_tracking(fresh.path()).unwrap());
+        assert!(load_chat(fresh.path(), "c").unwrap().is_some());
     }
 
     #[test]
