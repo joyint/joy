@@ -641,127 +641,23 @@ fn auth_with_token(
     project_id: &str,
     token_str: &str,
 ) -> Result<()> {
-    // Decode the delegation token
-    let delegation = token::decode_token(token_str)?;
+    // Redeem through the shared joy-core path — the SAME code the platform
+    // uses in-process (JI-0175-B0): validation, ephemeral proof-of-
+    // possession keypair, crypt-scope delegation key, and the F2
+    // delegated_by claim all live in one place. The CLI adds only local
+    // persistence, the eval-able handle, and the audit event below.
+    let redeemed = joy_core::auth::redeem::redeem_ai_session(project, project_id, token_str)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let session_token = redeemed.token;
+    let env_value = redeemed.session_env;
 
-    // Look up the delegating human
-    let human = &delegation.claims.delegated_by;
-    // `delegated_by` is the operator's git e-mail recorded at token issuance
-    // (create_delegation_token passes `operator_email` as `human`), so resolve
-    // it privacy-aware rather than as a raw map key (ADR-042).
-    let human_member = project
-        .member_by_email(human)
-        .ok_or_else(|| anyhow::anyhow!("Delegating member {} is not registered.", human))?;
-    let human_pk_hex = human_member.verify_key.as_ref().ok_or_else(|| {
-        anyhow::anyhow!("Delegating member {} has no public key registered.", human)
-    })?;
-    let human_pk = PublicKey::from_hex(human_pk_hex)?;
-
-    // Look up the stable delegation entry for this AI member under the delegator (ADR-033).
-    let ai_member_id = &delegation.claims.ai_member;
-    let delegation_entry = human_member
-        .ai_delegations
-        .get(ai_member_id)
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "No delegation registered for {} by {}. Create one with `joy auth token add {}`.",
-                ai_member_id,
-                human,
-                ai_member_id
-            )
-        })?;
-    let delegation_pk = PublicKey::from_hex(&delegation_entry.delegation_verifier)?;
-
-    // Validate dual signatures + project + expiry. Tokens are multi-use
-    // within their TTL (ADR-034 relaxes ADR-033 §3): no consumed-tokens
-    // ledger, redemption of the same token from multiple shells or at
-    // multiple points in time produces independent sessions.
-    let claims = token::validate_token(&delegation, &human_pk, &delegation_pk, project_id)?;
-
-    // Verify the AI member is registered
-    if !project.has_member_key(&claims.ai_member) {
-        anyhow::bail!(
-            "AI member {} is not registered in this project.",
-            claims.ai_member
-        );
-    }
-
-    // ADR-033: ephemeral per-session keypair. The private key lives only in
-    // the `JOY_SESSION` env var; the public key is recorded in the session
-    // claims. Validation re-derives the public key from the env var and
-    // requires a match, so sibling terminals without the env var cannot
-    // reuse the session file.
-    let ephemeral_keypair = IdentityKeypair::from_random();
-    let ephemeral_private = ephemeral_keypair.to_seed_bytes();
-
-    // ADR-041 §5: when the token carries the `crypt` scope, the embedded
-    // delegation private key (32-byte Ed25519 seed) is propagated through
-    // JOY_SESSION so subsequent joy commands on this AI session can unwrap
-    // zone keys without further passphrase entry by the operator.
-    let delegation_private: Option<[u8; 32]> = if claims.has_crypt_scope() {
-        match delegation.delegation_private_key.as_ref() {
-            Some(hex_seed) => {
-                let bytes = hex::decode(hex_seed).map_err(|e| {
-                    anyhow::anyhow!("Token has malformed delegation_private_key: {e}")
-                })?;
-                if bytes.len() != 32 {
-                    anyhow::bail!(
-                        "Token's delegation_private_key has wrong length: expected 32, got {}",
-                        bytes.len()
-                    );
-                }
-                let mut seed = [0u8; 32];
-                seed.copy_from_slice(&bytes);
-                // Verify the seed produces the public key we expect.
-                let derived = IdentityKeypair::from_seed(&seed);
-                if derived.public_key().to_hex() != delegation_entry.delegation_verifier {
-                    anyhow::bail!(
-                        "Token's delegation_private_key does not match the registered \
-                         delegation_verifier. The delegation may have been rotated since the \
-                         token was issued; ask the operator for a fresh token."
-                    );
-                }
-                Some(seed)
-            }
-            None => anyhow::bail!(
-                "Token claims include the `crypt` scope but the delegation private key is \
-                 missing from the token. Ask the operator to re-issue with --crypt."
-            ),
-        }
-    } else {
-        None
-    };
-
-    // ADR-041 §6: bound the session lifetime by the token expiry so a
-    // short-lived Crypt token (e.g. --ttl 30m) actually grants only that
-    // window of access.
-    //
-    // Record the delegating human in the signed session claims (F2,
-    // JI-0175-B0) as their at-rest member key, so `delegated-by:` is
-    // correct even where there is no operator git e-mail to derive it from
-    // (an agent container). `human` is the operator e-mail from the token.
-    let delegated_by = joy_core::privacy::delegated_by_at_rest(project, human);
-    let session_token = session::create_session_for_ai(
-        &ephemeral_keypair,
-        &claims.ai_member,
-        project_id,
-        None,
-        &delegation_entry.delegation_verifier,
-        claims.expires,
-        delegated_by,
-    );
+    // The session file lands in the local state dir; JOY_SESSION carries
+    // the ephemeral private key (ADR-033 §2), never persisted to a config
+    // file (that would contradict proof of possession).
     session::save_session(project_id, &session_token)?;
 
     // Output session handle for eval (stdout) -- SSH-agent pattern.
     // Status message goes to stderr so `eval $(joy auth --token ...)` works.
-    // JOY_SESSION carries the ephemeral private key (ADR-033 §2). It is
-    // intentionally not persisted to any tool config file: disk persistence
-    // would contradict the proof-of-possession property. The AI tool is
-    // responsible for propagating the env value into its subshells.
-    let sid = session::session_storage_id(project_id, &session_token.claims);
-    let env_value =
-        session::encode_session_env_full(&sid, &ephemeral_private, delegation_private.as_ref());
-
     if crate::output::is_json() {
         #[derive(serde::Serialize)]
         struct TokenAuthPayload<'a> {
@@ -772,24 +668,24 @@ fn auth_with_token(
         }
         crate::output::emit(TokenAuthPayload {
             session_env: env_value.clone(),
-            member: &claims.ai_member,
-            delegated_by: &claims.delegated_by,
+            member: &redeemed.member,
+            delegated_by: &redeemed.delegated_by,
             project_id,
         })?;
     } else {
         println!("export JOY_SESSION={env_value}");
         eprintln!(
             "Authenticated as {} (delegated by {}). Session active (24h).",
-            claims.ai_member, claims.delegated_by
+            redeemed.member, redeemed.delegated_by
         );
     }
 
     // Record the delegating operator by their at-rest member key (opaque id in
     // anonymous mode), never the cleartext e-mail from the token claim, so this
     // committed log line carries no PII in anonymous mode (ADR-042).
-    let actor = match joy_core::privacy::delegated_by_at_rest(project, &claims.delegated_by) {
-        Some(operator) => format!("{} delegated-by:{}", claims.ai_member, operator),
-        None => claims.ai_member.clone(),
+    let actor = match joy_core::privacy::delegated_by_at_rest(project, &redeemed.delegated_by) {
+        Some(operator) => format!("{} delegated-by:{}", redeemed.member, operator),
+        None => redeemed.member.clone(),
     };
     joy_core::event_log::log_event_as(
         root,
@@ -797,7 +693,7 @@ fn auth_with_token(
         "auth",
         Some(&format!(
             "session created for {} via delegation token",
-            claims.ai_member
+            redeemed.member
         )),
         &actor,
     );
