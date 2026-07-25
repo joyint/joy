@@ -558,26 +558,23 @@ fn collect_if_everyone_deleted(root: &Path, chat: &Chat) {
 
 /// Set (`Some`) or clear (`None`) the interaction level that
 /// `delegator`'s turns of `agent` run under in this chat (ADR
-/// JAPP-00F3-E8 as revised by JI-0166-D8 §5), and post the change as a
-/// notice authored by the delegator — switching a level is an explicit
-/// human action and must be visible to everyone in the chat. The notice
-/// append persists the chat, landing the level mutation and its notice
-/// in one commit.
+/// JAPP-00F3-E8 as revised by JI-0166-D8 §5). The override is the
+/// delegator's PRIVATE working-style preference — it binds only their
+/// own turns, so no notice is posted and `updated` does not move (the
+/// rail must not resort and nothing becomes unread over someone else's
+/// setting; JOY-0229-B3). Governance transparency lives at the turn
+/// itself: every AI reply carries its effective level in the header.
 ///
 /// Refused on a frozen (delete-for-all) chat, like [`append_message`]:
-/// notices themselves stay allowed there so the freeze can announce
-/// itself, but a level change is chat CONFIGURATION and a dead chat
-/// takes no configuration. Setting the value that is already stored is a
-/// successful no-op WITHOUT a notice — repeated menu clicks must not
-/// spam the timeline or bump `updated` (which drives unread markers and
-/// the merge tiebreaker).
+/// a level change is chat CONFIGURATION and a dead chat takes no
+/// configuration. Setting the value that is already stored is a
+/// successful no-op without a write.
 pub fn set_interaction_level(
     root: &Path,
     chat: &mut Chat,
     member: &MemberRef,
     delegator: &MemberRef,
     level: Option<InteractionLevel>,
-    now: DateTime<Utc>,
 ) -> Result<(), JoyError> {
     if chat.read_only {
         return Err(JoyError::GuardDenied(format!(
@@ -604,17 +601,7 @@ pub fn set_interaction_level(
             }
         }
     }
-    chat.updated = now;
-    let text = match level {
-        Some(level) => format!("@{} set @{} to {}", delegator.id(), member.id(), level),
-        None => format!(
-            "@{} cleared the interaction level for @{}",
-            delegator.id(),
-            member.id()
-        ),
-    };
-    append_notice(root, chat, delegator.clone(), text, now)?;
-    Ok(())
+    save_chat(root, chat)
 }
 
 /// Record the ACP session id of an AI participant and persist.
@@ -867,7 +854,7 @@ mod tests {
     }
 
     #[test]
-    fn set_interaction_level_posts_notice_and_is_idempotent() {
+    fn set_interaction_level_is_silent_persistent_and_idempotent() {
         let dir = repo();
         let horst = MemberRef::new("horst@example.com");
         let claude = MemberRef::new("ai:claude@joy");
@@ -880,52 +867,41 @@ mod tests {
             &claude,
             &horst,
             Some(InteractionLevel::Confirmed),
-            ts(1),
         )
         .unwrap();
         assert_eq!(
             chat.interaction_level_override("ai:claude@joy", "horst@example.com"),
             Some(InteractionLevel::Confirmed)
         );
-        assert_eq!(chat.messages.len(), 1);
-        let notice = chat.messages.last().unwrap();
-        assert_eq!(notice.kind, MessageKind::Notice);
-        assert_eq!(
-            notice.text,
-            "@horst@example.com set @ai:claude@joy to confirmed"
-        );
-        assert_eq!(notice.author, horst);
+        // A private preference: NO notice, no message, no updated bump
+        // (JOY-0229-B3 / JI-0166-D8 §5 revision).
+        assert!(chat.messages.is_empty());
+        assert_eq!(chat.updated, ts(0));
 
-        // setting the SAME value again: no notice, no updated bump
+        // setting the SAME value again stays a no-op
         set_interaction_level(
             dir.path(),
             &mut chat,
             &claude,
             &horst,
             Some(InteractionLevel::Confirmed),
-            ts(2),
         )
         .unwrap();
-        assert_eq!(chat.messages.len(), 1);
-        assert_eq!(chat.updated, ts(1));
+        assert!(chat.messages.is_empty());
 
-        // the level and its notice round-trip through the ref
+        // the override round-trips through the ref
         let loaded = load_chat(dir.path(), &chat.id).unwrap().unwrap();
         assert_eq!(loaded, chat);
 
-        // clearing removes the entry, prunes the empty inner map, notices
-        set_interaction_level(dir.path(), &mut chat, &claude, &horst, None, ts(3)).unwrap();
+        // clearing removes the entry and prunes the empty inner map,
+        // still without a message
+        set_interaction_level(dir.path(), &mut chat, &claude, &horst, None).unwrap();
         assert!(chat.interaction_levels.is_empty());
-        assert_eq!(
-            chat.messages.last().unwrap().text,
-            "@horst@example.com cleared the interaction level for @ai:claude@joy"
-        );
-        assert_eq!(chat.messages.len(), 2);
+        assert!(chat.messages.is_empty());
 
         // clearing what is not stored is a silent no-op
-        set_interaction_level(dir.path(), &mut chat, &claude, &horst, None, ts(4)).unwrap();
-        assert_eq!(chat.messages.len(), 2);
-        assert_eq!(chat.updated, ts(3));
+        set_interaction_level(dir.path(), &mut chat, &claude, &horst, None).unwrap();
+        assert!(chat.messages.is_empty());
     }
 
     #[test]
@@ -948,7 +924,6 @@ mod tests {
             &claude,
             &horst,
             Some(InteractionLevel::Autonomous),
-            ts(1),
         )
         .unwrap();
         set_interaction_level(
@@ -957,11 +932,10 @@ mod tests {
             &claude,
             &geordi,
             Some(InteractionLevel::Proposing),
-            ts(2),
         )
         .unwrap();
         // clearing one delegator's override leaves the other's intact
-        set_interaction_level(dir.path(), &mut chat, &claude, &horst, None, ts(3)).unwrap();
+        set_interaction_level(dir.path(), &mut chat, &claude, &horst, None).unwrap();
         assert_eq!(
             chat.interaction_level_override("ai:claude@joy", "horst@example.com"),
             None
@@ -979,7 +953,6 @@ mod tests {
             &claude,
             &geordi,
             Some(InteractionLevel::Autonomous),
-            ts(5),
         );
         assert!(denied.is_err());
     }

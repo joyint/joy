@@ -1,0 +1,28 @@
+id: JOY-0229-B3
+title: Level-change notice reads as if it switched the AI for everyone
+type: bug
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-25T00:40:14.630348463Z
+updated: 2026-07-25T00:56:28.431733569Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-07-25T00:40:14.743588801Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-25T00:56:28.431733569Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Symptom (Horst, 2026-07-25, first smoke test of the level switcher): the notice says ''@horst.schwarz@joydev.com set @ai:vibe@joy to autonomous'', which reads like a chat-global switch. The stored override is per (chat, AI, delegator) - only the delegator''s own turns change - but the wording claims the global effect. Fix: the notice names the scope: ''@X set their interaction level for @Y to <level>'' / ''@X cleared their interaction level for @Y''. Consumers of the exact text (desktop tests, app mock, shell e2e) follow.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-25T00:48:27.885597227Z
+  text: 'Re-scoped by the operator: not a wording fix - the broadcast notice itself is wrong. The level override is the delegator''s private working-style preference (their own turns only); a persisted chat message announces it to everyone and reads as a chat-global switch. Per the JI-0166-D8 section 5 revision: set_interaction_level stops posting any notice and persists the override directly; a level change no longer bumps updated (configuration, not activity - the rail must not resort and nothing becomes unread). Transparency stays at the turn header. The interim wording change is discarded.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-25T00:56:28.247763852Z
+  text: 'Result: set_interaction_level posts no notice and no longer bumps updated; it persists the override directly (save_chat), same-value sets stay write-free no-ops, the frozen-chat refusal and per-delegator pruning stand. The now parameter left the signature (nothing time-stamped anymore). Tests assert the silence explicitly (no message, updated untouched, round-trip). just check green. Platform and app callers follow (JP/JAPP items).'
