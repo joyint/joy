@@ -151,3 +151,97 @@ pub fn redeem_ai_session(
         delegated_by: claims.delegated_by.clone(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::auth::token::{create_token, encode_token, TokenIssueParams, TokenSigningKeys};
+    use crate::model::project::{AiDelegationEntry, Member, MemberCapabilities};
+
+    const AI: &str = "ai:claude@joy";
+    const HUMAN: &str = "human@example.com";
+    const PID: &str = "TST";
+
+    // A project where HUMAN has delegated to AI, wired so a crypt token
+    // from that delegation redeems. Returns (project, delegation_seed).
+    fn project_with_delegation() -> (Project, [u8; 32], IdentityKeypair) {
+        let delegator = IdentityKeypair::from_seed(&[3u8; 32]);
+        let delegation_seed = [4u8; 32];
+        let delegation = IdentityKeypair::from_seed(&delegation_seed);
+
+        let mut project = Project::new("Test".into(), Some(PID.into()));
+        project
+            .register_member(AI, Member::new(MemberCapabilities::All))
+            .unwrap();
+        let mut human = Member::new(MemberCapabilities::All);
+        human.verify_key = Some(delegator.public_key().to_hex());
+        human.ai_delegations.insert(
+            AI.to_string(),
+            AiDelegationEntry {
+                delegation_verifier: delegation.public_key().to_hex(),
+                delegation_salt: Some("00".repeat(32)),
+                created: chrono::Utc::now(),
+                rotated: None,
+            },
+        );
+        project.register_member(HUMAN, human).unwrap();
+        (project, delegation_seed, delegator)
+    }
+
+    fn crypt_token(delegator: &IdentityKeypair, seed: &[u8; 32]) -> String {
+        let delegation = IdentityKeypair::from_seed(seed);
+        let token = create_token(
+            TokenSigningKeys {
+                delegator,
+                delegation: &delegation,
+                delegation_seed: seed,
+            },
+            TokenIssueParams {
+                ai_member: AI,
+                human: HUMAN,
+                project_id: PID,
+                ttl: None,
+                crypt_scope: true,
+            },
+        );
+        encode_token(&token)
+    }
+
+    #[test]
+    fn crypt_token_redeems_to_a_resolvable_ai_session() {
+        let (project, seed, delegator) = project_with_delegation();
+        let token = crypt_token(&delegator, &seed);
+
+        let redeemed = redeem_ai_session(&project, PID, &token).unwrap();
+        assert_eq!(redeemed.member, AI);
+        assert_eq!(redeemed.delegated_by, HUMAN);
+        assert!(redeemed.session_env.starts_with("joy_s_"));
+
+        // The env carries the delegation private key (crypt scope), so a
+        // job/chat container can open sealed chats as the AI member.
+        let (_sid, _eph, deleg) = session::parse_session_env_full(&redeemed.session_env).unwrap();
+        assert_eq!(deleg, Some(seed), "crypt scope embeds the delegation key");
+
+        // The session carries the F2 delegated_by claim and passes the F3
+        // live-delegation gate against this project.
+        assert_eq!(redeemed.token.claims.delegated_by.as_deref(), Some(HUMAN));
+        assert!(crate::identity::token_session_rejection(
+            &project,
+            &redeemed.token,
+            deleg.as_ref()
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn redeem_rejected_when_delegation_absent() {
+        // A project that knows the AI but carries no delegation for it.
+        let mut project = Project::new("Test".into(), Some(PID.into()));
+        project
+            .register_member(AI, Member::new(MemberCapabilities::All))
+            .unwrap();
+        let delegator = IdentityKeypair::from_seed(&[3u8; 32]);
+        let token = crypt_token(&delegator, &[4u8; 32]);
+        assert!(redeem_ai_session(&project, PID, &token).is_err());
+    }
+}
