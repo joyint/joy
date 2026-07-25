@@ -1,0 +1,16 @@
+id: JOY-022E-B2
+title: Remove the platform-key model; add delegation-based F1-F4 fixes [JI-0175-B0]
+type: story
+status: new
+priority: high
+capabilities:
+- plan
+- implement
+- review
+effort: 6
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-25T21:10:14.399883706Z
+updated: 2026-07-25T21:10:14.399883706Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'Per decision JI-0175-B0. RUECKBAU: joy project platform-key (project.rs), joy crypt grant <zone> platform (crypt.rs), auth/platform.rs, PLATFORM_ISSUER + platform-signed session constructor (auth/session.rs), validate_job_session + its resolve_identity branch (identity.rs), PlatformInfo/Project::platform/set_platform_key/PLATFORM_RECIPIENT (model/project.rs), the platform recipient arm in joy-chat (chat_store.rs, chat_crypt.rs) and the encryptable predicate (chats.rs) reduced to members-with-keys; tests. write_yaml_preserve stays so foreign blocks in other repos are never silently dropped. AUFBAU: F1 self-heal on passphrase change (client re-wraps own chat slots holding both keys); F2 delegated_by from token claims into session claims; F3 cryptographic validation of token-redeemed sessions at command time (chain, capped to token expiry); F4 multi-delegator convention + set members.<ai>.verify_key from the delegation_verifier at token issuance when empty. Version marker bump so old clients update. just check green.'

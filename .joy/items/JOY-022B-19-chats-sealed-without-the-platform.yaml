@@ -9,7 +9,7 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-25T03:01:41.684602950Z
-updated: 2026-07-25T09:50:55.011226255Z
+updated: 2026-07-25T21:11:50.511989984Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-07-25T09:50:55.011226255Z
@@ -19,3 +19,6 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-07-25T09:50:54.895412503Z
   text: 'Operator decision 2026-07-25: history becomes platform-readable AUTOMATICALLY (registering the project is the consent). Finding: the sealed store already implements exactly this as the read-all invariant — on every sealed save, the writer grants the platform a slot in EVERY epoch its seed can open, and members are re-wrapped for epochs they held. The repro only looked like a missing feature because the seed clone''s project.yaml predated the registration and had no platform entry, so the writer could not name the platform as a recipient. Verified live on the forked repro chat: after ''git pull'' brought the platform entry into the clone, one ''joy chat send'' added the missing platform slot for the old epoch and the custodian now resolves BOTH epochs (probe: platform reads the full history). Inherent condition, documented here: healing needs a writer whose checkout knows the platform entry and whose seed opens the old epoch, i.e. a human member device; the platform cannot heal itself into an epoch it cannot read. No code change needed.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-25T21:11:50.511989165Z
+  text: The read-all custodian auto-heal was part of the retracted platform-key model. Replaced by client-side self-heal on passphrase change (F1) in story JOY-022E-B2, decision JI-0175-B0.
