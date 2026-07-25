@@ -317,26 +317,42 @@ impl Guard {
         }
     }
 
-    /// Check if removing a member would leave no one with manage capability.
+    /// Check if removing a member (or stripping their manage) would leave
+    /// no HUMAN with the manage capability (JOY-022D-DC).
+    ///
+    /// Who counts as a surviving manager:
+    /// - never an AI member (Guard hard-denies AI the manage action, so a
+    ///   nominal grant on an AI is never "the last manager" and revoking
+    ///   it is always allowed);
+    /// - never a PENDING INVITE (enrollment_verifier set, no verify_key
+    ///   yet): until the invite is redeemed there is no one who can act,
+    ///   so it must not stand in for the last active manager. Plain
+    ///   unenrolled members (pre-auth projects, no verifier) count as
+    ///   before.
     pub fn is_last_manager(&self, member_id: &str) -> bool {
-        // An AI member is never a real manager (Guard hard-denies AI the manage
-        // action, and manager_count below excludes AI), so an AI holding a
-        // nominal manage grant is never "the last manager"; revoking it is
-        // harmless and must not be blocked.
         if is_ai_member(member_id) {
             return false;
         }
-        let manager_count = self
-            .members
-            .iter()
-            .filter(|(id, m)| m.has_capability(&Capability::Manage) && !is_ai_member(id))
-            .count();
         let is_manager = self
             .members
             .get(member_id)
             .map(|m| m.has_capability(&Capability::Manage))
             .unwrap_or(false);
-        is_manager && manager_count <= 1
+        if !is_manager {
+            return false;
+        }
+        let pending_invite = |m: &Member| m.enrollment_verifier.is_some() && m.verify_key.is_none();
+        let survivors = self
+            .members
+            .iter()
+            .filter(|(id, m)| {
+                *id != member_id
+                    && m.has_capability(&Capability::Manage)
+                    && !is_ai_member(id)
+                    && !pending_invite(m)
+            })
+            .count();
+        survivors == 0
     }
 }
 
@@ -1040,6 +1056,39 @@ mod tests {
         let guard = Guard::new(&project);
         assert!(!guard.is_last_manager("lead@example.com"));
         assert!(!guard.is_last_manager("backup@example.com"));
+    }
+
+    #[test]
+    fn is_last_manager_pending_invite_does_not_stand_in() {
+        // JOY-022D-DC: an invited-but-unredeemed manager (verifier set, no
+        // key) cannot act yet — the last ACTIVE manager must stay.
+        let mut project = project_with_members(vec![
+            ("lead@example.com", MemberCapabilities::All),
+            ("invitee@example.com", MemberCapabilities::All),
+        ]);
+        {
+            let m = project.member_by_key_mut("invitee@example.com").unwrap();
+            m.enrollment_verifier = Some("otp-verifier".into());
+        }
+        let guard = Guard::new(&project);
+        assert!(guard.is_last_manager("lead@example.com"));
+        // removing the pending INVITE itself stays fine: lead survives
+        assert!(!guard.is_last_manager("invitee@example.com"));
+    }
+
+    #[test]
+    fn is_last_manager_redeemed_invite_counts_again() {
+        let mut project = project_with_members(vec![
+            ("lead@example.com", MemberCapabilities::All),
+            ("invitee@example.com", MemberCapabilities::All),
+        ]);
+        {
+            let m = project.member_by_key_mut("invitee@example.com").unwrap();
+            m.enrollment_verifier = Some("otp-verifier".into());
+            m.verify_key = Some("aa".into());
+        }
+        let guard = Guard::new(&project);
+        assert!(!guard.is_last_manager("lead@example.com"));
     }
 
     #[test]
