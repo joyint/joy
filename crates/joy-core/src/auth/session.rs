@@ -152,6 +152,7 @@ pub fn create_session_for_ai(
     ttl: Option<Duration>,
     delegation_key: &str,
     token_expires: Option<DateTime<Utc>>,
+    delegated_by: Option<String>,
 ) -> SessionToken {
     let now = Utc::now();
     let ttl = ttl.unwrap_or_else(|| Duration::hours(DEFAULT_TTL_HOURS));
@@ -170,7 +171,13 @@ pub fn create_session_for_ai(
         tty: None,
         job_id: None,
         issuer: None,
-        delegated_by: None,
+        // The delegating human recorded at redemption (F2, JI-0175-B0): a
+        // token-redeemed session used to leave this None, and the identity
+        // resolver then guessed the delegator from the local git e-mail —
+        // which inside an agent container is the image's fake identity. It
+        // now travels in the signed claims so `delegated-by:` is correct
+        // wherever the session runs.
+        delegated_by,
     };
     let claims_json = serde_json::to_string(&claims).expect("claims serialize");
     let signature = ephemeral_keypair.sign(claims_json.as_bytes());
@@ -734,7 +741,8 @@ mod tests {
     fn ai_session_carries_ephemeral_public_key() {
         let ephemeral = IdentityKeypair::from_random();
         let ephemeral_pk = ephemeral.public_key().to_hex();
-        let token = create_session_for_ai(&ephemeral, "ai:claude@joy", "TST", None, "dkey", None);
+        let token =
+            create_session_for_ai(&ephemeral, "ai:claude@joy", "TST", None, "dkey", None, None);
         assert_eq!(
             token.claims.session_public_key.as_deref(),
             Some(ephemeral_pk.as_str())
@@ -757,6 +765,7 @@ mod tests {
             None,
             "dkey",
             Some(token_expires),
+            None,
         );
         // Session expiry should equal token_expires (within a tiny window).
         let delta = (token.claims.expires - token_expires).num_seconds().abs();
@@ -774,6 +783,7 @@ mod tests {
             Some(Duration::hours(1)),
             "dkey",
             Some(token_expires),
+            None,
         );
         // Session expiry should be ~1h, not 7 days.
         let session_ttl = token.claims.expires - token.claims.created;
@@ -917,8 +927,10 @@ mod tests {
 
         let first_kp = IdentityKeypair::from_random();
         let second_kp = IdentityKeypair::from_random();
-        let first = create_session_for_ai(&first_kp, "ai:claude@joy", "TST", None, "dkey", None);
-        let second = create_session_for_ai(&second_kp, "ai:claude@joy", "TST", None, "dkey", None);
+        let first =
+            create_session_for_ai(&first_kp, "ai:claude@joy", "TST", None, "dkey", None, None);
+        let second =
+            create_session_for_ai(&second_kp, "ai:claude@joy", "TST", None, "dkey", None, None);
         save_session("TST", &first).unwrap();
         save_session("TST", &second).unwrap();
 
@@ -971,11 +983,13 @@ mod tests {
             Some(Duration::seconds(-1)),
             "dkey",
             None,
+            None,
         );
         save_session("TST", &expired).unwrap();
 
         let fresh_kp = IdentityKeypair::from_random();
-        let fresh = create_session_for_ai(&fresh_kp, "ai:claude@joy", "TST", None, "dkey", None);
+        let fresh =
+            create_session_for_ai(&fresh_kp, "ai:claude@joy", "TST", None, "dkey", None, None);
         save_session("TST", &fresh).unwrap();
 
         let sessions = list_member_sessions("TST", "ai:claude@joy").unwrap();
@@ -1027,7 +1041,7 @@ mod tests {
         unsafe { std::env::set_var("XDG_STATE_HOME", tmp.path()) };
 
         let kp = IdentityKeypair::from_random();
-        let token = create_session_for_ai(&kp, "ai:claude@joy", "TST", None, "dkey", None);
+        let token = create_session_for_ai(&kp, "ai:claude@joy", "TST", None, "dkey", None, None);
         let dir = session_dir().unwrap();
         std::fs::create_dir_all(&dir).unwrap();
         let legacy_sid = session_id("TST", "ai:claude@joy");
@@ -1061,8 +1075,10 @@ mod tests {
 
         let first_kp = IdentityKeypair::from_random();
         let second_kp = IdentityKeypair::from_random();
-        let first = create_session_for_ai(&first_kp, "ai:claude@joy", "TST", None, "dkey", None);
-        let second = create_session_for_ai(&second_kp, "ai:claude@joy", "TST", None, "dkey", None);
+        let first =
+            create_session_for_ai(&first_kp, "ai:claude@joy", "TST", None, "dkey", None, None);
+        let second =
+            create_session_for_ai(&second_kp, "ai:claude@joy", "TST", None, "dkey", None, None);
         save_session("TST", &first).unwrap();
         save_session("TST", &second).unwrap();
 

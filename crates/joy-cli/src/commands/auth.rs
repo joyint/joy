@@ -735,6 +735,12 @@ fn auth_with_token(
     // ADR-041 §6: bound the session lifetime by the token expiry so a
     // short-lived Crypt token (e.g. --ttl 30m) actually grants only that
     // window of access.
+    //
+    // Record the delegating human in the signed session claims (F2,
+    // JI-0175-B0) as their at-rest member key, so `delegated-by:` is
+    // correct even where there is no operator git e-mail to derive it from
+    // (an agent container). `human` is the operator e-mail from the token.
+    let delegated_by = joy_core::privacy::delegated_by_at_rest(project, human);
     let session_token = session::create_session_for_ai(
         &ephemeral_keypair,
         &claims.ai_member,
@@ -742,6 +748,7 @@ fn auth_with_token(
         None,
         &delegation_entry.delegation_verifier,
         claims.expires,
+        delegated_by,
     );
     session::save_session(project_id, &session_token)?;
 

@@ -52,7 +52,14 @@ impl Identity {
 /// 2. Human session by git email
 /// 3. Fallback: git email, unauthenticated
 pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
-    let git_email = crate::vcs::default_vcs().user_email()?;
+    // An AI identity comes entirely from JOY_SESSION and does not need a
+    // git e-mail; a missing `user.email` must not abort before that branch
+    // runs (JI-0175-B0). A bare checkout or a container without a git user
+    // then still authenticates a valid session. The e-mail is only needed
+    // for the human/fallback path below, where its absence degrades to an
+    // unauthenticated identity (the guard denies writes with a clear
+    // message) rather than hard-failing every command.
+    let git_email = crate::vcs::default_vcs().user_email().unwrap_or_default();
     let project = load_project_optional(root);
     let project_id = crate::auth::session::project_id(root).ok();
 
@@ -71,7 +78,8 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
     //    possession of the env var a sibling terminal cannot reuse a
     //    session file it can read.
     if let Some(env_value) = std::env::var("JOY_SESSION").ok().filter(|s| !s.is_empty()) {
-        if let Some((sid, ephemeral_private)) = crate::auth::session::parse_session_env(&env_value)
+        if let Some((sid, ephemeral_private, delegation_private)) =
+            crate::auth::session::parse_session_env_full(&env_value)
         {
             if let Ok(Some(sess)) = crate::auth::session::load_session_by_id(&sid) {
                 if sess.claims.expires > chrono::Utc::now() && is_ai_member(&sess.claims.member) {
@@ -121,17 +129,48 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
                                             eprintln!("{}", job_session_rejection_hint(&reason));
                                         }
                                     }
+                                } else if let Some(reason) = token_session_rejection(
+                                    project,
+                                    &sess,
+                                    delegation_private.as_ref(),
+                                ) {
+                                    // F3 (JI-0175-B0): a token-redeemed AI
+                                    // session must still trace to a LIVE
+                                    // delegation. `token_key` is the
+                                    // delegation_verifier bound at redemption;
+                                    // if no member's ai_delegations still
+                                    // carries it, the delegation was rotated or
+                                    // removed and the session is dead now, not
+                                    // at its TTL. When the session carries the
+                                    // delegation private key (crypt scope), we
+                                    // additionally require it to derive that
+                                    // verifier — possession of the delegation
+                                    // key, not just of a session file anyone
+                                    // with state-dir write could author. Emit a
+                                    // hint and fall through unauthenticated, as
+                                    // the job and cross-project paths do.
+                                    eprintln!("{reason}");
                                 } else {
                                     return Ok(Identity {
                                         member: sess.claims.member.clone().into(),
-                                        // Record the delegating operator by their
-                                        // at-rest member key (opaque id in anonymous
-                                        // mode), never the cleartext git e-mail, so
-                                        // the audit trail carries no PII (ADR-042).
-                                        delegated_by: crate::privacy::delegated_by_at_rest(
-                                            project, &git_email,
-                                        )
-                                        .map(Into::into),
+                                        // F2 (JI-0175-B0): the delegating
+                                        // operator is recorded in the signed
+                                        // session claims at redemption. Fall
+                                        // back to the git e-mail only for
+                                        // sessions written before F2 (no
+                                        // delegated_by claim), resolved to the
+                                        // at-rest member key so the audit trail
+                                        // carries no PII (ADR-042).
+                                        delegated_by: sess
+                                            .claims
+                                            .delegated_by
+                                            .clone()
+                                            .or_else(|| {
+                                                crate::privacy::delegated_by_at_rest(
+                                                    project, &git_email,
+                                                )
+                                            })
+                                            .map(Into::into),
                                         authenticated: true,
                                     });
                                 }
@@ -269,6 +308,59 @@ fn check_session(root: &Path, member: &str, project: &Option<Project>) -> bool {
     // the JOY_SESSION env var matched to the ephemeral public key. A
     // session file on its own no longer authenticates anyone.
     false
+}
+
+/// Reject a token-redeemed AI session that no longer traces to a live
+/// delegation (F3, JI-0175-B0). Returns `Some(reason)` to reject, `None`
+/// to accept.
+///
+/// A token-redeemed session records the delegation_verifier it was bound
+/// to in `claims.token_key`. Two checks:
+///
+/// 1. some member's `ai_delegations[<ai>]` must still carry that verifier.
+///    Rotating the delegation (`joy auth delegation rotate`) or removing
+///    the delegating member changes or drops it, so a revoked session
+///    dies at the next command, not only at its TTL.
+/// 2. when the session carries the delegation private key in its
+///    `JOY_SESSION` env (crypt scope), that key must derive the verifier.
+///    This proves possession of the delegation key: a session file alone
+///    — which anyone able to write the state dir could author for any
+///    registered AI member — is no longer enough.
+///
+/// Sessions with no `token_key` (older shapes) are accepted here; the
+/// generic checks in `resolve_identity` still gate them.
+pub fn token_session_rejection(
+    project: &Project,
+    sess: &crate::auth::session::SessionToken,
+    delegation_private: Option<&[u8; 32]>,
+) -> Option<String> {
+    // No token_key (older session shapes) -> nothing to trace; accept and
+    // let the generic checks in resolve_identity gate it.
+    let verifier = sess.claims.token_key.as_ref()?;
+    let registered = project.members().any(|(_, m)| {
+        m.ai_delegations
+            .get(&sess.claims.member)
+            .is_some_and(|d| &d.delegation_verifier == verifier)
+    });
+    if !registered {
+        return Some(format!(
+            "the delegation for {} was rotated or removed; this session is no longer valid \
+             (ask the operator for a fresh token)",
+            sess.claims.member
+        ));
+    }
+    if let Some(seed) = delegation_private {
+        let derived = crate::auth::IdentityKeypair::from_seed(seed)
+            .public_key()
+            .to_hex();
+        if &derived != verifier {
+            return Some(format!(
+                "the session's delegation key does not match the registered delegation for {}",
+                sess.claims.member
+            ));
+        }
+    }
+    None
 }
 
 /// Validate the job binding of a platform-issued session (JOY-020B-D2).
@@ -475,6 +567,59 @@ mod tests {
 
     fn platform_kp() -> IdentityKeypair {
         IdentityKeypair::from_seed(&[42u8; 32])
+    }
+
+    // F3 (JI-0175-B0): token-redeemed AI sessions must trace to a live
+    // delegation. `token_session_rejection` is the pure predicate; the
+    // full env-driven flow lives in tests/job_session_mint.rs.
+    #[test]
+    fn token_session_rejected_when_delegation_absent_and_accepted_when_live() {
+        use crate::auth::session::create_session_for_ai;
+
+        let deleg = IdentityKeypair::from_seed(&[9u8; 32]);
+        let verifier = deleg.public_key().to_hex();
+        let ephemeral = IdentityKeypair::from_random();
+
+        // A project where the AI is registered but NO delegation carries
+        // the verifier the session was bound to: rejected.
+        let mut project = crate::model::Project::new("Test".into(), Some(PID.into()));
+        project
+            .register_member(AI, Member::new(MemberCapabilities::All))
+            .unwrap();
+        let sess: SessionToken =
+            create_session_for_ai(&ephemeral, AI, PID, None, &verifier, None, None);
+        assert!(
+            token_session_rejection(&project, &sess, None).is_some(),
+            "no ai_delegation carries the verifier -> revoked"
+        );
+
+        // Register the delegation under a human member: now accepted.
+        let mut operator = Member::new(MemberCapabilities::All);
+        operator.ai_delegations.insert(
+            AI.to_string(),
+            crate::model::project::AiDelegationEntry {
+                delegation_verifier: verifier.clone(),
+                delegation_salt: Some("00".repeat(32)),
+                created: chrono::Utc::now(),
+                rotated: None,
+            },
+        );
+        project.register_member("horst@x", operator).unwrap();
+        assert!(
+            token_session_rejection(&project, &sess, None).is_none(),
+            "a live delegation with the verifier -> accepted"
+        );
+
+        // Possession proof (crypt scope): the right key passes, a wrong
+        // key is rejected even though the delegation is live.
+        assert!(
+            token_session_rejection(&project, &sess, Some(&[9u8; 32])).is_none(),
+            "the matching delegation private key proves possession"
+        );
+        assert!(
+            token_session_rejection(&project, &sess, Some(&[1u8; 32])).is_some(),
+            "a delegation key that does not derive the verifier -> rejected"
+        );
     }
 
     fn job_project(with_platform_key: bool) -> Project {
