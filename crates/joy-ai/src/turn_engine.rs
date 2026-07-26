@@ -89,6 +89,39 @@ pub enum Pending {
     Done,
 }
 
+/// Live activity of a RUNNING turn (JI-0172-EE, JI-0179-4F step 4): the
+/// agent's streamed chunks, thoughts and tool calls, published by the
+/// host WHILE its `run_turn` blocks. One vocabulary for every transport:
+/// the platform puts these on its chat bus, the desktop on a Tauri
+/// event, and the ONE channel renderer upgrades the waiting skeleton to
+/// the live turn view when they arrive. Ephemeral like the pending
+/// markers: the persisted reply is the only truth.
+#[derive(Debug, Clone)]
+pub enum TurnActivity {
+    /// A piece of the reply text.
+    Chunk { text: String },
+    /// A piece of the reasoning text.
+    Thought { text: String },
+    /// A tool call started or changed status.
+    Tool {
+        id: String,
+        title: String,
+        status: String,
+    },
+}
+
+impl TurnActivity {
+    /// The wire kind, identical on the bus and the Tauri event, so the
+    /// channel needs exactly one switch.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            TurnActivity::Chunk { .. } => "turn-chunk",
+            TurnActivity::Thought { .. } => "turn-thought",
+            TurnActivity::Tool { .. } => "turn-tool",
+        }
+    }
+}
+
 /// One agent turn, as the engine requests it from the host.
 pub struct TurnRequest<'a> {
     pub member: &'a str,
