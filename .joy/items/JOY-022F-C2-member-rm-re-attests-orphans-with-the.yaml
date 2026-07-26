@@ -1,0 +1,17 @@
+id: JOY-022F-C2
+title: member rm re-attests orphans with the cleartext git email
+type: bug
+status: new
+priority: medium
+tags:
+- plan-2026-07-26
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-26T12:05:30.766703803Z
+updated: 2026-07-26T12:05:30.766703803Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'Found during the app settings-unification review (JAPP-0137-BC find F5): joy-cli project.rs ~1884 re-attests orphaned members after a member removal signing with the raw acting git email instead of the RESOLVED at-rest member key. In anonymous mode that leaks cleartext PII into project.yaml and records an attester reference that resolves to no member key (ADR-042 violation). The desktop mirror already signs with the resolved key; align the CLI.'
