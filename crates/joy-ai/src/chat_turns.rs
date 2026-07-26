@@ -242,9 +242,132 @@ pub fn delta_prompt(chat: &Chat, ai_member: &str) -> Option<String> {
     Some(prompt)
 }
 
+// ---------------------------------------------------------------------------
+// The reply a turn is allowed to say
+// ---------------------------------------------------------------------------
+
+/// Strip tool-call blobs a model may emit as chat text (JAPP-010D-B0:
+/// nothing tool-shaped surfaces as a message). A blob is an identifier run
+/// glued directly to a JSON object — the shape an ACP tool call takes when
+/// a model mistakenly prints it as its answer (observed live from vibe:
+/// `write_file…{"file_path": …}`). Text that merely CONTAINS an object
+/// after whitespace stays untouched. Returns `None` when nothing readable
+/// remains.
+///
+/// Lives HERE, not in one host, because every host runs turns: the
+/// platform for a server-side turn, the desktop for a local one. It was
+/// fixed on the platform alone once, and the desktop then printed exactly
+/// the blob this removes into the operator's chat (2026-07-26).
+pub fn sanitize_reply(reply: &str) -> Option<String> {
+    let chars: Vec<char> = reply.chars().collect();
+    let mut kept = String::new();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '{' && i + 1 < chars.len() && chars[i + 1] == '"' {
+            // the identifier run glued to the brace (no whitespace between)
+            let glued_len = kept
+                .chars()
+                .rev()
+                .take_while(|c| !c.is_whitespace())
+                .count();
+            let glued: String = {
+                let all: Vec<char> = kept.chars().collect();
+                all[all.len() - glued_len..].iter().collect()
+            };
+            let looks_like_call = !glued.is_empty()
+                && glued
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_alphanumeric() || c == '_');
+            if looks_like_call {
+                // drop the glued identifier and the whole JSON object
+                // (brace-matched, string-aware; a truncated blob eats the
+                // rest of the reply)
+                for _ in 0..glued_len {
+                    kept.pop();
+                }
+                let mut depth = 0usize;
+                let mut in_string = false;
+                let mut escaped = false;
+                let mut end = chars.len();
+                for (offset, &c) in chars[i..].iter().enumerate() {
+                    if in_string {
+                        if escaped {
+                            escaped = false;
+                        } else if c == '\\' {
+                            escaped = true;
+                        } else if c == '"' {
+                            in_string = false;
+                        }
+                        continue;
+                    }
+                    match c {
+                        '"' => in_string = true,
+                        '{' => depth += 1,
+                        '}' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                end = i + offset + 1;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                i = end;
+                continue;
+            }
+        }
+        kept.push(chars[i]);
+        i += 1;
+    }
+    let cleaned = kept.trim();
+    (!cleaned.is_empty()).then(|| cleaned.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plain_replies_pass_untouched() {
+        assert_eq!(
+            sanitize_reply("mistral-medium-3.5, at your service."),
+            Some("mistral-medium-3.5, at your service.".into())
+        );
+    }
+
+    #[test]
+    fn a_pure_tool_call_blob_is_withheld() {
+        // the live vibe leak: identifier + garbled run glued to JSON args
+        let leak = r##"write_fileাব্দ{"file_path": "/Users/x/plan.md", "content": "# Plan\n"}"##;
+        assert_eq!(sanitize_reply(leak), None);
+    }
+
+    #[test]
+    fn a_blob_inside_prose_is_stripped_and_the_prose_stays() {
+        let mixed =
+            r#"Here is my answer. write_file{"file_path": "x", "content": "{nested} \"q\""} Done."#;
+        assert_eq!(
+            sanitize_reply(mixed),
+            Some("Here is my answer.  Done.".into())
+        );
+    }
+
+    #[test]
+    fn json_after_whitespace_is_legitimate_content() {
+        let reply = r#"The config is {"retries": 3} as discussed."#;
+        assert_eq!(sanitize_reply(reply), Some(reply.into()));
+    }
+
+    #[test]
+    fn a_truncated_blob_eats_to_the_end_not_beyond() {
+        let cut = r#"call_tool{"arg": "unclosed"#;
+        assert_eq!(sanitize_reply(cut), None);
+        let with_prefix = format!("Take this. {cut}");
+        assert_eq!(sanitize_reply(&with_prefix), Some("Take this.".into()));
+    }
+
     use chrono::{TimeZone, Utc};
     use joy_core::member_ref::MemberRef;
 
