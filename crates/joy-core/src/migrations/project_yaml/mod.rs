@@ -9,6 +9,7 @@
 //! entry. No struct-level changes required.
 
 mod m_2026_04_rename_auth_fields;
+mod m_2026_07_ai_member_adapter;
 
 use serde_yaml_ng::Value;
 
@@ -22,6 +23,10 @@ pub fn apply(value: Value) -> (Value, bool) {
     let mut changed = false;
 
     let (v, c) = m_2026_04_rename_auth_fields::migrate(value);
+    value = v;
+    changed |= c;
+
+    let (v, c) = m_2026_07_ai_member_adapter::migrate(value);
     value = v;
     changed |= c;
 

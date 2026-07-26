@@ -54,11 +54,20 @@ pub fn redeem_ai_session(
 ) -> Result<RedeemedSession, JoyError> {
     let delegation = token::decode_token(token_str)?;
 
-    // The delegating human and their registered verify key.
+    // The delegating human and their registered verify key. `delegated_by`
+    // carries whichever identifier the issuer had in hand: the raw git
+    // e-mail (`joy auth token add`) or the already-resolved at-rest member
+    // key (the app's attested add, which never touches a raw e-mail in
+    // anonymous mode, ADR-042). Accept BOTH — resolving an at-rest key
+    // through the e-mail matcher fails in anonymous mode, which silently
+    // broke redemption for every app-issued token there.
     let human = &delegation.claims.delegated_by;
-    let human_member = project.member_by_email(human).ok_or_else(|| {
-        JoyError::AuthFailed(format!("delegating member {human} is not registered"))
-    })?;
+    let human_member = project
+        .member_by_key(human)
+        .or_else(|| project.member_by_email(human))
+        .ok_or_else(|| {
+            JoyError::AuthFailed(format!("delegating member {human} is not registered"))
+        })?;
     let human_pk_hex = human_member.verify_key.as_ref().ok_or_else(|| {
         JoyError::AuthFailed(format!(
             "delegating member {human} has no public key registered"
@@ -205,6 +214,52 @@ mod tests {
             },
         );
         encode_token(&token)
+    }
+
+    // ADR-042 / anonymous mode: an app-issued token names the operator by
+    // their AT-REST member key, not a raw e-mail. Resolving that through
+    // the e-mail matcher finds nothing, so redemption used to fail for
+    // every token the app issued in an anonymous project.
+    #[test]
+    fn a_token_naming_the_operator_by_their_at_rest_key_redeems() {
+        let (project, seed, delegator) = project_with_delegation();
+        let delegation = IdentityKeypair::from_seed(&seed);
+        // The at-rest key IS the map key; in open mode it equals the
+        // e-mail, in anonymous mode it is the opaque id — either way this
+        // is what the app has in hand when it signs.
+        let token = encode_token(&create_token(
+            TokenSigningKeys {
+                delegator: &delegator,
+                delegation: &delegation,
+                delegation_seed: &seed,
+            },
+            TokenIssueParams {
+                ai_member: AI,
+                human: HUMAN, // the at-rest key of the human member
+                project_id: PID,
+                ttl: None,
+                crypt_scope: true,
+            },
+        ));
+        let redeemed = redeem_ai_session(&project, PID, &token).expect("redeems by key");
+        assert_eq!(redeemed.member, AI);
+
+        // …and an unknown identifier is still refused, by either route.
+        let bogus = encode_token(&create_token(
+            TokenSigningKeys {
+                delegator: &delegator,
+                delegation: &delegation,
+                delegation_seed: &seed,
+            },
+            TokenIssueParams {
+                ai_member: AI,
+                human: "nobody@example.com",
+                project_id: PID,
+                ttl: None,
+                crypt_scope: true,
+            },
+        ));
+        assert!(redeem_ai_session(&project, PID, &bogus).is_err());
     }
 
     #[test]
