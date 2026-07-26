@@ -16,3 +16,4 @@ pub mod chat_wrap;
 pub mod chats;
 pub mod mentions;
 pub mod model;
+pub mod turn_meta;
