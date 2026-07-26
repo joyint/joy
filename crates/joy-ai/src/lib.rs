@@ -6,6 +6,7 @@
 
 #![deny(clippy::all)]
 
+pub mod activity;
 pub mod ai_setup;
 pub mod ai_templates;
 pub mod app_settings;
