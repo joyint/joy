@@ -8,7 +8,8 @@
 //! shell (chat turns over local ACP tools). Only fragments of the rules
 //! were shared, and every fix that landed in one copy silently made the
 //! other one poorer; three operator findings in one day were all this
-//! class (APP-FAIL.md in the umbrella records the full accounting).
+//! class (JI-0179-4F; the full accounting is the APP-FAIL analysis in
+//! Joydev Docs, under Analysen).
 //!
 //! The rule now: hosts never decide anything product-shaped. This module
 //! owns the loop, the notices a person reads, the waiting-marker
