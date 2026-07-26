@@ -1,0 +1,18 @@
+id: JOY-0238-34
+title: 'The parity script: one conversation, one golden, every host'
+type: story
+status: new
+priority: high
+tags:
+- plan-2026-07-26
+capabilities:
+- plan
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-26T22:25:46.726508119Z
+updated: 2026-07-26T22:25:46.726508119Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'JI-0179-4F step 5. joy_ai::parity holds the scripted conversation (an @mention, a plain follow-up, a slash line), the deterministic replies, the normalizer (kinds, authors with humans folded to one token, texts, attribution-set and level-recorded flags; ids, times and budget fields normalized away) and the golden sequence. The engine is shared, so a parity break can only come from a HOST; each host runs this script against the one golden: the desktop always-on in cargo test, the platform beats in the gated web e2e. The machine holds the line reviews demonstrably did not.'
