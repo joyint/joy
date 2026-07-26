@@ -1,0 +1,19 @@
+id: JOY-0232-35
+title: AI members registered before the adapter pin carry none
+type: bug
+status: closed
+priority: medium
+tags:
+- plan-2026-07-26
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-26T16:29:48.436006813Z
+updated: 2026-07-26T16:30:00.545575185Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-07-26T16:30:00.545575185Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Found via the operator report of an empty adapter badge (JAPP-013F-F6, 2026-07-26). The project.yaml adapter pin (JI-0164) is absent on every AI member registered before it existed, because joy ai init / register_tool_member never wrote the field. Hosts reading the pin got nothing. Fixed with the established systematic: an on-read project_yaml migration (m_2026_07_ai_member_adapter) derives it from the canonical member id, never overwrites a recorded pin, is idempotent, and persists via joy update. DELIVERED in commit d14ca7a, which mistakenly carries the item id of the follow-up rename (JOY-0231-74) instead of this one.'
