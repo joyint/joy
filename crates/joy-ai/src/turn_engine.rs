@@ -356,7 +356,24 @@ pub fn run_chat_turns(ctx: &EngineCtx, host: &dyn TurnHost) -> Vec<Appended> {
                                 acted = true;
                             }
                         }
-                        Ok(_) => {}
+                        Ok(_) => {
+                            // An EMPTY answer is still an outcome, and it
+                            // used to produce nothing at all: the marker
+                            // opened, `Done` closed it a moment later, and
+                            // the room was left exactly as before — a turn
+                            // that ran, cost money and vanished without a
+                            // trace (JAPP-014E-4D). It happens for real:
+                            // an agent that only ran tools and said nothing
+                            // returns an empty reply, and a native ACP
+                            // adapter makes that MORE likely, not less,
+                            // because tool calls no longer leak into the
+                            // message text.
+                            let note =
+                                format!("@{alias} ended the turn without an answer. Ask again.");
+                            if host.append(&ctx.chat_id, notice(&member, note)).is_ok() {
+                                acted = true;
+                            }
+                        }
                         Err(raw) => {
                             // The raw adapter error (container names,
                             // tag wrappers) never reaches the chat; the

@@ -1,0 +1,19 @@
+id: JOY-023A-4B
+title: A turn with an empty answer produces nothing at all
+type: bug
+status: in-progress
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-27T10:38:11.579751290Z
+updated: 2026-07-27T10:38:18.802486097Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-07-27T10:38:18.802486097Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Found while investigating JAPP-014E-4D. turn_engine::run_chat_turns has one branch that produces nothing: Ok(_) with an empty reply. The waiting marker opens, Done closes it a moment later, and the room looks exactly as before - a turn that ran, cost money and vanished without a trace. It matches the first half of the operator report exactly (skeleton appears, skeleton disappears, no message). Not theoretical: an agent that only ran tools and said nothing returns an empty reply, and a native ACP adapter makes that MORE likely, because tool calls no longer leak into the message text. Fix: the empty answer gets an honest notice like every other outcome.'
