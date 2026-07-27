@@ -19,7 +19,7 @@ use joy_chat::model::chat::{Chat, ChatMessage, MessageKind};
 pub const MAX_AI_TURNS_SINCE_HUMAN: usize = 2;
 
 /// The system line posted when the chain guard trips (notice format).
-pub const MODERATION_NOTICE: &str = "the AIs paused — a human has to moderate on";
+pub const MODERATION_NOTICE: &str = "the AIs paused. A human has to moderate on.";
 
 /// What a host should do for one AI member after a new message landed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

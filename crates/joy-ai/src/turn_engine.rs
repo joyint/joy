@@ -446,7 +446,7 @@ fn usability_notice(alias: &str, usability: &Usability, ctx: &EngineCtx) -> Opti
             Some(format!("@{alias} is not set up on this machine ({hint})"))
         }
         Usability::NotActivated => Some(format!(
-            "@{alias} is not activated in this project — Settings → Local AI → Active"
+            "@{alias} is not activated in this project. Settings, Local AI, Active."
         )),
     }
 }
