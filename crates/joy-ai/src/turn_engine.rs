@@ -159,6 +159,11 @@ pub struct TurnOutcome {
     pub model: Option<String>,
     /// The turn was stopped early by a per-message spend cap.
     pub capped: bool,
+    /// How many permission round-trips this turn was REFUSED. An agent
+    /// that is not allowed to do what it planned typically ends its turn
+    /// without a word (measured with vibe-acp 2.22, JAPP-0152-81), so this
+    /// is what turns that silence into a sentence.
+    pub denied: u32,
     pub budget: Option<BudgetSnapshot>,
 }
 
@@ -356,7 +361,7 @@ pub fn run_chat_turns(ctx: &EngineCtx, host: &dyn TurnHost) -> Vec<Appended> {
                                 acted = true;
                             }
                         }
-                        Ok(_) => {
+                        Ok(out) => {
                             // An EMPTY answer is still an outcome, and it
                             // used to produce nothing at all: the marker
                             // opened, `Done` closed it a moment later, and
@@ -368,8 +373,19 @@ pub fn run_chat_turns(ctx: &EngineCtx, host: &dyn TurnHost) -> Vec<Appended> {
                             // adapter makes that MORE likely, not less,
                             // because tool calls no longer leak into the
                             // message text.
-                            let note =
-                                format!("@{alias} ended the turn without an answer. Ask again.");
+                            // …and when the reason is known, say THAT: a
+                            // refused permission is the common cause, and
+                            // "no answer" leaves the person with a mystery
+                            // instead of the one thing they can change.
+                            let note = if out.denied > 0 {
+                                let steps = if out.denied == 1 { "step" } else { "steps" };
+                                format!(
+                                    "@{alias} stopped: {} {steps} needed permission that the {level} level does not give. Raise the level for this chat and ask again.",
+                                    out.denied
+                                )
+                            } else {
+                                format!("@{alias} ended the turn without an answer. Ask again.")
+                            };
                             if host.append(&ctx.chat_id, notice(&member, note)).is_ok() {
                                 acted = true;
                             }
