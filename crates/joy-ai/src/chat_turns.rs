@@ -2,8 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 //! Turn rules for AI members in chats (JOY-01F9). One implementation for
-//! every host (desktop, platform): an AI answers only when @mentioned;
-//! since the last human message each AI may post at most
+//! every host (desktop, platform). ONE rule decides who a message is for
+//! (operator 2026-07-27, JOY-0239-02), the same in a 1:1 and in a room of
+//! six: a message that STARTS with @names is for those members; a message
+//! that does not is for whoever spoke last, and for nobody else. On top of
+//! that, since the last human message each AI may post at most
 //! [`MAX_AI_TURNS_SINCE_HUMAN`] messages — an address beyond that yields
 //! the moderation notice instead of another AI turn. Whether the SENDER
 //! is allowed to address the AI (local adapter installed, API key set) is
@@ -34,9 +37,14 @@ fn is_ai(id: &str) -> bool {
     id.starts_with("ai:")
 }
 
-pub use joy_chat::mentions::{alias, mentions, unknown_mentions};
+pub use joy_chat::mentions::{alias, leading_mentions, mentions, unknown_mentions};
 
 /// Decide what `ai_member` should do about the newest message.
+///
+/// The rule, in full: leading @names address exactly those members; no
+/// leading @name addresses the last other speaker. Consequence worth
+/// knowing: the FIRST message of a fresh chat has no last speaker, so it
+/// needs an @name — which is also what pulls the AI into the room.
 pub fn decide(chat: &Chat, newest: &ChatMessage, ai_member: &str) -> TurnDecision {
     // Only a CONVERSATIONAL text can address an AI (App-Konzept 5.1/5.2:
     // `/` addresses a tool, `@` addresses an actor). Notices, tool results,
@@ -58,27 +66,21 @@ pub fn decide(chat: &Chat, newest: &ChatMessage, ai_member: &str) -> TurnDecisio
         .iter()
         .map(|p| p.id().to_string())
         .collect();
-    let addressed = mentions(&newest.text, &participant_ids)
-        .iter()
-        .any(|m| m.as_str() == ai_member);
-    if !addressed {
-        // The messenger convention beyond explicit mentions (operator
-        // 2026-07-18: a follow-up right after the AI's answer got NO
-        // reply). A HUMAN message also addresses this AI when
-        //  - the chat is a solo conversation with exactly this AI, or
-        //  - the human is answering it: the latest conversational text
-        //    by anyone ELSE is this AI's reply (another human or AI
-        //    interjecting breaks the chain).
+    let leading = leading_mentions(&newest.text, &participant_ids);
+    let addressed = if leading.is_empty() {
+        // No leading mention: the message belongs to whoever spoke last
+        // (operator rule 2026-07-27, JOY-0239-02) — and to nobody else.
+        // "Last" means the latest conversational text by someone ELSE:
+        // two messages in a row from the same person are one turn, you
+        // cannot address yourself. An AI's own message never addresses
+        // implicitly: two AIs would answer each other forever, and the
+        // chain guard below only bounds the EXPLICIT ai-to-ai case.
         if is_ai(newest.author.id()) {
             return TurnDecision::Silent;
         }
-        let humans = participant_ids.iter().filter(|id| !is_ai(id)).count();
-        let ais: Vec<&String> = participant_ids.iter().filter(|id| is_ai(id)).collect();
-        let solo = humans == 1 && ais.len() == 1 && ais[0] == ai_member;
         // `newest` is the chat's last message on the run_turns path;
         // walk the history BEFORE it.
-        let follow_up = chat
-            .messages
+        chat.messages
             .iter()
             .rev()
             .skip_while(|m| {
@@ -91,11 +93,12 @@ pub fn decide(chat: &Chat, newest: &ChatMessage, ai_member: &str) -> TurnDecisio
             .filter(|m| m.kind == MessageKind::Text && m.author.id() != newest.author.id())
             .map(|m| m.author.id().to_string())
             .next()
-            .is_some_and(|id| id == ai_member);
-        if !(solo || follow_up) {
-            return TurnDecision::Silent;
-        }
-        return TurnDecision::Respond;
+            .is_some_and(|id| id == ai_member)
+    } else {
+        leading.iter().any(|m| m.as_str() == ai_member)
+    };
+    if !addressed {
+        return TurnDecision::Silent;
     }
     // Humans reset the chain; an AI addressing an AI is bounded.
     if !is_ai(newest.author.id()) {
@@ -115,10 +118,13 @@ pub fn decide(chat: &Chat, newest: &ChatMessage, ai_member: &str) -> TurnDecisio
     }
 }
 
-/// A human's @mention of a PROJECT AI that is not a participant yet adds
-/// it to the chat (the messenger convention, and the reason a fresh
-/// personal chat can talk to @claude at all). Returns whether anyone was
-/// added; General needs no adds (everyone is in it).
+/// A human's LEADING @mention of a PROJECT AI that is not a participant
+/// yet adds it to the chat (the messenger convention, and the reason a
+/// fresh personal chat can talk to @claude at all). Returns whether anyone
+/// was added; General needs no adds (everyone is in it).
+///
+/// Leading, like [`decide`]: an @name further in the sentence refers to
+/// someone, it does not pull them into the room.
 pub fn add_mentioned_ais(
     root: &std::path::Path,
     chat: &mut Chat,
@@ -142,7 +148,7 @@ pub fn add_mentioned_ais(
         .map(|(key, _)| key.clone())
         .filter(|key| is_ai(key))
         .collect();
-    let mentioned: Vec<String> = mentions(&newest.text, &project_ais)
+    let mentioned: Vec<String> = leading_mentions(&newest.text, &project_ais)
         .into_iter()
         .cloned()
         .collect();
@@ -526,7 +532,11 @@ mod tests {
     }
 
     #[test]
-    fn a_solo_chat_needs_no_mention_at_all() {
+    fn the_first_message_of_a_chat_needs_a_mention_even_in_a_1_to_1() {
+        // The 1:1 special case is GONE (operator 2026-07-27): one rule for
+        // every chat size. Nobody spoke before, so nobody is addressed —
+        // and the @name that starts the conversation is also what pulls the
+        // AI into the room (`add_mentioned_ais`).
         let now = Utc.with_ymd_and_hms(2026, 7, 4, 12, 0, 0).unwrap();
         let mut chat = Chat::new(
             "solo",
@@ -536,22 +546,69 @@ mod tests {
             ],
             now,
         );
-        chat.messages.push(ChatMessage {
-            id: "m1".into(),
-            at: now,
-            author: MemberRef::new("horst@example.com"),
-            text: "which model do you use?".into(),
-            kind: MessageKind::Text,
-            delegated_by: None,
-            turn_ms: None,
-            tool_steps: None,
-            tool: None,
-            payload: None,
-            details: None,
-            enc: None,
-            epoch: None,
-        });
+        fn line(chat: &mut Chat, now: chrono::DateTime<Utc>, text: &str) {
+            chat.messages.push(ChatMessage {
+                id: format!("m{}", chat.messages.len() + 1),
+                at: now,
+                author: MemberRef::new("horst@example.com"),
+                text: text.into(),
+                kind: MessageKind::Text,
+                delegated_by: None,
+                turn_ms: None,
+                tool_steps: None,
+                tool: None,
+                payload: None,
+                details: None,
+                enc: None,
+                epoch: None,
+            });
+        }
+        line(&mut chat, now, "which model do you use?");
+        let newest = chat.messages.last().unwrap().clone();
+        assert_eq!(decide(&chat, &newest, "ai:vibe@joy"), TurnDecision::Silent);
+
+        line(&mut chat, now, "@vibe which model do you use?");
+        let newest = chat.messages.last().unwrap().clone();
+        assert_eq!(decide(&chat, &newest, "ai:vibe@joy"), TurnDecision::Respond);
+    }
+
+    #[test]
+    fn a_leading_mention_of_someone_else_silences_the_last_speaker() {
+        // Operator validation 2026-07-26 (JOY-0239-02): vibe had answered
+        // last, the next message went to @claude, and vibe answered it too.
+        let chat = chat_with(vec![
+            ("horst@example.com", "@vibe which model?", MessageKind::Text),
+            ("ai:vibe@joy", "mistral-medium-3.5.", MessageKind::Text),
+            (
+                "horst@example.com",
+                "@claude what do you think?",
+                MessageKind::Text,
+            ),
+        ]);
         let newest = chat.messages.last().unwrap();
+        assert_eq!(decide(&chat, newest, "ai:vibe@joy"), TurnDecision::Silent);
+        assert_eq!(
+            decide(&chat, newest, "ai:claude@joy"),
+            TurnDecision::Respond
+        );
+    }
+
+    #[test]
+    fn a_mention_in_mid_sentence_refers_and_does_not_address() {
+        // Position, not spelling: "I already asked @claude" is about
+        // claude, it is not a question TO claude — it continues the
+        // exchange with whoever spoke last.
+        let chat = chat_with(vec![
+            ("horst@example.com", "@vibe which model?", MessageKind::Text),
+            ("ai:vibe@joy", "mistral-medium-3.5.", MessageKind::Text),
+            (
+                "horst@example.com",
+                "thanks, I already asked @claude about that",
+                MessageKind::Text,
+            ),
+        ]);
+        let newest = chat.messages.last().unwrap();
+        assert_eq!(decide(&chat, newest, "ai:claude@joy"), TurnDecision::Silent);
         assert_eq!(decide(&chat, newest, "ai:vibe@joy"), TurnDecision::Respond);
     }
 

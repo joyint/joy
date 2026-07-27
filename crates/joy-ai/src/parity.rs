@@ -30,13 +30,30 @@ pub const SCRIPT: &[&str] = &[
 /// golden can name it). Runners wire their agent to answer exactly this.
 pub const REPLIES: &[&str] = &["Opus 5", "kurz nach Mitternacht"];
 
+/// The activity every scripted turn produces: one thought and one
+/// completed tool call. The platform's mock agent emits exactly this on
+/// every prompt; the desktop runner injects the same.
+///
+/// It is part of the script because activity is part of the RECORD
+/// (JAPP-014D-6E): the desktop persisted none of it for weeks while the
+/// platform persisted it correctly, and a golden that only looked at the
+/// text could not see the difference.
+pub fn activity() -> crate::activity::Activity {
+    crate::activity::Activity {
+        thoughts: "reading the backlog".into(),
+        tools: vec![("joy ls".into(), "completed".into())],
+        permissions: Vec::new(),
+    }
+}
+
 /// One normalized row per persisted message: what parity is ABOUT, and
 /// nothing that legitimately differs (ids, timestamps, budget fields,
 /// and WHO the human is: every human author normalizes to `human`).
 ///
 /// Shape: `kind|author|text` plus, for AI replies, `|by=<set?>` (the
-/// attribution exists) and `|level=<set?>` (the execution record carries
-/// the interaction level).
+/// attribution exists), `|level=<set?>` (the execution record carries the
+/// interaction level) and `|act=<thoughts?>,<n>tools` (the activity block
+/// survived into the record).
 pub fn normalize(chat: &Chat) -> Vec<String> {
     chat.messages
         .iter()
@@ -59,10 +76,12 @@ pub fn normalize(chat: &Chat) -> Vec<String> {
                 } else {
                     "|by=unset"
                 });
-                let has_level = m
+                let details = m
                     .details
                     .as_deref()
-                    .and_then(|d| serde_json::from_str::<serde_json::Value>(d).ok())
+                    .and_then(|d| serde_json::from_str::<serde_json::Value>(d).ok());
+                let has_level = details
+                    .as_ref()
                     .map(|v| v.get("interactionLevel").is_some())
                     .unwrap_or(false);
                 row.push_str(if has_level {
@@ -70,6 +89,25 @@ pub fn normalize(chat: &Chat) -> Vec<String> {
                 } else {
                     "|level=unset"
                 });
+                // What the turn DID, as the thread will render it. A host
+                // that streams its activity but persists none lands on
+                // `-,0tools` here and fails the golden.
+                let thoughts = details
+                    .as_ref()
+                    .and_then(|v| v.get("thoughts"))
+                    .and_then(|t| t.as_str())
+                    .map(|t| !t.trim().is_empty())
+                    .unwrap_or(false);
+                let tools = details
+                    .as_ref()
+                    .and_then(|v| v.get("tools"))
+                    .and_then(|t| t.as_array())
+                    .map(Vec::len)
+                    .unwrap_or(0);
+                row.push_str(&format!(
+                    "|act={},{tools}tools",
+                    if thoughts { "t" } else { "-" }
+                ));
             }
             row
         })
@@ -85,9 +123,15 @@ pub fn golden() -> Vec<String> {
         // the ENGINE pulls the mentioned AI in; the add-notice is
         // authored by the human who mentioned it
         "notice|human|@ai:claude@joy was added".to_string(),
-        format!("text|ai:claude@joy|{}|by=set|level=set", REPLIES[0]),
+        format!(
+            "text|ai:claude@joy|{}|by=set|level=set|act=t,1tools",
+            REPLIES[0]
+        ),
         format!("text|human|{}", SCRIPT[1]),
-        format!("text|ai:claude@joy|{}|by=set|level=set", REPLIES[1]),
+        format!(
+            "text|ai:claude@joy|{}|by=set|level=set|act=t,1tools",
+            REPLIES[1]
+        ),
         format!("text|human|{}", SCRIPT[2]),
     ]
 }
