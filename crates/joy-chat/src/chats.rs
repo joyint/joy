@@ -43,7 +43,7 @@ pub fn save_chat(root: &Path, chat: &mut Chat) -> Result<(), JoyError> {
     // and a project that has an identity to wrap for, persist through
     // [`crate::chat_store`] (opaque keys/log tree; migrates a legacy chat
     // in place). The in-memory `chat` stays OPENED for the caller.
-    if let Some(seed) = crate::chat_crypt::custodian_seed() {
+    if let Some(seed) = crate::writer::seed() {
         if crate::chat_store::can_seal(root, chat) {
             return crate::chat_store::save(root, chat, &seed);
         }
@@ -52,8 +52,7 @@ pub fn save_chat(root: &Path, chat: &mut Chat) -> Result<(), JoyError> {
     // gets plaintext (it stays ephemeral until someone authenticates);
     // only a project with no identity at all persists in the clear.
     if let Ok(project) = joy_core::store::load_project(root) {
-        let encryptable =
-            project.platform.is_some() || project.members().any(|(_, m)| m.verify_key.is_some());
+        let encryptable = project.members().any(|(_, m)| m.verify_key.is_some());
         if encryptable {
             return Err(JoyError::AuthFailed(
                 "chat not persisted: authenticate first (ADR JAPP-002A-30)".into(),
@@ -67,16 +66,17 @@ pub fn save_chat(root: &Path, chat: &mut Chat) -> Result<(), JoyError> {
 /// [`crate::chat_store`]; a legacy (unmigrated) chat falls back to the old
 /// reader plus the custodian open.
 pub fn load_chat(root: &Path, id: &str) -> Result<Option<Chat>, JoyError> {
-    if let Some(seed) = crate::chat_crypt::custodian_seed() {
+    if let Some(seed) = crate::writer::seed() {
         if let Some(mut chat) = crate::chat_store::load(root, id, &seed)? {
             normalize(&mut chat);
             return Ok(Some(chat));
         }
     }
+    // A project with no identity at all keeps its chats in the clear
+    // (ADR JAPP-002A-30); that is the only thing left to read here.
     match crate::chat_ref::load_chat(root, id)? {
         Some(mut chat) => {
             normalize(&mut chat);
-            crate::chat_crypt::open_with_custodian(&mut chat);
             Ok(Some(chat))
         }
         None => Ok(None),
@@ -89,7 +89,7 @@ pub fn load_chat(root: &Path, id: &str) -> Result<Option<Chat>, JoyError> {
 pub fn load_chats(root: &Path) -> Result<Vec<Chat>, JoyError> {
     let mut out: Vec<Chat> = Vec::new();
     let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    if let Some(seed) = crate::chat_crypt::custodian_seed() {
+    if let Some(seed) = crate::writer::seed() {
         for mut chat in crate::chat_store::load_all(root, &seed)? {
             normalize(&mut chat);
             seen.insert(chat.id.clone());
@@ -101,7 +101,6 @@ pub fn load_chats(root: &Path) -> Result<Vec<Chat>, JoyError> {
             continue;
         }
         normalize(&mut chat);
-        crate::chat_crypt::open_with_custodian(&mut chat);
         out.push(chat);
     }
     out.sort_by_key(|c| std::cmp::Reverse(c.updated));
@@ -190,8 +189,6 @@ pub fn append_kind_with_id(
         tool: None,
         payload: None,
         details: None,
-        enc: None,
-        epoch: None,
     };
     chat.messages.push(message.clone());
     chat.updated = now;
@@ -1029,8 +1026,6 @@ mod channel_tests {
             tool: None,
             payload: None,
             details: None,
-            enc: None,
-            epoch: None,
         };
         chat.messages.push(mk(2, "second"));
         chat.messages.push(mk(1, "first"));

@@ -653,8 +653,6 @@ mod tests {
             tool: None,
             payload: None,
             details: None,
-            enc: None,
-            epoch: None,
         }
     }
 

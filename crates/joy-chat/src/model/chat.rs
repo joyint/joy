@@ -89,16 +89,6 @@ pub struct ChatMessage {
     /// decision 2026-07-16).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub details: Option<String>,
-    /// ADR JAPP-002A-30: the encrypted content envelope, hex
-    /// `nonce(12) || AES-256-GCM(ct)` over the JSON of the sensitive
-    /// fields (text, payload, details). When set, those fields are
-    /// EMPTY at rest and [`crate::chat_crypt`] restores them in memory.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub enc: Option<String>,
-    /// The key epoch `enc` was sealed under (index into
-    /// [`ChatCrypt::epochs`]).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub epoch: Option<u32>,
 }
 
 impl ChatMessage {
@@ -173,11 +163,6 @@ pub struct Chat {
         skip_serializing_if = "BTreeMap::is_empty"
     )]
     pub interaction_levels: BTreeMap<String, BTreeMap<String, InteractionLevel>>,
-    /// ADR JAPP-002A-30: the participant-wrapped content-key header.
-    /// None only for a legacy plaintext chat (migrated on next persist)
-    /// or a chat that was never persisted.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub crypt: Option<ChatCrypt>,
     /// Per-member read watermark (ADR JAPP-002A-30, sealed read markers):
     /// member id -> the instant up to which they have read. Held IN the
     /// chat (a sealed `Read` event per advance), never a server-side DB, so
@@ -188,24 +173,6 @@ pub struct Chat {
     pub read_markers: BTreeMap<String, DateTime<Utc>>,
     #[serde(default)]
     pub messages: Vec<ChatMessage>,
-}
-
-/// The chat's content-key header (ADR JAPP-002A-30): one AES-256-GCM
-/// key per epoch, wrapped X25519-pairwise for every participant who can
-/// hold one. Lives IN the chat object, never in project.yaml; there is
-/// no chat Crypt zone. Removing a participant appends a new epoch
-/// (rotation forward): past messages stay under their old epoch.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub struct ChatCrypt {
-    /// Key epochs, oldest first; the LAST is the active one.
-    pub epochs: Vec<ChatKeyEpoch>,
-}
-
-/// One content-key epoch: recipient id (member id or the reserved
-/// "platform" custodian) -> hex wrap (granter verify_key prefixed).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub struct ChatKeyEpoch {
-    pub wraps: std::collections::BTreeMap<String, String>,
 }
 
 impl Chat {
@@ -223,7 +190,6 @@ impl Chat {
             participants,
             ai_sessions: BTreeMap::new(),
             interaction_levels: BTreeMap::new(),
-            crypt: None,
             read_markers: BTreeMap::new(),
             messages: Vec::new(),
         }
@@ -362,8 +328,6 @@ mod tests {
             tool: None,
             payload: None,
             details: None,
-            enc: None,
-            epoch: None,
         };
         chat.messages = vec![mk(1, "a@e"), mk(2, "b@e"), mk(3, "ai:v@joy")];
         // b@e has an explicit read marker up to t2; a@e and the AI only have

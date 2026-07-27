@@ -54,19 +54,18 @@ pub struct SessionClaims {
     // inserted or reordered: sessions written before a field existed then
     // still serialize (and verify) byte-identically.
     // ------------------------------------------------------------------
-    /// Job-bound platform sessions (JOY-020B-D2): the job item this
-    /// session is scoped to. Commands accept such a session only while
-    /// that job is in progress and `member` is among its assignees.
+    /// Read but never written any more: a session a server signed for
+    /// itself and bound to a job item. That model is gone (JI-0174
+    /// family); the field stays so a session file written by an older
+    /// joy still parses, and it grants nothing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub job_id: Option<String>,
-    /// Who signed this session. `Some("platform")` for job-bound sessions
-    /// signed with the project's registered platform key (verified at
-    /// command time); `None` for every other session kind.
+    /// Read but never written any more, see `job_id`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub issuer: Option<String>,
-    /// Job-bound platform sessions: the at-rest member key of the human
-    /// who approved the job. Recorded at mint time because inside a job
-    /// sandbox there is no operator git e-mail to derive it from.
+    /// The human whose delegation this session acts under, recorded at
+    /// redemption (F2, JI-0175-B0), so every write names the person
+    /// behind the AI.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delegated_by: Option<String>,
 }
@@ -89,10 +88,6 @@ pub struct SessionToken {
 
 /// Default session duration: 24 hours.
 const DEFAULT_TTL_HOURS: i64 = 24;
-
-/// The `issuer` claim value for platform-signed, job-bound sessions
-/// (JOY-020B-D2).
-pub const PLATFORM_ISSUER: &str = "platform";
 
 /// Detect the current terminal device for session binding.
 ///
@@ -181,51 +176,6 @@ pub fn create_session_for_ai(
     };
     let claims_json = serde_json::to_string(&claims).expect("claims serialize");
     let signature = ephemeral_keypair.sign(claims_json.as_bytes());
-    SessionToken {
-        claims,
-        signature: hex::encode(signature),
-        members_zone_key: None,
-    }
-}
-
-/// Create a job-bound session for an AI member, signed by the PLATFORM
-/// key (JOY-020B-D2).
-///
-/// Unlike [`create_session_for_ai`] the signature is not by the throwaway
-/// ephemeral keypair: it is by the platform's registered signing key, so
-/// command-time validation can verify the issuer against
-/// `project.platform.verify_key`. The ephemeral keypair still provides
-/// proof of possession exactly as for token-redeemed AI sessions: its
-/// public half is recorded in the claims, its private half lives only in
-/// the `JOY_SESSION` env value of the sandboxed agent.
-///
-/// `delegated_by` is the at-rest member key of the human who approved the
-/// job (release at triage authorizes the spend); it becomes the
-/// `delegated-by:` audit actor for everything the session does.
-pub fn create_session_for_job(
-    platform_keypair: &IdentityKeypair,
-    ephemeral_keypair: &IdentityKeypair,
-    member: &str,
-    project_id: &str,
-    job_id: &str,
-    delegated_by: Option<String>,
-    ttl: Duration,
-) -> SessionToken {
-    let now = Utc::now();
-    let claims = SessionClaims {
-        member: member.to_string(),
-        project_id: project_id.to_string(),
-        created: now,
-        expires: now + ttl,
-        token_key: None,
-        session_public_key: Some(ephemeral_keypair.public_key().to_hex()),
-        tty: None,
-        job_id: Some(job_id.to_string()),
-        issuer: Some(PLATFORM_ISSUER.to_string()),
-        delegated_by,
-    };
-    let claims_json = serde_json::to_string(&claims).expect("claims serialize");
-    let signature = platform_keypair.sign(claims_json.as_bytes());
     SessionToken {
         claims,
         signature: hex::encode(signature),
@@ -791,51 +741,6 @@ mod tests {
             session_ttl <= Duration::hours(1),
             "session must respect its own TTL when token lives longer"
         );
-    }
-
-    #[test]
-    fn job_session_signed_by_platform_key_not_ephemeral() {
-        let platform = IdentityKeypair::from_seed(&[1u8; 32]);
-        let ephemeral = IdentityKeypair::from_random();
-        let token = create_session_for_job(
-            &platform,
-            &ephemeral,
-            "ai:claude@joy",
-            "TST",
-            "TST-JOB-0001",
-            Some("op@example.com".into()),
-            Duration::hours(4),
-        );
-        assert_eq!(token.claims.job_id.as_deref(), Some("TST-JOB-0001"));
-        assert_eq!(token.claims.issuer.as_deref(), Some(PLATFORM_ISSUER));
-        assert_eq!(token.claims.delegated_by.as_deref(), Some("op@example.com"));
-        assert_eq!(
-            token.claims.session_public_key.as_deref(),
-            Some(ephemeral.public_key().to_hex().as_str())
-        );
-        assert!(token.claims.token_key.is_none());
-
-        // Validates against the platform key...
-        validate_session(&token, &platform.public_key(), "TST").unwrap();
-        // ...but NOT against the ephemeral key (issuer binding is real).
-        assert!(validate_session(&token, &ephemeral.public_key(), "TST").is_err());
-    }
-
-    #[test]
-    fn job_session_tampered_claims_rejected() {
-        let platform = IdentityKeypair::from_seed(&[1u8; 32]);
-        let ephemeral = IdentityKeypair::from_random();
-        let mut token = create_session_for_job(
-            &platform,
-            &ephemeral,
-            "ai:claude@joy",
-            "TST",
-            "TST-JOB-0001",
-            None,
-            Duration::hours(4),
-        );
-        token.claims.job_id = Some("TST-JOB-0099".into());
-        assert!(validate_session(&token, &platform.public_key(), "TST").is_err());
     }
 
     #[test]

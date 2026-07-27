@@ -137,8 +137,6 @@ mod tests {
             tool: None,
             payload: None,
             details: None,
-            enc: None,
-            epoch: None,
         }
     }
     fn kp(seed: u8) -> joy_core::auth::IdentityKeypair {

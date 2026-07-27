@@ -6,7 +6,6 @@
 
 #![deny(clippy::all)]
 
-pub mod chat_crypt;
 pub mod chat_events;
 pub mod chat_ref;
 pub mod chat_seal;
@@ -17,3 +16,4 @@ pub mod chats;
 pub mod mentions;
 pub mod model;
 pub mod turn_meta;
+pub mod writer;

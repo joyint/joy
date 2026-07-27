@@ -398,8 +398,6 @@ mod tests {
                 tool: None,
                 payload: None,
                 details: None,
-                enc: None,
-                epoch: None,
                 at: now,
                 author: MemberRef::new(author),
                 text: text.into(),
@@ -559,8 +557,6 @@ mod tests {
                 tool: None,
                 payload: None,
                 details: None,
-                enc: None,
-                epoch: None,
             });
         }
         line(&mut chat, now, "which model do you use?");
@@ -778,8 +774,6 @@ mod tests {
             tool: None,
             payload: None,
             details: None,
-            enc: None,
-            epoch: None,
             at: chat.updated,
             author: MemberRef::new("ai:claude@joy"),
             text: MODERATION_NOTICE.into(),

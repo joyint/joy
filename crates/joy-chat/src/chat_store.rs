@@ -34,7 +34,7 @@ use crate::chat_seal::{self, KEYS_DIR, LOG_DIR};
 use crate::chat_wrap::{self, ContentKey, SLOT_LEN};
 use crate::model::chat::Chat;
 use joy_core::error::JoyError;
-use joy_core::model::project::{Project, PLATFORM_RECIPIENT};
+use joy_core::model::project::Project;
 
 fn git(e: git2::Error) -> JoyError {
     JoyError::Git(e.to_string())
@@ -57,19 +57,22 @@ fn effective_recipient_ids(project: &Project, chat: &Chat) -> Vec<String> {
     }
 }
 
-/// The verify_key on record for a recipient (a member, or the platform
-/// custodian under the reserved id).
+/// The verify_key on record for a recipient.
+///
+/// A recipient is a MEMBER, and nothing else. The reserved platform id
+/// that used to sit next to them, so a server could read every chat, is
+/// gone (JI-0174 family): a server reads a chat only where an AI member
+/// it holds a token for is a participant, through that member's own key
+/// like anyone else.
 fn recipient_public(project: &Project, id: &str) -> Option<joy_core::auth::PublicKey> {
-    let hex = if id == PLATFORM_RECIPIENT {
-        project.platform.as_ref().map(|p| p.verify_key.clone())
-    } else {
-        project.member_by_key(id).and_then(|m| m.verify_key.clone())
-    }?;
+    let hex = project
+        .member_by_key(id)
+        .and_then(|m| m.verify_key.clone())?;
     joy_core::auth::PublicKey::from_hex(&hex).ok()
 }
 
-/// (recipient id, verify_key) for every current recipient PLUS the
-/// platform custodian, skipping anyone without a verify_key on record.
+/// (recipient id, verify_key) for every current recipient, skipping
+/// anyone without a verify_key on record.
 fn recipients(project: &Project, chat: &Chat) -> Vec<(String, joy_core::auth::PublicKey)> {
     let mut out = Vec::new();
     for id in effective_recipient_ids(project, chat) {
@@ -77,15 +80,11 @@ fn recipients(project: &Project, chat: &Chat) -> Vec<(String, joy_core::auth::Pu
             out.push((id, pk));
         }
     }
-    if let Some(pk) = recipient_public(project, PLATFORM_RECIPIENT) {
-        out.push((PLATFORM_RECIPIENT.to_string(), pk));
-    }
     out
 }
 
 /// Whether this chat can be sealed here: a Joy project with at least one
-/// wrap recipient (a participant with a verify_key, or the platform
-/// custodian). When false, the chat has no identity to encrypt for and
+/// wrap recipient, that is a participant with a verify_key. When false, the chat has no identity to encrypt for and
 /// the caller keeps it plaintext / ephemeral per the ADR.
 pub fn can_seal(root: &std::path::Path, chat: &Chat) -> bool {
     joy_core::store::load_project(root)
@@ -317,7 +316,7 @@ fn save_once(root: &std::path::Path, chat: &Chat, seed: &[u8; 32]) -> Result<boo
     let mut active = active.expect("active epoch set");
     let removed = cov
         .keys()
-        .any(|(e, m)| e == &active && m != PLATFORM_RECIPIENT && !recip_ids.contains(m.as_str()));
+        .any(|(e, m)| e == &active && !recip_ids.contains(m.as_str()));
     if removed {
         let en = chat_wrap::new_epoch_id();
         let ckn = chat_wrap::new_content_key();
@@ -379,27 +378,10 @@ fn save_once(root: &std::path::Path, chat: &Chat, seed: &[u8; 32]) -> Result<boo
         Ok(())
     };
 
-    // platform custodian: a slot in EVERY epoch (read-all invariant).
-    if let Some(pk) = recipient_public(&project, PLATFORM_RECIPIENT) {
-        let epochs: Vec<String> = epoch_keys.keys().cloned().collect();
-        for e in epochs {
-            let ck = epoch_keys[&e];
-            grant(
-                &e,
-                &ck,
-                PLATFORM_RECIPIENT,
-                &pk,
-                &mut new_events,
-                &mut new_slots,
-            )?;
-        }
-    }
     // each current member recipient: the active epoch, plus a re-wrap of
-    // any older epoch they already held under a now-changed key.
+    // any older epoch they already held under a now-changed key. Nobody
+    // else gets a slot; a chat has exactly the recipients it names.
     for (member, vk) in &recips {
-        if member == PLATFORM_RECIPIENT {
-            continue;
-        }
         grant(
             &active,
             &ck_active,
@@ -611,7 +593,7 @@ mod tests {
     use crate::model::chat::{ChatMessage, MessageKind};
     use joy_core::auth::IdentityKeypair;
     use joy_core::member_ref::MemberRef;
-    use joy_core::model::project::{Member, MemberCapabilities, PlatformInfo};
+    use joy_core::model::project::{Member, MemberCapabilities};
 
     fn ts(s: u32) -> DateTime<Utc> {
         format!("2026-07-19T00:00:{s:02}Z").parse().unwrap()
@@ -629,14 +611,13 @@ mod tests {
             tool: None,
             payload: None,
             details: None,
-            enc: None,
-            epoch: None,
         }
     }
 
-    /// A project with a platform custodian and two members that hold
-    /// identity keys; returns (root, platform_seed, horst_seed, anna_seed).
-    fn project() -> (tempfile::TempDir, [u8; 32], [u8; 32], [u8; 32]) {
+    /// A project with two members that hold identity keys; returns
+    /// (root, horst_seed, anna_seed). There is no third party: whoever
+    /// writes a chat holds a slot in it, like every other reader.
+    fn project() -> (tempfile::TempDir, [u8; 32], [u8; 32]) {
         let dir = tempfile::tempdir().unwrap();
         joy_core::init::init(joy_core::init::InitOptions {
             root: dir.path().to_path_buf(),
@@ -646,14 +627,8 @@ mod tests {
             language: None,
         })
         .unwrap();
-        let (platform_seed, horst_seed, anna_seed) = ([2u8; 32], [1u8; 32], [3u8; 32]);
+        let (horst_seed, anna_seed) = ([1u8; 32], [3u8; 32]);
         let mut project = joy_core::store::load_project(dir.path()).unwrap();
-        project.platform = Some(PlatformInfo {
-            verify_key: IdentityKeypair::from_seed(&platform_seed)
-                .public_key()
-                .to_hex(),
-            registered: Utc::now(),
-        });
         project
             .member_by_key_mut("horst@example.com")
             .unwrap()
@@ -670,12 +645,12 @@ mod tests {
             &project,
         )
         .unwrap();
-        (dir, platform_seed, horst_seed, anna_seed)
+        (dir, horst_seed, anna_seed)
     }
 
     #[test]
     fn a_participant_and_the_custodian_read_what_the_custodian_saved() {
-        let (dir, platform, horst, _anna) = project();
+        let (dir, horst, _anna) = project();
         let mut chat = Chat::new("aaaa0000aaaa0000aaaa0000aaaa0000", vec![], ts(0));
         chat.title = Some("Standup".into());
         chat.participants = vec![MemberRef::new("horst@example.com")];
@@ -683,7 +658,7 @@ mod tests {
             .push(msg("m1", 1, "horst@example.com", "secret plan"));
 
         // the custodian (platform) seals the chat
-        save(dir.path(), &chat, &platform).unwrap();
+        save(dir.path(), &chat, &horst).unwrap();
 
         // the participant reads it back with their OWN seed
         let got = load(dir.path(), &chat.id, &horst).unwrap().unwrap();
@@ -692,7 +667,7 @@ mod tests {
         assert_eq!(got.messages[0].text, "secret plan");
 
         // the custodian reads it too
-        let cust = load(dir.path(), &chat.id, &platform).unwrap().unwrap();
+        let cust = load(dir.path(), &chat.id, &horst).unwrap().unwrap();
         assert_eq!(cust.title.as_deref(), Some("Standup"));
 
         // no plaintext in the packed tree bytes
@@ -701,13 +676,13 @@ mod tests {
 
     #[test]
     fn a_non_member_reads_nothing() {
-        let (dir, platform, _horst, anna) = project();
+        let (dir, horst, anna) = project();
         let mut chat = Chat::new("bbbb1111bbbb1111bbbb1111bbbb1111", vec![], ts(0));
         chat.participants = vec![MemberRef::new("horst@example.com")]; // NOT anna
         chat.title = Some("Private".into());
         chat.messages
             .push(msg("m1", 1, "horst@example.com", "hush"));
-        save(dir.path(), &chat, &platform).unwrap();
+        save(dir.path(), &chat, &horst).unwrap();
 
         // anna is a project member but NOT a participant: opens nothing
         assert!(load(dir.path(), &chat.id, &anna).unwrap().is_none());
@@ -715,17 +690,17 @@ mod tests {
 
     #[test]
     fn re_saving_an_unchanged_chat_adds_no_objects() {
-        let (dir, platform, _h, _a) = project();
+        let (dir, horst, _a) = project();
         let mut chat = Chat::new("cccc2222cccc2222cccc2222cccc2222", vec![], ts(0));
         chat.participants = vec![MemberRef::new("horst@example.com")];
         chat.messages.push(msg("m1", 1, "horst@example.com", "one"));
-        save(dir.path(), &chat, &platform).unwrap();
+        save(dir.path(), &chat, &horst).unwrap();
 
         let repo = Repository::open(dir.path()).unwrap();
         let tip1 = repo.refname_to_id(chat_ref::CHATS_REF).unwrap();
         // reload (as the custodian would) and save the unchanged chat
-        let reloaded = load(dir.path(), &chat.id, &platform).unwrap().unwrap();
-        save(dir.path(), &reloaded, &platform).unwrap();
+        let reloaded = load(dir.path(), &chat.id, &horst).unwrap().unwrap();
+        save(dir.path(), &reloaded, &horst).unwrap();
         let tree1 = repo.find_commit(tip1).unwrap().tree().unwrap().id();
         let tip2 = repo.refname_to_id(chat_ref::CHATS_REF).unwrap();
         let tree2 = repo.find_commit(tip2).unwrap().tree().unwrap().id();
@@ -734,17 +709,17 @@ mod tests {
 
     #[test]
     fn adding_a_message_appends_and_a_late_member_joins() {
-        let (dir, platform, horst, anna) = project();
+        let (dir, horst, anna) = project();
         let mut chat = Chat::new("dddd3333dddd3333dddd3333dddd3333", vec![], ts(0));
         chat.participants = vec![MemberRef::new("horst@example.com")];
         chat.messages.push(msg("m1", 1, "horst@example.com", "one"));
-        save(dir.path(), &chat, &platform).unwrap();
+        save(dir.path(), &chat, &horst).unwrap();
 
         // add anna + a second message
-        let mut next = load(dir.path(), &chat.id, &platform).unwrap().unwrap();
+        let mut next = load(dir.path(), &chat.id, &horst).unwrap().unwrap();
         next.participants.push(MemberRef::new("anna@example.com"));
         next.messages.push(msg("m2", 2, "anna@example.com", "two"));
-        save(dir.path(), &next, &platform).unwrap();
+        save(dir.path(), &next, &horst).unwrap();
 
         // both read the full chat now
         let h = load(dir.path(), &chat.id, &horst).unwrap().unwrap();
@@ -756,7 +731,7 @@ mod tests {
 
     #[test]
     fn removing_a_member_rotates_forward_and_revokes_future_reads() {
-        let (dir, platform, horst, anna) = project();
+        let (dir, horst, anna) = project();
         let mut chat = Chat::new("eeee4444eeee4444eeee4444eeee4444", vec![], ts(0));
         chat.participants = vec![
             MemberRef::new("horst@example.com"),
@@ -764,7 +739,7 @@ mod tests {
         ];
         chat.messages
             .push(msg("m1", 1, "horst@example.com", "before"));
-        save(dir.path(), &chat, &platform).unwrap();
+        save(dir.path(), &chat, &horst).unwrap();
         // anna reads the pre-removal message
         assert_eq!(
             load(dir.path(), &chat.id, &anna)
@@ -776,11 +751,11 @@ mod tests {
         );
 
         // remove anna, add a post-removal message
-        let mut next = load(dir.path(), &chat.id, &platform).unwrap().unwrap();
+        let mut next = load(dir.path(), &chat.id, &horst).unwrap().unwrap();
         next.participants.retain(|p| p.id() != "anna@example.com");
         next.messages
             .push(msg("m2", 2, "horst@example.com", "after anna left"));
-        save(dir.path(), &next, &platform).unwrap();
+        save(dir.path(), &next, &horst).unwrap();
 
         // horst (remaining) reads BOTH messages
         let h = load(dir.path(), &chat.id, &horst).unwrap().unwrap();
@@ -797,11 +772,11 @@ mod tests {
 
     #[test]
     fn a_key_change_re_wraps_and_the_new_key_reads_again() {
-        let (dir, platform, horst_old, _anna) = project();
+        let (dir, horst_old, _anna) = project();
         let mut chat = Chat::new("ffff5555ffff5555ffff5555ffff5555", vec![], ts(0));
         chat.participants = vec![MemberRef::new("horst@example.com")];
         chat.messages.push(msg("m1", 1, "horst@example.com", "hi"));
-        save(dir.path(), &chat, &platform).unwrap();
+        save(dir.path(), &chat, &horst_old).unwrap();
         assert!(load(dir.path(), &chat.id, &horst_old).unwrap().is_some());
 
         // horst rotates his identity key in project.yaml
@@ -819,9 +794,9 @@ mod tests {
 
         // the new key opens NOTHING yet (no slot for it)
         assert!(load(dir.path(), &chat.id, &horst_new).unwrap().is_none());
-        // a custodian save detects the key change and re-wraps
-        let reloaded = load(dir.path(), &chat.id, &platform).unwrap().unwrap();
-        save(dir.path(), &reloaded, &platform).unwrap();
+        // a save by the holder of the OLD key detects the change and re-wraps
+        let reloaded = load(dir.path(), &chat.id, &horst_old).unwrap().unwrap();
+        save(dir.path(), &reloaded, &horst_old).unwrap();
         // now the NEW key reads the full history
         let got = load(dir.path(), &chat.id, &horst_new).unwrap().unwrap();
         assert_eq!(got.messages.len(), 1);
@@ -830,27 +805,27 @@ mod tests {
 
     #[test]
     fn divergent_sealed_saves_merge_keylessly() {
-        let (dir, platform, horst, _anna) = project();
+        let (dir, horst, _anna) = project();
         let mut chat = Chat::new("99998888999988889999888899998888", vec![], ts(0));
         chat.participants = vec![MemberRef::new("horst@example.com")];
         chat.messages
             .push(msg("m1", 1, "horst@example.com", "base"));
-        save(dir.path(), &chat, &platform).unwrap();
+        save(dir.path(), &chat, &horst).unwrap();
         let repo = Repository::open(dir.path()).unwrap();
         let base_tip = repo.refname_to_id(chat_ref::CHATS_REF).unwrap();
 
         // lane A: add m2
-        let mut a = load(dir.path(), &chat.id, &platform).unwrap().unwrap();
+        let mut a = load(dir.path(), &chat.id, &horst).unwrap().unwrap();
         a.messages.push(msg("m2", 2, "horst@example.com", "from A"));
-        save(dir.path(), &a, &platform).unwrap();
+        save(dir.path(), &a, &horst).unwrap();
         let a_tip = repo.refname_to_id(chat_ref::CHATS_REF).unwrap();
 
         // reset to base and diverge on lane B: add m3
         repo.reference(chat_ref::CHATS_REF, base_tip, true, "reset")
             .unwrap();
-        let mut b = load(dir.path(), &chat.id, &platform).unwrap().unwrap();
+        let mut b = load(dir.path(), &chat.id, &horst).unwrap().unwrap();
         b.messages.push(msg("m3", 3, "horst@example.com", "from B"));
-        save(dir.path(), &b, &platform).unwrap();
+        save(dir.path(), &b, &horst).unwrap();
         let b_tip = repo.refname_to_id(chat_ref::CHATS_REF).unwrap();
 
         // keyless union of the two lanes
@@ -868,19 +843,19 @@ mod tests {
         // message, then the enriched copy (tool+payload / attribution). The
         // event log must carry the enrichment — a diff that only emits NEW
         // message ids silently dropped it ("[tree result]" fallback bug).
-        let (dir, platform, horst, _anna) = project();
+        let (dir, horst, _anna) = project();
         let mut chat = Chat::new("5555cccc5555cccc5555cccc5555cccc", vec![], ts(0));
         chat.participants = vec![MemberRef::new("horst@example.com")];
         let mut m = msg("t1", 1, "horst@example.com", "[tree result]");
         m.kind = MessageKind::Tool;
         chat.messages.push(m);
-        save(dir.path(), &chat, &platform).unwrap();
+        save(dir.path(), &chat, &horst).unwrap();
 
         // the enrichment save: same id, now with the frozen snapshot
-        let mut next = load(dir.path(), &chat.id, &platform).unwrap().unwrap();
+        let mut next = load(dir.path(), &chat.id, &horst).unwrap().unwrap();
         next.messages[0].tool = Some("/joy".into());
         next.messages[0].payload = Some("{\"v\":1,\"result\":{\"kind\":\"tree\"}}".into());
-        save(dir.path(), &next, &platform).unwrap();
+        save(dir.path(), &next, &horst).unwrap();
 
         let got = load(dir.path(), &chat.id, &horst).unwrap().unwrap();
         assert_eq!(got.messages.len(), 1);
@@ -894,11 +869,11 @@ mod tests {
 
     #[test]
     fn a_sealed_read_marker_round_trips() {
-        let (dir, platform, horst, _anna) = project();
+        let (dir, horst, _anna) = project();
         let mut chat = Chat::new("6666bbbb6666bbbb6666bbbb6666bbbb", vec![], ts(0));
         chat.participants = vec![MemberRef::new("horst@example.com")];
         chat.messages.push(msg("m1", 1, "horst@example.com", "hi"));
-        save(dir.path(), &chat, &platform).unwrap();
+        save(dir.path(), &chat, &horst).unwrap();
 
         // horst reads it back and advances his read marker, then re-saves
         let mut h = load(dir.path(), &chat.id, &horst).unwrap().unwrap();
@@ -907,7 +882,7 @@ mod tests {
 
         // the custodian reloads and sees horst's sealed watermark; nothing
         // about the marker is in plaintext
-        let reloaded = load(dir.path(), &chat.id, &platform).unwrap().unwrap();
+        let reloaded = load(dir.path(), &chat.id, &horst).unwrap().unwrap();
         assert_eq!(
             reloaded
                 .read_markers
@@ -925,13 +900,13 @@ mod tests {
         // resolves the key from refs/joy/chats (not project.yaml) and
         // decrypt_blob yields the raw event YAML. A non-participant gets no
         // key. This is exactly what crypt's unlock_for_file does.
-        let (dir, platform, horst, anna) = project();
+        let (dir, horst, anna) = project();
         let mut chat = Chat::new("7777aaaa7777aaaa7777aaaa7777aaaa", vec![], ts(0));
         chat.title = Some("Ops".into());
         chat.participants = vec![MemberRef::new("horst@example.com")]; // NOT anna
         chat.messages
             .push(msg("m1", 1, "horst@example.com", "top secret"));
-        save(dir.path(), &chat, &platform).unwrap();
+        save(dir.path(), &chat, &horst).unwrap();
 
         let repo = Repository::open(dir.path()).unwrap();
         let commit = repo

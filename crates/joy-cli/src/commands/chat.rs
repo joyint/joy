@@ -237,7 +237,7 @@ fn establish_reader_seed(
     }
     let pass = crate::commands::auth::read_passphrase(passphrase, stdin, "Passphrase: ")?;
     let unlocked = joy_core::auth::unlock_identity(member, &pass)?;
-    joy_chat::chat_crypt::set_custodian_seed(Some(unlocked.seed));
+    joy_chat::writer::set_seed(Some(unlocked.seed));
     Ok(())
 }
 
