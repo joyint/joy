@@ -58,6 +58,11 @@ pub const CHATS_REF: &str = "refs/joy/chats";
 /// never leaks state between callers).
 pub const CHATS_TRACKING_REF: &str = "refs/joy/chats-remote";
 
+/// How often a ref write retries when another writer moved the tip
+/// first (JOY-023B-7E). Contention is short: the loser re-reads the new
+/// tip and folds its work onto it.
+pub(crate) const REF_MOVE_ATTEMPTS: usize = 8;
+
 const META_FILE: &str = "meta.yaml";
 const MESSAGES_DIR: &str = "messages";
 
@@ -186,17 +191,77 @@ fn read_chat_at(repo: &Repository, root_tree: &Tree, id: &str) -> Result<Option<
     read_chat_tree(repo, &chat_tree)
 }
 
-/// Commit `root_tree` onto `refs/joy/chats` with the given parent.
+/// How many chat writes pass between two maintenance checks.
+const MAINTAIN_EVERY: usize = 64;
+static WRITES_SINCE_MAINTENANCE: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+/// Let git tidy its object store now and then (JOY-023C-1E).
+///
+/// Every chat write is a commit, and these go through libgit2, which never
+/// runs the auto-gc the git binary runs after its own commits. Nothing
+/// else packed or pruned either, so a project only ever grew: the
+/// operator's sandbox reached 39 MB of `.git` for 0.7 MiB of actual
+/// content, in 6140 loose objects and not a single pack.
+///
+/// `--auto` means git decides whether there is anything worth doing, which
+/// is why this can sit on the write path at all. Best effort throughout: a
+/// missing git binary, a locked repo or a busy gc leave the store as it is
+/// and the next write tries again.
+fn maintain_occasionally(repo: &Repository) {
+    use std::sync::atomic::Ordering;
+    let n = WRITES_SINCE_MAINTENANCE.fetch_add(1, Ordering::Relaxed);
+    if !n.is_multiple_of(MAINTAIN_EVERY) {
+        return;
+    }
+    let git_dir = repo.path().to_path_buf();
+    let _ = std::process::Command::new("git")
+        .arg("--git-dir")
+        .arg(&git_dir)
+        .args(["gc", "--auto", "--quiet"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+}
+
+/// Commit `root_tree` onto `parent` and move the chats ref there, but ONLY
+/// while the ref still points at `parent`. `Ok(None)` means it moved
+/// underneath us and the caller has to redo its work on the new tip
+/// (JOY-023B-7E).
+///
+/// Writing the commit with `repo.commit(Some(CHATS_REF), …)` looks like the
+/// same thing and is not: libgit2 SETS the ref, it does not compare. Two
+/// saves that read one tip then both commit a child of it, the second one
+/// wins, and the first commit is orphaned TOGETHER WITH THE MESSAGES IT
+/// CARRIED — silently. The desktop writes on every message, participant add
+/// and read marker, plus a sync worker, so that race is ordinary traffic:
+/// the operator's sandbox project had 505 of its 761 commits orphaned.
 pub(crate) fn commit_root(
     repo: &Repository,
     parent: Option<&Commit>,
     root_tree: &Tree,
     message: &str,
-) -> Result<Oid, JoyError> {
+) -> Result<Option<Oid>, JoyError> {
     let sig = signature(repo)?;
     let parents: Vec<&Commit> = parent.into_iter().collect();
-    repo.commit(Some(CHATS_REF), &sig, &sig, message, root_tree, &parents)
-        .map_err(git)
+    // No ref name here: the commit object first, the ref move separately
+    // and conditionally.
+    let oid = repo
+        .commit(None, &sig, &sig, message, root_tree, &parents)
+        .map_err(git)?;
+    let moved = match parent {
+        // The ref must still be exactly where the caller read it.
+        Some(base) => repo
+            .reference_matching(CHATS_REF, oid, true, base.id(), message)
+            .is_ok(),
+        // No parent means we believe the ref does not exist yet; creating
+        // it non-forced fails if someone else got there first.
+        None => repo.reference(CHATS_REF, oid, false, message).is_ok(),
+    };
+    if moved {
+        maintain_occasionally(repo);
+    }
+    Ok(moved.then_some(oid))
 }
 
 /// Load one chat by id from the ref, if present (un-normalized).
@@ -231,48 +296,72 @@ pub fn load_chats(root: &Path) -> Result<Vec<Chat>, JoyError> {
 /// unchanged chat produces no new objects for its messages.
 pub fn save_chat(root: &Path, chat: &Chat) -> Result<(), JoyError> {
     let repo = open_repo(root)?;
-    let parent = ref_commit(&repo)?;
+    for _ in 0..REF_MOVE_ATTEMPTS {
+        if save_chat_once(&repo, chat)? {
+            return Ok(());
+        }
+    }
+    Err(JoyError::Git(
+        "the chats ref kept moving while saving; try again".into(),
+    ))
+}
+
+/// One attempt of [`save_chat`]; `false` means the ref moved and the whole
+/// read-build-commit has to run again on the new tip.
+fn save_chat_once(repo: &Repository, chat: &Chat) -> Result<bool, JoyError> {
+    let parent = ref_commit(repo)?;
     let base_tree = match &parent {
         Some(c) => Some(c.tree().map_err(git)?),
         None => None,
     };
     let mut rb = repo.treebuilder(base_tree.as_ref()).map_err(git)?;
-    let chat_tree = build_chat_tree(&repo, chat)?;
+    let chat_tree = build_chat_tree(repo, chat)?;
     rb.insert(&chat.id, chat_tree, i32::from(FileMode::Tree))
         .map_err(git)?;
     let root_tree_oid = rb.write().map_err(git)?;
     let root_tree = repo.find_tree(root_tree_oid).map_err(git)?;
-    commit_root(
-        &repo,
+    let moved = commit_root(
+        repo,
         parent.as_ref(),
         &root_tree,
         &format!("chat {} [no-item]", chat.id),
     )?;
-    Ok(())
+    Ok(moved.is_some())
 }
 
 /// Remove a chat's whole subtree from the ref (garbage collection once
 /// every human deleted it). A no-op if the chat is not on the ref.
 pub fn remove_chat(root: &Path, id: &str) -> Result<(), JoyError> {
     let repo = open_repo(root)?;
-    let Some(parent) = ref_commit(&repo)? else {
-        return Ok(());
+    for _ in 0..REF_MOVE_ATTEMPTS {
+        if remove_chat_once(&repo, id)? {
+            return Ok(());
+        }
+    }
+    Err(JoyError::Git(
+        "the chats ref kept moving while deleting; try again".into(),
+    ))
+}
+
+fn remove_chat_once(repo: &Repository, id: &str) -> Result<bool, JoyError> {
+    let Some(parent) = ref_commit(repo)? else {
+        return Ok(true);
     };
     let tree = parent.tree().map_err(git)?;
     if tree.get_name(id).is_none() {
-        return Ok(());
+        return Ok(true);
     }
     let mut rb = repo.treebuilder(Some(&tree)).map_err(git)?;
     rb.remove(id).map_err(git)?;
     let root_tree_oid = rb.write().map_err(git)?;
     let root_tree = repo.find_tree(root_tree_oid).map_err(git)?;
-    commit_root(
-        &repo,
+    let moved = commit_root(
+        repo,
         Some(&parent),
         &root_tree,
         &format!("delete chat {id} [no-item]"),
     )?;
-    Ok(())
+    Ok(moved.is_some())
 }
 
 /// Merge a divergent `refs/joy/chats`: union each chat's messages by id
@@ -506,6 +595,49 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         Repository::init(dir.path()).unwrap();
         dir
+    }
+
+    /// JOY-023B-7E: two writers that read the SAME tip must not overwrite
+    /// each other. The second commit is refused, its caller retries, and
+    /// nothing that was already on the ref disappears.
+    #[test]
+    fn a_second_writer_on_the_same_tip_is_refused_instead_of_winning() {
+        let dir = repo();
+        let repo = open_repo(dir.path()).unwrap();
+        let empty = repo
+            .find_tree(repo.treebuilder(None).unwrap().write().unwrap())
+            .unwrap();
+
+        // first writer: the ref is unborn, so it creates it
+        let first = commit_root(&repo, None, &empty, "one [no-item]")
+            .unwrap()
+            .expect("the first writer moves the ref");
+        assert_eq!(repo.refname_to_id(CHATS_REF).unwrap(), first);
+
+        // second writer, still holding the pre-first view (unborn): refused
+        assert!(
+            commit_root(&repo, None, &empty, "two [no-item]")
+                .unwrap()
+                .is_none(),
+            "a stale view must not create the ref a second time"
+        );
+        assert_eq!(repo.refname_to_id(CHATS_REF).unwrap(), first);
+
+        // a writer that read the CURRENT tip moves it
+        let base = repo.find_commit(first).unwrap();
+        let third = commit_root(&repo, Some(&base), &empty, "three [no-item]")
+            .unwrap()
+            .expect("the up-to-date writer moves the ref");
+        assert_eq!(repo.refname_to_id(CHATS_REF).unwrap(), third);
+
+        // …and one that still holds the OLD tip does not
+        assert!(
+            commit_root(&repo, Some(&base), &empty, "four [no-item]")
+                .unwrap()
+                .is_none(),
+            "a stale tip must not clobber the newer one"
+        );
+        assert_eq!(repo.refname_to_id(CHATS_REF).unwrap(), third);
     }
 
     fn msg(id: &str, sec: u32, text: &str) -> ChatMessage {

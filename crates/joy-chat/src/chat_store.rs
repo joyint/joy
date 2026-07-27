@@ -236,6 +236,21 @@ fn coverage(events: &[ChatEvent]) -> BTreeMap<(String, String), BTreeSet<String>
 /// the chat's existing keys to read the baseline and maintain coverage.
 /// Idempotent: re-saving an unchanged chat writes no new objects.
 pub fn save(root: &std::path::Path, chat: &Chat, seed: &[u8; 32]) -> Result<(), JoyError> {
+    // Read tip, build, move ref — and if another writer moved it first,
+    // do the whole thing again on the new tip (JOY-023B-7E). Folding onto
+    // the winner is the only way the loser's messages survive.
+    for _ in 0..chat_ref::REF_MOVE_ATTEMPTS {
+        if save_once(root, chat, seed)? {
+            return Ok(());
+        }
+    }
+    Err(JoyError::Git(
+        "the chats ref kept moving while saving; try again".into(),
+    ))
+}
+
+/// One attempt of [`save`]; `false` means the ref moved underneath it.
+fn save_once(root: &std::path::Path, chat: &Chat, seed: &[u8; 32]) -> Result<bool, JoyError> {
     let repo = chat_ref::open_repo(root)?;
     let project = joy_core::store::load_project(root)
         .map_err(|_| JoyError::AuthFailed("sealed chats need a Joy project".into()))?;
@@ -450,7 +465,7 @@ fn write_tree(
     epoch_keys: &BTreeMap<String, ContentKey>,
     parent: Option<&git2::Commit>,
     root_tree: Option<&Tree>,
-) -> Result<(), JoyError> {
+) -> Result<bool, JoyError> {
     // keys/ subtree = existing + new slots (by content id, dedup).
     let mut keys_b = match chat_tree.and_then(|t| subtree(repo, t, KEYS_DIR)) {
         Some(t) => repo.treebuilder(Some(&t)).map_err(git)?,
@@ -507,8 +522,8 @@ fn write_tree(
         .map_err(git)?;
     let root_oid = root_b.write().map_err(git)?;
     let new_root = repo.find_tree(root_oid).map_err(git)?;
-    chat_ref::commit_root(repo, parent, &new_root, &format!("chat {cid} [no-item]"))?;
-    Ok(())
+    let moved = chat_ref::commit_root(repo, parent, &new_root, &format!("chat {cid} [no-item]"))?;
+    Ok(moved.is_some())
 }
 
 // ---- load -----------------------------------------------------------------
