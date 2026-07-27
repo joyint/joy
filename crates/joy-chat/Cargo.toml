@@ -3,12 +3,12 @@ name = "joy-chat"
 version = "0.19.0"
 edition = "2021"
 license = "MIT"
-description = "Encrypted chat subsystem for Joy (human and AI chat)"
+description = "What a Joy chat is: model, events, and the crypto that seals them"
 repository = "https://github.com/joyint/joy"
 homepage = "https://joyint.com/en/joy"
 
 [dependencies]
-joy-core = { version = "0.19.0", path = "../joy-core" }
+joy-model = { workspace = true }
 joy-crypt = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -21,11 +21,16 @@ hex = "0.4"
 zeroize = { version = "1", features = ["derive"] }
 base64ct = { version = "1", features = ["alloc"] }
 uuid = { version = "1", features = ["v4", "v7", "serde"] }
-git2 = { version = "0.20", default-features = false, features = ["vendored-libgit2"] }
 ts-rs = { version = "12", features = ["serde-compat"], optional = true }
 
+# The browser has no OS randomness: wasm builds take it from the JS
+# crypto API. Native builds are untouched (JAPP-0135-FD).
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+uuid = { version = "1", features = ["v4", "v7", "serde", "js"] }
+
 [features]
-ts = ["dep:ts-rs", "joy-core/ts"]
+ts = ["dep:ts-rs", "joy-model/ts"]
 
 [dev-dependencies]
 tempfile = "3"

@@ -37,8 +37,8 @@ use std::collections::BTreeMap;
 use rand::RngCore;
 use sha2::{Digest, Sha256};
 
-use joy_core::auth::{IdentityKeypair, PublicKey};
-use joy_core::error::JoyError;
+use crate::error::ChatError;
+use joy_crypt::identity::{Keypair as IdentityKeypair, PublicKey};
 
 /// HKDF info domain for chat content-key wraps. Binds a slot to its chat
 /// (a slot cannot be replayed into another chat) without naming a
@@ -90,10 +90,10 @@ pub fn anon_wrap_slot(
     epoch_id: &str,
     ck: &ContentKey,
     recipient_vk: &PublicKey,
-) -> Result<[u8; SLOT_LEN], JoyError> {
-    let eid = hex::decode(epoch_id).map_err(|e| JoyError::AuthFailed(format!("epoch id: {e}")))?;
+) -> Result<[u8; SLOT_LEN], ChatError> {
+    let eid = hex::decode(epoch_id).map_err(|e| ChatError::Auth(format!("epoch id: {e}")))?;
     if eid.len() != 16 {
-        return Err(JoyError::AuthFailed("epoch id must be 16 bytes".into()));
+        return Err(ChatError::Auth("epoch id must be 16 bytes".into()));
     }
     let eph = IdentityKeypair::from_random();
     let eph_secret = eph.to_x25519_secret_bytes();
@@ -106,7 +106,7 @@ pub fn anon_wrap_slot(
     payload.extend_from_slice(ck);
     let body = joy_crypt::wrap::wrap(&kek, &payload);
     if body.len() != SLOT_LEN - 32 {
-        return Err(JoyError::AuthFailed(format!(
+        return Err(ChatError::Auth(format!(
             "wrap body length {} unexpected",
             body.len()
         )));

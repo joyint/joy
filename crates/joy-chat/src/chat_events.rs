@@ -34,7 +34,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::model::chat::{Chat, ChatKind, ChatMessage};
-use joy_core::model::config::InteractionLevel;
+use joy_model::InteractionLevel;
 
 /// A hybrid logical clock: `wall_ms << 16 | counter`. Sealed inside every
 /// event, it is the TOTAL order for last-writer-wins, so the fold is
@@ -302,18 +302,18 @@ pub fn fold(id: impl Into<String>, created: DateTime<Utc>, events: &[ChatEvent])
     chat.read_only = read_only.map(|(_, v)| v).unwrap_or(false);
     chat.created_by = created_by
         .and_then(|(_, v)| v)
-        .map(joy_core::member_ref::MemberRef::new);
+        .map(joy_model::MemberRef::new);
     chat.participants = participants
         .into_iter()
         .filter(|(_, (_, present))| *present)
-        .map(|(m, _)| joy_core::member_ref::MemberRef::new(m))
+        .map(|(m, _)| joy_model::MemberRef::new(m))
         .collect();
     chat.interaction_levels = fold_levels(levels);
     chat.ai_sessions = sessions.into_iter().map(|(m, (_, v))| (m, v)).collect();
     chat.deleted_for = deleted_for
         .into_iter()
         .filter(|(_, (_, present))| *present)
-        .map(|(m, _)| joy_core::member_ref::MemberRef::new(m))
+        .map(|(m, _)| joy_model::MemberRef::new(m))
         .collect();
     chat.read_markers = read_max
         .into_iter()
@@ -487,7 +487,7 @@ pub fn diff(base: &Chat, next: &Chat, writer: &str) -> Vec<ChatEvent> {
     out
 }
 
-fn member_ids(members: &[joy_core::member_ref::MemberRef]) -> std::collections::BTreeSet<String> {
+fn member_ids(members: &[joy_model::MemberRef]) -> std::collections::BTreeSet<String> {
     members.iter().map(|m| m.id().to_string()).collect()
 }
 
@@ -510,7 +510,7 @@ fn diff_set(
 mod tests {
     use super::*;
     use crate::model::chat::MessageKind;
-    use joy_core::member_ref::MemberRef;
+    use joy_model::MemberRef;
 
     fn ts(sec: u32) -> DateTime<Utc> {
         format!("2026-07-19T00:00:{sec:02}Z").parse().unwrap()

@@ -1682,6 +1682,7 @@ dependencies = [
  "hex",
  "insta",
  "joy-chat",
+ "joy-chat-store",
  "joy-core",
  "joy-crypt",
  "minijinja",
@@ -1715,11 +1716,11 @@ version = "0.19.0"
 dependencies = [
  "base64ct",
  "chrono",
- "git2",
+ "getrandom 0.2.17",
  "hex",
  "insta",
- "joy-core",
  "joy-crypt",
+ "joy-model",
  "rand 0.8.7",
  "serde",
  "serde_json",
@@ -1730,6 +1731,27 @@ dependencies = [
  "ts-rs",
  "uuid",
  "zeroize",
+]
+
+[[package]]
+name = "joy-chat-store"
+version = "0.19.0"
+dependencies = [
+ "chrono",
+ "git2",
+ "hex",
+ "insta",
+ "joy-chat",
+ "joy-core",
+ "joy-crypt",
+ "joy-model",
+ "serde",
+ "serde_json",
+ "serde_yaml_ng",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "uuid",
 ]
 
 [[package]]
@@ -1748,6 +1770,7 @@ dependencies = [
  "hex",
  "joy-ai",
  "joy-chat",
+ "joy-chat-store",
  "joy-core",
  "joy-crypt",
  "minijinja",
@@ -1780,6 +1803,7 @@ dependencies = [
  "inquire",
  "insta",
  "joy-crypt",
+ "joy-model",
  "joy-token",
  "libc",
  "minijinja",
@@ -1815,6 +1839,15 @@ dependencies = [
  "thiserror",
  "x25519-dalek",
  "zeroize",
+]
+
+[[package]]
+name = "joy-model"
+version = "0.19.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "ts-rs",
 ]
 
 [[package]]

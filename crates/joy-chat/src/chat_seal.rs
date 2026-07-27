@@ -23,7 +23,7 @@ use sha2::{Digest, Sha256};
 
 use crate::chat_events::ChatEvent;
 use crate::chat_wrap::ContentKey;
-use joy_core::error::JoyError;
+use crate::error::ChatError;
 use joy_crypt::zone::{decrypt_blob, encrypt_blob_with_nonce, ZoneKey};
 
 /// The subtree that holds the anonymous key slots.
@@ -66,7 +66,7 @@ pub fn seal_event(
     epoch_id: &str,
     ck: &ContentKey,
     event: &ChatEvent,
-) -> Result<Vec<u8>, JoyError> {
+) -> Result<Vec<u8>, ChatError> {
     let yaml = serde_yaml_ng::to_string(event)?;
     let zone = event_zone(cid, epoch_id);
     let nonce = det_nonce(&zone, yaml.as_bytes());
@@ -119,7 +119,7 @@ mod tests {
     use crate::chat_wrap::{anon_wrap_slot, new_content_key, new_epoch_id, resolve_epoch_keys};
     use crate::model::chat::{Chat, ChatKind, ChatMessage, MessageKind};
     use chrono::{DateTime, Utc};
-    use joy_core::member_ref::MemberRef;
+    use joy_model::MemberRef;
 
     fn ts(s: u32) -> DateTime<Utc> {
         format!("2026-07-19T00:00:{s:02}Z").parse().unwrap()
@@ -139,8 +139,8 @@ mod tests {
             details: None,
         }
     }
-    fn kp(seed: u8) -> joy_core::auth::IdentityKeypair {
-        joy_core::auth::IdentityKeypair::from_seed(&[seed; 32])
+    fn kp(seed: u8) -> joy_crypt::identity::Keypair {
+        joy_crypt::identity::Keypair::from_seed(&[seed; 32])
     }
 
     /// The FULL sealed-storage path minus git: a chat becomes sealed

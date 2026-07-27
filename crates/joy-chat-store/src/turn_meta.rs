@@ -109,7 +109,7 @@ pub fn augment_details(details: Option<String>, meta: &TurnMeta<'_>) -> Option<S
 /// capability-scoped work).
 pub fn resolve_effective_level(
     dir: &Path,
-    chat: &crate::model::chat::Chat,
+    chat: &joy_chat::model::chat::Chat,
     agent: &str,
     delegator: &str,
     personal: Option<InteractionLevel>,
@@ -122,7 +122,7 @@ pub fn resolve_effective_level(
             .and_then(|p| p.member_by_key(agent).and_then(|m| m.interaction_level))
             .unwrap_or_else(|| joy_core::store::load_interaction_level_defaults(dir).default)
     });
-    crate::model::effective_level(
+    joy_chat::model::effective_level(
         None,
         chat.interaction_level_override(agent, delegator),
         default_level,

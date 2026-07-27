@@ -102,8 +102,8 @@ fn sync_ref(root: &std::path::Path) {
     }
     let fetch_spec = format!(
         "+{}:{}",
-        joy_chat::chat_ref::CHATS_REF,
-        joy_chat::chat_ref::CHATS_TRACKING_REF
+        joy_chat_store::chat_ref::CHATS_REF,
+        joy_chat_store::chat_ref::CHATS_TRACKING_REF
     );
     match git(&["fetch", "--quiet", &remote, &fetch_spec]) {
         Ok(out) if out.status.success() => {}
@@ -122,7 +122,7 @@ fn sync_ref(root: &std::path::Path) {
             return;
         }
     }
-    let push_needed = match joy_chat::chat_ref::reconcile_with_tracking(root) {
+    let push_needed = match joy_chat_store::chat_ref::reconcile_with_tracking(root) {
         Ok(needed) => needed,
         Err(e) => {
             eprintln!("chat ref reconcile failed: {e}");
@@ -134,8 +134,8 @@ fn sync_ref(root: &std::path::Path) {
     }
     let push_spec = format!(
         "{}:{}",
-        joy_chat::chat_ref::CHATS_REF,
-        joy_chat::chat_ref::CHATS_REF
+        joy_chat_store::chat_ref::CHATS_REF,
+        joy_chat_store::chat_ref::CHATS_REF
     );
     match git(&["push", "--quiet", &remote, &push_spec]) {
         Ok(out) if out.status.success() => {}
@@ -204,10 +204,14 @@ fn mention_inbox(chat: &joy_chat::model::chat::Chat, me: &str) -> MentionInbox {
 }
 
 fn load_or_general(root: &std::path::Path, id: &str) -> Result<joy_chat::model::chat::Chat> {
-    if id == joy_chat::chats::GENERAL_CHAT_ID {
-        return Ok(joy_chat::chats::ensure_general(root, chrono::Utc::now())?);
+    if id == joy_chat_store::chats::GENERAL_CHAT_ID {
+        return Ok(joy_chat_store::chats::ensure_general(
+            root,
+            chrono::Utc::now(),
+        )?);
     }
-    joy_chat::chats::load_chat(root, id)?.ok_or_else(|| anyhow::anyhow!("no chat with id {id}"))
+    joy_chat_store::chats::load_chat(root, id)?
+        .ok_or_else(|| anyhow::anyhow!("no chat with id {id}"))
 }
 
 /// Reading or writing a sealed chat needs the caller's identity seed. When
@@ -237,7 +241,7 @@ fn establish_reader_seed(
     }
     let pass = crate::commands::auth::read_passphrase(passphrase, stdin, "Passphrase: ")?;
     let unlocked = joy_core::auth::unlock_identity(member, &pass)?;
-    joy_chat::writer::set_seed(Some(unlocked.seed));
+    joy_chat_store::writer::set_seed(Some(unlocked.seed));
     Ok(())
 }
 
@@ -271,7 +275,7 @@ fn run_command(root: &std::path::Path, command: ChatCommand) -> Result<()> {
             if mine && me.is_none() {
                 anyhow::bail!("--mine needs an identity (run joy auth init or pass a passphrase)");
             }
-            let chats = joy_chat::chats::load_chats(root)?;
+            let chats = joy_chat_store::chats::load_chats(root)?;
             // Default: only chats you are a member of and have not deleted.
             // `--all` also shows chats you left or deleted that still exist.
             let rows: Vec<_> = chats
@@ -279,7 +283,7 @@ fn run_command(root: &std::path::Path, command: ChatCommand) -> Result<()> {
                 .filter(|c| {
                     all || me
                         .as_ref()
-                        .map(|me| joy_chat::chats::visible_to(c, me))
+                        .map(|me| joy_chat_store::chats::visible_to(c, me))
                         .unwrap_or(true)
                 })
                 .filter_map(|c| {
@@ -301,7 +305,7 @@ fn run_command(root: &std::path::Path, command: ChatCommand) -> Result<()> {
             for (c, inbox) in rows {
                 let left = me
                     .as_ref()
-                    .map(|me| !joy_chat::chats::visible_to(&c, me))
+                    .map(|me| !joy_chat_store::chats::visible_to(&c, me))
                     .unwrap_or(false);
                 let title = c.title.as_deref().unwrap_or("-");
                 // UNREAD: with --mine only the unread mentions at me, else
@@ -339,13 +343,13 @@ fn run_command(root: &std::path::Path, command: ChatCommand) -> Result<()> {
             if text.trim().is_empty() {
                 anyhow::bail!("nothing to send");
             }
-            joy_chat::chats::append_message(root, &mut chat, me, text, chrono::Utc::now())?;
+            joy_chat_store::chats::append_message(root, &mut chat, me, text, chrono::Utc::now())?;
             println!("sent to {}", chat.title.as_deref().unwrap_or(&chat.id));
         }
         ChatCommand::Add { id, member } => {
             let me = acting_member(root)?;
             let mut chat = load_or_general(root, &id)?;
-            joy_chat::chats::add_participant(
+            joy_chat_store::chats::add_participant(
                 root,
                 &mut chat,
                 joy_core::member_ref::MemberRef::new(member),
@@ -357,29 +361,29 @@ fn run_command(root: &std::path::Path, command: ChatCommand) -> Result<()> {
         ChatCommand::Leave { id } => {
             let me = acting_member(root)?;
             let mut chat = load_or_general(root, &id)?;
-            joy_chat::chats::leave(root, &mut chat, &me, chrono::Utc::now())?;
+            joy_chat_store::chats::leave(root, &mut chat, &me, chrono::Utc::now())?;
             println!("left {}", chat.title.as_deref().unwrap_or(&chat.id));
         }
         ChatCommand::Delete { id, for_all } => {
             let me = acting_member(root)?;
             let mut chat = load_or_general(root, &id)?;
             if for_all {
-                joy_chat::chats::delete_for_all(root, &mut chat, &me, chrono::Utc::now())?;
+                joy_chat_store::chats::delete_for_all(root, &mut chat, &me, chrono::Utc::now())?;
                 println!("deleted for everyone (read-only until each member removes it)");
             } else {
-                joy_chat::chats::delete_for_me(root, &mut chat, &me, chrono::Utc::now())?;
+                joy_chat_store::chats::delete_for_me(root, &mut chat, &me, chrono::Utc::now())?;
                 println!("deleted for you");
             }
         }
         ChatCommand::Rename { id, title } => {
             let mut chat = load_or_general(root, &id)?;
-            joy_chat::chats::rename(root, &mut chat, title.join(" "))?;
+            joy_chat_store::chats::rename(root, &mut chat, title.join(" "))?;
             println!("renamed");
         }
         ChatCommand::Read { id } => {
             let me = acting_member(root)?;
             let mut chat = load_or_general(root, &id)?;
-            joy_chat::chats::mark_read(root, &mut chat, &me, chrono::Utc::now())?;
+            joy_chat_store::chats::mark_read(root, &mut chat, &me, chrono::Utc::now())?;
             println!("marked read");
         }
         ChatCommand::Info { id } => {
@@ -410,7 +414,7 @@ fn run_command(root: &std::path::Path, command: ChatCommand) -> Result<()> {
             }
         }
         ChatCommand::Show { id } => {
-            let chat = joy_chat::chats::load_chat(root, &id)?
+            let chat = joy_chat_store::chats::load_chat(root, &id)?
                 .ok_or_else(|| anyhow::anyhow!("no chat with id {id}"))?;
             println!(
                 "{} — {} participant(s)",

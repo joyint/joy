@@ -214,7 +214,7 @@ pub fn run_chat_turns(ctx: &EngineCtx, host: &dyn TurnHost) -> Vec<Appended> {
         // General carries "everyone" implicitly; the turn logic needs the
         // resolved list. Best effort: an unresolved list must not kill
         // the turns.
-        if let Ok(participants) = joy_chat::chats::effective_participants(&ctx.root, &chat) {
+        if let Ok(participants) = joy_chat_store::chats::effective_participants(&ctx.root, &chat) {
             chat.participants = participants;
         }
         let Some(newest) = chat.messages.last().cloned() else {
@@ -228,7 +228,8 @@ pub fn run_chat_turns(ctx: &EngineCtx, host: &dyn TurnHost) -> Vec<Appended> {
         if host.add_mentioned_ais(&ctx.chat_id, &newest) {
             if let Some(fresh) = host.load_chat(&ctx.chat_id) {
                 chat = fresh;
-                if let Ok(participants) = joy_chat::chats::effective_participants(&ctx.root, &chat)
+                if let Ok(participants) =
+                    joy_chat_store::chats::effective_participants(&ctx.root, &chat)
                 {
                     chat.participants = participants;
                 }
@@ -272,7 +273,7 @@ pub fn run_chat_turns(ctx: &EngineCtx, host: &dyn TurnHost) -> Vec<Appended> {
                     // is the delegator, resolved by the one shared rule
                     // (ADR-025 order); the ACP boundary gets the one-way
                     // derived agent mode.
-                    let level = joy_chat::turn_meta::resolve_effective_level(
+                    let level = joy_chat_store::turn_meta::resolve_effective_level(
                         &ctx.root,
                         &chat,
                         &member,
@@ -319,9 +320,9 @@ pub fn run_chat_turns(ctx: &EngineCtx, host: &dyn TurnHost) -> Vec<Appended> {
                             // level, model, cost, tokens, and the budget
                             // snapshot where one exists, folded into the
                             // details for the per-message info popover.
-                            let details = joy_chat::turn_meta::augment_details(
+                            let details = joy_chat_store::turn_meta::augment_details(
                                 out.details,
-                                &joy_chat::turn_meta::TurnMeta {
+                                &joy_chat_store::turn_meta::TurnMeta {
                                     model: out.model.as_deref(),
                                     cost_cents: out.cost_cents,
                                     tokens: out.tokens,

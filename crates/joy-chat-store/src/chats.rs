@@ -9,7 +9,7 @@ use std::path::Path;
 
 use chrono::{DateTime, Utc};
 
-use crate::model::chat::{Chat, ChatKind, ChatMessage, MessageKind};
+use joy_chat::model::chat::{Chat, ChatKind, ChatMessage, MessageKind};
 use joy_core::error::JoyError;
 use joy_core::member_ref::MemberRef;
 use joy_core::model::config::InteractionLevel;
@@ -347,7 +347,7 @@ pub fn readd_mentioned_humans(
         .map(|(key, _)| key.clone())
         .filter(|key| !key.starts_with("ai:"))
         .collect();
-    let mentioned: Vec<String> = crate::mentions::mentions(text, &humans)
+    let mentioned: Vec<String> = joy_chat::mentions::mentions(text, &humans)
         .into_iter()
         .cloned()
         .collect();
@@ -1046,7 +1046,7 @@ mod channel_tests {
         let ours = "id: c\ntitle: T\ncreated_by: a@x\ncreated: 2026-07-05T02:00:00Z\nupdated: 2026-07-05T02:00:02Z\nparticipants:\n- a@x\nmessages:\n- id: m1\n  at: 2026-07-05T02:00:01Z\n  author: a@x\n  text: hello\n- id: m2\n  at: 2026-07-05T02:00:02Z\n  author: a@x\n  text: ours\n";
         let theirs = "id: c\ntitle: T\ncreated_by: a@x\ncreated: 2026-07-05T02:00:00Z\nupdated: 2026-07-05T02:00:03Z\nparticipants:\n- a@x\nmessages:\n- id: m1\n  at: 2026-07-05T02:00:01Z\n  author: a@x\n  text: hello\n- id: m3\n  at: 2026-07-05T02:00:03Z\n  author: b@x\n  text: theirs\n";
         let merged = joy_core::merge::merge_yaml_doc(base, ours, theirs).unwrap();
-        let chat: crate::model::chat::Chat = serde_yaml_ng::from_str(&merged).unwrap();
+        let chat: joy_chat::model::chat::Chat = serde_yaml_ng::from_str(&merged).unwrap();
         let ids: Vec<&str> = chat.messages.iter().map(|m| m.id.as_str()).collect();
         assert_eq!(ids.len(), 3);
         assert!(ids.contains(&"m2") && ids.contains(&"m3"));

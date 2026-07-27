@@ -155,7 +155,7 @@ pub fn add_mentioned_ais(
     let mut added = false;
     for member in mentioned {
         if !chat.participants.iter().any(|p| p.id() == member) {
-            joy_chat::chats::add_participant(
+            joy_chat_store::chats::add_participant(
                 root,
                 chat,
                 joy_core::member_ref::MemberRef::new(member),
@@ -715,14 +715,14 @@ mod tests {
         )
         .unwrap();
         let now = Utc.with_ymd_and_hms(2026, 7, 4, 19, 0, 0).unwrap();
-        let mut chat = joy_chat::chats::open_chat(
+        let mut chat = joy_chat_store::chats::open_chat(
             dir.path(),
             vec![MemberRef::new("horst@example.com")],
             Some("New chat".into()),
             now,
         )
         .unwrap();
-        let msg = joy_chat::chats::append_message(
+        let msg = joy_chat_store::chats::append_message(
             dir.path(),
             &mut chat,
             MemberRef::new("horst@example.com"),

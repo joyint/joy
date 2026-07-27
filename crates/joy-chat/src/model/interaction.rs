@@ -17,7 +17,7 @@
 //! persist writes only level names. This leniency exists ONLY on the
 //! chat-state read path; everything else uses the strict joy-core parse.
 
-use joy_core::model::config::InteractionLevel;
+use joy_model::InteractionLevel;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
@@ -87,7 +87,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use joy_core::model::config::InteractionLevel::{Autonomous, Confirmed, Proposing};
+    use joy_model::InteractionLevel::{Autonomous, Confirmed, Proposing};
 
     #[test]
     fn lattice_ordering_matches_oversight() {

@@ -14,8 +14,8 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use joy_core::member_ref::MemberRef;
-use joy_core::model::config::InteractionLevel;
+use joy_model::InteractionLevel;
+use joy_model::MemberRef;
 
 /// What kind of chat this is (JOY-01F4). `General` is the singleton
 /// team-wide chat (fixed id `general`, participants = every project

@@ -46,7 +46,7 @@ use std::path::Path;
 use chrono::Utc;
 use git2::{Commit, ErrorCode, FileMode, Oid, Repository, Signature, Time, Tree};
 
-use crate::model::chat::{Chat, ChatMessage};
+use joy_chat::model::chat::{Chat, ChatMessage};
 use joy_core::error::JoyError;
 
 /// The dedicated ref chats live on. Outside `refs/heads/`, so it never
@@ -583,8 +583,8 @@ fn merge_two_chats(base: Option<&Chat>, ours: &Chat, theirs: &Chat) -> Result<Ch
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::chat::MessageKind;
     use chrono::{DateTime, Utc};
+    use joy_chat::model::chat::MessageKind;
     use joy_core::member_ref::MemberRef;
 
     fn ts(sec: u32) -> DateTime<Utc> {

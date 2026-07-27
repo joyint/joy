@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 /// The variant order is the permission lattice — most restrictive first,
 /// `Plan < AcceptEdits < Autonomous`. Do not reorder variants.
 ///
-/// Not to be confused with [`joy_core::model::config::InteractionLevel`],
+/// Not to be confused with [`joy_model::InteractionLevel`],
 /// the governed axis this mode is DERIVED from (one-way, see
 /// [`from_level`]); the level's `Autonomous` variant sorts LOWEST.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -58,8 +58,8 @@ impl std::str::FromStr for AgentMode {
 /// (JI-0166-D8 §4). One-way by design: never parse a mode back into a
 /// level, never persist the result. Resolve the level first with
 /// [`crate::model::interaction::effective_level`].
-pub fn from_level(level: joy_core::model::config::InteractionLevel) -> AgentMode {
-    use joy_core::model::config::InteractionLevel;
+pub fn from_level(level: joy_model::InteractionLevel) -> AgentMode {
+    use joy_model::InteractionLevel;
     match level {
         InteractionLevel::Proposing => AgentMode::Plan,
         InteractionLevel::Confirmed => AgentMode::AcceptEdits,
@@ -105,7 +105,7 @@ mod tests {
 
     #[test]
     fn from_level_is_the_one_way_derivation() {
-        use joy_core::model::config::InteractionLevel;
+        use joy_model::InteractionLevel;
         assert_eq!(from_level(InteractionLevel::Proposing), Plan);
         assert_eq!(from_level(InteractionLevel::Confirmed), AcceptEdits);
         assert_eq!(from_level(InteractionLevel::Autonomous), Autonomous);

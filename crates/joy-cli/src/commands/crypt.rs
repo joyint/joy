@@ -486,7 +486,7 @@ fn unlock_for_file(
     {
         let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "Passphrase: ")?;
         let unlocked = joy_core::auth::unlock_identity(acting, &passphrase)?;
-        let ck = joy_chat::chat_store::epoch_content_key(&root, cid, epoch, &unlocked.seed)?
+        let ck = joy_chat_store::chat_store::epoch_content_key(&root, cid, epoch, &unlocked.seed)?
             .ok_or_else(|| {
                 anyhow::anyhow!(
                     "no key for chat zone '{zone_name}': not a participant, or chat/epoch absent"

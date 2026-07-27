@@ -9,6 +9,7 @@ homepage = "https://joyint.com/en/joy"
 readme = "README.md"
 
 [dependencies]
+joy-model = { workspace = true }
 joy-crypt = { workspace = true }
 joy-token = { workspace = true }
 serde = { workspace = true }
@@ -58,7 +59,7 @@ fast-kdf = ["joy-crypt/fast-kdf"]   # Use minimal Argon2id params (for testing o
 tutorial = ["dep:termimad", "dep:inquire", "dep:terminal_size"]
 # ts-rs derives on canonical wire types (AgentMode), so the generated TS
 # unions come from the single Rust definition. Off by default.
-ts = ["dep:ts-rs"]
+ts = ["dep:ts-rs", "joy-model/ts"]
 
 [dev-dependencies]
 insta = { version = "1.41", features = ["yaml"] }
