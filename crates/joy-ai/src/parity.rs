@@ -41,7 +41,7 @@ pub const REPLIES: &[&str] = &["Opus 5", "kurz nach Mitternacht"];
 pub fn activity() -> crate::activity::Activity {
     crate::activity::Activity {
         thoughts: "reading the backlog".into(),
-        tools: vec![("joy ls".into(), "completed".into())],
+        tools: vec![crate::activity::ToolStep::new("joy ls", "completed")],
         permissions: Vec::new(),
     }
 }
