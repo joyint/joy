@@ -1,0 +1,22 @@
+id: JOY-023E-68
+title: An AI member on the CLI cannot read or write sealed chats
+type: bug
+status: new
+priority: high
+capabilities:
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-28T03:26:47.394894937Z
+updated: 2026-07-28T03:26:47.394894937Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: |-
+  Found while building chat test coverage, 2026-07-28.
+
+  The CLI only installs a chat reader seed when a PASSPHRASE is given and the git identity resolves to a human member (joy-cli chat.rs, establish_reader_seed). An AI member acting under a delegation token gets no seed, so 'joy chat ls/show/send' shows 'No chats' and cannot write, although the AI is a recipient of those chats.
+
+  That is how an AI in a container works: it holds a token, not a passphrase. The platform's turn engine works around it by installing the seed from the deposited token itself, which is why chats work there and nowhere else.
+
+  Open decision for the operator: where the seed comes from for a CLI session (re-derived from the token at redemption, or kept in the state dir like the session), because it decides what a stolen state dir is worth.

@@ -365,3 +365,193 @@ fn writer_tag(seed: &[u8; 32]) -> String {
         .to_hex();
     hex::encode(&Sha256::digest(vk.as_bytes())[..6])
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::chat::{ChatKind, ChatMessage, MessageKind};
+    use joy_model::MemberRef;
+
+    const CID: &str = "0123456789abcdef0123456789abcdef";
+
+    fn kp(seed: u8) -> joy_crypt::identity::Keypair {
+        joy_crypt::identity::Keypair::from_seed(&[seed; 32])
+    }
+
+    fn member(id: &str, seed: u8) -> Member {
+        Member {
+            id: id.to_string(),
+            verify_key: kp(seed).public_key(),
+        }
+    }
+
+    /// What storage does with a save: union the new bytes in.
+    fn store(sealed: &mut Sealed, write: Write) {
+        for (_name, bytes) in write.slots {
+            sealed.slots.push(bytes);
+        }
+        for (_name, bytes) in write.blobs {
+            sealed.blobs.push(bytes);
+        }
+    }
+
+    fn line(id: &str, author: &str, text: &str) -> ChatMessage {
+        ChatMessage {
+            id: id.to_string(),
+            at: Utc::now(),
+            author: MemberRef::new(author),
+            text: text.to_string(),
+            kind: MessageKind::Text,
+            delegated_by: None,
+            turn_ms: None,
+            tool_steps: None,
+            tool: None,
+            payload: None,
+            details: None,
+        }
+    }
+
+    #[test]
+    fn an_addressed_ai_reads_the_line_that_addressed_it() {
+        // The operator's case, end to end (JAPP-0161-DC): a chat that
+        // belongs to one person, then a line that addresses an AI. The
+        // client takes the AI along as a participant when it seals, and
+        // from that moment the AI's own key opens the chat. Without the
+        // participant it opens nothing and answers nothing.
+        let horst = [1u8; 32];
+        let vibe = [2u8; 32];
+        let members = vec![member("horst@example.com", 1), member("ai:vibe@joy", 2)];
+
+        let mut stored = Sealed::default();
+        let mut chat = Chat::new(CID, vec![MemberRef::new("horst@example.com")], Utc::now());
+        chat.kind = ChatKind::Direct;
+
+        // the person writes to themselves first
+        let opened = open(CID, &stored, &horst);
+        chat.messages.push(line("m1", "horst@example.com", "nur ich"));
+        let write = seal(CID, &opened, &chat, &recipients(&chat, &members), &horst).unwrap();
+        store(&mut stored, write);
+
+        // nothing for the AI yet: it is not in the chat
+        assert!(open(CID, &stored, &vibe).chat.messages.is_empty());
+
+        // now the line that addresses it, sealed WITH the AI as participant
+        let opened = open(CID, &stored, &horst);
+        let mut next = opened.chat.clone();
+        next.participants.push(MemberRef::new("ai:vibe@joy"));
+        next.messages.push(line("m2", "horst@example.com", "@vibe ping"));
+        let write = seal(CID, &opened, &next, &recipients(&next, &members), &horst).unwrap();
+        store(&mut stored, write);
+
+        // the AI opens the chat and SEES the line that addressed it
+        let seen = open(CID, &stored, &vibe).chat;
+        assert!(
+            seen.messages.iter().any(|m| m.text == "@vibe ping"),
+            "the addressed AI must read the line that addressed it: {:?}",
+            seen.messages.iter().map(|m| &m.text).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn a_member_outside_the_chat_reads_nothing() {
+        let horst = [1u8; 32];
+        let mate = [3u8; 32];
+        let members = vec![member("horst@example.com", 1), member("mate@example.com", 3)];
+
+        let mut stored = Sealed::default();
+        let mut chat = Chat::new(CID, vec![MemberRef::new("horst@example.com")], Utc::now());
+        chat.kind = ChatKind::Direct;
+        chat.messages.push(line("m1", "horst@example.com", "privat"));
+        let opened = open(CID, &stored, &horst);
+        let write = seal(CID, &opened, &chat, &recipients(&chat, &members), &horst).unwrap();
+        store(&mut stored, write);
+
+        let outside = open(CID, &stored, &mate).chat;
+        assert!(outside.messages.is_empty(), "a chat must not leak to a project member who is not in it");
+    }
+
+    #[test]
+    fn an_empty_participant_list_reaches_every_member() {
+        // General/Team convention: no list means everyone, and that
+        // already covers an AI member without naming it.
+        let members = vec![member("horst@example.com", 1), member("ai:vibe@joy", 2)];
+        let mut chat = Chat::new(CID, Vec::new(), Utc::now());
+        chat.kind = ChatKind::General;
+        let ids: Vec<String> = recipients(&chat, &members).into_iter().map(|(m, _)| m).collect();
+        assert_eq!(ids, vec!["horst@example.com".to_string(), "ai:vibe@joy".to_string()]);
+    }
+
+    #[test]
+    fn a_participant_without_a_key_on_record_is_no_recipient() {
+        // A member the project knows no identity key for cannot hold a
+        // slot; sealing must not fail over it, it is simply not covered.
+        let members = vec![member("horst@example.com", 1)];
+        let mut chat = Chat::new(CID, Vec::new(), Utc::now());
+        chat.kind = ChatKind::Team;
+        chat.participants = vec![
+            MemberRef::new("horst@example.com"),
+            MemberRef::new("keyless@example.com"),
+        ];
+        let ids: Vec<String> = recipients(&chat, &members).into_iter().map(|(m, _)| m).collect();
+        assert_eq!(ids, vec!["horst@example.com".to_string()]);
+    }
+
+    #[test]
+    fn sealing_for_nobody_is_refused() {
+        let horst = [1u8; 32];
+        let chat = Chat::new(CID, vec![MemberRef::new("horst@example.com")], Utc::now());
+        let opened = open(CID, &Sealed::default(), &horst);
+        assert!(seal(CID, &opened, &chat, &[], &horst).is_err());
+    }
+
+    #[test]
+    fn a_second_writer_keeps_what_the_first_one_wrote() {
+        // Two participants save in turn; the union of their bytes must
+        // fold into one chat with both lines, or a message would vanish
+        // when two people write at once.
+        let horst = [1u8; 32];
+        let mate = [3u8; 32];
+        let members = vec![member("horst@example.com", 1), member("mate@example.com", 3)];
+        let participants = vec![
+            MemberRef::new("horst@example.com"),
+            MemberRef::new("mate@example.com"),
+        ];
+
+        let mut stored = Sealed::default();
+        let mut chat = Chat::new(CID, participants.clone(), Utc::now());
+        chat.kind = ChatKind::Team;
+        chat.messages.push(line("m1", "horst@example.com", "erste"));
+        let opened = open(CID, &stored, &horst);
+        let write = seal(CID, &opened, &chat, &recipients(&chat, &members), &horst).unwrap();
+        store(&mut stored, write);
+
+        let opened = open(CID, &stored, &mate);
+        let mut next = opened.chat.clone();
+        next.messages.push(line("m2", "mate@example.com", "zweite"));
+        let write = seal(CID, &opened, &next, &recipients(&next, &members), &mate).unwrap();
+        store(&mut stored, write);
+
+        let both = open(CID, &stored, &horst).chat;
+        let texts: Vec<&str> = both.messages.iter().map(|m| m.text.as_str()).collect();
+        assert!(texts.contains(&"erste") && texts.contains(&"zweite"), "{texts:?}");
+    }
+
+    #[test]
+    fn saving_the_same_chat_twice_stores_nothing_new() {
+        // Content addressing: a save that changes nothing must not add
+        // objects, or every poll would grow the repository.
+        let horst = [1u8; 32];
+        let members = vec![member("horst@example.com", 1)];
+        let mut stored = Sealed::default();
+        let mut chat = Chat::new(CID, vec![MemberRef::new("horst@example.com")], Utc::now());
+        chat.messages.push(line("m1", "horst@example.com", "einmal"));
+        let opened = open(CID, &stored, &horst);
+        let write = seal(CID, &opened, &chat, &recipients(&chat, &members), &horst).unwrap();
+        store(&mut stored, write);
+
+        let opened = open(CID, &stored, &horst);
+        let again = seal(CID, &opened, &opened.chat.clone(), &recipients(&chat, &members), &horst)
+            .unwrap();
+        assert!(again.is_empty(), "a re-save must produce no new bytes");
+    }
+}
