@@ -22,7 +22,7 @@
 
 use std::path::PathBuf;
 
-use joy_chat::model::chat::{Chat, ChatMessage, MessageKind};
+use joy_chat::model::chat::{Chat, ChatMessage};
 use joy_chat::model::AgentMode;
 use joy_core::model::config::InteractionLevel;
 
@@ -262,7 +262,7 @@ pub fn run_chat_turns(ctx: &EngineCtx, host: &dyn TurnHost) -> Vec<Appended> {
                     // The capability gate, with ONE sentence per
                     // condition, wherever the turn runs.
                     if let Some(note) = usability_notice(alias, &host.usable(&member), ctx) {
-                        if !recently_noticed(&chat, &note)
+                        if !chat_turns::recently_noticed(&chat, &note)
                             && host.append(&ctx.chat_id, notice(&member, note)).is_ok()
                         {
                             acted = true;
@@ -294,7 +294,7 @@ pub fn run_chat_turns(ctx: &EngineCtx, host: &dyn TurnHost) -> Vec<Appended> {
                         let note = format!(
                             "@{alias} has reached its monthly budget for this project. Raise it in Settings → AI members to continue."
                         );
-                        if !recently_noticed(&chat, &note)
+                        if !chat_turns::recently_noticed(&chat, &note)
                             && host.append(&ctx.chat_id, notice(&member, note)).is_ok()
                         {
                             acted = true;
@@ -436,7 +436,7 @@ fn notice(member: &str, text: String) -> AppendSpec {
 }
 
 /// The one sentence per unusable condition. None: the member is usable.
-fn usability_notice(alias: &str, usability: &Usability, ctx: &EngineCtx) -> Option<String> {
+pub fn usability_notice(alias: &str, usability: &Usability, ctx: &EngineCtx) -> Option<String> {
     match usability {
         Usability::Usable => None,
         Usability::NoKey => Some(format!(
@@ -452,15 +452,6 @@ fn usability_notice(alias: &str, usability: &Usability, ctx: &EngineCtx) -> Opti
     }
 }
 
-/// A notice is posted once, not per round: the same text within the last
-/// four messages counts as already said.
-fn recently_noticed(chat: &Chat, text: &str) -> bool {
-    chat.messages
-        .iter()
-        .rev()
-        .take(4)
-        .any(|m| m.kind == MessageKind::Notice && m.text == text)
-}
 
 /// Turn a raw adapter error into a human chat notice (operator
 /// 2026-07-20). The adapter emits container-prefixed, tag-wrapped text

@@ -117,6 +117,16 @@ pub fn decide(chat: &Chat, newest: &ChatMessage, ai_member: &str) -> TurnDecisio
         TurnDecision::Respond
     }
 }
+/// A notice is posted once, not per round: the same text within the last
+/// four messages counts as already said.
+pub fn recently_noticed(chat: &Chat, text: &str) -> bool {
+    chat.messages
+        .iter()
+        .rev()
+        .take(4)
+        .any(|m| m.kind == MessageKind::Notice && m.text == text)
+}
+
 /// Whether the moderation notice is already the newest notice (post once).
 pub fn moderation_already_posted(chat: &Chat) -> bool {
     chat.messages
