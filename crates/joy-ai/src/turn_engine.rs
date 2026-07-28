@@ -452,7 +452,6 @@ pub fn usability_notice(alias: &str, usability: &Usability, ctx: &EngineCtx) -> 
     }
 }
 
-
 /// Turn a raw adapter error into a human chat notice (operator
 /// 2026-07-20). The adapter emits container-prefixed, tag-wrapped text
 /// like `acp chat turn in joyint-project-…: <vibe_stop_event>Price limit
