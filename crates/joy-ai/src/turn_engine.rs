@@ -291,9 +291,7 @@ pub fn run_chat_turns(ctx: &EngineCtx, host: &dyn TurnHost) -> Vec<Appended> {
                     // opens (JI-014A): a budget refusal must not flash a
                     // waiting indicator.
                     if let Preflight::BudgetExhausted = host.preflight(&member) {
-                        let note = format!(
-                            "@{alias} has reached its monthly budget for this project. Raise it in Settings → AI members to continue."
-                        );
+                        let note = budget_notice(&alias);
                         if !chat_turns::recently_noticed(&chat, &note)
                             && host.append(&ctx.chat_id, notice(&member, note)).is_ok()
                         {
@@ -452,6 +450,18 @@ pub fn usability_notice(alias: &str, usability: &Usability, ctx: &EngineCtx) -> 
     }
 }
 
+/// What the room is told when a member's money is spent.
+///
+/// One sentence, one home: the hosts run their own preflight (only the
+/// platform has budgets at all) but must not each write their own
+/// wording, which is how the same fact ends up phrased two ways.
+pub fn budget_notice(alias: &str) -> String {
+    format!(
+        "@{alias} has reached its monthly budget for this project. \
+         Raise it in Settings → AI members to continue."
+    )
+}
+
 /// Turn a raw adapter error into a human chat notice (operator
 /// 2026-07-20). The adapter emits container-prefixed, tag-wrapped text
 /// like `acp chat turn in joyint-project-…: <vibe_stop_event>Price limit
@@ -495,6 +505,15 @@ pub fn humanize_turn_error(alias: &str, raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // JP-00A8-C9: the hosts must not phrase this themselves. The link is
+    // what people act on, so it stays in the sentence.
+    #[test]
+    fn the_budget_notice_names_the_member_and_the_way_out() {
+        let note = budget_notice("vibe");
+        assert!(note.starts_with("@vibe "), "{note}");
+        assert!(note.contains("Settings"), "{note}");
+    }
 
     // Moved with the function from platform/src/api/chat_ai.rs
     // (JI-0179-4F step 1): the wording is product surface and tested
