@@ -22,5 +22,6 @@ pub mod error;
 pub mod mentions;
 pub mod model;
 pub mod sealed;
+pub mod turns;
 
 pub use error::ChatError;
