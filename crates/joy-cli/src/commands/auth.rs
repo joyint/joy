@@ -157,12 +157,6 @@ struct TokenAddArgs {
     /// Token expiry in hours (default 24; multi-use within the window)
     #[arg(long)]
     ttl: Option<i64>,
-
-    /// Issue with Crypt scope: embed the delegation private key in the
-    /// token so the AI can unwrap zone keys for any zone your delegation
-    /// has wraps for. Without this flag the token is auth-only.
-    #[arg(long)]
-    crypt: bool,
 }
 
 pub fn run(args: AuthArgs) -> Result<()> {
@@ -973,14 +967,8 @@ fn run_token_add(
     let email = resolve_user(user_flag)?;
     let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "Passphrase: ")?;
 
-    let (encoded, hours) = create_delegation_token(
-        &root,
-        &email,
-        &passphrase,
-        &args.member,
-        args.ttl,
-        args.crypt,
-    )?;
+    let (encoded, hours) =
+        create_delegation_token(&root, &email, &passphrase, &args.member, args.ttl)?;
 
     if crate::output::is_json() {
         #[derive(serde::Serialize)]
@@ -1018,7 +1006,6 @@ pub(crate) fn create_delegation_token(
     operator_passphrase: &str,
     ai_member: &str,
     ttl_hours_override: Option<i64>,
-    crypt_scope: bool,
 ) -> Result<(String, i64)> {
     use joy_core::model::project::is_ai_member;
 
@@ -1096,7 +1083,7 @@ pub(crate) fn create_delegation_token(
 
     // `delegation_salt_to_persist` is `Some` only when we end up writing
     // a brand-new project.yaml entry (the bootstrap case). The 32-byte
-    // seed comes back so the caller can embed it in `--crypt` tokens
+    // seed comes back so the caller can embed it in the token
     // (ADR-041 §3).
     let (delegation_keypair, delegation_seed, delegation_salt_to_persist): (
         IdentityKeypair,
@@ -1163,7 +1150,6 @@ pub(crate) fn create_delegation_token(
             human: operator_email,
             project_id: &project_id,
             ttl,
-            crypt_scope,
         },
     );
 

@@ -135,7 +135,9 @@ fn an_ai_reads_the_chat_with_its_own_session() {
     let dir = tempfile::tempdir().unwrap();
     let (root, home) = project(dir.path());
 
-    joy(
+    // Adding an AI member with its delegation is the whole gesture: the
+    // token it prints carries the key that member acts with.
+    let issued = joy(
         &root,
         &home,
         &[
@@ -146,22 +148,6 @@ fn an_ai_reads_the_chat_with_its_own_session() {
             "--with-token",
             "--passphrase",
             PASS,
-        ],
-    );
-    // The crypt scope is what puts the delegation key into the token, and
-    // that key is the AI's identity: without it there is nothing to read
-    // the chat with, which is a grant the operator makes on purpose.
-    let issued = joy(
-        &root,
-        &home,
-        &[
-            "auth",
-            "--passphrase",
-            PASS,
-            "token",
-            "add",
-            "ai:vibe@joy",
-            "--crypt",
         ],
     );
     let token = issued
@@ -205,39 +191,5 @@ fn an_ai_reads_the_chat_with_its_own_session() {
     assert!(
         !empty.contains("hallo an alle"),
         "no key, no content: {empty}"
-    );
-}
-
-#[test]
-fn an_ai_without_a_chat_key_is_told_why() {
-    // Auth-only delegation: the AI can act, but it holds no key, so the
-    // chats stay closed. "No chats" would read as an empty room; the
-    // room is there and the key is not (JOY-023E-68).
-    let dir = tempfile::tempdir().unwrap();
-    let (root, home) = project(dir.path());
-    joy(
-        &root,
-        &home,
-        &[
-            "project",
-            "member",
-            "add",
-            "ai:vibe@joy",
-            "--with-token",
-            "--passphrase",
-            PASS,
-        ],
-    );
-    // act as the AI, with no session at all
-    Command::new("git")
-        .args(["config", "user.email", "ai:vibe@joy"])
-        .current_dir(&root)
-        .output()
-        .expect("git runs");
-
-    let said = joy_try(&root, &home, &["chat", "ls"]);
-    assert!(
-        said.contains("no chat key"),
-        "the AI must hear WHY it sees nothing: {said}"
     );
 }

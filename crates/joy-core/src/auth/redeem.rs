@@ -103,10 +103,10 @@ pub fn redeem_ai_session(
     let ephemeral_keypair = IdentityKeypair::from_random();
     let ephemeral_private = ephemeral_keypair.to_seed_bytes();
 
-    // Crypt scope (ADR-041 §5): carry the delegation private key so the
-    // session can unwrap zone keys and open sealed chats. It must match the
+    // The delegation key the token carries: it is the AI's identity for
+    // everything it does with it, chats and zones alike. It must match the
     // registered verifier or the delegation was rotated since issuance.
-    let delegation_private: Option<[u8; 32]> = if claims.has_crypt_scope() {
+    let delegation_private: Option<[u8; 32]> = {
         match delegation.delegation_private_key.as_ref() {
             Some(hex_seed) => {
                 let bytes = hex::decode(hex_seed).map_err(|e| {
@@ -126,14 +126,11 @@ pub fn redeem_ai_session(
                 }
                 Some(seed)
             }
-            None => {
-                return Err(JoyError::AuthFailed(
-                    "token claims the crypt scope but carries no delegation private key".into(),
-                ))
-            }
+            // A token issued before the key rode along: it can still
+            // authenticate, and whatever needs the key says so where it
+            // is needed.
+            None => None,
         }
-    } else {
-        None
     };
 
     // Record the delegating human in the signed claims (F2). Bound the
@@ -210,7 +207,6 @@ mod tests {
                 human: HUMAN,
                 project_id: PID,
                 ttl: None,
-                crypt_scope: true,
             },
         );
         encode_token(&token)
@@ -238,7 +234,6 @@ mod tests {
                 human: HUMAN, // the at-rest key of the human member
                 project_id: PID,
                 ttl: None,
-                crypt_scope: true,
             },
         ));
         let redeemed = redeem_ai_session(&project, PID, &token).expect("redeems by key");
@@ -256,7 +251,6 @@ mod tests {
                 human: "nobody@example.com",
                 project_id: PID,
                 ttl: None,
-                crypt_scope: true,
             },
         ));
         assert!(redeem_ai_session(&project, PID, &bogus).is_err());

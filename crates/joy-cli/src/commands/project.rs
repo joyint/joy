@@ -1495,7 +1495,6 @@ fn run_member(
                     passphrase,
                     &a.id,
                     None,
-                    false,
                 )?)
             } else {
                 None

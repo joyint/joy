@@ -214,15 +214,14 @@ fn load_or_general(root: &std::path::Path, id: &str) -> Result<joy_chat::model::
         .ok_or_else(|| anyhow::anyhow!("no chat with id {id}"))
 }
 
-/// The chat key this SESSION carries, if it carries one.
+/// The chat key this SESSION carries.
 ///
-/// An AI acts with a token and never with a passphrase: under the crypt
-/// scope its delegation private key rides in the session (ADR-041 §5),
-/// and that key IS its identity for chats, exactly as an unwrapped seed
-/// is a person's. Zone keys already work this way; chats did not, so an
-/// AI on the command line saw "No chats" in rooms it is a member of
-/// (JOY-023E-68). `--session` is copied into the environment before any
-/// command runs, so reading it here covers both ways of passing one.
+/// An AI acts with a token and never with a passphrase: its delegation
+/// key rides in the session, and that key IS its identity, for chats as
+/// for zones. Zone keys already worked this way; chats did not, so an AI
+/// saw "No chats" in rooms it is a member of (JOY-023E-68). `--session`
+/// is copied into the environment before any command runs, so reading it
+/// here covers both ways of passing one.
 fn session_chat_seed() -> Option<[u8; 32]> {
     let env_value = std::env::var("JOY_SESSION").ok()?;
     let (_sid, _ephemeral, delegation) =
@@ -246,18 +245,6 @@ fn establish_reader_seed(
     if let Some(seed) = session_chat_seed() {
         joy_chat_store::writer::set_seed(Some(seed));
         return Ok(());
-    }
-    // An AI has no other way in: no passphrase to type, and its session
-    // is the only place its key could come from. Saying "no chats" here
-    // would be a lie about the room; say what is actually missing.
-    if let Ok(email) = joy_core::vcs::default_vcs().user_email() {
-        if joy_core::model::project::is_ai_member(&email) {
-            anyhow::bail!(
-                "this session carries no chat key, so {email} cannot open the chats it is in. \
-                 The delegation was issued auth-only; reissue it with the crypt scope \
-                 (`joy auth token add {email} --crypt`) and redeem it again."
-            );
-        }
     }
     if passphrase.is_none() && !stdin && !crate::prompt::is_interactive() {
         return Ok(());
