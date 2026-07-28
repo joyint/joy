@@ -428,7 +428,8 @@ mod tests {
 
         // the person writes to themselves first
         let opened = open(CID, &stored, &horst);
-        chat.messages.push(line("m1", "horst@example.com", "nur ich"));
+        chat.messages
+            .push(line("m1", "horst@example.com", "nur ich"));
         let write = seal(CID, &opened, &chat, &recipients(&chat, &members), &horst).unwrap();
         store(&mut stored, write);
 
@@ -439,7 +440,8 @@ mod tests {
         let opened = open(CID, &stored, &horst);
         let mut next = opened.chat.clone();
         next.participants.push(MemberRef::new("ai:vibe@joy"));
-        next.messages.push(line("m2", "horst@example.com", "@vibe ping"));
+        next.messages
+            .push(line("m2", "horst@example.com", "@vibe ping"));
         let write = seal(CID, &opened, &next, &recipients(&next, &members), &horst).unwrap();
         store(&mut stored, write);
 
@@ -456,18 +458,25 @@ mod tests {
     fn a_member_outside_the_chat_reads_nothing() {
         let horst = [1u8; 32];
         let mate = [3u8; 32];
-        let members = vec![member("horst@example.com", 1), member("mate@example.com", 3)];
+        let members = vec![
+            member("horst@example.com", 1),
+            member("mate@example.com", 3),
+        ];
 
         let mut stored = Sealed::default();
         let mut chat = Chat::new(CID, vec![MemberRef::new("horst@example.com")], Utc::now());
         chat.kind = ChatKind::Direct;
-        chat.messages.push(line("m1", "horst@example.com", "privat"));
+        chat.messages
+            .push(line("m1", "horst@example.com", "privat"));
         let opened = open(CID, &stored, &horst);
         let write = seal(CID, &opened, &chat, &recipients(&chat, &members), &horst).unwrap();
         store(&mut stored, write);
 
         let outside = open(CID, &stored, &mate).chat;
-        assert!(outside.messages.is_empty(), "a chat must not leak to a project member who is not in it");
+        assert!(
+            outside.messages.is_empty(),
+            "a chat must not leak to a project member who is not in it"
+        );
     }
 
     #[test]
@@ -477,8 +486,14 @@ mod tests {
         let members = vec![member("horst@example.com", 1), member("ai:vibe@joy", 2)];
         let mut chat = Chat::new(CID, Vec::new(), Utc::now());
         chat.kind = ChatKind::General;
-        let ids: Vec<String> = recipients(&chat, &members).into_iter().map(|(m, _)| m).collect();
-        assert_eq!(ids, vec!["horst@example.com".to_string(), "ai:vibe@joy".to_string()]);
+        let ids: Vec<String> = recipients(&chat, &members)
+            .into_iter()
+            .map(|(m, _)| m)
+            .collect();
+        assert_eq!(
+            ids,
+            vec!["horst@example.com".to_string(), "ai:vibe@joy".to_string()]
+        );
     }
 
     #[test]
@@ -492,7 +507,10 @@ mod tests {
             MemberRef::new("horst@example.com"),
             MemberRef::new("keyless@example.com"),
         ];
-        let ids: Vec<String> = recipients(&chat, &members).into_iter().map(|(m, _)| m).collect();
+        let ids: Vec<String> = recipients(&chat, &members)
+            .into_iter()
+            .map(|(m, _)| m)
+            .collect();
         assert_eq!(ids, vec!["horst@example.com".to_string()]);
     }
 
@@ -511,7 +529,10 @@ mod tests {
         // when two people write at once.
         let horst = [1u8; 32];
         let mate = [3u8; 32];
-        let members = vec![member("horst@example.com", 1), member("mate@example.com", 3)];
+        let members = vec![
+            member("horst@example.com", 1),
+            member("mate@example.com", 3),
+        ];
         let participants = vec![
             MemberRef::new("horst@example.com"),
             MemberRef::new("mate@example.com"),
@@ -533,7 +554,10 @@ mod tests {
 
         let both = open(CID, &stored, &horst).chat;
         let texts: Vec<&str> = both.messages.iter().map(|m| m.text.as_str()).collect();
-        assert!(texts.contains(&"erste") && texts.contains(&"zweite"), "{texts:?}");
+        assert!(
+            texts.contains(&"erste") && texts.contains(&"zweite"),
+            "{texts:?}"
+        );
     }
 
     #[test]
@@ -544,14 +568,21 @@ mod tests {
         let members = vec![member("horst@example.com", 1)];
         let mut stored = Sealed::default();
         let mut chat = Chat::new(CID, vec![MemberRef::new("horst@example.com")], Utc::now());
-        chat.messages.push(line("m1", "horst@example.com", "einmal"));
+        chat.messages
+            .push(line("m1", "horst@example.com", "einmal"));
         let opened = open(CID, &stored, &horst);
         let write = seal(CID, &opened, &chat, &recipients(&chat, &members), &horst).unwrap();
         store(&mut stored, write);
 
         let opened = open(CID, &stored, &horst);
-        let again = seal(CID, &opened, &opened.chat.clone(), &recipients(&chat, &members), &horst)
-            .unwrap();
+        let again = seal(
+            CID,
+            &opened,
+            &opened.chat.clone(),
+            &recipients(&chat, &members),
+            &horst,
+        )
+        .unwrap();
         assert!(again.is_empty(), "a re-save must produce no new bytes");
     }
 }

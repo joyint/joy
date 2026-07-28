@@ -214,17 +214,52 @@ fn load_or_general(root: &std::path::Path, id: &str) -> Result<joy_chat::model::
         .ok_or_else(|| anyhow::anyhow!("no chat with id {id}"))
 }
 
-/// Reading or writing a sealed chat needs the caller's identity seed. When
-/// a passphrase is supplied (and the acting member has an identity), unlock
-/// it and set it as the reader/writer seed. Without a passphrase we stay on
-/// the legacy/plaintext path, so a bare `joy init` project (no identity)
-/// keeps working with no prompt.
+/// The chat key this SESSION carries, if it carries one.
+///
+/// An AI acts with a token and never with a passphrase: under the crypt
+/// scope its delegation private key rides in the session (ADR-041 §5),
+/// and that key IS its identity for chats, exactly as an unwrapped seed
+/// is a person's. Zone keys already work this way; chats did not, so an
+/// AI on the command line saw "No chats" in rooms it is a member of
+/// (JOY-023E-68). `--session` is copied into the environment before any
+/// command runs, so reading it here covers both ways of passing one.
+fn session_chat_seed() -> Option<[u8; 32]> {
+    let env_value = std::env::var("JOY_SESSION").ok()?;
+    let (_sid, _ephemeral, delegation) =
+        joy_core::auth::session::parse_session_env_full(&env_value)?;
+    delegation
+}
+
+/// Reading or writing a sealed chat needs the caller's identity seed.
+///
+/// Where it comes from depends on who is acting, and on nothing else: a
+/// session that carries one brings its own, a person unwraps theirs with
+/// their passphrase. A person at a terminal who has an identity but gave
+/// no passphrase is ASKED, rather than shown an empty room; a script
+/// without one stays on the quiet path, so a bare `joy init` project (no
+/// identity at all) keeps working with no prompt.
 fn establish_reader_seed(
     root: &std::path::Path,
     passphrase: Option<&str>,
     stdin: bool,
 ) -> Result<()> {
-    if passphrase.is_none() && !stdin {
+    if let Some(seed) = session_chat_seed() {
+        joy_chat_store::writer::set_seed(Some(seed));
+        return Ok(());
+    }
+    // An AI has no other way in: no passphrase to type, and its session
+    // is the only place its key could come from. Saying "no chats" here
+    // would be a lie about the room; say what is actually missing.
+    if let Ok(email) = joy_core::vcs::default_vcs().user_email() {
+        if joy_core::model::project::is_ai_member(&email) {
+            anyhow::bail!(
+                "this session carries no chat key, so {email} cannot open the chats it is in. \
+                 The delegation was issued auth-only; reissue it with the crypt scope \
+                 (`joy auth token add {email} --crypt`) and redeem it again."
+            );
+        }
+    }
+    if passphrase.is_none() && !stdin && !crate::prompt::is_interactive() {
         return Ok(());
     }
     let Ok(project) = joy_core::store::load_project(root) else {
