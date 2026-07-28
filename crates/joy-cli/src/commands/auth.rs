@@ -58,7 +58,8 @@ enum AuthCommand {
     Token(TokenArgs),
     /// Manage your per-(operator, AI) delegations: rotate, list
     Delegation(DelegationArgs),
-    /// Change your passphrase: re-derives your identity keypair
+    /// Change your passphrase: re-wraps your identity seed, which stays
+    /// the same, so chats and zones keep opening (ADR-039)
     Passphrase(PassphraseArgs),
     /// Recover identity via recovery key, or rotate the recovery key
     Recover(RecoverArgs),
