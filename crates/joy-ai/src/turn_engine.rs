@@ -450,6 +450,31 @@ pub fn usability_notice(alias: &str, usability: &Usability, ctx: &EngineCtx) -> 
     }
 }
 
+/// The execution record for ONE finished turn (JI-014A / JI-0162):
+/// level, model, cost, tokens and the budget snapshot where a host has
+/// one, folded into the details the info popover reads.
+///
+/// One home for both hosts. It used to live inside the engine's loop,
+/// and when the turn became one-ask-per-message the hosts kept the
+/// activity block but silently dropped this: the popover still showed
+/// duration and tool steps, and tokens and cost were gone (JAPP-016A-E0).
+pub fn turn_details(
+    out: &TurnOutcome,
+    level: joy_core::model::config::InteractionLevel,
+) -> Option<String> {
+    joy_chat_store::turn_meta::augment_details(
+        out.details.clone(),
+        &joy_chat_store::turn_meta::TurnMeta {
+            model: out.model.as_deref(),
+            cost_cents: out.cost_cents,
+            tokens: out.tokens,
+            interaction_level: Some(&level.to_string()),
+            spent_cents: out.budget.as_ref().map(|b| b.spent_cents),
+            cap_cents: out.budget.as_ref().and_then(|b| b.cap_cents),
+        },
+    )
+}
+
 /// What the room is told when a member's money is spent.
 ///
 /// One sentence, one home: the hosts run their own preflight (only the
@@ -508,6 +533,45 @@ mod tests {
 
     // JP-00A8-C9: the hosts must not phrase this themselves. The link is
     // what people act on, so it stays in the sentence.
+    #[test]
+    fn a_finished_turn_records_what_it_cost() {
+        // JAPP-016A-E0: the popover lost tokens and cost when the turn
+        // moved out of the engine loop and each host kept only the
+        // activity block.
+        let out = TurnOutcome {
+            reply: "da".into(),
+            details: None,
+            tool_steps: 2,
+            cost_cents: Some(7),
+            tokens: Some(1234),
+            model: Some("mistral-medium".into()),
+            capped: false,
+            denied: 0,
+            budget: None,
+        };
+        let details = turn_details(&out, joy_core::model::config::InteractionLevel::Autonomous)
+            .expect("a turn that reports something keeps a record");
+        assert!(details.contains("1234"), "{details}");
+        assert!(details.contains("mistral-medium"), "{details}");
+        assert!(details.contains("autonomous"), "{details}");
+        // …and a turn that reports nothing does not grow a record just to
+        // say so
+        let bare = TurnOutcome {
+            reply: "da".into(),
+            details: None,
+            tool_steps: 0,
+            cost_cents: None,
+            tokens: None,
+            model: None,
+            capped: false,
+            denied: 0,
+            budget: None,
+        };
+        assert!(
+            turn_details(&bare, joy_core::model::config::InteractionLevel::Proposing).is_some()
+        );
+    }
+
     #[test]
     fn the_budget_notice_names_the_member_and_the_way_out() {
         let note = budget_notice("vibe");
