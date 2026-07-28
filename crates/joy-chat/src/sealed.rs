@@ -64,6 +64,45 @@ impl Write {
     }
 }
 
+/// One member of the project as far as sealing is concerned: their id and
+/// the identity key on record. A member without a key cannot be a
+/// recipient, and is simply absent here.
+#[derive(Debug, Clone)]
+pub struct Member {
+    pub id: String,
+    pub verify_key: PublicKey,
+}
+
+/// Who a chat's key must reach: its participants, or every project member
+/// when the list is empty (the General/Team "everyone" convention).
+///
+/// Both sides ask THIS function. Storage knows the project from disk and
+/// the webview gets it over the wire, but the rule is one rule, or the
+/// same chat would be sealed for different people depending on who saved
+/// it.
+pub fn recipients(chat: &Chat, members: &[Member]) -> Vec<(String, PublicKey)> {
+    use crate::model::chat::ChatKind;
+    let everyone =
+        chat.participants.is_empty() && matches!(chat.kind, ChatKind::General | ChatKind::Team);
+    let wanted: Vec<String> = if everyone {
+        members.iter().map(|m| m.id.clone()).collect()
+    } else {
+        chat.participants
+            .iter()
+            .map(|p| p.id().to_string())
+            .collect()
+    };
+    wanted
+        .into_iter()
+        .filter_map(|id| {
+            members
+                .iter()
+                .find(|m| m.id == id)
+                .map(|m| (id, m.verify_key.clone()))
+        })
+        .collect()
+}
+
 /// Open what storage holds for a chat with one reader's seed.
 ///
 /// A reader who holds no slot gets an [`Opened`] with no events; the

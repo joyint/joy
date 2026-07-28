@@ -49,45 +49,26 @@ fn git(e: git2::Error) -> JoyError {
 
 // ---- recipient resolution -------------------------------------------------
 
-/// The member ids a chat's key must reach: its participants, or every
-/// project member when the list is empty (the General/Team "everyone"
-/// convention).
-fn effective_recipient_ids(project: &Project, chat: &Chat) -> Vec<String> {
-    use joy_chat::model::chat::ChatKind;
-    if chat.participants.is_empty() && matches!(chat.kind, ChatKind::General | ChatKind::Team) {
-        project.members().map(|(id, _)| id.clone()).collect()
-    } else {
-        chat.participants
-            .iter()
-            .map(|p| p.id().to_string())
-            .collect()
-    }
+/// The project's members that can hold a key, in the shape
+/// [`joy_chat::sealed`] wants. Who among them a given chat is for is the
+/// pure crate's rule ([`sealed::recipients`]), not this file's.
+fn sealing_members(project: &Project) -> Vec<sealed::Member> {
+    project
+        .members()
+        .filter_map(|(id, m)| {
+            let hex = m.verify_key.as_ref()?;
+            let key = joy_core::auth::PublicKey::from_hex(hex).ok()?;
+            Some(sealed::Member {
+                id: id.clone(),
+                verify_key: key,
+            })
+        })
+        .collect()
 }
 
-/// The verify_key on record for a recipient.
-///
-/// A recipient is a MEMBER, and nothing else. The reserved platform id
-/// that used to sit next to them, so a server could read every chat, is
-/// gone (JI-0174 family): a server reads a chat only where an AI member
-/// it holds a token for is a participant, through that member's own key
-/// like anyone else.
-fn recipient_public(project: &Project, id: &str) -> Option<joy_core::auth::PublicKey> {
-    let hex = project
-        .member_by_key(id)
-        .and_then(|m| m.verify_key.clone())?;
-    joy_core::auth::PublicKey::from_hex(&hex).ok()
-}
-
-/// (recipient id, verify_key) for every current recipient, skipping
-/// anyone without a verify_key on record.
+/// (recipient id, verify_key) for every current recipient of this chat.
 fn recipients(project: &Project, chat: &Chat) -> Vec<(String, joy_core::auth::PublicKey)> {
-    let mut out = Vec::new();
-    for id in effective_recipient_ids(project, chat) {
-        if let Some(pk) = recipient_public(project, &id) {
-            out.push((id, pk));
-        }
-    }
-    out
+    sealed::recipients(chat, &sealing_members(project))
 }
 
 /// Whether this chat can be sealed here: a Joy project with at least one
@@ -209,6 +190,57 @@ pub fn save(root: &std::path::Path, chat: &Chat, seed: &[u8; 32]) -> Result<(), 
     Err(JoyError::Other(
         "chat ref kept moving under this save; try again".into(),
     ))
+}
+
+/// Store the bytes a client produced for one chat, without a key.
+///
+/// This is the write half of the transport (JAPP-0135-FD): the webview
+/// opened the chat, sealed the change and handed back named bytes; here
+/// they are unioned into the tree and the ref moves. Whether the bytes
+/// make sense is not decidable here, and does not have to be: a blob
+/// nobody can open is a blob nobody can open, and the log is a
+/// content-addressed set either way.
+pub fn commit(root: &std::path::Path, cid: &str, write: &sealed::Write) -> Result<(), JoyError> {
+    if write.is_empty() {
+        return Ok(());
+    }
+    for _ in 0..chat_ref::REF_MOVE_ATTEMPTS {
+        if commit_once(root, cid, write)? {
+            return Ok(());
+        }
+    }
+    Err(JoyError::Other(
+        "chat ref kept moving under this write; try again".into(),
+    ))
+}
+
+fn commit_once(root: &std::path::Path, cid: &str, write: &sealed::Write) -> Result<bool, JoyError> {
+    let repo = chat_ref::open_repo(root)?;
+    let parent = chat_ref::ref_commit(&repo)?;
+    let root_tree = match &parent {
+        Some(c) => Some(c.tree().map_err(git)?),
+        None => None,
+    };
+    let chat_tree = root_tree.as_ref().and_then(|t| subtree(&repo, t, cid));
+    let held = match &chat_tree {
+        Some(t) if is_new_format(&repo, t) => read_subtree(&repo, t),
+        _ => Held {
+            sealed: Sealed::default(),
+            slot_ids: BTreeSet::new(),
+            log_rids: BTreeSet::new(),
+        },
+    };
+    let base_tree = chat_tree.as_ref().filter(|t| is_new_format(&repo, t));
+    write_tree(
+        &repo,
+        cid,
+        base_tree,
+        &held.slot_ids,
+        &held.log_rids,
+        write,
+        parent.as_ref(),
+        root_tree.as_ref(),
+    )
 }
 
 /// One attempt of [`save`]; `false` means the ref moved underneath it.
