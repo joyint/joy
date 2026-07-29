@@ -45,6 +45,11 @@ pub struct AdapterSpec {
     /// The environment variable selecting the model, for tools that take
     /// it via env rather than ACP session config.
     pub model_env: Option<&'static str>,
+    /// The environment variable naming the tool's own state directory
+    /// (session logs, caches). The host points it at a per-chat directory
+    /// so two chats never share tool state — identically on the desktop
+    /// and in the container. None for tools without one.
+    pub state_env: Option<&'static str>,
     /// What to tell a person on whose machine the probe fails.
     pub install_hint: &'static str,
 }
@@ -64,6 +69,7 @@ pub const ADAPTERS: &[AdapterSpec] = &[
         probe: "vibe-acp",
         key_env: Some("MISTRAL_API_KEY"),
         model_env: Some("VIBE_ACTIVE_MODEL"),
+        state_env: Some("VIBE_HOME"),
         install_hint: "Install the Mistral Vibe CLI (it ships vibe-acp) and sign in there",
     },
     AdapterSpec {
@@ -78,6 +84,7 @@ pub const ADAPTERS: &[AdapterSpec] = &[
         probe: "claude-agent-acp",
         key_env: Some("ANTHROPIC_API_KEY"),
         model_env: None,
+        state_env: Some("CLAUDE_CONFIG_DIR"),
         install_hint:
             "npm i -g @agentclientprotocol/claude-agent-acp; Claude Code signs in inside the tool",
     },
@@ -90,6 +97,7 @@ pub const ADAPTERS: &[AdapterSpec] = &[
         probe: "qwen",
         key_env: Some("OPENAI_API_KEY"),
         model_env: None,
+        state_env: None,
         install_hint: "Install Qwen Code (npm i -g @qwen-code/qwen-code) and sign in there",
     },
 ];
