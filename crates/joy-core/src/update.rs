@@ -152,8 +152,7 @@ pub fn project_state(
     let security_path = root.join("SECURITY.md");
     let raw = std::fs::read_to_string(&project_path)?;
     let raw_value: serde_yaml_ng::Value = serde_yaml_ng::from_str(&raw)?;
-    let (migrated_value, applied) = crate::migrations::project_yaml::apply(raw_value);
-    let schema_stale = applied.any;
+    let (migrated_value, schema_stale) = crate::migrations::project_yaml::apply(raw_value);
     let security_current = crate::security_md::is_current(&security_path)?;
     Ok((
         security_current,
