@@ -1,1 +1,2 @@
 2026-07-29T11:26:35.429Z JOY-0241-01 guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-07-29T17:05:18.162Z JOY-0241-14 item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
