@@ -211,49 +211,6 @@ fn resolve_user(user_flag: Option<&str>) -> Result<String> {
     }
 }
 
-/// Inspect SECURITY.md and project.yaml schema. Returns
-/// `(security_current, schema_stale, migrated_value, security_path)`.
-/// `security_current` is true when SECURITY.md matches the shipped
-/// template; `schema_stale` is true when project.yaml uses legacy
-/// auth-field names. Exposed for the update registry.
-pub(crate) fn auth_state_pub(
-    root: &std::path::Path,
-) -> Result<(bool, bool, serde_yaml_ng::Value, std::path::PathBuf)> {
-    auth_state(root)
-}
-
-/// Persist a project.yaml schema migration produced by [`auth_state_pub`].
-/// Used by the update registry's project-schema item.
-pub(crate) fn write_migrated_project(
-    root: &std::path::Path,
-    migrated_value: serde_yaml_ng::Value,
-) -> Result<()> {
-    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-    let project: joy_core::model::project::Project = serde_yaml_ng::from_value(migrated_value)?;
-    store::write_yaml_preserve(&project_path, &project)?;
-    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-    joy_core::git_ops::auto_git_add(root, &[&rel]);
-    Ok(())
-}
-
-fn auth_state(
-    root: &std::path::Path,
-) -> Result<(bool, bool, serde_yaml_ng::Value, std::path::PathBuf)> {
-    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-    let security_path = root.join("SECURITY.md");
-    let raw = std::fs::read_to_string(&project_path)?;
-    let raw_value: serde_yaml_ng::Value = serde_yaml_ng::from_str(&raw)?;
-    let (migrated_value, schema_stale) =
-        joy_core::migrations::project_yaml::apply(raw_value.clone());
-    let security_current = joy_core::security_md::is_current(&security_path)?;
-    Ok((
-        security_current,
-        schema_stale,
-        migrated_value,
-        security_path,
-    ))
-}
-
 /// Resolve token from --token flag or JOY_TOKEN env var.
 fn resolve_token(flag: Option<&str>) -> Option<String> {
     flag.map(|s| s.to_string())
