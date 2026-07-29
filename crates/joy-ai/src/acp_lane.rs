@@ -186,9 +186,10 @@ pub fn collect_notification(
                 None => {
                     let at = state.tools.len();
                     state.tool_rows.insert(row_id.clone(), at);
-                    state
-                        .tools
-                        .push(crate::activity::ToolStep::new(call.title.clone(), status.clone()));
+                    state.tools.push(crate::activity::ToolStep::new(
+                        call.title.clone(),
+                        status.clone(),
+                    ));
                 }
             }
             // Index the command by id so a following permission request
@@ -700,7 +701,11 @@ async fn run_lane(
             // numbers are the delta (a fresh session starts at 0). JP-0089-18.
             let mut session_cost: HashMap<String, f64> = HashMap::new();
             let mut session_tokens: HashMap<String, u64> = HashMap::new();
-            while let Some(QueuedTurn { request: turn, respond }) = rx.recv().await {
+            while let Some(QueuedTurn {
+                request: turn,
+                respond,
+            }) = rx.recv().await
+            {
                 let (session_id, prompt) = match sessions.get(&turn.chat_id) {
                     Some(sid) => (
                         sid.clone(),
@@ -1151,8 +1156,7 @@ mod tests {
             kind: Some("read".into()),
         };
         // a plain READ is allowed even at the proposing level
-        let answer =
-            answer_chat_permission(joy_chat::model::AgentMode::Plan, &request, &known);
+        let answer = answer_chat_permission(joy_chat::model::AgentMode::Plan, &request, &known);
         assert_eq!(answer.answered, "allowed");
         assert_eq!(answer.selected.as_ref().map(|o| o.0.as_ref()), Some("y"));
         // without the recovered kind the same request is refused
