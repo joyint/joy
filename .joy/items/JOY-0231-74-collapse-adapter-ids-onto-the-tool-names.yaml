@@ -1,8 +1,10 @@
 id: JOY-0231-74
 title: Collapse adapter ids onto the tool names
 type: task
-status: new
+status: in-progress
 priority: medium
+assignees:
+- member: ai:claude@joy
 tags:
 - plan-2026-07-26
 capabilities:
@@ -10,9 +12,11 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-26T16:24:09.717461908Z
-updated: 2026-07-26T16:30:00.624139872Z
+updated: 2026-07-29T18:46:10.188608596Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
+history:
+- date: 2026-07-29T18:46:10.188608596Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Operator question 2026-07-26: why are the ACP adapters named differently from the tools they run (claude-code vs claude, mistral-vibe vs vibe, qwen-code vs qwen; copilot already coincides)? The adapter id carries the PRODUCT name, but the product name already lives in the separate display label, so the distinction adds no information. It costs a two-way mapping table (joy-ai naming::adapter_tool_id / tool_adapter), a documented naming rule, and it already produced a real bug (the platform derived ai:mistral@joy from mistral-vibe by string split). Proposal: name adapters exactly like their binaries, so adapter == tool id and canonical_member_id becomes trivial. Scope: the ids live in project.yaml (member adapter pin), the platform providers.toml, ai_secrets config rows and the Settings dropdown values, so it needs a rename migration with the established systematic (a project_yaml on-read migration mapping the old ids, plus the platform-side rows). Check first whether one tool could ever need two adapters; today none does.'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com

@@ -1,44 +1,31 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! Canonical naming rules for AI members: the mapping between an ACP
-//! adapter (`mistral-vibe`), its tool id (`vibe`), and the canonical
-//! member id (`ai:vibe@joy`). Every surface that derives a member from an
-//! adapter must go through these helpers, never a string split (the
-//! platform once derived `ai:mistral@joy` from `mistral-vibe` that way).
+//! Canonical naming rules for AI members, riding on the ONE adapter
+//! registry (JI-017A-85). Since JOY-0231-74 the adapter id IS the tool
+//! name (`vibe`), and the first-generation provider ids (`mistral-vibe`)
+//! resolve through the registry's legacy list. Every surface that
+//! derives a member from an adapter goes through these helpers, never a
+//! string split (the platform once derived `ai:mistral@joy` from
+//! `mistral-vibe` that way).
 
-/// The tool id an ACP adapter belongs to (`mistral-vibe` -> `vibe`).
-/// THE naming rule behind canonical AI members (`ai:<tool>@joy`): every
-/// surface that derives a member from an adapter must use this mapping,
-/// never a string split (the platform once derived `ai:mistral@joy` from
-/// `mistral-vibe` that way). `mock` and unknown adapters have no tool.
+/// The tool id an adapter string belongs to — current or legacy
+/// (`mistral-vibe` and `vibe` both give `vibe`). `mock` and unknown
+/// adapters have no tool.
 pub fn adapter_tool_id(adapter: &str) -> Option<&'static str> {
-    match adapter {
-        "claude-code" => Some("claude"),
-        "qwen-code" => Some("qwen"),
-        "mistral-vibe" => Some("vibe"),
-        "copilot" => Some("copilot"),
-        _ => None,
-    }
+    crate::adapters::canonical_adapter_id(adapter)
 }
 
-/// The ACP adapter a tool id runs on (`vibe` -> `mistral-vibe`): the inverse
-/// of [`adapter_tool_id`]. The adapter is recorded on the project.yaml member
-/// at registration (JI-0164), so the platform can route turns without a
-/// per-member agent file. `None` for an unknown tool id.
+/// The adapter id to RECORD for a tool: since JOY-0231-74 that is the
+/// tool name itself, validated against the registry. `None` for an
+/// unknown tool id.
 pub fn tool_adapter(tool_id: &str) -> Option<&'static str> {
-    match tool_id {
-        "claude" => Some("claude-code"),
-        "qwen" => Some("qwen-code"),
-        "vibe" => Some("mistral-vibe"),
-        "copilot" => Some("copilot"),
-        _ => None,
-    }
+    crate::adapters::by_adapter(tool_id).map(|spec| spec.adapter)
 }
 
 /// The canonical member id registered for an adapter (`ai:vibe@joy` for
-/// `mistral-vibe`); adapters without a tool id (e.g. `mock`) use the
-/// adapter name itself.
+/// `vibe` or legacy `mistral-vibe`); adapters outside the registry (e.g.
+/// the test mock) use the adapter name itself.
 pub fn canonical_member_id(adapter: &str) -> String {
     format!("ai:{}@joy", adapter_tool_id(adapter).unwrap_or(adapter))
 }
@@ -50,22 +37,21 @@ mod tests {
     #[test]
     fn the_canonical_member_follows_the_tool_not_the_provider() {
         assert_eq!(canonical_member_id("mistral-vibe"), "ai:vibe@joy");
+        assert_eq!(canonical_member_id("vibe"), "ai:vibe@joy");
         assert_eq!(canonical_member_id("claude-code"), "ai:claude@joy");
         assert_eq!(canonical_member_id("qwen-code"), "ai:qwen@joy");
         assert_eq!(canonical_member_id("mock"), "ai:mock@joy");
     }
 
     #[test]
-    fn tool_adapter_is_the_inverse_of_adapter_tool_id() {
-        for (adapter, tool) in [
-            ("claude-code", "claude"),
-            ("qwen-code", "qwen"),
-            ("mistral-vibe", "vibe"),
-            ("copilot", "copilot"),
-        ] {
-            assert_eq!(adapter_tool_id(adapter), Some(tool));
-            assert_eq!(tool_adapter(tool), Some(adapter));
+    fn the_recorded_adapter_is_the_tool_name_itself() {
+        for tool in ["claude", "qwen", "vibe"] {
+            assert_eq!(tool_adapter(tool), Some(tool));
+            assert_eq!(adapter_tool_id(tool), Some(tool));
         }
+        // legacy spellings resolve but are never recorded again
+        assert_eq!(adapter_tool_id("mistral-vibe"), Some("vibe"));
+        assert_eq!(tool_adapter("mistral-vibe"), Some("vibe"));
         assert_eq!(adapter_tool_id("mock"), None);
         assert_eq!(tool_adapter("mock"), None);
     }

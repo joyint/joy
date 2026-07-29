@@ -191,8 +191,10 @@ pub struct Member {
         skip_serializing_if = "Option::is_none"
     )]
     pub interaction_level: Option<InteractionLevel>,
-    /// The ACP adapter/tool that runs an AI member (claude-code | mistral-vibe
-    /// | qwen-code | mock). Only meaningful on `ai:*` members. Set when the AI
+    /// The ACP adapter that runs an AI member. Since JOY-0231-74 the id is
+    /// the tool name itself (claude | vibe | qwen | mock); first-generation
+    /// pins (claude-code, mistral-vibe, qwen-code) are rewritten by the
+    /// silent migration. Only meaningful on `ai:*` members. Set when the AI
     /// member is added; the rest of its key-bound ACP config (key, model,
     /// budget, guardrail) lives in the platform DB, not the repo (JI-0164 as
     /// revised by JI-0166-D8: no agent mode is stored anywhere). None on human
