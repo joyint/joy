@@ -83,16 +83,20 @@ mod tests {
         std::fs::create_dir_all(dir.path().join(".joy")).unwrap();
         // a real project with one AI member
         let mut project = joy_core::model::Project::new("T".to_string(), Some("T".to_string()));
-        for member in ["ai:claude@joy", "horst@example.com"] {
-            project
-                .register_member(
-                    member,
-                    joy_core::model::project::Member::new(
-                        joy_core::model::project::MemberCapabilities::All,
-                    ),
-                )
-                .unwrap();
+        // chats are always sealed now, so the members carry identities and
+        // the writer's seed is installed for this thread
+        for (member, seed_byte) in [("ai:claude@joy", 7u8), ("horst@example.com", 5u8)] {
+            let mut m = joy_core::model::project::Member::new(
+                joy_core::model::project::MemberCapabilities::All,
+            );
+            m.verify_key = Some(
+                joy_core::auth::IdentityKeypair::from_seed(&[seed_byte; 32])
+                    .public_key()
+                    .to_hex(),
+            );
+            project.register_member(member, m).unwrap();
         }
+        joy_chat_store::writer::set_thread_seed(Some(Some([5u8; 32])));
         joy_core::store::write_yaml(
             &joy_core::store::joy_dir(dir.path()).join(joy_core::store::PROJECT_FILE),
             &project,

@@ -48,18 +48,22 @@ pub fn save_chat(root: &Path, chat: &mut Chat) -> Result<(), JoyError> {
             return crate::chat_store::save(root, chat, &seed);
         }
     }
-    // No custodian, or nothing to wrap: a project that COULD encrypt never
-    // gets plaintext (it stays ephemeral until someone authenticates);
-    // only a project with no identity at all persists in the clear.
-    if let Ok(project) = joy_core::store::load_project(root) {
-        let encryptable = project.members().any(|(_, m)| m.verify_key.is_some());
-        if encryptable {
-            return Err(JoyError::AuthFailed(
-                "chat not persisted: authenticate first (ADR JAPP-002A-30)".into(),
-            ));
-        }
-    }
-    crate::chat_ref::save_chat(root, chat)
+    // No key, nothing sealed, nothing persisted — ever. A project whose
+    // members have identities waits for the passphrase; a project without
+    // any identity is told to create one first. The plaintext fallback
+    // that used to sit here wrote chats in the clear onto the forge, and
+    // their history stayed readable even after a later migration sealed
+    // the tip (operator, 2026-07-29).
+    let has_identity = joy_core::store::load_project(root)
+        .map(|p| p.members().any(|(_, m)| m.verify_key.is_some()))
+        .unwrap_or(false);
+    Err(JoyError::AuthFailed(if has_identity {
+        "chat not persisted: authenticate first (ADR JAPP-002A-30)".into()
+    } else {
+        "chat not persisted: chats are always sealed and this project has no identity yet. \
+         Run `joy auth init` first."
+            .into()
+    }))
 }
 
 /// Load one chat by id, opened. New-format (sealed) chats fold through
@@ -618,18 +622,57 @@ pub fn set_ai_session(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
 
     fn ts(sec: u32) -> DateTime<Utc> {
         format!("2026-07-04T00:00:{sec:02}Z").parse().unwrap()
     }
 
-    /// A tempdir that is a real git repo. Chats live on `refs/joy/chats`
-    /// now (ADR JAPP-00DC-FC), so persistence needs a repo, not just a
-    /// directory.
+    /// A tempdir that is a real joy PROJECT with identities, plus the
+    /// writer seed installed for this thread. Chats are always sealed
+    /// (there is no plaintext persistence any more), so even the rule
+    /// tests write through the sealed store and need members with keys.
     fn repo() -> tempfile::TempDir {
-        let dir = tempdir().expect("tempdir");
-        git2::Repository::init(dir.path()).unwrap();
+        let dir = tempfile::tempdir().expect("tempdir");
+        joy_core::init::init(joy_core::init::InitOptions {
+            root: dir.path().to_path_buf(),
+            name: Some("Chats".into()),
+            acronym: Some("CH".into()),
+            user: Some("horst@example.com".into()),
+            language: None,
+        })
+        .unwrap();
+        let seed = [5u8; 32];
+        let mut project = joy_core::store::load_project(dir.path()).unwrap();
+        project
+            .member_by_key_mut("horst@example.com")
+            .unwrap()
+            .verify_key = Some(
+            joy_core::auth::IdentityKeypair::from_seed(&seed)
+                .public_key()
+                .to_hex(),
+        );
+        for (member, other_seed) in [
+            ("geordi@example.org", [6u8; 32]),
+            ("ai:claude@joy", [7u8; 32]),
+            ("a@x", [8u8; 32]),
+            ("x@y.z", [9u8; 32]),
+        ] {
+            let mut m = joy_core::model::project::Member::new(
+                joy_core::model::project::MemberCapabilities::All,
+            );
+            m.verify_key = Some(
+                joy_core::auth::IdentityKeypair::from_seed(&other_seed)
+                    .public_key()
+                    .to_hex(),
+            );
+            project.register_member(member, m).unwrap();
+        }
+        joy_core::store::write_yaml(
+            &joy_core::store::joy_dir(dir.path()).join(joy_core::store::PROJECT_FILE),
+            &project,
+        )
+        .unwrap();
+        crate::writer::set_thread_seed(Some(Some(seed)));
         dir
     }
 
@@ -653,7 +696,15 @@ mod tests {
         set_ai_session(dir.path(), &mut chat, &claude, "acp-session-42", ts(3)).unwrap();
 
         let loaded = load_chat(dir.path(), &chat.id).unwrap().unwrap();
-        assert_eq!(loaded, chat);
+        // The sealed store reconstructs participants as a SET and derives
+        // `updated` from content events (a session stamp is bookkeeping and
+        // moves nothing), so the comparison normalizes exactly those two.
+        let normalize = |mut c: Chat| {
+            c.participants.sort_by(|a, b| a.id().cmp(b.id()));
+            c.updated = ts(0);
+            c
+        };
+        assert_eq!(normalize(loaded.clone()), normalize(chat.clone()));
         assert_eq!(loaded.messages.len(), 2);
         assert_eq!(loaded.messages[0].text, "moin");
         assert_eq!(loaded.messages[1].author, geordi);
@@ -716,15 +767,22 @@ mod tests {
         let dir = repo();
         std::fs::create_dir_all(dir.path().join(".joy")).unwrap();
         let mut project = joy_core::model::Project::new("T".to_string(), Some("T".to_string()));
-        for member in ["horst@example.com", "geordi@example.org", "ai:claude@joy"] {
-            project
-                .register_member(
-                    member,
-                    joy_core::model::project::Member::new(
-                        joy_core::model::project::MemberCapabilities::All,
-                    ),
-                )
-                .unwrap();
+        // exactly these members, WITH identities: chats are always sealed
+        // now, and the GC rule under test counts the effective humans
+        for (member, seed_byte) in [
+            ("horst@example.com", 5u8),
+            ("geordi@example.org", 6u8),
+            ("ai:claude@joy", 7u8),
+        ] {
+            let mut m = joy_core::model::project::Member::new(
+                joy_core::model::project::MemberCapabilities::All,
+            );
+            m.verify_key = Some(
+                joy_core::auth::IdentityKeypair::from_seed(&[seed_byte; 32])
+                    .public_key()
+                    .to_hex(),
+            );
+            project.register_member(member, m).unwrap();
         }
         joy_core::store::write_yaml(
             &joy_core::store::joy_dir(dir.path()).join(joy_core::store::PROJECT_FILE),
@@ -769,15 +827,16 @@ mod tests {
         let dir = repo();
         std::fs::create_dir_all(dir.path().join(".joy")).unwrap();
         let mut project = joy_core::model::Project::new("T".to_string(), Some("T".to_string()));
-        for member in ["horst@example.com", "geordi@example.org"] {
-            project
-                .register_member(
-                    member,
-                    joy_core::model::project::Member::new(
-                        joy_core::model::project::MemberCapabilities::All,
-                    ),
-                )
-                .unwrap();
+        for (member, seed_byte) in [("horst@example.com", 5u8), ("geordi@example.org", 6u8)] {
+            let mut m = joy_core::model::project::Member::new(
+                joy_core::model::project::MemberCapabilities::All,
+            );
+            m.verify_key = Some(
+                joy_core::auth::IdentityKeypair::from_seed(&[seed_byte; 32])
+                    .public_key()
+                    .to_hex(),
+            );
+            project.register_member(member, m).unwrap();
         }
         joy_core::store::write_yaml(
             &joy_core::store::joy_dir(dir.path()).join(joy_core::store::PROJECT_FILE),
@@ -886,9 +945,14 @@ mod tests {
         .unwrap();
         assert!(chat.messages.is_empty());
 
-        // the override round-trips through the ref
+        // the override round-trips through the ref (participants come back
+        // as a set, see the roundtrip test)
         let loaded = load_chat(dir.path(), &chat.id).unwrap().unwrap();
-        assert_eq!(loaded, chat);
+        let normalize = |mut c: Chat| {
+            c.participants.sort_by(|a, b| a.id().cmp(b.id()));
+            c
+        };
+        assert_eq!(normalize(loaded.clone()), normalize(chat.clone()));
 
         // clearing removes the entry and prunes the empty inner map,
         // still without a message
@@ -979,10 +1043,53 @@ mod channel_tests {
         Utc.with_ymd_and_hms(2026, 7, 5, 3, 0, 0).unwrap()
     }
 
-    /// A tempdir that is a real git repo (chats live on a ref now).
+    /// A tempdir that is a real joy PROJECT with identities, plus the
+    /// writer seed installed for this thread. Chats are always sealed
+    /// (there is no plaintext persistence any more), so even the rule
+    /// tests write through the sealed store and need members with keys.
     fn repo() -> tempfile::TempDir {
-        let dir = tempfile::tempdir().unwrap();
-        git2::Repository::init(dir.path()).unwrap();
+        let dir = tempfile::tempdir().expect("tempdir");
+        joy_core::init::init(joy_core::init::InitOptions {
+            root: dir.path().to_path_buf(),
+            name: Some("Chats".into()),
+            acronym: Some("CH".into()),
+            user: Some("horst@example.com".into()),
+            language: None,
+        })
+        .unwrap();
+        let seed = [5u8; 32];
+        let mut project = joy_core::store::load_project(dir.path()).unwrap();
+        project
+            .member_by_key_mut("horst@example.com")
+            .unwrap()
+            .verify_key = Some(
+            joy_core::auth::IdentityKeypair::from_seed(&seed)
+                .public_key()
+                .to_hex(),
+        );
+        for (member, other_seed) in [
+            ("geordi@example.org", [6u8; 32]),
+            ("ai:claude@joy", [7u8; 32]),
+            ("a@x", [8u8; 32]),
+            ("x@y.z", [9u8; 32]),
+        ] {
+            let mut m = joy_core::model::project::Member::new(
+                joy_core::model::project::MemberCapabilities::All,
+            );
+            m.verify_key = Some(
+                joy_core::auth::IdentityKeypair::from_seed(&other_seed)
+                    .public_key()
+                    .to_hex(),
+            );
+            project.register_member(member, m).unwrap();
+        }
+        joy_core::store::write_yaml(
+            &joy_core::store::joy_dir(dir.path()).join(joy_core::store::PROJECT_FILE),
+            &project,
+        )
+        .unwrap();
+        // these tests write as a@x, so a@x's key is the one installed
+        crate::writer::set_thread_seed(Some(Some([8u8; 32])));
         dir
     }
 
