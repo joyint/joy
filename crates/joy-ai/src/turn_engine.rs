@@ -87,7 +87,6 @@ pub enum Usability {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Pending {
     Start,
-    Done,
 }
 
 /// Live activity of a RUNNING turn (JI-0172-EE, JI-0179-4F step 4): the
@@ -399,7 +398,6 @@ pub fn run_chat_turns(ctx: &EngineCtx, host: &dyn TurnHost) -> Vec<Appended> {
                             }
                         }
                     }
-                    host.publish_pending(&ctx.chat_id, &member, Pending::Done, &marker_id);
                     if capped {
                         // The turn ran partially and its spend is
                         // recorded; say so plainly so an abruptly short
