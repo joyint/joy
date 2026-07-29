@@ -267,42 +267,10 @@ fn establish_reader_seed(
     Ok(())
 }
 
-/// Bring the chat store up to date, if this caller can.
-///
-/// Chat migrations need a key, so they cannot ride the version sync the
-/// way joy-core's repo reconciles do (joy_chat_store::migrations). This
-/// is the place where a key is already established, so it is also the
-/// place where an old chat becomes readable for the apps again: they are
-/// served only the sealed shape and an unmigrated chat is simply absent
-/// there. Says what it did; a caller without a key sees the reminder
-/// instead, because doing nothing silently is how a chat disappears.
-fn migrate_chats(root: &std::path::Path) {
-    let waiting = joy_chat_store::migrations::pending(root).unwrap_or_default();
-    if waiting.is_empty() {
-        return;
-    }
-    let Some(seed) = joy_chat_store::writer::seed() else {
-        eprintln!(
-            "note: {} chat(s) still in the old storage shape; run a chat command \
-             with your passphrase to bring them over.",
-            waiting.len()
-        );
-        return;
-    };
-    match joy_chat_store::migrations::apply(root, &seed) {
-        Ok(done) if !done.is_empty() => {
-            eprintln!("migrated {} chat(s) to the sealed storage.", done.len());
-        }
-        Ok(_) => {}
-        Err(e) => eprintln!("warning: chat migration stopped: {e}"),
-    }
-}
-
 pub fn run(args: ChatArgs) -> Result<()> {
     let root = joy_core::store::find_project_root(&std::env::current_dir()?)
         .ok_or_else(|| anyhow::anyhow!("not inside a Joy project"))?;
     establish_reader_seed(&root, args.passphrase.as_deref(), args.passphrase_stdin)?;
-    migrate_chats(&root);
     // EVERY verb pulls first (JOY-022A-4D): reads see replies from the
     // platform and other members, and writes append on the ADOPTED
     // remote state — sealing under the chat's existing crypt epoch. A

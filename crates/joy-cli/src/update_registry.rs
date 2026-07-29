@@ -143,6 +143,7 @@ pub fn all() -> Vec<Box<dyn UpdateItem>> {
         Box::new(ProjectYamlSchemaItem),
         Box::new(AiMemberAdapterItem),
         Box::new(DocPathsMigrationItem),
+        Box::new(ChatStoreMigrationItem),
     ];
     for id in ai::tool_ids() {
         v.push(Box::new(AiToolItem { id }));
@@ -655,6 +656,51 @@ impl UpdateItem for DocPathsMigrationItem {
                 action: Some("pinned"),
             })
             .collect())
+    }
+}
+
+/// Chat-store migrations (see `joy_chat_store::migrations`): an older
+/// storage shape is brought into the sealed one.
+///
+/// No key is involved. Sealing wraps for the members' PUBLIC keys, so
+/// this runs at the version sync like every other reconcile, and whoever
+/// ran it still cannot read the chats afterwards. A chat that cannot be
+/// converted is named, never half-converted.
+struct ChatStoreMigrationItem;
+
+impl UpdateItem for ChatStoreMigrationItem {
+    fn section(&self) -> &'static str {
+        SECTION_AUTH
+    }
+    fn check(&self, root: &Path) -> Result<Vec<CheckRow>> {
+        let waiting = joy_chat_store::migrations::pending(root)?;
+        Ok(vec![CheckRow {
+            name: "chat storage".into(),
+            mark: RowMark::from_ok(waiting.is_empty()),
+            detail: if waiting.is_empty() {
+                "up to date".into()
+            } else {
+                format!("{} chat(s) in the old shape", waiting.len())
+            },
+        }])
+    }
+    fn refresh(&self, root: &Path) -> Result<Vec<RefreshRow>> {
+        let (done, skipped) = joy_chat_store::migrations::apply(root)?;
+        let mut rows = vec![RefreshRow {
+            name: "chat storage".into(),
+            action: if done.is_empty() {
+                None
+            } else {
+                Some("sealed")
+            },
+        }];
+        for s in skipped {
+            rows.push(RefreshRow {
+                name: format!("chat {}: {}", s.chat_id, s.why),
+                action: Some("left alone"),
+            });
+        }
+        Ok(rows)
     }
 }
 

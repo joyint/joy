@@ -9,15 +9,12 @@
 //! the product, and what an older version wrote must not quietly fall out
 //! of the app.
 //!
-//! One thing makes these different, and it decides the whole design: a
-//! chat migration WRITES A SEALED CHAT, so it needs the acting member's
-//! key. The version sync runs on every joy invocation and usually has no
-//! passphrase, so this module splits in two:
-//!
-//! - [`pending`] needs no key. It only reads the tree shape and says what
-//!   is waiting, so any command can mention it.
-//! - [`apply`] needs the seed and does the work. It runs where a key
-//!   already is, which today means an authenticated `joy chat` command.
+//! Neither half needs a key, and that is the point. Sealing wraps the
+//! epoch key for the MEMBERS' public keys; the private half is only ever
+//! needed to READ. So whoever holds the repository can bring an old chat
+//! into the current shape and still not be able to open it: the CLI does
+//! it at the version sync, the platform does it when it loads a project,
+//! and neither gains a way in.
 //!
 //! Each migration lives in a date-prefixed `m_<yyyy_mm>_<slug>.rs` module
 //! and is removable in one step once its window closes: delete the file
@@ -46,18 +43,33 @@ pub struct Applied {
     pub what: &'static str,
 }
 
+/// One chat a migration deliberately did NOT touch, and why. A chat that
+/// cannot be converted must stay as it is and be named, never be
+/// half-converted or silently emptied.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Skipped {
+    pub chat_id: String,
+    pub why: String,
+}
+
 /// What is waiting, without touching a key. Safe to call anywhere,
 /// including from a command that has no passphrase.
 pub fn pending(root: &Path) -> Result<Vec<Pending>, JoyError> {
     m_2026_07_sealed_chat_layout::pending(root)
 }
 
-/// Run every chat migration that this seed can run.
+/// Run every chat migration, and say what was converted and what was
+/// deliberately left alone.
 ///
-/// Idempotent: a chat that is already in the current shape is skipped, so
-/// calling this on every authenticated command costs a tree read.
-pub fn apply(root: &Path, seed: &[u8; 32]) -> Result<Vec<Applied>, JoyError> {
-    m_2026_07_sealed_chat_layout::apply(root, seed)
+/// No key: sealing wraps for the members' PUBLIC keys, so whoever holds
+/// the repository can convert a chat without being able to read it
+/// afterwards. That is what lets the platform do this by itself when a
+/// new version arrives.
+///
+/// Idempotent: a chat already in the current shape is not in the list, so
+/// calling this on every project load costs a tree read.
+pub fn apply(root: &Path) -> Result<(Vec<Applied>, Vec<Skipped>), JoyError> {
+    m_2026_07_sealed_chat_layout::apply(root)
 }
 
 #[cfg(test)]
@@ -115,9 +127,9 @@ mod tests {
 
     #[test]
     fn a_repository_without_chats_has_nothing_to_migrate() {
-        let (dir, seed) = project();
+        let (dir, _seed) = project();
         assert_eq!(pending(dir.path()).unwrap(), Vec::new());
-        assert_eq!(apply(dir.path(), &seed).unwrap(), Vec::new());
+        assert_eq!(apply(dir.path()).unwrap(), (Vec::new(), Vec::new()));
     }
 
     #[test]
@@ -135,8 +147,9 @@ mod tests {
             .unwrap()
             .is_none());
 
-        let done = apply(root, &seed).unwrap();
+        let (done, skipped) = apply(root).unwrap();
         assert_eq!(done.len(), 1);
+        assert!(skipped.is_empty(), "{skipped:?}");
 
         // now the transport serves it, the content survived, and nothing
         // is waiting any more
@@ -153,11 +166,51 @@ mod tests {
     }
 
     #[test]
+    fn a_chat_this_build_cannot_read_is_left_alone_and_named() {
+        // Between JOY-0218-E8 and the platform-key removal a message
+        // carried its ciphertext in a field this model no longer knows.
+        // Serde drops it, so the message reads as empty text. Sealing that
+        // would replace a chat nobody can read with an EMPTY chat everyone
+        // can read, which is worse than leaving it alone.
+        let (dir, _seed) = project();
+        let root = dir.path();
+        let at = "2026-07-19T00:00:01Z".parse().unwrap();
+        let mut chat = Chat::new(
+            "cccc0000cccc0000cccc0000cccc0000",
+            vec![MemberRef::new("horst@example.com")],
+            at,
+        );
+        chat.messages.push(ChatMessage {
+            id: "m1".into(),
+            at,
+            author: MemberRef::new("horst@example.com"),
+            text: String::new(),
+            kind: MessageKind::Text,
+            delegated_by: None,
+            turn_ms: None,
+            tool_steps: None,
+            tool: None,
+            payload: None,
+            details: None,
+        });
+        crate::chat_ref::save_chat(root, &chat).unwrap();
+
+        let (done, skipped) = apply(root).unwrap();
+        assert!(done.is_empty());
+        assert_eq!(skipped.len(), 1);
+        assert_eq!(skipped[0].chat_id, chat.id);
+        // …and it is still there, in the shape it was
+        assert!(crate::chat_ref::load_chat(root, &chat.id)
+            .unwrap()
+            .is_some());
+    }
+
+    #[test]
     fn running_it_again_changes_nothing() {
-        let (dir, seed) = project();
+        let (dir, _seed) = project();
         let root = dir.path();
         legacy_chat(root, "bbbb0000bbbb0000bbbb0000bbbb0000", "zweimal");
-        assert_eq!(apply(root, &seed).unwrap().len(), 1);
-        assert_eq!(apply(root, &seed).unwrap(), Vec::new());
+        assert_eq!(apply(root).unwrap().0.len(), 1);
+        assert_eq!(apply(root).unwrap(), (Vec::new(), Vec::new()));
     }
 }

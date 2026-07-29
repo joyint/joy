@@ -10,50 +10,83 @@
 //! the clear on the forge, which is the other half of why this must not
 //! wait for someone to happen to write into that chat.
 //!
-//! The conversion is the ordinary save: [`crate::chat_store::save`] drops
-//! the legacy subtree and writes the sealed one in the same commit, so
-//! this migration only has to find the chats and hand them over.
+//! Nobody needs a key for this. Sealing wraps the epoch key for the
+//! MEMBERS' public keys; the private half is only ever needed to READ.
+//! So whoever holds the repository can convert a chat and still not be
+//! able to open it afterwards, the platform included. That is what lets
+//! this run by itself when a new version arrives.
 
 use std::path::Path;
 
 use joy_core::error::JoyError;
 
-use super::{Applied, Pending};
+use super::{Applied, Pending, Skipped};
 
 const WHAT: &str = "seal the chat into keys/ + log/";
+const CANNOT: &str =
+    "written with the per-message encryption this build no longer reads; left untouched";
 
 /// The legacy chats, found without a key: the old reader only ever
 /// answers for a `meta.yaml` subtree, and a sealed chat has none.
-fn legacy(root: &Path) -> Result<Vec<String>, JoyError> {
-    Ok(crate::chat_ref::load_chats(root)?
-        .into_iter()
-        .map(|c| c.id)
-        .collect())
+fn legacy(root: &Path) -> Result<Vec<joy_chat::model::chat::Chat>, JoyError> {
+    crate::chat_ref::load_chats(root)
 }
+
+/// Whether a legacy chat can be converted at all.
+///
+/// Between JOY-0218-E8 and the platform-key removal, messages carried
+/// their ciphertext in an `enc` field that today's model does not know.
+/// Serde drops it, so such a message reads as empty text, and sealing it
+/// would replace a chat nobody can read with an EMPTY chat everybody can
+/// read. That is worse than leaving it alone, so it is left alone and
+/// named.
+fn readable(chat: &joy_chat::model::chat::Chat) -> bool {
+    !chat.messages.iter().any(|m| m.text.is_empty())
+}
+
+/// The writer tag a migration seals under.
+///
+/// `seal` derives a short tag from a seed to mark WHO wrote, and needs
+/// nothing else from it: recipients are wrapped with their PUBLIC keys.
+/// A migration is nobody in particular, so it writes under a fixed tag
+/// that says exactly that, and stays as unable to read the result as it
+/// was before. Nothing is protected by this value.
+const MIGRATION_WRITER: [u8; 32] = [0x6d; 32];
 
 pub(super) fn pending(root: &Path) -> Result<Vec<Pending>, JoyError> {
     Ok(legacy(root)?
         .into_iter()
-        .map(|chat_id| Pending {
-            chat_id,
+        .map(|chat| Pending {
+            chat_id: chat.id,
             what: WHAT,
         })
         .collect())
 }
 
-pub(super) fn apply(root: &Path, seed: &[u8; 32]) -> Result<Vec<Applied>, JoyError> {
+pub(super) fn apply(root: &Path) -> Result<(Vec<Applied>, Vec<Skipped>), JoyError> {
     let mut done = Vec::new();
-    for id in legacy(root)? {
-        // Read it the way every reader does, so the migration converts
-        // exactly what a person sees today and never a half-read chat.
-        let Some(chat) = crate::chats::load_chat(root, &id)? else {
+    let mut skipped = Vec::new();
+    for chat in legacy(root)? {
+        if !readable(&chat) {
+            skipped.push(Skipped {
+                chat_id: chat.id,
+                why: CANNOT.to_string(),
+            });
             continue;
-        };
-        crate::chat_store::save(root, &chat, seed)?;
-        done.push(Applied {
-            chat_id: id,
-            what: WHAT,
-        });
+        }
+        let id = chat.id.clone();
+        match crate::chat_store::save(root, &chat, &MIGRATION_WRITER) {
+            Ok(()) => done.push(Applied {
+                chat_id: id,
+                what: WHAT,
+            }),
+            // A project with no member key at all cannot be sealed for
+            // anyone; the chat stays as it is rather than half-converted.
+            Err(e) => skipped.push(Skipped {
+                chat_id: id,
+                why: e.to_string(),
+            }),
+        }
     }
-    Ok(done)
+    Ok((done, skipped))
 }
