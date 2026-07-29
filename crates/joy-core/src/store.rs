@@ -453,10 +453,8 @@ pub fn read_project(
             path: project_path.to_path_buf(),
             source: e,
         })?;
-    let (value, applied) = crate::migrations::project_yaml::apply(value);
-    // Only the legacy-auth rename earns the warning: a backfilled adapter
-    // pin on a fresh project is not "before v0.12" (JOY-0240-97).
-    if applied.legacy_auth {
+    let (value, migrated) = crate::migrations::project_yaml::apply(value);
+    if migrated {
         warn_legacy_schema_once();
     }
     serde_yaml_ng::from_value(value).map_err(|e| JoyError::YamlParse {

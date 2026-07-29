@@ -18,37 +18,19 @@ use serde_yaml_ng::Value;
 /// Returns the (possibly transformed) value plus a flag indicating
 /// whether any migration produced a change. Callers use the flag to
 /// decide whether to emit a deprecation warning.
-/// What [`apply`] did to the value, split by what the caller should say.
-///
-/// One combined flag made the read-time warning lie: a BRAND-NEW project
-/// whose AI member merely got its adapter pin backfilled warned about
-/// "legacy auth field names from before v0.12" on every invocation and
-/// sent people to `joy update` for nothing (JOY-0240-97). The warning
-/// belongs to the legacy-rename alone; `joy update` still persists on ANY
-/// change.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Applied {
-    /// The pre-v0.12 auth field names were rewritten — the one change the
-    /// read-time warning speaks about.
-    pub legacy_auth: bool,
-    /// Anything changed at all — what `joy update` persists.
-    pub any: bool,
-}
-
-pub fn apply(value: Value) -> (Value, Applied) {
+pub fn apply(value: Value) -> (Value, bool) {
     let mut value = value;
-    let mut applied = Applied::default();
+    let mut changed = false;
 
     let (v, c) = m_2026_04_rename_auth_fields::migrate(value);
     value = v;
-    applied.legacy_auth |= c;
-    applied.any |= c;
+    changed |= c;
 
     let (v, c) = m_2026_07_ai_member_adapter::migrate(value);
     value = v;
-    applied.any |= c;
+    changed |= c;
 
-    (value, applied)
+    (value, changed)
 }
 
 #[cfg(test)]
