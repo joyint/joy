@@ -506,6 +506,15 @@ impl<K: std::hash::Hash + Eq + Clone> LaneSet<K> {
             .remove(key);
     }
 
+    /// Forget every lane whose key fails the predicate (the desktop drops
+    /// a whole project's lanes when the person leaves it).
+    pub fn retain(&self, mut keep: impl FnMut(&K) -> bool) {
+        self.lanes
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .retain(|key, _| keep(key));
+    }
+
     /// The live lane sender, (re)spawning when absent, stale-keyed,
     /// closed, or when the caller forces it after a failed attempt.
     fn lane(
