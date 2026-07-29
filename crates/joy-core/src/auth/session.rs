@@ -593,6 +593,13 @@ pub fn project_id_of(project: &crate::model::Project) -> String {
         .unwrap_or_else(|| project.name.to_lowercase().replace(' ', "-"))
 }
 
+/// The OS state base directory, publicly: hosts park per-tool agent
+/// state (JI-017A-85 state_env) next to joy's own sessions instead of
+/// re-deriving the platform rules.
+pub fn state_base_dir() -> Result<PathBuf, JoyError> {
+    dirs_state_dir()
+}
+
 pub(super) fn dirs_state_dir() -> Result<PathBuf, JoyError> {
     // State dir: $XDG_STATE_HOME, else on Windows %LOCALAPPDATA%
     // (fallback %USERPROFILE%\AppData\Local), else on Unix $HOME/.local/state.
