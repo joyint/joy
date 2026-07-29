@@ -96,8 +96,8 @@ pub const ADAPTERS: &[AdapterSpec] = &[
         entrypoint: "qwen --acp",
         probe: "qwen",
         key_env: Some("OPENAI_API_KEY"),
-        model_env: None,
-        state_env: None,
+        model_env: Some("OPENAI_MODEL"),
+        state_env: Some("QWEN_DIR"),
         install_hint: "Install Qwen Code (npm i -g @qwen-code/qwen-code) and sign in there",
     },
 ];
