@@ -72,6 +72,10 @@ pub enum Usability {
     Usable,
     /// Platform: the sender has no usable API key for this member.
     NoKey,
+    /// Platform: the sender has not delegated to this member, so a turn
+    /// could not act under their name. The AI never acts under anyone
+    /// else's (operator rule, 2026-07-29: no exception).
+    NotDelegated,
     /// Desktop: the tool is not installed on this machine.
     NotInstalled {
         hint: String,
@@ -437,6 +441,11 @@ pub fn usability_notice(alias: &str, usability: &Usability, ctx: &EngineCtx) -> 
         Usability::Usable => None,
         Usability::NoKey => Some(format!(
             "@{alias} is not configured for {}. An API key in Settings makes it usable.",
+            ctx.sender
+        )),
+        Usability::NotDelegated => Some(format!(
+            "@{alias} is not delegated by {}. Delegate in Settings → AI members, \
+             then it can act for you.",
             ctx.sender
         )),
         Usability::NotInstalled { hint } => {
