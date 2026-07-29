@@ -453,25 +453,18 @@ pub fn read_project(
             path: project_path.to_path_buf(),
             source: e,
         })?;
-    let (value, migrated) = crate::migrations::project_yaml::apply(value);
-    if migrated {
-        warn_legacy_schema_once();
-    }
+    // Migrations run implicitly and SILENTLY (JOY-0240-97): the person is
+    // never sent to project.yaml — they are not supposed to see that file
+    // at all. `joy update` persists the migrated form when it runs; until
+    // then every read serves the migrated view without a word. The former
+    // read-time warning also fired on fresh projects whose AI member
+    // merely got its adapter pin backfilled, nagging about "legacy auth
+    // field names" that never existed.
+    let (value, _migrated) = crate::migrations::project_yaml::apply(value);
     serde_yaml_ng::from_value(value).map_err(|e| JoyError::YamlParse {
         path: project_path.to_path_buf(),
         source: e,
     })
-}
-
-fn warn_legacy_schema_once() {
-    use std::sync::Once;
-    static WARN: Once = Once::new();
-    WARN.call_once(|| {
-        eprintln!(
-            "warning: project.yaml uses legacy auth field names from before v0.12; \
-             run `joy update` to normalise. Legacy support will be removed in v0.13."
-        );
-    });
 }
 
 /// Load the full project metadata from project.yaml under the given
