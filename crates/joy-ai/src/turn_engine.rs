@@ -291,7 +291,7 @@ pub fn run_chat_turns(ctx: &EngineCtx, host: &dyn TurnHost) -> Vec<Appended> {
                     // opens (JI-014A): a budget refusal must not flash a
                     // waiting indicator.
                     if let Preflight::BudgetExhausted = host.preflight(&member) {
-                        let note = budget_notice(&alias);
+                        let note = budget_notice(alias);
                         if !chat_turns::recently_noticed(&chat, &note)
                             && host.append(&ctx.chat_id, notice(&member, note)).is_ok()
                         {

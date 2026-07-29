@@ -15,5 +15,6 @@ pub mod chat_ref;
 pub mod chat_state;
 pub mod chat_store;
 pub mod chats;
+pub mod migrations;
 pub mod turn_meta;
 pub mod writer;
