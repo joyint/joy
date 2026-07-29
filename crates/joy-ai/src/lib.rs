@@ -6,6 +6,8 @@
 
 #![deny(clippy::all)]
 
+#[cfg(feature = "acp")]
+pub mod acp_lane;
 pub mod activity;
 pub mod adapters;
 pub mod ai_setup;
