@@ -436,6 +436,12 @@ When an AI runs a Joy command, it authenticates with the delegation token you ha
 
 AI members have the same capabilities as human members, with one exception: **AI members cannot perform manage actions** (adding members, changing capabilities, modifying project settings). Management stays with humans.
 
+### Chats, Sealing, and the Delegate Button
+
+Team chats live in the repository (`refs/joy/chats`) and are **always sealed**: every message is encrypted for the chat's participants with their member keys, on the writing device. A clone without an identity cannot persist a chat at all (`joy auth init` first). The Joyint platform never holds a chat key - it stores and transports sealed bytes; reading and writing happen in your app, with your unlocked seed. The same chat opens identically in the web app and the desktop app.
+
+An AI answers in a chat **only under an explicit delegation from the person addressing it**. In the apps, delegation is a button: open the AI member's card in Settings, press **Delegate**, and confirm with your own passphrase - that mints the delegation token behind the scenes. **Undelegate** revokes it immediately, running sessions included. Without your delegation, the AI does not appear in your @mention suggestions, and a mention typed anyway gets a refusal notice instead of a turn. Whatever a delegated AI does - chat replies, items, commits - is recorded as the AI member acting `delegated-by` you, never under your identity and never under an invented one.
+
 ### Keeping Instructions Current
 
 You usually do not have to run anything explicitly. Every joy invocation
