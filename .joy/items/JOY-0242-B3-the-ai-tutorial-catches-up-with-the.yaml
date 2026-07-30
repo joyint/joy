@@ -1,7 +1,7 @@
 id: JOY-0242-B3
 title: The AI tutorial catches up with the sealed-and-delegated world
 type: task
-status: in-progress
+status: review
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -10,9 +10,11 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-30T06:00:23.078771790Z
-updated: 2026-07-30T06:06:25.713506179Z
+updated: 2026-07-30T06:18:46.320125657Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-07-30T06:06:25.713506179Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-30T06:18:46.320125657Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'The tutorial (and the website docs, tracked separately) still describe the pre-JI-0174 world: server-side chat reading, job-bound platform sessions, removed flags. Rewrite the affected sections to today''s truth: chats are ALWAYS sealed (no identity, no persisted chat), the platform holds no key and reads no chat, an AI acts only under an explicit delegation (Delegate/Undelegate on the member card), sessions come from redeemed delegation tokens, and adapter ids are the tool names. Terse, scannable, memorable - the tutorial''s style rule.'
