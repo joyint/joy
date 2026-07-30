@@ -169,7 +169,7 @@ Other errors:
 Expired              # ask the operator for a fresh token
 Wrong project        # token is from another project; ask for one here, or use -w <path>
 Bad signature        # token is corrupted; ask for a new one
-encrypted, no access # ask the operator for: joy auth token add <YOUR-ID> --crypt
+encrypted, no access # an old token without crypt scope; ask the operator for a fresh `joy auth token add <YOUR-ID>` (tokens carry the crypt scope since JI-0175-B0)
 ```
 
 Most joy commands accept `--json` for structured output. Use it to extract specific fields; the human-readable default works well for general reading.

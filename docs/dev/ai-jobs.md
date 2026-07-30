@@ -20,14 +20,16 @@ the `m_2026_07_remove_ai_jobs` repo migration removes any leftover.
 
 ## AI members carry their own execution config
 
-An AI member is a project member whose id is `ai:<tool>@joy` (see the
-canonical naming rules in `joy_ai::naming`). How the member runs — which
-ACP **adapter** drives it (`claude-code` | `mistral-vibe` | `qwen-code` |
-`copilot` | `mock`) — is recorded on the `project.yaml` member itself, so
-the platform can route turns without a per-member file. Provider API keys
-are **not** in the repo: platform keys live in the platform database
-(account-scoped), and locally run tools use their own subscription or
-environment.
+An AI member is a project member whose id is `ai:<tool>@joy`. How the
+member runs — which ACP **adapter** drives it — is recorded on the
+`project.yaml` member itself, so a host can route turns without a
+per-member file. Since JOY-0231-74 the adapter id IS the tool name
+(`vibe` | `claude` | `qwen`; `mock` is the test agent), and every
+adapter fact (entrypoint, key/model/state env, probe, install hint)
+lives in THE registry, `joy_ai::adapters` — one row per tool, shared by
+the desktop and the platform (JI-017A-85). Provider API keys are **not**
+in the repo: the platform stores them account-scoped in its database,
+and locally run tools use their own subscription or environment.
 
 The legacy execution-config store at `.joy/ai/agents/<member>.yaml` is
 retired; the `m_2026_07_remove_ai_agents` repo migration removes any
