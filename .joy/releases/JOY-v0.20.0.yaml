@@ -1,0 +1,124 @@
+version: v0.20.0
+date: 2026-07-31
+previous: v0.19.0
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 253
+  items: 55
+items:
+  epics:
+  - id: JOY-01B9-53
+    title: Pseudonymized member identity (privacy mode) — ADR-042
+  - id: JOY-021F-E2
+    title: Interaction Levels 2.0 in joy (JI-0166-D8)
+  stories:
+  - id: JOY-0210-E1
+    title: 'Chat model: tool snapshot messages, turn details, unknown mentions'
+  - id: JOY-0212-4D
+    title: 'Member model: repo-stored provider keys (pairwise wraps)'
+  - id: JOY-0190-D0
+    title: Sign Windows release binaries and ship WinGet manifest
+  - id: JOY-01FC-4B
+    title: Chat persistence on refs/joy/chats in joy-core
+  - id: JOY-0200-84
+    title: job item type, .joy/jobs/ store and ACRONYM-JOB id scheme
+  - id: JOY-0201-9B
+    title: 'job payload field: scope, budget, window, attempts'
+  - id: JOY-0202-58
+    title: jobs capability and job gate defaults
+  - id: JOY-0203-CC
+    title: 'stop verb: in-progress -> open for any item'
+  - id: JOY-0204-F2
+    title: 'CLI grammar: add job scope positional, edit scope/budget/window'
+  - id: JOY-0205-28
+    title: 'views: joy ls -J, joy board -J, show sections'
+  - id: JOY-0206-C6
+    title: 'close semantics: separate job and item acceptance'
+  - id: JOY-020B-D2
+    title: platform-issued job-bound joy sessions for sandboxed agents
+  - id: JOY-020C-A3
+    title: 'feedback axis on jobs: awaited/received dialog state'
+  - id: JOY-0218-E8
+    title: Per-chat content encryption (ADR JAPP-002A-30 core)
+  - id: JOY-0226-27
+    title: 'joy chat ls: last column and --mine mention inbox'
+  tasks:
+  - id: JOY-0207-DC
+    title: 'repo migration: remove legacy .joy/ai job records'
+  - id: JOY-0209-7A
+    title: 'tutorials: job type in human and AI tutorial'
+  - id: JOY-020A-C5
+    title: JOY_WORKING_DIR env backing for -w/--working-dir
+  - id: JOY-020E-E6
+    title: 'chat record: per-delegator agent mode overrides and effective-mode resolution (JAPP-00F3-E8)'
+  - id: JOY-020F-34
+    title: joy ai reset does not recognize platform-written agent config
+  - id: JOY-0213-50
+    title: Team provider keys follow member changes
+  - id: JOY-0214-E1
+    title: Crypt zone grant to the platform
+  - id: JOY-0215-44
+    title: 'Hygiene rule 0: an order is an order, the AI never defers on its own'
+  - id: JOY-0216-ED
+    title: chat_turns::delta_prompt for live agent sessions
+  - id: JOY-0220-CE
+    title: Shrink InteractionLevel to three values, keys mode -> level
+  - id: JOY-0221-09
+    title: joy update migration for Interaction Levels 2.0
+  - id: JOY-0222-4E
+    title: joy ai setup enforces levels as native agent modes
+  - id: JOY-0223-D7
+    title: 'Decision hygiene: supersede JOY-0047, amend JOY-01DA-E1 and JOY-01DB-B1'
+  - id: JOY-0228-8C
+    title: Chat override stores an interaction level (joy-chat, joy-ai follow-through)
+  - id: JOY-0227-5E
+    title: Chat verbs sync refs/joy/chats with the forge
+  - id: JOY-022D-DC
+    title: last-manager rule counts only enrolled members
+  - id: JOY-0231-74
+    title: Collapse adapter ids onto the tool names
+  - id: JOY-0242-B3
+    title: The AI tutorial catches up with the sealed-and-delegated world
+  - id: JOY-0245-03
+    title: ACP lane sets the pinned model per session
+  bugs:
+  - id: JOY-0211-8A
+    title: CLI edits replay no-op values into history and swap the last editor
+  - id: JOY-021B-8C
+    title: Token redemption displaces concurrent AI sessions
+  - id: JOY-01CD-D5
+    title: joy ai reset silently removes an in-use AI member from project.yaml
+  - id: JOY-0217-F1
+    title: Canonical AI member naming must be one shared rule
+  - id: JOY-0219-CC
+    title: Chat rename must not bump the recency sort
+  - id: JOY-021A-C1
+    title: A follow-up right after the AI's reply gets no answer
+  - id: JOY-0224-33
+    title: git_detect_forge assumes the checkout lives on GitHub
+  - id: JOY-0229-B3
+    title: Level-change notice reads as if it switched the AI for everyone
+  - id: JOY-022A-4D
+    title: chat write verbs append before adopting the forge state and fork the chat crypt epoch
+  - id: JOY-022C-16
+    title: unread_count counts the member's own messages
+  - id: JOY-022B-19
+    title: chats sealed without the platform custodian stay unreadable for the platform; no healing for non-active or foreign epochs
+  - id: JOY-0232-35
+    title: AI members registered before the adapter pin carry none
+  - id: JOY-0239-02
+    title: AI answers although the new message addresses someone else
+  - id: JOY-023A-4B
+    title: A turn with an empty answer produces nothing at all
+  - id: JOY-0240-97
+    title: A brand-new project warns about legacy auth fields
+  reworks:
+  - id: JOY-0225-22
+    title: Rename joy chat list to ls
+  - id: JOY-0243-DC
+    title: Remove unasked backwards-compat paths; only official migrations remain
+  decisions:
+  - id: JOY-013F-33
+    title: Switch AI delegations to passphrase-derived keys
+  - id: JOY-0244-9E
+    title: 'ADR: Transitional schema compatibility lives only in src/migrations'

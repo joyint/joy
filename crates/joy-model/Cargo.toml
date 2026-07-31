@@ -1,6 +1,6 @@
 [package]
 name = "joy-model"
-version = "0.19.0"
+version = "0.20.0"
 edition = "2021"
 license = "MIT"
 description = "The small shared types of Joy: member references and interaction levels"

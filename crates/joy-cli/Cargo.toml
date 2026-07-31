@@ -1,6 +1,6 @@
 [package]
 name = "joy-cli"
-version = "0.19.0"
+version = "0.20.0"
 edition = "2021"
 license = "MIT"
 description = "CLI for Joy product management - Git-native, terminal-first"
@@ -13,10 +13,10 @@ name = "joy"
 path = "src/main.rs"
 
 [dependencies]
-joy-core = { version = "0.19.0", path = "../joy-core", features = ["tutorial"] }
-joy-chat = { version = "0.19.0", path = "../joy-chat" }
-joy-chat-store = { version = "0.19.0", path = "../joy-chat-store" }
-joy-ai = { version = "0.19.0", path = "../joy-ai" }
+joy-core = { version = "0.20.0", path = "../joy-core", features = ["tutorial"] }
+joy-chat = { version = "0.20.0", path = "../joy-chat" }
+joy-chat-store = { version = "0.20.0", path = "../joy-chat-store" }
+joy-ai = { version = "0.20.0", path = "../joy-ai" }
 joy-crypt = { workspace = true }
 minijinja = { workspace = true }
 clap = { workspace = true }

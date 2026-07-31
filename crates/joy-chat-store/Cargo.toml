@@ -1,6 +1,6 @@
 [package]
 name = "joy-chat-store"
-version = "0.19.0"
+version = "0.20.0"
 edition = "2021"
 license = "MIT"
 description = "Git storage for Joy's sealed chats: blobs, trees and the chats ref"
@@ -8,8 +8,8 @@ repository = "https://github.com/joyint/joy"
 homepage = "https://joyint.com/en/joy"
 
 [dependencies]
-joy-chat = { version = "0.19.0", path = "../joy-chat" }
-joy-core = { version = "0.19.0", path = "../joy-core" }
+joy-chat = { version = "0.20.0", path = "../joy-chat" }
+joy-core = { version = "0.20.0", path = "../joy-core" }
 joy-model = { workspace = true }
 joy-crypt = { workspace = true }
 serde = { workspace = true }
