@@ -1,7 +1,7 @@
 id: JOY-0239-02
 title: AI answers although the new message addresses someone else
 type: bug
-status: review
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -11,13 +11,8 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-27T10:04:26.778584171Z
-updated: 2026-07-27T10:40:52.859037371Z
+updated: 2026-07-31T18:44:44.902907021Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history:
-- date: 2026-07-27T10:27:32.787928650Z
-  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-- date: 2026-07-27T10:40:52.859037371Z
-  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Operator validation 2026-07-26: in a chat with several participants, an AI answered a message that explicitly mentioned somebody else. Cause: joy_ai::chat_turns::decide lets an AI take the turn on two conditions, solo (one human, one AI) and follow_up (the last other text author was this AI), and NEITHER of them looks at whether the new message mentions a different member. A mention of someone else does not stop the previous speaker from answering. Operator rule 2026-07-27, replacing both branches: no matter whether the chat is 1:1 or n:n, a new message that does NOT start with an @mention always belongs to the sender of the last message; if that was an AI member, that AI answers, and only that one. No other logic, no other rule. A message that DOES start with a mention goes to the mentioned member. This is not a stricter rule but a clearer one, and it removes the solo/follow_up special cases entirely.'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com

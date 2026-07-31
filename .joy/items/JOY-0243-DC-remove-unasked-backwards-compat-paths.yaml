@@ -1,7 +1,7 @@
 id: JOY-0243-DC
 title: Remove unasked backwards-compat paths; only official migrations remain
 type: rework
-status: review
+status: closed
 priority: critical
 assignees:
 - member: ai:claude@joy
@@ -11,6 +11,6 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-31T12:35:42.035776800Z
-updated: 2026-07-31T12:35:57.879805586Z
+updated: 2026-07-31T18:44:45.406269405Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'joy-repo share of the operator-ordered cross-repo purge (2026-07-31; umbrella record JI-017F-D9). Done in commits 3f87f78 (adapter registry resolves exact tool ids only; the legacy table lives solely inside the official silent project.yaml migration; template data renamed; qwen-code probe fallback gone), fa9f7d9 (app settings read only the current shape), 00d504a (session claims strict: token_key renamed delegation_key, dead platform-key-era job_id/issuer claims removed, every AI session must carry its delegation binding and delegated_by or is rejected by name), bd7e9c8 + follow-ups (item history: first strict-with-backfill, then corrected per decision JOY-0175-9B to DERIVED from the event log; stored history dropped from the model, joy show/proto/DTO join the log), 0b953f1 (sealed layout is the only chat storage; plaintext meta.yaml writer, field-level chat merge and read fallbacks gone; the sealing migration keeps the one private legacy reader), b87703e (joy log ITEM positional, id-exact log filter for short and full ids, strip-on-save as item_yaml on-read migration instead of a mass sweep). Booked retroactively: the sessions had expired when the order landed.'

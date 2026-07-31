@@ -1,7 +1,7 @@
 id: JOY-0245-03
 title: ACP lane sets the pinned model per session
 type: task
-status: review
+status: closed
 priority: critical
 assignees:
 - member: ai:claude@joy
@@ -10,6 +10,6 @@ capabilities:
 effort: 1
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-31T13:30:28.338130320Z
-updated: 2026-07-31T13:30:46.646544339Z
+updated: 2026-07-31T18:44:45.678470007Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Platform bug JP-00B8-4B: a changed model pin never reached the running turn — the spawn env only suggests a default, and an agent with persisted per-chat state (vibe) keeps its previously active model. The lane machine now carries the pin in LaneConfig.model and sets it on every session it creates (chat sessions and single rounds) via session/set_config_option, config id model; a refused pin is a loud error. list_models stays unpinned.'
