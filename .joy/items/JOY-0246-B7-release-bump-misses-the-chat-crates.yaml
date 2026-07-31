@@ -1,0 +1,16 @@
+id: JOY-0246-B7
+title: 'Release bump misses the chat crates: version-files list incomplete'
+type: bug
+status: in-progress
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-31T19:36:10.396029053Z
+updated: 2026-07-31T19:36:59.843847252Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'just release-all minor failed: joy release bump rewrote joy-core, joy-cli and joy-ai but left joy-model, joy-chat and joy-chat-store at 0.19.0, so the Cargo.lock refresh could not resolve joy-chat ^0.20.0 and the release aborted mid-way (platform and the umbrella failed downstream). release.version-files in .joy/project.yaml never learned the crates added since: crates/joy-model/Cargo.toml, crates/joy-chat/Cargo.toml, crates/joy-chat-store/Cargo.toml, plus the workspace root Cargo.toml which pins joy-model as a workspace dependency. Fix: add the four files via joy release version-files add.'
