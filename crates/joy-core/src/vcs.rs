@@ -452,6 +452,24 @@ pub fn gh_create_release(
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
+/// Replace the notes of an existing GitHub release. Used when the
+/// release was created by the forge workflow from the tag push and
+/// therefore lacks the changelog (JOY-0248-AE).
+pub fn gh_edit_release_notes(root: &Path, tag: &str, notes: &str) -> Result<(), JoyError> {
+    let output = Command::new("gh")
+        .args(["release", "edit", tag, "--notes", notes])
+        .current_dir(root)
+        .output()
+        .map_err(|e| JoyError::Git(format!("failed to run gh release edit: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(JoyError::Git(format!("gh release edit failed: {stderr}")));
+    }
+
+    Ok(())
+}
+
 /// Default VCS provider. Returns the Git implementation.
 pub fn default_vcs() -> GitVcs {
     GitVcs

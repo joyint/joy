@@ -58,17 +58,26 @@ impl ForgeRelease for GitHubForge {
 
         // Idempotent: a release may already exist if an earlier
         // `just publish` made it and the subsequent push failed, or
-        // if the forge workflow created it from a tag push. In both
-        // cases the release is already there and we should surface
-        // its URL instead of erroring out.
+        // if the forge workflow created it from a tag push. The
+        // release is then already there, but the forge workflow only
+        // writes its installer section (JOY-0248-AE: v0.20.0 shipped
+        // without a changelog that way), so the notes still have to
+        // land: prepend them unless a prior run already did.
         let existing = std::process::Command::new("gh")
-            .args(["release", "view", tag, "--json", "url", "--jq", ".url"])
+            .args(["release", "view", tag, "--json", "url,body"])
             .current_dir(root)
             .output();
         if let Ok(output) = existing {
             if output.status.success() {
-                let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                let parsed: serde_json::Value =
+                    serde_json::from_slice(&output.stdout).unwrap_or_default();
+                let url = parsed["url"].as_str().unwrap_or("").to_string();
                 if !url.is_empty() {
+                    let body = parsed["body"].as_str().unwrap_or("");
+                    if !body.contains(notes.trim()) {
+                        let combined = format!("{}\n\n{}", notes.trim_end(), body);
+                        vcs::gh_edit_release_notes(root, tag, &combined)?;
+                    }
                     return Ok(Some(url));
                 }
             }
