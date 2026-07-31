@@ -26,3 +26,6 @@
 2026-07-31T19:40:17.989Z project guard.denied "AI member ai:claude@joy cannot perform manage actions" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-07-31T19:40:18.016Z project guard.denied "AI member ai:claude@joy cannot perform manage actions" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-07-31T19:40:18.042Z project guard.denied "AI member ai:claude@joy cannot perform manage actions" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-31T19:46:29.660Z project guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-07-31T19:47:32.389Z JOY-0246-B7 comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-31T19:47:32.469Z JOY-0246-B7 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

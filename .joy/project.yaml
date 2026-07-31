@@ -138,3 +138,7 @@ release:
   - crates/joy-core/Cargo.toml
   - crates/joy-cli/Cargo.toml
   - crates/joy-ai/Cargo.toml
+  - Cargo.toml
+  - crates/joy-model/Cargo.toml
+  - crates/joy-chat/Cargo.toml
+  - crates/joy-chat-store/Cargo.toml
