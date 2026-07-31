@@ -15,9 +15,9 @@
 //!     reach: { ... }                 # app-only, ignored here
 //! ```
 //!
-//! Read-compat: a pre-2.0 file carries `mode:` with agent-mode names
-//! (`plan | accept-edits | autonomous`); both the key and the values are
-//! accepted on read and the app rewrites the new form on its next save.
+//! Exactly this shape is read. The pre-2.0 spelling (`mode:` with
+//! agent-mode names) is not: an old file simply yields the default
+//! level until the app saves it again in the current form.
 
 use std::path::Path;
 
@@ -36,11 +36,8 @@ pub fn participant_default_level(root: &Path, member: &str) -> Option<Interactio
     // sibling entry never hides the one asked for.
     let doc: serde_yaml_ng::Value = serde_yaml_ng::from_str(&raw).ok()?;
     let participant = doc.get("participants")?.get(member)?;
-    let value = participant
-        .get("interaction-level")
-        .or_else(|| participant.get("mode"))?
-        .as_str()?;
-    joy_chat::model::interaction::parse_level_compat(value)
+    let value = participant.get("interaction-level")?.as_str()?;
+    value.parse().ok()
 }
 
 #[cfg(test)]
@@ -78,17 +75,14 @@ mod tests {
     }
 
     #[test]
-    fn reads_the_legacy_mode_key_and_values() {
-        // A pre-2.0 file: key `mode`, agent-mode names.
+    fn the_pre_2_0_mode_key_yields_no_level() {
+        // An old file falls back to the default until the app rewrites it.
         let dir = tempfile::tempdir().unwrap();
         write_app_yaml(
             dir.path(),
             "participants:\n  ai:claude@joy:\n    mode: accept-edits\n",
         );
-        assert_eq!(
-            participant_default_level(dir.path(), "ai:claude@joy"),
-            Some(InteractionLevel::Confirmed)
-        );
+        assert_eq!(participant_default_level(dir.path(), "ai:claude@joy"), None);
     }
 
     #[test]
