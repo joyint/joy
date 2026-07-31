@@ -18,12 +18,11 @@ Timestamps are displayed in your local timezone.
 
 Examples:
   joy log                     Show last 20 events
+  joy log JOY-0001            Events of one item (short or full ID)
   joy log --limit 50          Show last 50 events
-  joy log --item JOY-0001     Filter by item ID
   joy log --since 7d          Show events from last 7 days")]
 pub struct LogArgs {
-    /// Filter by item ID (e.g. JOY-0001)
-    #[arg(long)]
+    /// Item ID to filter by (short or full form), like joy show
     item: Option<String>,
 
     /// Show changes since duration (e.g. 7d, 2w, 30d)

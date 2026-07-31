@@ -294,7 +294,7 @@ Joy maintains a structured event log that records every state-changing action au
 ```sh
 joy log                          # Last 20 events
 joy log --since 7d               # Last 7 days
-joy log --item CB-0005           # Events for a specific item
+joy log CB-0005                  # Events for a specific item
 joy log --limit 50               # Show more entries
 ```
 

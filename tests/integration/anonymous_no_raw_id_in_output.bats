@@ -77,7 +77,7 @@ _member_id() {
     joy assign "$id" >/dev/null
 
     # The assignee recorded in the event details (not just the actor) resolves.
-    run joy log --item "$id"
+    run joy log "$id"
     [ "$status" -eq 0 ]
     [[ "$output" == *"item.assigned"* ]]
     [[ "$output" != *"m-"* ]]

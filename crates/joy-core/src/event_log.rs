@@ -200,6 +200,18 @@ pub struct LogEntry {
     pub user: crate::member_ref::MemberRef,
 }
 
+/// Whether a log target is the item the filter names. Ids have a short
+/// form (JOY-0031 for JOY-0031-XY) that every command accepts, so the
+/// rule is id-exact, never substring: the target IS the filter, or
+/// continues it with the `-` before the hash suffix. The number is
+/// unique per repo, so nothing foreign can match.
+fn id_matches(target: &str, filter: &str) -> bool {
+    target == filter
+        || (target.len() > filter.len()
+            && target.starts_with(filter)
+            && target.as_bytes()[filter.len()] == b'-')
+}
+
 /// Read events from .joy/log/ files, newest first.
 pub fn read_events(
     root: &Path,
@@ -250,7 +262,7 @@ pub fn read_events(
         for line in content.lines() {
             if let Some(entry) = parse_log_line(line) {
                 if let Some(filter) = item_filter {
-                    if !entry.target.contains(filter) {
+                    if !id_matches(&entry.target, filter) {
                         continue;
                     }
                 }
@@ -748,5 +760,20 @@ mod tests {
         assert!(!is_valid_timestamp(">"));
         assert!(!is_valid_timestamp("not-a-timestamp"));
         assert!(!is_valid_timestamp("2026"));
+    }
+}
+
+#[cfg(test)]
+mod id_match_tests {
+    use super::id_matches;
+
+    #[test]
+    fn short_and_full_ids_match_their_item_and_nothing_else() {
+        assert!(id_matches("JOY-0031-XY", "JOY-0031"));
+        assert!(id_matches("JOY-0031-XY", "JOY-0031-XY"));
+        assert!(id_matches("JOY-0031", "JOY-0031"));
+        assert!(!id_matches("JOY-0310-AB", "JOY-0031"));
+        assert!(!id_matches("JOY-0031-XY", "JOY-003"));
+        assert!(!id_matches("XJOY-0031-XY", "JOY-0031"));
     }
 }

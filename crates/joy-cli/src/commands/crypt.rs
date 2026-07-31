@@ -272,7 +272,7 @@ fn run_add(zone: &str, target: &str, passphrase: Option<&str>, stdin: bool) -> R
 
     if looks_like_item_id(target) {
         let item_path = joy_core::items::find_item_file(&unlocked.root, target)?;
-        let mut item: joy_core::model::item::Item = store::read_yaml(&item_path)?;
+        let mut item = joy_core::items::read_item_file(&item_path)?;
         if item.crypt_zone.as_deref() == Some(zone) {
             println!("{} is already in zone '{}'.", target, zone);
             return Ok(());
@@ -678,7 +678,7 @@ fn run_rm(zone: &str, target: &str, passphrase: Option<&str>, stdin: bool) -> Re
         // ciphertext blob before parsing.
         unlocked.install_zone_key();
         let item_path = joy_core::items::find_item_file(&unlocked.root, target)?;
-        let mut item: joy_core::model::item::Item = store::read_yaml(&item_path)?;
+        let mut item = joy_core::items::read_item_file(&item_path)?;
         match item.crypt_zone.as_deref() {
             Some(z) if z == zone => {
                 item.crypt_zone = None;

@@ -134,6 +134,20 @@ pub struct LockedItem {
 /// items whose zone key is currently active are returned as `Item`;
 /// items in zones without an active key are returned as
 /// [`LockedItem`] placeholders. See JOY-0174-D3.
+/// Read one item file: YAML (decrypting a JOYCRYPT blob inside
+/// `store::read_yaml`), then the item schema migrations
+/// (`migrations::item_yaml`), then the strict typed model. Every item
+/// read goes through here, so the model never needs a tolerant field;
+/// the migrated form persists when the item is next saved.
+pub fn read_item_file(path: &Path) -> Result<Item, JoyError> {
+    let value: serde_yaml_ng::Value = store::read_yaml(path)?;
+    let (value, _migrated) = crate::migrations::item_yaml::apply(value);
+    serde_yaml_ng::from_value(value).map_err(|e| JoyError::YamlParse {
+        path: path.to_path_buf(),
+        source: e,
+    })
+}
+
 pub fn load_items_with_locked(root: &Path) -> Result<(Vec<Item>, Vec<LockedItem>), JoyError> {
     let mut metas = list_item_metadata(root)?;
     metas.sort_by(|a, b| a.path.file_name().cmp(&b.path.file_name()));
@@ -150,7 +164,7 @@ pub fn load_items_with_locked(root: &Path) -> Result<(Vec<Item>, Vec<LockedItem>
                 continue;
             }
         }
-        let item: Item = store::read_yaml(&meta.path)?;
+        let item = read_item_file(&meta.path)?;
         items.push(item);
     }
 
@@ -185,7 +199,7 @@ pub fn load_jobs(root: &Path) -> Result<Vec<Item>, JoyError> {
                 continue;
             }
         }
-        let item: Item = store::read_yaml(&meta.path)?;
+        let item = read_item_file(&meta.path)?;
         jobs.push(item);
     }
     Ok(jobs)
@@ -761,7 +775,7 @@ fn extract_full_id(filename: &str) -> Option<String> {
 /// persists the normalized form.
 pub fn load_item(root: &Path, id: &str) -> Result<Item, JoyError> {
     let path = find_item_file(root, id)?;
-    let target_id: String = store::read_yaml::<Item>(&path)?.id;
+    let target_id: String = read_item_file(&path)?.id;
     let items = if is_job_id(id) {
         load_jobs(root)?
     } else {
@@ -776,7 +790,7 @@ pub fn load_item(root: &Path, id: &str) -> Result<Item, JoyError> {
 /// Delete an item by ID. Returns the deleted item.
 pub fn delete_item(root: &Path, id: &str) -> Result<Item, JoyError> {
     let path = find_item_file(root, id)?;
-    let item: Item = store::read_yaml(&path)?;
+    let item = read_item_file(&path)?;
     let rel = path
         .strip_prefix(root)
         .unwrap_or(&path)
@@ -870,6 +884,45 @@ pub fn update_item(root: &Path, item: &Item) -> Result<(), JoyError> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_stored_history_block_sheds_on_the_items_next_save() {
+        // The migration (item_yaml) drops the retired key on read; the
+        // normal save persists the strict schema, so the FILE loses the
+        // block exactly when the item is saved anyway — no sweep.
+        let dir = tempfile::tempdir().unwrap();
+        let items_dir = dir.path().join(".joy").join("items");
+        std::fs::create_dir_all(&items_dir).unwrap();
+        // the canonical name save_item writes back to ({ID}-{slug}.yaml)
+        let file = items_dir.join(crate::model::item::item_filename("T-0001-AB", "old"));
+        std::fs::write(
+            &file,
+            concat!(
+                "id: T-0001-AB\n",
+                "title: old\n",
+                "type: task\n",
+                "status: new\n",
+                "priority: medium\n",
+                "created: 2026-01-01T00:00:00Z\n",
+                "updated: 2026-01-01T00:00:00Z\n",
+                "history:\n",
+                "- date: 2026-01-02T00:00:00Z\n",
+                "  by: a@x\n",
+            ),
+        )
+        .unwrap();
+
+        let item = super::read_item_file(&file).unwrap();
+        super::save_item(dir.path(), &item).unwrap();
+
+        let saved = std::fs::read_dir(&items_dir)
+            .unwrap()
+            .flatten()
+            .map(|e| std::fs::read_to_string(e.path()).unwrap())
+            .collect::<String>();
+        assert!(saved.contains("title: old"), "{saved}");
+        assert!(!saved.contains("history"), "{saved}");
+    }
+
     use super::*;
     use crate::model::item::{ItemType, Priority};
     use tempfile::tempdir;

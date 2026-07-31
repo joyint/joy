@@ -345,17 +345,14 @@ pub fn run(args: ShowArgs) -> Result<()> {
     // (decision JOY-0175-9B): the log is the one audit record, so every
     // item has its full history without storing a byte of it twice.
     for entry in joy_core::event_log::item_attribute_history(&root, &item.id)? {
-        let local = chrono::DateTime::parse_from_rfc3339(&entry.timestamp)
-            .map(|t| {
-                t.with_timezone(&chrono::Local)
-                    .format("%Y-%m-%d %H:%M")
-                    .to_string()
-            })
+        // UTC like the Created line above; joy log is the local-time view
+        let date = chrono::DateTime::parse_from_rfc3339(&entry.timestamp)
+            .map(|t| t.format("%Y-%m-%d %H:%M").to_string())
             .unwrap_or_else(|_| entry.timestamp.clone());
         println!(
             "{} {} by {}",
             color::label("Updated:"),
-            color::label(&local),
+            color::label(&date),
             color::user(&entry.user),
         );
     }

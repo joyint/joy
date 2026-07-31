@@ -89,7 +89,7 @@ _emails_present() { grep -rlq "$TEST_EMAIL" .joy/; }
 
     # The viewer resolves ids to e-mails only with their own key; a read command
     # never prompts, so the passphrase is supplied non-interactively.
-    run env JOY_PASSPHRASE="$TEST_PASSPHRASE" joy log --item "$id"
+    run env JOY_PASSPHRASE="$TEST_PASSPHRASE" joy log "$id"
     [ "$status" -eq 0 ]
     [[ "$output" == *"$TEST_EMAIL"* ]]
     [[ "$output" != *"m-"* ]]
