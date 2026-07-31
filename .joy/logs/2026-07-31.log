@@ -30,3 +30,6 @@
 2026-07-31T19:47:32.389Z JOY-0246-B7 comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-07-31T19:47:32.469Z JOY-0246-B7 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-07-31T19:57:08.249Z v0.20.0 release.created [horst.schwarz@joydev.com]
+2026-07-31T19:59:25.565Z JOY-0247-E1 item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-31T19:59:33.248Z JOY-0247-E1 item.status_changed "new -> open" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-31T19:59:33.375Z JOY-0247-E1 item.status_changed "open -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
