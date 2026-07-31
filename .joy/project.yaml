@@ -18,7 +18,7 @@ members:
       document: {}
       create: {}
       assign: {}
-    adapter: claude-code
+    adapter: claude
     verify_key: 5b231331bf36f1f00c2348576a0c70c42f03056730bcee8560acf5c20e68c03b
     attestation:
       attester: horst.schwarz@joydev.com
@@ -75,7 +75,7 @@ members:
       document: {}
       create: {}
       assign: {}
-    adapter: qwen-code
+    adapter: qwen
     attestation:
       attester: horst.schwarz@joydev.com
       signed_fields:
@@ -103,7 +103,7 @@ members:
       document: {}
       create: {}
       assign: {}
-    adapter: mistral-vibe
+    adapter: vibe
     attestation:
       attester: horst.schwarz@joydev.com
       signed_fields:
