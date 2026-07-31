@@ -2133,7 +2133,7 @@ dependencies = [
 
 [[package]]
 name = "joy-crypt"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -2161,7 +2161,7 @@ dependencies = [
 
 [[package]]
 name = "joy-token"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64ct",
  "chrono",
