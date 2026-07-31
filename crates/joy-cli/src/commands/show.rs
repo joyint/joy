@@ -341,41 +341,14 @@ pub fn run(args: ShowArgs) -> Result<()> {
         ),
     };
     println!("{created_line}");
-    match &item.history {
-        None => {
-            // Legacy YAML written before `history` shipped: fall back to a
-            // single `Updated:` line when the item has been mutated since
-            // creation. New items always have `Some(...)` so they never go
-            // through this branch.
-            if item.updated > item.created {
-                let updated_date = item.updated.format("%Y-%m-%d %H:%M").to_string();
-                let updated_line = match &item.updated_by {
-                    Some(by) => format!(
-                        "{} {} by {}",
-                        color::label("Updated:"),
-                        color::label(&updated_date),
-                        color::user(by),
-                    ),
-                    None => format!(
-                        "{} {}",
-                        color::label("Updated:"),
-                        color::label(&updated_date),
-                    ),
-                };
-                println!("{updated_line}");
-            }
-        }
-        Some(entries) => {
-            for entry in entries {
-                let entry_date = entry.date.format("%Y-%m-%d %H:%M").to_string();
-                println!(
-                    "{} {} by {}",
-                    color::label("Updated:"),
-                    color::label(&entry_date),
-                    color::user(&entry.by),
-                );
-            }
-        }
+    for entry in &item.history {
+        let entry_date = entry.date.format("%Y-%m-%d %H:%M").to_string();
+        println!(
+            "{} {} by {}",
+            color::label("Updated:"),
+            color::label(&entry_date),
+            color::user(&entry.by),
+        );
     }
 
     Ok(())

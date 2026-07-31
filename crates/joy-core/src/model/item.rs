@@ -62,12 +62,10 @@ pub struct Item {
     pub updated_by: Option<MemberRef>,
     /// Append-only audit list of attribute-level mutations (status, priority,
     /// edit, deps, assignee, milestone, ...). Comment add / edit / rm do NOT
-    /// append here. `None` for legacy YAML written before this field existed
-    /// (display falls back to `updated` / `updated_by`); `Some(vec![])` for
-    /// items created after the field shipped but with no attribute mutations
-    /// yet. On first attribute mutation the vec gains its first entry.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub history: Option<Vec<UpdateEntry>>,
+    /// append here. Always present — the item schema migration backfills the
+    /// empty list on read, so the model never carries a tolerant Option —
+    /// and empty until the first attribute mutation pushes its entry.
+    pub history: Vec<UpdateEntry>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     /// Name of the Crypt zone this item belongs to. Absent or null
@@ -396,7 +394,7 @@ impl Item {
             created: now,
             updated: now,
             updated_by: None,
-            history: Some(Vec::new()),
+            history: Vec::new(),
             description: None,
             crypt_zone: None,
             job: None,

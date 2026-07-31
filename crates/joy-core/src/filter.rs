@@ -207,7 +207,7 @@ mod tests {
             created: now,
             updated: now,
             updated_by: None,
-            history: Some(vec![]),
+            history: vec![],
             description: None,
             crypt_zone: None,
             job: None,

@@ -56,18 +56,13 @@ pub fn render_item(item_type: &ItemType, id: &str, title: &str) -> Result<Item, 
         })
         .map_err(|e| JoyError::Template(e.to_string()))?;
 
-    let mut item: Item =
+    let value: serde_yaml_ng::Value =
         serde_yaml_ng::from_str(&yaml).map_err(|e| JoyError::Template(e.to_string()))?;
-
-    // Item YAML templates predate the `history` field, so freshly rendered
-    // items deserialize with `history = None`, which the display layer
-    // treats as "legacy item, use the single-Updated fallback". For newly
-    // created items we want the new model from the start, so we seed an
-    // empty history vec. The first attribute mutation will push the first
-    // entry; until then the footer has no `Updated:` lines.
-    if item.history.is_none() {
-        item.history = Some(Vec::new());
-    }
+    // The same schema road every item read takes: templates render the
+    // recorded shape, the migrations supply what the schema now requires.
+    let (value, _migrated) = crate::migrations::item_yaml::apply(value);
+    let item: Item =
+        serde_yaml_ng::from_value(value).map_err(|e| JoyError::Template(e.to_string()))?;
 
     Ok(item)
 }

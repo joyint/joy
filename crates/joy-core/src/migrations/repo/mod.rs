@@ -11,6 +11,7 @@
 //! file and its entry in [`apply`] / [`pending`].
 
 mod m_2026_06_doc_path_layout;
+mod m_2026_07_item_history_files;
 mod m_2026_07_mode_to_interaction;
 mod m_2026_07_remove_ai_agents;
 mod m_2026_07_remove_ai_jobs;
@@ -36,6 +37,7 @@ pub fn pending(root: &Path) -> Result<Vec<Reconciled>, JoyError> {
     out.extend(m_2026_07_remove_ai_agents::pending(root)?);
     out.extend(m_2026_07_mode_to_interaction::pending(root)?);
     out.extend(m_2026_07_three_levels::pending(root)?);
+    out.extend(m_2026_07_item_history_files::pending(root)?);
     Ok(out)
 }
 
@@ -46,5 +48,6 @@ pub fn apply(root: &Path) -> Result<Vec<Reconciled>, JoyError> {
     out.extend(m_2026_07_remove_ai_agents::migrate(root)?);
     out.extend(m_2026_07_mode_to_interaction::migrate(root)?);
     out.extend(m_2026_07_three_levels::migrate(root)?);
+    out.extend(m_2026_07_item_history_files::migrate(root)?);
     Ok(out)
 }
