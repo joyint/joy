@@ -109,9 +109,9 @@ pub fn run(args: ShowArgs) -> Result<()> {
         println!("{} {}", color::label("Capabilities:"), caps.join(", "));
     }
 
-    // Show item-level mode override (only if explicitly set on the item)
-    if let Some(ref mode) = item.mode {
-        // Check if clamped by max-mode of first assignee
+    // Show the item-level interaction-level override (only if explicitly set)
+    if let Some(ref level) = item.interaction_level {
+        // Check if clamped by max-interaction-level of first assignee
         let clamped = item.assignees.first().and_then(|a| {
             let project = joy_core::store::load_project(&root).ok()?;
             let member = project.member_by_key(a.member.id())?;
@@ -120,9 +120,9 @@ pub fn run(args: ShowArgs) -> Result<()> {
                     // Find the capability for the current status
                     item.capabilities.iter().find_map(|cap| {
                         let config = map.get(cap)?;
-                        let max = config.max_mode?;
-                        if mode < &max {
-                            Some((max, *mode))
+                        let max = config.max_interaction_level?;
+                        if level < &max {
+                            Some((max, *level))
                         } else {
                             None
                         }
@@ -135,12 +135,12 @@ pub fn run(args: ShowArgs) -> Result<()> {
         if let Some((effective, original)) = clamped {
             println!(
                 "{} {} {}",
-                color::label("Mode:"),
+                color::label("Interaction level:"),
                 effective,
                 color::inactive(&format!("[project max, item: {original}]"))
             );
         } else {
-            println!("{} {}", color::label("Mode:"), mode);
+            println!("{} {}", color::label("Interaction level:"), level);
         }
     }
 
@@ -341,41 +341,20 @@ pub fn run(args: ShowArgs) -> Result<()> {
         ),
     };
     println!("{created_line}");
-    match &item.history {
-        None => {
-            // Legacy YAML written before `history` shipped: fall back to a
-            // single `Updated:` line when the item has been mutated since
-            // creation. New items always have `Some(...)` so they never go
-            // through this branch.
-            if item.updated > item.created {
-                let updated_date = item.updated.format("%Y-%m-%d %H:%M").to_string();
-                let updated_line = match &item.updated_by {
-                    Some(by) => format!(
-                        "{} {} by {}",
-                        color::label("Updated:"),
-                        color::label(&updated_date),
-                        color::user(by),
-                    ),
-                    None => format!(
-                        "{} {}",
-                        color::label("Updated:"),
-                        color::label(&updated_date),
-                    ),
-                };
-                println!("{updated_line}");
-            }
-        }
-        Some(entries) => {
-            for entry in entries {
-                let entry_date = entry.date.format("%Y-%m-%d %H:%M").to_string();
-                println!(
-                    "{} {} by {}",
-                    color::label("Updated:"),
-                    color::label(&entry_date),
-                    color::user(&entry.by),
-                );
-            }
-        }
+    // The "Updated" trail is DERIVED from the event log at lookup time
+    // (decision JOY-0175-9B): the log is the one audit record, so every
+    // item has its full history without storing a byte of it twice.
+    for entry in joy_core::event_log::item_attribute_history(&root, &item.id)? {
+        // UTC like the Created line above; joy log is the local-time view
+        let date = chrono::DateTime::parse_from_rfc3339(&entry.timestamp)
+            .map(|t| t.format("%Y-%m-%d %H:%M").to_string())
+            .unwrap_or_else(|_| entry.timestamp.clone());
+        println!(
+            "{} {} by {}",
+            color::label("Updated:"),
+            color::label(&date),
+            color::user(&entry.user),
+        );
     }
 
     Ok(())

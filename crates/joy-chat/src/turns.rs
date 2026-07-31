@@ -1,0 +1,722 @@
+// Copyright (c) 2026 Joydev GmbH (joydev.com)
+// SPDX-License-Identifier: MIT
+
+//! Turn rules for AI members in chats (JOY-01F9). One implementation for
+//! every host (desktop, platform). ONE rule decides who a message is for
+//! (operator 2026-07-27, JOY-0239-02), the same in a 1:1 and in a room of
+//! six: a message that STARTS with @names is for those members; a message
+//! that does not is for whoever spoke last, and for nobody else. On top of
+//! that, since the last human message each AI may post at most
+//! [`MAX_AI_TURNS_SINCE_HUMAN`] messages — an address beyond that yields
+//! the moderation notice instead of another AI turn. Whether the SENDER
+//! is allowed to address the AI (local adapter installed, API key set) is
+//! host-specific and checked by the caller.
+
+use crate::model::chat::{Chat, ChatMessage, MessageKind};
+
+/// How many messages one AI may post since the last human message before
+/// a human has to moderate on ("ask, then react to the answer").
+pub const MAX_AI_TURNS_SINCE_HUMAN: usize = 2;
+
+/// The system line posted when the chain guard trips (notice format).
+pub const MODERATION_NOTICE: &str = "the AIs paused. A human has to moderate on.";
+
+/// What a host should do for one AI member after a new message landed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TurnDecision {
+    /// Run one agent turn and append its reply.
+    Respond,
+    /// Not addressed (or a notice): stay quiet.
+    Silent,
+    /// Addressed, but the chain guard tripped: post [`MODERATION_NOTICE`]
+    /// (once) instead of a turn.
+    NeedsModeration,
+}
+
+fn is_ai(id: &str) -> bool {
+    id.starts_with("ai:")
+}
+
+pub use crate::mentions::{alias, leading_mentions, mentions, unknown_mentions};
+
+/// Decide what `ai_member` should do about the newest message.
+///
+/// The rule, in full: leading @names address exactly those members; no
+/// leading @name addresses the last other speaker. Consequence worth
+/// knowing: the FIRST message of a fresh chat has no last speaker, so it
+/// needs an @name — which is also what pulls the AI into the room.
+pub fn decide(chat: &Chat, newest: &ChatMessage, ai_member: &str) -> TurnDecision {
+    // Only a CONVERSATIONAL text can address an AI (App-Konzept 5.1/5.2:
+    // `/` addresses a tool, `@` addresses an actor). Notices, tool results,
+    // and persisted errors are never an address — a tool's own answer
+    // (kind=Tool, authored by the human who ran it) once slipped through
+    // the solo rule and triggered a turn per command result.
+    if newest.kind != MessageKind::Text || newest.author.id() == ai_member {
+        return TurnDecision::Silent;
+    }
+    // A slash line addresses a TOOL, not the room's AI: no implicit turn
+    // (solo/follow-up), and no turn for an @ref used as a command ARGUMENT
+    // either (`/joy edit X -A @vibe`). Operator find 2026-07-19: `/joy ls`
+    // in a 1:1 chat made the AI answer "not configured" per command.
+    if newest.text.trim_start().starts_with('/') {
+        return TurnDecision::Silent;
+    }
+    let participant_ids: Vec<String> = chat
+        .participants
+        .iter()
+        .map(|p| p.id().to_string())
+        .collect();
+    let leading = leading_mentions(&newest.text, &participant_ids);
+    let addressed = if leading.is_empty() {
+        // No leading mention: the message belongs to whoever spoke last
+        // (operator rule 2026-07-27, JOY-0239-02) — and to nobody else.
+        // "Last" means the latest conversational text by someone ELSE:
+        // two messages in a row from the same person are one turn, you
+        // cannot address yourself. An AI's own message never addresses
+        // implicitly: two AIs would answer each other forever, and the
+        // chain guard below only bounds the EXPLICIT ai-to-ai case.
+        if is_ai(newest.author.id()) {
+            return TurnDecision::Silent;
+        }
+        // `newest` is the chat's last message on the run_turns path;
+        // walk the history BEFORE it.
+        chat.messages
+            .iter()
+            .rev()
+            .skip_while(|m| {
+                if newest.id.is_empty() {
+                    m.at == newest.at && m.author.id() == newest.author.id()
+                } else {
+                    m.id == newest.id
+                }
+            })
+            .filter(|m| m.kind == MessageKind::Text && m.author.id() != newest.author.id())
+            .map(|m| m.author.id().to_string())
+            .next()
+            .is_some_and(|id| id == ai_member)
+    } else {
+        leading.iter().any(|m| m.as_str() == ai_member)
+    };
+    if !addressed {
+        return TurnDecision::Silent;
+    }
+    // Humans reset the chain; an AI addressing an AI is bounded.
+    if !is_ai(newest.author.id()) {
+        return TurnDecision::Respond;
+    }
+    let turns_since_human = chat
+        .messages
+        .iter()
+        .rev()
+        .take_while(|m| is_ai(m.author.id()) || m.kind == MessageKind::Notice)
+        .filter(|m| m.kind == MessageKind::Text && m.author.id() == ai_member)
+        .count();
+    if turns_since_human >= MAX_AI_TURNS_SINCE_HUMAN {
+        TurnDecision::NeedsModeration
+    } else {
+        TurnDecision::Respond
+    }
+}
+/// A notice is posted once, not per round: the same text within the last
+/// four messages counts as already said.
+pub fn recently_noticed(chat: &Chat, text: &str) -> bool {
+    chat.messages
+        .iter()
+        .rev()
+        .take(4)
+        .any(|m| m.kind == MessageKind::Notice && m.text == text)
+}
+
+/// Whether the moderation notice is already the newest notice (post once).
+pub fn moderation_already_posted(chat: &Chat) -> bool {
+    chat.messages
+        .iter()
+        .rev()
+        .take_while(|m| is_ai(m.author.id()) || m.kind == MessageKind::Notice)
+        .any(|m| m.kind == MessageKind::Notice && m.text == MODERATION_NOTICE)
+}
+
+/// The prompt for one agent turn: the attributed transcript plus the role
+/// instruction. The chat itself IS the context — a fresh session with this
+/// prompt has everything either AI has said.
+pub fn context_prompt(chat: &Chat, ai_member: &str) -> String {
+    let title = chat.title.as_deref().unwrap_or("Team chat");
+    // The roster is rebuilt every turn from the chat's live participants
+    // (the host resolves team/General to the full project membership first),
+    // so members added over time appear automatically, no stale list.
+    let roster: Vec<String> = chat
+        .participants
+        .iter()
+        .map(|p| format!("@{}", alias(p.id())))
+        .collect();
+    let mut prompt = format!("You are {ai_member}, a member of the chat \"{title}\".\n");
+    if !roster.is_empty() {
+        prompt.push_str(&format!(
+            "Members you can reach here by @name: {}.\n",
+            roster.join(", ")
+        ));
+    }
+    prompt.push_str(
+        "To bring anyone in, @mention them in your reply: that is the only way\n\
+         to reach a participant, there is no direct call. Reply with your next\n\
+         chat message only, no preamble and no markdown headings. A human\n\
+         moderates the room.\n\n",
+    );
+    // Both vibe models otherwise print the command as text instead of running
+    // it (their built-in system prompt nudges them to "give the user the
+    // command"): make execution explicit, and pin the joy operating rules.
+    prompt.push_str(
+        "You have a shell in this project's checkout, and this project is managed\n\
+         with Joy. The operating guide is `joy ai tutorial`; its rules apply to you\n\
+         here. When a message needs item data or a change, RUN the joy CLI yourself\n\
+         with your shell tool (for example `joy show <id>` or `joy ls`) and report\n\
+         the result. Never print a command as text for the human to run: if you\n\
+         decide to run something, actually run it. Item state changes only through\n\
+         the joy CLI, never by editing files under .joy/.\n\n\
+         --- conversation ---\n",
+    );
+    for message in &chat.messages {
+        if message.kind == MessageKind::Notice {
+            prompt.push_str(&format!("[notice] {}\n", message.text));
+        } else {
+            prompt.push_str(&format!("{}: {}\n", message.author.id(), message.text));
+        }
+    }
+    prompt.push_str("--- end ---\n");
+    prompt
+}
+
+/// The DELTA prompt for a LIVE session (JP-0085-F4): only what happened
+/// since the member's own last message; the session already carries
+/// everything before it. None when the member has not spoken yet (the
+/// caller replays the full transcript into a fresh session instead).
+pub fn delta_prompt(chat: &Chat, ai_member: &str) -> Option<String> {
+    let last_own = chat
+        .messages
+        .iter()
+        .rposition(|m| m.author.id() == ai_member)?;
+    let mut prompt = String::from("--- new messages ---\n");
+    for message in &chat.messages[last_own + 1..] {
+        if message.kind == MessageKind::Notice {
+            prompt.push_str(&format!("[notice] {}\n", message.text));
+        } else {
+            prompt.push_str(&format!("{}: {}\n", message.author.id(), message.text));
+        }
+    }
+    prompt.push_str("--- end ---\nReply with your next chat message only.\n");
+    Some(prompt)
+}
+
+// ---------------------------------------------------------------------------
+// The reply a turn is allowed to say
+// ---------------------------------------------------------------------------
+
+/// Strip tool-call blobs a model may emit as chat text (JAPP-010D-B0:
+/// nothing tool-shaped surfaces as a message). A blob is an identifier run
+/// glued directly to a JSON object — the shape an ACP tool call takes when
+/// a model mistakenly prints it as its answer (observed live from vibe:
+/// `write_file…{"file_path": …}`). Text that merely CONTAINS an object
+/// after whitespace stays untouched. Returns `None` when nothing readable
+/// remains.
+///
+/// Lives HERE, not in one host, because every host runs turns: the
+/// platform for a server-side turn, the desktop for a local one. It was
+/// fixed on the platform alone once, and the desktop then printed exactly
+/// the blob this removes into the operator's chat (2026-07-26).
+pub fn sanitize_reply(reply: &str) -> Option<String> {
+    let chars: Vec<char> = reply.chars().collect();
+    let mut kept = String::new();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '{' && i + 1 < chars.len() && chars[i + 1] == '"' {
+            // the identifier run glued to the brace (no whitespace between)
+            let glued_len = kept
+                .chars()
+                .rev()
+                .take_while(|c| !c.is_whitespace())
+                .count();
+            let glued: String = {
+                let all: Vec<char> = kept.chars().collect();
+                all[all.len() - glued_len..].iter().collect()
+            };
+            let looks_like_call = !glued.is_empty()
+                && glued
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_alphanumeric() || c == '_');
+            if looks_like_call {
+                // drop the glued identifier and the whole JSON object
+                // (brace-matched, string-aware; a truncated blob eats the
+                // rest of the reply)
+                for _ in 0..glued_len {
+                    kept.pop();
+                }
+                let mut depth = 0usize;
+                let mut in_string = false;
+                let mut escaped = false;
+                let mut end = chars.len();
+                for (offset, &c) in chars[i..].iter().enumerate() {
+                    if in_string {
+                        if escaped {
+                            escaped = false;
+                        } else if c == '\\' {
+                            escaped = true;
+                        } else if c == '"' {
+                            in_string = false;
+                        }
+                        continue;
+                    }
+                    match c {
+                        '"' => in_string = true,
+                        '{' => depth += 1,
+                        '}' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                end = i + offset + 1;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                i = end;
+                continue;
+            }
+        }
+        kept.push(chars[i]);
+        i += 1;
+    }
+    let cleaned = kept.trim();
+    (!cleaned.is_empty()).then(|| cleaned.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plain_replies_pass_untouched() {
+        assert_eq!(
+            sanitize_reply("mistral-medium-3.5, at your service."),
+            Some("mistral-medium-3.5, at your service.".into())
+        );
+    }
+
+    #[test]
+    fn a_pure_tool_call_blob_is_withheld() {
+        // the live vibe leak: identifier + garbled run glued to JSON args
+        let leak = r##"write_fileাব্দ{"file_path": "/Users/x/plan.md", "content": "# Plan\n"}"##;
+        assert_eq!(sanitize_reply(leak), None);
+    }
+
+    #[test]
+    fn a_blob_inside_prose_is_stripped_and_the_prose_stays() {
+        let mixed =
+            r#"Here is my answer. write_file{"file_path": "x", "content": "{nested} \"q\""} Done."#;
+        assert_eq!(
+            sanitize_reply(mixed),
+            Some("Here is my answer.  Done.".into())
+        );
+    }
+
+    #[test]
+    fn json_after_whitespace_is_legitimate_content() {
+        let reply = r#"The config is {"retries": 3} as discussed."#;
+        assert_eq!(sanitize_reply(reply), Some(reply.into()));
+    }
+
+    #[test]
+    fn a_truncated_blob_eats_to_the_end_not_beyond() {
+        let cut = r#"call_tool{"arg": "unclosed"#;
+        assert_eq!(sanitize_reply(cut), None);
+        let with_prefix = format!("Take this. {cut}");
+        assert_eq!(sanitize_reply(&with_prefix), Some("Take this.".into()));
+    }
+
+    use chrono::{TimeZone, Utc};
+    use joy_model::MemberRef;
+
+    fn chat_with(messages: Vec<(&str, &str, MessageKind)>) -> Chat {
+        let now = Utc.with_ymd_and_hms(2026, 7, 4, 12, 0, 0).unwrap();
+        let mut chat = Chat::new(
+            "t1",
+            vec![
+                MemberRef::new("horst@example.com"),
+                MemberRef::new("ai:claude@joy"),
+                MemberRef::new("ai:vibe@joy"),
+            ],
+            now,
+        );
+        chat.messages = messages
+            .into_iter()
+            .map(|(author, text, kind)| ChatMessage {
+                id: uuid::Uuid::now_v7().to_string(),
+                delegated_by: None,
+                turn_ms: None,
+                tool_steps: None,
+                tool: None,
+                payload: None,
+                details: None,
+                at: now,
+                author: MemberRef::new(author),
+                text: text.into(),
+                kind,
+            })
+            .collect();
+        chat
+    }
+
+    #[test]
+    fn mentions_match_alias_and_full_ref() {
+        let candidates = vec![
+            "ai:claude@joy".to_string(),
+            "geordi@example.org".to_string(),
+        ];
+        let found = mentions("@claude please ask @geordi@example.org.", &candidates);
+        assert_eq!(found.len(), 2);
+        assert!(mentions("no at all", &candidates).is_empty());
+        assert!(mentions("mail me claude@joy", &candidates).is_empty());
+    }
+
+    #[test]
+    fn a_slash_command_never_triggers_a_turn() {
+        // operator find 2026-07-19: `/joy ls` in a 1:1 chat with vibe made
+        // it answer "not configured" for every command. A slash line talks
+        // to a TOOL: silent even in a solo chat, even right after the AI's
+        // reply, and even with an @ref as a command ARGUMENT.
+        let mut solo = chat_with(vec![(
+            "horst@example.com",
+            "/joy ls --tree",
+            MessageKind::Text,
+        )]);
+        solo.participants = vec![
+            MemberRef::new("horst@example.com"),
+            MemberRef::new("ai:vibe@joy"),
+        ];
+        let newest = solo.messages.last().unwrap().clone();
+        assert_eq!(decide(&solo, &newest, "ai:vibe@joy"), TurnDecision::Silent);
+
+        let follow = chat_with(vec![
+            ("horst@example.com", "@vibe which model?", MessageKind::Text),
+            ("ai:vibe@joy", "mistral-medium-3.5.", MessageKind::Text),
+            ("horst@example.com", "/joy ls", MessageKind::Text),
+        ]);
+        let newest = follow.messages.last().unwrap().clone();
+        assert_eq!(
+            decide(&follow, &newest, "ai:vibe@joy"),
+            TurnDecision::Silent
+        );
+
+        let arg = chat_with(vec![(
+            "horst@example.com",
+            "/joy edit VC-0001 -A @vibe",
+            MessageKind::Text,
+        )]);
+        let newest = arg.messages.last().unwrap().clone();
+        assert_eq!(decide(&arg, &newest, "ai:vibe@joy"), TurnDecision::Silent);
+    }
+
+    #[test]
+    fn only_conversational_text_can_address_an_ai() {
+        // A tool's persisted RESULT (kind=Tool, authored by the human who
+        // ran the command) and a persisted error are never an address —
+        // the result of `/joy ls` once triggered a turn via the solo rule.
+        for kind in [MessageKind::Tool, MessageKind::Error] {
+            let mut solo = chat_with(vec![("horst@example.com", "[tree result]", kind)]);
+            solo.participants = vec![
+                MemberRef::new("horst@example.com"),
+                MemberRef::new("ai:vibe@joy"),
+            ];
+            let newest = solo.messages.last().unwrap().clone();
+            assert_eq!(
+                decide(&solo, &newest, "ai:vibe@joy"),
+                TurnDecision::Silent,
+                "{kind:?} must not trigger a turn"
+            );
+        }
+    }
+
+    #[test]
+    fn a_follow_up_after_the_ais_reply_needs_no_mention() {
+        // operator 2026-07-18: "Kannst du mir das ins README.md
+        // schreiben?" right after vibe's answer got NO reply
+        let chat = chat_with(vec![
+            ("horst@example.com", "@vibe which model?", MessageKind::Text),
+            ("ai:vibe@joy", "mistral-medium-3.5.", MessageKind::Text),
+            (
+                "horst@example.com",
+                "write that into README.md?",
+                MessageKind::Text,
+            ),
+        ]);
+        let newest = chat.messages.last().unwrap();
+        assert_eq!(decide(&chat, newest, "ai:vibe@joy"), TurnDecision::Respond);
+        // the OTHER AI stays silent: the human is answering vibe
+        assert_eq!(decide(&chat, newest, "ai:claude@joy"), TurnDecision::Silent);
+    }
+
+    #[test]
+    fn consecutive_human_messages_keep_the_exchange_alive() {
+        let chat = chat_with(vec![
+            ("horst@example.com", "@vibe which model?", MessageKind::Text),
+            ("ai:vibe@joy", "mistral-medium-3.5.", MessageKind::Text),
+            ("horst@example.com", "ok", MessageKind::Text),
+            (
+                "horst@example.com",
+                "and into README.md please",
+                MessageKind::Text,
+            ),
+        ]);
+        let newest = chat.messages.last().unwrap();
+        assert_eq!(decide(&chat, newest, "ai:vibe@joy"), TurnDecision::Respond);
+    }
+
+    #[test]
+    fn another_voice_breaks_the_unmentioned_chain() {
+        let chat = chat_with(vec![
+            ("horst@example.com", "@vibe which model?", MessageKind::Text),
+            ("ai:vibe@joy", "mistral-medium-3.5.", MessageKind::Text),
+            ("geordi@example.org", "interesting!", MessageKind::Text),
+            (
+                "horst@example.com",
+                "write it into README.md?",
+                MessageKind::Text,
+            ),
+        ]);
+        let newest = chat.messages.last().unwrap();
+        assert_eq!(decide(&chat, newest, "ai:vibe@joy"), TurnDecision::Silent);
+        assert_eq!(decide(&chat, newest, "ai:claude@joy"), TurnDecision::Silent);
+    }
+
+    #[test]
+    fn the_first_message_of_a_chat_needs_a_mention_even_in_a_1_to_1() {
+        // The 1:1 special case is GONE (operator 2026-07-27): one rule for
+        // every chat size. Nobody spoke before, so nobody is addressed —
+        // and the @name that starts the conversation is also what pulls the
+        // AI into the room (`add_mentioned_ais`).
+        let now = Utc.with_ymd_and_hms(2026, 7, 4, 12, 0, 0).unwrap();
+        let mut chat = Chat::new(
+            "solo",
+            vec![
+                MemberRef::new("horst@example.com"),
+                MemberRef::new("ai:vibe@joy"),
+            ],
+            now,
+        );
+        fn line(chat: &mut Chat, now: chrono::DateTime<Utc>, text: &str) {
+            chat.messages.push(ChatMessage {
+                id: format!("m{}", chat.messages.len() + 1),
+                at: now,
+                author: MemberRef::new("horst@example.com"),
+                text: text.into(),
+                kind: MessageKind::Text,
+                delegated_by: None,
+                turn_ms: None,
+                tool_steps: None,
+                tool: None,
+                payload: None,
+                details: None,
+            });
+        }
+        line(&mut chat, now, "which model do you use?");
+        let newest = chat.messages.last().unwrap().clone();
+        assert_eq!(decide(&chat, &newest, "ai:vibe@joy"), TurnDecision::Silent);
+
+        line(&mut chat, now, "@vibe which model do you use?");
+        let newest = chat.messages.last().unwrap().clone();
+        assert_eq!(decide(&chat, &newest, "ai:vibe@joy"), TurnDecision::Respond);
+    }
+
+    #[test]
+    fn a_leading_mention_of_someone_else_silences_the_last_speaker() {
+        // Operator validation 2026-07-26 (JOY-0239-02): vibe had answered
+        // last, the next message went to @claude, and vibe answered it too.
+        let chat = chat_with(vec![
+            ("horst@example.com", "@vibe which model?", MessageKind::Text),
+            ("ai:vibe@joy", "mistral-medium-3.5.", MessageKind::Text),
+            (
+                "horst@example.com",
+                "@claude what do you think?",
+                MessageKind::Text,
+            ),
+        ]);
+        let newest = chat.messages.last().unwrap();
+        assert_eq!(decide(&chat, newest, "ai:vibe@joy"), TurnDecision::Silent);
+        assert_eq!(
+            decide(&chat, newest, "ai:claude@joy"),
+            TurnDecision::Respond
+        );
+    }
+
+    #[test]
+    fn a_mention_in_mid_sentence_refers_and_does_not_address() {
+        // Position, not spelling: "I already asked @claude" is about
+        // claude, it is not a question TO claude — it continues the
+        // exchange with whoever spoke last.
+        let chat = chat_with(vec![
+            ("horst@example.com", "@vibe which model?", MessageKind::Text),
+            ("ai:vibe@joy", "mistral-medium-3.5.", MessageKind::Text),
+            (
+                "horst@example.com",
+                "thanks, I already asked @claude about that",
+                MessageKind::Text,
+            ),
+        ]);
+        let newest = chat.messages.last().unwrap();
+        assert_eq!(decide(&chat, newest, "ai:claude@joy"), TurnDecision::Silent);
+        assert_eq!(decide(&chat, newest, "ai:vibe@joy"), TurnDecision::Respond);
+    }
+
+    #[test]
+    fn only_mentioned_ai_responds() {
+        let chat = chat_with(vec![(
+            "horst@example.com",
+            "@claude check this",
+            MessageKind::Text,
+        )]);
+        let newest = chat.messages.last().unwrap();
+        assert_eq!(
+            decide(&chat, newest, "ai:claude@joy"),
+            TurnDecision::Respond
+        );
+        assert_eq!(decide(&chat, newest, "ai:vibe@joy"), TurnDecision::Silent);
+    }
+
+    #[test]
+    fn context_prompt_lists_the_live_roster_and_the_mention_only_rule() {
+        let chat = chat_with(vec![(
+            "horst@example.com",
+            "@vibe which model?",
+            MessageKind::Text,
+        )]);
+        let prompt = context_prompt(&chat, "ai:vibe@joy");
+        // roster is built from the live participants: AIs by short alias,
+        // humans by their id, so members added over time appear on their own
+        assert!(prompt.contains("@horst@example.com"));
+        assert!(prompt.contains("@claude"));
+        assert!(prompt.contains("@vibe"));
+        // the sharpened rule: @mention is the only way in, no direct call
+        assert!(prompt.contains("the only way"));
+        assert!(prompt.contains("no direct call"));
+    }
+
+    #[test]
+    fn ai_chain_is_bounded_and_human_resets() {
+        // claude asked vibe, vibe answered, claude reacted, vibe answered:
+        // each has 2 turns since the human — the next AI address must
+        // moderate, a human message resets.
+        let chat = chat_with(vec![
+            (
+                "horst@example.com",
+                "@claude kick it off",
+                MessageKind::Text,
+            ),
+            (
+                "ai:claude@joy",
+                "@vibe what is the state?",
+                MessageKind::Text,
+            ),
+            ("ai:vibe@joy", "@claude two tests fail", MessageKind::Text),
+            ("ai:claude@joy", "@vibe which ones?", MessageKind::Text),
+            ("ai:vibe@joy", "@claude the auth pair", MessageKind::Text),
+        ]);
+        let newest = chat.messages.last().unwrap();
+        assert_eq!(
+            decide(&chat, newest, "ai:claude@joy"),
+            TurnDecision::NeedsModeration
+        );
+        // vibe addressed by claude at this point would also be over budget
+        let chat2 = chat_with(vec![
+            ("horst@example.com", "@claude go", MessageKind::Text),
+            ("ai:claude@joy", "@vibe q1", MessageKind::Text),
+            ("ai:vibe@joy", "@claude a1", MessageKind::Text),
+            ("ai:claude@joy", "@vibe q2", MessageKind::Text),
+        ]);
+        let newest2 = chat2.messages.last().unwrap();
+        assert_eq!(
+            decide(&chat2, newest2, "ai:vibe@joy"),
+            TurnDecision::Respond
+        );
+        // a human speaking resets the chain
+        let chat3 = chat_with(vec![
+            ("ai:claude@joy", "@vibe q", MessageKind::Text),
+            ("ai:vibe@joy", "@claude a", MessageKind::Text),
+            ("horst@example.com", "@claude summarize", MessageKind::Text),
+        ]);
+        let newest3 = chat3.messages.last().unwrap();
+        assert_eq!(
+            decide(&chat3, newest3, "ai:claude@joy"),
+            TurnDecision::Respond
+        );
+    }
+
+    #[test]
+    fn unknown_mentions_surface_and_known_ones_do_not() {
+        let candidates = vec!["ai:claude@joy".to_string(), "horst@example.com".to_string()];
+        // known by alias and by full ref: no error
+        assert!(unknown_mentions("@claude please check", &candidates).is_empty());
+        assert!(unknown_mentions("cc @horst@example.com", &candidates).is_empty());
+        // an @name nobody carries answers with the unknown token
+        assert_eq!(
+            unknown_mentions("@nobody take a look", &candidates),
+            vec!["nobody".to_string()]
+        );
+        // punctuation-cleaned, several at once, dupes preserved in order
+        assert_eq!(
+            unknown_mentions("@ghost: hi, @claude and @phantom.", &candidates),
+            vec!["ghost".to_string(), "phantom".to_string()]
+        );
+        // a bare @ is noise, not a mention
+        assert!(unknown_mentions("meet @ 5pm", &candidates).is_empty());
+    }
+
+    #[test]
+    fn moderation_notice_posts_once() {
+        let mut chat = chat_with(vec![("ai:claude@joy", "@vibe q", MessageKind::Text)]);
+        assert!(!moderation_already_posted(&chat));
+        chat.messages.push(ChatMessage {
+            id: uuid::Uuid::now_v7().to_string(),
+            delegated_by: None,
+            turn_ms: None,
+            tool_steps: None,
+            tool: None,
+            payload: None,
+            details: None,
+            at: chat.updated,
+            author: MemberRef::new("ai:claude@joy"),
+            text: MODERATION_NOTICE.into(),
+            kind: MessageKind::Notice,
+        });
+        assert!(moderation_already_posted(&chat));
+    }
+
+    #[test]
+    fn context_prompt_carries_the_whole_transcript() {
+        let chat = chat_with(vec![
+            ("horst@example.com", "hello", MessageKind::Text),
+            ("ai:vibe@joy", "hi @claude", MessageKind::Text),
+        ]);
+        let prompt = context_prompt(&chat, "ai:claude@joy");
+        assert!(prompt.contains("You are ai:claude@joy"));
+        assert!(prompt.contains("horst@example.com: hello"));
+        assert!(prompt.contains("ai:vibe@joy: hi @claude"));
+    }
+
+    #[test]
+    fn the_delta_prompt_carries_only_whats_new_to_the_member() {
+        let chat = chat_with(vec![
+            ("horst@example.com", "hi claude", MessageKind::Text),
+            ("ai:claude@joy", "hello!", MessageKind::Text),
+            ("horst@example.com", "and now?", MessageKind::Text),
+            ("ai:vibe@joy", "vibe here", MessageKind::Text),
+        ]);
+        let delta = delta_prompt(&chat, "ai:claude@joy").expect("spoke before");
+        assert!(delta.contains("and now?"));
+        assert!(delta.contains("vibe here"));
+        assert!(!delta.contains("hi claude"), "already in the session");
+        assert!(!delta.contains("hello!"), "own message never repeats");
+        // a member who never spoke gets NO delta: full replay instead
+        let chat2 = chat_with(vec![("horst@example.com", "hi", MessageKind::Text)]);
+        assert!(delta_prompt(&chat2, "ai:claude@joy").is_none());
+    }
+}

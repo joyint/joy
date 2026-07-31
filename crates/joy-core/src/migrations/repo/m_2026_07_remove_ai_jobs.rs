@@ -6,9 +6,9 @@
 //! Jobs became first-class items in `.joy/jobs/` (JOY-01FE-37); the
 //! parallel `.joy/ai/jobs/<id>.yaml` record model is retired. This
 //! reconcile deletes a leftover `.joy/ai/jobs/` directory and, when
-//! `.joy/ai/` is empty afterwards, that directory too. Agent execution
-//! configs under `.joy/ai/agents/` stand (JOY-01EA-2C) and are left
-//! untouched.
+//! `.joy/ai/` is empty afterwards, that directory too. The legacy
+//! `.joy/ai/agents/` store is removed by the sibling
+//! `m_2026_07_remove_ai_agents` migration.
 //!
 //! One-shot, filesystem-aware, idempotent: a repo without `.joy/ai/jobs`
 //! is a no-op. Remove this module and its entry in `repo::apply` /

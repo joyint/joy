@@ -15,8 +15,8 @@ pub struct Config {
     pub ai: Option<AiConfig>,
     #[serde(default)]
     pub workflow: WorkflowConfig,
-    #[serde(default)]
-    pub modes: ModesConfig,
+    #[serde(default, rename = "interaction-level")]
+    pub interaction_level: InteractionLevelConfig,
     #[serde(default = "default_auto_sync", rename = "auto-sync")]
     pub auto_sync: bool,
     /// Editor invoked when a Joy command needs free-form input (e.g.
@@ -78,47 +78,12 @@ fn default_true() -> bool {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct ModesConfig {
+pub struct InteractionLevelConfig {
     #[serde(default)]
     pub default: InteractionLevel,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum InteractionLevel {
-    Autonomous,
-    Supervised,
-    #[default]
-    Collaborative,
-    Interactive,
-    Pairing,
-}
-
-impl std::fmt::Display for InteractionLevel {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Autonomous => write!(f, "autonomous"),
-            Self::Supervised => write!(f, "supervised"),
-            Self::Collaborative => write!(f, "collaborative"),
-            Self::Interactive => write!(f, "interactive"),
-            Self::Pairing => write!(f, "pairing"),
-        }
-    }
-}
-
-impl std::str::FromStr for InteractionLevel {
-    type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "autonomous" => Ok(Self::Autonomous),
-            "supervised" => Ok(Self::Supervised),
-            "collaborative" => Ok(Self::Collaborative),
-            "interactive" => Ok(Self::Interactive),
-            "pairing" => Ok(Self::Pairing),
-            other => Err(format!("unknown interaction level: {other}")),
-        }
-    }
-}
+pub use joy_model::InteractionLevel;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SyncConfig {
@@ -171,7 +136,7 @@ impl Default for Config {
             output: OutputConfig::default(),
             ai: None,
             workflow: WorkflowConfig::default(),
-            modes: ModesConfig::default(),
+            interaction_level: InteractionLevelConfig::default(),
             auto_sync: default_auto_sync(),
             editor: None,
         }
@@ -198,17 +163,15 @@ pub fn describe_value(key: &str, value: &serde_json::Value) -> Option<String> {
     let s = value.as_str();
     let b = value.as_bool();
     let text = match (key, s, b) {
-        ("modes.default", Some("autonomous"), _) => {
+        ("interaction-level.default", Some("autonomous"), _) => {
             "work independently, stop only at governance gates"
         }
-        ("modes.default", Some("supervised"), _) => "confirm before irreversible actions",
-        ("modes.default", Some("collaborative"), _) => {
-            "propose approach, proceed after confirmation"
+        ("interaction-level.default", Some("confirmed"), _) => {
+            "work independently, confirm before irreversible actions"
         }
-        ("modes.default", Some("interactive"), _) => {
-            "present options with rationale, wait for decision"
+        ("interaction-level.default", Some("proposing"), _) => {
+            "propose, the human decides every step"
         }
-        ("modes.default", Some("pairing"), _) => "step by step, question by question",
 
         ("workflow.auto-git", Some("off"), _) => "never stage, commit, or push automatically",
         ("workflow.auto-git", Some("add"), _) => "git add changed files after each write",
@@ -344,10 +307,8 @@ fn probe_string_field(key: &str) -> Vec<String> {
         "high",
         "critical",
         "autonomous",
-        "supervised",
-        "collaborative",
-        "interactive",
-        "pairing",
+        "confirmed",
+        "proposing",
     ];
 
     let mut accepted = Vec::new();
@@ -410,47 +371,73 @@ mod tests {
     }
 
     #[test]
-    fn modes_config_get_default() {
+    fn interaction_level_config_get_default() {
         let config = Config::default();
-        assert_eq!(config.modes.default, InteractionLevel::Collaborative);
+        assert_eq!(
+            config.interaction_level.default,
+            InteractionLevel::Proposing
+        );
     }
 
     #[test]
-    fn modes_config_set_default() {
-        let yaml = "modes:\n  default: pairing\n";
+    fn interaction_level_config_set_default() {
+        let yaml = "interaction-level:\n  default: autonomous\n";
         let mut base = serde_json::to_value(Config::default()).unwrap();
         let overlay: serde_json::Value = serde_yaml_ng::from_str(yaml).unwrap();
         crate::store::deep_merge_value(&mut base, &overlay);
         let config: Config = serde_json::from_value(base).unwrap();
-        assert_eq!(config.modes.default, InteractionLevel::Pairing);
+        assert_eq!(
+            config.interaction_level.default,
+            InteractionLevel::Autonomous
+        );
     }
 
     #[test]
-    fn old_agents_key_does_not_deserialize_to_modes() {
-        let yaml = "agents:\n  default:\n    mode: pairing\n";
+    fn old_agents_key_does_not_deserialize_to_interaction_level() {
+        let yaml = "agents:\n  default:\n    mode: proposing\n";
         let mut base = serde_json::to_value(Config::default()).unwrap();
         let overlay: serde_json::Value = serde_yaml_ng::from_str(yaml).unwrap();
         crate::store::deep_merge_value(&mut base, &overlay);
         let config: Config = serde_json::from_value(base).unwrap();
-        // modes.default should still be the default, not pairing
-        assert_eq!(config.modes.default, InteractionLevel::Collaborative);
+        // interaction-level.default should still be the default
+        assert_eq!(
+            config.interaction_level.default,
+            InteractionLevel::Proposing
+        );
     }
 
     #[test]
-    fn describe_value_modes_default() {
-        let v = serde_json::Value::String("collaborative".to_string());
-        let d = describe_value("modes.default", &v).expect("known variant");
+    fn pre_2_0_level_value_errors_with_update_hint() {
+        let err = serde_yaml_ng::from_str::<InteractionLevel>("pairing").unwrap_err();
+        assert!(err.to_string().contains("joy update"));
+        let err = "collaborative".parse::<InteractionLevel>().unwrap_err();
+        assert!(err.contains("joy update"));
+        let err = "zzz".parse::<InteractionLevel>().unwrap_err();
+        assert!(err.contains("unknown interaction level"));
+    }
+
+    #[test]
+    fn clamp_order_autonomous_below_proposing() {
+        // Greater = more human oversight; a max floor raises toward Proposing.
+        assert!(InteractionLevel::Autonomous < InteractionLevel::Confirmed);
+        assert!(InteractionLevel::Confirmed < InteractionLevel::Proposing);
+    }
+
+    #[test]
+    fn describe_value_interaction_level_default() {
+        let v = serde_json::Value::String("proposing".to_string());
+        let d = describe_value("interaction-level.default", &v).expect("known variant");
         assert!(d.contains("propose"));
         let unknown = serde_json::Value::String("zzz".to_string());
-        assert!(describe_value("modes.default", &unknown).is_none());
+        assert!(describe_value("interaction-level.default", &unknown).is_none());
     }
 
     #[test]
-    fn flatten_under_modes_returns_default() {
+    fn flatten_under_interaction_level_returns_default() {
         let cfg = serde_json::to_value(Config::default()).unwrap();
-        let leaves = flatten_under(&cfg, "modes");
+        let leaves = flatten_under(&cfg, "interaction-level");
         let keys: Vec<&str> = leaves.iter().map(|(k, _)| k.as_str()).collect();
-        assert!(keys.contains(&"modes.default"));
+        assert!(keys.contains(&"interaction-level.default"));
     }
 
     #[test]
@@ -462,23 +449,28 @@ mod tests {
     }
 
     #[test]
-    fn field_hint_modes_default() {
-        let hint = field_hint("modes.default");
+    fn field_hint_interaction_level_default() {
+        let hint = field_hint("interaction-level.default");
         assert!(hint.is_some());
         let values = hint.unwrap();
-        assert!(values.contains("collaborative"));
-        assert!(values.contains("pairing"));
+        assert!(values.contains("proposing"));
+        assert!(values.contains("confirmed"));
+        assert!(values.contains("autonomous"));
     }
 
     #[test]
-    fn old_agents_key_has_no_effect_on_modes() {
-        // Even if agents key is present in YAML, it should not affect modes
-        let yaml = "agents:\n  default:\n    mode: pairing\nmodes:\n  default: interactive\n";
+    fn old_agents_key_has_no_effect_on_interaction_level() {
+        // Even if agents key is present in YAML, it should not affect the level
+        let yaml =
+            "agents:\n  default:\n    mode: proposing\ninteraction-level:\n  default: confirmed\n";
         let mut base = serde_json::to_value(Config::default()).unwrap();
         let overlay: serde_json::Value = serde_yaml_ng::from_str(yaml).unwrap();
         crate::store::deep_merge_value(&mut base, &overlay);
         let config: Config = serde_json::from_value(base).unwrap();
-        // modes.default takes the explicit value, agents is ignored
-        assert_eq!(config.modes.default, InteractionLevel::Interactive);
+        // interaction-level.default takes the explicit value, agents is ignored
+        assert_eq!(
+            config.interaction_level.default,
+            InteractionLevel::Confirmed
+        );
     }
 }

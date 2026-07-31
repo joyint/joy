@@ -1,0 +1,28 @@
+id: JOY-0220-CE
+title: Shrink InteractionLevel to three values, keys mode -> level
+type: task
+status: closed
+priority: high
+parent: JOY-021F-E2
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-24T18:28:19.313438341Z
+updated: 2026-07-24T23:10:38.711799657Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-07-24T22:34:41.813355690Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-24T23:10:38.711799657Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Core model change per JI-0166-D8: InteractionLevel becomes proposing | confirmed | autonomous (ordering preserved for clamping; off handling per settings, representation is an implementation detail). Config keys rename mode -> level and max-mode -> max-level everywhere (project.yaml, project.defaults.yaml, config.yaml, CLI flags, JSON output). The member default level (global and per capability) is stored in project.yaml next to the capabilities, for human and AI members. The four-layer resolution from JOY-01DA-E1 stands; the default table is re-populated (conceive/plan/design/review: proposing, implement/document: confirmed, test: autonomous). No agent_mode is stored anywhere in joy data.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-24T22:34:41.698634845Z
+  text: 'Plan (with the 2026-07-25 naming refinement on JI-0166-D8: full keys interaction-level / max-interaction-level in code and data; UI may shorten). (1) joy-core config.rs: InteractionLevel becomes Autonomous < Confirmed < Proposing (declaration order keeps the clamp semantics; default Proposing), Display/FromStr/describe_value/probes/tests follow; Config section key interaction -> interaction-level. (2) project.rs: CapabilityConfig.max-interaction -> max-interaction-level plus a NEW per-capability member default interaction-level; member entries also get a global interaction-level default; InteractionDefaults/resolve_interaction/InteractionSource renamed to the full term, resolution gains the member layer (defaults -> project section -> member global -> member per-cap -> personal, clamped by max-interaction-level). (3) item.rs: Item field mode -> interaction-level (item YAML key renamed; migration in JOY-0221-09 covers item files too, beyond the three config files listed there). (4) store.rs loaders to the new key. (5) Shipped templates: config.defaults.yaml, project.defaults.yaml with the re-populated table (default proposing; conceive/plan/design/review proposing; implement/document confirmed; test autonomous), capability md prose lines. (6) joy-ai agent YAMLs: default_mode -> default-interaction-level with the new values, agent.md templates follow (enforcement itself stays JOY-0222-4E). (7) joy-cli: member edit flag --max-interaction-level plus new --interaction-level for the member defaults, member show / show displays say Interaction level. (8) Tests: unit in config/project/store/guard fixtures, bats modes.bats -> interaction_level.bats rewritten, config_describe.bats. (9) Docs that ship with the binary: docs/ai/Tutorial.md and docs/user/Tutorial.md (three levels, terse), VISION.md table, docs/dev/ai-jobs.md ladder, just sync-tutorial. NOT in scope here: joy-chat Chat.modes (persisted AgentMode override per JAPP-00F3) - flagged to the operator as an open point of the epic, since JI-0166-D8 section 5 turns its stored value into a level.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-24T23:10:38.596649831Z
+  text: 'Result: InteractionLevel is now Autonomous < Confirmed < Proposing (default Proposing; hand-written Deserialize so pre-2.0 values in persisted YAML error with a joy update pointer). Keys renamed everywhere per the operator''s 2026-07-25 refinement: sections interaction-level (config.yaml, project.defaults.yaml, project.yaml), floor max-interaction-level, item field interaction-level (was mode). NEW member defaults: global interaction-level on the member entry plus per-capability interaction-level in CapabilityConfig, resolution order defaults -> project section -> member global -> member per-cap -> personal, clamped by the floor (InteractionLevelSource gained Member). CLI: member edit --interaction-level [CAP=]LEVEL and --max-interaction-level CAP=LEVEL, member show/show display ''Interaction level''. Shipped templates re-populated (default proposing; conceive/plan/design/review proposing; implement/document confirmed; test autonomous), capability docs and joy-ai agent YAMLs (default-interaction-level) and agent.md templates follow. Docs: AI+user tutorial (synced), VISION.md table, ai-jobs.md. Tests: unit suites rewritten, modes.bats replaced by interaction_level.bats incl. new member-default coverage, config_describe.bats updated, snapshot accepted; just check green (539 int tests). Platform consumers mechanically renamed in the same push (proto wire field mode stays until the app-side pass). NOT here: joy-chat Chat.modes (AgentMode override per JAPP-00F3); JI-0166-D8 section 5 turns that stored value into a level - flagged as open point on the epic for operator triage.'

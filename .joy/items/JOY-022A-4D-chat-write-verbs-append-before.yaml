@@ -1,0 +1,25 @@
+id: JOY-022A-4D
+title: chat write verbs append before adopting the forge state and fork the chat crypt epoch
+type: bug
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-25T03:01:29.901412562Z
+updated: 2026-07-25T03:06:42.895399170Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-07-25T03:01:47.096438467Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-25T03:06:42.895399170Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Found while proving the JP-008B-24 round trip. joy chat run() syncs refs/joy/chats BEFORE the verb only for reads; writes sync after the local persist (JOY-0227-5E). A write in a clone whose local chats ref is missing or behind therefore appends on the unmerged state: the first send in a fresh clone builds General from scratch, ensure_crypt mints a NEW crypt epoch wrapped only for the recipients the local project.yaml knows, and the union merge later carries both epochs. Result in the field: the platform custodian has no slot for the CLI-minted epoch, so platform/browser silently drop every CLI-sent message (repro: seed clone of a registered project, ''joy chat send general ...'' while the platform had already sealed General under its own epoch; custodian resolves only its epoch, horst resolves both). Fix: sync (fetch + reconcile) before EVERY chat verb so writes append on the adopted remote state and seal under the existing active epoch; keep the post-write sync for the push.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-25T03:06:42.781851549Z
+  text: 'Fixed: run() now syncs refs/joy/chats before EVERY chat verb (adopt/reconcile), writes still sync again after the persist for the push. Proven live against the dev platform: fresh registered project, browser open on General; ''joy chat send general "@vibe ..."'' from a plain seed clone surfaced in the open browser at ~5s via the JP-008B-24 poll, vibe replied without any browser involvement, and the next CLI read saw the reply (scratchpad verify-roundtrip). Root cause chain for the record: write-before-adopt built General from scratch in the fresh clone, ensure_crypt minted a second crypt epoch wrapped only for horst (seed project.yaml knows no platform entry), union merge kept both epochs, platform custodian silently dropped every CLI event. The healing of already-forked chats and missing custodian wraps stays JOY-022B-19.'

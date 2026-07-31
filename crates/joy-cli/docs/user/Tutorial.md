@@ -294,7 +294,7 @@ Joy maintains a structured event log that records every state-changing action au
 ```sh
 joy log                          # Last 20 events
 joy log --since 7d               # Last 7 days
-joy log --item CB-0005           # Events for a specific item
+joy log CB-0005                  # Events for a specific item
 joy log --limit 50               # Show more entries
 ```
 
@@ -436,6 +436,12 @@ When an AI runs a Joy command, it authenticates with the delegation token you ha
 
 AI members have the same capabilities as human members, with one exception: **AI members cannot perform manage actions** (adding members, changing capabilities, modifying project settings). Management stays with humans.
 
+### Chats, Sealing, and the Delegate Button
+
+Team chats live in the repository (`refs/joy/chats`) and are **always sealed**: every message is encrypted for the chat's participants with their member keys, on the writing device. A clone without an identity cannot persist a chat at all (`joy auth init` first). The Joyint platform never holds a chat key - it stores and transports sealed bytes; reading and writing happen in your app, with your unlocked seed. The same chat opens identically in the web app and the desktop app.
+
+An AI answers in a chat **only under an explicit delegation from the person addressing it**. In the apps, delegation is a button: open the AI member's card in Settings, press **Delegate**, and confirm with your own passphrase - that mints the delegation token behind the scenes. **Undelegate** revokes it immediately, running sessions included. Without your delegation, the AI does not appear in your @mention suggestions, and a mention typed anyway gets a refusal notice instead of a turn. Whatever a delegated AI does - chat replies, items, commits - is recorded as the AI member acting `delegated-by` you, never under your identity and never under an invented one.
+
 ### Keeping Instructions Current
 
 You usually do not have to run anything explicitly. Every joy invocation
@@ -511,20 +517,21 @@ Joy defines eleven capabilities across two groups.
 
 ### Interaction Levels
 
-Each capability also carries an interaction level that tells AI tools how much autonomy they have. Joy defines five levels, from least to most oversight:
+Each capability also carries an interaction level that tells AI tools how much autonomy they have. Levels apply to every member; for humans they are a team agreement, for AI members they are enforced through the tools. Joy defines three levels, from least to most oversight:
 
 - `autonomous` - work independently; only stop at governance gates
-- `supervised` - confirm before irreversible actions
-- `collaborative` - propose approach, proceed after confirmation
-- `interactive` - present options with rationale, wait for user decision
-- `pairing` - step by step, question by question
+- `confirmed` - work independently; confirm before irreversible actions
+- `proposing` - propose; the human decides every step
 
-The effective level for a `(member, capability)` pair is resolved across four layers, each overriding the previous:
+The effective level for a `(member, capability)` pair is resolved across these layers, each overriding the previous:
 
-1. **Project defaults** (`.joy/project.defaults.yaml`) - ship with sensible defaults per capability (e.g. `pairing` for `conceive`, `collaborative` for `implement`).
-2. **Project overrides** (`.joy/project.yaml`) - per-capability settings the team agrees on for this project.
-3. **Personal preference** (`.joy/config.yaml`) - per-user override under `modes.default`, applied to capabilities the project hasn't pinned.
-4. **Item override** - a single item can request a different level via its `mode` field, taking effect only for that item.
+1. **Project defaults** (`.joy/project.defaults.yaml`) - ship with sensible defaults per capability (e.g. `proposing` for `conceive`, `confirmed` for `implement`, `autonomous` for `test`).
+2. **Project overrides** (`.joy/project.yaml`) - per-capability settings the team agrees on for this project, under `interaction-level`.
+3. **Member defaults** (`.joy/project.yaml`) - the member's own default next to its capabilities: a global `interaction-level` on the member entry, plus per-capability values in the expert view.
+4. **Personal preference** (`.joy/config.yaml`) - per-user override under `interaction-level.default`, applied to capabilities the project hasn't pinned.
+5. **Item override** - a single item can request a different level via its `interaction-level` field, taking effect only for that item.
+
+A per-capability `max-interaction-level` on the member entry acts as a floor on oversight: the resolved level is clamped toward `proposing`, never relaxed.
 
 Inspect what is in force with:
 

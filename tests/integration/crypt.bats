@@ -83,10 +83,10 @@ setup_bob_with_crypt() {
     joy crypt add CT-0001 --passphrase "$PASS_BOB" >/dev/null
 
     # Bob (still the active git identity) registers Alice as a member,
-    # then we switch git identity and Alice runs auth init herself.
-    joy project member add alice@example.com --passphrase "$PASS_BOB" >/dev/null
+    # capturing her invitation OTP; Alice then redeems it herself.
+    ALICE_OTP=$(joy project member add alice@example.com --passphrase "$PASS_BOB" | extract_otp)
     git config user.email "alice@example.com"
-    joy auth init --passphrase "$PASS_ALICE" >/dev/null
+    joy auth --otp "$ALICE_OTP" --passphrase "$PASS_ALICE" >/dev/null
 
     # Alice has no zone access yet. ls must list the locked row, not error.
     run joy ls

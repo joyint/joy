@@ -1,7 +1,7 @@
 id: JOY-0206-C6
 title: 'close semantics: separate job and item acceptance'
 type: story
-status: review
+status: closed
 priority: high
 parent: JOY-01FF-9D
 assignees:
@@ -13,11 +13,13 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-11T15:15:58.579289281Z
-updated: 2026-07-11T15:46:18.600423769Z
+updated: 2026-07-21T08:45:04.583205488Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-07-11T15:46:18.532252989Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 - date: 2026-07-11T15:46:18.600423769Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-21T08:45:04.583205488Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'joy close JOB does not auto-close scope items: interactive per-item prompt Close JOY-xxxx? y/N; --items / --no-items for scripts and the app. Failed-final jobs land in review carrying the error.'

@@ -23,7 +23,7 @@ enum ConfigCommand {
 
 #[derive(clap::Args)]
 struct GetArgs {
-    /// Dotted key path (e.g. output.emoji, agents.architect.mode). A
+    /// Dotted key path (e.g. output.emoji, interaction-level.default). A
     /// trailing `.*` lists every leaf under that prefix.
     #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_config_key))]
     key: String,

@@ -66,17 +66,27 @@ setup_ai_session() {
 
 DEV_PASSPHRASE="alpha bravo charlie delta echo foxtrot"
 
-# Authenticate another member (e.g. dev@example.com).
-# Switches git email, runs auth init, switches back.
+# The one-time password from `joy project member add` output.
+extract_otp() {
+    grep -oE '[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}' | head -1
+}
+
+# Enrol another member (e.g. dev@example.com) by redeeming their invitation,
+# the real flow: a manage member adds them (emitting an OTP), the invitee
+# proves it. Setting a fresh identity WITHOUT the OTP is refused (an invited
+# slot cannot be claimed with a self-chosen key). Pass the OTP captured at
+# `member add`, or set DEV_OTP by convention. Switches back afterwards.
 setup_member_auth() {
     local member="$1"
     local passphrase="$2"
+    local otp="${3:-$DEV_OTP}"
     local original_email
     original_email=$(git config user.email)
     git config user.email "$member"
-    joy auth init --passphrase "$passphrase"
+    joy auth --otp "$otp" --passphrase "$passphrase"
     git config user.email "$original_email"
-    # Re-authenticate as original (dev's auth init overwrote the session file)
+    # Re-authenticate as original (the redemption opened the invitee's session,
+    # overwriting the session file).
     joy auth --passphrase "$TEST_PASSPHRASE"
 }
 

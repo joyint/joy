@@ -1,7 +1,7 @@
 id: JOY-020C-A3
 title: 'feedback axis on jobs: awaited/received dialog state'
 type: story
-status: review
+status: closed
 priority: high
 parent: JOY-01FF-9D
 assignees:
@@ -13,11 +13,13 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-11T18:57:28.179119631Z
-updated: 2026-07-11T22:14:05.857982459Z
+updated: 2026-07-21T08:45:05.449155180Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-07-11T22:14:05.782896612Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 - date: 2026-07-11T22:14:05.857982459Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-21T08:45:05.449155180Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Orthogonal dialog field on the job payload, exactly the validity recipe: job.feedback with values awaited (assignee asked, operator is up) and received (answer in, assignee is up), absent = no dialog. joy edit <JOB> --feedback awaited|received|none (assignee/operator set it alongside a normal comment); column in ls -J and board -J grouping; shown in joy show. See JOY-01FE-37 DIALOG section.'

@@ -568,9 +568,19 @@ mod tests {
 
     #[test]
     fn git_detect_forge() {
+        // A fixture repo with an explicit origin, so the plumbing path
+        // (default_remote + remote_url + parse) is deterministic regardless
+        // of where THIS checkout is hosted (GitHub, a private mirror, a bare
+        // remote). Per-forge URL parsing is covered by forge_detection_*.
+        let dir = tempfile::tempdir().unwrap();
         let vcs = GitVcs;
-        let forge = vcs.detect_forge(Path::new("."));
-        // We're on GitHub
-        assert_eq!(forge, Forge::GitHub);
+        vcs.init_repo(dir.path()).unwrap();
+        let status = std::process::Command::new("git")
+            .args(["remote", "add", "origin", "git@github.com:joyint/joy.git"])
+            .current_dir(dir.path())
+            .status()
+            .unwrap();
+        assert!(status.success());
+        assert_eq!(vcs.detect_forge(dir.path()), Forge::GitHub);
     }
 }

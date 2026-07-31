@@ -1,0 +1,14 @@
+id: JOY-0241-14
+title: 'Deleted chats keep their envelopes forever: prune the chat ref'
+type: task
+status: new
+priority: medium
+capabilities:
+- implement
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-29T17:05:18.156176319Z
+updated: 2026-07-29T17:05:18.156176319Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'A delete-for-all is a tombstone record (merge-safe under the union merge), but the sealed envelopes of deleted chats stay in the CURRENT tree of refs/joy/chats forever, and the ref''s git history keeps everything on top. In projects with many members and busy chats (tool records and turn details ride along, not just short text lines) this grows without bound. Two-part remedy, both version-gated so old clients cannot resurrect anything: (1) a prune step in the existing update path that drops the message envelopes of tombstoned chats from the current tree (the tombstone itself stays); (2) periodic squashing of the chat ref history — the ref is data, not code, so its history has no product value, and only with a squash does pruning actually reclaim space in clones. Confidentiality is NOT the driver (git history keeps blobs either way, like any git rm); size and hygiene are.'

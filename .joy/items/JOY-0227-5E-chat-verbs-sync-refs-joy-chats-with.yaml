@@ -1,0 +1,27 @@
+id: JOY-0227-5E
+title: Chat verbs sync refs/joy/chats with the forge
+type: task
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-24T21:43:04.522810254Z
+updated: 2026-07-25T02:11:24.019304735Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-07-25T01:57:57.455598130Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-25T02:11:24.019304735Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Implements the CLI half of JAPP-00DC-FC (the CLI and apps sync the ref explicitly) and the chats three-layer concept. joy chat send: append and commit locally first (truth in the repo, nothing lost), then in the same invocation fetch refs/joy/chats from the configured remote, merge by message-id union (append-only, merges ciphertext), push. On push failure: message stays committed, clear error text, transient vs permanent classification like the app sync worker; the next send or read retries. joy chat ls/show/info fetch the ref first (occasion-based pull) so replies from the platform or other members become visible. No manual git push refs/joy/* ever required.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-25T01:57:57.309511818Z
+  text: 'Plan: (1) joy-chat chat_ref gains the SHARED local reconcile (reconcile_with_tracking: adopt absent, fast-forward behind, message-union merge on divergence via the existing merge_refs, returns push-needed) plus the tracking-ref constant - the platform and the desktop each carry a private copy of exactly this decision tree today; the CLI must not become copy number three. Refactoring those two onto the shared helper is noted as follow-up, not done here (working, tested code). (2) joy-cli chat: a sync step around every verb - reads (ls/show/info) fetch+reconcile+push-if-ahead first; writes (send/add/leave/delete/rename/read) persist locally first (truth in the repo), then fetch+merge+push in the same invocation. Network via the git CLI with the user''s ambient auth (ssh agent etc.), remote from sync.remote else origin; a repo without a remote skips silently (local-only project). Failure classification like the app worker: missing remote ref = fine (first sync), auth/permission = permanent wording, everything else transient (''will retry on the next send or read''); a failed push never loses the message (it stays committed on the local ref). (3) Tests: reconcile unit scenarios in chat_ref, plus a bats round-trip over a bare origin with two clones (send in A, visible in B, reply in B, visible in A).'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-25T02:11:23.901152866Z
+  text: 'Result: joy-chat gained the SHARED reconcile (reconcile_with_tracking + CHATS_TRACKING_REF; adopt/fast-forward/union-merge/push-needed - the decision tree the platform and desktop each carry privately; converging them is noted follow-up). The CLI runs a sync around every verb: reads fetch+reconcile+push-if-ahead first, writes persist locally then fetch/merge/push in the same invocation, network via the git CLI with ambient auth, remote from sync.remote else origin, remote-less repos skip silently. Failures never lose a message and classify transient (offline, retry on next send/read) vs permanent (credentials) with the missing-remote-ref case treated as the normal first sync. Tests: reconcile all-lanes unit test; bats round-trip over a bare origin (A sends -> ref on origin; fresh clone B adopts on read and sees it; B replies; A sees both). just check green (542).'

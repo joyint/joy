@@ -1,0 +1,8 @@
+2026-07-28T03:26:47.299Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-28T03:26:47.402Z JOY-023E-68 item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-28T03:57:53.911Z JOY-023F-7B item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-28T07:00:34.135Z JOY-023E-68 comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-28T18:34:57.156Z JOY-022E-B2 guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-07-28T18:35:21.858Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-28T18:35:30.049Z JOY-022E-B2 comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-07-28T18:39:14.626Z JOY-0240-97 item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

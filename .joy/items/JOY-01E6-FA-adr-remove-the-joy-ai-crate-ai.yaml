@@ -5,13 +5,15 @@ status: closed
 priority: medium
 capabilities:
 - conceive
-validity: accepted
+validity: retired
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-15T21:13:32.249555Z
-updated: 2026-06-15T21:13:32.407096Z
+updated: 2026-07-21T08:45:06.996453180Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-15T21:13:32.407096Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-21T08:45:06.914862276Z
   by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Context: joy-ai was intended to hold AI tool dispatch and job tracking. It is an empty placeholder (lib.rs is only a license header; joy-cli depends on it but uses nothing). The AI execution model has since moved: per the Joyint App and Platform Container concepts, AI runs via ACP (Agent Client Protocol) with an AgentTransport trait and a governance Mediator, in the app's Tauri shell and in the platform's Project/Job containers (see JP-0030-E1). The joy-side AI configuration (joy ai init, agent file generation) already lives in joy-cli (commands/ai.rs) and joy-core (ai_templates.rs).
@@ -19,3 +21,7 @@ description: |-
   Decision: Remove the joy-ai crate. Joy (CLI and core) does not host AI execution or dispatch; that responsibility is ACP-based in the platform and the app shell. joy-side AI concerns are limited to configuration and governance metadata, which live in joy-cli and joy-core.
 
   Consequences: Drop crates/joy-ai, its workspace membership, and the joy-cli dependency (and the test fixtures that reference it). No functionality is lost (the crate was empty). The AI execution architecture is owned by the platform (JP-0030-E1, the Platform Container concept) and the app (the Joyint App concept).
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-21T08:45:06.996451959Z
+  text: 'Retired: superseded by ADR-043 (umbrella JI-0143-C8, 2026-07-20). The ''joy-ai is an empty placeholder'' premise no longer holds; joy-core had accumulated real AI/chat code, now split into joy-chat + joy-ai (JI-0145-C5). joy-ai is a populated crate, not removed.'

@@ -219,7 +219,7 @@ const STATIC_CONFIG_KEYS: &[&str] = &[
     "ai.model",
     "ai.max_cost_per_job",
     "ai.currency",
-    "modes.default",
+    "interaction.default",
 ];
 
 /// Complete config keys for `joy config get/set`.
@@ -228,24 +228,11 @@ pub fn complete_config_key(current: &OsStr) -> Vec<CompletionCandidate> {
         return Vec::new();
     };
 
-    let mut candidates: Vec<CompletionCandidate> = STATIC_CONFIG_KEYS
+    let candidates: Vec<CompletionCandidate> = STATIC_CONFIG_KEYS
         .iter()
         .filter(|k| k.starts_with(prefix))
         .map(|k| CompletionCandidate::new(*k))
         .collect();
-
-    // Add dynamic agent role keys from current config
-    let config_value = store::load_config_value();
-    if let Some(agents) = config_value.get("agents").and_then(|a| a.as_object()) {
-        for role in agents.keys() {
-            if role != "default" {
-                let key = format!("agents.{role}.mode");
-                if key.starts_with(prefix) {
-                    candidates.push(CompletionCandidate::new(key));
-                }
-            }
-        }
-    }
 
     candidates
 }

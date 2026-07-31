@@ -3,9 +3,17 @@
 
 //! Session management for authenticated Joy operations.
 //!
-//! Sessions are time-limited tokens stored locally in `~/.config/joy/sessions/`.
-//! They prove that the user has entered their passphrase and derived the correct
+//! Sessions are time-limited tokens stored locally in
+//! `~/.local/state/joy/sessions/` (honoring `XDG_STATE_HOME`). They prove
+//! that the user has entered their passphrase and derived the correct
 //! identity key within the configured time window.
+//!
+//! Human sessions occupy one deterministic slot per (project, member):
+//! re-authenticating replaces the previous session. AI sessions get one
+//! file per session, keyed by the ephemeral session public key, because
+//! every token redemption is an independent session (JOY-01E1-E7) and a
+//! redemption in one terminal must not displace the session another
+//! terminal is still using. Expired files are swept lazily on save.
 
 use std::path::{Path, PathBuf};
 
@@ -14,6 +22,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{IdentityKeypair, PublicKey};
 use crate::error::JoyError;
+use crate::model::project::is_ai_member;
 
 /// Claims encoded in a session token.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,11 +31,10 @@ pub struct SessionClaims {
     pub project_id: String,
     pub created: DateTime<Utc>,
     pub expires: DateTime<Utc>,
-    /// For AI sessions: the delegation_key this session was bound to at creation.
-    /// Rotating the delegation invalidates the session. Field name kept as
-    /// `token_key` for on-disk compatibility with already-written sessions.
+    /// For AI sessions: the delegation_verifier this session was bound to
+    /// at creation. Rotating the delegation invalidates the session.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub token_key: Option<String>,
+    pub delegation_key: Option<String>,
     /// For AI sessions (ADR-033): the ephemeral public key whose matching
     /// private key lives only in the `JOY_SESSION` env var. Validation
     /// requires the caller to possess that private key, binding the session
@@ -43,21 +51,14 @@ pub struct SessionClaims {
     // signed byte stream. New claims must be `Option` +
     // `skip_serializing_if = "Option::is_none"` and APPENDED here, never
     // inserted or reordered: sessions written before a field existed then
-    // still serialize (and verify) byte-identically.
+    // still serialize (and verify) byte-identically. Renaming or removing
+    // a field is allowed exactly BECAUSE it breaks old files: sessions
+    // are ephemeral, and a shape change simply expires them into a fresh
+    // `joy auth` instead of keeping a read path alive.
     // ------------------------------------------------------------------
-    /// Job-bound platform sessions (JOY-020B-D2): the job item this
-    /// session is scoped to. Commands accept such a session only while
-    /// that job is in progress and `member` is among its assignees.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub job_id: Option<String>,
-    /// Who signed this session. `Some("platform")` for job-bound sessions
-    /// signed with the project's registered platform key (verified at
-    /// command time); `None` for every other session kind.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub issuer: Option<String>,
-    /// Job-bound platform sessions: the at-rest member key of the human
-    /// who approved the job. Recorded at mint time because inside a job
-    /// sandbox there is no operator git e-mail to derive it from.
+    /// The human whose delegation this session acts under, recorded at
+    /// redemption (F2, JI-0175-B0), so every write names the person
+    /// behind the AI.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delegated_by: Option<String>,
 }
@@ -80,10 +81,6 @@ pub struct SessionToken {
 
 /// Default session duration: 24 hours.
 const DEFAULT_TTL_HOURS: i64 = 24;
-
-/// The `issuer` claim value for platform-signed, job-bound sessions
-/// (JOY-020B-D2).
-pub const PLATFORM_ISSUER: &str = "platform";
 
 /// Detect the current terminal device for session binding.
 ///
@@ -122,7 +119,7 @@ pub fn create_session(
     project_id: &str,
     ttl: Option<Duration>,
 ) -> SessionToken {
-    create_session_with_token_key(keypair, member, project_id, ttl, None)
+    create_session_with_delegation_key(keypair, member, project_id, ttl, None)
 }
 
 /// Create a session for an AI member with an ephemeral keypair (ADR-033).
@@ -143,6 +140,7 @@ pub fn create_session_for_ai(
     ttl: Option<Duration>,
     delegation_key: &str,
     token_expires: Option<DateTime<Utc>>,
+    delegated_by: Option<String>,
 ) -> SessionToken {
     let now = Utc::now();
     let ttl = ttl.unwrap_or_else(|| Duration::hours(DEFAULT_TTL_HOURS));
@@ -156,12 +154,16 @@ pub fn create_session_for_ai(
         project_id: project_id.to_string(),
         created: now,
         expires,
-        token_key: Some(delegation_key.to_string()),
+        delegation_key: Some(delegation_key.to_string()),
         session_public_key: Some(ephemeral_keypair.public_key().to_hex()),
         tty: None,
-        job_id: None,
-        issuer: None,
-        delegated_by: None,
+        // The delegating human recorded at redemption (F2, JI-0175-B0): a
+        // token-redeemed session used to leave this None, and the identity
+        // resolver then guessed the delegator from the local git e-mail —
+        // which inside an agent container is the image's fake identity. It
+        // now travels in the signed claims so `delegated-by:` is correct
+        // wherever the session runs.
+        delegated_by,
     };
     let claims_json = serde_json::to_string(&claims).expect("claims serialize");
     let signature = ephemeral_keypair.sign(claims_json.as_bytes());
@@ -172,57 +174,12 @@ pub fn create_session_for_ai(
     }
 }
 
-/// Create a job-bound session for an AI member, signed by the PLATFORM
-/// key (JOY-020B-D2).
-///
-/// Unlike [`create_session_for_ai`] the signature is not by the throwaway
-/// ephemeral keypair: it is by the platform's registered signing key, so
-/// command-time validation can verify the issuer against
-/// `project.platform.verify_key`. The ephemeral keypair still provides
-/// proof of possession exactly as for token-redeemed AI sessions: its
-/// public half is recorded in the claims, its private half lives only in
-/// the `JOY_SESSION` env value of the sandboxed agent.
-///
-/// `delegated_by` is the at-rest member key of the human who approved the
-/// job (release at triage authorizes the spend); it becomes the
-/// `delegated-by:` audit actor for everything the session does.
-pub fn create_session_for_job(
-    platform_keypair: &IdentityKeypair,
-    ephemeral_keypair: &IdentityKeypair,
-    member: &str,
-    project_id: &str,
-    job_id: &str,
-    delegated_by: Option<String>,
-    ttl: Duration,
-) -> SessionToken {
-    let now = Utc::now();
-    let claims = SessionClaims {
-        member: member.to_string(),
-        project_id: project_id.to_string(),
-        created: now,
-        expires: now + ttl,
-        token_key: None,
-        session_public_key: Some(ephemeral_keypair.public_key().to_hex()),
-        tty: None,
-        job_id: Some(job_id.to_string()),
-        issuer: Some(PLATFORM_ISSUER.to_string()),
-        delegated_by,
-    };
-    let claims_json = serde_json::to_string(&claims).expect("claims serialize");
-    let signature = platform_keypair.sign(claims_json.as_bytes());
-    SessionToken {
-        claims,
-        signature: hex::encode(signature),
-        members_zone_key: None,
-    }
-}
-
-fn create_session_with_token_key(
+fn create_session_with_delegation_key(
     keypair: &IdentityKeypair,
     member: &str,
     project_id: &str,
     ttl: Option<Duration>,
-    token_key: Option<String>,
+    delegation_key: Option<String>,
 ) -> SessionToken {
     let now = Utc::now();
     let ttl = ttl.unwrap_or_else(|| Duration::hours(DEFAULT_TTL_HOURS));
@@ -234,11 +191,9 @@ fn create_session_with_token_key(
         project_id: project_id.to_string(),
         created: now,
         expires: now + ttl,
-        token_key,
+        delegation_key,
         session_public_key: None,
         tty,
-        job_id: None,
-        issuer: None,
         delegated_by: None,
     };
     let claims_json = serde_json::to_string(&claims).expect("claims serialize");
@@ -291,9 +246,10 @@ fn session_filename(project_id: &str, member: &str) -> String {
     format!("{}.json", session_id(project_id, member))
 }
 
-/// The session ID: a short, deterministic, opaque identifier for a session.
-/// Used as the filename stub for the session file and as part of the
-/// `JOY_SESSION` env var payload.
+/// The session ID of the single per-member slot: deterministic, opaque.
+/// Human sessions live under this id. AI sessions use
+/// [`session_storage_id`] instead, which mixes in the ephemeral session
+/// public key so each session gets its own file.
 pub fn session_id(project_id: &str, member: &str) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
@@ -302,6 +258,35 @@ pub fn session_id(project_id: &str, member: &str) -> String {
     hasher.update(member.as_bytes());
     let hash = hasher.finalize();
     hex::encode(&hash[..SESSION_ID_LEN])
+}
+
+/// The storage ID of a session: the filename stub of its file on disk and
+/// the sid carried in the `JOY_SESSION` env payload.
+///
+/// AI sessions (token-redeemed and job-bound alike) are keyed by the
+/// ephemeral session public key, so every session occupies its own file
+/// and concurrent sessions for the same member coexist (JOY-01E1-E7).
+/// Human sessions keep the deterministic per-member slot: their lookup
+/// runs by (project, member), not by an env-carried sid.
+pub fn session_storage_id(project_id: &str, claims: &SessionClaims) -> String {
+    match &claims.session_public_key {
+        // AI sessions get a PER-SESSION file (keyed by the ephemeral
+        // session public key), so an AI can hold several at once (one per
+        // chat, and one per job round) and each survives independently
+        // (JOY-01E1-E7).
+        Some(session_pk) if is_ai_member(&claims.member) => {
+            use sha2::{Digest, Sha256};
+            let mut hasher = Sha256::new();
+            hasher.update(project_id.as_bytes());
+            hasher.update(b":");
+            hasher.update(claims.member.as_bytes());
+            hasher.update(b":");
+            hasher.update(session_pk.as_bytes());
+            let hash = hasher.finalize();
+            hex::encode(&hash[..SESSION_ID_LEN])
+        }
+        _ => session_id(project_id, &claims.member),
+    }
 }
 
 /// Prefix for the `JOY_SESSION` env var value (ADR-033).
@@ -398,14 +383,23 @@ pub fn parse_session_env_full(
     Some((sid_hex, session_priv, delegation_priv))
 }
 
-/// Save a session token to disk.
+/// Save a session token to disk, under its [`session_storage_id`].
+///
+/// Saving never displaces another live session: AI sessions land in their
+/// own per-session file, human sessions replace only the caller's own
+/// per-member slot. Expired session files are swept as a side effect so
+/// the directory does not accumulate dead files.
 pub fn save_session(project_id: &str, token: &SessionToken) -> Result<(), JoyError> {
     let dir = session_dir()?;
     std::fs::create_dir_all(&dir).map_err(|e| JoyError::CreateDir {
         path: dir.clone(),
         source: e,
     })?;
-    let path = dir.join(session_filename(project_id, &token.claims.member));
+    sweep_expired_sessions(&dir);
+    let path = dir.join(format!(
+        "{}.json",
+        session_storage_id(project_id, &token.claims)
+    ));
     let json = serde_json::to_string_pretty(token).expect("session serialize");
     std::fs::write(&path, &json).map_err(|e| JoyError::WriteFile {
         path: path.clone(),
@@ -424,7 +418,11 @@ pub fn save_session(project_id: &str, token: &SessionToken) -> Result<(), JoyErr
     Ok(())
 }
 
-/// Load a session token from disk for a specific member, if it exists.
+/// Load the per-member slot session from disk, if it exists.
+///
+/// This resolves only the deterministic (project, member) slot — the home
+/// of human sessions. AI sessions live in per-session files; resolve them
+/// via [`load_session_by_id`] (env sid) or [`list_member_sessions`].
 pub fn load_session(project_id: &str, member: &str) -> Result<Option<SessionToken>, JoyError> {
     let dir = session_dir()?;
     let path = dir.join(session_filename(project_id, member));
@@ -438,6 +436,76 @@ pub fn load_session(project_id: &str, member: &str) -> Result<Option<SessionToke
     let token: SessionToken =
         serde_json::from_str(&json).map_err(|e| JoyError::AuthFailed(format!("{e}")))?;
     Ok(Some(token))
+}
+
+/// All session files belonging to (project, member), with their on-disk
+/// paths: the per-member slot plus every per-session AI file. Unreadable
+/// or foreign files are skipped; a missing directory yields an empty list.
+pub fn list_member_sessions(
+    project_id: &str,
+    member: &str,
+) -> Result<Vec<(PathBuf, SessionToken)>, JoyError> {
+    let dir = session_dir()?;
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Ok(Vec::new());
+    };
+    let mut sessions = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let Ok(json) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(token) = serde_json::from_str::<SessionToken>(&json) else {
+            continue;
+        };
+        if token.claims.project_id == project_id && token.claims.member == member {
+            sessions.push((path, token));
+        }
+    }
+    // Newest first, so "the" session of a member is the most recent one.
+    sessions.sort_by_key(|(_, token)| std::cmp::Reverse(token.claims.created));
+    Ok(sessions)
+}
+
+/// The session the current environment points at: parses `JOY_SESSION`,
+/// loads the file it references, and returns it if it belongs to
+/// (project, member). Possession of the matching ephemeral private key is
+/// NOT checked here — that stays with `resolve_identity`; this is a
+/// display/lookup helper.
+pub fn current_env_session(project_id: &str, member: &str) -> Option<SessionToken> {
+    let env_value = std::env::var("JOY_SESSION")
+        .ok()
+        .filter(|s| !s.is_empty())?;
+    let (sid, _) = parse_session_env(&env_value)?;
+    let token = load_session_by_id(&sid).ok().flatten()?;
+    (token.claims.project_id == project_id && token.claims.member == member).then_some(token)
+}
+
+/// Remove every expired session file in `dir`. Best effort: unreadable or
+/// unparseable files are left alone (they may belong to a newer joy).
+fn sweep_expired_sessions(dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let now = Utc::now();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let Ok(json) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(token) = serde_json::from_str::<SessionToken>(&json) else {
+            continue;
+        };
+        if token.claims.expires < now {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
 }
 
 /// Load a session by its opaque ID (the JOY_SESSION value).
@@ -461,16 +529,36 @@ pub fn load_session_by_id(id: &str) -> Result<Option<SessionToken>, JoyError> {
 /// Used by `joy ai reset` to warn before removing a member that is still in
 /// active use, instead of silently invalidating a live session.
 pub fn has_active_session(project_id: &str, member: &str) -> bool {
-    matches!(
-        load_session(project_id, member),
-        Ok(Some(token)) if token.claims.expires > Utc::now()
-    )
+    let now = Utc::now();
+    list_member_sessions(project_id, member)
+        .map(|sessions| sessions.iter().any(|(_, t)| t.claims.expires > now))
+        .unwrap_or(false)
 }
 
-/// Remove a session token from disk for a specific member.
+/// Remove ALL of a member's sessions from disk for this project: the
+/// per-member slot and every per-session AI file. Deauth and delegation
+/// rotation mean "this member is signed out", not "one shell is".
 pub fn remove_session(project_id: &str, member: &str) -> Result<(), JoyError> {
     let dir = session_dir()?;
-    let path = dir.join(session_filename(project_id, member));
+    let slot = dir.join(session_filename(project_id, member));
+    if slot.exists() {
+        std::fs::remove_file(&slot).map_err(|e| JoyError::WriteFile {
+            path: slot,
+            source: e,
+        })?;
+    }
+    for (path, _) in list_member_sessions(project_id, member)? {
+        std::fs::remove_file(&path).map_err(|e| JoyError::WriteFile { path, source: e })?;
+    }
+    Ok(())
+}
+
+/// Remove a single session file, addressed by its storage id. Used to
+/// drop one stale session (e.g. bound to a rotated delegation key)
+/// without signing out the member's other sessions.
+pub fn remove_session_by_id(id: &str) -> Result<(), JoyError> {
+    let dir = session_dir()?;
+    let path = dir.join(format!("{id}.json"));
     if path.exists() {
         std::fs::remove_file(&path).map_err(|e| JoyError::WriteFile { path, source: e })?;
     }
@@ -491,6 +579,13 @@ pub fn project_id_of(project: &crate::model::Project) -> String {
         .acronym
         .clone()
         .unwrap_or_else(|| project.name.to_lowercase().replace(' ', "-"))
+}
+
+/// The OS state base directory, publicly: hosts park per-tool agent
+/// state (JI-017A-85 state_env) next to joy's own sessions instead of
+/// re-deriving the platform rules.
+pub fn state_base_dir() -> Result<PathBuf, JoyError> {
+    dirs_state_dir()
 }
 
 pub(super) fn dirs_state_dir() -> Result<PathBuf, JoyError> {
@@ -516,6 +611,14 @@ mod tests {
     use tempfile::tempdir;
 
     const TEST_PASSPHRASE: &str = "correct horse battery staple extra words";
+
+    /// Serializes tests that mutate process-global env vars
+    /// (`XDG_STATE_HOME`, `JOY_SESSION`): cargo runs tests on threads.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
 
     fn test_keypair() -> (IdentityKeypair, PublicKey) {
         let salt =
@@ -583,12 +686,13 @@ mod tests {
     fn ai_session_carries_ephemeral_public_key() {
         let ephemeral = IdentityKeypair::from_random();
         let ephemeral_pk = ephemeral.public_key().to_hex();
-        let token = create_session_for_ai(&ephemeral, "ai:claude@joy", "TST", None, "dkey", None);
+        let token =
+            create_session_for_ai(&ephemeral, "ai:claude@joy", "TST", None, "dkey", None, None);
         assert_eq!(
             token.claims.session_public_key.as_deref(),
             Some(ephemeral_pk.as_str())
         );
-        assert_eq!(token.claims.token_key.as_deref(), Some("dkey"));
+        assert_eq!(token.claims.delegation_key.as_deref(), Some("dkey"));
         // Ensure the session signature validates against the ephemeral public key.
         let pk = PublicKey::from_hex(&ephemeral_pk).unwrap();
         validate_session(&token, &pk, "TST").unwrap();
@@ -606,6 +710,7 @@ mod tests {
             None,
             "dkey",
             Some(token_expires),
+            None,
         );
         // Session expiry should equal token_expires (within a tiny window).
         let delta = (token.claims.expires - token_expires).num_seconds().abs();
@@ -623,6 +728,7 @@ mod tests {
             Some(Duration::hours(1)),
             "dkey",
             Some(token_expires),
+            None,
         );
         // Session expiry should be ~1h, not 7 days.
         let session_ttl = token.claims.expires - token.claims.created;
@@ -633,80 +739,43 @@ mod tests {
     }
 
     #[test]
-    fn job_session_signed_by_platform_key_not_ephemeral() {
-        let platform = IdentityKeypair::from_seed(&[1u8; 32]);
-        let ephemeral = IdentityKeypair::from_random();
-        let token = create_session_for_job(
-            &platform,
-            &ephemeral,
-            "ai:claude@joy",
-            "TST",
-            "TST-JOB-0001",
-            Some("op@example.com".into()),
-            Duration::hours(4),
-        );
-        assert_eq!(token.claims.job_id.as_deref(), Some("TST-JOB-0001"));
-        assert_eq!(token.claims.issuer.as_deref(), Some(PLATFORM_ISSUER));
-        assert_eq!(token.claims.delegated_by.as_deref(), Some("op@example.com"));
-        assert_eq!(
-            token.claims.session_public_key.as_deref(),
-            Some(ephemeral.public_key().to_hex().as_str())
-        );
-        assert!(token.claims.token_key.is_none());
-
-        // Validates against the platform key...
-        validate_session(&token, &platform.public_key(), "TST").unwrap();
-        // ...but NOT against the ephemeral key (issuer binding is real).
-        assert!(validate_session(&token, &ephemeral.public_key(), "TST").is_err());
-    }
-
-    #[test]
-    fn job_session_tampered_claims_rejected() {
-        let platform = IdentityKeypair::from_seed(&[1u8; 32]);
-        let ephemeral = IdentityKeypair::from_random();
-        let mut token = create_session_for_job(
-            &platform,
-            &ephemeral,
-            "ai:claude@joy",
-            "TST",
-            "TST-JOB-0001",
-            None,
-            Duration::hours(4),
-        );
-        token.claims.job_id = Some("TST-JOB-0099".into());
-        assert!(validate_session(&token, &platform.public_key(), "TST").is_err());
-    }
-
-    #[test]
-    fn job_claims_absent_from_non_job_sessions() {
-        // The signature is over the serde_json byte stream: pre-JOY-020B-D2
-        // sessions carry none of the job fields, so re-serializing them must
-        // not emit the new keys or every old signature breaks.
+    fn optional_claims_stay_absent_from_plain_sessions() {
+        // The signature is over the serde_json byte stream: absent
+        // optional claims must not serialize, or a session written
+        // without them would re-serialize differently and break its own
+        // signature.
         let (kp, pk) = test_keypair();
         let token = create_session(&kp, "test@example.com", "TST", None);
         let json = serde_json::to_string(&token.claims).unwrap();
-        assert!(!json.contains("job_id"), "got: {json}");
-        assert!(!json.contains("issuer"), "got: {json}");
+        assert!(!json.contains("delegation_key"), "got: {json}");
         assert!(!json.contains("delegated_by"), "got: {json}");
         validate_session(&token, &pk, "TST").unwrap();
     }
 
     #[test]
-    fn legacy_session_file_without_job_fields_parses() {
+    fn a_session_written_by_a_retired_shape_fails_verification() {
+        // A file carrying retired claims (the platform-key era job_id /
+        // issuer, or the pre-rename token_key) still parses — unknown
+        // fields are ignored — but its signature no longer verifies over
+        // the re-serialized claims, so it expires into a fresh joy auth
+        // instead of being quietly honored.
         let json = r#"{
             "claims": {
                 "member": "ai:claude@joy",
                 "project_id": "TST",
                 "created": "2026-01-01T00:00:00Z",
-                "expires": "2026-01-02T00:00:00Z",
-                "session_public_key": "aa"
+                "expires": "2099-01-02T00:00:00Z",
+                "session_public_key": "aa",
+                "token_key": "bb",
+                "job_id": "JOB-1",
+                "issuer": "platform"
             },
             "signature": "00"
         }"#;
         let token: SessionToken = serde_json::from_str(json).unwrap();
-        assert!(token.claims.job_id.is_none());
-        assert!(token.claims.issuer.is_none());
-        assert!(token.claims.delegated_by.is_none());
+        assert!(token.claims.delegation_key.is_none());
+        let (_kp, pk) = test_keypair();
+        assert!(validate_session(&token, &pk, "TST").is_err());
     }
 
     #[test]
@@ -736,12 +805,13 @@ mod tests {
 
     #[test]
     fn save_load_roundtrip() {
+        let _guard = env_lock();
         let (kp, pk) = test_keypair();
         let token = create_session(&kp, "test@example.com", "TST", None);
 
         let dir = tempdir().unwrap();
         // Override session dir via env
-        // SAFETY: test is single-threaded, setting env var for session dir override
+        // SAFETY: env mutation serialized via ENV_LOCK
         unsafe { std::env::set_var("XDG_STATE_HOME", dir.path()) };
 
         save_session("TST", &token).unwrap();
@@ -751,6 +821,191 @@ mod tests {
 
         remove_session("TST", "test@example.com").unwrap();
         assert!(load_session("TST", "test@example.com").unwrap().is_none());
+
+        // SAFETY: test cleanup
+        unsafe { std::env::remove_var("XDG_STATE_HOME") };
+    }
+
+    #[test]
+    fn ai_sessions_coexist_one_file_per_session() {
+        let _guard = env_lock();
+        let dir = tempdir().unwrap();
+        // SAFETY: env mutation serialized via ENV_LOCK
+        unsafe { std::env::set_var("XDG_STATE_HOME", dir.path()) };
+
+        let first_kp = IdentityKeypair::from_random();
+        let second_kp = IdentityKeypair::from_random();
+        let first =
+            create_session_for_ai(&first_kp, "ai:claude@joy", "TST", None, "dkey", None, None);
+        let second =
+            create_session_for_ai(&second_kp, "ai:claude@joy", "TST", None, "dkey", None, None);
+        save_session("TST", &first).unwrap();
+        save_session("TST", &second).unwrap();
+
+        let first_sid = session_storage_id("TST", &first.claims);
+        let second_sid = session_storage_id("TST", &second.claims);
+        assert_ne!(first_sid, second_sid, "each session gets its own id");
+
+        // Saving the second session must not displace the first
+        // (JOY-01E1-E7: redemptions are independent sessions).
+        let loaded_first = load_session_by_id(&first_sid).unwrap().unwrap();
+        assert_eq!(
+            loaded_first.claims.session_public_key,
+            first.claims.session_public_key
+        );
+        let loaded_second = load_session_by_id(&second_sid).unwrap().unwrap();
+        assert_eq!(
+            loaded_second.claims.session_public_key,
+            second.claims.session_public_key
+        );
+
+        assert_eq!(
+            list_member_sessions("TST", "ai:claude@joy").unwrap().len(),
+            2
+        );
+        assert!(has_active_session("TST", "ai:claude@joy"));
+
+        // remove_session signs the member out everywhere.
+        remove_session("TST", "ai:claude@joy").unwrap();
+        assert!(list_member_sessions("TST", "ai:claude@joy")
+            .unwrap()
+            .is_empty());
+        assert!(!has_active_session("TST", "ai:claude@joy"));
+
+        // SAFETY: test cleanup
+        unsafe { std::env::remove_var("XDG_STATE_HOME") };
+    }
+
+    #[test]
+    fn expired_sessions_swept_on_save() {
+        let _guard = env_lock();
+        let dir = tempdir().unwrap();
+        // SAFETY: env mutation serialized via ENV_LOCK
+        unsafe { std::env::set_var("XDG_STATE_HOME", dir.path()) };
+
+        let expired_kp = IdentityKeypair::from_random();
+        let expired = create_session_for_ai(
+            &expired_kp,
+            "ai:claude@joy",
+            "TST",
+            Some(Duration::seconds(-1)),
+            "dkey",
+            None,
+            None,
+        );
+        save_session("TST", &expired).unwrap();
+
+        let fresh_kp = IdentityKeypair::from_random();
+        let fresh =
+            create_session_for_ai(&fresh_kp, "ai:claude@joy", "TST", None, "dkey", None, None);
+        save_session("TST", &fresh).unwrap();
+
+        let sessions = list_member_sessions("TST", "ai:claude@joy").unwrap();
+        assert_eq!(sessions.len(), 1, "expired session swept on save");
+        assert_eq!(
+            sessions[0].1.claims.session_public_key,
+            fresh.claims.session_public_key
+        );
+
+        // SAFETY: test cleanup
+        unsafe { std::env::remove_var("XDG_STATE_HOME") };
+    }
+
+    #[test]
+    fn human_sessions_keep_single_slot() {
+        let _guard = env_lock();
+        let dir = tempdir().unwrap();
+        // SAFETY: env mutation serialized via ENV_LOCK
+        unsafe { std::env::set_var("XDG_STATE_HOME", dir.path()) };
+
+        let (kp, _) = test_keypair();
+        let first = create_session(&kp, "test@example.com", "TST", None);
+        let second = create_session(&kp, "test@example.com", "TST", None);
+        save_session("TST", &first).unwrap();
+        save_session("TST", &second).unwrap();
+
+        // Re-authenticating replaces the slot instead of accumulating.
+        assert_eq!(
+            list_member_sessions("TST", "test@example.com")
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(load_session("TST", "test@example.com").unwrap().is_some());
+
+        // SAFETY: test cleanup
+        unsafe { std::env::remove_var("XDG_STATE_HOME") };
+    }
+
+    #[test]
+    fn legacy_ai_session_slot_still_resolves_and_removes() {
+        // Sessions written by a pre-JOY-01E1-E7-fix joy live under the
+        // deterministic per-member filename, and live JOY_SESSION values
+        // carry that legacy sid. They must stay resolvable across the
+        // upgrade and disappear on remove_session.
+        let _guard = env_lock();
+        let tmp = tempdir().unwrap();
+        // SAFETY: env mutation serialized via ENV_LOCK
+        unsafe { std::env::set_var("XDG_STATE_HOME", tmp.path()) };
+
+        let kp = IdentityKeypair::from_random();
+        let token = create_session_for_ai(&kp, "ai:claude@joy", "TST", None, "dkey", None, None);
+        let dir = session_dir().unwrap();
+        std::fs::create_dir_all(&dir).unwrap();
+        let legacy_sid = session_id("TST", "ai:claude@joy");
+        std::fs::write(
+            dir.join(format!("{legacy_sid}.json")),
+            serde_json::to_string(&token).unwrap(),
+        )
+        .unwrap();
+
+        assert!(load_session_by_id(&legacy_sid).unwrap().is_some());
+        assert_eq!(
+            list_member_sessions("TST", "ai:claude@joy").unwrap().len(),
+            1
+        );
+        assert!(has_active_session("TST", "ai:claude@joy"));
+
+        remove_session("TST", "ai:claude@joy").unwrap();
+        assert!(load_session_by_id(&legacy_sid).unwrap().is_none());
+        assert!(!has_active_session("TST", "ai:claude@joy"));
+
+        // SAFETY: test cleanup
+        unsafe { std::env::remove_var("XDG_STATE_HOME") };
+    }
+
+    #[test]
+    fn current_env_session_resolves_the_env_referenced_session() {
+        let _guard = env_lock();
+        let dir = tempdir().unwrap();
+        // SAFETY: env mutation serialized via ENV_LOCK
+        unsafe { std::env::set_var("XDG_STATE_HOME", dir.path()) };
+
+        let first_kp = IdentityKeypair::from_random();
+        let second_kp = IdentityKeypair::from_random();
+        let first =
+            create_session_for_ai(&first_kp, "ai:claude@joy", "TST", None, "dkey", None, None);
+        let second =
+            create_session_for_ai(&second_kp, "ai:claude@joy", "TST", None, "dkey", None, None);
+        save_session("TST", &first).unwrap();
+        save_session("TST", &second).unwrap();
+
+        let second_sid = session_storage_id("TST", &second.claims);
+        let env_value = encode_session_env(&second_sid, &second_kp.to_seed_bytes());
+        // SAFETY: env mutation serialized via ENV_LOCK
+        unsafe { std::env::set_var("JOY_SESSION", &env_value) };
+
+        let resolved = current_env_session("TST", "ai:claude@joy").unwrap();
+        assert_eq!(
+            resolved.claims.session_public_key, second.claims.session_public_key,
+            "env resolves to the session the env points at, not the newest"
+        );
+        assert!(current_env_session("TST", "ai:other@joy").is_none());
+        assert!(current_env_session("OTHER", "ai:claude@joy").is_none());
+
+        // SAFETY: test cleanup
+        unsafe { std::env::remove_var("JOY_SESSION") };
+        assert!(current_env_session("TST", "ai:claude@joy").is_none());
 
         // SAFETY: test cleanup
         unsafe { std::env::remove_var("XDG_STATE_HOME") };

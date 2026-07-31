@@ -167,10 +167,10 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 @test "joy auth reset other member requires manage capability" {
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add dev@example.com --capabilities "implement,create" --passphrase "$TEST_PASSPHRASE"
+    DEV_OTP=$(joy project member add dev@example.com --capabilities "implement,create" --passphrase "$TEST_PASSPHRASE" | extract_otp)
     # Dev cannot reset others (no manage capability)
     git config user.email dev@example.com
-    joy auth init --passphrase "alpha bravo charlie delta echo foxtrot"
+    joy auth --otp "$DEV_OTP" --passphrase "alpha bravo charlie delta echo foxtrot"
     run joy auth reset test@example.com --passphrase "alpha bravo charlie delta echo foxtrot"
     [ "$status" -ne 0 ]
     [[ "$output" == *"manage"* ]]
@@ -180,12 +180,12 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 @test "joy auth reset other member as manage user" {
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE"
-    # Dev initializes auth
+    DEV_OTP=$(joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE" | extract_otp)
+    # Dev redeems their invitation
     git config user.email dev@example.com
-    joy auth init --passphrase "alpha bravo charlie delta echo foxtrot"
+    joy auth --otp "$DEV_OTP" --passphrase "alpha bravo charlie delta echo foxtrot"
     git config user.email test@example.com
-    # Re-authenticate as lead (dev's auth init overwrote the session)
+    # Re-authenticate as lead (dev's redemption overwrote the session)
     joy auth --passphrase "$TEST_PASSPHRASE"
     # Lead (manage user) resets dev
     run joy auth reset dev@example.com --passphrase "$TEST_PASSPHRASE"
@@ -313,6 +313,36 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     [ "$status" -eq 0 ]
 }
 
+@test "second redemption does not displace the first session" {
+    # JOY-01E1-E7: redemptions from different shells produce independent
+    # sessions. A tool that redeems the token later must not silently
+    # sign out a tool that redeemed it earlier.
+    setup_human_auth
+    joy add task "Displacement target"
+    ITEM=$(joy ls 2>/dev/null | grep Displacement | awk '{print $1}')
+
+    setup_ai_session ai:test@joy
+    FIRST="$JOY_SESSION"
+
+    # Second redemption of the same token, as another shell would do it.
+    eval $(joy auth --token "$AI_TOKEN")
+    SECOND="$JOY_SESSION"
+    [ -n "$FIRST" ]
+    [ -n "$SECOND" ]
+    [ "$FIRST" != "$SECOND" ]
+
+    # The first session keeps working after the second redemption.
+    export JOY_SESSION="$FIRST"
+    run joy comment "$ITEM" "first session still writes"
+    [ "$status" -eq 0 ]
+    grep -q "author: ai:test@joy" .joy/items/${ITEM}-*.yaml
+
+    # And so does the second.
+    export JOY_SESSION="$SECOND"
+    run joy comment "$ITEM" "second session writes too"
+    [ "$status" -eq 0 ]
+}
+
 @test "delegation token announces 24h default TTL" {
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
@@ -331,10 +361,10 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 @test "two members can have independent sessions" {
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE"
-    # Dev initializes auth
+    DEV_OTP=$(joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE" | extract_otp)
+    # Dev redeems their invitation
     git config user.email dev@example.com
-    joy auth init --passphrase "alpha bravo charlie delta echo foxtrot"
+    joy auth --otp "$DEV_OTP" --passphrase "alpha bravo charlie delta echo foxtrot"
     # Both should have active sessions
     run joy auth status
     [ "$status" -eq 0 ]
@@ -351,9 +381,9 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 @test "deauth only removes own session" {
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE"
+    DEV_OTP=$(joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE" | extract_otp)
     git config user.email dev@example.com
-    joy auth init --passphrase "alpha bravo charlie delta echo foxtrot"
+    joy auth --otp "$DEV_OTP" --passphrase "alpha bravo charlie delta echo foxtrot"
     # Dev deauths
     joy deauth
     run joy auth status
@@ -404,39 +434,6 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     # Both AI members should be removed
     ! grep -q "ai:claude@joy" .joy/project.yaml
     ! grep -q "ai:qwen@joy" .joy/project.yaml
-}
-
-@test "joy ai reset removes .joy/ai/ directory" {
-    joy init --name "Auth Test"
-    joy ai init </dev/null 2>/dev/null || true
-    # Verify .joy/ai/ exists
-    [ -d ".joy/ai" ]
-    # Create tool directories so reset has something to remove
-    mkdir -p .claude
-    touch .claude/CLAUDE.md
-    joy project member add ai:claude@joy 2>/dev/null --passphrase "$TEST_PASSPHRASE" || true
-    # Reset all
-    joy ai reset --force
-    # .joy/ai/ should be removed
-    [ ! -d ".joy/ai" ]
-}
-
-@test "joy ai reset preserves .joy/ai/jobs/ when non-empty" {
-    joy init --name "Auth Test"
-    joy ai init </dev/null 2>/dev/null || true
-    # Put content in jobs/
-    mkdir -p .joy/ai/jobs
-    echo "test-job" > .joy/ai/jobs/job-001.yaml
-    # Create tool directories so reset has something to remove
-    mkdir -p .claude
-    touch .claude/CLAUDE.md
-    joy project member add ai:claude@joy 2>/dev/null --passphrase "$TEST_PASSPHRASE" || true
-    # Reset all
-    joy ai reset --force
-    # jobs/ should be preserved
-    [ -f ".joy/ai/jobs/job-001.yaml" ]
-    # but other ai/ contents should be gone
-    [ ! -d ".joy/ai/agents" ]
 }
 
 # ============================================================
@@ -1096,46 +1093,28 @@ YAML
 # AI Tool --crypt token flow (JOY-015B-53, JOY-015E-4C)
 # ============================================================
 
-@test "joy auth token add --crypt embeds delegation private key" {
+@test "every delegation token embeds the delegation private key (crypt scope)" {
     joy init --name "AI Crypt Test" --acronym AC
     joy auth init --passphrase "$TEST_PASSPHRASE"
     joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE"
-    # Auth-only token: no privkey embedded.
-    PLAIN=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
+    # ONE token kind (JI-0175-B0): auth and chat crypto always travel
+    # together, so the delegation private key is always embedded.
+    TOKEN=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
         | grep -o 'joy_t_[A-Za-z0-9+/=]*' | head -1)
-    [ -n "$PLAIN" ]
-    PLAIN_DECODED=$(echo "$PLAIN" | sed 's/^joy_t_//' | base64 -d 2>/dev/null || true)
-    [[ "$PLAIN_DECODED" != *"delegation_private_key"* ]]
-
-    # --crypt token: privkey embedded.
-    CRYPT=$(joy auth token add ai:claude@joy --crypt --passphrase "$TEST_PASSPHRASE" \
-        | grep -o 'joy_t_[A-Za-z0-9+/=]*' | head -1)
-    [ -n "$CRYPT" ]
-    CRYPT_DECODED=$(echo "$CRYPT" | sed 's/^joy_t_//' | base64 -d 2>/dev/null || true)
-    [[ "$CRYPT_DECODED" == *"delegation_private_key"* ]]
-    [[ "$CRYPT_DECODED" == *"\"crypt\""* ]]
+    [ -n "$TOKEN" ]
+    DECODED=$(echo "$TOKEN" | sed 's/^joy_t_//' | base64 -d 2>/dev/null || true)
+    [[ "$DECODED" == *"delegation_private_key"* ]]
+    [[ "$DECODED" == *'"crypt"'* ]]
 }
 
-@test "auth-only token redemption produces a 44-byte JOY_SESSION payload" {
+@test "token redemption produces a 76-byte JOY_SESSION payload" {
     joy init --name "AI Crypt Test" --acronym AC
     joy auth init --passphrase "$TEST_PASSPHRASE"
     joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE"
     TOKEN=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
         | grep -o 'joy_t_[A-Za-z0-9+/=]*' | head -1)
     OUTPUT=$(joy auth --token "$TOKEN")
-    # Extract just the base64 payload from the export line.
-    PAYLOAD=$(echo "$OUTPUT" | grep -o 'joy_s_[A-Za-z0-9+/=]*' | head -1 | sed 's/^joy_s_//')
-    DECODED_LEN=$(echo "$PAYLOAD" | base64 -d 2>/dev/null | wc -c | tr -d '[:space:]')
-    [ "$DECODED_LEN" = "44" ]
-}
-
-@test "--crypt token redemption produces a 76-byte JOY_SESSION payload" {
-    joy init --name "AI Crypt Test" --acronym AC
-    joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE"
-    TOKEN=$(joy auth token add ai:claude@joy --crypt --passphrase "$TEST_PASSPHRASE" \
-        | grep -o 'joy_t_[A-Za-z0-9+/=]*' | head -1)
-    OUTPUT=$(joy auth --token "$TOKEN")
+    # sid + ephemeral private key + delegation private key
     PAYLOAD=$(echo "$OUTPUT" | grep -o 'joy_s_[A-Za-z0-9+/=]*' | head -1 | sed 's/^joy_s_//')
     DECODED_LEN=$(echo "$PAYLOAD" | base64 -d 2>/dev/null | wc -c | tr -d '[:space:]')
     [ "$DECODED_LEN" = "76" ]

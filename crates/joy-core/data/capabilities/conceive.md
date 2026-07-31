@@ -20,10 +20,10 @@ agent:
   permissions:
     allowed: [read, search, grep]
     denied: [write, edit, delete, bash]
-  applicable_tools: [claude-code, github-copilot, mistral-vibe]
+  applicable_tools: [claude, copilot, vibe]
 ```
 
 ## Interaction
 
-Default mode: pairing. Conceiving is a co-creation activity where
-human and AI explore ideas together step by step.
+Default interaction level: proposing. Conceiving is a co-creation
+activity: the AI proposes ideas and directions, the human decides.

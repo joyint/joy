@@ -37,6 +37,18 @@ const PROJECT_KEYS: &[&str] = &[
 /// JSON array under --json). Scalar keys reject `--add`/`--rm`.
 const LIST_KEYS: &[&str] = &["release.version-files"];
 
+/// Parse an interaction-level argument value; an empty string means "clear"
+/// (`None`), anything else must be one of the three level names.
+fn parse_optional_level(s: &str) -> Result<Option<joy_core::model::config::InteractionLevel>> {
+    let s = s.trim();
+    if s.is_empty() {
+        return Ok(None);
+    }
+    s.parse::<joy_core::model::config::InteractionLevel>()
+        .map(Some)
+        .map_err(|e| anyhow::anyhow!("{}", e))
+}
+
 fn is_list_key(key: &str) -> bool {
     LIST_KEYS.contains(&key)
 }
@@ -67,17 +79,6 @@ enum ProjectCommand {
     Set(SetArgs),
     /// Manage project members
     Member(MemberArgs),
-    /// Register the execution platform's session verify key. Job-bound
-    /// AI sessions minted by the platform are accepted only when signed
-    /// by the matching private key (JOY-020B-D2).
-    PlatformKey(PlatformKeyArgs),
-}
-
-#[derive(clap::Args)]
-struct PlatformKeyArgs {
-    /// Hex-encoded Ed25519 public key the platform signs job-bound
-    /// sessions with.
-    key: String,
 }
 
 #[derive(clap::Args)]
@@ -135,6 +136,8 @@ enum MemberCommand {
     Show(MemberShowArgs),
     /// Add a project member
     Add(MemberAddArgs),
+    /// Edit a member's capabilities and interaction levels
+    Edit(MemberEditArgs),
     /// Remove a project member
     Rm(MemberRmArgs),
     /// Erase a member's e-mail/name from the encrypted members.yaml (GDPR
@@ -210,6 +213,49 @@ struct MemberRmArgs {
     passphrase_stdin: bool,
 }
 
+#[derive(clap::Args)]
+struct MemberEditArgs {
+    /// Member ID (email or ai:tool@joy)
+    #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_member))]
+    id: String,
+
+    /// Replace the whole capability set: a comma-separated list, or the
+    /// keyword `all`. Surviving capabilities keep their
+    /// interaction-level/max-interaction-level/max-cost settings.
+    #[arg(short = 'c', long, conflicts_with_all = ["add_capability", "rm_capability"])]
+    capabilities: Option<String>,
+
+    /// Grant one capability, keeping the rest (repeatable).
+    #[arg(long = "add-capability", value_name = "CAP")]
+    add_capability: Vec<String>,
+
+    /// Revoke one capability, keeping the rest (repeatable).
+    #[arg(long = "rm-capability", value_name = "CAP")]
+    rm_capability: Vec<String>,
+
+    /// Set the member default interaction level: `LEVEL` for the global
+    /// default, `CAP=LEVEL` per capability (repeatable); `=` resp. `CAP=`
+    /// clears. LEVEL is one of proposing|confirmed|autonomous.
+    #[arg(long = "interaction-level", value_name = "[CAP=]LEVEL")]
+    interaction_level: Vec<String>,
+
+    /// Set a per-capability max-interaction-level floor: `CAP=LEVEL`
+    /// (repeatable); `CAP=` clears it. LEVEL is one of
+    /// proposing|confirmed|autonomous.
+    #[arg(long = "max-interaction-level", value_name = "CAP=LEVEL")]
+    max_interaction_level: Vec<String>,
+
+    /// Passphrase of the acting manage member (non-interactive, for
+    /// scripts and tests). Any capability or interaction change invalidates the
+    /// member's attestation, so the acting member re-signs it.
+    #[arg(long)]
+    passphrase: Option<String>,
+
+    /// Read the passphrase from a single line on stdin.
+    #[arg(long = "passphrase-stdin")]
+    passphrase_stdin: bool,
+}
+
 pub fn run(args: ProjectArgs) -> Result<()> {
     let ctx = Context::load()?;
 
@@ -226,10 +272,6 @@ pub fn run(args: ProjectArgs) -> Result<()> {
         }
         Some(ProjectCommand::Member(a)) => {
             return run_member(a, &mut project, &project_path, &ctx);
-        }
-        Some(ProjectCommand::PlatformKey(a)) => {
-            ctx.enforce(&Action::ManageProject, "project")?;
-            return set_platform_key(&ctx, &project_path, &mut project, &a.key);
         }
         None => {}
     }
@@ -1188,61 +1230,9 @@ fn show_project(project: &Project, root: &std::path::Path) {
     if project.member_keys().any(|id| id.starts_with("ai:")) {
         println!(
             "{}",
-            color::label("Use `joy project member show <ID>` to see interaction modes")
+            color::label("Use `joy project member show <ID>` to see interaction levels")
         );
     }
-}
-
-/// `joy project platform-key <hex>`: register (or rotate) the execution
-/// platform's session verify key (JOY-020B-D2). Manage-guarded by the
-/// caller; the write goes through write_yaml_preserve and is event-logged.
-fn set_platform_key(
-    ctx: &Context,
-    project_path: &std::path::Path,
-    project: &mut Project,
-    key: &str,
-) -> Result<()> {
-    let changed = project.set_platform_key(key)?;
-    let registered = project
-        .platform
-        .as_ref()
-        .expect("set_platform_key leaves a platform entry")
-        .registered;
-    if changed {
-        store::write_yaml_preserve(project_path, project)?;
-        let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-        joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
-        let log_user = ctx.log_user();
-        joy_core::event_log::log_event_as(
-            &ctx.root,
-            joy_core::event_log::EventType::ProjectUpdated,
-            "project",
-            Some("platform verify key registered"),
-            &log_user,
-        );
-        joy_core::git_ops::auto_git_post_command(&ctx.root, "project platform-key", &log_user);
-    }
-
-    if crate::output::is_json() {
-        #[derive(serde::Serialize)]
-        struct PlatformKeyPayload<'a> {
-            verify_key: &'a str,
-            registered: chrono::DateTime<chrono::Utc>,
-            changed: bool,
-        }
-        return crate::output::emit(PlatformKeyPayload {
-            verify_key: key.trim(),
-            registered,
-            changed,
-        });
-    }
-
-    if changed {
-        println!("Platform verify key registered.");
-    } else {
-        println!("Platform verify key unchanged (already registered).");
-    }
-    Ok(())
 }
 
 fn run_member(
@@ -1304,18 +1294,19 @@ fn run_member(
                 color::header(&joy_core::member_ref::resolve_str(&a.id))
             );
 
-            // Load defaults for mode resolution
-            let raw_defaults = joy_core::store::load_raw_mode_defaults(&ctx.root);
-            let effective_defaults = joy_core::store::load_mode_defaults(&ctx.root);
+            // Load defaults for interaction-level resolution
+            let raw_defaults = joy_core::store::load_raw_interaction_level_defaults(&ctx.root);
+            let effective_defaults = joy_core::store::load_interaction_level_defaults(&ctx.root);
             let config = joy_core::store::load_config();
-            let personal_mode =
-                if config.modes.default != joy_core::model::config::InteractionLevel::default() {
-                    Some(config.modes.default)
-                } else {
-                    None
-                };
+            let personal_level = if config.interaction_level.default
+                != joy_core::model::config::InteractionLevel::default()
+            {
+                Some(config.interaction_level.default)
+            } else {
+                None
+            };
 
-            // Build capability list with has/denied and mode info
+            // Build capability list with has/denied and interaction info
             let all_caps = joy_core::model::item::Capability::ALL;
             let is_all = matches!(&member.capabilities, MemberCapabilities::All);
             let specific_map = match &member.capabilities {
@@ -1335,41 +1326,44 @@ fn run_member(
 
                 if has && cap.is_work_capability() {
                     let cap_config = specific_map.and_then(|m| m.get(cap));
-                    let (mode, source) = joy_core::model::project::resolve_mode(
+                    let (level, source) = joy_core::model::project::resolve_interaction_level(
                         cap,
                         &raw_defaults,
                         &effective_defaults,
-                        personal_mode,
+                        member.interaction_level,
+                        personal_level,
                         cap_config,
                     );
-                    let mode_text = format!("{mode} [{source}]");
+                    let level_text = format!("{level} [{source}]");
                     let mut line = if wide {
                         format!(
                             "  {:<12} {}   {}",
                             cap_label,
                             mark,
-                            color::inactive(&mode_text)
+                            color::inactive(&level_text)
                         )
                     } else {
                         format!(
                             "  {:<5} {}   {}",
                             cap_label,
                             mark,
-                            color::inactive(&mode_text)
+                            color::inactive(&level_text)
                         )
                     };
-                    // Show max-mode hint if clamped
-                    if source == joy_core::model::project::ModeSource::ProjectMax {
-                        if let Some(personal) = personal_mode {
+                    // Show the clamped-away preference if the floor won
+                    if source == joy_core::model::project::InteractionLevelSource::ProjectMax {
+                        if let Some(personal) = personal_level {
                             line.push_str(&color::inactive(&format!(
                                 "  (your preference: {personal})"
                             )));
                         }
                     }
-                    // Show max-mode from cap config
+                    // Show max-interaction-level from cap config
                     if let Some(cc) = cap_config {
-                        if let Some(ref max) = cc.max_mode {
-                            if source != joy_core::model::project::ModeSource::ProjectMax {
+                        if let Some(ref max) = cc.max_interaction_level {
+                            if source
+                                != joy_core::model::project::InteractionLevelSource::ProjectMax
+                            {
                                 line.push_str(&color::inactive(&format!("  max: {max}")));
                             }
                         }
@@ -1501,7 +1495,6 @@ fn run_member(
                     passphrase,
                     &a.id,
                     None,
-                    false,
                 )?)
             } else {
                 None
@@ -1558,6 +1551,181 @@ fn run_member(
             joy_core::git_ops::auto_git_post_command(
                 &ctx.root,
                 &format!("project member add {}", a.id),
+                &log_user,
+            );
+        }
+        Some(MemberCommand::Edit(a)) => {
+            ctx.enforce(&Action::ManageProject, "project")?;
+
+            if a.capabilities.is_none()
+                && a.add_capability.is_empty()
+                && a.rm_capability.is_empty()
+                && a.interaction_level.is_empty()
+                && a.max_interaction_level.is_empty()
+            {
+                bail!(
+                    "nothing to edit: pass --capabilities, --add-capability, \
+                     --rm-capability, --interaction-level, or --max-interaction-level"
+                );
+            }
+
+            // Resolve the target to its at-rest map key: an ai:/opaque id is
+            // used as-is, a cleartext e-mail resolves via the privacy layer
+            // (ADR-042) so anonymous mode never needs the e-mail here.
+            let key = if project.has_member_key(&a.id) {
+                a.id.clone()
+            } else if let Some(k) = joy_core::privacy::member_key_for_email(project, &a.id) {
+                k
+            } else {
+                bail!("member not found: {}", a.id);
+            };
+            let mut member = project
+                .member_by_key(&key)
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("member not found: {}", a.id))?;
+            let had_manage = member.has_capability(&Capability::Manage);
+
+            // 1. Capability-set changes. --capabilities replaces wholesale
+            //    (carrying over surviving configs); --add/--rm-capability are
+            //    incremental and mutually exclusive with it (clap-enforced).
+            if let Some(caps_str) = a.capabilities.as_deref() {
+                let target = if caps_str.trim() == "all" {
+                    MemberCapabilities::All
+                } else {
+                    let mut map = std::collections::BTreeMap::new();
+                    for s in caps_str.split(',') {
+                        let cap: Capability = s
+                            .trim()
+                            .parse()
+                            .map_err(|e: String| anyhow::anyhow!("{}", e))?;
+                        map.insert(cap, CapabilityConfig::default());
+                    }
+                    MemberCapabilities::Specific(map)
+                };
+                member.set_capabilities(target);
+            }
+            for s in &a.add_capability {
+                let cap: Capability = s
+                    .trim()
+                    .parse()
+                    .map_err(|e: String| anyhow::anyhow!("{}", e))?;
+                match &mut member.capabilities {
+                    MemberCapabilities::All => {}
+                    MemberCapabilities::Specific(map) => {
+                        map.entry(cap).or_default();
+                    }
+                }
+            }
+            for s in &a.rm_capability {
+                let cap: Capability = s
+                    .trim()
+                    .parse()
+                    .map_err(|e: String| anyhow::anyhow!("{}", e))?;
+                match &mut member.capabilities {
+                    MemberCapabilities::All => bail!(
+                        "member has 'capabilities: all'; replace the set with \
+                         --capabilities <list> before removing individual capabilities"
+                    ),
+                    MemberCapabilities::Specific(map) => {
+                        map.remove(&cap);
+                    }
+                }
+            }
+
+            // 2. Member default interaction levels: `LEVEL` sets the member's
+            //    global default, `CAP=LEVEL` the per-capability default; an
+            //    empty level clears the respective setting.
+            for spec in &a.interaction_level {
+                match spec.split_once('=') {
+                    Some((cap_str, level_str)) => {
+                        let cap: Capability = cap_str
+                            .trim()
+                            .parse()
+                            .map_err(|e: String| anyhow::anyhow!("{}", e))?;
+                        let level = parse_optional_level(level_str)?;
+                        member
+                            .set_capability_interaction_level(cap, level)
+                            .map_err(|e| anyhow::anyhow!("{}", e))?;
+                    }
+                    None => {
+                        member.interaction_level = parse_optional_level(spec)?;
+                    }
+                }
+            }
+
+            // 3. Per-capability max-interaction-level floors (CAP=LEVEL, CAP= clears).
+            for spec in &a.max_interaction_level {
+                let (cap_str, level_str) = spec.split_once('=').ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "--max-interaction-level expects CAP=LEVEL (or CAP= to clear), got '{spec}'"
+                    )
+                })?;
+                let cap: Capability = cap_str
+                    .trim()
+                    .parse()
+                    .map_err(|e: String| anyhow::anyhow!("{}", e))?;
+                let max_interaction_level = parse_optional_level(level_str)?;
+                member
+                    .set_capability_max_interaction_level(cap, max_interaction_level)
+                    .map_err(|e| anyhow::anyhow!("{}", e))?;
+            }
+
+            // 4. Anti-brick: never strip manage from the last manager.
+            if had_manage && !member.has_capability(&Capability::Manage) {
+                let guard = joy_core::guard::Guard::new(project);
+                if guard.is_last_manager(&key) {
+                    bail!(
+                        "cannot remove manage from {}: last member with manage \
+                         capability. Grant another member manage first.",
+                        a.id
+                    );
+                }
+            }
+
+            // 5. Re-sign: any capability or interaction-level change invalidates
+            //    the stored attestation (it covers `capabilities`), so the
+            //    acting manage member re-signs over the new fields.
+            let acting_email = joy_core::vcs::default_vcs().user_email()?;
+            let acting_kp = derive_acting_keypair(
+                project,
+                &acting_email,
+                a.passphrase.as_deref(),
+                a.passphrase_stdin,
+            )?;
+            let signed_fields = joy_core::auth::attestation::signed_fields_for(
+                &key,
+                &member.capabilities,
+                member.enrollment_verifier.as_deref(),
+            );
+            let attester_id = joy_core::privacy::member_key_for_email(project, &acting_email)
+                .unwrap_or_else(|| acting_email.clone());
+            member.attestation = Some(joy_core::auth::attestation::sign_attestation(
+                &attester_id,
+                &acting_kp,
+                signed_fields,
+            ));
+
+            // 5. Apply + persist + audit (mirrors add/rm).
+            *project
+                .member_by_key_mut(&key)
+                .expect("member key resolved above") = member;
+            store::write_yaml_preserve(project_path, project)?;
+            let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
+            joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
+
+            if crate::output::is_json() {
+                #[derive(serde::Serialize)]
+                struct EditPayload<'a> {
+                    member: &'a str,
+                }
+                crate::output::emit(EditPayload { member: &a.id })?;
+            } else {
+                println!("Updated member {}", color::user(&a.id));
+            }
+            let log_user = ctx.log_user();
+            joy_core::git_ops::auto_git_post_command(
+                &ctx.root,
+                &format!("project member edit {}", a.id),
                 &log_user,
             );
         }
@@ -1815,7 +1983,7 @@ fn print_members_table(project: &Project, root: &std::path::Path) {
     let auth_statuses: Vec<(&str, String)> = project
         .members()
         .map(|(id, member)| {
-            let auth = member_auth_status(id, member, project, &project_id, root, use_emoji);
+            let auth = member_auth_status(id, member, project, &project_id, use_emoji);
             (id.as_str(), auth)
         })
         .collect();
@@ -2093,7 +2261,6 @@ fn member_auth_status(
     member: &Member,
     all_members: &Project,
     project_id: &str,
-    root: &std::path::Path,
     use_emoji: bool,
 ) -> String {
     use joy_core::model::project::is_ai_member;
@@ -2101,21 +2268,17 @@ fn member_auth_status(
     let is_ai = is_ai_member(id);
 
     // For humans: has passphrase key?
-    // For AI: either a human registered an ai_delegations entry (token
-    // channel) or the project registered a platform key (job-bound
-    // session channel, JOY-020B-D2).
+    // For AI: a human registered an ai_delegations entry, which is the
+    // one and only channel now (JI-0174 family).
     let has_delegation = is_ai
         && all_members
             .member_values()
             .any(|m| m.ai_delegations.contains_key(id));
     let has_auth = if is_ai {
-        has_delegation || all_members.platform.is_some()
+        has_delegation
     } else {
         member.verify_key.is_some()
     };
-
-    // When the active AI session is job-bound, the job id it is bound to.
-    let mut job_binding: Option<String> = None;
 
     // Session check: must mirror what resolve_identity (joy-core) actually
     // accepts at runtime. A check mark that the runtime would reject is
@@ -2126,54 +2289,56 @@ fn member_auth_status(
     } else if is_ai {
         // AI sessions (ADR-033): a session file alone is not enough; the
         // caller must hold the matching ephemeral private key in
-        // JOY_SESSION. Otherwise the session is "present on disk but not
-        // usable from this shell".
-        let current_session_id = std::env::var("JOY_SESSION")
-            .ok()
-            .and_then(|v| joy_core::auth::session::parse_session_env(&v))
-            .map(|(sid, _)| sid);
-
+        // JOY_SESSION. Otherwise sessions are "present on disk but not
+        // usable from this shell". The env sid names the session file
+        // directly (one file per session, JOY-01E1-E7), so the check is a
+        // straight lookup of the env-referenced session.
         let current_delegation_keys: Vec<&str> = all_members
             .member_values()
             .filter_map(|m| m.ai_delegations.get(id))
             .map(|entry| entry.delegation_verifier.as_str())
             .collect();
-        joy_core::auth::session::load_session(project_id, id)
+
+        // Drop this member's dead sessions: expired ones, and ones bound
+        // to a rotated (or missing) delegation key.
+        if let Ok(sessions) = joy_core::auth::session::list_member_sessions(project_id, id) {
+            for (path, sess) in &sessions {
+                let rotated = !matches!(
+                    &sess.claims.delegation_key,
+                    Some(tk) if current_delegation_keys.contains(&tk.as_str())
+                );
+                if sess.claims.expires <= chrono::Utc::now() || rotated {
+                    if let Some(sid) = path.file_stem().and_then(|s| s.to_str()) {
+                        let _ = joy_core::auth::session::remove_session_by_id(sid);
+                    }
+                }
+            }
+        }
+
+        std::env::var("JOY_SESSION")
             .ok()
-            .flatten()
+            .and_then(|v| joy_core::auth::session::parse_session_env(&v))
+            .and_then(|(sid, _)| {
+                joy_core::auth::session::load_session_by_id(&sid)
+                    .ok()
+                    .flatten()
+            })
             .and_then(|sess| {
-                if sess.claims.expires <= chrono::Utc::now() || sess.claims.member != id {
-                    let _ = joy_core::auth::session::remove_session(project_id, id);
+                if sess.claims.expires <= chrono::Utc::now()
+                    || sess.claims.member != id
+                    || sess.claims.project_id != project_id
+                {
                     return None;
                 }
-                if sess.claims.job_id.is_some() {
-                    // Job-bound platform session (JOY-020B-D2): active
-                    // exactly when the runtime accept rule passes --
-                    // display and runtime share validate_job_session
-                    // (JOY-00F4-CF). A rejected session (job left
-                    // in-progress, key rotated, ...) is kept on disk: the
-                    // binding is enforced at command time, not by file
-                    // presence.
-                    joy_core::identity::validate_job_session(root, all_members, project_id, &sess)
-                        .ok()?;
-                } else {
-                    match &sess.claims.token_key {
-                        Some(tk) if current_delegation_keys.contains(&tk.as_str()) => Some(()),
-                        Some(_) => {
-                            // Delegation rotated — previous session is no longer trusted.
-                            let _ = joy_core::auth::session::remove_session(project_id, id);
-                            None
-                        }
-                        None => None,
-                    }?;
-                }
-                let expected_sid = joy_core::auth::session::session_id(project_id, id);
-                if current_session_id.as_deref() == Some(expected_sid.as_str()) {
-                    job_binding = sess.claims.job_id.clone();
-                    Some(())
-                } else {
-                    None
-                }
+                // Mirrors what resolve_identity accepts at runtime
+                // (JOY-00F4-CF): a session is live while the delegation
+                // it was redeemed from is live.
+                match &sess.claims.delegation_key {
+                    Some(tk) if current_delegation_keys.contains(&tk.as_str()) => Some(()),
+                    // Delegation rotated — the session is no longer trusted.
+                    _ => None,
+                }?;
+                Some(())
             })
             .is_some()
     } else if let Some(pk_hex) = member.verify_key.as_ref() {
@@ -2205,10 +2370,10 @@ fn member_auth_status(
         if !has_auth {
             "· ·".to_string()
         } else if is_ai {
-            match (has_session, &job_binding) {
-                (true, Some(job)) => format!("✓ 🎟️ job: {job}"),
-                (true, None) => "✓ 🎟️".to_string(),
-                (false, _) => "· 🎟️".to_string(),
+            if has_session {
+                "✓ 🎟️".to_string()
+            } else {
+                "· 🎟️".to_string()
             }
         } else if has_session {
             "✓ 🔐".to_string()
@@ -2218,25 +2383,12 @@ fn member_auth_status(
     } else if !has_auth {
         "--".to_string()
     } else {
-        // `tok` = delegation-token channel, `job` = platform job-session
-        // channel (either the active session is job-bound, or the only
-        // registered auth path is the platform key), `key` = human
-        // passphrase key.
-        let kind = if !is_ai {
-            "key"
-        } else if job_binding.is_some() || !has_delegation {
-            "job"
-        } else {
-            "tok"
-        };
-        let base = if has_session {
+        // `tok` = delegation-token channel, `key` = human passphrase key.
+        let kind = if is_ai { "tok" } else { "key" };
+        if has_session {
             color::warning(&format!("{kind}+s"))
         } else {
             color::warning(kind)
-        };
-        match &job_binding {
-            Some(job) => format!("{base} job: {job}"),
-            None => base,
         }
     }
 }

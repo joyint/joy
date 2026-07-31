@@ -20,10 +20,11 @@ agent:
   permissions:
     allowed: [read, search, grep, test]
     denied: [write, edit, delete]
-  applicable_tools: [claude-code, github-copilot, mistral-vibe]
+  applicable_tools: [claude, copilot, vibe]
 ```
 
 ## Interaction
 
-Default mode: interactive. The reviewer presents findings with rationale
-and waits for the assignee or author to decide on each point.
+Default interaction level: proposing. The reviewer proposes findings
+with rationale and waits for the assignee or author to decide on each
+point.

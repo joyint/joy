@@ -309,3 +309,28 @@ with open('.joy/project.yaml', 'w') as f:
     [ "$status" -ne 0 ]
     [[ "$output" == *"attestation"* ]] || [[ "$output" == *"tampered"* ]] || [[ "$output" == *"not valid"* ]]
 }
+
+# ============================================================
+# 5. An invitation must be proven, not sidestepped
+# ============================================================
+
+@test "an invited member cannot skip the OTP via joy auth init" {
+    setup_founder
+    add_member_capture_otp alice@example.com
+    [ -n "$MEMBER_OTP" ]
+
+    become_member alice@example.com
+    # Setting up a fresh identity instead of redeeming would leave alice with a
+    # self-chosen verify_key. The attestation signs e-mail, capabilities and the
+    # enrollment verifier but NOT the key, so nothing downstream would notice.
+    run joy auth init --passphrase "$ALICE_PASSPHRASE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"one-time password is required"* ]]
+    # Only the founder is enrolled; alice's slot is untouched.
+    [ "$(grep -cE '^    verify_key:' .joy/project.yaml)" = "1" ]
+
+    # Redeeming the invitation is the way in.
+    run joy auth --otp "$MEMBER_OTP" --passphrase "$ALICE_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    [ "$(grep -cE '^    verify_key:' .joy/project.yaml)" = "2" ]
+}

@@ -1,6 +1,6 @@
 ---
 source: crates/joy-core/src/model/config.rs
-assertion_line: 306
+assertion_line: 419
 expression: yaml
 ---
 version: 1
@@ -12,6 +12,6 @@ output:
 workflow:
   auto-assign: true
   auto-git: add
-modes:
-  default: collaborative
+interaction-level:
+  default: proposing
 auto-sync: true

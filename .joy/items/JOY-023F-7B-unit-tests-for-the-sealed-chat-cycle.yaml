@@ -1,0 +1,17 @@
+id: JOY-023F-7B
+title: Unit tests for the sealed chat cycle
+type: task
+status: new
+priority: high
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-28T03:57:53.894338255Z
+updated: 2026-07-28T03:57:53.894338255Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: |-
+  open/seal/recipients in joy-chat carried the whole chat model without unit tests of their own; the only proof was a throwaway probe and app journeys in which no chat ever had an AI in it. That is how JAPP-0161-DC (an addressed AI holds no key) could ship.
+
+  Covers the cycle in one process: a human seals, another participant opens, an outsider reads nothing, the everyone convention, a participant without a key, a refused seal for nobody, two writers converging, and a re-save adding no bytes.

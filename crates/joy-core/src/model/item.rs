@@ -26,8 +26,14 @@ pub struct Item {
     pub tags: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub capabilities: Vec<Capability>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mode: Option<super::config::InteractionLevel>,
+    /// Item-level interaction-level override (the "item" layer of the
+    /// resolution in [`super::project::resolve_interaction_level`]).
+    #[serde(
+        default,
+        rename = "interaction-level",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub interaction_level: Option<super::config::InteractionLevel>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort: Option<u8>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -54,14 +60,6 @@ pub struct Item {
     /// full attribute-change list; this field is the legacy summary.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub updated_by: Option<MemberRef>,
-    /// Append-only audit list of attribute-level mutations (status, priority,
-    /// edit, deps, assignee, milestone, ...). Comment add / edit / rm do NOT
-    /// append here. `None` for legacy YAML written before this field existed
-    /// (display falls back to `updated` / `updated_by`); `Some(vec![])` for
-    /// items created after the field shipped but with no attribute mutations
-    /// yet. On first attribute mutation the vec gains its first entry.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub history: Option<Vec<UpdateEntry>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     /// Name of the Crypt zone this item belongs to. Absent or null
@@ -277,6 +275,11 @@ pub struct JobAttempt {
     pub error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub by: Option<MemberRef>,
+    /// The AI model this attempt ran under (the resolved ai_secrets model,
+    /// JI-0164), for cost attribution and audit. None when the adapter's
+    /// own default ran or the model was not recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 /// How an execution loop ended. `Failed` lives here, not in the item
@@ -376,7 +379,7 @@ impl Item {
             milestone: None,
             tags: Vec::new(),
             capabilities,
-            mode: None,
+            interaction_level: None,
             effort: None,
             version: None,
             validity: None,
@@ -385,7 +388,6 @@ impl Item {
             created: now,
             updated: now,
             updated_by: None,
-            history: Some(Vec::new()),
             description: None,
             crypt_zone: None,
             job: None,

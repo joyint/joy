@@ -21,10 +21,10 @@ agent:
   permissions:
     allowed: [read, search, grep, write, edit]
     denied: [delete, bash]
-  applicable_tools: [claude-code, github-copilot, mistral-vibe]
+  applicable_tools: [claude, copilot, vibe]
 ```
 
 ## Interaction
 
-Default mode: collaborative. The documenter proposes structure and content,
-proceeds after confirmation.
+Default interaction level: confirmed. The documenter works independently
+on structure and content and confirms before irreversible actions.

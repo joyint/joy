@@ -1,0 +1,16 @@
+id: JOY-0233-44
+title: One shared writer for an AI turn execution record
+type: story
+status: new
+priority: high
+capabilities:
+- plan
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-26T18:45:20.524042723Z
+updated: 2026-07-26T18:45:20.524042723Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'The level a turn ran under, the model that answered, its cost and its tokens belong to the turn, not to the host that ran it. The platform kept this logic in its own chat loop and the desktop grew a poorer copy, so the same shared reader in the app showed a full info popover on the web and a nearly empty one on the desktop, with no level beside the AI name (operator 2026-07-26, JAPP-0141-C9). joy-chat now owns it: turn_meta::augment_details writes the record and turn_meta::resolve_effective_level answers the ADR-025 order (chat override > personal > member default > project default) once for every caller. A budget is optional, so a local project omits it instead of reporting a spend of zero.'

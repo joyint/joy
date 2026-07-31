@@ -103,15 +103,16 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
         git_initialized = true;
     }
 
-    // Create directory structure. `.joy/ai/jobs/` is deliberately absent:
-    // jobs are items in `.joy/jobs/` (JOY-01FE-37) and the legacy record
-    // dir is removed by the 2026-07 repo migration -- creating it here
-    // would flag every fresh project as pending that migration.
+    // Create directory structure. The legacy `.joy/ai/` stores are
+    // deliberately absent: jobs are items in `.joy/jobs/` (JOY-01FE-37)
+    // and AI members carry their execution config on project.yaml, not in
+    // `.joy/ai/agents/`. The 2026-07 repo migrations remove any leftover
+    // `.joy/ai/jobs/` and `.joy/ai/agents/`; creating them here would flag
+    // every fresh project as pending those migrations.
     let dirs = [
         store::ITEMS_DIR,
         store::MILESTONES_DIR,
         store::RELEASES_DIR,
-        store::AI_AGENTS_DIR,
         store::LOG_DIR,
     ];
     for dir in &dirs {
@@ -513,10 +514,12 @@ mod tests {
 
         assert!(result.project_dir.join("items").is_dir());
         assert!(result.project_dir.join("milestones").is_dir());
-        assert!(result.project_dir.join("ai/agents").is_dir());
-        // Legacy job record dir: retired by JOY-01FE-37 / JOY-0207-DC, a
-        // fresh init must not create it (it would be flagged as pending
-        // the 2026-07 remove-ai-jobs migration).
+        // Legacy AI stores are retired: AI members carry their execution
+        // config on project.yaml and jobs are items in `.joy/jobs/`. A
+        // fresh init must create neither `.joy/ai/agents/` nor
+        // `.joy/ai/jobs/` (they would flag the 2026-07 remove-ai-* repo
+        // migrations as pending).
+        assert!(!result.project_dir.join("ai/agents").exists());
         assert!(!result.project_dir.join("ai/jobs").exists());
         assert!(result.project_dir.join("logs").is_dir());
         assert!(result.project_dir.join("config.defaults.yaml").is_file());

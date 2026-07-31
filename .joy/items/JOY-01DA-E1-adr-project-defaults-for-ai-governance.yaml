@@ -8,7 +8,7 @@ capabilities:
 validity: accepted
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-15T06:38:02.676605Z
-updated: 2026-06-15T20:38:56.957383Z
+updated: 2026-07-24T23:41:05.642333230Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-15T06:38:02.804390Z
@@ -181,3 +181,7 @@ description: |
 
   * Capability-to-workflow mapping stays static. This is a conscious decision, not an omission.
   * `max-mode` only exists in `project.yaml`, never in defaults. It is a governance decision, not an opinion.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-24T23:41:05.642332496Z
+  text: 'Amendment 2026-07-25 (JI-0166-D8, JOY-0223-D7, operator naming refinement): the four-layer resolution stands and gains a member layer - Joy defaults -> project section -> MEMBER DEFAULTS in the member entry (global plus per capability, humans and AI alike) -> personal preference, clamped by the per-capability floor. Value set shrinks to proposing | confirmed | autonomous. Key names carry the full term everywhere: section interaction-level (project.defaults.yaml, project.yaml, config.yaml), floor max-interaction-level (was max-mode, then max-interaction). The default table is re-populated: conceive/plan/design/review proposing, implement/document confirmed, test autonomous. Implemented in JOY-0220-CE; migration JOY-0221-09.'

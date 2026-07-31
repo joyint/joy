@@ -52,7 +52,14 @@ impl Identity {
 /// 2. Human session by git email
 /// 3. Fallback: git email, unauthenticated
 pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
-    let git_email = crate::vcs::default_vcs().user_email()?;
+    // An AI identity comes entirely from JOY_SESSION and does not need a
+    // git e-mail; a missing `user.email` must not abort before that branch
+    // runs (JI-0175-B0). A bare checkout or a container without a git user
+    // then still authenticates a valid session. The e-mail is only needed
+    // for the human/fallback path below, where its absence degrades to an
+    // unauthenticated identity (the guard denies writes with a clear
+    // message) rather than hard-failing every command.
+    let git_email = crate::vcs::default_vcs().user_email().unwrap_or_default();
     let project = load_project_optional(root);
     let project_id = crate::auth::session::project_id(root).ok();
 
@@ -71,7 +78,8 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
     //    possession of the env var a sibling terminal cannot reuse a
     //    session file it can read.
     if let Some(env_value) = std::env::var("JOY_SESSION").ok().filter(|s| !s.is_empty()) {
-        if let Some((sid, ephemeral_private)) = crate::auth::session::parse_session_env(&env_value)
+        if let Some((sid, ephemeral_private, delegation_private)) =
+            crate::auth::session::parse_session_env_full(&env_value)
         {
             if let Ok(Some(sess)) = crate::auth::session::load_session_by_id(&sid) {
                 if sess.claims.expires > chrono::Utc::now() && is_ai_member(&sess.claims.member) {
@@ -84,54 +92,47 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
                             if project.has_member_key(&sess.claims.member)
                                 && ephemeral_public_matches(&sess, &ephemeral_private)
                             {
-                                if sess.claims.job_id.is_some() {
-                                    // Job-bound platform session (JOY-020B-D2):
-                                    // additionally require the platform
-                                    // signature and a live job binding. On
-                                    // rejection, emit one stderr hint and fall
-                                    // through unauthenticated (mirroring the
-                                    // cross-project warning below): silently
-                                    // degrading to the git-email identity would
-                                    // make the subsequent guard denial name the
-                                    // wrong actor.
-                                    match validate_job_session(
-                                        root,
-                                        project,
-                                        project_id.as_deref().unwrap_or_default(),
-                                        &sess,
-                                    ) {
-                                        Ok(()) => {
-                                            return Ok(Identity {
-                                                member: sess.claims.member.clone().into(),
-                                                // The approving human was
-                                                // recorded at mint time as an
-                                                // at-rest member key; inside the
-                                                // job sandbox there is no
-                                                // operator git e-mail to derive
-                                                // it from.
-                                                delegated_by: sess
-                                                    .claims
-                                                    .delegated_by
-                                                    .clone()
-                                                    .map(Into::into),
-                                                authenticated: true,
-                                            });
-                                        }
-                                        Err(reason) => {
-                                            eprintln!("{}", job_session_rejection_hint(&reason));
-                                        }
-                                    }
+                                // Every AI session here is redeemed from a
+                                // delegation token. The second kind that used
+                                // to sit next to it, a session a server signed
+                                // for itself and bound to a job, is gone with
+                                // the platform key model (JI-0174 family).
+                                if let Some(reason) = token_session_rejection(
+                                    project,
+                                    &sess,
+                                    delegation_private.as_ref(),
+                                ) {
+                                    // F3 (JI-0175-B0): a token-redeemed AI
+                                    // session must still trace to a LIVE
+                                    // delegation. `delegation_key` is the
+                                    // delegation_verifier bound at redemption;
+                                    // if no member's ai_delegations still
+                                    // carries it, the delegation was rotated or
+                                    // removed and the session is dead now, not
+                                    // at its TTL. When the session carries the
+                                    // delegation private key (crypt scope), we
+                                    // additionally require it to derive that
+                                    // verifier — possession of the delegation
+                                    // key, not just of a session file anyone
+                                    // with state-dir write could author. Emit a
+                                    // hint and fall through unauthenticated, as
+                                    // the job and cross-project paths do.
+                                    eprintln!("{reason}");
                                 } else {
                                     return Ok(Identity {
                                         member: sess.claims.member.clone().into(),
-                                        // Record the delegating operator by their
-                                        // at-rest member key (opaque id in anonymous
-                                        // mode), never the cleartext git e-mail, so
-                                        // the audit trail carries no PII (ADR-042).
-                                        delegated_by: crate::privacy::delegated_by_at_rest(
-                                            project, &git_email,
-                                        )
-                                        .map(Into::into),
+                                        // F2 (JI-0175-B0): the delegating
+                                        // operator is recorded in the signed
+                                        // session claims at redemption; the
+                                        // binding check above guarantees the
+                                        // claim exists on every accepted
+                                        // session, so there is nothing to
+                                        // fall back to.
+                                        delegated_by: sess
+                                            .claims
+                                            .delegated_by
+                                            .clone()
+                                            .map(Into::into),
                                         authenticated: true,
                                     });
                                 }
@@ -271,92 +272,69 @@ fn check_session(root: &Path, member: &str, project: &Option<Project>) -> bool {
     false
 }
 
-/// Validate the job binding of a platform-issued session (JOY-020B-D2).
+/// Reject a token-redeemed AI session that no longer traces to a live
+/// delegation (F3, JI-0175-B0). Returns `Some(reason)` to reject, `None`
+/// to accept.
 ///
-/// Called after the generic AI-session checks (expiry, member registered,
-/// project match, ephemeral proof of possession) for sessions whose claims
-/// carry a `job_id`. Accepts exactly when:
+/// A token-redeemed session records the delegation_verifier it was bound
+/// to in `claims.delegation_key`. Three checks:
 ///
-/// 1. the claims name the platform as issuer, the project has a registered
-///    platform verify key, and the Ed25519 signature over the claims
-///    verifies against it (ordinary AI sessions skip signature
-///    verification; job sessions must not, because "signed by the
-///    platform" is their whole authority), and
-/// 2. the bound job item loads, is a `job`, is `in-progress`, and lists
-///    the session member among its assignees.
-///
-/// Returns the rejection reason so callers can surface it: the auth wall
-/// (guard.rs) makes every unauthenticated write fail with a message naming
-/// the git-email identity, which is confusing when the real cause is a
-/// stale job binding.
-///
-/// This is the single source of truth for the accept decision:
-/// `resolve_identity` enforces it at runtime and `joy project member`
-/// mirrors it for display (JOY-00F4-CF: display and runtime MUST agree).
-pub fn validate_job_session(
-    root: &Path,
+/// 1. the claim must be present at all: every AI session is redeemed
+///    from a delegation token and carries the binding, so a session
+///    without one was written by something that must not mint sessions.
+/// 2. some member's `ai_delegations[<ai>]` must still carry that verifier.
+///    Rotating the delegation (`joy auth delegation rotate`) or removing
+///    the delegating member changes or drops it, so a revoked session
+///    dies at the next command, not only at its TTL.
+/// 3. when the session carries the delegation private key in its
+///    `JOY_SESSION` env (crypt scope), that key must derive the verifier.
+///    This proves possession of the delegation key: a session file alone
+///    — which anyone able to write the state dir could author for any
+///    registered AI member — is no longer enough.
+pub fn token_session_rejection(
     project: &Project,
-    project_id: &str,
     sess: &crate::auth::session::SessionToken,
-) -> Result<(), String> {
-    let claims = &sess.claims;
-    let Some(ref job_id) = claims.job_id else {
-        return Err("session carries no job binding".into());
+    delegation_private: Option<&[u8; 32]>,
+) -> Option<String> {
+    let Some(verifier) = sess.claims.delegation_key.as_ref() else {
+        return Some(format!(
+            "the session for {} carries no delegation binding; redeem a fresh token              (joy auth --token <TOKEN>)",
+            sess.claims.member
+        ));
     };
-
-    // (a) Platform issuer + signature over the claims.
-    if claims.issuer.as_deref() != Some(crate::auth::session::PLATFORM_ISSUER) {
-        return Err(format!(
-            "issuer is {}, expected \"{}\"",
-            claims.issuer.as_deref().unwrap_or("absent"),
-            crate::auth::session::PLATFORM_ISSUER,
+    // F2: redemption records WHO delegates in the signed claims. A
+    // session without it cannot name the person behind the AI, so it is
+    // not honored either.
+    if sess.claims.delegated_by.is_none() {
+        return Some(format!(
+            "the session for {} names no delegating operator; redeem a fresh token",
+            sess.claims.member
         ));
     }
-    let Some(ref platform) = project.platform else {
-        return Err(
-            "no platform key registered in project.yaml (joy project platform-key <hex>)".into(),
-        );
-    };
-    let platform_pk = crate::auth::PublicKey::from_hex(&platform.verify_key)
-        .map_err(|e| format!("registered platform key is not a valid Ed25519 key: {e}"))?;
-    crate::auth::session::validate_session(sess, &platform_pk, project_id)
-        .map_err(|e| format!("platform signature check failed: {e}"))?;
-
-    // (b) The job item gates the session lifecycle.
-    if !crate::items::is_job_id(job_id) {
-        return Err(format!("{job_id} is not a job id"));
-    }
-    let item = crate::items::load_item(root, job_id)
-        .map_err(|_| format!("job {job_id} not found in this project"))?;
-    if item.item_type != crate::model::item::ItemType::Job {
-        return Err(format!("{job_id} is not a job item"));
-    }
-    if item.status != crate::model::item::Status::InProgress {
-        return Err(format!(
-            "job {job_id} is not in progress (status: {})",
-            item.status
+    let registered = project.members().any(|(_, m)| {
+        m.ai_delegations
+            .get(&sess.claims.member)
+            .is_some_and(|d| &d.delegation_verifier == verifier)
+    });
+    if !registered {
+        return Some(format!(
+            "the delegation for {} was rotated or removed; this session is no longer valid \
+             (ask the operator for a fresh token)",
+            sess.claims.member
         ));
     }
-    if !item
-        .assignees
-        .iter()
-        .any(|a| a.member.id() == claims.member)
-    {
-        return Err(format!(
-            "{} is not an assignee of job {job_id}",
-            claims.member
-        ));
+    if let Some(seed) = delegation_private {
+        let derived = crate::auth::IdentityKeypair::from_seed(seed)
+            .public_key()
+            .to_hex();
+        if &derived != verifier {
+            return Some(format!(
+                "the session's delegation key does not match the registered delegation for {}",
+                sess.claims.member
+            ));
+        }
     }
-
-    Ok(())
-}
-
-/// Build the one-line stderr hint for a rejected job-bound session.
-///
-/// Extracted as a pure helper so it can be asserted directly in unit
-/// tests, like [`cross_project_session_warning`].
-fn job_session_rejection_hint(reason: &str) -> String {
-    format!("job-bound session rejected: {reason}")
+    None
 }
 
 /// Build the cross-project JOY_SESSION warning text.
@@ -444,194 +422,5 @@ mod tests {
         assert!(msg.contains("member ai:claude@joy"));
         assert!(msg.contains("current project is JI"));
         assert!(msg.contains("joy auth token add ai:claude@joy"));
-    }
-
-    #[test]
-    fn job_session_rejection_hint_carries_reason() {
-        let msg = job_session_rejection_hint("job TST-JOB-0001 is not in progress");
-        assert_eq!(
-            msg,
-            "job-bound session rejected: job TST-JOB-0001 is not in progress"
-        );
-    }
-
-    // -----------------------------------------------------------------
-    // validate_job_session accept/reject matrix (JOY-020B-D2). Pure
-    // file-system tests: no env vars, no session store, so they are
-    // safe to run in parallel with the rest of the suite. The full
-    // mint -> resolve_identity flow (which needs JOY_SESSION and
-    // XDG_STATE_HOME) lives in tests/job_session_mint.rs.
-    // -----------------------------------------------------------------
-
-    use crate::auth::session::{create_session_for_job, SessionToken};
-    use crate::auth::IdentityKeypair;
-    use crate::model::item::{Assignee, Item, ItemType, JobSpec, Priority, Status};
-    use crate::model::project::{Member, MemberCapabilities};
-    use chrono::Duration;
-
-    const AI: &str = "ai:claude@joy";
-    const JOB: &str = "TST-JOB-0001";
-    const PID: &str = "TST";
-
-    fn platform_kp() -> IdentityKeypair {
-        IdentityKeypair::from_seed(&[42u8; 32])
-    }
-
-    fn job_project(with_platform_key: bool) -> Project {
-        let mut project = crate::model::Project::new("Test".into(), Some(PID.into()));
-        project
-            .register_member(AI, Member::new(MemberCapabilities::All))
-            .unwrap();
-        if with_platform_key {
-            project
-                .set_platform_key(&platform_kp().public_key().to_hex())
-                .unwrap();
-        }
-        project
-    }
-
-    fn seed_job(root: &Path, status: Status, assignee: &str) {
-        std::fs::create_dir_all(crate::store::joy_dir(root).join(crate::store::JOBS_DIR)).unwrap();
-        let mut item = Item::new(
-            JOB.into(),
-            "sandbox job".into(),
-            ItemType::Job,
-            Priority::Medium,
-            vec![],
-        );
-        item.status = status;
-        item.assignees = vec![Assignee {
-            member: assignee.into(),
-            capabilities: vec![],
-        }];
-        item.job = Some(JobSpec {
-            scope: vec!["TST-0001".into()],
-            budget: None,
-            window: None,
-            feedback: None,
-            attempts: vec![],
-        });
-        crate::items::save_item(root, &item).unwrap();
-    }
-
-    fn job_token(ttl: Duration) -> SessionToken {
-        create_session_for_job(
-            &platform_kp(),
-            &IdentityKeypair::from_random(),
-            AI,
-            PID,
-            JOB,
-            Some("op@example.com".into()),
-            ttl,
-        )
-    }
-
-    #[test]
-    fn job_session_accepted_when_platform_signed_and_job_live() {
-        let dir = tempfile::tempdir().unwrap();
-        let project = job_project(true);
-        seed_job(dir.path(), Status::InProgress, AI);
-        let token = job_token(Duration::hours(1));
-        assert_eq!(
-            validate_job_session(dir.path(), &project, PID, &token),
-            Ok(())
-        );
-    }
-
-    #[test]
-    fn job_session_rejected_without_platform_key() {
-        let dir = tempfile::tempdir().unwrap();
-        let project = job_project(false);
-        seed_job(dir.path(), Status::InProgress, AI);
-        let token = job_token(Duration::hours(1));
-        let err = validate_job_session(dir.path(), &project, PID, &token).unwrap_err();
-        assert!(err.contains("no platform key registered"), "got: {err}");
-    }
-
-    #[test]
-    fn job_session_rejected_when_signed_by_wrong_key() {
-        let dir = tempfile::tempdir().unwrap();
-        let project = job_project(true);
-        seed_job(dir.path(), Status::InProgress, AI);
-        let rogue = IdentityKeypair::from_seed(&[7u8; 32]);
-        let token = create_session_for_job(
-            &rogue,
-            &IdentityKeypair::from_random(),
-            AI,
-            PID,
-            JOB,
-            None,
-            Duration::hours(1),
-        );
-        let err = validate_job_session(dir.path(), &project, PID, &token).unwrap_err();
-        assert!(err.contains("signature check failed"), "got: {err}");
-    }
-
-    #[test]
-    fn job_session_rejected_when_issuer_is_not_platform() {
-        let dir = tempfile::tempdir().unwrap();
-        let project = job_project(true);
-        seed_job(dir.path(), Status::InProgress, AI);
-        let mut token = job_token(Duration::hours(1));
-        token.claims.issuer = None;
-        let err = validate_job_session(dir.path(), &project, PID, &token).unwrap_err();
-        assert!(err.contains("issuer is absent"), "got: {err}");
-
-        token.claims.issuer = Some("somebody-else".into());
-        let err = validate_job_session(dir.path(), &project, PID, &token).unwrap_err();
-        assert!(err.contains("issuer is somebody-else"), "got: {err}");
-    }
-
-    #[test]
-    fn job_session_rejected_when_claims_tampered() {
-        let dir = tempfile::tempdir().unwrap();
-        let project = job_project(true);
-        seed_job(dir.path(), Status::InProgress, AI);
-        let mut token = job_token(Duration::hours(1));
-        token.claims.member = "ai:attacker@joy".into();
-        let err = validate_job_session(dir.path(), &project, PID, &token).unwrap_err();
-        assert!(err.contains("signature check failed"), "got: {err}");
-    }
-
-    #[test]
-    fn job_session_rejected_when_expired() {
-        let dir = tempfile::tempdir().unwrap();
-        let project = job_project(true);
-        seed_job(dir.path(), Status::InProgress, AI);
-        let token = job_token(Duration::seconds(-1));
-        let err = validate_job_session(dir.path(), &project, PID, &token).unwrap_err();
-        assert!(err.contains("expired"), "got: {err}");
-    }
-
-    #[test]
-    fn job_session_rejected_when_job_not_in_progress() {
-        let dir = tempfile::tempdir().unwrap();
-        let project = job_project(true);
-        for status in [Status::New, Status::Open, Status::Review, Status::Closed] {
-            seed_job(dir.path(), status.clone(), AI);
-            let token = job_token(Duration::hours(1));
-            let err = validate_job_session(dir.path(), &project, PID, &token).unwrap_err();
-            assert!(err.contains("is not in progress"), "got: {err}");
-        }
-    }
-
-    #[test]
-    fn job_session_rejected_when_member_not_assignee() {
-        let dir = tempfile::tempdir().unwrap();
-        let project = job_project(true);
-        seed_job(dir.path(), Status::InProgress, "ai:other@joy");
-        let token = job_token(Duration::hours(1));
-        let err = validate_job_session(dir.path(), &project, PID, &token).unwrap_err();
-        assert!(err.contains("is not an assignee"), "got: {err}");
-    }
-
-    #[test]
-    fn job_session_rejected_when_job_missing() {
-        let dir = tempfile::tempdir().unwrap();
-        let project = job_project(true);
-        // No job seeded at all.
-        let token = job_token(Duration::hours(1));
-        let err = validate_job_session(dir.path(), &project, PID, &token).unwrap_err();
-        assert!(err.contains("not found"), "got: {err}");
     }
 }

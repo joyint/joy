@@ -58,7 +58,8 @@ enum AuthCommand {
     Token(TokenArgs),
     /// Manage your per-(operator, AI) delegations: rotate, list
     Delegation(DelegationArgs),
-    /// Change your passphrase: re-derives your identity keypair
+    /// Change your passphrase: re-wraps your identity seed, which stays
+    /// the same, so chats and zones keep opening (ADR-039)
     Passphrase(PassphraseArgs),
     /// Recover identity via recovery key, or rotate the recovery key
     Recover(RecoverArgs),
@@ -156,12 +157,6 @@ struct TokenAddArgs {
     /// Token expiry in hours (default 24; multi-use within the window)
     #[arg(long)]
     ttl: Option<i64>,
-
-    /// Issue with Crypt scope: embed the delegation private key in the
-    /// token so the AI can unwrap zone keys for any zone your delegation
-    /// has wraps for. Without this flag the token is auth-only.
-    #[arg(long)]
-    crypt: bool,
 }
 
 pub fn run(args: AuthArgs) -> Result<()> {
@@ -214,49 +209,6 @@ fn resolve_user(user_flag: Option<&str>) -> Result<String> {
         Some(u) if !u.is_empty() => Ok(u.to_string()),
         _ => Ok(joy_core::vcs::default_vcs().user_email()?),
     }
-}
-
-/// Inspect SECURITY.md and project.yaml schema. Returns
-/// `(security_current, schema_stale, migrated_value, security_path)`.
-/// `security_current` is true when SECURITY.md matches the shipped
-/// template; `schema_stale` is true when project.yaml uses legacy
-/// auth-field names. Exposed for the update registry.
-pub(crate) fn auth_state_pub(
-    root: &std::path::Path,
-) -> Result<(bool, bool, serde_yaml_ng::Value, std::path::PathBuf)> {
-    auth_state(root)
-}
-
-/// Persist a project.yaml schema migration produced by [`auth_state_pub`].
-/// Used by the update registry's project-schema item.
-pub(crate) fn write_migrated_project(
-    root: &std::path::Path,
-    migrated_value: serde_yaml_ng::Value,
-) -> Result<()> {
-    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-    let project: joy_core::model::project::Project = serde_yaml_ng::from_value(migrated_value)?;
-    store::write_yaml_preserve(&project_path, &project)?;
-    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-    joy_core::git_ops::auto_git_add(root, &[&rel]);
-    Ok(())
-}
-
-fn auth_state(
-    root: &std::path::Path,
-) -> Result<(bool, bool, serde_yaml_ng::Value, std::path::PathBuf)> {
-    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-    let security_path = root.join("SECURITY.md");
-    let raw = std::fs::read_to_string(&project_path)?;
-    let raw_value: serde_yaml_ng::Value = serde_yaml_ng::from_str(&raw)?;
-    let (migrated_value, schema_stale) =
-        joy_core::migrations::project_yaml::apply(raw_value.clone());
-    let security_current = joy_core::security_md::is_current(&security_path)?;
-    Ok((
-        security_current,
-        schema_stale,
-        migrated_value,
-        security_path,
-    ))
 }
 
 /// Resolve token from --token flag or JOY_TOKEN env var.
@@ -396,35 +348,25 @@ pub(crate) fn run_init(
     let keypair = IdentityKeypair::from_seed(seed.as_bytes());
     let public_key = keypair.public_key();
 
-    // Store salt, public key, and both wraps in project.yaml
-    let m = project.member_by_email_mut(&email).unwrap();
-    m.kdf_nonce = Some(salt.to_hex());
-    m.verify_key = Some(public_key.to_hex());
-    m.seed_wrap_passphrase = Some(wrap_passphrase);
-    m.seed_wrap_recovery = Some(wrap_recovery);
-
-    // JOY-00FD-93 (also applies to the legacy auth init path): if the
-    // founder is the only unattested member, reverse-attest them
-    // silently. Closes the attestation chain regardless of the
-    // redeemer's capabilities - attestation verification does not
-    // require the attester to have manage capability, only that the
-    // signature verifies against a member's public_key.
-    if let Some(founder_email) = founder_needing_reverse_attestation(&project) {
-        if founder_email != email {
-            let founder_member = project.member_by_key(&founder_email).cloned().unwrap();
-            let signed_fields = joy_core::auth::attestation::signed_fields_for(
-                &founder_email,
-                &founder_member.capabilities,
-                founder_member.enrollment_verifier.as_deref(),
-            );
-            let attestation =
-                joy_core::auth::attestation::sign_attestation(&email, &keypair, signed_fields);
-            project
-                .member_by_key_mut(&founder_email)
-                .unwrap()
-                .attestation = Some(attestation);
-        }
-    }
+    // ONE enrollment implementation with the desktop app and the platform:
+    // the already-enrolled guard, the invitation posture and the four fields.
+    // A member who WAS invited is refused here, so an invited slot cannot be
+    // claimed with a self-chosen key instead of the OTP (the attestation signs
+    // the verifier, not the verify key, and would not catch it).
+    joy_core::auth::enroll::apply_enrollment(
+        &mut project,
+        &email,
+        joy_core::auth::enroll::Proof::FirstContact,
+        joy_core::auth::enroll::EnrollmentMaterial {
+            verify_key: public_key.to_hex(),
+            kdf_nonce: salt.to_hex(),
+            seed_wrap_passphrase: wrap_passphrase,
+            seed_wrap_recovery: wrap_recovery,
+        },
+    )?;
+    // JOY-00FD-93: close the attestation chain while the founder is the only
+    // unattested member.
+    joy_core::auth::enroll::reverse_attest_founder(&mut project, &email, &keypair);
 
     // Determine the on-disk member key. In anonymous mode (ADR-042) the founder
     // is rekeyed to an opaque id before the project file is persisted, so the
@@ -593,7 +535,7 @@ fn cached_members_zone_key(
         return None;
     }
     let wrap = project.member_by_key(member_key)?.members_wrap.as_deref()?;
-    let zk = joy_core::crypt::unwrap_for_member(wrap, joy_core::members_file::MEMBERS_ZONE, seed)
+    let zk = joy_crypt::zone::unwrap_for_member(wrap, joy_core::members_file::MEMBERS_ZONE, seed)
         .ok()?;
     Some(hex::encode(zk.as_bytes()))
 }
@@ -651,120 +593,23 @@ fn auth_with_token(
     project_id: &str,
     token_str: &str,
 ) -> Result<()> {
-    // Decode the delegation token
-    let delegation = token::decode_token(token_str)?;
+    // Redeem through the shared joy-core path — the SAME code the platform
+    // uses in-process (JI-0175-B0): validation, ephemeral proof-of-
+    // possession keypair, crypt-scope delegation key, and the F2
+    // delegated_by claim all live in one place. The CLI adds only local
+    // persistence, the eval-able handle, and the audit event below.
+    let redeemed = joy_core::auth::redeem::redeem_ai_session(project, project_id, token_str)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let session_token = redeemed.token;
+    let env_value = redeemed.session_env;
 
-    // Look up the delegating human
-    let human = &delegation.claims.delegated_by;
-    // `delegated_by` is the operator's git e-mail recorded at token issuance
-    // (create_delegation_token passes `operator_email` as `human`), so resolve
-    // it privacy-aware rather than as a raw map key (ADR-042).
-    let human_member = project
-        .member_by_email(human)
-        .ok_or_else(|| anyhow::anyhow!("Delegating member {} is not registered.", human))?;
-    let human_pk_hex = human_member.verify_key.as_ref().ok_or_else(|| {
-        anyhow::anyhow!("Delegating member {} has no public key registered.", human)
-    })?;
-    let human_pk = PublicKey::from_hex(human_pk_hex)?;
-
-    // Look up the stable delegation entry for this AI member under the delegator (ADR-033).
-    let ai_member_id = &delegation.claims.ai_member;
-    let delegation_entry = human_member
-        .ai_delegations
-        .get(ai_member_id)
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "No delegation registered for {} by {}. Create one with `joy auth token add {}`.",
-                ai_member_id,
-                human,
-                ai_member_id
-            )
-        })?;
-    let delegation_pk = PublicKey::from_hex(&delegation_entry.delegation_verifier)?;
-
-    // Validate dual signatures + project + expiry. Tokens are multi-use
-    // within their TTL (ADR-034 relaxes ADR-033 §3): no consumed-tokens
-    // ledger, redemption of the same token from multiple shells or at
-    // multiple points in time produces independent sessions.
-    let claims = token::validate_token(&delegation, &human_pk, &delegation_pk, project_id)?;
-
-    // Verify the AI member is registered
-    if !project.has_member_key(&claims.ai_member) {
-        anyhow::bail!(
-            "AI member {} is not registered in this project.",
-            claims.ai_member
-        );
-    }
-
-    // ADR-033: ephemeral per-session keypair. The private key lives only in
-    // the `JOY_SESSION` env var; the public key is recorded in the session
-    // claims. Validation re-derives the public key from the env var and
-    // requires a match, so sibling terminals without the env var cannot
-    // reuse the session file.
-    let ephemeral_keypair = IdentityKeypair::from_random();
-    let ephemeral_private = ephemeral_keypair.to_seed_bytes();
-
-    // ADR-041 §5: when the token carries the `crypt` scope, the embedded
-    // delegation private key (32-byte Ed25519 seed) is propagated through
-    // JOY_SESSION so subsequent joy commands on this AI session can unwrap
-    // zone keys without further passphrase entry by the operator.
-    let delegation_private: Option<[u8; 32]> = if claims.has_crypt_scope() {
-        match delegation.delegation_private_key.as_ref() {
-            Some(hex_seed) => {
-                let bytes = hex::decode(hex_seed).map_err(|e| {
-                    anyhow::anyhow!("Token has malformed delegation_private_key: {e}")
-                })?;
-                if bytes.len() != 32 {
-                    anyhow::bail!(
-                        "Token's delegation_private_key has wrong length: expected 32, got {}",
-                        bytes.len()
-                    );
-                }
-                let mut seed = [0u8; 32];
-                seed.copy_from_slice(&bytes);
-                // Verify the seed produces the public key we expect.
-                let derived = IdentityKeypair::from_seed(&seed);
-                if derived.public_key().to_hex() != delegation_entry.delegation_verifier {
-                    anyhow::bail!(
-                        "Token's delegation_private_key does not match the registered \
-                         delegation_verifier. The delegation may have been rotated since the \
-                         token was issued; ask the operator for a fresh token."
-                    );
-                }
-                Some(seed)
-            }
-            None => anyhow::bail!(
-                "Token claims include the `crypt` scope but the delegation private key is \
-                 missing from the token. Ask the operator to re-issue with --crypt."
-            ),
-        }
-    } else {
-        None
-    };
-
-    // ADR-041 §6: bound the session lifetime by the token expiry so a
-    // short-lived Crypt token (e.g. --ttl 30m) actually grants only that
-    // window of access.
-    let session_token = session::create_session_for_ai(
-        &ephemeral_keypair,
-        &claims.ai_member,
-        project_id,
-        None,
-        &delegation_entry.delegation_verifier,
-        claims.expires,
-    );
+    // The session file lands in the local state dir; JOY_SESSION carries
+    // the ephemeral private key (ADR-033 §2), never persisted to a config
+    // file (that would contradict proof of possession).
     session::save_session(project_id, &session_token)?;
 
     // Output session handle for eval (stdout) -- SSH-agent pattern.
     // Status message goes to stderr so `eval $(joy auth --token ...)` works.
-    // JOY_SESSION carries the ephemeral private key (ADR-033 §2). It is
-    // intentionally not persisted to any tool config file: disk persistence
-    // would contradict the proof-of-possession property. The AI tool is
-    // responsible for propagating the env value into its subshells.
-    let sid = session::session_id(project_id, &claims.ai_member);
-    let env_value =
-        session::encode_session_env_full(&sid, &ephemeral_private, delegation_private.as_ref());
-
     if crate::output::is_json() {
         #[derive(serde::Serialize)]
         struct TokenAuthPayload<'a> {
@@ -775,24 +620,24 @@ fn auth_with_token(
         }
         crate::output::emit(TokenAuthPayload {
             session_env: env_value.clone(),
-            member: &claims.ai_member,
-            delegated_by: &claims.delegated_by,
+            member: &redeemed.member,
+            delegated_by: &redeemed.delegated_by,
             project_id,
         })?;
     } else {
         println!("export JOY_SESSION={env_value}");
         eprintln!(
             "Authenticated as {} (delegated by {}). Session active (24h).",
-            claims.ai_member, claims.delegated_by
+            redeemed.member, redeemed.delegated_by
         );
     }
 
     // Record the delegating operator by their at-rest member key (opaque id in
     // anonymous mode), never the cleartext e-mail from the token claim, so this
     // committed log line carries no PII in anonymous mode (ADR-042).
-    let actor = match joy_core::privacy::delegated_by_at_rest(project, &claims.delegated_by) {
-        Some(operator) => format!("{} delegated-by:{}", claims.ai_member, operator),
-        None => claims.ai_member.clone(),
+    let actor = match joy_core::privacy::delegated_by_at_rest(project, &redeemed.delegated_by) {
+        Some(operator) => format!("{} delegated-by:{}", redeemed.member, operator),
+        None => redeemed.member.clone(),
     };
     joy_core::event_log::log_event_as(
         root,
@@ -800,7 +645,7 @@ fn auth_with_token(
         "auth",
         Some(&format!(
             "session created for {} via delegation token",
-            claims.ai_member
+            redeemed.member
         )),
         &actor,
     );
@@ -819,10 +664,14 @@ fn run_status() -> Result<()> {
     let project = store::load_project(&root)?;
     let project_id = session::project_id(&root)?;
 
+    // AI identities authenticate via the env-carried session (per-session
+    // file); humans via their per-member slot. Try env first, slot second.
     let own_session = if identity.authenticated {
-        session::load_session(&project_id, &identity.member)
-            .ok()
-            .flatten()
+        session::current_env_session(&project_id, identity.member.id()).or_else(|| {
+            session::load_session(&project_id, &identity.member)
+                .ok()
+                .flatten()
+        })
     } else {
         None
     };
@@ -842,11 +691,20 @@ fn run_status() -> Result<()> {
         .unwrap_or_default()
         .into_iter()
         .map(|ai_id| {
-            let sess = session::load_session(&project_id, &ai_id).ok().flatten();
-            let active = sess.as_ref().is_some_and(|s| s.claims.expires > Utc::now());
+            // Newest live session wins the display; an AI may hold several
+            // concurrent sessions (one per redemption, JOY-01E1-E7).
+            let sess = session::list_member_sessions(&project_id, &ai_id)
+                .ok()
+                .and_then(|sessions| {
+                    let now = Utc::now();
+                    sessions
+                        .into_iter()
+                        .map(|(_, t)| t)
+                        .find(|t| t.claims.expires > now)
+                });
+            let active = sess.is_some();
             let expires_in_seconds = sess
                 .as_ref()
-                .filter(|_| active)
                 .map(|s| (s.claims.expires - Utc::now()).num_seconds());
             DelegatedSession {
                 member: ai_id.into(),
@@ -1066,14 +924,8 @@ fn run_token_add(
     let email = resolve_user(user_flag)?;
     let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "Passphrase: ")?;
 
-    let (encoded, hours) = create_delegation_token(
-        &root,
-        &email,
-        &passphrase,
-        &args.member,
-        args.ttl,
-        args.crypt,
-    )?;
+    let (encoded, hours) =
+        create_delegation_token(&root, &email, &passphrase, &args.member, args.ttl)?;
 
     if crate::output::is_json() {
         #[derive(serde::Serialize)]
@@ -1111,7 +963,6 @@ pub(crate) fn create_delegation_token(
     operator_passphrase: &str,
     ai_member: &str,
     ttl_hours_override: Option<i64>,
-    crypt_scope: bool,
 ) -> Result<(String, i64)> {
     use joy_core::model::project::is_ai_member;
 
@@ -1189,7 +1040,7 @@ pub(crate) fn create_delegation_token(
 
     // `delegation_salt_to_persist` is `Some` only when we end up writing
     // a brand-new project.yaml entry (the bootstrap case). The 32-byte
-    // seed comes back so the caller can embed it in `--crypt` tokens
+    // seed comes back so the caller can embed it in the token
     // (ADR-041 §3).
     let (delegation_keypair, delegation_seed, delegation_salt_to_persist): (
         IdentityKeypair,
@@ -1256,7 +1107,6 @@ pub(crate) fn create_delegation_token(
             human: operator_email,
             project_id: &project_id,
             ttl,
-            crypt_scope,
         },
     );
 
@@ -1277,6 +1127,27 @@ pub(crate) fn create_delegation_token(
                 },
             );
         }
+    }
+
+    // F4 (JI-0175-B0): give the AI member its own verify_key so chats wrap
+    // for it via the ordinary member path, replacing the platform
+    // custodian. The FIRST delegation sets it; further delegators (or a
+    // second operator) leave an existing key alone, so the member has one
+    // stable wrapping key. On revocation the takeover is handled by the
+    // rotate path, not here. Doing this at token issuance means the key is
+    // in place exactly when the platform gains the delegation to read as
+    // the AI.
+    let ai_verify = delegation_keypair.public_key().to_hex();
+    let set_ai_verify = project_mut
+        .member_by_key(ai_member)
+        .is_some_and(|m| m.verify_key.is_none());
+    if set_ai_verify {
+        if let Some(m) = project_mut.member_by_key_mut(ai_member) {
+            m.verify_key = Some(ai_verify);
+        }
+    }
+
+    if new_entry || set_ai_verify {
         store::write_yaml_preserve(&project_path, &project_mut)?;
         let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
         joy_core::git_ops::auto_git_add(root, &[&rel]);
@@ -1605,86 +1476,21 @@ fn run_auth_otp(otp: &str, passphrase_flag: Option<&str>, passphrase_stdin: bool
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
-    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
-    let mut project = store::read_project(&project_path)?;
-
     let email = joy_core::vcs::default_vcs().user_email()?;
-    let member = project.member_by_email(&email).ok_or_else(|| {
-        anyhow::anyhow!(
-            "{} is not a registered project member. A manage member must add you first.",
-            email
-        )
-    })?;
 
-    let stored_hash = member.enrollment_verifier.as_ref().ok_or_else(|| {
-        anyhow::anyhow!(
-            "no pending OTP for {}. Either this member has already completed setup \
-             or was added without an OTP.",
-            email
-        )
-    })?;
-
-    if !joy_core::auth::otp::verify_otp(otp, stored_hash)? {
-        anyhow::bail!("incorrect OTP");
-    }
-    // Wrapped-seed onboarding (ADR-039): generate a random seed and
-    // recovery key, wrap the seed under both KEKs.
+    // The redemption itself (verify the OTP, derive and apply the wrapped
+    // seed, close the founder attestation, open a session) lives in joy-core
+    // so the desktop app runs the exact same flow instead of shelling out or
+    // re-implementing it; only the I/O below is the CLI's.
     let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "Choose passphrase: ")?;
-    validate_passphrase(&passphrase)?;
-    let salt = generate_salt();
-    let seed = seed_mod::Seed::generate();
-    let recovery = seed_mod::RecoveryKey::generate();
-    let wrap_passphrase = seed_mod::wrap_seed_with_passphrase(&seed, &passphrase, &salt)?;
-    let wrap_recovery = seed_mod::wrap_seed_with_recovery(&seed, &recovery, &salt)?;
-    let keypair = IdentityKeypair::from_seed(seed.as_bytes());
-
-    // Apply to project.yaml: set public_key/salt/wraps, clear otp_hash.
-    {
-        let m = project.member_by_email_mut(&email).unwrap();
-        m.verify_key = Some(keypair.public_key().to_hex());
-        m.kdf_nonce = Some(salt.to_hex());
-        m.seed_wrap_passphrase = Some(wrap_passphrase);
-        m.seed_wrap_recovery = Some(wrap_recovery);
-        m.enrollment_verifier = None;
-    }
-
-    // JOY-00FD-93: if the founder is still the only unattested member,
-    // reverse-attest them silently. Attestation verification doesn't
-    // require the attester to have manage capability, only that their
-    // public_key verifies the signature - so any redeemer (regardless
-    // of capabilities) can close the attestation chain on first join.
-    if let Some(founder_email) = founder_needing_reverse_attestation(&project) {
-        if founder_email != email {
-            let founder_member = project.member_by_key(&founder_email).cloned().unwrap();
-            let signed_fields = joy_core::auth::attestation::signed_fields_for(
-                &founder_email,
-                &founder_member.capabilities,
-                founder_member.enrollment_verifier.as_deref(),
-            );
-            let attestation =
-                joy_core::auth::attestation::sign_attestation(&email, &keypair, signed_fields);
-            project
-                .member_by_key_mut(&founder_email)
-                .unwrap()
-                .attestation = Some(attestation);
-        }
-    }
-
-    store::write_yaml_preserve(&project_path, &project)?;
-    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-    joy_core::git_ops::auto_git_add(&root, &[&rel]);
-
-    // Establish an initial session for the new member.
-    let project_id = session::project_id(&root)?;
-    let session_token = session::create_session(&keypair, &email, &project_id, None);
-    session::save_session(&project_id, &session_token)?;
+    let outcome = joy_core::auth::enroll::redeem_with_passphrase(&root, otp, &passphrase)?;
 
     println!("Authentication initialized for {}.", email);
     println!("Public key registered. Session active (24h).");
     println!();
     println!("RECOVERY KEY (write this down now, it is shown only once):");
     println!();
-    println!("    {}", recovery.to_display_string());
+    println!("    {}", outcome.recovery_key.to_display_string());
     println!();
     println!("Use it with `joy auth recover --recovery-key` if you ever forget");
     println!("your passphrase. Joy never stores the plaintext recovery key.");
@@ -1692,23 +1498,6 @@ fn run_auth_otp(otp: &str, passphrase_flag: Option<&str>, passphrase_stdin: bool
     joy_core::git_ops::auto_git_post_command(&root, "auth otp", &email);
 
     Ok(())
-}
-
-/// Return the founder's email if exactly one member currently has no
-/// attestation (the solo founder, pre-closure). `None` otherwise.
-fn founder_needing_reverse_attestation(
-    project: &joy_core::model::project::Project,
-) -> Option<String> {
-    let mut unattested: Vec<&String> = project
-        .members()
-        .filter(|(_, m)| m.attestation.is_none())
-        .map(|(email, _)| email)
-        .collect();
-    if unattested.len() == 1 {
-        Some(unattested.remove(0).clone())
-    } else {
-        None
-    }
 }
 
 /// `joy ai rotate <ai-member>` - rotate the (human, AI) delegation keypair (ADR-033).

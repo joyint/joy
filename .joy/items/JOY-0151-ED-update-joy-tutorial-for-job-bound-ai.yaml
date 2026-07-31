@@ -12,5 +12,10 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-02T22:45:46.408027Z
-updated: 2026-05-02T22:45:46.408027Z
+updated: 2026-07-25T21:13:14.198778441Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Extends crates/joy-cli/docs/Tutorial.md once Job-bound AI access and the WebUI Crypt path are functional: Job-bound access flow, what is wrapped where, browser-side wrapping in the WebUI, the responsibility model when the trigger does not hold the zone key.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-25T21:13:14.198777529Z
+  text: 'The job-bound platform session model this documents is retracted (decision JI-0175-B0). Rework the tutorial to the delegation-token model: the platform holds an operator-issued delegation token and redeems short-lived sessions, no platform key. Depends on story JOY-022E-B2.'

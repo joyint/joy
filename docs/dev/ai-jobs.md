@@ -1,79 +1,63 @@
-# AI Jobs and Agents (git-native)
+# AI jobs and AI members (git-native)
 
-AI orchestration data is git-native, like everything in Joy: an AI **job**
-is `.joy/ai/jobs/<id>.yaml` and an AI **agent** config is
-`.joy/ai/agents/<member>.yaml`. joy-core owns the model, so the CLI, the
-desktop app, and the platform all read and write the same records. The forge
-is the source of truth; the audit trail is `.joy/logs`; the history is git;
-the work product of a repo job is a branch on the forge. No database is
-involved (the platform's Postgres is only chat pub/sub and account info).
+AI orchestration data is git-native, like everything in Joy. joy-core owns
+the models, so the CLI, the desktop app, and the platform all read and
+write the same records. The forge is the source of truth; the audit trail
+is `.joy/logs`; the history is git; the work product of a repo job is a
+branch on the forge.
 
-## Job record — `.joy/ai/jobs/<id>.yaml`
+## Jobs are items — `.joy/jobs/<id>.yaml`
 
-The current state of one unit of AI work derived from an item:
+A delegated unit of AI work is a first-class **job item** (`ItemType::Job`)
+stored under `.joy/jobs/`, kept apart from the product backlog: deletable
+without touching the backlog, invisible to default views, lower merge
+contention. The `-JOB-` segment in the id routes between the two
+directories. List them with `joy ls -J`; create one with `joy add job`.
+The job payload (scope, budget, window) rides on the item.
 
-```yaml
-id: 0f2c1e9a4b7d
-item: LP-0002-FE
-type: implement            # implement | review | estimate | analyze | plan
-actor: ai:claude@joy       # the AI member doing the work
-delegated_by: horst@example.com
-status: awaiting-approval  # see lifecycle below
-branch: joy/claude/LP-0002-FE-0f2c1e   # repo work only
-budget: { max_cents: 500, currency: EUR }
-cost:   { spent_cents: 1, tokens: 240 }
-created: 2026-07-04T00:08:00Z
-updated: 2026-07-04T00:08:07Z
-result: "created hello.txt -- proposal on branch … awaiting approval"
-reviews:                   # human review rounds, oldest first
-  - at: 2026-07-04T00:10:00Z
-    by: horst@example.com
-    decision: request-changes   # request-changes | approve
-    feedback: make the greeting warmer
-```
+The legacy parallel record store at `.joy/ai/jobs/<id>.yaml` is retired;
+the `m_2026_07_remove_ai_jobs` repo migration removes any leftover.
 
-Money is held in whole cents to avoid floating-point drift. The record is
-committed and pushed on every meaningful status change, so anyone viewing
-the item sees the current status.
+## AI members carry their own execution config
 
-### Lifecycle
+An AI member is a project member whose id is `ai:<tool>@joy`. How the
+member runs — which ACP **adapter** drives it — is recorded on the
+`project.yaml` member itself, so a host can route turns without a
+per-member file. Since JOY-0231-74 the adapter id IS the tool name
+(`vibe` | `claude` | `qwen`; `mock` is the test agent), and every
+adapter fact (entrypoint, key/model/state env, probe, install hint)
+lives in THE registry, `joy_ai::adapters` — one row per tool, shared by
+the desktop and the platform (JI-017A-85). Provider API keys are **not**
+in the repo: the platform stores them account-scoped in its database,
+and locally run tools use their own subscription or environment.
 
-```
-queued -> running -> awaiting-approval
-                       |          ^
-        (human)        |          |
-   request-changes ->  changes-requested -> running --+
-   approve         ->  done
-   (failure)       ->  failed        (cancel) -> cancelled
-```
+The legacy execution-config store at `.joy/ai/agents/<member>.yaml` is
+retired; the `m_2026_07_remove_ai_agents` repo migration removes any
+leftover.
 
-The gate holds at `awaiting-approval`; the human either requests changes
-(another round runs on the same branch, feedback carried in) or approves
-(the branch merges, the job is `done`).
+## Interaction level vs. agent mode
 
-## Agent config — `.joy/ai/agents/<member>.yaml`
+Two distinct oversight concepts, easy to confuse:
 
-How an AI member runs. The API key is a secret referenced out of band
-(platform secret store / OS keychain) and is **never** stored here.
-
-```yaml
-member: ai:claude@joy
-adapter: mock              # mock | claude-code | mistral-vibe | qwen-code
-model: claude-sonnet-4
-provider: anthropic
-default_mode: collaborative
-budget_default: { max_cents: 500, currency: EUR }
-```
+- **Interaction level** (`InteractionLevel`): the project's three-step
+  oversight ladder (JI-0166-D8): `autonomous`, `confirmed`, `proposing`.
+  The per-project default is `interaction-level.default` in config;
+  per-capability defaults live in `project.defaults.yaml`, member defaults
+  next to the capabilities in `project.yaml`.
+- **Agent mode** (`AgentMode`): the ACP permission mode a chat turn runs
+  under (`plan` / `accept-edits` / `autonomous`). It is per-(member,
+  delegator) on a chat, never a project-wide interaction level.
 
 ## CLI
 
 ```
-joy ai jobs                # list jobs, newest first
-joy ai jobs --item LP-0002 # only that item's jobs
-joy ai agents              # list agent configs (never shows a key)
+joy ai init         # set up AI tool integration and register AI members
+joy ai reset        # remove AI tool config / delegations
+joy ai tutorial     # the operational guide for AI assistants
+joy ls -J           # list job items
 ```
 
 The desktop app and the platform delegate, review, and approve through the
-same joy-core model; the platform additionally runs the agent in a sandbox
-container and pushes the branch. Audit for every job action lands in
-`.joy/logs`.
+same joy-core models; the platform additionally runs the member in a
+sandbox container and pushes the branch. Audit for every job action lands
+in `.joy/logs`.

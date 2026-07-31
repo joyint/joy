@@ -12,5 +12,10 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-02T22:45:47.880026Z
-updated: 2026-05-02T22:45:47.880026Z
+updated: 2026-07-25T21:13:14.271796522Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: Extends project/website content to reflect Job-bound AI access and the browser-side WebUI Crypt path. Marketing positioning for the three E2E levels on joyint.com is updated to reference the implemented architecture.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-25T21:13:14.271795668Z
+  text: 'Same as JOY-0151-ED: website content for ''job-bound platform sessions'' must be reworked to the delegation-token model (decision JI-0175-B0).'

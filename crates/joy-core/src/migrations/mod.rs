@@ -5,16 +5,19 @@
 //!
 //! Each migration is a pure transform on `serde_yaml_ng::Value`, isolated
 //! in its own module under a date-prefixed filename. Migrations are
-//! applied on read; persistence happens at the next `joy auth update`,
-//! never as a silent on-save rewrite (per ADR-035).
+//! applied on read; the migrated form persists with the artifact's next
+//! regular write — project.yaml at the next `joy auth update` (ADR-035),
+//! an item when it is next saved — never as a mass rewrite.
 //!
 //! Removing a migration after its deprecation window is a one-step
 //! operation: delete the module file and the corresponding entry from
 //! the area-specific `apply` function. No cross-cutting changes needed.
 //!
-//! Migrations are grouped by kind so the two mechanisms stay separate:
+//! Migrations are grouped by kind so the mechanisms stay separate:
 //! - [`project_yaml`]: pure on-read transforms of the parsed YAML value.
+//! - [`item_yaml`]: the same discipline for item files.
 //! - [`repo`]: filesystem-aware, one-shot reconciles run at sync time.
 
+pub mod item_yaml;
 pub mod project_yaml;
 pub mod repo;

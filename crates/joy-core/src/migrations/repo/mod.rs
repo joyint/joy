@@ -11,7 +11,10 @@
 //! file and its entry in [`apply`] / [`pending`].
 
 mod m_2026_06_doc_path_layout;
+mod m_2026_07_mode_to_interaction;
+mod m_2026_07_remove_ai_agents;
 mod m_2026_07_remove_ai_jobs;
+mod m_2026_07_three_levels;
 
 use std::path::Path;
 
@@ -30,6 +33,9 @@ pub struct Reconciled {
 pub fn pending(root: &Path) -> Result<Vec<Reconciled>, JoyError> {
     let mut out = m_2026_06_doc_path_layout::pending(root)?;
     out.extend(m_2026_07_remove_ai_jobs::pending(root)?);
+    out.extend(m_2026_07_remove_ai_agents::pending(root)?);
+    out.extend(m_2026_07_mode_to_interaction::pending(root)?);
+    out.extend(m_2026_07_three_levels::pending(root)?);
     Ok(out)
 }
 
@@ -37,5 +43,8 @@ pub fn pending(root: &Path) -> Result<Vec<Reconciled>, JoyError> {
 pub fn apply(root: &Path) -> Result<Vec<Reconciled>, JoyError> {
     let mut out = m_2026_06_doc_path_layout::migrate(root)?;
     out.extend(m_2026_07_remove_ai_jobs::migrate(root)?);
+    out.extend(m_2026_07_remove_ai_agents::migrate(root)?);
+    out.extend(m_2026_07_mode_to_interaction::migrate(root)?);
+    out.extend(m_2026_07_three_levels::migrate(root)?);
     Ok(out)
 }

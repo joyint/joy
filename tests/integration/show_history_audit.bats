@@ -57,7 +57,7 @@ load setup
     joy comment "$id" "original body" >/dev/null
 
     # Edit as a different identity.
-    joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE" >/dev/null
+    DEV_OTP=$(joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE" | extract_otp)
     setup_member_auth "dev@example.com" "$DEV_PASSPHRASE"
     git config user.email "dev@example.com"
     joy comment edit "$id" 1 "edited body" >/dev/null
@@ -74,7 +74,7 @@ load setup
     echo "$output" | grep -E "^  Updated: [0-9-]+ [0-9:]+ by dev@example\.com$"
 }
 
-@test "joy show: legacy item without history still renders single Updated line" {
+@test "joy show: an item file without history reads as empty audit list" {
     setup_human_auth
     mkdir -p .joy/items
     cat > .joy/items/TP-0099-legacy.yaml <<'YAML'
@@ -92,10 +92,13 @@ updated_by: bob@example.com
 description: legacy fixture
 YAML
 
+    # The strict schema backfills `history: []` on read (item_yaml
+    # migration): the footer shows real audit entries or nothing — a
+    # fabricated single Updated line was the retired fallback.
     run joy show TP-0099
     [ "$status" -eq 0 ]
     echo "$output" | grep -E "^Created: 2026-01-01 [0-9:]+ by alice@example\.com$"
-    echo "$output" | grep -E "^Updated: 2026-01-02 [0-9:]+ by bob@example\.com$"
+    ! echo "$output" | grep -E "^Updated:"
 }
 
 @test "joy show: legacy item with updated == created shows no Updated line" {

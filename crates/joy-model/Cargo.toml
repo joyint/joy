@@ -1,0 +1,18 @@
+[package]
+name = "joy-model"
+version = "0.19.0"
+edition = "2021"
+license = "MIT"
+description = "The small shared types of Joy: member references and interaction levels"
+repository = "https://github.com/joyint/joy"
+homepage = "https://joyint.com/en/joy"
+
+[dependencies]
+serde = { workspace = true }
+ts-rs = { version = "12", features = ["serde-compat"], optional = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[features]
+ts = ["dep:ts-rs"]

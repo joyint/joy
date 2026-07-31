@@ -1,0 +1,24 @@
+id: JOY-022E-B2
+title: Remove the platform-key model; add delegation-based F1-F4 fixes [JI-0175-B0]
+type: story
+status: in-progress
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- plan
+- implement
+- review
+effort: 6
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-25T21:10:14.399883706Z
+updated: 2026-07-28T18:35:30.041609188Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-07-27T22:53:48.157334854Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Per decision JI-0175-B0. RUECKBAU: joy project platform-key (project.rs), joy crypt grant <zone> platform (crypt.rs), auth/platform.rs, PLATFORM_ISSUER + platform-signed session constructor (auth/session.rs), validate_job_session + its resolve_identity branch (identity.rs), PlatformInfo/Project::platform/set_platform_key/PLATFORM_RECIPIENT (model/project.rs), the platform recipient arm in joy-chat (chat_store.rs, chat_crypt.rs) and the encryptable predicate (chats.rs) reduced to members-with-keys; tests. write_yaml_preserve stays so foreign blocks in other repos are never silently dropped. AUFBAU: F1 self-heal on passphrase change (client re-wraps own chat slots holding both keys); F2 delegated_by from token claims into session claims; F3 cryptographic validation of token-redeemed sessions at command time (chain, capped to token expiry); F4 multi-delegator convention + set members.<ai>.verify_key from the delegation_verifier at token issuance when empty. Version marker bump so old clients update. just check green.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-28T18:35:30.041608236Z
+  text: 'F1 (Selbstheilung beim Passphrase-Wechsel) ist nicht noetig und faellt weg. Das Wrapped-Seed-Modell (ADR-039) haelt Seed und Identity-Keypair ueber den Passphrase-Wechsel stabil; joy auth passphrase wrappt nur seed_wrap_passphrase neu (crates/joy-cli/src/commands/auth.rs). Die Chat-Slots haengen am Seed-abgeleiteten Schluessel, also aendert sich an ihnen nichts. Belegt durch crates/joy-cli/tests/chat_access.rs::a_passphrase_change_keeps_the_chats_readable: Nachricht vor dem Wechsel geschrieben, nach dem Wechsel mit der neuen Passphrase gelesen, gruen. Ein Neu-Wrappen braucht es nur beim echten Schluesselwechsel (neue Identitaet), dafuer gibt es die bestehende Key-Change-Heilung (F4).'

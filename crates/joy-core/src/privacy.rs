@@ -21,13 +21,13 @@ use std::path::Path;
 
 use joy_crypt::identity::{Keypair, PublicKey};
 
-use crate::crypt::{self, ZoneKey};
 use crate::error::JoyError;
 use crate::member_id::{email_match, opaque_member_id};
 use crate::members_file::{self, MemberInfo, MembersFile, MEMBERS_ZONE};
 use crate::model::project::{Member, PrivacyMode};
 use crate::model::Project;
 use crate::store;
+use joy_crypt::zone::{unwrap_for_member, wrap_for_member, ZoneKey};
 
 /// A human member is one whose map key is an e-mail (not an `ai:` synthetic id).
 /// Only human members carry PII and get anonymized; AI members keep their
@@ -111,7 +111,7 @@ pub fn erase_member(
         .find(|m| m.verify_key.as_deref() == Some(operator_vk.as_str()))
         .and_then(|m| m.members_wrap.clone())
         .ok_or_else(|| JoyError::Other("operator has no members.yaml access wrap".into()))?;
-    let zone_key = crypt::unwrap_for_member(&wrap, MEMBERS_ZONE, operator_seed)?;
+    let zone_key = unwrap_for_member(&wrap, MEMBERS_ZONE, operator_seed)?;
     let mut mf = members_file::read(root, &zone_key)?;
     let removed = mf.members.remove(target_id).is_some();
     if removed {
@@ -225,7 +225,7 @@ pub fn switch_to_anonymous(
             .map_err(|e| JoyError::Other(format!("bad kdf_nonce for {email}: {e}")))?;
 
         let recipient_pk = PublicKey::from_hex(&verify_key)?;
-        let wrap = crypt::wrap_for_member(
+        let wrap = wrap_for_member(
             &zone_key,
             MEMBERS_ZONE,
             operator_seed,
@@ -281,7 +281,7 @@ pub fn switch_to_open(
         .find(|m| m.verify_key.as_deref() == Some(operator_vk.as_str()))
         .and_then(|m| m.members_wrap.clone())
         .ok_or_else(|| JoyError::Other("operator has no members.yaml access wrap".into()))?;
-    let zone_key = crypt::unwrap_for_member(&wrap, MEMBERS_ZONE, operator_seed)?;
+    let zone_key = unwrap_for_member(&wrap, MEMBERS_ZONE, operator_seed)?;
     let mf = members_file::read(root, &zone_key)?;
 
     let mut renamed: Vec<(String, String)> = Vec::new();
@@ -326,6 +326,7 @@ pub fn switch_to_open(
 mod tests {
     use super::*;
     use crate::model::project::MemberCapabilities;
+    use joy_crypt::zone::looks_like_blob;
 
     const EMAIL: &str = "test@example.com";
     const NONCE: &str = "8c1f00000000000000000000000000000000000000000000000000000000e4ab";
@@ -405,7 +406,7 @@ mod tests {
         );
         assert!(members_file::exists(root));
         let raw = std::fs::read(members_file::members_path(root)).unwrap();
-        assert!(crypt::looks_like_blob(&raw));
+        assert!(looks_like_blob(&raw));
         // project.yaml now keyed by opaque id, carries email_match.
         let pj: Project =
             store::read_yaml(&store::joy_dir(root).join(store::PROJECT_FILE)).unwrap();

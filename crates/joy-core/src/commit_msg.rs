@@ -15,8 +15,32 @@
 //! cursored over and deleted. Comment (`#`) lines are stripped by git's
 //! default editor cleanup, so they never reach the stored commit.
 
-use crate::ai_templates::coauthor_line_for_member;
 use crate::model::item::ItemType;
+
+/// Canonical `Co-Authored-By:` value for an AI member id, or `None` when the
+/// member is not a known tool. Maps `ai:claude@joy` -> the `claude` tool line.
+/// Owned here (not in the AI template layer) so commit-message building stays
+/// AI-free at the crate level (ADR-043). Brand names are allowed in this
+/// trailer and only here; the rest of the project uses the Joy member ID.
+pub fn coauthor_line_for_member(member_id: &str) -> Option<&'static str> {
+    let tool = member_id
+        .strip_prefix("ai:")
+        .and_then(|rest| rest.split('@').next())?;
+    let line = coauthor_line_for_tool(tool);
+    (!line.is_empty()).then_some(line)
+}
+
+/// `<Brand> <email>` co-author value for an AI tool (empty for an unknown
+/// tool), matching each tool's own standalone-commit form.
+pub fn coauthor_line_for_tool(tool: &str) -> &'static str {
+    match tool {
+        "claude" => "Claude <noreply@anthropic.com>",
+        "copilot" => "Copilot <copilot@github.com>",
+        "qwen" => "Qwen-Coder <qwen-coder@alibabacloud.com>",
+        "vibe" => "Mistral Vibe <vibe@mistral.ai>",
+        _ => "",
+    }
+}
 
 /// A candidate item for the message (id + type + title).
 #[derive(Debug, Clone, PartialEq)]

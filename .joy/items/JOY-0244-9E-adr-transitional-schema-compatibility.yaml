@@ -1,0 +1,26 @@
+id: JOY-0244-9E
+title: 'ADR: Transitional schema compatibility lives only in src/migrations'
+type: decision
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- conceive
+validity: accepted
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-31T12:35:57.957999330Z
+updated: 2026-07-31T18:44:45.531052120Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Decided with the operator on 2026-07-31, generalizing what ADR-035 (JOY-01E2-0B) established for the auth rename.
+
+  Product code is strict: models and commands know exactly the current form of every joy-managed artifact. No tolerant field, no legacy branch, no fallback read ever lives in product code.
+
+  Every transitional adaptation for data an older build wrote is a dated migration module under joy-core src/migrations, in one of the existing cuts: project_yaml (pure on-read transform), item_yaml (the same discipline for item files), repo (filesystem-aware one-shot reconciles at sync time), plus joy-chat-store's chat migrations for sealed chat layouts. A migration module may privately keep the retired format's reader; nothing outside migrations may.
+
+  Persistence of the migrated form rides the artifact's next REGULAR write: an item persists it when the item is next saved, project.yaml at the next joy update (per ADR-035). Never a mass rewrite of untouched files, and no reporting, info rows or extra surfaces around it.
+
+  Removing a migration once its window closes is one step: delete the module file and its single registry line. Nothing else in the codebase knows the old form, so nobody has to comb the code for scattered compat.
+
+  Consequence for callers: data older than the migration window simply expires into the honest path (a session re-auth, a default value, a named refusal); that is intended, not a regression.

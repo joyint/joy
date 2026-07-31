@@ -1,0 +1,28 @@
+id: JOY-0221-09
+title: joy update migration for Interaction Levels 2.0
+type: task
+status: closed
+priority: high
+parent: JOY-021F-E2
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-24T18:28:19.426584492Z
+updated: 2026-07-24T23:24:57.260020189Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-07-24T23:12:08.674150937Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-24T23:24:57.260020189Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Hard-switch migration per JI-0166-D8: joy update rewrites project.yaml, project.defaults.yaml, and config.yaml (value map pairing/interactive/collaborative -> proposing, supervised -> confirmed, autonomous unchanged; key renames mode -> level, max-mode -> max-level) and regenerates all joy ai setup artifacts from the three-level templates. After migration, old values and keys are a hard error with a clear message pointing at joy update; no fallback, no warning-and-continue. The existing downgrade guard covers old binaries on migrated repos. Migration code lives in the dedicated migrations module so it can be removed later.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-24T23:12:08.561545395Z
+  text: 'Plan: new one-shot reconcile crates/joy-core/src/migrations/repo/m_2026_07_three_levels.rs, chained AFTER m_2026_07_mode_to_interaction in repo::pending/apply so ancient modes/max-mode repos migrate through the interaction stage first. Transforms, all idempotent, raw-YAML edits so unknown fields round-trip: (1) config.yaml + config.defaults.yaml: top-level interaction -> interaction-level, values mapped (pairing/interactive/collaborative -> proposing, supervised -> confirmed, autonomous unchanged); (2) project.yaml: same section rename+map, plus per member-capability max-interaction -> max-interaction-level with value map; (3) BEYOND the item text (found in the 0220 inventory): .joy/items/*.yaml still carry the literal mode: key for the per-item override - renamed to interaction-level with the value map, else those items hard-error after the switch. Regeneration of the joy ai setup artifacts comes from the existing joy update template sync (tests 528-530 cover it), so the module stays pure YAML rewriting. Tests in-module (fixture repos: fresh no-op, five-level repo, mixed old+new key precedence, item files) plus a bats scenario running joy update on a pre-2.0 repo.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-24T23:24:57.147925146Z
+  text: 'Result: m_2026_07_three_levels reconcile added and chained after m_2026_07_mode_to_interaction in repo::pending/apply. Renames and value-maps: interaction -> interaction-level in config.yaml/config.defaults.yaml/project.yaml, max-interaction -> max-interaction-level per member capability, item mode: -> interaction-level; values pairing/interactive/collaborative -> proposing, supervised -> confirmed. Idempotent, raw-YAML edits, new-key-wins on conflicts, also maps five-level values that already sit under new keys (halfway states). Item files included (found in the 0220 inventory, beyond the original item text). Registry row output polished (dropped the stale docs. prefix from reconcile rows). Verified end to end: manual repo migrated via joy update, chained ancient modes:/max-mode: fixture passes through both stages in one apply, 11 unit tests in-module, bats scenario in interaction_level.bats, just check green (540). Note for the rollout: version marker gating means real repos migrate on first run of a RELEASED newer binary; with the same-version dev binary joy update applies it explicitly. Running the migration over our repos happens together with the binary reinstall, operator call.'

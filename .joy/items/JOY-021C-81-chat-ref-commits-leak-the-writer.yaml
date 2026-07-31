@@ -1,0 +1,20 @@
+id: JOY-021C-81
+title: Chat-ref commits leak the writer identity
+type: bug
+status: in-progress
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-19T09:51:42.090872320Z
+updated: 2026-07-19T09:51:42.361939917Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-07-19T09:51:42.179949589Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-19T09:51:42.361939917Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'refs/joy/chats commits were authored+committed with repo.signature() (the developer''s real git name/email), so a keyless reader running git log --stat refs/joy/chats maps a member to an opaque chat regardless of tree sealing. This defeats ADR JAPP-002A-30 (a keyless reader must not learn who is in which chat). Fix: a FIXED neutral identity (joy/joy@localhost) plus a day-coarsened commit time on every chat-ref write on every device. Chat ordering is by in-chat data, never git author/time, so nothing is lost. This is the universal leak the whole-file-encryption design panel surfaced.'

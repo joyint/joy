@@ -8,7 +8,7 @@ capabilities:
 validity: accepted
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-15T06:38:03.050197Z
-updated: 2026-06-15T20:33:39.835291Z
+updated: 2026-07-24T23:41:05.827342395Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 history:
 - date: 2026-06-15T06:38:03.181026Z
@@ -99,3 +99,7 @@ description: |
 
   * The 200-line limit is based on current research (2026-03). It may change as AI tools improve their instruction processing. The quarterly review cycle accounts for this.
   * Agent definitions (`.claude/agents/*.md`) are not affected by this decision. They are loaded on demand, not as part of the base instructions.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-24T23:41:05.827341337Z
+  text: 'Amendment 2026-07-25 (JI-0166-D8, JOY-0223-D7): the two execution contexts are renamed - tool mode becomes Chat context, automation mode becomes Job context; the word mode leaves the level vocabulary (Agent Mode remains solely the tool/ACP mechanics term). The per-level behaviour guidance shrinks to three rows (proposing, confirmed, autonomous), which pays into this ADR''s 200-line budget: the tutorial carries the three-line list, the managed block carries a terse enforced-levels section (JOY-0222-4E), and no five-row table remains in any template. The 200-line rendered-output limit itself stands unchanged.'

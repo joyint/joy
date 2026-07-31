@@ -1,0 +1,33 @@
+[package]
+name = "joy-chat-store"
+version = "0.19.0"
+edition = "2021"
+license = "MIT"
+description = "Git storage for Joy's sealed chats: blobs, trees and the chats ref"
+repository = "https://github.com/joyint/joy"
+homepage = "https://joyint.com/en/joy"
+
+[dependencies]
+joy-chat = { version = "0.19.0", path = "../joy-chat" }
+joy-core = { version = "0.19.0", path = "../joy-core" }
+joy-model = { workspace = true }
+joy-crypt = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml_ng = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+sha2 = "0.10.9"
+hex = "0.4"
+uuid = { version = "1", features = ["v4", "v7", "serde"] }
+# Chats live on a dedicated ref (refs/joy/chats, ADR JAPP-00DC-FC), which is
+# never checked out, so it needs git plumbing (blob/tree/commit/ref) that the
+# CLI cannot express cleanly.
+git2 = { version = "0.20", default-features = false, features = ["vendored-libgit2"] }
+
+[features]
+ts = ["joy-chat/ts", "joy-core/ts"]
+
+[dev-dependencies]
+tempfile = "3"
+insta = { version = "1.41", features = ["yaml"] }

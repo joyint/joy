@@ -419,8 +419,8 @@ pub fn read_yaml<T: DeserializeOwned>(path: &Path) -> Result<T, JoyError> {
     // populated by joy-cli after passphrase verification. If the
     // blob's zone is not in that context, surface ZoneAccessDenied
     // rather than a YAML parse error.
-    let plaintext = if crate::crypt::looks_like_blob(&bytes) {
-        let (_zone, plain) = crate::crypt::decrypt_blob(crate::crypt::active_zone_key, &bytes)?;
+    let plaintext = if joy_crypt::zone::looks_like_blob(&bytes) {
+        let (_zone, plain) = joy_crypt::zone::decrypt_blob(crate::crypt::active_zone_key, &bytes)?;
         plain
     } else {
         bytes
@@ -453,25 +453,18 @@ pub fn read_project(
             path: project_path.to_path_buf(),
             source: e,
         })?;
-    let (value, migrated) = crate::migrations::project_yaml::apply(value);
-    if migrated {
-        warn_legacy_schema_once();
-    }
+    // Migrations run implicitly and SILENTLY (JOY-0240-97): the person is
+    // never sent to project.yaml — they are not supposed to see that file
+    // at all. `joy update` persists the migrated form when it runs; until
+    // then every read serves the migrated view without a word. The former
+    // read-time warning also fired on fresh projects whose AI member
+    // merely got its adapter pin backfilled, nagging about "legacy auth
+    // field names" that never existed.
+    let (value, _migrated) = crate::migrations::project_yaml::apply(value);
     serde_yaml_ng::from_value(value).map_err(|e| JoyError::YamlParse {
         path: project_path.to_path_buf(),
         source: e,
     })
-}
-
-fn warn_legacy_schema_once() {
-    use std::sync::Once;
-    static WARN: Once = Once::new();
-    WARN.call_once(|| {
-        eprintln!(
-            "warning: project.yaml uses legacy auth field names from before v0.12; \
-             run `joy update` to normalise. Legacy support will be removed in v0.13."
-        );
-    });
 }
 
 /// Load the full project metadata from project.yaml under the given
@@ -481,28 +474,35 @@ pub fn load_project(root: &Path) -> Result<crate::model::project::Project, crate
     read_project(&project_path)
 }
 
-/// Load mode defaults by merging project.defaults.yaml with project.yaml modes section.
-pub fn load_mode_defaults(root: &Path) -> crate::model::project::ModeDefaults {
+/// Load interaction-level defaults by merging project.defaults.yaml with the
+/// project.yaml interaction-level section.
+pub fn load_interaction_level_defaults(
+    root: &Path,
+) -> crate::model::project::InteractionLevelDefaults {
     let defaults_path = project_defaults_path(root);
     let mut base = read_yaml_value(&defaults_path)
-        .and_then(|v| v.get("modes").cloned())
+        .and_then(|v| v.get("interaction-level").cloned())
         .unwrap_or(serde_json::json!({}));
 
-    // Overlay from project.yaml modes section
+    // Overlay from project.yaml interaction-level section
     let project_path = joy_dir(root).join(PROJECT_FILE);
-    if let Some(overlay) = read_yaml_value(&project_path).and_then(|v| v.get("modes").cloned()) {
+    if let Some(overlay) =
+        read_yaml_value(&project_path).and_then(|v| v.get("interaction-level").cloned())
+    {
         deep_merge(&mut base, &overlay);
     }
 
     serde_json::from_value(base).unwrap_or_default()
 }
 
-/// Load the raw mode defaults from project.defaults.yaml (before project.yaml merge).
-/// Used for source tracking in resolve_mode().
-pub fn load_raw_mode_defaults(root: &Path) -> crate::model::project::ModeDefaults {
+/// Load the raw interaction-level defaults from project.defaults.yaml (before
+/// the project.yaml merge). Used for source tracking in resolve_interaction_level().
+pub fn load_raw_interaction_level_defaults(
+    root: &Path,
+) -> crate::model::project::InteractionLevelDefaults {
     let path = project_defaults_path(root);
     read_yaml_value(&path)
-        .and_then(|v| v.get("modes").cloned())
+        .and_then(|v| v.get("interaction-level").cloned())
         .and_then(|v| serde_json::from_value(v).ok())
         .unwrap_or_default()
 }
@@ -656,7 +656,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Mode defaults loading integration tests
+    // Interaction-level defaults loading integration tests
     // -----------------------------------------------------------------------
 
     use crate::model::config::InteractionLevel;
@@ -670,14 +670,14 @@ mod tests {
     }
 
     #[test]
-    fn load_mode_defaults_from_file() {
+    fn load_interaction_level_defaults_from_file() {
         let dir = tempdir().unwrap();
         setup_project_dir(dir.path());
         let defaults_content = r#"
-modes:
-  default: interactive
-  implement: collaborative
-  review: pairing
+interaction-level:
+  default: proposing
+  implement: confirmed
+  test: autonomous
 "#;
         std::fs::write(
             dir.path().join(JOY_DIR).join(PROJECT_DEFAULTS_FILE),
@@ -685,36 +685,36 @@ modes:
         )
         .unwrap();
 
-        let defaults = load_mode_defaults(dir.path());
-        assert_eq!(defaults.default, InteractionLevel::Interactive);
+        let defaults = load_interaction_level_defaults(dir.path());
+        assert_eq!(defaults.default, InteractionLevel::Proposing);
         assert_eq!(
             defaults.capabilities[&Capability::Implement],
-            InteractionLevel::Collaborative
+            InteractionLevel::Confirmed
         );
         assert_eq!(
-            defaults.capabilities[&Capability::Review],
-            InteractionLevel::Pairing
+            defaults.capabilities[&Capability::Test],
+            InteractionLevel::Autonomous
         );
     }
 
     #[test]
-    fn load_mode_defaults_missing_file_returns_default() {
+    fn load_interaction_level_defaults_missing_file_returns_default() {
         let dir = tempdir().unwrap();
         setup_project_dir(dir.path());
-        let defaults = load_mode_defaults(dir.path());
-        assert_eq!(defaults.default, InteractionLevel::Collaborative);
+        let defaults = load_interaction_level_defaults(dir.path());
+        assert_eq!(defaults.default, InteractionLevel::Proposing);
         assert!(defaults.capabilities.is_empty());
     }
 
     #[test]
-    fn load_mode_defaults_project_yaml_overrides() {
+    fn load_interaction_level_defaults_project_yaml_overrides() {
         let dir = tempdir().unwrap();
         setup_project_dir(dir.path());
 
         let defaults_content = r#"
-modes:
-  default: collaborative
-  implement: collaborative
+interaction-level:
+  default: proposing
+  implement: proposing
 "#;
         std::fs::write(
             dir.path().join(JOY_DIR).join(PROJECT_DEFAULTS_FILE),
@@ -722,33 +722,33 @@ modes:
         )
         .unwrap();
 
-        // project.yaml overrides implement to interactive
+        // project.yaml overrides implement to confirmed
         let project_content = r#"
 name: test
 acronym: TST
 language: en
 created: "2026-01-01T00:00:00+00:00"
 members: {}
-modes:
-  implement: interactive
+interaction-level:
+  implement: confirmed
 "#;
         std::fs::write(dir.path().join(JOY_DIR).join(PROJECT_FILE), project_content).unwrap();
 
-        let defaults = load_mode_defaults(dir.path());
+        let defaults = load_interaction_level_defaults(dir.path());
         assert_eq!(
             defaults.capabilities[&Capability::Implement],
-            InteractionLevel::Interactive
+            InteractionLevel::Confirmed
         );
     }
 
     #[test]
-    fn load_raw_mode_defaults_ignores_project_overrides() {
+    fn load_raw_interaction_level_defaults_ignores_project_overrides() {
         let dir = tempdir().unwrap();
         setup_project_dir(dir.path());
 
         let defaults_content = r#"
-modes:
-  implement: collaborative
+interaction-level:
+  implement: proposing
 "#;
         std::fs::write(
             dir.path().join(JOY_DIR).join(PROJECT_DEFAULTS_FILE),
@@ -762,15 +762,15 @@ acronym: TST
 language: en
 created: "2026-01-01T00:00:00+00:00"
 members: {}
-modes:
-  implement: interactive
+interaction-level:
+  implement: confirmed
 "#;
         std::fs::write(dir.path().join(JOY_DIR).join(PROJECT_FILE), project_content).unwrap();
 
-        let raw = load_raw_mode_defaults(dir.path());
+        let raw = load_raw_interaction_level_defaults(dir.path());
         assert_eq!(
             raw.capabilities[&Capability::Implement],
-            InteractionLevel::Collaborative
+            InteractionLevel::Proposing
         );
     }
 

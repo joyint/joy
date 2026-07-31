@@ -7,7 +7,7 @@ load setup
 # --- Helper: set up a project with lead, developer, and AI agent ---
 setup_team_project() {
     setup_human_auth
-    joy project member add dev@example.com --capabilities "implement,test,create" --passphrase "$TEST_PASSPHRASE"
+    DEV_OTP=$(joy project member add dev@example.com --capabilities "implement,test,create" --passphrase "$TEST_PASSPHRASE" | extract_otp)
     joy project member add ai:test@joy --capabilities "implement,review,create" --passphrase "$TEST_PASSPHRASE"
     joy add task "Test item"
     ITEM_ID=$(joy ls 2>/dev/null | grep "Test item" | awk '{print $1}')

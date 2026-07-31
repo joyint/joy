@@ -116,13 +116,13 @@ EOF
 
 @test "guard.warned logged for missing capability" {
     setup_human_auth
-    joy project member add dev@example.com --capabilities "implement,create" --passphrase "$TEST_PASSPHRASE"
+    DEV_OTP=$(joy project member add dev@example.com --capabilities "implement,create" --passphrase "$TEST_PASSPHRASE" | extract_otp)
     joy add task "Warn test"
     ITEM_ID=$(joy ls 2>/dev/null | grep "Warn test" | awk '{print $1}')
     # Developer tries review transition (needs Review cap, dev lacks it)
     joy status "$ITEM_ID" in-progress
     git config user.email dev@example.com
-    joy auth init --passphrase "alpha bravo charlie delta echo foxtrot"
+    joy auth --otp "$DEV_OTP" --passphrase "alpha bravo charlie delta echo foxtrot"
     joy status "$ITEM_ID" review
     grep -q "guard.warned.*dev@example.com" .joy/logs/*.log
     git config user.email test@example.com

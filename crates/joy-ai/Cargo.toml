@@ -6,11 +6,35 @@ license = "MIT"
 description = "AI integration layer for Joy product management"
 repository = "https://github.com/joyint/joy"
 homepage = "https://joyint.com/en/joy"
-readme = "README.md"
 
 [dependencies]
 joy-core = { version = "0.19.0", path = "../joy-core" }
+joy-chat = { version = "0.19.0", path = "../joy-chat" }
+joy-chat-store = { version = "0.19.0", path = "../joy-chat-store" }
+joy-crypt = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true }
+serde_yaml_ng = { workspace = true }
 thiserror = { workspace = true }
+chrono = { workspace = true }
+minijinja = { workspace = true }
+toml_edit = "0.25.5"
+sha2 = "0.10.9"
+rand = "0.8"
+hex = "0.4"
+uuid = { version = "1", features = ["v4", "v7", "serde"] }
+ts-rs = { version = "12", features = ["serde-compat"], optional = true }
+# The lane-and-session machine (JI-017A-85): the ACP runtime stays out of
+# joy-cli — only the hosts (platform, desktop) turn the feature on.
+agent-client-protocol = { version = "1.2", optional = true }
+tokio = { version = "1", features = ["rt", "sync", "time", "macros"], optional = true }
+anyhow = { version = "1", optional = true }
+
+[features]
+ts = ["dep:ts-rs", "joy-core/ts", "joy-chat/ts"]
+acp = ["dep:agent-client-protocol", "dep:tokio", "dep:anyhow"]
+
+[dev-dependencies]
+tempfile = "3"
+git2 = { version = "0.20", default-features = false, features = ["vendored-libgit2"] }
+insta = { version = "1.41", features = ["yaml"] }

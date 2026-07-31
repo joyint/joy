@@ -1,0 +1,19 @@
+id: JOY-023D-21
+title: A permission is counted and shown as a tool step of its own
+type: bug
+status: in-progress
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-27T17:58:55.337015561Z
+updated: 2026-07-27T17:59:11.166937651Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-07-27T17:59:11.166937651Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Operator 2026-07-27: the activity box said "2 tool steps" while the info hover on the same message said "tool steps 1", and the box listed "tool call allowed (joy)" above "bash: joy ls" - two rows for one action. Two defects with one root. The box counted tools PLUS permissions, the persisted record counts only calls, so the same turn had two different numbers. And a permission is not a step: it is the door to the call standing right next to it. joy_ai::activity now carries a ToolStep {title, status, answered} and the hosts attach the gate answer to the call it belongs to, matched by tool call id; the permissions list keeps only answers that matched no call, which is normally empty. The persisted v1 block gains an optional "answered" per tool entry, which older readers ignore.'

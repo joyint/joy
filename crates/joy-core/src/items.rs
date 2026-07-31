@@ -14,6 +14,100 @@ pub fn is_job_id(id: &str) -> bool {
     id.to_uppercase().contains("-JOB-")
 }
 
+/// Apply a `joy edit --scope` spec to a job's CURRENT scope. The ONE
+/// definition shared by the CLI, the desktop shell and the platform (ADR
+/// JAPP-011A-9F: no divergent second implementation, e.g. the TS copy in
+/// the web wiring or the desktop shell's own copy). A plain CSV replaces
+/// the scope; `+ID`/`-ID` entries add/remove; mixing the two forms is
+/// rejected; an addition must resolve to an existing non-job item; the
+/// result is never empty.
+pub fn apply_scope_spec(
+    root: &Path,
+    current: &[String],
+    spec: &str,
+) -> Result<Vec<String>, JoyError> {
+    let entries: Vec<&str> = spec
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if entries.is_empty() {
+        return Err(JoyError::GuardDenied(
+            "a job needs at least one scope item".into(),
+        ));
+    }
+    let delta = entries
+        .iter()
+        .any(|e| e.starts_with('+') || e.starts_with('-'));
+    let mut scope: Vec<String>;
+    if delta {
+        if !entries
+            .iter()
+            .all(|e| e.starts_with('+') || e.starts_with('-'))
+        {
+            return Err(JoyError::GuardDenied(
+                "--scope cannot mix +/- entries with plain IDs; use one form".into(),
+            ));
+        }
+        scope = current.to_vec();
+        for entry in &entries {
+            let (op, sid) = entry.split_at(1);
+            let sid = sid.trim();
+            if op == "+" {
+                let full = resolve_scope_item(root, sid)?;
+                if !scope.contains(&full) {
+                    scope.push(full);
+                }
+            } else {
+                // Normalize a short form when it still resolves; a stale ID
+                // that no longer loads is matched verbatim.
+                let full = load_item(root, sid)
+                    .map(|i| i.id)
+                    .unwrap_or_else(|_| sid.to_string());
+                let before = scope.len();
+                scope.retain(|s| s != &full && s != sid);
+                if scope.len() == before {
+                    return Err(JoyError::GuardDenied(format!(
+                        "{sid} is not in the scope of this job"
+                    )));
+                }
+            }
+        }
+    } else {
+        scope = Vec::new();
+        for sid in &entries {
+            let full = resolve_scope_item(root, sid)?;
+            if !scope.contains(&full) {
+                scope.push(full);
+            }
+        }
+    }
+    if scope.is_empty() {
+        return Err(JoyError::GuardDenied(
+            "a job needs at least one scope item".into(),
+        ));
+    }
+    Ok(scope)
+}
+
+/// Validate one scope addition: must resolve to an existing NON-job item;
+/// returns the full (normalized) item id.
+pub fn resolve_scope_item(root: &Path, sid: &str) -> Result<String, JoyError> {
+    if is_job_id(sid) {
+        return Err(JoyError::GuardDenied(
+            "a job cannot scope another job; use deps for job ordering".into(),
+        ));
+    }
+    let scope_item = load_item(root, sid)
+        .map_err(|_| JoyError::GuardDenied(format!("scope item {sid} is not a valid item ID.")))?;
+    if scope_item.item_type == ItemType::Job {
+        return Err(JoyError::GuardDenied(
+            "a job cannot scope another job; use deps for job ordering".into(),
+        ));
+    }
+    Ok(scope_item.id)
+}
+
 /// The storage directory for an item, routed by its type.
 fn dir_for_type(root: &Path, item_type: &ItemType) -> std::path::PathBuf {
     let sub = if *item_type == ItemType::Job {
@@ -40,6 +134,20 @@ pub struct LockedItem {
 /// items whose zone key is currently active are returned as `Item`;
 /// items in zones without an active key are returned as
 /// [`LockedItem`] placeholders. See JOY-0174-D3.
+/// Read one item file: YAML (decrypting a JOYCRYPT blob inside
+/// `store::read_yaml`), then the item schema migrations
+/// (`migrations::item_yaml`), then the strict typed model. Every item
+/// read goes through here, so the model never needs a tolerant field;
+/// the migrated form persists when the item is next saved.
+pub fn read_item_file(path: &Path) -> Result<Item, JoyError> {
+    let value: serde_yaml_ng::Value = store::read_yaml(path)?;
+    let (value, _migrated) = crate::migrations::item_yaml::apply(value);
+    serde_yaml_ng::from_value(value).map_err(|e| JoyError::YamlParse {
+        path: path.to_path_buf(),
+        source: e,
+    })
+}
+
 pub fn load_items_with_locked(root: &Path) -> Result<(Vec<Item>, Vec<LockedItem>), JoyError> {
     let mut metas = list_item_metadata(root)?;
     metas.sort_by(|a, b| a.path.file_name().cmp(&b.path.file_name()));
@@ -56,7 +164,7 @@ pub fn load_items_with_locked(root: &Path) -> Result<(Vec<Item>, Vec<LockedItem>
                 continue;
             }
         }
-        let item: Item = store::read_yaml(&meta.path)?;
+        let item = read_item_file(&meta.path)?;
         items.push(item);
     }
 
@@ -91,7 +199,7 @@ pub fn load_jobs(root: &Path) -> Result<Vec<Item>, JoyError> {
                 continue;
             }
         }
-        let item: Item = store::read_yaml(&meta.path)?;
+        let item = read_item_file(&meta.path)?;
         jobs.push(item);
     }
     Ok(jobs)
@@ -203,22 +311,15 @@ fn normalize_id_refs(items: &mut [Item]) {
     }
 }
 
-/// Record an attribute-level mutation on an item. Sets `updated` /
-/// `updated_by` for sort recency AND appends an entry to `history` for
-/// the audit footer. Use this whenever you mutate an item attribute
-/// (status, priority, deps, assignee, edit, ...). Do NOT use it for
-/// comment add / edit / rm; those use `touch_for_comment_change`
-/// instead, because per-comment audit lives on the comment itself.
+/// Record a mutation on an item: `updated` / `updated_by` for sort
+/// recency, nothing else. The audit history is NOT stored here — the
+/// event log is the one record of who changed what when (decision
+/// JOY-0175-9B), and every display derives the "Updated" trail from it
+/// at lookup time.
 pub fn touch_for_attribute_change(item: &mut Item, by: &str) {
     let now = chrono::Utc::now();
     item.updated = now;
     item.updated_by = Some(by.into());
-    item.history
-        .get_or_insert_with(Vec::new)
-        .push(crate::model::item::UpdateEntry {
-            date: now,
-            by: by.into(),
-        });
 }
 
 /// `touch_for_attribute_change`, but only when the item actually differs
@@ -285,7 +386,7 @@ fn write_item_file(path: &Path, item: &Item) -> Result<(), JoyError> {
                 crate::crypt::active_zone_key(zone).ok_or_else(|| JoyError::ZoneAccessDenied {
                     zone: zone.to_string(),
                 })?;
-            crate::crypt::encrypt_blob(zone, &zone_key, yaml.as_bytes())
+            joy_crypt::zone::encrypt_blob(zone, &zone_key, yaml.as_bytes())
         }
         None => yaml.into_bytes(),
     };
@@ -356,7 +457,7 @@ fn list_metadata_in(root: &Path, sub: &str) -> Result<Vec<ItemMeta>, JoyError> {
             path: path.clone(),
             source: e,
         })?;
-        let (encrypted_zone, plaintext_crypt_zone) = if crate::crypt::looks_like_blob(&bytes) {
+        let (encrypted_zone, plaintext_crypt_zone) = if joy_crypt::zone::looks_like_blob(&bytes) {
             (parse_blob_zone(&bytes), None)
         } else {
             (None, parse_plaintext_crypt_zone(&bytes))
@@ -674,7 +775,7 @@ fn extract_full_id(filename: &str) -> Option<String> {
 /// persists the normalized form.
 pub fn load_item(root: &Path, id: &str) -> Result<Item, JoyError> {
     let path = find_item_file(root, id)?;
-    let target_id: String = store::read_yaml::<Item>(&path)?.id;
+    let target_id: String = read_item_file(&path)?.id;
     let items = if is_job_id(id) {
         load_jobs(root)?
     } else {
@@ -689,7 +790,7 @@ pub fn load_item(root: &Path, id: &str) -> Result<Item, JoyError> {
 /// Delete an item by ID. Returns the deleted item.
 pub fn delete_item(root: &Path, id: &str) -> Result<Item, JoyError> {
     let path = find_item_file(root, id)?;
-    let item: Item = store::read_yaml(&path)?;
+    let item = read_item_file(&path)?;
     let rel = path
         .strip_prefix(root)
         .unwrap_or(&path)
@@ -783,6 +884,45 @@ pub fn update_item(root: &Path, item: &Item) -> Result<(), JoyError> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_stored_history_block_sheds_on_the_items_next_save() {
+        // The migration (item_yaml) drops the retired key on read; the
+        // normal save persists the strict schema, so the FILE loses the
+        // block exactly when the item is saved anyway — no sweep.
+        let dir = tempfile::tempdir().unwrap();
+        let items_dir = dir.path().join(".joy").join("items");
+        std::fs::create_dir_all(&items_dir).unwrap();
+        // the canonical name save_item writes back to ({ID}-{slug}.yaml)
+        let file = items_dir.join(crate::model::item::item_filename("T-0001-AB", "old"));
+        std::fs::write(
+            &file,
+            concat!(
+                "id: T-0001-AB\n",
+                "title: old\n",
+                "type: task\n",
+                "status: new\n",
+                "priority: medium\n",
+                "created: 2026-01-01T00:00:00Z\n",
+                "updated: 2026-01-01T00:00:00Z\n",
+                "history:\n",
+                "- date: 2026-01-02T00:00:00Z\n",
+                "  by: a@x\n",
+            ),
+        )
+        .unwrap();
+
+        let item = super::read_item_file(&file).unwrap();
+        super::save_item(dir.path(), &item).unwrap();
+
+        let saved = std::fs::read_dir(&items_dir)
+            .unwrap()
+            .flatten()
+            .map(|e| std::fs::read_to_string(e.path()).unwrap())
+            .collect::<String>();
+        assert!(saved.contains("title: old"), "{saved}");
+        assert!(!saved.contains("history"), "{saved}");
+    }
+
     use super::*;
     use crate::model::item::{ItemType, Priority};
     use tempfile::tempdir;
@@ -811,7 +951,47 @@ mod tests {
         item.title = "Changed".into();
         assert!(touch_if_changed(&mut item, &before, "b@example.com"));
         assert_eq!(item.updated_by.as_deref(), Some("b@example.com"));
-        assert_eq!(item.history.as_ref().map(Vec::len), Some(1));
+    }
+
+    #[test]
+    fn apply_scope_spec_replaces_adds_removes_and_validates() {
+        let dir = tempdir().unwrap();
+        setup_project(dir.path());
+        let root = dir.path();
+        for id in ["JOY-0001", "JOY-0002"] {
+            save_item(
+                root,
+                &Item::new(id.into(), "T".into(), ItemType::Task, Priority::Low, vec![]),
+            )
+            .unwrap();
+        }
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+
+        // a plain list REPLACES the whole scope
+        assert_eq!(
+            apply_scope_spec(root, &s(&["JOY-0009"]), "JOY-0001,JOY-0002").unwrap(),
+            s(&["JOY-0001", "JOY-0002"])
+        );
+        // +/- entries ADJUST the current scope
+        assert_eq!(
+            apply_scope_spec(root, &s(&["JOY-0001"]), "+JOY-0002").unwrap(),
+            s(&["JOY-0001", "JOY-0002"])
+        );
+        assert_eq!(
+            apply_scope_spec(root, &s(&["JOY-0001", "JOY-0002"]), "-JOY-0001").unwrap(),
+            s(&["JOY-0002"])
+        );
+
+        // mixing plain IDs with +/- is rejected
+        assert!(apply_scope_spec(root, &[], "JOY-0001,+JOY-0002").is_err());
+        // adding a non-existent item is rejected
+        assert!(apply_scope_spec(root, &[], "JOY-9999").is_err());
+        // a job id can never be a scope item (a job cannot scope a job)
+        assert!(apply_scope_spec(root, &[], "JOY-JOB-0001").is_err());
+        // removing a non-member is rejected
+        assert!(apply_scope_spec(root, &s(&["JOY-0001"]), "-JOY-0002").is_err());
+        // the scope may never end up empty
+        assert!(apply_scope_spec(root, &s(&["JOY-0001"]), "-JOY-0001").is_err());
     }
 
     #[test]

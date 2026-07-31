@@ -3,17 +3,6 @@ load setup
 
 # --- joy ai init ---
 
-@test "joy ai init creates .joy/ai/ directory" {
-    joy init --name "Test Project"
-    joy ai init </dev/null 2>/dev/null || true
-    [ -d ".joy/ai" ]
-    [ -d ".joy/ai/agents" ]
-    # Legacy job record dir: jobs are items in .joy/jobs/ (JOY-01FE-37);
-    # a fresh project must not carry the retired .joy/ai/jobs/ or it is
-    # immediately flagged as pending the 2026-07 repo migration.
-    [ ! -d ".joy/ai/jobs" ]
-}
-
 @test "joy ai init registers AI members in project.yaml" {
     setup_human_auth
     joy ai init --passphrase "$TEST_PASSPHRASE" </dev/null 2>/dev/null || true

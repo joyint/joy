@@ -18,9 +18,9 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::crypt::{self, ZoneKey};
 use crate::error::JoyError;
 use crate::store;
+use joy_crypt::zone::{decrypt_blob, encrypt_blob, ZoneKey};
 
 /// Reserved Crypt zone for the members file. The double underscores keep it out
 /// of the user-facing `joy crypt` zone namespace.
@@ -74,7 +74,7 @@ pub fn exists(root: &Path) -> bool {
 pub fn read(root: &Path, zone_key: &ZoneKey) -> Result<MembersFile, JoyError> {
     let blob = std::fs::read(members_path(root))
         .map_err(|e| JoyError::Other(format!("read members.yaml: {e}")))?;
-    let (_zone, plain) = crypt::decrypt_blob(
+    let (_zone, plain) = decrypt_blob(
         |z| {
             if z == MEMBERS_ZONE {
                 Some(ZoneKey::from_bytes(*zone_key.as_bytes()))
@@ -93,7 +93,7 @@ pub fn read(root: &Path, zone_key: &ZoneKey) -> Result<MembersFile, JoyError> {
 /// Serialize, encrypt, and write `members.yaml` with the members-zone key.
 pub fn write(root: &Path, zone_key: &ZoneKey, mf: &MembersFile) -> Result<(), JoyError> {
     let yaml = serde_yaml_ng::to_string(mf)?;
-    let blob = crypt::encrypt_blob(MEMBERS_ZONE, zone_key, yaml.as_bytes());
+    let blob = encrypt_blob(MEMBERS_ZONE, zone_key, yaml.as_bytes());
     std::fs::write(members_path(root), blob)
         .map_err(|e| JoyError::Other(format!("write members.yaml: {e}")))?;
     Ok(())
@@ -102,6 +102,7 @@ pub fn write(root: &Path, zone_key: &ZoneKey, mf: &MembersFile) -> Result<(), Jo
 #[cfg(test)]
 mod tests {
     use super::*;
+    use joy_crypt::zone::looks_like_blob;
 
     fn info(email: &str, name: Option<&str>) -> MemberInfo {
         MemberInfo {
@@ -127,7 +128,7 @@ mod tests {
 
         let raw = std::fs::read(members_path(dir.path())).unwrap();
         assert!(
-            crypt::looks_like_blob(&raw),
+            looks_like_blob(&raw),
             "members.yaml must be a JOYCRYPT blob"
         );
         assert!(

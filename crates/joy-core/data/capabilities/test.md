@@ -20,10 +20,10 @@ agent:
   permissions:
     allowed: [read, search, grep, write, edit, bash]
     denied: [delete]
-  applicable_tools: [claude-code, github-copilot, mistral-vibe, qwen-code]
+  applicable_tools: [claude, copilot, vibe, qwen]
 ```
 
 ## Interaction
 
-Default mode: supervised. The tester works independently but confirms
-before irreversible actions like modifying production code.
+Default interaction level: autonomous. The tester works independently;
+governance gates remain the only checkpoints.

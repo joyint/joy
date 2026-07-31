@@ -1,0 +1,17 @@
+id: JOY-0230-F0
+title: 'Anonymous mode: app-issued delegation tokens never redeem'
+type: bug
+status: new
+priority: high
+tags:
+- plan-2026-07-26
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-26T15:35:54.571857873Z
+updated: 2026-07-26T15:35:54.571857873Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history: []
+description: 'Found by the adversarial review of the desktop token gesture (JI-0175-B0 B3). A token names its delegating operator in delegated_by with whichever identifier the issuer held: the raw git e-mail (joy auth token add) or the already-resolved at-rest member key (the app attested add, which never touches a raw e-mail in anonymous mode, ADR-042). redeem_ai_session resolved it with member_by_email only, and member_key_for_email cannot match an opaque id against itself, so in an ANONYMOUS project every app-issued token failed redemption and the AI silently stayed on the operator identity. Fix: resolve by at-rest key first, then by e-mail; unknown identifiers still refused.'

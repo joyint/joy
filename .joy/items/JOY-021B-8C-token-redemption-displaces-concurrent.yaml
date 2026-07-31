@@ -1,0 +1,28 @@
+id: JOY-021B-8C
+title: Token redemption displaces concurrent AI sessions
+type: bug
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-18T15:13:35.619005915Z
+updated: 2026-07-18T15:34:07.400970472Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-07-18T15:13:44.006793871Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-18T15:13:54.743739451Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-18T15:34:07.400970472Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-18T15:13:43.872428294Z
+  text: 'Plan: store AI sessions one file per session (storage id = hash of project:member:ephemeral session pubkey) instead of one deterministic slot per member, so token redemptions and job-session mints never displace concurrent sessions (implements JOY-01E1-E7). Humans keep the per-member slot. Wire through: deauth/rotate/member removal drop all sessions of the member; auth status and the member-state mirror resolve via the env sid and enumerate; lazy sweep of expired files on save; legacy files and sids stay valid until expiry.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-18T15:13:54.668012798Z
+  text: '[x] per-session storage id + save/list/remove/sweep in joy-core session store [x] redemption and job-session mint emit the per-session sid [x] auth status and member-state mirror resolve via env sid [x] deauth/rotate/removal drop all member sessions [x] 5 new unit tests, extended job_session_mint flow, new bats displacement test; full suite green (541 bats, cargo tests, clippy 1.97) [x] shipped as PR https://github.com/joyint/joy/pull/15 (commits 52908fe, dfc5128; committed [no-item] before this item existed, a delegation token only became available afterwards)'

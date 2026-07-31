@@ -1,0 +1,28 @@
+id: JOY-0223-D7
+title: 'Decision hygiene: supersede JOY-0047, amend JOY-01DA-E1 and JOY-01DB-B1'
+type: task
+status: closed
+priority: medium
+parent: JOY-021F-E2
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-24T18:28:19.645551678Z
+updated: 2026-07-24T23:41:15.648342105Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-07-24T23:40:51.752952703Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-24T23:41:15.648342105Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Per JI-0166-D8 and the ADR conventions (JI-0134): retire/supersede JOY-0047 (five named levels) with a reference to JI-0166-D8; amend JOY-01DA-E1 in place (resolution stands, value set and key names level/max-level, new default table); amend JOY-01DB-B1 in place (contexts renamed Chat context and Job context, behaviour table shrinks to three rows, shorter templates pay into the 200-line budget). Add cross-reference comments rather than rewriting history.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-24T23:40:51.633391988Z
+  text: 'Plan: JOY-0047 retires with a cross-reference to JI-0166-D8 (cross-project supersede has no local successor item to point --replaced-by at); JOY-01DA-E1 and JOY-01DB-B1 get amendment comments per the ADR conventions (JI-0134), no history rewrite. Amendments carry the operator''s 2026-07-25 key naming (interaction-level / max-interaction-level) instead of the shorter level/max-level from the original item text.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-24T23:41:15.535551112Z
+  text: 'Result: JOY-0047 validity retired with a successor comment pointing at JI-0166-D8 (cross-project, so no --replaced-by link). Amendment comments on JOY-01DA-E1 (member layer, three values, interaction-level/max-interaction-level keys, new default table) and JOY-01DB-B1 (Chat context / Job context, three-row behaviour guidance, 200-line budget unchanged). No history rewritten.'

@@ -1,0 +1,24 @@
+id: JOY-022D-DC
+title: last-manager rule counts only enrolled members
+type: task
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-07-25T13:48:21.901859557Z
+updated: 2026-07-25T13:57:45.082329292Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+history:
+- date: 2026-07-25T13:48:30.982331968Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- date: 2026-07-25T13:57:45.082329292Z
+  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Operator decision 2026-07-25: an invited-but-unredeemed member holding manage must not satisfy the last-manager invariant — otherwise the last ACTIVE manager can be removed while the nominal successor is an open invite (a brick window until redemption). Guard::is_last_manager now blocks when stripping/removing the target would leave ZERO qualifying managers, where qualifying = non-AI, holds manage, and is not a pending invite (enrollment_verifier set, no verify_key yet). Plain unenrolled members (pre-auth projects, no verifier) keep counting as before; removing a pending manage-invite itself stays allowed while an enrolled manager remains. CLI and platform inherit through the shared guard.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-07-25T13:57:44.949061135Z
+  text: 'Done, full suite green (542 int tests + 404 joy-core unit tests). Also audited every strip/remove path on the way: CLI member edit + remove, platform attested capability edit + member remove, the new overall batch-setters — all funnel through this one guard; AI members never count and never get blocked.'

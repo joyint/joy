@@ -200,6 +200,18 @@ pub struct LogEntry {
     pub user: crate::member_ref::MemberRef,
 }
 
+/// Whether a log target is the item the filter names. Ids have a short
+/// form (JOY-0031 for JOY-0031-XY) that every command accepts, so the
+/// rule is id-exact, never substring: the target IS the filter, or
+/// continues it with the `-` before the hash suffix. The number is
+/// unique per repo, so nothing foreign can match.
+fn id_matches(target: &str, filter: &str) -> bool {
+    target == filter
+        || (target.len() > filter.len()
+            && target.starts_with(filter)
+            && target.as_bytes()[filter.len()] == b'-')
+}
+
 /// Read events from .joy/log/ files, newest first.
 pub fn read_events(
     root: &Path,
@@ -250,7 +262,7 @@ pub fn read_events(
         for line in content.lines() {
             if let Some(entry) = parse_log_line(line) {
                 if let Some(filter) = item_filter {
-                    if !entry.target.contains(filter) {
+                    if !id_matches(&entry.target, filter) {
                         continue;
                     }
                 }
@@ -360,6 +372,52 @@ fn parse_log_line(line: &str) -> Option<LogEntry> {
 }
 
 /// Read all events (oldest first, no limit). Used for release computation.
+/// The event types that count as an ATTRIBUTE change of an item: what
+/// `joy show`'s footer and the apps' history tab render as "Updated"
+/// lines. Creation has its own line, deletion ends the item, and
+/// comment events keep their audit on the comment itself.
+pub const ITEM_ATTRIBUTE_EVENTS: &[&str] = &[
+    "item.updated",
+    "item.status_changed",
+    "item.assigned",
+    "item.unassigned",
+    "dep.added",
+    "dep.removed",
+    "milestone.linked",
+    "milestone.unlinked",
+];
+
+/// The attribute-change history of one item, oldest first, DERIVED from
+/// the event log. The log is the one audit record — (timestamp, id,
+/// action, actor), append-only, value-free (decision JOY-0175-9B) — and
+/// every display joins it at lookup time; nothing is stored on the item.
+pub fn item_attribute_history(root: &Path, item_id: &str) -> Result<Vec<LogEntry>, JoyError> {
+    let mut entries: Vec<LogEntry> = read_events(root, None, Some(item_id), usize::MAX)?
+        .into_iter()
+        .filter(|e| ITEM_ATTRIBUTE_EVENTS.contains(&e.event_type.as_str()))
+        .collect();
+    entries.reverse(); // read_events answers newest first
+    Ok(entries)
+}
+
+/// [`item_attribute_history`] for every item at once (one log pass), for
+/// the servers' item listings: item id -> oldest-first entries.
+pub fn attribute_history_by_item(
+    root: &Path,
+) -> Result<std::collections::BTreeMap<String, Vec<LogEntry>>, JoyError> {
+    let mut map: std::collections::BTreeMap<String, Vec<LogEntry>> =
+        std::collections::BTreeMap::new();
+    for entry in read_all_events(root)? {
+        if ITEM_ATTRIBUTE_EVENTS.contains(&entry.event_type.as_str()) {
+            map.entry(entry.target.clone()).or_default().push(entry);
+        }
+    }
+    for entries in map.values_mut() {
+        entries.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+    }
+    Ok(map)
+}
+
 pub fn read_all_events(root: &Path) -> Result<Vec<LogEntry>, JoyError> {
     let log_dir = store::joy_dir(root).join(store::LOG_DIR);
     if !log_dir.is_dir() {
@@ -702,5 +760,20 @@ mod tests {
         assert!(!is_valid_timestamp(">"));
         assert!(!is_valid_timestamp("not-a-timestamp"));
         assert!(!is_valid_timestamp("2026"));
+    }
+}
+
+#[cfg(test)]
+mod id_match_tests {
+    use super::id_matches;
+
+    #[test]
+    fn short_and_full_ids_match_their_item_and_nothing_else() {
+        assert!(id_matches("JOY-0031-XY", "JOY-0031"));
+        assert!(id_matches("JOY-0031-XY", "JOY-0031-XY"));
+        assert!(id_matches("JOY-0031", "JOY-0031"));
+        assert!(!id_matches("JOY-0310-AB", "JOY-0031"));
+        assert!(!id_matches("JOY-0031-XY", "JOY-003"));
+        assert!(!id_matches("XJOY-0031-XY", "JOY-0031"));
     }
 }

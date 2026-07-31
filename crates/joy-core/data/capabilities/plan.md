@@ -20,10 +20,11 @@ agent:
   permissions:
     allowed: [read, search, grep]
     denied: [write, edit, delete, bash]
-  applicable_tools: [claude-code, github-copilot, mistral-vibe]
+  applicable_tools: [claude, copilot, vibe]
 ```
 
 ## Interaction
 
-Default mode: interactive. The planner presents options with rationale
-and waits for the user to decide on scope, priority, and breakdown.
+Default interaction level: proposing. The planner proposes options with
+rationale and waits for the human to decide on scope, priority, and
+breakdown.

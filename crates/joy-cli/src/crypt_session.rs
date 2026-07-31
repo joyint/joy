@@ -99,7 +99,7 @@ pub fn ensure_zone_keys_with_stdin(passphrase_flag: Option<&str>, from_stdin: bo
             // wrap will unwrap. Walking is cheap (one or a few entries).
             for wrap_hex in per_ai.values() {
                 if let Ok(zk) =
-                    joy_core::crypt::unwrap_for_member(wrap_hex, zone_name, &delegation_priv)
+                    joy_crypt::zone::unwrap_for_member(wrap_hex, zone_name, &delegation_priv)
                 {
                     keys.insert(zone_name.clone(), *zk.as_bytes());
                     break;
@@ -139,7 +139,7 @@ pub fn ensure_zone_keys_with_stdin(passphrase_flag: Option<&str>, from_stdin: bo
     let unlocked = joy_core::auth::unlock_identity(member, &passphrase)?;
     let mut keys = std::collections::BTreeMap::new();
     for (zone, wrap_hex) in &member.crypt_wraps {
-        if let Ok(zk) = joy_core::crypt::unwrap_for_member(wrap_hex, zone, &unlocked.seed) {
+        if let Ok(zk) = joy_crypt::zone::unwrap_for_member(wrap_hex, zone, &unlocked.seed) {
             keys.insert(zone.clone(), *zk.as_bytes());
         }
     }

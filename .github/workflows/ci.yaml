@@ -20,8 +20,10 @@ permissions:
 # `cargo publish` resolves the version from crates.io while local
 # builds use the sibling checkout. The standalone joy CI therefore
 # also clones joyint/crypt into a sibling directory before running
-# any cargo command. Both repos are public; no PAT or deploy key is
-# needed.
+# any cargo command. On GitHub both repos are public and no PAT is
+# needed; on a private mirror (e.g. the internal Gitea) the sibling
+# is private too, so the checkout uses the ORG_READ_TOKEN org secret
+# when present and falls back to the default token otherwise.
 
 jobs:
   fmt:
@@ -34,7 +36,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: joyint/crypt
+          ref: main
           path: crypt
+          token: ${{ secrets.ORG_READ_TOKEN || github.token }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -52,7 +56,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: joyint/crypt
+          ref: main
           path: crypt
+          token: ${{ secrets.ORG_READ_TOKEN || github.token }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -73,7 +79,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -81,7 +87,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: joyint/crypt
+          ref: main
           path: crypt
+          token: ${{ secrets.ORG_READ_TOKEN || github.token }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -100,6 +108,36 @@ jobs:
       - run: cargo test --workspace --no-fail-fast
         working-directory: joy
 
+  # Split out of the matrix so the windows leg can differ from linux when a
+  # venue needs it. It runs everywhere: GitHub uses hosted runners, the
+  # internal Gitea mirror serves windows-latest from the Windows VM on zara
+  # (infra: win-provision-gitea).
+  test-windows:
+    name: Test (windows-latest)
+    runs-on: windows-latest
+    needs: fmt
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: joy
+      - uses: actions/checkout@v4
+        with:
+          repository: joyint/crypt
+          ref: main
+          path: crypt
+          token: ${{ secrets.ORG_READ_TOKEN || github.token }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: joy
+          cache-on-failure: true
+      - name: Configure a git identity for the tests
+        run: |
+          git config --global user.email "ci@joyint.dev"
+          git config --global user.name "Joyint CI"
+      - run: cargo test --workspace --no-fail-fast
+        working-directory: joy
+
   integration:
     name: Integration (bats)
     runs-on: ubuntu-latest
@@ -111,7 +149,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: joyint/crypt
+          ref: main
           path: crypt
+          token: ${{ secrets.ORG_READ_TOKEN || github.token }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
