@@ -12,11 +12,9 @@
 //! operation: delete the module file and the corresponding entry from
 //! the area-specific `apply` function. No cross-cutting changes needed.
 //!
-//! Migrations are grouped by kind so the mechanisms stay separate:
+//! Migrations are grouped by kind so the two mechanisms stay separate:
 //! - [`project_yaml`]: pure on-read transforms of the parsed YAML value.
-//! - [`item_yaml`]: the same discipline for item files.
 //! - [`repo`]: filesystem-aware, one-shot reconciles run at sync time.
 
-pub mod item_yaml;
 pub mod project_yaml;
 pub mod repo;

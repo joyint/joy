@@ -1671,7 +1671,6 @@ priority: medium
 interaction-level: confirmed
 created: "2026-01-01T00:00:00+00:00"
 updated: "2026-01-01T00:00:00+00:00"
-history: []
 "#;
         let item: crate::model::item::Item = serde_yaml_ng::from_str(yaml).unwrap();
         assert_eq!(item.interaction_level, Some(InteractionLevel::Confirmed));

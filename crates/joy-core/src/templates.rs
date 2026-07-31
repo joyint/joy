@@ -56,13 +56,8 @@ pub fn render_item(item_type: &ItemType, id: &str, title: &str) -> Result<Item, 
         })
         .map_err(|e| JoyError::Template(e.to_string()))?;
 
-    let value: serde_yaml_ng::Value =
-        serde_yaml_ng::from_str(&yaml).map_err(|e| JoyError::Template(e.to_string()))?;
-    // The same schema road every item read takes: templates render the
-    // recorded shape, the migrations supply what the schema now requires.
-    let (value, _migrated) = crate::migrations::item_yaml::apply(value);
     let item: Item =
-        serde_yaml_ng::from_value(value).map_err(|e| JoyError::Template(e.to_string()))?;
+        serde_yaml_ng::from_str(&yaml).map_err(|e| JoyError::Template(e.to_string()))?;
 
     Ok(item)
 }

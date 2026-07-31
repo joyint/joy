@@ -60,12 +60,6 @@ pub struct Item {
     /// full attribute-change list; this field is the legacy summary.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub updated_by: Option<MemberRef>,
-    /// Append-only audit list of attribute-level mutations (status, priority,
-    /// edit, deps, assignee, milestone, ...). Comment add / edit / rm do NOT
-    /// append here. Always present — the item schema migration backfills the
-    /// empty list on read, so the model never carries a tolerant Option —
-    /// and empty until the first attribute mutation pushes its entry.
-    pub history: Vec<UpdateEntry>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     /// Name of the Crypt zone this item belongs to. Absent or null
@@ -394,7 +388,6 @@ impl Item {
             created: now,
             updated: now,
             updated_by: None,
-            history: Vec::new(),
             description: None,
             crypt_zone: None,
             job: None,

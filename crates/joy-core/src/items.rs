@@ -134,20 +134,6 @@ pub struct LockedItem {
 /// items whose zone key is currently active are returned as `Item`;
 /// items in zones without an active key are returned as
 /// [`LockedItem`] placeholders. See JOY-0174-D3.
-/// Read one item file: YAML (decrypting a JOYCRYPT blob via
-/// `store::read_yaml`'s value path), then the item schema migrations
-/// (`migrations::item_yaml`), then the strict typed model. Every item
-/// read in the workspace goes through here, so the model never needs a
-/// tolerant field.
-pub fn read_item_file(path: &Path) -> Result<Item, JoyError> {
-    let value: serde_yaml_ng::Value = store::read_yaml(path)?;
-    let (value, _migrated) = crate::migrations::item_yaml::apply(value);
-    serde_yaml_ng::from_value(value).map_err(|e| JoyError::YamlParse {
-        path: path.to_path_buf(),
-        source: e,
-    })
-}
-
 pub fn load_items_with_locked(root: &Path) -> Result<(Vec<Item>, Vec<LockedItem>), JoyError> {
     let mut metas = list_item_metadata(root)?;
     metas.sort_by(|a, b| a.path.file_name().cmp(&b.path.file_name()));
@@ -164,7 +150,7 @@ pub fn load_items_with_locked(root: &Path) -> Result<(Vec<Item>, Vec<LockedItem>
                 continue;
             }
         }
-        let item = read_item_file(&meta.path)?;
+        let item: Item = store::read_yaml(&meta.path)?;
         items.push(item);
     }
 
@@ -199,7 +185,7 @@ pub fn load_jobs(root: &Path) -> Result<Vec<Item>, JoyError> {
                 continue;
             }
         }
-        let item = read_item_file(&meta.path)?;
+        let item: Item = store::read_yaml(&meta.path)?;
         jobs.push(item);
     }
     Ok(jobs)
@@ -311,20 +297,15 @@ fn normalize_id_refs(items: &mut [Item]) {
     }
 }
 
-/// Record an attribute-level mutation on an item. Sets `updated` /
-/// `updated_by` for sort recency AND appends an entry to `history` for
-/// the audit footer. Use this whenever you mutate an item attribute
-/// (status, priority, deps, assignee, edit, ...). Do NOT use it for
-/// comment add / edit / rm; those use `touch_for_comment_change`
-/// instead, because per-comment audit lives on the comment itself.
+/// Record a mutation on an item: `updated` / `updated_by` for sort
+/// recency, nothing else. The audit history is NOT stored here — the
+/// event log is the one record of who changed what when (decision
+/// JOY-0175-9B), and every display derives the "Updated" trail from it
+/// at lookup time.
 pub fn touch_for_attribute_change(item: &mut Item, by: &str) {
     let now = chrono::Utc::now();
     item.updated = now;
     item.updated_by = Some(by.into());
-    item.history.push(crate::model::item::UpdateEntry {
-        date: now,
-        by: by.into(),
-    });
 }
 
 /// `touch_for_attribute_change`, but only when the item actually differs
@@ -780,7 +761,7 @@ fn extract_full_id(filename: &str) -> Option<String> {
 /// persists the normalized form.
 pub fn load_item(root: &Path, id: &str) -> Result<Item, JoyError> {
     let path = find_item_file(root, id)?;
-    let target_id: String = read_item_file(&path)?.id;
+    let target_id: String = store::read_yaml::<Item>(&path)?.id;
     let items = if is_job_id(id) {
         load_jobs(root)?
     } else {
@@ -795,7 +776,7 @@ pub fn load_item(root: &Path, id: &str) -> Result<Item, JoyError> {
 /// Delete an item by ID. Returns the deleted item.
 pub fn delete_item(root: &Path, id: &str) -> Result<Item, JoyError> {
     let path = find_item_file(root, id)?;
-    let item = read_item_file(&path)?;
+    let item: Item = store::read_yaml(&path)?;
     let rel = path
         .strip_prefix(root)
         .unwrap_or(&path)
@@ -917,7 +898,6 @@ mod tests {
         item.title = "Changed".into();
         assert!(touch_if_changed(&mut item, &before, "b@example.com"));
         assert_eq!(item.updated_by.as_deref(), Some("b@example.com"));
-        assert_eq!(item.history.len(), 1);
     }
 
     #[test]
