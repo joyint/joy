@@ -107,15 +107,10 @@ pub fn ref_target(root: &Path) -> Result<Option<Oid>, JoyError> {
     }
 }
 
-/// Serialize a chat's metadata (everything but the message list).
-fn meta_yaml(chat: &Chat) -> Result<String, JoyError> {
-    let mut meta = chat.clone();
-    meta.messages = Vec::new();
-    Ok(serde_yaml_ng::to_string(&meta)?)
-}
-
 /// The stable storage id of a message (its own id, or the deterministic
-/// synthetic one for pre-channel messages).
+/// synthetic one for pre-channel messages). Test-only since the legacy
+/// writer left: the sealed store names its entries itself.
+#[cfg(test)]
 fn message_key(m: &ChatMessage) -> String {
     if m.id.is_empty() {
         m.synthetic_id()
@@ -124,35 +119,10 @@ fn message_key(m: &ChatMessage) -> String {
     }
 }
 
-/// Build the `<chat-id>/` subtree (meta.yaml + messages/) and return its oid.
-fn build_chat_tree(repo: &Repository, chat: &Chat) -> Result<Oid, JoyError> {
-    let meta_blob = repo.blob(meta_yaml(chat)?.as_bytes()).map_err(git)?;
-    let mut cb = repo.treebuilder(None).map_err(git)?;
-    cb.insert(META_FILE, meta_blob, i32::from(FileMode::Blob))
-        .map_err(git)?;
-
-    if !chat.messages.is_empty() {
-        let mut mb = repo.treebuilder(None).map_err(git)?;
-        for m in &chat.messages {
-            let blob = repo
-                .blob(serde_yaml_ng::to_string(m)?.as_bytes())
-                .map_err(git)?;
-            mb.insert(
-                format!("{}.yaml", message_key(m)),
-                blob,
-                i32::from(FileMode::Blob),
-            )
-            .map_err(git)?;
-        }
-        let messages_tree = mb.write().map_err(git)?;
-        cb.insert(MESSAGES_DIR, messages_tree, i32::from(FileMode::Tree))
-            .map_err(git)?;
-    }
-    cb.write().map_err(git)
-}
-
-/// Read a chat out of its `<chat-id>/` subtree (messages included). Does
-/// NOT normalize — the semantic layer does that.
+/// LEGACY READER — the sealing migration's eyes only. Reads the retired
+/// plaintext `meta.yaml` + `messages/` layout so
+/// `migrations::m_2026_07_sealed_chat_layout` can convert it; no product
+/// surface reads this shape. Does NOT normalize.
 fn read_chat_tree(repo: &Repository, chat_tree: &Tree) -> Result<Option<Chat>, JoyError> {
     let Some(meta_entry) = chat_tree.get_name(META_FILE) else {
         return Ok(None);
@@ -264,8 +234,10 @@ pub(crate) fn commit_root(
     Ok(moved.then_some(oid))
 }
 
-/// Load one chat by id from the ref, if present (un-normalized).
-pub fn load_chat(root: &Path, id: &str) -> Result<Option<Chat>, JoyError> {
+/// LEGACY READER — see [`read_chat_tree`]; the migration's tests are the
+/// only callers (the migration itself sweeps via [`load_chats`]).
+#[cfg(test)]
+pub(crate) fn load_chat(root: &Path, id: &str) -> Result<Option<Chat>, JoyError> {
     let repo = open_repo(root)?;
     let Some(commit) = ref_commit(&repo)? else {
         return Ok(None);
@@ -274,8 +246,10 @@ pub fn load_chat(root: &Path, id: &str) -> Result<Option<Chat>, JoyError> {
     read_chat_at(&repo, &tree, id)
 }
 
-/// Load every chat from the ref (un-normalized, unsorted).
-pub fn load_chats(root: &Path) -> Result<Vec<Chat>, JoyError> {
+/// LEGACY READER — see [`read_chat_tree`]; the migration and its tests
+/// are the only callers. A sealed chat has no `meta.yaml`, so this
+/// answers exactly the unmigrated set.
+pub(crate) fn load_chats(root: &Path) -> Result<Vec<Chat>, JoyError> {
     let repo = open_repo(root)?;
     let Some(commit) = ref_commit(&repo)? else {
         return Ok(Vec::new());
@@ -289,44 +263,6 @@ pub fn load_chats(root: &Path) -> Result<Vec<Chat>, JoyError> {
         }
     }
     Ok(chats)
-}
-
-/// Upsert a chat onto the ref: splice its subtree into the root tree and
-/// commit. The message blobs are content-addressed, so re-saving an
-/// unchanged chat produces no new objects for its messages.
-pub fn save_chat(root: &Path, chat: &Chat) -> Result<(), JoyError> {
-    let repo = open_repo(root)?;
-    for _ in 0..REF_MOVE_ATTEMPTS {
-        if save_chat_once(&repo, chat)? {
-            return Ok(());
-        }
-    }
-    Err(JoyError::Git(
-        "the chats ref kept moving while saving; try again".into(),
-    ))
-}
-
-/// One attempt of [`save_chat`]; `false` means the ref moved and the whole
-/// read-build-commit has to run again on the new tip.
-fn save_chat_once(repo: &Repository, chat: &Chat) -> Result<bool, JoyError> {
-    let parent = ref_commit(repo)?;
-    let base_tree = match &parent {
-        Some(c) => Some(c.tree().map_err(git)?),
-        None => None,
-    };
-    let mut rb = repo.treebuilder(base_tree.as_ref()).map_err(git)?;
-    let chat_tree = build_chat_tree(repo, chat)?;
-    rb.insert(&chat.id, chat_tree, i32::from(FileMode::Tree))
-        .map_err(git)?;
-    let root_tree_oid = rb.write().map_err(git)?;
-    let root_tree = repo.find_tree(root_tree_oid).map_err(git)?;
-    let moved = commit_root(
-        repo,
-        parent.as_ref(),
-        &root_tree,
-        &format!("chat {} [no-item]", chat.id),
-    )?;
-    Ok(moved.is_some())
 }
 
 /// Remove a chat's whole subtree from the ref (garbage collection once
@@ -364,16 +300,14 @@ fn remove_chat_once(repo: &Repository, id: &str) -> Result<bool, JoyError> {
     Ok(moved.is_some())
 }
 
-/// Merge a divergent `refs/joy/chats`: union each chat's messages by id
-/// and three-way-merge its metadata, then write a merge commit with both
-/// sides as parents and move the ref to it. Returns the merged oid.
-///
-/// Message union is conflict-free because a message id is immutable and
-/// client-minted; only metadata (title, participants, deleted_for,
-/// read_only) can diverge, and that goes through the field-level YAML
-/// merge. A chat GC'd on one side but still present on the other is kept
-/// with its delete marks and re-collected on the next GC pass — the
-/// deleted_for marks are the source of truth, so this self-heals.
+/// Merge a divergent `refs/joy/chats`: keyless union of every chat's
+/// sealed subtrees, then a merge commit with both sides as parents.
+/// Conflict-free by construction — the entries are content-addressed —
+/// and key-free, so the forge, a seedless peer and the platform all
+/// produce the identical merge. Semantic resolution (title, markers,
+/// levels) happens at read-time event fold, never here. A chat GC'd on
+/// one side but present on the other is kept and re-collected on the
+/// next pass — the deleted_for marks are the source of truth.
 /// A named subtree of `parent`, if present.
 fn named_tree<'a>(repo: &'a Repository, parent: &Tree<'a>, name: &str) -> Option<Tree<'a>> {
     parent
@@ -382,8 +316,9 @@ fn named_tree<'a>(repo: &'a Repository, parent: &Tree<'a>, name: &str) -> Option
         .and_then(|o| o.peel_to_tree().ok())
 }
 
-/// Whether a `<cid>/` subtree is the sealed new format (keys/ + log/); a
-/// legacy chat carries `meta.yaml` instead.
+/// Whether a `<cid>/` subtree is the sealed layout (keys/ + log/) — the
+/// only layout a merge accepts; the retired plaintext layout is the
+/// sealing migration's business.
 fn subtree_is_new_format(chat_tree: &Tree) -> bool {
     chat_tree.get_name("keys").is_some() || chat_tree.get_name("log").is_some()
 }
@@ -488,12 +423,6 @@ pub fn merge_refs(root: &Path, ours: Oid, theirs: Oid) -> Result<Oid, JoyError> 
     let theirs_c = repo.find_commit(theirs).map_err(git)?;
     let ours_tree = ours_c.tree().map_err(git)?;
     let theirs_tree = theirs_c.tree().map_err(git)?;
-    let base_tree = match repo.merge_base(ours, theirs) {
-        Ok(oid) => Some(repo.find_commit(oid).map_err(git)?.tree().map_err(git)?),
-        Err(e) if e.code() == ErrorCode::NotFound => None,
-        Err(e) => return Err(git(e)),
-    };
-
     let mut ids: BTreeSet<String> = BTreeSet::new();
     for e in ours_tree.iter().chain(theirs_tree.iter()) {
         if let Some(name) = e.name() {
@@ -505,36 +434,20 @@ pub fn merge_refs(root: &Path, ours: Oid, theirs: Oid) -> Result<Oid, JoyError> 
     for id in &ids {
         let ours_ct = named_tree(&repo, &ours_tree, id);
         let theirs_ct = named_tree(&repo, &theirs_tree, id);
-        // A sealed chat (keys/+log/) merges by pure keyless union of its
-        // content-addressed sets; a legacy (meta.yaml) chat on either
-        // side still takes the field-level merge until it is migrated.
-        let sealed = ours_ct.as_ref().map(subtree_is_new_format).unwrap_or(true)
-            && theirs_ct
-                .as_ref()
-                .map(subtree_is_new_format)
-                .unwrap_or(true)
-            && (ours_ct.is_some() || theirs_ct.is_some());
-        if sealed {
-            let oid = union_chat_subtrees(&repo, ours_ct.as_ref(), theirs_ct.as_ref())?;
-            rb.insert(id, oid, i32::from(FileMode::Tree)).map_err(git)?;
-            continue;
+        // Only the sealed layout merges. A plaintext subtree here means a
+        // clone wrote with a pre-sealing build; merging it would need the
+        // retired format back, so it is refused by name instead.
+        let sealed = [&ours_ct, &theirs_ct]
+            .into_iter()
+            .filter_map(|t| t.as_ref())
+            .all(subtree_is_new_format);
+        if !sealed {
+            return Err(JoyError::Git(format!(
+                "chat {id} is in the retired pre-sealing layout; run the chat migration                  (joy update) on the clone that wrote it before syncing"
+            )));
         }
-        let ours_chat = read_chat_at(&repo, &ours_tree, id)?;
-        let theirs_chat = read_chat_at(&repo, &theirs_tree, id)?;
-        let base_chat = match &base_tree {
-            Some(t) => read_chat_at(&repo, t, id)?,
-            None => None,
-        };
-        let merged = match (ours_chat, theirs_chat) {
-            (Some(o), Some(t)) => Some(merge_two_chats(base_chat.as_ref(), &o, &t)?),
-            (Some(o), None) => Some(o),
-            (None, Some(t)) => Some(t),
-            (None, None) => None,
-        };
-        if let Some(chat) = merged {
-            let oid = build_chat_tree(&repo, &chat)?;
-            rb.insert(id, oid, i32::from(FileMode::Tree)).map_err(git)?;
-        }
+        let oid = union_chat_subtrees(&repo, ours_ct.as_ref(), theirs_ct.as_ref())?;
+        rb.insert(id, oid, i32::from(FileMode::Tree)).map_err(git)?;
     }
     let root_tree_oid = rb.write().map_err(git)?;
     let root_tree = repo.find_tree(root_tree_oid).map_err(git)?;
@@ -557,27 +470,47 @@ pub fn merge_refs(root: &Path, ours: Oid, theirs: Oid) -> Result<Oid, JoyError> 
     Ok(oid)
 }
 
-/// Three-way-merge two versions of one chat: union messages by id,
-/// field-merge the metadata.
-fn merge_two_chats(base: Option<&Chat>, ours: &Chat, theirs: &Chat) -> Result<Chat, JoyError> {
-    let our_meta = meta_yaml(ours)?;
-    let their_meta = meta_yaml(theirs)?;
-    let merged_meta = match base {
-        Some(b) => joy_core::merge::merge_yaml_doc(&meta_yaml(b)?, &our_meta, &their_meta)?,
-        None if ours.updated >= theirs.updated => our_meta,
-        None => their_meta,
-    };
-    let mut merged: Chat = serde_yaml_ng::from_str(&merged_meta)?;
-
-    let mut seen = BTreeSet::new();
-    let mut messages = Vec::new();
-    for m in ours.messages.iter().chain(theirs.messages.iter()) {
-        if seen.insert(message_key(m)) {
-            messages.push(m.clone());
+/// TEST-ONLY legacy writer: commits a chat in the retired plaintext
+/// layout (meta.yaml + messages/), the shape the sealing migration
+/// converts. Product code never writes this; the fixtures that exercise
+/// the migration and the merge refusal do.
+#[cfg(test)]
+pub(crate) fn save_legacy_chat_for_tests(root: &Path, chat: &Chat) {
+    let repo = open_repo(root).unwrap();
+    let parent = ref_commit(&repo).unwrap();
+    let base_tree = parent.as_ref().map(|c| c.tree().unwrap());
+    let mut meta = chat.clone();
+    meta.messages = Vec::new();
+    let meta_blob = repo
+        .blob(serde_yaml_ng::to_string(&meta).unwrap().as_bytes())
+        .unwrap();
+    let mut cb = repo.treebuilder(None).unwrap();
+    cb.insert(META_FILE, meta_blob, i32::from(FileMode::Blob))
+        .unwrap();
+    if !chat.messages.is_empty() {
+        let mut mb = repo.treebuilder(None).unwrap();
+        for m in &chat.messages {
+            let blob = repo
+                .blob(serde_yaml_ng::to_string(m).unwrap().as_bytes())
+                .unwrap();
+            mb.insert(
+                format!("{}.yaml", message_key(m)),
+                blob,
+                i32::from(FileMode::Blob),
+            )
+            .unwrap();
         }
+        cb.insert(MESSAGES_DIR, mb.write().unwrap(), i32::from(FileMode::Tree))
+            .unwrap();
     }
-    merged.messages = messages;
-    Ok(merged)
+    let chat_tree = cb.write().unwrap();
+    let mut rb = repo.treebuilder(base_tree.as_ref()).unwrap();
+    rb.insert(&chat.id, chat_tree, i32::from(FileMode::Tree))
+        .unwrap();
+    let root_tree = repo.find_tree(rb.write().unwrap()).unwrap();
+    commit_root(&repo, parent.as_ref(), &root_tree, "legacy stub [no-item]")
+        .unwrap()
+        .expect("stub commit moves the ref");
 }
 
 #[cfg(test)]
@@ -640,6 +573,42 @@ mod tests {
         assert_eq!(repo.refname_to_id(CHATS_REF).unwrap(), third);
     }
 
+    /// Commit a sealed-layout chat subtree carrying the given log entry
+    /// names. Union and reconcile care only about content-addressed
+    /// NAMES, so a stub blob per name exercises exactly what they do.
+    fn save_sealed_stub(root: &Path, id: &str, log_names: &[&str]) {
+        let repo = open_repo(root).unwrap();
+        let parent = ref_commit(&repo).unwrap();
+        let base_tree = parent.as_ref().map(|c| c.tree().unwrap());
+        let mut lb = repo.treebuilder(None).unwrap();
+        for name in log_names {
+            let blob = repo.blob(name.as_bytes()).unwrap();
+            lb.insert(*name, blob, i32::from(FileMode::Blob)).unwrap();
+        }
+        let log = lb.write().unwrap();
+        let mut cb = repo.treebuilder(None).unwrap();
+        cb.insert("log", log, i32::from(FileMode::Tree)).unwrap();
+        let chat_tree = cb.write().unwrap();
+        let mut rb = repo.treebuilder(base_tree.as_ref()).unwrap();
+        rb.insert(id, chat_tree, i32::from(FileMode::Tree)).unwrap();
+        let root_tree = repo.find_tree(rb.write().unwrap()).unwrap();
+        commit_root(&repo, parent.as_ref(), &root_tree, "chat stub [no-item]")
+            .unwrap()
+            .expect("stub commit moves the ref");
+    }
+
+    /// The log entry names of a chat on the current ref tip.
+    fn log_names(root: &Path, id: &str) -> BTreeSet<String> {
+        let repo = open_repo(root).unwrap();
+        let commit = ref_commit(&repo).unwrap().unwrap();
+        let tree = commit.tree().unwrap();
+        let chat = named_tree(&repo, &tree, id).unwrap();
+        let log = named_tree(&repo, &chat, "log").unwrap();
+        log.iter()
+            .filter_map(|e| e.name().map(str::to_string))
+            .collect()
+    }
+
     fn msg(id: &str, sec: u32, text: &str) -> ChatMessage {
         ChatMessage {
             id: id.into(),
@@ -677,9 +646,7 @@ mod tests {
         assert!(!reconcile_with_tracking(dir.path()).unwrap());
 
         // local only: the remote needs it
-        let mut chat = Chat::new("c", vec![MemberRef::new("a@x")], ts(0));
-        chat.messages.push(msg("m1", 1, "hello"));
-        save_chat(dir.path(), &chat).unwrap();
+        save_sealed_stub(dir.path(), "c", &["m1"]);
         let first = ref_target(dir.path()).unwrap().unwrap();
         assert!(reconcile_with_tracking(dir.path()).unwrap());
 
@@ -688,8 +655,7 @@ mod tests {
         assert!(!reconcile_with_tracking(dir.path()).unwrap());
 
         // local behind (tracking ahead): fast-forward, no push
-        chat.messages.push(msg("m2", 2, "world"));
-        save_chat(dir.path(), &chat).unwrap();
+        save_sealed_stub(dir.path(), "c", &["m1", "m2"]);
         let second = ref_target(dir.path()).unwrap().unwrap();
         reset_ref(dir.path(), first);
         set_tracking(dir.path(), second);
@@ -701,20 +667,17 @@ mod tests {
         assert!(reconcile_with_tracking(dir.path()).unwrap());
         assert_eq!(ref_target(dir.path()).unwrap().unwrap(), second);
 
-        // diverged: message-union merge, then push
-        let mut ours = chat.clone();
-        ours.messages.push(msg("m3", 3, "ours"));
-        save_chat(dir.path(), &ours).unwrap();
+        // diverged: keyless union merge, then push
+        save_sealed_stub(dir.path(), "c", &["m1", "m2", "m3"]);
         let ours_oid = ref_target(dir.path()).unwrap().unwrap();
         reset_ref(dir.path(), second);
-        let mut theirs = chat.clone();
-        theirs.messages.push(msg("m4", 4, "theirs"));
-        save_chat(dir.path(), &theirs).unwrap();
+        save_sealed_stub(dir.path(), "c", &["m1", "m2", "m4"]);
         set_tracking(dir.path(), ours_oid);
         assert!(reconcile_with_tracking(dir.path()).unwrap());
-        let merged = load_chat(dir.path(), "c").unwrap().unwrap();
-        let texts: Vec<_> = merged.messages.iter().map(|m| m.text.as_str()).collect();
-        assert!(texts.contains(&"ours") && texts.contains(&"theirs"));
+        let names = log_names(dir.path(), "c");
+        for n in ["m1", "m2", "m3", "m4"] {
+            assert!(names.contains(n), "missing {n} in {names:?}");
+        }
 
         // adopt: a fresh clone (no local ref) takes the tracking ref
         let fresh = repo();
@@ -728,7 +691,7 @@ mod tests {
             .unwrap();
         drop(donor);
         assert!(!reconcile_with_tracking(fresh.path()).unwrap());
-        assert!(load_chat(fresh.path(), "c").unwrap().is_some());
+        assert!(!log_names(fresh.path(), "c").is_empty());
     }
 
     #[test]
@@ -745,9 +708,7 @@ mod tests {
             cfg.set_str("user.email", "horst.schwarz@joydev.com")
                 .unwrap();
         }
-        let mut chat = Chat::new("c1", vec![MemberRef::new("horst@example.com")], ts(0));
-        chat.messages.push(msg("m1", 1, "secret"));
-        save_chat(dir.path(), &chat).unwrap();
+        save_sealed_stub(dir.path(), "c1", &["m1"]);
 
         let r = Repository::open(dir.path()).unwrap();
         let commit = r.find_commit(r.refname_to_id(CHATS_REF).unwrap()).unwrap();
@@ -764,13 +725,16 @@ mod tests {
     }
 
     #[test]
-    fn round_trips_a_chat_with_messages() {
+    fn the_legacy_reader_serves_only_the_migration_shape() {
+        // The retired plaintext layout is readable ONLY through the
+        // migration's reader, and a delete removes the subtree whatever
+        // its layout.
         let dir = repo();
         let mut chat = Chat::new("c", vec![MemberRef::new("a@x")], ts(0));
         chat.title = Some("T".into());
         chat.messages.push(msg("m1", 1, "hello"));
         chat.messages.push(msg("m2", 2, "world"));
-        save_chat(dir.path(), &chat).unwrap();
+        save_legacy_chat_for_tests(dir.path(), &chat);
 
         let loaded = load_chat(dir.path(), "c").unwrap().unwrap();
         assert_eq!(loaded.title.as_deref(), Some("T"));
@@ -779,114 +743,34 @@ mod tests {
 
         remove_chat(dir.path(), "c").unwrap();
         assert!(load_chat(dir.path(), "c").unwrap().is_none());
+
+        // …and a SEALED chat is invisible to the legacy reader.
+        save_sealed_stub(dir.path(), "s", &["e1"]);
+        assert!(load_chat(dir.path(), "s").unwrap().is_none());
+        assert!(load_chats(dir.path()).unwrap().is_empty());
     }
 
     #[test]
-    fn diverging_message_appends_union_on_merge() {
+    fn a_pre_sealing_chat_refuses_to_merge_by_name() {
         let dir = repo();
         let root = dir.path();
-        let mut base = Chat::new("c", vec![MemberRef::new("a@x")], ts(0));
-        base.messages.push(msg("m1", 1, "hello"));
-        save_chat(root, &base).unwrap();
+        save_sealed_stub(root, "c", &["m1"]);
         let base_oid = ref_target(root).unwrap().unwrap();
 
-        let mut ours = base.clone();
-        ours.messages.push(msg("m2", 2, "ours"));
-        ours.updated = ts(2);
-        save_chat(root, &ours).unwrap();
+        save_sealed_stub(root, "c", &["m1", "m2"]);
         let ours_oid = ref_target(root).unwrap().unwrap();
 
         reset_ref(root, base_oid);
-        let mut theirs = base.clone();
-        theirs.messages.push(msg("m3", 3, "theirs"));
-        theirs.updated = ts(3);
-        save_chat(root, &theirs).unwrap();
+        let mut legacy = Chat::new("old", vec![MemberRef::new("a@x")], ts(0));
+        legacy.messages.push(msg("m9", 9, "pre-sealing"));
+        save_legacy_chat_for_tests(root, &legacy);
         let theirs_oid = ref_target(root).unwrap().unwrap();
 
-        merge_refs(root, ours_oid, theirs_oid).unwrap();
-        let merged = load_chat(root, "c").unwrap().unwrap();
-        let ids: BTreeSet<&str> = merged.messages.iter().map(|m| m.id.as_str()).collect();
-        assert_eq!(merged.messages.len(), 3);
-        assert!(ids.contains("m1") && ids.contains("m2") && ids.contains("m3"));
-    }
-
-    #[test]
-    fn diverging_metadata_three_way_merges() {
-        let dir = repo();
-        let root = dir.path();
-        let base = Chat::new("c", vec![MemberRef::new("a@x")], ts(0));
-        save_chat(root, &base).unwrap();
-        let base_oid = ref_target(root).unwrap().unwrap();
-
-        let mut ours = base.clone();
-        ours.title = Some("Renamed".into());
-        ours.updated = ts(2);
-        save_chat(root, &ours).unwrap();
-        let ours_oid = ref_target(root).unwrap().unwrap();
-
-        reset_ref(root, base_oid);
-        let mut theirs = base.clone();
-        theirs.subtitle = Some("sub".into());
-        theirs.updated = ts(1);
-        save_chat(root, &theirs).unwrap();
-        let theirs_oid = ref_target(root).unwrap().unwrap();
-
-        merge_refs(root, ours_oid, theirs_oid).unwrap();
-        let merged = load_chat(root, "c").unwrap().unwrap();
-        assert_eq!(merged.title.as_deref(), Some("Renamed"));
-        assert_eq!(merged.subtitle.as_deref(), Some("sub"));
-    }
-
-    #[test]
-    fn diverging_mode_writes_union_per_delegator() {
-        use joy_core::model::config::InteractionLevel;
-
-        // Two chats derived from one base, each storing a level for a
-        // DIFFERENT delegator under the SAME agent: the nested-map merge
-        // must keep both entries (ADR JAPP-00F3-E8).
-        let dir = repo();
-        let root = dir.path();
-        let base = Chat::new(
-            "c",
-            vec![
-                MemberRef::new("a@x"),
-                MemberRef::new("b@x"),
-                MemberRef::new("ai:claude@joy"),
-            ],
-            ts(0),
-        );
-        save_chat(root, &base).unwrap();
-        let base_oid = ref_target(root).unwrap().unwrap();
-
-        let mut ours = base.clone();
-        ours.interaction_levels
-            .entry("ai:claude@joy".to_string())
-            .or_default()
-            .insert("a@x".to_string(), InteractionLevel::Confirmed);
-        ours.updated = ts(2);
-        save_chat(root, &ours).unwrap();
-        let ours_oid = ref_target(root).unwrap().unwrap();
-
-        reset_ref(root, base_oid);
-        let mut theirs = base.clone();
-        theirs
-            .interaction_levels
-            .entry("ai:claude@joy".to_string())
-            .or_default()
-            .insert("b@x".to_string(), InteractionLevel::Autonomous);
-        theirs.updated = ts(1);
-        save_chat(root, &theirs).unwrap();
-        let theirs_oid = ref_target(root).unwrap().unwrap();
-
-        merge_refs(root, ours_oid, theirs_oid).unwrap();
-        let merged = load_chat(root, "c").unwrap().unwrap();
-        assert_eq!(
-            merged.interaction_level_override("ai:claude@joy", "a@x"),
-            Some(InteractionLevel::Confirmed)
-        );
-        assert_eq!(
-            merged.interaction_level_override("ai:claude@joy", "b@x"),
-            Some(InteractionLevel::Autonomous)
+        let err = merge_refs(root, ours_oid, theirs_oid).unwrap_err();
+        assert!(
+            err.to_string().contains("old")
+                && err.to_string().contains("retired pre-sealing layout"),
+            "{err}"
         );
     }
 }

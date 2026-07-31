@@ -1093,46 +1093,28 @@ YAML
 # AI Tool --crypt token flow (JOY-015B-53, JOY-015E-4C)
 # ============================================================
 
-@test "joy auth token add --crypt embeds delegation private key" {
+@test "every delegation token embeds the delegation private key (crypt scope)" {
     joy init --name "AI Crypt Test" --acronym AC
     joy auth init --passphrase "$TEST_PASSPHRASE"
     joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE"
-    # Auth-only token: no privkey embedded.
-    PLAIN=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
+    # ONE token kind (JI-0175-B0): auth and chat crypto always travel
+    # together, so the delegation private key is always embedded.
+    TOKEN=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
         | grep -o 'joy_t_[A-Za-z0-9+/=]*' | head -1)
-    [ -n "$PLAIN" ]
-    PLAIN_DECODED=$(echo "$PLAIN" | sed 's/^joy_t_//' | base64 -d 2>/dev/null || true)
-    [[ "$PLAIN_DECODED" != *"delegation_private_key"* ]]
-
-    # --crypt token: privkey embedded.
-    CRYPT=$(joy auth token add ai:claude@joy --crypt --passphrase "$TEST_PASSPHRASE" \
-        | grep -o 'joy_t_[A-Za-z0-9+/=]*' | head -1)
-    [ -n "$CRYPT" ]
-    CRYPT_DECODED=$(echo "$CRYPT" | sed 's/^joy_t_//' | base64 -d 2>/dev/null || true)
-    [[ "$CRYPT_DECODED" == *"delegation_private_key"* ]]
-    [[ "$CRYPT_DECODED" == *"\"crypt\""* ]]
+    [ -n "$TOKEN" ]
+    DECODED=$(echo "$TOKEN" | sed 's/^joy_t_//' | base64 -d 2>/dev/null || true)
+    [[ "$DECODED" == *"delegation_private_key"* ]]
+    [[ "$DECODED" == *'"crypt"'* ]]
 }
 
-@test "auth-only token redemption produces a 44-byte JOY_SESSION payload" {
+@test "token redemption produces a 76-byte JOY_SESSION payload" {
     joy init --name "AI Crypt Test" --acronym AC
     joy auth init --passphrase "$TEST_PASSPHRASE"
     joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE"
     TOKEN=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
         | grep -o 'joy_t_[A-Za-z0-9+/=]*' | head -1)
     OUTPUT=$(joy auth --token "$TOKEN")
-    # Extract just the base64 payload from the export line.
-    PAYLOAD=$(echo "$OUTPUT" | grep -o 'joy_s_[A-Za-z0-9+/=]*' | head -1 | sed 's/^joy_s_//')
-    DECODED_LEN=$(echo "$PAYLOAD" | base64 -d 2>/dev/null | wc -c | tr -d '[:space:]')
-    [ "$DECODED_LEN" = "44" ]
-}
-
-@test "--crypt token redemption produces a 76-byte JOY_SESSION payload" {
-    joy init --name "AI Crypt Test" --acronym AC
-    joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE"
-    TOKEN=$(joy auth token add ai:claude@joy --crypt --passphrase "$TEST_PASSPHRASE" \
-        | grep -o 'joy_t_[A-Za-z0-9+/=]*' | head -1)
-    OUTPUT=$(joy auth --token "$TOKEN")
+    # sid + ephemeral private key + delegation private key
     PAYLOAD=$(echo "$OUTPUT" | grep -o 'joy_s_[A-Za-z0-9+/=]*' | head -1 | sed 's/^joy_s_//')
     DECODED_LEN=$(echo "$PAYLOAD" | base64 -d 2>/dev/null | wc -c | tr -d '[:space:]')
     [ "$DECODED_LEN" = "76" ]

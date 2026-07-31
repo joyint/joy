@@ -122,7 +122,7 @@ mod tests {
             payload: None,
             details: None,
         });
-        crate::chat_ref::save_chat(root, &chat).unwrap();
+        crate::chat_ref::save_legacy_chat_for_tests(root, &chat);
     }
 
     #[test]
@@ -193,7 +193,7 @@ mod tests {
             payload: None,
             details: None,
         });
-        crate::chat_ref::save_chat(root, &chat).unwrap();
+        crate::chat_ref::save_legacy_chat_for_tests(root, &chat);
 
         let (done, skipped) = apply(root).unwrap();
         assert!(done.is_empty());

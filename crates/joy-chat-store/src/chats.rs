@@ -66,19 +66,15 @@ pub fn save_chat(root: &Path, chat: &mut Chat) -> Result<(), JoyError> {
     }))
 }
 
-/// Load one chat by id, opened. New-format (sealed) chats fold through
-/// [`crate::chat_store`]; a legacy (unmigrated) chat falls back to the old
-/// reader plus the custodian open.
+/// Load one chat by id, opened, from the sealed store — the only chat
+/// storage there is. An unmigrated pre-sealing chat is invisible here
+/// until the chat migration converts it (it runs at every version sync
+/// and platform project load).
 pub fn load_chat(root: &Path, id: &str) -> Result<Option<Chat>, JoyError> {
-    if let Some(seed) = crate::writer::seed() {
-        if let Some(mut chat) = crate::chat_store::load(root, id, &seed)? {
-            normalize(&mut chat);
-            return Ok(Some(chat));
-        }
-    }
-    // A project with no identity at all keeps its chats in the clear
-    // (ADR JAPP-002A-30); that is the only thing left to read here.
-    match crate::chat_ref::load_chat(root, id)? {
+    let Some(seed) = crate::writer::seed() else {
+        return Ok(None);
+    };
+    match crate::chat_store::load(root, id, &seed)? {
         Some(mut chat) => {
             normalize(&mut chat);
             Ok(Some(chat))
@@ -87,25 +83,16 @@ pub fn load_chat(root: &Path, id: &str) -> Result<Option<Chat>, JoyError> {
     }
 }
 
-/// Load every chat, opened, newest-updated first. Sealed chats come from
-/// [`crate::chat_store`]; any legacy chat not yet migrated is added from
-/// the old reader.
+/// Load every chat, opened, newest-updated first, from the sealed store
+/// — the only chat storage there is (see [`load_chat`] on unmigrated
+/// pre-sealing chats).
 pub fn load_chats(root: &Path) -> Result<Vec<Chat>, JoyError> {
     let mut out: Vec<Chat> = Vec::new();
-    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     if let Some(seed) = crate::writer::seed() {
         for mut chat in crate::chat_store::load_all(root, &seed)? {
             normalize(&mut chat);
-            seen.insert(chat.id.clone());
             out.push(chat);
         }
-    }
-    for mut chat in crate::chat_ref::load_chats(root)? {
-        if seen.contains(&chat.id) {
-            continue;
-        }
-        normalize(&mut chat);
-        out.push(chat);
     }
     out.sort_by_key(|c| std::cmp::Reverse(c.updated));
     Ok(out)
