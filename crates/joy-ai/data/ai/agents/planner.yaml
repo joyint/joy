@@ -14,4 +14,4 @@ constraints:
   - "May create items only with the create capability"
   - "May change status to move items through triage"
 
-applicable_tools: [claude-code, github-copilot, mistral-vibe]
+applicable_tools: [claude, copilot, vibe]

@@ -20,7 +20,7 @@ agent:
   permissions:
     allowed: [read, search, grep, test]
     denied: [write, edit, delete]
-  applicable_tools: [claude-code, github-copilot, mistral-vibe]
+  applicable_tools: [claude, copilot, vibe]
 ```
 
 ## Interaction

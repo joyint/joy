@@ -14,4 +14,4 @@ constraints:
   - "May NOT create items -- documentation follows existing items"
   - "May NOT change status -- documentation alone does not close items"
 
-applicable_tools: [claude-code, github-copilot, mistral-vibe]
+applicable_tools: [claude, copilot, vibe]

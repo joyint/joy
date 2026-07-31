@@ -7,10 +7,10 @@
 //! budgets, container health) lives with the hosts.
 //!
 //! The adapter id IS the tool name (JOY-0231-74): `vibe`, `claude`,
-//! `qwen`. The provider-flavored ids of the first generation
-//! (`mistral-vibe`, `claude-code`, `qwen-code`) stay readable as
-//! `legacy_ids` while project.yaml pins migrate through joy's silent
-//! update path.
+//! `qwen`. The provider-flavored ids of the first generation exist ONLY
+//! inside the official silent project.yaml migration
+//! (`m_2026_07_adapter_tool_names`), which rewrites recorded pins; the
+//! registry itself knows exactly one spelling per tool.
 //!
 //! The entrypoint is ONE argv prefix, valid verbatim on the desktop PATH
 //! and inside the agent container. That single line is what ended the
@@ -25,10 +25,6 @@ pub struct AdapterSpec {
     /// THE id, equal to the tool name; also the suffix of the canonical
     /// member (`ai:<adapter>@joy`).
     pub adapter: &'static str,
-    /// First-generation ids that still appear in unmigrated project.yaml
-    /// pins and environment lists. Resolved by [`by_adapter`], written by
-    /// nobody.
-    pub legacy_ids: &'static [&'static str],
     /// Human-facing name for pickers and cards.
     pub label: &'static str,
     /// The canonical member this tool acts as.
@@ -60,7 +56,6 @@ pub struct AdapterSpec {
 pub const ADAPTERS: &[AdapterSpec] = &[
     AdapterSpec {
         adapter: "vibe",
-        legacy_ids: &["mistral-vibe"],
         label: "Mistral Vibe",
         member: "ai:vibe@joy",
         // vibe speaks ACP natively through vibe-acp, which ships with the
@@ -74,7 +69,6 @@ pub const ADAPTERS: &[AdapterSpec] = &[
     },
     AdapterSpec {
         adapter: "claude",
-        legacy_ids: &["claude-code"],
         label: "Claude Code",
         member: "ai:claude@joy",
         // The official ACP bridge (same org as codex-acp). One spelling
@@ -90,7 +84,6 @@ pub const ADAPTERS: &[AdapterSpec] = &[
     },
     AdapterSpec {
         adapter: "qwen",
-        legacy_ids: &["qwen-code"],
         label: "Qwen Code",
         member: "ai:qwen@joy",
         entrypoint: "qwen --acp",
@@ -102,14 +95,11 @@ pub const ADAPTERS: &[AdapterSpec] = &[
     },
 ];
 
-/// Resolve an adapter id — current or legacy — to its row. This is the
-/// ONE lookup every surface uses; a legacy id resolves to the same row as
-/// its tool name, so unmigrated pins keep working while the silent
-/// migration catches up.
+/// Resolve an adapter id to its row. Exact match only: recorded pins are
+/// kept current by the official silent project.yaml migration, so no
+/// other spelling exists at runtime.
 pub fn by_adapter(id: &str) -> Option<&'static AdapterSpec> {
-    ADAPTERS
-        .iter()
-        .find(|spec| spec.adapter == id || spec.legacy_ids.contains(&id))
+    ADAPTERS.iter().find(|spec| spec.adapter == id)
 }
 
 /// The row acting as a given member (`ai:vibe@joy` -> vibe).
@@ -117,8 +107,8 @@ pub fn by_member(member: &str) -> Option<&'static AdapterSpec> {
     ADAPTERS.iter().find(|spec| spec.member == member)
 }
 
-/// The current id for a possibly legacy adapter string: what the silent
-/// project.yaml migration writes, and what every new pin records.
+/// The registered id for an adapter string: `Some` exactly for the
+/// registry's tools, `None` for mocks and unknown values.
 pub fn canonical_adapter_id(id: &str) -> Option<&'static str> {
     by_adapter(id).map(|spec| spec.adapter)
 }
@@ -177,26 +167,16 @@ mod tests {
     fn every_row_is_named_after_its_tool() {
         for spec in ADAPTERS {
             assert_eq!(spec.member, format!("ai:{}@joy", spec.adapter));
-            assert!(
-                !spec.legacy_ids.contains(&spec.adapter),
-                "{}: the current id must not double as a legacy id",
-                spec.adapter
-            );
         }
     }
 
     #[test]
-    fn a_legacy_id_resolves_to_the_same_row_as_the_tool_name() {
-        for (legacy, tool) in [
-            ("mistral-vibe", "vibe"),
-            ("claude-code", "claude"),
-            ("qwen-code", "qwen"),
-        ] {
-            let via_legacy = by_adapter(legacy).expect(legacy);
-            let via_tool = by_adapter(tool).expect(tool);
-            assert!(std::ptr::eq(via_legacy, via_tool));
-            assert_eq!(canonical_adapter_id(legacy), Some(tool));
-        }
+    fn only_the_exact_tool_id_resolves() {
+        assert_eq!(by_adapter("vibe").unwrap().adapter, "vibe");
+        // first-generation spellings live only in the official migration
+        assert_eq!(by_adapter("mistral-vibe"), None);
+        assert_eq!(by_adapter("claude-code"), None);
+        assert_eq!(by_adapter("qwen-code"), None);
         assert_eq!(by_adapter("copilot"), None);
         assert_eq!(canonical_adapter_id("mock"), None);
     }

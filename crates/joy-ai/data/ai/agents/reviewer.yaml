@@ -14,4 +14,4 @@ constraints:
   - "May NOT create items -- findings are reported as comments"
   - "May change status to accept or send back for rework"
 
-applicable_tools: [claude-code, github-copilot, mistral-vibe]
+applicable_tools: [claude, copilot, vibe]

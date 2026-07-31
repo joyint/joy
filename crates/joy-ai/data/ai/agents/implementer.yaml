@@ -15,4 +15,4 @@ constraints:
   - "Must run joy start <ID> before writing code"
   - "Must run joy submit <ID> after committing"
 
-applicable_tools: [claude-code, github-copilot, mistral-vibe, qwen-code]
+applicable_tools: [claude, copilot, vibe, qwen]

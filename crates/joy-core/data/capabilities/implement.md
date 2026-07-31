@@ -20,7 +20,7 @@ agent:
   permissions:
     allowed: [read, search, grep, write, edit, bash]
     denied: [delete]
-  applicable_tools: [claude-code, github-copilot, mistral-vibe, qwen-code]
+  applicable_tools: [claude, copilot, vibe, qwen]
 ```
 
 ## Interaction

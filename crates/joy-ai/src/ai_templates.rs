@@ -190,18 +190,13 @@ pub fn render_copilot_prompt(workflow: &serde_json::Value) -> Result<String, Joy
     Ok(rendered)
 }
 
-/// Check if an agent is applicable to a given tool.
+/// Check if an agent is applicable to a given tool. The template data
+/// names tools by their one id (JOY-0231-74), the same word the adapter
+/// registry uses.
 pub fn agent_applicable_to_tool(agent: &serde_json::Value, tool: &str) -> bool {
-    let tool_key = match tool {
-        "claude" => "claude-code",
-        "qwen" => "qwen-code",
-        "vibe" => "mistral-vibe",
-        "copilot" => "github-copilot",
-        _ => return false,
-    };
     agent["applicable_tools"]
         .as_array()
-        .map(|tools| tools.iter().any(|t| t.as_str() == Some(tool_key)))
+        .map(|tools| tools.iter().any(|t| t.as_str() == Some(tool)))
         .unwrap_or(false)
 }
 

@@ -385,7 +385,7 @@ fn detect_claude() -> bool {
 }
 
 fn detect_qwen() -> bool {
-    which("qwen") || which("qwen-code")
+    which("qwen")
 }
 
 fn detect_vibe() -> bool {

@@ -27,5 +27,5 @@ agent:
   permissions:
     allowed: [read, search, grep]
     denied: [write, edit, delete, bash]
-  applicable_tools: [claude-code, github-copilot, mistral-vibe, qwen-code]
+  applicable_tools: [claude, copilot, vibe, qwen]
 ```

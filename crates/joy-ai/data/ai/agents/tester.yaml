@@ -14,4 +14,4 @@ constraints:
   - "May NOT create items -- test findings are reported as comments"
   - "May NOT change status -- testing does not approve or close"
 
-applicable_tools: [claude-code, github-copilot, mistral-vibe, qwen-code]
+applicable_tools: [claude, copilot, vibe, qwen]
