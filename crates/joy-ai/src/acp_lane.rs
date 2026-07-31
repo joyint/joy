@@ -36,8 +36,8 @@ use agent_client_protocol::schema::v1::{
     CancelNotification, ContentBlock, Cost, Implementation, InitializeRequest, NewSessionRequest,
     PermissionOptionId, PermissionOptionKind, PromptRequest, RequestPermissionOutcome,
     RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
-    SessionConfigKind, SessionConfigSelectOptions, SessionNotification, SessionUpdate, StopReason,
-    TextContent, ToolKind,
+    SessionConfigKind, SessionConfigSelectOptions, SessionNotification, SessionUpdate,
+    SetSessionConfigOptionRequest, StopReason, TextContent, ToolKind,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{AcpAgent, Agent, ConnectionTo};
@@ -404,6 +404,13 @@ pub struct LaneConfig {
     /// leads with its in-app posture; the platform's agents read theirs
     /// from the repo).
     pub fresh_preamble: Option<String>,
+    /// The pinned model, set on every session this lane creates via
+    /// `session/set_config_option` (config id `model`). The env default
+    /// alone is not enough: an agent with persisted per-chat state keeps
+    /// its previously active model across spawns, so only the explicit
+    /// session-level set makes a changed pin actually run (JP-00B8-4B).
+    /// None = the agent's own default.
+    pub model: Option<String>,
     /// Host hook over the parsed agent before it connects — the desktop
     /// injects the delegated JOY_SESSION, the git identity and the tool's
     /// state directory into the spawn descriptor.
@@ -540,6 +547,7 @@ impl<K: std::hash::Hash + Eq + Clone> LaneSet<K> {
             config.client_name.clone(),
             config.client_version.clone(),
             config.fresh_preamble.clone(),
+            config.model.clone(),
             config.prepare.clone(),
             rx,
         );
@@ -564,6 +572,7 @@ fn spawn_lane_thread(
     client_name: String,
     client_version: String,
     fresh_preamble: Option<String>,
+    model: Option<String>,
     prepare: Option<Arc<dyn Fn(AcpAgent) -> AcpAgent + Send + Sync>>,
     rx: mpsc::UnboundedReceiver<QueuedTurn>,
 ) {
@@ -583,6 +592,7 @@ fn spawn_lane_thread(
                 client_name,
                 client_version,
                 fresh_preamble,
+                model,
                 prepare,
                 rx,
             ));
@@ -594,12 +604,14 @@ fn spawn_lane_thread(
 /// arrival order. Ends when the turn channel closes or the transport
 /// dies; pending turns learn it through their dropped responders.
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 async fn run_lane(
     command: String,
     cwd: PathBuf,
     client_name: String,
     client_version: String,
     fresh_preamble: Option<String>,
+    model: Option<String>,
     prepare: Option<Arc<dyn Fn(AcpAgent) -> AcpAgent + Send + Sync>>,
     mut rx: mpsc::UnboundedReceiver<QueuedTurn>,
 ) {
@@ -720,6 +732,22 @@ async fn run_lane(
                             .send_request(NewSessionRequest::new(cwd.clone()))
                             .block_task()
                             .await?;
+                        // The pinned model is SESSION config, set before the
+                        // first prompt: the spawn env only suggests a default,
+                        // and an agent with persisted chat state ignores it
+                        // (JP-00B8-4B). A pin the agent refuses is an error
+                        // the person must see, never a silently different
+                        // model.
+                        if let Some(model) = &model {
+                            connection
+                                .send_request(SetSessionConfigOptionRequest::new(
+                                    created.session_id.clone(),
+                                    "model",
+                                    model.as_str(),
+                                ))
+                                .block_task()
+                                .await?;
+                        }
                         sessions.insert(turn.chat_id.clone(), created.session_id.clone());
                         // fresh session: the chat history IS the resume,
                         // led once by the host's preamble if it has one
@@ -893,6 +921,7 @@ async fn single_round_inner(config: &LaneConfig, prompt: &str) -> anyhow::Result
     let escalated = question.clone();
     let cwd = config.cwd.clone();
     let prompt = prompt.to_string();
+    let pinned_model = config.model.clone();
     let client = Implementation::new(config.client_name.clone(), config.client_version.clone());
 
     agent_client_protocol::Client
@@ -940,6 +969,18 @@ async fn single_round_inner(config: &LaneConfig, prompt: &str) -> anyhow::Result
                 .send_request(NewSessionRequest::new(cwd))
                 .block_task()
                 .await?;
+            // same rule as the chat lane: the pin is session config
+            // (JP-00B8-4B), and a refused pin is a loud error
+            if let Some(model) = &pinned_model {
+                connection
+                    .send_request(SetSessionConfigOptionRequest::new(
+                        session.session_id.clone(),
+                        "model",
+                        model.as_str(),
+                    ))
+                    .block_task()
+                    .await?;
+            }
             connection
                 .send_request(PromptRequest::new(
                     session.session_id.clone(),
