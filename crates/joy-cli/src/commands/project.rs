@@ -2299,17 +2299,14 @@ fn member_auth_status(
             .map(|entry| entry.delegation_verifier.as_str())
             .collect();
 
-        // Drop this member's dead sessions: expired ones, and
-        // token-redeemed ones bound to a rotated delegation key. Rejected
-        // job-bound sessions are kept on disk: their binding is enforced
-        // at command time, not by file presence (JOY-020B-D2).
+        // Drop this member's dead sessions: expired ones, and ones bound
+        // to a rotated (or missing) delegation key.
         if let Ok(sessions) = joy_core::auth::session::list_member_sessions(project_id, id) {
             for (path, sess) in &sessions {
-                let rotated = sess.claims.job_id.is_none()
-                    && !matches!(
-                        &sess.claims.token_key,
-                        Some(tk) if current_delegation_keys.contains(&tk.as_str())
-                    );
+                let rotated = !matches!(
+                    &sess.claims.delegation_key,
+                    Some(tk) if current_delegation_keys.contains(&tk.as_str())
+                );
                 if sess.claims.expires <= chrono::Utc::now() || rotated {
                     if let Some(sid) = path.file_stem().and_then(|s| s.to_str()) {
                         let _ = joy_core::auth::session::remove_session_by_id(sid);
@@ -2336,7 +2333,7 @@ fn member_auth_status(
                 // Mirrors what resolve_identity accepts at runtime
                 // (JOY-00F4-CF): a session is live while the delegation
                 // it was redeemed from is live.
-                match &sess.claims.token_key {
+                match &sess.claims.delegation_key {
                     Some(tk) if current_delegation_keys.contains(&tk.as_str()) => Some(()),
                     // Delegation rotated — the session is no longer trusted.
                     _ => None,

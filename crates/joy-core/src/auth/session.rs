@@ -31,11 +31,10 @@ pub struct SessionClaims {
     pub project_id: String,
     pub created: DateTime<Utc>,
     pub expires: DateTime<Utc>,
-    /// For AI sessions: the delegation_key this session was bound to at creation.
-    /// Rotating the delegation invalidates the session. Field name kept as
-    /// `token_key` for on-disk compatibility with already-written sessions.
+    /// For AI sessions: the delegation_verifier this session was bound to
+    /// at creation. Rotating the delegation invalidates the session.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub token_key: Option<String>,
+    pub delegation_key: Option<String>,
     /// For AI sessions (ADR-033): the ephemeral public key whose matching
     /// private key lives only in the `JOY_SESSION` env var. Validation
     /// requires the caller to possess that private key, binding the session
@@ -52,17 +51,11 @@ pub struct SessionClaims {
     // signed byte stream. New claims must be `Option` +
     // `skip_serializing_if = "Option::is_none"` and APPENDED here, never
     // inserted or reordered: sessions written before a field existed then
-    // still serialize (and verify) byte-identically.
+    // still serialize (and verify) byte-identically. Renaming or removing
+    // a field is allowed exactly BECAUSE it breaks old files: sessions
+    // are ephemeral, and a shape change simply expires them into a fresh
+    // `joy auth` instead of keeping a read path alive.
     // ------------------------------------------------------------------
-    /// Read but never written any more: a session a server signed for
-    /// itself and bound to a job item. That model is gone (JI-0174
-    /// family); the field stays so a session file written by an older
-    /// joy still parses, and it grants nothing.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub job_id: Option<String>,
-    /// Read but never written any more, see `job_id`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub issuer: Option<String>,
     /// The human whose delegation this session acts under, recorded at
     /// redemption (F2, JI-0175-B0), so every write names the person
     /// behind the AI.
@@ -126,7 +119,7 @@ pub fn create_session(
     project_id: &str,
     ttl: Option<Duration>,
 ) -> SessionToken {
-    create_session_with_token_key(keypair, member, project_id, ttl, None)
+    create_session_with_delegation_key(keypair, member, project_id, ttl, None)
 }
 
 /// Create a session for an AI member with an ephemeral keypair (ADR-033).
@@ -161,11 +154,9 @@ pub fn create_session_for_ai(
         project_id: project_id.to_string(),
         created: now,
         expires,
-        token_key: Some(delegation_key.to_string()),
+        delegation_key: Some(delegation_key.to_string()),
         session_public_key: Some(ephemeral_keypair.public_key().to_hex()),
         tty: None,
-        job_id: None,
-        issuer: None,
         // The delegating human recorded at redemption (F2, JI-0175-B0): a
         // token-redeemed session used to leave this None, and the identity
         // resolver then guessed the delegator from the local git e-mail —
@@ -183,12 +174,12 @@ pub fn create_session_for_ai(
     }
 }
 
-fn create_session_with_token_key(
+fn create_session_with_delegation_key(
     keypair: &IdentityKeypair,
     member: &str,
     project_id: &str,
     ttl: Option<Duration>,
-    token_key: Option<String>,
+    delegation_key: Option<String>,
 ) -> SessionToken {
     let now = Utc::now();
     let ttl = ttl.unwrap_or_else(|| Duration::hours(DEFAULT_TTL_HOURS));
@@ -200,11 +191,9 @@ fn create_session_with_token_key(
         project_id: project_id.to_string(),
         created: now,
         expires: now + ttl,
-        token_key,
+        delegation_key,
         session_public_key: None,
         tty,
-        job_id: None,
-        issuer: None,
         delegated_by: None,
     };
     let claims_json = serde_json::to_string(&claims).expect("claims serialize");
@@ -284,8 +273,7 @@ pub fn session_storage_id(project_id: &str, claims: &SessionClaims) -> String {
         // AI sessions get a PER-SESSION file (keyed by the ephemeral
         // session public key), so an AI can hold several at once (one per
         // chat, and one per job round) and each survives independently
-        // (JOY-01E1-E7). The session is bound to its job by
-        // `claims.job_id`, not by the filename.
+        // (JOY-01E1-E7).
         Some(session_pk) if is_ai_member(&claims.member) => {
             use sha2::{Digest, Sha256};
             let mut hasher = Sha256::new();
@@ -704,7 +692,7 @@ mod tests {
             token.claims.session_public_key.as_deref(),
             Some(ephemeral_pk.as_str())
         );
-        assert_eq!(token.claims.token_key.as_deref(), Some("dkey"));
+        assert_eq!(token.claims.delegation_key.as_deref(), Some("dkey"));
         // Ensure the session signature validates against the ephemeral public key.
         let pk = PublicKey::from_hex(&ephemeral_pk).unwrap();
         validate_session(&token, &pk, "TST").unwrap();
@@ -751,35 +739,43 @@ mod tests {
     }
 
     #[test]
-    fn job_claims_absent_from_non_job_sessions() {
-        // The signature is over the serde_json byte stream: pre-JOY-020B-D2
-        // sessions carry none of the job fields, so re-serializing them must
-        // not emit the new keys or every old signature breaks.
+    fn optional_claims_stay_absent_from_plain_sessions() {
+        // The signature is over the serde_json byte stream: absent
+        // optional claims must not serialize, or a session written
+        // without them would re-serialize differently and break its own
+        // signature.
         let (kp, pk) = test_keypair();
         let token = create_session(&kp, "test@example.com", "TST", None);
         let json = serde_json::to_string(&token.claims).unwrap();
-        assert!(!json.contains("job_id"), "got: {json}");
-        assert!(!json.contains("issuer"), "got: {json}");
+        assert!(!json.contains("delegation_key"), "got: {json}");
         assert!(!json.contains("delegated_by"), "got: {json}");
         validate_session(&token, &pk, "TST").unwrap();
     }
 
     #[test]
-    fn legacy_session_file_without_job_fields_parses() {
+    fn a_session_written_by_a_retired_shape_fails_verification() {
+        // A file carrying retired claims (the platform-key era job_id /
+        // issuer, or the pre-rename token_key) still parses — unknown
+        // fields are ignored — but its signature no longer verifies over
+        // the re-serialized claims, so it expires into a fresh joy auth
+        // instead of being quietly honored.
         let json = r#"{
             "claims": {
                 "member": "ai:claude@joy",
                 "project_id": "TST",
                 "created": "2026-01-01T00:00:00Z",
-                "expires": "2026-01-02T00:00:00Z",
-                "session_public_key": "aa"
+                "expires": "2099-01-02T00:00:00Z",
+                "session_public_key": "aa",
+                "token_key": "bb",
+                "job_id": "JOB-1",
+                "issuer": "platform"
             },
             "signature": "00"
         }"#;
         let token: SessionToken = serde_json::from_str(json).unwrap();
-        assert!(token.claims.job_id.is_none());
-        assert!(token.claims.issuer.is_none());
-        assert!(token.claims.delegated_by.is_none());
+        assert!(token.claims.delegation_key.is_none());
+        let (_kp, pk) = test_keypair();
+        assert!(validate_session(&token, &pk, "TST").is_err());
     }
 
     #[test]

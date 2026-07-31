@@ -104,7 +104,7 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
                                 ) {
                                     // F3 (JI-0175-B0): a token-redeemed AI
                                     // session must still trace to a LIVE
-                                    // delegation. `token_key` is the
+                                    // delegation. `delegation_key` is the
                                     // delegation_verifier bound at redemption;
                                     // if no member's ai_delegations still
                                     // carries it, the delegation was rotated or
@@ -123,21 +123,15 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
                                         member: sess.claims.member.clone().into(),
                                         // F2 (JI-0175-B0): the delegating
                                         // operator is recorded in the signed
-                                        // session claims at redemption. Fall
-                                        // back to the git e-mail only for
-                                        // sessions written before F2 (no
-                                        // delegated_by claim), resolved to the
-                                        // at-rest member key so the audit trail
-                                        // carries no PII (ADR-042).
+                                        // session claims at redemption; the
+                                        // binding check above guarantees the
+                                        // claim exists on every accepted
+                                        // session, so there is nothing to
+                                        // fall back to.
                                         delegated_by: sess
                                             .claims
                                             .delegated_by
                                             .clone()
-                                            .or_else(|| {
-                                                crate::privacy::delegated_by_at_rest(
-                                                    project, &git_email,
-                                                )
-                                            })
                                             .map(Into::into),
                                         authenticated: true,
                                     });
@@ -283,28 +277,40 @@ fn check_session(root: &Path, member: &str, project: &Option<Project>) -> bool {
 /// to accept.
 ///
 /// A token-redeemed session records the delegation_verifier it was bound
-/// to in `claims.token_key`. Two checks:
+/// to in `claims.delegation_key`. Three checks:
 ///
-/// 1. some member's `ai_delegations[<ai>]` must still carry that verifier.
+/// 1. the claim must be present at all: every AI session is redeemed
+///    from a delegation token and carries the binding, so a session
+///    without one was written by something that must not mint sessions.
+/// 2. some member's `ai_delegations[<ai>]` must still carry that verifier.
 ///    Rotating the delegation (`joy auth delegation rotate`) or removing
 ///    the delegating member changes or drops it, so a revoked session
 ///    dies at the next command, not only at its TTL.
-/// 2. when the session carries the delegation private key in its
+/// 3. when the session carries the delegation private key in its
 ///    `JOY_SESSION` env (crypt scope), that key must derive the verifier.
 ///    This proves possession of the delegation key: a session file alone
 ///    — which anyone able to write the state dir could author for any
 ///    registered AI member — is no longer enough.
-///
-/// Sessions with no `token_key` (older shapes) are accepted here; the
-/// generic checks in `resolve_identity` still gate them.
 pub fn token_session_rejection(
     project: &Project,
     sess: &crate::auth::session::SessionToken,
     delegation_private: Option<&[u8; 32]>,
 ) -> Option<String> {
-    // No token_key (older session shapes) -> nothing to trace; accept and
-    // let the generic checks in resolve_identity gate it.
-    let verifier = sess.claims.token_key.as_ref()?;
+    let Some(verifier) = sess.claims.delegation_key.as_ref() else {
+        return Some(format!(
+            "the session for {} carries no delegation binding; redeem a fresh token              (joy auth --token <TOKEN>)",
+            sess.claims.member
+        ));
+    };
+    // F2: redemption records WHO delegates in the signed claims. A
+    // session without it cannot name the person behind the AI, so it is
+    // not honored either.
+    if sess.claims.delegated_by.is_none() {
+        return Some(format!(
+            "the session for {} names no delegating operator; redeem a fresh token",
+            sess.claims.member
+        ));
+    }
     let registered = project.members().any(|(_, m)| {
         m.ai_delegations
             .get(&sess.claims.member)
