@@ -44,7 +44,7 @@ use agent_client_protocol::{AcpAgent, Agent, ConnectionTo};
 use std::str::FromStr;
 use tokio::sync::{mpsc, oneshot};
 
-use crate::turn_engine::{TurnActivity, TurnOutcome};
+use crate::turn_engine::{TurnActivity, TurnOutcome, TurnSink, WireActivity};
 
 // ---------------------------------------------------------------------------
 // The collector: one ACP notification stream folded into one record.
@@ -71,9 +71,9 @@ pub fn wire_kind(kind: impl Into<Option<ToolKind>>) -> Option<String> {
         .and_then(|v| v.as_str().map(str::to_string))
 }
 
-/// The live view of a running turn, host-supplied: the desktop emits
-/// Tauri events, the platform forwards onto its gRPC stream.
-pub type ActivitySink = Arc<dyn Fn(TurnActivity) + Send + Sync>;
+// The live view of a running turn rides the shared TurnSink
+// (turn_engine): the lane owns the ordered delivery and the drain, the
+// host owns only the transport of one WireActivity (JOY-0249-D2).
 
 /// Everything one ACP session produced so far.
 #[derive(Default)]
@@ -149,19 +149,13 @@ impl Collected {
     }
 }
 
-/// Fold one session notification into the collected state, optionally
-/// streaming it on as live activity (a chat turn listens, a job round
-/// does not).
-pub fn collect_notification(
-    state: &mut Collected,
-    update: SessionUpdate,
-    live: Option<&dyn Fn(TurnActivity)>,
-) {
-    let stream = |event: TurnActivity| {
-        if let Some(sink) = live {
-            sink(event);
-        }
-    };
+/// Fold one session notification into the collected state and return
+/// the live activity it produced. The CALLER routes the events: a chat
+/// turn queues them onto its ordered delivery wire, a job round drops
+/// them (nobody watches a round live).
+pub fn collect_notification(state: &mut Collected, update: SessionUpdate) -> Vec<TurnActivity> {
+    let mut events = Vec::new();
+    let mut stream = |event: TurnActivity| events.push(event);
     match update {
         SessionUpdate::AgentMessageChunk(chunk) => {
             if let ContentBlock::Text(text) = chunk.content {
@@ -254,6 +248,7 @@ pub fn collect_notification(
         }
         _ => {}
     }
+    events
 }
 
 // ---------------------------------------------------------------------------
@@ -427,8 +422,12 @@ pub struct TurnRequest {
     /// watches the turn's cumulative ACP cost and cancels the session once
     /// this turn's delta crosses the cap.
     pub max_price_cents: u64,
-    /// Live activity out (JI-0172-EE) while the turn runs.
-    pub activity: Option<ActivitySink>,
+    /// Live activity out (JI-0172-EE) while the turn runs: the shared
+    /// delivery contract (ordered, drained before the result returns).
+    pub activity: Option<Arc<dyn TurnSink>>,
+    /// The waiting-marker id (JAPP-0129-A7): delivered as the turn's
+    /// first wire event when a sink listens.
+    pub marker_id: Option<String>,
 }
 
 struct QueuedTurn {
@@ -482,6 +481,7 @@ impl<K: std::hash::Hash + Eq + Clone> LaneSet<K> {
                     mode: request.mode,
                     max_price_cents: request.max_price_cents,
                     activity: request.activity.clone(),
+                    marker_id: request.marker_id.clone(),
                 },
                 respond,
             };
@@ -627,9 +627,10 @@ async fn run_lane(
     // requests carry the session id, so concurrent chats never mix
     let buffers: Arc<Mutex<HashMap<String, Collected>>> = Arc::default();
     let modes: Arc<Mutex<HashMap<String, joy_chat::model::AgentMode>>> = Arc::default();
-    // per-SESSION live-activity sinks (JI-0172-EE): set for the running
-    // turn, so the notification handler can stream what it collects
-    let live: Arc<Mutex<HashMap<String, ActivitySink>>> = Arc::default();
+    // per-SESSION live-activity wires (JI-0172-EE): the running turn
+    // listens on the receiving end and owns delivery order + drain
+    // (JOY-0249-D2); the notification handler only queues.
+    let live: Arc<Mutex<HashMap<String, mpsc::UnboundedSender<TurnActivity>>>> = Arc::default();
     let notify_live = live.clone();
     let notes = buffers.clone();
     let perms = buffers.clone();
@@ -646,14 +647,18 @@ async fn run_lane(
                     .unwrap_or_else(|e| e.into_inner())
                     .get(&sid)
                     .cloned();
-                let stream = move |event: TurnActivity| {
-                    if let Some(sink) = &wire {
-                        sink(event);
-                    }
+                let events = {
+                    let mut map = notes.lock().unwrap_or_else(|e| e.into_inner());
+                    let state = map.entry(sid).or_default();
+                    collect_notification(state, notification.update)
                 };
-                let mut map = notes.lock().unwrap_or_else(|e| e.into_inner());
-                let state = map.entry(sid).or_default();
-                collect_notification(state, notification.update, Some(&stream));
+                if let Some(wire) = wire {
+                    for event in events {
+                        // queue only: the turn loop delivers in order and
+                        // drains before it responds (JOY-0249-D2)
+                        let _ = wire.send(event);
+                    }
+                }
                 Ok(())
             },
             agent_client_protocol::on_receive_notification!(),
@@ -718,6 +723,12 @@ async fn run_lane(
                 respond,
             }) = rx.recv().await
             {
+                // The waiting marker opens the skeleton BEFORE the slow
+                // parts (session spawn, model pin), as the first event on
+                // the same ordered wire the chunks ride (JOY-0249-D2).
+                if let (Some(sink), Some(marker)) = (&turn.activity, &turn.marker_id) {
+                    sink.deliver(WireActivity::pending(marker)).await;
+                }
                 let (session_id, prompt) = match sessions.get(&turn.chat_id) {
                     Some(sid) => (
                         sid.clone(),
@@ -763,18 +774,23 @@ async fn run_lane(
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
                     .insert(sid_key.clone(), turn.mode);
-                // the live wire opens with the turn and closes after it
+                // The live wire opens with the turn: the notification
+                // handler queues into this turn's channel; THIS loop is
+                // the only deliverer, in order, and drains before it
+                // responds (JOY-0249-D2).
+                let (act_tx, mut act_rx) = mpsc::unbounded_channel::<TurnActivity>();
                 {
-                    let mut sinks = live.lock().unwrap_or_else(|e| e.into_inner());
-                    match &turn.activity {
-                        Some(sink) => {
-                            sinks.insert(sid_key.clone(), sink.clone());
-                        }
-                        None => {
-                            sinks.remove(&sid_key);
-                        }
+                    let mut wires = live.lock().unwrap_or_else(|e| e.into_inner());
+                    if turn.activity.is_some() {
+                        wires.insert(sid_key.clone(), act_tx.clone());
+                    } else {
+                        wires.remove(&sid_key);
                     }
                 }
+                // the map holds the one live sender; removing it later
+                // closes the wire and ends the drain
+                drop(act_tx);
+                let mut live_open = turn.activity.is_some();
                 buffers
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
@@ -797,6 +813,16 @@ async fn run_lane(
                 let prompted = loop {
                     tokio::select! {
                         r = &mut prompt_fut => break r,
+                        queued = act_rx.recv(), if live_open => {
+                            match queued {
+                                Some(event) => {
+                                    if let Some(sink) = &turn.activity {
+                                        sink.deliver(WireActivity::of(&event)).await;
+                                    }
+                                }
+                                None => live_open = false,
+                            }
+                        }
                         _ = tokio::time::sleep(std::time::Duration::from_millis(250)),
                             if cap_cents > 0 && !capped =>
                         {
@@ -822,6 +848,18 @@ async fn run_lane(
                 // the agent may answer the cancel with Ok or a JSON-RPC
                 // error. Both drain what streamed and keep the shared lane;
                 // only a non-capped error poisons the connection.
+                // The wire closes with the turn: removing the sender ends
+                // the queue, then DRAIN what already streamed — every
+                // event of this turn is delivered before its result
+                // returns, so nothing can overtake the reply (JOY-0249-D2).
+                live.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .remove(&sid_key);
+                if let Some(sink) = &turn.activity {
+                    while let Some(event) = act_rx.recv().await {
+                        sink.deliver(WireActivity::of(&event)).await;
+                    }
+                }
                 let stop_ok = prompted.is_ok() || capped;
                 // Did the cap actually TRUNCATE this turn? The 250ms poll
                 // may cancel just as the agent finishes; a whole reply must
@@ -863,10 +901,6 @@ async fn run_lane(
                         prompted.err().map(|e| e.to_string()).unwrap_or_default()
                     ))
                 };
-                // the wire closes with the turn: nothing streams between
-                live.lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .remove(&sid_key);
                 let failed = result.is_err();
                 let _ = respond.send(result);
                 if failed {
@@ -929,8 +963,8 @@ async fn single_round_inner(config: &LaneConfig, prompt: &str) -> anyhow::Result
         .on_receive_notification(
             async move |notification: SessionNotification, _cx| {
                 let mut state = notes.lock().unwrap_or_else(|e| e.into_inner());
-                // nobody watches a round live, so there is no sink
-                collect_notification(&mut state, notification.update, None);
+                // nobody watches a round live: the events are dropped
+                let _ = collect_notification(&mut state, notification.update);
                 Ok(())
             },
             agent_client_protocol::on_receive_notification!(),
@@ -1119,7 +1153,6 @@ mod tests {
                     "kind": "execute",
                     "status": "pending",
                 })),
-                None,
             );
         }
         assert_eq!(state.tools.len(), 1);
@@ -1138,7 +1171,6 @@ mod tests {
                 "kind": "execute",
                 "status": "pending",
             })),
-            None,
         );
         state.record_permission("t1", "bash: joy ls".into(), "allowed (joy)");
         assert_eq!(state.tools[0].answered.as_deref(), Some("allowed (joy)"));
@@ -1159,7 +1191,6 @@ mod tests {
                 "size": 128000,
                 "cost": { "amount": 0.02, "currency": "USD" },
             })),
-            None,
         );
         // a later update WITHOUT cost keeps the last-known amount
         collect_notification(
@@ -1169,7 +1200,6 @@ mod tests {
                 "used": 250,
                 "size": 128000,
             })),
-            None,
         );
         assert_eq!(state.used, 250);
         assert_eq!(state.cost.as_ref().map(|c| c.amount), Some(0.02));

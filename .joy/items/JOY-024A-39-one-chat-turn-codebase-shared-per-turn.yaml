@@ -1,0 +1,15 @@
+id: JOY-024A-39
+title: 'One chat-turn codebase: shared per-turn core, ordered live wire, corpses removed'
+type: task
+status: review
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-02T09:18:42.340271100Z
+updated: 2026-08-02T09:18:42.645846577Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'The JOY-0249-D2 audit along the four axes (desktop/web, platform/local project, local/platform agent, safeguards) found the turn pipeline split: the shared Rust loop run_chat_turns had no caller (the real loop lives in the sealed chat client, shared by web and desktop), and around the dead core both hosts had duplicated level resolution (divergently), marker formats (four), outcome assembly, activity field mappings and notice texts. Consolidation: turn_engine::run_host_turn is THE per-turn choreography (level via the one ADR-025 host rule, marker mint, timing, execution record, error wording); WireActivity is THE wire shape of live events incl. the pending marker; TurnSink is THE delivery contract, and the shared lane delivers marker and chunks in order and DRAINS the wire before a turn''s result returns, which kills the stray-chunk class at the root. Deleted: run_chat_turns with its dead branches (empty-reply notices contradicted JOY-023A-4B), TurnHost, AppendSpec, Pending, the per-host sink types, and the parity harness (its purpose dissolved: there is only one loop; the golden conversation now runs as a test against the shared client, and the platform lane has a drain-order test). Hosts shrink to agent acquisition, money (platform) and one transport sink each.'

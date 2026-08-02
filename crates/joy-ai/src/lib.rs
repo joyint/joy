@@ -16,5 +16,4 @@ pub mod app_settings;
 pub mod chat_turns;
 pub mod level_enforcement;
 pub mod naming;
-pub mod parity;
 pub mod turn_engine;

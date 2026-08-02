@@ -1,105 +1,40 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! THE chat turn loop (JI-0179-4F): one engine for every host.
+//! THE chat turn core (JI-0179-4F, JOY-0249-D2): one codebase for every
+//! host.
 //!
-//! Until 2026-07 this loop existed twice, once in the platform's server
-//! (chat turns in project containers) and once in the desktop app's Rust
-//! shell (chat turns over local ACP tools). Only fragments of the rules
-//! were shared, and every fix that landed in one copy silently made the
-//! other one poorer; three operator findings in one day were all this
-//! class (JI-0179-4F; the full accounting is the APP-FAIL analysis in
-//! Joydev Docs, under Analysen).
+//! The turn LOOP lives in the sealed chat client (sealedChatProvider),
+//! shared by the web and the desktop app, because only the key holder
+//! can read the conversation (operator decision 2026-07-28). What a host
+//! contributes is exactly ONE turn: run the agent, stream its live
+//! activity, and return the outcome. Until 2026-08 each host had its own
+//! copy of that too — its own level fallback, its own marker format, its
+//! own outcome assembly, its own activity field mapping — and every fix
+//! that landed in one copy silently made the other one poorer.
 //!
-//! The rule now: hosts never decide anything product-shaped. This module
-//! owns the loop, the notices a person reads, the waiting-marker
-//! ordering, the reply hygiene and the execution record. A host
-//! implements [`TurnHost`], which is deliberately narrow: load a chat,
-//! commit a write, run one agent turn, deliver an ephemeral event, and
-//! answer capability questions (is this AI usable, is there budget).
-//! Everything a host returns for a refusal is an ENUM, never a sentence;
-//! the engine formats the one sentence both apps show.
+//! The rule: hosts never decide anything product-shaped. This module
+//! owns the per-turn choreography ([`run_host_turn`]), the live-activity
+//! wire shape ([`WireActivity`]), the delivery contract ([`TurnSink`]:
+//! everything a turn streamed is DELIVERED before its result returns,
+//! so a stray trailing chunk can never overtake the reply), the level
+//! resolution, the execution record and every sentence a person reads.
+//! A host implements only the last mile: publish one [`WireActivity`]
+//! on its transport, and run one agent.
 
-use std::path::PathBuf;
+use std::future::Future;
+use std::path::Path;
+use std::pin::Pin;
 
-use joy_chat::model::chat::{Chat, ChatMessage};
 use joy_chat::model::AgentMode;
 use joy_core::model::config::InteractionLevel;
 
-use crate::chat_turns::{self, TurnDecision};
+use crate::chat_turns;
 
-/// Hard backstop for AI-to-AI rounds, well above the chain guard's own
-/// bound (the guard in [`chat_turns::decide`] moderates first).
-const MAX_ROUNDS: u8 = 8;
-
-/// The project and conversation a loop run works on.
-pub struct EngineCtx {
-    /// The project root (the checkout on the platform, the opened
-    /// directory on the desktop).
-    pub root: PathBuf,
-    pub chat_id: String,
-    /// The sender of the triggering message: the delegator of every turn
-    /// this run performs, and the attribution on every reply.
-    pub sender: String,
-}
-
-/// A write the engine wants committed. The HOST owns the transaction
-/// around it (gate lock, git commit, live fan-out, forge note on the
-/// platform; plain file append on the desktop); the engine owns every
-/// field in here.
-pub struct AppendSpec {
-    pub member: String,
-    pub text: String,
-    /// true: a centered notice; false: the AI's reply message.
-    pub notice: bool,
-    pub delegated_by: Option<String>,
-    pub turn_ms: Option<u32>,
-    pub tool_steps: Option<u32>,
-    /// The persisted activity block + execution record (turn_meta).
-    pub details: Option<String>,
-}
-
-/// A committed write, as the chat file now holds it.
-pub struct Appended {
-    pub seq: u64,
-    pub message: ChatMessage,
-}
-
-/// Why an AI member cannot take a turn for this sender. Conditions are
-/// host capabilities (a local host knows about installed binaries, the
-/// platform knows about keys); the SENTENCES for them live in the engine.
-pub enum Usability {
-    Usable,
-    /// Platform: the sender has no usable API key for this member.
-    NoKey,
-    /// Platform: the sender has not delegated to this member, so a turn
-    /// could not act under their name. The AI never acts under anyone
-    /// else's (operator rule, 2026-07-29: no exception).
-    NotDelegated,
-    /// Desktop: the tool is not installed on this machine.
-    NotInstalled {
-        hint: String,
-    },
-    /// Desktop: the tool is not activated in this project.
-    NotActivated,
-}
-
-/// The waiting-marker signal (JAPP-0129-A7 / JP-0097-65): `Start` opens
-/// the one-line skeleton for the member, `Done` closes it. The engine
-/// guarantees the ordering (Done AFTER the append, JP-0093-51), the host
-/// only transports the event (chat bus or Tauri event).
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Pending {
-    Start,
-}
-
-/// Live activity of a RUNNING turn (JI-0172-EE, JI-0179-4F step 4): the
-/// agent's streamed chunks, thoughts and tool calls, published by the
-/// host WHILE its `run_turn` blocks. One vocabulary for every transport:
-/// the platform puts these on its chat bus, the desktop on a Tauri
-/// event, and the ONE channel renderer upgrades the waiting skeleton to
-/// the live turn view when they arrive. Ephemeral like the pending
-/// markers: the persisted reply is the only truth.
+/// Live activity of a RUNNING turn (JI-0172-EE): the agent's streamed
+/// chunks, thoughts and tool calls. One vocabulary for every transport;
+/// ephemeral like the waiting marker it upgrades — the persisted reply
+/// is the only truth.
 #[derive(Debug, Clone)]
 pub enum TurnActivity {
     /// A piece of the reply text.
@@ -126,7 +61,94 @@ impl TurnActivity {
     }
 }
 
-/// One agent turn, as the engine requests it from the host.
+/// The ONE wire shape of a live turn event, on every transport
+/// (JOY-0249-D2): the chat bus wraps it in its ChatEvent, the Tauri
+/// event carries it directly; the client folds both into the same
+/// TurnActivityEvent. Field reuse by design: `text` is the chunk or
+/// thought text or the tool title, `tool` the tool-call id, `payload`
+/// the tool status, `id` the waiting-marker id of a `pending` event.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WireActivity {
+    /// "pending" | "turn-chunk" | "turn-thought" | "turn-tool"
+    pub kind: String,
+    /// The waiting-marker id (pending events only; unique per turn so
+    /// client-side dedupe never swallows a later one).
+    pub id: String,
+    pub text: String,
+    pub tool: String,
+    pub payload: String,
+}
+
+impl WireActivity {
+    /// The waiting marker that opens the reply-in-preparation skeleton
+    /// (JAPP-0129-A7). Closed by the reply that takes its place, never
+    /// by a signal (JAPP-0169-78).
+    pub fn pending(marker_id: &str) -> Self {
+        WireActivity {
+            kind: "pending".into(),
+            id: marker_id.to_string(),
+            text: String::new(),
+            tool: String::new(),
+            payload: String::new(),
+        }
+    }
+
+    /// One streamed activity event on the wire.
+    pub fn of(activity: &TurnActivity) -> Self {
+        let (text, tool, payload) = match activity {
+            TurnActivity::Chunk { text } | TurnActivity::Thought { text } => {
+                (text.clone(), String::new(), String::new())
+            }
+            TurnActivity::Tool { id, title, status } => (title.clone(), id.clone(), status.clone()),
+        };
+        WireActivity {
+            kind: activity.kind().into(),
+            id: String::new(),
+            text,
+            tool,
+            payload,
+        }
+    }
+}
+
+/// How live turn events reach the room. The ONE host-specific part of
+/// the streaming path: the platform awaits a chat-bus publish, the
+/// desktop wraps its (synchronous) Tauri emit.
+///
+/// The delivery CONTRACT is what kills the stray-chunk class
+/// (JOY-0249-D2): the shared lane awaits every delivery and drains the
+/// stream before a turn's result returns, so nothing of a turn can
+/// arrive after its reply. Implementations swallow their own transport
+/// errors — a lost ephemeral event must never fail the turn.
+pub trait TurnSink: Send + Sync {
+    fn deliver<'a>(
+        &'a self,
+        activity: WireActivity,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
+}
+
+/// Why an AI member cannot take a turn for this sender. Conditions are
+/// host capabilities (a local host knows about installed binaries, the
+/// platform knows about keys); the SENTENCES for them live here.
+pub enum Usability {
+    Usable,
+    /// Platform: the sender has no usable API key for this member.
+    NoKey,
+    /// Platform: the sender has not delegated to this member, so a turn
+    /// could not act under their name. The AI never acts under anyone
+    /// else's (operator rule, 2026-07-29: no exception).
+    NotDelegated,
+    /// Desktop: the tool is not installed on this machine.
+    NotInstalled {
+        hint: String,
+    },
+    /// Desktop: the tool is not activated in this project.
+    NotActivated,
+}
+
+/// One agent turn, as the core requests it from the host's agent
+/// plumbing (docker lane on the platform, PATH lane on the desktop).
 pub struct TurnRequest<'a> {
     pub member: &'a str,
     /// The full transcript prompt; a fresh session replays this.
@@ -138,6 +160,10 @@ pub struct TurnRequest<'a> {
     pub mode: AgentMode,
     /// The effective interaction level the turn runs under.
     pub level: InteractionLevel,
+    /// The waiting-marker id of this turn. The shared lane delivers the
+    /// pending event under this id before the first prompt byte, on the
+    /// same ordered wire as the chunks.
+    pub marker_id: String,
 }
 
 /// The platform's money answer for a finished turn: the member's spend
@@ -149,7 +175,7 @@ pub struct BudgetSnapshot {
 }
 
 /// What one agent turn produced. Hosts fill what they can observe and
-/// leave the rest None; the engine never invents a value.
+/// leave the rest None; the core never invents a value.
 #[derive(Default)]
 pub struct TurnOutcome {
     pub reply: String,
@@ -164,8 +190,7 @@ pub struct TurnOutcome {
     pub capped: bool,
     /// How many permission round-trips this turn was REFUSED. An agent
     /// that is not allowed to do what it planned typically ends its turn
-    /// without a word (measured with vibe-acp 2.22, JAPP-0152-81), so this
-    /// is what turns that silence into a sentence.
+    /// without a word (measured with vibe-acp 2.22, JAPP-0152-81).
     pub denied: u32,
     pub budget: Option<BudgetSnapshot>,
 }
@@ -178,275 +203,122 @@ pub enum Preflight {
     BudgetExhausted,
 }
 
-/// What a host provides. Every method is a capability or a transaction;
-/// none of them decides wording, ordering or policy.
-pub trait TurnHost {
-    fn load_chat(&self, chat_id: &str) -> Option<Chat>;
-    /// Run the shared mention-add ([`chat_turns::add_mentioned_ais`])
-    /// inside the host's write transaction and deliver the change (live
-    /// fan-out, forge note). Returns whether participants changed.
-    fn add_mentioned_ais(&self, chat_id: &str, newest: &ChatMessage) -> bool;
-    /// Commit one write. See [`AppendSpec`].
-    fn append(&self, chat_id: &str, spec: AppendSpec) -> Result<Appended, String>;
-    /// Deliver the ephemeral waiting marker. `marker_id` is unique per
-    /// turn so client-side dedupe never swallows a later one.
-    fn publish_pending(&self, chat_id: &str, member: &str, kind: Pending, marker_id: &str);
-    /// May this member act for the run's sender?
-    fn usable(&self, member: &str) -> Usability;
-    /// The sender's personal overall level for this member, when the
-    /// host stores one (platform DB); None otherwise.
-    fn personal_level(&self, member: &str) -> Option<InteractionLevel>;
-    /// The pre-turn budget check; a local host is always [`Preflight::Ready`].
-    fn preflight(&self, member: &str) -> Preflight;
-    /// Run ONE agent turn. Err carries the raw adapter error; the engine
-    /// turns it into the human notice.
-    fn run_turn(&self, req: &TurnRequest) -> Result<TurnOutcome, String>;
+/// Everything ONE host turn starts from. The prompt and the chat-scoped
+/// level override come from the client, which alone holds the chat key;
+/// the rest is host capability.
+pub struct HostTurnSpec<'a> {
+    pub root: &'a Path,
+    pub member: &'a str,
+    pub prompt: String,
+    pub prompt_delta: Option<String>,
+    /// The caller's per-chat level choice (ADR-025 rank 1); only the
+    /// client can read it, so it sends it.
+    pub level_override: Option<InteractionLevel>,
+    /// The caller's personal overall level for this member, when the
+    /// host stores one (platform DB); None on the desktop.
+    pub personal_level: Option<InteractionLevel>,
 }
 
-/// Run the AI turns a new message may have triggered: every addressed AI
-/// participant answers with the full transcript as context; AI-to-AI
-/// mentions loop until the joy-core chain guard posts the moderation
-/// notice. Returns the committed REPLY messages (notices are committed
-/// too but not returned; clients refresh them over their stream).
-pub fn run_chat_turns(ctx: &EngineCtx, host: &dyn TurnHost) -> Vec<Appended> {
-    let mut appended = Vec::new();
-    for _round in 0..MAX_ROUNDS {
-        let Some(mut chat) = host.load_chat(&ctx.chat_id) else {
-            break;
-        };
-        // General carries "everyone" implicitly; the turn logic needs the
-        // resolved list. Best effort: an unresolved list must not kill
-        // the turns.
-        if let Ok(participants) = joy_chat_store::chats::effective_participants(&ctx.root, &chat) {
-            chat.participants = participants;
-        }
-        let Some(newest) = chat.messages.last().cloned() else {
-            break;
-        };
-        // A human's @mention of a project AI pulls it into the chat
-        // first (the reason a fresh personal chat can talk to @claude at
-        // all). Participants changed: reload for THIS round but keep
-        // deciding on the human message (the add's notice is newer in
-        // the file and would silence everyone).
-        if host.add_mentioned_ais(&ctx.chat_id, &newest) {
-            if let Some(fresh) = host.load_chat(&ctx.chat_id) {
-                chat = fresh;
-                if let Ok(participants) =
-                    joy_chat_store::chats::effective_participants(&ctx.root, &chat)
-                {
-                    chat.participants = participants;
-                }
-            }
-        }
-        let ai_members: Vec<String> = chat
-            .participants
-            .iter()
-            .map(|p| p.id().to_string())
-            .filter(|id| id.starts_with("ai:"))
-            .collect();
-        let mut acted = false;
-        for member in ai_members {
-            match chat_turns::decide(&chat, &newest, &member) {
-                TurnDecision::Silent => {}
-                TurnDecision::NeedsModeration => {
-                    if !chat_turns::moderation_already_posted(&chat)
-                        && host
-                            .append(
-                                &ctx.chat_id,
-                                notice(&member, chat_turns::MODERATION_NOTICE.to_string()),
-                            )
-                            .is_ok()
-                    {
-                        acted = true;
-                    }
-                }
-                TurnDecision::Respond => {
-                    let alias = chat_turns::alias(&member);
-                    // The capability gate, with ONE sentence per
-                    // condition, wherever the turn runs.
-                    if let Some(note) = usability_notice(alias, &host.usable(&member), ctx) {
-                        if !chat_turns::recently_noticed(&chat, &note)
-                            && host.append(&ctx.chat_id, notice(&member, note)).is_ok()
-                        {
-                            acted = true;
-                        }
-                        continue;
-                    }
-                    // The level of THIS turn (JI-0166-D8 §5): the sender
-                    // is the delegator, resolved by the one shared rule
-                    // (ADR-025 order); the ACP boundary gets the one-way
-                    // derived agent mode.
-                    let level = joy_chat_store::turn_meta::resolve_effective_level(
-                        &ctx.root,
-                        &chat,
-                        &member,
-                        &ctx.sender,
-                        host.personal_level(&member),
-                    );
-                    let request = TurnRequest {
-                        member: &member,
-                        prompt: chat_turns::context_prompt(&chat, &member),
-                        prompt_delta: chat_turns::delta_prompt(&chat, &member),
-                        mode: joy_chat::model::agent_mode::from_level(level),
-                        level,
-                    };
-                    // Refuse BEFORE spending and BEFORE the skeleton
-                    // opens (JI-014A): a budget refusal must not flash a
-                    // waiting indicator.
-                    if let Preflight::BudgetExhausted = host.preflight(&member) {
-                        let note = budget_notice(alias);
-                        if !chat_turns::recently_noticed(&chat, &note)
-                            && host.append(&ctx.chat_id, notice(&member, note)).is_ok()
-                        {
-                            acted = true;
-                        }
-                        continue;
-                    }
-                    // The reply-in-preparation marker (JP-0097-65):
-                    // non-streaming adapters return only the final text,
-                    // so without a signal the room looks dead while the
-                    // model works. Done fires AFTER the append
-                    // (JP-0093-51) so the reply fills the skeleton and
-                    // the withheld/empty/failed branches still close it.
-                    let marker_id = format!("pending-{}-{}", member, uuid::Uuid::new_v4().simple());
-                    host.publish_pending(&ctx.chat_id, &member, Pending::Start, &marker_id);
-                    let started = std::time::Instant::now();
-                    let outcome = host.run_turn(&request);
-                    let capped = outcome.as_ref().map(|o| o.capped).unwrap_or(false);
-                    match outcome {
-                        Ok(out) if !out.reply.trim().is_empty() => {
-                            let turn_ms =
-                                started.elapsed().as_millis().min(u32::MAX as u128) as u32;
-                            // The execution record (JI-014A/JI-0162):
-                            // level, model, cost, tokens, and the budget
-                            // snapshot where one exists, folded into the
-                            // details for the per-message info popover.
-                            let details = joy_chat_store::turn_meta::augment_details(
-                                out.details,
-                                &joy_chat_store::turn_meta::TurnMeta {
-                                    model: out.model.as_deref(),
-                                    cost_cents: out.cost_cents,
-                                    tokens: out.tokens,
-                                    interaction_level: Some(&level.to_string()),
-                                    spent_cents: out.budget.as_ref().map(|b| b.spent_cents),
-                                    cap_cents: out.budget.as_ref().and_then(|b| b.cap_cents),
-                                },
-                            );
-                            // Nothing tool-shaped may surface as chat
-                            // text (JAPP-010D-B0); a blob-only reply is
-                            // withheld with an honest notice.
-                            let committed = match chat_turns::sanitize_reply(&out.reply) {
-                                Some(clean) => host
-                                    .append(
-                                        &ctx.chat_id,
-                                        AppendSpec {
-                                            member: member.clone(),
-                                            text: clean,
-                                            notice: false,
-                                            delegated_by: Some(ctx.sender.clone()),
-                                            turn_ms: Some(turn_ms),
-                                            tool_steps: (out.tool_steps > 0)
-                                                .then_some(out.tool_steps),
-                                            details,
-                                        },
-                                    )
-                                    .map(|a| appended.push(a))
-                                    .is_ok(),
-                                None => {
-                                    let note = format!(
-                                        "@{alias} answered with raw tool-call data; the reply was withheld"
-                                    );
-                                    host.append(&ctx.chat_id, notice(&member, note)).is_ok()
-                                }
-                            };
-                            if committed {
-                                acted = true;
-                            }
-                        }
-                        Ok(out) => {
-                            // An EMPTY answer is still an outcome, and it
-                            // used to produce nothing at all: the marker
-                            // opened, `Done` closed it a moment later, and
-                            // the room was left exactly as before — a turn
-                            // that ran, cost money and vanished without a
-                            // trace (JAPP-014E-4D). It happens for real:
-                            // an agent that only ran tools and said nothing
-                            // returns an empty reply, and a native ACP
-                            // adapter makes that MORE likely, not less,
-                            // because tool calls no longer leak into the
-                            // message text.
-                            // …and when the reason is known, say THAT: a
-                            // refused permission is the common cause, and
-                            // "no answer" leaves the person with a mystery
-                            // instead of the one thing they can change.
-                            let note = if out.denied > 0 {
-                                let steps = if out.denied == 1 { "step" } else { "steps" };
-                                format!(
-                                    "@{alias} stopped: {} {steps} needed permission that the {level} level does not give. Raise the level for this chat and ask again.",
-                                    out.denied
-                                )
-                            } else {
-                                format!("@{alias} ended the turn without an answer. Ask again.")
-                            };
-                            if host.append(&ctx.chat_id, notice(&member, note)).is_ok() {
-                                acted = true;
-                            }
-                        }
-                        Err(raw) => {
-                            // The raw adapter error (container names,
-                            // tag wrappers) never reaches the chat; the
-                            // human notice survives a refresh.
-                            let note = humanize_turn_error(alias, &raw);
-                            if host.append(&ctx.chat_id, notice(&member, note)).is_ok() {
-                                acted = true;
-                            }
-                        }
-                    }
-                    if capped {
-                        // The turn ran partially and its spend is
-                        // recorded; say so plainly so an abruptly short
-                        // reply is not a mystery.
-                        let note = format!(
-                            "@{alias} stopped at the per-message spend limit. Continue with a smaller step, or raise the limit in Settings."
-                        );
-                        if host.append(&ctx.chat_id, notice(&member, note)).is_ok() {
-                            acted = true;
-                        }
-                    }
-                }
-            }
-        }
-        if !acted {
-            break;
-        }
-    }
-    appended
+/// What the client gets back from one host turn: either the reply with
+/// its execution record, or the one human sentence why there is none.
+/// Serializes camelCase: it IS the wire shape of the desktop's Tauri
+/// answer, and the platform's proto mirrors the same fields.
+#[derive(Debug, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostTurnOutcome {
+    pub reply: String,
+    pub notice: String,
+    pub turn_ms: u32,
+    pub tool_steps: u32,
+    pub details: String,
+    /// The model the agent reported, for the host's postmortem line.
+    pub model: String,
 }
 
-fn notice(member: &str, text: String) -> AppendSpec {
-    AppendSpec {
-        member: member.to_string(),
-        text,
-        notice: true,
-        delegated_by: None,
-        turn_ms: None,
-        tool_steps: None,
-        details: None,
+/// The host-side share of the ADR-025 level order: chat override (from
+/// the client) > the caller's personal overall > the member's default >
+/// the project default. The chat-scoped rank lives with the key holder;
+/// everything below is store state both hosts can read — and used to
+/// resolve DIFFERENTLY per host until JOY-0249-D2's audit.
+pub fn host_turn_level(
+    root: &Path,
+    member: &str,
+    level_override: Option<InteractionLevel>,
+    personal_level: Option<InteractionLevel>,
+) -> InteractionLevel {
+    level_override
+        .or(personal_level)
+        .or_else(|| {
+            joy_core::store::load_project(root)
+                .ok()
+                .and_then(|p| p.member_by_key(member).and_then(|m| m.interaction_level))
+        })
+        .unwrap_or_else(|| joy_core::store::load_interaction_level_defaults(root).default)
+}
+
+/// Run ONE host turn: resolve the level, mint the waiting marker, run
+/// the agent, assemble the outcome. The choreography both hosts used to
+/// copy by hand — level fallback, marker format, timing, execution
+/// record, error wording — lives here exactly once. `run_agent` is the
+/// host's agent plumbing; everything it streams rides the [`TurnSink`]
+/// the host handed to its lane, delivered in order and drained before
+/// this returns.
+pub fn run_host_turn(
+    spec: HostTurnSpec,
+    run_agent: impl FnOnce(&TurnRequest) -> Result<TurnOutcome, String>,
+) -> HostTurnOutcome {
+    let alias = chat_turns::alias(spec.member);
+    let level = host_turn_level(
+        spec.root,
+        spec.member,
+        spec.level_override,
+        spec.personal_level,
+    );
+    let request = TurnRequest {
+        member: spec.member,
+        prompt: spec.prompt,
+        prompt_delta: spec.prompt_delta,
+        mode: joy_chat::model::agent_mode::from_level(level),
+        level,
+        // unique per turn: the skeleton keys on it and a later one must
+        // never be swallowed by client-side dedupe
+        marker_id: format!("pending-{}-{}", spec.member, uuid::Uuid::new_v4().simple()),
+    };
+    let started = std::time::Instant::now();
+    // Nothing closes the waiting row from here: the message that takes
+    // its place does (JAPP-0169-78). This side being finished is not the
+    // room having the answer — the client still has to seal and commit.
+    match run_agent(&request) {
+        Ok(out) => HostTurnOutcome {
+            turn_ms: started.elapsed().as_millis().min(u32::MAX as u128) as u32,
+            tool_steps: out.tool_steps,
+            // level, model, cost, tokens and the budget snapshot: the
+            // execution record the info popover reads (JAPP-016A-E0).
+            details: turn_details(&out, level).unwrap_or_default(),
+            model: out.model.clone().unwrap_or_default(),
+            reply: out.reply,
+            ..Default::default()
+        },
+        // The adapter's raw text is container-prefixed and tag-wrapped;
+        // this module owns the wording both hosts show (JP-00A8-C9).
+        Err(raw) => HostTurnOutcome {
+            notice: humanize_turn_error(alias, &raw),
+            ..Default::default()
+        },
     }
 }
 
 /// The one sentence per unusable condition. None: the member is usable.
-pub fn usability_notice(alias: &str, usability: &Usability, ctx: &EngineCtx) -> Option<String> {
+/// `sender` is the person the turn would act for.
+pub fn usability_notice(alias: &str, usability: &Usability, sender: &str) -> Option<String> {
     match usability {
         Usability::Usable => None,
         Usability::NoKey => Some(format!(
-            "@{alias} is not configured for {}. An API key in Settings makes it usable.",
-            ctx.sender
+            "@{alias} is not configured for {sender}. An API key in Settings makes it usable."
         )),
         Usability::NotDelegated => Some(format!(
-            "@{alias} is not delegated by {}. Delegate in Settings → AI members, \
-             then it can act for you.",
-            ctx.sender
+            "@{alias} is not delegated by {sender}. Delegate in Settings → AI members, \
+             then it can act for you."
         )),
         Usability::NotInstalled { hint } => {
             Some(format!("@{alias} is not set up on this machine ({hint})"))
@@ -460,15 +332,7 @@ pub fn usability_notice(alias: &str, usability: &Usability, ctx: &EngineCtx) -> 
 /// The execution record for ONE finished turn (JI-014A / JI-0162):
 /// level, model, cost, tokens and the budget snapshot where a host has
 /// one, folded into the details the info popover reads.
-///
-/// One home for both hosts. It used to live inside the engine's loop,
-/// and when the turn became one-ask-per-message the hosts kept the
-/// activity block but silently dropped this: the popover still showed
-/// duration and tool steps, and tokens and cost were gone (JAPP-016A-E0).
-pub fn turn_details(
-    out: &TurnOutcome,
-    level: joy_core::model::config::InteractionLevel,
-) -> Option<String> {
+pub fn turn_details(out: &TurnOutcome, level: InteractionLevel) -> Option<String> {
     joy_chat_store::turn_meta::augment_details(
         out.details.clone(),
         &joy_chat_store::turn_meta::TurnMeta {
@@ -483,10 +347,6 @@ pub fn turn_details(
 }
 
 /// What the room is told when a member's money is spent.
-///
-/// One sentence, one home: the hosts run their own preflight (only the
-/// platform has budgets at all) but must not each write their own
-/// wording, which is how the same fact ends up phrased two ways.
 pub fn budget_notice(alias: &str) -> String {
     format!(
         "@{alias} has reached its monthly budget for this project. \
@@ -538,8 +398,119 @@ pub fn humanize_turn_error(alias: &str, raw: &str) -> String {
 mod tests {
     use super::*;
 
-    // JP-00A8-C9: the hosts must not phrase this themselves. The link is
-    // what people act on, so it stays in the sentence.
+    #[test]
+    fn a_host_turn_assembles_the_record_and_the_marker() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let spec = HostTurnSpec {
+            root: dir.path(),
+            member: "ai:vibe@joy",
+            prompt: "full".into(),
+            prompt_delta: Some("delta".into()),
+            level_override: Some(InteractionLevel::Autonomous),
+            personal_level: None,
+        };
+        let outcome = run_host_turn(spec, |req| {
+            // the choreography hands the agent everything resolved
+            assert_eq!(req.level, InteractionLevel::Autonomous);
+            assert!(req.marker_id.starts_with("pending-ai:vibe@joy-"));
+            assert_eq!(req.prompt_delta.as_deref(), Some("delta"));
+            Ok(TurnOutcome {
+                reply: "da".into(),
+                tool_steps: 2,
+                model: Some("mistral-medium".into()),
+                tokens: Some(9),
+                ..Default::default()
+            })
+        });
+        assert_eq!(outcome.reply, "da");
+        assert_eq!(outcome.tool_steps, 2);
+        assert_eq!(outcome.model, "mistral-medium");
+        assert!(outcome.notice.is_empty());
+        assert!(
+            outcome.details.contains("autonomous"),
+            "{}",
+            outcome.details
+        );
+        assert!(outcome.details.contains("mistral-medium"));
+    }
+
+    #[test]
+    fn a_failed_agent_run_becomes_the_one_human_sentence() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let spec = HostTurnSpec {
+            root: dir.path(),
+            member: "ai:vibe@joy",
+            prompt: "full".into(),
+            prompt_delta: None,
+            level_override: None,
+            personal_level: None,
+        };
+        let outcome = run_host_turn(spec, |_req| {
+            Err("chat turn in joyint-project-x: <err>connection reset by peer</err>".into())
+        });
+        assert!(outcome.reply.is_empty());
+        assert_eq!(
+            outcome.notice,
+            "@vibe could not finish this turn: connection reset by peer"
+        );
+    }
+
+    #[test]
+    fn the_level_order_is_override_personal_member_project() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        // no project store at all: the project default is the floor
+        let floor = host_turn_level(dir.path(), "ai:vibe@joy", None, None);
+        assert_eq!(
+            floor,
+            joy_core::store::load_interaction_level_defaults(dir.path()).default
+        );
+        // personal beats the defaults, the chat override beats personal
+        assert_eq!(
+            host_turn_level(
+                dir.path(),
+                "ai:vibe@joy",
+                None,
+                Some(InteractionLevel::Autonomous)
+            ),
+            InteractionLevel::Autonomous
+        );
+        assert_eq!(
+            host_turn_level(
+                dir.path(),
+                "ai:vibe@joy",
+                Some(InteractionLevel::Proposing),
+                Some(InteractionLevel::Autonomous)
+            ),
+            InteractionLevel::Proposing
+        );
+    }
+
+    #[test]
+    fn the_wire_shape_reuses_the_fields_the_clients_already_read() {
+        let pending = WireActivity::pending("pending-x-1");
+        assert_eq!(pending.kind, "pending");
+        assert_eq!(pending.id, "pending-x-1");
+        let tool = WireActivity::of(&TurnActivity::Tool {
+            id: "t1".into(),
+            title: "joy ls".into(),
+            status: "completed".into(),
+        });
+        assert_eq!(
+            (
+                tool.kind.as_str(),
+                tool.text.as_str(),
+                tool.tool.as_str(),
+                tool.payload.as_str()
+            ),
+            ("turn-tool", "joy ls", "t1", "completed")
+        );
+        let chunk = WireActivity::of(&TurnActivity::Chunk { text: "hi".into() });
+        assert_eq!(
+            (chunk.kind.as_str(), chunk.text.as_str()),
+            ("turn-chunk", "hi")
+        );
+    }
+
     #[test]
     fn a_finished_turn_records_what_it_cost() {
         // JAPP-016A-E0: the popover lost tokens and cost when the turn
@@ -547,36 +518,22 @@ mod tests {
         // activity block.
         let out = TurnOutcome {
             reply: "da".into(),
-            details: None,
             tool_steps: 2,
             cost_cents: Some(7),
             tokens: Some(1234),
             model: Some("mistral-medium".into()),
-            capped: false,
-            denied: 0,
-            budget: None,
+            ..Default::default()
         };
-        let details = turn_details(&out, joy_core::model::config::InteractionLevel::Autonomous)
+        let details = turn_details(&out, InteractionLevel::Autonomous)
             .expect("a turn that reports something keeps a record");
         assert!(details.contains("1234"), "{details}");
         assert!(details.contains("mistral-medium"), "{details}");
         assert!(details.contains("autonomous"), "{details}");
-        // …and a turn that reports nothing does not grow a record just to
-        // say so
         let bare = TurnOutcome {
             reply: "da".into(),
-            details: None,
-            tool_steps: 0,
-            cost_cents: None,
-            tokens: None,
-            model: None,
-            capped: false,
-            denied: 0,
-            budget: None,
+            ..Default::default()
         };
-        assert!(
-            turn_details(&bare, joy_core::model::config::InteractionLevel::Proposing).is_some()
-        );
+        assert!(turn_details(&bare, InteractionLevel::Proposing).is_some());
     }
 
     #[test]
@@ -586,9 +543,6 @@ mod tests {
         assert!(note.contains("Settings"), "{note}");
     }
 
-    // Moved with the function from platform/src/api/chat_ai.rs
-    // (JI-0179-4F step 1): the wording is product surface and tested
-    // where it lives now.
     #[test]
     fn humanize_strips_container_prefix_and_tags() {
         let raw = "acp chat turn in joyint-project-abc: <vibe_stop_event>ReadTimeout on upstream</vibe_stop_event>";
@@ -603,14 +557,12 @@ mod tests {
         let raw = "acp chat turn in joyint-project-5be53877: \
                    <vibe_stop_event>Price limit exceeded: $0.0728 > $0.05</vibe_stop_event>";
         let msg = humanize_turn_error("vibe", raw);
-        // no container name, no tags, no raw dollar figures
         assert!(!msg.contains("joyint-project"), "leaked container: {msg}");
         assert!(
             !msg.contains('<') && !msg.contains('>'),
             "leaked tags: {msg}"
         );
         assert!(!msg.contains("$0.05"), "echoed the raw limit: {msg}");
-        // no fabricated ceiling; just the honest spend-limit line + pointer
         assert!(msg.contains("spend limit"), "missing the reason: {msg}");
         assert!(
             msg.contains("Settings"),
@@ -618,6 +570,7 @@ mod tests {
         );
         assert!(msg.starts_with("@vibe"), "missing the mention: {msg}");
     }
+
     #[test]
     fn a_generic_error_degrades_to_a_short_tag_free_line() {
         let msg = humanize_turn_error(
