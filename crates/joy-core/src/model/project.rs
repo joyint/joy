@@ -301,18 +301,18 @@ impl AttestationSignedFields {
 /// `~/.local/state/joy/delegations/<project>/<ai-member>.key` (0600); a missing
 /// cache is regenerated transparently from passphrase + salt at next use.
 ///
-/// Legacy entries (created under ADR-033 §1, before ADR-037) carry no
-/// `delegation_salt`. They keep working on the machine whose local cache holds
-/// the matching random seed; rotating under the new code populates the salt
-/// and unblocks every other machine going forward.
+/// An entry without a `delegation_salt` cannot re-derive its key and counts
+/// as NOT delegated everywhere ([`Member::delegation_usable`]); delegating
+/// again (`joy ai rotate`, or the app's Delegate action) records the salt.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AiDelegationEntry {
     /// Public verifier of the stable delegation keypair (hex-encoded Ed25519).
     /// Used to verify the binding signature on delegation tokens.
     pub delegation_verifier: String,
     /// 32-byte hex salt feeding HKDF-SHA256 over the human's identity material
-    /// (ADR-037). `None` for legacy entries created under ADR-033 §1; populated
-    /// by `joy ai rotate` and by every fresh delegation issued under ADR-037.
+    /// (ADR-037). Every fresh delegation records it; an entry still without
+    /// one (written before ADR-037 existed) counts as NOT delegated until a
+    /// new delegation fills it in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delegation_salt: Option<String>,
     /// When this delegation was first issued.
@@ -1005,7 +1005,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // ai_delegations (ADR-033) tests
+    // ai_delegations tests
     // -----------------------------------------------------------------------
 
     #[test]
@@ -1046,7 +1046,7 @@ mod tests {
         assert!(yaml.contains("delegation_verifier:"));
         assert!(
             !yaml.contains("delegation_salt:"),
-            "unset delegation_salt should be skipped (legacy entry)"
+            "an unset delegation_salt is not serialized"
         );
         assert!(
             !yaml.contains("rotated:"),
