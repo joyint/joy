@@ -103,6 +103,15 @@ pub struct Collected {
     pub contents: Vec<crate::activity::ContentInfo>,
 }
 
+/// Cents to bill for a turn, given the session's CUMULATIVE cost amount
+/// and the cents earlier turns already billed (JP-0089-18, JP-00C0-25).
+/// Rounding the cumulative instead of each turn's delta lets sub-cent
+/// turns accumulate: every turn's remainder carries into the next, and
+/// the loss is bounded by half a cent per SESSION, not per turn.
+fn turn_cents(cumulative_amount: f64, billed_cents: u64) -> u64 {
+    ((cumulative_amount.max(0.0) * 100.0).round() as u64).saturating_sub(billed_cents)
+}
+
 impl Collected {
     /// What the correlated `tool_call` notification said about this id,
     /// or nothing when the call was never announced.
@@ -814,9 +823,13 @@ async fn run_lane(
             // chat id -> live agent session
             let mut sessions: HashMap<String, agent_client_protocol::schema::v1::SessionId> =
                 HashMap::new();
-            // session id -> last-seen CUMULATIVE cost/tokens, so a turn's
-            // numbers are the delta (a fresh session starts at 0). JP-0089-18.
-            let mut session_cost: HashMap<String, f64> = HashMap::new();
+            // session id -> cents already BILLED for this session, so a
+            // turn's cents are the rounded cumulative minus what earlier
+            // turns billed (JP-0089-18). Rounding the cumulative instead
+            // of each turn's delta lets sub-cent turns accumulate
+            // (JP-00C0-25): the loss is bounded by half a cent per
+            // SESSION, not half a cent per turn.
+            let mut session_billed_cents: HashMap<String, u64> = HashMap::new();
             let mut session_tokens: HashMap<String, u64> = HashMap::new();
             while let Some(QueuedTurn {
                 request: turn,
@@ -901,7 +914,7 @@ async fn run_lane(
                 // `session/cancel`; the agent stops the turn, so the shared
                 // lane stays healthy for other chats.
                 let cap_cents = turn.max_price_cents;
-                let prev_cum = session_cost.get(&sid_key).copied().unwrap_or(0.0);
+                let billed_before = session_billed_cents.get(&sid_key).copied().unwrap_or(0);
                 let prompt_fut = connection
                     .send_request(PromptRequest::new(
                         session_id.clone(),
@@ -931,8 +944,10 @@ async fn run_lane(
                                 .unwrap_or_else(|e| e.into_inner())
                                 .get(&sid_key)
                                 .and_then(|c| c.cost.as_ref().map(|x| x.amount))
-                                .unwrap_or(prev_cum);
-                            let turn_cents = ((cur - prev_cum).max(0.0) * 100.0).round() as u64;
+                                .unwrap_or(0.0);
+                            // same arithmetic as the billing below: rounded
+                            // cumulative minus what earlier turns billed
+                            let turn_cents = turn_cents(cur, billed_before);
                             if turn_cents > cap_cents {
                                 capped = true;
                                 // best effort: a failed send just means we
@@ -975,15 +990,17 @@ async fn run_lane(
                         .unwrap_or_else(|e| e.into_inner())
                         .remove(&sid_key)
                         .unwrap_or_default();
-                    // per-turn cost = this turn's cumulative minus the
-                    // last-seen for this session (JP-0089-18). The amount is
-                    // treated as ~cents: a spend ceiling needs no FX
-                    // precision, and over-counting stops marginally early,
-                    // the safe direction.
+                    // Per-turn cost = the session's cumulative amount in
+                    // rounded cents minus what earlier turns already billed
+                    // (JP-0089-18, JP-00C0-25): the remainder of every turn
+                    // carries into the next instead of being rounded away
+                    // per turn. The amount is treated as ~cents: a spend
+                    // ceiling needs no FX precision.
                     let cost_cents = state.cost.as_ref().map(|c| {
-                        let prev = session_cost.get(&sid_key).copied().unwrap_or(0.0);
-                        session_cost.insert(sid_key.clone(), c.amount);
-                        ((c.amount - prev).max(0.0) * 100.0).round() as u64
+                        let billed = session_billed_cents.get(&sid_key).copied().unwrap_or(0);
+                        let turn = turn_cents(c.amount, billed);
+                        session_billed_cents.insert(sid_key.clone(), billed + turn);
+                        turn
                     });
                     let tokens = {
                         let prev = session_tokens.get(&sid_key).copied().unwrap_or(0);
@@ -1368,6 +1385,28 @@ mod tests {
         );
         assert_eq!(state.used, 250);
         assert_eq!(state.cost.as_ref().map(|c| c.amount), Some(0.02));
+    }
+
+    #[test]
+    fn sub_cent_turns_accumulate_across_a_session() {
+        // JP-00C0-25: rounding each turn's delta to whole cents dropped
+        // every remainder — three 0.4-cent turns billed 0. Billing against
+        // the ROUNDED CUMULATIVE carries remainders into the next turn.
+        let mut billed = 0u64;
+        for (cumulative, expect) in [
+            (0.004, 0), // 0.4 cent: rounds to 0, remainder carries
+            (0.008, 1), // 0.8 cent cumulative: rounds to 1, billed now
+            (0.012, 0), // 1.2 cents cumulative: still 1 billed in total
+        ] {
+            let turn = turn_cents(cumulative, billed);
+            assert_eq!(turn, expect, "cumulative {cumulative}");
+            billed += turn;
+        }
+        assert_eq!(billed, 1, "true total 1.2 cents, billed 1");
+        // whole-cent turns keep billing exactly as before
+        assert_eq!(turn_cents(0.05, 1), 4);
+        // a provider correcting its cumulative DOWN never underflows
+        assert_eq!(turn_cents(0.0, 3), 0);
     }
 
     fn permission_request(value: serde_json::Value) -> RequestPermissionRequest {
