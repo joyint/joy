@@ -1,0 +1,16 @@
+id: JOY-024F-4B
+title: Composer sends attachments as prompt content blocks, capability-gated
+type: story
+status: open
+priority: high
+parent: JOY-024B-AC
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-02T10:50:32.663117879Z
+updated: 2026-08-02T10:50:33.030213695Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Sending direction: the composer takes attachments; the prompt becomes a ContentBlock list instead of one string. Per agent the declared prompt capabilities from initialize decide what may be attached (no image to an agent that cannot take one; honest refusal naming the agent). Transcript/replay rule: what of the attachments re-rides a fresh session replay, and what it costs, decided and recorded here.'

@@ -1,0 +1,16 @@
+id: JOY-024E-9A
+title: Thread renders image, audio and resource parts
+type: story
+status: open
+priority: high
+parent: JOY-024B-AC
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-02T10:50:32.533764229Z
+updated: 2026-08-02T10:50:32.950063936Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'The thread renderer displays parts: images inline from the unsealed attachment (data URI), audio with a player, embedded resources and resource links as named links with MIME and size, download/open per part. Reduced-motion and theme rules as everywhere; no second rendering path anywhere.'

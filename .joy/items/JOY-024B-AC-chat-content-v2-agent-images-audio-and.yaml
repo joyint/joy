@@ -1,0 +1,14 @@
+id: JOY-024B-AC
+title: 'Chat content v2: agent images, audio and resources as first-class chat content'
+type: epic
+status: open
+priority: high
+capabilities:
+- conceive
+- plan
+effort: 6
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-02T10:49:20.598036638Z
+updated: 2026-08-02T10:49:20.683043902Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'ACP v1 agents may stream five content-block kinds in message and thought chunks: text (markdown, the only one we handle today), image (base64 + MIME), audio (base64 + MIME), embedded resource (content with URI/MIME) and resource link (pointer with URI/name/size, no bytes). The agent-to-client direction is unnegotiated by design: there is no protocol way to demand text-only, so a conforming client accepts and interprets everything (operator 2026-08-02: dropping is unacceptable; images as images, audio as audio). Today content is a String at three choke points: the collector concatenates reply text and TurnActivity chunks carry only text; WireActivity carries text-only fields; joy-chat ChatMessage knows only text, sealed as one blob. This epic makes content typed end to end: message PARTS with sealed attachment blobs in the chat store (size caps; base64 media in the git ref needs limits), typed TurnActivity/WireActivity (the live wire delivers references or thumbnails, the persisted message carries the media), the thread renderer displaying image, audio and resource parts, the composer sending attachments as content blocks gated by each agent''s declared prompt capabilities, and the replay/cost rule for transcripts. Tool-call content (diffs, terminal output) rides the same model.'
