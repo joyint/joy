@@ -1146,6 +1146,9 @@ async fn single_round_inner(config: &LaneConfig, prompt: &str) -> anyhow::Result
 pub struct AgentModels {
     pub current: String,
     pub options: Vec<(String, String)>,
+    /// The agent's self-reported version from the ACP initialize
+    /// response (settings info line); empty = the tool sent none.
+    pub agent_version: String,
 }
 
 /// List an agent's selectable models by opening a short ACP session and
@@ -1187,10 +1190,13 @@ async fn list_models_inner(config: &LaneConfig) -> anyhow::Result<AgentModels> {
             agent_client_protocol::on_receive_request!(),
         )
         .connect_with(agent, |connection: ConnectionTo<Agent>| async move {
-            connection
+            let init = connection
                 .send_request(InitializeRequest::new(ProtocolVersion::V1).client_info(client))
                 .block_task()
                 .await?;
+            if let Some(info) = init.agent_info {
+                cap.lock().unwrap_or_else(|e| e.into_inner()).agent_version = info.version;
+            }
             let session = connection
                 .send_request(NewSessionRequest::new(cwd))
                 .block_task()
