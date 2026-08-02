@@ -503,6 +503,19 @@ impl<'de> Deserialize<'de> for MemberCapabilities {
 }
 
 impl Member {
+    /// Whether this member's delegation to `ai` is USABLE: the entry can
+    /// re-derive its delegation key from the member's passphrase (it
+    /// carries the ADR-037 salt). An entry without one is a broken
+    /// artifact — `joy ai init` never writes such a thing — and counts
+    /// as NOT delegated (operator rule 2026-08-02): the UI greys the
+    /// member and offers Delegate, which rewrites the entry properly.
+    /// THE one predicate for every surface; hosts never re-derive it.
+    pub fn delegation_usable(&self, ai: &str) -> bool {
+        self.ai_delegations
+            .get(ai)
+            .is_some_and(|entry| entry.delegation_salt.is_some())
+    }
+
     /// Create a member with the given capabilities and no auth fields.
     pub fn new(capabilities: MemberCapabilities) -> Self {
         Self {
@@ -880,6 +893,31 @@ pub fn derive_acronym(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_delegation_without_its_salt_counts_as_not_delegated() {
+        // Operator rule 2026-08-02: an entry whose key cannot re-derive
+        // is a broken artifact, not a delegation — every surface greys it
+        // and offers Delegate. THE one predicate lives here.
+        let mut member = Member::new(MemberCapabilities::All);
+        assert!(!member.delegation_usable("ai:claude@joy"));
+        member.ai_delegations.insert(
+            "ai:claude@joy".into(),
+            AiDelegationEntry {
+                delegation_verifier: "ab".repeat(32),
+                delegation_salt: None,
+                created: chrono::Utc::now(),
+                rotated: None,
+            },
+        );
+        assert!(!member.delegation_usable("ai:claude@joy"));
+        member
+            .ai_delegations
+            .get_mut("ai:claude@joy")
+            .expect("entry")
+            .delegation_salt = Some("cd".repeat(32));
+        assert!(member.delegation_usable("ai:claude@joy"));
+    }
 
     #[test]
     fn privacy_mode_defaults_to_open() {

@@ -80,7 +80,11 @@ pub struct SessionToken {
 }
 
 /// Default session duration: 24 hours.
-const DEFAULT_TTL_HOURS: i64 = 24;
+/// The one session TTL. Public because every session an auth mints —
+/// the human's and the AI delegations redeemed in the same breath —
+/// shares it and renews with it (operator rule 2026-08-02: expiry asks
+/// for auth again, never for re-delegation).
+pub const DEFAULT_TTL_HOURS: i64 = 24;
 
 /// Detect the current terminal device for session binding.
 ///
