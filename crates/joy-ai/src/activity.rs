@@ -38,6 +38,18 @@ impl ToolStep {
     }
 }
 
+/// One non-text content block the agent sent, as the record shows it
+/// (JOY-024B-AC interim): the FACT and its shape, never the payload.
+/// `label` is the one wording, built where the block is recognized, so
+/// the live view and the persisted record say the same thing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContentInfo {
+    /// "image" | "audio" | "resource" | "link" | "content" (unknown kind)
+    pub kind: String,
+    /// Human line: name and/or MIME and size, e.g. "image/png · 213 kB".
+    pub label: String,
+}
+
 /// What a turn did, as the host collected it from the agent's events.
 #[derive(Debug, Default, Clone)]
 pub struct Activity {
@@ -49,13 +61,20 @@ pub struct Activity {
     /// (an agent that asks without announcing the call first). Normally
     /// empty; kept so such an answer is still visible instead of dropped.
     pub permissions: Vec<(String, String)>,
+    /// Non-text content blocks the agent sent (JOY-024B-AC interim):
+    /// visible as facts until content v2 carries the payloads.
+    pub contents: Vec<ContentInfo>,
 }
 
 impl Activity {
     /// The persisted v1 details JSON, or None when the turn had no
     /// activity worth a block (a plain text answer).
     pub fn to_details_json(&self) -> Option<String> {
-        if self.thoughts.is_empty() && self.tools.is_empty() && self.permissions.is_empty() {
+        if self.thoughts.is_empty()
+            && self.tools.is_empty()
+            && self.permissions.is_empty()
+            && self.contents.is_empty()
+        {
             return None;
         }
         let tools: Vec<serde_json::Value> = self
@@ -78,15 +97,23 @@ impl Activity {
             .iter()
             .map(|(title, answered)| serde_json::json!({ "title": title, "answered": answered }))
             .collect();
-        Some(
-            serde_json::json!({
-                "v": 1,
-                "thoughts": self.thoughts,
-                "tools": tools,
-                "permissions": permissions,
-            })
-            .to_string(),
-        )
+        let contents: Vec<serde_json::Value> = self
+            .contents
+            .iter()
+            .map(|c| serde_json::json!({ "kind": c.kind, "label": c.label }))
+            .collect();
+        let mut block = serde_json::json!({
+            "v": 1,
+            "thoughts": self.thoughts,
+            "tools": tools,
+            "permissions": permissions,
+        });
+        // only when present: v1 parsers that predate the field read the
+        // block unchanged
+        if !contents.is_empty() {
+            block["contents"] = serde_json::Value::Array(contents);
+        }
+        Some(block.to_string())
     }
 }
 
@@ -112,6 +139,10 @@ mod tests {
                 answered: Some("allowed".into()),
             }],
             permissions: vec![("Edit b".into(), "allowed".into())],
+            contents: vec![ContentInfo {
+                kind: "image".into(),
+                label: "image/png · 6 B".into(),
+            }],
         };
         let v: serde_json::Value =
             serde_json::from_str(&activity.to_details_json().expect("a block")).expect("json");
@@ -121,6 +152,9 @@ mod tests {
         assert_eq!(v["tools"][0]["status"], "completed");
         // the gate answer rides WITH its call, not as a step of its own
         assert_eq!(v["tools"][0]["answered"], "allowed");
+        // content rows (JOY-024B-AC interim): kind + the one label
+        assert_eq!(v["contents"][0]["kind"], "image");
+        assert_eq!(v["contents"][0]["label"], "image/png · 6 B");
         assert_eq!(v["permissions"][0]["title"], "Edit b");
         assert_eq!(v["permissions"][0]["answered"], "allowed");
     }

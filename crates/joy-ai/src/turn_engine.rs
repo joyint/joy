@@ -47,6 +47,10 @@ pub enum TurnActivity {
         title: String,
         status: String,
     },
+    /// A non-text content block arrived (JOY-024B-AC interim): the fact
+    /// and its shape, never the payload — visible instead of dropped
+    /// until content v2 carries the media itself.
+    Content { kind: String, label: String },
 }
 
 impl TurnActivity {
@@ -57,6 +61,7 @@ impl TurnActivity {
             TurnActivity::Chunk { .. } => "turn-chunk",
             TurnActivity::Thought { .. } => "turn-thought",
             TurnActivity::Tool { .. } => "turn-tool",
+            TurnActivity::Content { .. } => "turn-content",
         }
     }
 }
@@ -101,6 +106,9 @@ impl WireActivity {
                 (text.clone(), String::new(), String::new())
             }
             TurnActivity::Tool { id, title, status } => (title.clone(), id.clone(), status.clone()),
+            // field reuse: text carries the human label, tool the
+            // content kind ("image", "audio", ...)
+            TurnActivity::Content { kind, label } => (label.clone(), kind.clone(), String::new()),
         };
         WireActivity {
             kind: activity.kind().into(),

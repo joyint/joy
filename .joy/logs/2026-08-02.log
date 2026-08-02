@@ -17,3 +17,7 @@
 2026-08-02T10:50:32.878Z JOY-024D-3C item.status_changed "new -> open" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-08-02T10:50:32.956Z JOY-024E-9A item.status_changed "new -> open" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-08-02T10:50:33.037Z JOY-024F-4B item.status_changed "new -> open" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-08-02T11:23:42.086Z JOY-0250-48 item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-08-02T11:23:42.173Z JOY-0250-48 item.status_changed "new -> open" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-08-02T11:23:42.301Z JOY-0250-48 item.status_changed "open -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-08-02T11:23:42.382Z JOY-0250-48 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

@@ -98,6 +98,9 @@ pub struct Collected {
     pub cost: Option<Cost>,
     /// Tokens used, same UsageUpdate, same cumulative semantics.
     pub used: u64,
+    /// Non-text content blocks the agent sent (JOY-024B-AC interim):
+    /// recorded as facts, never dropped.
+    pub contents: Vec<crate::activity::ContentInfo>,
 }
 
 impl Collected {
@@ -137,6 +140,7 @@ impl Collected {
             thoughts: self.thoughts,
             tools: self.tools,
             permissions: self.permissions,
+            contents: self.contents,
         }
         .to_details_json();
         TurnOutcome {
@@ -149,6 +153,84 @@ impl Collected {
     }
 }
 
+/// What a non-text content block IS, as record and live view show it
+/// (JOY-024B-AC interim): kind for the icon, one human label with
+/// name/MIME/size. The payload itself waits for content v2.
+fn content_info(block: &ContentBlock) -> crate::activity::ContentInfo {
+    fn human_size(bytes: usize) -> String {
+        if bytes >= 1_000_000 {
+            format!("{:.1} MB", bytes as f64 / 1_000_000.0)
+        } else if bytes >= 1_000 {
+            format!("{} kB", bytes / 1_000)
+        } else {
+            format!("{bytes} B")
+        }
+    }
+    /// base64 payload -> approximate decoded size
+    fn b64_size(data: &str) -> usize {
+        data.len() * 3 / 4
+    }
+    let (kind, parts): (&str, Vec<String>) = match block {
+        ContentBlock::Image(image) => (
+            "image",
+            vec![image.mime_type.clone(), human_size(b64_size(&image.data))],
+        ),
+        ContentBlock::Audio(audio) => (
+            "audio",
+            vec![audio.mime_type.clone(), human_size(b64_size(&audio.data))],
+        ),
+        ContentBlock::Resource(resource) => match &resource.resource {
+            agent_client_protocol::schema::v1::EmbeddedResourceResource::TextResourceContents(
+                text,
+            ) => (
+                "resource",
+                [
+                    Some(text.uri.clone()),
+                    text.mime_type.clone(),
+                    Some(human_size(text.text.len())),
+                ]
+                .into_iter()
+                .flatten()
+                .collect(),
+            ),
+            agent_client_protocol::schema::v1::EmbeddedResourceResource::BlobResourceContents(
+                blob,
+            ) => (
+                "resource",
+                [
+                    Some(blob.uri.clone()),
+                    blob.mime_type.clone(),
+                    Some(human_size(b64_size(&blob.blob))),
+                ]
+                .into_iter()
+                .flatten()
+                .collect(),
+            ),
+            // non_exhaustive: an unknown payload still leaves a trace
+            _ => ("resource", vec!["unknown resource payload".to_string()]),
+        },
+        ContentBlock::ResourceLink(link) => (
+            "link",
+            [
+                Some(link.title.clone().unwrap_or_else(|| link.name.clone())),
+                Some(link.uri.clone()),
+                link.mime_type.clone(),
+                link.size.map(|s| human_size(s.max(0) as usize)),
+            ]
+            .into_iter()
+            .flatten()
+            .collect(),
+        ),
+        // ContentBlock is non_exhaustive: an unknown kind still leaves
+        // its trace instead of vanishing.
+        _ => ("content", vec!["unknown content block".to_string()]),
+    };
+    crate::activity::ContentInfo {
+        kind: kind.to_string(),
+        label: parts.join(" · "),
+    }
+}
+
 /// Fold one session notification into the collected state and return
 /// the live activity it produced. The CALLER routes the events: a chat
 /// turn queues them onto its ordered delivery wire, a job round drops
@@ -157,18 +239,36 @@ pub fn collect_notification(state: &mut Collected, update: SessionUpdate) -> Vec
     let mut events = Vec::new();
     let mut stream = |event: TurnActivity| events.push(event);
     match update {
-        SessionUpdate::AgentMessageChunk(chunk) => {
-            if let ContentBlock::Text(text) = chunk.content {
+        SessionUpdate::AgentMessageChunk(chunk) => match chunk.content {
+            ContentBlock::Text(text) => {
                 state.reply.push_str(&text.text);
                 stream(TurnActivity::Chunk { text: text.text });
             }
-        }
-        SessionUpdate::AgentThoughtChunk(chunk) => {
-            if let ContentBlock::Text(text) = chunk.content {
+            other => {
+                // Never dropped (operator 2026-08-02): until content v2
+                // carries the payload, the FACT goes on record and wire.
+                let info = content_info(&other);
+                state.contents.push(info.clone());
+                stream(TurnActivity::Content {
+                    kind: info.kind,
+                    label: info.label,
+                });
+            }
+        },
+        SessionUpdate::AgentThoughtChunk(chunk) => match chunk.content {
+            ContentBlock::Text(text) => {
                 state.thoughts.push_str(&text.text);
                 stream(TurnActivity::Thought { text: text.text });
             }
-        }
+            other => {
+                let info = content_info(&other);
+                state.contents.push(info.clone());
+                stream(TurnActivity::Content {
+                    kind: info.kind,
+                    label: info.label,
+                });
+            }
+        },
         SessionUpdate::ToolCall(call) => {
             let row_id = call.tool_call_id.0.to_string();
             let status = format!("{:?}", call.status);
@@ -1136,6 +1236,65 @@ mod tests {
     /// that caused these bugs.
     fn update(value: serde_json::Value) -> SessionUpdate {
         serde_json::from_value(value).expect("a valid ACP session update")
+    }
+
+    #[test]
+    fn a_non_text_block_leaves_a_content_row_instead_of_vanishing() {
+        // Operator 2026-08-02 (JOY-024B-AC): dropping is unacceptable.
+        // Until content v2 carries the payload, the FACT goes on record
+        // (details JSON) and on the live wire as a turn-content event.
+        let mut state = Collected::default();
+        let events = collect_notification(
+            &mut state,
+            update(serde_json::json!({
+                "sessionUpdate": "agent_message_chunk",
+                "content": {
+                    "type": "image",
+                    "mimeType": "image/png",
+                    // 8 base64 chars ≈ 6 decoded bytes
+                    "data": "aGFsbG8h",
+                },
+            })),
+        );
+        assert_eq!(state.contents.len(), 1);
+        assert_eq!(state.contents[0].kind, "image");
+        assert_eq!(state.contents[0].label, "image/png · 6 B");
+        match &events[..] {
+            [TurnActivity::Content { kind, label }] => {
+                assert_eq!(kind, "image");
+                assert_eq!(label, "image/png · 6 B");
+            }
+            other => panic!("expected one content event, got {other:?}"),
+        }
+        // the reply stays untouched; the record carries the block
+        assert!(state.reply.is_empty());
+        let details = state.into_outcome().details.expect("a details block");
+        assert!(details.contains("\"contents\""), "{details}");
+        assert!(details.contains("image/png · 6 B"), "{details}");
+    }
+
+    #[test]
+    fn a_resource_link_names_itself_in_the_content_row() {
+        let mut state = Collected::default();
+        collect_notification(
+            &mut state,
+            update(serde_json::json!({
+                "sessionUpdate": "agent_message_chunk",
+                "content": {
+                    "type": "resource_link",
+                    "name": "diagram.svg",
+                    "uri": "file:///tmp/diagram.svg",
+                    "mimeType": "image/svg+xml",
+                    "size": 4200,
+                },
+            })),
+        );
+        assert_eq!(state.contents.len(), 1);
+        assert_eq!(state.contents[0].kind, "link");
+        assert_eq!(
+            state.contents[0].label,
+            "diagram.svg · file:///tmp/diagram.svg · image/svg+xml · 4 kB"
+        );
     }
 
     #[test]
