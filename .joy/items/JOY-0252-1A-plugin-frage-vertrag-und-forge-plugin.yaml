@@ -1,7 +1,7 @@
 id: JOY-0252-1A
 title: Plugin-Frage-Vertrag und Forge-Plugin-Registry
 type: story
-status: in-progress
+status: review
 priority: high
 parent: JOY-0251-AA
 assignees:
@@ -13,6 +13,6 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-09T08:32:49.385073344Z
-updated: 2026-08-09T09:01:09.817734467Z
+updated: 2026-08-09T10:07:20.334807960Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'docs/plugins.md um den Frage-Vertrag erweitern: joy-<name> claims --remote <url> (JSON ja/nein) und joy-<name> identity [--unresolved-email <a>] [--login/--user-id/--token-env fuer Server-Zulieferung] (JSON: login, kennung, adressen[] oder ''unbekannt''). Registry nach dem Adapter-Muster (joy_ai::adapters, eine Datenzeile pro Forge-Plugin) in joy-core; project.yaml forge: bleibt Operator-Override. Kein Forge-Wissen ausserhalb der Plugins.'
