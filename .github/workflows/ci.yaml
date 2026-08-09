@@ -163,7 +163,9 @@ jobs:
       # (minimal Argon2id) for speed, matching `just test-int`. The
       # setup helper finds it at target/debug/joy. Windows coverage is
       # tracked separately (JOY-01A7-35).
-      - run: cargo build -p joy-cli --features fast-kdf
+      # the forge plugins ride the bats PATH too (forge_alias.bats,
+      # JOY-0251-AA); fast-kdf stays a joy-cli-only feature
+      - run: cargo build -p joy-cli -p joy-github -p joy-gitlab --features joy-cli/fast-kdf
         working-directory: joy
       - run: bats tests/integration/*.bats
         working-directory: joy

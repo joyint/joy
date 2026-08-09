@@ -200,6 +200,7 @@ fn run_query_env(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use std::io::Write;
 
     #[test]
@@ -224,7 +225,8 @@ mod tests {
 
     /// A stub plugin on a private PATH proves the subprocess round trip
     /// AND the best-effort rules (missing binary, garbage, timeout are
-    /// all "no answer").
+    /// all "no answer"). Unix only: the stub is a shell script.
+    #[cfg(unix)]
     #[test]
     fn queries_run_the_binary_and_degrade_on_every_failure() {
         let dir = tempfile::tempdir().unwrap();
