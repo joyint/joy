@@ -1,0 +1,18 @@
+id: JOY-0253-8A
+title: 'joy-core: Alias-Aufloesung als Nicht-Treffer-Fallback'
+type: story
+status: in-progress
+priority: high
+parent: JOY-0251-AA
+assignees:
+- member: ai:claude@joy
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-09T08:32:49.520127792Z
+updated: 2026-08-09T09:01:10.127396389Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'An der einen Trichterstelle (privacy::member_key_for_email-Aufrufer: identity.rs, enroll, login, guard-Pfade): trifft die Git-Adresse kein Mitglied, claims-Frage an registrierte Forge-Plugins ueber die Remote-URLs, dann identity-Frage ans zustaendige Plugin, gelieferte Kandidaten stumpf durch dieselbe Member-Aufloesung. Ergebnis pro Lauf gecacht. Ohne Remotes/Plugins/Zustaendigkeit: Verhalten unveraendert (lokale Repos!). Scheitert die Aufloesung trotz erkanntem Kandidaten, ehrliche Anweisung statt ''kein Mitglied''-Raetsel. Git-Autor bleibt unangetastet. --user-Reparatur: Sitzung wird unter dem aufgeloesten Schluessel abgelegt UND gesucht (heute: Ablage primaer, Suche Alias, auth.rs:1479 reicht --user nicht durch).'

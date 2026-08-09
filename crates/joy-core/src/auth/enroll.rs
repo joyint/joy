@@ -63,6 +63,24 @@ pub enum Proof<'a> {
     FirstContact,
 }
 
+/// The member a redemption belongs to (JOY-0257-FC): the OTP is the
+/// identity proof during enrolment, so the member whose PENDING
+/// invitation it proves wins — the invited address in the manager's head
+/// and the redeemer's git/account address need not agree (forge alias
+/// addresses, JP-00BF-94). Only members with an open invitation are
+/// scanned; when no verifier matches, the address resolves as before, so
+/// every existing error text (already enrolled, no pending invitation)
+/// stays word-for-word.
+pub fn member_for_redemption(project: &Project, email: &str, otp: &str) -> Option<String> {
+    let proven = project
+        .members()
+        .filter(|(_, m)| m.verify_key.is_none())
+        .filter_map(|(key, m)| m.enrollment_verifier.as_deref().map(|v| (key, v)))
+        .find(|(_, verifier)| crate::auth::otp::verify_otp(otp, verifier).unwrap_or(false))
+        .map(|(key, _)| key.clone());
+    proven.or_else(|| crate::privacy::member_key_for_email(project, email))
+}
+
 /// Check the invitation posture and write the material onto the member,
 /// clearing the invitation when one was redeemed. Mutates the project in
 /// memory; persisting it is the caller's job (the platform and the CLI's
@@ -181,8 +199,10 @@ pub fn redeem_with_passphrase(
     let email = crate::vcs::default_vcs().user_email()?;
     let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
     let mut project = store::load_project(root)?;
-    let member_key =
-        crate::privacy::member_key_for_email(&project, &email).unwrap_or_else(|| email.clone());
+    // The OTP finds its member (JOY-0257-FC); the raw address only
+    // survives as the fallthrough so apply_enrollment can answer with
+    // its precise refusal texts.
+    let member_key = member_for_redemption(&project, &email, otp).unwrap_or_else(|| email.clone());
 
     // Wrapped-seed onboarding (ADR-039): a fresh random seed, wrapped under
     // both the passphrase KEK and the recovery KEK.
@@ -297,5 +317,51 @@ mod tests {
         let err =
             apply_enrollment(&mut project, &key, Proof::Otp("anything"), material()).unwrap_err();
         assert!(err.to_string().contains("no pending invitation"));
+    }
+
+    #[test]
+    fn the_otp_finds_its_member_whatever_the_redeemers_address_says() {
+        // JOY-0257-FC / JP-00BF-94: invited as alice@example.com, but the
+        // redeemer's git config carries a forge alias. The OTP is the
+        // identity proof, so redemption still lands on the invited slot.
+        let otp = otp::generate_otp();
+        let (project, key) = project_with(Some(otp::hash_otp(&otp).unwrap()));
+        let alias = "12345+alice@users.noreply.github.com";
+        assert_eq!(
+            member_for_redemption(&project, alias, &otp).as_deref(),
+            Some(key.as_str())
+        );
+        // a matching address still resolves like before
+        assert_eq!(
+            member_for_redemption(&project, &key, &otp).as_deref(),
+            Some(key.as_str())
+        );
+    }
+
+    #[test]
+    fn a_wrong_otp_and_a_strange_address_resolve_to_nobody() {
+        let otp = otp::generate_otp();
+        let (project, _key) = project_with(Some(otp::hash_otp(&otp).unwrap()));
+        assert_eq!(
+            member_for_redemption(&project, "stranger@example.com", "WRNG-OTPX-0000"),
+            None
+        );
+    }
+
+    #[test]
+    fn an_enrolled_member_is_never_matched_by_otp_scan() {
+        // Only PENDING invitations are scanned: an already enrolled member
+        // (verify_key set) must not be reachable through a stale verifier.
+        let otp = otp::generate_otp();
+        let (mut project, key) = project_with(Some(otp::hash_otp(&otp).unwrap()));
+        apply_enrollment(&mut project, &key, Proof::Otp(&otp), material()).unwrap();
+        // enrolment cleared the verifier; even if it survived, the
+        // verify_key filter alone must exclude the member
+        project.member_by_key_mut(&key).unwrap().enrollment_verifier =
+            Some(otp::hash_otp(&otp).unwrap());
+        assert_eq!(
+            member_for_redemption(&project, "stranger@example.com", &otp),
+            None
+        );
     }
 }

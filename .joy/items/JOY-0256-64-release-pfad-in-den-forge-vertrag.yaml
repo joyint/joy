@@ -1,0 +1,16 @@
+id: JOY-0256-64
+title: Release-Pfad in den Forge-Vertrag ueberfuehren
+type: story
+status: new
+priority: medium
+parent: JOY-0251-AA
+capabilities:
+- plan
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-09T08:32:49.903367572Z
+updated: 2026-08-09T08:32:49.903367572Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: ForgeRelease (joy-cli/src/forge.rs, gh-Shelling) und die URL-Klassifizierung (vcs.rs parse_forge_from_url) gehen im Plugin-Vertrag auf (release-Faehigkeit des Plugins bzw. claims), damit kein zweites Forge-Wissen in joy-core verbleibt.

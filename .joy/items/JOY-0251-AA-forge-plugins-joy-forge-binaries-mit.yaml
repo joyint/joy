@@ -1,0 +1,13 @@
+id: JOY-0251-AA
+title: 'Forge-Plugins: joy-<forge> Binaries mit Frage-Vertrag'
+type: epic
+status: new
+priority: high
+capabilities:
+- conceive
+- plan
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-09T08:32:21.851003633Z
+updated: 2026-08-09T08:32:21.851003633Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Generalisierung des Plugin-Musters (joy-bi, docs/plugins.md) auf Forges, Anlass JP-00BF-94 (GitHub-Alias-Adressen zerlegen die Identitaet). Eckpfeiler (Operator 2026-08-09): (1) Forge-Wissen lebt AUSSCHLIESSLICH im Plugin, joy-core kennt nur ein neutrales Protokoll; (2) zentral fuer alle Hosts: CLI, Desktop und Platform rufen dasselbe Binary mit derselben joy-core-Regel, die Hosts liefern nur Aufrufer-Fakten zu (Server: Login/Kennung/Token aus der Sitzung; lokal: Plugin findet sie selbst via gh/glab-Konfiguration); (3) ohne Forge (lokales Repo) aendert sich NICHTS, der Haken ist reiner Nicht-Treffer-Fallback; (4) mehrsorten-faehig ab Tag eins (joy-github, joy-gitlab); (5) Git-Autor bleibt unangetastet. Vertrag: gleiche Konventionen wie BI (Binary joy-<name>, ein JSON auf stdout, stderr+Exitcodes, read-only), neu sind typisierte Fragen: claims (gehoert dir dieses Remote?) und identity (kennst du diese Adresse? Kandidaten-Identitaeten). project.yaml behaelt die primaere Adresse; die Aufloesung probiert Plugin-Kandidaten durch member_key_for_email. Mittelfristig geht die Release-Klassifizierung (vcs.rs parse_forge_from_url, ForgeRelease/gh-Shelling) in denselben Vertrag auf.'

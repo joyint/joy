@@ -131,6 +131,27 @@ become_member() {
     grep -q "attester: alice@example.com" .joy/project.yaml
 }
 
+@test "otp redemption finds its member behind a forge alias address" {
+    # JOY-0257-FC / JP-00BF-94: the redeemer's clone carries GitHub's
+    # privacy alias, not the invited address. The OTP is the identity
+    # proof during enrolment, so the INVITED slot enrolls anyway and no
+    # member appears under the alias.
+    setup_founder
+    add_member_capture_otp alice@example.com
+    [ -n "$MEMBER_OTP" ]
+
+    become_member "12345+alice@users.noreply.github.com"
+    run joy auth --otp "$MEMBER_OTP" --passphrase "$ALICE_PASSPHRASE"
+    [ "$status" -eq 0 ]
+
+    # invitation spent on the invited slot, both members enrolled
+    run grep -E "^    enrollment_verifier:" .joy/project.yaml
+    [ "$status" -ne 0 ]
+    [ "$(grep -cE '^    verify_key:' .joy/project.yaml)" = "2" ]
+    # no second identity under the alias
+    ! grep -q "users.noreply.github.com" .joy/project.yaml
+}
+
 # ============================================================
 # 4. Further member adds work without further reverse-attestation
 # ============================================================
