@@ -12,6 +12,7 @@ pub mod embedded;
 pub mod error;
 pub mod event_log;
 pub mod filter;
+pub mod forge_plugins;
 pub mod fortune;
 pub mod git_ops;
 pub mod guard;

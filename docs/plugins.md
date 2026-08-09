@@ -46,6 +46,51 @@ joy-bi velocity 2w            # closed items per bucket; h, d, w, m
 Read its `report.rs` for the intended shape of a report and its tests for
 how to test against a temp project.
 
+## Forge plugins: the query contract (JOY-0251-AA)
+
+A FORGE plugin (`joy-github`, `joy-gitlab`, ...) is a plugin like any
+other, with one addition: besides printing node trees for humans it
+answers **typed queries** that joy-core consumes. All forge knowledge
+(host names, alias address formats, API access) lives in the plugin;
+joy-core only speaks this protocol. Every answer is exactly one JSON
+object on stdout.
+
+- `joy-<name> claims --remote <url>`
+  Does this remote belong to your forge? Answer:
+  `{"claims": true}` or `{"claims": false}`.
+  joy-core asks this instead of ever parsing forge URLs itself.
+
+- `joy-<name> identity [--login <l> --user-id <id>] [--token-env <VAR>]`
+  Who is ACTING on your forge? Answer: `{"known": false}` — or
+  `{"known": true, "login": "...", "user_id": "...", "emails": ["..."]}`
+  where `emails` are the verified addresses the plugin can vouch for
+  (possibly empty when the source cannot list them).
+  Locally the plugin finds its own facts (e.g. the forge CLI's config);
+  a multi-account host (the platform) hands the caller's facts in via
+  the flags, `--token-env` naming an environment variable so a token
+  never appears in the process list.
+
+- `joy-<name> resolve --email <addr>`
+  Whose address is this? PURE: the answer derives from the address
+  alone (e.g. an alias form encodes login and account id), never from
+  ambient state — an address the plugin cannot attribute is
+  `{"known": false}`, even when someone is signed in locally. Answer
+  shape as above, `emails` usually empty.
+
+Rules, in addition to the base contract:
+
+- **Best effort, never blocking**: a missing binary, a timeout, or an
+  error answer degrade to "no claim / unknown" in the caller. Identity
+  resolution must never fail because a plugin is absent.
+- **Read-only and side-effect free**, like every plugin.
+- **No forge knowledge outside the plugin**: joy-core selects the
+  responsible plugin purely by asking `claims` over the project's
+  remotes (the registry in `joy_core::forge_plugins` lists the known
+  plugin names; `project.yaml`'s `forge:` stays the operator override).
+- A project without remotes, without installed forge plugins, or whose
+  remotes nobody claims behaves exactly as if this contract did not
+  exist.
+
 ## Making a plugin available
 
 Install the binary on the PATH (`cargo install --path crates/joy-bi` or
