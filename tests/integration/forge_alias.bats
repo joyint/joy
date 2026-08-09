@@ -106,3 +106,26 @@ setup_project_with_alice() {
     [ "$status" -ne 0 ]
     [[ "$output" == *"not a registered project member"* ]] || [[ "$output" == *"must authenticate"* ]]
 }
+
+@test "a legacy alias member key resolves back to the actor (direction two)" {
+    # Legacy shape: the project was FOUNDED under the alias while the
+    # repo had no remote — no plugin was responsible, so nothing could
+    # judge the address, exactly how such projects came to exist. The
+    # member key in project.yaml IS the alias.
+    git config user.email "777+alice-login@users.noreply.github.com"
+    joy init --name "Legacy Alias" --acronym LA
+    joy auth init --passphrase "$FOUNDER_PASSPHRASE"
+    grep -q "777+alice-login@users.noreply.github.com" .joy/project.yaml
+
+    # Later the repo gets its GitHub remote and the person's clone uses
+    # the PRIMARY address. Direction two: the plugin ATTRIBUTES the alias
+    # member key (pure resolve) and matches it to the signed-in actor.
+    git remote add origin git@github.com:example/legacy-alias.git
+    install_gh_stub
+    git config user.email alice@example.com
+
+    run joy auth --passphrase "$FOUNDER_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    run joy add idea "acting as primary against an alias member key"
+    [ "$status" -eq 0 ]
+}

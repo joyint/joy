@@ -85,7 +85,7 @@ pub fn member_key_for_email_or_forge(
     // Direction one: the unresolved address belongs to the ACTOR (their
     // alias in the git config) and the plugin can vouch for their real
     // addresses — try those through the same resolution.
-    if let Some(key) = resolve_candidates(project, &acting.emails) {
+    if let Some(key) = member_key_for_any(project, &acting.emails) {
         forge_cache_put(root, email, &key);
         return Some(key);
     }
@@ -113,12 +113,32 @@ pub fn member_key_for_email_or_forge(
     Some(key)
 }
 
-/// The pure half of the fallback: the first candidate address that IS a
-/// member, through the one resolution. Split out for tests.
-fn resolve_candidates(project: &Project, candidates: &[String]) -> Option<String> {
+/// The first candidate address that IS a member, through the one
+/// resolution. THE shared rule of the identity model (docs "Joy
+/// Identität"): hosts differ only in where the candidates come from —
+/// locally the forge plugin vouches for them, on the platform the
+/// account's verified address set does.
+pub fn member_key_for_any(project: &Project, candidates: &[String]) -> Option<String> {
     candidates
         .iter()
         .find_map(|candidate| member_key_for_email(project, candidate))
+}
+
+/// [`member_key_for_any`] plus the forge fallback (JOY-0253-8A): for a
+/// multi-address caller (a platform account). Tries every address
+/// directly, then consults the responsible forge plugin with the first
+/// address as the unresolved one.
+pub fn member_key_for_addresses_or_forge(
+    project: &Project,
+    root: &std::path::Path,
+    addresses: &[String],
+    facts: Option<&crate::forge_plugins::CallerFacts>,
+) -> Option<String> {
+    if let Some(key) = member_key_for_any(project, addresses) {
+        return Some(key);
+    }
+    let first = addresses.first()?;
+    member_key_for_email_or_forge(project, root, first, facts)
 }
 
 /// Positive forge resolutions per process: (root, unresolved email) ->
