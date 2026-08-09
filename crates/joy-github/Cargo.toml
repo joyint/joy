@@ -1,0 +1,12 @@
+[package]
+name = "joy-github"
+version = "0.1.0"
+edition = "2021"
+license-file = "../../LICENSE"
+description = "Joy forge plugin for GitHub: claims/identity queries (alias addresses, acting login)"
+
+[dependencies]
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }

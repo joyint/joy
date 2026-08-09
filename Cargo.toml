@@ -8,6 +8,8 @@ members = [
     "crates/joy-chat",
     "crates/joy-chat-store",
     "crates/joy-bi",
+    "crates/joy-github",
+    "crates/joy-gitlab",
 ]
 
 [workspace.dependencies]
