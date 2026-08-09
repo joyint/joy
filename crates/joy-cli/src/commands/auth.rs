@@ -474,8 +474,10 @@ fn auth_with_passphrase(
 ) -> Result<()> {
     // In anonymous mode the member map is keyed by the opaque id, not the git
     // e-mail (ADR-042); resolve it so the lookup, session and audit actor share
-    // one key. In open mode this is the e-mail.
-    let member_key = joy_core::privacy::member_key_for_email(project, email)
+    // one key. A miss consults the project's forge plugin (JOY-0253-8A):
+    // a forge alias address still finds its member. In open mode (or when
+    // nothing resolves) this is the e-mail.
+    let member_key = joy_core::privacy::member_key_for_email_or_forge(project, root, email, None)
         .unwrap_or_else(|| email.to_string());
     let member = project.member_by_key(&member_key).ok_or_else(|| {
         anyhow::anyhow!(

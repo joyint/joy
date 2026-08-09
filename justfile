@@ -150,9 +150,10 @@ doctor:
 setup:
     cargo install cargo-insta
 
-# Install to ~/.local/bin/ (joy and the joy-bi reference plugin)
+# Install to ~/.local/bin/ (joy plus the plugins: joy-bi, and the forge
+# plugins joy-core's identity fallback queries, JOY-0251-AA)
 install:
-    cargo build --release -p joy-cli -p joy-bi && mkdir -p ~/.local/bin && cp target/release/joy target/release/joy-bi ~/.local/bin/
+    cargo build --release -p joy-cli -p joy-bi -p joy-github -p joy-gitlab && mkdir -p ~/.local/bin && cp target/release/joy target/release/joy-bi target/release/joy-github target/release/joy-gitlab ~/.local/bin/
 
 # Auto-commit known generated files (.joy/, lockfiles)
 [private]

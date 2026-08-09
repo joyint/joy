@@ -35,8 +35,10 @@ pub struct LoginOutcome {
 /// zone files. Mirrors the CLI's `joy auth` for wrapped-seed members.
 pub fn login(root: &Path, email: &str, passphrase: &str) -> Result<LoginOutcome, JoyError> {
     let project = store::load_project(root)?;
-    let member_key =
-        crate::privacy::member_key_for_email(&project, email).unwrap_or_else(|| email.to_string());
+    // A miss consults the project's forge plugin (JOY-0253-8A): a forge
+    // alias address still finds its member.
+    let member_key = crate::privacy::member_key_for_email_or_forge(&project, root, email, None)
+        .unwrap_or_else(|| email.to_string());
     let member = project.member_by_key(&member_key).ok_or_else(|| {
         JoyError::AuthFailed(format!(
             "{email} is not a registered project member. Run `joy project member add {email}`."
@@ -82,8 +84,10 @@ pub fn login_with_seed(
     seed_bytes: &[u8; 32],
 ) -> Result<LoginOutcome, JoyError> {
     let project = store::load_project(root)?;
-    let member_key =
-        crate::privacy::member_key_for_email(&project, email).unwrap_or_else(|| email.to_string());
+    // A miss consults the project's forge plugin (JOY-0253-8A): a forge
+    // alias address still finds its member.
+    let member_key = crate::privacy::member_key_for_email_or_forge(&project, root, email, None)
+        .unwrap_or_else(|| email.to_string());
     let member = project.member_by_key(&member_key).ok_or_else(|| {
         JoyError::AuthFailed(format!(
             "{email} is not a registered project member. Run `joy project member add {email}`."
@@ -132,8 +136,18 @@ fn finish_login(
         .expect("member survived sealing");
 
     // JOY-0100-DA: attestation posture before establishing a session.
+    // The attestation binds the member's CANONICAL identity: in open mode
+    // that is the member key itself. The raw login address may legally
+    // differ (a forge alias resolved to its member, JOY-0253-8A) and must
+    // not fail the binding check. Anonymous mode keeps the address (the
+    // opaque key is never what an attestation signs).
+    let attested_id = if view.privacy_mode() == crate::model::project::PrivacyMode::Open {
+        member_key.as_str()
+    } else {
+        email
+    };
     if let Some(att) = member.attestation.as_ref() {
-        verify_member_attestation(view, email, member, att)?;
+        verify_member_attestation(view, attested_id, member, att)?;
     } else if attestation::founder_must_be_attested(view) {
         return Err(JoyError::AuthFailed(format!(
             "{email} has no attestation and the project has multiple members. \

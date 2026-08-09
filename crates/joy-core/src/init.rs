@@ -92,7 +92,7 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
     // and fail fast with guidance rather than leave a member-less project on disk
     // that cannot be recovered without re-init (JOY-01CA-AF).
     let founder_email =
-        resolve_founder_email(options.user.as_deref()).ok_or(JoyError::NoFounderIdentity)?;
+        resolve_founder_email(root, options.user.as_deref())?.ok_or(JoyError::NoFounderIdentity)?;
 
     // Detect or initialize git
     let vcs = default_vcs();
@@ -178,12 +178,29 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
 }
 
 /// Resolve the founding member's e-mail: an explicit `--user` override, else the
-/// git `user.email`. `None` when neither is available.
-fn resolve_founder_email(user_override: Option<&str>) -> Option<String> {
-    user_override
+/// git `user.email`. `Ok(None)` when neither is available.
+///
+/// Capture guard (JOY-0253-8A, epic JOY-0251-AA): a forge ALIAS address
+/// must never become a member key — it would split the person's identity
+/// (JP-00BF-94). Whether an address is an alias is the responsible forge
+/// plugin's judgement alone; without remotes or plugins nothing changes.
+fn resolve_founder_email(
+    root: &Path,
+    user_override: Option<&str>,
+) -> Result<Option<String>, JoyError> {
+    let email = user_override
         .map(str::to_string)
         .filter(|s| !s.is_empty())
-        .or_else(|| default_vcs().user_email().ok().filter(|s| !s.is_empty()))
+        .or_else(|| default_vcs().user_email().ok().filter(|s| !s.is_empty()));
+    if let Some(email) = &email {
+        let remotes = default_vcs().all_remotes(root).unwrap_or_default();
+        if let Some(spec) = crate::forge_plugins::responsible_plugin(None, root, &remotes) {
+            if crate::forge_plugins::resolve(spec, root, email).is_some() {
+                return Err(JoyError::FounderAliasIdentity(email.clone()));
+            }
+        }
+    }
+    Ok(email)
 }
 
 /// Outcome of [`ensure_founder`].
@@ -208,7 +225,7 @@ pub fn ensure_founder(root: &Path, user_override: Option<&str>) -> Result<Founde
     if project.has_members() {
         return Ok(FounderHeal::AlreadyPresent);
     }
-    let Some(email) = resolve_founder_email(user_override) else {
+    let Some(email) = resolve_founder_email(root, user_override)? else {
         return Ok(FounderHeal::NoIdentity);
     };
     project.register_member(

@@ -44,6 +44,109 @@ pub fn member_key_for_email(project: &Project, email: &str) -> Option<String> {
     project.member_key_for_email(email)
 }
 
+/// [`member_key_for_email`] plus the forge fallback (JOY-0253-8A, epic
+/// JOY-0251-AA): when the address resolves no member, the project's
+/// responsible forge plugin is asked whether it means anything (a forge
+/// alias address, JP-00BF-94); the plugin's candidate addresses are then
+/// tried through the SAME resolution. joy-core holds no forge knowledge:
+/// which plugin is responsible is a `claims` question over the remotes
+/// (project.yaml `forge:` stays the operator override), and whether the
+/// address is an alias is the plugin's judgement alone.
+///
+/// A project without remotes, without installed plugins, or whose
+/// remotes nobody claims behaves EXACTLY like [`member_key_for_email`].
+/// Successful resolutions are cached per (root, email) for the process;
+/// misses are not, so adding the member later works without a restart.
+pub fn member_key_for_email_or_forge(
+    project: &Project,
+    root: &std::path::Path,
+    email: &str,
+    facts: Option<&crate::forge_plugins::CallerFacts>,
+) -> Option<String> {
+    if let Some(key) = member_key_for_email(project, email) {
+        return Some(key);
+    }
+    if email.trim().is_empty() {
+        return None;
+    }
+    if let Some(hit) = forge_cache_get(root, email) {
+        // still a member? (a removed member must not resurrect via cache)
+        if project.member_by_key(&hit).is_some() {
+            return Some(hit);
+        }
+    }
+    let remotes = crate::vcs::default_vcs()
+        .all_remotes(root)
+        .unwrap_or_default();
+    let spec = crate::forge_plugins::responsible_plugin(project.forge.as_deref(), root, &remotes)?;
+    let default_facts = crate::forge_plugins::CallerFacts::default();
+    let facts = facts.unwrap_or(&default_facts);
+    let acting = crate::forge_plugins::identity(spec, root, facts)?;
+    // Direction one: the unresolved address belongs to the ACTOR (their
+    // alias in the git config) and the plugin can vouch for their real
+    // addresses — try those through the same resolution.
+    if let Some(key) = resolve_candidates(project, &acting.emails) {
+        forge_cache_put(root, email, &key);
+        return Some(key);
+    }
+    // Direction two: the PROJECT is keyed by an alias (created under
+    // one). `resolve` is pure by contract — it attributes an address
+    // from the address alone — so a member key the plugin attributes to
+    // the acting forge account IS the actor's slot. joy-core only
+    // compares what two answers say; whether anything is an alias stays
+    // the plugin's judgement.
+    let key = project
+        .members()
+        .map(|(key, _)| key)
+        .filter(|key| !key.starts_with("ai:"))
+        .find(|key| {
+            crate::forge_plugins::resolve(spec, root, key).is_some_and(|owner| {
+                match (&owner.user_id, &acting.user_id) {
+                    // the numeric account id is the strongest join
+                    (Some(a), Some(b)) => a == b,
+                    _ => owner.login.is_some() && owner.login == acting.login,
+                }
+            })
+        })
+        .cloned()?;
+    forge_cache_put(root, email, &key);
+    Some(key)
+}
+
+/// The pure half of the fallback: the first candidate address that IS a
+/// member, through the one resolution. Split out for tests.
+fn resolve_candidates(project: &Project, candidates: &[String]) -> Option<String> {
+    candidates
+        .iter()
+        .find_map(|candidate| member_key_for_email(project, candidate))
+}
+
+/// Positive forge resolutions per process: (root, unresolved email) ->
+/// member key. Positives only — a miss re-runs, so config fixes and
+/// late member adds take effect without restarting a long-lived host.
+fn forge_cache(
+) -> &'static std::sync::Mutex<std::collections::HashMap<(std::path::PathBuf, String), String>> {
+    static CACHE: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<(std::path::PathBuf, String), String>>,
+    > = std::sync::OnceLock::new();
+    CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+fn forge_cache_get(root: &std::path::Path, email: &str) -> Option<String> {
+    forge_cache()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(&(root.to_path_buf(), email.to_string()))
+        .cloned()
+}
+
+fn forge_cache_put(root: &std::path::Path, email: &str, key: &str) {
+    forge_cache()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert((root.to_path_buf(), email.to_string()), key.to_string());
+}
+
 /// The single source of a member's e-mail (the concept's `email_for`).
 ///
 /// Open mode: the member-map key *is* the e-mail, returned as-is. Anonymous

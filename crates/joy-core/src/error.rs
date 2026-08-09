@@ -15,6 +15,13 @@ pub enum JoyError {
     )]
     NoFounderIdentity,
 
+    #[error(
+        "{0} is a forge alias address, not an identity (JOY-0253-8A).\n\
+         Set your real address first:\n  git config user.email \"you@example.com\"\n\
+         or pass --user you@example.com"
+    )]
+    FounderAliasIdentity(String),
+
     #[error("Joy needs Git, but it was not found on your PATH.")]
     GitMissing,
 

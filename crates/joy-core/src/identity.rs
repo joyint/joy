@@ -65,11 +65,13 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
 
     // In anonymous mode (ADR-042) the member map is keyed by an opaque id, not
     // the git e-mail; resolve the e-mail to that id so membership checks,
-    // sessions and the audit actor all use the same key. In open mode (or when
-    // the e-mail is not a member) this is just the e-mail.
+    // sessions and the audit actor all use the same key. A miss consults
+    // the project's forge plugin (JOY-0253-8A): a forge alias address in
+    // the git config then still resolves to its member. In open mode (or
+    // when nothing resolves) this is just the e-mail.
     let member_key = project
         .as_ref()
-        .and_then(|p| crate::privacy::member_key_for_email(p, &git_email))
+        .and_then(|p| crate::privacy::member_key_for_email_or_forge(p, root, &git_email, None))
         .unwrap_or_else(|| git_email.clone());
 
     // 1. JOY_SESSION: env var carries the ephemeral private key bound to
