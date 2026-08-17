@@ -118,10 +118,30 @@ pub fn member_key_for_email_or_forge(
 /// Identität"): hosts differ only in where the candidates come from —
 /// locally the forge plugin vouches for them, on the platform the
 /// account's verified address set does.
+///
+/// ENROLLED beats INVITED (operator find 2026-08-17, Roland's case):
+/// when several of the candidates are member keys of the SAME person —
+/// the real entry plus a stale, never-redeemed invitation under another
+/// of their addresses — the entry with an identity key on record must
+/// win. Candidate order is host- and database-dependent; without this
+/// rule a keyless invitation slot can shadow the person's real
+/// membership. A pending slot still resolves when it is the ONLY match
+/// (the OTP-redemption posture depends on that).
 pub fn member_key_for_any(project: &Project, candidates: &[String]) -> Option<String> {
-    candidates
-        .iter()
-        .find_map(|candidate| member_key_for_email(project, candidate))
+    let mut invited_only: Option<String> = None;
+    for candidate in candidates {
+        let Some(key) = member_key_for_email(project, candidate) else {
+            continue;
+        };
+        let enrolled = project
+            .member_by_key(&key)
+            .is_some_and(|m| m.verify_key.is_some());
+        if enrolled {
+            return Some(key);
+        }
+        invited_only.get_or_insert(key);
+    }
+    invited_only
 }
 
 /// [`member_key_for_any`] plus the forge fallback (JOY-0253-8A): for a
@@ -450,6 +470,44 @@ mod tests {
     use super::*;
     use crate::model::project::MemberCapabilities;
     use joy_crypt::zone::looks_like_blob;
+
+    /// Roland's constellation (operator find 2026-08-17): the account's
+    /// address set contains BOTH a stale never-redeemed invitation and
+    /// the person's real enrolled entry (an alias-keyed founder). The
+    /// enrolled entry must win regardless of candidate order; a pending
+    /// slot resolves only when it is the sole match.
+    #[test]
+    fn enrolled_member_beats_pending_invitation_regardless_of_order() {
+        let mut project = Project::new("Test".into(), Some("T".into()));
+        let mut founder = Member::new(MemberCapabilities::All);
+        founder.verify_key = Some("aa".repeat(32));
+        project
+            .register_member("777+roland@users.noreply.github.com", founder)
+            .unwrap();
+        let mut invited = Member::new(MemberCapabilities::All);
+        invited.enrollment_verifier = Some("salt:hash".into());
+        project
+            .register_member("roland@example.com", invited)
+            .unwrap();
+
+        // the pending slot FIRST in the candidate list — it must not shadow
+        let candidates = [
+            "roland@posteo.example".to_string(),
+            "roland@example.com".to_string(),
+            "777+roland@users.noreply.github.com".to_string(),
+        ];
+        assert_eq!(
+            member_key_for_any(&project, &candidates).as_deref(),
+            Some("777+roland@users.noreply.github.com")
+        );
+
+        // the pending slot alone still resolves (OTP posture depends on it)
+        let only_invited = ["roland@example.com".to_string()];
+        assert_eq!(
+            member_key_for_any(&project, &only_invited).as_deref(),
+            Some("roland@example.com")
+        );
+    }
 
     const EMAIL: &str = "test@example.com";
     const NONCE: &str = "8c1f00000000000000000000000000000000000000000000000000000000e4ab";
