@@ -1,1 +1,6 @@
 2026-08-17T18:48:35.654Z JOY-0253-8A guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-08-17T20:33:39.073Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-08-17T20:34:22.589Z JOY-0259-44 item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-08-17T20:34:31.880Z JOY-0259-44 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-08-17T20:34:31.966Z JOY-0259-44 comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-08-17T20:34:32.047Z JOY-0259-44 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

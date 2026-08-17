@@ -1,0 +1,20 @@
+id: JOY-0259-44
+title: Eingerichtetes Mitglied wird von offener Einladung verdeckt
+type: bug
+status: review
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-17T20:34:22.582409560Z
+updated: 2026-08-17T20:34:32.041325006Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Fund Roland 2026-08-17: Enthält die Adressmenge eines Kontos sowohl den echten (eingerichteten) Member-Eintrag als auch eine nie eingelöste Einladung unter einer anderen Adresse derselben Person, entschied bisher die zufällige Kandidaten-Reihenfolge. Der leere Einladungs-Slot verdeckte die echte Mitgliedschaft: Die App verlangte ein OTP, das es längst nicht mehr gibt, während Passphrase und Wraps am echten Eintrag hängen. Regel jetzt: verify_key schlägt Einladungs-Slot; ein Slot löst nur noch auf, wenn er der einzige Treffer ist (OTP-Posture für echte Neu-Eingeladene bleibt).'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-17T20:34:31.959531022Z
+  text: 'Umgesetzt in member_key_for_any (joy-core privacy): eingerichtete Mitglieder gewinnen vor offenen Einladungs-Slots, unabhängig von der Kandidaten-Reihenfolge. Test auf genau Rolands Konstellation (Alias-Gründer plus liegengebliebene Selbst-Einladung). Commit ced5af0; auf Integrate deployt und für Rolands Projekt wirksam.'
