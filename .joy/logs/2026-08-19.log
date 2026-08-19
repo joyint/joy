@@ -25,3 +25,5 @@
 2026-08-19T04:42:39.443Z JOY-025C-A7 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-08-19T04:42:42.856Z JOY-025C-A7 comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-08-19T04:42:42.936Z JOY-025C-A7 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-08-19T04:45:53.203Z project guard.denied "AI member ai:claude@joy cannot perform manage actions" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-08-19T04:46:37.362Z JOY-025C-A7 comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

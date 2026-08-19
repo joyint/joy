@@ -639,7 +639,7 @@ pub fn describe_value(key: &str, _value: &serde_json::Value) -> Option<String> {
         "description" => "one-paragraph project description",
         "language" => "project language for written artifacts (titles, comments, commits)",
         "forge" => {
-            "release forge override (e.g. github, none); unset = auto-detect from git remotes"
+            "forge override: which forge plugin answers for this project and where releases go (github, gitlab, gitea, none); unset = auto-detect from git remotes. Set it for an instance nobody is signed in to locally, e.g. a self-hosted GitLab, a GitHub Enterprise Server, or any Gitea/Forgejo"
         }
         "privacy" => {
             "member-PII privacy mode: none (default, behaves as open), open, or anonymous (e-mail in an encrypted members.yaml, opaque ids in project.yaml)"

@@ -12,15 +12,20 @@ use std::process::Command;
 /// `ssh://git@github.com/o/r.git`); subdomains of github.com count
 /// (GitHub Enterprise Cloud), lookalike hosts (`github.com.evil`) do not.
 pub fn claims_remote(url: &str) -> bool {
-    let Some(host) = host_of(url) else {
-        return false;
-    };
-    // The product's own domain, plus every host gh is signed in to: that
-    // is how a GitHub Enterprise Server on any domain becomes reachable
-    // without putting somebody's instance into this code.
+    match host_of(url) {
+        Some(host) => claims_host(&host, &configured_hosts()),
+        None => false,
+    }
+}
+
+/// The product's own domain, plus every host gh is signed in to: that is
+/// how a GitHub Enterprise Server on any domain becomes reachable
+/// without putting somebody's instance into this code. Pure, so the
+/// tests need no ambient configuration.
+fn claims_host(host: &str, configured: &[String]) -> bool {
     host == "github.com"
         || host.ends_with(".github.com")
-        || configured_hosts().iter().any(|known| known == &host)
+        || configured.iter().any(|known| known == host)
 }
 
 /// Every host in gh's hosts.yml, lowercased.
@@ -306,24 +311,13 @@ mod tests {
     /// belongs in this code.
     #[test]
     fn an_enterprise_host_is_claimed_once_gh_knows_it() {
-        let dir = std::env::temp_dir().join(format!("joy-github-claims-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(
-            dir.join("hosts.yml"),
-            "github.acme.test:\n    user: horst\n",
-        )
-        .unwrap();
-        std::env::set_var("GH_CONFIG_DIR", &dir);
-
-        assert!(claims_remote("git@github.acme.test:team/repo.git"));
-        assert!(claims_remote("https://github.com/o/r.git"));
-        assert!(!claims_remote("https://gitlab.com/o/r.git"));
-        assert!(!claims_remote(
-            "https://github.acme.test.evil.example/x.git"
-        ));
-
-        std::env::remove_var("GH_CONFIG_DIR");
-        std::fs::remove_dir_all(&dir).ok();
+        let configured = vec!["github.acme.test".to_string()];
+        assert!(claims_host("github.acme.test", &configured));
+        assert!(claims_host("github.com", &configured));
+        assert!(!claims_host("gitlab.com", &configured));
+        assert!(!claims_host("github.acme.test.evil.example", &configured));
+        // without a signed-in enterprise host only the product domain counts
+        assert!(!claims_host("github.acme.test", &[]));
     }
 
     #[test]
