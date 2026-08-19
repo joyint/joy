@@ -1,7 +1,7 @@
 id: JOY-025A-3A
 title: 'Plugin-Kisten veroeffentlichen: joy-github, joy-gitlab, joy-bi'
 type: task
-status: in-progress
+status: review
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -10,6 +10,10 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-19T03:13:30.923201261Z
-updated: 2026-08-19T03:14:42.753148155Z
+updated: 2026-08-19T03:14:45.072322927Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Fund beim Backlog-Abgleich 2026-08-19 (Entscheidung Horst: die Plugins sollen oeffentlich nutzbar sein). Die drei neuen Workspace-Member stehen weder in der Publish-Liste des justfile noch auf publish = false, und auch nicht in release.version-files, wuerden also bei einem Release weder mitversioniert noch hochgeladen. Zu tun: Publish-Liste ergaenzen (joy-bi nach joy-core, die beiden Forge-Plugins ohne interne Abhaengigkeit), Metadaten publizierbar machen (license statt license-file mit Pfad ausserhalb der Kiste, repository und homepage wie bei den anderen, joy-bi braucht eine Version an seiner joy-core-Abhaengigkeit) und die Versionen an die Familie angleichen. Offen fuer den Operator: release.version-files in .joy/project.yaml um die drei Pfade erweitern, dafuer gibt es keinen CLI-Befehl.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-19T03:14:44.992451842Z
+  text: 'Umgesetzt in Commit 4592961: Metadaten, Publish-Liste, Versionen 0.20.0, cargo package fuer alle drei gruen. Offen bleibt der Operator-Schritt release.version-files.'
