@@ -1,9 +1,11 @@
 [package]
 name = "joy-github"
-version = "0.1.0"
+version = "0.20.0"
 edition = "2021"
-license-file = "../../LICENSE"
+license = "MIT"
 description = "Joy forge plugin for GitHub: claims/identity queries (alias addresses, acting login)"
+repository = "https://github.com/joyint/joy"
+homepage = "https://joyint.com/en/joy"
 
 [dependencies]
 clap = { workspace = true }

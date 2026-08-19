@@ -237,7 +237,10 @@ publish-crates: sync-tutorial
         exit 1
     fi
     # Order matters: dependents after dependencies.
-    crates=(joy-model joy-chat joy-core joy-chat-store joy-ai joy-cli)
+    # joy-bi rides after joy-core (its only internal dependency); the two
+    # forge plugins have none. Every workspace member is either in this
+    # list or carries publish = false -- the gap that made JOY-0247-E1.
+    crates=(joy-model joy-chat joy-core joy-bi joy-github joy-gitlab joy-chat-store joy-ai joy-cli)
     for crate in "${crates[@]}"; do
         version=$(cargo pkgid --quiet -p "$crate" 2>/dev/null | sed 's/.*[#@]\(.*\)/\1/')
         if [ -z "$version" ]; then

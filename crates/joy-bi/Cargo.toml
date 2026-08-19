@@ -1,12 +1,14 @@
 [package]
 name = "joy-bi"
-version = "0.1.0"
+version = "0.20.0"
 edition = "2021"
-license-file = "../../LICENSE"
+license = "MIT"
 description = "Joy BI reference plugin: milestone and velocity reports as JoyNode JSON"
+repository = "https://github.com/joyint/joy"
+homepage = "https://joyint.com/en/joy"
 
 [dependencies]
-joy-core = { path = "../joy-core" }
+joy-core = { version = "0.20.0", path = "../joy-core" }
 clap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
