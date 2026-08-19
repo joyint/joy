@@ -6,12 +6,32 @@
 
 use std::process::Command;
 
-/// Does this remote URL belong to gitlab.com? Self-hosted instances are
-/// not URL-recognizable; they are reached via the `forge:` override.
+/// Does this remote URL belong to GitLab? The product's own domain, plus
+/// every host glab is signed in to: that is how a self-hosted GitLab on
+/// any domain becomes reachable without putting somebody's instance into
+/// this code. An instance nobody is signed in to still has the
+/// project.yaml `forge:` override.
 pub fn claims_remote(url: &str) -> bool {
-    host_of(url)
-        .map(|h| h == "gitlab.com" || h.ends_with(".gitlab.com"))
-        .unwrap_or(false)
+    let Some(host) = host_of(url) else {
+        return false;
+    };
+    host == "gitlab.com"
+        || host.ends_with(".gitlab.com")
+        || configured_hosts().iter().any(|known| known == &host)
+}
+
+/// Every host block in glab's config.yml, lowercased.
+fn configured_hosts() -> Vec<String> {
+    let Some(path) = glab_config_dir().map(|d| d.join("config.yml")) else {
+        return Vec::new();
+    };
+    match std::fs::read_to_string(path) {
+        Ok(text) => parse_hosts(&text)
+            .into_iter()
+            .map(|(host, _)| host)
+            .collect(),
+        Err(_) => Vec::new(),
+    }
 }
 
 /// The host part of a git remote URL, lowercased.
@@ -37,12 +57,13 @@ pub struct Alias {
 
 /// Parse an address as a GitLab noreply alias, if it is one. The local
 /// part is `<numeric id>-<username>`; usernames may contain `-`, so the
-/// split is at the FIRST dash after the digits.
+/// split is at the FIRST dash after the digits. gitlab.com and every
+/// self-hosted instance share the shape, the domain is the instance's.
 pub fn parse_alias(email: &str) -> Option<Alias> {
-    let local = email
-        .trim()
-        .strip_suffix("@users.noreply.gitlab.com")
-        .filter(|l| !l.is_empty())?;
+    let (local, domain) = email.trim().split_once('@')?;
+    if !domain.to_ascii_lowercase().starts_with("users.noreply.") || local.is_empty() {
+        return None;
+    }
     let digits: String = local.chars().take_while(|c| c.is_ascii_digit()).collect();
     if digits.is_empty() {
         return None;
@@ -58,38 +79,52 @@ pub fn parse_alias(email: &str) -> Option<Alias> {
 /// The signed-in login from glab's config, offline. Same minimal line
 /// parse as the gh twin: the `user:` under the `gitlab.com:` block.
 pub fn glab_login() -> Option<String> {
-    let dir = match std::env::var("GLAB_CONFIG_DIR") {
-        Ok(d) if !d.trim().is_empty() => std::path::PathBuf::from(d),
-        _ => std::path::PathBuf::from(std::env::var_os("HOME")?).join(".config/glab-cli"),
-    };
-    let text = std::fs::read_to_string(dir.join("config.yml")).ok()?;
+    let text = std::fs::read_to_string(glab_config_dir()?.join("config.yml")).ok()?;
     parse_config_yml(&text)
 }
 
-/// The `user:` under the `gitlab.com:` block (nested under `hosts:`).
+fn glab_config_dir() -> Option<std::path::PathBuf> {
+    if let Ok(dir) = std::env::var("GLAB_CONFIG_DIR") {
+        if !dir.trim().is_empty() {
+            return Some(std::path::PathBuf::from(dir));
+        }
+    }
+    Some(std::path::PathBuf::from(std::env::var_os("HOME")?).join(".config/glab-cli"))
+}
+
+/// The signed-in login: gitlab.com's when configured, else whichever
+/// instance is (a self-hosted-only setup has no gitlab.com block).
 pub fn parse_config_yml(text: &str) -> Option<String> {
-    let mut in_gitlab = false;
+    let hosts = parse_hosts(text);
+    hosts
+        .iter()
+        .find(|(host, _)| host == "gitlab.com")
+        .or_else(|| hosts.first())
+        .map(|(_, user)| user.clone())
+}
+
+/// Every `<host>: { user: ... }` block under `hosts:`, in file order.
+pub fn parse_hosts(text: &str) -> Vec<(String, String)> {
+    let mut hosts: Vec<(String, String)> = Vec::new();
+    let mut current: Option<String> = None;
     for line in text.lines() {
-        let trimmed = line.trim_end();
-        let stripped = trimmed.trim_start();
-        if stripped.trim_end_matches(':').trim() == "gitlab.com" {
-            in_gitlab = true;
+        let stripped = line.trim_end().trim_start();
+        if stripped.is_empty() || stripped == "hosts:" {
             continue;
         }
-        if in_gitlab {
-            if let Some(user) = stripped.strip_prefix("user:") {
-                let user = user.trim();
-                if !user.is_empty() {
-                    return Some(user.to_string());
-                }
-            }
-            // a new, less-indented host block ends the gitlab.com block
-            if stripped.ends_with(':') && !stripped.contains(' ') && stripped != "gitlab.com:" {
-                in_gitlab = false;
+        // a host block header: a bare `<something>:` with no value
+        if stripped.ends_with(':') && !stripped.contains(' ') {
+            current = Some(stripped.trim_end_matches(':').to_ascii_lowercase());
+            continue;
+        }
+        if let (Some(host), Some(user)) = (&current, stripped.strip_prefix("user:")) {
+            let user = user.trim();
+            if !user.is_empty() && !hosts.iter().any(|(h, _)| h == host) {
+                hosts.push((host.clone(), user.to_string()));
             }
         }
     }
-    None
+    hosts
 }
 
 fn run_stdout(cmd: &mut Command) -> Option<String> {
@@ -189,12 +224,46 @@ mod tests {
     }
 
     #[test]
-    fn config_yml_yields_the_gitlab_login() {
+    fn config_yml_yields_the_login_of_gitlab_com_or_the_configured_instance() {
         let text = "hosts:\n    gitlab.com:\n        token: x\n        user: horst\n";
         assert_eq!(parse_config_yml(text).as_deref(), Some("horst"));
+        // a self-hosted-only setup has no gitlab.com block; its login counts
         assert_eq!(
-            parse_config_yml("hosts:\n    other.host:\n        user: x\n"),
-            None
+            parse_config_yml("hosts:\n    gitlab.acme.test:\n        user: alice\n").as_deref(),
+            Some("alice")
         );
+        assert_eq!(parse_config_yml(""), None);
+    }
+
+    /// A self-hosted GitLab lives on the customer's own domain, so a
+    /// remote is claimed when glab is signed in to that host. No
+    /// instance belongs in this code.
+    #[test]
+    fn a_self_hosted_host_is_claimed_once_glab_knows_it() {
+        let dir = std::env::temp_dir().join(format!("joy-gitlab-claims-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("config.yml"),
+            "hosts:\n    gitlab.acme.test:\n        user: alice\n",
+        )
+        .unwrap();
+        std::env::set_var("GLAB_CONFIG_DIR", &dir);
+
+        assert!(claims_remote("git@gitlab.acme.test:group/proj.git"));
+        assert!(claims_remote("https://gitlab.com/group/proj.git"));
+        assert!(!claims_remote("https://github.com/o/r.git"));
+        assert!(!claims_remote(
+            "https://gitlab.acme.test.evil.example/x.git"
+        ));
+
+        std::env::remove_var("GLAB_CONFIG_DIR");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn the_self_hosted_alias_form_parses_too() {
+        let a = parse_alias("42-alice@users.noreply.gitlab.acme.test").unwrap();
+        assert_eq!(a.login, "alice");
+        assert_eq!(a.user_id.as_deref(), Some("42"));
     }
 }

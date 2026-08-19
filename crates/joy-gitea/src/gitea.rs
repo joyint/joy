@@ -4,23 +4,35 @@
 //! The Gitea knowledge: host matching, the alias address form, tea's
 //! config, API access. Everything degrades silently to "unknown".
 //!
-//! Gitea (and its fork Forgejo) runs anywhere, so a URL alone identifies
-//! only the well-known public instance, codeberg.org; every other
-//! instance is reached through the project.yaml `forge:` override, the
-//! same rule the GitLab twin uses for self-hosted GitLab.
+//! Gitea (and its fork Forgejo) is SELF-HOSTED software with no
+//! canonical host: any domain can run it, and no instance belongs in
+//! this code. So the plugin claims a remote only when the person's own
+//! tea configuration names that host as one of their Gitea instances,
+//! and otherwise waits for the project.yaml `forge:` override, exactly
+//! the road self-hosted GitLab takes.
 
 use std::process::Command;
 
-/// The public instance a URL can identify on its own.
-const PUBLIC_INSTANCE: &str = "codeberg.org";
-
-/// Does this remote URL belong to the public Gitea instance? Self-hosted
-/// instances are not URL-recognizable; they are reached via the `forge:`
-/// override.
+/// Does this remote URL belong to a Gitea instance THIS person is signed
+/// in to (tea's own config)? An unknown host is not claimed: a URL alone
+/// cannot tell Gitea from anything else, and guessing would steal the
+/// remote from the plugin it really belongs to. Projects on an instance
+/// nobody is signed in to use the project.yaml `forge:` override.
 pub fn claims_remote(url: &str) -> bool {
-    host_of(url)
-        .map(|h| h == PUBLIC_INSTANCE || h.ends_with(&format!(".{PUBLIC_INSTANCE}")))
-        .unwrap_or(false)
+    let Some(host) = host_of(url) else {
+        return false;
+    };
+    configured_hosts()
+        .iter()
+        .any(|configured| configured == &host)
+}
+
+/// The hosts of every login in tea's config, lowercased.
+fn configured_hosts() -> Vec<String> {
+    tea_logins()
+        .iter()
+        .filter_map(|login| host_of(&login.url))
+        .collect()
 }
 
 /// The host part of a git remote URL, lowercased.
@@ -64,28 +76,39 @@ pub fn parse_alias(email: &str) -> Option<Alias> {
     })
 }
 
-/// tea's configured login for an instance, offline: the `user:` of the
-/// first login entry, plus its `url:` so the API calls know where to go.
+/// One login from tea's config: which instance, and who is signed in.
 pub struct TeaLogin {
     pub user: String,
     pub url: String,
 }
 
-pub fn tea_login() -> Option<TeaLogin> {
+/// Every login tea has on file, offline. Empty when tea is not set up.
+pub fn tea_logins() -> Vec<TeaLogin> {
     let dir = match std::env::var("TEA_CONFIG_DIR") {
         Ok(d) if !d.trim().is_empty() => std::path::PathBuf::from(d),
-        _ => std::path::PathBuf::from(std::env::var_os("HOME")?).join(".config/tea"),
+        _ => match std::env::var_os("HOME") {
+            Some(home) => std::path::PathBuf::from(home).join(".config/tea"),
+            None => return Vec::new(),
+        },
     };
-    let text = std::fs::read_to_string(dir.join("config.yml")).ok()?;
-    parse_config_yml(&text)
+    match std::fs::read_to_string(dir.join("config.yml")) {
+        Ok(text) => parse_config_yml(&text),
+        Err(_) => Vec::new(),
+    }
 }
 
-/// The first `logins:` entry's user and url. tea writes a list of maps;
-/// the minimal line parse mirrors the gh and glab twins.
-pub fn parse_config_yml(text: &str) -> Option<TeaLogin> {
+/// Every `logins:` entry with both a user and a url. tea writes a list
+/// of maps; the minimal line parse mirrors the gh and glab twins.
+pub fn parse_config_yml(text: &str) -> Vec<TeaLogin> {
+    let mut logins = Vec::new();
     let mut in_logins = false;
     let mut user: Option<String> = None;
     let mut url: Option<String> = None;
+    let flush = |user: &mut Option<String>, url: &mut Option<String>, out: &mut Vec<TeaLogin>| {
+        if let (Some(u), Some(base)) = (user.take(), url.take()) {
+            out.push(TeaLogin { user: u, url: base });
+        }
+    };
     for line in text.lines() {
         let stripped = line.trim_start();
         if stripped.trim_end_matches(':').trim() == "logins" {
@@ -99,27 +122,26 @@ pub fn parse_config_yml(text: &str) -> Option<TeaLogin> {
         if !line.starts_with([' ', '\t', '-']) && line.trim_end().ends_with(':') {
             break;
         }
+        // a new list item closes the entry before it
+        if stripped.starts_with("- ") {
+            flush(&mut user, &mut url, &mut logins);
+        }
         let field = stripped.trim_start_matches("- ").trim();
         if let Some(value) = field.strip_prefix("user:") {
             let value = value.trim();
-            if user.is_none() && !value.is_empty() {
+            if !value.is_empty() {
                 user = Some(value.to_string());
             }
         }
         if let Some(value) = field.strip_prefix("url:") {
             let value = value.trim();
-            if url.is_none() && !value.is_empty() {
+            if !value.is_empty() {
                 url = Some(value.trim_end_matches('/').to_string());
             }
         }
-        if user.is_some() && url.is_some() {
-            break;
-        }
     }
-    Some(TeaLogin {
-        user: user?,
-        url: url.unwrap_or_else(|| format!("https://{PUBLIC_INSTANCE}")),
-    })
+    flush(&mut user, &mut url, &mut logins);
+    logins
 }
 
 fn run_stdout(cmd: &mut Command) -> Option<String> {
@@ -131,8 +153,7 @@ fn run_stdout(cmd: &mut Command) -> Option<String> {
 }
 
 /// The account's addresses, best effort. Gitea's API takes the token in
-/// the `token` scheme; the base URL comes from tea's configured login,
-/// else the public instance.
+/// the `token` scheme; the base URL is the instance tea is signed in to.
 fn verified_emails(token_env: Option<&str>, base: &str) -> Vec<String> {
     let raw = match token_env {
         Some(var) => {
@@ -176,16 +197,19 @@ pub fn identity_answer(
     user_id: Option<String>,
     token_env: Option<&str>,
 ) -> serde_json::Value {
-    let configured = tea_login();
-    let base = configured
-        .as_ref()
-        .map(|l| l.url.clone())
-        .unwrap_or_else(|| format!("https://{PUBLIC_INSTANCE}"));
-    let login = login.or_else(|| configured.map(|l| l.user));
+    let configured = tea_logins();
+    let first = configured.into_iter().next();
+    let base = first.as_ref().map(|l| l.url.clone());
+    let login = login.or_else(|| first.map(|l| l.user));
     let Some(login) = login else {
         return serde_json::json!({ "known": false });
     };
-    let emails = verified_emails(token_env, &base);
+    // Without a known instance there is nowhere to ask; the login alone
+    // is still a useful answer.
+    let emails = match &base {
+        Some(base) => verified_emails(token_env, base),
+        None => Vec::new(),
+    };
     serde_json::json!({
         "known": true,
         "login": login,
@@ -213,19 +237,36 @@ pub fn resolve_answer(email: &str) -> serde_json::Value {
 mod tests {
     use super::*;
 
+    /// Gitea and Forgejo have no canonical host, so no instance belongs
+    /// in this code: a remote is claimed only when tea is signed in to
+    /// that very host, whichever host that is.
     #[test]
-    fn the_public_instance_is_claimed_and_others_are_not() {
-        assert!(claims_remote("git@codeberg.org:owner/repo.git"));
-        assert!(claims_remote("https://codeberg.org/owner/repo.git"));
-        assert!(!claims_remote("git@github.com:o/r.git"));
+    fn only_hosts_the_person_is_signed_in_to_are_claimed() {
+        let dir = std::env::temp_dir().join(format!("joy-gitea-claims-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("config.yml"),
+            "logins:\n- name: house\n  url: https://git.example.org/\n  user: alice\n",
+        )
+        .unwrap();
+        std::env::set_var("TEA_CONFIG_DIR", &dir);
+
+        assert!(claims_remote("git@git.example.org:owner/repo.git"));
+        assert!(claims_remote("https://git.example.org/owner/repo.git"));
+        // a host nobody is signed in to stays unclaimed, however
+        // gitea-ish it looks; the project.yaml forge override is its road
         assert!(!claims_remote("https://gitea.example.com/o/r.git"));
-        assert!(!claims_remote("https://codeberg.org.evil.example/x.git"));
+        assert!(!claims_remote("git@github.com:o/r.git"));
+        assert!(!claims_remote("https://git.example.org.evil.example/x.git"));
+
+        std::env::remove_var("TEA_CONFIG_DIR");
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn the_alias_form_parses_and_leaves_the_other_forges_alone() {
         assert_eq!(
-            parse_alias("horst@noreply.codeberg.org").unwrap().login,
+            parse_alias("horst@noreply.git.example.org").unwrap().login,
             "horst"
         );
         assert_eq!(
@@ -239,16 +280,20 @@ mod tests {
         assert!(parse_alias("7-login@users.noreply.gitlab.com").is_none());
         // a plain address is not an alias
         assert!(parse_alias("horst@example.com").is_none());
-        assert!(parse_alias("@noreply.codeberg.org").is_none());
+        assert!(parse_alias("@noreply.git.example.org").is_none());
     }
 
     #[test]
-    fn config_yml_yields_the_login_and_its_instance() {
-        let text =
-            "logins:\n- name: codeberg\n  url: https://codeberg.org/\n  token: x\n  user: horst\n";
-        let login = parse_config_yml(text).unwrap();
-        assert_eq!(login.user, "horst");
-        assert_eq!(login.url, "https://codeberg.org");
-        assert!(parse_config_yml("logins:\n- name: x\n  url: https://x/\n").is_none());
+    fn config_yml_yields_every_login_and_its_instance() {
+        let text = "logins:\n\
+             - name: house\n  url: https://git.example.org/\n  token: x\n  user: horst\n\
+             - name: other\n  url: https://git.other.test/\n  user: alice\n";
+        let logins = parse_config_yml(text);
+        assert_eq!(logins.len(), 2);
+        assert_eq!(logins[0].user, "horst");
+        assert_eq!(logins[0].url, "https://git.example.org");
+        assert_eq!(logins[1].user, "alice");
+        // an entry without a user is no login
+        assert!(parse_config_yml("logins:\n- name: x\n  url: https://x.test/\n").is_empty());
     }
 }

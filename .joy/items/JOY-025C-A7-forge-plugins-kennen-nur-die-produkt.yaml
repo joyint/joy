@@ -1,0 +1,16 @@
+id: JOY-025C-A7
+title: Forge-Plugins kennen nur die Produkt-Domains, keine eigenen Instanzen
+type: bug
+status: in-progress
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-19T04:42:25.643514976Z
+updated: 2026-08-19T04:42:39.436343892Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Fund Horst 2026-08-19: joy-gitea beanspruchte codeberg.org fest im Code, obwohl Codeberg nur EINE Forgejo-Instanz ist; joy-github und joy-gitlab konnten umgekehrt GitHub Enterprise und selbst gehostete GitLab-Instanzen gar nicht erkennen. Regel jetzt einheitlich fuer alle drei: ein Plugin beansprucht die eigene Produkt-Domain (github.com, gitlab.com; Gitea hat keine) plus jeden Host, bei dem die Forge-CLI dieser Person angemeldet ist (gh hosts.yml, glab config.yml, tea config.yml). Alias-Formen sind nicht mehr an eine Domain gebunden, sondern an ihre Gestalt. Instanzen ohne Anmeldung nehmen weiter den project.yaml-forge-Override.'

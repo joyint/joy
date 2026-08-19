@@ -4,12 +4,12 @@
 //! joy-gitea: the Gitea forge plugin (JOY-025B-F6, epic JOY-0251-AA).
 //!
 //! The third implementation of the forge query contract
-//! (docs/plugins.md, "Forge plugins"), added when an instance put
-//! Codeberg next to GitHub and GitLab. All Gitea knowledge lives here:
-//! host matching (codeberg.org; every other instance is reached via the
-//! project.yaml `forge:` override, a URL alone cannot identify them),
-//! the noreply alias form `<username>@noreply.<instance>`, tea's
-//! config, the API.
+//! (docs/plugins.md, "Forge plugins"). All Gitea knowledge lives here:
+//! host matching (Gitea and Forgejo are self-hosted with no canonical
+//! domain, so a remote is claimed when tea is signed in to that host;
+//! everything else takes the project.yaml `forge:` override), the
+//! noreply alias form `<username>@noreply.<instance>`, tea's config,
+//! the API.
 
 mod gitea;
 

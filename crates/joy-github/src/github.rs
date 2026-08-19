@@ -12,9 +12,29 @@ use std::process::Command;
 /// `ssh://git@github.com/o/r.git`); subdomains of github.com count
 /// (GitHub Enterprise Cloud), lookalike hosts (`github.com.evil`) do not.
 pub fn claims_remote(url: &str) -> bool {
-    host_of(url)
-        .map(|h| h == "github.com" || h.ends_with(".github.com"))
-        .unwrap_or(false)
+    let Some(host) = host_of(url) else {
+        return false;
+    };
+    // The product's own domain, plus every host gh is signed in to: that
+    // is how a GitHub Enterprise Server on any domain becomes reachable
+    // without putting somebody's instance into this code.
+    host == "github.com"
+        || host.ends_with(".github.com")
+        || configured_hosts().iter().any(|known| known == &host)
+}
+
+/// Every host in gh's hosts.yml, lowercased.
+fn configured_hosts() -> Vec<String> {
+    let Some(path) = gh_config_dir().map(|d| d.join("hosts.yml")) else {
+        return Vec::new();
+    };
+    match std::fs::read_to_string(path) {
+        Ok(text) => parse_hosts(&text)
+            .into_iter()
+            .map(|(host, _)| host)
+            .collect(),
+        Err(_) => Vec::new(),
+    }
 }
 
 /// The host part of a git remote URL, lowercased.
@@ -44,9 +64,12 @@ pub struct Alias {
 /// Parse an address as a GitHub noreply alias, if it is one.
 pub fn parse_alias(email: &str) -> Option<Alias> {
     let email = email.trim();
-    let local = email
-        .strip_suffix("@users.noreply.github.com")
-        .filter(|l| !l.is_empty())?;
+    // github.com and every Enterprise Server share the shape
+    // `<id>+<login>@users.noreply.<host>`; the host is the instance's.
+    let (local, domain) = email.split_once('@')?;
+    if !domain.to_ascii_lowercase().starts_with("users.noreply.") || local.is_empty() {
+        return None;
+    }
     match local.split_once('+') {
         Some((id, login)) if !id.is_empty() && id.chars().all(|c| c.is_ascii_digit()) => {
             (!login.is_empty()).then(|| Alias {
@@ -83,23 +106,39 @@ fn gh_config_dir() -> Option<std::path::PathBuf> {
 
 /// The `user:` under the `github.com:` block.
 pub fn parse_hosts_yml(text: &str) -> Option<String> {
-    let mut in_github = false;
+    let hosts = parse_hosts(text);
+    // github.com first when it is there, else whichever instance is
+    // configured (an Enterprise-only setup has no github.com block).
+    hosts
+        .iter()
+        .find(|(host, _)| host == "github.com")
+        .or_else(|| hosts.first())
+        .map(|(_, user)| user.clone())
+}
+
+/// Every `<host>: { user: ... }` block of gh's hosts.yml, in file order.
+pub fn parse_hosts(text: &str) -> Vec<(String, String)> {
+    let mut hosts: Vec<(String, String)> = Vec::new();
+    let mut current: Option<String> = None;
     for line in text.lines() {
         let trimmed = line.trim_end();
-        if !trimmed.starts_with(' ') {
-            in_github = trimmed.trim_end_matches(':').trim() == "github.com";
+        if trimmed.is_empty() {
             continue;
         }
-        if in_github {
+        if !trimmed.starts_with(' ') {
+            current = Some(trimmed.trim_end_matches(':').trim().to_ascii_lowercase());
+            continue;
+        }
+        if let Some(host) = &current {
             if let Some(user) = trimmed.trim_start().strip_prefix("user:") {
                 let user = user.trim();
-                if !user.is_empty() {
-                    return Some(user.to_string());
+                if !user.is_empty() && !hosts.iter().any(|(h, _)| h == host) {
+                    hosts.push((host.clone(), user.to_string()));
                 }
             }
         }
     }
-    None
+    hosts
 }
 
 /// The account's verified addresses, best effort. With `--token-env` the
@@ -251,10 +290,47 @@ mod tests {
     }
 
     #[test]
-    fn hosts_yml_yields_the_github_login() {
-        let text = "github.com:\n    user: joydev-horst\n    git_protocol: ssh\nother.host:\n    user: nobody\n";
+    fn hosts_yml_yields_the_login_of_github_com_or_the_configured_instance() {
+        let text = "github.com:\n    user: joydev-horst\n    git_protocol: ssh\ngithub.acme.test:\n    user: nobody\n";
         assert_eq!(parse_hosts_yml(text).as_deref(), Some("joydev-horst"));
-        assert_eq!(parse_hosts_yml("other.host:\n    user: x\n"), None);
+        // an Enterprise-only setup has no github.com block; its login counts
+        assert_eq!(
+            parse_hosts_yml("github.acme.test:\n    user: horst\n").as_deref(),
+            Some("horst")
+        );
+        assert_eq!(parse_hosts_yml("").as_deref(), None);
+    }
+
+    /// GitHub Enterprise Server runs on the customer's own domain, so a
+    /// remote is claimed when gh is signed in to that host. No instance
+    /// belongs in this code.
+    #[test]
+    fn an_enterprise_host_is_claimed_once_gh_knows_it() {
+        let dir = std::env::temp_dir().join(format!("joy-github-claims-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("hosts.yml"),
+            "github.acme.test:\n    user: horst\n",
+        )
+        .unwrap();
+        std::env::set_var("GH_CONFIG_DIR", &dir);
+
+        assert!(claims_remote("git@github.acme.test:team/repo.git"));
+        assert!(claims_remote("https://github.com/o/r.git"));
+        assert!(!claims_remote("https://gitlab.com/o/r.git"));
+        assert!(!claims_remote(
+            "https://github.acme.test.evil.example/x.git"
+        ));
+
+        std::env::remove_var("GH_CONFIG_DIR");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn the_enterprise_alias_form_parses_too() {
+        let a = parse_alias("77+horst@users.noreply.github.acme.test").unwrap();
+        assert_eq!(a.login, "horst");
+        assert_eq!(a.user_id.as_deref(), Some("77"));
     }
 
     #[test]

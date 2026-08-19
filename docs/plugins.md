@@ -59,6 +59,14 @@ object on stdout.
   Does this remote belong to your forge? Answer:
   `{"claims": true}` or `{"claims": false}`.
   joy-core asks this instead of ever parsing forge URLs itself.
+  A forge product may own a domain (github.com, gitlab.com), and a
+  plugin may claim it. NO INSTANCE belongs in a plugin's code: a
+  GitHub Enterprise Server, a self-hosted GitLab and every Gitea or
+  Forgejo run on their operator's own domain. A plugin recognizes
+  those the honest way, by asking its own CLI which hosts this person
+  is signed in to (gh's hosts.yml, glab's config.yml, tea's
+  config.yml); an instance nobody is signed in to is reached through
+  the project.yaml `forge:` override.
 
 - `joy-<name> identity [--login <l> --user-id <id>] [--token-env <VAR>]`
   Who is ACTING on your forge? Answer: `{"known": false}` — or
