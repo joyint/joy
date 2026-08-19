@@ -1,0 +1,15 @@
+id: JOY-025D-99
+title: 'Doku: Forge-Plugins auf dem Arbeitsplatz'
+type: task
+status: in-progress
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-19T05:18:47.212597924Z
+updated: 2026-08-19T05:18:59.253161983Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Nachfrage Horst 2026-08-19: Warum gibt es nur fuer die Platform eine Beispielkonfiguration? Antwort: lokal gibt es nichts zu konfigurieren, das Plugin liest die Konfiguration der Forge-CLI (gh, glab, tea). Genau das stand nirgends. docs/plugins.md erklaert jetzt den Arbeitsplatz-Fall: Plugin installieren, mit der Forge-CLI anmelden, fertig; einziger Hebel ist joy project set forge fuer Instanzen ohne lokale Anmeldung. Der Server-Fall verweist auf .env.example.'

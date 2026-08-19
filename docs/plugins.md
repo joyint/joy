@@ -101,7 +101,30 @@ Rules, in addition to the base contract:
 
 ## Making a plugin available
 
-Install the binary on the PATH (`cargo install --path crates/joy-bi` or
-your package manager). The Joyint app discovers `/name` commands by
-probing `joy-<name>` and renders the node tree with charts; the CLI story
-(`joy <name> ...` passthrough) is tracked separately.
+Install the binary on the PATH (`cargo install joy-bi`, `cargo install
+--path crates/joy-bi`, or your package manager). The Joyint app
+discovers `/name` commands by probing `joy-<name>` and renders the node
+tree with charts; the CLI story (`joy <name> ...` passthrough) is
+tracked separately.
+
+### Forge plugins on a workstation
+
+There is nothing to configure. Install the plugin for your forge
+(`cargo install joy-github`, `joy-gitlab`, `joy-gitea`) and sign in with
+that forge's own CLI (`gh auth login`, `glab auth login`, `tea login
+add`) as you would anyway. From then on joy resolves alias addresses
+through it, and a project on a host you are signed in to is recognized
+on its own. No environment variable, no token in joy's hands: the
+plugin reads the CLI's configuration and asks the API with it.
+
+One lever exists, per project rather than per machine: when a project
+lives on an instance nobody is signed in to locally (a GitHub
+Enterprise Server, a self-hosted GitLab, any Gitea or Forgejo), name
+its forge once and the right plugin answers for it:
+
+    joy project set forge gitea
+
+A server has neither a forge CLI nor a person in front of it, so it is
+told the same facts through its own configuration instead; the platform
+ships them as environment variables (see its `.env.example`), and hands
+the caller's login and token to the plugin per call.
