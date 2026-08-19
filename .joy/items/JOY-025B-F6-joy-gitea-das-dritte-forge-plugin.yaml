@@ -1,7 +1,7 @@
 id: JOY-025B-F6
 title: 'joy-gitea: das dritte Forge-Plugin (Codeberg und Forgejo)'
 type: story
-status: in-progress
+status: review
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -12,6 +12,10 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-19T03:29:56.659737964Z
-updated: 2026-08-19T03:30:11.276219244Z
+updated: 2026-08-19T03:30:21.591610113Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Fund Horst 2026-08-19: Seit Codeberg auf der Integrate-Instanz als Gitea-kompatibler Forge eingerichtet ist, fehlt fuer genau diese Repos die Alias-Aufloesung; die Registry kannte nur github und gitlab, fuer ein Codeberg-Remote fuehlte sich kein Plugin zustaendig. Gitea und Forgejo haben dieselbe Problemklasse: Keep Email Private liefert Adressen der Form <benutzer>@noreply.<instanz>. joy-gitea nach dem Muster von joy-gitlab: claims fuer codeberg.org (andere Instanzen ueber den forge-Override), Alias-Parsing, tea-Konfiguration, API fuer die verifizierten Adressen; Registry-Zeile in joy-core, dazu install, publish, CI, Platform-Image und Doku.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-19T03:30:18.444525432Z
+  text: 'Commit d5a368e: Plugin, Registry-Zeile, install/publish/version-files, CI, Platform-Image, docs/plugins.md, plus bats-Test 6 (Codeberg-Alias schreibt als alice@example.com). Workspace-Tests, clippy und cargo package gruen.'
