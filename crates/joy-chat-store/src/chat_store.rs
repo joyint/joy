@@ -25,7 +25,7 @@ use std::collections::BTreeSet;
 use git2::{FileMode, Repository, Tree};
 
 use crate::chat_ref;
-use joy_chat::chat_seal::{KEYS_DIR, LOG_DIR};
+use joy_chat::chat_seal::{ATT_DIR, KEYS_DIR, LOG_DIR};
 use joy_chat::chat_wrap::{ContentKey, SLOT_LEN};
 use joy_chat::model::chat::Chat;
 use joy_chat::sealed::{self, Sealed};
@@ -200,6 +200,50 @@ pub fn save(root: &std::path::Path, chat: &Chat, seed: &[u8; 32]) -> Result<(), 
 /// make sense is not decidable here, and does not have to be: a blob
 /// nobody can open is a blob nobody can open, and the log is a
 /// content-addressed set either way.
+/// One sealed attachment blob of a chat, by its content-addressed name
+/// (JOY-024C-97). The bytes are SEALED; opening them takes the reader's
+/// epoch keys ([`joy_chat::sealed::open_attachment`]). `None` when the
+/// chat or the attachment does not exist here.
+pub fn attachment(
+    root: &std::path::Path,
+    cid: &str,
+    name: &str,
+) -> Result<Option<Vec<u8>>, JoyError> {
+    let repo = chat_ref::open_repo(root)?;
+    let Some(commit) = chat_ref::ref_commit(&repo)? else {
+        return Ok(None);
+    };
+    let root_tree = commit.tree().map_err(git)?;
+    let Some(chat_tree) = subtree(&repo, &root_tree, cid) else {
+        return Ok(None);
+    };
+    let Some(att_tree) = subtree(&repo, &chat_tree, ATT_DIR) else {
+        return Ok(None);
+    };
+    let Some(entry) = att_tree.get_name(name) else {
+        return Ok(None);
+    };
+    let blob = repo.find_blob(entry.id()).map_err(git)?;
+    Ok(Some(blob.content().to_vec()))
+}
+
+/// Store sealed attachment blobs for a chat (JOY-024C-97): the write half
+/// for a host that sealed them itself ([`joy_chat::sealed::seal_attachment`]).
+pub fn put_attachments(
+    root: &std::path::Path,
+    cid: &str,
+    attachments: Vec<(String, Vec<u8>)>,
+) -> Result<(), JoyError> {
+    commit(
+        root,
+        cid,
+        &sealed::Write {
+            attachments,
+            ..sealed::Write::default()
+        },
+    )
+}
+
 pub fn commit(root: &std::path::Path, cid: &str, write: &sealed::Write) -> Result<(), JoyError> {
     if write.is_empty() {
         return Ok(());
@@ -329,7 +373,22 @@ fn write_tree(
     }
     let log_oid = log_b.write().map_err(git)?;
 
-    // <cid>/ subtree = { keys/, log/ }
+    // att/ subtree = existing + newly sealed attachments (content
+    // addressed, so a re-insert of the same name is the same blob).
+    let mut att_b = match chat_tree.and_then(|t| subtree(repo, t, ATT_DIR)) {
+        Some(t) => repo.treebuilder(Some(&t)).map_err(git)?,
+        None => repo.treebuilder(None).map_err(git)?,
+    };
+    for (aid, blob) in &write.attachments {
+        let oid = repo.blob(blob).map_err(git)?;
+        att_b
+            .insert(aid, oid, i32::from(FileMode::Blob))
+            .map_err(git)?;
+    }
+    let att_len = att_b.len();
+    let att_oid = att_b.write().map_err(git)?;
+
+    // <cid>/ subtree = { keys/, log/ [, att/] }
     let mut chat_b = repo.treebuilder(None).map_err(git)?;
     chat_b
         .insert(KEYS_DIR, keys_oid, i32::from(FileMode::Tree))
@@ -337,6 +396,11 @@ fn write_tree(
     chat_b
         .insert(LOG_DIR, log_oid, i32::from(FileMode::Tree))
         .map_err(git)?;
+    if att_len > 0 {
+        chat_b
+            .insert(ATT_DIR, att_oid, i32::from(FileMode::Tree))
+            .map_err(git)?;
+    }
     let chat_oid = chat_b.write().map_err(git)?;
 
     // root tree with this chat spliced in.
@@ -455,6 +519,7 @@ mod tests {
             tool: None,
             payload: None,
             details: None,
+            parts: Vec::new(),
         }
     }
 
@@ -842,5 +907,114 @@ mod tests {
 
     fn contains(hay: &[u8], needle: &[u8]) -> bool {
         hay.windows(needle.len()).any(|w| w == needle)
+    }
+}
+
+#[cfg(test)]
+mod attachment_tests {
+    use super::*;
+    use joy_chat::model::chat::{Chat, MessagePart};
+
+    fn repo() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        git2::Repository::init(dir.path()).unwrap();
+        dir
+    }
+
+    /// JOY-024C-97 end to end on the store: seal an attachment, store it
+    /// next to the message, read it back sealed, open it with the
+    /// reader's keys — and a foreign seed opens nothing.
+    #[test]
+    fn an_attachment_seals_stores_and_opens_only_for_a_recipient() {
+        let dir = repo();
+        let root = dir.path();
+        let seed = [7u8; 32];
+        let vk = joy_core::auth::IdentityKeypair::from_seed(&seed)
+            .public_key()
+            .to_hex();
+        let members = [sealed::Member {
+            id: "alice@example.com".into(),
+            verify_key: joy_core::auth::PublicKey::from_hex(&vk).unwrap(),
+        }];
+
+        // a chat with one message whose part references the attachment
+        let mut chat = Chat::new(
+            "c-att",
+            vec![joy_model::MemberRef::new("alice@example.com")],
+            chrono::Utc::now(),
+        );
+        let opened = sealed::open("c-att", &Sealed::default(), &seed);
+        let payload = b"png bytes stand in";
+        // no epoch yet: seal the chat first to mint one, then the blob
+        let recipients = sealed::recipients(&chat, &members);
+        let write = sealed::seal("c-att", &opened, &chat, &recipients, &seed).unwrap();
+        commit(root, "c-att", &write).unwrap();
+        let sealed_now = snapshot(root, "c-att").unwrap().unwrap();
+        let opened = sealed::open("c-att", &sealed_now, &seed);
+        let (aid, blob) = sealed::seal_attachment("c-att", &opened, payload).unwrap();
+        put_attachments(root, "c-att", vec![(aid.clone(), blob)]).unwrap();
+
+        chat.messages.push(joy_chat::model::chat::ChatMessage {
+            id: "m1".into(),
+            at: chrono::Utc::now(),
+            author: joy_model::MemberRef::new("alice@example.com"),
+            text: "see the screenshot".into(),
+            kind: Default::default(),
+            delegated_by: None,
+            turn_ms: None,
+            tool_steps: None,
+            tool: None,
+            payload: None,
+            details: None,
+            parts: vec![MessagePart::Image {
+                mime: "image/png".into(),
+                attachment: aid.clone(),
+                label: "screenshot".into(),
+            }],
+        });
+        let write = sealed::seal("c-att", &opened, &chat, &recipients, &seed).unwrap();
+        commit(root, "c-att", &write).unwrap();
+
+        // the message and its part survive the round trip
+        let loaded = load(root, "c-att", &seed).unwrap().unwrap();
+        assert_eq!(loaded.messages.len(), 1);
+        assert_eq!(loaded.messages[0].parts.len(), 1);
+        assert_eq!(loaded.messages[0].parts[0].attachment(), Some(aid.as_str()));
+
+        // the stored blob is sealed; the recipient opens it, a stranger not
+        let stored = attachment(root, "c-att", &aid).unwrap().unwrap();
+        assert_ne!(stored.as_slice(), payload);
+        let sealed_now = snapshot(root, "c-att").unwrap().unwrap();
+        let opened = sealed::open("c-att", &sealed_now, &seed);
+        assert_eq!(
+            sealed::open_attachment(&opened, &stored).as_deref(),
+            Some(payload.as_slice())
+        );
+        let stranger = sealed::open("c-att", &sealed_now, &[9u8; 32]);
+        assert!(sealed::open_attachment(&stranger, &stored).is_none());
+
+        // an unknown name is None, not an error
+        assert!(attachment(root, "c-att", "feedbeef").unwrap().is_none());
+    }
+
+    /// The cap is an honest refusal, not a truncation.
+    #[test]
+    fn an_oversized_attachment_is_refused() {
+        let dir = repo();
+        let root = dir.path();
+        let _ = root;
+        let opened = {
+            // an opened chat with one held epoch key
+            let mut epoch_keys = std::collections::BTreeMap::new();
+            epoch_keys.insert("e1".to_string(), joy_chat::chat_wrap::new_content_key());
+            sealed::Opened {
+                chat: Chat::new("c", Vec::new(), chrono::Utc::now()),
+                events: Vec::new(),
+                epoch_keys,
+            }
+        };
+        let big = vec![0u8; joy_chat::chat_seal::MAX_ATTACHMENT_BYTES + 1];
+        let err = sealed::seal_attachment("c", &opened, &big).unwrap_err();
+        assert!(err.to_string().contains("exceeds"), "{err}");
     }
 }

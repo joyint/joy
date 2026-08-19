@@ -46,6 +46,68 @@ pub enum MessageKind {
     Tool,
 }
 
+/// One typed content part of a message (JOY-024C-97). The message's
+/// `text` field stays the markdown backbone; parts carry what a turn
+/// produced beyond that text. Binary payloads never sit in the message
+/// itself: `attachment` names a sealed blob stored next to the message
+/// in the chats ref, addressed per part.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "part", rename_all = "kebab-case")]
+pub enum MessagePart {
+    /// An additional text block (e.g. an agent's secondary text output).
+    Text { text: String },
+    Image {
+        mime: String,
+        attachment: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        label: String,
+    },
+    Audio {
+        mime: String,
+        attachment: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        label: String,
+    },
+    /// An embedded resource: content that travels with the chat.
+    Resource {
+        mime: String,
+        attachment: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        label: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        uri: String,
+    },
+    /// A link to a resource that lives elsewhere; nothing embedded.
+    ResourceLink {
+        uri: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        label: String,
+    },
+}
+
+impl MessagePart {
+    /// The sealed attachment this part references, if it embeds one.
+    pub fn attachment(&self) -> Option<&str> {
+        match self {
+            Self::Image { attachment, .. }
+            | Self::Audio { attachment, .. }
+            | Self::Resource { attachment, .. } => Some(attachment),
+            Self::Text { .. } | Self::ResourceLink { .. } => None,
+        }
+    }
+
+    /// A short human word for the part's kind (CLI and log rendering).
+    pub fn kind_word(&self) -> &'static str {
+        match self {
+            Self::Text { .. } => "text",
+            Self::Image { .. } => "image",
+            Self::Audio { .. } => "audio",
+            Self::Resource { .. } => "resource",
+            Self::ResourceLink { .. } => "link",
+        }
+    }
+}
+
 /// One message in a chat. The author is a member ref and resolves for
 /// display via the no-raw-ID rule.
 ///
@@ -89,6 +151,11 @@ pub struct ChatMessage {
     /// decision 2026-07-16).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub details: Option<String>,
+    /// Typed content beyond the text backbone (JOY-024C-97). Absent on
+    /// every message from before parts existed; the default keeps those
+    /// loading unchanged (read-side tolerance, ADR JOY-0244-9E).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<MessagePart>,
 }
 
 impl ChatMessage {
@@ -328,6 +395,7 @@ mod tests {
             tool: None,
             payload: None,
             details: None,
+            parts: Vec::new(),
         };
         chat.messages = vec![mk(1, "a@e"), mk(2, "b@e"), mk(3, "ai:v@joy")];
         // b@e has an explicit read marker up to t2; a@e and the AI only have

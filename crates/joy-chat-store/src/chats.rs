@@ -180,6 +180,7 @@ pub fn append_kind_with_id(
         tool: None,
         payload: None,
         details: None,
+        parts: Vec::new(),
     };
     chat.messages.push(message.clone());
     chat.updated = now;
@@ -1120,6 +1121,7 @@ mod channel_tests {
             tool: None,
             payload: None,
             details: None,
+            parts: Vec::new(),
         };
         chat.messages.push(mk(2, "second"));
         chat.messages.push(mk(1, "first"));

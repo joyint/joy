@@ -23,6 +23,10 @@ pub enum ChatError {
     /// Event YAML that does not serialize or parse.
     #[error("chat event: {0}")]
     Yaml(#[from] serde_yaml_ng::Error),
+    /// An attachment above the hard size cap (media in a git ref needs
+    /// limits): the honest refusal, never a silent truncation.
+    #[error("attachment of {got} bytes exceeds the {cap} byte cap")]
+    AttachmentTooLarge { got: usize, cap: usize },
 }
 
 impl ChatError {

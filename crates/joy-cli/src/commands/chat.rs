@@ -450,6 +450,26 @@ fn run_command(root: &std::path::Path, command: ChatCommand) -> Result<()> {
                     m.author.id(),
                     m.text
                 );
+                // Non-text parts are named, never dropped (JOY-024C-97):
+                // the CLI cannot show an image, but it must say one is
+                // there.
+                for part in &m.parts {
+                    use joy_chat::model::chat::MessagePart;
+                    let label = match part {
+                        MessagePart::Text { text } => text.clone(),
+                        MessagePart::Image { label, .. }
+                        | MessagePart::Audio { label, .. }
+                        | MessagePart::Resource { label, .. } => label.clone(),
+                        MessagePart::ResourceLink { uri, label } => {
+                            if label.is_empty() {
+                                uri.clone()
+                            } else {
+                                format!("{label} <{uri}>")
+                            }
+                        }
+                    };
+                    println!("                    [{}] {}", part.kind_word(), label);
+                }
             }
         }
     }

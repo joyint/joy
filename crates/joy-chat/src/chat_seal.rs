@@ -28,6 +28,9 @@ use joy_crypt::zone::{decrypt_blob, encrypt_blob_with_nonce, ZoneKey};
 
 /// The subtree that holds the anonymous key slots.
 pub const KEYS_DIR: &str = "keys";
+/// Subtree of sealed attachment blobs (JOY-024C-97), addressed per part
+/// by [`rid`] of the sealed bytes.
+pub const ATT_DIR: &str = "att";
 /// The subtree that holds the sealed event log.
 pub const LOG_DIR: &str = "log";
 
@@ -84,6 +87,51 @@ pub fn rid(blob: &[u8]) -> String {
     hex::encode(&Sha256::digest(blob)[..16])
 }
 
+/// Hard per-attachment size cap (JOY-024C-97): media lives in a git ref,
+/// so it needs a limit, and crossing it is an honest refusal.
+pub const MAX_ATTACHMENT_BYTES: usize = 4 * 1024 * 1024;
+
+/// Seal raw attachment bytes under `epoch_id`'s content key, same crypt
+/// format and zone as the event blobs, so the same epoch keys open both.
+/// Refuses above [`MAX_ATTACHMENT_BYTES`].
+pub fn seal_attachment(
+    cid: &str,
+    epoch_id: &str,
+    ck: &ContentKey,
+    bytes: &[u8],
+) -> Result<Vec<u8>, ChatError> {
+    if bytes.len() > MAX_ATTACHMENT_BYTES {
+        return Err(ChatError::AttachmentTooLarge {
+            got: bytes.len(),
+            cap: MAX_ATTACHMENT_BYTES,
+        });
+    }
+    let zone = event_zone(cid, epoch_id);
+    let nonce = det_nonce(&zone, bytes);
+    Ok(encrypt_blob_with_nonce(
+        &zone,
+        &ZoneKey::from_bytes(*ck),
+        &nonce,
+        bytes,
+    ))
+}
+
+/// Open a sealed attachment blob given the reader's epoch keys. `None`
+/// when no held key opens it (foreign epoch, tampered) — a still-sealed
+/// attachment, never an error.
+pub fn open_attachment(blob: &[u8], keys: &BTreeMap<String, ContentKey>) -> Option<Vec<u8>> {
+    let (_, plain) = decrypt_blob(
+        |zone| {
+            epoch_of_zone(zone)
+                .and_then(|epoch| keys.get(epoch))
+                .map(|ck| ZoneKey::from_bytes(*ck))
+        },
+        blob,
+    )
+    .ok()?;
+    Some(plain)
+}
+
 /// Open a sealed event blob given the epoch content keys the reader
 /// holds. `None` when no held key opens it (foreign epoch, tampered),
 /// which the caller treats as a still-sealed event, never an error.
@@ -137,6 +185,7 @@ mod tests {
             tool: None,
             payload: None,
             details: None,
+            parts: Vec::new(),
         }
     }
     fn kp(seed: u8) -> joy_crypt::identity::Keypair {

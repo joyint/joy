@@ -529,6 +529,7 @@ mod tests {
             tool: None,
             payload: None,
             details: None,
+            parts: Vec::new(),
         }
     }
 

@@ -31,3 +31,4 @@
 2026-08-19T05:18:59.259Z JOY-025D-99 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-08-19T05:19:20.655Z JOY-025D-99 comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-08-19T05:19:20.735Z JOY-025D-99 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-08-19T06:27:24.915Z JOY-024C-97 item.status_changed "open -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

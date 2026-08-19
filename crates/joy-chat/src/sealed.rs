@@ -55,12 +55,15 @@ pub struct Opened {
 pub struct Write {
     pub slots: Vec<(String, Vec<u8>)>,
     pub blobs: Vec<(String, Vec<u8>)>,
+    /// Sealed attachment blobs (JOY-024C-97), stored under `att/` next
+    /// to the message log; message parts reference them by name.
+    pub attachments: Vec<(String, Vec<u8>)>,
 }
 
 impl Write {
     /// Nothing to store.
     pub fn is_empty(&self) -> bool {
-        self.slots.is_empty() && self.blobs.is_empty()
+        self.slots.is_empty() && self.blobs.is_empty() && self.attachments.is_empty()
     }
 }
 
@@ -119,6 +122,34 @@ pub fn open(cid: &str, sealed: &Sealed, seed: &[u8; 32]) -> Opened {
         events,
         epoch_keys,
     }
+}
+
+/// Seal raw attachment bytes for this chat (JOY-024C-97): under the
+/// ACTIVE epoch's content key when the reader holds it. Returns the
+/// content-addressed attachment name (the part's `attachment` value) and
+/// the sealed bytes for storage. The caller stores the blob and puts the
+/// name into a [`crate::model::chat::MessagePart`]; both then ride the
+/// same save. Refuses above [`chat_seal::MAX_ATTACHMENT_BYTES`].
+pub fn seal_attachment(
+    cid: &str,
+    opened: &Opened,
+    bytes: &[u8],
+) -> Result<(String, Vec<u8>), ChatError> {
+    let epoch = active_epoch(&opened.events)
+        .or_else(|| opened.epoch_keys.keys().next_back().cloned())
+        .ok_or_else(|| ChatError::auth("no epoch to seal the attachment under"))?;
+    let ck = opened
+        .epoch_keys
+        .get(&epoch)
+        .ok_or_else(|| ChatError::auth("active epoch key not held"))?;
+    let blob = chat_seal::seal_attachment(cid, &epoch, ck, bytes)?;
+    Ok((chat_seal::rid(&blob), blob))
+}
+
+/// Open a sealed attachment with the keys of an opened chat. `None` is
+/// "not for me" (foreign epoch, tampered), never an error.
+pub fn open_attachment(opened: &Opened, blob: &[u8]) -> Option<Vec<u8>> {
+    chat_seal::open_attachment(blob, &opened.epoch_keys)
 }
 
 /// Seal the change from `opened.chat` to `next` for `recipients`.
@@ -408,6 +439,7 @@ mod tests {
             tool: None,
             payload: None,
             details: None,
+            parts: Vec::new(),
         }
     }
 

@@ -357,6 +357,7 @@ mod tests {
                 tool: None,
                 payload: None,
                 details: None,
+                parts: Vec::new(),
                 at: now,
                 author: MemberRef::new(author),
                 text: text.into(),
@@ -516,6 +517,7 @@ mod tests {
                 tool: None,
                 payload: None,
                 details: None,
+                parts: Vec::new(),
             });
         }
         line(&mut chat, now, "which model do you use?");
@@ -682,6 +684,7 @@ mod tests {
             tool: None,
             payload: None,
             details: None,
+            parts: Vec::new(),
             at: chat.updated,
             author: MemberRef::new("ai:claude@joy"),
             text: MODERATION_NOTICE.into(),
