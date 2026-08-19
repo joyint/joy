@@ -48,7 +48,7 @@ how to test against a temp project.
 
 ## Forge plugins: the query contract (JOY-0251-AA)
 
-A FORGE plugin (`joy-github`, `joy-gitlab`, ...) is a plugin like any
+A FORGE plugin (`joy-github`, `joy-gitlab`, `joy-gitea`, ...) is a plugin like any
 other, with one addition: besides printing node trees for humans it
 answers **typed queries** that joy-core consumes. All forge knowledge
 (host names, alias address formats, API access) lives in the plugin;

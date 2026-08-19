@@ -2151,6 +2151,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "joy-gitea"
+version = "0.20.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "joy-github"
 version = "0.20.0"
 dependencies = [

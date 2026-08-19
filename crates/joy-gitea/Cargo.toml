@@ -1,0 +1,14 @@
+[package]
+name = "joy-gitea"
+version = "0.20.0"
+edition = "2021"
+license = "MIT"
+description = "Joy forge plugin for Gitea and Forgejo: claims/identity queries (alias addresses, acting login)"
+repository = "https://github.com/joyint/joy"
+homepage = "https://joyint.com/en/joy"
+
+[dependencies]
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }

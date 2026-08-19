@@ -145,3 +145,4 @@ release:
   - crates/joy-bi/Cargo.toml
   - crates/joy-github/Cargo.toml
   - crates/joy-gitlab/Cargo.toml
+  - crates/joy-gitea/Cargo.toml

@@ -153,7 +153,7 @@ setup:
 # Install to ~/.local/bin/ (joy plus the plugins: joy-bi, and the forge
 # plugins joy-core's identity fallback queries, JOY-0251-AA)
 install:
-    cargo build --release -p joy-cli -p joy-bi -p joy-github -p joy-gitlab && mkdir -p ~/.local/bin && cp target/release/joy target/release/joy-bi target/release/joy-github target/release/joy-gitlab ~/.local/bin/
+    cargo build --release -p joy-cli -p joy-bi -p joy-github -p joy-gitlab -p joy-gitea && mkdir -p ~/.local/bin && cp target/release/joy target/release/joy-bi target/release/joy-github target/release/joy-gitlab target/release/joy-gitea ~/.local/bin/
 
 # Auto-commit known generated files (.joy/, lockfiles)
 [private]
@@ -240,7 +240,7 @@ publish-crates: sync-tutorial
     # joy-bi rides after joy-core (its only internal dependency); the two
     # forge plugins have none. Every workspace member is either in this
     # list or carries publish = false -- the gap that made JOY-0247-E1.
-    crates=(joy-model joy-chat joy-core joy-bi joy-github joy-gitlab joy-chat-store joy-ai joy-cli)
+    crates=(joy-model joy-chat joy-core joy-bi joy-github joy-gitlab joy-gitea joy-chat-store joy-ai joy-cli)
     for crate in "${crates[@]}"; do
         version=$(cargo pkgid --quiet -p "$crate" 2>/dev/null | sed 's/.*[#@]\(.*\)/\1/')
         if [ -z "$version" ]; then

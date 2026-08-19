@@ -165,7 +165,7 @@ jobs:
       # tracked separately (JOY-01A7-35).
       # the forge plugins ride the bats PATH too (forge_alias.bats,
       # JOY-0251-AA); fast-kdf stays a joy-cli-only feature
-      - run: cargo build -p joy-cli -p joy-github -p joy-gitlab --features joy-cli/fast-kdf
+      - run: cargo build -p joy-cli -p joy-github -p joy-gitlab -p joy-gitea --features joy-cli/fast-kdf
         working-directory: joy
       - run: bats tests/integration/*.bats
         working-directory: joy

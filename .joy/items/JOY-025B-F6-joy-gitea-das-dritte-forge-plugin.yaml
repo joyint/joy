@@ -1,0 +1,17 @@
+id: JOY-025B-F6
+title: 'joy-gitea: das dritte Forge-Plugin (Codeberg und Forgejo)'
+type: story
+status: in-progress
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- plan
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-19T03:29:56.659737964Z
+updated: 2026-08-19T03:30:11.276219244Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Fund Horst 2026-08-19: Seit Codeberg auf der Integrate-Instanz als Gitea-kompatibler Forge eingerichtet ist, fehlt fuer genau diese Repos die Alias-Aufloesung; die Registry kannte nur github und gitlab, fuer ein Codeberg-Remote fuehlte sich kein Plugin zustaendig. Gitea und Forgejo haben dieselbe Problemklasse: Keep Email Private liefert Adressen der Form <benutzer>@noreply.<instanz>. joy-gitea nach dem Muster von joy-gitlab: claims fuer codeberg.org (andere Instanzen ueber den forge-Override), Alias-Parsing, tea-Konfiguration, API fuer die verifizierten Adressen; Registry-Zeile in joy-core, dazu install, publish, CI, Platform-Image und Doku.'

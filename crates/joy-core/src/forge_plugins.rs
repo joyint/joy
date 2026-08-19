@@ -40,6 +40,10 @@ pub const FORGE_PLUGINS: &[ForgePluginSpec] = &[
         id: "gitlab",
         binary: "joy-gitlab",
     },
+    ForgePluginSpec {
+        id: "gitea",
+        binary: "joy-gitea",
+    },
 ];
 
 /// The registry row for a `forge:` override value, if any.

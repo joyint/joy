@@ -129,3 +129,44 @@ setup_project_with_alice() {
     run joy add idea "acting as primary against an alias member key"
     [ "$status" -eq 0 ]
 }
+
+# The tea STUB: the Gitea forge boundary, same shape as the gh stub.
+install_tea_stub() {
+    STUB_DIR="$TEST_DIR/stub-bin"
+    mkdir -p "$STUB_DIR"
+    cat > "$STUB_DIR/tea" <<'STUB'
+#!/bin/sh
+case "$*" in
+"api get user/emails") echo '[{"email":"alice@example.com","verified":true}]' ;;
+*) exit 1 ;;
+esac
+STUB
+    chmod +x "$STUB_DIR/tea"
+    export PATH="$STUB_DIR:$PATH"
+    # tea's config names the signed-in login and its instance, offline
+    export TEA_CONFIG_DIR="$TEST_DIR/tea-config"
+    mkdir -p "$TEA_CONFIG_DIR"
+    printf 'logins:\n- name: codeberg\n  url: https://codeberg.org/\n  user: alice-login\n' \
+        > "$TEA_CONFIG_DIR/config.yml"
+}
+
+@test "a member behind a codeberg alias keeps working via the gitea plugin" {
+    setup_project_with_alice
+    # this project lives on Codeberg, not GitHub
+    git remote remove origin
+    git remote add origin git@codeberg.org:example/forge-alias.git
+    install_tea_stub
+
+    # the clone flips to Gitea's private-email alias
+    git config user.email "alice-login@noreply.codeberg.org"
+
+    run joy auth --passphrase "$ALICE_PASSPHRASE"
+    [ "$status" -eq 0 ]
+
+    run joy add idea "written behind the codeberg alias"
+    [ "$status" -eq 0 ]
+
+    run grep -rl "noreply.codeberg.org" .joy/items
+    [ "$status" -ne 0 ]
+    grep -q "created_by: alice@example.com" .joy/items/*.yaml
+}
