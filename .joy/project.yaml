@@ -142,3 +142,6 @@ release:
   - crates/joy-model/Cargo.toml
   - crates/joy-chat/Cargo.toml
   - crates/joy-chat-store/Cargo.toml
+  - crates/joy-bi/Cargo.toml
+  - crates/joy-github/Cargo.toml
+  - crates/joy-gitlab/Cargo.toml
