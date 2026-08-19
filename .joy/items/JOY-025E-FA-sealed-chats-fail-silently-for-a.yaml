@@ -1,0 +1,14 @@
+id: JOY-025E-FA
+title: Sealed chats fail silently for a member without a key slot
+type: bug
+status: new
+priority: high
+capabilities:
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-19T14:03:52.786743320Z
+updated: 2026-08-19T14:03:52.786743320Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Observed on integrate 2026-08-19 (Roland, roland@helmrich.eu): project opens, authentication succeeds (12 WebUnlocks, healthy sessions and unlock rows), the server answers ChatSnapshot/ChatSnapshotOne/StreamChat with 200 and data, yet the chat window never becomes usable; not one ChatCommit or RunChatTurn all day. Server logs and OTel traces show NO failure: the break is client-side and invisible to the platform. Evidence pointing at lost slot coverage: his chats carry 1-2 anonymous key slots while 3 members are enrolled; his member entry was renamed and re-attested on 2026-08-06 (commit caa2ec6 ''Update email address for project member and attester'') the same day all three chats were written. Hypothesis: his current seed opens no slot; chatCrypto.openAll silently drops such chats (empty list or eternal spinner from ChatSnapshotOne polling), and coverage only heals when someone who CAN open the chat saves again. Wanted: (a) an honest client surface for ''sealed to keys you do not hold'' instead of silence, (b) a deliberate re-cover path, (c) confirmation via the reporter''s browser console. Related: the enrolled-beats-invited work and the alias epic JOY-0251-AA.'
