@@ -13,10 +13,13 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-09T08:32:49.385073344Z
-updated: 2026-08-20T05:22:19.588432894Z
+updated: 2026-08-20T06:14:18.617283601Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'docs/plugins.md um den Frage-Vertrag erweitern: joy-<name> claims --remote <url> (JSON ja/nein) und joy-<name> identity [--unresolved-email <a>] [--login/--user-id/--token-env fuer Server-Zulieferung] (JSON: login, kennung, adressen[] oder ''unbekannt''). Registry nach dem Adapter-Muster (joy_ai::adapters, eine Datenzeile pro Forge-Plugin) in joy-core; project.yaml forge: bleibt Operator-Override. Kein Forge-Wissen ausserhalb der Plugins.'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-08-20T05:22:19.588431938Z
   text: 'Coverage audit 2026-08-20: partially covered by joy/tests/integration/forge_alias.bats:56, untested: by any bats/e2e: the question contract itself (joy-<name> claims ,remote <url> JSON, joy-<name> identity [,unresolved-email].'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-20T06:14:18.617281789Z
+  text: Now covered by bats (67bdeaf, 2026-08-20); see JOY-0260-1A.

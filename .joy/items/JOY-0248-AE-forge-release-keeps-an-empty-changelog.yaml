@@ -11,10 +11,13 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-31T20:35:39.744356735Z
-updated: 2026-08-20T05:22:19.174346291Z
+updated: 2026-08-20T06:14:18.890398125Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'joy release publish is idempotent on an existing forge release, but only returns its URL: when the tag push triggers the dist workflow first (exactly what happened for v0.20.0 after the crates upload failed and publish was retried), the release exists with just the installer section and the whole changelog is silently dropped. Fix: when the release already exists, fetch its body and prepend the rendered notes unless they are already present, via gh release edit.'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-08-20T05:22:19.174345494Z
   text: 'Coverage audit 2026-08-20: no bats or e2e test yet; customer-facing, planned as bats in joy/tests/integration/release_publish_forge_notes.bats.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-20T06:14:18.890396871Z
+  text: Now covered by bats (67bdeaf, 2026-08-20); see JOY-0260-1A.
