@@ -1171,3 +1171,39 @@ YAML
 #     unwrap_for_member path; bats-driving JOY_SESSION across the
 #     run/eval boundary from a captured token string was inconsistent
 #     across bash versions.
+
+# ---- the platform-key model is gone (JOY-022E-B2) --------------------
+# Delegation replaced the platform key: the server holds no key of its
+# own any more, it holds tokens a member signed. What was removed must
+# stay removed, or the two models drift apart again.
+
+@test "the retired platform-key surface is refused" {
+    setup_human_auth
+
+    run joy project platform-key
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"unrecognized subcommand"* ]]
+
+    # and the platform is not a member one could grant a zone to
+    run joy crypt grant chats platform
+    [ "$status" -ne 0 ]
+}
+
+@test "issuing a delegation token registers the AI member's identity key" {
+    setup_human_auth
+    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+
+    joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" >/dev/null
+    # the member now carries the key its tokens are checked against
+    run -0 awk '/^  ai:test@joy:/{f=1} f&&/^  [^ ]/&&!/ai:test/{f=0} f' .joy/project.yaml
+    [[ "$output" == *"verify_key:"* ]]
+    local first
+    first=$(printf '%s' "$output" | sed -n 's/.*verify_key: \([0-9a-f]*\).*/\1/p')
+    [ -n "$first" ]
+
+    # a second token rides the SAME identity: re-keying would silently
+    # invalidate every token already out there
+    joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" >/dev/null
+    run -0 awk '/^  ai:test@joy:/{f=1} f&&/^  [^ ]/&&!/ai:test/{f=0} f' .joy/project.yaml
+    [[ "$output" == *"$first"* ]]
+}

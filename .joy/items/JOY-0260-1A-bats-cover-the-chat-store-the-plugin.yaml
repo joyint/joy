@@ -1,0 +1,15 @@
+id: JOY-0260-1A
+title: Bats cover the chat store, the plugin contract and the release notes
+type: task
+status: in-progress
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-20T06:13:41.336644684Z
+updated: 2026-08-20T06:13:53.226414942Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Second batch from the coverage audit, the bats half (they run in joy''s own CI, so they hold from day one). New suites: forge_plugin_contract.bats drives the three plugin binaries the way joy-core and the platform do (claims per domain, resolve pure and per alias shape, an unknown address honestly unknown, identity through a named token variable with curl as the marked stub); chat_concurrent_writes.bats fires twelve parallel sends and asserts nothing is lost silently, a send that reports success is in the chat and one that loses the race says try again; chat_store_maintenance.bats proves the write path asks git to tidy up, once per process, and that a failing tidy-up never costs the message; auth.bats gained the platform-key rollback (the retired surface is refused) and the delegation identity rule (a token registers the AI member''s verify_key and a second token keeps it). Covers JOY-0252-1A, JOY-023B-7E, JOY-023C-1E, JOY-0248-AE, JOY-022E-B2. 569 bats green in 2m41.'

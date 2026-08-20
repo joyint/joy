@@ -1,0 +1,14 @@
+id: JOY-0261-BA
+title: joy-gitea claims no product domain, unlike its twins
+type: bug
+status: new
+priority: medium
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-20T06:13:53.332870026Z
+updated: 2026-08-20T06:13:53.332870026Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: Found while writing forge_plugin_contract.bats (2026-08-20). joy-github claims github.com plus every host gh is signed in to, joy-gitlab claims gitlab.com plus every host glab knows, but joy-gitea (crates/joy-gitea/src/gitea.rs:21) claims ONLY hosts tea is signed in to, with no product domain at all. So a repository on gitea.com is unclaimed unless the person happens to have tea configured, while the operator's decision was that gitea.com is a product domain like the other two (Gitea Cloud and Gitea Enterprise exist; Codeberg is the compatible alternative that arrives through tea's config). Either the plugin gains gitea.com and .gitea.com as its default claim, matching the twins, or the decision is recorded the other way; today the code and the decision disagree. The new bats suite asserts today's behaviour, so changing it means changing that test with it.
