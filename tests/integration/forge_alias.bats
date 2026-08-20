@@ -170,3 +170,142 @@ STUB
     [ "$status" -ne 0 ]
     grep -q "created_by: alice@example.com" .joy/items/*.yaml
 }
+
+# The same person, twice in the project: enrolled under one address and
+# still invited under another (JOY-0259-44, reported by an operator whose
+# repo refused him). The forge vouches for BOTH, pending one FIRST, so
+# order cannot be what decides who the caller is.
+@test "an enrolled member wins over an open invitation for the same person" {
+    setup_project_with_alice
+    # the founder speaks the invitation (alice holds no manage)
+    git config user.email test@example.com
+    joy project member add alice-second@example.com --passphrase "$FOUNDER_PASSPHRASE"
+    install_gh_stub
+    cat > "$STUB_DIR/gh" <<'EOF'
+#!/bin/sh
+case "$1 $2" in
+"api user/emails") echo '[{"email":"alice-second@example.com","verified":true},{"email":"alice@example.com","verified":true}]' ;;
+"api user") echo '{"email":null}' ;;
+*) exit 1 ;;
+esac
+EOF
+    chmod +x "$STUB_DIR/gh"
+    git config user.email "777+alice-login@users.noreply.github.com"
+
+    # the enrolled slot answers, so login and write go through
+    run joy auth --passphrase "$ALICE_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    run joy add idea "the enrolled entry wins"
+    [ "$status" -eq 0 ]
+
+    # attributed to the enrolled member, never to the pending slot
+    grep -q "created_by: alice@example.com" .joy/items/*.yaml
+    run grep -rl "alice-second@example.com" .joy/items
+    [ "$status" -ne 0 ]
+}
+
+# GitHub's older privacy address carries no numeric id (JOY-0254-3C).
+@test "the legacy alias form without a numeric id resolves too" {
+    setup_project_with_alice
+    install_gh_stub
+    git config user.email "alice-login@users.noreply.github.com"
+
+    run joy auth --passphrase "$ALICE_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    run joy add idea "legacy alias form"
+    [ "$status" -eq 0 ]
+
+    grep -q "created_by: alice@example.com" .joy/items/*.yaml
+    run grep -rl "users.noreply.github.com" .joy/items
+    [ "$status" -ne 0 ]
+}
+
+# No instance lives in the code (JOY-025C-A7): the host comes from gh's
+# own config, and the alias is matched by SHAPE, so an Enterprise Server
+# on any domain works.
+@test "an enterprise host from gh's own config is claimed" {
+    setup_project_with_alice
+    install_gh_stub
+    printf 'github.com:\n    user: alice-login\nghe.example.com:\n    user: alice-login\n' \
+        > "$GH_CONFIG_DIR/hosts.yml"
+    git remote remove origin
+    git remote add origin git@ghe.example.com:example/forge-alias.git
+    git config user.email "777+alice-login@users.noreply.ghe.example.com"
+
+    run joy auth --passphrase "$ALICE_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    run joy add idea "enterprise host"
+    [ "$status" -eq 0 ]
+    grep -q "created_by: alice@example.com" .joy/items/*.yaml
+}
+
+# ...and a lookalike host nobody is signed in to is NOT claimed, so the
+# address stays a stranger (JOY-025C-A7, the other half).
+@test "a lookalike host is not claimed by the github plugin" {
+    setup_project_with_alice
+    install_gh_stub
+    git remote remove origin
+    git remote add origin git@github.com.evil.example:example/forge-alias.git
+    git config user.email "777+alice-login@users.noreply.github.com.evil.example"
+
+    run joy add idea "should be refused"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"not a registered project member"* ]] || [[ "$output" == *"must authenticate"* ]]
+}
+
+# The glab STUB: the GitLab forge boundary, same shape as the gh twin.
+install_glab_stub() {
+    STUB_DIR="$TEST_DIR/stub-bin"
+    mkdir -p "$STUB_DIR"
+    cat > "$STUB_DIR/glab" <<'STUB'
+#!/bin/sh
+case "$*" in
+"api user/emails") echo '[{"email":"alice@example.com","verified":true}]' ;;
+*) exit 1 ;;
+esac
+STUB
+    chmod +x "$STUB_DIR/glab"
+    export PATH="$STUB_DIR:$PATH"
+    export GLAB_CONFIG_DIR="$TEST_DIR/glab-config"
+    mkdir -p "$GLAB_CONFIG_DIR"
+    printf 'hosts:\n  gitlab.com:\n    user: alice-login\n' > "$GLAB_CONFIG_DIR/config.yml"
+}
+
+# The second proof of the same contract (JOY-0255-B3); GitLab's alias
+# carries a dash where GitHub's carries a plus.
+@test "a member behind a gitlab alias keeps working via the gitlab plugin" {
+    setup_project_with_alice
+    git remote remove origin
+    git remote add origin git@gitlab.com:example/forge-alias.git
+    install_glab_stub
+    git config user.email "4711-alice-login@users.noreply.gitlab.com"
+
+    run joy auth --passphrase "$ALICE_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    run joy add idea "written behind the gitlab alias"
+    [ "$status" -eq 0 ]
+
+    run grep -rl "users.noreply.gitlab.com" .joy/items
+    [ "$status" -ne 0 ]
+    grep -q "created_by: alice@example.com" .joy/items/*.yaml
+}
+
+# The session is stored under the member key, not under whatever the git
+# config happens to say (JOY-0253-8A): --user must carry through to the
+# lookup, or status reports unauthenticated right after a good login.
+@test "joy auth --user carries through to the session lookup" {
+    setup_project_with_alice
+    install_gh_stub
+    git config user.email "777+alice-login@users.noreply.github.com"
+
+    run joy auth --user alice@example.com --passphrase "$ALICE_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    run joy auth status --json
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"authenticated":true'* ]]
+    [[ "$output" == *'"member":"alice@example.com"'* ]]
+
+    run joy add idea "written after --user"
+    [ "$status" -eq 0 ]
+    grep -q "created_by: alice@example.com" .joy/items/*.yaml
+}
