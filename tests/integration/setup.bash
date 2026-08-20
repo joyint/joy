@@ -31,6 +31,11 @@ setup() {
     export HOME="$TEST_DIR"
     export XDG_STATE_HOME="$TEST_DIR/.state"
     export XDG_CONFIG_HOME="$TEST_DIR/.config"
+    # Overriding HOME hides ~/.gitconfig but not /etc/gitconfig, and a CI
+    # image that puts a git identity there makes the cases about a
+    # MISSING identity pass on a laptop and fail on the runner. Ignoring
+    # the system file completes the isolation the lines above intend.
+    export GIT_CONFIG_NOSYSTEM=1
 }
 
 # Clean up after each test
