@@ -31,6 +31,7 @@ load setup
     [[ "$output" == *"hi Horst"* ]]
 }
 
+# bats test_tags=smoke
 @test "joy chat send/leave/delete lifecycle from the terminal" {
     joy init --name "Chat Life" 2>/dev/null
     joy auth init --passphrase "$TEST_PASSPHRASE"

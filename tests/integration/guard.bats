@@ -160,6 +160,7 @@ EOF
 # Scenario 4: Developer without manage capability
 # ============================================================
 
+# bats test_tags=smoke
 @test "developer without manage cannot add members" {
     setup_team_project
     setup_member_auth dev@example.com "$DEV_PASSPHRASE"

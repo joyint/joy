@@ -175,6 +175,7 @@ STUB
 # still invited under another (JOY-0259-44, reported by an operator whose
 # repo refused him). The forge vouches for BOTH, pending one FIRST, so
 # order cannot be what decides who the caller is.
+# bats test_tags=smoke
 @test "an enrolled member wins over an open invitation for the same person" {
     setup_project_with_alice
     # the founder speaks the invitation (alice holds no manage)

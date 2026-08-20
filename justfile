@@ -29,8 +29,17 @@ test-cmd:
 
 # Integration tests (bats)
 test-int:
-    cargo build -p joy-cli --features fast-kdf
+    cargo build -p joy-cli -p joy-github -p joy-gitlab -p joy-gitea --features joy-cli/fast-kdf
     bats tests/integration/*.bats
+
+# The functional core, in seconds: the handful of bats cases tagged
+# `smoke` (item lifecycle, authentication, a guard refusal, the chat
+# lifecycle, forge identity resolution). `just check` runs these so a
+# commit is gated on the product still WORKING, not only on it
+# compiling; the full suite rides in `just check-all`.
+test-smoke:
+    cargo build -p joy-cli -p joy-github -p joy-gitlab -p joy-gitea --features joy-cli/fast-kdf
+    bats --filter-tags smoke tests/integration/*.bats
 
 # Snapshot tests (insta)
 test-snap:
@@ -83,7 +92,12 @@ sync-tutorial:
     cp docs/ai/Tutorial.md crates/joy-cli/docs/ai/Tutorial.md
 
 # Run fmt-check, lint, test
-check: _toolchain-check sync-tutorial fmt-check lint test
+# The fast gate, for every commit: static checks plus the functional
+# core. Seconds, not minutes, so nobody is tempted to skip it.
+check: _toolchain-check sync-tutorial fmt-check lint test-unit test-cmd test-smoke
+
+# Everything, for the nightly run and before a release.
+check-all: _toolchain-check sync-tutorial fmt-check lint test
 
 # Lint commit messages for Joy item references (default: main..HEAD)
 lint-commits base="main":

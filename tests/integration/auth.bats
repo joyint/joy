@@ -47,6 +47,7 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 # joy auth (login)
 # ============================================================
 
+# bats test_tags=smoke
 @test "joy auth authenticates with correct passphrase" {
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"

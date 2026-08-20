@@ -10,6 +10,7 @@ load setup
     grep -q "name: Test Project" .joy/project.yaml
 }
 
+# bats test_tags=smoke
 @test "joy add creates an item" {
     joy init --name "Test Project"
     run joy add task "Fix the bug" --effort 2
