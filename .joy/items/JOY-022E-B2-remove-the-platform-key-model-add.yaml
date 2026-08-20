@@ -12,7 +12,7 @@ capabilities:
 effort: 6
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-25T21:10:14.399883706Z
-updated: 2026-08-19T03:05:05.368473037Z
+updated: 2026-08-20T05:22:18.757111814Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Per decision JI-0175-B0. RUECKBAU: joy project platform-key (project.rs), joy crypt grant <zone> platform (crypt.rs), auth/platform.rs, PLATFORM_ISSUER + platform-signed session constructor (auth/session.rs), validate_job_session + its resolve_identity branch (identity.rs), PlatformInfo/Project::platform/set_platform_key/PLATFORM_RECIPIENT (model/project.rs), the platform recipient arm in joy-chat (chat_store.rs, chat_crypt.rs) and the encryptable predicate (chats.rs) reduced to members-with-keys; tests. write_yaml_preserve stays so foreign blocks in other repos are never silently dropped. AUFBAU: F1 self-heal on passphrase change (client re-wraps own chat slots holding both keys); F2 delegated_by from token claims into session claims; F3 cryptographic validation of token-redeemed sessions at command time (chain, capped to token expiry); F4 multi-delegator convention + set members.<ai>.verify_key from the delegation_verifier at token issuance when empty. Version marker bump so old clients update. just check green.'
 comments:
@@ -22,3 +22,6 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-08-19T03:05:05.287893609Z
   text: 'Verifiziert 2026-08-19: umgesetzt. Rueckbau vollstaendig (keine Treffer mehr fuer platform_key, PLATFORM_ISSUER, mint_job_session; auth/platform.rs entfernt). F1 laut Item-Kommentar bewusst gestrichen, F2 in auth/redeem.rs und auth/session.rs (delegated_by in den Claims), F3 in identity.rs (token_session_rejection: Binding-Claim, lebender delegation_verifier, Schluesselbesitz), F4 in joy-cli/src/commands/auth.rs (verify_key bei Token-Ausgabe).'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-20T05:22:18.757108806Z
+  text: 'Coverage audit 2026-08-20: partially covered by joy/tests/integration/traceability.bats:41, untested: F3''s negative half, no test for a broken delegation chain or a session outliving the token expiry (auth.bats:443 only proves.'

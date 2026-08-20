@@ -11,7 +11,7 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-19T04:42:25.643514976Z
-updated: 2026-08-19T04:46:37.355520552Z
+updated: 2026-08-20T05:22:20.330036796Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Fund Horst 2026-08-19: joy-gitea beanspruchte codeberg.org fest im Code, obwohl Codeberg nur EINE Forgejo-Instanz ist; joy-github und joy-gitlab konnten umgekehrt GitHub Enterprise und selbst gehostete GitLab-Instanzen gar nicht erkennen. Regel jetzt einheitlich fuer alle drei: ein Plugin beansprucht die eigene Produkt-Domain (github.com, gitlab.com; Gitea hat keine) plus jeden Host, bei dem die Forge-CLI dieser Person angemeldet ist (gh hosts.yml, glab config.yml, tea config.yml). Alias-Formen sind nicht mehr an eine Domain gebunden, sondern an ihre Gestalt. Instanzen ohne Anmeldung nehmen weiter den project.yaml-forge-Override.'
 comments:
@@ -21,3 +21,6 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-08-19T04:46:37.355519188Z
   text: 'Nachtrag 2026-08-19 nach Hinweis Horst: Gitea hat sehr wohl eine Produkt-Domain (gitea.com, Gitea Cloud und Enterprise); Codeberg ist eine kompatible Alternative auf Forgejo. joy-gitea beansprucht daher gitea.com plus die per tea angemeldeten Hosts, analog zu den beiden anderen. Ausserdem sind die claims-Tests jetzt hermetisch (reine Host-Praedikate statt gesetzter Umgebungsvariablen) - die Variante davor ist in der CI ueber parallel laufende Tests gestolpert. Der Hilfetext zu project.forge nennt jetzt die Plugin-Ids und den Fall selbst gehosteter Instanzen.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-20T05:22:20.330035852Z
+  text: 'Coverage audit 2026-08-20: now covered by joy/tests/integration/forge_alias.bats, case "an enterprise host from gh''s own config is claimed / a lookalike host is not claimed", written today and mutation-checked.'

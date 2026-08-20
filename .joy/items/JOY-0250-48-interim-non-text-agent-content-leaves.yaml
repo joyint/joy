@@ -11,6 +11,10 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-02T11:23:42.034661138Z
-updated: 2026-08-02T11:23:42.375492301Z
+updated: 2026-08-20T05:22:19.505492235Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Until content v2 (JOY-024B-AC) carries the payloads, a non-text ACP block (image, audio, embedded resource, resource link, unknown kind) is never dropped: the collector records kind plus ONE label (name/MIME/size, built once in Rust so live view and record say the same), the details JSON gains an optional contents array (v1 stays readable for older parsers), and the live wire carries a turn-content event. The activity block renders the rows with a paperclip next to thoughts and tools, live and after reload; the agent panel shows the same fact. Superseded by JOY-024D-3C. Known limit: a turn whose ONLY output is non-text still posts no message, so its record exists only in the live view until content v2.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-20T05:22:19.505491345Z
+  text: 'Coverage audit 2026-08-20: no bats or e2e test yet; customer-facing, planned as e2e in app/apps/web/tests/integration/chat-content.e2e.ts.'

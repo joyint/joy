@@ -11,10 +11,13 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-27T16:47:49.063943379Z
-updated: 2026-08-19T03:05:22.503285291Z
+updated: 2026-08-20T05:22:18.926037130Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Operator 2026-07-27: a sandbox project with about 20 chats of 10 messages carries 39 MB in .git. Measured on the exact copy he sent: 6140 loose objects, 38.89 MiB, ZERO packs. Of that, 1703 objects are reachable and weigh 0.7 MiB uncompressed; 4437 objects (22 MiB, mostly trees) are unreachable. The rest of the disk figure is loose-object overhead, one file per object padded to a filesystem block. Cause: every chat write goes through libgit2, which never runs the auto-gc that the git binary runs at 6700 loose objects, and nothing else ever packs or prunes either, so the number only rises. Proof: git gc --prune=now on his copy took .git from 41 MB to 476 KB with all 12 chats intact. Fix: run repository maintenance from the write path, best effort, so a long-lived project stays small; joy already shells out to the git binary (joy-ai/ai_setup.rs), so this needs no new dependency. The garbage that maintenance sweeps up is produced by the ref race in the sibling item.'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-08-19T03:05:22.423474050Z
   text: 'Verifiziert 2026-08-19: umgesetzt. maintain_occasionally in crates/joy-chat-store/src/chat_ref.rs zaehlt Schreibvorgaenge (MAINTAIN_EVERY = 64) und ruft dann best effort git gc --auto --quiet auf dem Chat-Repo; aufgerufen genau dann, wenn die Ref wirklich bewegt wurde. Gleicher Commit f0fd151.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-20T05:22:18.926034069Z
+  text: 'Coverage audit 2026-08-20: no bats or e2e test yet; customer-facing, planned as bats in joy/tests/integration/chat_store_maintenance.bats.'

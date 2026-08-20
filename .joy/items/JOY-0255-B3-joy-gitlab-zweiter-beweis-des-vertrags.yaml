@@ -11,6 +11,10 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-09T08:32:49.774741081Z
-updated: 2026-08-09T10:07:20.812912645Z
+updated: 2026-08-20T05:22:19.838185932Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: Gleicher Vertrag, GitLab-Aliasform (<id>-<username>@users.noreply.gitlab.com), Fakten aus glab-Konfiguration bzw. Server-Zulieferung. Beweist, dass der Vertrag ohne joy-core-Aenderung traegt.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-20T05:22:19.838184916Z
+  text: 'Coverage audit 2026-08-20: now covered by joy/tests/integration/forge_alias.bats, case "a member behind a gitlab alias keeps working via the gitlab plugin", written today and mutation-checked.'

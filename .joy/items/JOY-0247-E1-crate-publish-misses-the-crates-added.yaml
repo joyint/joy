@@ -11,10 +11,13 @@ capabilities:
 effort: 1
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-31T19:59:25.559380939Z
-updated: 2026-08-19T03:05:22.662838869Z
+updated: 2026-08-20T05:22:19.092952994Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'just publish failed after the v0.20.0 release: publish-crates only knows (joy-core joy-ai joy-cli), so joy-model, joy-chat and joy-chat-store were never uploaded and joy-core 0.20.0 cannot be packaged (no matching package joy-model on crates.io). Same gap in the crypt repo: its list only carries joy-crypt, while joy-core now depends on the unpublished joy-token 0.1.0, whose joy-crypt path dependency also lacks the version field crates.io requires. Fix: joy list becomes (joy-model joy-chat joy-core joy-chat-store joy-ai joy-cli), crypt list becomes (joy-crypt joy-token), joy-token pins joy-crypt with a version. The crypt commits ride without an item, there is no crypt delegation token.'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-08-19T03:05:22.582855734Z
   text: 'Verifiziert 2026-08-19: umgesetzt. justfile Zeile 240 listet crates=(joy-model joy-chat joy-core joy-chat-store joy-ai joy-cli) in genau der geforderten Reihenfolge; crypt/justfile publiziert joy-crypt und joy-token, joy-token pinnt joy-crypt 0.2.0. Commit 403b16e. Neue Luecke derselben Art ausserhalb dieses Items: joy-github, joy-gitlab und joy-bi stehen weder in der Publish-Liste noch tragen sie publish = false; sie brechen just publish nicht, weil kein publiziertes Crate von ihnen abhaengt.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-20T05:22:19.092951644Z
+  text: 'Coverage audit 2026-08-20: no bats or e2e test; infrastructure, release or documentation work that the operator''s rule leaves to daily use.'

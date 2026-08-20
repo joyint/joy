@@ -11,10 +11,13 @@ capabilities:
 effort: 1
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-31T19:36:10.396029053Z
-updated: 2026-07-31T19:47:32.463332822Z
+updated: 2026-08-20T05:22:19.011001958Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'just release-all minor failed: joy release bump rewrote joy-core, joy-cli and joy-ai but left joy-model, joy-chat and joy-chat-store at 0.19.0, so the Cargo.lock refresh could not resolve joy-chat ^0.20.0 and the release aborted mid-way (platform and the umbrella failed downstream). release.version-files in .joy/project.yaml never learned the crates added since: crates/joy-model/Cargo.toml, crates/joy-chat/Cargo.toml, crates/joy-chat-store/Cargo.toml, plus the workspace root Cargo.toml which pins joy-model as a workspace dependency. Fix: add the four files via joy release version-files add.'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-07-31T19:47:32.383399350Z
   text: 'Fixed: release.version-files now carries all seven version-bearing files (workspace root Cargo.toml plus joy-model, joy-chat, joy-chat-store next to core/cli/ai). List extended by the operator via joy project set, since project settings are manage-gated.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-20T05:22:19.011001177Z
+  text: 'Coverage audit 2026-08-20: no bats or e2e test; infrastructure, release or documentation work that the operator''s rule leaves to daily use.'

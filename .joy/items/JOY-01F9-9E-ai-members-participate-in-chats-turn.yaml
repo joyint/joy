@@ -11,7 +11,7 @@ capabilities:
 effort: 5
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-04T14:34:55.326656Z
-updated: 2026-08-19T03:05:05.201411513Z
+updated: 2026-08-20T05:22:18.675448119Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'AIs are chat participants with full context: they answer only when @mentioned; between AIs at most two follow-up turns each since the last human message, then the system posts a notice (the leave-notice format) that a human must moderate on. Only the member who configured an AI (locally or with an API key) may address it — everyone else reads along until they configure it themselves (their use is then delegated-by them). The shared rule module (mention resolution against participants, the AI-chain guard, the moderation notice, the context prompt from the chat history) lives in joy-core so desktop and platform behave identically.'
 comments:
@@ -21,3 +21,6 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-08-19T03:05:05.120060477Z
   text: 'Verifiziert 2026-08-19 gegen den Code: umgesetzt. Turn-Regeln in crates/joy-chat/src/turns.rs (MAX_AI_TURNS_SINCE_HUMAN, TurnDecision, decide, context_prompt, delta_prompt, Moderationshinweis) plus mentions.rs; die Nur-wer-delegiert-hat-Regel in joy-ai/src/turn_engine.rs (Usability::NoKey/NotDelegated); genutzt von Desktop, Platform und web-auth. Abweichung vom Wortlaut: das Modul sitzt in joy-chat statt joy-core, bewusst durch den Crate-Split.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-20T05:22:18.675447286Z
+  text: 'Coverage audit 2026-08-20: partially covered by app/apps/web/tests/integration/chat.e2e.ts:187, untested: the AI-chain guard, no bats or e2e drives two AI members at each other, so ''at most two follow-up turns each since the last.'
