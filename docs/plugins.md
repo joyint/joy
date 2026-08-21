@@ -85,12 +85,25 @@ object on stdout.
   `{"known": false}`, even when someone is signed in locally. Answer
   shape as above, `emails` usually empty.
 
+- `joy-<name> release --tag <t> --title <t> --notes-file <path>`
+  (JOY-0256-64) Create — or complete — the release for this tag on
+  your forge; the notes arrive as a file because they are multi-line.
+  Answer: `{"url": "..."}` on success, or `{"unsupported": true}` when
+  the forge has no release backend yet (joy then keeps its tag-only
+  publish). This is the contract's ONE write verb, and unlike the read
+  queries it reports failure: the reason goes to stderr, the exit code
+  is non-zero, and `joy release publish` fails with it. Idempotence is
+  the plugin's duty: a release that already exists (a tag-triggered
+  forge workflow may have made it) keeps its URL and gets the notes
+  prepended exactly once (JOY-0248-AE).
+
 Rules, in addition to the base contract:
 
 - **Best effort, never blocking**: a missing binary, a timeout, or an
   error answer degrade to "no claim / unknown" in the caller. Identity
   resolution must never fail because a plugin is absent.
-- **Read-only and side-effect free**, like every plugin.
+- **Read-only and side-effect free** — except the explicit `release`
+  verb, whose one side effect is the release it names.
 - **No forge knowledge outside the plugin**: joy-core selects the
   responsible plugin purely by asking `claims` over the project's
   remotes (the registry in `joy_core::forge_plugins` lists the known

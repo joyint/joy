@@ -150,6 +150,51 @@ pub fn responsible_plugin(
 /// forge API call; anything slower must not stall a `joy` command.
 const QUERY_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// How long the release verb may take: it talks to the forge's release
+/// API (possibly view + edit/create), so it gets network patience the
+/// read queries must not have.
+const RELEASE_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// What the release verb answered (JOY-0256-64). `unsupported` is the
+/// plugin saying "my forge has no release backend yet" — the caller then
+/// keeps the tag-only publish instead of failing the whole release.
+#[derive(Debug, Deserialize)]
+pub struct ReleaseOutcome {
+    /// The release URL when the forge reports one.
+    pub url: Option<String>,
+    /// The plugin has no release capability for its forge (yet).
+    #[serde(default)]
+    pub unsupported: bool,
+}
+
+/// Create (or complete) the release for `tag` through the plugin.
+/// `None` = the plugin failed (not installed, non-zero exit, timeout);
+/// its own message reached stderr already, the caller adds the verdict.
+pub fn release(
+    spec: &ForgePluginSpec,
+    root: &Path,
+    tag: &str,
+    title: &str,
+    notes_file: &Path,
+) -> Option<ReleaseOutcome> {
+    let notes_path = notes_file.to_string_lossy();
+    run_query_timeout(
+        spec.binary,
+        root,
+        &[
+            "release",
+            "--tag",
+            tag,
+            "--title",
+            title,
+            "--notes-file",
+            &notes_path,
+        ],
+        RELEASE_TIMEOUT,
+    )
+    .and_then(|out| serde_json::from_str::<ReleaseOutcome>(&out).ok())
+}
+
 /// Run one query, capture stdout. `None` on spawn failure (plugin not
 /// installed), non-zero exit, timeout, or non-UTF8 output. Stderr is
 /// inherited so a plugin's diagnostics reach the person unfiltered.
@@ -165,6 +210,27 @@ fn run_query_env(
     args: &[&str],
     env: Option<(&str, &str)>,
 ) -> Option<String> {
+    run_query_full(binary, root, args, env, QUERY_TIMEOUT)
+}
+
+/// [`run_query`] with its own deadline (the release verb needs network
+/// patience the read queries must not have).
+fn run_query_timeout(
+    binary: &str,
+    root: &Path,
+    args: &[&str],
+    timeout: Duration,
+) -> Option<String> {
+    run_query_full(binary, root, args, None, timeout)
+}
+
+fn run_query_full(
+    binary: &str,
+    root: &Path,
+    args: &[&str],
+    env: Option<(&str, &str)>,
+    timeout: Duration,
+) -> Option<String> {
     let mut command = Command::new(binary);
     if let Some((var, value)) = env {
         command.env(var, value);
@@ -177,7 +243,7 @@ fn run_query_env(
         .stderr(Stdio::inherit())
         .spawn()
         .ok()?;
-    let deadline = Instant::now() + QUERY_TIMEOUT;
+    let deadline = Instant::now() + timeout;
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {

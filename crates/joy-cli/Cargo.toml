@@ -14,6 +14,7 @@ path = "src/main.rs"
 
 [dependencies]
 joy-core = { version = "0.20.0", path = "../joy-core", features = ["tutorial"] }
+tempfile = "3"
 joy-chat = { version = "0.20.0", path = "../joy-chat" }
 joy-chat-store = { version = "0.20.0", path = "../joy-chat-store" }
 joy-ai = { version = "0.20.0", path = "../joy-ai" }

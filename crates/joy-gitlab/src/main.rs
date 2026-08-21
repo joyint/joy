@@ -48,6 +48,17 @@ enum Command {
         #[arg(long)]
         email: String,
     },
+    /// Create the release for a tag (JOY-0256-64). GitLab has no release
+    /// backend yet: the honest answer is `unsupported`, and joy keeps
+    /// the tag-only publish instead of failing the release.
+    Release {
+        #[arg(long)]
+        tag: String,
+        #[arg(long)]
+        title: String,
+        #[arg(long)]
+        notes_file: std::path::PathBuf,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -65,6 +76,7 @@ fn main() -> anyhow::Result<()> {
             token_env,
         } => gitlab::identity_answer(login, user_id, token_env.as_deref()),
         Command::Resolve { email } => gitlab::resolve_answer(&email),
+        Command::Release { .. } => serde_json::json!({ "unsupported": true }),
     };
     println!("{}", serde_json::to_string(&answer)?);
     Ok(())

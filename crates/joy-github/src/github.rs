@@ -257,6 +257,103 @@ pub fn resolve_answer(email: &str) -> serde_json::Value {
     }
 }
 
+// -- the release capability (JOY-0256-64) -----------------------------------
+//
+// `joy release publish` used to shell gh from joy-cli; the gh knowledge
+// lives HERE now, behind the same one-JSON-answer contract as the read
+// queries. Unlike those, a release failure is an error the person must
+// see, so this path reports on stderr and exits non-zero instead of
+// degrading to "unknown".
+
+/// Create (or complete) the release for `tag` on GitHub via the gh CLI.
+///
+/// Idempotent the way publish needs it: a release may already exist when
+/// this runs, because a tag-triggered forge workflow made it or an
+/// earlier publish pushed and then failed. That pre-made release carries
+/// only the installer section (JOY-0248-AE: v0.20.0 shipped without a
+/// changelog that way), so the notes still have to land: they are
+/// prepended unless a prior run already did.
+pub fn release_answer(tag: &str, title: &str, notes: &str) -> anyhow::Result<serde_json::Value> {
+    use anyhow::{anyhow, bail};
+    // Check gh is available…
+    let gh_probe = Command::new("gh").arg("--version").output();
+    let gh_ver = match gh_probe {
+        Ok(out) if out.status.success() => {
+            let raw = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            // "gh version 2.87.3 (2026-02-24)" -> "2.87.3"
+            raw.lines()
+                .next()
+                .unwrap_or(&raw)
+                .strip_prefix("gh version ")
+                .unwrap_or(&raw)
+                .split_whitespace()
+                .next()
+                .unwrap_or(&raw)
+                .to_string()
+        }
+        Ok(_) => bail!("gh --version failed"),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => bail!(
+            "GitHub releases need the gh CLI\n  \
+             = help: install gh (https://cli.github.com) or run `joy forge setup` to reconfigure"
+        ),
+        Err(e) => bail!("failed to run gh: {e}"),
+    };
+    // …and authenticated.
+    let auth = Command::new("gh")
+        .args(["auth", "status"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    if !auth.is_ok_and(|s| s.success()) {
+        bail!(
+            "gh is installed ({gh_ver}) but not authenticated\n  \
+             = help: run `gh auth login` or `joy forge setup`"
+        );
+    }
+
+    // An existing release keeps its url; the notes are prepended once.
+    let existing = Command::new("gh")
+        .args(["release", "view", tag, "--json", "url,body"])
+        .output();
+    if let Ok(output) = existing {
+        if output.status.success() {
+            let parsed: serde_json::Value =
+                serde_json::from_slice(&output.stdout).unwrap_or_default();
+            let url = parsed["url"].as_str().unwrap_or("").to_string();
+            if !url.is_empty() {
+                let body = parsed["body"].as_str().unwrap_or("");
+                if !body.contains(notes.trim()) {
+                    let combined = format!("{}\n\n{}", notes.trim_end(), body);
+                    let edit = Command::new("gh")
+                        .args(["release", "edit", tag, "--notes", &combined])
+                        .output()
+                        .map_err(|e| anyhow!("failed to run gh release edit: {e}"))?;
+                    if !edit.status.success() {
+                        bail!(
+                            "gh release edit failed: {}",
+                            String::from_utf8_lossy(&edit.stderr).trim()
+                        );
+                    }
+                }
+                return Ok(serde_json::json!({ "url": url }));
+            }
+        }
+    }
+
+    let create = Command::new("gh")
+        .args(["release", "create", tag, "--title", title, "--notes", notes])
+        .output()
+        .map_err(|e| anyhow!("failed to run gh release create: {e}"))?;
+    if !create.status.success() {
+        bail!(
+            "gh release create failed: {}",
+            String::from_utf8_lossy(&create.stderr).trim()
+        );
+    }
+    let url = String::from_utf8_lossy(&create.stdout).trim().to_string();
+    Ok(serde_json::json!({ "url": url }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -55,6 +55,19 @@ enum Command {
         #[arg(long)]
         email: String,
     },
+    /// Create (or complete) the release for a tag on GitHub
+    /// (JOY-0256-64). Unlike the read queries this reports failures:
+    /// stderr carries the reason, the exit code is non-zero.
+    Release {
+        #[arg(long)]
+        tag: String,
+        #[arg(long)]
+        title: String,
+        /// The release notes, passed as a file (they are multi-line and
+        /// may be long).
+        #[arg(long)]
+        notes_file: std::path::PathBuf,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -72,6 +85,14 @@ fn main() -> anyhow::Result<()> {
             token_env,
         } => github::identity_answer(login, user_id, token_env.as_deref()),
         Command::Resolve { email } => github::resolve_answer(&email),
+        Command::Release {
+            tag,
+            title,
+            notes_file,
+        } => {
+            let notes = std::fs::read_to_string(&notes_file)?;
+            github::release_answer(&tag, &title, &notes)?
+        }
     };
     println!("{}", serde_json::to_string(&answer)?);
     Ok(())

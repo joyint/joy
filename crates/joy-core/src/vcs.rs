@@ -12,28 +12,6 @@ use crate::error::JoyError;
 
 const MIN_GIT_MAJOR: u32 = 2;
 
-/// Hosting platform type, detected from git remote URL.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Forge {
-    GitHub,
-    GitLab,
-    Gitea,
-    Unknown,
-}
-
-impl Forge {
-    /// Stable identifier as written in `project.yaml` and accepted by
-    /// `joy project set forge`. `Unknown` has no canonical form.
-    pub fn as_config_str(&self) -> Option<&'static str> {
-        match self {
-            Forge::GitHub => Some("github"),
-            Forge::GitLab => Some("gitlab"),
-            Forge::Gitea => Some("gitea"),
-            Forge::Unknown => None,
-        }
-    }
-}
-
 /// VCS read operations that Joy needs.
 pub trait Vcs {
     /// Check if the given directory is inside a VCS repository.
@@ -347,129 +325,6 @@ impl GitVcs {
     }
 }
 
-// -- Forge detection --
-
-impl GitVcs {
-    /// Detect the hosting platform from the remote URL.
-    pub fn detect_forge(&self, root: &Path) -> Forge {
-        let remote = match self.default_remote(root) {
-            Ok(r) => r,
-            Err(_) => return Forge::Unknown,
-        };
-        let url = match self.remote_url(root, &remote) {
-            Ok(u) => u,
-            Err(_) => return Forge::Unknown,
-        };
-        parse_forge_from_url(&url)
-    }
-
-    /// Detect the forge type for every configured remote. Each entry
-    /// is `(remote_name, forge)`. Remotes with no recognisable forge
-    /// are returned as `Forge::Unknown` so callers can report what was
-    /// configured.
-    pub fn detect_forges(&self, root: &Path) -> Vec<(String, Forge)> {
-        self.all_remotes(root)
-            .unwrap_or_default()
-            .into_iter()
-            .map(|(name, url)| (name, parse_forge_from_url(&url)))
-            .collect()
-    }
-}
-
-/// Parse forge type from a git remote URL.
-pub fn parse_forge_from_url(url: &str) -> Forge {
-    let lower = url.to_lowercase();
-    if lower.contains("github.com") {
-        Forge::GitHub
-    } else if lower.contains("gitlab.com") || lower.contains("gitlab") {
-        Forge::GitLab
-    } else if lower.contains("gitea") || lower.contains("codeberg.org") {
-        Forge::Gitea
-    } else {
-        Forge::Unknown
-    }
-}
-
-// -- gh CLI check --
-
-/// Check if the GitHub CLI (gh) is installed and return its version.
-pub fn gh_version() -> Result<String, JoyError> {
-    let output = Command::new("gh").arg("--version").output().map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            JoyError::Git("gh (GitHub CLI) is not installed or not in PATH".into())
-        } else {
-            JoyError::Git(format!("failed to run gh: {e}"))
-        }
-    })?;
-
-    if !output.status.success() {
-        return Err(JoyError::Git("gh --version failed".into()));
-    }
-
-    let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    // "gh version 2.87.3 (2026-02-24)" -> extract "2.87.3"
-    let version = raw
-        .lines()
-        .next()
-        .unwrap_or(&raw)
-        .strip_prefix("gh version ")
-        .unwrap_or(&raw)
-        .split_whitespace()
-        .next()
-        .unwrap_or(&raw)
-        .to_string();
-    Ok(version)
-}
-
-/// Check if gh CLI is available (returns false if not installed).
-pub fn has_gh() -> bool {
-    Command::new("gh")
-        .arg("--version")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success())
-}
-
-/// Create a GitHub release using the gh CLI.
-pub fn gh_create_release(
-    root: &Path,
-    tag: &str,
-    title: &str,
-    notes: &str,
-) -> Result<String, JoyError> {
-    let output = Command::new("gh")
-        .args(["release", "create", tag, "--title", title, "--notes", notes])
-        .current_dir(root)
-        .output()
-        .map_err(|e| JoyError::Git(format!("failed to run gh release create: {e}")))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(JoyError::Git(format!("gh release create failed: {stderr}")));
-    }
-
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-}
-
-/// Replace the notes of an existing GitHub release. Used when the
-/// release was created by the forge workflow from the tag push and
-/// therefore lacks the changelog (JOY-0248-AE).
-pub fn gh_edit_release_notes(root: &Path, tag: &str, notes: &str) -> Result<(), JoyError> {
-    let output = Command::new("gh")
-        .args(["release", "edit", tag, "--notes", notes])
-        .current_dir(root)
-        .output()
-        .map_err(|e| JoyError::Git(format!("failed to run gh release edit: {e}")))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(JoyError::Git(format!("gh release edit failed: {stderr}")));
-    }
-
-    Ok(())
-}
-
 /// Default VCS provider. Returns the Git implementation.
 pub fn default_vcs() -> GitVcs {
     GitVcs
@@ -527,50 +382,6 @@ mod tests {
     }
 
     #[test]
-    fn forge_detection_github() {
-        assert_eq!(
-            parse_forge_from_url("git@github.com:joyint/joy.git"),
-            Forge::GitHub
-        );
-        assert_eq!(
-            parse_forge_from_url("https://github.com/joyint/joy.git"),
-            Forge::GitHub
-        );
-    }
-
-    #[test]
-    fn forge_detection_gitlab() {
-        assert_eq!(
-            parse_forge_from_url("git@gitlab.com:user/repo.git"),
-            Forge::GitLab
-        );
-        assert_eq!(
-            parse_forge_from_url("https://gitlab.example.com/user/repo.git"),
-            Forge::GitLab
-        );
-    }
-
-    #[test]
-    fn forge_detection_gitea() {
-        assert_eq!(
-            parse_forge_from_url("https://codeberg.org/user/repo.git"),
-            Forge::Gitea
-        );
-        assert_eq!(
-            parse_forge_from_url("https://gitea.example.com/user/repo.git"),
-            Forge::Gitea
-        );
-    }
-
-    #[test]
-    fn forge_detection_unknown() {
-        assert_eq!(
-            parse_forge_from_url("https://example.com/repo.git"),
-            Forge::Unknown
-        );
-    }
-
-    #[test]
     fn git_version_check() {
         let vcs = GitVcs;
         let v = vcs.check_version().unwrap();
@@ -582,23 +393,5 @@ mod tests {
         let vcs = GitVcs;
         // Should not error, just return true or false
         let _ = vcs.is_clean(Path::new("."));
-    }
-
-    #[test]
-    fn git_detect_forge() {
-        // A fixture repo with an explicit origin, so the plumbing path
-        // (default_remote + remote_url + parse) is deterministic regardless
-        // of where THIS checkout is hosted (GitHub, a private mirror, a bare
-        // remote). Per-forge URL parsing is covered by forge_detection_*.
-        let dir = tempfile::tempdir().unwrap();
-        let vcs = GitVcs;
-        vcs.init_repo(dir.path()).unwrap();
-        let status = std::process::Command::new("git")
-            .args(["remote", "add", "origin", "git@github.com:joyint/joy.git"])
-            .current_dir(dir.path())
-            .status()
-            .unwrap();
-        assert!(status.success());
-        assert_eq!(vcs.detect_forge(dir.path()), Forge::GitHub);
     }
 }

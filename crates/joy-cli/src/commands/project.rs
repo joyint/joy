@@ -1083,10 +1083,10 @@ fn set_value(project: &mut Project, key: &str, value: &str) -> Result<()> {
 /// Validate and normalize a `forge:` value. Empty input clears the
 /// field (auto-detection at publish time applies). `"none"` is an
 /// explicit opt-out and is stored verbatim so the intent is visible
-/// in project.yaml. Any other value must be in
-/// [`crate::forge::SUPPORTED_FORGES`]; this rejects typos at write
-/// time, which is the right moment for strictness (read-time stays
-/// lenient so legacy values don't hard-fail publish).
+/// in project.yaml. Any other value must name a registered forge
+/// plugin (joy-core's registry, JOY-0256-64); this rejects typos at
+/// write time, which is the right moment for strictness (read-time
+/// stays lenient so legacy values don't hard-fail publish).
 fn normalize_forge_value(value: &str) -> Result<Option<String>> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -1095,12 +1095,12 @@ fn normalize_forge_value(value: &str) -> Result<Option<String>> {
     if trimmed == "none" {
         return Ok(Some("none".to_string()));
     }
-    if crate::forge::SUPPORTED_FORGES.contains(&trimmed) {
+    if joy_core::forge_plugins::by_id(trimmed).is_some() {
         return Ok(Some(trimmed.to_string()));
     }
     bail!(
         "unsupported forge '{trimmed}'\n  = help: supported values are: {}, none (pass an empty value to clear)",
-        crate::forge::SUPPORTED_FORGES.join(", ")
+        crate::forge::supported_forges().join(", ")
     );
 }
 
