@@ -72,9 +72,9 @@ setup_publish_repo() {
 @test "publish --forge with unsupported value fails before push" {
     setup_publish_repo
     git remote add origin git@github.com:fake/repo.git
-    run joy release publish --forge gitlab
+    run joy release publish --forge sourcehut
     [ "$status" -ne 0 ]
-    [[ "$output" == *"unsupported forge 'gitlab'"* ]]
+    [[ "$output" == *"unsupported forge 'sourcehut'"* ]]
     [[ "$output" == *"--forge"* ]]
     # Push must not have run -- the resolution step rejects upfront.
     [[ "$output" != *"Pushing to"* ]]

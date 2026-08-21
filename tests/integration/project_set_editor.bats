@@ -82,10 +82,10 @@ EOF
 @test "joy project set forge via editor still runs supported-value validation" {
     joy init --name "T" >/dev/null
     local editor
-    editor=$(fake_editor_writing "gitlab")
+    editor=$(fake_editor_writing "sourcehut")
     run joy project set forge --editor "$editor"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"unsupported forge 'gitlab'"* ]]
+    [[ "$output" == *"unsupported forge 'sourcehut'"* ]]
 }
 
 @test "joy project set release.version-files with no VALUE opens editor (list)" {

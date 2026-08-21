@@ -43,10 +43,12 @@ load setup
 }
 
 @test "joy project set forge with unsupported value is rejected" {
+    # every registered plugin id is a valid value since JOY-0256-64;
+    # only a value naming NO registered plugin is a typo to reject
     setup_human_auth
-    run joy project set forge gitlab
+    run joy project set forge sourcehut
     [ "$status" -ne 0 ]
-    [[ "$output" == *"unsupported forge 'gitlab'"* ]]
+    [[ "$output" == *"unsupported forge 'sourcehut'"* ]]
     [[ "$output" == *"github"* ]]
     [[ "$output" == *"none"* ]]
 }
