@@ -14,13 +14,19 @@ macOS / Linux:
 curl -fsSL get.joyint.com/joy | sh
 ```
 
-Windows (PowerShell):
+Windows:
+
+```powershell
+winget install -s winget joyint.joy
+```
+
+Without winget:
 
 ```powershell
 irm get.joyint.com/joy.ps1 | iex
 ```
 
-Both installers drop the binary into `~/.local/bin`. The Windows installer also adds that directory to your user PATH (no administrator rights required); on macOS / Linux add it yourself if it isn't already (`export PATH="$HOME/.local/bin:$PATH"` in your shell rc).
+The script installers drop the binary into `~/.local/bin`. The Windows script also adds that directory to your user PATH (no administrator rights required); on macOS / Linux add it yourself if it isn't already (`export PATH="$HOME/.local/bin:$PATH"` in your shell rc). A winget install is managed by winget and updates with `winget upgrade`.
 
 Or install from source via cargo:
 
