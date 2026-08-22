@@ -132,6 +132,64 @@ members:
         delegation_salt: 707f1b543eb35285e922b61d64ac01a0292d68dd5b48b97cc7d791a2bbce7018
         created: 2026-04-21T15:59:22.223224422Z
         rotated: 2026-05-05T21:04:20.367172Z
+  philipp@joyint.com:
+    capabilities:
+      conceive: {}
+      plan: {}
+      design: {}
+      implement: {}
+      test: {}
+      review: {}
+      document: {}
+      create: {}
+      assign: {}
+    enrollment_verifier: be5e6fc90ed34ca44ee2bccd5eb3af96dd35ed2568d216b27c86090a870d3a32:e60d18a823db0f1186890fc256ac8e45a9eefbf01c482bb9ec08236e3fb39d81
+    attestation:
+      attester: horst.schwarz@joydev.com
+      signed_fields:
+        email: philipp@joyint.com
+        capabilities:
+          conceive: {}
+          plan: {}
+          design: {}
+          implement: {}
+          test: {}
+          review: {}
+          document: {}
+          create: {}
+          assign: {}
+        otp_hash: be5e6fc90ed34ca44ee2bccd5eb3af96dd35ed2568d216b27c86090a870d3a32:e60d18a823db0f1186890fc256ac8e45a9eefbf01c482bb9ec08236e3fb39d81
+      signed_at: 2026-08-22T08:40:43.188730046Z
+      signature: da5dfe56d890e1156cc2bbfeb32512a24d996f1c971e64c1d13440f9103d5971e87d82acf89a8ae39913d28a0880739d94a615b2265fd887214f19c0f1948107
+  roland@joyint.com:
+    capabilities:
+      conceive: {}
+      plan: {}
+      design: {}
+      implement: {}
+      test: {}
+      review: {}
+      document: {}
+      create: {}
+      assign: {}
+    enrollment_verifier: 024088014020aa671dbe86002669a89f08046131230edc625e12f650ab5e00e1:35a991e2d023dd67beba75f012e068dab46a1227f355ce05781d313f4bbb2d81
+    attestation:
+      attester: horst.schwarz@joydev.com
+      signed_fields:
+        email: roland@joyint.com
+        capabilities:
+          conceive: {}
+          plan: {}
+          design: {}
+          implement: {}
+          test: {}
+          review: {}
+          document: {}
+          create: {}
+          assign: {}
+        otp_hash: 024088014020aa671dbe86002669a89f08046131230edc625e12f650ab5e00e1:35a991e2d023dd67beba75f012e068dab46a1227f355ce05781d313f4bbb2d81
+      signed_at: 2026-08-22T08:33:50.795456152Z
+      signature: 289ed336f16d5d3f733c5c651ed2e1221406f88b809fdc2236199b9c4c9da2db6f9bdb2369513d6e2d774a8ea38942a070ad120e8cea9853614a0f69a9858907
 created: 2026-03-09T23:57:36.761964460Z
 release:
   version-files:
