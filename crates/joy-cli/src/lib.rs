@@ -95,10 +95,10 @@ Run 'joy tutorial' for the full guide.
 Run 'joy tutorial --interactive' for a chapter menu.\n"
 )]
 pub(crate) struct Cli {
-    /// Run as if joy was started in <PATH> (env: JOY_WORKING_DIR; the
-    /// flag wins). Lets a runner point every joy invocation of a
-    /// sandboxed agent at its item checkout without the agent knowing
-    /// the workspace anatomy (JOY-01FE-37).
+    // Rationale for the flag (a runner points a sandboxed agent's joy calls
+    // at its item checkout) belongs here, not in the help line: help stays
+    // one short line per option, and item ids never reach the user.
+    /// Run as if joy was started in <PATH>
     #[arg(
         short = 'w',
         long = "working-dir",

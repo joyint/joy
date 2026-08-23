@@ -6,14 +6,15 @@
 //! On Windows, the bare command `joy` resolves to
 //! `C:\Windows\System32\joy.cpl` (Game Controllers) before the installed
 //! `joy.exe`. A `Set-Alias joy joy.exe` line in the user's PowerShell
-//! `$PROFILE` fixes interactive PowerShell sessions. This module detects
+//! profile fixes interactive PowerShell sessions. This module detects
 //! whether that alias is present and drives the hint surfaces (help tip,
 //! first-run prompt, `joy update` prompt).
 //!
-//! The pure logic (alias regex, profile-path building, append payload, edition
-//! detection from a process name) is cross-platform and unit-tested on every
-//! OS. Only the OS glue (parent-process inspection, `$env:USERPROFILE`, file
-//! IO) is `#[cfg(windows)]`; the public surface is a no-op off Windows.
+//! The pure logic (alias regex, reading PowerShell's answer, append payload,
+//! edition detection from a process name) is cross-platform and unit-tested on
+//! every OS. Only the OS glue (parent-process inspection, asking PowerShell for
+//! its profile path, file IO) is `#[cfg(windows)]`; the public surface is a
+//! no-op off Windows.
 
 // The pure helpers below are used by the `#[cfg(windows)]` glue and the unit
 // tests. On a non-Windows, non-test build they are unused; that is an artifact
@@ -45,17 +46,11 @@ fn ps_edition_from_exe(exe_name: &str) -> Option<PsEdition> {
     }
 }
 
-/// The `$PROFILE` path for an edition, given the user's profile directory. This
-/// mirrors how PowerShell itself resolves `$PROFILE` from `$env:USERPROFILE`.
-fn profile_path(user_profile: &std::path::Path, edition: PsEdition) -> std::path::PathBuf {
-    let sub = match edition {
-        PsEdition::Core => "PowerShell",
-        PsEdition::WindowsPowerShell => "WindowsPowerShell",
-    };
-    user_profile
-        .join("Documents")
-        .join(sub)
-        .join("Microsoft.PowerShell_profile.ps1")
+/// The profile path out of PowerShell's own answer (one path on stdout).
+/// `None` when it answered nothing usable.
+fn profile_path_from_output(stdout: &str) -> Option<std::path::PathBuf> {
+    let line = stdout.lines().map(str::trim).find(|l| !l.is_empty())?;
+    Some(std::path::PathBuf::from(line))
 }
 
 /// Whether the profile already defines a `joy` alias. Loose by design: any
@@ -93,7 +88,7 @@ fn append_payload(existing: &str) -> String {
 #[cfg(windows)]
 mod platform {
     use super::*;
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
 
     /// The PowerShell edition of the parent process, or `None` when the parent
     /// is not PowerShell (cmd, a CI runner, unknown) -- in which case we emit
@@ -113,12 +108,30 @@ mod platform {
     /// PowerShell or the user profile directory is unknown.
     fn target_profile() -> Option<(PathBuf, bool, PsEdition)> {
         let edition = parent_ps_edition()?;
-        let user_profile = std::env::var_os("USERPROFILE")?;
-        let path = profile_path(Path::new(&user_profile), edition);
+        let path = ask_profile_path(edition)?;
         let present = std::fs::read_to_string(&path)
             .map(|c| alias_present(&c))
             .unwrap_or(false);
         Some((path, present, edition))
+    }
+
+    /// Where PowerShell keeps the profile that runs in EVERY host: the console,
+    /// Windows Terminal, and the VS Code integrated console, which loads its own
+    /// `Microsoft.VSCode_profile.ps1` and would never see a host-specific one.
+    ///
+    /// Asked, never built. `Documents` moves (OneDrive Known Folder Move,
+    /// corporate folder redirection), so a path assembled from `%USERPROFILE%`
+    /// points at a file PowerShell never loads: the alias then exists, looks
+    /// right, and does nothing.
+    fn ask_profile_path(edition: PsEdition) -> Option<PathBuf> {
+        let out = std::process::Command::new(ps_exe(edition))
+            .args(["-NoProfile", "-Command", "$PROFILE.CurrentUserAllHosts"])
+            .output()
+            .ok()?;
+        if !out.status.success() {
+            return None;
+        }
+        profile_path_from_output(&String::from_utf8_lossy(&out.stdout))
     }
 
     /// The PowerShell executable name for an edition.
@@ -191,7 +204,7 @@ mod platform {
                 println!(
                     "Tip: 'joy' alone opens Windows Game Controllers. To make 'joy' launch this tool:"
                 );
-                println!("  Add-Content $PROFILE \"{ALIAS_LINE}\"");
+                println!("  Add-Content $PROFILE.CurrentUserAllHosts \"{ALIAS_LINE}\"");
             }
         }
     }
@@ -211,19 +224,19 @@ mod platform {
         }
         println!();
         println!("Tip: 'joy' alone opens Windows Game Controllers. Add `{ALIAS_LINE}`");
-        println!("to your PowerShell $PROFILE so 'joy' launches this tool.");
+        println!("to your PowerShell profile so 'joy' launches this tool.");
         if !matches!(crate::prompt::ask_yn("Do it now?", true), Ok(true)) {
             return;
         }
 
-        // The alias lives in $PROFILE, which only runs if the execution policy
+        // The alias lives in the profile, which only runs if the execution policy
         // allows local scripts. On a default-Restricted box it would never load,
         // so offer to allow local scripts first -- only when actually needed, and
         // only on explicit consent (it changes a Windows security setting).
         if scripts_disabled(edition) {
             println!();
             println!(
-                "PowerShell currently blocks scripts, so $PROFILE (and the alias) will not load."
+                "PowerShell currently blocks scripts, so the profile (and the alias) will not load."
             );
             if matches!(
                 crate::prompt::ask_yn(
@@ -274,7 +287,6 @@ pub fn offer_alias_fix() {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
 
     #[test]
     fn edition_from_exe_name() {
@@ -290,18 +302,29 @@ mod tests {
     }
 
     #[test]
-    fn profile_paths_per_edition() {
-        // Build the expected suffix with `join` so the comparison is by path
-        // component, not by separator (this test runs on every OS).
-        let home = Path::new(r"C:\Users\me");
-        let core_suffix = Path::new("Documents")
-            .join("PowerShell")
-            .join("Microsoft.PowerShell_profile.ps1");
-        let win_suffix = Path::new("Documents")
-            .join("WindowsPowerShell")
-            .join("Microsoft.PowerShell_profile.ps1");
-        assert!(profile_path(home, PsEdition::Core).ends_with(&core_suffix));
-        assert!(profile_path(home, PsEdition::WindowsPowerShell).ends_with(&win_suffix));
+    fn the_profile_path_comes_from_powershells_own_answer() {
+        // PowerShell prints one path; whitespace and a trailing newline are
+        // its own, and a path with spaces must survive intact. Nothing here
+        // rebuilds a path: guessing %USERPROFILE%\\Documents was the bug that
+        // put the alias in a file PowerShell never loads (OneDrive moves
+        // Documents).
+        let answered = "C:\\Users\\me\\OneDrive\\Dokumente\\WindowsPowerShell\\profile.ps1\r\n";
+        assert_eq!(
+            profile_path_from_output(answered),
+            Some(std::path::PathBuf::from(
+                "C:\\Users\\me\\OneDrive\\Dokumente\\WindowsPowerShell\\profile.ps1"
+            ))
+        );
+        let with_spaces = "\n  C:\\Users\\a b\\Documents\\PowerShell\\profile.ps1  \n";
+        assert_eq!(
+            profile_path_from_output(with_spaces),
+            Some(std::path::PathBuf::from(
+                "C:\\Users\\a b\\Documents\\PowerShell\\profile.ps1"
+            ))
+        );
+        // No answer at all: no path, and every surface stays silent.
+        assert_eq!(profile_path_from_output("   \n\n"), None);
+        assert_eq!(profile_path_from_output(""), None);
     }
 
     #[test]
