@@ -88,7 +88,7 @@ fn append_payload(existing: &str) -> String {
 #[cfg(windows)]
 mod platform {
     use super::*;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     /// The PowerShell edition of the parent process, or `None` when the parent
     /// is not PowerShell (cmd, a CI runner, unknown) -- in which case we emit
