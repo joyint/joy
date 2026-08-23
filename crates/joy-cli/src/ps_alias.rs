@@ -91,7 +91,7 @@ mod platform {
     use std::path::{Path, PathBuf};
 
     /// The PowerShell edition of the parent process, or `None` when the parent
-    /// is not PowerShell (cmd, a CI runner, unknown) -- in which case we emit
+    /// is not PowerShell (cmd, a CI runner, unknown), in which case we emit
     /// nothing anywhere.
     fn parent_ps_edition() -> Option<PsEdition> {
         use sysinfo::{Pid, ProcessesToUpdate, System};
@@ -231,7 +231,7 @@ mod platform {
 
         // The alias lives in the profile, which only runs if the execution policy
         // allows local scripts. On a default-Restricted box it would never load,
-        // so offer to allow local scripts first -- only when actually needed, and
+        // so offer to allow local scripts first, only when actually needed, and
         // only on explicit consent (it changes a Windows security setting).
         if scripts_disabled(edition) {
             println!();
