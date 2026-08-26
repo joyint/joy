@@ -83,16 +83,16 @@ struct GitignoreBlockItem;
 
 impl GitignoreBlockItem {
     /// The entries the managed block should carry for this repo. All or
-    /// nothing, never per-tool: once any AI tool is configured the block holds
-    /// the full fixed set (base entries plus every tool's ignore entries), so
-    /// `joy update` stops stripping the per-tool lines `joy ai init` writes;
-    /// with no AI tool configured it stays the base-only set `joy init`
-    /// produces (JOY-01FE-98).
+    /// nothing, never per-tool: once the project has any AI member the block
+    /// holds the full fixed set (base entries plus every tool's ignore
+    /// entries), so `joy update` stops stripping the per-tool lines
+    /// `joy ai init` writes; with no AI member it stays the base-only set
+    /// `joy init` produces (JOY-01FE-98). The signal is `ai:*` membership in
+    /// `.joy/project.yaml`, not the machine-local marker files: those are
+    /// git-ignored, so a fresh checkout would otherwise read "nothing
+    /// configured" and strip the committed tool lines (JOY-0264-89).
     fn expected_entries(root: &Path) -> Vec<(&'static str, &'static str)> {
-        if ai::tool_ids()
-            .iter()
-            .any(|&id| ai::is_tool_configured_pub(root, id))
-        {
+        if joy_ai::ai_setup::has_ai_member(root) {
             joy_ai::ai_setup::managed_gitignore_entries()
         } else {
             init::GITIGNORE_BASE_ENTRIES.to_vec()
@@ -292,5 +292,42 @@ mod tests {
                 item.section()
             );
         }
+    }
+
+    /// Minimal project.yaml under `root/.joy/` with the given members block.
+    fn seed_project_yaml(root: &Path, members_yaml: &str) {
+        let dir = root.join(".joy");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("project.yaml"),
+            format!("name: Test\ncreated: 2026-01-01T00:00:00Z\n{members_yaml}"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn gitignore_block_full_set_from_membership_not_local_markers() {
+        // Fresh-clone shape: an AI member in project.yaml, no local marker
+        // files. The expected block must still be the full fixed set, so
+        // `joy update` does not strip the committed tool entries
+        // (JOY-0264-89).
+        let tmp = tempfile::tempdir().unwrap();
+        seed_project_yaml(
+            tmp.path(),
+            "members:\n  \"ai:claude@joy\":\n    capabilities: all\n",
+        );
+        let entries = GitignoreBlockItem::expected_entries(tmp.path());
+        assert_eq!(entries, joy_ai::ai_setup::managed_gitignore_entries());
+    }
+
+    #[test]
+    fn gitignore_block_base_only_without_ai_members() {
+        let tmp = tempfile::tempdir().unwrap();
+        seed_project_yaml(
+            tmp.path(),
+            "members:\n  horst@joy:\n    capabilities: all\n",
+        );
+        let entries = GitignoreBlockItem::expected_entries(tmp.path());
+        assert_eq!(entries, init::GITIGNORE_BASE_ENTRIES.to_vec());
     }
 }

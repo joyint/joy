@@ -811,6 +811,22 @@ pub fn is_tool_configured(root: &Path, tool: &str) -> bool {
     }
 }
 
+/// Repo-portable "any AI tool is configured" signal: true when
+/// `.joy/project.yaml` carries any `ai:*` member. The marker files
+/// [`is_tool_configured`] tests are git-ignored and thus machine-local, so
+/// they must not decide the content of a committed file like `.gitignore`:
+/// a fresh checkout reads "nothing configured" and strips what the init
+/// machine keeps re-adding (JOY-0264-89). Membership travels with the
+/// repo, so every machine reaches the same verdict.
+pub fn has_ai_member(root: &Path) -> bool {
+    joy_core::store::load_project(root)
+        .map(|p| {
+            p.member_keys()
+                .any(|k| joy_core::model::project::is_ai_member(k))
+        })
+        .unwrap_or(false)
+}
+
 /// The acting human's identity, unlocked for attestations. No prompt:
 /// the passphrase comes from the caller.
 pub fn unlock_acting_keypair(
@@ -1075,9 +1091,10 @@ pub fn apply_reset(root: &Path, plan: &ResetPlan, report: Report) -> Result<usiz
             joy_core::git_ops::auto_git_add(root, &[&rel]);
         }
     }
-    let any_remaining = RESET_PATHS
-        .iter()
-        .any(|(_, id, _)| is_tool_configured(root, id));
+    // Shrink the managed block to base-only when the project itself has no
+    // AI members left: the signal must be repo-portable, not the machine-
+    // local marker files (JOY-0264-89).
+    let any_remaining = has_ai_member(root);
     if !any_remaining {
         joy_core::init::update_gitignore_block(root, joy_core::init::GITIGNORE_BASE_ENTRIES)?;
         let ai_dir = joy_core::store::joy_dir(root).join("ai");
@@ -1433,6 +1450,47 @@ mod setup_tests {
                 "managed block must contain {path} even with no tools configured"
             );
         }
+    }
+
+    /// Minimal project.yaml under `root/.joy/` with the given members block.
+    fn seed_project_yaml(root: &Path, members_yaml: &str) {
+        let dir = root.join(".joy");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("project.yaml"),
+            format!("name: Test\ncreated: 2026-01-01T00:00:00Z\n{members_yaml}"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn has_ai_member_true_without_local_markers() {
+        // Fresh-clone shape: project.yaml carries the AI member, but no
+        // machine-local marker files exist. The portable signal must still
+        // say "configured" (JOY-0264-89).
+        let tmp = tempfile::tempdir().unwrap();
+        seed_project_yaml(
+            tmp.path(),
+            "members:\n  horst@joy:\n    capabilities: all\n  \"ai:claude@joy\":\n    capabilities: all\n",
+        );
+        assert!(!is_tool_configured(tmp.path(), "claude"));
+        assert!(has_ai_member(tmp.path()));
+    }
+
+    #[test]
+    fn has_ai_member_false_with_only_human_members() {
+        let tmp = tempfile::tempdir().unwrap();
+        seed_project_yaml(
+            tmp.path(),
+            "members:\n  horst@joy:\n    capabilities: all\n",
+        );
+        assert!(!has_ai_member(tmp.path()));
+    }
+
+    #[test]
+    fn has_ai_member_false_without_project() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(!has_ai_member(tmp.path()));
     }
 
     #[test]
