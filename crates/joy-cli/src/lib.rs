@@ -13,7 +13,6 @@ mod output;
 mod prompt;
 mod ps_alias;
 mod update_registry;
-mod version_bump;
 
 use std::io::IsTerminal;
 

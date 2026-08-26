@@ -46,6 +46,13 @@ pub const FORGE_PLUGINS: &[ForgePluginSpec] = &[
     },
 ];
 
+/// The registry's ids, in registry order. This is the list `--forge`
+/// and `forge:` accept; error help text renders it, so it lives next
+/// to the registry instead of being re-derived by every caller.
+pub fn supported_ids() -> Vec<&'static str> {
+    FORGE_PLUGINS.iter().map(|spec| spec.id).collect()
+}
+
 /// The registry row for a `forge:` override value, if any.
 pub fn by_id(id: &str) -> Option<&'static ForgePluginSpec> {
     let id = id.trim().to_ascii_lowercase();

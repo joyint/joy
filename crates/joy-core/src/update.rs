@@ -24,9 +24,9 @@ use crate::vcs::Vcs;
 /// thing whoever ran the sync.
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// What an update item may fail with. joy-core has no anyhow, and the
-/// callers do not share one error type either, so the trait takes the
-/// boxed standard error every layer can turn its own into.
+/// What an update item may fail with. This framework stays off anyhow,
+/// and the callers do not share one error type either, so the trait
+/// takes the boxed standard error every layer can turn its own into.
 pub type UpdateResult<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 /// Section labels used to group items in the output.

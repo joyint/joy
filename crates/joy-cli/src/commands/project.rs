@@ -8,34 +8,23 @@ use joy_core::auth::IdentityKeypair;
 use joy_core::context::Context;
 use joy_core::guard::Action;
 use joy_core::model::item::Capability;
-use joy_core::model::project::{
-    validate_acronym, CapabilityConfig, Member, MemberCapabilities, PrivacyMode,
-};
+use joy_core::model::project::{CapabilityConfig, Member, MemberCapabilities, PrivacyMode};
 use joy_core::model::Project;
+// The get/set core (key catalogue, value tree, per-key write rules and
+// YAML pruning) lives in joy-core::project_meta so the desktop app and
+// the platform server share it; this file keeps the CLI-only pieces
+// (clap args, editor flows, printing, privacy switch, member flows).
+use joy_core::project_meta::{
+    current_scalar_value, is_list_key, project_value_tree, prune_docs_yaml, prune_yaml_key,
+    scalar_str, set_value, value_as_optional_string, wildcard_prefix, LIST_KEYS, PROJECT_KEYS,
+};
 use joy_core::store;
 use joy_core::vcs::Vcs;
+use joy_core::version_files::{
+    version_files_add, version_files_get, version_files_rm, version_files_set, AddOutcome,
+};
 
 use crate::color;
-
-const PROJECT_KEYS: &[&str] = &[
-    "name",
-    "acronym",
-    "description",
-    "language",
-    "forge",
-    "privacy",
-    "created",
-    "docs.architecture",
-    "docs.vision",
-    "docs.contributing",
-    "release.version-files",
-];
-
-/// Keys whose value is a list rather than a scalar. List keys accept
-/// `--add` / `--rm` flags on `joy project set` plus CSV form for whole-
-/// list replacement; their `get` output is one entry per line (or a
-/// JSON array under --json). Scalar keys reject `--add`/`--rm`.
-const LIST_KEYS: &[&str] = &["release.version-files"];
 
 /// Parse an interaction-level argument value; an empty string means "clear"
 /// (`None`), anything else must be one of the three level names.
@@ -47,10 +36,6 @@ fn parse_optional_level(s: &str) -> Result<Option<joy_core::model::config::Inter
     s.parse::<joy_core::model::config::InteractionLevel>()
         .map(Some)
         .map_err(|e| anyhow::anyhow!("{}", e))
-}
-
-fn is_list_key(key: &str) -> bool {
-    LIST_KEYS.contains(&key)
 }
 
 #[derive(Args)]
@@ -374,16 +359,6 @@ fn get_value(root: &std::path::Path, project: &Project, key: &str, describe: boo
     Ok(())
 }
 
-/// Strip a trailing `.*` (or bare `*`) from `key` and return the
-/// prefix that remains. `None` when the key has no wildcard.
-fn wildcard_prefix(key: &str) -> Option<&str> {
-    if key == "*" {
-        Some("")
-    } else {
-        key.strip_suffix(".*")
-    }
-}
-
 fn get_wildcard(tree: &serde_json::Value, key: &str, prefix: &str, describe: bool) -> Result<()> {
     let leaves = joy_core::model::config::flatten_under(tree, prefix);
 
@@ -454,60 +429,6 @@ fn get_wildcard(tree: &serde_json::Value, key: &str, prefix: &str, describe: boo
         }
     }
     Ok(())
-}
-
-fn scalar_str(v: &serde_json::Value) -> String {
-    match v {
-        serde_json::Value::String(s) => s.clone(),
-        serde_json::Value::Bool(b) => b.to_string(),
-        serde_json::Value::Number(n) => n.to_string(),
-        serde_json::Value::Null => String::new(),
-        other => other.to_string(),
-    }
-}
-
-/// Some project fields are `Option<String>` (acronym, description).
-/// In the existing JSON contract those return `null` when unset, not
-/// the string `"null"`. Preserve that.
-fn value_as_optional_string(v: &serde_json::Value) -> Option<String> {
-    match v {
-        serde_json::Value::Null => None,
-        serde_json::Value::String(s) => Some(s.clone()),
-        other => Some(other.to_string()),
-    }
-}
-
-/// Snapshot the project's read-exposed metadata into a nested JSON
-/// tree so `flatten_under` and `describe_value` can walk it the same
-/// way `joy config get` does. The shape matches PROJECT_KEYS: top-level
-/// scalars plus a `docs` object holding the three resolved doc paths.
-/// Unset optional fields (acronym, description) are represented as
-/// `null` so the existing JSON payload shape on those keys is
-/// preserved.
-fn project_value_tree(root: &std::path::Path, project: &Project) -> serde_json::Value {
-    let version_files: serde_json::Value = match version_files_get(root) {
-        Ok(v) if !v.is_empty() => {
-            serde_json::Value::Array(v.into_iter().map(serde_json::Value::String).collect())
-        }
-        _ => serde_json::Value::Null,
-    };
-    serde_json::json!({
-        "name": project.name,
-        "acronym": project.acronym,
-        "description": project.description,
-        "language": project.language,
-        "forge": project.forge,
-        "privacy": project.privacy().map(|p| p.to_string()).unwrap_or_else(|| "none".to_string()),
-        "created": project.created.format("%Y-%m-%d %H:%M").to_string(),
-        "docs": {
-            "architecture": project.docs.architecture_or_default(),
-            "vision": project.docs.vision_or_default(),
-            "contributing": project.docs.contributing_or_default(),
-        },
-        "release": {
-            "version-files": version_files,
-        }
-    })
 }
 
 /// Render `joy project get` for a list-typed key. Text form is one
@@ -793,11 +714,6 @@ fn set_list_key(
     Ok(())
 }
 
-enum AddOutcome {
-    Added,
-    AlreadyPresent,
-}
-
 enum EditorOutcome {
     /// User saved a new value (possibly an empty string to clear).
     Apply(String),
@@ -883,279 +799,12 @@ fn list_editor_buffer(key: &str, entries: &[String]) -> String {
     buf
 }
 
-/// Read the current scalar value for `key` as plain text. Returns
-/// empty string for unset Option fields and for `docs.*` overrides
-/// at the built-in default (callers can tell the user this is the
-/// default by inspecting the value, but for editor pre-population
-/// the empty case is fine).
-fn current_scalar_value(project: &Project, key: &str) -> String {
-    match key {
-        "name" => project.name.clone(),
-        "acronym" => project.acronym.clone().unwrap_or_default(),
-        "description" => project.description.clone().unwrap_or_default(),
-        "language" => project.language.clone(),
-        "forge" => project.forge.clone().unwrap_or_default(),
-        "privacy" => project
-            .privacy()
-            .map(|p| p.to_string())
-            .unwrap_or_else(|| "none".to_string()),
-        "docs.architecture" => project.docs.architecture.clone().unwrap_or_default(),
-        "docs.vision" => project.docs.vision.clone().unwrap_or_default(),
-        "docs.contributing" => project.docs.contributing.clone().unwrap_or_default(),
-        _ => String::new(),
-    }
-}
-
 fn editor_file_suffix(key: &str) -> String {
     let normalized: String = key
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
         .collect();
     format!("project-{normalized}.txt")
-}
-
-/// Extract the path field from a release.version-files entry. Each
-/// entry is either a bare string or a mapping with a `path` field
-/// (with optional extra fields preserved on round-trip).
-fn entry_path(entry: &serde_yaml_ng::Value) -> Option<String> {
-    use serde_yaml_ng::Value;
-    match entry {
-        Value::String(s) => Some(s.clone()),
-        Value::Mapping(m) => m
-            .get(Value::String("path".into()))
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
-        _ => None,
-    }
-}
-
-/// Load raw release.version-files entries from project.yaml,
-/// preserving mapping-form entries verbatim.
-fn version_files_raw(root: &std::path::Path) -> Result<Vec<serde_yaml_ng::Value>> {
-    let path = store::joy_dir(root).join(store::PROJECT_FILE);
-    let raw = std::fs::read_to_string(&path)?;
-    if raw.trim().is_empty() {
-        return Ok(Vec::new());
-    }
-    let doc: serde_yaml_ng::Value = serde_yaml_ng::from_str(&raw)?;
-    let Some(map) = doc.as_mapping() else {
-        return Ok(Vec::new());
-    };
-    let Some(release) = map.get(serde_yaml_ng::Value::String("release".into())) else {
-        return Ok(Vec::new());
-    };
-    let Some(release_map) = release.as_mapping() else {
-        return Ok(Vec::new());
-    };
-    let Some(files) = release_map.get(serde_yaml_ng::Value::String("version-files".into())) else {
-        return Ok(Vec::new());
-    };
-    let Some(seq) = files.as_sequence() else {
-        bail!("release.version-files in project.yaml is not a list");
-    };
-    Ok(seq.clone())
-}
-
-/// Read the configured paths as plain strings (mapping-form entries
-/// are reduced to their `path` field).
-fn version_files_get(root: &std::path::Path) -> Result<Vec<String>> {
-    Ok(version_files_raw(root)?
-        .into_iter()
-        .filter_map(|e| entry_path(&e))
-        .collect())
-}
-
-fn version_files_add(root: &std::path::Path, path: &str) -> Result<AddOutcome> {
-    let mut entries = version_files_raw(root)?;
-    if entries
-        .iter()
-        .any(|e| entry_path(e).as_deref() == Some(path))
-    {
-        return Ok(AddOutcome::AlreadyPresent);
-    }
-    entries.push(serde_yaml_ng::Value::String(path.to_string()));
-    write_version_files_raw(root, entries)?;
-    Ok(AddOutcome::Added)
-}
-
-fn version_files_rm(root: &std::path::Path, path: &str) -> Result<()> {
-    let mut entries = version_files_raw(root)?;
-    let before = entries.len();
-    entries.retain(|e| entry_path(e).as_deref() != Some(path));
-    if entries.len() == before {
-        bail!("'{path}' is not configured in release.version-files");
-    }
-    write_version_files_raw(root, entries)?;
-    Ok(())
-}
-
-fn version_files_set(root: &std::path::Path, paths: &[String]) -> Result<()> {
-    let entries = paths
-        .iter()
-        .map(|p| serde_yaml_ng::Value::String(p.clone()))
-        .collect();
-    write_version_files_raw(root, entries)
-}
-
-/// Write the supplied entries back to release.version-files,
-/// creating the `release:` block if needed and removing
-/// `version-files` (or the entire `release:` block if it becomes
-/// empty) when entries is empty.
-fn write_version_files_raw(
-    root: &std::path::Path,
-    entries: Vec<serde_yaml_ng::Value>,
-) -> Result<()> {
-    use serde_yaml_ng::Value;
-    let path = store::joy_dir(root).join(store::PROJECT_FILE);
-    let raw = std::fs::read_to_string(&path)?;
-    let mut doc: Value = serde_yaml_ng::from_str(&raw)?;
-    let Some(top) = doc.as_mapping_mut() else {
-        bail!("project.yaml is not a mapping");
-    };
-    let release_key = Value::String("release".into());
-    let version_key = Value::String("version-files".into());
-
-    if entries.is_empty() {
-        // Remove version-files; drop the release block too if it becomes empty.
-        if let Some(release) = top.get_mut(&release_key) {
-            if let Some(release_map) = release.as_mapping_mut() {
-                release_map.remove(&version_key);
-                if release_map.is_empty() {
-                    top.remove(&release_key);
-                }
-            }
-        }
-    } else {
-        let release = top
-            .entry(release_key)
-            .or_insert_with(|| Value::Mapping(Default::default()));
-        let Some(release_map) = release.as_mapping_mut() else {
-            bail!("project.yaml release: is not a mapping");
-        };
-        release_map.insert(version_key, Value::Sequence(entries));
-    }
-
-    let yaml = serde_yaml_ng::to_string(&doc)?;
-    std::fs::write(&path, yaml)?;
-    Ok(())
-}
-
-fn set_value(project: &mut Project, key: &str, value: &str) -> Result<()> {
-    match key {
-        "name" => project.name = value.to_string(),
-        "description" => {
-            project.description = if value.is_empty() || value == "none" {
-                None
-            } else {
-                Some(value.to_string())
-            };
-        }
-        "language" => project.language = value.to_string(),
-        "forge" => project.forge = normalize_forge_value(value)?,
-        "privacy" => match value.trim() {
-            "none" => project.set_privacy_non_anonymous(None)?,
-            "open" => project.set_privacy_non_anonymous(Some(PrivacyMode::Open))?,
-            "anonymous" => anyhow::bail!(
-                "privacy: anonymous is not yet implemented; it arrives with the mode-transition task JOY-01BF-2E"
-            ),
-            other => {
-                anyhow::bail!("invalid privacy mode '{other}'; expected: none, open, or anonymous")
-            }
-        },
-        "docs.architecture" => project.docs.architecture = normalize_docs_value(value),
-        "docs.vision" => project.docs.vision = normalize_docs_value(value),
-        "docs.contributing" => project.docs.contributing = normalize_docs_value(value),
-        "acronym" => {
-            let normalized = validate_acronym(value).map_err(|e| anyhow::anyhow!(e))?;
-            project.acronym = Some(normalized);
-        }
-        "created" => {
-            anyhow::bail!("'created' is read-only");
-        }
-        _ => anyhow::bail!(
-            "unknown key: {key}\nknown keys: {}",
-            PROJECT_KEYS.join(", ")
-        ),
-    }
-    Ok(())
-}
-
-/// Validate and normalize a `forge:` value. Empty input clears the
-/// field (auto-detection at publish time applies). `"none"` is an
-/// explicit opt-out and is stored verbatim so the intent is visible
-/// in project.yaml. Any other value must name a registered forge
-/// plugin (joy-core's registry, JOY-0256-64); this rejects typos at
-/// write time, which is the right moment for strictness (read-time
-/// stays lenient so legacy values don't hard-fail publish).
-fn normalize_forge_value(value: &str) -> Result<Option<String>> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return Ok(None);
-    }
-    if trimmed == "none" {
-        return Ok(Some("none".to_string()));
-    }
-    if joy_core::forge_plugins::by_id(trimmed).is_some() {
-        return Ok(Some(trimmed.to_string()));
-    }
-    bail!(
-        "unsupported forge '{trimmed}'\n  = help: supported values are: {}, none (pass an empty value to clear)",
-        crate::forge::supported_forges().join(", ")
-    );
-}
-
-/// Empty / "none" / "default" reset a docs path to its built-in default.
-fn normalize_docs_value(value: &str) -> Option<String> {
-    let trimmed = value.trim();
-    if trimmed.is_empty()
-        || trimmed.eq_ignore_ascii_case("none")
-        || trimmed.eq_ignore_ascii_case("default")
-    {
-        None
-    } else {
-        Some(trimmed.to_string())
-    }
-}
-
-/// Remove a top-level key from the on-disk project YAML. Used after
-/// `write_yaml_preserve` to clear optional Option<String> fields that
-/// the preserve step would otherwise re-add from the original file.
-fn prune_yaml_key(path: &std::path::Path, key: &str) -> Result<()> {
-    use serde_yaml_ng::Value;
-    let raw = std::fs::read_to_string(path)?;
-    let mut value: Value = serde_yaml_ng::from_str(&raw)?;
-    if let Some(map) = value.as_mapping_mut() {
-        map.remove(Value::String(key.to_string()));
-    }
-    let yaml = serde_yaml_ng::to_string(&value)?;
-    std::fs::write(path, yaml)?;
-    Ok(())
-}
-
-/// Rewrite the project YAML so the `docs:` block exactly reflects the desired
-/// state. Removes the block entirely when no overrides are set; otherwise
-/// replaces it with only the configured fields. Needed because
-/// `write_yaml_preserve` keeps unknown top-level keys (which would otherwise
-/// re-introduce a stale `docs:` block when an override is cleared).
-fn prune_docs_yaml(path: &std::path::Path, docs: &joy_core::model::Docs) -> Result<()> {
-    use serde_yaml_ng::Value;
-
-    let raw = std::fs::read_to_string(path)?;
-    let mut value: Value = serde_yaml_ng::from_str(&raw)?;
-    let map = match value.as_mapping_mut() {
-        Some(m) => m,
-        None => return Ok(()),
-    };
-    let docs_key = Value::String("docs".to_string());
-    if docs.is_empty() {
-        map.remove(&docs_key);
-    } else {
-        let docs_value = serde_yaml_ng::to_value(docs)?;
-        map.insert(docs_key, docs_value);
-    }
-    let yaml = serde_yaml_ng::to_string(&value)?;
-    std::fs::write(path, yaml)?;
-    Ok(())
 }
 
 fn show_project(project: &Project, root: &std::path::Path) {

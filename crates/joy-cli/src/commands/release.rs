@@ -14,10 +14,10 @@ use joy_core::model::release::{Bump, Contributor, Release, ReleaseItem, ReleaseI
 use joy_core::releases;
 use joy_core::store;
 use joy_core::vcs::{self, Vcs};
+use joy_core::version_bump;
 
 use crate::color;
 use crate::forge;
-use crate::version_bump;
 
 #[derive(clap::Args)]
 pub struct ReleaseArgs {
@@ -586,35 +586,16 @@ fn ls() -> Result<()> {
     Ok(())
 }
 
-/// Read release.version-files from project.yaml as raw YAML.
-/// Each entry is a path string or a mapping with a `path` field.
+/// Read release.version-files from project.yaml via joy-core's raw-YAML
+/// helpers (one parser for the mapping-form contract instead of a second
+/// re-parse here). Errors collapse to an empty list on purpose: the
+/// release path has always treated a missing or unreadable project.yaml
+/// as "nothing configured" rather than failing.
 fn read_version_files(root: &std::path::Path) -> Vec<version_bump::VersionFile> {
-    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-    let content = match std::fs::read_to_string(&project_path) {
-        Ok(c) => c,
-        Err(_) => return Vec::new(),
-    };
-    let doc: serde_json::Value = match serde_yaml_ng::from_str(&content) {
-        Ok(v) => v,
-        Err(_) => return Vec::new(),
-    };
-    let files = match doc.get("release").and_then(|r| r.get("version-files")) {
-        Some(serde_json::Value::Array(arr)) => arr,
-        _ => return Vec::new(),
-    };
-    files
-        .iter()
-        .filter_map(|entry| {
-            if let Some(s) = entry.as_str() {
-                return Some(version_bump::VersionFile {
-                    path: s.to_string(),
-                });
-            }
-            let path = entry.get("path")?.as_str()?;
-            Some(version_bump::VersionFile {
-                path: path.to_string(),
-            })
-        })
+    joy_core::version_files::version_files_get(root)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|path| version_bump::VersionFile { path })
         .collect()
 }
 
