@@ -1,7 +1,7 @@
 id: JOY-0265-D7
 title: Vier Git-Beruehrungspunkte statt einer Git-Engine
 type: rework
-status: in-progress
+status: review
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -11,10 +11,13 @@ capabilities:
 effort: 5
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-26T08:59:32.486127031Z
-updated: 2026-08-26T09:35:04.759183556Z
+updated: 2026-08-26T13:04:33.977213446Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Git-Arbeit auf einem Repo ist heute vierfach implementiert: (1) joy-core vcs.rs shellt auf die git-CLI aus (Trait Vcs, ADR-017 JOY-003E) und kann weder Fetch noch Fast-Forward noch Merge; (2) joy-chat-store chat_ref nutzt git2 fuer refs/joy/chats; (3) die Platform hat in src/git/mod.rs eine eigene git2-Schicht (Fetch/FF/Merge/Push/Chats/Worktrees); (4) die Desktop-App hat in src-tauri/git_ops.rs eine dritte git2-Schicht, die eine Teilmenge der Platform-Logik dupliziert. Folgen real belegt am 2026-08-26 (demo-calc auf halcyon): Der Desktop-Sync kennt den YAML-bewussten Merge der Platform nicht, bleibt bei Divergenz haengen und widerspricht ADR JAPP-00D8 (Divergenz ist der Normalfall unter write-behind); Fixes wie JP-00DB-61 (FETCH_HEAD) erreichen die App-Kopie nicht. JP-0034-A2 legt git2 als DIE eine Engine fest. Anforderung: eine gemeinsame, git2-basierte Sync-Engine an einer Stelle, die CLI, Platform und App gleichermassen nutzen; Ort und Zuschnitt nach Diskussion mit Horst.'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-08-26T09:35:04.759182775Z
   text: 'Plan (mit Horst 2026-08-26): Komplettloesung statt Einzelfix. Neue Workspace-Crate mit der gemeinsamen git2-Sync-Engine: Fetch ohne FETCH_HEAD-Schreiben (Fast-Forward vom Tracking-Ref, eliminiert die Riss-Klasse aus JP-00DB-61 und JAPP-0198-EA an der Wurzel), YAML-bewusster write-behind-Merge, Push, Schreibprobe, Fehlerklassen, Chats-Sync via joy-chat-store; Credentials als Parameter (Platform: Forge-Token; Desktop: Credential-Helper/SSH-Agent). Platform ersetzt src/git/mod.rs durch die Engine (Job-Worktree-Helfer bleiben platform-eigen), Desktop ersetzt git_ops.rs komplett. Arbeiter-Schleifen bleiben je Host duenn.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-26T13:04:33.891006994Z
+  text: 'Umgesetzt in Commit 3ad9ff9 (joy), 9439356 (platform), 6d2d10b (app). Eine Engine in joy_core::vcs (forge.rs kopflos per git2, mod.rs CLI-Verben und benannte CLI-git-Helfer); Platform-Fassade und Desktop restlos umgezogen, joy-chat-store komponiert seinen Forge-Sync ueber die Primitiven. Kerninvariante: FETCH_HEAD wird nie mehr geschrieben oder gelesen (libgit2s update_tips entfaellt; es schneidet die Datei bedingungslos ab, Beleg remote.c truncate_fetch_head), per Test erzwungen. Waechter: git2 ausserhalb joy-core/joy-chat-store nur dev-dependency, guard-vcs prueft git-Binary-Aufrufe in joy- und platform-Check. Testkette gruen: joy just check (inkl. bats), platform just check, app just check, beide e2e-Bloecke des Umbrella-check-all. Adversariales Audit gefahren; Funde eingearbeitet (discover, Remote-Name-Tracking, Repo-Config fuer Local-Auth, Erstpublish, leere Advertisements, refresh ohne update_tips). Bewusst offen: das git2-Objekt-Plumbing von joy-chat-store (eigene Speicherschicht, sanktionierte Stelle) und die Lizenzfrage des umgezogenen Codes (vormals Commercial, jetzt MIT in joy-core) liegen bei Horst.'

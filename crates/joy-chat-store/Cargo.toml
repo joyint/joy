@@ -23,7 +23,7 @@ uuid = { version = "1", features = ["v4", "v7", "serde"] }
 # Chats live on a dedicated ref (refs/joy/chats, ADR JAPP-00DC-FC), which is
 # never checked out, so it needs git plumbing (blob/tree/commit/ref) that the
 # CLI cannot express cleanly.
-git2 = { version = "0.20", default-features = false, features = ["vendored-libgit2"] }
+git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2", "cred"] }
 
 [features]
 ts = ["joy-chat/ts", "joy-core/ts"]

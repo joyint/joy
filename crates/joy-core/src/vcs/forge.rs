@@ -135,7 +135,8 @@ fn origin_or_first<'r>(repo: &'r git2::Repository) -> anyhow::Result<git2::Remot
             let remotes = repo.remotes().map_err(err)?;
             let name = remotes
                 .get(0)
-                .ok_or_else(|| anyhow::anyhow!("no remote configured"))?
+                .map_err(|_| anyhow::anyhow!("no remote configured"))?
+                .ok_or_else(|| anyhow::anyhow!("remote name is not utf-8"))?
                 .to_string();
             repo.find_remote(&name).map_err(err)
         }
@@ -210,13 +211,13 @@ fn pull_ff_inner(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
 fn tracking_ref_name(repo: &git2::Repository, branch: &str) -> anyhow::Result<String> {
     if let Ok(b) = repo.find_branch(branch, git2::BranchType::Local) {
         if let Ok(upstream) = b.upstream() {
-            if let Some(name) = upstream.get().name() {
+            if let Ok(name) = upstream.get().name() {
                 return Ok(name.to_string());
             }
         }
     }
     let remote = origin_or_first(repo)?;
-    let remote_name = remote.name().unwrap_or("origin").to_string();
+    let remote_name = remote.name().ok().flatten().unwrap_or("origin").to_string();
     Ok(format!("refs/remotes/{remote_name}/{branch}"))
 }
 
@@ -242,21 +243,14 @@ fn download_ref(
                 None,
             )
             .map_err(|e| anyhow::anyhow!("fetch failed (offline?): {}", e.message()))?;
-        // A freshly created forge advertises NOTHING, and git2's list()
-        // builds a null slice for that (aborts under the UB check). The
-        // default-branch probe answers from the same advertisement
-        // without the slice: when even that is absent, there is nothing
-        // to fetch.
-        if connection.default_branch().is_err() {
-            None
-        } else {
-            connection
-                .list()
-                .map_err(err)?
-                .iter()
-                .find(|r| r.name() == src)
-                .map(|r| r.oid())
-        }
+        // an empty advertisement (freshly created forge) is a plain
+        // empty list since git2 0.21 — and an honest "nothing there"
+        connection
+            .list()
+            .map_err(err)?
+            .iter()
+            .find(|r| r.name() == src)
+            .map(|r| r.oid())
     };
     let Some(tip) = advertised else {
         return Ok(None);
@@ -288,7 +282,7 @@ pub fn fetch_branch(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
     let head = repo.head().map_err(err)?;
     let branch = head
         .shorthand()
-        .ok_or_else(|| anyhow::anyhow!("detached HEAD"))?
+        .map_err(|_| anyhow::anyhow!("detached HEAD"))?
         .to_string();
     let src = format!("refs/heads/{branch}");
     let dst = tracking_ref_name(&repo, &branch)?;
@@ -306,7 +300,7 @@ pub fn ff_from_tracking(repo_dir: &Path) -> anyhow::Result<()> {
     let head = repo.head().map_err(err)?;
     let branch = head
         .shorthand()
-        .ok_or_else(|| anyhow::anyhow!("detached HEAD"))?
+        .map_err(|_| anyhow::anyhow!("detached HEAD"))?
         .to_string();
     let tracking = repo
         .find_reference(&tracking_ref_name(&repo, &branch)?)
@@ -411,7 +405,7 @@ pub fn push(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
         let head = repo.head().map_err(err)?;
         let branch = head
             .shorthand()
-            .ok_or_else(|| anyhow::anyhow!("detached HEAD"))?
+            .map_err(|_| anyhow::anyhow!("detached HEAD"))?
             .to_string();
         let mut remote = origin_or_first(&repo)?;
         let mut opts = git2::PushOptions::new();
@@ -485,11 +479,6 @@ pub fn ls_remote_ref(
             None,
         )
         .map_err(|e| anyhow::anyhow!("ls-remote failed (offline?): {}", e.message()))?;
-    // same empty-advertisement guard as download_ref: git2's list()
-    // aborts on a forge that advertises nothing
-    if connection.default_branch().is_err() {
-        return Ok(None);
-    }
     let head = connection
         .list()
         .map_err(err)?
@@ -520,7 +509,7 @@ pub fn pull_merge(
     let head = repo.head().map_err(err)?;
     let branch = head
         .shorthand()
-        .ok_or_else(|| anyhow::anyhow!("detached HEAD"))?
+        .map_err(|_| anyhow::anyhow!("detached HEAD"))?
         .to_string();
     let tracking = repo
         .find_reference(&tracking_ref_name(&repo, &branch)?)
@@ -770,7 +759,7 @@ pub fn joy_dirty_paths(repo_dir: &Path) -> anyhow::Result<Vec<String>> {
     let statuses = repo.statuses(Some(&mut opts)).map_err(err)?;
     Ok(statuses
         .iter()
-        .filter_map(|entry| entry.path().map(str::to_string))
+        .filter_map(|entry| entry.path().ok().map(str::to_string))
         .collect())
 }
 
@@ -790,7 +779,7 @@ pub fn joy_dirty_fingerprint(repo_dir: &Path) -> Vec<String> {
     };
     statuses
         .iter()
-        .filter_map(|e| e.path().map(|p| format!("{}:{:?}", p, e.status())))
+        .filter_map(|e| e.path().ok().map(|p| format!("{}:{:?}", p, e.status())))
         .collect()
 }
 
@@ -843,9 +832,9 @@ pub fn branch_names(repo_dir: &Path) -> Vec<String> {
 pub fn remote_url(repo_dir: &Path) -> Option<String> {
     let repo = open(repo_dir).ok()?;
     let remotes = repo.remotes().ok()?;
-    let name = remotes.get(0)?;
+    let name = remotes.get(0).ok()??;
     let remote = repo.find_remote(name).ok()?;
-    remote.url().map(str::to_string)
+    remote.url().ok().map(|u| u.to_string())
 }
 
 /// The oid a ref points at, as hex; `None` when absent or unborn.
@@ -868,7 +857,7 @@ pub fn head_oid(repo_dir: &Path) -> Option<String> {
 pub fn head_author(repo_dir: &Path) -> Option<String> {
     let repo = open(repo_dir).ok()?;
     let head = repo.head().ok()?.peel_to_commit().ok()?;
-    let email = head.author().email().map(|e| e.to_string());
+    let email = head.author().email().ok().map(|e| e.to_string());
     email
 }
 
@@ -879,7 +868,7 @@ pub fn ahead_behind(repo_dir: &Path) -> anyhow::Result<(u32, u32)> {
     let head = repo.head().map_err(err)?;
     let branch = head
         .shorthand()
-        .ok_or_else(|| anyhow::anyhow!("detached HEAD"))?
+        .map_err(|_| anyhow::anyhow!("detached HEAD"))?
         .to_string();
     let local = head
         .target()
@@ -1116,7 +1105,7 @@ pub fn joy_commit_on_branch(
                     let describe = format!(
                         "{:.8} ({})",
                         oid.to_string(),
-                        commit.summary().unwrap_or_default()
+                        commit.summary().ok().flatten().unwrap_or_default()
                     );
                     return Ok(Some((describe, f.display().to_string())));
                 }
@@ -1198,7 +1187,7 @@ fn land_branch_yaml_inner(
         .head()
         .map_err(err)?
         .name()
-        .ok_or_else(|| anyhow::anyhow!("unnamed HEAD"))?
+        .map_err(|_| anyhow::anyhow!("unnamed HEAD"))?
         .to_string();
     let head = repo.head().map_err(err)?.peel_to_commit().map_err(err)?;
     let their = repo
@@ -1399,7 +1388,7 @@ pub fn branch_state(repo_dir: &Path) -> anyhow::Result<BranchState> {
     let head = repo.head().ok();
     let branch = head
         .as_ref()
-        .and_then(|h| h.shorthand())
+        .and_then(|h| h.shorthand().ok())
         .unwrap_or("HEAD")
         .to_string();
     let mut branches = Vec::new();
@@ -1904,7 +1893,7 @@ mod engine_invariant_tests {
         let repo = git2::Repository::open(&rig.clone_dir).unwrap();
         let head = repo.head().unwrap().peel_to_commit().unwrap();
         assert_eq!(head.parents().len(), 2, "a real merge commit");
-        assert_eq!(head.author().email(), Some("member@example.com"));
+        assert_eq!(head.author().email().ok(), Some("member@example.com"));
         // and the result pushes: nothing left ahead or behind afterwards
         push(&rig.clone_dir, &auth).unwrap();
         let (ahead, behind) = ahead_behind(&rig.clone_dir).unwrap();
@@ -1986,7 +1975,7 @@ mod pull_merge_tests {
         let tmp = tempfile::tempdir().unwrap();
         let bare = tmp.path().join("forge.git");
         git2::Repository::init_bare(&bare).unwrap();
-        let url = format!("file://{}", bare.display());
+        let url = bare.to_str().unwrap().to_string();
 
         let a_dir = tmp.path().join("a");
         let a = git2::Repository::clone(&url, &a_dir).unwrap();

@@ -112,7 +112,7 @@ fn read_subtree(repo: &Repository, chat_tree: &Tree) -> Held {
     };
     if let Some(keys_tree) = subtree(repo, chat_tree, KEYS_DIR) {
         for e in keys_tree.iter() {
-            let Some(name) = e.name() else { continue };
+            let Ok(name) = e.name() else { continue };
             let Ok(blob) = e.to_object(repo).and_then(|o| o.peel_to_blob()) else {
                 continue;
             };
@@ -124,7 +124,7 @@ fn read_subtree(repo: &Repository, chat_tree: &Tree) -> Held {
     }
     if let Some(log_tree) = subtree(repo, chat_tree, LOG_DIR) {
         for e in log_tree.iter() {
-            let Some(name) = e.name() else { continue };
+            let Ok(name) = e.name() else { continue };
             let Ok(blob) = e.to_object(repo).and_then(|o| o.peel_to_blob()) else {
                 continue;
             };
@@ -162,7 +162,7 @@ pub fn snapshot_all(root: &std::path::Path) -> Result<Vec<(String, Sealed)>, Joy
     let root_tree = commit.tree().map_err(git)?;
     let mut out = Vec::new();
     for e in root_tree.iter() {
-        let Some(name) = e.name() else { continue };
+        let Ok(name) = e.name() else { continue };
         let Ok(chat_tree) = e.to_object(&repo).and_then(|o| o.peel_to_tree()) else {
             continue;
         };
@@ -446,7 +446,7 @@ pub fn load_all(root: &std::path::Path, seed: &[u8; 32]) -> Result<Vec<Chat>, Jo
     let root_tree = commit.tree().map_err(git)?;
     let mut out = Vec::new();
     for e in root_tree.iter() {
-        let Some(name) = e.name() else { continue };
+        let Ok(name) = e.name() else { continue };
         let Ok(chat_tree) = e.to_object(&repo).and_then(|o| o.peel_to_tree()) else {
             continue;
         };

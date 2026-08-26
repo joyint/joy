@@ -257,7 +257,7 @@ pub(crate) fn load_chats(root: &Path) -> Result<Vec<Chat>, JoyError> {
     let tree = commit.tree().map_err(git)?;
     let mut chats = Vec::new();
     for entry in tree.iter() {
-        let Some(name) = entry.name() else { continue };
+        let Ok(name) = entry.name() else { continue };
         if let Some(chat) = read_chat_at(&repo, &tree, name)? {
             chats.push(chat);
         }
@@ -337,7 +337,7 @@ fn union_leaf(
     let mut tb = repo.treebuilder(None).map_err(git)?;
     for t in [a, b].into_iter().flatten() {
         for e in t.iter() {
-            if let Some(name) = e.name() {
+            if let Ok(name) = e.name() {
                 tb.insert(name, e.id(), e.filemode()).map_err(git)?;
             }
         }
@@ -465,7 +465,7 @@ pub fn merge_refs(root: &Path, ours: Oid, theirs: Oid) -> Result<Oid, JoyError> 
     let theirs_tree = theirs_c.tree().map_err(git)?;
     let mut ids: BTreeSet<String> = BTreeSet::new();
     for e in ours_tree.iter().chain(theirs_tree.iter()) {
-        if let Some(name) = e.name() {
+        if let Ok(name) = e.name() {
             ids.insert(name.to_string());
         }
     }
@@ -645,7 +645,7 @@ mod tests {
         let chat = named_tree(&repo, &tree, id).unwrap();
         let log = named_tree(&repo, &chat, "log").unwrap();
         log.iter()
-            .filter_map(|e| e.name().map(str::to_string))
+            .filter_map(|e| e.name().ok().map(str::to_string))
             .collect()
     }
 
@@ -754,8 +754,8 @@ mod tests {
         let r = Repository::open(dir.path()).unwrap();
         let commit = r.find_commit(r.refname_to_id(CHATS_REF).unwrap()).unwrap();
         for sig in [commit.author(), commit.committer()] {
-            assert_eq!(sig.name(), Some("joy"));
-            assert_eq!(sig.email(), Some("joy@localhost"));
+            assert_eq!(sig.name().ok(), Some("joy"));
+            assert_eq!(sig.email().ok(), Some("joy@localhost"));
             assert_eq!(sig.when().seconds() % 86_400, 0, "day-coarsened time");
             let blob = format!("{} {}", sig.name().unwrap(), sig.email().unwrap());
             assert!(

@@ -36,6 +36,6 @@ acp = ["dep:agent-client-protocol", "dep:tokio", "dep:anyhow"]
 
 [dev-dependencies]
 # tests build fixture repos directly; production git lives in joy-core/src/vcs (JOY-0265-D7)
-git2 = { version = "0.20", default-features = false, features = ["vendored-libgit2"] }
+git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2"] }
 tempfile = "3"
 insta = { version = "1.41", features = ["yaml"] }
