@@ -884,6 +884,109 @@ pub fn ahead_behind(repo_dir: &Path) -> anyhow::Result<(u32, u32)> {
     Ok((ahead as u32, behind as u32))
 }
 
+/// Stage the given pathspecs (relative to the repo root) and commit them
+/// as the acting account; returns the commit id, or None when nothing
+/// under the pathspecs changed. Unlike [`commit_joy`] this stages
+/// arbitrary paths: `joy release bump` patches version files OUTSIDE
+/// `.joy/`, and a shared server checkout must never stay dirty.
+pub fn commit_paths(
+    repo_dir: &Path,
+    pathspecs: &[String],
+    message: &str,
+    author_name: &str,
+    author_email: &str,
+) -> anyhow::Result<Option<String>> {
+    let repo = open(repo_dir).map_err(err)?;
+    let mut index = repo.index().map_err(err)?;
+    index
+        .add_all(pathspecs, git2::IndexAddOption::DEFAULT, None)
+        .map_err(err)?;
+    index.write().map_err(err)?;
+    let tree_id = index.write_tree().map_err(err)?;
+    let parent = repo
+        .head()
+        .ok()
+        .and_then(|h| h.target())
+        .and_then(|oid| repo.find_commit(oid).ok());
+    if parent.as_ref().map(|p| p.tree_id()) == Some(tree_id) {
+        return Ok(None);
+    }
+    let tree = repo.find_tree(tree_id).map_err(err)?;
+    let signature = git2::Signature::now(author_name, author_email).map_err(err)?;
+    let parents: Vec<&git2::Commit> = parent.iter().collect();
+    let oid = repo
+        .commit(
+            Some("HEAD"),
+            &signature,
+            &signature,
+            message,
+            &tree,
+            &parents,
+        )
+        .map_err(err)?;
+    Ok(Some(oid.to_string()))
+}
+
+/// Create an annotated tag on HEAD (the release record's tag), replacing
+/// an existing tag of the same name (re-record after a failed publish).
+pub fn tag_annotated(
+    repo_dir: &Path,
+    name: &str,
+    message: &str,
+    author_name: &str,
+    author_email: &str,
+) -> anyhow::Result<()> {
+    let repo = open(repo_dir).map_err(err)?;
+    let head = repo.head().map_err(err)?.peel_to_commit().map_err(err)?;
+    let signature = git2::Signature::now(author_name, author_email).map_err(err)?;
+    repo.tag(name, head.as_object(), &signature, message, true)
+        .map_err(err)?;
+    Ok(())
+}
+
+/// Push one tag to the forge (joy release publish's tag push).
+pub fn push_tag(repo_dir: &Path, auth: &Auth, tag: &str) -> anyhow::Result<()> {
+    let repo = open(repo_dir).map_err(err)?;
+    let mut remote = origin_or_first(&repo)?;
+    let mut opts = git2::PushOptions::new();
+    opts.remote_callbacks(auth.callbacks(cred_config(Some(&repo))));
+    let refspec = format!("refs/tags/{tag}:refs/tags/{tag}");
+    remote
+        .push(&[refspec.as_str()], Some(&mut opts))
+        .map_err(|e| anyhow::anyhow!("tag push failed: {}", e.message()))?;
+    Ok(())
+}
+
+/// The newest local `v*` version tag by semver order, or None (no tags,
+/// or not a git repo). The git2 counterpart of the CLI's shelled
+/// `latest_version_tag` — headless callers stay on the one git engine
+/// (JP-0034).
+pub fn latest_version_tag(repo_dir: &Path) -> Option<String> {
+    let repo = open(repo_dir).ok()?;
+    let names = repo.tag_names(Some("v*")).ok()?;
+    let mut versions: Vec<(Vec<u64>, String)> = names
+        .iter()
+        .flatten()
+        .flatten()
+        .filter_map(|name| {
+            let nums: Vec<u64> = name
+                .trim_start_matches('v')
+                .split('.')
+                .map(|part| {
+                    part.chars()
+                        .take_while(|c| c.is_ascii_digit())
+                        .collect::<String>()
+                        .parse()
+                        .unwrap_or(0)
+                })
+                .collect();
+            (nums.len() == 3).then(|| (nums, name.to_string()))
+        })
+        .collect();
+    versions.sort();
+    versions.pop().map(|(_, name)| name)
+}
+
 /// Create a linked git worktree of the project checkout on a fresh branch
 /// (the Job Container works here; it shares the checkout's object database).
 /// Returns the worktree directory.
