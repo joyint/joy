@@ -10,14 +10,14 @@ use joy_core::event_log;
 use joy_core::guard::Action;
 use joy_core::items;
 use joy_core::model::item::{self, ItemType};
-use joy_core::model::release::{Bump, Contributor, Release, ReleaseItem, ReleaseItems};
+use joy_core::model::release::{Contributor, Release, ReleaseItem, ReleaseItems};
 use joy_core::releases;
 use joy_core::store;
 use joy_core::vcs::{self, Vcs};
+use joy_core::version_bump;
 
 use crate::color;
 use crate::forge;
-use crate::version_bump;
 
 #[derive(clap::Args)]
 pub struct ReleaseArgs {
@@ -100,59 +100,24 @@ pub fn run(args: ReleaseArgs) -> Result<()> {
     }
 }
 
-/// Compute the new version from the bump argument and the previous
-/// release (or latest tag). Deterministic: `bump` and `record` call
-/// this with the same argument and land on the same version. When
-/// `baseline_override` is set, that value replaces the ledger / tag
-/// lookup (used by `joy release bump --adopt`).
+/// joy_core::releases::resolve_version with the CLI's shelled-git tag
+/// fallback and its errors mapped onto anyhow (same Display output as
+/// before the move).
 fn resolve_version(
     root: &std::path::Path,
     arg: Option<&str>,
     baseline_override: Option<String>,
 ) -> Result<(String, String)> {
-    let current = match baseline_override {
-        Some(v) => {
-            if v.starts_with('v') {
-                v
-            } else {
-                format!("v{v}")
-            }
-        }
-        None => {
-            let previous = releases::latest_version(root)?.or_else(|| {
-                joy_core::vcs::default_vcs()
-                    .latest_version_tag(root)
-                    .ok()
-                    .flatten()
-            });
-            previous.as_deref().unwrap_or("v0.0.0").to_string()
-        }
-    };
-
-    let next = match arg {
-        Some(v) if looks_like_explicit(v) => {
-            if v.starts_with('v') {
-                v.to_string()
-            } else {
-                format!("v{v}")
-            }
-        }
-        Some(b) => {
-            let bump: Bump = b.parse().map_err(|e: String| anyhow::anyhow!("{}", e))?;
-            joy_core::model::release::bump_version(&current, bump)
-        }
-        None => {
-            let bump: Bump = "patch"
-                .parse()
-                .map_err(|e: String| anyhow::anyhow!("{}", e))?;
-            joy_core::model::release::bump_version(&current, bump)
-        }
-    };
-    Ok((current, next))
-}
-
-fn looks_like_explicit(s: &str) -> bool {
-    matches!(s.chars().next(), Some(c) if c.is_ascii_digit()) || s.starts_with('v')
+    releases::resolve_version(root, arg, baseline_override, || {
+        joy_core::vcs::default_vcs()
+            .latest_version_tag(root)
+            .ok()
+            .flatten()
+    })
+    .map_err(|e| match e {
+        releases::ResolveVersionError::Store(e) => anyhow::Error::new(e),
+        releases::ResolveVersionError::InvalidBump(msg) => anyhow::anyhow!("{msg}"),
+    })
 }
 
 fn bump(args: BumpArgs) -> Result<()> {
@@ -168,7 +133,9 @@ fn bump(args: BumpArgs) -> Result<()> {
     }
 
     let baseline_override = if args.adopt {
-        Some(adopt_baseline(&ctx.root, &version_files)?)
+        let baseline = releases::adopt_baseline(&ctx.root, &version_files)
+            .map_err(|msg| anyhow::anyhow!("{msg}"))?;
+        Some(baseline)
     } else {
         None
     };
@@ -203,105 +170,18 @@ fn bump(args: BumpArgs) -> Result<()> {
     Ok(())
 }
 
-/// Scan the configured files for the version they currently contain
-/// (via `version_bump::detect_version`) and return that as the new
-/// baseline for `--adopt`. All files must agree; files where detection
-/// fails are listed but tolerated as long as at least one file
-/// produces a version. Failure modes get their own clear error.
-fn adopt_baseline(
-    root: &std::path::Path,
-    version_files: &[version_bump::VersionFile],
-) -> Result<String> {
-    let mut by_version: std::collections::BTreeMap<String, Vec<std::path::PathBuf>> =
-        std::collections::BTreeMap::new();
-    let mut undetectable: Vec<std::path::PathBuf> = Vec::new();
-
-    for vf in version_files {
-        let pattern = root.join(&vf.path);
-        let paths: Vec<_> = glob::glob(&pattern.to_string_lossy())
-            .ok()
-            .into_iter()
-            .flatten()
-            .filter_map(|r| r.ok())
-            .collect();
-        for path in paths {
-            match version_bump::detect_version(&path) {
-                Some(v) => by_version.entry(v).or_default().push(path),
-                None => undetectable.push(path),
-            }
-        }
-    }
-
-    match by_version.len() {
-        0 => {
-            let mut msg =
-                String::from("--adopt: could not detect a version in any configured file");
-            for path in &undetectable {
-                let rel = path.strip_prefix(root).unwrap_or(path);
-                msg.push_str(&format!("\n  ! {}", rel.display()));
-            }
-            msg.push_str("\n  = help: pass an explicit X.Y.Z to bump instead");
-            anyhow::bail!("{msg}")
-        }
-        1 => {
-            let v = by_version.into_keys().next().unwrap();
-            Ok(v)
-        }
-        _ => {
-            let mut msg = String::from("--adopt: configured files disagree on the current version");
-            for (v, files) in &by_version {
-                for path in files {
-                    let rel = path.strip_prefix(root).unwrap_or(path);
-                    msg.push_str(&format!("\n  {} -> {}", rel.display(), v));
-                }
-            }
-            msg.push_str("\n  = help: align the files manually or pass an explicit X.Y.Z");
-            anyhow::bail!("{msg}")
-        }
-    }
-}
-
-/// Build the multi-line "version mismatch" error printed when
-/// `joy release bump` finds zero matches. The block per file shows
-/// what joy expected versus what it actually detected; the closing
-/// section names the two recovery commands. Designed for narrow
-/// terminals -- every emitted line stays short.
+/// joy_core::releases::version_mismatch, split the CLI way: the
+/// per-file diagnostic goes to stdout (framed by blank lines) above the
+/// Error: line, the summary becomes the error.
 fn version_mismatch_error(
     root: &std::path::Path,
     results: &[version_bump::BumpResult],
     expected: &str,
 ) -> anyhow::Error {
-    // Per-file diagnostic goes to stdout above the Error: line.
-    let mut detected_any: Option<String> = None;
+    let vm = releases::version_mismatch(root, results, expected);
+    print!("\n{}", vm.file_diagnostics);
     println!();
-    for r in results {
-        let rel = r.path.strip_prefix(root).unwrap_or(&r.path);
-        let detected = version_bump::detect_version(&r.path);
-        if detected_any.is_none() {
-            detected_any = detected.clone();
-        }
-        println!("  ! {}", rel.display());
-        println!("      expected: {expected}");
-        match detected {
-            Some(v) => println!("      found:    {v}"),
-            None => println!("      found:    (no version detected)"),
-        }
-    }
-    println!();
-
-    let n = results.len();
-    let plural = if n == 1 { "" } else { "s" };
-    let mut msg = format!("version mismatch ({n} of {n} file{plural})\n\nFix options:");
-    msg.push_str("\n\n  joy release bump --adopt");
-    msg.push_str("\n      adopt the file's detected version");
-    if let Some(v) = detected_any {
-        msg.push_str(&format!("\n\n  joy release record {v}"));
-        msg.push_str("\n      skip bump, record at the detected version");
-    } else {
-        msg.push_str("\n\n  joy release record <X.Y.Z>");
-        msg.push_str("\n      skip bump, record at an explicit version");
-    }
-    anyhow::anyhow!("{msg}")
+    anyhow::anyhow!("{}", vm.summary)
 }
 
 fn record(args: RecordArgs) -> Result<()> {
@@ -413,7 +293,7 @@ fn record(args: RecordArgs) -> Result<()> {
     git.check_version()?;
     git.add_all(&ctx.root)?;
     git.commit(&ctx.root, &format!("bump to {version} [no-item]"))?;
-    let markdown_notes = render_release_markdown(&release);
+    let markdown_notes = releases::render_release_markdown(&release);
     git.tag_annotated(&ctx.root, &version, &markdown_notes)?;
     println!("Tag {version} created locally. Next: `joy release publish`.");
     Ok(())
@@ -458,7 +338,7 @@ fn publish(args: PublishArgs) -> Result<()> {
     git.push_tag(&ctx.root, &remote, &version)?;
     println!("Pushed {version} to {remote}.");
 
-    let markdown_notes = render_release_markdown(&release);
+    let markdown_notes = releases::render_release_markdown(&release);
     let title = release
         .title
         .as_deref()
@@ -586,93 +466,17 @@ fn ls() -> Result<()> {
     Ok(())
 }
 
-/// Read release.version-files from project.yaml as raw YAML.
-/// Each entry is a path string or a mapping with a `path` field.
+/// Read release.version-files from project.yaml via joy-core's raw-YAML
+/// helpers (one parser for the mapping-form contract instead of a second
+/// re-parse here). Errors collapse to an empty list on purpose: the
+/// release path has always treated a missing or unreadable project.yaml
+/// as "nothing configured" rather than failing.
 fn read_version_files(root: &std::path::Path) -> Vec<version_bump::VersionFile> {
-    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-    let content = match std::fs::read_to_string(&project_path) {
-        Ok(c) => c,
-        Err(_) => return Vec::new(),
-    };
-    let doc: serde_json::Value = match serde_yaml_ng::from_str(&content) {
-        Ok(v) => v,
-        Err(_) => return Vec::new(),
-    };
-    let files = match doc.get("release").and_then(|r| r.get("version-files")) {
-        Some(serde_json::Value::Array(arr)) => arr,
-        _ => return Vec::new(),
-    };
-    files
-        .iter()
-        .filter_map(|entry| {
-            if let Some(s) = entry.as_str() {
-                return Some(version_bump::VersionFile {
-                    path: s.to_string(),
-                });
-            }
-            let path = entry.get("path")?.as_str()?;
-            Some(version_bump::VersionFile {
-                path: path.to_string(),
-            })
-        })
+    joy_core::version_files::version_files_get(root)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|path| version_bump::VersionFile { path })
         .collect()
-}
-
-fn render_release_markdown(release: &Release) -> String {
-    let mut out = String::new();
-    let title_str = release
-        .title
-        .as_deref()
-        .map(|t| format!(" - {t}"))
-        .unwrap_or_default();
-    out.push_str(&format!("# {}{}\n\n", release.version, title_str));
-    out.push_str(&format!("**Date:** {}\n", release.date));
-    if let Some(ref prev) = release.previous {
-        out.push_str(&format!("**Previous:** {prev}\n"));
-    }
-    if let Some(ref desc) = release.description {
-        out.push_str(&format!("\n{desc}\n"));
-    }
-    if !release.contributors.is_empty() {
-        out.push_str("\n## Contributors\n\n");
-        for c in &release.contributors {
-            // Published notes stay anonymous: emit the raw id, never the
-            // resolved value (which Display would produce). ADR-042.
-            out.push_str(&format!(
-                "- {} ({} events on {} items)\n",
-                c.id.id(),
-                c.events,
-                c.items
-            ));
-        }
-    }
-    let type_groups: &[(&str, &[ReleaseItem])] = &[
-        ("Epics", &release.items.epics),
-        ("Stories", &release.items.stories),
-        ("Tasks", &release.items.tasks),
-        ("Bugs", &release.items.bugs),
-        ("Reworks", &release.items.reworks),
-        ("Decisions", &release.items.decisions),
-        ("Ideas", &release.items.ideas),
-    ];
-    let total: usize = type_groups.iter().map(|(_, items)| items.len()).sum();
-    for (label, items) in type_groups {
-        if items.is_empty() {
-            continue;
-        }
-        out.push_str(&format!("\n## {label}\n\n"));
-        for ri in *items {
-            let filename = item::item_filename(&ri.id, &ri.title);
-            out.push_str(&format!(
-                "- [{}](.joy/items/{}) {}\n",
-                ri.id, filename, ri.title
-            ));
-        }
-    }
-    if total > 0 {
-        out.push_str(&format!("\n---\n*{}*\n", color::plural(total, "item")));
-    }
-    out
 }
 
 fn truncate(s: &str, max: usize) -> String {

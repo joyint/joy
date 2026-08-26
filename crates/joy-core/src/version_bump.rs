@@ -13,6 +13,10 @@
 //! Lockfiles, changelogs, and other derived state are not joy's
 //! concern -- the project orchestrates those between `joy release
 //! bump` and `joy release record` in its own release script.
+//!
+//! Lives in joy-core (moved from joy-cli) so the desktop app and the
+//! platform server, which link joy-core as a library, run the exact
+//! same bump logic as the CLI instead of re-implementing it.
 
 use std::fs;
 use std::path::{Path, PathBuf};

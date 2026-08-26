@@ -2111,6 +2111,7 @@ dependencies = [
  "base64ct",
  "chrono",
  "git2",
+ "glob",
  "hex",
  "inquire",
  "insta",

@@ -87,12 +87,10 @@ impl ForgeRelease for NoForge {
 
 /// The forge values `--forge` and `forge:` accept: the plugin registry's
 /// ids. Whether a forge can RELEASE is the plugin's answer at release
-/// time, not a second list here.
+/// time, not a second list here. Thin alias over joy-core's registry so
+/// the CLI and joy-core's own error help render the same list.
 pub fn supported_forges() -> Vec<&'static str> {
-    forge_plugins::FORGE_PLUGINS
-        .iter()
-        .map(|spec| spec.id)
-        .collect()
+    forge_plugins::supported_ids()
 }
 
 /// Outcome of [`resolve`]: the forge to talk to plus a human-readable
