@@ -879,10 +879,11 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
         }
     }
 
-    // If no AI tools remain, update gitignore and clean up .joy/ai/.
-    let any_remaining = all_tools
-        .iter()
-        .any(|(_, id, _)| is_tool_configured(&root, id));
+    // If no AI members remain on the project, shrink the gitignore block
+    // and clean up .joy/ai/. Membership is the repo-portable signal; the
+    // machine-local marker files must not decide committed content
+    // (JOY-0264-89).
+    let any_remaining = joy_ai::ai_setup::has_ai_member(&root);
     if !any_remaining {
         joy_core::init::update_gitignore_block(&root, joy_core::init::GITIGNORE_BASE_ENTRIES)?;
 

@@ -39,6 +39,20 @@ load setup
     grep -q "project.defaults.yaml" .gitignore
 }
 
+@test "joy update keeps tool gitignore entries on a member-only checkout" {
+    # Fresh-clone shape (JOY-0264-89): the AI member is committed in
+    # project.yaml, but the machine-local marker files joy ai init writes
+    # are git-ignored and absent here. joy update must still carry the
+    # full block instead of stripping the committed tool entries.
+    setup_human_auth
+    joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE"
+    [ ! -d .claude ]
+    joy update </dev/null 2>/dev/null || true
+    grep -q "^\.claude/" .gitignore
+    run joy update --check
+    [ "$status" -eq 0 ]
+}
+
 # --- joy update --check ---
 
 @test "joy update --check detects tampered SKILL.md" {
