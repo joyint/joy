@@ -192,45 +192,6 @@ fn update_copilot_permissions(
     Ok(changed)
 }
 
-fn git_path_is_tracked(root: &Path, path: &str) -> bool {
-    let output = std::process::Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(["ls-files", "--error-unmatch", "--", path])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
-    matches!(output, Ok(s) if s.code() == Some(0))
-}
-
-fn git_rm_cached(root: &Path, path: &str) -> bool {
-    let status = std::process::Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(["rm", "--cached", "-r", "--quiet", "--", path])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
-    match status {
-        Ok(s) if s.success() => true,
-        _ => {
-            eprintln!("Warning: could not untrack {path}");
-            false
-        }
-    }
-}
-
-fn git_rm_hard(root: &Path, path: &str) -> bool {
-    let status = std::process::Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(["rm", "-r", "--quiet", "--ignore-unmatch", "--", path])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
-    matches!(status, Ok(s) if s.success())
-}
-
 #[cfg(test)]
 fn existing_managed_block_entries(root: &Path) -> Vec<String> {
     use joy_core::init::{GITIGNORE_BLOCK_END, GITIGNORE_BLOCK_START};
@@ -743,7 +704,7 @@ pub fn untrack_gitignored_tool_files(root: &Path) {
     let mut untracked: Vec<&str> = Vec::new();
     for (_tool_id, tool_entries) in TOOL_GITIGNORE_ENTRIES {
         for (path, _comment) in *tool_entries {
-            if git_path_is_tracked(root, path) && git_rm_cached(root, path) {
+            if joy_core::vcs::path_is_tracked(root, path) && joy_core::vcs::rm_cached(root, path) {
                 untracked.push(path);
             }
         }
@@ -755,7 +716,10 @@ pub fn remove_legacy_ai_artifacts(root: &Path) -> Vec<String> {
     let mut removed = Vec::new();
     for rel in joy_core::init::LEGACY_AI_ARTIFACTS {
         let full = root.join(rel);
-        if git_path_is_tracked(root, rel) && git_rm_hard(root, rel) && !full.exists() {
+        if joy_core::vcs::path_is_tracked(root, rel)
+            && joy_core::vcs::rm_hard(root, rel)
+            && !full.exists()
+        {
             removed.push((*rel).to_string());
             continue;
         }
@@ -1546,13 +1510,13 @@ mod setup_tests {
         fs::write(root.join(".vibe/config.toml"), "x").unwrap();
         git(&["add", "AGENTS.md", ".vibe/config.toml"]);
         git(&["commit", "-q", "-m", "seed"]);
-        assert!(git_path_is_tracked(root, "AGENTS.md"));
-        assert!(git_path_is_tracked(root, ".vibe/"));
+        assert!(joy_core::vcs::path_is_tracked(root, "AGENTS.md"));
+        assert!(joy_core::vcs::path_is_tracked(root, ".vibe/"));
 
         untrack_gitignored_tool_files(root);
 
-        assert!(!git_path_is_tracked(root, "AGENTS.md"));
-        assert!(!git_path_is_tracked(root, ".vibe/"));
+        assert!(!joy_core::vcs::path_is_tracked(root, "AGENTS.md"));
+        assert!(!joy_core::vcs::path_is_tracked(root, ".vibe/"));
         // Files remain on disk.
         assert!(root.join("AGENTS.md").is_file());
         assert!(root.join(".vibe/config.toml").is_file());
@@ -1570,7 +1534,7 @@ mod setup_tests {
             .unwrap();
         // No tool files tracked: must not panic or error.
         untrack_gitignored_tool_files(root);
-        assert!(!git_path_is_tracked(root, "AGENTS.md"));
+        assert!(!joy_core::vcs::path_is_tracked(root, "AGENTS.md"));
     }
 
     #[test]
@@ -1618,7 +1582,7 @@ mod setup_tests {
         assert!(!root.join(".joy/ai/instructions").exists());
         assert!(!root.join(".joy/ai/skills").exists());
         assert!(!root.join(".joy/capabilities").exists());
-        assert!(!git_path_is_tracked(root, ".joy/capabilities/"));
+        assert!(!joy_core::vcs::path_is_tracked(root, ".joy/capabilities/"));
         // Runtime data preserved.
         assert!(root.join(".joy/ai/jobs/j.yaml").is_file());
         assert!(root.join(".joy/ai/agents/a.yaml").is_file());

@@ -13,9 +13,6 @@
 //! `joy_core::commit_msg` and is unit-tested there; this file only gathers the
 //! inputs from git and the project.
 
-use std::path::Path;
-use std::process::Command;
-
 use anyhow::{Context, Result};
 use clap::Args;
 
@@ -58,7 +55,7 @@ pub fn run(args: PrepareCommitMsgArgs) -> Result<()> {
         return Ok(());
     }
 
-    let staged = staged_paths(&root);
+    let staged = joy_core::vcs::staged_paths(&root);
 
     // Items whose .joy/items/*.yaml file is staged: exact id from filename.
     let all_items = items::load_items(&root).unwrap_or_default();
@@ -105,24 +102,6 @@ pub fn run(args: PrepareCommitMsgArgs) -> Result<()> {
         .with_context(|| format!("writing prepared message to {}", args.msg_file))?;
 
     Ok(())
-}
-
-/// Staged paths relative to the repo root (added/modified/renamed), via
-/// `git diff --cached --name-only`.
-fn staged_paths(root: &Path) -> Vec<String> {
-    let out = Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(["diff", "--cached", "--name-only", "--diff-filter=ACMR"])
-        .output();
-    match out {
-        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
-            .lines()
-            .map(|l| l.trim().to_string())
-            .filter(|l| !l.is_empty())
-            .collect(),
-        _ => Vec::new(),
-    }
 }
 
 /// Extract a Joy item id from a staged `.joy/items/<ID>-<slug>.yaml` path.

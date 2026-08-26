@@ -26,15 +26,17 @@ zeroize = { version = "1", features = ["derive"] }
 base64ct = { version = "1", features = ["alloc"] }
 uuid = { version = "1", features = ["v4", "v7", "serde"] }
 minijinja = { workspace = true }
-# Chats live on a dedicated ref (refs/joy/chats, ADR JAPP-00DC-FC), which
-# is never checked out, so it needs git plumbing (blob/tree/commit/ref)
-# that the CLI cannot express cleanly. Local-only, so no network transport
-# features (push/fetch stay with the platform and desktop git2 layers).
+# The vcs::forge engine (JOY-0265-D7) is the ONE headless git layer for
+# every consumer; local plumbing needs no transport, so the lean default
+# stays. Network transports are opt-in via the `forge-net` feature below:
+# the platform and the desktop app enable it, the CLI stays lean (its
+# user-facing verbs run the git binary so hooks and user config fire).
 # `vendored-libgit2` compiles the bundled libgit2 from source and links it
 # statically: nothing external is expected on the system, so the single
-# binary/library stays self-contained and cross-compiles cleanly (no
-# openssl/libssh2 here since there is no network feature).
+# binary/library stays self-contained and cross-compiles cleanly.
 git2 = { version = "0.20", default-features = false, features = ["vendored-libgit2"] }
+anyhow = "1"
+tracing = "0.1"
 
 # TypeScript binding generation for the canonical wire types the desktop
 # consumes (e.g. AgentMode). Optional so library consumers stay lean; the
@@ -60,6 +62,11 @@ tutorial = ["dep:termimad", "dep:inquire", "dep:terminal_size"]
 # ts-rs derives on canonical wire types (AgentMode), so the generated TS
 # unions come from the single Rust definition. Off by default.
 ts = ["dep:ts-rs", "joy-model/ts"]
+# Network transports for vcs::forge (https for token auth, ssh for the
+# desktop's agent auth). Off by default so CLI builds stay lean; a lean
+# build still compiles the engine, it just cannot reach an https/ssh
+# remote at runtime.
+forge-net = ["git2/https", "git2/ssh"]
 
 [dev-dependencies]
 insta = { version = "1.41", features = ["yaml"] }

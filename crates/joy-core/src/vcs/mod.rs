@@ -326,8 +326,142 @@ impl GitVcs {
 }
 
 /// Default VCS provider. Returns the Git implementation.
+pub mod forge;
+
 pub fn default_vcs() -> GitVcs {
     GitVcs
+}
+// ---- named CLI-git helpers (JOY-0265-D7) --------------------------------
+//
+// The scattered direct `git` invocations of joy-cli and joy-ai live here
+// now, each as ONE named verb. They stay on the git BINARY on purpose:
+// they run in a person's own checkout, where the user's config,
+// credential setup and hooks must apply. Headless sync belongs to
+// [`forge`].
+
+/// The unix time of a commit, resolved in the CURRENT directory (merge
+/// drivers run with the repo as cwd). `None` when the rev does not
+/// resolve or git is unavailable.
+pub fn commit_unix_time(rev: &str) -> Option<i64> {
+    let rev = rev.trim();
+    if rev.is_empty() || rev.starts_with('%') {
+        return None;
+    }
+    let out = Command::new("git")
+        .args(["log", "-1", "--format=%ct", rev])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    String::from_utf8(out.stdout).ok()?.trim().parse().ok()
+}
+
+/// Staged paths relative to the repo root (added/modified/renamed), via
+/// `git diff --cached --name-only`.
+pub fn staged_paths(root: &Path) -> Vec<String> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["diff", "--cached", "--name-only", "--diff-filter=ACMR"])
+        .output();
+    match out {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Whether `remote` is configured in this checkout.
+pub fn remote_exists(root: &Path, remote: &str) -> bool {
+    Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["remote", "get-url", remote])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// One CLI-git ref transfer (fetch or push) with the outcome a caller
+/// can phrase honestly.
+pub enum RefTransfer {
+    Done,
+    /// git ran and refused; the raw stderr for classification.
+    Refused(String),
+    /// git itself could not run.
+    GitUnavailable(String),
+}
+
+/// Fetch one refspec from `remote`, quietly, with the user's own
+/// credential world (helpers, ssh agent, config).
+pub fn fetch_ref(root: &Path, remote: &str, refspec: &str) -> RefTransfer {
+    transfer(root, &["fetch", "--quiet", remote, refspec])
+}
+
+/// Push one refspec to `remote`, quietly, with the user's own
+/// credential world.
+pub fn push_ref(root: &Path, remote: &str, refspec: &str) -> RefTransfer {
+    transfer(root, &["push", "--quiet", remote, refspec])
+}
+
+fn transfer(root: &Path, args: &[&str]) -> RefTransfer {
+    match Command::new("git").arg("-C").arg(root).args(args).output() {
+        Ok(out) if out.status.success() => RefTransfer::Done,
+        Ok(out) => RefTransfer::Refused(String::from_utf8_lossy(&out.stderr).into_owned()),
+        Err(e) => RefTransfer::GitUnavailable(e.to_string()),
+    }
+}
+
+/// Whether git tracks `path` in this checkout.
+pub fn path_is_tracked(root: &Path, path: &str) -> bool {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["ls-files", "--error-unmatch", "--", path])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    matches!(output, Ok(s) if s.code() == Some(0))
+}
+
+/// Untrack `path` (keep the file). Warns and answers false on failure.
+pub fn rm_cached(root: &Path, path: &str) -> bool {
+    let status = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["rm", "--cached", "-r", "--quiet", "--", path])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    match status {
+        Ok(s) if s.success() => true,
+        _ => {
+            eprintln!("Warning: could not untrack {path}");
+            false
+        }
+    }
+}
+
+/// Remove `path` from tree and index. Warns and answers false on failure.
+pub fn rm_hard(root: &Path, path: &str) -> bool {
+    let status = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["rm", "-r", "--quiet", "--ignore-unmatch", "--", path])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    match status {
+        Ok(s) if s.success() => true,
+        _ => {
+            eprintln!("Warning: could not remove {path}");
+            false
+        }
+    }
 }
 
 #[cfg(test)]

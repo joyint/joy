@@ -17,7 +17,6 @@
 //! default to the incoming side (`theirs`).
 
 use std::path::PathBuf;
-use std::process::Command;
 
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
@@ -109,8 +108,8 @@ fn run_driver(args: DriverArgs) -> Result<()> {
 }
 
 fn pick_newer_encrypted(args: &DriverArgs, ours: Vec<u8>, theirs: Vec<u8>) -> Vec<u8> {
-    let our_t = commit_unix_time(&args.ours_rev);
-    let their_t = commit_unix_time(&args.theirs_rev);
+    let our_t = joy_core::vcs::commit_unix_time(&args.ours_rev);
+    let their_t = joy_core::vcs::commit_unix_time(&args.theirs_rev);
     let prefer_theirs = match (our_t, their_t) {
         (Some(o), Some(t)) => t >= o,
         _ => true,
@@ -120,19 +119,4 @@ fn pick_newer_encrypted(args: &DriverArgs, ours: Vec<u8>, theirs: Vec<u8>) -> Ve
     } else {
         ours
     }
-}
-
-fn commit_unix_time(rev: &str) -> Option<i64> {
-    let rev = rev.trim();
-    if rev.is_empty() || rev.starts_with('%') {
-        return None;
-    }
-    let out = Command::new("git")
-        .args(["log", "-1", "--format=%ct", rev])
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    String::from_utf8(out.stdout).ok()?.trim().parse().ok()
 }

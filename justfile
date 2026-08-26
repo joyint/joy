@@ -94,7 +94,27 @@ sync-tutorial:
 # Run fmt-check, lint, test
 # The fast gate, for every commit: static checks plus the functional
 # core. Seconds, not minutes, so nobody is tempted to skip it.
-check: _toolchain-check sync-tutorial fmt-check lint test-unit test-cmd test-smoke
+check: _toolchain-check sync-tutorial fmt-check lint guard-vcs test-unit test-cmd test-smoke
+
+# Git lives in ONE place (JOY-0265-D7): joy-core/src/vcs, plus the chat
+# store's object plumbing (a git-object database, its own storage layer).
+# git2 elsewhere is compile-guarded (dev-dependency only); this guards
+# the git BINARY calls. Tests may shell git to build fixtures.
+guard-vcs:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    bad=0
+    for f in $(grep -rl 'Command::new("git")' crates/*/src --include='*.rs' | grep -v 'crates/joy-core/src/vcs/'); do
+        test_start=$(grep -n '#\[cfg(test)\]' "$f" | head -1 | cut -d: -f1)
+        for line in $(grep -n 'Command::new("git")' "$f" | cut -d: -f1); do
+            if [ -z "$test_start" ] || [ "$line" -lt "$test_start" ]; then
+                echo "guard-vcs: $f calls git directly (line $line); git belongs in joy-core/src/vcs"
+                bad=1
+            fi
+        done
+    done
+    exit $bad
 
 # Everything, for the nightly run and before a release.
 check-all: _toolchain-check sync-tutorial fmt-check lint test

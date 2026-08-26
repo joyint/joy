@@ -88,27 +88,18 @@ fn sync_ref(root: &std::path::Path) {
         .sync
         .map(|s| s.remote)
         .unwrap_or_else(|| "origin".to_string());
-    let git = |args: &[&str]| {
-        std::process::Command::new("git")
-            .arg("-C")
-            .arg(root)
-            .args(args)
-            .output()
-    };
     // A project without this remote is local-only: chats stay local.
-    match git(&["remote", "get-url", &remote]) {
-        Ok(out) if out.status.success() => {}
-        _ => return,
+    if !joy_core::vcs::remote_exists(root, &remote) {
+        return;
     }
     let fetch_spec = format!(
         "+{}:{}",
         joy_chat_store::chat_ref::CHATS_REF,
         joy_chat_store::chat_ref::CHATS_TRACKING_REF
     );
-    match git(&["fetch", "--quiet", &remote, &fetch_spec]) {
-        Ok(out) if out.status.success() => {}
-        Ok(out) => {
-            let stderr = String::from_utf8_lossy(&out.stderr);
+    match joy_core::vcs::fetch_ref(root, &remote, &fetch_spec) {
+        joy_core::vcs::RefTransfer::Done => {}
+        joy_core::vcs::RefTransfer::Refused(stderr) => {
             // No remote chats yet: the normal first sync, nothing to merge.
             if !stderr.contains("couldn't find remote ref") {
                 eprintln!(
@@ -117,7 +108,7 @@ fn sync_ref(root: &std::path::Path) {
                 );
             }
         }
-        Err(e) => {
+        joy_core::vcs::RefTransfer::GitUnavailable(e) => {
             eprintln!("chats not fetched (git unavailable: {e}); local state shown");
             return;
         }
@@ -137,16 +128,17 @@ fn sync_ref(root: &std::path::Path) {
         joy_chat_store::chat_ref::CHATS_REF,
         joy_chat_store::chat_ref::CHATS_REF
     );
-    match git(&["push", "--quiet", &remote, &push_spec]) {
-        Ok(out) if out.status.success() => {}
-        Ok(out) => {
-            let stderr = String::from_utf8_lossy(&out.stderr);
+    match joy_core::vcs::push_ref(root, &remote, &push_spec) {
+        joy_core::vcs::RefTransfer::Done => {}
+        joy_core::vcs::RefTransfer::Refused(stderr) => {
             eprintln!(
                 "chat stays committed locally, push failed ({}); the next send or read retries",
                 classify_sync_error(&stderr)
             );
         }
-        Err(e) => eprintln!("chat stays committed locally, push failed (git unavailable: {e})"),
+        joy_core::vcs::RefTransfer::GitUnavailable(e) => {
+            eprintln!("chat stays committed locally, push failed (git unavailable: {e})")
+        }
     }
 }
 

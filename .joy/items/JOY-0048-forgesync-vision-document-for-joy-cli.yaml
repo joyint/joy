@@ -4,8 +4,10 @@ type: decision
 status: closed
 priority: high
 effort: 2
+validity: replaced
 created: 2026-03-23T06:34:23.766097415Z
-updated: 2026-03-23T06:39:08.268067567Z
+updated: 2026-08-26T08:53:24.462407116Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Create docs/dev/vision/ForgeSync.md covering CLI perspective: forge: config in project.yaml (github, joyint, github@joyint, gitlab, gitea, none), joy sync push/pull flow, offline-first design, conflict resolution always local, joy init forge detection and proposal. Companion to JP-0001 in the platform project.'
 comments:
 - author: horst.schwarz@joydev.com
@@ -14,3 +16,6 @@ comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-23T06:39:08.262097491Z
   text: '[x] Created docs/dev/vision/ForgeSync.md: forge config format (github, joyint, github@joyint, none), sync push/pull flows per forge type, offline-first design, conflict resolution always local, forge detection at joy init, tool requirements. Referenced from umbrella Vision.md.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-26T08:53:24.462403824Z
+  text: 'Als replaced markiert (2026-08-26): Die Relay-/Bare-Repo-Vision ist ueberholt. Das umgesetzte Modell (Kunden-Forge als Hub, ein Checkout pro Projekt, Write-behind-Sync mit Gates und Session-Bindung) ist als Platform-ADR JP-00E1-CC festgehalten; die CLI-Seite arbeitet unveraendert direkt auf dem lokalen Repo.'

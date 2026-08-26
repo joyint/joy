@@ -375,6 +375,47 @@ fn union_chat_subtrees(
     tb.write().map_err(git)
 }
 
+// ---- forge sync, composed over the one git engine ----------------------
+//
+// The raw verbs live in joy_core::vcs::forge (JOY-0265-D7); this file owns
+// only the CHAT semantics: what to fetch, when to reconcile, when the
+// forge still needs our commits.
+
+/// Bidirectional chat sync with the forge: fetch the remote chat ref into
+/// the tracking ref, reconcile (adopt / fast-forward / message-union
+/// merge — ONE decision tree for every venue), then push when the local
+/// ref carries commits the forge still needs. Chats live on this ref,
+/// never the working branch, so `git log`/`git pull` ignore them.
+pub fn sync_with_forge(root: &Path, auth: &joy_core::vcs::forge::Auth) -> Result<(), JoyError> {
+    if pull_from_forge(root, auth)? {
+        joy_core::vcs::forge::push_ref(root, auth, CHATS_REF)
+            .map_err(|e| JoyError::Git(format!("chats push failed: {e}")))?;
+    }
+    Ok(())
+}
+
+/// Read-side chat refresh: fetch and reconcile, never push. Lets a read
+/// recover the chat ref the working-branch clone left behind, and pick up
+/// chats another writer pushed. Returns whether the local ref now carries
+/// commits the forge still needs (a later [`sync_with_forge`] delivers
+/// them).
+pub fn pull_from_forge(root: &Path, auth: &joy_core::vcs::forge::Auth) -> Result<bool, JoyError> {
+    joy_core::vcs::forge::fetch_ref(root, auth, CHATS_REF, CHATS_TRACKING_REF)
+        .map_err(|e| JoyError::Git(format!("chats fetch failed: {e}")))?;
+    reconcile_with_tracking(root)
+}
+
+/// The oid the FORGE's chat ref points at, without fetching anything
+/// (JP-008B-24: the poll compares hashes and fetches only on a change).
+/// `None` when the forge has no chats yet.
+pub fn remote_hash(
+    root: &Path,
+    auth: &joy_core::vcs::forge::Auth,
+) -> Result<Option<String>, JoyError> {
+    joy_core::vcs::forge::ls_remote_ref(root, auth, CHATS_REF)
+        .map_err(|e| JoyError::Git(format!("chats ls-remote failed: {e}")))
+}
+
 /// Reconcile the local [`CHATS_REF`] with an already-fetched
 /// [`CHATS_TRACKING_REF`] (ADR JAPP-00DC-FC): adopt the remote ref when
 /// none exists locally (a fresh clone carries no custom refs),
@@ -383,9 +424,8 @@ fn union_chat_subtrees(
 /// push (each transport plumbs credentials differently). Returns whether
 /// the local ref now carries commits the remote still needs (push it).
 ///
-/// This is THE decision tree every sync path runs; the platform server
-/// and the desktop shell carry historical private copies that should
-/// converge on this helper.
+/// This is THE decision tree every sync path runs, via
+/// [`sync_with_forge`] / [`pull_from_forge`] on every venue.
 pub fn reconcile_with_tracking(root: &Path) -> Result<bool, JoyError> {
     let repo = open_repo(root)?;
     let local = repo.refname_to_id(CHATS_REF).ok();
@@ -773,5 +813,133 @@ mod tests {
                 && err.to_string().contains("retired pre-sealing layout"),
             "{err}"
         );
+    }
+}
+
+#[cfg(test)]
+mod forge_sync_tests {
+    use super::*;
+
+    /// Chats sync on their own ref (refs/joy/chats), never the working
+    /// branch: write a chat, sync it, and see the message land on
+    /// refs/joy/chats on the bare forge while the branch stays chat-free.
+    #[test]
+    fn chats_ref_syncs_to_the_forge_off_the_branch() {
+        let base = std::env::temp_dir().join(format!("jp-chatref-{}", std::process::id()));
+        std::fs::remove_dir_all(&base).ok();
+        let forge = base.join("forge.git");
+        std::fs::create_dir_all(&forge).unwrap();
+        git2::Repository::init_bare(&forge).unwrap();
+
+        let seed = base.join("seed");
+        let seed_repo = git2::Repository::init(&seed).unwrap();
+        std::fs::create_dir_all(seed.join(".joy")).unwrap();
+        std::fs::write(seed.join(".joy/marker"), "hi").unwrap();
+        // chats are always sealed now: the writing member needs an
+        // identity, and this thread needs its seed
+        let mut project = joy_core::model::Project::new("T".to_string(), Some("T".to_string()));
+        let mut m = joy_core::model::project::Member::new(
+            joy_core::model::project::MemberCapabilities::All,
+        );
+        m.verify_key = Some(
+            joy_core::auth::IdentityKeypair::from_seed(&[5u8; 32])
+                .public_key()
+                .to_hex(),
+        );
+        project.register_member("horst@example.com", m).unwrap();
+        joy_core::store::write_yaml(&seed.join(".joy/project.yaml"), &project).unwrap();
+        crate::writer::set_thread_seed(Some(Some([5u8; 32])));
+        let mut index = seed_repo.index().unwrap();
+        index
+            .add_all(["."], git2::IndexAddOption::DEFAULT, None)
+            .unwrap();
+        index.write().unwrap();
+        let tree = seed_repo.find_tree(index.write_tree().unwrap()).unwrap();
+        let sig = git2::Signature::now("Seed", "seed@example.com").unwrap();
+        seed_repo
+            .commit(Some("HEAD"), &sig, &sig, "seed", &tree, &[])
+            .unwrap();
+        seed_repo.remote("origin", forge.to_str().unwrap()).unwrap();
+        let branch = seed_repo.head().unwrap().shorthand().unwrap().to_string();
+        seed_repo
+            .find_remote("origin")
+            .unwrap()
+            .push(
+                &[format!("refs/heads/{branch}:refs/heads/{branch}").as_str()],
+                None,
+            )
+            .unwrap();
+
+        let checkout = base.join("checkout");
+        joy_core::vcs::forge::clone(
+            forge.to_str().unwrap(),
+            &joy_core::vcs::forge::Auth::token("x"),
+            &checkout,
+        )
+        .expect("clone");
+
+        // write a chat onto refs/joy/chats, then sync just that ref
+        let now = chrono::Utc::now();
+        let mut chat = crate::chats::ensure_general(&checkout, now).unwrap();
+        crate::chats::append_message(
+            &checkout,
+            &mut chat,
+            joy_core::member_ref::MemberRef::new("horst@example.com"),
+            "warp core stable",
+            now,
+        )
+        .unwrap();
+        sync_with_forge(&checkout, &joy_core::vcs::forge::Auth::token("x")).expect("chats sync");
+
+        // the forge has refs/joy/chats with the message blob
+        let forge_repo = git2::Repository::open_bare(&forge).unwrap();
+        let chats_tree = forge_repo
+            .find_reference(crate::chat_ref::CHATS_REF)
+            .expect("chats ref on forge")
+            .peel_to_commit()
+            .unwrap()
+            .tree()
+            .unwrap();
+        let general = chats_tree
+            .get_name("general")
+            .expect("general chat")
+            .to_object(&forge_repo)
+            .unwrap()
+            .peel_to_tree()
+            .unwrap();
+        // sealed shape on the forge: keys/ + log/, no messages dir, and
+        // the log blobs do NOT contain the plaintext
+        assert!(general.get_name("messages").is_none(), "no plaintext dir");
+        let log = general
+            .get_name("log")
+            .expect("log dir")
+            .to_object(&forge_repo)
+            .unwrap()
+            .peel_to_tree()
+            .unwrap();
+        assert!(log.iter().count() > 0, "sealed events reached the forge");
+        assert!(
+            log.iter().all(|e| {
+                let blob = e.to_object(&forge_repo).unwrap().peel_to_blob().unwrap();
+                !String::from_utf8_lossy(blob.content()).contains("warp core stable")
+            }),
+            "the forge holds envelopes, not text"
+        );
+
+        // the working branch carries NO chats — they left it
+        let head_tree = forge_repo
+            .find_reference(&format!("refs/heads/{branch}"))
+            .unwrap()
+            .peel_to_tree()
+            .unwrap();
+        if let Some(joy) = head_tree.get_name(".joy") {
+            let joy_tree = joy.to_object(&forge_repo).unwrap().peel_to_tree().unwrap();
+            assert!(
+                joy_tree.get_name("chats").is_none(),
+                "no .joy/chats on the working branch"
+            );
+        }
+
+        std::fs::remove_dir_all(&base).ok();
     }
 }
