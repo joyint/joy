@@ -1,0 +1,22 @@
+id: JOY-0264-89
+title: 'gitignore managed block flip-flops between machines: tool-configured signal is machine-local'
+type: bug
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-26T08:48:15.211617983Z
+updated: 2026-08-26T09:32:49.303510089Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'JOY-01FE-98 made the managed .gitignore block all-or-nothing: base plus all tool entries when any AI tool is configured, base-only otherwise. But is_tool_configured (ai_setup.rs) tests marker files that are themselves git-ignored (for Claude Code: .claude/skills/joy/SKILL.md), so the signal is machine-local and never travels with the repo. On the machine where joy ai init ran, joy update keeps the full block; on any fresh checkout (CI, container, new team member before joy ai init) the same repo state reads as no tool configured and joy update strips the eight tool lines (.claude/, .qwen/, .vibe/, AGENTS.md, .github/copilot-instructions.md, .github/copilot/, .github/agents/, .github/prompts/). The committed .gitignore ping-pongs depending on where joy runs. Observed on joyint/project 2026-08-26 with joy 0.20.0: in a fresh clone, joy update (triggered by reinstall sync) wanted to remove the tool lines while the init machine reports the block OK; the update check there also showed Claude Code as installed, not configured.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-26T08:53:16.198796276Z
+  text: 'Plan: make the all-or-nothing signal repo-portable per Horst''s call: the managed .gitignore block carries the full fixed set iff .joy/project.yaml has any ai:* member (project.member_keys().any(is_ai_member)), instead of testing machine-local marker files. New helper has_ai_member(root) in joy_ai::ai_setup as single source of truth; switch GitignoreBlockItem::expected_entries (joy update) and the two reset shrink-to-base sites (ai_setup.rs reset, commands/ai.rs reset) to it. Per-tool staleness/refresh and the installed/not-configured report stay machine-local by design. Add unit tests for the helper and the update check on a fresh-clone-shaped repo (members present, no local markers); run just check.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-26T09:03:04.317262281Z
+  text: '[x] Implemented on branch JOY-0264-89-gitignore-portable-signal. New ai_setup::has_ai_member(root): true iff .joy/project.yaml carries any ai:* member (load_project + member_keys + is_ai_member). Switched the three all-or-nothing sites to it: GitignoreBlockItem::expected_entries (joy update check+refresh) and the two reset shrink-to-base sites (joy-ai ai_setup reset, joy-cli commands/ai.rs reset). Per-tool staleness and the installed/not-configured report stay machine-local by design. Tests: 3 unit tests for has_ai_member, 2 for expected_entries (fresh-clone shape: member present, no local markers), new bats case ''joy update keeps tool gitignore entries on a member-only checkout''; ai.bats+update_command.bats 34/34, just check green (fmt, clippy -D warnings, unit/cmd tests, smoke bats).'
