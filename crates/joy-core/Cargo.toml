@@ -42,7 +42,6 @@ minijinja = { workspace = true }
 # statically: nothing external is expected on the system, so the single
 # binary/library stays self-contained and cross-compiles cleanly.
 git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2", "cred"] }
-anyhow = "1"
 tracing = "0.1"
 
 # TypeScript binding generation for the canonical wire types the desktop
