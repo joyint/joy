@@ -287,6 +287,11 @@ pub fn ensure_general(root: &Path, now: DateTime<Utc>) -> Result<Chat, JoyError>
     Ok(chat)
 }
 
+/// PAIRED with the TS display mirror `effectiveParticipants`
+/// (app/packages/tools/chat-client/src/types.ts, JAPP-01A4-6E): the rule
+/// is mirrored there because routing three lines through wasm costs more
+/// than it protects. Change BOTH or neither.
+///
 /// The chat's effective participants: General AND team chats carry an
 /// empty list that means "every project member" (a team chat belongs to
 /// the team — new members see it automatically) — resolve it for

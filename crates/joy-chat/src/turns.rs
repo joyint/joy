@@ -18,6 +18,10 @@ use crate::model::chat::{Chat, ChatMessage, MessageKind};
 /// a human has to moderate on ("ask, then react to the answer").
 pub const MAX_AI_TURNS_SINCE_HUMAN: usize = 2;
 
+/// PAIRED with the local-agent conversation bound AI_CHAIN_MAX in the
+/// app shell (JAPP-01A4-6E): same intent on a different surface. Change
+/// the semantics in both places or neither.
+///
 /// The system line posted when the chain guard trips (notice format).
 pub const MODERATION_NOTICE: &str = "the AIs paused. A human has to moderate on.";
 
