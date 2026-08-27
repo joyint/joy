@@ -704,7 +704,10 @@ mod tests {
         let mut chat = Chat::new("cccc1111cccc1111cccc1111cccc1111", vec![], ts(0));
         chat.participants = vec![MemberRef::new("horst@example.com")];
         save(dir.path(), &chat, &horst).unwrap();
-        assert!(load(dir.path(), &chat.id, &horst).unwrap().is_some(), "own chat readable at create");
+        assert!(
+            load(dir.path(), &chat.id, &horst).unwrap().is_some(),
+            "own chat readable at create"
+        );
 
         // his first line mentions the AI; the app adds the AI as a
         // participant (chat_turns::add_mentioned_ais), then seals. horst
@@ -730,9 +733,15 @@ mod tests {
 
         // horst must STILL read his own chat
         let got = load(dir.path(), &chat.id, &horst).unwrap();
-        assert!(got.is_some(), "creator lost read access after the AI joined");
+        assert!(
+            got.is_some(),
+            "creator lost read access after the AI joined"
+        );
         // and the AI can read it too
-        assert!(load(dir.path(), &chat.id, &ai_seed).unwrap().is_some(), "AI cannot read");
+        assert!(
+            load(dir.path(), &chat.id, &ai_seed).unwrap().is_some(),
+            "AI cannot read"
+        );
     }
 
     #[test]
