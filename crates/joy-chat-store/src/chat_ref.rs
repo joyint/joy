@@ -418,11 +418,9 @@ pub fn poll_once(root: &Path, auth: &joy_core::vcs::forge::Auth) -> Result<bool,
     let _guard = gate.lock().unwrap_or_else(|e| e.into_inner());
     let before = ref_target(root)?.map(|oid| oid.to_string());
     let remote = remote_hash(root, auth)?;
-    if remote != before {
-        if pull_from_forge(root, auth)? {
-            // best effort: delivery heals what an offline write left
-            let _ = joy_core::vcs::forge::push_ref(root, auth, CHATS_REF);
-        }
+    if remote != before && pull_from_forge(root, auth)? {
+        // best effort: delivery heals what an offline write left
+        let _ = joy_core::vcs::forge::push_ref(root, auth, CHATS_REF);
     }
     let after = ref_target(root)?.map(|oid| oid.to_string());
     Ok(after != before)
