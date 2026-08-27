@@ -387,6 +387,18 @@ fn union_chat_subtrees(
 /// ref carries commits the forge still needs. Chats live on this ref,
 /// never the working branch, so `git log`/`git pull` ignore them.
 pub fn sync_with_forge(root: &Path, auth: &joy_core::vcs::forge::Auth) -> Result<(), JoyError> {
+    // Push FIRST (JAPP-01A3-4A): after a write the forge is usually
+    // strictly behind this checkout, so one roundtrip delivers and the
+    // reader's poll sees it a second later. Only a rejected push means
+    // the forge moved meanwhile — then the classic road: fetch,
+    // reconcile (adopt / fast-forward / union), push again. The old
+    // fetch-before-every-push paid a full extra roundtrip on the hot
+    // path of every message.
+    if open_repo(root)?.refname_to_id(CHATS_REF).is_ok()
+        && joy_core::vcs::forge::push_ref(root, auth, CHATS_REF).is_ok()
+    {
+        return Ok(());
+    }
     if pull_from_forge(root, auth)? {
         joy_core::vcs::forge::push_ref(root, auth, CHATS_REF)
             .map_err(|e| JoyError::Git(format!("chats push failed: {e}")))?;
@@ -823,6 +835,98 @@ mod forge_sync_tests {
     /// Chats sync on their own ref (refs/joy/chats), never the working
     /// branch: write a chat, sync it, and see the message land on
     /// refs/joy/chats on the bare forge while the branch stays chat-free.
+    #[test]
+    fn a_rejected_first_push_falls_back_to_union_and_delivers() {
+        // Push-first (JAPP-01A3-4A): when the forge moved meanwhile, the
+        // optimistic push is rejected and the classic road must still
+        // deliver — fetch, union-reconcile, push. Both writers' messages
+        // end up on the forge, nothing is lost.
+        let base = std::env::temp_dir().join(format!("jp-chatref-race-{}", std::process::id()));
+        std::fs::remove_dir_all(&base).ok();
+        let forge = base.join("forge.git");
+        std::fs::create_dir_all(&forge).unwrap();
+        git2::Repository::init_bare(&forge).unwrap();
+
+        let seed = base.join("seed");
+        let seed_repo = git2::Repository::init(&seed).unwrap();
+        std::fs::create_dir_all(seed.join(".joy")).unwrap();
+        let mut project = joy_core::model::Project::new("T".to_string(), Some("T".to_string()));
+        let mut m = joy_core::model::project::Member::new(
+            joy_core::model::project::MemberCapabilities::All,
+        );
+        m.verify_key = Some(
+            joy_core::auth::IdentityKeypair::from_seed(&[5u8; 32])
+                .public_key()
+                .to_hex(),
+        );
+        project.register_member("horst@example.com", m).unwrap();
+        joy_core::store::write_yaml(&seed.join(".joy/project.yaml"), &project).unwrap();
+        crate::writer::set_thread_seed(Some(Some([5u8; 32])));
+        let mut index = seed_repo.index().unwrap();
+        index
+            .add_all(["."], git2::IndexAddOption::DEFAULT, None)
+            .unwrap();
+        index.write().unwrap();
+        let tree = seed_repo.find_tree(index.write_tree().unwrap()).unwrap();
+        let sig = git2::Signature::now("Seed", "seed@example.com").unwrap();
+        seed_repo
+            .commit(Some("HEAD"), &sig, &sig, "seed", &tree, &[])
+            .unwrap();
+        seed_repo.remote("origin", forge.to_str().unwrap()).unwrap();
+        let branch = seed_repo.head().unwrap().shorthand().unwrap().to_string();
+        seed_repo
+            .find_remote("origin")
+            .unwrap()
+            .push(
+                &[format!("refs/heads/{branch}:refs/heads/{branch}").as_str()],
+                None,
+            )
+            .unwrap();
+        let auth = joy_core::vcs::forge::Auth::token("x");
+
+        // both sides clone BEFORE any chat exists
+        let a = base.join("a");
+        let b = base.join("b");
+        joy_core::vcs::forge::clone(forge.to_str().unwrap(), &auth, &a).expect("clone a");
+        joy_core::vcs::forge::clone(forge.to_str().unwrap(), &auth, &b).expect("clone b");
+
+        let now = chrono::Utc::now();
+        // A writes and syncs: the forge now holds A's ref
+        let mut chat_a = crate::chats::ensure_general(&a, now).unwrap();
+        crate::chats::append_message(
+            &a,
+            &mut chat_a,
+            joy_core::member_ref::MemberRef::new("horst@example.com"),
+            "from a",
+            now,
+        )
+        .unwrap();
+        sync_with_forge(&a, &auth).expect("a sync");
+
+        // B, unaware, writes its own chat: B's optimistic push is
+        // rejected (the forge moved), the fallback unions and delivers
+        let mut chat_b = crate::chats::ensure_general(&b, now).unwrap();
+        crate::chats::append_message(
+            &b,
+            &mut chat_b,
+            joy_core::member_ref::MemberRef::new("horst@example.com"),
+            "from b",
+            now,
+        )
+        .unwrap();
+        sync_with_forge(&b, &auth).expect("b sync unions");
+
+        // A pulls: BOTH messages are readable in A's checkout
+        pull_from_forge(&a, &auth).expect("a pull");
+        let general = crate::chat_store::load(&a, "general", &[5u8; 32])
+            .unwrap()
+            .expect("general opens");
+        let texts: Vec<_> = general.messages.iter().map(|m| m.text.as_str()).collect();
+        assert!(texts.contains(&"from a"), "{texts:?}");
+        assert!(texts.contains(&"from b"), "{texts:?}");
+        std::fs::remove_dir_all(&base).ok();
+    }
+
     #[test]
     fn chats_ref_syncs_to_the_forge_off_the_branch() {
         let base = std::env::temp_dir().join(format!("jp-chatref-{}", std::process::id()));
