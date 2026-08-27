@@ -557,12 +557,19 @@ struct Lane {
 /// turn.
 pub struct LaneSet<K: std::hash::Hash + Eq + Clone> {
     lanes: Mutex<HashMap<K, Lane>>,
+    /// The last reason a lane failed to come up (spawn error, refused
+    /// initialize, dead transport). Written by the lane thread, read by
+    /// [`LaneSet::turn`] when both attempts died: without it every real
+    /// failure collapsed into "could not be established" with no trace
+    /// (JAPP-01A0-1C).
+    last_error: Arc<Mutex<Option<String>>>,
 }
 
 impl<K: std::hash::Hash + Eq + Clone> Default for LaneSet<K> {
     fn default() -> Self {
         Self {
             lanes: Mutex::new(HashMap::new()),
+            last_error: Arc::default(),
         }
     }
 }
@@ -611,7 +618,14 @@ impl<K: std::hash::Hash + Eq + Clone> LaneSet<K> {
                 }
             }
         }
-        anyhow::bail!("acp chat lane could not be established")
+        let reason = self
+            .last_error
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+            .map(|e| format!(": {e}"))
+            .unwrap_or_default();
+        anyhow::bail!("acp chat lane could not be established{reason}")
     }
 
     /// Forget a lane (project close, undelegate, config change): the
@@ -650,6 +664,8 @@ impl<K: std::hash::Hash + Eq + Clone> LaneSet<K> {
             }
         }
         let (tx, rx) = mpsc::unbounded_channel();
+        // a fresh start judges itself: only ITS failure may reach turn()
+        *self.last_error.lock().unwrap_or_else(|e| e.into_inner()) = None;
         spawn_lane_thread(
             config.command.clone(),
             config.cwd.clone(),
@@ -658,6 +674,7 @@ impl<K: std::hash::Hash + Eq + Clone> LaneSet<K> {
             config.fresh_preamble.clone(),
             config.model.clone(),
             config.prepare.clone(),
+            self.last_error.clone(),
             rx,
         );
         lanes.insert(
@@ -683,6 +700,7 @@ fn spawn_lane_thread(
     fresh_preamble: Option<String>,
     model: Option<String>,
     prepare: Option<Arc<dyn Fn(AcpAgent) -> AcpAgent + Send + Sync>>,
+    errors: Arc<Mutex<Option<String>>>,
     rx: mpsc::UnboundedReceiver<QueuedTurn>,
 ) {
     std::thread::Builder::new()
@@ -693,7 +711,11 @@ fn spawn_lane_thread(
                 .build()
             {
                 Ok(rt) => rt,
-                Err(_) => return,
+                Err(e) => {
+                    *errors.lock().unwrap_or_else(|e| e.into_inner()) =
+                        Some(format!("lane runtime: {e}"));
+                    return;
+                }
             };
             runtime.block_on(run_lane(
                 command,
@@ -703,6 +725,7 @@ fn spawn_lane_thread(
                 fresh_preamble,
                 model,
                 prepare,
+                errors,
                 rx,
             ));
         })
@@ -722,11 +745,17 @@ async fn run_lane(
     fresh_preamble: Option<String>,
     model: Option<String>,
     prepare: Option<Arc<dyn Fn(AcpAgent) -> AcpAgent + Send + Sync>>,
+    errors: Arc<Mutex<Option<String>>>,
     mut rx: mpsc::UnboundedReceiver<QueuedTurn>,
 ) {
     let agent = match AcpAgent::from_str(&command) {
         Ok(agent) => agent,
-        Err(_) => return,
+        Err(e) => {
+            let reason = format!("agent command '{command}': {e}");
+            eprintln!("joyint: acp lane refused: {reason}");
+            *errors.lock().unwrap_or_else(|e| e.into_inner()) = Some(reason);
+            return;
+        }
     };
     let agent = match prepare {
         Some(hook) => hook(agent),
@@ -745,7 +774,8 @@ async fn run_lane(
     let perms = buffers.clone();
     let perm_modes = modes.clone();
 
-    let _ = agent_client_protocol::Client
+    let command_shown = command.clone();
+    let connect = agent_client_protocol::Client
         .builder()
         .on_receive_notification(
             async move |notification: SessionNotification, _cx| {
@@ -1029,6 +1059,15 @@ async fn run_lane(
             Ok(())
         })
         .await;
+    // A lane that never came up, or died: NAME it. The child's own last
+    // words went to stderr already; this line plus the stored reason is
+    // what turn() and the person get instead of a bare sammelsatz
+    // (JAPP-01A0-1C: "could not be established" with no trace).
+    if let Err(e) = connect {
+        let reason = format!("agent '{command_shown}': {e:#}");
+        eprintln!("joyint: acp lane ended: {reason}");
+        *errors.lock().unwrap_or_else(|e| e.into_inner()) = Some(reason);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1247,6 +1286,57 @@ async fn list_models_inner(config: &LaneConfig) -> anyhow::Result<AgentModels> {
         .map_err(|e| anyhow::anyhow!("acp list models: {e}"))?;
     let result = out.lock().unwrap_or_else(|e| e.into_inner()).clone();
     Ok(result)
+}
+
+#[cfg(test)]
+mod lane_error_tests {
+    use super::*;
+
+    /// JAPP-01A0-1C: a lane that cannot come up must NAME the reason.
+    /// Before, a spawn failure ended in a bare "could not be
+    /// established" and the real cause (here: the binary does not
+    /// exist) was nowhere to be found.
+    #[test]
+    fn a_lane_that_cannot_spawn_names_the_reason() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let lanes: LaneSet<u32> = LaneSet::default();
+            let config = LaneConfig {
+                command: "joyint-missing-binary-xyz".into(),
+                cwd: std::env::temp_dir(),
+                client_name: "test".into(),
+                client_version: "1".into(),
+                fresh_preamble: None,
+                model: None,
+                prepare: None,
+            };
+            let request = TurnRequest {
+                chat_id: "c1".into(),
+                prompt_full: "hi".into(),
+                prompt_delta: None,
+                mode: joy_chat::model::AgentMode::Plan,
+                max_price_cents: 0,
+                activity: None,
+                marker_id: None,
+            };
+            let err = match lanes
+                .turn(1, 0, &config, request, std::time::Duration::from_secs(20))
+                .await
+            {
+                Err(e) => e,
+                Ok(_) => panic!("a missing binary cannot make a lane"),
+            };
+            let msg = format!("{err}");
+            assert!(msg.contains("could not be established"), "{msg}");
+            assert!(
+                msg.contains("joyint-missing-binary-xyz"),
+                "the reason names the command: {msg}"
+            );
+        });
+    }
 }
 
 #[cfg(test)]
