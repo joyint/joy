@@ -679,6 +679,62 @@ mod tests {
         );
     }
 
+    /// Demo reproduction (JP-00E4-B3): horst creates a chat and its FIRST
+    /// message mentions the AI. The chat must stay readable to horst, its
+    /// creator. If it ends up sealed only to the AI, horst loses it: it
+    /// hides, rename fails to decrypt, and the AI never answers.
+    #[test]
+    fn a_chat_whose_first_message_mentions_an_ai_stays_readable_to_its_creator() {
+        let (dir, horst, _anna) = project();
+        // add an AI member with its own key (like ai:vibe@joy)
+        let ai_seed = [9u8; 32];
+        let mut project = joy_core::store::load_project(dir.path()).unwrap();
+        let mut vibe = joy_core::model::project::Member::new(
+            joy_core::model::project::MemberCapabilities::All,
+        );
+        vibe.verify_key = Some(IdentityKeypair::from_seed(&ai_seed).public_key().to_hex());
+        project.register_member("ai:vibe@joy", vibe).unwrap();
+        joy_core::store::write_yaml(
+            &joy_core::store::joy_dir(dir.path()).join(joy_core::store::PROJECT_FILE),
+            &project,
+        )
+        .unwrap();
+
+        // horst opens a fresh direct chat (participants = himself)
+        let mut chat = Chat::new("cccc1111cccc1111cccc1111cccc1111", vec![], ts(0));
+        chat.participants = vec![MemberRef::new("horst@example.com")];
+        save(dir.path(), &chat, &horst).unwrap();
+        assert!(load(dir.path(), &chat.id, &horst).unwrap().is_some(), "own chat readable at create");
+
+        // his first line mentions the AI; the app adds the AI as a
+        // participant (chat_turns::add_mentioned_ais), then seals. horst
+        // is the writer for both.
+        crate::writer::set_thread_seed(Some(Some(horst)));
+        let mut reloaded = load(dir.path(), &chat.id, &horst).unwrap().unwrap();
+        crate::chats::append_message(
+            dir.path(),
+            &mut reloaded,
+            MemberRef::new("horst@example.com"),
+            "@vibe please help",
+            ts(1),
+        )
+        .unwrap();
+        crate::chats::add_participant(
+            dir.path(),
+            &mut reloaded,
+            MemberRef::new("ai:vibe@joy"),
+            &MemberRef::new("horst@example.com"),
+            ts(2),
+        )
+        .unwrap();
+
+        // horst must STILL read his own chat
+        let got = load(dir.path(), &chat.id, &horst).unwrap();
+        assert!(got.is_some(), "creator lost read access after the AI joined");
+        // and the AI can read it too
+        assert!(load(dir.path(), &chat.id, &ai_seed).unwrap().is_some(), "AI cannot read");
+    }
+
     #[test]
     fn a_key_change_re_wraps_and_the_new_key_reads_again() {
         let (dir, horst_old, _anna) = project();
