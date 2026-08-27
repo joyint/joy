@@ -406,6 +406,73 @@ pub fn sync_with_forge(root: &Path, auth: &joy_core::vcs::forge::Auth) -> Result
     Ok(())
 }
 
+/// ONE inbound poll pass (JAPP-01A3-4A / JP-00E6-3D), the same algorithm
+/// on every host: a cheap remote-hash compare, a fetch+reconcile only
+/// when the forge moved, and a healing push when the local ref still
+/// carries commits the forge needs (an earlier offline write). Takes the
+/// engine's per-checkout gate. Returns whether the LOCAL chats ref
+/// moved — the caller announces that however its host does
+/// (fs-notice on the desktop, the chat bus on the platform).
+pub fn poll_once(root: &Path, auth: &joy_core::vcs::forge::Auth) -> Result<bool, JoyError> {
+    let gate = joy_core::vcs::forge::checkout_gate(root);
+    let _guard = gate.lock().unwrap_or_else(|e| e.into_inner());
+    let before = ref_target(root)?.map(|oid| oid.to_string());
+    let remote = remote_hash(root, auth)?;
+    if remote != before {
+        if pull_from_forge(root, auth)? {
+            // best effort: delivery heals what an offline write left
+            let _ = joy_core::vcs::forge::push_ref(root, auth, CHATS_REF);
+        }
+    }
+    let after = ref_target(root)?.map(|oid| oid.to_string());
+    Ok(after != before)
+}
+
+/// Roots with a detached delivery in flight; the bool is "go one more
+/// round": a write landing DURING a delivery marks it, and the running
+/// thread loops once more instead of a second one piling onto the same
+/// repository.
+static DELIVERIES: std::sync::Mutex<Option<std::collections::HashMap<std::path::PathBuf, bool>>> =
+    std::sync::Mutex::new(None);
+
+/// Deliver the chats ref to the forge — DETACHED and coalescing, the
+/// same mechanics on every host (JAPP-01A3-4A): the caller returns
+/// right after its local commit, the roundtrip runs on its own thread
+/// behind the per-checkout gate, and WHEN a write reaches the forge
+/// stays best effort (JAPP-0126-E2) — a failed round only delays
+/// visibility, the next write or poll heals it.
+pub fn deliver_detached(root: std::path::PathBuf, auth: joy_core::vcs::forge::Auth) {
+    {
+        let mut guard = DELIVERIES.lock().unwrap_or_else(|e| e.into_inner());
+        let map = guard.get_or_insert_with(std::collections::HashMap::new);
+        if let Some(again) = map.get_mut(&root) {
+            // a delivery is running: it covers this write with one more round
+            *again = true;
+            return;
+        }
+        map.insert(root.clone(), false);
+    }
+    std::thread::spawn(move || loop {
+        {
+            let gate = joy_core::vcs::forge::checkout_gate(&root);
+            let _guard = gate.lock().unwrap_or_else(|e| e.into_inner());
+            if let Err(e) = sync_with_forge(&root, &auth) {
+                eprintln!("joy: chats delivery failed (offline?): {e}");
+            }
+        }
+        let mut guard = DELIVERIES.lock().unwrap_or_else(|e| e.into_inner());
+        let map = guard.get_or_insert_with(std::collections::HashMap::new);
+        match map.get_mut(&root) {
+            // a write landed while we were pushing: one more round
+            Some(again) if *again => *again = false,
+            _ => {
+                map.remove(&root);
+                break;
+            }
+        }
+    });
+}
+
 /// Read-side chat refresh: fetch and reconcile, never push. Lets a read
 /// recover the chat ref the working-branch clone left behind, and pick up
 /// chats another writer pushed. Returns whether the local ref now carries

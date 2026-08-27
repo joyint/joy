@@ -447,6 +447,34 @@ pub fn fetch_ref(repo_dir: &Path, auth: &Auth, src: &str, dst: &str) -> anyhow::
     }
 }
 
+// ---- the ONE per-checkout gate (JP-00DB-61) ----------------------------
+
+/// Gates keyed by canonical checkout path. Lazy, never dropped: a gate
+/// is a few bytes and a process touches a handful of checkouts.
+static CHECKOUT_GATES: std::sync::Mutex<
+    Option<std::collections::HashMap<PathBuf, std::sync::Arc<std::sync::Mutex<()>>>>,
+> = std::sync::Mutex::new(None);
+
+/// THE per-checkout gate (JP-00DB-61): one git actor per checkout,
+/// whoever the actor is. Every path that MOVES refs on a checkout —
+/// commits, syncs, polls — takes this gate first; reads stay lock-free.
+/// It lives in the engine so no host grows a private twin again (the
+/// desktop did on 2026-08-27, and a command's answer lost the race
+/// against a poll). Per process; cross-process safety is git's own
+/// ref locking plus the store's compare-and-swap.
+pub fn checkout_gate(repo_dir: &Path) -> std::sync::Arc<std::sync::Mutex<()>> {
+    let key = repo_dir
+        .canonicalize()
+        .unwrap_or_else(|_| repo_dir.to_path_buf());
+    CHECKOUT_GATES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(std::collections::HashMap::new)
+        .entry(key)
+        .or_default()
+        .clone()
+}
+
 /// Push one local ref to the same name on the forge.
 pub fn push_ref(repo_dir: &Path, auth: &Auth, refname: &str) -> anyhow::Result<()> {
     let repo = open(repo_dir).map_err(err)?;
