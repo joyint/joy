@@ -622,7 +622,7 @@ impl<K: std::hash::Hash + Eq + Clone> LaneSet<K> {
             .last_error
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .clone()
+            .take()
             .map(|e| format!(": {e}"))
             .unwrap_or_default();
         anyhow::bail!("acp chat lane could not be established{reason}")
@@ -664,8 +664,10 @@ impl<K: std::hash::Hash + Eq + Clone> LaneSet<K> {
             }
         }
         let (tx, rx) = mpsc::unbounded_channel();
-        // a fresh start judges itself: only ITS failure may reach turn()
-        *self.last_error.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        // NEVER cleared here: a reset raced the dying lane's write and
+        // turn() read None instead of the reason (seen in the test). New
+        // failures overwrite; turn() TAKES the value, so a stale reason
+        // cannot leak into an unrelated later error.
         spawn_lane_thread(
             config.command.clone(),
             config.cwd.clone(),
