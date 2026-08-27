@@ -41,10 +41,16 @@ pub struct AdapterSpec {
     /// The environment variable selecting the model, for tools that take
     /// it via env rather than ACP session config.
     pub model_env: Option<&'static str>,
-    /// The environment variable naming the tool's own state directory
-    /// (session logs, caches). The host points it at a per-chat directory
-    /// so two chats never share tool state — identically on the desktop
-    /// and in the container. None for tools without one.
+    /// The environment variable naming the tool's HOME directory. It
+    /// holds session logs and caches — and, for every current tool, the
+    /// person's own LOGIN (vibe: VIBE_HOME carries the subscription
+    /// auth; claude: CLAUDE_CONFIG_DIR carries Claude Code's sign-in;
+    /// qwen: QWEN_DIR likewise). The rule (JAPP-01A0-1C): only an
+    /// ISOLATED host that provides credentials itself may point this
+    /// elsewhere — the platform container does (fresh home, key injected
+    /// via `key_env`). A desktop must NEVER redirect it: the spawned
+    /// agent would lose the person's sign-in and fail with "missing API
+    /// key" while their own CLI works right next to it.
     pub state_env: Option<&'static str>,
     /// What to tell a person on whose machine the probe fails.
     pub install_hint: &'static str,
