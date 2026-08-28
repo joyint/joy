@@ -167,6 +167,10 @@ fn err(e: git2::Error) -> anyhow::Error {
 
 /// Clone a forge URL into `dest` using the account token.
 pub fn clone(url: &str, auth: &Auth, dest: &Path) -> anyhow::Result<()> {
+    super::contact::run(url, "clone", || clone_raw(url, auth, dest))
+}
+
+fn clone_raw(url: &str, auth: &Auth, dest: &Path) -> anyhow::Result<()> {
     std::fs::create_dir_all(dest.parent().expect("checkout dir has a parent"))?;
     let mut fetch = git2::FetchOptions::new();
     fetch.remote_callbacks(auth.callbacks(cred_config(None)));
@@ -276,6 +280,10 @@ fn download_ref(
 /// A branch that is gone from the forge (renamed or deleted) is said out
 /// loud instead of surfacing as a phantom state.
 pub fn fetch_branch(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
+    super::contact::run_for(repo_dir, "fetch", || fetch_branch_raw(repo_dir, auth))
+}
+
+fn fetch_branch_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
     let span = tracing::info_span!("git.fetch", repo = %repo_dir.display());
     let _s = span.enter();
     let repo = open(repo_dir).map_err(err)?;
@@ -382,6 +390,10 @@ pub fn commit_joy(
 /// object and no ref is sent. A refusal here is exactly the refusal a real
 /// push would meet.
 pub fn probe_write_access(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
+    super::contact::run_for(repo_dir, "probe", || probe_write_access_raw(repo_dir, auth))
+}
+
+fn probe_write_access_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
     let span = tracing::info_span!("git.probe_write", repo = %repo_dir.display());
     let _s = span.enter();
     let repo = open(repo_dir).map_err(err)?;
@@ -398,6 +410,10 @@ pub fn probe_write_access(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
 }
 
 pub fn push(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
+    super::contact::run_for(repo_dir, "push", || push_raw(repo_dir, auth))
+}
+
+fn push_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
     let span = tracing::info_span!("git.push", repo = %repo_dir.display());
     let _s = span.enter();
     let result = (|| -> anyhow::Result<()> {
@@ -435,6 +451,12 @@ pub fn push(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
 /// removed) — the stale destination is deleted then, so reconciles run
 /// against nothing rather than a stale state.
 pub fn fetch_ref(repo_dir: &Path, auth: &Auth, src: &str, dst: &str) -> anyhow::Result<bool> {
+    super::contact::run_for(repo_dir, "fetch", || {
+        fetch_ref_raw(repo_dir, auth, src, dst)
+    })
+}
+
+fn fetch_ref_raw(repo_dir: &Path, auth: &Auth, src: &str, dst: &str) -> anyhow::Result<bool> {
     let repo = open(repo_dir).map_err(err)?;
     match download_ref(&repo, auth, src, dst)? {
         Some(_) => Ok(true),
@@ -477,6 +499,10 @@ pub fn checkout_gate(repo_dir: &Path) -> std::sync::Arc<std::sync::Mutex<()>> {
 
 /// Push one local ref to the same name on the forge.
 pub fn push_ref(repo_dir: &Path, auth: &Auth, refname: &str) -> anyhow::Result<()> {
+    super::contact::run_for(repo_dir, "push", || push_ref_raw(repo_dir, auth, refname))
+}
+
+fn push_ref_raw(repo_dir: &Path, auth: &Auth, refname: &str) -> anyhow::Result<()> {
     let repo = open(repo_dir).map_err(err)?;
     let mut remote = origin_or_first(&repo)?;
     let mut opts = git2::PushOptions::new();
@@ -494,6 +520,16 @@ pub fn push_ref(repo_dir: &Path, auth: &Auth, refname: &str) -> anyhow::Result<(
 /// project, so the remote always advertises at least its working branch
 /// (a fully ref-less remote trips a git2 empty-list edge).
 pub fn ls_remote_ref(
+    repo_dir: &Path,
+    auth: &Auth,
+    refname: &str,
+) -> anyhow::Result<Option<String>> {
+    super::contact::run_for(repo_dir, "ls-remote", || {
+        ls_remote_ref_raw(repo_dir, auth, refname)
+    })
+}
+
+fn ls_remote_ref_raw(
     repo_dir: &Path,
     auth: &Auth,
     refname: &str,
@@ -974,6 +1010,10 @@ pub fn tag_annotated(
 
 /// Push one tag to the forge (joy release publish's tag push).
 pub fn push_tag(repo_dir: &Path, auth: &Auth, tag: &str) -> anyhow::Result<()> {
+    super::contact::run_for(repo_dir, "push", || push_tag_raw(repo_dir, auth, tag))
+}
+
+fn push_tag_raw(repo_dir: &Path, auth: &Auth, tag: &str) -> anyhow::Result<()> {
     let repo = open(repo_dir).map_err(err)?;
     let mut remote = origin_or_first(&repo)?;
     let mut opts = git2::PushOptions::new();

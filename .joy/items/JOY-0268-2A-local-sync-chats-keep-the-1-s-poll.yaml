@@ -1,8 +1,10 @@
 id: JOY-0268-2A
 title: 'Local sync: chats keep the 1 s poll, everything else within a forge budget with 429 backoff and a span per contact'
 type: story
-status: new
+status: review
 priority: high
+assignees:
+- member: ai:claude@joy
 capabilities:
 - plan
 - implement
@@ -10,6 +12,6 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-28T21:58:43.217803252Z
-updated: 2026-08-28T21:59:29.758719530Z
+updated: 2026-08-28T22:27:03.111930560Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Incident JP-00EF-CC (platform) showed what a 1 Hz ls-remote from ONE shared IP does to a forge''s rate limit. Local projects (desktop, CLI) stay local (Horst, 2026-08-28: they must never have to become platform projects) and keep polling from the person''s own machine and identity, so the forge sees one client, not an instance. Requirements (Horst, 2026-08-28): the CHAT poll stays at one second - receiving a message may take 1 to 2 s at most, sending is instant; the other forge contacts (item refs, fetch, push) run within a budget the forges tolerate (on the order of one contact per 30 s per watched project, none while nobody looks); and every contact honours HTTP 429 with backoff (Retry-After when present) instead of retrying blindly. Every forge contact (ls-remote, fetch, push) is a span with outcome and duration (ADR JP-00ED-EE), so the next incident is readable. The app sees no difference between a platform project (webhook-fed, JP-00F0-EF) and a local one: the change notice arrives through the same provider seam.'

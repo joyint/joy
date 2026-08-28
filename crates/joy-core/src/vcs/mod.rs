@@ -326,6 +326,7 @@ impl GitVcs {
 }
 
 /// Default VCS provider. Returns the Git implementation.
+pub mod contact;
 pub mod forge;
 
 pub fn default_vcs() -> GitVcs {
@@ -409,6 +410,16 @@ pub fn push_ref(root: &Path, remote: &str, refspec: &str) -> RefTransfer {
 }
 
 fn transfer(root: &Path, args: &[&str]) -> RefTransfer {
+    // The CLI's forge contact (JOY-0268-2A): the same span the engine's
+    // git2 verbs open, so a CLI run reads like a desktop run.
+    let span = tracing::info_span!(
+        "forge.contact",
+        verb = args.first().copied().unwrap_or("git"),
+        forge = %forge::remote_url(root)
+            .map(|u| contact::host_of(&u))
+            .unwrap_or_default()
+    );
+    let _s = span.enter();
     match Command::new("git").arg("-C").arg(root).args(args).output() {
         Ok(out) if out.status.success() => RefTransfer::Done,
         Ok(out) => RefTransfer::Refused(String::from_utf8_lossy(&out.stderr).into_owned()),
