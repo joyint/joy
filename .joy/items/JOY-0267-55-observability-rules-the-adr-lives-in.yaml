@@ -1,0 +1,13 @@
+id: JOY-0267-55
+title: 'Observability rules: the ADR lives in the platform backlog (JP-00ED-EE)'
+type: decision
+status: new
+priority: medium
+capabilities:
+- conceive
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-28T17:09:53.942735526Z
+updated: 2026-08-28T17:09:53.942735526Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Pointer, not a copy: how and when joyint logs, traces and measures is decided ONCE, in JP-00ED-EE (platform backlog, epic JP-0077-F8). The Rust telemetry core (JOY-0266-CA) and every tracing call in the joy crates follow it: spans at boundaries, records for decisions/transitions/failures with structured fields, metrics for rates and durations, redaction in the core, every caught error recorded once with its cause chain. Read the ADR there before adding a signal here.'
