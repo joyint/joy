@@ -1,0 +1,15 @@
+id: JOY-0268-2A
+title: 'Local sync polls the forge politely: cadence budget, 429 backoff, a span per contact'
+type: story
+status: new
+priority: high
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-28T21:58:43.217803252Z
+updated: 2026-08-28T21:58:43.217803252Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Incident JP-00EF-CC (platform) showed what a 1 Hz ls-remote does to a forge''s rate limit. Local projects (desktop, CLI) stay local (Horst, 2026-08-28: they must never have to become platform projects) and keep polling, but from the person''s own machine and identity, within a budget the forges tolerate: on the order of one contact per 30 s per watched project, none while nobody looks, and a backoff that honours HTTP 429 (Retry-After when present) instead of retrying blindly. Every forge contact (ls-remote, fetch, push) is a span with outcome and duration (ADR JP-00ED-EE), so the next incident is readable. The app sees no difference between a platform project (webhook-fed) and a local one: the change notice arrives through the same provider seam.'
