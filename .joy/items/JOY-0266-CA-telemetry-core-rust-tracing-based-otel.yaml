@@ -1,0 +1,15 @@
+id: JOY-0266-CA
+title: 'Telemetry core (Rust): tracing-based OTel records for CLI and desktop backend, file sink, settings.toml level'
+type: story
+status: new
+priority: medium
+capabilities:
+- plan
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-28T16:46:03.020276313Z
+updated: 2026-08-28T16:46:03.020276313Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'The Rust counterpart of the app''s telemetry core (JAPP-01A1-3B): a tracing subscriber that produces the same OTel-shaped log records, spans and metrics with the same resource attributes (service.name joy-cli / joyint-desktop backend, version, project id, session id), writes rolling JSON-lines files in the state directory when telemetry is off, exports over OTLP/HTTP when on, and reads telemetry.level from ~/.config/joyint/settings.toml. One record format across all components so an incident reads as one trace.'
