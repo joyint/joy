@@ -18,6 +18,7 @@ tempfile = "3"
 joy-chat = { version = "0.20.0", path = "../joy-chat" }
 joy-chat-store = { version = "0.20.0", path = "../joy-chat-store" }
 joy-ai = { version = "0.20.0", path = "../joy-ai" }
+joy-telemetry = { version = "0.20.0", path = "../joy-telemetry" }
 joy-crypt = { workspace = true }
 minijinja = { workspace = true }
 clap = { workspace = true }

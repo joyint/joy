@@ -11,6 +11,7 @@ members = [
     "crates/joy-github",
     "crates/joy-gitlab",
     "crates/joy-gitea",
+    "crates/joy-telemetry",
 ]
 
 [workspace.dependencies]

@@ -108,6 +108,22 @@ pub fn global_config_path() -> PathBuf {
         .join("config.yaml")
 }
 
+/// Personal STATE base dir (logs, telemetry, caches that may be lost):
+/// `$XDG_STATE_HOME`, else on Windows `%LOCALAPPDATA%` (fallback
+/// `%USERPROFILE%\AppData\Local`), else on Unix `$HOME/.local/state`.
+/// The telemetry file sink writes under `<state>/joy/` (JOY-0266-CA).
+pub fn state_base_dir() -> Option<PathBuf> {
+    resolve_base_dir(
+        std::env::var("XDG_STATE_HOME").ok(),
+        std::env::var("LOCALAPPDATA").ok(),
+        std::env::var("HOME").ok(),
+        std::env::var("USERPROFILE").ok(),
+        cfg!(windows),
+        "Local",
+        ".local/state",
+    )
+}
+
 /// Personal config base dir: `$XDG_CONFIG_HOME`, else on Windows `%APPDATA%`
 /// (fallback `%USERPROFILE%\AppData\Roaming`), else on Unix `$HOME/.config`.
 fn config_base_dir() -> Option<PathBuf> {

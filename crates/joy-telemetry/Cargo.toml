@@ -1,0 +1,16 @@
+[package]
+name = "joy-telemetry"
+version = "0.20.0"
+edition = "2021"
+license = "MIT"
+description = "The telemetry core of joy's Rust components: OTel-shaped records from tracing, a rolling file sink, redaction"
+
+[dependencies]
+joy-core = { version = "0.20.0", path = "../joy-core" }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["registry", "std"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml_ng = { workspace = true }
+chrono = { workspace = true }
+uuid = { version = "1", features = ["v4"] }

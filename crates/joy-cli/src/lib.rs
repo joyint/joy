@@ -372,6 +372,11 @@ pub fn cli_main() -> anyhow::Result<()> {
         }
     };
 
+    // Every run keeps its records on the device (JOY-0266-CA): the
+    // tracing layer writes OTel-shaped JSON lines to the personal state
+    // directory, at the level JOY_LOG or the personal config asks for.
+    let _telemetry = joy_telemetry::init("joy-cli", env!("CARGO_PKG_VERSION"));
+
     // --session overrides JOY_SESSION. Setting the env var here keeps all
     // downstream readers (joy-core identity resolution, crypt_session)
     // unchanged. Precedence: --session > JOY_SESSION > no session.
