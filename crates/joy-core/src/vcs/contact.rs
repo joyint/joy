@@ -18,6 +18,15 @@
 //! libgit2 does not expose response headers, so Retry-After is never
 //! known; the gate doubles from thirty seconds up to ten minutes and
 //! resets on the first successful contact.
+//!
+//! Before any of that, the THROTTLE (Horst, 2026-08-29): contacts to one
+//! host are spaced by a minimum gap, a plain wait in line, never a
+//! refusal. One value per host ([`set_gaps`], `codeberg.org=800,
+//! default=100` built in): Codeberg braked at about one request per
+//! second from one address (JP-00EF-CC); GitLab allows 10,000 git
+//! requests per minute per user, GitHub publishes no git limit at all.
+//! Every caller - chat poll, item sync, pushes, jobs - lines up here, so
+//! the sum stays under the forge's patience whatever runs.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -113,6 +122,82 @@ pub fn next_try_of(error: &anyhow::Error) -> Option<SystemTime> {
     error
         .downcast_ref::<ContactError>()
         .and_then(|c| c.next_try)
+}
+
+// ---- the per-host throttle ------------------------------------------
+
+const DEFAULT_GAPS: &str = "codeberg.org=800,default=100";
+
+struct Throttle {
+    gaps: HashMap<String, Duration>,
+    /// when the next contact to a host may leave
+    next_free: HashMap<String, Instant>,
+}
+
+static THROTTLE: Mutex<Option<Throttle>> = Mutex::new(None);
+
+fn with_throttle<T>(f: impl FnOnce(&mut Throttle) -> T) -> T {
+    let mut guard = THROTTLE.lock().unwrap_or_else(|e| e.into_inner());
+    let t = guard.get_or_insert_with(|| Throttle {
+        gaps: parse_gaps(DEFAULT_GAPS),
+        next_free: HashMap::new(),
+    });
+    f(t)
+}
+
+/// `host=ms,host=ms,default=ms` into a table; unknown shapes are skipped.
+pub fn parse_gaps(spec: &str) -> HashMap<String, Duration> {
+    spec.split(',')
+        .filter_map(|entry| {
+            let (host, ms) = entry.split_once('=')?;
+            let ms: u64 = ms.trim().parse().ok()?;
+            Some((host.trim().to_ascii_lowercase(), Duration::from_millis(ms)))
+        })
+        .collect()
+}
+
+/// Install the per-host gaps (the platform hands its
+/// JOYINT_FORGE_MIN_GAP_MS here; hosts left out keep `default`).
+pub fn set_gaps(spec: &str) {
+    let parsed = parse_gaps(spec);
+    with_throttle(|t| {
+        let mut gaps = parse_gaps(DEFAULT_GAPS);
+        gaps.extend(parsed);
+        t.gaps = gaps;
+    });
+}
+
+fn gap_for(host: &str) -> Duration {
+    with_throttle(|t| {
+        t.gaps
+            .get(host)
+            .or_else(|| t.gaps.get("default"))
+            .copied()
+            .unwrap_or(Duration::from_millis(100))
+    })
+}
+
+/// Wait for this host's turn: the gap since the previous contact. Takes
+/// the slot on the way out, so concurrent callers line up one behind the
+/// other instead of leaving together.
+fn take_turn(host: &str) -> Duration {
+    let gap = gap_for(host);
+    let waited = with_throttle(|t| {
+        let now = Instant::now();
+        let free = t.next_free.get(host).copied().unwrap_or(now);
+        let start = free.max(now);
+        t.next_free.insert(host.to_string(), start + gap);
+        start.saturating_duration_since(now)
+    });
+    if !waited.is_zero() {
+        std::thread::sleep(waited);
+    }
+    waited
+}
+
+#[cfg(test)]
+pub(crate) fn reset_throttle() {
+    with_throttle(|t| t.next_free.clear());
 }
 
 // ---- the per-host gate ----------------------------------------------
@@ -233,6 +318,13 @@ pub fn run<T>(
             next_try: Some(next),
         }));
     }
+    let waited = take_turn(&host);
+    if !waited.is_zero() {
+        tracing::debug!(
+            waited_ms = waited.as_millis() as u64,
+            "forge contact throttled"
+        );
+    }
     let started = Instant::now();
     match work() {
         Ok(value) => {
@@ -332,6 +424,30 @@ mod tests {
         assert!(run("https://other.test/x", "fetch", || Ok(1)).is_ok());
         reset_limits();
         assert!(limited_until("limited.test").is_none());
+    }
+
+    #[test]
+    fn contacts_to_one_host_are_spaced_by_its_gap() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        reset_limits();
+        reset_throttle();
+        set_gaps("paced.test=120,default=0");
+        let gaps = parse_gaps("codeberg.org=800, default=100");
+        assert_eq!(gaps["codeberg.org"], Duration::from_millis(800));
+        assert_eq!(gaps["default"], Duration::from_millis(100));
+        assert_eq!(gap_for("paced.test"), Duration::from_millis(120));
+        assert_eq!(gap_for("elsewhere.test"), Duration::ZERO);
+        let t0 = Instant::now();
+        for _ in 0..3 {
+            run("https://paced.test/a/b", "ls-remote", || Ok(())).unwrap();
+        }
+        // the first leaves at once, the next two wait their gap: >= 240 ms
+        assert!(t0.elapsed() >= Duration::from_millis(240));
+        // another host is not paced by this one
+        let t1 = Instant::now();
+        run("https://elsewhere.test/x", "fetch", || Ok(())).unwrap();
+        assert!(t1.elapsed() < Duration::from_millis(50));
+        set_gaps(DEFAULT_GAPS);
     }
 
     #[test]
