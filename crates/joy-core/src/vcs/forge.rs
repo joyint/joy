@@ -143,17 +143,26 @@ impl Auth {
                         None,
                     )
                 });
-                // The host key is taken as presented and logged; pinning
-                // the three public forges' keys is the follow-up named on
-                // JP-00F4-D9, not silently skipped.
+                // The host key is PINNED (JP-00F4-D9): a deploy key with
+                // push right must never talk to an impostor. Known hosts
+                // come from the built-in table below and from
+                // [`set_ssh_known_hosts`]; anything else is refused with
+                // the fingerprint in the log, so an operator can pin it.
                 callbacks.certificate_check(|cert, host| {
                     let fingerprint = cert
                         .as_hostkey()
                         .and_then(|k| k.hash_sha256())
                         .map(|h| h.iter().map(|b| format!("{b:02x}")).collect::<String>())
                         .unwrap_or_default();
-                    tracing::info!(host, fingerprint, "ssh host key accepted (unpinned)");
-                    Ok(git2::CertificateCheckStatus::CertificateOk)
+                    if host_key_pinned(host, &fingerprint) {
+                        Ok(git2::CertificateCheckStatus::CertificateOk)
+                    } else {
+                        tracing::error!(host, fingerprint,
+                            "ssh host key is not pinned; refusing (JOYINT_SSH_KNOWN_HOSTS adds a host)");
+                        Err(git2::Error::from_str(&format!(
+                            "ssh host key of {host} is not pinned (sha256 {fingerprint})"
+                        )))
+                    }
                 });
             }
             Auth::Local => {
@@ -179,6 +188,78 @@ impl Auth {
         }
         callbacks
     }
+}
+
+/// The public forges' SSH host keys as SHA-256 of the key blob, hex
+/// (JP-00F4-D9). Verified 2026-08-29 against the forges' own statements:
+/// github.com from `GET https://api.github.com/meta` (ssh_key_fingerprints),
+/// gitlab.com from docs.gitlab.com/ee/user/gitlab_com/ (SSH host keys
+/// fingerprints), codeberg.org from docs.codeberg.org/security/ssh-fingerprint/;
+/// each matched an `ssh-keyscan` of the host that day. Order: ed25519,
+/// ecdsa, rsa.
+const PINNED_HOST_KEYS: &[(&str, &[&str])] = &[
+    (
+        "github.com",
+        &[
+            "f83898df0bef57a4ee24985ba598ac17fccb0c0d333cc4af1dd92be14bc23aa5",
+            "a764003173480b54c96167883adb6b55cf7cfd1d415055aedff2e2c8a8147d03",
+            "b8d895ced92c0ac0e171cd2ef5ef01ba3417554a4a6480d331ccc2be3ded0f6b",
+        ],
+    ),
+    (
+        "gitlab.com",
+        &[
+            "7945c61a6d581ac3004bbbe4731e8938974e1873de9b9810a78b5a8827c22c1f",
+            "1db5b783ccd48cd4a4b056ea4e25163d683606ad71f3174652b9625c5cd29d4c",
+            "44e405bcf4e11ab5b846e58ba0bf6dabd23dcc9e367cae17cb0c91b5b3b3fc44",
+        ],
+    ),
+    (
+        "codeberg.org",
+        &[
+            "98897103d938e8c98ceaa74939d327010a731b11785885552fe7e3fb065bc348",
+            "4fd1580c41c42e1564ba510a2b081ee5a5615536ea096d0c211c007e9011b3f1",
+            "e90426622e29a454b8ffecd26794b8214fb8b1aeabc2f4383db842b4f1017a44",
+        ],
+    ),
+];
+
+/// Hosts an instance pins on top of the built-in table
+/// (`host=sha256hex,host=sha256hex`, several entries per host allowed).
+static EXTRA_HOST_KEYS: std::sync::Mutex<Vec<(String, String)>> = std::sync::Mutex::new(Vec::new());
+
+/// Install extra pinned host keys (the platform hands its
+/// JOYINT_SSH_KNOWN_HOSTS here). Unknown shapes are skipped.
+pub fn set_ssh_known_hosts(spec: &str) {
+    let parsed: Vec<(String, String)> = spec
+        .split(',')
+        .filter_map(|entry| {
+            let (host, hex) = entry.split_once('=')?;
+            let hex = hex
+                .trim()
+                .trim_start_matches("sha256:")
+                .to_ascii_lowercase();
+            (hex.len() == 64 && hex.chars().all(|c| c.is_ascii_hexdigit()))
+                .then(|| (host.trim().to_ascii_lowercase(), hex))
+        })
+        .collect();
+    *EXTRA_HOST_KEYS.lock().unwrap_or_else(|e| e.into_inner()) = parsed;
+}
+
+/// Whether `fingerprint` (hex SHA-256 of the host key blob) is pinned
+/// for `host` (as libgit2 names it, e.g. `codeberg.org`).
+pub fn host_key_pinned(host: &str, fingerprint: &str) -> bool {
+    let host = host.trim().to_ascii_lowercase();
+    let fingerprint = fingerprint.to_ascii_lowercase();
+    let builtin = PINNED_HOST_KEYS
+        .iter()
+        .any(|(h, keys)| *h == host && keys.contains(&fingerprint.as_str()));
+    builtin
+        || EXTRA_HOST_KEYS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .any(|(h, k)| *h == host && *k == fingerprint)
 }
 
 /// The SSH form of a forge URL (`https://host/o/r.git` ->
@@ -1725,6 +1806,30 @@ pub fn checkout_branch(repo_dir: &Path, branch: &str) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn host_keys_are_pinned_for_the_public_forges_and_extras_add_to_them() {
+        assert!(host_key_pinned(
+            "codeberg.org",
+            "98897103d938e8c98ceaa74939d327010a731b11785885552fe7e3fb065bc348"
+        ));
+        assert!(host_key_pinned(
+            "GitHub.com",
+            "F83898DF0BEF57A4EE24985BA598AC17FCCB0C0D333CC4AF1DD92BE14BC23AA5"
+        ));
+        assert!(!host_key_pinned("codeberg.org", "00".repeat(32).as_str()));
+        assert!(!host_key_pinned(
+            "forge.example.org",
+            "00".repeat(32).as_str()
+        ));
+        set_ssh_known_hosts(&format!(
+            "forge.example.org=sha256:{}, junk",
+            "00".repeat(32)
+        ));
+        assert!(host_key_pinned("forge.example.org", &"00".repeat(32)));
+        set_ssh_known_hosts("");
+        assert!(!host_key_pinned("forge.example.org", &"00".repeat(32)));
+    }
 
     #[test]
     fn a_forge_url_has_one_ssh_form() {
