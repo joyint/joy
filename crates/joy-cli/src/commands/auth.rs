@@ -401,6 +401,7 @@ pub(crate) fn run_init(
     // resolve opaque ids without re-entering the passphrase.
     session_token.members_zone_key =
         cached_members_zone_key(&project, &session_member, seed.as_bytes());
+    session_token.chat_seed = Some(hex::encode(seed.as_bytes()));
     session::save_session(&project_id, &session_token)?;
 
     if anonymous {

@@ -159,6 +159,7 @@ fn finish_login(
     let project_id = session::project_id(root)?;
     let mut token = session::create_session(&keypair, &member_key, &project_id, None);
     token.members_zone_key = cached_members_zone_key(view, &member_key, seed.as_bytes());
+    token.chat_seed = Some(hex::encode(seed.as_bytes()));
     session::save_session(&project_id, &token)?;
 
     let relocked = relock_unlocked_files(root, view, email, seed.as_bytes());

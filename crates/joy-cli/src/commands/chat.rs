@@ -221,6 +221,22 @@ fn session_chat_seed() -> Option<[u8; 32]> {
     delegation
 }
 
+/// The chat seed a standing session of the acting person carries, if the
+/// session is still valid for this project and member.
+fn stored_session_seed(root: &std::path::Path) -> Option<[u8; 32]> {
+    let identity = joy_core::identity::resolve_identity(root).ok()?;
+    if !identity.authenticated {
+        return None;
+    }
+    let project_id = joy_core::auth::session::project_id(root).ok()?;
+    let token = joy_core::auth::session::load_session(&project_id, &identity.member).ok()??;
+    if token.claims.expires <= chrono::Utc::now() {
+        return None;
+    }
+    let bytes = hex::decode(token.chat_seed.as_deref()?).ok()?;
+    bytes.try_into().ok()
+}
+
 /// Reading or writing a sealed chat needs the caller's identity seed.
 ///
 /// Where it comes from depends on who is acting, and on nothing else: a
@@ -237,6 +253,15 @@ fn establish_reader_seed(
     if let Some(seed) = session_chat_seed() {
         joy_chat_store::writer::set_seed(Some(seed));
         return Ok(());
+    }
+    // A person with a standing session (joy auth) brings the seed the
+    // login cached (JOY-0269-BC): the session suffices, as for every
+    // other command; the passphrase is asked only without one.
+    if passphrase.is_none() && !stdin {
+        if let Some(seed) = stored_session_seed(root) {
+            joy_chat_store::writer::set_seed(Some(seed));
+            return Ok(());
+        }
     }
     if passphrase.is_none() && !stdin && !crate::prompt::is_interactive() {
         return Ok(());
@@ -357,8 +382,11 @@ fn run_command(root: &std::path::Path, command: ChatCommand) -> Result<()> {
             if text.trim().is_empty() {
                 anyhow::bail!("nothing to send");
             }
+            let started = std::time::Instant::now();
             joy_chat_store::chats::append_message(root, &mut chat, me, text, chrono::Utc::now())?;
-            println!("sent to {}", chat.title.as_deref().unwrap_or(&chat.id));
+            // what the person did, and how long it took - never the
+            // chat's title, which read like a technology (JOY-026A-F2)
+            println!("message sent ({} ms)", started.elapsed().as_millis());
         }
         ChatCommand::Add { id, member } => {
             let me = acting_member(root)?;

@@ -77,6 +77,14 @@ pub struct SessionToken {
     /// session credential itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub members_zone_key: Option<String>,
+    /// The hex-encoded identity seed the sealed chats are keyed on, cached
+    /// for the life of the session so chat commands need no passphrase
+    /// while a session stands (JOY-0269-BC: "session suffices", like every
+    /// other command). Same trust boundary as the zone key above: the
+    /// owner-only session file, gone with the session. An AI's seed rides
+    /// in its session credential instead; this field is the person's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat_seed: Option<String>,
 }
 
 /// Default session duration: 24 hours.
@@ -175,6 +183,7 @@ pub fn create_session_for_ai(
         claims,
         signature: hex::encode(signature),
         members_zone_key: None,
+        chat_seed: None,
     }
 }
 
@@ -206,6 +215,7 @@ fn create_session_with_delegation_key(
         claims,
         signature: hex::encode(signature),
         members_zone_key: None,
+        chat_seed: None,
     }
 }
 
@@ -611,6 +621,24 @@ pub(super) fn dirs_state_dir() -> Result<PathBuf, JoyError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_cached_chat_seed_survives_the_session_file_round_trip() {
+        let keypair = IdentityKeypair::from_seed(&[7u8; 32]);
+        let mut token = create_session(&keypair, "anna@example.com", "proj", None);
+        assert!(token.chat_seed.is_none());
+        token.chat_seed = Some(hex::encode([7u8; 32]));
+        let json = serde_json::to_string(&token).unwrap();
+        let back: SessionToken = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            back.chat_seed.as_deref(),
+            Some(hex::encode([7u8; 32]).as_str())
+        );
+        // an older session file without the field still loads
+        let legacy: SessionToken =
+            serde_json::from_str(&json.replace(",\"chat_seed\":", ",\"x_chat_seed\":")).unwrap();
+        assert!(legacy.chat_seed.is_none());
+    }
     use crate::auth::{derive_key, IdentityKeypair, PublicKey, Salt};
     use tempfile::tempdir;
 

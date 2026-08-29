@@ -1,0 +1,7 @@
+2026-08-29T05:54:53.777Z JOY-0269-BC item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-08-29T05:54:53.862Z JOY-026A-F2 item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-08-29T05:54:53.944Z JOY-026B-E7 item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-08-29T06:16:36.387Z JOY-0269-BC item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-08-29T06:16:36.476Z JOY-0269-BC item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-08-29T06:16:36.617Z JOY-026A-F2 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-08-29T06:16:36.701Z JOY-026A-F2 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

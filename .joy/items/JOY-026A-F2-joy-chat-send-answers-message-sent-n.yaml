@@ -1,0 +1,15 @@
+id: JOY-026A-F2
+title: joy chat send answers 'message sent (N ms)' instead of 'sent to <chat title>'
+type: task
+status: review
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-29T05:54:53.856281767Z
+updated: 2026-08-29T06:16:36.694558391Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'The confirmation line names the chat''s title (''sent to Webhooks''), which reads like a technology and says nothing the person did not know. Horst, 2026-08-29: ''message sent (N ms)'', with the time the send took - today a send takes about 8 s because the CLI fetches and pushes before and after every chat command.'

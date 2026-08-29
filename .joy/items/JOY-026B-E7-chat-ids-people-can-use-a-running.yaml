@@ -1,0 +1,15 @@
+id: JOY-026B-E7
+title: 'Chat ids people can use: a running number like jyn, a joy-style id, and the name as address'
+type: story
+status: new
+priority: high
+capabilities:
+- plan
+- implement
+- review
+effort: 5
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-29T05:54:53.938350597Z
+updated: 2026-08-29T05:54:53.938350597Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Today a chat id is a 32-hex string (''2902d005c323929221263104f8aac38a''); ''joy chat ls'' is dominated by it and every command needs it. Horst, 2026-08-29: number the chats like jyn does (1, 2, 3 ...), give them a joy-style id as well (e.g. MPS-CHAT-0001-AB, with the short forms 1 or 1-AB accepted), and accept the name too; ''send'' and friends take any of the three. The number also goes into the app''s rail instead of the meaningless ''#'' (JAPP story), and later a short command switches chats by number. The favourite is the number; the combination of number, joy id and name is the goal.'

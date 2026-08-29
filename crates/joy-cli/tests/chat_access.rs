@@ -186,7 +186,10 @@ fn an_ai_reads_the_chat_with_its_own_session() {
         "an AI member must read the chat with its session: {shown}"
     );
 
-    // …and no key means no content, for anyone.
+    // A person's standing session brings the chat key by itself
+    // (JOY-0269-BC: the session suffices); so end every session first,
+    // and then no key means no content, for anyone.
+    std::fs::remove_dir_all(home.join(".state")).ok();
     let empty = joy_try(&root, &home, &["chat", "show", "general"]);
     assert!(
         !empty.contains("hallo an alle"),
