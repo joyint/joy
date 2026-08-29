@@ -56,37 +56,11 @@ pub enum Auth {
     /// The machine's own credentials (desktop): ssh-agent for ssh
     /// remotes, the git credential helper for https ones.
     Local,
-    /// A deploy key held in memory (platform, JP-00F4-D9): the repo's
-    /// own long-lived SSH key, so background work never depends on a
-    /// rotating OAuth token. The engine talks SSH to the forge for it,
-    /// whatever URL the checkout's remote carries.
-    Key {
-        /// OpenSSH private key (PEM text).
-        private: String,
-        /// The matching public key line (`ssh-ed25519 AAAA... title`).
-        public: String,
-    },
 }
 
 impl Auth {
     pub fn token(token: impl Into<String>) -> Self {
         Auth::Token(token.into())
-    }
-
-    pub fn key(private: impl Into<String>, public: impl Into<String>) -> Self {
-        Auth::Key {
-            private: private.into(),
-            public: public.into(),
-        }
-    }
-
-    /// The URL a contact uses: a key wants SSH, everything else takes
-    /// the remote as it is.
-    fn contact_url(&self, url: &str) -> String {
-        match self {
-            Auth::Key { .. } => ssh_url(url),
-            _ => url.to_string(),
-        }
     }
 
     fn callbacks(&self, config: Option<git2::Config>) -> git2::RemoteCallbacks<'static> {
@@ -126,45 +100,6 @@ impl Auth {
                     }
                 });
             }
-            Auth::Key { private, public } => {
-                let (private, public) = (private.clone(), public.clone());
-                let attempts = std::cell::Cell::new(0u32);
-                callbacks.credentials(move |_url, username, _allowed| {
-                    attempts.set(attempts.get() + 1);
-                    if attempts.get() > 1 {
-                        return Err(git2::Error::from_str(
-                            "authentication failed (the deploy key was rejected)",
-                        ));
-                    }
-                    git2::Cred::ssh_key_from_memory(
-                        username.unwrap_or("git"),
-                        Some(&public),
-                        &private,
-                        None,
-                    )
-                });
-                // The host key is PINNED (JP-00F4-D9): a deploy key with
-                // push right must never talk to an impostor. Known hosts
-                // come from the built-in table below and from
-                // [`set_ssh_known_hosts`]; anything else is refused with
-                // the fingerprint in the log, so an operator can pin it.
-                callbacks.certificate_check(|cert, host| {
-                    let fingerprint = cert
-                        .as_hostkey()
-                        .and_then(|k| k.hash_sha256())
-                        .map(|h| h.iter().map(|b| format!("{b:02x}")).collect::<String>())
-                        .unwrap_or_default();
-                    if host_key_pinned(host, &fingerprint) {
-                        Ok(git2::CertificateCheckStatus::CertificateOk)
-                    } else {
-                        tracing::error!(host, fingerprint,
-                            "ssh host key is not pinned; refusing (JOYINT_SSH_KNOWN_HOSTS adds a host)");
-                        Err(git2::Error::from_str(&format!(
-                            "ssh host key of {host} is not pinned (sha256 {fingerprint})"
-                        )))
-                    }
-                });
-            }
             Auth::Local => {
                 let attempts = std::cell::Cell::new(0u32);
                 callbacks.credentials(move |url, username, allowed| {
@@ -187,111 +122,6 @@ impl Auth {
             }
         }
         callbacks
-    }
-}
-
-/// The public forges' SSH host keys as SHA-256 of the key blob, hex
-/// (JP-00F4-D9). Verified 2026-08-29 against the forges' own statements:
-/// github.com from `GET https://api.github.com/meta` (ssh_key_fingerprints),
-/// gitlab.com from docs.gitlab.com/ee/user/gitlab_com/ (SSH host keys
-/// fingerprints), codeberg.org from docs.codeberg.org/security/ssh-fingerprint/;
-/// each matched an `ssh-keyscan` of the host that day. Order: ed25519,
-/// ecdsa, rsa.
-const PINNED_HOST_KEYS: &[(&str, &[&str])] = &[
-    (
-        "github.com",
-        &[
-            "f83898df0bef57a4ee24985ba598ac17fccb0c0d333cc4af1dd92be14bc23aa5",
-            "a764003173480b54c96167883adb6b55cf7cfd1d415055aedff2e2c8a8147d03",
-            "b8d895ced92c0ac0e171cd2ef5ef01ba3417554a4a6480d331ccc2be3ded0f6b",
-        ],
-    ),
-    (
-        "gitlab.com",
-        &[
-            "7945c61a6d581ac3004bbbe4731e8938974e1873de9b9810a78b5a8827c22c1f",
-            "1db5b783ccd48cd4a4b056ea4e25163d683606ad71f3174652b9625c5cd29d4c",
-            "44e405bcf4e11ab5b846e58ba0bf6dabd23dcc9e367cae17cb0c91b5b3b3fc44",
-        ],
-    ),
-    (
-        "codeberg.org",
-        &[
-            "98897103d938e8c98ceaa74939d327010a731b11785885552fe7e3fb065bc348",
-            "4fd1580c41c42e1564ba510a2b081ee5a5615536ea096d0c211c007e9011b3f1",
-            "e90426622e29a454b8ffecd26794b8214fb8b1aeabc2f4383db842b4f1017a44",
-        ],
-    ),
-];
-
-/// Hosts an instance pins on top of the built-in table
-/// (`host=sha256hex,host=sha256hex`, several entries per host allowed).
-static EXTRA_HOST_KEYS: std::sync::Mutex<Vec<(String, String)>> = std::sync::Mutex::new(Vec::new());
-
-/// Install extra pinned host keys (the platform hands its
-/// JOYINT_SSH_KNOWN_HOSTS here). Unknown shapes are skipped.
-pub fn set_ssh_known_hosts(spec: &str) {
-    let parsed: Vec<(String, String)> = spec
-        .split(',')
-        .filter_map(|entry| {
-            let (host, hex) = entry.split_once('=')?;
-            let hex = hex
-                .trim()
-                .trim_start_matches("sha256:")
-                .to_ascii_lowercase();
-            (hex.len() == 64 && hex.chars().all(|c| c.is_ascii_hexdigit()))
-                .then(|| (host.trim().to_ascii_lowercase(), hex))
-        })
-        .collect();
-    *EXTRA_HOST_KEYS.lock().unwrap_or_else(|e| e.into_inner()) = parsed;
-}
-
-/// Whether `fingerprint` (hex SHA-256 of the host key blob) is pinned
-/// for `host` (as libgit2 names it, e.g. `codeberg.org`).
-pub fn host_key_pinned(host: &str, fingerprint: &str) -> bool {
-    let host = host.trim().to_ascii_lowercase();
-    let fingerprint = fingerprint.to_ascii_lowercase();
-    let builtin = PINNED_HOST_KEYS
-        .iter()
-        .any(|(h, keys)| *h == host && keys.contains(&fingerprint.as_str()));
-    builtin
-        || EXTRA_HOST_KEYS
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .iter()
-            .any(|(h, k)| *h == host && *k == fingerprint)
-}
-
-/// The SSH form of a forge URL (`https://host/o/r.git` ->
-/// `ssh://git@host/o/r.git`); an SSH URL comes back unchanged.
-pub fn ssh_url(url: &str) -> String {
-    let trimmed = url.trim();
-    if trimmed.starts_with("ssh://") || trimmed.starts_with("git@") {
-        return trimmed.to_string();
-    }
-    match trimmed.split_once("://") {
-        Some((_, rest)) => {
-            let rest = rest.rsplit('@').next().unwrap_or(rest);
-            format!("ssh://git@{rest}")
-        }
-        None => trimmed.to_string(),
-    }
-}
-
-/// The remote a contact talks to: for a deploy key an anonymous remote
-/// on the SSH form of origin's URL (the checkout keeps its configured
-/// URL untouched), otherwise origin itself.
-fn remote_for<'r>(repo: &'r git2::Repository, auth: &Auth) -> anyhow::Result<git2::Remote<'r>> {
-    match auth {
-        Auth::Key { .. } => {
-            let origin = origin_or_first(repo)?;
-            let url = origin
-                .url()
-                .map_err(|_| anyhow::anyhow!("remote url is not utf-8"))?
-                .to_string();
-            repo.remote_anonymous(&ssh_url(&url)).map_err(err)
-        }
-        _ => origin_or_first(repo),
     }
 }
 
@@ -346,7 +176,7 @@ fn clone_raw(url: &str, auth: &Auth, dest: &Path) -> anyhow::Result<()> {
     fetch.remote_callbacks(auth.callbacks(cred_config(None)));
     git2::build::RepoBuilder::new()
         .fetch_options(fetch)
-        .clone(&auth.contact_url(url), dest)
+        .clone(url, dest)
         .map_err(err)?;
     // the clone machinery runs libgit2's update_tips once; nothing here
     // ever reads FETCH_HEAD, so the checkout starts without one
@@ -408,7 +238,7 @@ fn download_ref(
     src: &str,
     dst: &str,
 ) -> anyhow::Result<Option<git2::Oid>> {
-    let mut remote = remote_for(repo, auth)?;
+    let mut remote = origin_or_first(repo)?;
     let advertised = {
         let connection = remote
             .connect_auth(
@@ -567,7 +397,7 @@ fn probe_write_access_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
     let span = tracing::info_span!("git.probe_write", repo = %repo_dir.display());
     let _s = span.enter();
     let repo = open(repo_dir).map_err(err)?;
-    let mut remote = remote_for(&repo, auth)?;
+    let mut remote = origin_or_first(&repo)?;
     remote
         .connect_auth(
             git2::Direction::Push,
@@ -593,7 +423,7 @@ fn push_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
             .shorthand()
             .map_err(|_| anyhow::anyhow!("detached HEAD"))?
             .to_string();
-        let mut remote = remote_for(&repo, auth)?;
+        let mut remote = origin_or_first(&repo)?;
         let mut opts = git2::PushOptions::new();
         opts.remote_callbacks(auth.callbacks(cred_config(Some(&repo))));
         let refspec = format!("refs/heads/{branch}:refs/heads/{branch}");
@@ -674,7 +504,7 @@ pub fn push_ref(repo_dir: &Path, auth: &Auth, refname: &str) -> anyhow::Result<(
 
 fn push_ref_raw(repo_dir: &Path, auth: &Auth, refname: &str) -> anyhow::Result<()> {
     let repo = open(repo_dir).map_err(err)?;
-    let mut remote = remote_for(&repo, auth)?;
+    let mut remote = origin_or_first(&repo)?;
     let mut opts = git2::PushOptions::new();
     opts.remote_callbacks(auth.callbacks(cred_config(Some(&repo))));
     let refspec = format!("{refname}:{refname}");
@@ -705,7 +535,7 @@ fn ls_remote_ref_raw(
     refname: &str,
 ) -> anyhow::Result<Option<String>> {
     let repo = open(repo_dir).map_err(err)?;
-    let mut remote = remote_for(&repo, auth)?;
+    let mut remote = origin_or_first(&repo)?;
     let connection = remote
         .connect_auth(
             git2::Direction::Fetch,
@@ -1185,7 +1015,7 @@ pub fn push_tag(repo_dir: &Path, auth: &Auth, tag: &str) -> anyhow::Result<()> {
 
 fn push_tag_raw(repo_dir: &Path, auth: &Auth, tag: &str) -> anyhow::Result<()> {
     let repo = open(repo_dir).map_err(err)?;
-    let mut remote = remote_for(&repo, auth)?;
+    let mut remote = origin_or_first(&repo)?;
     let mut opts = git2::PushOptions::new();
     opts.remote_callbacks(auth.callbacks(cred_config(Some(&repo))));
     let refspec = format!("refs/tags/{tag}:refs/tags/{tag}");
@@ -1806,52 +1636,6 @@ pub fn checkout_branch(repo_dir: &Path, branch: &str) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn host_keys_are_pinned_for_the_public_forges_and_extras_add_to_them() {
-        assert!(host_key_pinned(
-            "codeberg.org",
-            "98897103d938e8c98ceaa74939d327010a731b11785885552fe7e3fb065bc348"
-        ));
-        assert!(host_key_pinned(
-            "GitHub.com",
-            "F83898DF0BEF57A4EE24985BA598AC17FCCB0C0D333CC4AF1DD92BE14BC23AA5"
-        ));
-        assert!(!host_key_pinned("codeberg.org", "00".repeat(32).as_str()));
-        assert!(!host_key_pinned(
-            "forge.example.org",
-            "00".repeat(32).as_str()
-        ));
-        set_ssh_known_hosts(&format!(
-            "forge.example.org=sha256:{}, junk",
-            "00".repeat(32)
-        ));
-        assert!(host_key_pinned("forge.example.org", &"00".repeat(32)));
-        set_ssh_known_hosts("");
-        assert!(!host_key_pinned("forge.example.org", &"00".repeat(32)));
-    }
-
-    #[test]
-    fn a_forge_url_has_one_ssh_form() {
-        assert_eq!(
-            ssh_url("https://codeberg.org/joyint/mps.git"),
-            "ssh://git@codeberg.org/joyint/mps.git"
-        );
-        assert_eq!(
-            ssh_url("https://user:tok@github.com/joyint/app"),
-            "ssh://git@github.com/joyint/app"
-        );
-        assert_eq!(
-            ssh_url("ssh://git@gitlab.com/a/b.git"),
-            "ssh://git@gitlab.com/a/b.git"
-        );
-        assert_eq!(ssh_url("git@github.com:a/b.git"), "git@github.com:a/b.git");
-        assert_eq!(
-            Auth::key("k", "p").contact_url("https://x/y"),
-            "ssh://git@x/y"
-        );
-        assert_eq!(Auth::Local.contact_url("https://x/y"), "https://x/y");
-    }
 
     /// Local end-to-end against a bare "forge" repo: clone, commit, push,
     /// pull. No network, real git2 semantics.
