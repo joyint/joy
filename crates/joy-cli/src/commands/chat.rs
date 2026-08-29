@@ -357,10 +357,18 @@ pub fn run(args: ChatArgs) -> Result<()> {
         args.command,
         ChatCommand::Ls { .. } | ChatCommand::Show { .. } | ChatCommand::Info { .. }
     );
+    let started = std::time::Instant::now();
+    let is_send = matches!(args.command, ChatCommand::Send { .. });
     sync_ref(&root);
     let result = run_command(&root, args.command);
     if result.is_ok() && !is_read {
         sync_ref(&root);
+    }
+    if result.is_ok() && is_send {
+        // what the person did, and how long the WHOLE of it took, the
+        // push to the forge included - never the chat's title, which
+        // read like a technology (JOY-026A-F2)
+        println!("message sent ({} ms)", started.elapsed().as_millis());
     }
     result
 }
@@ -440,11 +448,9 @@ fn run_command(root: &std::path::Path, command: ChatCommand) -> Result<()> {
             if text.trim().is_empty() {
                 anyhow::bail!("nothing to send");
             }
-            let started = std::time::Instant::now();
             joy_chat_store::chats::append_message(root, &mut chat, me, text, chrono::Utc::now())?;
-            // what the person did, and how long it took - never the
-            // chat's title, which read like a technology (JOY-026A-F2)
-            println!("message sent ({} ms)", started.elapsed().as_millis());
+            // the confirmation is printed by run() AFTER the push to the
+            // forge, with the honest time (JOY-026A-F2)
         }
         ChatCommand::Add { id, member } => {
             let me = acting_member(root)?;
