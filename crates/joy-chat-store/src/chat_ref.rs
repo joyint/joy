@@ -419,8 +419,15 @@ pub fn poll_once(root: &Path, auth: &joy_core::vcs::forge::Auth) -> Result<bool,
     let before = ref_target(root)?.map(|oid| oid.to_string());
     let remote = remote_hash(root, auth)?;
     if remote != before && pull_from_forge(root, auth)? {
-        // best effort: delivery heals what an offline write left
-        let _ = joy_core::vcs::forge::push_ref(root, auth, CHATS_REF);
+        // best effort: delivery heals what an offline write left - but
+        // only when the local ref carries what the forge lacks. After a
+        // plain fast-forward local == remote, and a push then was one
+        // forge contact for nothing: 2.3 s and a throttle slot at
+        // Codeberg, twice per chat opened (JP-00FA-FF, 2026-08-29).
+        let local = ref_target(root)?.map(|oid| oid.to_string());
+        if local != remote {
+            let _ = joy_core::vcs::forge::push_ref(root, auth, CHATS_REF);
+        }
     }
     let after = ref_target(root)?.map(|oid| oid.to_string());
     Ok(after != before)
