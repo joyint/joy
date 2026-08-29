@@ -195,15 +195,73 @@ fn mention_inbox(chat: &joy_chat::model::chat::Chat, me: &str) -> MentionInbox {
     MentionInbox { last }
 }
 
+/// The chat a person means (JOY-026B-E7): `general`, the opaque id, the
+/// joy id in any spelling (`1`, `0001`, `1-AB`, `MPS-CHAT-0001`, full),
+/// or the chat's name. A counter two chats share needs the suffix; a
+/// name two chats share needs the id - both are said, never guessed.
 fn load_or_general(root: &std::path::Path, id: &str) -> Result<joy_chat::model::chat::Chat> {
+    use joy_core::short_id::{matches, parse_input};
     if id == joy_chat_store::chats::GENERAL_CHAT_ID {
         return Ok(joy_chat_store::chats::ensure_general(
             root,
             chrono::Utc::now(),
         )?);
     }
-    joy_chat_store::chats::load_chat(root, id)?
-        .ok_or_else(|| anyhow::anyhow!("no chat with id {id}"))
+    if let Some(chat) = joy_chat_store::chats::load_chat(root, id)? {
+        return Ok(chat);
+    }
+    let chats = joy_chat_store::chats::load_chats(root)?;
+    let prefix = joy_chat_store::chats::joy_id_prefix(root)?;
+    let describe = |c: &joy_chat::model::chat::Chat| {
+        format!(
+            "{} ({})",
+            c.joy_id.as_deref().unwrap_or(&c.id),
+            c.title.as_deref().unwrap_or("untitled")
+        )
+    };
+    if let Some(typed) = parse_input(&prefix, id) {
+        let hits: Vec<_> = chats
+            .iter()
+            .filter(|c| {
+                c.joy_id
+                    .as_deref()
+                    .is_some_and(|j| matches(&prefix, j, &typed))
+            })
+            .collect();
+        match hits.len() {
+            1 => return Ok(hits[0].clone()),
+            0 => {}
+            _ => anyhow::bail!(
+                "{id} is ambiguous; say which: {}",
+                hits.iter()
+                    .map(|c| describe(c))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        }
+    }
+    let wanted = id.trim();
+    let named: Vec<_> = chats
+        .iter()
+        .filter(|c| {
+            c.title
+                .as_deref()
+                .is_some_and(|t| t.trim().eq_ignore_ascii_case(wanted))
+        })
+        .collect();
+    match named.len() {
+        1 => Ok(named[0].clone()),
+        0 => anyhow::bail!("no chat with id or name {id}"),
+        _ => anyhow::bail!(
+            "{id} names {} chats; use the id: {}",
+            named.len(),
+            named
+                .iter()
+                .map(|c| describe(c))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
 }
 
 /// The chat key this SESSION carries.
@@ -361,7 +419,7 @@ fn run_command(root: &std::path::Path, command: ChatCommand) -> Result<()> {
                     .unwrap_or_else(|| "-".into());
                 println!(
                     "{:<14} {:<17} {:<5} {:<17} {:<7} {}{}",
-                    c.id,
+                    c.joy_id.as_deref().unwrap_or(&c.id),
                     c.updated.format("%Y-%m-%d %H:%M"),
                     c.messages.len(),
                     last,

@@ -27,6 +27,45 @@ pub fn new_chat_id() -> String {
     uuid::Uuid::new_v4().simple().to_string()
 }
 
+/// The id prefix chats count under: `<ACRONYM>-CHAT-` (JOY-026B-E7).
+pub fn joy_id_prefix(root: &Path) -> Result<String, JoyError> {
+    Ok(format!("{}-CHAT-", joy_core::store::load_acronym(root)?))
+}
+
+/// The next joy id for a chat: the counter above every counter in
+/// `taken`, the suffix hashed from the chat's opaque id (a chat has no
+/// title to hash, and two chats created at once must still differ).
+fn next_joy_id(prefix: &str, taken: &[String], hex_id: &str) -> String {
+    let max = taken
+        .iter()
+        .filter_map(|id| id.strip_prefix(prefix))
+        .filter_map(|rest| rest.get(..4))
+        .filter_map(|c| u16::from_str_radix(c, 16).ok())
+        .max()
+        .unwrap_or(0);
+    let suffix = joy_core::items::title_hash_suffix(hex_id);
+    format!("{prefix}{:04X}-{suffix}", max.saturating_add(1))
+}
+
+/// Give every chat without a joy id one, in creation order (the first
+/// run after the numbering shipped): returns whether anything changed.
+/// The general chat keeps its name as its address and takes no number.
+pub fn assign_joy_ids(root: &Path, chats: &mut [Chat]) -> Result<bool, JoyError> {
+    let prefix = joy_id_prefix(root)?;
+    let mut taken: Vec<String> = chats.iter().filter_map(|c| c.joy_id.clone()).collect();
+    let mut order: Vec<usize> = (0..chats.len())
+        .filter(|&i| chats[i].joy_id.is_none() && chats[i].id != GENERAL_CHAT_ID)
+        .collect();
+    order.sort_by_key(|&i| chats[i].created);
+    let changed = !order.is_empty();
+    for i in order {
+        let id = next_joy_id(&prefix, &taken, &chats[i].id);
+        taken.push(id.clone());
+        chats[i].joy_id = Some(id);
+    }
+    Ok(changed)
+}
+
 /// Save a chat onto the `refs/joy/chats` ref (never the working branch),
 /// SEALED (ADR JAPP-002A-30): with a custodian seed set, the content key
 /// is ensured, pending messages are sealed and only the at-rest form is
@@ -93,6 +132,12 @@ pub fn load_chats(root: &Path) -> Result<Vec<Chat>, JoyError> {
             normalize(&mut chat);
             out.push(chat);
         }
+        // chats from before the numbering get theirs now, once
+        if assign_joy_ids(root, &mut out)? {
+            for chat in out.iter_mut().filter(|c| c.id != GENERAL_CHAT_ID) {
+                save_chat(root, chat)?;
+            }
+        }
     }
     out.sort_by_key(|c| std::cmp::Reverse(c.updated));
     Ok(out)
@@ -107,6 +152,14 @@ pub fn open_chat(
 ) -> Result<Chat, JoyError> {
     let mut chat = Chat::new(new_chat_id(), participants, now);
     chat.title = title;
+    // its joy id: the counter above every chat this side can see
+    let taken: Vec<String> = load_chats(root)?
+        .into_iter()
+        .filter_map(|c| c.joy_id)
+        .collect();
+    if let Ok(prefix) = joy_id_prefix(root) {
+        chat.joy_id = Some(next_joy_id(&prefix, &taken, &chat.id));
+    }
     save_chat(root, &mut chat)?;
     Ok(chat)
 }
@@ -695,6 +748,8 @@ mod tests {
         let normalize = |mut c: Chat| {
             c.participants.sort_by(|a, b| a.id().cmp(b.id()));
             c.updated = ts(0);
+            // the load numbers a chat that has no joy id yet (JOY-026B-E7)
+            c.joy_id = None;
             c
         };
         assert_eq!(normalize(loaded.clone()), normalize(chat.clone()));
@@ -943,6 +998,8 @@ mod tests {
         let loaded = load_chat(dir.path(), &chat.id).unwrap().unwrap();
         let normalize = |mut c: Chat| {
             c.participants.sort_by(|a, b| a.id().cmp(b.id()));
+            // the load numbers a chat that has no joy id yet (JOY-026B-E7)
+            c.joy_id = None;
             c
         };
         assert_eq!(normalize(loaded.clone()), normalize(chat.clone()));
@@ -1169,5 +1226,28 @@ mod channel_tests {
         .unwrap();
         let loaded = load_chat(dir.path(), &chat.id).unwrap().unwrap();
         assert_eq!(loaded.messages[0].kind, MessageKind::Error);
+    }
+}
+
+#[cfg(test)]
+mod joy_id_tests {
+    use super::*;
+
+    #[test]
+    fn counters_climb_and_the_suffix_comes_from_the_opaque_id() {
+        let first = next_joy_id("MPS-CHAT-", &[], "2902d005c323929221263104f8aac38a");
+        assert!(first.starts_with("MPS-CHAT-0001-"), "{first}");
+        assert_eq!(first.len(), "MPS-CHAT-0001-AB".len());
+        let taken = vec![
+            first.clone(),
+            "MPS-CHAT-0007-11".into(),
+            "OTHER-CHAT-0099-00".into(),
+        ];
+        let next = next_joy_id("MPS-CHAT-", &taken, "f3cc2ba56e76a9606e946b2d71696cfd");
+        assert!(next.starts_with("MPS-CHAT-0008-"), "{next}");
+        // the same opaque id always yields the same suffix; another id another one
+        let again = next_joy_id("MPS-CHAT-", &[], "2902d005c323929221263104f8aac38a");
+        assert_eq!(again, first);
+        assert_ne!(next[14..], first[14..]);
     }
 }

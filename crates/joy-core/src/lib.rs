@@ -30,6 +30,7 @@ pub mod privacy;
 pub mod project_meta;
 pub mod releases;
 pub mod security_md;
+pub mod short_id;
 pub mod store;
 pub mod templates;
 #[cfg(feature = "tutorial")]

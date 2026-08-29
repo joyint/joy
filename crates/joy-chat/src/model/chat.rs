@@ -240,6 +240,12 @@ pub struct Chat {
     pub read_markers: BTreeMap<String, DateTime<Utc>>,
     #[serde(default)]
     pub messages: Vec<ChatMessage>,
+    /// The ADR-027 id people address the chat by (`MPS-CHAT-0001-AB`,
+    /// JOY-026B-E7): counter per project, suffix from the opaque id. The
+    /// opaque `id` stays the storage key. None only on a chat written
+    /// before the numbering; the store backfills it on the next load.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub joy_id: Option<String>,
 }
 
 impl Chat {
@@ -248,6 +254,7 @@ impl Chat {
             id: id.into(),
             kind: ChatKind::Team,
             title: None,
+            joy_id: None,
             subtitle: None,
             created_by: None,
             read_only: false,
