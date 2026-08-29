@@ -1,0 +1,17 @@
+id: JOY-026C-34
+title: 'joy chat writes make ONE forge contact: push first, fetch and unite only when refused'
+type: story
+status: review
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- plan
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-29T08:02:54.601412417Z
+updated: 2026-08-29T08:04:33.065254505Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Measured 2026-08-29 with the new forge spans: every ''joy chat send'' makes three contacts (fetch before the command, fetch again after the append, then push). At 09:52 that was 1.3+1.2+2.2 s = 4.8 s; at 10:01 Codeberg answered slower and the same three took 3.0+3.6+6.6 s = 13 s. The second fetch is waste (3 ms after the first); the first is unnecessary for a write because the chat store is built push-first (the desktop does it: push, and only when the forge refuses, fetch, unite the messages, push again). Requirement: write commands (send, add, leave, rename, read, delete) append locally and push; on a refused push they fetch, reconcile and push once more. Read commands (ls, show, info) keep the fetch before. One contact per message in the common case.'

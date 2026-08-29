@@ -83,6 +83,49 @@ fn acting_member(root: &std::path::Path) -> Result<joy_core::member_ref::MemberR
 /// sync worker: a missing remote ref is the normal first sync; auth
 /// errors are permanent (fix access); everything else is transient and
 /// the next send or read retries.
+/// Push-first delivery after a write (JOY-026C-34): the local chats ref
+/// goes up as it is; a refusal (someone else pushed first) is the one
+/// case that fetches, unites and pushes again through [`sync_ref`].
+fn deliver_ref(root: &std::path::Path) {
+    let remote = joy_core::store::load_config()
+        .sync
+        .map(|s| s.remote)
+        .unwrap_or_else(|| "origin".to_string());
+    if !joy_core::vcs::remote_exists(root, &remote) {
+        return;
+    }
+    let push_spec = format!(
+        "{}:{}",
+        joy_chat_store::chat_ref::CHATS_REF,
+        joy_chat_store::chat_ref::CHATS_REF
+    );
+    match joy_core::vcs::push_ref(root, &remote, &push_spec) {
+        joy_core::vcs::RefTransfer::Done => {}
+        joy_core::vcs::RefTransfer::Refused(stderr) => {
+            let lower = stderr.to_ascii_lowercase();
+            // nothing local to push yet: not a refusal
+            if lower.contains("src refspec") {
+                return;
+            }
+            // the forge moved first: the full round unites and retries
+            if lower.contains("rejected")
+                || lower.contains("fetch first")
+                || lower.contains("non-fast-forward")
+            {
+                sync_ref(root);
+                return;
+            }
+            eprintln!(
+                "chat stays committed locally, push failed ({}); the next send or read retries",
+                classify_sync_error(&stderr)
+            );
+        }
+        joy_core::vcs::RefTransfer::GitUnavailable(e) => {
+            eprintln!("chat stays committed locally, push failed (git unavailable: {e})");
+        }
+    }
+}
+
 fn sync_ref(root: &std::path::Path) {
     let remote = joy_core::store::load_config()
         .sync
@@ -359,10 +402,16 @@ pub fn run(args: ChatArgs) -> Result<()> {
     );
     let started = std::time::Instant::now();
     let is_send = matches!(args.command, ChatCommand::Send { .. });
-    sync_ref(&root);
+    // A read fetches first, so it shows the forge's state. A write does
+    // NOT (JOY-026C-34): it appends locally and pushes; only a refused
+    // push fetches, unites and pushes again - one contact per message in
+    // the common case instead of three.
+    if is_read {
+        sync_ref(&root);
+    }
     let result = run_command(&root, args.command);
     if result.is_ok() && !is_read {
-        sync_ref(&root);
+        deliver_ref(&root);
     }
     if result.is_ok() && is_send {
         // what the person did, and how long the WHOLE of it took, the
