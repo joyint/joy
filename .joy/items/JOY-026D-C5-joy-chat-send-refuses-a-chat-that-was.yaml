@@ -1,0 +1,17 @@
+id: JOY-026D-C5
+title: joy chat send refuses a chat that was just created in the app
+type: bug
+status: closed
+priority: medium
+capabilities:
+- implement
+- review
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-29T17:59:11.466981761Z
+updated: 2026-08-29T18:06:21.060199889Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Horst on mule, 2026-08-29: a chat named f created in the app; joy chat send f <text> answers ''no chat with id or name f''. A write deliberately does not fetch refs/joy/chats before it appends (JOY-026C-34, one forge contact per message), so a chat born elsewhere is unknown to the CLI until a read (joy chat ls/show) fetched once. The person had to learn this the hard way; the error names no way out. Requirement: a send to an unknown chat must not fail on the local state alone.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-29T18:06:20.926700169Z
+  text: 'Horst, 2026-08-29: not wanted. A fetch on miss would make every send slower; running joy chat ls before sending to a new chat is fine.'
