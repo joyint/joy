@@ -25,6 +25,8 @@
 //! default=100` built in): Codeberg braked at about one request per
 //! second from one address (JP-00EF-CC); GitLab allows 10,000 git
 //! requests per minute per user, GitHub publishes no git limit at all.
+//! Built in, the gap is zero: only an instance that serves many
+//! projects from one address installs a table.
 //! Every caller - chat poll, item sync, pushes, jobs - lines up here, so
 //! the sum stays under the forge's patience whatever runs.
 
@@ -126,7 +128,12 @@ pub fn next_try_of(error: &anyhow::Error) -> Option<SystemTime> {
 
 // ---- the per-host throttle ------------------------------------------
 
-const DEFAULT_GAPS: &str = "codeberg.org=800,default=100";
+/// No gap by default: a CLI or desktop contacts the forge from the
+/// person's own address, a few times per command, and an artificial
+/// wait between a fetch and its push only costs seconds (Horst,
+/// 2026-08-29: 4.8 s per send). The PLATFORM, one address for every
+/// project and person, installs its table (JOYINT_FORGE_MIN_GAP_MS).
+const DEFAULT_GAPS: &str = "default=0";
 
 struct Throttle {
     gaps: HashMap<String, Duration>,
@@ -435,6 +442,7 @@ mod tests {
         let gaps = parse_gaps("codeberg.org=800, default=100");
         assert_eq!(gaps["codeberg.org"], Duration::from_millis(800));
         assert_eq!(gaps["default"], Duration::from_millis(100));
+        assert_eq!(parse_gaps(DEFAULT_GAPS)["default"], Duration::ZERO);
         assert_eq!(gap_for("paced.test"), Duration::from_millis(120));
         assert_eq!(gap_for("elsewhere.test"), Duration::ZERO);
         let t0 = Instant::now();
