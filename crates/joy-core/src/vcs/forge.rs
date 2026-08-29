@@ -56,11 +56,37 @@ pub enum Auth {
     /// The machine's own credentials (desktop): ssh-agent for ssh
     /// remotes, the git credential helper for https ones.
     Local,
+    /// A deploy key held in memory (platform, JP-00F4-D9): the repo's
+    /// own long-lived SSH key, so background work never depends on a
+    /// rotating OAuth token. The engine talks SSH to the forge for it,
+    /// whatever URL the checkout's remote carries.
+    Key {
+        /// OpenSSH private key (PEM text).
+        private: String,
+        /// The matching public key line (`ssh-ed25519 AAAA... title`).
+        public: String,
+    },
 }
 
 impl Auth {
     pub fn token(token: impl Into<String>) -> Self {
         Auth::Token(token.into())
+    }
+
+    pub fn key(private: impl Into<String>, public: impl Into<String>) -> Self {
+        Auth::Key {
+            private: private.into(),
+            public: public.into(),
+        }
+    }
+
+    /// The URL a contact uses: a key wants SSH, everything else takes
+    /// the remote as it is.
+    fn contact_url(&self, url: &str) -> String {
+        match self {
+            Auth::Key { .. } => ssh_url(url),
+            _ => url.to_string(),
+        }
     }
 
     fn callbacks(&self, config: Option<git2::Config>) -> git2::RemoteCallbacks<'static> {
@@ -100,6 +126,36 @@ impl Auth {
                     }
                 });
             }
+            Auth::Key { private, public } => {
+                let (private, public) = (private.clone(), public.clone());
+                let attempts = std::cell::Cell::new(0u32);
+                callbacks.credentials(move |_url, username, _allowed| {
+                    attempts.set(attempts.get() + 1);
+                    if attempts.get() > 1 {
+                        return Err(git2::Error::from_str(
+                            "authentication failed (the deploy key was rejected)",
+                        ));
+                    }
+                    git2::Cred::ssh_key_from_memory(
+                        username.unwrap_or("git"),
+                        Some(&public),
+                        &private,
+                        None,
+                    )
+                });
+                // The host key is taken as presented and logged; pinning
+                // the three public forges' keys is the follow-up named on
+                // JP-00F4-D9, not silently skipped.
+                callbacks.certificate_check(|cert, host| {
+                    let fingerprint = cert
+                        .as_hostkey()
+                        .and_then(|k| k.hash_sha256())
+                        .map(|h| h.iter().map(|b| format!("{b:02x}")).collect::<String>())
+                        .unwrap_or_default();
+                    tracing::info!(host, fingerprint, "ssh host key accepted (unpinned)");
+                    Ok(git2::CertificateCheckStatus::CertificateOk)
+                });
+            }
             Auth::Local => {
                 let attempts = std::cell::Cell::new(0u32);
                 callbacks.credentials(move |url, username, allowed| {
@@ -122,6 +178,39 @@ impl Auth {
             }
         }
         callbacks
+    }
+}
+
+/// The SSH form of a forge URL (`https://host/o/r.git` ->
+/// `ssh://git@host/o/r.git`); an SSH URL comes back unchanged.
+pub fn ssh_url(url: &str) -> String {
+    let trimmed = url.trim();
+    if trimmed.starts_with("ssh://") || trimmed.starts_with("git@") {
+        return trimmed.to_string();
+    }
+    match trimmed.split_once("://") {
+        Some((_, rest)) => {
+            let rest = rest.rsplit('@').next().unwrap_or(rest);
+            format!("ssh://git@{rest}")
+        }
+        None => trimmed.to_string(),
+    }
+}
+
+/// The remote a contact talks to: for a deploy key an anonymous remote
+/// on the SSH form of origin's URL (the checkout keeps its configured
+/// URL untouched), otherwise origin itself.
+fn remote_for<'r>(repo: &'r git2::Repository, auth: &Auth) -> anyhow::Result<git2::Remote<'r>> {
+    match auth {
+        Auth::Key { .. } => {
+            let origin = origin_or_first(repo)?;
+            let url = origin
+                .url()
+                .map_err(|_| anyhow::anyhow!("remote url is not utf-8"))?
+                .to_string();
+            repo.remote_anonymous(&ssh_url(&url)).map_err(err)
+        }
+        _ => origin_or_first(repo),
     }
 }
 
@@ -176,7 +265,7 @@ fn clone_raw(url: &str, auth: &Auth, dest: &Path) -> anyhow::Result<()> {
     fetch.remote_callbacks(auth.callbacks(cred_config(None)));
     git2::build::RepoBuilder::new()
         .fetch_options(fetch)
-        .clone(url, dest)
+        .clone(&auth.contact_url(url), dest)
         .map_err(err)?;
     // the clone machinery runs libgit2's update_tips once; nothing here
     // ever reads FETCH_HEAD, so the checkout starts without one
@@ -238,7 +327,7 @@ fn download_ref(
     src: &str,
     dst: &str,
 ) -> anyhow::Result<Option<git2::Oid>> {
-    let mut remote = origin_or_first(repo)?;
+    let mut remote = remote_for(repo, auth)?;
     let advertised = {
         let connection = remote
             .connect_auth(
@@ -397,7 +486,7 @@ fn probe_write_access_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
     let span = tracing::info_span!("git.probe_write", repo = %repo_dir.display());
     let _s = span.enter();
     let repo = open(repo_dir).map_err(err)?;
-    let mut remote = origin_or_first(&repo)?;
+    let mut remote = remote_for(&repo, auth)?;
     remote
         .connect_auth(
             git2::Direction::Push,
@@ -423,7 +512,7 @@ fn push_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
             .shorthand()
             .map_err(|_| anyhow::anyhow!("detached HEAD"))?
             .to_string();
-        let mut remote = origin_or_first(&repo)?;
+        let mut remote = remote_for(&repo, auth)?;
         let mut opts = git2::PushOptions::new();
         opts.remote_callbacks(auth.callbacks(cred_config(Some(&repo))));
         let refspec = format!("refs/heads/{branch}:refs/heads/{branch}");
@@ -504,7 +593,7 @@ pub fn push_ref(repo_dir: &Path, auth: &Auth, refname: &str) -> anyhow::Result<(
 
 fn push_ref_raw(repo_dir: &Path, auth: &Auth, refname: &str) -> anyhow::Result<()> {
     let repo = open(repo_dir).map_err(err)?;
-    let mut remote = origin_or_first(&repo)?;
+    let mut remote = remote_for(&repo, auth)?;
     let mut opts = git2::PushOptions::new();
     opts.remote_callbacks(auth.callbacks(cred_config(Some(&repo))));
     let refspec = format!("{refname}:{refname}");
@@ -535,7 +624,7 @@ fn ls_remote_ref_raw(
     refname: &str,
 ) -> anyhow::Result<Option<String>> {
     let repo = open(repo_dir).map_err(err)?;
-    let mut remote = origin_or_first(&repo)?;
+    let mut remote = remote_for(&repo, auth)?;
     let connection = remote
         .connect_auth(
             git2::Direction::Fetch,
@@ -1015,7 +1104,7 @@ pub fn push_tag(repo_dir: &Path, auth: &Auth, tag: &str) -> anyhow::Result<()> {
 
 fn push_tag_raw(repo_dir: &Path, auth: &Auth, tag: &str) -> anyhow::Result<()> {
     let repo = open(repo_dir).map_err(err)?;
-    let mut remote = origin_or_first(&repo)?;
+    let mut remote = remote_for(&repo, auth)?;
     let mut opts = git2::PushOptions::new();
     opts.remote_callbacks(auth.callbacks(cred_config(Some(&repo))));
     let refspec = format!("refs/tags/{tag}:refs/tags/{tag}");
@@ -1636,6 +1725,28 @@ pub fn checkout_branch(repo_dir: &Path, branch: &str) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_forge_url_has_one_ssh_form() {
+        assert_eq!(
+            ssh_url("https://codeberg.org/joyint/mps.git"),
+            "ssh://git@codeberg.org/joyint/mps.git"
+        );
+        assert_eq!(
+            ssh_url("https://user:tok@github.com/joyint/app"),
+            "ssh://git@github.com/joyint/app"
+        );
+        assert_eq!(
+            ssh_url("ssh://git@gitlab.com/a/b.git"),
+            "ssh://git@gitlab.com/a/b.git"
+        );
+        assert_eq!(ssh_url("git@github.com:a/b.git"), "git@github.com:a/b.git");
+        assert_eq!(
+            Auth::key("k", "p").contact_url("https://x/y"),
+            "ssh://git@x/y"
+        );
+        assert_eq!(Auth::Local.contact_url("https://x/y"), "https://x/y");
+    }
 
     /// Local end-to-end against a bare "forge" repo: clone, commit, push,
     /// pull. No network, real git2 semantics.
