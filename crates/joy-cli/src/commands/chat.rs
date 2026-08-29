@@ -65,11 +65,18 @@ enum ChatCommand {
     Info { id: String },
 }
 
+/// Who acts: the ONE identity resolution of joy-core, the same every
+/// command uses (JOY-026E-0F). With a session (`--session`, JOY_SESSION)
+/// that is the session's member, an AI delegated by a person; without
+/// one it is the person at the terminal (git e-mail). Reading the git
+/// e-mail directly here made a delegated AI post as the machine's owner.
+fn acting_identity(root: &std::path::Path) -> Result<joy_core::identity::Identity> {
+    joy_core::identity::resolve_identity(root)
+        .map_err(|e| anyhow::anyhow!("cannot determine your identity: {e}"))
+}
+
 fn acting_member(root: &std::path::Path) -> Result<joy_core::member_ref::MemberRef> {
-    let email = joy_core::event_log::get_git_email()
-        .map_err(|e| anyhow::anyhow!("cannot determine your identity: {e}"))?;
-    let _ = root; // identity refinement (anonymous mode) happens in joy-core resolution
-    Ok(joy_core::member_ref::MemberRef::new(email))
+    Ok(acting_identity(root)?.member)
 }
 
 /// Sync `refs/joy/chats` with the project's remote (JOY-0227-5E): fetch
@@ -491,7 +498,8 @@ fn run_command(root: &std::path::Path, command: ChatCommand) -> Result<()> {
             }
         }
         ChatCommand::Send { id, text } => {
-            let me = acting_member(root)?;
+            let identity = acting_identity(root)?;
+            let me = identity.member.clone();
             let mut chat = load_or_general(root, &id)?;
             let text = text.join(" ");
             if text.trim().is_empty() {
@@ -515,7 +523,33 @@ fn run_command(root: &std::path::Path, command: ChatCommand) -> Result<()> {
                     joy_chat::mentions::alias(ai)
                 );
             }
-            joy_chat_store::chats::append_message(root, &mut chat, me, text, chrono::Utc::now())?;
+            match identity.delegated_by {
+                // an AI acting for a person says so on the message, the
+                // way its turn replies do (the app shows "delegated by")
+                Some(by) => {
+                    joy_chat_store::chats::append_ai_reply(
+                        root,
+                        &mut chat,
+                        me,
+                        text,
+                        chrono::Utc::now(),
+                        None,
+                        Some(by.id().to_string()),
+                        None,
+                        None,
+                        None,
+                    )?;
+                }
+                None => {
+                    joy_chat_store::chats::append_message(
+                        root,
+                        &mut chat,
+                        me,
+                        text,
+                        chrono::Utc::now(),
+                    )?;
+                }
+            }
             // the confirmation is printed by run() AFTER the push to the
             // forge, with the honest time (JOY-026A-F2)
         }
@@ -562,10 +596,13 @@ fn run_command(root: &std::path::Path, command: ChatCommand) -> Result<()> {
         ChatCommand::Info { id } => {
             let me = acting_member(root)?;
             let chat = load_or_general(root, &id)?;
+            // General and team chats carry no explicit list: everyone in
+            // the project is in (JOY-026E-0F: "0 participant(s)" for General)
+            let participants = joy_chat_store::chats::effective_participants(root, &chat)?;
             println!(
                 "{} — {} participant(s), {} message(s)",
                 chat.title.as_deref().unwrap_or("(untitled)"),
-                chat.participants.len(),
+                participants.len(),
                 chat.messages.len(),
             );
             println!("your unread: {}", chat.unread_count(me.id()));
@@ -574,7 +611,7 @@ fn run_command(root: &std::path::Path, command: ChatCommand) -> Result<()> {
                 println!(
                     "latest read by {}/{}: {}",
                     readers.len(),
-                    chat.participants.len(),
+                    participants.len(),
                     if readers.is_empty() {
                         "(nobody yet)".to_string()
                     } else {
@@ -582,7 +619,7 @@ fn run_command(root: &std::path::Path, command: ChatCommand) -> Result<()> {
                     },
                 );
             }
-            for p in &chat.participants {
+            for p in &participants {
                 println!("  {:<28} {} unread", p.id(), chat.unread_count(p.id()));
             }
         }

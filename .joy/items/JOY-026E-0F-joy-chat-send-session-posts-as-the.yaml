@@ -1,13 +1,15 @@
 id: JOY-026E-0F
 title: joy chat send --session posts as the local login, not as the delegated AI member
 type: bug
-status: new
+status: review
 priority: medium
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 - review
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-29T19:02:00.828959156Z
-updated: 2026-08-29T19:02:00.828959156Z
+updated: 2026-08-29T23:22:41.477890717Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'mps-netbrain-demo, 2026-08-29 18:55Z: ai:claude@joy sent a chat message with --session (delegation token redeemed for ai:claude@joy, delegated by Horst). The app shows the sender as horst.schwarz@joydev.com, and joy chat show prints the same. The message author must be the session''s member (ai:claude@joy, delegated by Horst), never the machine''s local login. Also seen: joy chat show general reports 0 participant(s) for a chat with three keys.'
