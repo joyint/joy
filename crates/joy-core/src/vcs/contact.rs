@@ -10,25 +10,17 @@
 //!   - classifies a failure into what the person needs to know
 //!     ([`Failure`]: rate-limited, denied, offline, other), reading the
 //!     only evidence libgit2 hands out, the message text,
-//!   - keeps a backoff gate PER FORGE HOST: after a 429 no verb touches
-//!     that host until the gate opens again, whoever asks and however
-//!     often (the chat poll keeps its one-second cadence and simply
-//!     gets the answer 'limited, next try at T' without a request).
-//!
-//! libgit2 does not expose response headers, so Retry-After is never
-//! known; the gate doubles from thirty seconds up to ten minutes and
-//! resets on the first successful contact.
-//!
-//! Before any of that, the THROTTLE (Horst, 2026-08-29): contacts to one
-//! host are spaced by a minimum gap, a plain wait in line, never a
-//! refusal. One value per host ([`set_gaps`], `codeberg.org=800,
-//! default=100` built in): Codeberg braked at about one request per
-//! second from one address (JP-00EF-CC); GitLab allows 10,000 git
-//! requests per minute per user, GitHub publishes no git limit at all.
-//! Built in, the gap is zero: only an instance that serves many
-//! projects from one address installs a table.
-//! Every caller - chat poll, item sync, pushes, jobs - lines up here, so
-//! the sum stays under the forge's patience whatever runs.
+//!   - spaces the contacts to one host by a minimum gap (the THROTTLE):
+//!     a plain wait in line, never a refusal. One value per host
+//!     ([`set_gaps`], built in at 80 percent of what each forge was
+//!     measured to tolerate), and every caller - chat poll, item sync,
+//!     pushes, jobs - lines up here, so the sum stays under the forge's
+//!     patience whatever runs,
+//!   - answers a 429 by slowing down, never by stopping (Horst,
+//!     2026-08-29): the host runs at half speed for ten minutes, every
+//!     contact still goes out, and the 429 is an ERROR record with a
+//!     plain sentence for the board. libgit2 exposes no Retry-After, so
+//!     that is the whole reaction.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -128,12 +120,15 @@ pub fn next_try_of(error: &anyhow::Error) -> Option<SystemTime> {
 
 // ---- the per-host throttle ------------------------------------------
 
-/// No gap by default: a CLI or desktop contacts the forge from the
-/// person's own address, a few times per command, and an artificial
-/// wait between a fetch and its push only costs seconds (Horst,
-/// 2026-08-29: 4.8 s per send). The PLATFORM, one address for every
-/// project and person, installs its table (JOYINT_FORGE_MIN_GAP_MS).
-const DEFAULT_GAPS: &str = "default=0";
+/// The built-in gaps: 80 percent of what a forge was measured to
+/// tolerate from one address (Horst, 2026-08-29: the maximum minus a
+/// twenty percent buffer). Codeberg braked at about 1.1 requests/s
+/// sustained (JP-00EF-CC), so 1150 ms; GitLab documents 10,000 git
+/// requests per minute per user and GitHub publishes no git limit, so
+/// 100 ms is a courtesy, not a constraint. Every host runs this table,
+/// the desktop's poller included; the platform may override it
+/// (JOYINT_FORGE_MIN_GAP_MS). A CLI command pays it once per contact.
+const DEFAULT_GAPS: &str = "codeberg.org=1150,default=100";
 
 struct Throttle {
     gaps: HashMap<String, Duration>,
@@ -188,7 +183,11 @@ fn gap_for(host: &str) -> Duration {
 /// the slot on the way out, so concurrent callers line up one behind the
 /// other instead of leaving together.
 fn take_turn(host: &str) -> Duration {
-    let gap = gap_for(host);
+    let mut gap = gap_for(host);
+    if limited_until(host).is_some() {
+        // the forge asked for less: half speed until the strike expires
+        gap *= 2;
+    }
     let waited = with_throttle(|t| {
         let now = Instant::now();
         let free = t.next_free.get(host).copied().unwrap_or(now);
@@ -209,8 +208,8 @@ pub(crate) fn reset_throttle() {
 
 // ---- the per-host gate ----------------------------------------------
 
-const FIRST_BACKOFF: Duration = Duration::from_secs(30);
-const MAX_BACKOFF: Duration = Duration::from_secs(600);
+/// How long a 429 keeps a host at half speed.
+const STRIKE_LASTS: Duration = Duration::from_secs(600);
 
 struct Limit {
     until: Instant,
@@ -274,12 +273,9 @@ fn strike(host: &str) -> SystemTime {
             until: now,
             strikes: 0,
         });
-        let wait = FIRST_BACKOFF
-            .saturating_mul(1u32 << entry.strikes.min(5))
-            .min(MAX_BACKOFF);
         entry.strikes = entry.strikes.saturating_add(1);
-        entry.until = now + wait;
-        SystemTime::now() + wait
+        entry.until = now + STRIKE_LASTS;
+        SystemTime::now() + STRIKE_LASTS
     })
 }
 
@@ -311,20 +307,9 @@ pub fn run<T>(
     let host = host_of(url);
     let span = tracing::info_span!("forge.contact", verb, forge = %host);
     let _s = span.enter();
-    if let Some(next) = limited_until(&host) {
-        tracing::warn!(
-            next_try_unix = unix(next),
-            "forge contact skipped: rate limited"
-        );
-        return Err(anyhow::Error::new(ContactError {
-            failure: Failure::RateLimited,
-            message: format!(
-                "{host} is limiting our requests (429); next try at {}",
-                unix(next)
-            ),
-            next_try: Some(next),
-        }));
-    }
+    // A forge that said 429 is never stopped, only slowed (Horst,
+    // 2026-08-29: throttle, never block): while a strike stands, this
+    // host's gap is doubled inside take_turn; the contact still goes out.
     let waited = take_turn(&host);
     if !waited.is_zero() {
         tracing::debug!(
@@ -348,6 +333,14 @@ pub fn run<T>(
                 Failure::RateLimited => Some(strike(&host)),
                 _ => None,
             };
+            if failure == Failure::RateLimited {
+                // the sentence an operator reads on the board (JP-00F7-31)
+                tracing::error!(
+                    forge = %host,
+                    slowed_until_unix = next_try.map(unix).unwrap_or(0),
+                    "{host} is limiting this instance (HTTP 429): contacts to it run at half speed for ten minutes; lower JOYINT_FORGE_MIN_GAP_MS's rate for this host if it repeats"
+                );
+            }
             tracing::error!(
                 outcome = failure.reason(),
                 took_ms = started.elapsed().as_millis() as u64,
@@ -407,30 +400,40 @@ mod tests {
     }
 
     #[test]
-    fn a_429_closes_the_gate_and_the_next_contact_is_skipped_until_it_opens() {
+    fn a_429_slows_the_host_down_and_never_stops_it() {
         let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
         reset_limits();
+        reset_throttle();
+        set_gaps("limited.test=60,default=0");
         let url = "https://limited.test/a/b";
         let first = run(url, "push", || -> anyhow::Result<()> {
             anyhow::bail!("push failed: unexpected http status code: 429")
         });
         let e = first.unwrap_err();
         assert_eq!(failure_of(&e), Failure::RateLimited);
-        let next = next_try_of(&e).expect("a limit names its next try");
+        let next = next_try_of(&e).expect("a strike names when it ends");
         assert!(next > SystemTime::now());
-        // the gate is closed: the verb is not even called
+        assert!(limited_until("limited.test").is_some());
+        // the next contacts still go out - at half speed: the doubled gap
+        // (120 ms) is what the second of them waits behind the first
         let mut called = false;
-        let second = run(url, "ls-remote", || -> anyhow::Result<()> {
+        run(url, "ls-remote", || {
             called = true;
             Ok(())
-        });
-        assert!(!called);
-        assert_eq!(failure_of(&second.unwrap_err()), Failure::RateLimited);
-        assert!(limited_until("limited.test").is_some());
+        })
+        .unwrap();
+        assert!(called);
+        let t0 = Instant::now();
+        run(url, "ls-remote", || Ok(())).unwrap();
+        assert!(
+            t0.elapsed() >= Duration::from_millis(100),
+            "doubled gap of 120 ms"
+        );
         // another host is not affected
         assert!(run("https://other.test/x", "fetch", || Ok(1)).is_ok());
         reset_limits();
         assert!(limited_until("limited.test").is_none());
+        set_gaps(DEFAULT_GAPS);
     }
 
     #[test]
@@ -442,7 +445,14 @@ mod tests {
         let gaps = parse_gaps("codeberg.org=800, default=100");
         assert_eq!(gaps["codeberg.org"], Duration::from_millis(800));
         assert_eq!(gaps["default"], Duration::from_millis(100));
-        assert_eq!(parse_gaps(DEFAULT_GAPS)["default"], Duration::ZERO);
+        assert_eq!(
+            parse_gaps(DEFAULT_GAPS)["default"],
+            Duration::from_millis(100)
+        );
+        assert_eq!(
+            parse_gaps(DEFAULT_GAPS)["codeberg.org"],
+            Duration::from_millis(1150)
+        );
         assert_eq!(gap_for("paced.test"), Duration::from_millis(120));
         assert_eq!(gap_for("elsewhere.test"), Duration::ZERO);
         let t0 = Instant::now();
