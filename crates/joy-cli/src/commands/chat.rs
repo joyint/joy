@@ -497,6 +497,24 @@ fn run_command(root: &std::path::Path, command: ChatCommand) -> Result<()> {
             if text.trim().is_empty() {
                 anyhow::bail!("nothing to send");
             }
+            // An AI turn is started by the client that SENDS the message,
+            // under the sender's delegation (the app: web on the platform
+            // host, desktop on the local host). This command has no chat
+            // session and no turn host, so an AI it addresses would never
+            // answer - and the sender would never learn why (JOY-0270-40,
+            // Horst 2026-08-30: refuse, do not send into the void).
+            let ais: Vec<String> = joy_core::store::load_project(root)?
+                .members()
+                .map(|(id, _)| id.clone())
+                .filter(|id| id.starts_with("ai:"))
+                .collect();
+            if let Some(ai) = joy_chat::mentions::leading_mentions(&text, &ais).first() {
+                anyhow::bail!(
+                    "@{} answers only when addressed from the app (an AI turn runs under the sender's chat session there); nothing sent. Address {} in the app, or send the message without the mention.",
+                    joy_chat::mentions::alias(ai),
+                    joy_chat::mentions::alias(ai)
+                );
+            }
             joy_chat_store::chats::append_message(root, &mut chat, me, text, chrono::Utc::now())?;
             // the confirmation is printed by run() AFTER the push to the
             // forge, with the honest time (JOY-026A-F2)
