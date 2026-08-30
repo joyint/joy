@@ -10,6 +10,8 @@
 //! `git push refs/joy/...` ever.
 
 use anyhow::Result;
+
+use crate::color;
 use clap::{Args, Subcommand};
 
 use joy_core::vcs::Vcs;
@@ -506,44 +508,121 @@ fn run_command(root: &std::path::Path, command: ChatCommand) -> Result<()> {
                     }
                 })
                 .collect();
+            // The same table as `joy ls` (JOY-0275-63): separator, labelled
+            // header, separator, rows with widths from the data and the
+            // title cut to the terminal, separator, count.
+            use crate::commands::ls::{display_width, pad_colored, truncate_title};
+            let term_width = color::terminal_width();
+            struct Row {
+                short: String,
+                full: String,
+                updated: String,
+                msgs: String,
+                last: String,
+                unread: String,
+                title: String,
+                left: bool,
+            }
+            let table: Vec<Row> = rows
+                .into_iter()
+                .zip(shorts)
+                .map(|((c, inbox), short)| {
+                    let left = me
+                        .as_ref()
+                        .map(|me| !joy_chat_store::chats::visible_to(&c, me))
+                        .unwrap_or(false);
+                    // UNREAD: with --mine only the unread mentions at me, else
+                    // every message after my effective watermark (JOY-0226-27).
+                    let unread = match (&me, &inbox) {
+                        (Some(me), Some(inbox)) if mine => inbox.unread_mentions(&c, me.id()),
+                        (Some(me), _) => c.unread_count(me.id()),
+                        (None, _) => 0,
+                    };
+                    Row {
+                        short,
+                        full: c.joy_id.clone().unwrap_or_else(|| c.id.clone()),
+                        updated: c.updated.format("%Y-%m-%d %H:%M").to_string(),
+                        msgs: c.messages.len().to_string(),
+                        last: inbox
+                            .as_ref()
+                            .and_then(|i| i.last)
+                            .map(|at| at.format("%Y-%m-%d %H:%M").to_string())
+                            .unwrap_or_else(|| "-".into()),
+                        unread: if me.is_some() {
+                            unread.to_string()
+                        } else {
+                            "-".into()
+                        },
+                        title: c.title.clone().unwrap_or_else(|| "-".into()),
+                        left,
+                    }
+                })
+                .collect();
+            let width = |header: &str, f: &dyn Fn(&Row) -> &str| -> usize {
+                table
+                    .iter()
+                    .map(|r| display_width(f(r)))
+                    .max()
+                    .unwrap_or(0)
+                    .max(display_width(header))
+            };
+            let w_id = width("ID", &|r| &r.short);
+            let w_full = width("FULL ID", &|r| &r.full);
+            let w_upd = width("UPDATED", &|r| &r.updated);
+            let w_msgs = width("MSGS", &|r| &r.msgs);
+            let w_last = width("LAST@ME", &|r| &r.last);
+            let w_unread = width("UNREAD", &|r| &r.unread);
+            let fixed_width =
+                w_id + 2 + w_full + 2 + w_upd + 2 + w_msgs + 2 + w_last + 2 + w_unread + 2;
+            let min_title_width = 20;
+            let title_width = if term_width > fixed_width {
+                (term_width - fixed_width).max(min_title_width)
+            } else {
+                min_title_width
+            };
+            let sep_len = term_width.min(fixed_width + title_width);
+            println!("{}", color::label(&"-".repeat(sep_len)));
             println!(
-                "{:<8} {:<17} {:<17} {:<5} {:<17} {:<7} TITLE",
-                "ID", "FULL ID", "UPDATED", "MSGS", "LAST@ME", "UNREAD"
+                "{}  {}  {}  {}  {}  {}  {}",
+                pad_colored(&color::label("ID"), "ID", w_id),
+                pad_colored(&color::label("FULL ID"), "FULL ID", w_full),
+                pad_colored(&color::label("UPDATED"), "UPDATED", w_upd),
+                pad_colored(&color::label("MSGS"), "MSGS", w_msgs),
+                pad_colored(&color::label("LAST@ME"), "LAST@ME", w_last),
+                pad_colored(&color::label("UNREAD"), "UNREAD", w_unread),
+                color::label("TITLE"),
             );
-            for ((c, inbox), short) in rows.into_iter().zip(shorts) {
-                let left = me
-                    .as_ref()
-                    .map(|me| !joy_chat_store::chats::visible_to(&c, me))
-                    .unwrap_or(false);
-                let title = c.title.as_deref().unwrap_or("-");
-                // UNREAD: with --mine only the unread mentions at me, else
-                // every message after my effective watermark (JOY-0226-27).
-                let unread = match (&me, &inbox) {
-                    (Some(me), Some(inbox)) if mine => inbox.unread_mentions(&c, me.id()),
-                    (Some(me), _) => c.unread_count(me.id()),
-                    (None, _) => 0,
+            println!("{}", color::label(&"-".repeat(sep_len)));
+            let count = table.len();
+            for r in &table {
+                let unread = if r.unread != "0" && r.unread != "-" {
+                    color::info(&r.unread)
+                } else {
+                    r.unread.clone()
                 };
-                let last = inbox
-                    .as_ref()
-                    .and_then(|i| i.last)
-                    .map(|at| at.format("%Y-%m-%d %H:%M").to_string())
-                    .unwrap_or_else(|| "-".into());
+                let title = truncate_title(&r.title, title_width);
                 println!(
-                    "{:<8} {:<17} {:<17} {:<5} {:<17} {:<7} {}{}",
-                    short,
-                    c.joy_id.as_deref().unwrap_or(&c.id),
-                    c.updated.format("%Y-%m-%d %H:%M"),
-                    c.messages.len(),
-                    last,
-                    if me.is_some() {
-                        unread.to_string()
+                    "{}  {}  {}  {}  {}  {}  {}{}",
+                    pad_colored(&color::id(&r.short), &r.short, w_id),
+                    pad_colored(&color::id(&r.full), &r.full, w_full),
+                    pad_colored(&r.updated, &r.updated, w_upd),
+                    pad_colored(&r.msgs, &r.msgs, w_msgs),
+                    pad_colored(&r.last, &r.last, w_last),
+                    pad_colored(&unread, &r.unread, w_unread),
+                    if r.left {
+                        color::inactive(&title)
                     } else {
-                        "-".into()
+                        title
                     },
-                    title,
-                    if left { " [left]" } else { "" },
+                    if r.left {
+                        color::inactive(" [left]")
+                    } else {
+                        String::new()
+                    },
                 );
             }
+            println!("{}", color::label(&"-".repeat(sep_len)));
+            println!("{}", color::label(&color::plural(count, "chat")));
         }
         ChatCommand::Send { id, text } => {
             let identity = acting_identity(root)?;

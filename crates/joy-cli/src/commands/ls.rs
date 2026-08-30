@@ -378,7 +378,7 @@ fn terminal_width() -> usize {
 }
 
 /// Truncate a string to `max_len` display columns, appending "..." if truncated.
-fn truncate_title(s: &str, max_len: usize) -> String {
+pub(crate) fn truncate_title(s: &str, max_len: usize) -> String {
     if display_width(s) <= max_len {
         return s.to_string();
     }
@@ -723,11 +723,11 @@ fn print_table(
     println!("{}", color::label(&color::plural(total, "item")));
 }
 
-fn display_width(s: &str) -> usize {
+pub(crate) fn display_width(s: &str) -> usize {
     unicode_width::UnicodeWidthStr::width(s)
 }
 
-fn pad_colored(colored: &str, raw: &str, width: usize) -> String {
+pub(crate) fn pad_colored(colored: &str, raw: &str, width: usize) -> String {
     let padding = width.saturating_sub(display_width(raw));
     format!("{}{}", colored, " ".repeat(padding))
 }

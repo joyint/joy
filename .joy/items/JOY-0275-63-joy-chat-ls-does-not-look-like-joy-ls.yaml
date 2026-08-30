@@ -1,0 +1,14 @@
+id: JOY-0275-63
+title: joy chat ls does not look like joy ls
+type: task
+status: review
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-30T08:46:05.148054723Z
+updated: 2026-08-30T08:50:18.297567833Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Horst, 2026-08-30: joy chat ls prints a bare fixed-width table: no header and footer lines, no colours, no fit to the terminal width, unlike joy ls and the other list commands. Requirement: joy chat ls renders exactly like joy ls (separator, labelled header, separator, rows with widths from the data and the title cut to the terminal, separator, count).'
