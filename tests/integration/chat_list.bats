@@ -139,8 +139,8 @@ load setup
     [ "$status" -eq 0 ]
     [[ "$output" == *"general"* ]]
 
-    # reading clears the unread count
-    run joy chat read general --passphrase "$PP"
+    # showing is reading (JOY-0273-7C): it clears the unread count
+    run joy chat show general --passphrase "$PP"
     [ "$status" -eq 0 ]
     run joy chat ls --mine --passphrase "$PP"
     [ "$status" -eq 0 ]

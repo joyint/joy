@@ -487,11 +487,30 @@ fn run_command(root: &std::path::Path, command: ChatCommand) -> Result<()> {
                 println!("{}", if mine { "No mentions." } else { "No chats." });
                 return Ok(());
             }
+            // The short form first (JOY-0274-A8): what people type and what
+            // the apps' sidebar shows - the number, the suffix only where
+            // two chats share it - then the full id.
+            let prefix = joy_chat_store::chats::joy_id_prefix(root)?;
+            let full_ids: Vec<&str> = rows
+                .iter()
+                .map(|(c, _)| c.joy_id.as_deref().unwrap_or(&c.id))
+                .collect();
+            let shorts: Vec<String> = joy_core::short_id::format_ids(&prefix, &full_ids)
+                .into_iter()
+                .zip(full_ids.iter())
+                .map(|(short, full)| {
+                    if full.starts_with(&prefix) {
+                        short
+                    } else {
+                        (*full).to_string()
+                    }
+                })
+                .collect();
             println!(
-                "{:<14} {:<17} {:<5} {:<17} {:<7} TITLE",
-                "ID", "UPDATED", "MSGS", "LAST@ME", "UNREAD"
+                "{:<8} {:<17} {:<17} {:<5} {:<17} {:<7} TITLE",
+                "ID", "FULL ID", "UPDATED", "MSGS", "LAST@ME", "UNREAD"
             );
-            for (c, inbox) in rows {
+            for ((c, inbox), short) in rows.into_iter().zip(shorts) {
                 let left = me
                     .as_ref()
                     .map(|me| !joy_chat_store::chats::visible_to(&c, me))
@@ -510,7 +529,8 @@ fn run_command(root: &std::path::Path, command: ChatCommand) -> Result<()> {
                     .map(|at| at.format("%Y-%m-%d %H:%M").to_string())
                     .unwrap_or_else(|| "-".into());
                 println!(
-                    "{:<14} {:<17} {:<5} {:<17} {:<7} {}{}",
+                    "{:<8} {:<17} {:<17} {:<5} {:<17} {:<7} {}{}",
+                    short,
                     c.joy_id.as_deref().unwrap_or(&c.id),
                     c.updated.format("%Y-%m-%d %H:%M"),
                     c.messages.len(),
