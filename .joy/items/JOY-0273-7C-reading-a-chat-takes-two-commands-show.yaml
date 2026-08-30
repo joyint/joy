@@ -1,0 +1,12 @@
+id: JOY-0273-7C
+title: 'Reading a chat takes two commands: show prints, read marks'
+type: task
+status: review
+priority: medium
+capabilities:
+- implement
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-30T05:37:30.083224258Z
+updated: 2026-08-30T05:37:57.115473950Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Horst, 2026-08-30: joy chat show prints a chat and joy chat read marks it read, so the read state on the forge only moves when someone remembers the second command; the apps know no such step, opening a chat is reading it. And show has no way to see only what is new. Decision (Horst): show marks the chat read and takes --unread, --last N and --since 30m|2h|3d; read goes.'

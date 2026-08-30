@@ -18,6 +18,7 @@ This tutorial covers a complete project setup, from `joy init` through encryptio
 - [9. Project Configuration](#9-project-configuration) - `project`, `config`
 - [10. Updating joy](#10-updating-joy) - `update`
 - [11. Encryption with Crypt](#11-encryption-with-crypt) - `crypt`
+- [12. Chats](#12-chats) - `chat`
 - [Bonus: Cross-Directory Queries](#bonus-cross-directory-queries-w)
 - [Bonus: Shell Completions](#bonus-shell-completions)
 - [Bonus: Machine-Readable Output](#bonus-machine-readable-output)
@@ -1013,6 +1014,34 @@ binary garbage on those forges, or you mirror through Joyint with
 
 ---
 
+## 12. Chats
+
+Every project has team chats, and they live where the project lives: in the repository, on `refs/joy/chats`, sealed for their participants (see [8. AI Tool Integration](#chats-sealing-and-the-delegate-button)). The apps and the CLI open the same chats.
+
+```sh
+joy chat ls                      # Every chat you are in, newest first
+joy chat show 10                 # Read a chat (this marks it read, as opening it in the app does)
+joy chat show 10 --unread        # Only what you have not read yet
+joy chat show 10 --last 5        # Only the last five messages
+joy chat show 10 --since 2h      # Only the last two hours (30m, 2h, 3d)
+joy chat send 10 "On my way."    # Say something
+joy chat info 10                 # Who is in, who has read what
+```
+
+### Chat Ids
+
+A chat has an id like an item: `MPS-CHAT-0010-BB`, the project's acronym, `CHAT`, a number, and a short suffix. In commands the number is enough (`10`, `0010`), as is `MPS-CHAT-0010`, the full id, the chat's name, or `general` for the team-wide chat. `joy chat ls` prints the full id; the apps show the number in the sidebar and the suffix only when two chats share a number.
+
+### Reading and Sending
+
+Reading fetches the chat from the forge first, so `show` and `ls` always print the forge's state. Sending appends locally and pushes at once, one forge contact per message; when someone else pushed first, the CLI fetches, unites and pushes again by itself. A chat created in the app is unknown to the CLI until a read fetched it, so run `joy chat ls` before writing into a chat you have not seen from the terminal yet.
+
+### AI Members in Chats
+
+An AI answers a mention (`@vibe ...` at the start of a message) only in the apps, and only under a delegation from the person addressing it: the app that sends the message starts the turn, on the platform for a platform project and on your machine for a local one, with your delegation, your key and your budget. The CLI has no chat session and no turn host, so `joy chat send` refuses a message that opens with the mention of an AI member and says why. A mention later in the text only refers to the AI and is sent as it is.
+
+An AI can send from the CLI itself: with its session (`--session`, or `JOY_SESSION`) the message is posted as the AI member, marked as delegated by the person whose token the session came from.
+
 ## Bonus: Cross-Directory Queries (`-w`)
 
 Joy normally operates on the project containing the current working directory. The global `-w / --working-dir <PATH>` flag runs a command as if you had `cd`'d into PATH first:
@@ -1100,6 +1129,10 @@ The shape is `{"version": 1, "data": ...}`. Within a major Joy release, fields a
 | `joy project get/set <KEY> [VALUE]` | Read or write a project field (e.g. `forge`, `language`, `docs.*`) |
 | `joy config` | Show or modify configuration |
 | `joy ai init` | Set up AI tool integration |
+| `joy chat ls` | List your chats |
+| `joy chat show <CHAT>` | Read a chat and mark it read (`--unread`, `--last N`, `--since 2h`) |
+| `joy chat send <CHAT> <TEXT>` | Send a message |
+| `joy chat info <CHAT>` | Participants and read state |
 | `joy update` | Update the joy binary and refresh joy-managed state |
 | `joy update --check` | Read-only audit of every joy-managed artefact |
 | `joy tutorial` | You are here |

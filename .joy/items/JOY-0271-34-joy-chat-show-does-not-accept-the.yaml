@@ -1,0 +1,15 @@
+id: JOY-0271-34
+title: joy chat show does not accept the short chat id that ls, info and send accept
+type: bug
+status: review
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-30T05:31:11.198959740Z
+updated: 2026-08-30T05:37:57.031863195Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'mps-netbrain-demo, 2026-08-30: joy chat info 10 works, joy chat show 10 answers ''no chat with id 10''. show loads the chat by the raw argument while every other chat command resolves number, MPS-CHAT-0010, name or general through the same resolver. Requirement: every chat command accepts every id form the same way.'

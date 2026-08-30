@@ -43,7 +43,20 @@ enum ChatCommand {
         mine: bool,
     },
     /// Show a chat's messages
-    Show { id: String },
+    /// Show a chat's messages and mark it read (opening a chat is
+    /// reading it, as in the apps); filters narrow what is shown
+    Show {
+        id: String,
+        /// Only messages you have not read yet
+        #[arg(long)]
+        unread: bool,
+        /// Only the last N messages
+        #[arg(long, value_name = "N")]
+        last: Option<usize>,
+        /// Only messages newer than this: 30m, 2h, 3d
+        #[arg(long, value_name = "AGE")]
+        since: Option<String>,
+    },
     /// Send a message to a chat (use `general` for the team-wide chat)
     Send { id: String, text: Vec<String> },
     /// Add a member to a chat (re-adds someone who left)
@@ -59,8 +72,6 @@ enum ChatCommand {
     },
     /// Rename a chat
     Rename { id: String, title: Vec<String> },
-    /// Mark a chat read up to now (advance your read marker)
-    Read { id: String },
     /// Show read state: who has read the latest message and unread counts
     Info { id: String },
 }
@@ -249,6 +260,21 @@ fn mention_inbox(chat: &joy_chat::model::chat::Chat, me: &str) -> MentionInbox {
 /// joy id in any spelling (`1`, `0001`, `1-AB`, `MPS-CHAT-0001`, full),
 /// or the chat's name. A counter two chats share needs the suffix; a
 /// name two chats share needs the id - both are said, never guessed.
+/// `30m`, `2h`, `3d` into a duration (the ages `show --since` takes).
+fn parse_age(age: &str) -> Result<chrono::Duration> {
+    let age = age.trim();
+    let (number, unit) = age.split_at(age.len().saturating_sub(1));
+    let n: i64 = number
+        .parse()
+        .map_err(|_| anyhow::anyhow!("{age}: say an age like 30m, 2h or 3d"))?;
+    Ok(match unit {
+        "m" => chrono::Duration::minutes(n),
+        "h" => chrono::Duration::hours(n),
+        "d" => chrono::Duration::days(n),
+        _ => anyhow::bail!("{age}: say an age like 30m, 2h or 3d"),
+    })
+}
+
 fn load_or_general(root: &std::path::Path, id: &str) -> Result<joy_chat::model::chat::Chat> {
     use joy_core::short_id::{matches, parse_input};
     if id == joy_chat_store::chats::GENERAL_CHAT_ID {
@@ -416,8 +442,10 @@ pub fn run(args: ChatArgs) -> Result<()> {
     if is_read {
         sync_ref(&root);
     }
+    let is_show = matches!(args.command, ChatCommand::Show { .. });
     let result = run_command(&root, args.command);
-    if result.is_ok() && !is_read {
+    // a show moves the read marker, so it delivers like a write
+    if result.is_ok() && (!is_read || is_show) {
         deliver_ref(&root);
     }
     if result.is_ok() && is_send {
@@ -587,12 +615,6 @@ fn run_command(root: &std::path::Path, command: ChatCommand) -> Result<()> {
             joy_chat_store::chats::rename(root, &mut chat, title.join(" "))?;
             println!("renamed");
         }
-        ChatCommand::Read { id } => {
-            let me = acting_member(root)?;
-            let mut chat = load_or_general(root, &id)?;
-            joy_chat_store::chats::mark_read(root, &mut chat, &me, chrono::Utc::now())?;
-            println!("marked read");
-        }
         ChatCommand::Info { id } => {
             let me = acting_member(root)?;
             let chat = load_or_general(root, &id)?;
@@ -623,21 +645,49 @@ fn run_command(root: &std::path::Path, command: ChatCommand) -> Result<()> {
                 println!("  {:<28} {} unread", p.id(), chat.unread_count(p.id()));
             }
         }
-        ChatCommand::Show { id } => {
-            let chat = joy_chat_store::chats::load_chat(root, &id)?
-                .ok_or_else(|| anyhow::anyhow!("no chat with id {id}"))?;
+        ChatCommand::Show {
+            id,
+            unread,
+            last,
+            since,
+        } => {
+            // The same resolver as every other chat command (JOY-0271-34):
+            // number, MPS-CHAT-0010, name or general.
+            let me = acting_member(root)?;
+            let mut chat = load_or_general(root, &id)?;
+            let participants = joy_chat_store::chats::effective_participants(root, &chat)?;
+            let cutoff = match since.as_deref() {
+                Some(age) => Some(chrono::Utc::now() - parse_age(age)?),
+                None => None,
+            };
+            let unread_from = unread.then(|| chat.unread_count(me.id()));
+            let total = chat.messages.len();
+            let shown: Vec<&joy_chat::model::chat::ChatMessage> = chat
+                .messages
+                .iter()
+                .enumerate()
+                .filter(|(i, m)| {
+                    cutoff.is_none_or(|c| m.at >= c) && unread_from.is_none_or(|n| *i + n >= total)
+                })
+                .map(|(_, m)| m)
+                .collect();
+            let shown: Vec<_> = match last {
+                Some(n) if n < shown.len() => shown[shown.len() - n..].to_vec(),
+                _ => shown,
+            };
             println!(
-                "{} — {} participant(s)",
+                "{} — {} participant(s), {} of {} message(s)",
                 chat.title.as_deref().unwrap_or("(untitled)"),
-                chat.participants.len()
+                participants.len(),
+                shown.len(),
+                total
             );
-            for m in &chat.messages {
-                println!(
-                    "{}  {}  {}",
-                    m.at.format("%Y-%m-%d %H:%M"),
-                    m.author.id(),
-                    m.text
-                );
+            for m in shown {
+                let by = match &m.delegated_by {
+                    Some(by) => format!("{} (delegated by {by})", m.author.id()),
+                    None => m.author.id().to_string(),
+                };
+                println!("{}  {}  {}", m.at.format("%Y-%m-%d %H:%M"), by, m.text);
                 // Non-text parts are named, never dropped (JOY-024C-97):
                 // the CLI cannot show an image, but it must say one is
                 // there.
@@ -659,6 +709,9 @@ fn run_command(root: &std::path::Path, command: ChatCommand) -> Result<()> {
                     println!("                    [{}] {}", part.kind_word(), label);
                 }
             }
+            // showing is reading, as in the apps: the read marker moves
+            // and rides to the forge with the next delivery
+            joy_chat_store::chats::mark_read(root, &mut chat, &me, chrono::Utc::now())?;
         }
     }
     Ok(())
