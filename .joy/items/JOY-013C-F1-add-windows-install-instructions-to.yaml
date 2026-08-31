@@ -13,11 +13,8 @@ capabilities:
 effort: 1
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-04-30T21:32:01.028288660Z
-updated: 2026-06-10T21:42:22.692620160Z
+updated: 2026-08-31T15:19:46.126934413Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history:
-- date: 2026-06-10T21:42:22.692620160Z
-  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Website docs at content/joy/docs/{en,de}/index.mdx currently show only the curl Linux/macOS install line. Windows users land on the same page and have no install path. The Windows installer (get.joyint.com/joy.ps1) is deployed and must be surfaced.
 
@@ -31,3 +28,6 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-04-30T21:39:48.745647073Z
   text: '[x] Website index.mdx (en + de) und Joy-Repo README.md zeigen jetzt drei Install-Pfade: macOS/Linux (curl ... | sh), Windows PowerShell (irm ... | iex), cargo. Klarstellung dass der Windows-Installer User-PATH automatisch setzt und macOS/Linux es selbst tun muss. Tutorials erwaehnen kein Install (start beim joy init), bleiben unveraendert.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-31T15:19:46.126932761Z
+  text: 'State in English for the record (2026-08-31), replacing the German note. Delivered: the website''s index.mdx (English and German) and the joy repository''s README.md now show three install paths - macOS and Linux (curl ... | sh), Windows PowerShell (irm ... | iex), and cargo - with the clarification that the Windows installer sets the user PATH automatically while macOS and Linux have to do it themselves. The tutorials mention no install (they start at joy init) and stay unchanged.'

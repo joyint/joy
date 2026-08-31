@@ -13,7 +13,8 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-05T17:25:02.558335Z
-updated: 2026-05-05T18:47:24.232782Z
+updated: 2026-08-31T15:20:14.523406007Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-05-05T17:25:45.042399Z
@@ -51,3 +52,6 @@ comments:
       - session.expires Klemmung (date -j -f Portabilitaet zwischen macOS/GNU)
       - AI-side decrypt round-trip (eval+JOY_SESSION cross-shell flakiness)
     [x] 308 bats-Tests gruen, 0 Fehlschlaege
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-31T15:20:14.523405121Z
+  text: 'State in English for the record (2026-08-31), replacing the German notes. Seven new bats tests for ADR-041 v2 in tests/integration/auth.bats cover the end-to-end --crypt flow: joy auth token add --crypt embeds the delegation private key, an auth-only redemption produces a 44-byte JOY_SESSION payload and a --crypt redemption a 76-byte one, joy crypt grant for an AI writes zone-major delegation wraps, joy crypt revoke removes the whole delegations map of that AI, plus the delegation rotate and ls cases.'

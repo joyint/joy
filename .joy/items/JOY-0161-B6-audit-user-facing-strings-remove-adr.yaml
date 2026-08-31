@@ -10,7 +10,8 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-05T17:25:05.387426Z
-updated: 2026-05-05T18:03:46.729154Z
+updated: 2026-08-31T15:20:14.777318883Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-05-05T17:26:18.035982Z
@@ -39,3 +40,6 @@ comments:
     [x] Tutorial.md sechs ADR-Referenzen entfernt: zwei Erwaehnungen ADR-039 (recovery key, passphrase change), eine ADR-040 (E2E forge), zwei ADR-041 (AI Tool grant section incl. broken markdown link), eine ADR-039 (Crypt recovery)
     [x] Inner code-comments mit ADR-Verweisen bewusst behalten (developer-facing)
     [x] cargo build, clippy, tests, fmt alle gruen
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-31T15:20:14.777318077Z
+  text: 'State in English for the record (2026-08-31), replacing the German notes. Background: the umbrella repository with the ADRs and vision documents is private, and users only see the joy submodule''s code and joy/docs/user/, so an ADR reference in a user-facing string is a dead pointer. Delivered: the clap doc strings for --ttl and --crypt and the ai rotate subcommand lost their ADR references, two println lines now read ''Auth schema upgraded to the wrapped-seed identity model.'', and six ADR references left Tutorial.md (two to ADR-039 for the recovery key and the passphrase change, one to ADR-040 for the E2E forge, and two to ADR-041 in the AI tool grant section, including a broken markdown link).'

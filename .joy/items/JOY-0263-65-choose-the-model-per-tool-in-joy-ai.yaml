@@ -1,0 +1,19 @@
+id: JOY-0263-65
+title: Choose the model per tool in joy ai init and joy ai edit
+type: story
+status: new
+priority: medium
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-22T09:03:58.486463210Z
+updated: 2026-08-31T15:38:56.556913048Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Today the tool decides its default model by itself: AiConfig has a model field, but no surface lets a person pick one (joy ai init and edit do not ask, and the app sends an empty model on save). Wanted (Horst, 2026-07-18, confirmed again on 2026-08-22): make the model selectable per tool in joy ai init and joy ai edit, so that clients (the project settings, later flows) can offer a tool dropdown with a dependent model dropdown. Replaces JOY-021B-2B, which never landed, from the closed PR 16 (branch feat/jon-pda).'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-31T15:38:56.556912166Z
+  text: 'State in English for the record (2026-08-31): still new, not started.'

@@ -1,0 +1,33 @@
+id: JOY-00C3-3D
+title: Mistral Vibe can pass itself off as Claude Code
+type: bug
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy
+created: 2026-04-01T00:02:21.811410323Z
+updated: 2026-08-31T15:19:46.036642421Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: From the same terminal where Claude Code ran before, Mistral Vibe can pass itself off as Claude Code. With Qwen Code that was not possible. This ticket was created by Mistral Vibe itself; the Joy logs show which identity it happened under.
+comments:
+- author: ai:claude@joy
+  date: 2026-04-01T20:28:27.469628231Z
+  text: 'Plan: Replace TTY-based AI session lookup with SSH-agent style JOY_SESSION handle. joy auth --token outputs export JOY_SESSION=<id> for eval.'
+- author: ai:claude@joy
+  date: 2026-04-01T20:28:35.494197656Z
+  text: |-
+    [x] session.rs: session_id() and load_session_by_id() for direct lookup
+    [x] auth --token: outputs export JOY_SESSION=<id> to stdout (eval-ready)
+    [x] identity.rs: JOY_SESSION > JOY_TOKEN > human session > fallback
+    [x] TTY-based AI session loop removed
+    [x] Instructions updated: eval pattern, joy auth status
+    [x] BATS: impersonation test, multi-AI tests migrated to JOY_SESSION
+    [x] 138 BATS + 229 cargo tests passing
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-31T15:19:46.036641315Z
+  text: 'State in English for the record (2026-08-31): closed. The TTY-based AI session lookup is replaced by an SSH-agent style JOY_SESSION handle - session.rs gained session_id() and load_session_by_id() for a direct lookup, joy auth --token prints an eval-ready export line, identity.rs resolves JOY_SESSION before JOY_TOKEN before the human session, and the TTY loop is gone. Instructions updated; bats covers the impersonation case and the multi-AI tests moved to JOY_SESSION. 138 bats and 229 cargo tests passing.'

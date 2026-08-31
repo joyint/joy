@@ -1,0 +1,28 @@
+id: JOY-025A-3A
+title: 'Publish the plugin crates: joy-github, joy-gitlab, joy-bi'
+type: task
+status: review
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-19T03:13:30.923201261Z
+updated: 2026-08-31T15:38:23.483811872Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Found during the backlog reconciliation on 2026-08-19 (Horst''s decision: the plugins should be publicly usable). The three new workspace members are neither in the justfile''s publish list nor marked publish = false, and not in release.version-files either, so a release would neither version nor upload them. To do: extend the publish list (joy-bi after joy-core, the two forge plugins without an internal dependency), make the metadata publishable (license instead of a license-file path outside the crate, repository and homepage as the others have, and a version on joy-bi''s joy-core dependency) and align the versions with the family.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-19T03:14:44.992451842Z
+  text: 'Umgesetzt in Commit 4592961: Metadaten, Publish-Liste, Versionen 0.20.0, cargo package fuer alle drei gruen. Offen bleibt der Operator-Schritt release.version-files.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-19T03:18:39.730395257Z
+  text: 'Nachtrag 2026-08-19 auf ausdrueckliche Anweisung des Operators: release.version-files in .joy/project.yaml um crates/joy-bi, crates/joy-github und crates/joy-gitlab ergaenzt (kein CLI dafuer vorhanden, daher ausnahmsweise direkt in der Datei). Damit werden die drei beim naechsten joy release bump mitversioniert. Namenspruefung auf crates.io: joy-github, joy-gitlab und joy-bi sind alle frei.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-20T05:22:20.167056593Z
+  text: 'Coverage audit 2026-08-20: no bats or e2e test; infrastructure, release or documentation work that the operator''s rule leaves to daily use.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-31T15:38:23.483810599Z
+  text: 'State in English for the record (2026-08-31): delivered in commit 4592961 (metadata, publish list, versions 0.20.0, cargo package green for all three). Added on 2026-08-19 at Horst''s explicit instruction: release.version-files in .joy/project.yaml now lists crates/joy-bi, crates/joy-github and crates/joy-gitlab, so the three are versioned by the next joy release bump; there is no CLI for that file, hence the exceptional direct edit. Name check on crates.io: joy-github, joy-gitlab and joy-bi are all free.'

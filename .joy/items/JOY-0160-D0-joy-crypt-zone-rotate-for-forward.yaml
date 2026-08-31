@@ -10,7 +10,8 @@ capabilities:
 effort: 5
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-05T17:25:04.549031Z
-updated: 2026-05-05T17:26:06.752354Z
+updated: 2026-08-31T15:20:14.693988836Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-05-05T17:26:06.752353Z
@@ -33,3 +34,6 @@ comments:
     - Tests fuer Konsistenz (kein File mit alter Key-Version verbleibt)
 
     Heavy. Spec-Diskussion zuerst.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-31T15:20:14.693987826Z
+  text: 'State in English for the record (2026-08-31), replacing the German sketch. Still new. Forward secrecy after a joy crypt revoke: today the formerly granted member keeps everything they could clone before the revoke decryptable forever, because their wrap is gone but the zone key was known to them. joy crypt zone rotate would promise that the old key is worthless from the moment of the rotation: generate a fresh zone key, decrypt every file and item in the zone with the old key and re-encrypt with the new one.'

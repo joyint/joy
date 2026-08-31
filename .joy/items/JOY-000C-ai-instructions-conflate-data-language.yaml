@@ -5,7 +5,8 @@ status: closed
 priority: medium
 effort: 2
 created: 2026-03-20T18:56:52.257223402Z
-updated: 2026-03-21T15:09:03.425300582Z
+updated: 2026-08-31T15:19:46.297561798Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-20T18:56:59.605734240Z
@@ -19,3 +20,6 @@ comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-21T15:09:00.735695671Z
   text: '[x] Fixed data/ai/skills/joy/SKILL.md: added explicit conversation language rule, changed hardcoded ''English'' to project language reference. [x] Fixed data/ai/instructions.md: made the separation between artifact language and conversation language much more explicit with bold heading and clear examples.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-31T15:19:46.297555123Z
+  text: 'State in English for the record (2026-08-31): closed. Both source files in data/ai/ were fixed - skills/joy/SKILL.md gained an explicit rule that the conversation follows the user''s language and its hardcoded ''English'' now refers to the project language, and instructions.md separates artifact language from conversation language with a bold heading and clear examples. The confirming case was Vibe explaining that it followed the project''s language setting for the conversation as well.'

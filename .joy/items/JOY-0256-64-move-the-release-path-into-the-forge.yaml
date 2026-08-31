@@ -1,0 +1,25 @@
+id: JOY-0256-64
+title: Move the release path into the forge contract
+type: story
+status: review
+priority: medium
+parent: JOY-0251-AA
+assignees:
+- member: ai:claude@joy
+capabilities:
+- plan
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-09T08:32:49.903367572Z
+updated: 2026-08-31T15:37:41.080592845Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: ForgeRelease (joy-cli/src/forge.rs, shelling out to gh) and the URL classification (vcs.rs parse_forge_from_url) are absorbed into the plugin contract (the plugin's release capability, and claims), so that no second body of forge knowledge is left in joy-core.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-21T06:30:32.592441669Z
+  text: '2026-08-21: Umgesetzt in 9f26365 + 444abf7; geprüft via just check (fmt, clippy, unit, cmd, smoke) und bats (release_publish_forge_notes 3/3 durchs Plugin, forge contract+alias 17/17, project_forge/release_publish_forge/project_set_editor 23/23).'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-31T15:37:41.080588327Z
+  text: 'State in English for the record (2026-08-31): delivered on 2026-08-21 in 9f26365 and 444abf7, checked with just check (fmt, clippy, unit, cmd, smoke) and bats (release_publish_forge_notes 3/3 through the plugin, forge contract and alias 17/17, project_forge, release_publish_forge and project_set_editor 23/23).'

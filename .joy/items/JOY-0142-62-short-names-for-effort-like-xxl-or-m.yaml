@@ -11,7 +11,8 @@ capabilities:
 effort: 7
 created_by: horst.schwarz@joydev.com
 created: 2026-05-02T18:35:48.606106Z
-updated: 2026-05-03T01:58:24.033439Z
+updated: 2026-08-31T15:19:46.214188576Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-05-03T00:53:28.237568Z
@@ -27,3 +28,6 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-05-03T01:10:38.899033Z
   text: 'Nachgezogen: in joy ls / board zeigt die EFF-Spalte jetzt T-Shirt-Sizes (xxs..xxl), wenn emoji off ist. Mit emoji on weiterhin Block-Char. Neue Helper-Funktion color::effort_label fuer Width-Berechnung; effort_indicator nutzt Label intern. ls.rs w_eff korrekt auf max T-Shirt-Breite (3) skaliert. cargo test gruen.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-31T15:19:46.214185956Z
+  text: 'State in English for the record (2026-08-31), replacing the German notes. Delivered: a t-shirt mapping (xxs=1, xs=2, s=3, m=4, l=5, xl=6, xxl=7) behind the helper parse_effort in joy-cli/src/effort.rs, which accepts ''none'', 1 to 7 and xxs to xxl case-insensitively; add.rs takes --effort as a string and edit.rs uses the same helper. Six unit tests, cargo test -p joy-cli green, and a smoke test (joy edit --effort xxl stores effort: 7). Documentation followed in Tutorial.md and the AI templates. Added afterwards: the EFF column in joy ls and board shows t-shirt sizes when emoji are off (block characters when on), with the new helper color::effort_label for the width calculation.'

@@ -6,7 +6,7 @@ priority: high
 effort: 2
 validity: replaced
 created: 2026-03-23T06:34:23.766097415Z
-updated: 2026-08-26T08:53:24.462407116Z
+updated: 2026-08-31T15:19:45.686549652Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Create docs/dev/vision/ForgeSync.md covering CLI perspective: forge: config in project.yaml (github, joyint, github@joyint, gitlab, gitea, none), joy sync push/pull flow, offline-first design, conflict resolution always local, joy init forge detection and proposal. Companion to JP-0001 in the platform project.'
 comments:
@@ -19,3 +19,6 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-08-26T08:53:24.462403824Z
   text: 'Als replaced markiert (2026-08-26): Die Relay-/Bare-Repo-Vision ist ueberholt. Das umgesetzte Modell (Kunden-Forge als Hub, ein Checkout pro Projekt, Write-behind-Sync mit Gates und Session-Bindung) ist als Platform-ADR JP-00E1-CC festgehalten; die CLI-Seite arbeitet unveraendert direkt auf dem lokalen Repo.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-31T15:19:45.686548332Z
+  text: 'State in English for the record (2026-08-31), replacing the German note. Marked as replaced on 2026-08-26: the relay and bare-repo vision is superseded. The model as built - the customer''s forge as the hub, one checkout per project, write-behind sync with gates and session binding - is recorded as the platform ADR JP-00E1-CC, while the CLI side keeps working directly on the local repository, unchanged.'

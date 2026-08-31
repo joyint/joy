@@ -9,9 +9,8 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-28T03:26:47.394894937Z
-updated: 2026-07-28T07:00:34.127468588Z
+updated: 2026-08-31T15:37:40.128437010Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
 description: |-
   Found while building chat test coverage, 2026-07-28.
 
@@ -29,3 +28,6 @@ comments:
     Seine Erwartung im Wortlaut: 'joy chat read --session' entschluesselt alles, was zum Session-Key passt; ohne --session dasselbe fuer den authentifizierten Nutzer, und wenn keiner authentifiziert ist, fordert es zur Authentifizierung auf und entschluesselt danach alles fuer ihn.
 
     Damit faellt der heutige Sonderweg der Plattform (Seed direkt aus dem hinterlegten Token in den Thread schieben) mit weg: sie loest wie jeder andere eine Session ein und liest damit. Eine Mechanik, ein Pfad, kein Sonderfall fuer den Server.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-31T15:37:40.128434674Z
+  text: 'State in English for the record (2026-08-31), replacing the German direction note. Horst''s direction of 2026-07-28: the platform''s workaround is not acceptable either - chat access has to run through the session key throughout. In his words: ''joy chat read --session'' decrypts everything the session key fits; without --session the same for the authenticated user; and when nobody is authenticated it asks for authentication and then decrypts everything that identity can open. Still new.'

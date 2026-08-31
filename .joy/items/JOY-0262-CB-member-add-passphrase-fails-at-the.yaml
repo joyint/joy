@@ -1,0 +1,18 @@
+id: JOY-0262-CB
+title: member add --passphrase fails at the manage gate without an existing session
+type: bug
+status: new
+priority: medium
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-22T08:31:46.549253213Z
+updated: 2026-08-31T15:38:56.373433331Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'joy project member add checks the manage gate (ctx.enforce) before the passphrase given with --passphrase is used anywhere; that passphrase only serves the attestation signature. Without an existing joy auth session the command ends with ''must authenticate. Run joy auth'', although the correct passphrase is right there on the command line. Reproduction: a fresh XDG_STATE_HOME, then member add --passphrase in a project with auth material. Expected: the passphrase given also authenticates the gate, or the message says honestly that joy auth comes first.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-31T15:38:56.373432440Z
+  text: 'State in English for the record (2026-08-31): still new, not started.'

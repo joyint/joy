@@ -15,15 +15,8 @@ capabilities:
 effort: 5
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-06-10T20:59:41.301685450Z
-updated: 2026-07-01T19:19:44.919417441Z
+updated: 2026-08-31T15:20:48.563706609Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history:
-- date: 2026-06-12T00:59:58.226457285Z
-  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-- date: 2026-06-12T00:59:58.290240800Z
-  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-- date: 2026-07-01T19:19:44.919417441Z
-  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'open->anonymous (needs auth + manage): per member generate an ID, move e-mail from project.yaml to members.yaml, rekey map to the ID, write the email_match verifier, create encrypted members.yaml — all in one atomic commit (never incremental). anonymous->open: the reverse. New project: joy init --anonymous flag AND a Y/n prompt (flag does not replace the prompt). Onboarding a new member in anonymous mode: OTP flow unchanged, wrap the members.yaml zone key for the new member. Ref ADR-042 §6.'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
@@ -32,3 +25,6 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-06-11T22:21:24.932542439Z
   text: Der verbleibende offene Teil dieses Tasks, das anonyme OTP-Onboarding eines Menschen, wird in JOY-01C3-A7 herausgeloest und dort weiter geloest. Die uebrigen Teile (open/anonymous Transition in beide Richtungen sowie joy init mit dem anonymous-Flag und Y/n-Prompt) sind umgesetzt.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-31T15:20:48.563705871Z
+  text: 'State in English for the record (2026-08-31), replacing the German note. The remaining open part of this task, the anonymous OTP onboarding of a human, was split out into JOY-01C3-A7 and is solved there. Everything else is delivered: the open-to-anonymous transition in both directions, and joy init with the anonymous flag and the Y/n prompt.'

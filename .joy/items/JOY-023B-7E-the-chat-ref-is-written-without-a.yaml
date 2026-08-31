@@ -11,7 +11,7 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-27T16:47:48.975636058Z
-updated: 2026-08-20T06:14:18.716697392Z
+updated: 2026-08-31T15:20:48.992244282Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Found while investigating a 39 MB .git in a sandbox project with maybe 200 messages (operator 2026-07-27). chat_ref::commit_root calls repo.commit(Some(CHATS_REF), ...), which makes libgit2 SET the ref, not compare-and-swap it. Two saves that read the same tip therefore both commit a child of it and the last writer silently wins: the loser commit is orphaned AND the events it carried are not in the surviving tree. The desktop saves on every message, every participant add and every read marker, plus the sync worker, so the race is not exotic. Evidence from the operator project: 761 commits total, of which 505 are unreachable, and 22 of the 39 MB are unreachable objects (1804 trees). Fix: build the commit without a ref update and move the ref with a compare-and-swap against the tip that was read (git2 reference_matching), retrying the whole save on mismatch so the loser folds its events onto the winner instead of vanishing.'
 comments:
@@ -24,3 +24,6 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-08-20T06:14:18.716695752Z
   text: Now covered by bats (67bdeaf, 2026-08-20); see JOY-0260-1A.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-31T15:20:48.992242156Z
+  text: 'State in English for the record (2026-08-31), replacing the German verification note. Verified on 2026-08-19: fixed, the bug is gone. commit_root in crates/joy-chat-store/src/chat_ref.rs commits with repo.commit(None, ...) and then moves the ref with reference_matching against the expected base; Ok(None) means the ref moved, and save and commit in chat_store.rs redo the whole work (REF_MOVE_ATTEMPTS = 8) before failing honestly instead of losing silently. Unit tests in chat_ref.rs cover the loser. Now covered by bats (67bdeaf, 2026-08-20); see JOY-0260-1A.'

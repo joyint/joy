@@ -7,7 +7,8 @@ deps:
 - JOY-0090
 effort: 5
 created: 2026-03-20T21:02:31.070606074Z
-updated: 2026-03-30T19:08:59.363342725Z
+updated: 2026-08-31T15:19:46.385685929Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-20T21:02:53.015937883Z
@@ -37,3 +38,6 @@ comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-30T05:35:29.388271918Z
   text: ADR-024 changes the generation pipeline. Source data moves from .joy/ai/capabilities/*.md to data/ai/agents/*.yaml (tool-agnostic, embedded in binary). Templates in templates/ai/tools/*/agents/ render tool-specific output. Output goes directly into tool directories (.claude/, .qwen/, .vibe/, .github/), not into .joy/ai/ or .joy/capabilities/. Version-based freshness check replaces SHA-256 hashing for AI files.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-31T15:19:46.385685039Z
+  text: 'State in English for the record (2026-08-31), replacing the German passage of the critical review. Its substance: the model has a natural progression - a solo developer with capabilities: all notices no process at all, a team adds members and the capabilities become visible, an enterprise adds gates and they are enforced. No break, no reconfiguration, which is rare: most tools have a single-seat mode and a team mode that differ fundamentally. The epic itself was reframed by ADR-018 to capability-based agent generation and again by ADR-024, which moved the source data to data/ai/agents/*.yaml with templates rendering tool-specific output directly into the tool directories, and replaced SHA-256 hashing with a version-based freshness check.'

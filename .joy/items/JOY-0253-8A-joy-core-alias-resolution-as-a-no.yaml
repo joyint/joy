@@ -1,0 +1,28 @@
+id: JOY-0253-8A
+title: 'joy-core: alias resolution as a no-match fallback'
+type: story
+status: review
+priority: high
+parent: JOY-0251-AA
+assignees:
+- member: ai:claude@joy
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-09T08:32:49.520127792Z
+updated: 2026-08-31T15:37:40.906651664Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'At the one funnel point (the callers of privacy::member_key_for_email: identity.rs, enroll, login, the guard paths): when the git address matches no member, ask the registered forge plugins the claims question over the remote URLs, then the identity question of the plugin that claims them, and run the returned candidates through the same member resolution unchanged. The result is cached per run. Without remotes, plugins or a claim, behaviour is unchanged (local repositories). If the resolution fails despite a recognised candidate, give an honest instruction instead of the ''not a member'' riddle. The git author stays untouched. The --user repair: the session is stored AND looked up under the resolved key (today it is stored under the primary address and looked up under the alias).'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-09T18:50:10.874775129Z
+  text: 'Offener Nachweis (zugesagt 2026-08-09): Richtung zwei (Projekt auf Alias geschluesselt, git config traegt die primaere Adresse) hat Unit-Abdeckung der Bausteine, aber noch keinen End-to-End-Bats-Beweis. Nachstellbar als Legacy-Fall: Projekt ohne Remote unter Alias gegruendet, GitHub-Remote danach ergaenzt, gh-Stub mit passendem Login, dann als primaere Adresse handeln. Wird mit dem Identitaetspaket nachgelegt.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-20T05:22:19.670515210Z
+  text: 'Coverage audit 2026-08-20: now covered by joy/tests/integration/forge_alias.bats, case "joy auth ,user carries through to the session lookup", written today and mutation-checked.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-31T15:37:40.906649266Z
+  text: State in English for the record (2026-08-31), replacing the German note about the open proof. Direction two (a project keyed on the alias while the git config carries the primary address) had unit coverage of its parts but no end-to-end bats proof; it is covered now by joy/tests/integration/forge_alias.bats, case 'joy auth --user carries through to the session lookup', written and mutation-checked on 2026-08-20.

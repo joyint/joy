@@ -1,0 +1,25 @@
+id: JOY-025D-99
+title: 'Documentation: forge plugins on a workstation'
+type: task
+status: review
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-19T05:18:47.212597924Z
+updated: 2026-08-31T15:38:56.192722510Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Horst asked on 2026-08-19 why there is an example configuration for the platform only. The answer: locally there is nothing to configure, because the plugin reads the forge CLI''s own configuration (gh, glab, tea). Exactly that was written nowhere. docs/plugins.md now explains the workstation case - install the plugin, sign in with the forge CLI, done - with joy project set forge as the only lever, for instances with no local sign-in; the server case points at .env.example.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-19T05:19:20.648585767Z
+  text: Commit 718355b.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-20T05:22:20.419797059Z
+  text: 'Coverage audit 2026-08-20: no bats or e2e test; infrastructure, release or documentation work that the operator''s rule leaves to daily use.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-31T15:38:56.192721576Z
+  text: 'State in English for the record (2026-08-31): delivered in commit 718355b. No bats or e2e test: documentation the operator''s rule leaves to daily use.'

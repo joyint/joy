@@ -1,5 +1,5 @@
 id: JOY-0252-1A
-title: Plugin-Frage-Vertrag und Forge-Plugin-Registry
+title: The plugin question contract and the forge plugin registry
 type: story
 status: review
 priority: high
@@ -13,9 +13,9 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-09T08:32:49.385073344Z
-updated: 2026-08-20T06:14:18.617283601Z
+updated: 2026-08-31T15:37:40.733474691Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-description: 'docs/plugins.md um den Frage-Vertrag erweitern: joy-<name> claims --remote <url> (JSON ja/nein) und joy-<name> identity [--unresolved-email <a>] [--login/--user-id/--token-env fuer Server-Zulieferung] (JSON: login, kennung, adressen[] oder ''unbekannt''). Registry nach dem Adapter-Muster (joy_ai::adapters, eine Datenzeile pro Forge-Plugin) in joy-core; project.yaml forge: bleibt Operator-Override. Kein Forge-Wissen ausserhalb der Plugins.'
+description: 'Extend docs/plugins.md with the question contract: joy-<name> claims --remote <url> (JSON yes or no) and joy-<name> identity [--unresolved-email <a>] [--login, --user-id, --token-env for what a server supplies] (JSON: login, id, addresses[], or ''unknown''). A registry after the adapter pattern (joy_ai::adapters, one data row per forge plugin) in joy-core; project.yaml''s forge: stays the operator''s override. No forge knowledge outside the plugins.'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-08-20T05:22:19.588431938Z
@@ -23,3 +23,6 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-08-20T06:14:18.617281789Z
   text: Now covered by bats (67bdeaf, 2026-08-20); see JOY-0260-1A.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-31T15:37:40.733473723Z
+  text: 'State in English for the record (2026-08-31): in review, and now covered by bats (67bdeaf, 2026-08-20); see JOY-0260-1A.'

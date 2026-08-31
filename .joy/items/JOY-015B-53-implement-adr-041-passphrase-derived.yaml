@@ -12,7 +12,8 @@ capabilities:
 effort: 6
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-05T16:10:06.761519Z
-updated: 2026-05-05T16:30:03.479358Z
+updated: 2026-08-31T15:20:14.275854460Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-05-05T16:12:29.607321Z
@@ -55,3 +56,6 @@ comments:
     - Migration alter members.<ai>.crypt_wraps-Eintraege auf neue delegations-Form
     - bats E2E-Suite fuer den --crypt-Flow
     - Abgelehntes joy auth --token mit Crypt-Scope wenn Delegation rotiert wurde: Pfad funktioniert (Binding-Sig-Mismatch), aber Fehlermeldung koennte spezifischer sein
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-31T15:20:14.275853544Z
+  text: 'State in English for the record (2026-08-31), replacing the German plan and result notes. Delivered for ADR-041 v2: token scopes (auth, or auth plus crypt) with a --crypt flag that embeds the 32-byte delegation seed in the token string; an extended JOY_SESSION encoding (44 bytes auth-only, 76 bytes with crypt) plus the parse_session_env_full helper; session.expires clamped to the minimum of the session TTL and the token''s expiry in create_session_for_ai; and redemption that extracts the delegation private key, validates it against the registered delegation verifier and packs it into JOY_SESSION.'

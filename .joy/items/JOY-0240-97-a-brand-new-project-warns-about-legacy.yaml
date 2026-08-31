@@ -9,6 +9,10 @@ capabilities:
 effort: 1
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-28T18:39:14.619078302Z
-updated: 2026-07-31T18:44:45.155564155Z
+updated: 2026-08-31T15:37:40.296603797Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-description: 'Jeder joy-Aufruf in einem frisch angelegten Projekt mit AI-Member druckt ''warning: project.yaml uses legacy auth field names from before v0.12; run joy update to normalise''. Ursache: migrations::project_yaml::apply liefert EIN changed-Flag fuer alle Migrationen, und m_2026_07_ai_member_adapter fuellt bei einem neuen AI-Member den fehlenden adapter-Pin nach. Das setzt das Flag, obwohl an den Auth-Feldern nichts alt ist. Die Meldung ist also unwahr und schickt Leute grundlos zu joy update. Vorschlag: zwei Flags trennen (legacy_auth fuer die Warnung, any fuer joy update). Gefunden beim Aufsetzen der Chat-e2e-Projekte.'
+description: 'Every joy call in a freshly created project with an AI member prints ''warning: project.yaml uses legacy auth field names from before v0.12; run joy update to normalise''. Cause: migrations::project_yaml::apply returns ONE changed flag for all migrations, and m_2026_07_ai_member_adapter fills in the missing adapter pin for a new AI member. That sets the flag although nothing about the auth fields is old, so the message is untrue and sends people to joy update for nothing. Proposal: split the flags (legacy_auth for the warning, any for joy update). Found while setting up the chat e2e projects.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-31T15:37:40.296602950Z
+  text: 'State in English for the record (2026-08-31): closed.'

@@ -10,7 +10,8 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-05T17:24:59.819711Z
-updated: 2026-05-05T17:49:20.946703Z
+updated: 2026-08-31T15:20:14.360151874Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-05-05T17:25:24.239664Z
@@ -39,3 +40,6 @@ comments:
     [x] TokenCommand::Rm + run_token_rm entfernt (semantisch ersetzt durch delegation rotate)
     [x] bats Tests aktualisiert: zwei tests für rotate, zwei tests für ls
     [x] joy auth token rm tests entfernt (war pre-1.0 Schnittstelle)
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-31T15:20:14.360150956Z
+  text: 'State in English for the record (2026-08-31), replacing the German notes. A naming refactor plus a new view verb for AI tool delegations: joy auth token rm became joy auth delegation rotate <ai-member> (the semantics stay - a fresh per-operator delegation, and every token of that AI issued by this operator dies), and joy auth delegation ls lists the delegations registered in project.yaml for all operators with created, rotated and the delegation verifier''s prefix. TokenCommand::Rm and run_token_rm are removed, and the bats tests cover rotate and ls.'

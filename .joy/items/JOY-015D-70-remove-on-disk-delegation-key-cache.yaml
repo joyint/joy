@@ -10,7 +10,8 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-05T17:25:01.546340Z
-updated: 2026-05-05T17:53:46.237817Z
+updated: 2026-08-31T15:20:14.441659393Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-05-05T17:25:33.129244Z
@@ -43,3 +44,6 @@ comments:
     [x] auth/mod.rs STATE_ENV_LOCK entfernt (war nur fuer die geloeschten file-IO-Tests)
     [x] joy auth update druckt eine zusaetzliche Warnung pro legacy Eintrag ohne delegation_salt
     [x] cargo build, clippy, tests, fmt alle gruen
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-31T15:20:14.441658521Z
+  text: 'State in English for the record (2026-08-31), replacing the German notes. Background: ADR-041 v2 demands no private key on disk for AI tool delegations, and re-deriving from the operator seed plus the delegation salt (HKDF) was already in place from ADR-037. Delivered: save_delegation_key, load_delegation_key, remove_delegation_key, delegation_key_path and rename_project_delegations are gone from joy-core/auth/delegation.rs, the match arms in run_token_add are down to three cases (bootstrap, re-derive, legacy bail), and the legacy bail carries the short message agreed in the discussion, pointing at joy auth delegation rotate while existing tokens keep working.'

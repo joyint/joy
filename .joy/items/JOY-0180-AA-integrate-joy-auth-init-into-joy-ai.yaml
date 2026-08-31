@@ -12,7 +12,8 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-05-14T18:02:31.053985416Z
-updated: 2026-05-14T19:17:28.953234334Z
+updated: 2026-08-31T15:20:48.479788988Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: When `joy ai init` is run without prior authentication, it fails partway through (after creating doc templates and AI tool configs) with "no registered public key". Auth is a prerequisite for the AI member registration step, so detect missing auth at the start of `joy ai init` and run `joy auth init` inline (no extra y/n confirmation -- the passphrase prompt itself is the natural commitment point). The setup should complete in a single flow.
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
@@ -56,3 +57,6 @@ comments:
     [x] Smoke-tested: cold-start with `--passphrase` shows the new section + explanation + run_init output, then doc templates and AI tool registration without further prompts.
 
     Commit: 0beb20b on main.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-31T15:20:48.479787953Z
+  text: 'State in English for the record (2026-08-31), replacing the German review feedback. The review found two things: in the cold-start flow the passphrase was asked twice, once in auth::run_init for the bootstrap and again later in setup_new_tools through derive_acting_keypair for the member attestation, which must not happen inside one joy ai init; and the output did not say why AI init now needs auth. Both fixed: auth::run_init returns the validated passphrase, ensure_human_auth_initialized hands it on (Some on the cold bootstrap, None on the warm path), and ai_init forwards it to setup_new_tools so the later derive_acting_keypair reuses it and the second prompt is skipped.'

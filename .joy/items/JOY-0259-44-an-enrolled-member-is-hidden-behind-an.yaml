@@ -1,0 +1,26 @@
+id: JOY-0259-44
+title: An enrolled member is hidden behind an open invitation
+type: bug
+status: review
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-17T20:34:22.582409560Z
+updated: 2026-08-31T15:38:23.307279860Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Roland''s finding of 2026-08-17: when an account''s address set contains both the real, enrolled member entry and a never-redeemed invitation under another address of the same person, the accidental order of the candidates decided which won. The empty invitation slot hid the real membership: the app demanded an OTP that no longer exists, while the passphrase and the wraps hang on the real entry. The rule now: a verify key beats an invitation slot, and a slot resolves only when it is the single match (the OTP posture for genuinely new invitees stays).'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-17T20:34:31.959531022Z
+  text: 'Umgesetzt in member_key_for_any (joy-core privacy): eingerichtete Mitglieder gewinnen vor offenen Einladungs-Slots, unabhängig von der Kandidaten-Reihenfolge. Test auf genau Rolands Konstellation (Alias-Gründer plus liegengebliebene Selbst-Einladung). Commit ced5af0; auf Integrate deployt und für Rolands Projekt wirksam.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-20T05:22:20.085075421Z
+  text: 'Coverage audit 2026-08-20: now covered by joy/tests/integration/forge_alias.bats, case "an enrolled member wins over an open invitation for the same person", written today and mutation-checked.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-31T15:38:23.307279011Z
+  text: 'State in English for the record (2026-08-31): delivered in member_key_for_any (joy-core privacy) - enrolled members win over open invitation slots regardless of the candidate order, with a test on exactly Roland''s constellation (an alias founder plus a leftover self-invitation). Commit ced5af0, deployed to integrate and effective for his project. Now covered by joy/tests/integration/forge_alias.bats, case ''an enrolled member wins over an open invitation for the same person'', written and mutation-checked on 2026-08-20.'

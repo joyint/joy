@@ -1,5 +1,5 @@
 id: JOY-00C2-DC
-title: 'SKILL.md Parser: HTML-Kommentar vor YAML-Frontmatter bricht Qwen Code Skill-Loading'
+title: 'SKILL.md parser: an HTML comment before the YAML frontmatter breaks Qwen Code''s skill loading'
 type: bug
 status: closed
 priority: high
@@ -11,7 +11,9 @@ capabilities:
 effort: 2
 created_by: ai:qwen@joy
 created: 2026-03-31T23:53:49.190175923Z
-updated: 2026-04-01T19:20:49.634058783Z
+updated: 2026-08-31T15:19:45.861017967Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'The SKILL.md that Joy generates began with an HTML comment BEFORE the YAML frontmatter. Qwen Code''s parser expects the file to start with --- at line one, character one (its regex is anchored with ^), so the comment prevented the parsing. The fix is to move the HTML comment AFTER the frontmatter. Affected component: the Joy CLI''s SKILL.md template generation (ai setup, skill export). Test: generate the skill, copy it into .qwen/skills/, restart Qwen Code, and /skills joy should load. The skill does not have to live in ~/.qwen/skills/; the project-local .qwen/skills/ works too. Mistral Vibe is affected as well, because its skill parser also expects the frontmatter at the start of the file.'
 comments:
 - author: ai:qwen@joy
   date: 2026-03-31T23:54:00.174488300Z
@@ -72,3 +74,6 @@ comments:
     [x] CLI refactor: setup (new tools only), update (refresh files), update --check (status), check (deprecated alias)
     [x] 10 new BATS integration tests, 33 updated unit tests
     [x] 241 cargo tests + 141 BATS tests passing
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-31T15:19:45.860916086Z
+  text: 'State in English for the record (2026-08-31), replacing the German report. Delivered, and wider than the report: the version comments are gone from all seven templates, the joy_version parameter is out of the render functions and content hashing replaced extract_version, a new ai_manifest.rs tracks the generated files by SHA-256 at .joy/ai/manifest.yaml, and the CLI is split into setup (new tools only), update (refresh files) and update --check (status), with check kept as a deprecated alias. 10 new bats tests, 33 updated unit tests, 241 cargo tests and 141 bats tests passing.'

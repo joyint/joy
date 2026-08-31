@@ -1,0 +1,25 @@
+id: JOY-0257-FC
+title: The OTP finds its member by itself
+type: story
+status: review
+priority: high
+parent: JOY-0251-AA
+assignees:
+- member: ai:claude@joy
+capabilities:
+- plan
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-08-09T08:42:11.161355201Z
+updated: 2026-08-31T15:38:22.955942601Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'On redemption (joy auth --otp, and the platform redeem) the member is found through the invitation verifier rather than the git or account address: whoever holds a valid OTP IS the invited person (operator, 2026-08-09). That makes setup work with an alias git configuration too, with no forge and no plugin. It does NOT replace the alias resolution: later commands still resolve over the git address (JOY-0253-8A). Security: the verifier scan runs only over members with an open invitation, the OTP stays high-entropy, and failed attempts are handled as before.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-20T05:22:19.922219383Z
+  text: 'Coverage audit 2026-08-20: covered end to end by joy/tests/integration/attestation.bats:134.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-08-31T15:38:22.955940316Z
+  text: 'State in English for the record (2026-08-31): in review, covered end to end by joy/tests/integration/attestation.bats:134.'
