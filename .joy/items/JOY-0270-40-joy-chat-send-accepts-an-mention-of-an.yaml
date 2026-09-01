@@ -1,7 +1,7 @@
 id: JOY-0270-40
 title: joy chat send accepts an @mention of an AI member that nobody will answer
 type: bug
-status: review
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -10,6 +10,6 @@ capabilities:
 - review
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-29T22:44:38.884903222Z
-updated: 2026-08-29T22:46:28.374990203Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-01T15:34:43.776433018Z
+updated_by: horst.schwarz@joydev.com
 description: 'mps-netbrain-demo, 2026-08-29 21:47Z: ''@vibe wie spät ist es?'' sent with joy chat send reached the web app, and ai:vibe@joy never answered. An AI turn is started by the client that sends the message, under the sender''s delegation (web app: the platform host, desktop app: the local host); the CLI has no chat session and no turn host, so a mention from it can never be answered, and the sender learns nothing. Decision (Horst, 2026-08-30): the CLI refuses a message that mentions an AI member of the project, naming the reason, instead of sending a mention into the void. Platform side: JP-00FC-9B (closed in favour of this).'
