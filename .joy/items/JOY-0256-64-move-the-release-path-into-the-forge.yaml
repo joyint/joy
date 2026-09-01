@@ -1,7 +1,7 @@
 id: JOY-0256-64
 title: Move the release path into the forge contract
 type: story
-status: review
+status: closed
 priority: medium
 parent: JOY-0251-AA
 assignees:
@@ -13,8 +13,8 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-09T08:32:49.903367572Z
-updated: 2026-08-31T15:37:41.080592845Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-01T15:25:25.950185028Z
+updated_by: horst.schwarz@joydev.com
 description: ForgeRelease (joy-cli/src/forge.rs, shelling out to gh) and the URL classification (vcs.rs parse_forge_from_url) are absorbed into the plugin contract (the plugin's release capability, and claims), so that no second body of forge knowledge is left in joy-core.
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
