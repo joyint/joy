@@ -1,7 +1,7 @@
 id: JOY-025D-99
 title: 'Documentation: forge plugins on a workstation'
 type: task
-status: review
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -10,8 +10,8 @@ capabilities:
 effort: 1
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-19T05:18:47.212597924Z
-updated: 2026-08-31T15:38:56.192722510Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-01T15:28:09.345661870Z
+updated_by: horst.schwarz@joydev.com
 description: 'Horst asked on 2026-08-19 why there is an example configuration for the platform only. The answer: locally there is nothing to configure, because the plugin reads the forge CLI''s own configuration (gh, glab, tea). Exactly that was written nowhere. docs/plugins.md now explains the workstation case - install the plugin, sign in with the forge CLI, done - with joy project set forge as the only lever, for instances with no local sign-in; the server case points at .env.example.'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
