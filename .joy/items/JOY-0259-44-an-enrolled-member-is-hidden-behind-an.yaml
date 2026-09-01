@@ -1,7 +1,7 @@
 id: JOY-0259-44
 title: An enrolled member is hidden behind an open invitation
 type: bug
-status: review
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -11,8 +11,8 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-17T20:34:22.582409560Z
-updated: 2026-08-31T15:38:23.307279860Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-01T15:25:47.949543923Z
+updated_by: horst.schwarz@joydev.com
 description: 'Roland''s finding of 2026-08-17: when an account''s address set contains both the real, enrolled member entry and a never-redeemed invitation under another address of the same person, the accidental order of the candidates decided which won. The empty invitation slot hid the real membership: the app demanded an OTP that no longer exists, while the passphrase and the wraps hang on the real entry. The rule now: a verify key beats an invitation slot, and a slot resolves only when it is the single match (the OTP posture for genuinely new invitees stays).'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
