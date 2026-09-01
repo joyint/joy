@@ -1,7 +1,7 @@
 id: JOY-024D-3C
 title: Typed content through collector, TurnActivity and the live wire
 type: story
-status: open
+status: new
 priority: high
 parent: JOY-024B-AC
 capabilities:
@@ -11,6 +11,6 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-02T10:50:32.399608339Z
-updated: 2026-08-02T10:50:32.871812407Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-01T15:36:08.504934156Z
+updated_by: horst.schwarz@joydev.com
 description: 'joy-ai: Collected stops concatenating a String reply and folds typed parts; TurnActivity and WireActivity carry content kinds beyond text. The live wire stays lean: base64 media never rides the bus or the Tauri event; live events carry kind, MIME, name and size (reference or thumbnail), the persisted message carries the media. The lane''s ordering and drain contract (JOY-0249-D2) is unchanged. Replaces the interim content-info rows.'
