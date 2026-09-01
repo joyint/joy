@@ -1,7 +1,7 @@
 id: JOY-0249-D2
 title: Live stream shows a stray second answer bubble that the store never gets
 type: bug
-status: review
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -11,8 +11,8 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-02T07:36:03.556987905Z
-updated: 2026-08-20T05:22:19.256334890Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-01T15:15:26.288555104Z
+updated_by: horst.schwarz@joydev.com
 description: 'Validation on app.int.joyint.com (v0.3.0 web, platform 0.4.0, project demo-calc, chat ''0.3.0 val''): after vibe''s real answer plus one tool step, a second ai:vibe bubble appeared containing only ''.'', rendered without timestamp and without the level line. After leaving and reopening the chat the bubble was gone, so the message never reached the store; it existed only on the live stream. Likely the lane forwards a trailing agent chunk (mistral models like to emit a lone ''.'') after the final answer, the client renders it as a new message, and the persist path drops it. Suppression belongs at the source, same family as JOY-023A-4B. No logs or traces available from titan (project container runs without telemetry, booked separately).'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
