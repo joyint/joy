@@ -1,7 +1,7 @@
 id: JOY-0265-D7
 title: Four places touch git instead of one engine
 type: rework
-status: review
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -11,8 +11,8 @@ capabilities:
 effort: 5
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-26T08:59:32.486127031Z
-updated: 2026-08-31T15:38:56.733995180Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-01T15:28:39.882464594Z
+updated_by: horst.schwarz@joydev.com
 description: 'Git work on a repository is implemented four times today: (1) joy-core''s vcs.rs shells out to the git CLI (trait Vcs, ADR-017, JOY-003E) and can neither fetch nor fast-forward nor merge; (2) joy-chat-store''s chat_ref uses git2 for refs/joy/chats; (3) the platform has its own git2 layer in src/git/mod.rs (fetch, fast-forward, merge, push, chats, worktrees); (4) the desktop app has a third git2 layer in src-tauri/git_ops.rs that duplicates a subset of the platform''s logic. The consequences were shown on 2026-08-26 (demo-calc on halcyon): the desktop sync does not know the platform''s YAML-aware merge, hangs on divergence and contradicts ADR JAPP-00D8, under which divergence is the normal case for write-behind.'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
