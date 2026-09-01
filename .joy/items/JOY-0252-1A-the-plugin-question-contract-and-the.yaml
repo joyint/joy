@@ -1,7 +1,7 @@
 id: JOY-0252-1A
 title: The plugin question contract and the forge plugin registry
 type: story
-status: review
+status: closed
 priority: high
 parent: JOY-0251-AA
 assignees:
@@ -13,8 +13,8 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-09T08:32:49.385073344Z
-updated: 2026-08-31T15:37:40.733474691Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-01T15:16:44.441400090Z
+updated_by: horst.schwarz@joydev.com
 description: 'Extend docs/plugins.md with the question contract: joy-<name> claims --remote <url> (JSON yes or no) and joy-<name> identity [--unresolved-email <a>] [--login, --user-id, --token-env for what a server supplies] (JSON: login, id, addresses[], or ''unknown''). A registry after the adapter pattern (joy_ai::adapters, one data row per forge plugin) in joy-core; project.yaml''s forge: stays the operator''s override. No forge knowledge outside the plugins.'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
