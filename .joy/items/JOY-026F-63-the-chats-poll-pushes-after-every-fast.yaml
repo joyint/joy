@@ -1,7 +1,7 @@
 id: JOY-026F-63
 title: The chats poll pushes after every fast-forward pull, delivering nothing
 type: bug
-status: review
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -10,6 +10,6 @@ capabilities:
 - review
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-29T19:18:26.985331468Z
-updated: 2026-08-29T19:18:27.349872654Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-01T15:34:34.975259295Z
+updated_by: horst.schwarz@joydev.com
 description: 'int spans, 2026-08-29 18:59Z: poll_once in joy-chat-store pushed the chats ref after each pull that merely fast-forwarded, so local == remote and the push carried nothing; at Codeberg every such push took 2.3 s and a throttle slot, twice per chat opened (platform side: JP-00FA-FF). A healing push is only due when the local ref carries commits the forge lacks.'
