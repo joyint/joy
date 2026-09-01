@@ -1,7 +1,7 @@
 id: JOY-025A-3A
 title: 'Publish the plugin crates: joy-github, joy-gitlab, joy-bi'
 type: task
-status: review
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -10,8 +10,8 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-19T03:13:30.923201261Z
-updated: 2026-08-31T15:38:23.483811872Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-01T15:25:54.208434492Z
+updated_by: horst.schwarz@joydev.com
 description: 'Found during the backlog reconciliation on 2026-08-19 (Horst''s decision: the plugins should be publicly usable). The three new workspace members are neither in the justfile''s publish list nor marked publish = false, and not in release.version-files either, so a release would neither version nor upload them. To do: extend the publish list (joy-bi after joy-core, the two forge plugins without an internal dependency), make the metadata publishable (license instead of a license-file path outside the crate, repository and homepage as the others have, and a version on joy-bi''s joy-core dependency) and align the versions with the family.'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
