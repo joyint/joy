@@ -56,3 +56,5 @@
 2026-09-01T15:35:53.199Z JOY-024F-4B item.status_changed "open -> new" [horst.schwarz@joydev.com]
 2026-09-01T15:36:08.564Z JOY-024D-3C item.status_changed "open -> new" [horst.schwarz@joydev.com]
 2026-09-01T15:36:30.508Z JOY-024B-AC item.status_changed "open -> new" [horst.schwarz@joydev.com]
+2026-09-01T15:50:20.271Z JOY-009A item.updated [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-09-01T15:50:20.353Z JOY-009A comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

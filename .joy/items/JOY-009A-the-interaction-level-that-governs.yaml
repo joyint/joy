@@ -1,0 +1,37 @@
+id: JOY-009A
+title: The interaction level that governs work on an item is nowhere to be seen
+type: story
+status: new
+priority: medium
+parent: JOY-0029
+deps:
+- JOY-0187-D0
+milestone: JOY-MS-02
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created_by: horst.schwarz@joydev.com
+created: 2026-03-30T18:46:02.970060899Z
+updated: 2026-09-01T15:50:20.346366057Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Before anyone starts on an item - a person or an AI - they need to know which interaction level governs that work, and where that level comes from. Today the answer is scattered: joy show prints the item's own level and the clamp of the assignee's capability floor, joy config get returns the project default, the project view lists the per-capability defaults and floors, the personal levels of the calling account live on the platform, and a chat can hold its own override. Nobody can see the resolved answer for one item, per member, with its origin and with the level's meaning in plain words, which is exactly what an AI needs at the start of a session and what a person needs before delegating.
+
+  The resolution itself exists: joy_core::model::project::resolve_interaction_level returns the level together with its source, and joy-ai and joy project already use it. What is missing is the place where that answer is shown.
+
+  The item's earlier text spoke of modes, a max-mode and ADR-025; the axis is the interaction level of JI-0166-D8, with the per-capability floors and the personal levels of JP-0099-66. How the answer is surfaced is open and is decided before the work starts.
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-03-30T18:46:08.711854621Z
+  text: 'New command joy mode <ID> to inspect effective interaction levels per member per item. Flags: --mine (all statuses for caller), --member <id> (all statuses for a member), --status <status> (filter to a specific status). Combinable. Default (no flags): current status, all members. Output follows Joy UI standard: full-width header/footer, dimmed annotations. The AI uses joy mode <ID> --mine to determine how to interact. Resolves all four layers (project defaults, project overrides, personal preference, item override) clamped by max-mode. See ADR-025 for resolution logic.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-14T22:04:47.707140767Z
+  text: Renamed from `joy mode` to `joy ai mode` to keep the AI-targeted CLI surface under the `joy ai` namespace, consistent with `joy ai init`, `joy ai reset`, `joy ai rotate`, `joy ai tutorial`. The output must include the level description so the AI does not need to consult an external document just to act on the resolved value.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-05-14T22:07:01.446240647Z
+  text: 'Reverted to `joy mode` (not `joy ai mode`). Reasoning: this is item-attribute inspection, same shape as `joy show <ID>`, `joy edit <ID>`, etc. Both humans and AIs run it. The `joy ai` namespace is reserved for AI-tool integration setup.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-01T15:50:20.346365174Z
+  text: 'Rewritten on 2026-09-01 after Horst asked whether it is still current. The need stands - nothing shows the resolved level for an item per member - but the text was of its time: modes instead of interaction levels, a max-mode instead of the per-capability floor, ADR-025 instead of JI-0166-D8, four layers instead of today''s five, and a command shape (joy mode with its flags) decided in advance. The description now carries the need and what already exists; the surface stays open.'
