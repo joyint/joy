@@ -1,7 +1,7 @@
 id: JOY-0269-BC
 title: joy chat asks for the passphrase on every command although a session is active
 type: bug
-status: review
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -11,6 +11,6 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-29T05:54:53.770942869Z
-updated: 2026-08-29T06:16:36.469893851Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-01T15:32:47.980849390Z
+updated_by: horst.schwarz@joydev.com
 description: 'Horst, 2026-08-29 on mps-netbrain-demo: ''joy auth'' says ''Authenticated ... Session active (24h)'', yet every ''joy chat send/ls'' asks for the passphrase again (and a mistyped one ends in ''crypto error: incorrect passphrase''). Requirement: for chat commands the session must suffice, exactly like for every other joy command; the passphrase is asked only when there is no session.'
