@@ -1,15 +1,15 @@
 id: JOY-0251-AA
 title: 'Forge plugins: joy-<forge> binaries with a question contract'
 type: epic
-status: new
+status: closed
 priority: high
 capabilities:
 - conceive
 - plan
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-09T08:32:21.851003633Z
-updated: 2026-08-31T15:37:40.557801759Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-01T15:25:38.418066311Z
+updated_by: horst.schwarz@joydev.com
 description: 'Generalising the plugin pattern (joy-bi, docs/plugins.md) to forges, prompted by JP-00BF-94, where GitHub alias addresses take the identity apart. Cornerstones (operator, 2026-08-09): (1) forge knowledge lives ONLY in the plugin and joy-core knows nothing but a neutral protocol; (2) central for every host - CLI, desktop and platform call the same binary under the same joy-core rule, and the hosts only supply caller facts (the server the login, id and token from the session; locally the plugin finds them itself through the gh or glab configuration); (3) without a forge (a local repository) NOTHING changes, the hook being a pure no-match fallback; (4) multi-forge from day one (joy-github, joy-gitlab); (5) the git author stays untouched.'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com

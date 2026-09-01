@@ -1,7 +1,7 @@
 id: JOY-0258-59
 title: A magic-link e-mail as a door into the account
 type: story
-status: review
+status: closed
 priority: medium
 parent: JOY-0251-AA
 assignees:
@@ -13,8 +13,8 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-09T18:50:10.744078341Z
-updated: 2026-08-31T15:38:23.132408753Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-01T15:25:38.233477337Z
+updated_by: horst.schwarz@joydev.com
 description: 'Operator, 2026-08-09, per the ''Joy identity'' document (docs.int.joydev.com/doc/joy-identitat-hm9930cQC3): an e-mail address can be set up in the platform in two steps (give the address, click the confirmation link). From then on it serves for signing in by magic link and for recovering the account (the case being that the only forge was cancelled, while subscription and data hang on the account UUID and survive). The address is a DOOR, not an identity: project work still needs the member resolution, and registering or syncing still needs a forge identity in practice. No identity check is needed, because the payment provider checks the payer for the subscription.'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
