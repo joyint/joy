@@ -1,7 +1,7 @@
 id: JOY-0274-A8
 title: joy chat ls shows the long chat id first; the short form people type is missing
 type: task
-status: review
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -9,6 +9,6 @@ capabilities:
 - implement
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-30T05:41:36.464650704Z
-updated: 2026-08-30T05:47:10.186361501Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-01T15:35:10.616535725Z
+updated_by: horst.schwarz@joydev.com
 description: 'Horst, 2026-08-30: joy chat ls prints MPS-CHAT-0010-BB in the first column. The form people type in commands and see in the apps'' sidebar is the number (10, suffix only on collision). Requirement: the first column is the short id, the full id next to it.'
