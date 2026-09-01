@@ -1,7 +1,7 @@
 id: JOY-025F-0B
 title: The forge alias suite covers the open customer cases
 type: task
-status: review
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -10,8 +10,8 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-20T05:22:52.381961590Z
-updated: 2026-08-20T05:23:00.156535419Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-01T15:28:27.312188612Z
+updated_by: horst.schwarz@joydev.com
 description: 'Coverage audit of the items in review (2026-08-20): the forge and alias items all hung on one happy path in forge_alias.bats, and each item had a claim nobody tested. Six new cases close that, all on the real product path with the forge CLI as the only marked stub: an enrolled member wins over an open invitation for the same person even when the forge names the invited address first (JOY-0259-44, the reported case); GitHub''s older privacy address without a numeric id (JOY-0254-3C); an Enterprise host taken from gh''s own config is claimed and a lookalike host is not (JOY-025C-A7); a GitLab alias resolves through joy-gitlab with a new glab stub (JOY-0255-B3); joy auth --user carries through to the session lookup (JOY-0253-8A). Both central rules were mutation-checked, so the tests are known to bite.'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
