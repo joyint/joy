@@ -1,7 +1,7 @@
 id: JOY-0253-8A
 title: 'joy-core: alias resolution as a no-match fallback'
 type: story
-status: review
+status: closed
 priority: high
 parent: JOY-0251-AA
 assignees:
@@ -13,8 +13,8 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-09T08:32:49.520127792Z
-updated: 2026-08-31T15:37:40.906651664Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-01T15:17:04.614612885Z
+updated_by: horst.schwarz@joydev.com
 description: 'At the one funnel point (the callers of privacy::member_key_for_email: identity.rs, enroll, login, the guard paths): when the git address matches no member, ask the registered forge plugins the claims question over the remote URLs, then the identity question of the plugin that claims them, and run the returned candidates through the same member resolution unchanged. The result is cached per run. Without remotes, plugins or a claim, behaviour is unchanged (local repositories). If the resolution fails despite a recognised candidate, give an honest instruction instead of the ''not a member'' riddle. The git author stays untouched. The --user repair: the session is stored AND looked up under the resolved key (today it is stored under the primary address and looked up under the alias).'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
