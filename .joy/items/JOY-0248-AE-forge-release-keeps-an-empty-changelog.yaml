@@ -1,7 +1,7 @@
 id: JOY-0248-AE
 title: Forge release keeps an empty changelog when the dist workflow wins the race
 type: bug
-status: review
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -11,8 +11,8 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-31T20:35:39.744356735Z
-updated: 2026-08-20T06:14:18.890398125Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-01T15:14:53.631052032Z
+updated_by: horst.schwarz@joydev.com
 description: 'joy release publish is idempotent on an existing forge release, but only returns its URL: when the tag push triggers the dist workflow first (exactly what happened for v0.20.0 after the crates upload failed and publish was retried), the release exists with just the installer section and the whole changelog is silently dropped. Fix: when the release already exists, fetch its body and prepend the rendered notes unless they are already present, via gh release edit.'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
