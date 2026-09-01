@@ -1,7 +1,7 @@
 id: JOY-024C-97
 title: Typed message parts and sealed attachments in the chat model and store
 type: story
-status: review
+status: closed
 priority: high
 parent: JOY-024B-AC
 assignees:
@@ -13,8 +13,8 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-02T10:50:32.267419179Z
-updated: 2026-08-20T05:22:19.419823633Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-01T15:16:03.482078131Z
+updated_by: horst.schwarz@joydev.com
 description: 'joy-chat: ChatMessage grows content PARTS (text, image, audio, embedded resource, resource link) with the text field staying the markdown backbone; attachments are sealed blobs in the chats ref next to the message, addressed per part, with hard size caps (media in a git ref needs limits) and an honest refusal above them. Store: seal/unseal of attachment blobs under the existing chat crypt epochs; migration for existing chats (none carry parts, so read-side tolerance only per ADR JOY-0244-9E); wasm bindings so the client can open parts. CLI: joy chat rendering names non-text parts.'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
