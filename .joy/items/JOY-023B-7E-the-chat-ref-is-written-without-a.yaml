@@ -1,7 +1,7 @@
 id: JOY-023B-7E
 title: The chat ref is written without a compare-and-swap, so concurrent saves orphan each other
 type: bug
-status: review
+status: closed
 priority: critical
 assignees:
 - member: ai:claude@joy
@@ -11,8 +11,8 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-27T16:47:48.975636058Z
-updated: 2026-08-31T15:20:48.992244282Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-01T15:13:39.291764880Z
+updated_by: horst.schwarz@joydev.com
 description: 'Found while investigating a 39 MB .git in a sandbox project with maybe 200 messages (operator 2026-07-27). chat_ref::commit_root calls repo.commit(Some(CHATS_REF), ...), which makes libgit2 SET the ref, not compare-and-swap it. Two saves that read the same tip therefore both commit a child of it and the last writer silently wins: the loser commit is orphaned AND the events it carried are not in the surviving tree. The desktop saves on every message, every participant add and every read marker, plus the sync worker, so the race is not exotic. Evidence from the operator project: 761 commits total, of which 505 are unreachable, and 22 of the 39 MB are unreachable objects (1804 trees). Fix: build the commit without a ref update and move the ref with a compare-and-swap against the tip that was read (git2 reference_matching), retrying the whole save on mismatch so the loser folds its events onto the winner instead of vanishing.'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
