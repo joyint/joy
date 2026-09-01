@@ -1,7 +1,7 @@
 id: JOY-0254-3C
 title: 'joy-github: erstes Forge-Plugin'
 type: story
-status: review
+status: closed
 priority: high
 parent: JOY-0251-AA
 assignees:
@@ -13,8 +13,8 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-09T08:32:49.647638213Z
-updated: 2026-08-20T05:22:19.752996111Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-01T15:25:12.849697677Z
+updated_by: horst.schwarz@joydev.com
 description: 'Workspace-Crate joy-github nach BI-Muster. claims: erkennt github.com-Remotes. identity: parst <id>+<login>@users.noreply.github.com und die Alt-Form <login>@users.noreply.github.com; Fakten lokal aus ~/.config/gh/hosts.yml (offline: login) und gh api user/emails (wenn Scope vorhanden); auf dem Server aus zugelieferten Aufrufer-Fakten. Read-only, ein JSON auf stdout.'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
