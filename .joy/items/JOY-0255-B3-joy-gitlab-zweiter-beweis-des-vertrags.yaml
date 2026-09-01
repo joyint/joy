@@ -1,7 +1,7 @@
 id: JOY-0255-B3
 title: 'joy-gitlab: zweiter Beweis des Vertrags'
 type: story
-status: review
+status: closed
 priority: medium
 parent: JOY-0251-AA
 capabilities:
@@ -11,8 +11,8 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-09T08:32:49.774741081Z
-updated: 2026-08-20T05:22:19.838185932Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-01T15:25:19.088438672Z
+updated_by: horst.schwarz@joydev.com
 description: Gleicher Vertrag, GitLab-Aliasform (<id>-<username>@users.noreply.gitlab.com), Fakten aus glab-Konfiguration bzw. Server-Zulieferung. Beweist, dass der Vertrag ohne joy-core-Aenderung traegt.
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
