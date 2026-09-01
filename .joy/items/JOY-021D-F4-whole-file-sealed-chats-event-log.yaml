@@ -1,7 +1,7 @@
 id: JOY-021D-F4
 title: 'Whole-file sealed chats: event log + anonymous wraps (core)'
 type: story
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -11,11 +11,10 @@ capabilities:
 - review
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-19T10:14:16.865727059Z
-updated: 2026-07-19T10:14:17.144663101Z
+updated: 2026-09-01T15:29:38.420550910Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history:
-- date: 2026-07-19T10:14:16.951661985Z
-  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-- date: 2026-07-19T10:14:17.144663101Z
-  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'ADR JAPP-002A-30 clarified (whole file encrypted, not just content). joy-core foundation: (1) chat_events.rs - append-only sealed event model with HLC/LWW stamps, order-independent fold (events -> Chat) and diff (Chat -> delta), so whole-file encryption survives the keyless blind merge of refs/joy/chats (concurrent field edits no longer clobber); (2) chat_wrap.rs - anonymous ephemeral-sender content-key wraps (108-byte uniform slots, no member id/verify_key/epoch in plaintext, decoy-paddable), reusing pairwise_kek + wrap verbatim. Next: storage cutover (chat_ref), epochs/cover, migration, read markers, CLI, server gate, lock UX.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-01T15:29:38.291101422Z
+  text: 'Checked against the code on 2026-09-01: delivered, and the crate split moved it. The foundation lives in joy-chat: chat_events.rs with the HLC stamps and the order-independent fold and diff, chat_wrap.rs with anonymous 108-byte slots that carry no recipient id, no verify key and no epoch in plaintext, plus decoy slots. The follow-ups this description lists (storage cutover, migration, read markers, CLI, server gate, lock UX) shipped with the sealed chat under their own items.'

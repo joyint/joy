@@ -1,7 +1,7 @@
 id: JOY-021E-B0
 title: Job session files accumulate across rounds (stale-session replay)
 type: bug
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -10,15 +10,13 @@ capabilities:
 - review
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-19T11:22:49.735319434Z
-updated: 2026-07-19T11:36:36.341749195Z
+updated: 2026-09-01T15:29:52.925427261Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history:
-- date: 2026-07-19T11:22:49.877157521Z
-  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-- date: 2026-07-19T11:22:50.014321738Z
-  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'AI sessions are stored in per-session files keyed by (project, member, session_public_key). A job round mints a fresh ephemeral session each round, so successive rounds of the SAME job left multiple session files in the sandbox state dir instead of one, and a prior round''s session lingered valid (replay surface). Fix: session_storage_id keys a JOB-BOUND session (claims.job_id present) by (project, member, job), so a re-mint per round displaces the previous round''s file. Chat sessions (no job_id) keep per-session files so an AI can hold several chats at once. Surfaced by the platform job runner tests (exactly-one-session assertion).'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-07-19T11:36:36.341748267Z
   text: 'Corrected: keeping AI sessions PER-SESSION (session_public_key) is right (JOY-01E1-E7): each survives and is independently restorable, and the session is bound to its job by claims.job_id. The job-keying attempt broke the job_session_mint integration test (which just check does not run: it is --lib only, CI runs cargo test --workspace). Real fix lives on the platform side: the stale exactly-one-session-file assertions in the job runner/watch tests expected displacement; relaxed to present-at-least-once for the per-session design.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-01T15:29:52.796476530Z
+  text: 'Checked on 2026-09-01: nothing is left to do here. The joy-side keying attempt was withdrawn on the day itself (see the comment above): keeping AI sessions per session public key is the right design, and a job session is bound to its job through claims.job_id. session_storage_id in crates/joy-core/src/auth/session.rs still mixes in the ephemeral session, so the code matches that conclusion. The real change was on the platform side, where the job runner''s exactly-one-session assertions were relaxed to the per-session design.'
