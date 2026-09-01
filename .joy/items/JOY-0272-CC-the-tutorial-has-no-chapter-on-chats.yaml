@@ -1,7 +1,7 @@
 id: JOY-0272-CC
 title: The tutorial has no chapter on chats
 type: task
-status: review
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -9,6 +9,6 @@ capabilities:
 - implement
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-30T05:31:11.281825619Z
-updated: 2026-08-30T05:37:57.198061876Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-01T15:34:57.487657313Z
+updated_by: horst.schwarz@joydev.com
 description: 'Horst, 2026-08-30: chats (ls, show, send, info, ids like MPS-CHAT-0010 and their short forms, mentions of AI members and where they are answered, delegated sending with --session, how the CLI and the apps meet on the forge) are undocumented in the tutorial. Requirement: a chat chapter in the tutorial, terse and scannable like the rest.'
