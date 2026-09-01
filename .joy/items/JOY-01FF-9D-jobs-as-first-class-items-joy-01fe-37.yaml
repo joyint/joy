@@ -1,14 +1,17 @@
 id: JOY-01FF-9D
 title: Jobs as first-class items (JOY-01FE-37)
 type: epic
-status: new
+status: closed
 priority: high
 capabilities:
 - conceive
 - plan
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-11T15:15:31.123637816Z
-updated: 2026-07-11T15:15:31.123637816Z
+updated: 2026-09-01T21:00:40.995988312Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
 description: 'Implementation epic for decision JOY-01FE-37: job item type with multi-item scope, attempts data, jobs capability, stop verb. CLI-first; platform (JP) and app (JAPP) follow.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-01T21:00:40.995987449Z
+  text: 'Closed in the backlog sweep of 2026-09-01 (ordered by Horst): delivered. jobs as items are implemented across CLI, platform and app.'

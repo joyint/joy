@@ -1,7 +1,7 @@
 id: JOY-0235-42
 title: One permission policy for agent tool calls
 type: story
-status: new
+status: closed
 priority: critical
 tags:
 - plan-2026-07-26
@@ -12,7 +12,10 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-26T21:02:48.205060037Z
-updated: 2026-07-26T21:02:48.205060037Z
+updated: 2026-09-01T21:00:39.194535477Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
 description: 'JI-0179-4F step 2. The question "may this agent tool call run" was answered three times: the desktop streaming session had a per-mode match, the desktop chat turn had a kind allowlist, and the platform lanes had allow = is_joy or not-plan. The disagreements were bugs found one at a time; the plan-mode stranding (JAPP-0140-8B) was fixed on the desktop and still live on the platform, which rejected reads and switch_mode in plan mode. joy_chat::model::permission owns the rule now: joy invocations always allowed (operator 2026-07-21, with the hardened bare-command detection moved from the platform, chaining refused); everything non-mutating always allowed in every mode; mutations follow the mode (autonomous all, accept-edits edits only, plan none); unknown kinds count as mutating. The classification maps ACP wire names in this one module so no host classifies on its own. A Deny is escalatable: a host with a human attached asks, a host without one rejects.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-01T21:00:39.062886857Z
+  text: 'Closed in the backlog sweep of 2026-09-01 (ordered by Horst): delivered. Commits: joy 339c31f (2026-07-26) feat(chat): one permission policy for agent tool.'

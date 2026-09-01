@@ -1,12 +1,17 @@
 id: JOY-0045
 title: 'Forge: Gitea implementation'
 type: idea
-status: new
+status: closed
 priority: low
 parent: JOY-003F
 deps:
 - JOY-0042
 effort: 2
 created: 2026-03-22T22:08:20.225942026Z
-updated: 2026-03-22T22:08:34.180038554Z
+updated: 2026-09-01T21:00:34.247041220Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: Gitea implementation of the Forge trait. Releases API, auto-detect from known Gitea instances or API probe.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-01T21:00:34.118134796Z
+  text: 'Closed in the backlog sweep of 2026-09-01 (ordered by Horst): delivered. crates/joy-gitea exists (forge plugin).'

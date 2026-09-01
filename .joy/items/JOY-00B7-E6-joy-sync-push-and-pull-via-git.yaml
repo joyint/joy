@@ -1,7 +1,7 @@
 id: JOY-00B7-E6
 title: 'joy sync: push and pull via Git'
 type: story
-status: new
+status: closed
 priority: medium
 capabilities:
 - plan
@@ -10,5 +10,10 @@ capabilities:
 effort: 3
 created_by: horst.schwarz@joydev.com
 created: 2026-03-31T19:28:51.696755773Z
-updated: 2026-03-31T19:28:51.696755773Z
+updated: 2026-09-01T21:00:35.523683477Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Sync via git push/pull to a configured remote. Support --push, --pull, --auto flags. For BYOG: users can sync to GitHub, GitLab, Gitea, or joyint.com. Requires a Git remote to be configured. Migrated from JI-0024.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-01T21:00:35.391978676Z
+  text: 'Closed in the backlog sweep of 2026-09-01 (ordered by Horst): no longer current: the forge is the hub and the platform syncs (JP-00E1-CC); joy has no sync command.'

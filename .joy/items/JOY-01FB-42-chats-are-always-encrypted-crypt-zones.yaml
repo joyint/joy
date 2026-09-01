@@ -1,17 +1,20 @@
 id: JOY-01FB-42
 title: 'Chats are always encrypted: crypt zones for .joy/chats'
 type: epic
-status: new
+status: closed
 priority: high
 capabilities:
 - conceive
 - plan
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-05T06:43:01.750118Z
-updated: 2026-08-31T15:20:48.823999440Z
+updated: 2026-09-01T21:00:40.911792735Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Operator directive (2026-07-04): all chats are ALWAYS encrypted and decryptable only by their participants (crypt zones and grants per chat); signing in happens when a project is opened; and online too every chat is persisted encrypted (the web through wasm, the AI keys inside the container). Counterparts: JAPP-00C8-3E (app), JP-0064-C1 (platform). Built on the chat channel (message ids, JAPP-00C9-80): encryption per message with the zone key, and the merge filter keeps working because it is id-based.'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-08-31T15:20:48.823998563Z
   text: 'State in English for the record (2026-08-31): still new as an epic, while the substance has landed elsewhere - the sealed chat runs in the shared chat client of both hosts, sealed per participant, with the seed held in client memory (JAPP-0135-FD and the chat crypto work of 2026-07/08).'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-01T21:00:40.782023043Z
+  text: 'Closed in the backlog sweep of 2026-09-01 (ordered by Horst): delivered. the substance landed in the shared chat client: sealed per participant, seed in client memory (JAPP-0135-FD).'

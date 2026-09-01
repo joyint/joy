@@ -1,7 +1,7 @@
 id: JOY-0237-7C
 title: 'Live turn activity: one vocabulary for every host'
 type: story
-status: new
+status: closed
 priority: high
 tags:
 - plan-2026-07-26
@@ -12,7 +12,10 @@ capabilities:
 effort: 1
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-26T22:00:29.896938502Z
-updated: 2026-07-26T22:00:29.896938502Z
+updated: 2026-09-01T21:00:39.623962629Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
 description: 'JI-0179-4F step 4, the joy half. turn_engine::TurnActivity names what a running turn streams: chunk, thought, tool call, with the wire kinds turn-chunk, turn-thought, turn-tool. Hosts publish these WHILE their run_turn blocks (the platform on its chat bus, the desktop on a Tauri event) and the one channel renderer upgrades the waiting skeleton to the live turn view, whichever host streamed it (JI-0172-EE). Ephemeral like the pending markers; the persisted reply is the only truth.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-01T21:00:39.490543891Z
+  text: 'Closed in the backlog sweep of 2026-09-01 (ordered by Horst): delivered. Commits: joy 2206356 (2026-07-27) feat(ai): the live-activity vocabulary of a runn.'

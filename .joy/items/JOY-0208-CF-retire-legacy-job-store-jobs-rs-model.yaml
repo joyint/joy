@@ -1,7 +1,7 @@
 id: JOY-0208-CF
 title: retire legacy job store (jobs.rs, model/job.rs)
 type: task
-status: new
+status: closed
 priority: high
 parent: JOY-01FF-9D
 capabilities:
@@ -9,7 +9,10 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-11T15:15:58.792602758Z
-updated: 2026-07-11T15:15:58.792602758Z
+updated: 2026-09-01T21:00:37.996124615Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
 description: 'After the platform consumes job items + attempts: remove joy-core jobs.rs and model/job.rs (the parallel lifecycle: JobStatus, ReviewRound, approve/request_changes). Keep agents.rs (.joy/ai/agents stands per JOY-01EA-2C).'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-01T21:00:37.865107260Z
+  text: 'Closed in the backlog sweep of 2026-09-01 (ordered by Horst): delivered. joy-core jobs.rs and model/job.rs are gone.'

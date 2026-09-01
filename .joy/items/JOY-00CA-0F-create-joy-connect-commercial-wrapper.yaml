@@ -1,7 +1,7 @@
 id: JOY-00CA-0F
 title: Create joy-connect commercial wrapper crate
 type: rework
-status: new
+status: closed
 priority: medium
 capabilities:
 - implement
@@ -9,5 +9,10 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy
 created: 2026-04-08T16:21:34.268587303Z
-updated: 2026-04-08T16:21:34.268587303Z
+updated: 2026-09-01T21:00:36.375993026Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: Commercial crate wrapping joy-core with gRPC client stubs for Joyint platform services (ADR-031). Produces the Joyint-distributed binary.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-01T21:00:36.246421305Z
+  text: 'Closed in the backlog sweep of 2026-09-01 (ordered by Horst): no longer current: joy-connect was retired; the platform talks gRPC directly, there is no commercial wrapper crate.'

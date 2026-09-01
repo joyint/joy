@@ -1,7 +1,7 @@
 id: JOY-0236-87
 title: The activity block has one producer, in joy-ai
 type: story
-status: new
+status: closed
 priority: high
 tags:
 - plan-2026-07-26
@@ -12,7 +12,10 @@ capabilities:
 effort: 1
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-26T21:26:32.100336389Z
-updated: 2026-07-26T21:26:32.100336389Z
+updated: 2026-09-01T21:00:39.407624910Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
 description: 'JI-0179-4F step 3, the joy half. joy_ai::activity owns the v1 details shape the thread renders: thoughts, tool calls with their last status (normalized lowercase), answered permission round-trips. Three producers existed before: the platform chat lanes, the platform job rounds, and the desktop TypeScript, which rebuilt the shape from streamed events and handed it back down; a platform test tried to keep the copies equal by hand. Both platform builders delegate now, the desktop Rust side collects into this type during the streamed turn, and TypeScript keeps only the parser and the live view.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-01T21:00:39.277389862Z
+  text: 'Closed in the backlog sweep of 2026-09-01 (ordered by Horst): delivered. Commits: joy e18e6e7 (2026-07-26) feat(ai): one producer for the activity block [J.'

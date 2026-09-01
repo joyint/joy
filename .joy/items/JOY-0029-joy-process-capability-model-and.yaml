@@ -1,14 +1,18 @@
 id: JOY-0029
 title: 'Joy process: capability model and member management'
 type: epic
-status: new
+status: closed
 priority: high
 milestone: JOY-MS-03
 effort: 7
 created: 2026-03-22T16:18:33.917705816Z
-updated: 2026-04-30T21:23:22.603450087Z
+updated: 2026-09-01T21:00:40.700398158Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Implement the Joy process as defined in docs/dev/vision/JoyProcess.md. Covers Layer 1-4: capabilities, member management (humans/agents), multi-capability assignments, interaction levels, gates, jobs, and cost tracking. Each layer works without the next.'
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-30T05:35:54.338323346Z
   text: ADR-024 introduces data/process/ as structured YAML source for status flow, transitions, and gates. This data feeds into the AI generation pipeline (workflow.md, agent files). When implementing process model items, the YAML structures in data/process/ should be designed to serve both joy-core runtime logic and template rendering.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-01T21:00:40.568064508Z
+  text: 'Closed in the backlog sweep of 2026-09-01 (ordered by Horst): delivered. Commits: joy aa881c3 (2026-03-25) feat(core): capability model, member management,. capabilities, member management, interaction levels, gates, jobs and cost tracking all live in joy-core today.'

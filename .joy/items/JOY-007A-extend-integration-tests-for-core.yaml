@@ -1,7 +1,7 @@
 id: JOY-007A
 title: Extend integration tests for core workflows
 type: task
-status: new
+status: closed
 priority: medium
 parent: JOY-0061
 milestone: JOY-MS-02
@@ -9,8 +9,12 @@ capabilities:
 - implement
 effort: 3
 created: 2026-03-27T20:09:10.538973708Z
-updated: 2026-03-30T19:49:01.956872480Z
+updated: 2026-09-01T21:00:34.562025814Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 comments:
 - author: ai:claude@joy
   date: 2026-03-27T20:09:10.551164487Z
   text: 'Missing bats coverage for: edit (title, priority, parent, effort), deps (add, rm, cycle detection), milestones (add, link, show, rm), status transitions (full workflow new->closed, auto-close parent), rm (with confirmation, recursive), release workflow. Add incrementally as these areas are touched.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-01T21:00:34.425930868Z
+  text: 'Closed in the backlog sweep of 2026-09-01 (ordered by Horst): delivered. the bats suite has grown into every area this item listed.'

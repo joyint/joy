@@ -1,7 +1,7 @@
 id: JOY-023E-68
 title: An AI member on the CLI cannot read or write sealed chats
 type: bug
-status: new
+status: closed
 priority: high
 capabilities:
 - implement
@@ -9,7 +9,7 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-28T03:26:47.394894937Z
-updated: 2026-08-31T15:37:40.128437010Z
+updated: 2026-09-01T21:00:40.059601763Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Found while building chat test coverage, 2026-07-28.
@@ -31,3 +31,6 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-08-31T15:37:40.128434674Z
   text: 'State in English for the record (2026-08-31), replacing the German direction note. Horst''s direction of 2026-07-28: the platform''s workaround is not acceptable either - chat access has to run through the session key throughout. In his words: ''joy chat read --session'' decrypts everything the session key fits; without --session the same for the authenticated user; and when nobody is authenticated it asks for authentication and then decrypts everything that identity can open. Still new.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-01T21:00:39.925566748Z
+  text: 'Closed in the backlog sweep of 2026-09-01 (ordered by Horst): delivered. Commits: joy dba3b60 (2026-07-28) refactor(auth): one token, one key, no --crypt [; joy b175c13 (2026-07-28) docs(auth): the passphrase change re-wraps the s; joy 6652376 (2026-07-28) feat(chat): an AI reads its chats with its own s.'

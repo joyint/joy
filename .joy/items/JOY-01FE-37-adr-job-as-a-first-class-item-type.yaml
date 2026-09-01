@@ -1,17 +1,15 @@
 id: JOY-01FE-37
 title: 'ADR: job as a first-class item type (multi-item scope, attempts, jobs capability)'
 type: decision
-status: new
+status: closed
 priority: high
 capabilities:
 - conceive
+validity: accepted
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-11T14:28:59.397290401Z
-updated: 2026-07-11T18:57:28.035194588Z
+updated: 2026-09-01T21:00:37.783456678Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history:
-- date: 2026-07-11T18:57:28.035194588Z
-  by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   DECISION: Jobs are first-class Joy items of type `job`. A job is the assignment of work (to an AI or a human) over a scope of items, governed by the standard item machinery: six statuses, transition verbs, gates, priorities, deps, description, comments. The separate `.joy/ai/jobs` record model (own status enum, own review rounds, own approve/request-changes verbs) is retired.
 
@@ -59,3 +57,6 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-07-11T17:29:55.518990756Z
   text: 'Clarifications from the sandbox design discussion (2026-07-11, operator-approved): (1) Job agents never leave their container and never talk to the platform for writes - no ACP write back-channel; item state is written exclusively via the joy CLI (Guard/gates in-process) against a job-owned checkout of main (joywork/) inside the job workspace; code is edited in the branch worktree. (2) Agents commit their code themselves (they know when a unit is done); the platform validates after process exit (any branch commit touching .joy fails the attempt), pushes branch and .joy changes (no forge credentials in the container, completion = process exit, no polling). (3) AcceptJob refuses branches whose diff touches .joy. (4) The job branch is platform-owned and deterministic (joy/<member>/<job-id>), recorded per attempt; agents need no knowledge of it. (5) The app needs no branch switcher: review happens on the forge via the branch link from the latest attempt. (6) Enforcement lives at seams the platform owns (attempt end, merge), backend-agnostic across AgentRunner backends; container mounts may add hardening but never carry the policy (no sparse checkout - libgit2 lacks it).'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-01T21:00:37.630019226Z
+  text: 'Closed in the backlog sweep of 2026-09-01 (ordered by Horst): delivered. decision in force: jobs are items in CLI, platform and app.'

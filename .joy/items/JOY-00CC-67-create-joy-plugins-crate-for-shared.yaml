@@ -1,12 +1,17 @@
 id: JOY-00CC-67
 title: Create joy-plugins crate for shared plugin system
 type: task
-status: new
+status: closed
 priority: high
 capabilities:
 - implement
 effort: 3
 created_by: ai:claude@joy
 created: 2026-04-08T17:11:34.281286655Z
-updated: 2026-04-08T17:11:34.281286655Z
+updated: 2026-09-01T21:00:36.591907732Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: New crate in joy/crates/joy-plugins. Plugin discovery (~/.joy/plugins/), subprocess invocation with JSON, joy plugins add/list/remove commands, fallback message for missing plugins. Used by joy-cli, jot-cli, jon-cli.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-01T21:00:36.459633769Z
+  text: 'Closed in the backlog sweep of 2026-09-01 (ordered by Horst): delivered. the plugin system exists as joy-<name> binaries (docs/plugins.md; joy-bi, joy-github, joy-gitlab, joy-gitea), no separate crate needed.'

@@ -1,7 +1,7 @@
 id: JOY-0234-CD
 title: 'The chat turn engine: one loop in joy-ai for every host'
 type: story
-status: new
+status: closed
 priority: critical
 tags:
 - plan-2026-07-26
@@ -12,7 +12,10 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-26T20:41:35.098279824Z
-updated: 2026-07-26T20:41:35.098279824Z
+updated: 2026-09-01T21:00:38.977516706Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
 description: 'The joy half of JI-0179-4F step 1. turn_engine.rs owns the chat turn loop both hosts used to duplicate: the rounds, the decide choreography, the mention add, moderation, the usability notices (hosts answer with an enum, the engine formats the one sentence), level and mode resolution, the waiting-marker ordering (Start before the model runs, Done after the append), sanitize_reply, the withheld and error and budget wording, the execution record via turn_meta, and the append spec. Hosts implement the narrow TurnHost trait: load a chat, commit a write, run one agent turn, deliver an ephemeral event, answer capability questions. humanize_turn_error moved here from the platform with its tests; sanitize_reply moved into chat_turns with its tests the same day. Reviewable invariant downstream: no user-facing sentence in platform chat_ai.rs or desktop chat_ops.rs.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-01T21:00:38.845721236Z
+  text: 'Closed in the backlog sweep of 2026-09-01 (ordered by Horst): delivered. Commits: joy c82bc71 (2026-07-29) feat(ai): a turn without the sender''s delegation; joy 2514ff9 (2026-07-29) refactor(ai): the waiting marker only opens; the; joy c2335e6 (2026-07-28) fix(ai): the execution record gets one home agai.'

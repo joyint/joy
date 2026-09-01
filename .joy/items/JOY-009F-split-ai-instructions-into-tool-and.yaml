@@ -1,12 +1,17 @@
 id: JOY-009F
 title: Split AI instructions into tool and automation mode
 type: task
-status: new
+status: closed
 priority: high
 capabilities:
 - implement
 effort: 3
 created_by: horst.schwarz@joydev.com
 created: 2026-03-31T16:13:17.719959032Z
-updated: 2026-03-31T16:15:15.424284375Z
+updated: 2026-09-01T21:00:34.877831362Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Per ADR-026, split templates/ai/instructions.md into tool.md and automation.md. Extract shared content (workflow, capabilities, gates) to avoid duplication. Update joy ai setup with --mode parameter (default: tool). The mode is not stored in project config -- it only determines which instruction files are generated. Both rendered files must stay under 200 lines.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-01T21:00:34.743859633Z
+  text: 'Closed in the backlog sweep of 2026-09-01 (ordered by Horst): no longer current: the tool/automation split is superseded by the three interaction levels (JI-0166-D8) and the one tutorial.'

@@ -1,12 +1,17 @@
 id: JOY-00B8-95
 title: 'joy clone: clone project from remote'
 type: task
-status: new
+status: closed
 priority: medium
 capabilities:
 - implement
 effort: 2
 created_by: horst.schwarz@joydev.com
 created: 2026-03-31T19:28:51.719110956Z
-updated: 2026-03-31T19:28:51.719110956Z
+updated: 2026-09-01T21:00:35.738535259Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: Clone a project from a remote server URL. Download all items, milestones, config. Requires a Git remote. Migrated from JI-0025.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-01T21:00:35.607340981Z
+  text: 'Closed in the backlog sweep of 2026-09-01 (ordered by Horst): no longer current: the forge is the hub; a project is cloned with git, not with joy.'

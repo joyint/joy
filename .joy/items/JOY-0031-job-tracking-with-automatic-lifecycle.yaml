@@ -1,7 +1,7 @@
 id: JOY-0031
 title: Job tracking with automatic lifecycle
 type: story
-status: new
+status: closed
 priority: medium
 parent: JOY-0029
 deps:
@@ -10,9 +10,13 @@ deps:
 milestone: JOY-MS-03
 effort: 5
 created: 2026-03-22T16:19:52.733952156Z
-updated: 2026-03-30T19:49:08.633505575Z
+updated: 2026-09-01T21:00:33.456117731Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Job data model in joy-core, stored in .joy/jobs/ as YAML. A Job tracks: assignee (human: or agent:), item, capability, started/completed timestamps, and for agents: tokens_in, tokens_out, cost, currency. joy start auto-creates a job for the current user. joy close completes the job. Multiple jobs per item (one per capability, or multiple iterations). Jobs are the auditable record of who did what, when, and at what cost.'
 comments:
 - author: horst.schwarz@joydev.com
   date: 2026-03-25T18:06:43.119305452Z
   text: 'Confirmed in planning session 2026-03-25: Jobs are separate files in .joy/jobs/, never embedded in item YAML. joy show displays them in a visually separated footer section. This keeps one source of truth per fact: item data in the item file, job data in job files.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-01T21:00:33.323611925Z
+  text: 'Closed in the backlog sweep of 2026-09-01 (ordered by Horst): no longer current: replaced by jobs as items (JOY-01FE-37).'
