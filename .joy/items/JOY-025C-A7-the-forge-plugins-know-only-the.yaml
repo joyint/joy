@@ -1,7 +1,7 @@
 id: JOY-025C-A7
 title: The forge plugins know only the product domains, not their own instances
 type: bug
-status: review
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -11,8 +11,8 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-08-19T04:42:25.643514976Z
-updated: 2026-08-31T15:38:23.847333341Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-01T15:27:28.921902746Z
+updated_by: horst.schwarz@joydev.com
 description: 'Horst''s finding of 2026-08-19: joy-gitea claimed codeberg.org hardcoded, although Codeberg is only ONE Forgejo instance, while joy-github and joy-gitlab could not recognise GitHub Enterprise or self-hosted GitLab instances at all. The rule now, the same for all three: a plugin claims its own product domain plus every host this person''s forge CLI is signed in to (gh hosts.yml, glab config.yml, tea config.yml). Alias forms are no longer bound to a domain but to their shape. Instances with no sign-in still take the project.yaml forge override.'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
