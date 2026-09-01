@@ -1,7 +1,7 @@
 id: JOY-01F9-9E
 title: AI members participate in chats (turn rules in joy-core)
 type: epic
-status: review
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -11,8 +11,8 @@ capabilities:
 effort: 5
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-04T14:34:55.326656Z
-updated: 2026-08-31T15:20:48.647332461Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-01T15:14:25.728814608Z
+updated_by: horst.schwarz@joydev.com
 description: 'AIs are chat participants with full context: they answer only when @mentioned; between AIs at most two follow-up turns each since the last human message, then the system posts a notice (the leave-notice format) that a human must moderate on. Only the member who configured an AI (locally or with an API key) may address it — everyone else reads along until they configure it themselves (their use is then delegated-by them). The shared rule module (mention resolution against participants, the AI-chain guard, the moderation notice, the context prompt from the chat history) lives in joy-core so desktop and platform behave identically.'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
