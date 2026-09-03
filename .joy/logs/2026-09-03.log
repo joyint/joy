@@ -1,0 +1,3 @@
+2026-09-03T11:11:07.551Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-09-03T11:11:07.680Z JOY-0276-FA item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-09-03T11:11:25.792Z JOY-0276-FA item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

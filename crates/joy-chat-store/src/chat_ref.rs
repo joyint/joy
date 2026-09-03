@@ -484,9 +484,22 @@ pub fn deliver_detached(root: std::path::PathBuf, auth: joy_core::vcs::forge::Au
 /// commits the forge still needs (a later [`sync_with_forge`] delivers
 /// them).
 pub fn pull_from_forge(root: &Path, auth: &joy_core::vcs::forge::Auth) -> Result<bool, JoyError> {
-    joy_core::vcs::forge::fetch_ref(root, auth, CHATS_REF, CHATS_TRACKING_REF)
-        .map_err(|e| JoyError::Git(format!("chats fetch failed: {e}")))?;
+    fetch_from_forge(root, auth)?;
     reconcile_with_tracking(root)
+}
+
+/// The network half of [`pull_from_forge`] on its own: bring the forge's
+/// chat ref into [`CHATS_TRACKING_REF`] and touch nothing else. A host
+/// that serves readers while it syncs runs this WITHOUT the lock those
+/// readers wait on, and takes the lock only for
+/// [`reconcile_with_tracking`] (JP-0115-EC: a forge that does not answer
+/// must not stall reading). Returns what [`fetch_ref`] returns: whether
+/// the forge had the ref at all.
+///
+/// [`fetch_ref`]: joy_core::vcs::forge::fetch_ref
+pub fn fetch_from_forge(root: &Path, auth: &joy_core::vcs::forge::Auth) -> Result<bool, JoyError> {
+    joy_core::vcs::forge::fetch_ref(root, auth, CHATS_REF, CHATS_TRACKING_REF)
+        .map_err(|e| JoyError::Git(format!("chats fetch failed: {e}")))
 }
 
 /// The oid the FORGE's chat ref points at, without fetching anything

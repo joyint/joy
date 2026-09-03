@@ -1,0 +1,15 @@
+id: JOY-0276-FA
+title: A silent forge holds a contact for as long as it likes
+type: task
+status: in-progress
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-03T11:11:07.674396945Z
+updated: 2026-09-03T11:11:25.786139293Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Platform incident JP-0115-EC (2026-09-03): Codeberg''s proxy answered 504 after 30 seconds of silence, and libgit2 waited with it on every contact, because the engine sets no bound of its own; a host that serves readers while it syncs paid the full thirty per attempt. Also, the chat-ref pull runs network and reconcile as one call, so a host cannot run the network half outside the lock its readers wait on. Requirement: a forge that has not accepted the connection or has sent nothing for a bounded time is given up on; the chat-ref refresh offers its network half on its own.'

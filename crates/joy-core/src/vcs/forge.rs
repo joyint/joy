@@ -58,12 +58,37 @@ pub enum Auth {
     Local,
 }
 
+/// How long a forge contact waits on a silent forge, set once for the
+/// process (JP-0115-EC). Codeberg's own proxy answered 504 after 30
+/// seconds of silence on 2026-09-03, and until then libgit2 waited with
+/// it; every contact in the loop paid the full thirty. A forge that has
+/// not accepted the connection after ten seconds, or has sent nothing for
+/// fifteen, is not answering; a slow but living transfer keeps sending
+/// and is not touched by either bound. Both are socket bounds, not a cap
+/// on the transfer as a whole.
+fn bound_forge_waits() {
+    static BOUND: std::sync::Once = std::sync::Once::new();
+    BOUND.call_once(|| {
+        // SAFETY: libgit2 global options, set before any remote is opened
+        // and never changed afterwards; the Once serialises the one call.
+        unsafe {
+            if let Err(e) = git2::opts::set_server_connect_timeout_in_milliseconds(10_000) {
+                tracing::debug!(error = %e, "forge connect timeout not set");
+            }
+            if let Err(e) = git2::opts::set_server_timeout_in_milliseconds(15_000) {
+                tracing::debug!(error = %e, "forge socket timeout not set");
+            }
+        }
+    });
+}
+
 impl Auth {
     pub fn token(token: impl Into<String>) -> Self {
         Auth::Token(token.into())
     }
 
     fn callbacks(&self, config: Option<git2::Config>) -> git2::RemoteCallbacks<'static> {
+        bound_forge_waits();
         let mut callbacks = git2::RemoteCallbacks::new();
         match self {
             Auth::Token(token) => {
@@ -1636,6 +1661,50 @@ pub fn checkout_branch(repo_dir: &Path, branch: &str) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A forge that accepts the connection and then says nothing, the way
+    /// Codeberg's proxy did on 2026-09-03 before its own 504 at thirty
+    /// seconds: the fetch gives up on our socket bound (JP-0115-EC), not
+    /// on the forge's. The listener answers nothing for longer than the
+    /// bound, so the fetch's return is the bound firing.
+    #[test]
+    fn a_silent_forge_is_given_up_on_within_the_bound() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            // accept and hold every connection without a byte in reply
+            let mut held = Vec::new();
+            while let Ok((stream, _)) = listener.accept() {
+                held.push(stream);
+                if held.len() > 8 {
+                    std::thread::sleep(std::time::Duration::from_secs(60));
+                }
+            }
+        });
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(tmp.path()).unwrap();
+        let sig = git2::Signature::now("Seed", "seed@example.com").unwrap();
+        let tree = repo
+            .find_tree(repo.index().unwrap().write_tree().unwrap())
+            .unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "seed", &tree, &[])
+            .unwrap();
+        repo.remote("origin", &format!("http://127.0.0.1:{port}/silent.git"))
+            .unwrap();
+
+        let started = std::time::Instant::now();
+        let result = fetch_branch(tmp.path(), &Auth::token("x"));
+        let took = started.elapsed();
+        assert!(result.is_err(), "a silent forge cannot deliver a branch");
+        assert!(
+            took >= std::time::Duration::from_secs(10) && took < std::time::Duration::from_secs(25),
+            "gave up after {took:?}: expected the 15s socket bound, not the forge's timing"
+        );
+        assert_eq!(
+            unsafe { git2::opts::get_server_connect_timeout_in_milliseconds() }.unwrap(),
+            10_000
+        );
+    }
 
     /// Local end-to-end against a bare "forge" repo: clone, commit, push,
     /// pull. No network, real git2 semantics.
