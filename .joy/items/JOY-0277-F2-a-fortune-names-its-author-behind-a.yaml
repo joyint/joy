@@ -1,7 +1,7 @@
 id: JOY-0277-F2
 title: A fortune names its author behind a double hyphen
 type: bug
-status: in-progress
+status: review
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -11,6 +11,6 @@ capabilities:
 effort: 1
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-04T18:07:21.173395110Z
-updated: 2026-09-04T18:07:45.180486719Z
+updated: 2026-09-04T18:21:49.917536550Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: A fortune with an author prints as "text -- author" (joy-core fortune.rs). The double hyphen is not the usual way to attribute a quotation; the author belongs in the classic form, in parentheses after the sentence. Reported by Horst from the app (2026-09-04).
