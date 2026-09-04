@@ -58,10 +58,17 @@ pub fn fortune(category: Option<&Category>, probability: f32) -> Option<String> 
     let idx = simple_random_usize(entries.len());
     let entry = &entries[idx];
 
-    Some(match &entry.author {
-        Some(author) => format!("{} -- {}", entry.text, author),
+    Some(format_entry(entry))
+}
+
+/// The line a fortune prints as: the sentence, and its author in
+/// parentheses after it, the classic way to attribute a quotation
+/// (JOY-0277-F2).
+fn format_entry(entry: &FortuneEntry) -> String {
+    match &entry.author {
+        Some(author) => format!("{} ({})", entry.text, author),
         None => entry.text.clone(),
-    })
+    }
 }
 
 fn load_entries(category: &Category) -> Vec<FortuneEntry> {
@@ -147,11 +154,7 @@ mod tests {
             text: "Test quote".into(),
             author: Some("Test Author".into()),
         };
-        let formatted = match &entry.author {
-            Some(author) => format!("{} -- {}", entry.text, author),
-            None => entry.text.clone(),
-        };
-        assert_eq!(formatted, "Test quote -- Test Author");
+        assert_eq!(format_entry(&entry), "Test quote (Test Author)");
     }
 
     #[test]
@@ -160,10 +163,6 @@ mod tests {
             text: "Anonymous quote".into(),
             author: None,
         };
-        let formatted = match &entry.author {
-            Some(author) => format!("{} -- {}", entry.text, author),
-            None => entry.text.clone(),
-        };
-        assert_eq!(formatted, "Anonymous quote");
+        assert_eq!(format_entry(&entry), "Anonymous quote");
     }
 }

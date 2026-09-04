@@ -33,7 +33,7 @@ entries:
   author: Grady Booch
 - text: "There are only two hard things in Computer Science: cache invalidation and naming things."
   author: Phil Karlton
-- text: "It's not a bug -- it's an undocumented feature."
+- text: "It's not a bug, it's an undocumented feature."
   author: Anonymous
 - text: "The best error message is the one that never shows up."
   author: Thomas Fuchs
@@ -61,7 +61,7 @@ entries:
   author: Edsger W. Dijkstra
 - text: "The only way to go fast is to go well."
   author: Robert C. Martin
-- text: "Software and cathedrals are much the same -- first we build them, then we pray."
+- text: "Software and cathedrals are much the same: first we build them, then we pray."
   author: Sam Redwine
 - text: "If debugging is the process of removing bugs, then programming must be the process of putting them in."
   author: Edsger W. Dijkstra
@@ -103,7 +103,7 @@ entries:
   author: Kent Beck
 - text: "The value of a prototype is in the education it gives you, not in the code itself."
   author: Alan Cooper
-- text: "Write shy code -- modules that don't reveal anything unnecessary and don't rely on anything unnecessary."
+- text: "Write shy code: modules that don't reveal anything unnecessary and don't rely on anything unnecessary."
   author: Andy Hunt
 - text: "Duplication is far cheaper than the wrong abstraction."
   author: Sandi Metz
