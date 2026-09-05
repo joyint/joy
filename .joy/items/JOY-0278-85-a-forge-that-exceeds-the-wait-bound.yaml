@@ -1,7 +1,7 @@
 id: JOY-0278-85
 title: A forge that exceeds the wait bound reports an SSL syscall error, not a timeout
 type: bug
-status: review
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -11,6 +11,10 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-05T07:03:37.479830039Z
-updated: 2026-09-05T08:48:58.086282632Z
+updated: 2026-09-05T19:05:23.997795719Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Since the wait bound (JOY-0276-FA: 10 s connect, 15 s server), a forge that answers too slowly fails after ~15 s with "SSL error: syscall failure: Resource temporarily unavailable", libgit2''s EAGAIN surfacing raw. On integration on 2026-09-04 (07:13 to 19:44 UTC) that was 149 fetches, 62 ls-remotes and 57 pushes against codeberg.org (mps-netbrain-demo), all logged as errors, the write-behind retries covering the pushes (main was never left ahead). The message must say what happened: the forge did not answer within the bound. Open with Horst: whether 15 s is the right bound for a forge like Codeberg that regularly needs longer.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-05T19:05:23.865630948Z
+  text: Deployed to integration and production and verified there; closed on Horst's word (2026-09-05).
