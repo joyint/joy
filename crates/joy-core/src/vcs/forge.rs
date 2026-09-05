@@ -66,20 +66,42 @@ pub enum Auth {
 /// fifteen, is not answering; a slow but living transfer keeps sending
 /// and is not touched by either bound. Both are socket bounds, not a cap
 /// on the transfer as a whole.
+const CONNECT_BOUND_MS: i32 = 10_000;
+const SILENCE_BOUND_MS: i32 = 15_000;
+
 fn bound_forge_waits() {
     static BOUND: std::sync::Once = std::sync::Once::new();
     BOUND.call_once(|| {
         // SAFETY: libgit2 global options, set before any remote is opened
         // and never changed afterwards; the Once serialises the one call.
         unsafe {
-            if let Err(e) = git2::opts::set_server_connect_timeout_in_milliseconds(10_000) {
+            if let Err(e) = git2::opts::set_server_connect_timeout_in_milliseconds(CONNECT_BOUND_MS)
+            {
                 tracing::debug!(error = %e, "forge connect timeout not set");
             }
-            if let Err(e) = git2::opts::set_server_timeout_in_milliseconds(15_000) {
+            if let Err(e) = git2::opts::set_server_timeout_in_milliseconds(SILENCE_BOUND_MS) {
                 tracing::debug!(error = %e, "forge socket timeout not set");
             }
         }
     });
+}
+
+/// What a forge contact's libgit2 error means, in words. A forge that
+/// runs into the wait bound surfaces as libgit2's raw EAGAIN, "SSL
+/// error: syscall failure: Resource temporarily unavailable", which says
+/// nothing about what happened (JOY-0278-85); that case is named for what
+/// it is, everything else is quoted as libgit2 says it.
+fn contact_error(e: &git2::Error) -> String {
+    let message = e.message();
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("resource temporarily unavailable") || lower.contains("timed out") {
+        format!(
+            "the forge sent nothing for {} seconds (timed out): {message}",
+            SILENCE_BOUND_MS / 1000
+        )
+    } else {
+        message.to_string()
+    }
 }
 
 impl Auth {
@@ -271,7 +293,7 @@ fn download_ref(
                 Some(auth.callbacks(cred_config(Some(repo)))),
                 None,
             )
-            .map_err(|e| anyhow::anyhow!("fetch failed (offline?): {}", e.message()))?;
+            .map_err(|e| anyhow::anyhow!("fetch failed (offline?): {}", contact_error(&e)))?;
         // an empty advertisement (freshly created forge) is a plain
         // empty list since git2 0.21 — and an honest "nothing there"
         connection
@@ -289,7 +311,7 @@ fn download_ref(
     let refspec = format!("+{src}:{dst}");
     remote
         .download(&[refspec.as_str()], Some(&mut opts))
-        .map_err(|e| anyhow::anyhow!("fetch failed (offline?): {}", e.message()))?;
+        .map_err(|e| anyhow::anyhow!("fetch failed (offline?): {}", contact_error(&e)))?;
     let _ = remote.disconnect();
     repo.reference(dst, tip, true, "joy-vcs: fetch")
         .map_err(err)?;
@@ -429,7 +451,7 @@ fn probe_write_access_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
             Some(auth.callbacks(cred_config(Some(&repo)))),
             None,
         )
-        .map_err(|e| anyhow::anyhow!("push failed: {}", e.message()))?;
+        .map_err(|e| anyhow::anyhow!("push failed: {}", contact_error(&e)))?;
     let _ = remote.disconnect();
     Ok(())
 }
@@ -454,7 +476,7 @@ fn push_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
         let refspec = format!("refs/heads/{branch}:refs/heads/{branch}");
         remote
             .push(&[refspec.as_str()], Some(&mut opts))
-            .map_err(|e| anyhow::anyhow!("push failed: {}", e.message()))?;
+            .map_err(|e| anyhow::anyhow!("push failed: {}", contact_error(&e)))?;
         Ok(())
     })();
     if let Err(e) = &result {
@@ -535,7 +557,7 @@ fn push_ref_raw(repo_dir: &Path, auth: &Auth, refname: &str) -> anyhow::Result<(
     let refspec = format!("{refname}:{refname}");
     remote
         .push(&[refspec.as_str()], Some(&mut opts))
-        .map_err(|e| anyhow::anyhow!("push of {refname} failed: {}", e.message()))?;
+        .map_err(|e| anyhow::anyhow!("push of {refname} failed: {}", contact_error(&e)))?;
     Ok(())
 }
 
@@ -567,7 +589,7 @@ fn ls_remote_ref_raw(
             Some(auth.callbacks(cred_config(Some(&repo)))),
             None,
         )
-        .map_err(|e| anyhow::anyhow!("ls-remote failed (offline?): {}", e.message()))?;
+        .map_err(|e| anyhow::anyhow!("ls-remote failed (offline?): {}", contact_error(&e)))?;
     let head = connection
         .list()
         .map_err(err)?
@@ -1046,7 +1068,7 @@ fn push_tag_raw(repo_dir: &Path, auth: &Auth, tag: &str) -> anyhow::Result<()> {
     let refspec = format!("refs/tags/{tag}:refs/tags/{tag}");
     remote
         .push(&[refspec.as_str()], Some(&mut opts))
-        .map_err(|e| anyhow::anyhow!("tag push failed: {}", e.message()))?;
+        .map_err(|e| anyhow::anyhow!("tag push failed: {}", contact_error(&e)))?;
     Ok(())
 }
 
@@ -1695,7 +1717,14 @@ mod tests {
         let started = std::time::Instant::now();
         let result = fetch_branch(tmp.path(), &Auth::token("x"));
         let took = started.elapsed();
-        assert!(result.is_err(), "a silent forge cannot deliver a branch");
+        let error = result
+            .expect_err("a silent forge cannot deliver a branch")
+            .to_string();
+        // and the error says so, not libgit2's raw EAGAIN (JOY-0278-85)
+        assert!(
+            error.contains("sent nothing for 15 seconds"),
+            "the error names the bound: {error}"
+        );
         assert!(
             took >= std::time::Duration::from_secs(10) && took < std::time::Duration::from_secs(25),
             "gave up after {took:?}: expected the 15s socket bound, not the forge's timing"
