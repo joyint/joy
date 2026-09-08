@@ -1,0 +1,17 @@
+id: JOY-0279-BD
+title: The engine's branch verbs for a host that lets a member choose a branch
+type: story
+status: in-progress
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- plan
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-08T15:40:04.602873134Z
+updated: 2026-09-08T15:40:19.148364197Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'A host that lets a member read and write on a branch of their choice (platform JP-0126-72, JP-0127-69) needs verbs the engine lacked: every branch the forge has into the tracking refs, the forge''s branch names, the forge''s default branch, a local branch from the forge''s tip without moving HEAD, which worktree holds which branch, and a read-only view worktree of a branch another worktree holds (detached head at the tip, following the branch). Where the platform-only ones belong is JP-012B-6C.'

@@ -939,6 +939,28 @@ pub fn branch_names(repo_dir: &Path) -> Vec<String> {
     names
 }
 
+/// The forge's branch names as the clone knows them: the remote-tracking
+/// refs without HEAD (JP-0126-72). The list a member chooses a branch
+/// from; local-only branches (a job's working branches) are not on it.
+pub fn remote_branch_names(repo_dir: &Path) -> Vec<String> {
+    let Ok(repo) = open(repo_dir) else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = Vec::new();
+    if let Ok(branches) = repo.branches(Some(git2::BranchType::Remote)) {
+        for (branch, _) in branches.flatten() {
+            if let Ok(Some(full)) = branch.name() {
+                let short = full.split_once('/').map(|(_, b)| b).unwrap_or(full);
+                if short != "HEAD" && !names.iter().any(|n| n == short) {
+                    names.push(short.to_string());
+                }
+            }
+        }
+    }
+    names.sort();
+    names
+}
+
 /// The first remote's URL (forge detection lives with the caller).
 pub fn remote_url(repo_dir: &Path) -> Option<String> {
     let repo = open(repo_dir).ok()?;
@@ -1265,6 +1287,109 @@ pub fn prune_joywork(repo_dir: &Path, job_id: &str, joywork_path: &Path) {
             }
         }
     }
+}
+
+/// Which branch every linked worktree of the clone has checked out
+/// (JP-0126-72): (worktree name, branch). A worktree on a detached HEAD
+/// or one that cannot be opened is left out.
+pub fn worktree_branches(repo_dir: &Path) -> Vec<(String, String)> {
+    let Ok(repo) = open(repo_dir) else {
+        return Vec::new();
+    };
+    let Ok(names) = repo.worktrees() else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for name in (0..names.len()).filter_map(|i| names.get(i).ok().flatten()) {
+        let Ok(wt) = repo.find_worktree(name) else {
+            continue;
+        };
+        let Ok(wt_repo) = git2::Repository::open_from_worktree(&wt) else {
+            continue;
+        };
+        let Ok(head) = wt_repo.head() else {
+            continue;
+        };
+        if !head.is_branch() {
+            continue;
+        }
+        if let Ok(branch) = head.shorthand() {
+            out.push((name.to_string(), branch.to_string()));
+        }
+    }
+    out
+}
+
+/// The tip of `branch`: the local branch, else the remote-tracking ref.
+fn any_branch_tip(repo: &git2::Repository, branch: &str) -> anyhow::Result<git2::Oid> {
+    if let Ok(oid) = repo.refname_to_id(&format!("refs/heads/{branch}")) {
+        return Ok(oid);
+    }
+    let remote = origin_or_first(repo)?;
+    let name = remote
+        .name()
+        .map_err(err)?
+        .ok_or_else(|| anyhow::anyhow!("remote name is not utf-8"))?;
+    repo.refname_to_id(&format!("refs/remotes/{name}/{branch}"))
+        .map_err(|_| anyhow::anyhow!("unknown branch: {branch}"))
+}
+
+/// A READ-ONLY view of `branch` in its own worktree (JP-0126-72): git
+/// keeps a branch in one worktree, and a job holds its branch in its
+/// own, so a member who wants to read that branch gets a worktree with a
+/// DETACHED head standing at the branch's tip: no branch of its own,
+/// nothing to push, nothing to list. Calling again moves the head to the
+/// tip the branch has now. A view of an earlier make that stood on a
+/// mirror branch is detached here and the mirror dropped.
+pub fn ensure_view_worktree(
+    repo_dir: &Path,
+    name: &str,
+    branch: &str,
+    path: &Path,
+) -> anyhow::Result<()> {
+    let repo = open(repo_dir).map_err(err)?;
+    let tip = any_branch_tip(&repo, branch)?;
+    if path.join(".git").exists() {
+        let view = open(path).map_err(err)?;
+        let head = view.head().ok();
+        let on_branch = head
+            .as_ref()
+            .filter(|h| h.is_branch())
+            .and_then(|h| h.shorthand().ok().map(str::to_string));
+        if on_branch.is_none() && head.as_ref().and_then(|h| h.target()) == Some(tip) {
+            return Ok(());
+        }
+        drop(head);
+        view.set_head_detached(tip).map_err(err)?;
+        view.checkout_head(Some(git2::build::CheckoutBuilder::default().force()))
+            .map_err(|e| anyhow::anyhow!("view checkout: {}", e.message()))?;
+        if let Some(mirror) = on_branch {
+            if let Ok(mut b) = repo.find_branch(&mirror, git2::BranchType::Local) {
+                let _ = b.delete();
+            }
+        }
+        return Ok(());
+    }
+    if let Ok(wt) = repo.find_worktree(name) {
+        // the working tree is gone; drop the registration
+        let _ = wt.prune(Some(git2::WorktreePruneOptions::new().valid(true)));
+    }
+    // libgit2 adds a worktree on a branch: a transient one, detached from
+    // and deleted the moment the worktree stands
+    let transient = format!("refs/heads/joy/view-add/{name}");
+    repo.reference(&transient, tip, true, "joy-vcs: view (transient)")
+        .map_err(err)?;
+    let reference = repo.find_reference(&transient).map_err(err)?;
+    let mut opts = git2::WorktreeAddOptions::new();
+    opts.reference(Some(&reference));
+    repo.worktree(name, path, Some(&opts))
+        .map_err(|e| anyhow::anyhow!("view worktree add failed: {}", e.message()))?;
+    let view = open(path).map_err(err)?;
+    view.set_head_detached(tip).map_err(err)?;
+    if let Ok(mut b) = repo.find_branch(&format!("joy/view-add/{name}"), git2::BranchType::Local) {
+        b.delete().map_err(err)?;
+    }
+    Ok(())
 }
 
 /// The commit id a local branch points at.
@@ -1641,6 +1766,117 @@ pub fn branch_state(repo_dir: &Path) -> anyhow::Result<BranchState> {
         behind,
         has_remote,
     })
+}
+
+/// Make sure `branch` exists as a LOCAL branch, creating it from the
+/// remote-tracking ref when only the forge has it (JP-0126-72: a member's
+/// worktree starts on the branch's forge tip, never on somebody's HEAD).
+/// Errors when neither side knows the branch. Never moves HEAD.
+pub fn ensure_local_branch(repo_dir: &Path, branch: &str) -> anyhow::Result<()> {
+    let repo = open(repo_dir).map_err(err)?;
+    if repo.find_branch(branch, git2::BranchType::Local).is_ok() {
+        return Ok(());
+    }
+    let remote_ref = repo
+        .branches(Some(git2::BranchType::Remote))
+        .map_err(err)?
+        .flatten()
+        .find(|(b, _)| {
+            b.name()
+                .ok()
+                .flatten()
+                .map(|full| full.split_once('/').map(|(_, s)| s).unwrap_or(full) == branch)
+                .unwrap_or(false)
+        })
+        .ok_or_else(|| anyhow::anyhow!("unknown branch: {branch}"))?;
+    let target = remote_ref.0.get().peel_to_commit().map_err(err)?;
+    let mut local = repo.branch(branch, &target, false).map_err(err)?;
+    // upstream set, so ahead/behind and the fast-forward know their ref
+    if let Ok(Some(name)) = remote_ref.0.name() {
+        local.set_upstream(Some(name)).map_err(err)?;
+    }
+    Ok(())
+}
+
+/// Bring EVERY branch of the forge into the remote-tracking refs, the way
+/// [`fetch_branch`] does for the working branch alone (JP-0126-72: the
+/// branch list a member chooses from is the forge's, not the clone's
+/// memory of its first day). FETCH_HEAD is not touched. Returns the
+/// branch names the forge advertises.
+pub fn fetch_heads(repo_dir: &Path, auth: &Auth) -> anyhow::Result<Vec<String>> {
+    super::contact::run_for(repo_dir, "fetch", || fetch_heads_raw(repo_dir, auth))
+}
+
+fn fetch_heads_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<Vec<String>> {
+    let span = tracing::info_span!("git.fetch-heads", repo = %repo_dir.display());
+    let _s = span.enter();
+    let repo = open(repo_dir).map_err(err)?;
+    let mut remote = origin_or_first(&repo)?;
+    let remote_name = remote
+        .name()
+        .map_err(err)?
+        .ok_or_else(|| anyhow::anyhow!("remote name is not utf-8"))?
+        .to_string();
+    let heads: Vec<(String, git2::Oid)> = {
+        let connection = remote
+            .connect_auth(
+                git2::Direction::Fetch,
+                Some(auth.callbacks(cred_config(Some(&repo)))),
+                None,
+            )
+            .map_err(|e| anyhow::anyhow!("fetch failed (offline?): {}", contact_error(&e)))?;
+        connection
+            .list()
+            .map_err(err)?
+            .iter()
+            .filter_map(|r| {
+                r.name()
+                    .strip_prefix("refs/heads/")
+                    .map(|b| (b.to_string(), r.oid()))
+            })
+            .collect()
+    };
+    if heads.is_empty() {
+        return Ok(Vec::new());
+    }
+    let refspecs: Vec<String> = heads
+        .iter()
+        .map(|(b, _)| format!("+refs/heads/{b}:refs/remotes/{remote_name}/{b}"))
+        .collect();
+    let refspec_strs: Vec<&str> = refspecs.iter().map(String::as_str).collect();
+    let mut opts = git2::FetchOptions::new();
+    opts.remote_callbacks(auth.callbacks(cred_config(Some(&repo))));
+    remote
+        .download(&refspec_strs, Some(&mut opts))
+        .map_err(|e| anyhow::anyhow!("fetch failed (offline?): {}", contact_error(&e)))?;
+    let _ = remote.disconnect();
+    // the tracking refs by hand, as download_ref does: update_tips would
+    // write FETCH_HEAD
+    for (b, tip) in &heads {
+        repo.reference(
+            &format!("refs/remotes/{remote_name}/{b}"),
+            *tip,
+            true,
+            "joy-vcs: fetch heads",
+        )
+        .map_err(err)?;
+    }
+    Ok(heads.into_iter().map(|(b, _)| b).collect())
+}
+
+/// The forge's default branch as the clone recorded it (`origin/HEAD`,
+/// JP-0126-72): `None` when the clone carries no such pointer.
+pub fn remote_head_branch(repo_dir: &Path) -> Option<String> {
+    let repo = open(repo_dir).ok()?;
+    let remote = origin_or_first(&repo).ok()?;
+    let name = remote.name().ok()??.to_string();
+    let head = repo
+        .find_reference(&format!("refs/remotes/{name}/HEAD"))
+        .ok()?;
+    let target = head.symbolic_target().ok()??;
+    target
+        .strip_prefix(&format!("refs/remotes/{name}/"))
+        .map(str::to_string)
 }
 
 /// Switch the checkout to `branch` — creating a local branch from the
@@ -2033,6 +2269,133 @@ mod engine_invariant_tests {
                 None,
             )
             .unwrap();
+    }
+
+    /// A branch born on the forge after the clone (JP-0126-72): fetch_heads
+    /// learns it, ensure_local_branch stands it up at the forge's tip with
+    /// its upstream, and neither writes FETCH_HEAD.
+    #[test]
+    fn a_forge_branch_the_clone_never_saw_becomes_a_local_branch_at_its_tip() {
+        let rig = rig();
+        let auth = Auth::token("");
+        let seed_repo = git2::Repository::open(&rig.seed).unwrap();
+        let base = seed_repo.head().unwrap().peel_to_commit().unwrap();
+        seed_repo.branch("feat", &base, false).unwrap();
+        seed_repo.set_head("refs/heads/feat").unwrap();
+        std::fs::write(rig.seed.join("feature.txt"), "on feat\n").unwrap();
+        commit_everything(&seed_repo, "feat work");
+        push_current_branch(&seed_repo);
+        let feat_tip = seed_repo.head().unwrap().target().unwrap();
+
+        assert!(
+            ensure_local_branch(&rig.clone_dir, "feat").is_err(),
+            "before the fetch the clone cannot know feat"
+        );
+        let fetch_head = rig.clone_dir.join(".git/FETCH_HEAD");
+        std::fs::remove_file(&fetch_head).ok();
+        let heads = fetch_heads(&rig.clone_dir, &auth).unwrap();
+        assert!(heads.contains(&"feat".to_string()), "{heads:?}");
+        assert!(!fetch_head.exists(), "fetch_heads wrote FETCH_HEAD");
+        assert!(branch_names(&rig.clone_dir).contains(&"feat".to_string()));
+
+        ensure_local_branch(&rig.clone_dir, "feat").unwrap();
+        let clone = git2::Repository::open(&rig.clone_dir).unwrap();
+        let local = clone.find_branch("feat", git2::BranchType::Local).unwrap();
+        assert_eq!(
+            local.get().target().unwrap(),
+            feat_tip,
+            "the forge's tip, not HEAD"
+        );
+        assert!(local.upstream().is_ok(), "the upstream is set");
+        assert_ne!(
+            clone.head().unwrap().shorthand().unwrap(),
+            "feat",
+            "HEAD stays where it was"
+        );
+        // idempotent
+        ensure_local_branch(&rig.clone_dir, "feat").unwrap();
+    }
+
+    /// The list a member chooses from is the forge's (JP-0126-72): a
+    /// local-only branch stays off it, a forge branch is on it.
+    #[test]
+    fn the_choosable_branches_are_the_forges_not_the_clones_private_ones() {
+        let rig = rig();
+        let clone = git2::Repository::open(&rig.clone_dir).unwrap();
+        let head = clone.head().unwrap().peel_to_commit().unwrap();
+        clone.branch("joy/jobwork/X-1", &head, false).unwrap();
+        let names = remote_branch_names(&rig.clone_dir);
+        assert!(!names.iter().any(|n| n == "joy/jobwork/X-1"), "{names:?}");
+        assert!(
+            names.iter().any(|n| n == "main") || !names.is_empty(),
+            "{names:?}"
+        );
+        assert!(!names.iter().any(|n| n == "HEAD"));
+    }
+
+    /// A branch a worktree holds (a job's) is listed with its worktree,
+    /// and a member still gets a read-only view of it beside the job's
+    /// tree that follows the branch as it moves (JP-0126-72).
+    #[test]
+    fn a_branch_held_by_a_worktree_is_readable_through_a_view_that_follows_it() {
+        let rig = rig();
+        let clone = git2::Repository::open(&rig.clone_dir).unwrap();
+        let job_tree = rig.clone_dir.parent().unwrap().join("job-tree");
+        create_worktree(&rig.clone_dir, "job-X-1", "joy/vibe/X-1", &job_tree).unwrap();
+        let held = worktree_branches(&rig.clone_dir);
+        assert!(
+            held.contains(&("job-X-1".to_string(), "joy/vibe/X-1".to_string())),
+            "{held:?}"
+        );
+        // a second worktree on the same branch is what git refuses
+        let second = rig.clone_dir.parent().unwrap().join("second");
+        assert!(create_worktree(&rig.clone_dir, "second", "joy/vibe/X-1", &second).is_err());
+
+        let view = rig.clone_dir.parent().unwrap().join("view");
+        ensure_view_worktree(&rig.clone_dir, "view-X-1", "joy/vibe/X-1", &view).unwrap();
+        let tip = clone.refname_to_id("refs/heads/joy/vibe/X-1").unwrap();
+        let view_repo = git2::Repository::open(&view).unwrap();
+        assert_eq!(view_repo.head().unwrap().target(), Some(tip));
+        assert!(
+            view_repo.head_detached().unwrap(),
+            "a view has no branch of its own"
+        );
+        let locals: Vec<String> = branch_names(&rig.clone_dir);
+        assert!(
+            !locals.iter().any(|b| b.starts_with("joy/view")),
+            "no mirror left behind: {locals:?}"
+        );
+        assert!(
+            !worktree_branches(&rig.clone_dir)
+                .iter()
+                .any(|(w, _)| w == "view-X-1"),
+            "a detached view holds no branch"
+        );
+
+        // the job commits on its branch; the view follows on the next call
+        let job_repo = git2::Repository::open(&job_tree).unwrap();
+        std::fs::write(job_tree.join("work.txt"), "done\n").unwrap();
+        commit_everything(&job_repo, "job work");
+        let moved = clone.refname_to_id("refs/heads/joy/vibe/X-1").unwrap();
+        assert_ne!(moved, tip);
+        ensure_view_worktree(&rig.clone_dir, "view-X-1", "joy/vibe/X-1", &view).unwrap();
+        let view_repo = git2::Repository::open(&view).unwrap();
+        assert_eq!(view_repo.head().unwrap().target(), Some(moved));
+        assert!(view_repo.head_detached().unwrap());
+        assert!(view.join("work.txt").exists(), "the working tree followed");
+        assert!(!rig.clone_dir.join(".git/FETCH_HEAD").exists());
+    }
+
+    /// The clone remembers the forge's default branch (origin/HEAD).
+    #[test]
+    fn the_clone_knows_the_forges_default_branch() {
+        let rig = rig();
+        let seed_repo = git2::Repository::open(&rig.seed).unwrap();
+        let default = seed_repo.head().unwrap().shorthand().unwrap().to_string();
+        assert_eq!(
+            remote_head_branch(&rig.clone_dir).as_deref(),
+            Some(default.as_str())
+        );
     }
 
     /// THE invariant this engine exists for: no verb ever writes
