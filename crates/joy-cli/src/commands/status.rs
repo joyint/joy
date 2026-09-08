@@ -108,6 +108,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
         Action::ChangeJobStatus {
             from: old_status.clone(),
             to: new_status.clone(),
+            assignee: item.assignees.first().map(|a| a.member.clone()),
         }
     } else {
         Action::ChangeStatus {

@@ -36,9 +36,13 @@ pub enum Action {
     /// by default -- approving a job authorizes its spend, and that
     /// release belongs to a human unless a `job: new -> open` status
     /// rule explicitly says otherwise. See JOY-01FE-37.
+    /// The job's assignee rides along (JOY-027A-AB): a job is under its
+    /// assignee's control, so only the assignee moves it from open to
+    /// in-progress and from in-progress to review. None: no assignee yet.
     ChangeJobStatus {
         from: Status,
         to: Status,
+        assignee: Option<crate::member_ref::MemberRef>,
     },
     AssignItem,
     AddComment,
@@ -205,6 +209,37 @@ impl Guard {
             }
         };
 
+        // A job is under its assignee's control (JOY-027A-AB): starting it
+        // and handing it to review are the assignee's alone, whoever else
+        // holds the jobs capability. Changing the assignee stays a plain
+        // assignment, which is how control is handed over.
+        if let Action::ChangeJobStatus { from, to, assignee } = action {
+            let assignee_only = matches!(
+                (from, to),
+                (Status::Open, Status::InProgress) | (Status::InProgress, Status::Review)
+            );
+            if assignee_only {
+                match assignee {
+                    Some(a) if a.id() == identity.member.id() => {}
+                    Some(a) => {
+                        return Verdict::Deny(format!(
+                            "only the assignee {} moves a job from {} to {}; {} is not the assignee",
+                            a,
+                            status_str(from),
+                            status_str(to),
+                            identity.member
+                        ));
+                    }
+                    None => {
+                        return Verdict::Deny(format!(
+                            "a job without an assignee cannot move from {} to {}",
+                            status_str(from),
+                            status_str(to)
+                        ));
+                    }
+                }
+            }
+        }
         // AI-specific restrictions apply regardless of capabilities (even capabilities: all)
         if is_ai_member(&identity.member) {
             let required = action.required_capability();
@@ -233,7 +268,7 @@ impl Guard {
             // Job gates use `job: `-prefixed status_rules keys. The triage
             // gate defaults to allow_ai: false -- approving a job is the
             // human release that authorizes spend.
-            if let Action::ChangeJobStatus { from, to } = action {
+            if let Action::ChangeJobStatus { from, to, .. } = action {
                 let key = format!("job: {} -> {}", status_str(from), status_str(to));
                 let allow_ai = match self.gates.get(&key) {
                     Some(gate) => gate.allow_ai,
@@ -439,6 +474,90 @@ mod tests {
     fn specific_caps(caps: &[Capability]) -> MemberCapabilities {
         let map: BTreeMap<Capability, _> = caps.iter().map(|c| (*c, Default::default())).collect();
         MemberCapabilities::Specific(map)
+    }
+
+    /// A job is under its assignee's control (JOY-027A-AB): only the
+    /// assignee starts it and hands it to review; everyone with the jobs
+    /// capability still approves, stops, reopens or reassigns.
+    #[test]
+    fn only_the_assignee_starts_a_job_and_hands_it_to_review() {
+        let project = project_with_members(vec![
+            ("dev@example.com", MemberCapabilities::All),
+            ("other@example.com", MemberCapabilities::All),
+            ("ai:vibe@joy", specific_caps(&[Capability::Jobs])),
+        ]);
+        let guard = Guard::new(&project);
+        let ai: crate::member_ref::MemberRef = "ai:vibe@joy".into();
+        let start = Action::ChangeJobStatus {
+            from: Status::Open,
+            to: Status::InProgress,
+            assignee: Some(ai.clone()),
+        };
+        // the assignee, delegated by a human: allowed
+        assert_eq!(
+            guard.check(&start, &ai_identity("ai:vibe@joy", "dev@example.com")),
+            Verdict::Allow
+        );
+        // a human who is not the assignee: denied, by name
+        match guard.check(&start, &identity("dev@example.com")) {
+            Verdict::Deny(reason) => assert!(reason.contains("only the assignee"), "{reason}"),
+            other => panic!("{other:?}"),
+        }
+        let review = Action::ChangeJobStatus {
+            from: Status::InProgress,
+            to: Status::Review,
+            assignee: Some(ai.clone()),
+        };
+        assert_eq!(
+            guard.check(&review, &ai_identity("ai:vibe@joy", "dev@example.com")),
+            Verdict::Allow
+        );
+        assert!(matches!(
+            guard.check(&review, &identity("other@example.com")),
+            Verdict::Deny(_)
+        ));
+        // a human assignee starts their own job
+        let mine = Action::ChangeJobStatus {
+            from: Status::Open,
+            to: Status::InProgress,
+            assignee: Some("dev@example.com".into()),
+        };
+        assert_eq!(
+            guard.check(&mine, &identity("dev@example.com")),
+            Verdict::Allow
+        );
+        assert!(matches!(
+            guard.check(&mine, &identity("other@example.com")),
+            Verdict::Deny(_)
+        ));
+        // no assignee yet: nothing to start
+        let nobody = Action::ChangeJobStatus {
+            from: Status::Open,
+            to: Status::InProgress,
+            assignee: None,
+        };
+        assert!(matches!(
+            guard.check(&nobody, &identity("dev@example.com")),
+            Verdict::Deny(_)
+        ));
+        // the rest of the lifecycle is not the assignee's alone: approve,
+        // stop, reopen
+        for (from, to) in [
+            (Status::New, Status::Open),
+            (Status::InProgress, Status::Open),
+            (Status::Closed, Status::Open),
+        ] {
+            let action = Action::ChangeJobStatus {
+                from,
+                to,
+                assignee: Some(ai.clone()),
+            };
+            assert_eq!(
+                guard.check(&action, &identity("other@example.com")),
+                Verdict::Allow,
+                "{action:?}"
+            );
+        }
     }
 
     #[test]
