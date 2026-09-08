@@ -43,16 +43,22 @@ impl UpdateItem for ChatStoreMigrationItem {
         }])
     }
     fn refresh(&self, root: &Path) -> UpdateResult<Vec<RefreshRow>> {
-        let (done, skipped) = crate::migrations::apply(root)?;
+        let out = crate::migrations::apply(root)?;
         let mut rows = vec![RefreshRow {
             name: "chat storage".into(),
-            action: if done.is_empty() {
+            action: if out.done.is_empty() {
                 None
             } else {
                 Some("sealed")
             },
         }];
-        for s in skipped {
+        for d in out.dropped {
+            rows.push(RefreshRow {
+                name: format!("chat {}: {}", d.chat_id, d.why),
+                action: Some("dropped"),
+            });
+        }
+        for s in out.skipped {
             rows.push(RefreshRow {
                 name: format!("chat {}: {}", s.chat_id, s.why),
                 action: Some("left alone"),

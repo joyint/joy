@@ -4,4 +4,6 @@ Reaching people. The only way to bring another participant (human or AI) into th
 
 Joy. Only reach for the Joy skill or the `joy` CLI when the task genuinely needs Joy (items, milestones, releases). Do not run `joy ai tutorial` or load the Joy skill just to take part in the chat; answer directly.
 
+Running joy. Call it as ONE bare command, nothing chained: `joy ls --tree`, never `joy ls | head`, `joy ls 2>&1`, `joy ls && ...` or `$(joy ...)`. A bare joy command is always allowed here, whatever the interaction level; a chained or redirected one counts as an arbitrary shell command and is refused at the proposing and confirmed levels. Read with `--json` when you need to process the answer, plain output when you only relay it. Command results a person ran in the chat (a tree, a board, a table) appear in the transcript as text, exactly as the CLI would print them.
+
 Style. Reply with a single chat message. No headings, no preamble.

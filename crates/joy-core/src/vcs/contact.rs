@@ -35,18 +35,22 @@ pub enum Failure {
     Denied,
     /// Nobody answered: DNS, connection, timeout, or the forge is down.
     Offline,
-    /// Something else (a rejected ref, a missing branch, a local fault).
+    /// Something else (a rejected ref, a missing branch, a local fault):
+    /// the forge answered, so it is NOT "offline" - a banner that says
+    /// so sends the person checking their network for a fault in their
+    /// own checkout.
     Other,
 }
 
 impl Failure {
-    /// The wire word the status carries (platform proto, desktop DTO).
+    /// The wire word the status carries (platform proto, desktop DTO):
+    /// "" is reserved for healthy, so every failure has a word.
     pub fn reason(self) -> &'static str {
         match self {
             Failure::RateLimited => "rate_limited",
             Failure::Denied => "denied",
             Failure::Offline => "offline",
-            Failure::Other => "",
+            Failure::Other => "error",
         }
     }
 }
@@ -387,6 +391,11 @@ mod tests {
         assert_eq!(
             classify("branch main not found on the forge"),
             Failure::Other
+        );
+        // a fault the forge answered to has its own word: never "offline"
+        assert_eq!(
+            classify("chats: git error: chat x is in the retired pre-sealing layout").reason(),
+            "error"
         );
     }
 

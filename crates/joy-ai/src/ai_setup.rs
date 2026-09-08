@@ -775,6 +775,23 @@ pub fn is_tool_configured(root: &Path, tool: &str) -> bool {
     }
 }
 
+/// Whether the tool's AI member may act in this project: the member
+/// `ai:<tool>@joy` is registered in `.joy/project.yaml`, which travels
+/// with the repo (the same reasoning as [`has_ai_member`], JOY-0264-89).
+/// The machine-local marker [`is_tool_configured`] is NOT the gate here:
+/// it is git-ignored and vanishes with a clean checkout while the
+/// registration stands, and the operator then saw a registered,
+/// delegated Claude read "available" but never online (2026-09-02). The
+/// marker still counts on its own, so a tool set up before it was
+/// registered as a member keeps working.
+pub fn is_tool_active(root: &Path, tool: &str) -> bool {
+    let member = format!("ai:{tool}@joy");
+    joy_core::store::load_project(root)
+        .map(|p| p.has_member_key(&member))
+        .unwrap_or(false)
+        || is_tool_configured(root, tool)
+}
+
 /// Repo-portable "any AI tool is configured" signal: true when
 /// `.joy/project.yaml` carries any `ai:*` member. The marker files
 /// [`is_tool_configured`] tests are git-ignored and thus machine-local, so
@@ -1438,6 +1455,9 @@ mod setup_tests {
             "members:\n  horst@joy:\n    capabilities: all\n  \"ai:claude@joy\":\n    capabilities: all\n",
         );
         assert!(!is_tool_configured(tmp.path(), "claude"));
+        // …and the registered member acts here: the marker is not the gate
+        assert!(is_tool_active(tmp.path(), "claude"));
+        assert!(!is_tool_active(tmp.path(), "qwen"));
         assert!(has_ai_member(tmp.path()));
     }
 

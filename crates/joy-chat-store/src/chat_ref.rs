@@ -571,19 +571,43 @@ pub fn merge_refs(root: &Path, ours: Oid, theirs: Oid) -> Result<Oid, JoyError> 
     for id in &ids {
         let ours_ct = named_tree(&repo, &ours_tree, id);
         let theirs_ct = named_tree(&repo, &theirs_tree, id);
-        // Only the sealed layout merges. A plaintext subtree here means a
-        // clone wrote with a pre-sealing build; merging it would need the
-        // retired format back, so it is refused by name instead.
-        let sealed = [&ours_ct, &theirs_ct]
-            .into_iter()
-            .filter_map(|t| t.as_ref())
-            .all(subtree_is_new_format);
-        if !sealed {
-            return Err(JoyError::Git(format!(
-                "chat {id} is in the retired pre-sealing layout; run the chat migration                  (joy update) on the clone that wrote it before syncing"
-            )));
-        }
-        let oid = union_chat_subtrees(&repo, ours_ct.as_ref(), theirs_ct.as_ref())?;
+        let oid = match (&ours_ct, &theirs_ct) {
+            // A chat only one side carries has nothing to unite: it
+            // travels as it is, whatever its layout. A pre-sealing
+            // subtree here is the writer's clone's business - its
+            // migration seals or drops it whenever that clone next runs
+            // `joy update`, which may be never. Refusing the whole merge
+            // over it left every OTHER clone in an endless "not
+            // reachable" retry about a chat it never touched.
+            (Some(only), None) | (None, Some(only)) => only.id(),
+            // Both sides know the chat and both are sealed: union.
+            (Some(o), Some(t)) if subtree_is_new_format(o) && subtree_is_new_format(t) => {
+                union_chat_subtrees(&repo, Some(o), Some(t))?
+            }
+            // One side sealed, the other still the pre-sealing plaintext
+            // layout (a clone that has not migrated yet, or one that
+            // cannot: a chat nobody can read any more). The sealed side
+            // IS the chat; the plaintext copy is dropped rather than
+            // merged, and the merge does not refuse over it. Operator
+            // 2026-09-02: the desktop's `general` sat sealed against the
+            // platform's unconvertible plaintext copy, endlessly.
+            //
+            // Dropping loses nothing a reader could have had: the
+            // plaintext side is either the same conversation in the old
+            // shape, or unreadable ciphertext. Both remain reachable
+            // through that ref's own history in the clone that wrote
+            // them - every write here commits onto the previous tip.
+            (Some(o), Some(_)) if subtree_is_new_format(o) => o.id(),
+            (Some(_), Some(t)) if subtree_is_new_format(t) => t.id(),
+            // Plaintext on both sides has no union to speak of; two
+            // pre-sealing writers must migrate first.
+            (Some(_), Some(_)) => {
+                return Err(JoyError::Git(format!(
+                    "chat {id} is in the pre-sealing layout on both sides; run the chat migration (joy update) on the clone that wrote it before syncing"
+                )));
+            }
+            (None, None) => unreachable!("ids come from the two trees"),
+        };
         rb.insert(id, oid, i32::from(FileMode::Tree)).map_err(git)?;
     }
     let root_tree_oid = rb.write().map_err(git)?;
@@ -888,8 +912,14 @@ mod tests {
         assert!(load_chats(dir.path()).unwrap().is_empty());
     }
 
+    /// A pre-sealing chat that only ONE side carries rides through the
+    /// merge untouched: the clone that never wrote it must not sit in an
+    /// endless retry over it, and it cannot fix it either - only the
+    /// writer's own `joy update` seals or drops it, whenever that
+    /// happens. Refusal is reserved for a chat BOTH sides know where one
+    /// of them is still plaintext.
     #[test]
-    fn a_pre_sealing_chat_refuses_to_merge_by_name() {
+    fn a_one_sided_pre_sealing_chat_travels_through_the_merge() {
         let dir = repo();
         let root = dir.path();
         save_sealed_stub(root, "c", &["m1"]);
@@ -904,12 +934,108 @@ mod tests {
         save_legacy_chat_for_tests(root, &legacy);
         let theirs_oid = ref_target(root).unwrap().unwrap();
 
+        let merged = merge_refs(root, ours_oid, theirs_oid).unwrap();
+        let repo = open_repo(root).unwrap();
+        let tree = repo.find_commit(merged).unwrap().tree().unwrap();
+        // the sealed chat united, the legacy one carried verbatim
+        let c = named_tree(&repo, &tree, "c").unwrap();
+        assert_eq!(named_tree(&repo, &c, "log").unwrap().len(), 2);
+        let old = named_tree(&repo, &tree, "old").unwrap();
+        assert!(old.get_name(META_FILE).is_some());
+        assert_eq!(load_chat(root, "old").unwrap().unwrap().messages.len(), 1);
+    }
+
+    /// One side sealed the chat, the other still carries the plaintext
+    /// copy (a clone that has not migrated, or one that cannot): the
+    /// sealed side is the chat, the plaintext copy is dropped, and the
+    /// merge goes through. Either direction.
+    #[test]
+    fn a_sealed_side_wins_over_a_pre_sealing_copy() {
+        for sealed_is_ours in [true, false] {
+            let dir = repo();
+            let root = dir.path();
+            let mut legacy = Chat::new("old", vec![MemberRef::new("a@x")], ts(0));
+            legacy.messages.push(msg("m9", 9, "pre-sealing"));
+            save_legacy_chat_for_tests(root, &legacy);
+            let base_oid = ref_target(root).unwrap().unwrap();
+
+            remove_chat(root, "old").unwrap();
+            save_sealed_stub(root, "old", &["m1"]);
+            let sealed_oid = ref_target(root).unwrap().unwrap();
+
+            reset_ref(root, base_oid);
+            legacy.messages.push(msg("m10", 10, "still plaintext"));
+            save_legacy_chat_for_tests(root, &legacy);
+            let plain_oid = ref_target(root).unwrap().unwrap();
+
+            let (ours, theirs) = if sealed_is_ours {
+                (sealed_oid, plain_oid)
+            } else {
+                (plain_oid, sealed_oid)
+            };
+            let merged = merge_refs(root, ours, theirs).unwrap();
+            let repo = open_repo(root).unwrap();
+            let tree = repo.find_commit(merged).unwrap().tree().unwrap();
+            let old = named_tree(&repo, &tree, "old").unwrap();
+            assert!(subtree_is_new_format(&old), "sealed side wins");
+            assert!(old.get_name(META_FILE).is_none());
+            // the plaintext copy is gone from the merged tree, and the
+            // legacy reader no longer answers for it
+            assert!(named_tree(&repo, &old, MESSAGES_DIR).is_none());
+        }
+    }
+
+    #[test]
+    fn plaintext_on_both_sides_still_refuses_by_name() {
+        let dir = repo();
+        let root = dir.path();
+        let mut legacy = Chat::new("old", vec![MemberRef::new("a@x")], ts(0));
+        legacy.messages.push(msg("m9", 9, "pre-sealing"));
+        save_legacy_chat_for_tests(root, &legacy);
+        let base_oid = ref_target(root).unwrap().unwrap();
+        legacy.messages.push(msg("m10", 10, "ours"));
+        save_legacy_chat_for_tests(root, &legacy);
+        let ours_oid = ref_target(root).unwrap().unwrap();
+        reset_ref(root, base_oid);
+        legacy.messages.pop();
+        legacy.messages.push(msg("m11", 11, "theirs"));
+        save_legacy_chat_for_tests(root, &legacy);
+        let theirs_oid = ref_target(root).unwrap().unwrap();
+
         let err = merge_refs(root, ours_oid, theirs_oid).unwrap_err();
         assert!(
-            err.to_string().contains("old")
-                && err.to_string().contains("retired pre-sealing layout"),
+            err.to_string().contains("old") && err.to_string().contains("pre-sealing layout"),
             "{err}"
         );
+    }
+
+    /// What the sealing migration relies on when it drops a chat no build
+    /// can read: the id leaves the live ref, its neighbours stay, and a
+    /// second run is a no-op. The migration re-runs on every `joy update`
+    /// of every old project, so "already gone" must be a quiet success,
+    /// never an error.
+    #[test]
+    fn dropping_a_chat_takes_it_off_the_live_ref_and_is_idempotent() {
+        let dir = repo();
+        let root = dir.path();
+        let mut legacy = Chat::new("old", vec![MemberRef::new("a@x")], ts(0));
+        legacy.messages.push(msg("m9", 9, "unreadable"));
+        save_legacy_chat_for_tests(root, &legacy);
+        save_sealed_stub(root, "c", &["m1"]);
+
+        remove_chat(root, "old").unwrap();
+        assert!(load_chat(root, "old").unwrap().is_none());
+        let repo = open_repo(root).unwrap();
+        let live = repo
+            .find_commit(ref_target(root).unwrap().unwrap())
+            .unwrap();
+        let tree = live.tree().unwrap();
+        assert!(tree.get_name("old").is_none(), "dropped");
+        assert!(tree.get_name("c").is_some(), "neighbour untouched");
+
+        // second run: still gone, still no error
+        remove_chat(root, "old").unwrap();
+        assert!(load_chat(root, "old").unwrap().is_none());
     }
 }
 

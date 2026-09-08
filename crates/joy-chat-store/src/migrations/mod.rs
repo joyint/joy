@@ -43,6 +43,23 @@ pub struct Applied {
     pub what: &'static str,
 }
 
+/// One chat a migration dropped from the chat ref, and why: nobody can
+/// read it and nobody ever will, so it neither converts nor belongs on
+/// the ref every clone merges. Named rather than removed in silence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Dropped {
+    pub chat_id: String,
+    pub why: String,
+}
+
+/// Everything one run of the migrations did, chat by chat.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Outcome {
+    pub done: Vec<Applied>,
+    pub skipped: Vec<Skipped>,
+    pub dropped: Vec<Dropped>,
+}
+
 /// One chat a migration deliberately did NOT touch, and why. A chat that
 /// cannot be converted must stay as it is and be named, never be
 /// half-converted or silently emptied.
@@ -58,17 +75,26 @@ pub fn pending(root: &Path) -> Result<Vec<Pending>, JoyError> {
     m_2026_07_sealed_chat_layout::pending(root)
 }
 
-/// Run every chat migration, and say what was converted and what was
-/// deliberately left alone.
+/// Run every chat migration, and say what was converted, what was
+/// dropped, and what was deliberately left alone.
 ///
 /// No key: sealing wraps for the members' PUBLIC keys, so whoever holds
 /// the repository can convert a chat without being able to read it
 /// afterwards. That is what lets the platform do this by itself when a
 /// new version arrives.
 ///
-/// Idempotent: a chat already in the current shape is not in the list, so
-/// calling this on every project load costs a tree read.
-pub fn apply(root: &Path) -> Result<(Vec<Applied>, Vec<Skipped>), JoyError> {
+/// This is a STANDING migration, not a one-off sweep. A project that has
+/// not been opened for a year still carries the pre-sealing layout, and
+/// it must migrate on the `joy update` that finally reaches it - so this
+/// stays registered, and stays idempotent: a chat already in the current
+/// shape is not in the list, and a chat already dropped is simply gone,
+/// which [`crate::chat_ref::remove_chat`] reports as a quiet success.
+/// Running it on an up-to-date project costs a tree read.
+///
+/// Until such a clone runs it, its unconverted chats reach everyone else
+/// through the forge. That is the merge's problem, not this one's, and
+/// [`crate::chat_ref::merge_refs`] settles it without refusing.
+pub fn apply(root: &Path) -> Result<Outcome, JoyError> {
     m_2026_07_sealed_chat_layout::apply(root)
 }
 
@@ -130,7 +156,7 @@ mod tests {
     fn a_repository_without_chats_has_nothing_to_migrate() {
         let (dir, _seed) = project();
         assert_eq!(pending(dir.path()).unwrap(), Vec::new());
-        assert_eq!(apply(dir.path()).unwrap(), (Vec::new(), Vec::new()));
+        assert_eq!(apply(dir.path()).unwrap(), Outcome::default());
     }
 
     #[test]
@@ -148,9 +174,9 @@ mod tests {
             .unwrap()
             .is_none());
 
-        let (done, skipped) = apply(root).unwrap();
-        assert_eq!(done.len(), 1);
-        assert!(skipped.is_empty(), "{skipped:?}");
+        let out = apply(root).unwrap();
+        assert_eq!(out.done.len(), 1);
+        assert!(out.skipped.is_empty() && out.dropped.is_empty(), "{out:?}");
 
         // now the transport serves it, the content survived, and nothing
         // is waiting any more
@@ -167,12 +193,13 @@ mod tests {
     }
 
     #[test]
-    fn a_chat_this_build_cannot_read_is_left_alone_and_named() {
+    fn a_chat_no_build_can_read_is_dropped_and_named() {
         // Between JOY-0218-E8 and the platform-key removal a message
         // carried its ciphertext in a field this model no longer knows.
         // Serde drops it, so the message reads as empty text. Sealing that
         // would replace a chat nobody can read with an EMPTY chat everyone
-        // can read, which is worse than leaving it alone.
+        // can read; leaving it on the live ref kept every other clone's
+        // merge arguing about it. So it goes, and it is named as it goes.
         let (dir, _seed) = project();
         let root = dir.path();
         let at = "2026-07-19T00:00:01Z".parse().unwrap();
@@ -197,14 +224,26 @@ mod tests {
         });
         crate::chat_ref::save_legacy_chat_for_tests(root, &chat);
 
-        let (done, skipped) = apply(root).unwrap();
-        assert!(done.is_empty());
-        assert_eq!(skipped.len(), 1);
-        assert_eq!(skipped[0].chat_id, chat.id);
-        // …and it is still there, in the shape it was
+        let out = apply(root).unwrap();
+        assert!(out.done.is_empty() && out.skipped.is_empty(), "{out:?}");
+        assert_eq!(out.dropped.len(), 1);
+        assert_eq!(out.dropped[0].chat_id, chat.id);
+        // …gone from the live ref
         assert!(crate::chat_ref::load_chat(root, &chat.id)
             .unwrap()
-            .is_some());
+            .is_none());
+        let repo = crate::chat_ref::open_repo(root).unwrap();
+        let tip = repo
+            .find_commit(repo.refname_to_id(crate::chat_ref::CHATS_REF).unwrap())
+            .unwrap();
+        assert!(tip.tree().unwrap().get_name(&chat.id).is_none());
+        // …but still reachable through the ref's own history, because the
+        // removal commits onto the previous tip rather than rewriting it
+        let before = tip.parent(0).unwrap();
+        assert!(before.tree().unwrap().get_name(&chat.id).is_some());
+        // and nothing waits any more: the next run is a no-op
+        assert_eq!(pending(root).unwrap(), Vec::new());
+        assert_eq!(apply(root).unwrap(), Outcome::default());
     }
 
     #[test]
@@ -212,7 +251,7 @@ mod tests {
         let (dir, _seed) = project();
         let root = dir.path();
         legacy_chat(root, "bbbb0000bbbb0000bbbb0000bbbb0000", "zweimal");
-        assert_eq!(apply(root).unwrap().0.len(), 1);
-        assert_eq!(apply(root).unwrap(), (Vec::new(), Vec::new()));
+        assert_eq!(apply(root).unwrap().done.len(), 1);
+        assert_eq!(apply(root).unwrap(), Outcome::default());
     }
 }

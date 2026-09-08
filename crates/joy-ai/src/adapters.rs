@@ -54,6 +54,25 @@ pub struct AdapterSpec {
     pub state_env: Option<&'static str>,
     /// What to tell a person on whose machine the probe fails.
     pub install_hint: &'static str,
+    /// The TOOL behind the bridge, when bridge and tool are separate
+    /// programs (JAPP-0084-7D): the desktop ships the bridge as a
+    /// sidecar, so the tool is what still has to be installed and
+    /// signed in on the machine, and the bridge is told where it is.
+    /// None when the entrypoint IS the tool (vibe-acp ships with vibe,
+    /// qwen speaks ACP itself).
+    pub tool: Option<ToolBinary>,
+}
+
+/// The tool a bridge drives, as the registry states it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ToolBinary {
+    /// Binary probed on the PATH for "is the tool installed here".
+    pub binary: &'static str,
+    /// The environment variable the bridge reads to find the tool, set
+    /// to the resolved absolute path by a host that spawns locally.
+    pub env: &'static str,
+    /// What to tell a person on whose machine the tool is missing.
+    pub install_hint: &'static str,
 }
 
 /// The product's tools. Test-only agents (the platform's ACP mock) are
@@ -72,10 +91,14 @@ pub const ADAPTERS: &[AdapterSpec] = &[
         model_env: Some("VIBE_ACTIVE_MODEL"),
         state_env: Some("VIBE_HOME"),
         install_hint: "Install the Mistral Vibe CLI (it ships vibe-acp) and sign in there",
+        tool: None,
     },
     AdapterSpec {
         adapter: "claude",
-        label: "Claude Code",
+        // "Claude Agent", not "Claude Code": Anthropic's branding rules
+        // for third-party products forbid "Claude Code" as a label and
+        // name "Claude Agent" as the preferred form in a picker.
+        label: "Claude Agent",
         member: "ai:claude@joy",
         // The official ACP bridge (same org as codex-acp). One spelling
         // ended the era where the desktop npx-ran one bridge package and
@@ -87,6 +110,14 @@ pub const ADAPTERS: &[AdapterSpec] = &[
         state_env: Some("CLAUDE_CONFIG_DIR"),
         install_hint:
             "npm i -g @agentclientprotocol/claude-agent-acp; Claude Code signs in inside the tool",
+        // The bridge embeds the Claude Agent SDK, which looks for Claude
+        // Code by this variable; the desktop points it at the person's
+        // own installation (their sign-in stays in the tool, JAPP-001D).
+        tool: Some(ToolBinary {
+            binary: "claude",
+            env: "CLAUDE_CODE_EXECUTABLE",
+            install_hint: "Install Claude Code (claude.ai/code) and sign in there",
+        }),
     },
     AdapterSpec {
         adapter: "qwen",
@@ -98,6 +129,7 @@ pub const ADAPTERS: &[AdapterSpec] = &[
         model_env: Some("OPENAI_MODEL"),
         state_env: Some("QWEN_DIR"),
         install_hint: "Install Qwen Code (npm i -g @qwen-code/qwen-code) and sign in there",
+        tool: None,
     },
 ];
 
