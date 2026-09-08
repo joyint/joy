@@ -373,7 +373,7 @@ fn empty_job_spec() -> JobSpec {
         budget: None,
         window: None,
         feedback: None,
-        attempts: Vec::new(),
+        activity: Vec::new(),
         base_branch: None,
         result_branch: None,
     }

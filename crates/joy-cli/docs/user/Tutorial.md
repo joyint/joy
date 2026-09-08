@@ -145,7 +145,7 @@ Jobs take the scope as a third positional argument (required, comma-separated it
 joy add job "Implement recipe basics" CB-0002,CB-0003
 ```
 
-Jobs live in `.joy/jobs/` with IDs like `CB-JOB-0001-A3` and stay out of the normal views; `joy ls -J` and `joy board -J` show them (`-Ja` includes closed ones). Approving a job (`joy approve`) is the release that authorizes its execution - on the Joyint platform, `joy start` then hands it to the assignee. `joy show` on a job lists its scope, budget, window, and recorded execution attempts; `joy show` on an item lists the jobs it belongs to. Closing a job asks per scope item whether to close that item too. Moving jobs through their gates is governed by the `jobs` capability, separate from `review`, so who accepts AI work and who accepts the product items can differ.
+Jobs live in `.joy/jobs/` with IDs like `CB-JOB-0001-A3` and stay out of the normal views; `joy ls -J` and `joy board -J` show them (`-Ja` includes closed ones). Approving a job (`joy approve`) is the release that authorizes its execution - on the Joyint platform, `joy start` then hands it to the assignee. `joy show` on a job lists its scope, budget, window, and recorded activity; `joy show` on an item lists the jobs it belongs to. Closing a job asks per scope item whether to close that item too. Moving jobs through their gates is governed by the `jobs` capability, separate from `review`, so who accepts AI work and who accepts the product items can differ.
 
 ---
 
@@ -975,7 +975,7 @@ The `--crypt` flag embeds your delegation private key in the token
 itself. The AI then carries that key in its `JOY_SESSION` env var
 (never on disk) and can unwrap zone keys until the token expires. An
 auth-only token (no `--crypt`) lets the AI run joy commands but
-returns "no access to zone" on any decrypt attempt.
+returns "no access to zone" on any decrypt activity.
 
 **Per-token expiry is honoured by the session.** A `--ttl 30m` token
 produces a 30-minute session, regardless of any longer session TTL

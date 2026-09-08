@@ -214,7 +214,7 @@ pub fn run(args: AddArgs) -> Result<()> {
             budget: None,
             window: None,
             feedback: None,
-            attempts: vec![],
+            activity: vec![],
             base_branch: None,
             result_branch: None,
         });

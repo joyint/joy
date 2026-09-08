@@ -1,0 +1,15 @@
+id: JOY-027B-09
+title: A job's attempts are its activity
+type: task
+status: in-progress
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-08T17:07:30.962979804Z
+updated: 2026-09-08T17:09:52.185371685Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Horst, 2026-09-08: ''attempts'' is a needlessly negative word, and ''rounds'' implies several by definition. The list of a job''s execution records is its activity: the field in the item YAML (old files keep reading), the type, the proto message, the CLI output and the app all say activity. A rename in full, no facade over the old name.'

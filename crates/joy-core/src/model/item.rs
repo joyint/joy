@@ -67,9 +67,9 @@ pub struct Item {
     /// project's `crypt.zones` registry. See ADR-038 and Crypt.md.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub crypt_zone: Option<String>,
-    /// Job payload: scope, budget, window and execution attempts. Only
+    /// Job payload: scope, budget, window and execution activity. Only
     /// present on `job` items; invisible to every other type. Live
-    /// execution telemetry never enters this field -- attempts carry
+    /// execution telemetry never enters this field -- activity carry
     /// condensed terminal results only. See JOY-01FE-37.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub job: Option<JobSpec>,
@@ -205,7 +205,7 @@ pub struct Assignee {
 
 /// Type-specific payload of a `job` item: what to work on (scope), the
 /// limits (budget, window), and the condensed record of execution
-/// attempts. Plan data and terminal attempt results are git-native
+/// activity. Plan data and terminal activity results are git-native
 /// here; live telemetry (progress, running counters) stays with the
 /// executor (platform or local runner). See JOY-01FE-37.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -222,11 +222,12 @@ pub struct JobSpec {
     /// The dialog axis; see [`JobFeedback`]. Absent = no dialog open.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub feedback: Option<JobFeedback>,
-    /// Append-only list of execution loops. Retries and rework rounds
-    /// are entries here, not separate objects and not a second status
-    /// axis: a job being retried simply stays `in-progress`.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub attempts: Vec<JobAttempt>,
+    /// Append-only list of execution records, the job's activity
+    /// (JOY-027B-09; `attempts` in files written before). Retries and
+    /// rework are entries here, not separate objects and not a second
+    /// status axis: a job being retried simply stays `in-progress`.
+    #[serde(default, alias = "attempts", skip_serializing_if = "Vec::is_empty")]
+    pub activity: Vec<JobActivity>,
     /// The branch the job forks from and its result merges into
     /// (JOY-0279-BD): the branch the person who started it was on.
     /// Absent: the checkout's default branch, as before.
@@ -267,11 +268,11 @@ pub struct JobWindow {
 /// end (success, failure, or abort via `joy stop`), with the cost that
 /// actually accrued -- aborts cost money too.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct JobAttempt {
+pub struct JobActivity {
     pub started: DateTime<Utc>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended: Option<DateTime<Utc>>,
-    pub outcome: AttemptOutcome,
+    pub outcome: ActivityOutcome,
     #[serde(default)]
     pub tokens: u64,
     #[serde(default)]
@@ -284,7 +285,7 @@ pub struct JobAttempt {
     pub error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub by: Option<MemberRef>,
-    /// The AI model this attempt ran under (the resolved ai_secrets model,
+    /// The AI model this activity ran under (the resolved ai_secrets model,
     /// JI-0164), for cost attribution and audit. None when the adapter's
     /// own default ran or the model was not recorded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -296,18 +297,18 @@ pub struct JobAttempt {
 /// lands in `review` (carrying the error) when finally given up.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum AttemptOutcome {
+pub enum ActivityOutcome {
     Succeeded,
     Failed,
     Aborted,
 }
 
-impl std::fmt::Display for AttemptOutcome {
+impl std::fmt::Display for ActivityOutcome {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AttemptOutcome::Succeeded => write!(f, "succeeded"),
-            AttemptOutcome::Failed => write!(f, "failed"),
-            AttemptOutcome::Aborted => write!(f, "aborted"),
+            ActivityOutcome::Succeeded => write!(f, "succeeded"),
+            ActivityOutcome::Failed => write!(f, "failed"),
+            ActivityOutcome::Aborted => write!(f, "aborted"),
         }
     }
 }
@@ -782,7 +783,7 @@ mod tests {
             budget: None,
             window: None,
             feedback: Some(JobFeedback::Awaited),
-            attempts: Vec::new(),
+            activity: Vec::new(),
             base_branch: None,
             result_branch: None,
         });

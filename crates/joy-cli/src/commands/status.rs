@@ -285,7 +285,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
 
     if args.via_stop && matches!(item.item_type, ItemType::Job) {
         eprintln!(
-            "note: a running execution is aborted by the platform watcher; the attempt is recorded with its partial cost"
+            "note: a running execution is aborted by the platform watcher; the activity is recorded with its partial cost"
         );
     }
 

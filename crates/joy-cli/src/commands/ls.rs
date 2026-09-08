@@ -221,15 +221,15 @@ fn cents_display(cents: u64, currency: &str) -> String {
     format!("{}.{:02} {}", cents / 100, cents % 100, currency)
 }
 
-/// The COST cell: total of all attempt costs, empty while nothing ran.
+/// The COST cell: total of all activity costs, empty while nothing ran.
 fn job_cost_cell(item: &Item) -> String {
     let Some(job) = item.job.as_ref() else {
         return String::new();
     };
-    if job.attempts.is_empty() {
+    if job.activity.is_empty() {
         return String::new();
     }
-    let total: u64 = job.attempts.iter().map(|a| a.cost_cents).sum();
+    let total: u64 = job.activity.iter().map(|a| a.cost_cents).sum();
     let currency = job
         .budget
         .as_ref()
@@ -254,7 +254,7 @@ fn print_jobs_table(jobs: &[&Item]) {
     let last_cell = |i: &Item| -> String {
         i.job
             .as_ref()
-            .and_then(|j| j.attempts.last())
+            .and_then(|j| j.activity.last())
             .map(|a| a.outcome.to_string())
             .unwrap_or_else(|| "-".to_string())
     };

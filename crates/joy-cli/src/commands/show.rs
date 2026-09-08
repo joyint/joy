@@ -172,7 +172,7 @@ pub fn run(args: ShowArgs) -> Result<()> {
         }
     }
 
-    // Job payload: scope, limits, and the attempt record.
+    // Job payload: scope, limits, and the activity record.
     if let Some(ref job) = item.job {
         println!("\n{}:", color::label("Scope"));
         for scope_id in &job.scope {
@@ -222,22 +222,22 @@ pub fn run(args: ShowArgs) -> Result<()> {
         if let Some(feedback) = job.feedback {
             println!("{} {}", color::label("Feedback:"), feedback);
         }
-        if !job.attempts.is_empty() {
-            println!("\n{}:", color::label("Attempts"));
-            for (n, attempt) in job.attempts.iter().enumerate() {
+        if !job.activity.is_empty() {
+            println!("\n{}:", color::label("Activity"));
+            for (n, activity) in job.activity.iter().enumerate() {
                 println!(
                     "  #{} {} {} tokens={} cost={} branch={}",
                     n + 1,
-                    attempt.started.format("%Y-%m-%d %H:%M"),
-                    attempt.outcome,
-                    attempt.tokens,
-                    cents_display(attempt.cost_cents, currency),
-                    attempt.branch.as_deref().unwrap_or("-"),
+                    activity.started.format("%Y-%m-%d %H:%M"),
+                    activity.outcome,
+                    activity.tokens,
+                    cents_display(activity.cost_cents, currency),
+                    activity.branch.as_deref().unwrap_or("-"),
                 );
-                if let Some(ref result) = attempt.result {
+                if let Some(ref result) = activity.result {
                     println!("     {result}");
                 }
-                if let Some(ref error) = attempt.error {
+                if let Some(ref error) = activity.error {
                     println!("     {error}");
                 }
             }
@@ -253,7 +253,7 @@ pub fn run(args: ShowArgs) -> Result<()> {
                 let latest = job_item
                     .job
                     .as_ref()
-                    .and_then(|j| j.attempts.last())
+                    .and_then(|j| j.activity.last())
                     .map(|a| format!(" ({})", a.outcome))
                     .unwrap_or_default();
                 println!(
