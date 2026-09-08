@@ -374,6 +374,8 @@ fn empty_job_spec() -> JobSpec {
         window: None,
         feedback: None,
         attempts: Vec::new(),
+        base_branch: None,
+        result_branch: None,
     }
 }
 

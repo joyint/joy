@@ -215,6 +215,8 @@ pub fn run(args: AddArgs) -> Result<()> {
             window: None,
             feedback: None,
             attempts: vec![],
+            base_branch: None,
+            result_branch: None,
         });
     }
 

@@ -227,6 +227,15 @@ pub struct JobSpec {
     /// axis: a job being retried simply stays `in-progress`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attempts: Vec<JobAttempt>,
+    /// The branch the job forks from and its result merges into
+    /// (JOY-0279-BD): the branch the person who started it was on.
+    /// Absent: the checkout's default branch, as before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_branch: Option<String>,
+    /// The branch the result is pushed to, when the person named one at
+    /// the start; absent: the runner's own naming.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_branch: Option<String>,
 }
 
 /// Spend limits for a job. `max_cents` mirrors the platform's budget
@@ -774,6 +783,8 @@ mod tests {
             window: None,
             feedback: Some(JobFeedback::Awaited),
             attempts: Vec::new(),
+            base_branch: None,
+            result_branch: None,
         });
 
         let yaml = serde_yaml_ng::to_string(&item).unwrap();
