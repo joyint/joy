@@ -2386,6 +2386,42 @@ mod engine_invariant_tests {
         assert!(!rig.clone_dir.join(".git/FETCH_HEAD").exists());
     }
 
+    /// A job forks from the member's branch (platform JP-0128-0F): its
+    /// worktree is added FROM the branch's linked worktree, and the clone
+    /// still registers and lists it like every other.
+    #[test]
+    fn a_worktree_added_from_a_linked_worktree_belongs_to_the_clone() {
+        let rig = rig();
+        let base = rig.clone_dir.parent().unwrap().join("feat");
+        ensure_local_branch(&rig.clone_dir, "main").ok();
+        let clone = git2::Repository::open(&rig.clone_dir).unwrap();
+        let head = clone.head().unwrap().peel_to_commit().unwrap();
+        clone.branch("feat", &head, false).unwrap();
+        create_worktree(&rig.clone_dir, "branch-feat", "feat", &base).unwrap();
+        std::fs::write(base.join("on-feat.txt"), "feat\n").unwrap();
+        commit_everything(&git2::Repository::open(&base).unwrap(), "on feat");
+
+        let job = rig.clone_dir.parent().unwrap().join("job");
+        create_worktree(&base, "job-J-1", "joy/vibe/J-1", &job).unwrap();
+        assert!(
+            job.join("on-feat.txt").exists(),
+            "forked from the branch's tip"
+        );
+        let held = worktree_branches(&rig.clone_dir);
+        assert!(
+            held.contains(&("job-J-1".to_string(), "joy/vibe/J-1".to_string())),
+            "the clone lists it: {held:?}"
+        );
+        assert!(
+            rig.clone_dir.join(".git/worktrees/job-J-1").is_dir(),
+            "registered in the clone's common dir"
+        );
+        prune_worktree(&rig.clone_dir, "job-J-1", &job);
+        assert!(!worktree_branches(&rig.clone_dir)
+            .iter()
+            .any(|(w, _)| w == "job-J-1"));
+    }
+
     /// The clone remembers the forge's default branch (origin/HEAD).
     #[test]
     fn the_clone_knows_the_forges_default_branch() {
