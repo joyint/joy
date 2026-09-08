@@ -176,7 +176,11 @@ pub fn context_prompt(chat: &Chat, ai_member: &str) -> String {
          with your shell tool (for example `joy show <id>` or `joy ls`) and report\n\
          the result. Never print a command as text for the human to run: if you\n\
          decide to run something, actually run it. Item state changes only through\n\
-         the joy CLI, never by editing files under .joy/.\n\n\
+         the joy CLI, never by editing files under .joy/. Run joy as ONE bare\n\
+         command (`joy ls --tree`, `joy show <id> --json`): a bare joy command is\n\
+         always allowed, while a piped, redirected or chained line (`| head`,\n\
+         `2>&1`, `&&`) counts as an arbitrary shell command and is refused below\n\
+         the autonomous level.\n\n\
          --- conversation ---\n",
     );
     for message in &chat.messages {

@@ -1,0 +1,23 @@
+id: JOY-0279-8D
+title: A pre-sealing chat must not stall every clone's chat sync
+type: bug
+status: closed
+priority: critical
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-08T16:59:46.894338Z
+updated: 2026-09-08T17:01:12.715875Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'The chat-ref merge refused by name as soon as it saw ANY subtree in the pre-sealing plaintext layout, so two clones that could not both convert it retried forever (operator 2026-09-02: the desktop''s sealed general against the platform''s unconvertible plaintext copy). merge_refs now settles all four cases instead: a chat only one side carries travels through, two sealed sides union, sealed-against-plaintext takes the sealed side and drops the other, and only plaintext on BOTH sides still refuses. The fix lives entirely in the merge, so the loop clears on the next sync without anyone running joy update. The sealing migration stays a standing update item for old projects and now deletes an unreadable chat outright rather than shelving it on a second ref: remove_chat commits onto the previous tip, so the bytes stay reachable through the ref''s own history and a parallel retired ref preserved nothing git did not already keep. Also carries two findings from the same session: is_tool_active gates an AI member on its registration in project.yaml instead of the git-ignored marker file, and Failure::Other reports the wire word error instead of the empty string that surfaced as a false offline banner.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-08T16:59:56.802914Z
+  text: 'Plan: the loop is a merge problem, so it is fixed in merge_refs and nowhere else - four explicit cases, each with a test, and refusal reserved for plaintext on both sides where no resolution exists. The retired ref (refs/joy/chats-retired) is dropped from the design on the operator''s call: it kept data nobody can decrypt on a second ref while remove_chat already commits onto the previous tip, so git keeps those bytes anyway. The sealing migration therefore deletes an unreadable chat instead, and stays registered as a standing update item because a project untouched for a year must still migrate on the joy update that finally reaches it. Folded in from the same session: is_tool_active (registration, not the git-ignored marker) and the Failure::Other wire word. The adapter label becomes Claude Agent - Anthropic''s branding rules for third-party products forbid Claude Code as a product label and name Claude Agent as the preferred form in a picker.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-08T17:01:12.537343Z
+  text: '[x] merge_refs settles four cases, one test each: a one-sided pre-sealing chat travels through, two sealed sides union, a sealed side wins over a pre-sealing copy in either direction, and plaintext on both sides still refuses by name. The loop needs no migration run to clear. [x] refs/joy/chats-retired, retire_chat, shelve_subtree and the Retired struct are gone; the migration deletes an unreadable chat through remove_chat, and a test asserts the bytes stay reachable through the ref''s parent commit. [x] apply() documents that it is a standing migration, not a one-off sweep, and that an unmigrated clone''s chats are the merge''s problem, not its own. [x] is_tool_active added and covered. [x] Failure::Other reports error, covered. [x] adapter label is Claude Agent. Verified: just check green on this repo after fast-forwarding to origin/main (rustfmt, clippy, 46 joy-chat-store + 95 joy-ai + 418 joy-core tests, bats). Not verified here: no desktop call site consumes is_tool_active yet - the app repo carried none of it, which is JAPP-0084-7D''s correction.'

@@ -20,11 +20,11 @@ use std::path::Path;
 
 use joy_core::error::JoyError;
 
-use super::{Applied, Pending, Skipped};
+use super::{Applied, Dropped, Outcome, Pending, Skipped};
 
 const WHAT: &str = "seal the chat into keys/ + log/";
 const CANNOT: &str =
-    "written with the per-message encryption this build no longer reads; left untouched";
+    "written with the per-message encryption no build reads any more; dropped from the chat ref";
 
 /// The legacy chats, found without a key: the old reader only ever
 /// answers for a `meta.yaml` subtree, and a sealed chat has none.
@@ -38,7 +38,7 @@ fn legacy(root: &Path) -> Result<Vec<joy_chat::model::chat::Chat>, JoyError> {
 /// their ciphertext in an `enc` field that today's model does not know.
 /// Serde drops it, so such a message reads as empty text, and sealing it
 /// would replace a chat nobody can read with an EMPTY chat everybody can
-/// read. That is worse than leaving it alone, so it is left alone and
+/// read. That is worse than converting, so it is dropped instead and
 /// named.
 fn readable(chat: &joy_chat::model::chat::Chat) -> bool {
     !chat.messages.iter().any(|m| m.text.is_empty())
@@ -63,12 +63,20 @@ pub(super) fn pending(root: &Path) -> Result<Vec<Pending>, JoyError> {
         .collect())
 }
 
-pub(super) fn apply(root: &Path) -> Result<(Vec<Applied>, Vec<Skipped>), JoyError> {
+pub(super) fn apply(root: &Path) -> Result<Outcome, JoyError> {
     let mut done = Vec::new();
     let mut skipped = Vec::new();
+    let mut dropped = Vec::new();
     for chat in legacy(root)? {
         if !readable(&chat) {
-            skipped.push(Skipped {
+            // Nobody can read it and nobody ever will: the key material
+            // for that shape is gone from the model. Keeping it on the
+            // live ref only made every other clone's merge argue about
+            // it forever, so it goes. `remove_chat` commits onto the
+            // previous tip, so the bytes stay reachable through this
+            // ref's own history for anyone who ever needs to dig.
+            crate::chat_ref::remove_chat(root, &chat.id)?;
+            dropped.push(Dropped {
                 chat_id: chat.id,
                 why: CANNOT.to_string(),
             });
@@ -88,5 +96,9 @@ pub(super) fn apply(root: &Path) -> Result<(Vec<Applied>, Vec<Skipped>), JoyErro
             }),
         }
     }
-    Ok((done, skipped))
+    Ok(Outcome {
+        done,
+        skipped,
+        dropped,
+    })
 }
