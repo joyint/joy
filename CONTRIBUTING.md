@@ -25,6 +25,8 @@ Architecture decisions are recorded as Joy **decision items**, not as markdown f
 
 A decision is an **ADR** when it records an architecturally significant choice: structure, dependencies, interfaces and contracts, data formats, or a cross-cutting property (security, licensing, naming). Process, triage, or naming-confirmation decisions are plain decisions without the `ADR:` prefix.
 
+Keep ADRs few. Every decision is read at the start of every session (`joy ls -D`), so each one costs every session that follows. A UI interpretation, a design call taken or re-taken while working a story, or a rule that only the one story needs belongs in that story or as a comment on its item, not in an ADR.
+
 An ADR lives in the project whose code or contract it governs; genuinely cross-subproject ADRs (naming, open-core licensing, terminology, the AI governance taxonomy, the documentation and source-of-truth conventions) live in the Joyint umbrella project and apply here too.
 
 ## Documentation Rules
