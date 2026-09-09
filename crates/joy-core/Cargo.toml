@@ -72,7 +72,20 @@ ts = ["dep:ts-rs", "joy-model/ts"]
 # desktop's agent auth). Off by default so CLI builds stay lean; a lean
 # build still compiles the engine, it just cannot reach an https/ssh
 # remote at runtime.
-forge-net = ["git2/https", "git2/ssh"]
+#
+# `vendored-openssl` for the same reason libgit2 is vendored above: the
+# ssh transport needs OpenSSL as libssh2's crypto backend (and, off
+# Apple, libgit2's https does too), and without vendoring openssl-sys
+# links whatever OpenSSL the BUILD machine has. On the operator's Mac
+# that was Homebrew's libssl.3.dylib, which a Developer-ID-signed app
+# under the hardened runtime refuses to load (different Team ID) - the
+# first signed build died in dyld before main (JOY-027C-14). On a Mac
+# without that exact Homebrew path it would have died unsigned as well.
+# TLS trust is unaffected: on Apple libgit2 speaks https through
+# SecureTransport, elsewhere git2's openssl-probe finds the system CA
+# bundle at runtime. On Windows openssl-sys is not a dependency at all
+# (WinHTTP / WinCNG), so the feature is inert there.
+forge-net = ["git2/https", "git2/ssh", "git2/vendored-openssl"]
 
 [dev-dependencies]
 insta = { version = "1.41", features = ["yaml"] }
