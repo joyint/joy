@@ -93,6 +93,8 @@ pub struct Collected {
     pub permissions: Vec<(String, String)>,
     /// toolCallId -> what its `tool_call` notification carried.
     pub tool_calls: HashMap<String, KnownCall>,
+    /// How the host ended the turn, if it had to (see `Activity::ended`).
+    pub ended: Option<String>,
     /// The newest ACP UsageUpdate cost (CUMULATIVE per session,
     /// JP-0089-18). A chat lane turns it into a per-turn delta; a job
     /// round is one fresh session, so there it IS the round total.
@@ -151,6 +153,7 @@ impl Collected {
             tools: self.tools,
             permissions: self.permissions,
             contents: self.contents,
+            ended: self.ended,
         }
         .to_details_json();
         TurnOutcome {
@@ -282,6 +285,7 @@ pub fn collect_notification(state: &mut Collected, update: SessionUpdate) -> Vec
         SessionUpdate::ToolCall(call) => {
             let row_id = call.tool_call_id.0.to_string();
             let status = format!("{:?}", call.status);
+            tracing::debug!(title = %call.title, status = %status, "acp tool call");
             match state.tool_rows.get(&row_id).copied() {
                 Some(at) => {
                     state.tools[at].title = call.title.clone();
@@ -543,7 +547,46 @@ pub struct TurnRequest {
 struct QueuedTurn {
     request: TurnRequest,
     respond: oneshot::Sender<anyhow::Result<TurnOutcome>>,
+    /// The turn's pulse: the lane touches it on every message the agent
+    /// sends, the waiter reads it (JP-0133-82).
+    liveness: Arc<Liveness>,
 }
+
+/// A running turn's pulse. Silence, not the wall clock, ends a turn: a
+/// live analysis streaming tool calls ran past a fixed 180 s and was cut
+/// off with its result thrown away, while an agent stuck on a decision
+/// sat equally silent for 180 s -- only the second is a timeout. The lane
+/// touches the pulse on every notification and request from the agent;
+/// the waiter cancels the turn once the pulse has been still for the
+/// idle span and takes what streamed.
+pub struct Liveness {
+    last: Mutex<std::time::Instant>,
+    cancel: tokio::sync::Notify,
+}
+
+impl Liveness {
+    fn new() -> Self {
+        Self {
+            last: Mutex::new(std::time::Instant::now()),
+            cancel: tokio::sync::Notify::new(),
+        }
+    }
+    fn touch(&self) {
+        *self.last.lock().unwrap_or_else(|e| e.into_inner()) = std::time::Instant::now();
+    }
+    fn silent_for(&self) -> std::time::Duration {
+        self.last
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .elapsed()
+    }
+}
+
+/// How long the lane waits for the agent to answer an idle cancel with
+/// what it has before the lane is declared dead.
+const IDLE_CANCEL_GRACE: std::time::Duration = std::time::Duration::from_secs(20);
+/// The longest a turn may run in total, however lively (a runaway agent).
+const TURN_HARD_LIMIT: std::time::Duration = std::time::Duration::from_secs(60 * 60);
 
 struct Lane {
     /// Spawn-env identity (key, model, adapter): a change respawns the
@@ -579,17 +622,25 @@ impl<K: std::hash::Hash + Eq + Clone> LaneSet<K> {
     /// Run one chat turn through the keyed lane, spawning or respawning
     /// it as needed. One respawn attempt: a dead lane (stopped container,
     /// exited process) is normal, the second failure is a real error.
+    ///
+    /// `idle` is the longest SILENCE a turn may have, not its length: as
+    /// long as the agent sends anything (thoughts, tool calls, usage), the
+    /// turn is alive. Past the idle span the lane cancels the agent's turn
+    /// and returns what streamed, marked `ended: idle-timeout` in the
+    /// record; a lane that does not even answer the cancel within the
+    /// grace is dead and dropped (JP-0133-82).
     pub async fn turn(
         &self,
         key: K,
         fingerprint: u64,
         config: &LaneConfig,
         request: TurnRequest,
-        timeout: std::time::Duration,
+        idle: std::time::Duration,
     ) -> anyhow::Result<TurnOutcome> {
         for attempt in 0..2 {
             let tx = self.lane(key.clone(), fingerprint, config, attempt > 0);
             let (respond, rx) = oneshot::channel();
+            let liveness = Arc::new(Liveness::new());
             let queued = QueuedTurn {
                 request: TurnRequest {
                     chat_id: request.chat_id.clone(),
@@ -601,21 +652,44 @@ impl<K: std::hash::Hash + Eq + Clone> LaneSet<K> {
                     marker_id: request.marker_id.clone(),
                 },
                 respond,
+                liveness: liveness.clone(),
             };
             if tx.send(queued).is_err() {
                 // lane closed between lookup and send: retry respawns
                 continue;
             }
-            match tokio::time::timeout(timeout, rx).await {
-                Ok(Ok(result)) => return result,
-                Ok(Err(_recv_dropped)) => {
-                    // the lane died mid-turn: drop it and retry once
-                    self.drop_lane(&key);
-                    continue;
-                }
-                Err(_) => {
-                    self.drop_lane(&key);
-                    anyhow::bail!("acp chat turn timed out after {}s", timeout.as_secs());
+            let started = std::time::Instant::now();
+            let mut cancelled_at: Option<std::time::Instant> = None;
+            tokio::pin!(rx);
+            loop {
+                tokio::select! {
+                    r = &mut rx => match r {
+                        Ok(result) => return result,
+                        Err(_recv_dropped) => {
+                            // the lane died mid-turn: drop it and retry once
+                            self.drop_lane(&key);
+                            break;
+                        }
+                    },
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {
+                        if let Some(at) = cancelled_at {
+                            if at.elapsed() > IDLE_CANCEL_GRACE {
+                                self.drop_lane(&key);
+                                anyhow::bail!(
+                                    "acp chat turn was silent for {}s and did not answer the cancel",
+                                    idle.as_secs()
+                                );
+                            }
+                        } else if liveness.silent_for() >= idle || started.elapsed() >= TURN_HARD_LIMIT {
+                            tracing::warn!(
+                                silent_s = liveness.silent_for().as_secs(),
+                                total_s = started.elapsed().as_secs(),
+                                "acp chat turn idle; cancelling the agent's turn and keeping what streamed"
+                            );
+                            liveness.cancel.notify_one();
+                            cancelled_at = Some(std::time::Instant::now());
+                        }
+                    }
                 }
             }
         }
@@ -779,6 +853,11 @@ async fn run_lane(
     let notes = buffers.clone();
     let perms = buffers.clone();
     let perm_modes = modes.clone();
+    // per-SESSION pulse of the running turn (JP-0133-82): every
+    // notification and every request from the agent touches it
+    let pulses: Arc<Mutex<HashMap<String, Arc<Liveness>>>> = Arc::default();
+    let notify_pulses = pulses.clone();
+    let perm_pulses = pulses.clone();
 
     let command_shown = command.clone();
     let connect = agent_client_protocol::Client
@@ -786,6 +865,13 @@ async fn run_lane(
         .on_receive_notification(
             async move |notification: SessionNotification, _cx| {
                 let sid = notification.session_id.0.to_string();
+                if let Some(pulse) = notify_pulses
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .get(&sid)
+                {
+                    pulse.touch();
+                }
                 // the live wire of the RUNNING turn, if one listens
                 let wire = notify_live
                     .lock()
@@ -814,6 +900,13 @@ async fn run_lane(
                 // SESSION before the prompt; the host's sandbox (container
                 // mounts, reach) is the hard boundary, this is the belt.
                 let sid = request.session_id.0.to_string();
+                if let Some(pulse) = perm_pulses
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .get(&sid)
+                {
+                    pulse.touch();
+                }
                 let mode = perm_modes
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
@@ -827,6 +920,12 @@ async fn run_lane(
                     .map(|c| c.known(request.tool_call.tool_call_id.0.as_ref()))
                     .unwrap_or_default();
                 let answer = answer_chat_permission(mode, &request, &known);
+                tracing::info!(
+                    title = %answer.title,
+                    answered = answer.answered,
+                    mode = ?mode,
+                    "acp permission answered"
+                );
                 {
                     let mut map = perms.lock().unwrap_or_else(|e| e.into_inner());
                     map.entry(sid).or_default().record_permission(
@@ -870,8 +969,10 @@ async fn run_lane(
             while let Some(QueuedTurn {
                 request: turn,
                 respond,
+                liveness,
             }) = rx.recv().await
             {
+                liveness.touch();
                 // The waiting marker opens the skeleton BEFORE the slow
                 // parts (session spawn, model pin), as the first event on
                 // the same ordered wire the chunks ride (JOY-0249-D2).
@@ -966,6 +1067,11 @@ async fn run_lane(
                 // handler queues into this turn's channel; THIS loop is
                 // the only deliverer, in order, and drains before it
                 // responds (JOY-0249-D2).
+                pulses
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .insert(sid_key.clone(), liveness.clone());
+                liveness.touch();
                 let (act_tx, mut act_rx) = mpsc::unbounded_channel::<TurnActivity>();
                 {
                     let mut wires = live.lock().unwrap_or_else(|e| e.into_inner());
@@ -998,9 +1104,22 @@ async fn run_lane(
                     .block_task();
                 tokio::pin!(prompt_fut);
                 let mut capped = false;
+                let mut idle_cancelled = false;
+                // None: the agent never answered the idle cancel within the
+                // grace; the turn ends with what streamed and the lane dies
                 let prompted = loop {
                     tokio::select! {
-                        r = &mut prompt_fut => break r,
+                        r = &mut prompt_fut => break Some(r),
+                        _ = liveness.cancel.notified(), if !idle_cancelled => {
+                            idle_cancelled = true;
+                            let _ = connection.send_notification(
+                                CancelNotification::new(session_id.clone()),
+                            );
+                        }
+                        _ = tokio::time::sleep(IDLE_CANCEL_GRACE), if idle_cancelled => {
+                            tracing::warn!("acp agent did not answer the idle cancel; ending the turn with what streamed");
+                            break None;
+                        }
                         queued = act_rx.recv(), if live_open => {
                             match queued {
                                 Some(event) => {
@@ -1045,19 +1164,37 @@ async fn run_lane(
                 live.lock()
                     .unwrap_or_else(|e| e.into_inner())
                     .remove(&sid_key);
+                pulses
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .remove(&sid_key);
                 if let Some(sink) = &turn.activity {
                     while let Some(event) = act_rx.recv().await {
                         sink.deliver(WireActivity::of(&event)).await;
                     }
                 }
-                let stop_ok = prompted.is_ok() || capped;
+                let stop_ok = matches!(prompted, Some(Ok(_))) || capped || idle_cancelled;
                 // Did the cap actually TRUNCATE this turn? The 250ms poll
                 // may cancel just as the agent finishes; a whole reply must
                 // not get the "stopped" notice. Only a Cancelled stop (or a
                 // cancel answered with an error) was really cut short.
                 let truncated = match &prompted {
-                    Ok(resp) => resp.stop_reason == StopReason::Cancelled,
-                    Err(_) => capped,
+                    Some(Ok(resp)) => resp.stop_reason == StopReason::Cancelled,
+                    Some(Err(_)) => capped || idle_cancelled,
+                    None => true,
+                };
+                // A turn the host had to end says so in its record
+                // (JP-0133-82): the reply-less message the client writes is
+                // then a turn that was cut, never one that never happened.
+                // an agent that never answered the cancel is stuck: end the
+                // lane after answering, the next turn respawns and replays
+                let unanswered = prompted.is_none();
+                let ended = if idle_cancelled && truncated {
+                    Some("idle-timeout".to_string())
+                } else if capped && truncated {
+                    Some("capped".to_string())
+                } else {
+                    None
                 };
                 let result = if stop_ok {
                     let state = buffers
@@ -1082,18 +1219,24 @@ async fn run_lane(
                         session_tokens.insert(sid_key.clone(), state.used);
                         state.used.saturating_sub(prev)
                     };
+                    let mut state = state;
+                    state.ended = ended;
                     let mut output = state.into_outcome();
                     output.cost_cents = cost_cents;
                     output.tokens = (tokens > 0).then_some(tokens);
-                    output.capped = truncated;
+                    output.capped = capped && truncated;
                     Ok(output)
                 } else {
                     Err(anyhow::anyhow!(
                         "acp prompt: {}",
-                        prompted.err().map(|e| e.to_string()).unwrap_or_default()
+                        prompted
+                            .as_ref()
+                            .and_then(|r| r.as_ref().err())
+                            .map(|e| e.to_string())
+                            .unwrap_or_default()
                     ))
                 };
-                let failed = result.is_err();
+                let failed = result.is_err() || unanswered;
                 let _ = respond.send(result);
                 if failed {
                     // a failed prompt poisons the connection state: end

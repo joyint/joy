@@ -64,6 +64,12 @@ pub struct Activity {
     /// Non-text content blocks the agent sent (JOY-024B-AC interim):
     /// visible as facts until content v2 carries the payloads.
     pub contents: Vec<ContentInfo>,
+    /// How the turn ended when it did not end by itself (JP-0133-82):
+    /// "idle-timeout" (the host cancelled a turn that had gone silent),
+    /// "capped" (the spend cap cancelled it). Absent for a turn the agent
+    /// finished. The record says so, so a reply-less turn is never mistaken
+    /// for a turn that never happened.
+    pub ended: Option<String>,
 }
 
 impl Activity {
@@ -74,6 +80,7 @@ impl Activity {
             && self.tools.is_empty()
             && self.permissions.is_empty()
             && self.contents.is_empty()
+            && self.ended.is_none()
         {
             return None;
         }
@@ -113,6 +120,9 @@ impl Activity {
         if !contents.is_empty() {
             block["contents"] = serde_json::Value::Array(contents);
         }
+        if let Some(ended) = &self.ended {
+            block["ended"] = serde_json::Value::String(ended.clone());
+        }
         Some(block.to_string())
     }
 }
@@ -139,6 +149,7 @@ mod tests {
                 answered: Some("allowed".into()),
             }],
             permissions: vec![("Edit b".into(), "allowed".into())],
+            ended: None,
             contents: vec![ContentInfo {
                 kind: "image".into(),
                 label: "image/png · 6 B".into(),
