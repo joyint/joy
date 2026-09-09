@@ -1,7 +1,7 @@
 id: JOY-027E-D6
 title: A newline inside an argument makes a joy call stop being one
 type: bug
-status: in-progress
+status: review
 priority: critical
 assignees:
 - member: ai:claude@joy
@@ -11,7 +11,7 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-09T16:01:15.240688Z
-updated: 2026-09-09T16:01:24.877456Z
+updated: 2026-09-09T17:46:01.340557Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   An AI below the autonomous level could file only SINGLE-LINE joy calls. Any `joy add --description "two\nlines"` was refused, and the refusal reached the person as the AI declining to act, with no reason given.
@@ -23,3 +23,7 @@ description: |-
   The scan now honours quoting. A newline inside quotes is text; every operator that genuinely starts another program still disqualifies, and substitution disqualifies inside double quotes too, where the shell still performs it. Single quotes make everything literal, and an unterminated quote counts as not plain, since it is not a string we can reason about.
 
   Found while the operator watched two AI members do the same thing with different outcomes (2026-09-09).
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-09T17:46:01.221407Z
+  text: 'Result (2026-09-09): verified at the running desktop, the agent created MPS-000A-4D with the multi-line description that was refused before, and posted a multi-line result comment. Commit 432568c.'

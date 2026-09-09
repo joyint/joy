@@ -1,7 +1,7 @@
 id: JOY-0280-A5
 title: The level chosen for a turn reaches the agent through the ACP session mode
 type: story
-status: in-progress
+status: review
 priority: critical
 assignees:
 - member: ai:claude@joy
@@ -12,7 +12,7 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-09T17:08:22.722424Z
-updated: 2026-09-09T17:11:38.592555Z
+updated: 2026-09-09T17:46:01.074606Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   JI-0166-D8 §4 says the adapter derives its native mode from the effective level "at setup and turn time". Setup exists (joy ai setup writes .claude/settings.json); turn time never did. The turn mode lived only in the lane, used to ANSWER permission requests. An agent that never asks - Claude Code in its own plan mode - ran in whatever its setup file said, and switching the level in the composer changed nothing anyone could see (operator, 2026-09-09).
@@ -22,3 +22,7 @@ description: |-
   The candidate ids live next to the setup writers in level_enforcement and a test holds the two tables together, so they cannot drift.
 
   Not covered by a test: the wire itself. joy-ai has no fake ACP agent; the selection is unit-tested, the effect is verified at the running app. The composer side of this (the choice as a turn parameter instead of a chat write) is the JAPP twin.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-09T17:46:00.961742Z
+  text: 'Result (2026-09-09): the lane keeps what each session advertised and sets the mode the turn means before every prompt. Verified end to end at the running desktop: telemetry 19:27:51 ''session mode set for the turn'' mode=bypassPermissions, the answer''s info block shows mode autonomous, and the agent filed an item with a multi-line description in that turn. lint runs with --all-features so the lane stays compiled here. Commits c6d22aa, 26b0d40.'
