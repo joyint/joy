@@ -414,19 +414,31 @@ pub fn sync_with_forge(root: &Path, auth: &joy_core::vcs::forge::Auth) -> Result
 /// moved — the caller announces that however its host does
 /// (fs-notice on the desktop, the chat bus on the platform).
 pub fn poll_once(root: &Path, auth: &joy_core::vcs::forge::Auth) -> Result<bool, JoyError> {
-    let gate = joy_core::vcs::forge::checkout_gate(root);
-    let _guard = gate.lock().unwrap_or_else(|e| e.into_inner());
+    // The cheap question first, OUTSIDE the checkout gate. The gate's own
+    // contract (JP-00DB-61) is "every path that MOVES refs takes it;
+    // reads stay lock-free", and a remote-hash compare moves nothing.
+    // Holding it across the forge contact made every local write queue
+    // behind a network round trip: 1.3 s over SSH, once per poll tick,
+    // so a message, a delegation or a level took seconds to land
+    // (JOY-027F-EB). The platform drew the same line on 2026-08-29
+    // (JP-00F5-2A) in its own wrapper; here it is in the shared pass, so
+    // both hosts have it.
     let before = ref_target(root)?.map(|oid| oid.to_string());
     let remote = remote_hash(root, auth)?;
-    if remote != before && pull_from_forge(root, auth)? {
-        // best effort: delivery heals what an offline write left - but
-        // only when the local ref carries what the forge lacks. After a
-        // plain fast-forward local == remote, and a push then was one
-        // forge contact for nothing: 2.3 s and a throttle slot at
-        // Codeberg, twice per chat opened (JP-00FA-FF, 2026-08-29).
-        let local = ref_target(root)?.map(|oid| oid.to_string());
-        if local != remote {
-            let _ = joy_core::vcs::forge::push_ref(root, auth, CHATS_REF);
+    if remote != before {
+        // Something moved: only now the refs move, only now the gate.
+        let gate = joy_core::vcs::forge::checkout_gate(root);
+        let _guard = gate.lock().unwrap_or_else(|e| e.into_inner());
+        if pull_from_forge(root, auth)? {
+            // best effort: delivery heals what an offline write left - but
+            // only when the local ref carries what the forge lacks. After a
+            // plain fast-forward local == remote, and a push then was one
+            // forge contact for nothing: 2.3 s and a throttle slot at
+            // Codeberg, twice per chat opened (JP-00FA-FF, 2026-08-29).
+            let local = ref_target(root)?.map(|oid| oid.to_string());
+            if local != remote {
+                let _ = joy_core::vcs::forge::push_ref(root, auth, CHATS_REF);
+            }
         }
     }
     let after = ref_target(root)?.map(|oid| oid.to_string());
@@ -1042,6 +1054,44 @@ mod tests {
 #[cfg(test)]
 mod forge_sync_tests {
     use super::*;
+
+    /// A poll that finds the forge unchanged never touches the checkout
+    /// gate (JOY-027F-EB). The test HOLDS the gate and polls from another
+    /// thread: the old pass took the gate before asking the forge and
+    /// would sit here forever; the pass that asks first comes straight
+    /// back with "nothing moved".
+    #[test]
+    fn a_quiet_poll_never_takes_the_checkout_gate() {
+        let base = std::env::temp_dir().join(format!("jp-chatref-quiet-{}", std::process::id()));
+        std::fs::remove_dir_all(&base).ok();
+        let forge = base.join("forge.git");
+        std::fs::create_dir_all(&forge).unwrap();
+        git2::Repository::init_bare(&forge).unwrap();
+        let clone = base.join("clone");
+        let repo = git2::Repository::init(&clone).unwrap();
+        repo.remote("origin", forge.to_str().unwrap()).unwrap();
+        // No chats ref on either side: the forge answers "none", the
+        // local side has "none", nothing moved.
+        let gate = joy_core::vcs::forge::checkout_gate(&clone);
+        let held = gate.lock().unwrap();
+        let root = clone.clone();
+        let polled =
+            std::thread::spawn(move || poll_once(&root, &joy_core::vcs::forge::Auth::token("x")));
+        let started = std::time::Instant::now();
+        while !polled.is_finished() {
+            assert!(
+                started.elapsed() < std::time::Duration::from_secs(10),
+                "poll_once waited for the checkout gate although the forge had not moved"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        drop(held);
+        assert!(
+            !polled.join().unwrap().unwrap(),
+            "nothing moved, so nothing changed"
+        );
+        std::fs::remove_dir_all(&base).ok();
+    }
 
     /// Chats sync on their own ref (refs/joy/chats), never the working
     /// branch: write a chat, sync it, and see the message land on

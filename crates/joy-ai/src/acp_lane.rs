@@ -32,6 +32,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use agent_client_protocol::schema::v1::SetSessionModeRequest;
 use agent_client_protocol::schema::v1::{
     CancelNotification, ContentBlock, Cost, Implementation, InitializeRequest, NewSessionRequest,
     PermissionOptionId, PermissionOptionKind, PromptRequest, RequestPermissionOutcome,
@@ -767,6 +768,10 @@ async fn run_lane(
     // requests carry the session id, so concurrent chats never mix
     let buffers: Arc<Mutex<HashMap<String, Collected>>> = Arc::default();
     let modes: Arc<Mutex<HashMap<String, joy_chat::model::AgentMode>>> = Arc::default();
+    // per-SESSION advertised session modes (JOY-0280-A5): what the agent
+    // offered at session/new, so a turn can put it into the mode its
+    // level means
+    let mut advertised: HashMap<String, Vec<String>> = HashMap::new();
     // per-SESSION live-activity wires (JI-0172-EE): the running turn
     // listens on the receiving end and owns delivery order + drain
     // (JOY-0249-D2); the notification handler only queues.
@@ -904,6 +909,12 @@ async fn run_lane(
                                 .block_task()
                                 .await?;
                         }
+                        if let Some(state) = &created.modes {
+                            advertised.insert(
+                                created.session_id.0.to_string(),
+                                state.available_modes.iter().map(|m| m.id.0.to_string()).collect(),
+                            );
+                        }
                         sessions.insert(turn.chat_id.clone(), created.session_id.clone());
                         // fresh session: the chat history IS the resume,
                         // led once by the host's preamble if it has one
@@ -919,6 +930,39 @@ async fn run_lane(
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
                     .insert(sid_key.clone(), turn.mode);
+                // The level chosen for THIS turn reaches the tool itself
+                // (JOY-0280-A5). Until now the turn's mode governed only
+                // how this host answered permission requests; an agent
+                // that never asks - Claude in its own plan mode - ran in
+                // whatever mode its setup file said, and the pill in the
+                // composer changed nothing anyone could see. Set on EVERY
+                // turn, not only on change: the agent may leave a mode on
+                // its own (plan mode ends itself), and a stale cache would
+                // let it run less restricted than the level says.
+                let offered = advertised.get(&sid_key).cloned().unwrap_or_default();
+                match crate::level_enforcement::pick_session_mode(
+                    offered.iter().map(String::as_str),
+                    turn.mode,
+                ) {
+                    Some(mode_id) => {
+                        match connection
+                            .send_request(SetSessionModeRequest::new(session_id.clone(), mode_id))
+                            .block_task()
+                            .await
+                        {
+                            Ok(_) => tracing::info!(mode = mode_id, "session mode set for the turn"),
+                            Err(e) => tracing::warn!(
+                                mode = mode_id,
+                                error = %e,
+                                "the agent refused the session mode; permission answers govern"
+                            ),
+                        }
+                    }
+                    None => tracing::info!(
+                        turn_mode = ?turn.mode,
+                        "the agent advertises no session mode for this level; permission answers govern"
+                    ),
+                }
                 // The live wire opens with the turn: the notification
                 // handler queues into this turn's channel; THIS loop is
                 // the only deliverer, in order, and drains before it

@@ -87,6 +87,36 @@ pub fn qwen_approval_mode(level: InteractionLevel) -> &'static str {
     }
 }
 
+/// The ACP session-mode ids that mean a given agent mode, across the
+/// adapters we know (JOY-0280-A5): the lane picks the first one the
+/// agent ADVERTISES in `available_modes` and sets it on the session at
+/// every turn, so the level chosen for a turn reaches the tool itself and
+/// not only the host's permission answers. An adapter that advertises
+/// none of these keeps running under those answers alone.
+///
+/// The ids are the native strings the setup writers above emit, so the
+/// table cannot drift from them (the tests hold both sides together).
+pub fn session_mode_candidates(mode: joy_chat::model::AgentMode) -> &'static [&'static str] {
+    use joy_chat::model::AgentMode;
+    match mode {
+        AgentMode::Plan => &["plan"],
+        AgentMode::AcceptEdits => &["acceptEdits", "auto-edit"],
+        AgentMode::Autonomous => &["bypassPermissions", "yolo"],
+    }
+}
+
+/// The advertised mode id to set for `mode`, if the agent offers one.
+pub fn pick_session_mode<'a>(
+    advertised: impl IntoIterator<Item = &'a str>,
+    mode: joy_chat::model::AgentMode,
+) -> Option<&'static str> {
+    let offered: Vec<&str> = advertised.into_iter().collect();
+    session_mode_candidates(mode)
+        .iter()
+        .copied()
+        .find(|id| offered.contains(id))
+}
+
 /// Mistral Vibe native bash-tool permission (`.vibe/config.toml`
 /// `[tools.bash] permission`). Vibe's repo config has no plan profile;
 /// below `autonomous` every shell command is confirmed by the human.
@@ -160,6 +190,41 @@ pub fn managed_block_section(levels: &EnforcedLevels, tool: &str) -> String {
 mod tests {
     use super::*;
     use joy_core::model::config::InteractionLevel::*;
+
+    #[test]
+    fn session_mode_candidates_agree_with_the_setup_writers() {
+        use joy_chat::model::AgentMode;
+        use InteractionLevel::*;
+        for (level, mode) in [
+            (Proposing, AgentMode::Plan),
+            (Confirmed, AgentMode::AcceptEdits),
+            (Autonomous, AgentMode::Autonomous),
+        ] {
+            let ids = session_mode_candidates(mode);
+            assert!(ids.contains(&claude_permission_mode(level)), "{level:?}");
+            assert!(ids.contains(&qwen_approval_mode(level)), "{level:?}");
+        }
+    }
+
+    #[test]
+    fn pick_session_mode_takes_what_the_agent_offers_and_nothing_else() {
+        use joy_chat::model::AgentMode;
+        let claude = ["default", "acceptEdits", "plan", "bypassPermissions"];
+        assert_eq!(pick_session_mode(claude, AgentMode::Plan), Some("plan"));
+        assert_eq!(
+            pick_session_mode(claude, AgentMode::AcceptEdits),
+            Some("acceptEdits")
+        );
+        assert_eq!(
+            pick_session_mode(claude, AgentMode::Autonomous),
+            Some("bypassPermissions")
+        );
+        let qwen = ["plan", "auto-edit", "yolo"];
+        assert_eq!(pick_session_mode(qwen, AgentMode::Autonomous), Some("yolo"));
+        // an adapter without modes: nothing to set, permission answers govern
+        assert_eq!(pick_session_mode([], AgentMode::Autonomous), None);
+        assert_eq!(pick_session_mode(["chat"], AgentMode::Plan), None);
+    }
 
     #[test]
     fn native_maps_are_one_way_and_total() {
