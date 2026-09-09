@@ -52,8 +52,14 @@ pub struct AdapterSpec {
     /// agent would lose the person's sign-in and fail with "missing API
     /// key" while their own CLI works right next to it.
     pub state_env: Option<&'static str>,
-    /// What to tell a person on whose machine the probe fails.
+    /// What to tell a person on whose machine the probe fails: prose
+    /// only, no command. A surface pairs it with [`Self::install_command`]
+    /// so the command can be shown as something to copy rather than
+    /// buried in a sentence (JAPP-0245-7A).
     pub install_hint: &'static str,
+    /// The one command that installs it, when there is one. None where
+    /// installing means downloading an application.
+    pub install_command: Option<&'static str>,
     /// The TOOL behind the bridge, when bridge and tool are separate
     /// programs (JAPP-0084-7D): the desktop ships the bridge as a
     /// sidecar, so the tool is what still has to be installed and
@@ -71,8 +77,11 @@ pub struct ToolBinary {
     /// The environment variable the bridge reads to find the tool, set
     /// to the resolved absolute path by a host that spawns locally.
     pub env: &'static str,
-    /// What to tell a person on whose machine the tool is missing.
+    /// What to tell a person on whose machine the tool is missing: prose
+    /// only, like [`AdapterSpec::install_hint`].
     pub install_hint: &'static str,
+    /// The one command that installs it, when there is one.
+    pub install_command: Option<&'static str>,
 }
 
 /// The product's tools. Test-only agents (the platform's ACP mock) are
@@ -90,7 +99,8 @@ pub const ADAPTERS: &[AdapterSpec] = &[
         key_env: Some("MISTRAL_API_KEY"),
         model_env: Some("VIBE_ACTIVE_MODEL"),
         state_env: Some("VIBE_HOME"),
-        install_hint: "Install the Mistral Vibe CLI (it ships vibe-acp) and sign in there",
+        install_hint: "Install the Mistral Vibe CLI, which ships vibe-acp, and sign in there.",
+        install_command: None,
         tool: None,
     },
     AdapterSpec {
@@ -109,14 +119,16 @@ pub const ADAPTERS: &[AdapterSpec] = &[
         model_env: None,
         state_env: Some("CLAUDE_CONFIG_DIR"),
         install_hint:
-            "npm i -g @agentclientprotocol/claude-agent-acp; Claude Code signs in inside the tool",
+            "The ACP bridge is missing. Install it, then sign in inside Claude Code itself.",
+        install_command: Some("npm i -g @agentclientprotocol/claude-agent-acp"),
         // The bridge embeds the Claude Agent SDK, which looks for Claude
         // Code by this variable; the desktop points it at the person's
         // own installation (their sign-in stays in the tool, JAPP-001D).
         tool: Some(ToolBinary {
             binary: "claude",
             env: "CLAUDE_CODE_EXECUTABLE",
-            install_hint: "Install Claude Code (claude.ai/code) and sign in there",
+            install_hint: "Install Claude Code from claude.ai/code and sign in there.",
+            install_command: None,
         }),
     },
     AdapterSpec {
@@ -128,7 +140,8 @@ pub const ADAPTERS: &[AdapterSpec] = &[
         key_env: Some("OPENAI_API_KEY"),
         model_env: Some("OPENAI_MODEL"),
         state_env: Some("QWEN_DIR"),
-        install_hint: "Install Qwen Code (npm i -g @qwen-code/qwen-code) and sign in there",
+        install_hint: "Install Qwen Code, then sign in there.",
+        install_command: Some("npm i -g @qwen-code/qwen-code"),
         tool: None,
     },
 ];

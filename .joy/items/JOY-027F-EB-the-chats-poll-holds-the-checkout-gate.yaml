@@ -1,0 +1,27 @@
+id: JOY-027F-EB
+title: The chats poll holds the checkout gate across the forge contact; every desktop write waits behind it
+type: bug
+status: review
+priority: critical
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-09T17:08:22.603087Z
+updated: 2026-09-09T17:46:00.850811Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  poll_once took the per-checkout gate BEFORE asking the forge and held it across the whole contact. Over SSH that contact is 1.3 s (measured on the desktop 2026-09-09, same as JP-00F8-F0 on the platform), and the desktop polls every 500 ms while focused, so the gate was busy about 70 percent of the time. Every local write that needs the gate - a message, a delegation, an interaction level - queued behind a network round trip and could lose the race to the next poll; the operator measured 7 s for one click.
+
+  The gate contract (JP-00DB-61) says it itself: every path that MOVES refs takes the gate; reads stay lock-free. A remote-hash compare moves nothing. The platform drew this line on 2026-08-29 in its own wrapper (JP-00F5-2A, commit 8850a05); the shared pass the desktop runs was left as it was.
+
+  Now the pass asks first, without the gate, and takes it only when the forge has moved, for fetch, reconcile and push. A test holds the gate and polls from another thread: the old pass sat there forever, the new one answers at once.
+
+  Twin of JP-00F5-2A, in the shared code so both hosts have it.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-09T17:46:00.735014Z
+  text: 'Result (2026-09-09): poll_once asks the forge without the gate and takes it only on a change; a test holds the gate and polls from another thread. Verified at the running desktop by the operator: sending is noticeably faster, no more seconds behind a poll. Commits c6d22aa, 26b0d40.'

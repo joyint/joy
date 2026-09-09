@@ -9,6 +9,10 @@ homepage = "https://joyint.com/en/joy"
 
 [dependencies]
 joy-core = { version = "0.20.0", path = "../joy-core" }
+# The lane records its session-mode decisions (JOY-0280-A5); the same
+# subscriber joy-core feeds. Unconditional, so the `acp` feature builds
+# wherever the crate does.
+tracing = "0.1"
 joy-chat = { version = "0.20.0", path = "../joy-chat" }
 joy-chat-store = { version = "0.20.0", path = "../joy-chat-store" }
 joy-crypt = { workspace = true }

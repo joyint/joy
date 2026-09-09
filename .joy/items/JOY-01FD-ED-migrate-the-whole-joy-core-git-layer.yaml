@@ -10,7 +10,10 @@ capabilities:
 effort: 5
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-07-07T06:54:37.517173Z
-updated: 2026-07-07T06:54:37.517173Z
+updated: 2026-09-09T17:08:22.837693Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
-history: []
 description: Stage 2 of the git2 move (stage 1 = JOY-01FC-4B, chats on refs/joy/chats). Once git2 is a joy-core dependency for refs/joy/chats, migrate the remaining CLI-subprocess git away from GitVcs in vcs.rs (add, add_all, commit, push, push_tag, is_ignored, is_clean, config_get/set, remotes, version tags, forge detection, init_repo, user_email) and the direct Command::new("git") calls in ai_setup.rs (git rm --cached, ls-files) onto git2, so joy-core has a single git engine. Verify release/version-tag and ai-setup paths keep working. Avoids a permanent CLI/git2 hybrid.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-09T17:08:22.837692Z
+  text: 'Operator decision 2026-09-09: git as a process goes away entirely, not only the CLI verbs. The reason is mobile: the app must work without a git binary at all. That makes the one remaining production call - git gc --auto in joy-chat-store, best effort every N writes - a thing to REPLACE, not to keep: implement the maintenance ourselves on git2 (pack loose objects, prune what nothing references), so a store on iOS and Android stops growing without bound. Also for this pass: the guard-vcs heuristic treats everything after a file''s FIRST #[cfg(test)] as test code; chat_ref.rs has one at line 113, so its gc call at 188 passes the guard by accident, not by sanction. Not started; recorded so it is not lost while the launch work runs.'
