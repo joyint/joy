@@ -739,7 +739,6 @@ fn spawn_lane_thread(
 /// arrival order. Ends when the turn channel closes or the transport
 /// dies; pending turns learn it through their dropped responders.
 #[allow(clippy::too_many_arguments)]
-#[allow(clippy::too_many_arguments)]
 async fn run_lane(
     command: String,
     cwd: PathBuf,

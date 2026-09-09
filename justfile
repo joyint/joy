@@ -69,9 +69,12 @@ fmt:
 fmt-check:
     cargo fmt --all -- --check
 
-# Lint all code
+# Lint all code. EVERY feature: the ACP lane (joy-ai `acp`) is only
+# compiled behind its feature, and without this flag it was never linted
+# here at all - a missing dependency and a duplicated attribute in it
+# surfaced from the desktop build instead (JOY-0280-A5, 2026-09-09).
 lint:
-    cargo clippy --workspace -- -D warnings
+    cargo clippy --workspace --all-features -- -D warnings
 
 # Abort if the local Rust stable toolchain is behind the latest release.
 # Prevents clippy-version drift between local and CI.
