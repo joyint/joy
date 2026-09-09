@@ -1,7 +1,7 @@
 id: JOY-0282-E8
 title: The chat lane ends a turn on silence, not on the clock, and keeps what streamed
 type: story
-status: in-progress
+status: review
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -12,7 +12,7 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-09T20:34:33.808330914Z
-updated: 2026-09-09T20:53:07.771700312Z
+updated: 2026-09-09T21:03:02.144413367Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Platform side JP-0133-82. A chat turn had a fixed wall-clock limit (180 s): a live analysis streaming tool calls was cut off and its result thrown away, while an agent stuck on a decision sat equally silent for 180 s and only that one is a timeout. Every ACP adapter on both hosts shares joy_ai::acp_lane, so the rule lives there: the lane keeps a pulse per running turn, touched by every notification and request from the agent; the waiter cancels the agent''s turn once the pulse has been still for the idle span (the same env value, now meaning silence), takes what streamed and marks the record ''ended: idle-timeout''; an agent that does not answer the cancel within the grace ends the lane. Tool calls and permission answers are logged so a postmortem can see the ACP exchange.'
 comments:

@@ -26,3 +26,4 @@
 2026-09-09T20:34:33.815Z JOY-0282-E8 item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-09-09T20:38:13.551Z JOY-0282-E8 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-09-09T20:53:07.778Z JOY-0282-E8 comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-09-09T21:03:02.151Z JOY-0282-E8 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
