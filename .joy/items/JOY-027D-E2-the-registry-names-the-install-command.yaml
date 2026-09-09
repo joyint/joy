@@ -1,0 +1,19 @@
+id: JOY-027D-E2
+title: The registry names the install command apart from the prose
+type: task
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-09T10:19:15.535972Z
+updated: 2026-09-09T10:19:30.535696Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Operator 2026-09-09, on the desktop''s new AI-member card: the reason a member cannot run was one sentence with the command inside it, which reads badly and cannot be copied. AdapterSpec.install_hint and ToolBinary.install_hint were prose and command mixed (''npm i -g @agentclientprotocol/claude-agent-acp; Claude Code signs in inside the tool''). Both gain install_command: Option<&str> and keep prose only, so a surface can print the sentence and offer the command as something to copy, and a surface with no room for a box can still join them into one line. None where installing means downloading an application (Claude Code, Mistral Vibe).'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-09T10:19:30.387770Z
+  text: '[x] AdapterSpec.install_command and ToolBinary.install_command, both Option<&''static str>; the four hints are prose only now and end in a full stop. claude carries the npm command for its bridge and None for Claude Code itself, which is a download; qwen carries its npm command; vibe carries None. The desktop pairs them (JAPP-0245-7A): a card prints the sentence and the command in a copyable box, a chat notice joins them into one line. just check green in joy; every consumer builds.'
