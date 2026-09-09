@@ -62,6 +62,10 @@ pub struct KnownCall {
     pub raw_input: Option<serde_json::Value>,
     /// The ACP tool kind as it goes over the wire ("read", "execute", …).
     pub kind: Option<String>,
+    /// The text blocks the call carried as its content. A tool may hand
+    /// a document over this way (Claude's plan rides its "Approve Plan"
+    /// call), so the record keeps them for `crate::adapter_behaviour`.
+    pub content: Vec<String>,
 }
 
 /// An ACP tool kind as its wire string, the form the shared policy
@@ -104,6 +108,12 @@ pub struct Collected {
     /// Non-text content blocks the agent sent (JOY-024B-AC interim):
     /// recorded as facts, never dropped.
     pub contents: Vec<crate::activity::ContentInfo>,
+    /// The newest protocol plan (ACP `plan` update): the whole list each
+    /// time, so the newest replaces the last.
+    pub plan_entries: Vec<crate::adapter_behaviour::PlanItem>,
+    /// The turn's plan in the one shape, set when the turn ends by the
+    /// tool's behaviour (`crate::adapter_behaviour`).
+    pub plan: Option<String>,
 }
 
 /// Cents to bill for a turn, given the session's CUMULATIVE cost amount
@@ -120,6 +130,17 @@ impl Collected {
     /// or nothing when the call was never announced.
     pub fn known(&self, call_id: &str) -> KnownCall {
         self.tool_calls.get(call_id).cloned().unwrap_or_default()
+    }
+
+    /// Every announced call in CALL order (the map is keyed by id; the
+    /// row index says when it was announced), for a behaviour that wants
+    /// the last write or the one plan hand-over.
+    pub fn calls_in_order(&self) -> Vec<&KnownCall> {
+        let mut ids: Vec<(&String, &usize)> = self.tool_rows.iter().collect();
+        ids.sort_by_key(|(_, at)| **at);
+        ids.into_iter()
+            .filter_map(|(id, _)| self.tool_calls.get(id))
+            .collect()
     }
 
     /// Record an answered permission: it belongs to the CALL it opens, and
@@ -154,6 +175,7 @@ impl Collected {
             permissions: self.permissions,
             contents: self.contents,
             ended: self.ended,
+            plan: self.plan,
         }
         .to_details_json();
         TurnOutcome {
@@ -308,6 +330,7 @@ pub fn collect_notification(state: &mut Collected, update: SessionUpdate) -> Vec
                     title: Some(call.title.clone()),
                     raw_input: call.raw_input.clone(),
                     kind: wire_kind(call.kind),
+                    content: content_texts(&call.content),
                 },
             );
             stream(TurnActivity::Tool {
@@ -337,6 +360,12 @@ pub fn collect_notification(state: &mut Collected, update: SessionUpdate) -> Vec
             if let Some(kind) = update.fields.kind.and_then(wire_kind) {
                 entry.kind = Some(kind);
             }
+            if let Some(content) = &update.fields.content {
+                let texts = content_texts(content);
+                if !texts.is_empty() {
+                    entry.content = texts;
+                }
+            }
             stream(TurnActivity::Tool {
                 title: update
                     .fields
@@ -360,9 +389,51 @@ pub fn collect_notification(state: &mut Collected, update: SessionUpdate) -> Vec
             }
             state.used = usage.used;
         }
+        // The protocol's own plan (Claude renders its todo list this
+        // way): the whole list every time, so the newest replaces the
+        // last, on record and on the wire alike.
+        SessionUpdate::Plan(plan) => {
+            state.plan_entries = plan
+                .entries
+                .iter()
+                .map(|entry| crate::adapter_behaviour::PlanItem {
+                    content: entry.content.clone(),
+                    // the wire words (`in_progress`), not the Rust names
+                    status: wire_word(&entry.status),
+                    priority: wire_word(&entry.priority),
+                })
+                .collect();
+            stream(TurnActivity::Plan {
+                text: crate::adapter_behaviour::plan_entries_markdown(&state.plan_entries),
+            });
+        }
         _ => {}
     }
     events
+}
+
+/// A wire enum as its wire string (`in_progress`, `high`), the words the
+/// record and the app share; the Rust name is the fallback.
+fn wire_word<T: serde::Serialize + std::fmt::Debug>(value: &T) -> String {
+    serde_json::to_value(value)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_string))
+        .unwrap_or_else(|| format!("{value:?}").to_lowercase())
+}
+
+/// The text blocks of a tool call's content, in order.
+fn content_texts(content: &[agent_client_protocol::schema::v1::ToolCallContent]) -> Vec<String> {
+    use agent_client_protocol::schema::v1::ToolCallContent;
+    content
+        .iter()
+        .filter_map(|block| match block {
+            ToolCallContent::Content(inner) => match &inner.content {
+                ContentBlock::Text(text) => Some(text.text.clone()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -503,6 +574,11 @@ pub struct LaneConfig {
     /// The full command line (the registry entrypoint, locally or behind
     /// `docker exec`), parsed by `AcpAgent::from_str`.
     pub command: String,
+    /// The registry id of the tool behind the command ("vibe", "claude",
+    /// …): picks the behaviour that normalises what the tool does
+    /// differently from the protocol (`crate::adapter_behaviour`). An
+    /// unknown or empty id gets the protocol's own behaviour.
+    pub adapter: String,
     /// Working directory for new sessions (the repo checkout).
     pub cwd: PathBuf,
     /// ACP client_info. REQUIRED in practice: vibe-acp forwards it to the
@@ -745,6 +821,7 @@ impl<K: std::hash::Hash + Eq + Clone> LaneSet<K> {
         // cannot leak into an unrelated later error.
         spawn_lane_thread(
             config.command.clone(),
+            config.adapter.clone(),
             config.cwd.clone(),
             config.client_name.clone(),
             config.client_version.clone(),
@@ -771,6 +848,7 @@ impl<K: std::hash::Hash + Eq + Clone> LaneSet<K> {
 #[allow(clippy::too_many_arguments)]
 fn spawn_lane_thread(
     command: String,
+    adapter: String,
     cwd: PathBuf,
     client_name: String,
     client_version: String,
@@ -796,6 +874,7 @@ fn spawn_lane_thread(
             };
             runtime.block_on(run_lane(
                 command,
+                adapter,
                 cwd,
                 client_name,
                 client_version,
@@ -815,6 +894,7 @@ fn spawn_lane_thread(
 #[allow(clippy::too_many_arguments)]
 async fn run_lane(
     command: String,
+    adapter: String,
     cwd: PathBuf,
     client_name: String,
     client_version: String,
@@ -824,6 +904,9 @@ async fn run_lane(
     errors: Arc<Mutex<Option<String>>>,
     mut rx: mpsc::UnboundedReceiver<QueuedTurn>,
 ) {
+    // what THIS tool does differently from the protocol, normalised
+    // once per turn when it ends (`crate::adapter_behaviour`)
+    let behaviour = crate::adapter_behaviour::behaviour_for(&adapter);
     let agent = match AcpAgent::from_str(&command) {
         Ok(agent) => agent,
         Err(e) => {
@@ -1221,6 +1304,18 @@ async fn run_lane(
                     };
                     let mut state = state;
                     state.ended = ended;
+                    // The tool's own way of handing over a plan, and its
+                    // own control tags in the reply, normalised into the
+                    // one record (`crate::adapter_behaviour`). The plan
+                    // goes onto the wire as the turn's last event, so a
+                    // live view shows it before the reply lands.
+                    crate::adapter_behaviour::finish_turn(behaviour, &cwd, &mut state);
+                    if let (Some(sink), Some(plan)) = (&turn.activity, &state.plan) {
+                        sink.deliver(WireActivity::of(&TurnActivity::Plan {
+                            text: plan.clone(),
+                        }))
+                        .await;
+                    }
                     let mut output = state.into_outcome();
                     output.cost_cents = cost_cents;
                     output.tokens = (tokens > 0).then_some(tokens);
@@ -1371,8 +1466,14 @@ async fn single_round_inner(config: &LaneConfig, prompt: &str) -> anyhow::Result
         .await
         .map_err(|e| anyhow::anyhow!("acp round: {e}"))?;
 
-    let state = std::mem::take(&mut *collected.lock().unwrap_or_else(|e| e.into_inner()));
+    let mut state = std::mem::take(&mut *collected.lock().unwrap_or_else(|e| e.into_inner()));
     let question = question.lock().unwrap_or_else(|e| e.into_inner()).take();
+    // the same per-tool normalisation as a chat turn gets
+    crate::adapter_behaviour::finish_turn(
+        crate::adapter_behaviour::behaviour_for(&config.adapter),
+        &config.cwd,
+        &mut state,
+    );
     // one fresh session: the cumulative usage IS the round total
     let cost_cents = state
         .cost
@@ -1494,6 +1595,7 @@ mod lane_error_tests {
             let lanes: LaneSet<u32> = LaneSet::default();
             let config = LaneConfig {
                 command: "joyint-missing-binary-xyz".into(),
+                adapter: String::new(),
                 cwd: std::env::temp_dir(),
                 client_name: "test".into(),
                 client_version: "1".into(),
@@ -1666,6 +1768,55 @@ mod tests {
     }
 
     #[test]
+    fn a_protocol_plan_update_replaces_the_last_and_rides_the_wire() {
+        // Claude's bridge renders its todo list this way (JOY-0283-1B):
+        // the whole list every time
+        let mut state = Collected::default();
+        let events = collect_notification(
+            &mut state,
+            update(serde_json::json!({
+                "sessionUpdate": "plan",
+                "entries": [
+                    { "content": "read the backlog", "priority": "high", "status": "completed" },
+                    { "content": "write tests", "priority": "medium", "status": "in_progress" },
+                ],
+            })),
+        );
+        assert_eq!(state.plan_entries.len(), 2);
+        assert_eq!(state.plan_entries[1].status, "in_progress");
+        match &events[..] {
+            [TurnActivity::Plan { text }] => {
+                assert_eq!(
+                    text,
+                    "- [x] read the backlog\n- [ ] write tests _(in progress)_"
+                )
+            }
+            other => panic!("expected one plan event, got {other:?}"),
+        }
+        collect_notification(
+            &mut state,
+            update(serde_json::json!({
+                "sessionUpdate": "plan",
+                "entries": [{ "content": "ship", "priority": "low", "status": "pending" }],
+            })),
+        );
+        assert_eq!(state.plan_entries.len(), 1);
+        // the tool's content rides its call for the behaviours
+        collect_notification(
+            &mut state,
+            update(serde_json::json!({
+                "sessionUpdate": "tool_call",
+                "toolCallId": "t1",
+                "title": "Approve Plan",
+                "kind": "switch_mode",
+                "status": "pending",
+                "content": [{ "type": "content", "content": { "type": "text", "text": "## Plan" } }],
+            })),
+        );
+        assert_eq!(state.known("t1").content, vec!["## Plan".to_string()]);
+    }
+
+    #[test]
     fn sub_cent_turns_accumulate_across_a_session() {
         // JP-00C0-25: rounding each turn's delta to whole cents dropped
         // every remainder — three 0.4-cent turns billed 0. Billing against
@@ -1707,6 +1858,7 @@ mod tests {
             title: Some("read file".into()),
             raw_input: None,
             kind: Some("read".into()),
+            content: vec![],
         };
         // a plain READ is allowed even at the proposing level
         let answer = answer_chat_permission(joy_chat::model::AgentMode::Plan, &request, &known);

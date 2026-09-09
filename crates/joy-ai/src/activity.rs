@@ -70,6 +70,11 @@ pub struct Activity {
     /// finished. The record says so, so a reply-less turn is never mistaken
     /// for a turn that never happened.
     pub ended: Option<String>,
+    /// The plan the turn produced, as Markdown, in ONE shape whatever
+    /// the tool did with it (`crate::adapter_behaviour`): vibe keeps it
+    /// in a file, Claude hands it over in a tool call, the protocol
+    /// streams it as entries. The thread shows it as the answer.
+    pub plan: Option<String>,
 }
 
 impl Activity {
@@ -81,6 +86,7 @@ impl Activity {
             && self.permissions.is_empty()
             && self.contents.is_empty()
             && self.ended.is_none()
+            && self.plan.is_none()
         {
             return None;
         }
@@ -123,6 +129,9 @@ impl Activity {
         if let Some(ended) = &self.ended {
             block["ended"] = serde_json::Value::String(ended.clone());
         }
+        if let Some(plan) = &self.plan {
+            block["plan"] = serde_json::Value::String(plan.clone());
+        }
         Some(block.to_string())
     }
 }
@@ -154,10 +163,13 @@ mod tests {
                 kind: "image".into(),
                 label: "image/png · 6 B".into(),
             }],
+            plan: Some("## Plan\n\n1. read\n2. write".into()),
         };
         let v: serde_json::Value =
             serde_json::from_str(&activity.to_details_json().expect("a block")).expect("json");
         assert_eq!(v["v"], 1);
+        // the plan rides the record in one shape, whatever tool made it
+        assert_eq!(v["plan"], "## Plan\n\n1. read\n2. write");
         assert_eq!(v["thoughts"], "brief reasoning");
         assert_eq!(v["tools"][0]["title"], "Read a");
         assert_eq!(v["tools"][0]["status"], "completed");

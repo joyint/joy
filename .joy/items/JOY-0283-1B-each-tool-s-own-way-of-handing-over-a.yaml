@@ -1,0 +1,20 @@
+id: JOY-0283-1B
+title: Each tool's own way of handing over a plan is normalised into the one record
+type: story
+status: in-progress
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- plan
+- implement
+- review
+effort: 5
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-09T22:15:02.793419308Z
+updated: 2026-09-09T22:15:02.958152178Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Horst 2026-09-09/10: a plan-mode turn's plan reaches the room differently per tool, and the room shows none of them as the answer. Read from the sources: vibe (2.19.1) writes the plan to a file under its home (plans/<time>-<slug>.md, via write_file/edit on an allowlist, no permission asked) and sends no ACP plan update; over ACP it has no exit_plan_mode, so the reminder tells the model to present the plan in prose, which the model may or may not do (on integration it put the plan into its reasoning and wrote a fake harness warning as its reply). Claude (claude-agent-acp 0.76) carries the plan text in the ExitPlanMode tool call ("Approve Plan", kind switch_mode, content = the plan) and renders TodoWrite as ACP plan updates (entries with status and priority).
+
+  The registry row is data; this is behaviour, and only code per tool can normalise it (Horst 2026-09-10, revising the "table only" decision of JI-017A-85). Requirement: the shared lane, used by both hosts and every adapter, hands every turn's plan to the record in one shape, wherever the tool kept it, so the thread can show it as the answer. Per tool only the deviation, everything else stays the one lane.

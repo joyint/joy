@@ -9,6 +9,8 @@
 #[cfg(feature = "acp")]
 pub mod acp_lane;
 pub mod activity;
+#[cfg(feature = "acp")]
+pub mod adapter_behaviour;
 pub mod adapters;
 pub mod ai_setup;
 pub mod ai_templates;

@@ -51,6 +51,11 @@ pub enum TurnActivity {
     /// and its shape, never the payload — visible instead of dropped
     /// until content v2 carries the media itself.
     Content { kind: String, label: String },
+    /// The turn's plan, whole, as Markdown: every event REPLACES the
+    /// last (a protocol plan update carries the full list; the tool's
+    /// own plan arrives once at the end). One shape for every tool
+    /// (`crate::adapter_behaviour`).
+    Plan { text: String },
 }
 
 impl TurnActivity {
@@ -62,6 +67,7 @@ impl TurnActivity {
             TurnActivity::Thought { .. } => "turn-thought",
             TurnActivity::Tool { .. } => "turn-tool",
             TurnActivity::Content { .. } => "turn-content",
+            TurnActivity::Plan { .. } => "turn-plan",
         }
     }
 }
@@ -102,9 +108,9 @@ impl WireActivity {
     /// One streamed activity event on the wire.
     pub fn of(activity: &TurnActivity) -> Self {
         let (text, tool, payload) = match activity {
-            TurnActivity::Chunk { text } | TurnActivity::Thought { text } => {
-                (text.clone(), String::new(), String::new())
-            }
+            TurnActivity::Chunk { text }
+            | TurnActivity::Thought { text }
+            | TurnActivity::Plan { text } => (text.clone(), String::new(), String::new()),
             TurnActivity::Tool { id, title, status } => (title.clone(), id.clone(), status.clone()),
             // field reuse: text carries the human label, tool the
             // content kind ("image", "audio", ...)
