@@ -127,13 +127,77 @@ pub fn command_invokes_joy(title: Option<&str>, raw_input: Option<&serde_json::V
 /// match the program actually run and refuse chaining/substitution/redirect.
 fn is_bare_joy_command(cmd: &str) -> bool {
     let cmd = cmd.trim();
-    const CHAINING: &[&str] = &[";", "&&", "||", "|", "`", "$(", ">", "<", "&", "\n"];
-    if CHAINING.iter().any(|d| cmd.contains(d)) {
+    if !is_one_plain_command(cmd) {
         return false;
     }
     let argv0 = cmd.split_whitespace().next().unwrap_or("");
+    let argv0 = argv0.trim_matches(['"', '\'']);
     let base = argv0.rsplit(['/', '\\']).next().unwrap_or(argv0);
     base == "joy"
+}
+
+/// Whether the string runs exactly ONE program, with nothing in it that
+/// could start a second.
+///
+/// The scan honours quoting, and that is the whole point of it. A plain
+/// substring test used to reject any command CONTAINING a newline, which
+/// made `joy add --description "two\nlines"` stop being a joy invocation
+/// (JOY-027E-D6):
+/// `is_joy` went false, and below autonomous the turn was denied with no
+/// human to ask. Which adapter it hit was accident, since the caller
+/// offers several candidates and an argv array is represented by its
+/// program name alone - so one AI could file a multi-line item and the
+/// next could not.
+///
+/// A newline inside quotes is text. Everything that genuinely starts
+/// another program stays disqualifying, and substitution disqualifies
+/// inside double quotes too, where the shell still performs it; single
+/// quotes make everything literal. An unterminated quote is a string we
+/// cannot reason about, so it counts as not plain.
+fn is_one_plain_command(cmd: &str) -> bool {
+    let chars: Vec<char> = cmd.chars().collect();
+    let mut i = 0;
+    // None outside quotes, else the quote character we are inside of.
+    let mut quote: Option<char> = None;
+    while i < chars.len() {
+        let c = chars[i];
+        match quote {
+            // Single quotes: literal until the closing one.
+            Some('\'') => {
+                if c == '\'' {
+                    quote = None;
+                }
+                i += 1;
+            }
+            // Double quotes: a backslash escapes the next character, and
+            // the shell still substitutes in here.
+            Some(_) => {
+                if c == '\\' {
+                    i += 2;
+                    continue;
+                }
+                if c == '`' || (c == '$' && chars.get(i + 1) == Some(&'(')) {
+                    return false;
+                }
+                if c == '"' {
+                    quote = None;
+                }
+                i += 1;
+            }
+            None => match c {
+                '\'' | '"' => {
+                    quote = Some(c);
+                    i += 1;
+                }
+                // Escapes the next character, a line continuation included.
+                '\\' => i += 2,
+                ';' | '|' | '&' | '<' | '>' | '\n' | '`' => return false,
+                '$' if chars.get(i + 1) == Some(&'(') => return false,
+                _ => i += 1,
+            },
+        }
+    }
+    quote.is_none()
 }
 
 #[cfg(test)]
@@ -242,5 +306,53 @@ mod tests {
             Some(json!({"command": "ls -la"}))
         ));
         assert!(!joy(None, None));
+    }
+
+    #[test]
+    fn a_newline_inside_an_argument_is_text_not_chaining() {
+        use serde_json::json;
+        let joy =
+            |t: Option<&str>, r: Option<serde_json::Value>| command_invokes_joy(t, r.as_ref());
+
+        // The report (JOY-027E-D6): an item whose description has
+        // real line breaks. Every one of these was refused below
+        // autonomous, so an AI could file only single-line items, and the
+        // refusal read as the AI declining.
+        assert!(joy(
+            None,
+            Some(json!({"command": "joy add task \"T\" --description \"line one\nline two\""}))
+        ));
+        assert!(joy(
+            None,
+            Some(json!({"command": "joy comment JI-0001 \"first\n\n- second\n- third\""}))
+        ));
+        // Single quotes are literal all through.
+        assert!(joy(
+            None,
+            Some(json!({"command": "joy add task 'a\nb; not a command'"}))
+        ));
+        // A line continuation is still ONE command.
+        assert!(joy(
+            None,
+            Some(json!({"command": "joy add task \"T\" \\\n  --priority low"}))
+        ));
+
+        // ...and everything that really starts a second program still is
+        // refused, quoted or not.
+        assert!(!joy(
+            None,
+            Some(json!({"command": "joy add task \"T\"\nrm -rf /"}))
+        ));
+        // Substitution runs INSIDE double quotes, so it disqualifies there.
+        assert!(!joy(
+            None,
+            Some(json!({"command": "joy add task \"$(rm -rf /)\""}))
+        ));
+        assert!(!joy(
+            None,
+            Some(json!({"command": "joy add task \"`rm -rf /`\""}))
+        ));
+        // An unterminated quote is not a string we can reason about.
+        assert!(!joy(None, Some(json!({"command": "joy add task \"oops"}))));
     }
 }
