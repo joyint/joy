@@ -1,0 +1,14 @@
+id: JOY-0281-80
+title: joy chat ls --json prints the human table, not JSON
+type: bug
+status: new
+priority: low
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-09T19:29:18.342843197Z
+updated: 2026-09-09T19:29:18.342843197Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'joy 0.20.0, 2026-09-09: ''joy chat ls --json --passphrase-stdin'' prints the same table as without --json (header, dashes, rows); a caller expecting JSON gets nothing parseable. ''joy chat show --json'' behaves the same way. Found while reading a sealed chat from a script.'
