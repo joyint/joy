@@ -184,6 +184,10 @@ pub fn context_prompt(chat: &Chat, ai_member: &str) -> String {
          --- conversation ---\n",
     );
     for message in &chat.messages {
+        // a running-turn marker is not a line anyone said (JP-0134-48)
+        if message.kind == MessageKind::Turn {
+            continue;
+        }
         if message.kind == MessageKind::Notice {
             prompt.push_str(&format!("[notice] {}\n", message.text));
         } else {
@@ -199,12 +203,18 @@ pub fn context_prompt(chat: &Chat, ai_member: &str) -> String {
 /// everything before it. None when the member has not spoken yet (the
 /// caller replays the full transcript into a fresh session instead).
 pub fn delta_prompt(chat: &Chat, ai_member: &str) -> Option<String> {
+    // The member's last own LINE. Its own running-turn marker is not one
+    // (JP-0134-48): the client writes the marker after the human's line,
+    // and counting it here would hand the agent an empty delta.
     let last_own = chat
         .messages
         .iter()
-        .rposition(|m| m.author.id() == ai_member)?;
+        .rposition(|m| m.author.id() == ai_member && m.kind != MessageKind::Turn)?;
     let mut prompt = String::from("--- new messages ---\n");
     for message in &chat.messages[last_own + 1..] {
+        if message.kind == MessageKind::Turn {
+            continue;
+        }
         if message.kind == MessageKind::Notice {
             prompt.push_str(&format!("[notice] {}\n", message.text));
         } else {
@@ -443,6 +453,26 @@ mod tests {
                 "{kind:?} must not trigger a turn"
             );
         }
+    }
+
+    /// A running-turn marker (JP-0134-48) is the AI's own, non-text line:
+    /// it triggers nothing, it is not the member's last own line for the
+    /// delta, and it never enters a prompt.
+    #[test]
+    fn a_running_turn_marker_is_silent_and_invisible_to_prompts() {
+        let chat = chat_with(vec![
+            ("horst@example.com", "@vibe which model?", MessageKind::Text),
+            ("ai:vibe@joy", "mistral-medium-3.5.", MessageKind::Text),
+            ("horst@example.com", "and the version?", MessageKind::Text),
+            ("ai:vibe@joy", "", MessageKind::Turn),
+        ]);
+        let newest = chat.messages.last().unwrap().clone();
+        assert_eq!(decide(&chat, &newest, "ai:vibe@joy"), TurnDecision::Silent);
+        // the delta counts from the reply, not from the marker written
+        // after the human's line: the agent must see that line
+        let delta = delta_prompt(&chat, "ai:vibe@joy").expect("the member spoke before");
+        assert!(delta.contains("and the version?"), "{delta}");
+        assert!(!delta.contains("ai:vibe@joy: \n"), "{delta}");
     }
 
     #[test]

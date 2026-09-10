@@ -708,4 +708,67 @@ mod tests {
         events.extend(diff(&left, &joined, "w1"));
         assert_eq!(fold("c", ts(0), &events).participants.len(), 1);
     }
+
+    /// A running-turn marker and the reply that replaces it share ONE id
+    /// (JP-0134-48): the reply is the richer copy, so it wins in any merge
+    /// order; a heartbeat is a later marker copy with a larger `turn_ms`,
+    /// which ranks above the earlier one.
+    #[test]
+    fn the_reply_replaces_its_turn_marker_in_any_order() {
+        use crate::model::chat::MessageKind;
+        let marker = ChatMessage {
+            id: "t1".into(),
+            at: ts(5),
+            author: MemberRef::new("ai:vibe@joy"),
+            text: String::new(),
+            kind: MessageKind::Turn,
+            delegated_by: Some("x@e".into()),
+            turn_ms: Some(30_000),
+            tool_steps: None,
+            tool: None,
+            payload: None,
+            details: None,
+            parts: Vec::new(),
+        };
+        let reply = ChatMessage {
+            text: "done".into(),
+            kind: MessageKind::Text,
+            turn_ms: Some(61_000),
+            details: Some("{\"v\":1}".into()),
+            ..marker.clone()
+        };
+        let forward = vec![
+            ChatEvent::Message {
+                msg: Box::new(marker.clone()),
+            },
+            ChatEvent::Message {
+                msg: Box::new(reply.clone()),
+            },
+        ];
+        let mut backward = forward.clone();
+        backward.reverse();
+        for events in [forward, backward] {
+            let chat = fold("c", ts(0), &events);
+            assert_eq!(chat.messages.len(), 1);
+            assert_eq!(chat.messages[0].kind, MessageKind::Text);
+            assert_eq!(chat.messages[0].text, "done");
+        }
+        let beat = ChatMessage {
+            turn_ms: Some(60_000),
+            ..marker.clone()
+        };
+        let chat = fold(
+            "c",
+            ts(0),
+            &[
+                ChatEvent::Message {
+                    msg: Box::new(beat),
+                },
+                ChatEvent::Message {
+                    msg: Box::new(marker),
+                },
+            ],
+        );
+        assert_eq!(chat.messages[0].turn_ms, Some(60_000));
+    }
 }

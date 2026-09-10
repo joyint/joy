@@ -36,6 +36,14 @@ pub enum ChatKind {
 /// stands answerless after a reload (operator rule, 2026-07-05); `Tool`
 /// is a tool's own persisted answer (JAPP-010D-B0): the frozen result
 /// snapshot of a command, never attributed to a person on render.
+/// `Turn` is a RUNNING AI turn (JP-0134-48, Horst 2026-09-10): written
+/// by the client that runs the turn the moment it starts, under the id
+/// the reply will carry, so every participant and every reload sees the
+/// answer's place taken; `turn_ms` is its heartbeat (the wall time the
+/// running client last reported). The reply, the reply-less record or
+/// the notice replaces it by the same id (the richer copy wins in the
+/// fold); a marker nobody replaces is a turn nobody waited for, and the
+/// room says so. It never addresses anyone and never enters a prompt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum MessageKind {
@@ -44,6 +52,7 @@ pub enum MessageKind {
     Notice,
     Error,
     Tool,
+    Turn,
 }
 
 /// One typed content part of a message (JOY-024C-97). The message's
