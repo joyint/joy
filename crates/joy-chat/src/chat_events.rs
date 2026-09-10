@@ -183,16 +183,25 @@ fn message_key(m: &ChatMessage) -> String {
     }
 }
 
-/// A total order over message VERSIONS of the same id: (attempt,
-/// serialized length, serialization). A later ATTEMPT at an AI turn
-/// (a retry, JAPP-0145-DB) outranks every copy of an earlier one, however
-/// long; within one attempt the enriched follow-up copy (payload,
-/// attribution, the reply that replaces its running-turn marker)
-/// serializes longer than the bare append, so it wins deterministically on
-/// every device regardless of merge order.
-fn message_rank(m: &ChatMessage) -> (u32, usize, String) {
+/// A total order over message VERSIONS of the same id: (attempt, settled,
+/// serialized length, serialization). A later ATTEMPT at an AI turn (a
+/// retry, JAPP-0145-DB, JOY-0285-DB) outranks every copy of an earlier
+/// one, however long. Within one attempt a running-turn marker (`kind:
+/// turn`, JAPP-0268-E8) ranks below every other kind: a marker never
+/// outranks what replaces it, even when a late heartbeat makes it
+/// serialize longer than a reply-less outcome (kind text unwritten, empty
+/// text, no details); otherwise the turn would look running, then expired,
+/// although it ended. Among marker copies the heartbeat is the same
+/// marker written again with a larger `turn_ms` (JP-0134-48), which is
+/// the only field that changes, so the later beat serializes at least as
+/// long and wins by length, then by text. Among the rest the enriched
+/// follow-up (payload, attribution, the reply's record) serializes longer
+/// than the bare append, so it wins deterministically on every device
+/// regardless of merge order.
+fn message_rank(m: &ChatMessage) -> (u32, bool, usize, String) {
     let s = serde_yaml_ng::to_string(m).unwrap_or_default();
-    (m.attempt, s.len(), s)
+    let settled = m.kind != crate::model::chat::MessageKind::Turn;
+    (m.attempt, settled, s.len(), s)
 }
 
 /// Reduce a set of events into a [`Chat`]. Order-independent: the same
@@ -332,7 +341,10 @@ pub fn fold(id: impl Into<String>, created: DateTime<Utc>, events: &[ChatEvent])
     chat.messages = msgs;
 
     // `updated` is an in-memory convenience (never serialized): the newest
-    // activity by message clock, falling back to created.
+    // activity by message clock, falling back to created. A turn's outcome
+    // lands with `at` = its landing time (JAPP-0268-E8), so the last row
+    // IS the newest activity; a heartbeat keeps the marker's `at` and does
+    // not move the chat.
     chat.updated = chat
         .messages
         .last()
@@ -517,6 +529,11 @@ mod tests {
 
     fn ts(sec: u32) -> DateTime<Utc> {
         format!("2026-07-19T00:00:{sec:02}Z").parse().unwrap()
+    }
+
+    /// `sec` seconds after the epoch of `ts`, for spans past the minute.
+    fn after(sec: i64) -> DateTime<Utc> {
+        ts(0) + chrono::Duration::seconds(sec)
     }
 
     fn msg(id: &str, sec: u32, author: &str, text: &str) -> ChatMessage {
@@ -714,9 +731,11 @@ mod tests {
     }
 
     /// A running-turn marker and the reply that replaces it share ONE id
-    /// (JP-0134-48): the reply is the richer copy, so it wins in any merge
-    /// order; a heartbeat is a later marker copy with a larger `turn_ms`,
-    /// which ranks above the earlier one.
+    /// (JP-0134-48): the reply is the settled copy, so it wins in any merge
+    /// order and lands with `at` = its landing time (JAPP-0268-E8), which
+    /// is what moves the chat's `updated`; a heartbeat is the same marker
+    /// written again with a larger `turn_ms` and the ORIGINAL `at`, so it
+    /// ranks above the earlier beat without moving the chat.
     #[test]
     fn the_reply_replaces_its_turn_marker_in_any_order() {
         use crate::model::chat::MessageKind;
@@ -736,6 +755,7 @@ mod tests {
             parts: Vec::new(),
         };
         let reply = ChatMessage {
+            at: after(66),
             text: "done".into(),
             kind: MessageKind::Text,
             turn_ms: Some(61_000),
@@ -757,24 +777,30 @@ mod tests {
             assert_eq!(chat.messages.len(), 1);
             assert_eq!(chat.messages[0].kind, MessageKind::Text);
             assert_eq!(chat.messages[0].text, "done");
+            // the reply lands at its landing time, and that is the chat's
+            // newest activity
+            assert_eq!(chat.messages[0].at, after(66));
+            assert_eq!(chat.updated, after(66));
         }
+        // A later beat wins over an earlier one in either order: `at`
+        // stays, only `turn_ms` grows, so the chat does not move.
         let beat = ChatMessage {
             turn_ms: Some(60_000),
             ..marker.clone()
         };
-        let chat = fold(
-            "c",
-            ts(0),
-            &[
-                ChatEvent::Message {
-                    msg: Box::new(beat),
-                },
-                ChatEvent::Message {
-                    msg: Box::new(marker),
-                },
-            ],
-        );
-        assert_eq!(chat.messages[0].turn_ms, Some(60_000));
+        for events in [
+            [beat.clone(), marker.clone()],
+            [marker.clone(), beat.clone()],
+        ] {
+            let events: Vec<ChatEvent> = events
+                .into_iter()
+                .map(|m| ChatEvent::Message { msg: Box::new(m) })
+                .collect();
+            let chat = fold("c", ts(0), &events);
+            assert_eq!(chat.messages[0].turn_ms, Some(60_000));
+            assert_eq!(chat.messages[0].at, ts(5));
+            assert_eq!(chat.updated, ts(5));
+        }
     }
 
     /// A retry (JAPP-0145-DB, JOY-0285-DB) writes its outcome under the same
@@ -823,5 +849,58 @@ mod tests {
         }
         let yaml = serde_yaml_ng::to_string(&first).unwrap();
         assert!(!yaml.contains("attempt"), "{yaml}");
+    }
+
+    /// A marker never outranks what replaces it (JAPP-0268-E8): a marker
+    /// with a late heartbeat (a large `turn_ms`) serializes LONGER than a
+    /// reply-less outcome (kind text unwritten, empty text, no details,
+    /// no wall time), yet the outcome wins in any merge order; otherwise
+    /// the turn would look running, then expired, although it ended.
+    #[test]
+    fn a_settled_turn_outranks_its_longer_marker() {
+        use crate::model::chat::MessageKind;
+        let marker = ChatMessage {
+            id: "t3".into(),
+            at: ts(5),
+            author: MemberRef::new("ai:vibe@joy"),
+            text: String::new(),
+            kind: MessageKind::Turn,
+            delegated_by: Some("x@e".into()),
+            turn_ms: Some(125_000),
+            tool_steps: None,
+            tool: None,
+            payload: None,
+            details: None,
+            attempt: 0,
+            parts: Vec::new(),
+        };
+        let reply = ChatMessage {
+            at: after(124),
+            kind: MessageKind::Text,
+            turn_ms: None,
+            ..marker.clone()
+        };
+        let marker_yaml = serde_yaml_ng::to_string(&marker).unwrap();
+        let reply_yaml = serde_yaml_ng::to_string(&reply).unwrap();
+        assert!(
+            marker_yaml.len() > reply_yaml.len(),
+            "the fixture must exercise the longer marker: {marker_yaml} vs {reply_yaml}"
+        );
+        let forward = vec![
+            ChatEvent::Message {
+                msg: Box::new(marker.clone()),
+            },
+            ChatEvent::Message {
+                msg: Box::new(reply.clone()),
+            },
+        ];
+        let mut backward = forward.clone();
+        backward.reverse();
+        for events in [forward, backward] {
+            let chat = fold("c", ts(0), &events);
+            assert_eq!(chat.messages.len(), 1);
+            assert_eq!(chat.messages[0].kind, MessageKind::Text);
+            assert_eq!(chat.messages[0].at, after(124));
+        }
     }
 }

@@ -77,8 +77,11 @@ pub fn wire_kind(kind: impl Into<Option<ToolKind>>) -> Option<String> {
 }
 
 // The live view of a running turn rides the shared TurnSink
-// (turn_engine): the lane owns the ordered delivery and the drain, the
-// host owns only the transport of one WireActivity (JOY-0249-D2).
+// (turn_engine): streamed activity only (chunks, thoughts, tools,
+// content, plan). The lane owns the ordered delivery and the drain, the
+// host owns only the transport of one WireActivity (JOY-0249-D2). The
+// waiting state is the client's persisted turn message, never a wire
+// event (JAPP-0268-E8).
 
 /// Everything one ACP session produced so far.
 #[derive(Default)]
@@ -615,9 +618,6 @@ pub struct TurnRequest {
     /// Live activity out (JI-0172-EE) while the turn runs: the shared
     /// delivery contract (ordered, drained before the result returns).
     pub activity: Option<Arc<dyn TurnSink>>,
-    /// The waiting-marker id (JAPP-0129-A7): delivered as the turn's
-    /// first wire event when a sink listens.
-    pub marker_id: Option<String>,
 }
 
 struct QueuedTurn {
@@ -725,7 +725,6 @@ impl<K: std::hash::Hash + Eq + Clone> LaneSet<K> {
                     mode: request.mode,
                     max_price_cents: request.max_price_cents,
                     activity: request.activity.clone(),
-                    marker_id: request.marker_id.clone(),
                 },
                 respond,
                 liveness: liveness.clone(),
@@ -1056,12 +1055,6 @@ async fn run_lane(
             }) = rx.recv().await
             {
                 liveness.touch();
-                // The waiting marker opens the skeleton BEFORE the slow
-                // parts (session spawn, model pin), as the first event on
-                // the same ordered wire the chunks ride (JOY-0249-D2).
-                if let (Some(sink), Some(marker)) = (&turn.activity, &turn.marker_id) {
-                    sink.deliver(WireActivity::pending(marker)).await;
-                }
                 let (session_id, prompt) = match sessions.get(&turn.chat_id) {
                     Some(sid) => (
                         sid.clone(),
@@ -1610,7 +1603,6 @@ mod lane_error_tests {
                 mode: joy_chat::model::AgentMode::Plan,
                 max_price_cents: 0,
                 activity: None,
-                marker_id: None,
             };
             let err = match lanes
                 .turn(1, 0, &config, request, std::time::Duration::from_secs(20))

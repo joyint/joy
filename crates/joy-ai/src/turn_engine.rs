@@ -9,9 +9,9 @@
 //! can read the conversation (operator decision 2026-07-28). What a host
 //! contributes is exactly ONE turn: run the agent, stream its live
 //! activity, and return the outcome. Until 2026-08 each host had its own
-//! copy of that too — its own level fallback, its own marker format, its
-//! own outcome assembly, its own activity field mapping — and every fix
-//! that landed in one copy silently made the other one poorer.
+//! copy of that too — its own level fallback, its own outcome assembly,
+//! its own activity field mapping — and every fix that landed in one
+//! copy silently made the other one poorer.
 //!
 //! The rule: hosts never decide anything product-shaped. This module
 //! owns the per-turn choreography ([`run_host_turn`]), the live-activity
@@ -21,6 +21,12 @@
 //! resolution, the execution record and every sentence a person reads.
 //! A host implements only the last mile: publish one [`WireActivity`]
 //! on its transport, and run one agent.
+//!
+//! The waiting state of a turn is NOT on this wire (JAPP-0268-E8,
+//! JP-0134-48): the client that drives the turn persists a `turn`
+//! message under the id its reply will carry and replaces it with the
+//! outcome, so every participant sees the running turn from the chat
+//! itself. Hosts stream only what the agent produced meanwhile.
 
 use std::future::Future;
 use std::path::Path;
@@ -33,8 +39,8 @@ use crate::chat_turns;
 
 /// Live activity of a RUNNING turn (JI-0172-EE): the agent's streamed
 /// chunks, thoughts and tool calls. One vocabulary for every transport;
-/// ephemeral like the waiting marker it upgrades — the persisted reply
-/// is the only truth.
+/// ephemeral: it fills the persisted running-turn row while the turn
+/// runs, and the persisted outcome is the only truth.
 #[derive(Debug, Clone)]
 pub enum TurnActivity {
     /// A piece of the reply text.
@@ -76,35 +82,20 @@ impl TurnActivity {
 /// (JOY-0249-D2): the chat bus wraps it in its ChatEvent, the Tauri
 /// event carries it directly; the client folds both into the same
 /// TurnActivityEvent. Field reuse by design: `text` is the chunk or
-/// thought text or the tool title, `tool` the tool-call id, `payload`
-/// the tool status, `id` the waiting-marker id of a `pending` event.
+/// thought text, the tool title or the content label, `tool` the
+/// tool-call id or the content kind, `payload` the tool status.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WireActivity {
-    /// "pending" | "turn-chunk" | "turn-thought" | "turn-tool"
+    /// "turn-chunk" | "turn-thought" | "turn-tool" | "turn-content" |
+    /// "turn-plan" (see [`TurnActivity::kind`])
     pub kind: String,
-    /// The waiting-marker id (pending events only; unique per turn so
-    /// client-side dedupe never swallows a later one).
-    pub id: String,
     pub text: String,
     pub tool: String,
     pub payload: String,
 }
 
 impl WireActivity {
-    /// The waiting marker that opens the reply-in-preparation skeleton
-    /// (JAPP-0129-A7). Closed by the reply that takes its place, never
-    /// by a signal (JAPP-0169-78).
-    pub fn pending(marker_id: &str) -> Self {
-        WireActivity {
-            kind: "pending".into(),
-            id: marker_id.to_string(),
-            text: String::new(),
-            tool: String::new(),
-            payload: String::new(),
-        }
-    }
-
     /// One streamed activity event on the wire.
     pub fn of(activity: &TurnActivity) -> Self {
         let (text, tool, payload) = match activity {
@@ -118,7 +109,6 @@ impl WireActivity {
         };
         WireActivity {
             kind: activity.kind().into(),
-            id: String::new(),
             text,
             tool,
             payload,
@@ -174,10 +164,6 @@ pub struct TurnRequest<'a> {
     pub mode: AgentMode,
     /// The effective interaction level the turn runs under.
     pub level: InteractionLevel,
-    /// The waiting-marker id of this turn. The shared lane delivers the
-    /// pending event under this id before the first prompt byte, on the
-    /// same ordered wire as the chunks.
-    pub marker_id: String,
 }
 
 /// The platform's money answer for a finished turn: the member's spend
@@ -209,9 +195,9 @@ pub struct TurnOutcome {
     pub budget: Option<BudgetSnapshot>,
 }
 
-/// The pre-turn capability check, BEFORE the waiting marker opens: a
-/// refusal here must not flash a skeleton (the platform refuses before
-/// spending, JI-014A).
+/// The pre-turn capability check, before the host spends anything: a
+/// refusal here costs nothing (the platform refuses before spending,
+/// JI-014A).
 pub enum Preflight {
     Ready,
     BudgetExhausted,
@@ -270,13 +256,12 @@ pub fn host_turn_level(
         .unwrap_or_else(|| joy_core::store::load_interaction_level_defaults(root).default)
 }
 
-/// Run ONE host turn: resolve the level, mint the waiting marker, run
-/// the agent, assemble the outcome. The choreography both hosts used to
-/// copy by hand — level fallback, marker format, timing, execution
-/// record, error wording — lives here exactly once. `run_agent` is the
-/// host's agent plumbing; everything it streams rides the [`TurnSink`]
-/// the host handed to its lane, delivered in order and drained before
-/// this returns.
+/// Run ONE host turn: resolve the level, run the agent, assemble the
+/// outcome. The choreography both hosts used to copy by hand — level
+/// fallback, timing, execution record, error wording — lives here
+/// exactly once. `run_agent` is the host's agent plumbing; everything it
+/// streams rides the [`TurnSink`] the host handed to its lane, delivered
+/// in order and drained before this returns.
 pub fn run_host_turn(
     spec: HostTurnSpec,
     run_agent: impl FnOnce(&TurnRequest) -> Result<TurnOutcome, String>,
@@ -294,13 +279,11 @@ pub fn run_host_turn(
         prompt_delta: spec.prompt_delta,
         mode: joy_chat::model::agent_mode::from_level(level),
         level,
-        // unique per turn: the skeleton keys on it and a later one must
-        // never be swallowed by client-side dedupe
-        marker_id: format!("pending-{}-{}", spec.member, uuid::Uuid::new_v4().simple()),
     };
     let started = std::time::Instant::now();
-    // Nothing closes the waiting row from here: the message that takes
-    // its place does (JAPP-0169-78). This side being finished is not the
+    // Nothing settles the running-turn row from here: the client that
+    // drives the turn replaces its own persisted marker with this outcome
+    // (JAPP-0268-E8, JAPP-0169-78). This side being finished is not the
     // room having the answer — the client still has to seal and commit.
     match run_agent(&request) {
         Ok(out) => HostTurnOutcome {
@@ -413,7 +396,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_host_turn_assembles_the_record_and_the_marker() {
+    fn a_host_turn_assembles_the_record() {
         let dir = tempfile::tempdir().expect("tempdir");
         let spec = HostTurnSpec {
             root: dir.path(),
@@ -426,7 +409,6 @@ mod tests {
         let outcome = run_host_turn(spec, |req| {
             // the choreography hands the agent everything resolved
             assert_eq!(req.level, InteractionLevel::Autonomous);
-            assert!(req.marker_id.starts_with("pending-ai:vibe@joy-"));
             assert_eq!(req.prompt_delta.as_deref(), Some("delta"));
             Ok(TurnOutcome {
                 reply: "da".into(),
@@ -501,9 +483,6 @@ mod tests {
 
     #[test]
     fn the_wire_shape_reuses_the_fields_the_clients_already_read() {
-        let pending = WireActivity::pending("pending-x-1");
-        assert_eq!(pending.kind, "pending");
-        assert_eq!(pending.id, "pending-x-1");
         let tool = WireActivity::of(&TurnActivity::Tool {
             id: "t1".into(),
             title: "joy ls".into(),

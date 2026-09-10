@@ -40,10 +40,13 @@ pub enum ChatKind {
 /// by the client that runs the turn the moment it starts, under the id
 /// the reply will carry, so every participant and every reload sees the
 /// answer's place taken; `turn_ms` is its heartbeat (the wall time the
-/// running client last reported). The reply, the reply-less record or
-/// the notice replaces it by the same id (the richer copy wins in the
-/// fold); a marker nobody replaces is a turn nobody waited for, and the
-/// room says so. It never addresses anyone and never enters a prompt.
+/// running client last reported, JAPP-0268-E8: `at` stays the moment the
+/// turn was requested, so the chat does not move in the rail while the
+/// turn runs). The reply, the reply-less record or the notice replaces
+/// it by the same id with `at` = its landing time (the settled copy wins
+/// in the fold); a marker nobody replaces is a turn nobody waited for,
+/// and the room says so. It never addresses anyone and never enters a
+/// prompt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum MessageKind {
@@ -304,7 +307,10 @@ impl Chat {
     }
 
     /// The participant member ids (humans AND AI) who have read `msg`:
-    /// their effective watermark is at or past the message instant.
+    /// their effective watermark is at or past the message instant. A
+    /// turn's outcome lands with `at` = its landing time (JAPP-0268-E8),
+    /// so `at` alone is the clock here: nobody is "past" a reply that
+    /// landed after they last read the chat.
     pub fn read_by(&self, msg: &ChatMessage) -> Vec<String> {
         self.participants
             .iter()
