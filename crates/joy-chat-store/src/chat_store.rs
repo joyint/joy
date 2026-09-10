@@ -519,6 +519,7 @@ mod tests {
             tool: None,
             payload: None,
             details: None,
+            attempt: 0,
             parts: Vec::new(),
         }
     }
@@ -1031,6 +1032,7 @@ mod attachment_tests {
             tool: None,
             payload: None,
             details: None,
+            attempt: 0,
             parts: vec![MessagePart::Image {
                 mime: "image/png".into(),
                 attachment: aid.clone(),

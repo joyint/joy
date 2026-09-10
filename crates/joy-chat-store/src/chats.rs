@@ -233,6 +233,7 @@ pub fn append_kind_with_id(
         tool: None,
         payload: None,
         details: None,
+        attempt: 0,
         parts: Vec::new(),
     };
     chat.messages.push(message.clone());
@@ -1183,6 +1184,7 @@ mod channel_tests {
             tool: None,
             payload: None,
             details: None,
+            attempt: 0,
             parts: Vec::new(),
         };
         chat.messages.push(mk(2, "second"));

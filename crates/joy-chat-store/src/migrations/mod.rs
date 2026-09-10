@@ -147,6 +147,7 @@ mod tests {
             tool: None,
             payload: None,
             details: None,
+            attempt: 0,
             parts: Vec::new(),
         });
         crate::chat_ref::save_legacy_chat_for_tests(root, &chat);
@@ -220,6 +221,7 @@ mod tests {
             tool: None,
             payload: None,
             details: None,
+            attempt: 0,
             parts: Vec::new(),
         });
         crate::chat_ref::save_legacy_chat_for_tests(root, &chat);

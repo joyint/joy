@@ -165,6 +165,17 @@ pub struct ChatMessage {
     /// loading unchanged (read-side tolerance, ADR JOY-0244-9E).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub parts: Vec<MessagePart>,
+    /// AI turns: which attempt at this turn the message is (JAPP-0145-DB,
+    /// retry). The first attempt is 0 and stays unwritten; a retry writes
+    /// its outcome under the SAME id with the next attempt, and the fold
+    /// prefers the higher attempt over the richer copy, so a short second
+    /// answer replaces a long first failure on every device.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub attempt: u32,
+}
+
+fn is_zero(n: &u32) -> bool {
+    *n == 0
 }
 
 impl ChatMessage {
@@ -411,6 +422,7 @@ mod tests {
             tool: None,
             payload: None,
             details: None,
+            attempt: 0,
             parts: Vec::new(),
         };
         chat.messages = vec![mk(1, "a@e"), mk(2, "b@e"), mk(3, "ai:v@joy")];

@@ -1,0 +1,17 @@
+id: JOY-0285-DB
+title: 'A retry outranks the first attempt: the attempt counter on a chat message'
+type: story
+status: in-progress
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- plan
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-10T08:45:08.898198343Z
+updated: 2026-09-10T08:45:09.069521381Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Chat lane rebuild, phase 2 (JAPP retry story, JAPP-0145-DB): a retry re-runs the same turn under the same message id, and its outcome must replace the first attempt on every device even when it is shorter. The fold''s richer-copy rule cannot express that. The message carries an attempt counter (0 unwritten for the first attempt) and the fold ranks by attempt before length.'

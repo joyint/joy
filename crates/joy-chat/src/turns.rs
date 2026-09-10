@@ -375,6 +375,7 @@ mod tests {
                 tool: None,
                 payload: None,
                 details: None,
+                attempt: 0,
                 parts: Vec::new(),
                 at: now,
                 author: MemberRef::new(author),
@@ -555,6 +556,7 @@ mod tests {
                 tool: None,
                 payload: None,
                 details: None,
+                attempt: 0,
                 parts: Vec::new(),
             });
         }
@@ -722,6 +724,7 @@ mod tests {
             tool: None,
             payload: None,
             details: None,
+            attempt: 0,
             parts: Vec::new(),
             at: chat.updated,
             author: MemberRef::new("ai:claude@joy"),

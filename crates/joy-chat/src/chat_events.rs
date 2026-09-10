@@ -183,13 +183,16 @@ fn message_key(m: &ChatMessage) -> String {
     }
 }
 
-/// A total order over message VERSIONS of the same id: (serialized length,
-/// serialization). The enriched follow-up copy (payload, attribution)
+/// A total order over message VERSIONS of the same id: (attempt,
+/// serialized length, serialization). A later ATTEMPT at an AI turn
+/// (a retry, JAPP-0145-DB) outranks every copy of an earlier one, however
+/// long; within one attempt the enriched follow-up copy (payload,
+/// attribution, the reply that replaces its running-turn marker)
 /// serializes longer than the bare append, so it wins deterministically on
 /// every device regardless of merge order.
-fn message_rank(m: &ChatMessage) -> (usize, String) {
+fn message_rank(m: &ChatMessage) -> (u32, usize, String) {
     let s = serde_yaml_ng::to_string(m).unwrap_or_default();
-    (s.len(), s)
+    (m.attempt, s.len(), s)
 }
 
 /// Reduce a set of events into a [`Chat`]. Order-independent: the same
@@ -529,6 +532,7 @@ mod tests {
             tool: None,
             payload: None,
             details: None,
+            attempt: 0,
             parts: Vec::new(),
         }
     }
@@ -728,6 +732,7 @@ mod tests {
             tool: None,
             payload: None,
             details: None,
+            attempt: 0,
             parts: Vec::new(),
         };
         let reply = ChatMessage {
@@ -770,5 +775,53 @@ mod tests {
             ],
         );
         assert_eq!(chat.messages[0].turn_ms, Some(60_000));
+    }
+
+    /// A retry (JAPP-0145-DB, JOY-0285-DB) writes its outcome under the same
+    /// id with the next attempt: it outranks the first attempt however
+    /// short it is, in any merge order; the first attempt stays unwritten.
+    #[test]
+    fn a_later_attempt_outranks_a_longer_first_one() {
+        use crate::model::chat::MessageKind;
+        let first = ChatMessage {
+            id: "t2".into(),
+            at: ts(5),
+            author: MemberRef::new("ai:vibe@joy"),
+            text: "@vibe could not finish this turn: the provider timed out after a long wait"
+                .into(),
+            kind: MessageKind::Notice,
+            delegated_by: Some("x@e".into()),
+            turn_ms: None,
+            tool_steps: None,
+            tool: None,
+            payload: None,
+            details: None,
+            attempt: 0,
+            parts: Vec::new(),
+        };
+        let retry = ChatMessage {
+            text: "ok".into(),
+            kind: MessageKind::Text,
+            attempt: 1,
+            ..first.clone()
+        };
+        let forward = vec![
+            ChatEvent::Message {
+                msg: Box::new(first.clone()),
+            },
+            ChatEvent::Message {
+                msg: Box::new(retry.clone()),
+            },
+        ];
+        let mut backward = forward.clone();
+        backward.reverse();
+        for events in [forward, backward] {
+            let chat = fold("c", ts(0), &events);
+            assert_eq!(chat.messages.len(), 1);
+            assert_eq!(chat.messages[0].attempt, 1);
+            assert_eq!(chat.messages[0].text, "ok");
+        }
+        let yaml = serde_yaml_ng::to_string(&first).unwrap();
+        assert!(!yaml.contains("attempt"), "{yaml}");
     }
 }
