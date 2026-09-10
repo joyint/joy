@@ -1,7 +1,7 @@
 id: JOY-0284-75
 title: A running AI turn is a fact of the chat, persisted and visible to everyone
 type: story
-status: in-progress
+status: review
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -12,6 +12,10 @@ capabilities:
 effort: 5
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-10T05:39:19.825332944Z
-updated: 2026-09-10T05:39:19.979927735Z
+updated: 2026-09-10T05:53:50.179279868Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Horst 2026-09-10 (JP-0134-48): a running turn is visible only to the session that started it; other participants and a reloaded page see nothing, and when the starting client goes away nobody writes the outcome. Decision (Horst): the turn stays client-driven, but its status is persisted in the chat, so everyone sees the skeleton where the answer will stand and, once the turn is no longer awaited, the warning box in its place. Model side: the marker is a message of its own kind under the id the reply will carry; the reply replaces it by the existing richer-copy rule; the turn decision and the prompts ignore markers.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-10T05:53:50.089906959Z
+  text: 'Done on feat/adapter-behaviour (joy 4b80969): MessageKind::Turn, silent for the decision, skipped by the prompts, not the member''s last own line for the delta; the fold''s richer-copy rule makes the reply replace it and a later heartbeat outrank an earlier one (tests). The chat-crypto wasm in the app is rebuilt from it.'
