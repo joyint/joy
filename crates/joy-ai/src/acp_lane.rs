@@ -608,6 +608,9 @@ pub struct LaneConfig {
 /// One turn requested from a lane.
 pub struct TurnRequest {
     pub chat_id: String,
+    /// The message id of the turn: every event this turn streams names it
+    /// (JAPP-0278-A2), so the client attaches by identity, not arrival.
+    pub turn_id: String,
     pub prompt_full: String,
     pub prompt_delta: Option<String>,
     pub mode: joy_chat::model::AgentMode,
@@ -720,6 +723,7 @@ impl<K: std::hash::Hash + Eq + Clone> LaneSet<K> {
             let queued = QueuedTurn {
                 request: TurnRequest {
                     chat_id: request.chat_id.clone(),
+                    turn_id: request.turn_id.clone(),
                     prompt_full: request.prompt_full.clone(),
                     prompt_delta: request.prompt_delta.clone(),
                     mode: request.mode,
@@ -1200,7 +1204,7 @@ async fn run_lane(
                             match queued {
                                 Some(event) => {
                                     if let Some(sink) = &turn.activity {
-                                        sink.deliver(WireActivity::of(&event)).await;
+                                        sink.deliver(WireActivity::of(&turn.turn_id, &event)).await;
                                     }
                                 }
                                 None => live_open = false,
@@ -1246,7 +1250,7 @@ async fn run_lane(
                     .remove(&sid_key);
                 if let Some(sink) = &turn.activity {
                     while let Some(event) = act_rx.recv().await {
-                        sink.deliver(WireActivity::of(&event)).await;
+                        sink.deliver(WireActivity::of(&turn.turn_id, &event)).await;
                     }
                 }
                 let stop_ok = matches!(prompted, Some(Ok(_))) || capped || idle_cancelled;
@@ -1304,9 +1308,10 @@ async fn run_lane(
                     // live view shows it before the reply lands.
                     crate::adapter_behaviour::finish_turn(behaviour, &cwd, &mut state);
                     if let (Some(sink), Some(plan)) = (&turn.activity, &state.plan) {
-                        sink.deliver(WireActivity::of(&TurnActivity::Plan {
-                            text: plan.clone(),
-                        }))
+                        sink.deliver(WireActivity::of(
+                            &turn.turn_id,
+                            &TurnActivity::Plan { text: plan.clone() },
+                        ))
                         .await;
                     }
                     let mut output = state.into_outcome();
@@ -1598,6 +1603,7 @@ mod lane_error_tests {
             };
             let request = TurnRequest {
                 chat_id: "c1".into(),
+                turn_id: "t1".into(),
                 prompt_full: "hi".into(),
                 prompt_delta: None,
                 mode: joy_chat::model::AgentMode::Plan,

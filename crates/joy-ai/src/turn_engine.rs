@@ -84,9 +84,18 @@ impl TurnActivity {
 /// TurnActivityEvent. Field reuse by design: `text` is the chunk or
 /// thought text, the tool title or the content label, `tool` the
 /// tool-call id or the content kind, `payload` the tool status.
+///
+/// Every event names its turn (`turn_id`): the id of the turn's message,
+/// the marker the driving client wrote and the reply that replaces it.
+/// The bus and the turn's own call are two connections with no order
+/// between them, so a client CAN see a turn's last chunk after its reply;
+/// with the id it attaches every event to the one turn it belongs to and
+/// an event of a settled turn has no place left to go (JAPP-0278-A2).
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WireActivity {
+    /// The message id of the turn this event belongs to.
+    pub turn_id: String,
     /// "turn-chunk" | "turn-thought" | "turn-tool" | "turn-content" |
     /// "turn-plan" (see [`TurnActivity::kind`])
     pub kind: String,
@@ -96,8 +105,8 @@ pub struct WireActivity {
 }
 
 impl WireActivity {
-    /// One streamed activity event on the wire.
-    pub fn of(activity: &TurnActivity) -> Self {
+    /// One streamed activity event of the turn `turn_id` on the wire.
+    pub fn of(turn_id: &str, activity: &TurnActivity) -> Self {
         let (text, tool, payload) = match activity {
             TurnActivity::Chunk { text }
             | TurnActivity::Thought { text }
@@ -108,6 +117,7 @@ impl WireActivity {
             TurnActivity::Content { kind, label } => (label.clone(), kind.clone(), String::new()),
         };
         WireActivity {
+            turn_id: turn_id.into(),
             kind: activity.kind().into(),
             text,
             tool,
@@ -120,11 +130,15 @@ impl WireActivity {
 /// the streaming path: the platform awaits a chat-bus publish, the
 /// desktop wraps its (synchronous) Tauri emit.
 ///
-/// The delivery CONTRACT is what kills the stray-chunk class
-/// (JOY-0249-D2): the shared lane awaits every delivery and drains the
-/// stream before a turn's result returns, so nothing of a turn can
-/// arrive after its reply. Implementations swallow their own transport
-/// errors — a lost ephemeral event must never fail the turn.
+/// The delivery CONTRACT (JOY-0249-D2): the shared lane awaits every
+/// delivery and drains the stream before a turn's result returns, so the
+/// host has handed every event over before it answers. What the client
+/// sees is a different matter: the events travel the bus, the result its
+/// own call, and the two are not ordered against each other. That is
+/// why every event names its turn (`WireActivity::turn_id`), and the
+/// client attaches by that, never by arrival. Implementations swallow
+/// their own transport errors — a lost ephemeral event must never fail
+/// the turn.
 pub trait TurnSink: Send + Sync {
     fn deliver<'a>(
         &'a self,
@@ -155,6 +169,10 @@ pub enum Usability {
 /// plumbing (docker lane on the platform, PATH lane on the desktop).
 pub struct TurnRequest<'a> {
     pub member: &'a str,
+    /// The message id of the turn (JAPP-0278-A2): the marker the client
+    /// wrote, the reply that replaces it, and the name on every streamed
+    /// event of this turn.
+    pub turn_id: &'a str,
     /// The full transcript prompt; a fresh session replays this.
     pub prompt: String,
     /// The delta since the member's last turn; a live session prefers it
@@ -209,6 +227,10 @@ pub enum Preflight {
 pub struct HostTurnSpec<'a> {
     pub root: &'a Path,
     pub member: &'a str,
+    /// The message id of the turn, minted by the client that drives it
+    /// (JAPP-0268-E8): its marker, its reply and every streamed event of
+    /// it carry this one id (JAPP-0278-A2).
+    pub turn_id: &'a str,
     pub prompt: String,
     pub prompt_delta: Option<String>,
     /// The caller's per-chat level choice (ADR-025 rank 1); only the
@@ -275,6 +297,7 @@ pub fn run_host_turn(
     );
     let request = TurnRequest {
         member: spec.member,
+        turn_id: spec.turn_id,
         prompt: spec.prompt,
         prompt_delta: spec.prompt_delta,
         mode: joy_chat::model::agent_mode::from_level(level),
@@ -401,15 +424,18 @@ mod tests {
         let spec = HostTurnSpec {
             root: dir.path(),
             member: "ai:vibe@joy",
+            turn_id: "m-1",
             prompt: "full".into(),
             prompt_delta: Some("delta".into()),
             level_override: Some(InteractionLevel::Autonomous),
             personal_level: None,
         };
         let outcome = run_host_turn(spec, |req| {
-            // the choreography hands the agent everything resolved
+            // the choreography hands the agent everything resolved, the
+            // turn's identity included (JAPP-0278-A2)
             assert_eq!(req.level, InteractionLevel::Autonomous);
             assert_eq!(req.prompt_delta.as_deref(), Some("delta"));
+            assert_eq!(req.turn_id, "m-1");
             Ok(TurnOutcome {
                 reply: "da".into(),
                 tool_steps: 2,
@@ -436,6 +462,7 @@ mod tests {
         let spec = HostTurnSpec {
             root: dir.path(),
             member: "ai:vibe@joy",
+            turn_id: "m-2",
             prompt: "full".into(),
             prompt_delta: None,
             level_override: None,
@@ -483,11 +510,14 @@ mod tests {
 
     #[test]
     fn the_wire_shape_reuses_the_fields_the_clients_already_read() {
-        let tool = WireActivity::of(&TurnActivity::Tool {
-            id: "t1".into(),
-            title: "joy ls".into(),
-            status: "completed".into(),
-        });
+        let tool = WireActivity::of(
+            "m-1",
+            &TurnActivity::Tool {
+                id: "t1".into(),
+                title: "joy ls".into(),
+                status: "completed".into(),
+            },
+        );
         assert_eq!(
             (
                 tool.kind.as_str(),
@@ -497,11 +527,14 @@ mod tests {
             ),
             ("turn-tool", "joy ls", "t1", "completed")
         );
-        let chunk = WireActivity::of(&TurnActivity::Chunk { text: "hi".into() });
+        let chunk = WireActivity::of("m-1", &TurnActivity::Chunk { text: "hi".into() });
         assert_eq!(
             (chunk.kind.as_str(), chunk.text.as_str()),
             ("turn-chunk", "hi")
         );
+        // every event names its turn, camelCase on the wire (JAPP-0278-A2)
+        let wire = serde_json::to_value(&chunk).expect("json");
+        assert_eq!(wire["turnId"], "m-1");
     }
 
     #[test]
