@@ -1,7 +1,7 @@
 id: JOY-0286-01
 title: A streamed turn event carries no identity of its turn
 type: bug
-status: new
+status: closed
 priority: high
 capabilities:
 - implement
@@ -9,6 +9,6 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-11T06:13:12.252641010Z
-updated: 2026-09-11T06:13:12.252641010Z
+updated: 2026-09-11T17:45:37.041992092Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Seen on mule 2026-09-11 (JAPP-0278-A2): the reply''s last chunks reached the phone after the reply itself and showed as a second message. The turn''s marker and its outcome carry the message id; the activity events the lane streams (turn-chunk, turn-thought, turn-tool, turn-content, turn-plan) carry only the author, so a client can neither attach them to the turn nor tell a straggler of a finished turn from the start of a new one. The chat bus and the turn''s RPC are two connections with no order between them.'
