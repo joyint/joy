@@ -887,6 +887,49 @@ pub fn stage_paths(dir: &Path, paths: &[&str]) -> anyhow::Result<()> {
     index.write().map_err(err)
 }
 
+/// Is `dir` itself a repository, bare or the top of a working tree? Unlike
+/// the discovering open the other verbs use, a directory that merely lies
+/// inside some repository is not one.
+pub fn is_repository(dir: &Path) -> bool {
+    git2::Repository::open(dir).is_ok()
+}
+
+/// The branch HEAD names in the repository at `dir`, also when it has no
+/// commit yet (an empty repository's default branch).
+pub fn head_branch(dir: &Path) -> Option<String> {
+    let repo = git2::Repository::open(dir).ok()?;
+    let head = repo.find_reference("HEAD").ok()?;
+    let target = head.symbolic_target().ok()??.to_string();
+    target.strip_prefix("refs/heads/").map(String::from)
+}
+
+/// Every file path in the tree at `refname`, sorted; empty when the ref has
+/// no commit (an empty repository). The local counterpart of a forge
+/// plugin's `files` answer.
+pub fn tree_paths(dir: &Path, refname: &str) -> Vec<String> {
+    let Ok(repo) = open(dir) else {
+        return Vec::new();
+    };
+    let Some(tree) = repo
+        .find_reference(refname)
+        .ok()
+        .and_then(|r| r.peel_to_tree().ok())
+    else {
+        return Vec::new();
+    };
+    let mut paths = Vec::new();
+    let _ = tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
+        if entry.kind() == Some(git2::ObjectType::Blob) {
+            if let Ok(name) = entry.name() {
+                paths.push(format!("{root}{name}"));
+            }
+        }
+        git2::TreeWalkResult::Ok
+    });
+    paths.sort();
+    paths
+}
+
 /// Point an unborn HEAD at `branch`: a clone of an empty repository has no
 /// branch yet, and its first commit must land on the one the forge names
 /// as the default. A HEAD that already has a commit is left alone.
@@ -2100,6 +2143,11 @@ mod init_on_git2_tests {
         std::fs::create_dir_all(&repo_dir).unwrap();
         init_worktree(&repo_dir).unwrap();
         set_unborn_branch(&repo_dir, "trunk").unwrap();
+        assert!(is_repository(&repo_dir));
+        assert_eq!(head_branch(&repo_dir).as_deref(), Some("trunk"));
+        // a directory inside the repository is not a repository of its own
+        std::fs::create_dir_all(repo_dir.join("inner")).unwrap();
+        assert!(!is_repository(&repo_dir.join("inner")));
         std::fs::write(repo_dir.join("staged.md"), "in").unwrap();
         std::fs::write(repo_dir.join("unstaged.md"), "out").unwrap();
         stage_paths(&repo_dir, &["staged.md"]).unwrap();
@@ -2114,6 +2162,7 @@ mod init_on_git2_tests {
             tree.get_name("unstaged.md").is_none(),
             "only what was staged"
         );
+        assert_eq!(tree_paths(&repo_dir, "HEAD"), vec!["staged.md".to_string()]);
         // a branch that has a commit is not moved
         set_unborn_branch(&repo_dir, "other").unwrap();
         assert_eq!(repo.head().unwrap().name().ok(), Some("refs/heads/trunk"));

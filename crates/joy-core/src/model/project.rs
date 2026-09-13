@@ -867,6 +867,20 @@ pub fn validate_acronym(value: &str) -> Result<String, String> {
     Ok(normalized)
 }
 
+/// Validate and normalize a project language: two ASCII letters, the
+/// ISO 639-1 shape (`en`, `de`). Trimmed and lowercased on success.
+pub fn validate_language(value: &str) -> Result<String, String> {
+    let normalized = value.trim().to_ascii_lowercase();
+    if normalized.len() == 2 && normalized.chars().all(|c| c.is_ascii_lowercase()) {
+        Ok(normalized)
+    } else {
+        Err(format!(
+            "language must be two letters like en or de, got '{}'",
+            value.trim()
+        ))
+    }
+}
+
 /// Derive an acronym from a project name.
 /// Takes the first letter of each word, uppercase, max 4 characters.
 /// Single words use up to 3 uppercase characters.
@@ -1255,6 +1269,14 @@ created: 2026-01-01T00:00:00Z
     // -----------------------------------------------------------------------
     // validate_acronym tests
     // -----------------------------------------------------------------------
+
+    #[test]
+    fn validate_language_takes_two_letters() {
+        assert_eq!(validate_language(" DE "), Ok("de".to_string()));
+        assert!(validate_language("eng").is_err());
+        assert!(validate_language("e1").is_err());
+        assert!(validate_language("").is_err());
+    }
 
     #[test]
     fn validate_acronym_accepts_real_project_acronyms() {
