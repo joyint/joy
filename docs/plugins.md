@@ -91,13 +91,21 @@ object on stdout.
   Answer, by `state`:
   `{"state": "store", "project_yaml": "..."}` when `.joy/project.yaml`
   on the default branch is readable (its content comes along);
-  `{"state": "missing", "may_create": true|false}` when the repository
-  is there without a store, with the caller's push permission;
+  `{"state": "missing", "may_create": true|false, "default_branch": "..."}`
+  when the repository is there without a store, with the caller's push
+  permission and the branch the forge names as its default;
   `{"state": "gone"}` when the forge does not show the caller the
   repository (deleted or no access, which forges answer alike);
   `{"state": "unknown"}` when the forge could not be asked. Only the
   last is not a verdict. Without `--token-env` the forge is asked
   anonymously and sees public repositories only.
+
+- `joy-<name> files --remote <url> [--token-env <VAR>]`
+  (JAPP-0293-A7) Which files does the default branch carry? Answer:
+  `{"state": "files", "paths": ["..."], "truncated": true|false}`, where
+  `truncated` says the forge or the plugin's own page bound cut the
+  listing off; an empty repository lists no paths. `{"state": "unknown"}`
+  when the forge could not be asked.
 
 - `joy-<name> release --tag <t> --title <t> --notes-file <path>`
   (JOY-0256-64) Create — or complete — the release for this tag on

@@ -348,7 +348,75 @@ fn store_verdict(
         .pointer("/permissions/push")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    serde_json::json!({ "state": "missing", "may_create": may_create })
+    // an empty repository's first push goes to the branch the forge
+    // names as its default, not to whatever a fresh clone guesses
+    let default_branch = body.get("default_branch").and_then(|v| v.as_str());
+    serde_json::json!({ "state": "missing", "may_create": may_create, "default_branch": default_branch })
+}
+
+// -- the files query (JAPP-0293-A7) --------------------------------------------
+//
+// The setup of a new joy project points at the repository's documents, and
+// the person picks them from the files the default branch carries. Gitea
+// pages a recursive tree; a bounded number of pages is read, and a tree
+// that goes on beyond them is reported as cut off.
+
+/// Entries per page and pages read for one listing.
+const TREE_PAGE: usize = 1000;
+const TREE_PAGES: usize = 5;
+
+/// The FILES answer (docs/plugins.md `files`) for a remote.
+pub fn files_answer(remote: &str, token_env: Option<&str>) -> serde_json::Value {
+    let (Some(host), Some(path)) = (host_of(remote), repo_path_of(remote)) else {
+        return serde_json::json!({ "state": "unknown" });
+    };
+    let base = format!("https://{host}/api/v1/repos/{path}/git/trees/HEAD");
+    files_verdict(|page| {
+        api_get(
+            &format!("{base}?recursive=true&per_page={TREE_PAGE}&page={page}"),
+            token_env,
+        )
+    })
+}
+
+/// The file paths over the pages, pure. An empty repository has no tree to
+/// list: no files.
+fn files_verdict(mut page: impl FnMut(usize) -> Option<ApiAnswer>) -> serde_json::Value {
+    let unknown = serde_json::json!({ "state": "unknown" });
+    let mut paths: Vec<String> = Vec::new();
+    for number in 1..=TREE_PAGES {
+        let Some(answer) = page(number) else {
+            return unknown;
+        };
+        match answer.status {
+            200..=299 => {}
+            404 | 409 if number == 1 => {
+                return serde_json::json!({ "state": "files", "paths": [], "truncated": false })
+            }
+            _ => return unknown,
+        }
+        let Ok(body) = serde_json::from_str::<serde_json::Value>(&answer.body) else {
+            return unknown;
+        };
+        if let Some(entries) = body.get("tree").and_then(|t| t.as_array()) {
+            paths.extend(
+                entries
+                    .iter()
+                    .filter(|e| e.get("type").and_then(|t| t.as_str()) == Some("blob"))
+                    .filter_map(|e| e.get("path").and_then(|p| p.as_str()))
+                    .map(String::from),
+            );
+        }
+        // Gitea's `truncated` means "more pages follow"
+        let more = body
+            .get("truncated")
+            .and_then(|t| t.as_bool())
+            .unwrap_or(false);
+        if !more {
+            return serde_json::json!({ "state": "files", "paths": paths, "truncated": false });
+        }
+    }
+    serde_json::json!({ "state": "files", "paths": paths, "truncated": true })
 }
 
 #[cfg(test)]
@@ -448,7 +516,7 @@ mod store_tests {
                     r#"{"permissions": {"admin": false, "push": true, "pull": true}}"#,
                 )
             }),
-            serde_json::json!({ "state": "missing", "may_create": true })
+            serde_json::json!({ "state": "missing", "may_create": true, "default_branch": null })
         );
     }
 
@@ -469,6 +537,52 @@ mod store_tests {
         assert_eq!(
             repo_path_of("git@codeberg.org:joyint/demo.git").as_deref(),
             Some("joyint/demo")
+        );
+    }
+}
+
+#[cfg(test)]
+mod files_tests {
+    use super::*;
+
+    fn page(entries: &[&str], more: bool) -> Option<ApiAnswer> {
+        let tree: Vec<serde_json::Value> = entries
+            .iter()
+            .map(|p| serde_json::json!({ "path": p, "type": "blob" }))
+            .collect();
+        Some(ApiAnswer {
+            status: 200,
+            body: serde_json::json!({ "tree": tree, "truncated": more }).to_string(),
+        })
+    }
+
+    #[test]
+    fn pages_are_read_until_the_tree_ends_or_the_bound_is_reached() {
+        let verdict = files_verdict(|n| match n {
+            1 => page(&["VISION.md"], true),
+            _ => page(&["docs/ARCHITECTURE.md"], false),
+        });
+        assert_eq!(
+            verdict,
+            serde_json::json!({ "state": "files", "paths": ["VISION.md", "docs/ARCHITECTURE.md"], "truncated": false })
+        );
+        let endless = files_verdict(|_| page(&["x.md"], true));
+        assert_eq!(endless["truncated"], serde_json::json!(true));
+        assert_eq!(endless["paths"].as_array().unwrap().len(), TREE_PAGES);
+    }
+
+    #[test]
+    fn an_empty_repository_lists_nothing_and_a_failure_stays_unanswered() {
+        assert_eq!(
+            files_verdict(|_| Some(ApiAnswer {
+                status: 404,
+                body: String::new()
+            })),
+            serde_json::json!({ "state": "files", "paths": [], "truncated": false })
+        );
+        assert_eq!(
+            files_verdict(|_| None),
+            serde_json::json!({ "state": "unknown" })
         );
     }
 }

@@ -484,7 +484,62 @@ fn store_verdict(
         .pointer("/permissions/push")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    serde_json::json!({ "state": "missing", "may_create": may_create })
+    // an empty repository's first push goes to the branch the forge
+    // names as its default, not to whatever a fresh clone guesses
+    let default_branch = body.get("default_branch").and_then(|v| v.as_str());
+    serde_json::json!({ "state": "missing", "may_create": may_create, "default_branch": default_branch })
+}
+
+// -- the files query (JAPP-0293-A7) --------------------------------------------
+//
+// The setup of a new joy project points at the repository's documents, and
+// the person picks them from the files the default branch carries. One API
+// call lists the whole tree; GitHub cuts it off for very large trees and
+// says so.
+
+/// The FILES answer (docs/plugins.md `files`) for a remote.
+pub fn files_answer(remote: &str, token_env: Option<&str>) -> serde_json::Value {
+    let (Some(host), Some(path)) = (host_of(remote), repo_path_of(remote)) else {
+        return serde_json::json!({ "state": "unknown" });
+    };
+    let url = format!(
+        "{}/repos/{path}/git/trees/HEAD?recursive=1",
+        api_base(&host)
+    );
+    files_verdict(api_get(&url, "application/vnd.github+json", token_env))
+}
+
+/// The file paths in a tree answer, pure. An empty repository has no tree
+/// to list (GitHub answers 409 or 404 for it): no files.
+fn files_verdict(answer: Option<ApiAnswer>) -> serde_json::Value {
+    let unknown = serde_json::json!({ "state": "unknown" });
+    let Some(answer) = answer else { return unknown };
+    match answer.status {
+        200..=299 => {}
+        404 | 409 => {
+            return serde_json::json!({ "state": "files", "paths": [], "truncated": false })
+        }
+        _ => return unknown,
+    }
+    let Ok(body) = serde_json::from_str::<serde_json::Value>(&answer.body) else {
+        return unknown;
+    };
+    let paths: Vec<&str> = body
+        .get("tree")
+        .and_then(|t| t.as_array())
+        .map(|entries| {
+            entries
+                .iter()
+                .filter(|e| e.get("type").and_then(|t| t.as_str()) == Some("blob"))
+                .filter_map(|e| e.get("path").and_then(|p| p.as_str()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let truncated = body
+        .get("truncated")
+        .and_then(|t| t.as_bool())
+        .unwrap_or(false);
+    serde_json::json!({ "state": "files", "paths": paths, "truncated": truncated })
 }
 
 #[cfg(test)]
@@ -602,12 +657,12 @@ mod store_tests {
             store_verdict(answer(404, "{}"), || {
                 answer(200, r#"{"permissions": {"push": true}}"#)
             }),
-            serde_json::json!({ "state": "missing", "may_create": true })
+            serde_json::json!({ "state": "missing", "may_create": true, "default_branch": null })
         );
         // an anonymous answer carries no permissions: nothing to create with
         assert_eq!(
             store_verdict(answer(404, "{}"), || answer(200, "{}")),
-            serde_json::json!({ "state": "missing", "may_create": false })
+            serde_json::json!({ "state": "missing", "may_create": false, "default_branch": null })
         );
     }
 
@@ -637,5 +692,45 @@ mod store_tests {
             Some("joyint/app")
         );
         assert_eq!(repo_path_of("https://github.com/joyint"), None);
+    }
+}
+
+#[cfg(test)]
+mod files_tests {
+    use super::*;
+
+    #[test]
+    fn a_tree_lists_its_files_and_says_when_it_was_cut_off() {
+        let body = r#"{"tree": [
+            {"path": "docs", "type": "tree"},
+            {"path": "docs/VISION.md", "type": "blob"},
+            {"path": "README.md", "type": "blob"}
+        ], "truncated": true}"#;
+        assert_eq!(
+            files_verdict(Some(ApiAnswer {
+                status: 200,
+                body: body.into()
+            })),
+            serde_json::json!({ "state": "files", "paths": ["docs/VISION.md", "README.md"], "truncated": true })
+        );
+        // an empty repository has nothing to list
+        assert_eq!(
+            files_verdict(Some(ApiAnswer {
+                status: 409,
+                body: String::new()
+            })),
+            serde_json::json!({ "state": "files", "paths": [], "truncated": false })
+        );
+        assert_eq!(
+            files_verdict(None),
+            serde_json::json!({ "state": "unknown" })
+        );
+        assert_eq!(
+            files_verdict(Some(ApiAnswer {
+                status: 401,
+                body: String::new()
+            })),
+            serde_json::json!({ "state": "unknown" })
+        );
     }
 }

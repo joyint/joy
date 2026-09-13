@@ -54,6 +54,16 @@ enum Command {
         #[arg(long)]
         token_env: Option<String>,
     },
+    /// Which files does the repository's default branch carry
+    /// (JAPP-0293-A7)? Read-only.
+    Files {
+        #[arg(long)]
+        remote: String,
+        /// Environment variable holding a Gitea token (never the token
+        /// itself: it must not appear in a process list).
+        #[arg(long)]
+        token_env: Option<String>,
+    },
     Resolve {
         #[arg(long)]
         email: String,
@@ -86,6 +96,7 @@ fn main() -> anyhow::Result<()> {
             token_env,
         } => gitea::identity_answer(login, user_id, token_env.as_deref()),
         Command::Store { remote, token_env } => gitea::store_answer(&remote, token_env.as_deref()),
+        Command::Files { remote, token_env } => gitea::files_answer(&remote, token_env.as_deref()),
         Command::Resolve { email } => gitea::resolve_answer(&email),
         Command::Release { .. } => serde_json::json!({ "unsupported": true }),
     };

@@ -141,8 +141,13 @@ pub enum StoreAnswer {
     /// The store is there and readable: the content of its project.yaml.
     Store { project_yaml: String },
     /// The repository is there but holds no store; whether the caller may
-    /// push one.
-    Missing { may_create: bool },
+    /// push one, and the branch the forge names as the default (the first
+    /// push of an empty repository goes there).
+    Missing {
+        may_create: bool,
+        #[serde(default)]
+        default_branch: Option<String>,
+    },
     /// The forge does not show the caller the repository: deleted, or no
     /// access. Forges answer both the same way on purpose.
     Gone,
@@ -173,6 +178,37 @@ pub fn store(
         .filter(|answer| *answer != StoreAnswer::Unknown)
 }
 
+/// The files a repository's default branch carries (JAPP-0293-A7), the
+/// answer of the `files` query. A listing the forge cut off, or the plugin
+/// bounded, says so.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(tag = "state", rename_all = "lowercase")]
+pub enum FilesAnswer {
+    Files { paths: Vec<String>, truncated: bool },
+    Unknown,
+}
+
+/// The files of the repository at `remote_url`; `None` on every plugin
+/// failure and on `unknown`.
+pub fn files(
+    spec: &ForgePluginSpec,
+    root: &Path,
+    remote_url: &str,
+    facts: &CallerFacts,
+) -> Option<FilesAnswer> {
+    let mut args: Vec<&str> = vec!["files", "--remote", remote_url];
+    if let Some(var) = facts.token_env.as_deref() {
+        args.extend(["--token-env", var]);
+    }
+    let env = match (facts.token_env.as_deref(), facts.token_value.as_deref()) {
+        (Some(var), Some(value)) => Some((var, value)),
+        _ => None,
+    };
+    run_query_full(spec.binary, root, &args, env, STORE_TIMEOUT)
+        .and_then(|out| serde_json::from_str::<FilesAnswer>(&out).ok())
+        .filter(|answer| *answer != FilesAnswer::Unknown)
+}
+
 /// The plugin responsible for this project: the `forge:` override when it
 /// names a registered plugin, else the first registry row that claims one
 /// of the remotes. `None` = nobody is responsible (a local-only project,
@@ -198,10 +234,10 @@ pub fn responsible_plugin(
 /// forge API call; anything slower must not stall a `joy` command.
 const QUERY_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// How long the store query may take: up to three forge API calls (the
-/// file, the repository, GitLab's branch protection), each bounded by the
-/// plugin itself.
-const STORE_TIMEOUT: Duration = Duration::from_secs(15);
+/// How long the store and files queries may take: several forge API calls
+/// (the file, the repository, GitLab's branch protection; the pages of a
+/// tree), each bounded by the plugin itself.
+const STORE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// How long the release verb may take: it talks to the forge's release
 /// API (possibly view + edit/create), so it gets network patience the
@@ -356,8 +392,30 @@ mod tests {
             }
         );
         assert_eq!(
-            parse(r#"{"state":"missing","may_create":true}"#),
-            StoreAnswer::Missing { may_create: true }
+            parse(r#"{"state":"missing","may_create":true,"default_branch":"main"}"#),
+            StoreAnswer::Missing {
+                may_create: true,
+                default_branch: Some("main".into())
+            }
+        );
+        // a plugin that names no default branch still parses
+        assert_eq!(
+            parse(r#"{"state":"missing","may_create":false}"#),
+            StoreAnswer::Missing {
+                may_create: false,
+                default_branch: None
+            }
+        );
+        let files = serde_json::from_str::<FilesAnswer>(
+            r#"{"state":"files","paths":["VISION.md"],"truncated":false}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            files,
+            FilesAnswer::Files {
+                paths: vec!["VISION.md".into()],
+                truncated: false
+            }
         );
         assert_eq!(parse(r#"{"state":"gone"}"#), StoreAnswer::Gone);
         assert_eq!(parse(r#"{"state":"unknown"}"#), StoreAnswer::Unknown);
@@ -420,7 +478,10 @@ mod tests {
                 "git@stub:owner/repo.git",
                 &CallerFacts::default()
             ),
-            Some(StoreAnswer::Missing { may_create: true })
+            Some(StoreAnswer::Missing {
+                may_create: true,
+                default_branch: None
+            })
         );
         // garbage output and unknown subcommands degrade to nothing
         assert!(run_query(spec.binary, root, &["garbage"])
