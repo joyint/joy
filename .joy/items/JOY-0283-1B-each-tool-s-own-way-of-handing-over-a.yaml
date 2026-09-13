@@ -1,7 +1,7 @@
 id: JOY-0283-1B
 title: Each tool's own way of handing over a plan is normalised into the one record
 type: story
-status: review
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -12,8 +12,8 @@ capabilities:
 effort: 5
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-09T22:15:02.793419308Z
-updated: 2026-09-09T22:37:12.549570303Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-13T08:12:32.514808070Z
+updated_by: horst.schwarz@joydev.com
 description: |-
   Horst 2026-09-09/10: a plan-mode turn's plan reaches the room differently per tool, and the room shows none of them as the answer. Read from the sources: vibe (2.19.1) writes the plan to a file under its home (plans/<time>-<slug>.md, via write_file/edit on an allowlist, no permission asked) and sends no ACP plan update; over ACP it has no exit_plan_mode, so the reminder tells the model to present the plan in prose, which the model may or may not do (on integration it put the plan into its reasoning and wrote a fake harness warning as its reply). Claude (claude-agent-acp 0.76) carries the plan text in the ExitPlanMode tool call ("Approve Plan", kind switch_mode, content = the plan) and renders TodoWrite as ACP plan updates (entries with status and priority).
 
