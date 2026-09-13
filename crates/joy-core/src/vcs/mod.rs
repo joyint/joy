@@ -3,7 +3,10 @@
 
 //! VCS abstraction layer (see ADR-010, ADR-017).
 //! All version control operations go through the `Vcs` trait.
-//! Currently only Git is implemented, via CLI process calls.
+//! Currently only Git is implemented. The trait's verbs and the staging
+//! that joy init needs run on git2 (JOY-0288-72), so a project can be
+//! created where no git binary exists; the named CLI helpers below stay
+//! on the binary.
 
 use std::path::Path;
 use std::process::Command;
@@ -98,38 +101,17 @@ fn git_run(root: &Path, args: &[&str]) -> Result<(), JoyError> {
     Ok(())
 }
 
-/// Fail fast when git is unavailable, before any prompts or writes. Until joy
-/// embeds libgit2, every `joy init` needs system git on PATH; checking up front
-/// avoids running a whole init wizard only to abort at the first git call.
-pub fn ensure_git_available() -> Result<(), JoyError> {
-    match Command::new("git").arg("--version").output() {
-        Ok(_) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(JoyError::GitMissing),
-        Err(e) => Err(JoyError::Git(format!("failed to run git --version: {e}"))),
-    }
-}
-
 impl Vcs for GitVcs {
     fn is_repo(&self, root: &Path) -> bool {
-        Command::new("git")
-            .args(["rev-parse", "--is-inside-work-tree"])
-            .current_dir(root)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .is_ok_and(|s| s.success())
+        forge::is_worktree(root)
     }
 
     fn init_repo(&self, root: &Path) -> Result<(), JoyError> {
-        git_run(root, &["init"])
+        forge::init_worktree(root).map_err(|e| JoyError::Git(format!("git init failed: {e}")))
     }
 
     fn user_email(&self) -> Result<String, JoyError> {
-        let email = git_output(Path::new("."), &["config", "user.email"])?;
-        if email.is_empty() {
-            return Err(JoyError::Git("git user.email is empty".into()));
-        }
-        Ok(email)
+        forge::user_email().ok_or_else(|| JoyError::Git("git user.email is empty".into()))
     }
 
     fn version_tags(&self, root: &Path) -> Result<Vec<String>, JoyError> {
@@ -152,11 +134,13 @@ impl Vcs for GitVcs {
     }
 
     fn config_get(&self, root: &Path, key: &str) -> Result<String, JoyError> {
-        git_output(root, &["config", "--local", key])
+        forge::local_config_get(root, key)
+            .ok_or_else(|| JoyError::Git(format!("git config --local {key} is not set")))
     }
 
     fn config_set(&self, root: &Path, key: &str, value: &str) -> Result<(), JoyError> {
-        git_run(root, &["config", "--local", key, value])
+        forge::local_config_set(root, key, value)
+            .map_err(|e| JoyError::Git(format!("git config --local {key} failed: {e}")))
     }
 }
 
@@ -219,30 +203,16 @@ fn parse_git_version(raw: &str) -> Result<GitVersion, JoyError> {
 impl GitVcs {
     /// Stage files for commit.
     pub fn add(&self, root: &Path, paths: &[&str]) -> Result<(), JoyError> {
-        let mut args = vec!["add"];
-        args.extend_from_slice(paths);
-        git_run(root, &args)
+        forge::stage_paths(root, paths).map_err(|e| JoyError::Git(format!("git add failed: {e}")))
     }
 
     /// True if `path` matches one of the .gitignore patterns
-    /// (regardless of whether it is currently tracked).
-    ///
-    /// `git check-ignore --quiet <path>` exits 0 when the path is
-    /// ignored, 1 when it is not, anything else on error. Errors
-    /// are treated as "not ignored" so that genuine staging
-    /// attempts surface via the regular `add` error path rather
-    /// than getting swallowed here.
+    /// (regardless of whether it is currently tracked). Errors are
+    /// treated as "not ignored" so that genuine staging attempts surface
+    /// via the regular `add` error path rather than getting swallowed
+    /// here.
     pub fn is_ignored(&self, root: &Path, path: &str) -> bool {
-        let status = std::process::Command::new("git")
-            .arg("-C")
-            .arg(root)
-            .arg("check-ignore")
-            .arg("--quiet")
-            .arg(path)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status();
-        matches!(status, Ok(s) if s.code() == Some(0))
+        forge::is_ignored(root, path)
     }
 
     /// Stage all changes (git add -A).
@@ -297,20 +267,7 @@ impl GitVcs {
     /// order `git remote` returns them. Empty when the repo has no
     /// remotes configured.
     pub fn all_remotes(&self, root: &Path) -> Result<Vec<(String, String)>, JoyError> {
-        let names = match git_output(root, &["remote"]) {
-            Ok(s) => s,
-            Err(_) => return Ok(Vec::new()),
-        };
-        let mut out = Vec::new();
-        for name in names.lines() {
-            if name.is_empty() {
-                continue;
-            }
-            if let Ok(url) = self.remote_url(root, name) {
-                out.push((name.to_string(), url));
-            }
-        }
-        Ok(out)
+        Ok(forge::remotes(root))
     }
 
     /// Check if the working tree is clean.

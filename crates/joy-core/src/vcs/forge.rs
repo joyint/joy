@@ -757,6 +757,136 @@ pub fn init_repo(dir: &Path, branch: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+// ---- working-copy verbs of joy init (JOY-0288-72) ------------------------
+//
+// joy init used to reach these through the git binary, which a host
+// without one (the platform) cannot run. They answer the way the git
+// commands they replace did, for every caller of the Vcs trait.
+
+/// Is `dir` inside a repository's working tree? A bare repository is not.
+pub fn is_worktree(dir: &Path) -> bool {
+    open(dir)
+        .map(|repo| repo.workdir().is_some())
+        .unwrap_or(false)
+}
+
+/// Initialize a repository in `dir` the way `git init` does: on the
+/// person's `init.defaultBranch` when their git config names one.
+pub fn init_worktree(dir: &Path) -> anyhow::Result<()> {
+    let mut options = git2::RepositoryInitOptions::new();
+    let configured = git2::Config::open_default()
+        .ok()
+        .and_then(|config| config.get_string("init.defaultBranch").ok())
+        .filter(|branch| !branch.trim().is_empty());
+    if let Some(branch) = configured.as_deref() {
+        options.initial_head(branch);
+    }
+    git2::Repository::init_opts(dir, &options).map_err(err)?;
+    Ok(())
+}
+
+/// The person's `user.email`, answered like `git config user.email` in
+/// the current directory: the repository's config when it runs inside
+/// one (local over global over system), else the global and system files.
+pub fn user_email() -> Option<String> {
+    let config = open(Path::new("."))
+        .and_then(|repo| repo.config())
+        .or_else(|_| git2::Config::open_default())
+        .ok()?;
+    config
+        .get_string("user.email")
+        .ok()
+        .filter(|email| !email.trim().is_empty())
+}
+
+/// A value of the repository's own config file (`git config --local`).
+pub fn local_config_get(dir: &Path, key: &str) -> Option<String> {
+    let repo = open(dir).ok()?;
+    let local = repo
+        .config()
+        .ok()?
+        .open_level(git2::ConfigLevel::Local)
+        .ok()?;
+    local.get_string(key).ok()
+}
+
+/// Write a value into the repository's own config file
+/// (`git config --local <key> <value>`).
+pub fn local_config_set(dir: &Path, key: &str, value: &str) -> anyhow::Result<()> {
+    let repo = open(dir).map_err(err)?;
+    let mut local = repo
+        .config()
+        .map_err(err)?
+        .open_level(git2::ConfigLevel::Local)
+        .map_err(err)?;
+    local.set_str(key, value).map_err(err)
+}
+
+/// Every configured remote as `(name, url)`, in the repository's order.
+pub fn remotes(dir: &Path) -> Vec<(String, String)> {
+    let Ok(repo) = open(dir) else {
+        return Vec::new();
+    };
+    let Ok(names) = repo.remotes() else {
+        return Vec::new();
+    };
+    (0..names.len())
+        .filter_map(|i| {
+            let name = names.get(i).ok()??;
+            let remote = repo.find_remote(name).ok()?;
+            let url = remote.url().ok()?.to_string();
+            Some((name.to_string(), url))
+        })
+        .collect()
+}
+
+/// `path`, given relative to `dir`, as the repository sees it: relative
+/// to its working tree, with forward slashes. `dir` may be a subdirectory.
+fn workdir_relative(repo: &git2::Repository, dir: &Path, path: &str) -> Option<String> {
+    let workdir = repo.workdir()?.canonicalize().ok()?;
+    let here = dir.canonicalize().ok()?;
+    let prefix = here.strip_prefix(&workdir).ok()?;
+    let joined = prefix.join(path);
+    Some(
+        joined
+            .components()
+            .map(|c| c.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("/"),
+    )
+}
+
+/// Does a `.gitignore` rule match `path` (relative to `dir`), tracked or
+/// not? `git check-ignore`'s question; errors count as not ignored.
+pub fn is_ignored(dir: &Path, path: &str) -> bool {
+    let Ok(repo) = open(dir) else {
+        return false;
+    };
+    workdir_relative(&repo, dir, path)
+        .and_then(|rel| repo.is_path_ignored(rel).ok())
+        .unwrap_or(false)
+}
+
+/// Stage `paths` (relative to `dir`) the way `git add` does: new and
+/// changed files go in, deleted ones come out, untracked ignored ones stay
+/// out.
+pub fn stage_paths(dir: &Path, paths: &[&str]) -> anyhow::Result<()> {
+    let repo = open(dir).map_err(err)?;
+    let specs: Vec<String> = paths
+        .iter()
+        .map(|path| {
+            workdir_relative(&repo, dir, path)
+                .ok_or_else(|| anyhow::anyhow!("{path} is outside the working tree"))
+        })
+        .collect::<anyhow::Result<_>>()?;
+    let mut index = repo.index().map_err(err)?;
+    index
+        .add_all(specs.iter(), git2::IndexAddOption::DEFAULT, None)
+        .map_err(err)?;
+    index.update_all(specs.iter(), None).map_err(err)?;
+    index.write().map_err(err)
+}
+
 /// Configure a named remote.
 pub fn add_remote(dir: &Path, name: &str, url: &str) -> anyhow::Result<()> {
     let repo = open(dir).map_err(err)?;

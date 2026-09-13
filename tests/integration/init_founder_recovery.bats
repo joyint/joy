@@ -80,11 +80,14 @@ load setup
     ! grep -q "@example.com" .joy/project.yaml
 }
 
-@test "joy init fails fast and writes nothing when git is missing" {
-    # A PATH that contains joy but not git (JOY-01CC-BE). Until joy embeds
-    # libgit2, init must check for git before any prompt or write.
-    run env PATH="$(dirname "$JOY_BIN")" joy init --name "No Git"
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"Joy needs Git"* ]]
-    [ ! -d .joy ]
+@test "joy init needs no git binary" {
+    # A PATH that contains joy but not git. joy init reaches git through
+    # git2 (JOY-0288-72), so a host without the binary, like the platform,
+    # can create a project: founder, staged store and per-clone config.
+    run env PATH="$(dirname "$JOY_BIN")" joy init --name "No Git" --acronym NG
+    [ "$status" -eq 0 ]
+    grep -q "@example.com" .joy/project.yaml
+    [ "$(git config --local core.hooksPath)" = ".joy/hooks" ]
+    git config --local merge.joy-yaml.driver | grep -q "joy merge driver"
+    git diff --cached --name-only | grep -qx ".joy/project.yaml"
 }
