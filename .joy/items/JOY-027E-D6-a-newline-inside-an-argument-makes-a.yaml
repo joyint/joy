@@ -1,7 +1,7 @@
 id: JOY-027E-D6
 title: A newline inside an argument makes a joy call stop being one
 type: bug
-status: review
+status: closed
 priority: critical
 assignees:
 - member: ai:claude@joy
@@ -11,8 +11,8 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-09T16:01:15.240688Z
-updated: 2026-09-09T17:46:01.340557Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-13T08:10:37.657070174Z
+updated_by: horst.schwarz@joydev.com
 description: |-
   An AI below the autonomous level could file only SINGLE-LINE joy calls. Any `joy add --description "two\nlines"` was refused, and the refusal reached the person as the AI declining to act, with no reason given.
 
