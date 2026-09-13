@@ -1,7 +1,7 @@
 id: JOY-0280-A5
 title: The level chosen for a turn reaches the agent through the ACP session mode
 type: story
-status: review
+status: closed
 priority: critical
 assignees:
 - member: ai:claude@joy
@@ -12,8 +12,8 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-09T17:08:22.722424Z
-updated: 2026-09-09T17:46:01.074606Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-13T08:11:12.791595373Z
+updated_by: horst.schwarz@joydev.com
 description: |-
   JI-0166-D8 §4 says the adapter derives its native mode from the effective level "at setup and turn time". Setup exists (joy ai setup writes .claude/settings.json); turn time never did. The turn mode lived only in the lane, used to ANSWER permission requests. An agent that never asks - Claude Code in its own plan mode - ran in whatever its setup file said, and switching the level in the composer changed nothing anyone could see (operator, 2026-09-09).
 
