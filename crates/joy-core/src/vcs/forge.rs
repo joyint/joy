@@ -887,6 +887,49 @@ pub fn stage_paths(dir: &Path, paths: &[&str]) -> anyhow::Result<()> {
     index.write().map_err(err)
 }
 
+/// Point an unborn HEAD at `branch`: a clone of an empty repository has no
+/// branch yet, and its first commit must land on the one the forge names
+/// as the default. A HEAD that already has a commit is left alone.
+pub fn set_unborn_branch(dir: &Path, branch: &str) -> anyhow::Result<()> {
+    let repo = open(dir).map_err(err)?;
+    if repo.head().is_ok() {
+        return Ok(());
+    }
+    repo.set_head(&format!("refs/heads/{branch}")).map_err(err)
+}
+
+/// Commit exactly what the index holds, as `author`: joy init stages the
+/// files it wrote, and a host commits them without guessing which.
+pub fn commit_index(
+    repo_dir: &Path,
+    message: &str,
+    author_name: &str,
+    author_email: &str,
+) -> anyhow::Result<String> {
+    let repo = open(repo_dir).map_err(err)?;
+    let mut index = repo.index().map_err(err)?;
+    let tree_id = index.write_tree().map_err(err)?;
+    let tree = repo.find_tree(tree_id).map_err(err)?;
+    let signature = git2::Signature::now(author_name, author_email).map_err(err)?;
+    let parent = repo
+        .head()
+        .ok()
+        .and_then(|h| h.target())
+        .and_then(|oid| repo.find_commit(oid).ok());
+    let parents: Vec<&git2::Commit> = parent.iter().collect();
+    let oid = repo
+        .commit(
+            Some("HEAD"),
+            &signature,
+            &signature,
+            message,
+            &tree,
+            &parents,
+        )
+        .map_err(err)?;
+    Ok(oid.to_string())
+}
+
 /// Configure a named remote.
 pub fn add_remote(dir: &Path, name: &str, url: &str) -> anyhow::Result<()> {
     let repo = open(dir).map_err(err)?;
@@ -2046,6 +2089,37 @@ pub fn checkout_branch(repo_dir: &Path, branch: &str) -> anyhow::Result<()> {
     repo.set_head(&refname).map_err(err)?;
     Ok(())
 }
+#[cfg(test)]
+mod init_on_git2_tests {
+    use super::*;
+
+    #[test]
+    fn a_project_created_in_an_empty_repository_lands_on_the_named_branch() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_dir = dir.path().join("repo");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        init_worktree(&repo_dir).unwrap();
+        set_unborn_branch(&repo_dir, "trunk").unwrap();
+        std::fs::write(repo_dir.join("staged.md"), "in").unwrap();
+        std::fs::write(repo_dir.join("unstaged.md"), "out").unwrap();
+        stage_paths(&repo_dir, &["staged.md"]).unwrap();
+
+        commit_index(&repo_dir, "set up", "Founder", "founder@example.com").unwrap();
+
+        let repo = git2::Repository::open(&repo_dir).unwrap();
+        assert_eq!(repo.head().unwrap().name().ok(), Some("refs/heads/trunk"));
+        let tree = repo.head().unwrap().peel_to_tree().unwrap();
+        assert!(tree.get_name("staged.md").is_some());
+        assert!(
+            tree.get_name("unstaged.md").is_none(),
+            "only what was staged"
+        );
+        // a branch that has a commit is not moved
+        set_unborn_branch(&repo_dir, "other").unwrap();
+        assert_eq!(repo.head().unwrap().name().ok(), Some("refs/heads/trunk"));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
