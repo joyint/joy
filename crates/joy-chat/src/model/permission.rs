@@ -28,10 +28,10 @@
 //! * an unknown or absent tool kind counts as mutating, so a kind we do
 //!   not know yet starts safe rather than permitted.
 //!
-//! A [`Decision::Deny`] is escalatable: a host with a human attached (the
-//! desktop's streaming session) asks them; a host without one (chat
-//! turns, container lanes) rejects. That difference is WHO can answer,
-//! not what the rule is.
+//! A [`Decision::Deny`] is escalatable: a lane turn with a present person
+//! (`joy_ai::acp_lane::TurnGate`, JOY-028A-DC) asks them; a chat turn
+//! without one, and every container lane today, rejects. That difference
+//! is WHO can answer, not what the rule is.
 
 use crate::model::AgentMode;
 
@@ -67,8 +67,9 @@ impl ToolAction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Decision {
     Allow,
-    /// Not allowed by the mode. A host with a human attached escalates
-    /// (asks them); a host without one rejects.
+    /// Not allowed by the mode. A lane turn with a present person
+    /// escalates (asks them, `joy_ai::acp_lane::TurnGate`); a chat turn
+    /// without one rejects.
     Deny,
 }
 

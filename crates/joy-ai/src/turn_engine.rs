@@ -26,7 +26,8 @@
 //! JP-0134-48): the client that drives the turn persists a `turn`
 //! message under the id its reply will carry and replaces it with the
 //! outcome, so every participant sees the running turn from the chat
-//! itself. Hosts stream only what the agent produced meanwhile.
+//! itself. Hosts stream only what the agent produced meanwhile, and the
+//! questions the lane puts to the person the turn runs for (JOY-028A-DC).
 
 use std::future::Future;
 use std::path::Path;
@@ -38,9 +39,10 @@ use joy_core::model::config::InteractionLevel;
 use crate::chat_turns;
 
 /// Live activity of a RUNNING turn (JI-0172-EE): the agent's streamed
-/// chunks, thoughts and tool calls. One vocabulary for every transport;
-/// ephemeral: it fills the persisted running-turn row while the turn
-/// runs, and the persisted outcome is the only truth.
+/// chunks, thoughts and tool calls, and the questions the lane puts to
+/// the person the turn runs for (JOY-028A-DC). One vocabulary for every
+/// transport; ephemeral: it fills the persisted running-turn row while
+/// the turn runs, and the persisted outcome is the only truth.
 #[derive(Debug, Clone)]
 pub enum TurnActivity {
     /// A piece of the reply text.
@@ -62,11 +64,49 @@ pub enum TurnActivity {
     /// own plan arrives once at the end). One shape for every tool
     /// (`crate::adapter_behaviour`).
     Plan { text: String },
+    /// The lane asks the present person about a tool call the policy
+    /// does not grant, and again once the question is settled
+    /// (`crate::acp_lane::TurnGate`). Never produced from an agent
+    /// notification.
+    Gate(GateQuestion),
+}
+
+/// One question a running turn puts to its present person (JOY-028A-DC).
+#[derive(Debug, Clone, PartialEq)]
+pub struct GateQuestion {
+    /// The lane's id of the question, unique per turn gate registry; the
+    /// person's answer names it.
+    pub id: u32,
+    /// The tool call the question opens (ACP tool_call_id): a settled
+    /// answer sits on that call's row, the same rule as
+    /// `crate::acp_lane::Collected::record_permission`.
+    pub call: String,
+    /// What the agent wants to do, as the person reads it.
+    pub title: String,
+    /// The choices the agent offered, in its order.
+    pub options: Vec<GateOption>,
+    /// None while the question is open; the answer word once settled
+    /// ("allowed (person)", "denied (person)", "denied (no answer)").
+    pub answered: Option<&'static str>,
+}
+
+/// One choice the agent offered for a question.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct GateOption {
+    /// The agent's option id, sent back verbatim when the person picks it.
+    pub id: String,
+    /// The agent's label for it.
+    pub name: String,
+    /// The ACP option kind as its wire word: "allow_once" |
+    /// "allow_always" | "reject_once" | "reject_always".
+    pub kind: String,
 }
 
 impl TurnActivity {
     /// The wire kind, identical on the bus and the Tauri event, so the
     /// channel needs exactly one switch.
+    /// PAIRED with chat-client TURN_ACTIVITY_KINDS (JAPP-01A4-6E): a new
+    /// kind lands in both lists in the same change.
     pub fn kind(&self) -> &'static str {
         match self {
             TurnActivity::Chunk { .. } => "turn-chunk",
@@ -74,6 +114,7 @@ impl TurnActivity {
             TurnActivity::Tool { .. } => "turn-tool",
             TurnActivity::Content { .. } => "turn-content",
             TurnActivity::Plan { .. } => "turn-plan",
+            TurnActivity::Gate(_) => "turn-gate",
         }
     }
 }
@@ -83,7 +124,9 @@ impl TurnActivity {
 /// event carries it directly; the client folds both into the same
 /// TurnActivityEvent. Field reuse by design: `text` is the chunk or
 /// thought text, the tool title or the content label, `tool` the
-/// tool-call id or the content kind, `payload` the tool status.
+/// tool-call id or the content kind, `payload` the tool status. A gate
+/// puts its title in `text`, the gate id in `tool` and the JSON
+/// `{call, options, answered}` in `payload`.
 ///
 /// Every event names its turn (`turn_id`): the id of the turn's message,
 /// the marker the driving client wrote and the reply that replaces it.
@@ -97,7 +140,7 @@ pub struct WireActivity {
     /// The message id of the turn this event belongs to.
     pub turn_id: String,
     /// "turn-chunk" | "turn-thought" | "turn-tool" | "turn-content" |
-    /// "turn-plan" (see [`TurnActivity::kind`])
+    /// "turn-plan" | "turn-gate" (see [`TurnActivity::kind`])
     pub kind: String,
     pub text: String,
     pub tool: String,
@@ -115,6 +158,18 @@ impl WireActivity {
             // field reuse: text carries the human label, tool the
             // content kind ("image", "audio", ...)
             TurnActivity::Content { kind, label } => (label.clone(), kind.clone(), String::new()),
+            // field reuse: text carries the question's title, tool the
+            // gate id the answer names, payload the rest as JSON
+            TurnActivity::Gate(question) => (
+                question.title.clone(),
+                question.id.to_string(),
+                serde_json::json!({
+                    "call": question.call,
+                    "options": question.options,
+                    "answered": question.answered,
+                })
+                .to_string(),
+            ),
         };
         WireActivity {
             turn_id: turn_id.into(),
@@ -535,6 +590,55 @@ mod tests {
         // every event names its turn, camelCase on the wire (JAPP-0278-A2)
         let wire = serde_json::to_value(&chunk).expect("json");
         assert_eq!(wire["turnId"], "m-1");
+    }
+
+    #[test]
+    fn the_gate_rides_the_one_wire_shape() {
+        // JOY-028A-DC: the question to the present person travels the
+        // same wire as every other live event, asked and then settled
+        let mut question = GateQuestion {
+            id: 7,
+            call: "t1".into(),
+            title: "bash: rm -rf target".into(),
+            options: vec![
+                GateOption {
+                    id: "y".into(),
+                    name: "Allow".into(),
+                    kind: "allow_once".into(),
+                },
+                GateOption {
+                    id: "n".into(),
+                    name: "Reject".into(),
+                    kind: "reject_once".into(),
+                },
+            ],
+            answered: None,
+        };
+        let asked = WireActivity::of("m-1", &TurnActivity::Gate(question.clone()));
+        assert_eq!(
+            (
+                asked.kind.as_str(),
+                asked.text.as_str(),
+                asked.tool.as_str()
+            ),
+            ("turn-gate", "bash: rm -rf target", "7")
+        );
+        let payload: serde_json::Value = serde_json::from_str(&asked.payload).expect("json");
+        assert_eq!(payload["call"], "t1");
+        assert_eq!(
+            payload["options"],
+            serde_json::json!([
+                { "id": "y", "name": "Allow", "kind": "allow_once" },
+                { "id": "n", "name": "Reject", "kind": "reject_once" },
+            ])
+        );
+        assert!(payload["answered"].is_null());
+        // the settled question carries the answer word on the same shape
+        question.answered = Some("allowed (person)");
+        let settled = WireActivity::of("m-1", &TurnActivity::Gate(question));
+        let payload: serde_json::Value = serde_json::from_str(&settled.payload).expect("json");
+        assert_eq!(payload["answered"], "allowed (person)");
+        assert_eq!(settled.tool, "7");
     }
 
     #[test]

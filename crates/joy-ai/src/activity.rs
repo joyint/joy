@@ -23,8 +23,9 @@
 pub struct ToolStep {
     pub title: String,
     pub status: String,
-    /// "allowed", "allowed (joy)", "denied" — absent when the call needed
-    /// no permission at all.
+    /// "allowed", "allowed (joy)", "denied", or the present person's
+    /// answer "allowed (person)", "denied (person)", "denied (no answer)"
+    /// (JOY-028A-DC); absent when the call needed no permission at all.
     pub answered: Option<String>,
 }
 

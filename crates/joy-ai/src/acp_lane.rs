@@ -47,6 +47,12 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::turn_engine::{TurnActivity, TurnOutcome, TurnSink, WireActivity};
 
+// The questions a turn puts to its present person (JOY-028A-DC): the
+// registry and the answer vocabulary, in their own file.
+mod gate;
+pub use gate::{answer_from_person, GateChoice, OpenGate, PresentPerson, TurnGate};
+use gate::{gate_question, offers_allow};
+
 // ---------------------------------------------------------------------------
 // The collector: one ACP notification stream folded into one record.
 // ---------------------------------------------------------------------------
@@ -77,10 +83,11 @@ pub fn wire_kind(kind: impl Into<Option<ToolKind>>) -> Option<String> {
 }
 
 // The live view of a running turn rides the shared TurnSink
-// (turn_engine): streamed activity only (chunks, thoughts, tools,
-// content, plan). The lane owns the ordered delivery and the drain, the
-// host owns only the transport of one WireActivity (JOY-0249-D2). The
-// waiting state is the client's persisted turn message, never a wire
+// (turn_engine): streamed activity (chunks, thoughts, tools, content,
+// plan) and the questions the lane puts to the turn's present person
+// (gates, JOY-028A-DC). The lane owns the ordered delivery and the drain,
+// the host owns only the transport of one WireActivity (JOY-0249-D2).
+// The waiting state is the client's persisted turn message, never a wire
 // event (JAPP-0268-E8).
 
 /// Everything one ACP session produced so far.
@@ -170,7 +177,8 @@ impl Collected {
             .iter()
             .filter_map(|step| step.answered.as_deref())
             .chain(self.permissions.iter().map(|(_, answer)| answer.as_str()))
-            .filter(|answer| *answer == "denied")
+            // every refusal word: the policy's, the person's, no answer
+            .filter(|answer| answer.starts_with("denied"))
             .count() as u32;
         let details = crate::activity::Activity {
             thoughts: self.thoughts,
@@ -424,6 +432,21 @@ fn wire_word<T: serde::Serialize + std::fmt::Debug>(value: &T) -> String {
         .unwrap_or_else(|| format!("{value:?}").to_lowercase())
 }
 
+/// Queue one event onto the live wire of the turn running on session
+/// `sid`, if one listens. Looked up per event and never kept: a held
+/// sender would keep the turn loop's drain open.
+fn queue_live(
+    live: &Mutex<HashMap<String, mpsc::UnboundedSender<TurnActivity>>>,
+    sid: &str,
+    event: TurnActivity,
+) {
+    if let Some(wire) = live.lock().unwrap_or_else(|e| e.into_inner()).get(sid) {
+        // queue only: the turn loop delivers in order and drains before it
+        // responds (JOY-0249-D2)
+        let _ = wire.send(event);
+    }
+}
+
 /// The text blocks of a tool call's content, in order.
 fn content_texts(content: &[agent_client_protocol::schema::v1::ToolCallContent]) -> Vec<String> {
     use agent_client_protocol::schema::v1::ToolCallContent;
@@ -448,12 +471,25 @@ pub struct PermissionAnswer {
     /// The option to select; None answers Cancelled.
     pub selected: Option<PermissionOptionId>,
     pub title: String,
-    /// "allowed" | "allowed (joy)" | "denied" | "escalated to operator" —
+    /// "allowed" | "allowed (joy)" | "denied" | "allowed (person)" |
+    /// "denied (person)" | "denied (no answer)" | "escalated to operator":
     /// the vocabulary the activity block renders.
     pub answered: &'static str,
     /// Set when a HUMAN must decide (job rounds: a request without an
     /// allow option is a gate escalation).
     pub question: Option<String>,
+    /// The verdict; the lane branches on this, never on the word.
+    pub decision: joy_chat::model::permission::Decision,
+}
+
+/// The ACP response that selects `selected`, or answers Cancelled.
+fn permission_response(selected: Option<PermissionOptionId>) -> RequestPermissionResponse {
+    match selected {
+        Some(option_id) => RequestPermissionResponse::new(RequestPermissionOutcome::Selected(
+            SelectedPermissionOutcome::new(option_id),
+        )),
+        None => RequestPermissionResponse::new(RequestPermissionOutcome::Cancelled),
+    }
 }
 
 fn pick_option(
@@ -467,13 +503,29 @@ fn pick_option(
         .map(|o| o.option_id.clone())
 }
 
+/// The option a refusal selects: the agent's reject option, or its first
+/// option when it worded them oddly (never Cancelled just for that). The
+/// policy's deny and the person's decline pick the same way.
+fn reject_option(request: &RequestPermissionRequest) -> Option<PermissionOptionId> {
+    pick_option(
+        request,
+        [
+            PermissionOptionKind::RejectOnce,
+            PermissionOptionKind::RejectAlways,
+        ],
+    )
+    .or_else(|| request.options.first().map(|o| o.option_id.clone()))
+}
+
 /// A CHAT turn's permission: THE shared policy (JI-0179-4F step 2,
 /// `joy_chat::model::permission`) under the turn's mode. joy is ALWAYS
 /// allowed, even in plan mode (operator 2026-07-21): it is the agents'
 /// governed item interface and enforces its own capability/mode rules.
 /// The request may not carry the command, so facts are recovered from the
-/// correlated notification (`known`). A Deny rejects — no human is
-/// attached mid-turn, on either host.
+/// correlated notification (`known`). A Deny rejects on a turn with no
+/// present person. When the turn carries one (`TurnRequest.present`),
+/// the lane puts the question to them and awaits the answer until the
+/// turn is cancelled (`TurnGate`, JOY-028A-DC).
 pub fn answer_chat_permission(
     mode: joy_chat::model::AgentMode,
     request: &RequestPermissionRequest,
@@ -496,9 +548,9 @@ pub fn answer_chat_permission(
     };
     let title = cmd_title.clone().unwrap_or_else(|| "tool call".into());
     let is_joy = permission::command_invokes_joy(cmd_title.as_deref(), cmd_raw.as_ref());
-    let allow =
-        permission::permission_decision(mode, ToolAction::from_wire(wire.as_deref()), is_joy)
-            == Decision::Allow;
+    let decision =
+        permission::permission_decision(mode, ToolAction::from_wire(wire.as_deref()), is_joy);
+    let allow = decision == Decision::Allow;
     let answered = if !allow {
         "denied"
     } else if is_joy {
@@ -514,22 +566,17 @@ pub fn answer_chat_permission(
                 PermissionOptionKind::AllowAlways,
             ],
         )
+        // never Cancelled just because the agent worded its options oddly
+        .or_else(|| request.options.first().map(|o| o.option_id.clone()))
     } else {
-        pick_option(
-            request,
-            [
-                PermissionOptionKind::RejectOnce,
-                PermissionOptionKind::RejectAlways,
-            ],
-        )
-    }
-    // never Cancelled just because the agent worded its options oddly
-    .or_else(|| request.options.first().map(|o| o.option_id.clone()));
+        reject_option(request)
+    };
     PermissionAnswer {
         selected,
         title,
         answered,
         question: None,
+        decision,
     }
 }
 
@@ -557,12 +604,14 @@ pub fn answer_job_permission(request: &RequestPermissionRequest) -> PermissionAn
             title,
             answered: "allowed",
             question: None,
+            decision: joy_chat::model::permission::Decision::Allow,
         },
         None => PermissionAnswer {
             selected: None,
             title: title.clone(),
             answered: "escalated to operator",
             question: Some(title),
+            decision: joy_chat::model::permission::Decision::Deny,
         },
     }
 }
@@ -621,6 +670,11 @@ pub struct TurnRequest {
     /// Live activity out (JI-0172-EE) while the turn runs: the shared
     /// delivery contract (ordered, drained before the result returns).
     pub activity: Option<Arc<dyn TurnSink>>,
+    /// The person the turn runs for, when the host has them attached: a
+    /// tool call the policy does not grant is put to them over the live
+    /// wire and awaited (JOY-028A-DC). None asks nobody, and every Deny
+    /// rejects.
+    pub present: Option<PresentPerson>,
 }
 
 struct QueuedTurn {
@@ -641,6 +695,11 @@ struct QueuedTurn {
 pub struct Liveness {
     last: Mutex<std::time::Instant>,
     cancel: tokio::sync::Notify,
+    /// Flipped once the lane cancels the agent's turn (idle span or spend
+    /// cap), so a question waiting for its person ends with it. A watch,
+    /// not the Notify above: any number of waiters read it, late ones
+    /// included. One Liveness per turn attempt, so it never carries over.
+    cancelled: tokio::sync::watch::Sender<bool>,
 }
 
 impl Liveness {
@@ -648,6 +707,7 @@ impl Liveness {
         Self {
             last: Mutex::new(std::time::Instant::now()),
             cancel: tokio::sync::Notify::new(),
+            cancelled: tokio::sync::watch::channel(false).0,
         }
     }
     fn touch(&self) {
@@ -729,6 +789,7 @@ impl<K: std::hash::Hash + Eq + Clone> LaneSet<K> {
                     mode: request.mode,
                     max_price_cents: request.max_price_cents,
                     activity: request.activity.clone(),
+                    present: request.present.clone(),
                 },
                 respond,
                 liveness: liveness.clone(),
@@ -944,6 +1005,12 @@ async fn run_lane(
     let pulses: Arc<Mutex<HashMap<String, Arc<Liveness>>>> = Arc::default();
     let notify_pulses = pulses.clone();
     let perm_pulses = pulses.clone();
+    // per-SESSION present person of the running turn and that turn's id
+    // (JOY-028A-DC): set only for a turn that also has a live wire, so a
+    // question is never asked where nobody can see it
+    let present: Arc<Mutex<HashMap<String, (PresentPerson, String)>>> = Arc::default();
+    let perm_present = present.clone();
+    let perm_live = live.clone();
 
     let command_shown = command.clone();
     let connect = agent_client_protocol::Client
@@ -958,39 +1025,31 @@ async fn run_lane(
                 {
                     pulse.touch();
                 }
-                // the live wire of the RUNNING turn, if one listens
-                let wire = notify_live
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .get(&sid)
-                    .cloned();
                 let events = {
                     let mut map = notes.lock().unwrap_or_else(|e| e.into_inner());
-                    let state = map.entry(sid).or_default();
+                    let state = map.entry(sid.clone()).or_default();
                     collect_notification(state, notification.update)
                 };
-                if let Some(wire) = wire {
-                    for event in events {
-                        // queue only: the turn loop delivers in order and
-                        // drains before it responds (JOY-0249-D2)
-                        let _ = wire.send(event);
-                    }
+                // onto the live wire of the RUNNING turn, if one listens
+                for event in events {
+                    queue_live(&notify_live, &sid, event);
                 }
                 Ok(())
             },
             agent_client_protocol::on_receive_notification!(),
         )
         .on_receive_request(
-            async move |request: RequestPermissionRequest, responder, _connection| {
+            async move |request: RequestPermissionRequest, responder, connection| {
                 // THE shared permission policy: the mode was set per
                 // SESSION before the prompt; the host's sandbox (container
                 // mounts, reach) is the hard boundary, this is the belt.
                 let sid = request.session_id.0.to_string();
-                if let Some(pulse) = perm_pulses
+                let pulse = perm_pulses
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
                     .get(&sid)
-                {
+                    .cloned();
+                if let Some(pulse) = &pulse {
                     pulse.touch();
                 }
                 let mode = perm_modes
@@ -1006,6 +1065,97 @@ async fn run_lane(
                     .map(|c| c.known(request.tool_call.tool_call_id.0.as_ref()))
                     .unwrap_or_default();
                 let answer = answer_chat_permission(mode, &request, &known);
+                // A Deny is escalated to the turn's present person
+                // (JOY-028A-DC) when there is something to allow and the
+                // turn is running here with a live wire and a pulse.
+                // Everything else keeps the policy's answer: the platform
+                // attaches no person, so it keeps denying.
+                let person = perm_present
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .get(&sid)
+                    .cloned();
+                let wire_open = perm_live
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .contains_key(&sid);
+                let askable = answer.decision == joy_chat::model::permission::Decision::Deny
+                    && offers_allow(&request)
+                    && wire_open;
+                if let (true, Some((person, turn_id)), Some(pulse)) = (askable, person, pulse) {
+                    let open = person.gate.open(&turn_id, &person.member);
+                    let question = gate_question(open.id, &request, answer.title);
+                    queue_live(&perm_live, &sid, TurnActivity::Gate(question.clone()));
+                    tracing::info!(gate = open.id, mode = ?mode, "acp permission asked");
+                    // The wait leaves the dispatch loop: a handler blocks
+                    // every other message of the connection until it
+                    // returns, the agent's notifications included.
+                    let cancellation = responder.cancellation();
+                    let records = perms.clone();
+                    let wires = perm_live.clone();
+                    let people = perm_present.clone();
+                    connection.spawn(async move {
+                        let mut open = open;
+                        let mut cancelled = pulse.cancelled.subscribe();
+                        let choice = tokio::select! {
+                            // Err: the turn settled and dropped the question
+                            answered = &mut open.rx => answered.ok(),
+                            // the lane is cancelling the turn (idle, cap)
+                            _ = async { let _ = cancelled.wait_for(|c| *c).await; } => None,
+                            // the agent withdrew the request
+                            _ = cancellation.cancelled() => None,
+                        };
+                        drop(open);
+                        if choice.is_some() {
+                            // the person's answer is activity of the turn
+                            pulse.touch();
+                        }
+                        let settled = answer_from_person(&request, question.title.clone(), choice);
+                        // Record and settle only while THIS turn still runs
+                        // on the session: a question the prompt outlived
+                        // must not land in a later turn's record.
+                        let still_running = people
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .get(&sid)
+                            .is_some_and(|(_, running)| *running == turn_id);
+                        if still_running {
+                            if let Some(state) =
+                                records.lock().unwrap_or_else(|e| e.into_inner()).get_mut(&sid)
+                            {
+                                state.record_permission(
+                                    &question.call,
+                                    settled.title.clone(),
+                                    settled.answered,
+                                );
+                            }
+                        }
+                        tracing::info!(
+                            title = %settled.title,
+                            answered = settled.answered,
+                            mode = ?mode,
+                            asked = true,
+                            "acp permission answered"
+                        );
+                        if still_running {
+                            queue_live(
+                                &wires,
+                                &sid,
+                                TurnActivity::Gate(crate::turn_engine::GateQuestion {
+                                    answered: Some(settled.answered),
+                                    ..question
+                                }),
+                            );
+                        }
+                        if let Err(e) = responder.respond(permission_response(settled.selected)) {
+                            tracing::warn!(error = %e, "acp permission answer not delivered");
+                        }
+                        // never Err: a failed task shuts the whole
+                        // connection down, and the agent may be gone already
+                        Ok(())
+                    })?;
+                    return Ok(());
+                }
                 tracing::info!(
                     title = %answer.title,
                     answered = answer.answered,
@@ -1020,16 +1170,7 @@ async fn run_lane(
                         answer.answered,
                     );
                 }
-                match answer.selected {
-                    Some(option_id) => responder.respond(RequestPermissionResponse::new(
-                        RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
-                            option_id,
-                        )),
-                    )),
-                    None => responder.respond(RequestPermissionResponse::new(
-                        RequestPermissionOutcome::Cancelled,
-                    )),
-                }
+                responder.respond(permission_response(answer.selected))
             },
             agent_client_protocol::on_receive_request!(),
         )
@@ -1161,6 +1302,19 @@ async fn run_lane(
                         wires.remove(&sid_key);
                     }
                 }
+                // the present person rides only a turn with a live wire:
+                // a question nobody can see is never asked (JOY-028A-DC)
+                {
+                    let mut people = present.lock().unwrap_or_else(|e| e.into_inner());
+                    match (&turn.present, &turn.activity) {
+                        (Some(person), Some(_)) => {
+                            people.insert(sid_key.clone(), (person.clone(), turn.turn_id.clone()));
+                        }
+                        _ => {
+                            people.remove(&sid_key);
+                        }
+                    }
+                }
                 // the map holds the one live sender; removing it later
                 // closes the wire and ends the drain
                 drop(act_tx);
@@ -1195,6 +1349,9 @@ async fn run_lane(
                             let _ = connection.send_notification(
                                 CancelNotification::new(session_id.clone()),
                             );
+                            // a question still waiting for its person ends
+                            // with the turn
+                            liveness.cancelled.send_replace(true);
                         }
                         _ = tokio::time::sleep(IDLE_CANCEL_GRACE), if idle_cancelled => {
                             tracing::warn!("acp agent did not answer the idle cancel; ending the turn with what streamed");
@@ -1229,6 +1386,7 @@ async fn run_lane(
                                 let _ = connection.send_notification(
                                     CancelNotification::new(session_id.clone()),
                                 );
+                                liveness.cancelled.send_replace(true);
                             }
                         }
                     }
@@ -1248,6 +1406,15 @@ async fn run_lane(
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
                     .remove(&sid_key);
+                // questions the prompt outlived end unanswered; their
+                // waiters find this turn gone and record nothing
+                let person = present
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .remove(&sid_key);
+                if let Some((person, turn_id)) = person {
+                    person.gate.settle_turn(&turn_id);
+                }
                 if let Some(sink) = &turn.activity {
                     while let Some(event) = act_rx.recv().await {
                         sink.deliver(WireActivity::of(&turn.turn_id, &event)).await;
@@ -1420,14 +1587,7 @@ async fn single_round_inner(config: &LaneConfig, prompt: &str) -> anyhow::Result
                 if let Some(q) = answer.question {
                     *escalated.lock().unwrap_or_else(|e| e.into_inner()) = Some(q);
                 }
-                match answer.selected {
-                    Some(option) => responder.respond(RequestPermissionResponse::new(
-                        RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option)),
-                    )),
-                    None => responder.respond(RequestPermissionResponse::new(
-                        RequestPermissionOutcome::Cancelled,
-                    )),
-                }
+                responder.respond(permission_response(answer.selected))
             },
             agent_client_protocol::on_receive_request!(),
         )
@@ -1609,6 +1769,7 @@ mod lane_error_tests {
                 mode: joy_chat::model::AgentMode::Plan,
                 max_price_cents: 0,
                 activity: None,
+                present: None,
             };
             let err = match lanes
                 .turn(1, 0, &config, request, std::time::Duration::from_secs(20))
@@ -1834,6 +1995,33 @@ mod tests {
         assert_eq!(turn_cents(0.05, 1), 4);
         // a provider correcting its cumulative DOWN never underflows
         assert_eq!(turn_cents(0.0, 3), 0);
+    }
+
+    #[test]
+    fn every_denial_word_counts_toward_denied() {
+        // JOY-028A-DC: a refusal by the person, or no answer at all, is
+        // as much a refused step as the policy's own deny
+        let mut state = Collected::default();
+        for (id, answered) in [
+            ("t1", "denied"),
+            ("t2", "denied (person)"),
+            ("t3", "allowed (person)"),
+        ] {
+            collect_notification(
+                &mut state,
+                update(serde_json::json!({
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": id,
+                    "title": "bash",
+                    "kind": "execute",
+                    "status": "pending",
+                })),
+            );
+            state.record_permission(id, "bash".into(), answered);
+        }
+        // an orphan answer counts too
+        state.record_permission("never-announced", "mystery".into(), "denied (no answer)");
+        assert_eq!(state.into_outcome().denied, 3);
     }
 
     fn permission_request(value: serde_json::Value) -> RequestPermissionRequest {
