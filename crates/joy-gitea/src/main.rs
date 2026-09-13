@@ -44,6 +44,16 @@ enum Command {
         token_env: Option<String>,
     },
     /// Whose address is this? Pure: answered from the address alone.
+    /// Does the repository hold a joy store, and may the caller create
+    /// one (JP-013C-11)? Read-only.
+    Store {
+        #[arg(long)]
+        remote: String,
+        /// Environment variable holding a Gitea token (never the token
+        /// itself: it must not appear in a process list).
+        #[arg(long)]
+        token_env: Option<String>,
+    },
     Resolve {
         #[arg(long)]
         email: String,
@@ -75,6 +85,7 @@ fn main() -> anyhow::Result<()> {
             user_id,
             token_env,
         } => gitea::identity_answer(login, user_id, token_env.as_deref()),
+        Command::Store { remote, token_env } => gitea::store_answer(&remote, token_env.as_deref()),
         Command::Resolve { email } => gitea::resolve_answer(&email),
         Command::Release { .. } => serde_json::json!({ "unsupported": true }),
     };

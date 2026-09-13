@@ -132,6 +132,47 @@ pub fn resolve(spec: &ForgePluginSpec, root: &Path, email: &str) -> Option<Forge
         .filter(|identity| identity.known)
 }
 
+/// What a forge says about a repository's joy store (JP-013C-11), the
+/// answer of the `store` query. A multi-account host asks it instead of
+/// cloning the repository to find out.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(tag = "state", rename_all = "lowercase")]
+pub enum StoreAnswer {
+    /// The store is there and readable: the content of its project.yaml.
+    Store { project_yaml: String },
+    /// The repository is there but holds no store; whether the caller may
+    /// push one.
+    Missing { may_create: bool },
+    /// The forge does not show the caller the repository: deleted, or no
+    /// access. Forges answer both the same way on purpose.
+    Gone,
+    /// The forge could not be asked (network, a refused token, an answer
+    /// the plugin did not expect). Never a verdict on the repository.
+    Unknown,
+}
+
+/// Does the repository at `remote_url` hold a joy store, and may the
+/// caller create one? `None` on every plugin failure and on `unknown`:
+/// the question stayed unanswered.
+pub fn store(
+    spec: &ForgePluginSpec,
+    root: &Path,
+    remote_url: &str,
+    facts: &CallerFacts,
+) -> Option<StoreAnswer> {
+    let mut args: Vec<&str> = vec!["store", "--remote", remote_url];
+    if let Some(var) = facts.token_env.as_deref() {
+        args.extend(["--token-env", var]);
+    }
+    let env = match (facts.token_env.as_deref(), facts.token_value.as_deref()) {
+        (Some(var), Some(value)) => Some((var, value)),
+        _ => None,
+    };
+    run_query_full(spec.binary, root, &args, env, STORE_TIMEOUT)
+        .and_then(|out| serde_json::from_str::<StoreAnswer>(&out).ok())
+        .filter(|answer| *answer != StoreAnswer::Unknown)
+}
+
 /// The plugin responsible for this project: the `forge:` override when it
 /// names a registered plugin, else the first registry row that claims one
 /// of the remotes. `None` = nobody is responsible (a local-only project,
@@ -156,6 +197,11 @@ pub fn responsible_plugin(
 /// How long a plugin may take per query. Queries are local parses or one
 /// forge API call; anything slower must not stall a `joy` command.
 const QUERY_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// How long the store query may take: up to three forge API calls (the
+/// file, the repository, GitLab's branch protection), each bounded by the
+/// plugin itself.
+const STORE_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// How long the release verb may take: it talks to the forge's release
 /// API (possibly view + edit/create), so it gets network patience the
@@ -300,6 +346,23 @@ mod tests {
         assert!(unknown.emails.is_empty());
     }
 
+    #[test]
+    fn store_answers_parse_in_every_state() {
+        let parse = |raw: &str| serde_json::from_str::<StoreAnswer>(raw).unwrap();
+        assert_eq!(
+            parse(r#"{"state":"store","project_yaml":"name: x\n"}"#),
+            StoreAnswer::Store {
+                project_yaml: "name: x\n".into()
+            }
+        );
+        assert_eq!(
+            parse(r#"{"state":"missing","may_create":true}"#),
+            StoreAnswer::Missing { may_create: true }
+        );
+        assert_eq!(parse(r#"{"state":"gone"}"#), StoreAnswer::Gone);
+        assert_eq!(parse(r#"{"state":"unknown"}"#), StoreAnswer::Unknown);
+    }
+
     /// A stub plugin on a private PATH proves the subprocess round trip
     /// AND the best-effort rules (missing binary, garbage, timeout are
     /// all "no answer"). Unix only: the stub is a shell script.
@@ -316,6 +379,11 @@ mod tests {
             writeln!(
                 f,
                 "identity) echo '{{\"known\": true, \"login\": \"alice\", \"emails\": [\"a@example.com\"]}}' ;;"
+            )
+            .unwrap();
+            writeln!(
+                f,
+                "store) echo '{{\"state\": \"missing\", \"may_create\": true}}' ;;"
             )
             .unwrap();
             writeln!(f, "garbage) echo 'not json' ;;").unwrap();
@@ -345,6 +413,15 @@ mod tests {
         assert!(claimed, "the stub claims its remote");
         let id = identity(&spec, root, &CallerFacts::default()).expect("the stub answers");
         assert_eq!(id.login.as_deref(), Some("alice"));
+        assert_eq!(
+            store(
+                &spec,
+                root,
+                "git@stub:owner/repo.git",
+                &CallerFacts::default()
+            ),
+            Some(StoreAnswer::Missing { may_create: true })
+        );
         // garbage output and unknown subcommands degrade to nothing
         assert!(run_query(spec.binary, root, &["garbage"])
             .and_then(|o| serde_json::from_str::<ClaimsAnswer>(&o).ok())
@@ -358,5 +435,6 @@ mod tests {
         assert!(!claims(&missing, root, "url"));
         assert!(identity(&missing, root, &CallerFacts::default()).is_none());
         assert!(resolve(&missing, root, "x@y").is_none());
+        assert!(store(&missing, root, "url", &CallerFacts::default()).is_none());
     }
 }

@@ -200,6 +200,195 @@ pub fn resolve_answer(email: &str) -> serde_json::Value {
     }
 }
 
+// -- the store query (JP-013C-11) ---------------------------------------------
+//
+// A multi-account host (the platform) asks whether a repository holds a joy
+// store instead of cloning it. One API call reads `.joy/project.yaml` raw
+// from the default branch; only a 404 needs a second one on the project,
+// because GitLab answers a missing file and a missing project alike. GitLab
+// names an access level instead of a push flag, so a Developer's push
+// permission also depends on the default branch's protection.
+
+/// Where the store lives inside a repository.
+const PROJECT_YAML: &str = ".joy/project.yaml";
+
+/// One API answer: the HTTP status and the body.
+struct ApiAnswer {
+    status: u16,
+    body: String,
+}
+
+/// "owner/repo" from a remote URL of any wire form, nested groups included.
+fn repo_path_of(url: &str) -> Option<String> {
+    let url = url.trim().trim_end_matches('/');
+    let url = url.strip_suffix(".git").unwrap_or(url);
+    let path = match url.split_once("://") {
+        Some((_, rest)) => rest.split_once('/')?.1,
+        None => url.split_once(':')?.1,
+    };
+    let path = path.trim_matches('/');
+    path.contains('/').then(|| path.to_string())
+}
+
+/// GET through curl. The token comes from the named variable and reaches
+/// curl on stdin as a header line, never on its command line. `None` when
+/// the request did not complete (network, timeout, no curl).
+fn api_get(url: &str, token_env: Option<&str>) -> Option<ApiAnswer> {
+    use std::io::Write;
+    use std::process::Stdio;
+    let token = token_env
+        .and_then(|var| std::env::var(var).ok())
+        .filter(|t| !t.is_empty());
+    let mut child = Command::new("curl")
+        .args([
+            "--silent",
+            "--max-time",
+            "4",
+            "--write-out",
+            "\n%{http_code}",
+            "-H",
+            "Accept: application/json",
+            "-H",
+            "User-Agent: joy-gitlab",
+            "--header",
+            "@-",
+            url,
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    {
+        let mut stdin = child.stdin.take()?;
+        if let Some(token) = token {
+            writeln!(stdin, "Authorization: Bearer {token}").ok()?;
+        }
+    }
+    let out = child.wait_with_output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8(out.stdout).ok()?;
+    let (body, status) = text.rsplit_once('\n')?;
+    Some(ApiAnswer {
+        status: status.trim().parse().ok()?,
+        body: body.to_string(),
+    })
+}
+
+/// GitLab's access levels that can push.
+const DEVELOPER: i64 = 30;
+const MAINTAINER: i64 = 40;
+
+/// The STORE answer (docs/plugins.md `store`) for a remote. The instance
+/// is the remote's own host. Without a token the instance is asked
+/// anonymously, which only sees public projects.
+pub fn store_answer(remote: &str, token_env: Option<&str>) -> serde_json::Value {
+    let (Some(host), Some(path)) = (host_of(remote), repo_path_of(remote)) else {
+        return serde_json::json!({ "state": "unknown" });
+    };
+    let project_url = format!(
+        "https://{host}/api/v4/projects/{}",
+        path.replace('/', "%2F")
+    );
+    let file = api_get(
+        &format!(
+            "{project_url}/repository/files/{}/raw?ref=HEAD",
+            PROJECT_YAML.replace('/', "%2F")
+        ),
+        token_env,
+    );
+    store_verdict(
+        file,
+        || api_get(&project_url, token_env),
+        || {
+            api_get(
+                &format!("{project_url}/protected_branches?per_page=100"),
+                token_env,
+            )
+        },
+    )
+}
+
+/// The decision over the answers, pure. Anything but a clear 2xx or 404
+/// leaves the question unanswered.
+fn store_verdict(
+    file: Option<ApiAnswer>,
+    project: impl FnOnce() -> Option<ApiAnswer>,
+    protected: impl FnOnce() -> Option<ApiAnswer>,
+) -> serde_json::Value {
+    let unknown = serde_json::json!({ "state": "unknown" });
+    let Some(file) = file else { return unknown };
+    match file.status {
+        200..=299 => {
+            return serde_json::json!({ "state": "store", "project_yaml": file.body });
+        }
+        404 => {}
+        _ => return unknown,
+    }
+    let Some(project) = project() else {
+        return unknown;
+    };
+    match project.status {
+        200..=299 => {}
+        404 => return serde_json::json!({ "state": "gone" }),
+        _ => return unknown,
+    }
+    let Ok(body) = serde_json::from_str::<serde_json::Value>(&project.body) else {
+        return unknown;
+    };
+    let may_create = may_push(&body, protected);
+    serde_json::json!({ "state": "missing", "may_create": may_create })
+}
+
+/// Maintainers push to any branch; Developers only where the default
+/// branch is not protected, and GitLab protects it by default. A
+/// protection list GitLab would not show counts as protected.
+fn may_push(project: &serde_json::Value, protected: impl FnOnce() -> Option<ApiAnswer>) -> bool {
+    let level = ["project_access", "group_access"]
+        .iter()
+        .filter_map(|scope| {
+            project
+                .pointer(&format!("/permissions/{scope}/access_level"))
+                .and_then(|v| v.as_i64())
+        })
+        .max()
+        .unwrap_or(0);
+    if level >= MAINTAINER {
+        return true;
+    }
+    if level < DEVELOPER {
+        return false;
+    }
+    let Some(branch) = project.get("default_branch").and_then(|v| v.as_str()) else {
+        // an empty project has no branch to protect yet
+        return true;
+    };
+    let Some(answer) = protected().filter(|a| (200..=299).contains(&a.status)) else {
+        return false;
+    };
+    let Ok(rules) = serde_json::from_str::<Vec<serde_json::Value>>(&answer.body) else {
+        return false;
+    };
+    !rules
+        .iter()
+        .filter_map(|rule| rule.get("name").and_then(|v| v.as_str()))
+        .any(|rule| rule_matches(rule, branch))
+}
+
+/// A protection rule is a branch name or a pattern with `*`.
+fn rule_matches(rule: &str, branch: &str) -> bool {
+    match rule.split_once('*') {
+        Some((head, tail)) => {
+            branch.starts_with(head)
+                && branch.ends_with(tail)
+                && branch.len() >= head.len() + tail.len()
+        }
+        None => rule == branch,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -265,5 +454,102 @@ mod tests {
         let a = parse_alias("42-alice@users.noreply.gitlab.acme.test").unwrap();
         assert_eq!(a.login, "alice");
         assert_eq!(a.user_id.as_deref(), Some("42"));
+    }
+}
+
+#[cfg(test)]
+mod store_tests {
+    use super::*;
+
+    fn answer(status: u16, body: &str) -> Option<ApiAnswer> {
+        Some(ApiAnswer {
+            status,
+            body: body.to_string(),
+        })
+    }
+
+    fn project(level: i64, branch: Option<&str>) -> Option<ApiAnswer> {
+        let body = serde_json::json!({
+            "default_branch": branch,
+            "permissions": {"project_access": {"access_level": level}, "group_access": null}
+        });
+        answer(200, &body.to_string())
+    }
+
+    #[test]
+    fn a_readable_project_yaml_is_the_store() {
+        assert_eq!(
+            store_verdict(
+                answer(200, "name: Demo\n"),
+                || panic!("no second request"),
+                || panic!("no third request")
+            ),
+            serde_json::json!({ "state": "store", "project_yaml": "name: Demo\n" })
+        );
+    }
+
+    #[test]
+    fn a_404_asks_the_project_whether_it_is_gone_or_only_storeless() {
+        assert_eq!(
+            store_verdict(answer(404, "{}"), || answer(404, "{}"), || None),
+            serde_json::json!({ "state": "gone" })
+        );
+        assert_eq!(
+            store_verdict(
+                answer(404, "{}"),
+                || project(40, Some("main")),
+                || { panic!("a maintainer needs no protection list") }
+            ),
+            serde_json::json!({ "state": "missing", "may_create": true })
+        );
+    }
+
+    #[test]
+    fn a_developer_may_push_only_to_an_unprotected_default_branch() {
+        let rules = || answer(200, r#"[{"name": "main"}, {"name": "release/*"}]"#);
+        assert!(!may_push(
+            &serde_json::from_str(&project(30, Some("main")).unwrap().body).unwrap(),
+            rules
+        ));
+        assert!(may_push(
+            &serde_json::from_str(&project(30, Some("trunk")).unwrap().body).unwrap(),
+            rules
+        ));
+        // a list GitLab would not show counts as protected
+        assert!(!may_push(
+            &serde_json::from_str(&project(30, Some("trunk")).unwrap().body).unwrap(),
+            || answer(403, "")
+        ));
+        // an empty project has nothing protected yet
+        assert!(may_push(
+            &serde_json::from_str(&project(30, None).unwrap().body).unwrap(),
+            || None
+        ));
+        // reporters and guests never push
+        assert!(!may_push(
+            &serde_json::from_str(&project(20, Some("trunk")).unwrap().body).unwrap(),
+            || answer(200, "[]")
+        ));
+    }
+
+    #[test]
+    fn anything_unclear_stays_unanswered() {
+        let unknown = serde_json::json!({ "state": "unknown" });
+        assert_eq!(store_verdict(None, || None, || None), unknown);
+        assert_eq!(store_verdict(answer(401, ""), || None, || None), unknown);
+        assert_eq!(
+            store_verdict(answer(404, ""), || answer(500, ""), || None),
+            unknown
+        );
+    }
+
+    #[test]
+    fn nested_groups_keep_their_path() {
+        assert_eq!(
+            repo_path_of("https://gitlab.com/grp/sub/repo.git").as_deref(),
+            Some("grp/sub/repo")
+        );
+        assert!(rule_matches("release/*", "release/1.2"));
+        assert!(!rule_matches("release/*", "releases/1"));
     }
 }

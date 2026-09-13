@@ -464,9 +464,20 @@ pub fn read_project(
         path: project_path.to_path_buf(),
         source: e,
     })?;
+    parse_project(&content, project_path)
+}
+
+/// Parse the content of a project.yaml that did not come from a file on
+/// disk, for example the one a forge answers without a clone. The same
+/// silent migrations as [`read_project`] apply; `origin` only names where
+/// the content came from in a parse error.
+pub fn parse_project(
+    content: &str,
+    origin: &Path,
+) -> Result<crate::model::project::Project, crate::error::JoyError> {
     let value: serde_yaml_ng::Value =
-        serde_yaml_ng::from_str(&content).map_err(|e| JoyError::YamlParse {
-            path: project_path.to_path_buf(),
+        serde_yaml_ng::from_str(content).map_err(|e| JoyError::YamlParse {
+            path: origin.to_path_buf(),
             source: e,
         })?;
     // Migrations run implicitly and SILENTLY (JOY-0240-97): the person is
@@ -478,7 +489,7 @@ pub fn read_project(
     // field names" that never existed.
     let (value, _migrated) = crate::migrations::project_yaml::apply(value);
     serde_yaml_ng::from_value(value).map_err(|e| JoyError::YamlParse {
-        path: project_path.to_path_buf(),
+        path: origin.to_path_buf(),
         source: e,
     })
 }
@@ -566,6 +577,23 @@ mod tests {
         write_yaml(&path, &config).unwrap();
         let parsed: Config = read_yaml(&path).unwrap();
         assert_eq!(config, parsed);
+    }
+
+    #[test]
+    fn a_project_parsed_from_content_matches_the_one_read_from_disk() {
+        // The platform reads project.yaml from a forge without a clone; it
+        // must get the migrated project a file read gives, legacy fields
+        // included.
+        let legacy = "name: Demo\nacronym: DMO\ncreated: 2026-01-01T00:00:00Z\nmembers:\n  alice@example.com:\n    capabilities: all\n    public_key: aa\n    salt: bb\n";
+        let dir = tempdir().unwrap();
+        let path = dir.path().join(PROJECT_FILE);
+        std::fs::write(&path, legacy).unwrap();
+
+        let parsed = parse_project(legacy, Path::new(".joy/project.yaml")).unwrap();
+        assert_eq!(parsed, read_project(&path).unwrap());
+        assert_eq!(parsed.name, "Demo");
+        assert_eq!(parsed.acronym.as_deref(), Some("DMO"));
+        assert!(parse_project("name: [", Path::new(".joy/project.yaml")).is_err());
     }
 
     #[test]

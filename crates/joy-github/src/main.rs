@@ -50,6 +50,16 @@ enum Command {
         #[arg(long)]
         token_env: Option<String>,
     },
+    /// Does the repository hold a joy store, and may the caller create
+    /// one (JP-013C-11)? Read-only.
+    Store {
+        #[arg(long)]
+        remote: String,
+        /// Environment variable holding a GitHub token (never the token
+        /// itself: it must not appear in a process list).
+        #[arg(long)]
+        token_env: Option<String>,
+    },
     /// Whose address is this? Pure: answered from the address alone.
     Resolve {
         #[arg(long)]
@@ -84,6 +94,7 @@ fn main() -> anyhow::Result<()> {
             user_id,
             token_env,
         } => github::identity_answer(login, user_id, token_env.as_deref()),
+        Command::Store { remote, token_env } => github::store_answer(&remote, token_env.as_deref()),
         Command::Resolve { email } => github::resolve_answer(&email),
         Command::Release {
             tag,

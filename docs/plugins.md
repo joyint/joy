@@ -85,6 +85,20 @@ object on stdout.
   `{"known": false}`, even when someone is signed in locally. Answer
   shape as above, `emails` usually empty.
 
+- `joy-<name> store --remote <url> [--token-env <VAR>]`
+  (JP-013C-11) Does this repository hold a joy store, and may the
+  caller create one? A multi-account host asks this instead of cloning.
+  Answer, by `state`:
+  `{"state": "store", "project_yaml": "..."}` when `.joy/project.yaml`
+  on the default branch is readable (its content comes along);
+  `{"state": "missing", "may_create": true|false}` when the repository
+  is there without a store, with the caller's push permission;
+  `{"state": "gone"}` when the forge does not show the caller the
+  repository (deleted or no access, which forges answer alike);
+  `{"state": "unknown"}` when the forge could not be asked. Only the
+  last is not a verdict. Without `--token-env` the forge is asked
+  anonymously and sees public repositories only.
+
 - `joy-<name> release --tag <t> --title <t> --notes-file <path>`
   (JOY-0256-64) Create — or complete — the release for this tag on
   your forge; the notes arrive as a file because they are multi-line.

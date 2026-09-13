@@ -354,6 +354,139 @@ pub fn release_answer(tag: &str, title: &str, notes: &str) -> anyhow::Result<ser
     Ok(serde_json::json!({ "url": url }))
 }
 
+// -- the store query (JP-013C-11) ---------------------------------------------
+//
+// A multi-account host (the platform) asks whether a repository holds a joy
+// store instead of cloning it. One API call reads `.joy/project.yaml` raw
+// from the default branch; only a 404 needs a second one on the repository,
+// because GitHub answers a missing file and a missing repository alike.
+
+/// Where the store lives inside a repository.
+const PROJECT_YAML: &str = ".joy/project.yaml";
+
+/// One API answer: the HTTP status and the body.
+struct ApiAnswer {
+    status: u16,
+    body: String,
+}
+
+/// The API base of the GitHub a remote lives on: github.com's own API
+/// host, or a GitHub Enterprise Server's `/api/v3` on its own domain.
+fn api_base(host: &str) -> String {
+    if host == "github.com" {
+        "https://api.github.com".to_string()
+    } else {
+        format!("https://{host}/api/v3")
+    }
+}
+
+/// "owner/repo" from a remote URL of any wire form.
+fn repo_path_of(url: &str) -> Option<String> {
+    let url = url.trim().trim_end_matches('/');
+    let url = url.strip_suffix(".git").unwrap_or(url);
+    let path = match url.split_once("://") {
+        Some((_, rest)) => rest.split_once('/')?.1,
+        None => url.split_once(':')?.1,
+    };
+    let path = path.trim_matches('/');
+    path.contains('/').then(|| path.to_string())
+}
+
+/// GET through curl. The token comes from the named variable and reaches
+/// curl on stdin as a header line, never on its command line. `None` when
+/// the request did not complete (network, timeout, no curl).
+fn api_get(url: &str, accept: &str, token_env: Option<&str>) -> Option<ApiAnswer> {
+    use std::io::Write;
+    use std::process::Stdio;
+    let token = token_env
+        .and_then(|var| std::env::var(var).ok())
+        .filter(|t| !t.is_empty());
+    let mut child = Command::new("curl")
+        .args([
+            "--silent",
+            "--max-time",
+            "4",
+            "--write-out",
+            "\n%{http_code}",
+            "-H",
+            &format!("Accept: {accept}"),
+            "-H",
+            "User-Agent: joy-github",
+            "--header",
+            "@-",
+            url,
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    {
+        let mut stdin = child.stdin.take()?;
+        if let Some(token) = token {
+            writeln!(stdin, "Authorization: Bearer {token}").ok()?;
+        }
+    }
+    let out = child.wait_with_output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8(out.stdout).ok()?;
+    let (body, status) = text.rsplit_once('\n')?;
+    Some(ApiAnswer {
+        status: status.trim().parse().ok()?,
+        body: body.to_string(),
+    })
+}
+
+/// The STORE answer (docs/plugins.md `store`) for a remote. Without a
+/// token GitHub is asked anonymously, which only sees public repositories.
+pub fn store_answer(remote: &str, token_env: Option<&str>) -> serde_json::Value {
+    let (Some(host), Some(path)) = (host_of(remote), repo_path_of(remote)) else {
+        return serde_json::json!({ "state": "unknown" });
+    };
+    let repo_url = format!("{}/repos/{path}", api_base(&host));
+    let file = api_get(
+        &format!("{repo_url}/contents/{PROJECT_YAML}"),
+        "application/vnd.github.raw+json",
+        token_env,
+    );
+    store_verdict(file, || {
+        api_get(&repo_url, "application/vnd.github+json", token_env)
+    })
+}
+
+/// The decision over the two answers, pure. Anything but a clear 2xx or
+/// 404 leaves the question unanswered.
+fn store_verdict(
+    file: Option<ApiAnswer>,
+    repo: impl FnOnce() -> Option<ApiAnswer>,
+) -> serde_json::Value {
+    let unknown = serde_json::json!({ "state": "unknown" });
+    let Some(file) = file else { return unknown };
+    match file.status {
+        200..=299 => {
+            return serde_json::json!({ "state": "store", "project_yaml": file.body });
+        }
+        404 => {}
+        _ => return unknown,
+    }
+    let Some(repo) = repo() else { return unknown };
+    match repo.status {
+        200..=299 => {}
+        404 => return serde_json::json!({ "state": "gone" }),
+        _ => return unknown,
+    }
+    let Ok(body) = serde_json::from_str::<serde_json::Value>(&repo.body) else {
+        return unknown;
+    };
+    let may_create = body
+        .pointer("/permissions/push")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    serde_json::json!({ "state": "missing", "may_create": may_create })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -434,5 +567,75 @@ mod tests {
         assert_eq!(owner["login"], "bob");
         assert_eq!(owner["user_id"], "99");
         assert_eq!(resolve_answer("bob@example.com")["known"], false);
+    }
+}
+
+#[cfg(test)]
+mod store_tests {
+    use super::*;
+
+    fn answer(status: u16, body: &str) -> Option<ApiAnswer> {
+        Some(ApiAnswer {
+            status,
+            body: body.to_string(),
+        })
+    }
+
+    #[test]
+    fn a_readable_project_yaml_is_the_store() {
+        let verdict = store_verdict(answer(200, "name: Demo\n"), || {
+            panic!("no second request when the store is there")
+        });
+        assert_eq!(
+            verdict,
+            serde_json::json!({ "state": "store", "project_yaml": "name: Demo\n" })
+        );
+    }
+
+    #[test]
+    fn a_404_asks_the_repository_whether_it_is_gone_or_only_storeless() {
+        assert_eq!(
+            store_verdict(answer(404, "{}"), || answer(404, "{}")),
+            serde_json::json!({ "state": "gone" })
+        );
+        assert_eq!(
+            store_verdict(answer(404, "{}"), || {
+                answer(200, r#"{"permissions": {"push": true}}"#)
+            }),
+            serde_json::json!({ "state": "missing", "may_create": true })
+        );
+        // an anonymous answer carries no permissions: nothing to create with
+        assert_eq!(
+            store_verdict(answer(404, "{}"), || answer(200, "{}")),
+            serde_json::json!({ "state": "missing", "may_create": false })
+        );
+    }
+
+    #[test]
+    fn anything_unclear_stays_unanswered() {
+        let unknown = serde_json::json!({ "state": "unknown" });
+        assert_eq!(store_verdict(None, || None), unknown);
+        assert_eq!(store_verdict(answer(401, ""), || None), unknown);
+        assert_eq!(store_verdict(answer(403, ""), || None), unknown);
+        assert_eq!(store_verdict(answer(404, ""), || None), unknown);
+        assert_eq!(store_verdict(answer(404, ""), || answer(500, "")), unknown);
+    }
+
+    #[test]
+    fn the_api_and_path_come_from_the_remote() {
+        assert_eq!(api_base("github.com"), "https://api.github.com");
+        assert_eq!(
+            api_base("ghe.example.org"),
+            "https://ghe.example.org/api/v3"
+        );
+        assert_eq!(
+            repo_path_of("https://github.com/joyint/app.git").as_deref(),
+            Some("joyint/app")
+        );
+        assert_eq!(
+            repo_path_of("git@github.com:joyint/app.git").as_deref(),
+            Some("joyint/app")
+        );
+        assert_eq!(repo_path_of("https://github.com/joyint"), None);
     }
 }
