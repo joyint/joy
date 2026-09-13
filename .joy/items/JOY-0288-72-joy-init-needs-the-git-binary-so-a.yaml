@@ -1,7 +1,7 @@
 id: JOY-0288-72
 title: joy init needs the git binary, so a host without it cannot create a project
 type: story
-status: in-progress
+status: review
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -12,6 +12,10 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-13T16:08:12.380046668Z
-updated: 2026-09-13T16:17:25.141990925Z
+updated: 2026-09-13T17:47:35.338030854Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'joy init reaches git through the git binary: it checks and initializes the repository, reads user.email and the remotes, stages its files, and writes the per-clone config for the merge driver, hooks and last-sync version. The platform may not call the git binary (ADR JP-0034-A2) and its image has none, so it cannot create a joy store in a repository that has none (JP-013E-46). Horst, 2026-09-13: joy init is built on git2 so this is clean as a whole.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-13T17:47:35.252044564Z
+  text: 'Done: the Vcs verbs joy init uses (repository check and init, user.email, remotes, staging with the ignore check, local config) run on git2 in vcs::forge, so joy init needs no git binary. Git config, branch and staged files are identical to the git-binary init (compared side by side). For a host creating a project: set_unborn_branch, commit_index, validate_language, tree_paths, head_branch, and is_repository which does not discover upwards. The bats test that pinned the refusal without git now pins that init works without it. Gates green: just check, bats 570/570.'

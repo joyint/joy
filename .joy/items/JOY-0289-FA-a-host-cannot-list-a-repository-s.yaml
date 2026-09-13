@@ -1,7 +1,7 @@
 id: JOY-0289-FA
 title: A host cannot list a repository's files or learn its default branch through a forge plugin
 type: story
-status: in-progress
+status: review
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -12,6 +12,10 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-13T17:02:48.324041452Z
-updated: 2026-09-13T17:02:48.459542523Z
+updated: 2026-09-13T17:47:35.511308530Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'The setup of a new joy project on the platform (JAPP-0293-A7, JP-013E-46) points at the repository''s vision, architecture and contributing documents, and Horst wants a file picker next to each. Nothing lets a host see which files a repository''s default branch carries without cloning it. And a repository without a store may be empty: its first push has to go to the branch the forge names as default, which the store answer does not say.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-13T17:47:35.424763988Z
+  text: 'Done: the forge plugins answer the read-only files query: the default branch''s tree, one call on GitHub, bounded pages on Gitea and GitLab, with truncated when cut off; an empty repository lists nothing. The store answer for a repository without a store carries default_branch. Verified live (GitHub 1147 files, Codeberg truncated at the page bound, gitlab.com 1440) and in the setup mask''s document pickers on the dev stack.'
