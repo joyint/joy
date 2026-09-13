@@ -12,7 +12,8 @@
 //!
 //! * a host that has the delegating person attaches a [`PresentPerson`]
 //!   to its [`super::TurnRequest`]; a host without one attaches nothing
-//!   and every Deny rejects as before;
+//!   and every Deny rejects as before (today no host attaches one, see
+//!   [`PresentPerson`]);
 //! * the lane opens a question in the person's [`TurnGate`], puts it on
 //!   the turn's live wire (`TurnActivity::Gate`) and awaits the answer
 //!   until the turn is cancelled;
@@ -30,7 +31,9 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use agent_client_protocol::schema::v1::{PermissionOptionKind, RequestPermissionRequest};
+use agent_client_protocol::schema::v1::{
+    PermissionOptionId, PermissionOptionKind, RequestPermissionRequest,
+};
 use joy_chat::model::permission::Decision;
 use tokio::sync::oneshot;
 
@@ -47,9 +50,9 @@ pub enum GateChoice {
 }
 
 /// The person a turn runs for, attached by a host that has one
-/// (JP-0135-17). The desktop attaches the delegating member of the local
-/// project; the platform attaches none yet (JAPP-02A0-38 will, through
-/// this same field).
+/// (JP-0135-17). No host attaches one yet: the desktop attaches none until
+/// its old session path is gone (JAPP-026C-DC), and the platform attaches
+/// none until JAPP-02A0-38 adds it through this same field.
 #[derive(Clone)]
 pub struct PresentPerson {
     /// Where the person's answers arrive.
@@ -199,8 +202,8 @@ pub(super) fn gate_question(
 /// * an offered allow option runs the call: "allowed (person)";
 /// * an offered reject option refuses it: "denied (person)";
 /// * a decline, or an option the request never offered, refuses with the
-///   agent's reject option, the same pick as the policy's own deny:
-///   "denied (person)";
+///   agent's reject option, the same pick as the policy's own deny, but
+///   never an allow option (see [`refusal_option`]): "denied (person)";
 /// * no answer is `Cancelled`, as ACP asks of a client that cancels while
 ///   a permission is pending: "denied (no answer)".
 pub fn answer_from_person(
@@ -246,13 +249,35 @@ pub fn answer_from_person(
         // declined, not offered, or a kind this client does not know:
         // never a grant
         _ => PermissionAnswer {
-            selected: reject_option(request),
+            selected: refusal_option(request),
             title,
             answered: "denied (person)",
             question: None,
             decision: Decision::Deny,
         },
     }
+}
+
+/// The option a person's refusal selects: the lane's reject pick, but
+/// never an option that would let the call run. `reject_option` falls
+/// back to the agent's first option, and a request is only asked when it
+/// offers an allow option, so on an agent without a reject option that
+/// first option can be an allow option. The refusal then answers
+/// Cancelled (None), so the call does not run and the record's
+/// "denied (person)" stays true.
+fn refusal_option(request: &RequestPermissionRequest) -> Option<PermissionOptionId> {
+    reject_option(request).filter(|chosen| {
+        request
+            .options
+            .iter()
+            .find(|option| &option.option_id == chosen)
+            .is_some_and(|option| {
+                !matches!(
+                    option.kind,
+                    PermissionOptionKind::AllowOnce | PermissionOptionKind::AllowAlways
+                )
+            })
+    })
 }
 
 #[cfg(test)]
@@ -331,6 +356,28 @@ mod tests {
         assert_eq!(selected(&answer), Some("no"));
         assert_eq!(answer.answered, "denied (person)");
         assert_eq!(answer.decision, Decision::Deny);
+    }
+
+    #[test]
+    fn a_decline_without_a_reject_option_never_selects_an_allow_option() {
+        // an agent that offers only allow options: the lane still asks,
+        // because the person could approve
+        let allow_only = permission_request(serde_json::json!({
+            "sessionId": "s1",
+            "toolCall": { "toolCallId": "t4", "title": "git push", "kind": "execute" },
+            "options": [
+                { "optionId": "once", "name": "Allow once", "kind": "allow_once" },
+                { "optionId": "always", "name": "Always allow", "kind": "allow_always" },
+            ],
+        }));
+        assert!(offers_allow(&allow_only));
+        for choice in [GateChoice::Declined, GateChoice::Selected("made-up".into())] {
+            let answer = answer_from_person(&allow_only, "git push".into(), Some(choice));
+            // Cancelled, never the first (allow) option
+            assert!(answer.selected.is_none(), "a refusal must not grant");
+            assert_eq!(answer.answered, "denied (person)");
+            assert_eq!(answer.decision, Decision::Deny);
+        }
     }
 
     #[test]
