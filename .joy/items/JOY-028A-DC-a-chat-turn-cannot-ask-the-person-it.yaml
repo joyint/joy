@@ -1,7 +1,7 @@
 id: JOY-028A-DC
 title: A chat turn cannot ask the person it runs for before a denied tool call
 type: story
-status: review
+status: closed
 priority: high
 capabilities:
 - plan
@@ -10,8 +10,8 @@ capabilities:
 effort: 5
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-13T22:57:40.176275531Z
-updated: 2026-09-14T02:20:35.391816706Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-14T17:30:31.886299232Z
+updated_by: horst.schwarz@joydev.com
 description: In a chat turn, a tool call the permission policy does not allow at the turn's level is rejected at once, even when the person the turn runs for is at the desktop app and could approve it. The lane has no way to put the question to a present person and wait for the answer. joy_chat::model::permission already says a host with a human attached asks (JOY-0235-42). Needed by JAPP-026C-DC and JP-0135-17 part 2.
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
