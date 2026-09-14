@@ -1,0 +1,14 @@
+id: JOY-028C-DD
+title: Two projects with the same acronym share one CLI session
+type: bug
+status: new
+priority: high
+capabilities:
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-14T04:52:55.535977168Z
+updated: 2026-09-14T04:52:55.535977168Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Found on 2026-09-14 on mule while running the web e2e seeds in parallel: four fresh repositories, each with joy init --acronym LC, joy auth init and member add by the same person, then joy add task; one failed with ''guard denied: must authenticate''. Sequentially two such projects leave one session file. The session file name hashes project_id and member, and project_id_of returns the acronym, so every project with that acronym and member writes the same slot and the last joy auth replaces the others.'
