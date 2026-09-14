@@ -190,11 +190,48 @@ fn origin_or_first<'r>(repo: &'r git2::Repository) -> anyhow::Result<git2::Remot
     }
 }
 
+/// git's own rule for its system config, which libgit2 does not know: with
+/// `GIT_CONFIG_NOSYSTEM` true, the system-wide gitconfig is not read
+/// (git-config(1)). libgit2 always adds it, so a script that isolates
+/// HOME and sets the variable still found an identity from the machine's
+/// /etc/gitconfig in joy, where git itself found none (JOY-028D-46).
+/// Every entry into libgit2 below calls this first. The search path is
+/// process state, so it is changed only when the variable changes, under
+/// one lock.
+fn git_environment() {
+    static APPLIED: std::sync::Mutex<Option<bool>> = std::sync::Mutex::new(None);
+    let nosystem = std::env::var("GIT_CONFIG_NOSYSTEM").is_ok_and(|value| git_bool(&value));
+    let mut applied = APPLIED.lock().unwrap_or_else(|e| e.into_inner());
+    if *applied == Some(nosystem) {
+        return;
+    }
+    // SAFETY: libgit2's search paths are global; every change goes through
+    // this lock, and joy reads config only after passing through here.
+    let result = unsafe {
+        if nosystem {
+            git2::opts::set_search_path(git2::ConfigLevel::System, "")
+        } else {
+            git2::opts::reset_search_path(git2::ConfigLevel::System)
+        }
+    };
+    if result.is_ok() {
+        *applied = Some(nosystem);
+    }
+}
+
+/// A boolean the way git reads one from its environment: true, yes, on or
+/// a non-zero number; anything else, the empty value included, is false.
+fn git_bool(value: &str) -> bool {
+    let value = value.trim().to_ascii_lowercase();
+    matches!(value.as_str(), "true" | "yes" | "on") || value.parse::<i64>().is_ok_and(|n| n != 0)
+}
+
 /// Open the repository that holds `dir` — `discover`, not `open`: the
 /// desktop opens project roots that may sit inside a larger repo, and
 /// for an exact root (every platform checkout) discover is the same
 /// thing.
 fn open(dir: &Path) -> Result<git2::Repository, git2::Error> {
+    git_environment();
     git2::Repository::discover(dir)
 }
 
@@ -202,6 +239,7 @@ fn open(dir: &Path) -> Result<git2::Repository, git2::Error> {
 /// (insteadOf, per-repo helpers) included; the global config as the
 /// fallback when there is no repo yet (clone).
 fn cred_config(repo: Option<&git2::Repository>) -> Option<git2::Config> {
+    git_environment();
     match repo {
         Some(r) => r.config().and_then(|mut c| c.snapshot()).ok(),
         None => git2::Config::open_default().ok(),
@@ -221,6 +259,7 @@ fn clone_raw(url: &str, auth: &Auth, dest: &Path) -> anyhow::Result<()> {
     std::fs::create_dir_all(dest.parent().expect("checkout dir has a parent"))?;
     let mut fetch = git2::FetchOptions::new();
     fetch.remote_callbacks(auth.callbacks(cred_config(None)));
+    git_environment();
     git2::build::RepoBuilder::new()
         .fetch_options(fetch)
         .clone(url, dest)
@@ -743,6 +782,7 @@ fn resolve_conflicts_yaml_aware(
 /// Initialize a bare repository on `branch` (a local stand-in forge for
 /// harnesses).
 pub fn init_bare(dir: &Path, branch: &str) -> anyhow::Result<()> {
+    git_environment();
     let repo = git2::Repository::init_bare(dir).map_err(err)?;
     repo.set_head(&format!("refs/heads/{branch}"))
         .map_err(err)?;
@@ -751,6 +791,7 @@ pub fn init_bare(dir: &Path, branch: &str) -> anyhow::Result<()> {
 
 /// Initialize a plain repository on `branch`.
 pub fn init_repo(dir: &Path, branch: &str) -> anyhow::Result<()> {
+    git_environment();
     let repo = git2::Repository::init(dir).map_err(err)?;
     repo.set_head(&format!("refs/heads/{branch}"))
         .map_err(err)?;
@@ -773,6 +814,7 @@ pub fn is_worktree(dir: &Path) -> bool {
 /// Initialize a repository in `dir` the way `git init` does: on the
 /// person's `init.defaultBranch` when their git config names one.
 pub fn init_worktree(dir: &Path) -> anyhow::Result<()> {
+    git_environment();
     let mut options = git2::RepositoryInitOptions::new();
     let configured = git2::Config::open_default()
         .ok()
@@ -789,6 +831,7 @@ pub fn init_worktree(dir: &Path) -> anyhow::Result<()> {
 /// the current directory: the repository's config when it runs inside
 /// one (local over global over system), else the global and system files.
 pub fn user_email() -> Option<String> {
+    git_environment();
     let config = open(Path::new("."))
         .and_then(|repo| repo.config())
         .or_else(|_| git2::Config::open_default())
@@ -891,12 +934,14 @@ pub fn stage_paths(dir: &Path, paths: &[&str]) -> anyhow::Result<()> {
 /// the discovering open the other verbs use, a directory that merely lies
 /// inside some repository is not one.
 pub fn is_repository(dir: &Path) -> bool {
+    git_environment();
     git2::Repository::open(dir).is_ok()
 }
 
 /// The branch HEAD names in the repository at `dir`, also when it has no
 /// commit yet (an empty repository's default branch).
 pub fn head_branch(dir: &Path) -> Option<String> {
+    git_environment();
     let repo = git2::Repository::open(dir).ok()?;
     let head = repo.find_reference("HEAD").ok()?;
     let target = head.symbolic_target().ok()??.to_string();
