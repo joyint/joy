@@ -33,8 +33,18 @@ fn the_system_identity_is_read_unless_git_config_nosystem_says_otherwise() {
 
     // the first look settles joy's view of the variable (unset)...
     forge::user_email();
-    // ...then the machine's system config is the temporary one
+    // ...then every other config level is the empty home and the system
+    // config the temporary one. The levels are set on libgit2 itself, not
+    // through the environment: on Windows the global config is also looked
+    // up under USERPROFILE, where the CI runner keeps its own identity.
     unsafe {
+        for level in [
+            git2::ConfigLevel::Global,
+            git2::ConfigLevel::XDG,
+            git2::ConfigLevel::ProgramData,
+        ] {
+            git2::opts::set_search_path(level, home.path().to_str().unwrap()).unwrap();
+        }
         git2::opts::set_search_path(git2::ConfigLevel::System, system.path().to_str().unwrap())
             .unwrap();
     }
