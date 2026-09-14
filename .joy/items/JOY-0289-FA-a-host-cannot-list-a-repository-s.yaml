@@ -1,7 +1,7 @@
 id: JOY-0289-FA
 title: A host cannot list a repository's files or learn its default branch through a forge plugin
 type: story
-status: review
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -12,8 +12,8 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-13T17:02:48.324041452Z
-updated: 2026-09-13T17:47:35.511308530Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-14T17:30:25.817300764Z
+updated_by: horst.schwarz@joydev.com
 description: 'The setup of a new joy project on the platform (JAPP-0293-A7, JP-013E-46) points at the repository''s vision, architecture and contributing documents, and Horst wants a file picker next to each. Nothing lets a host see which files a repository''s default branch carries without cloning it. And a repository without a store may be empty: its first push has to go to the branch the forge names as default, which the store answer does not say.'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
