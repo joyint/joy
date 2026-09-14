@@ -254,6 +254,54 @@ fn session_dir() -> Result<PathBuf, JoyError> {
     Ok(state_dir.join("joy").join("sessions"))
 }
 
+/// The person's app state directory (ADR JAPP-02BD-56): every piece of app
+/// state and every local setting of an app lives here, never in a
+/// repository. Beside the sessions on Linux (`$XDG_STATE_HOME/joy/app`,
+/// by default `~/.local/state/joy/app`) and on Windows
+/// (`%LOCALAPPDATA%\joy\app`); on macOS where apps keep their data,
+/// `~/Library/Application Support/joy/app`. An explicit `XDG_STATE_HOME`
+/// wins everywhere, so a test or a script can place it.
+pub fn app_state_dir() -> Result<PathBuf, JoyError> {
+    app_state_dir_for(
+        std::env::var_os("XDG_STATE_HOME").is_some(),
+        cfg!(target_os = "macos"),
+        std::env::var_os("HOME").map(PathBuf::from),
+        dirs_state_dir,
+    )
+}
+
+/// The file of one project's app state inside [`app_state_dir`]: named by
+/// the SHA-256 of the checkout's canonical path, so two checkouts of the
+/// same repository keep their own settings. The key moves to the project's
+/// own identity once one exists (JOY-028C-DD); callers only ever ask here.
+pub fn app_state_project_file(root: &Path) -> Result<PathBuf, JoyError> {
+    use sha2::{Digest, Sha256};
+    let canonical = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    let digest = Sha256::digest(canonical.to_string_lossy().as_bytes());
+    Ok(app_state_dir()?
+        .join("projects")
+        .join(format!("{}.json", hex::encode(digest))))
+}
+
+fn app_state_dir_for(
+    xdg_state_set: bool,
+    macos: bool,
+    home: Option<PathBuf>,
+    state_base: impl FnOnce() -> Result<PathBuf, JoyError>,
+) -> Result<PathBuf, JoyError> {
+    if macos && !xdg_state_set {
+        let home = home.ok_or_else(|| {
+            JoyError::AuthFailed("cannot determine the app state directory: HOME is unset".into())
+        })?;
+        return Ok(home
+            .join("Library")
+            .join("Application Support")
+            .join("joy")
+            .join("app"));
+    }
+    Ok(state_base()?.join("joy").join("app"))
+}
+
 /// Session filename: SHA-256 hash of project_id + member.
 /// Deterministic but not human-readable (privacy).
 fn session_filename(project_id: &str, member: &str) -> String {
@@ -621,6 +669,26 @@ pub(super) fn dirs_state_dir() -> Result<PathBuf, JoyError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_app_state_directory_follows_each_systems_convention() {
+        let base = || Ok(PathBuf::from("/state"));
+        // Linux and Windows: beside the sessions under the state base
+        assert_eq!(
+            app_state_dir_for(false, false, Some("/home/p".into()), base).unwrap(),
+            PathBuf::from("/state/joy/app")
+        );
+        // macOS: where apps keep their data
+        assert_eq!(
+            app_state_dir_for(false, true, Some("/Users/p".into()), base).unwrap(),
+            PathBuf::from("/Users/p/Library/Application Support/joy/app")
+        );
+        // an explicit XDG_STATE_HOME places it on macOS too
+        assert_eq!(
+            app_state_dir_for(true, true, Some("/Users/p".into()), base).unwrap(),
+            PathBuf::from("/state/joy/app")
+        );
+    }
 
     #[test]
     fn the_cached_chat_seed_survives_the_session_file_round_trip() {
