@@ -67,7 +67,8 @@ pub struct Activity {
     pub contents: Vec<ContentInfo>,
     /// How the turn ended when it did not end by itself (JP-0133-82):
     /// "idle-timeout" (the host cancelled a turn that had gone silent),
-    /// "capped" (the spend cap cancelled it). Absent for a turn the agent
+    /// "capped" (the spend cap cancelled it), "auth-required" (the agent
+    /// refused the turn until its login, JAPP-02C8-56). Absent for a turn the agent
     /// finished. The record says so, so a reply-less turn is never mistaken
     /// for a turn that never happened.
     pub ended: Option<String>,

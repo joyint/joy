@@ -90,6 +90,26 @@ pub fn wire_kind(kind: impl Into<Option<ToolKind>>) -> Option<String> {
 // The waiting state is the client's persisted turn message, never a wire
 // event (JAPP-0268-E8).
 
+/// How a turn ends when the agent refused it until its login (ACP
+/// `AuthRequired`, -32000; JAPP-02C8-56): no reply, and the record names
+/// the cause, so the client can say what the person has to do instead of
+/// a failure line.
+pub const ENDED_AUTH_REQUIRED: &str = "auth-required";
+
+/// Whether the agent answered a request with "sign in first".
+fn wants_login(error: &agent_client_protocol::Error) -> bool {
+    error.code == agent_client_protocol::schema::v1::ErrorCode::AuthRequired
+}
+
+/// The outcome of a turn the agent would not run until its login.
+fn login_required_outcome() -> TurnOutcome {
+    Collected {
+        ended: Some(ENDED_AUTH_REQUIRED.to_string()),
+        ..Default::default()
+    }
+    .into_outcome()
+}
+
 /// Everything one ACP session produced so far.
 #[derive(Default)]
 pub struct Collected {
@@ -1214,10 +1234,22 @@ async fn run_lane(
                             .unwrap_or_else(|| turn.prompt_full.clone()),
                     ),
                     None => {
-                        let created = connection
+                        let created = match connection
                             .send_request(NewSessionRequest::new(cwd.clone()))
                             .block_task()
-                            .await?;
+                            .await
+                        {
+                            Ok(created) => created,
+                            // Not a broken lane: the agent wants its login
+                            // first. The turn ends without a reply and says
+                            // so; the login happens outside this lane, so
+                            // the next turn starts a fresh one (JAPP-02C8-56).
+                            Err(e) if wants_login(&e) => {
+                                let _ = respond.send(Ok(login_required_outcome()));
+                                break;
+                            }
+                            Err(e) => Err(e)?,
+                        };
                         // The pinned model is SESSION config, set before the
                         // first prompt: the spawn env only suggests a default,
                         // and an agent with persisted chat state ignores it
@@ -1424,7 +1456,14 @@ async fn run_lane(
                         sink.deliver(WireActivity::of(&turn.turn_id, &event)).await;
                     }
                 }
-                let stop_ok = matches!(prompted, Some(Ok(_))) || capped || idle_cancelled;
+                // The agent refused the prompt until its login: a turn
+                // that ended without a reply for a named cause, not a
+                // failure (JAPP-02C8-56).
+                let login_required = !capped
+                    && !idle_cancelled
+                    && matches!(&prompted, Some(Err(e)) if wants_login(e));
+                let stop_ok =
+                    matches!(prompted, Some(Ok(_))) || capped || idle_cancelled || login_required;
                 // Did the cap actually TRUNCATE this turn? The 250ms poll
                 // may cancel just as the agent finishes; a whole reply must
                 // not get the "stopped" notice. Only a Cancelled stop (or a
@@ -1440,7 +1479,9 @@ async fn run_lane(
                 // an agent that never answered the cancel is stuck: end the
                 // lane after answering, the next turn respawns and replays
                 let unanswered = prompted.is_none();
-                let ended = if idle_cancelled && truncated {
+                let ended = if login_required {
+                    Some(ENDED_AUTH_REQUIRED.to_string())
+                } else if idle_cancelled && truncated {
                     Some("idle-timeout".to_string())
                 } else if capped && truncated {
                     Some("capped".to_string())
@@ -1502,9 +1543,10 @@ async fn run_lane(
                 };
                 let failed = result.is_err() || unanswered;
                 let _ = respond.send(result);
-                if failed {
-                    // a failed prompt poisons the connection state: end
-                    // the lane; the next turn respawns and replays
+                if failed || login_required {
+                    // a failed prompt poisons the connection state, and a
+                    // login happens outside this lane: end the lane; the
+                    // next turn respawns and replays
                     break;
                 }
             }
@@ -1747,6 +1789,28 @@ mod lane_error_tests {
     /// Before, a spawn failure ended in a bare "could not be
     /// established" and the real cause (here: the binary does not
     /// exist) was nowhere to be found.
+    /// JAPP-02C8-56: an agent that wants its login is told apart by the
+    /// protocol's code, never by the words of its message.
+    #[test]
+    fn an_auth_required_error_is_a_login_the_turn_names() {
+        use agent_client_protocol::schema::v1::ErrorCode;
+        let refused: agent_client_protocol::Error = ErrorCode::AuthRequired.into();
+        assert!(wants_login(&refused));
+        let broken: agent_client_protocol::Error = ErrorCode::InternalError.into();
+        assert!(!wants_login(&broken));
+        // the same words under another code are not a login
+        let mut worded: agent_client_protocol::Error = ErrorCode::InternalError.into();
+        worded.message = "Authentication required".to_string();
+        assert!(!wants_login(&worded));
+
+        let out = login_required_outcome();
+        assert!(out.reply.is_empty());
+        let details: serde_json::Value =
+            serde_json::from_str(out.details.as_deref().expect("the record names the cause"))
+                .expect("details are json");
+        assert_eq!(details["ended"], ENDED_AUTH_REQUIRED);
+    }
+
     #[test]
     fn a_lane_that_cannot_spawn_names_the_reason() {
         let rt = tokio::runtime::Builder::new_current_thread()
