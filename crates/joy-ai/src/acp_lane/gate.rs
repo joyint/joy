@@ -12,8 +12,8 @@
 //!
 //! * a host that has the delegating person attaches a [`PresentPerson`]
 //!   to its [`super::TurnRequest`]; a host without one attaches nothing
-//!   and every Deny rejects as before (today no host attaches one, see
-//!   [`PresentPerson`]);
+//!   and every Deny rejects as before (the desktop attaches the person at
+//!   it, the platform none yet, see [`PresentPerson`]);
 //! * the lane opens a question in the person's [`TurnGate`], puts it on
 //!   the turn's live wire (`TurnActivity::Gate`) and awaits the answer
 //!   until the turn is cancelled;
@@ -50,9 +50,9 @@ pub enum GateChoice {
 }
 
 /// The person a turn runs for, attached by a host that has one
-/// (JP-0135-17). No host attaches one yet: the desktop attaches none until
-/// its old session path is gone (JAPP-026C-DC), and the platform attaches
-/// none until JAPP-02A0-38 adds it through this same field.
+/// (JP-0135-17). The desktop attaches the person at it, this device's
+/// identity (JAPP-026C-DC); the platform attaches none until JAPP-02A0-38
+/// adds it through this same field.
 #[derive(Clone)]
 pub struct PresentPerson {
     /// Where the person's answers arrive.
