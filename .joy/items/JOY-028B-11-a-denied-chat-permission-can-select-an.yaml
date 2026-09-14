@@ -1,0 +1,14 @@
+id: JOY-028B-11
+title: A denied chat permission can select an allow option when the agent offers no reject option
+type: bug
+status: new
+priority: high
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-14T02:20:35.221617782Z
+updated: 2026-09-14T02:20:35.221617782Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Found in the review of JAPP-026C-DC on 2026-09-14 and confirmed in the code on origin/main: when the permission policy denies a chat tool call and no person is asked (every platform turn, and a desktop turn without a present person), the lane answers with reject_option (crates/joy-ai/src/acp_lane.rs). That picks a RejectOnce or RejectAlways option and otherwise falls back to the request''s first option. An agent that offers only allow options therefore gets its call allowed while the record says denied. The person''s decline path on the branch already refuses to pick an allow option (JOY-028A-DC); the policy deny path does not.'
