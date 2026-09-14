@@ -8,3 +8,8 @@
 2026-09-14T17:30:23.790Z JOY-0288-72 item.status_changed "review -> closed" [horst.schwarz@joydev.com]
 2026-09-14T17:30:25.839Z JOY-0289-FA item.status_changed "review -> closed" [horst.schwarz@joydev.com]
 2026-09-14T17:30:31.937Z JOY-028A-DC item.status_changed "review -> closed" [horst.schwarz@joydev.com]
+2026-09-14T22:15:07.485Z JOY-028D-46 guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-09-14T22:15:07.567Z JOY-028E-4F guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-09-14T22:15:20.775Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-09-14T22:15:39.676Z JOY-028D-46 item.status_changed "new -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-09-14T22:15:39.761Z JOY-028E-4F item.status_changed "new -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

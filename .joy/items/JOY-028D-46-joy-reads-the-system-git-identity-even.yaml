@@ -1,7 +1,7 @@
 id: JOY-028D-46
 title: joy reads the system git identity even with GIT_CONFIG_NOSYSTEM set
 type: bug
-status: new
+status: review
 priority: high
 capabilities:
 - implement
@@ -9,6 +9,6 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-14T09:02:40.219131581Z
-updated: 2026-09-14T09:02:40.219131581Z
+updated: 2026-09-14T22:15:39.666823040Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Found on 2026-09-14 in the nightly check-all on the self-hosted runner: bats tests 306, 307 and 310 in init_founder_recovery.bats fail; joy init finds a git identity although the test removes the repo identity and isolates HOME and XDG_CONFIG_HOME and sets GIT_CONFIG_NOSYSTEM=1. Since JOY-0288-72 joy reads user.email through git2::Config::open_default, and libgit2 1.9.6 always adds the system config (git_config_open_default) and knows no GIT_CONFIG_NOSYSTEM, while git itself honours it. The runner has an identity in its system config; mule has none, so the suite passes there.'
