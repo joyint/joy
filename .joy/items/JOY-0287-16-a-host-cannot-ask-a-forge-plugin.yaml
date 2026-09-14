@@ -1,7 +1,7 @@
 id: JOY-0287-16
 title: A host cannot ask a forge plugin whether a repository holds a joy store
 type: story
-status: review
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -12,8 +12,8 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-13T15:53:27.035922015Z
-updated: 2026-09-13T17:47:35.166723524Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-14T17:30:17.639497777Z
+updated_by: horst.schwarz@joydev.com
 description: The platform must know, without cloning, whether a repository holds a joy store the account can read, or may create one (JP-013A-7B, registration JP-013C-11, project list JP-013D-9F). All forge knowledge lives in the forge plugins (docs/plugins.md), but their query contract only knows claims, identity, resolve and release. There is no way to ask a plugin about a repository's store, and joy-core can only parse project.yaml from a file on disk, so content a forge answers cannot be read with the same migrations.
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
