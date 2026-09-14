@@ -206,6 +206,11 @@ pub(super) fn gate_question(
 ///   never an allow option (see [`refusal_option`]): "denied (person)";
 /// * no answer is `Cancelled`, as ACP asks of a client that cancels while
 ///   a permission is pending: "denied (no answer)".
+///
+/// PAIRED with the app shell's answerWord
+/// (packages/app/shell/src/shell/liveGates.ts, JAPP-01A4-6E), the word a
+/// row shows the moment the person picks: change the words or their
+/// mapping in both or neither.
 pub fn answer_from_person(
     request: &RequestPermissionRequest,
     title: String,

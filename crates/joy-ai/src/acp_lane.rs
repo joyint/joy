@@ -156,6 +156,10 @@ impl Collected {
     /// Record an answered permission: it belongs to the CALL it opens, and
     /// only an answer with no call to sit on keeps its own row (operator
     /// 2026-07-27).
+    ///
+    /// PAIRED with the app shell's gatedSteps
+    /// (packages/app/shell/src/shell/liveGates.ts, JAPP-01A4-6E): change
+    /// both or neither.
     pub fn record_permission(&mut self, call_id: &str, title: String, answered: &str) {
         match self.tool_rows.get(call_id).copied() {
             Some(at) => self.tools[at].answered = Some(answered.to_string()),
