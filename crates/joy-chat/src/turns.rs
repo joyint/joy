@@ -39,7 +39,9 @@ fn is_ai(id: &str) -> bool {
     id.starts_with("ai:")
 }
 
-pub use crate::mentions::{alias, leading_mentions, mentions, unknown_mentions};
+pub use crate::mentions::{
+    alias, leading_mentions, leads_with_mention, mentions, unknown_mentions,
+};
 
 /// Decide what `ai_member` should do about the newest message.
 ///
@@ -68,8 +70,13 @@ pub fn decide(chat: &Chat, newest: &ChatMessage, ai_member: &str) -> TurnDecisio
         .iter()
         .map(|p| p.id().to_string())
         .collect();
-    let leading = leading_mentions(&newest.text, &participant_ids);
-    let addressed = if leading.is_empty() {
+    // A message that STARTS with an @name is for exactly those names
+    // (Horst 2026-09-14, JAPP-02C4-E6): the sender takes them into the
+    // chat, and an AI outside that list stays silent even when it spoke
+    // last. A name the chat does not hold is still an address, never a
+    // fall-through to the last speaker: "@alex are you there?" answered by
+    // the AI that spoke before was the bug.
+    let addressed = if !leads_with_mention(&newest.text) {
         // No leading mention: the message belongs to whoever spoke last
         // (operator rule 2026-07-27, JOY-0239-02) — and to nobody else.
         // "Last" means the latest conversational text by someone ELSE:
@@ -97,7 +104,9 @@ pub fn decide(chat: &Chat, newest: &ChatMessage, ai_member: &str) -> TurnDecisio
             .next()
             .is_some_and(|id| id == ai_member)
     } else {
-        leading.iter().any(|m| m.as_str() == ai_member)
+        leading_mentions(&newest.text, &participant_ids)
+            .iter()
+            .any(|m| m.as_str() == ai_member)
     };
     if !addressed {
         return TurnDecision::Silent;
@@ -119,6 +128,27 @@ pub fn decide(chat: &Chat, newest: &ChatMessage, ai_member: &str) -> TurnDecisio
         TurnDecision::Respond
     }
 }
+/// Take the members a message opens with into the chat (Horst 2026-09-14,
+/// JAPP-02C4-E6): an @name at the START of a line makes that project
+/// member a participant, human or AI, so they can read the chat and find
+/// the line among their mentions. An @name inside the sentence takes
+/// nobody along. A chat for everyone (no participant list) already holds
+/// them. Returns who joined.
+pub fn take_along(chat: &mut Chat, text: &str, members: &[String]) -> Vec<String> {
+    if chat.participants.is_empty() {
+        return Vec::new();
+    }
+    let mut joined = Vec::new();
+    for id in leading_mentions(text, members) {
+        if !chat.participants.iter().any(|p| p.id() == id.as_str()) {
+            chat.participants
+                .push(joy_model::MemberRef::new(id.clone()));
+            joined.push(id.clone());
+        }
+    }
+    joined
+}
+
 /// A notice is posted once, not per round: the same text within the last
 /// four messages counts as already said.
 pub fn recently_noticed(chat: &Chat, text: &str) -> bool {
@@ -382,6 +412,72 @@ mod tests {
             })
             .collect();
         chat
+    }
+
+    /// Horst's case (JAPP-02C4-E6): a 1:1 with vibe, vibe answered, then a
+    /// line to a person who is not in the chat.
+    fn one_to_one_after_vibe_answered(line: &str) -> (Chat, ChatMessage) {
+        let mut chat = chat_with(vec![
+            (
+                "horst@example.com",
+                "@vibe alles im lot?",
+                MessageKind::Text,
+            ),
+            ("ai:vibe@joy", "Nicht alles im Lot.", MessageKind::Text),
+            ("horst@example.com", line, MessageKind::Text),
+        ]);
+        chat.participants = vec![
+            MemberRef::new("horst@example.com"),
+            MemberRef::new("ai:vibe@joy"),
+        ];
+        let newest = chat.messages.last().cloned().unwrap();
+        (chat, newest)
+    }
+
+    #[test]
+    fn a_leading_name_outside_the_chat_is_still_an_address_and_the_last_speaker_stays_silent() {
+        let (chat, newest) = one_to_one_after_vibe_answered("@alex@werklust.com bist du da?");
+        assert_eq!(decide(&chat, &newest, "ai:vibe@joy"), TurnDecision::Silent);
+    }
+
+    #[test]
+    fn a_leading_name_of_someone_who_joined_addresses_only_them() {
+        let (mut chat, newest) = one_to_one_after_vibe_answered("@alex@werklust.com bist du da?");
+        chat.participants.push(MemberRef::new("alex@werklust.com"));
+        assert_eq!(decide(&chat, &newest, "ai:vibe@joy"), TurnDecision::Silent);
+    }
+
+    #[test]
+    fn a_name_inside_the_sentence_is_a_reference_and_the_last_speaker_answers() {
+        let (chat, newest) =
+            one_to_one_after_vibe_answered("hast du @alex@werklust.com schon gefragt?");
+        assert_eq!(decide(&chat, &newest, "ai:vibe@joy"), TurnDecision::Respond);
+    }
+
+    #[test]
+    fn a_leading_name_takes_the_member_along_and_a_name_inside_the_sentence_does_not() {
+        let members = vec![
+            "horst@example.com".to_string(),
+            "alex@werklust.com".to_string(),
+            "ai:vibe@joy".to_string(),
+        ];
+        let (mut chat, _) = one_to_one_after_vibe_answered("");
+        assert!(take_along(&mut chat, "hast du @alex@werklust.com gefragt?", &members).is_empty());
+        assert_eq!(
+            take_along(&mut chat, "@alex@werklust.com bist du da?", &members),
+            vec!["alex@werklust.com".to_string()]
+        );
+        assert!(chat
+            .participants
+            .iter()
+            .any(|p| p.id() == "alex@werklust.com"));
+        // already in: nobody joins twice
+        assert!(take_along(&mut chat, "@alex@werklust.com noch da?", &members).is_empty());
+        // a chat for everyone holds them already
+        let mut everyone = chat_with(Vec::new());
+        everyone.participants.clear();
+        assert!(take_along(&mut everyone, "@alex@werklust.com hi", &members).is_empty());
+        assert!(everyone.participants.is_empty());
     }
 
     #[test]

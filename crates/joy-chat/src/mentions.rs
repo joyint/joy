@@ -57,6 +57,13 @@ pub fn leading_mentions<'a>(text: &str, candidates: &'a [String]) -> Vec<&'a Str
         .collect()
 }
 
+/// Whether `text` STARTS with an @name, whoever it names (JAPP-02C4-E6):
+/// a message that opens with an @name is addressed to those names and to
+/// nobody else, even when a name matches no one in the chat.
+pub fn leads_with_mention(text: &str) -> bool {
+    words(text).next().and_then(as_token).is_some()
+}
+
 /// Member ids among `candidates` that `text` @mentions, by full ref or by
 /// short alias.
 pub fn mentions<'a>(text: &str, candidates: &'a [String]) -> Vec<&'a String> {

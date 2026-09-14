@@ -638,18 +638,23 @@ fn run_command(root: &std::path::Path, command: ChatCommand) -> Result<()> {
             // session and no turn host, so an AI it addresses would never
             // answer - and the sender would never learn why (JOY-0270-40,
             // Horst 2026-08-30: refuse, do not send into the void).
-            let ais: Vec<String> = joy_core::store::load_project(root)?
+            let members: Vec<String> = joy_core::store::load_project(root)?
                 .members()
                 .map(|(id, _)| id.clone())
-                .filter(|id| id.starts_with("ai:"))
                 .collect();
-            if let Some(ai) = joy_chat::mentions::leading_mentions(&text, &ais).first() {
+            let addressed = joy_chat::mentions::leading_mentions(&text, &members);
+            if let Some(ai) = addressed.iter().find(|id| id.starts_with("ai:")) {
                 anyhow::bail!(
                     "@{} answers only when addressed from the app (an AI turn runs under the sender's chat session there); nothing sent. Address {} in the app, or send the message without the mention.",
                     joy_chat::mentions::alias(ai),
                     joy_chat::mentions::alias(ai)
                 );
             }
+            // An @name at the START takes that member into the chat (Horst
+            // 2026-09-14, JAPP-02C4-E6), the same rule the app's write
+            // follows: they can read the chat and find the line in
+            // `joy chat ls --mine`.
+            joy_chat::turns::take_along(&mut chat, &text, &members);
             match identity.delegated_by {
                 // an AI acting for a person says so on the message, the
                 // way its turn replies do (the app shows "delegated by")
