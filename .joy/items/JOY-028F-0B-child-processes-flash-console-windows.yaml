@@ -11,7 +11,7 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-16T05:07:38.296799803Z
-updated: 2026-09-16T05:29:02.538830011Z
+updated: 2026-09-16T05:42:51.024131271Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Reported 2026-09-15 from the first install of the public Windows build (JAPP-02CE-5D): the desktop app opens and closes console windows in the background continuously. macOS and Linux never showed it, and never can: a console window is a Windows-only concept.
@@ -44,3 +44,6 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-09-16T05:29:02.483451893Z
   text: '[x] crates/joy-process: command() builds every child; on Windows prepare() sets CREATE_NO_WINDOW and GIT_TERMINAL_PROMPT=0 exactly when GetConsoleWindow() is null (cached in a OnceLock). [x] Routed: joy-core (vcs/mod.rs, forge_plugins.rs, tutorial.rs), joy-chat-store (chat_ref.rs), joy-ai (ai_setup.rs), joy-cli (editor.rs, crypt.rs, ps_alias.rs, two test files) and joy-github/-gitlab/-gitea - 27 files. [x] clippy.toml disallows std::process::Command::new and tokio::process::Command::new; joy-process allows it for itself. [x] Tests: the program survives preparation and a unix command carries no extra env, everywhere; on Windows three more, driving both branches of prepare() against a probe that re-runs this test binary and reports whether its console window is visible. [x] Verified on Linux: cargo fmt, cargo clippy --workspace --all-targets -D warnings, the full suite green. [x] Downstream per CONTRIBUTING: cargo check --all-targets green in the desktop crate and in platform, both against this joy (worktrees are laid out as siblings). [ ] The Windows tests have not run yet - they need the windows-latest CI leg. [ ] The symptom itself is verified on a real Windows install in JAPP-02CE-5D. Commit a47ba81 on fix/joy-no-window-spawns.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-16T05:42:51.024130049Z
+  text: '[x] Windows verified by CI (PR joyint/joy#18, run 35060031420 and the re-run after 798019f): all five joy-process tests compile and pass on windows-latest, and the whole suite with them. The first run exposed a test that checked nothing - a_console_host_hands_its_console_down returned early because the CI test binary has no console of its own, finishing in under a millisecond while the spawn test beside it took nineteen. It now asserts per host (terminal: handed down and visible; no console: nothing to hand down, the child stays hidden) and takes 7ms, so it really spawns the probe. Also added here: cargo check --target x86_64-pc-windows-msvc catches platform-specific code on the Linux box before a push. Remaining: the symptom on a real Windows install (JAPP-02CE-5D).'
