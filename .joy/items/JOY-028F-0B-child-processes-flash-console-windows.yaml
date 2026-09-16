@@ -1,0 +1,37 @@
+id: JOY-028F-0B
+title: Child processes flash console windows under a GUI host on Windows
+type: bug
+status: new
+priority: high
+capabilities:
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-16T05:07:38.296799803Z
+updated: 2026-09-16T05:07:38.296799803Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Reported 2026-09-15 from the first install of the public Windows build (JAPP-02CE-5D): the desktop app opens and closes console windows in the background continuously. macOS and Linux never showed it, and never can: a console window is a Windows-only concept.
+
+  Cause: a GUI process (windows_subsystem = "windows") has no console, so every console child spawned without CREATE_NO_WINDOW gets its own console WINDOW. Joy spawns git, gh, curl, sh, powershell and plugin binaries; none of them sets the flag. In the shipped build joy-core still ran git for resolve_identity on the app's periodic ticks, which is what made it constant; c533162 moved the identity lookups to git2, but the remaining spawns keep flashing.
+
+  The rule (one rule, no per-call switches, JI-017C-E1): on Windows a child gets CREATE_NO_WINDOW exactly when THIS process has no console (GetConsoleWindow() is null). Never unconditionally: with a console inherited from the CLI, the flag would give the child a separate invisible console and break everything that talks to the terminal - the pager in joy ai tutorial, the editor, joy int and other plugins with inherited stdio, and ssh's passphrase prompt on fetch/push. A GUI host has nothing to inherit, so the flag is free there. A child started WITH the flag owns a windowless console its own children inherit, so plugins and their gh/curl calls stay quiet without knowing anything.
+
+  Without a console nobody can answer a prompt either, so the same helper sets GIT_TERMINAL_PROMPT=0 there: an app-side git fetch that wants credentials must fail, not hang invisibly. Git Credential Manager keeps working, it draws its own window.
+
+  Plan:
+  - New crate joy-process (MIT, zero deps except windows-sys under cfg(windows)). It is its own crate because the forge plugins (joy-github, joy-gitlab, joy-gitea) do not depend on joy-core. joy_process::command(program) -> std::process::Command, preconfigured. tokio callers use tokio::process::Command::from(..).
+  - Route every spawn through it: joy-core (vcs/mod.rs, forge_plugins.rs, tutorial.rs), joy-chat-store (chat_ref.rs git gc), joy-ai (ai_setup.rs), joy-cli (editor.rs, crypt.rs, ps_alias.rs), and the three forge plugins.
+  - clippy.toml disallowed-methods for std::process::Command::new and tokio::process::Command::new, allowed only inside joy-process.
+  - Tests: the flag decision is a pure function, unit-tested everywhere; a Windows integration test calls FreeConsole(), spawns a probe through the helper and asserts the child has no visible console window.
+
+  Out of scope, tracked separately: the app-side spawns (JAPP-02CE-5D) and the platform's (docker, git, python3 - Linux only, lint parity).
+
+  Nebenbefund to file separately: ai_setup.rs:754 shells out to which, which does not exist on Windows.
+
+  - [ ] joy-process crate with the console check
+  - [ ] every joy spawn routed through it
+  - [ ] clippy disallowed-methods across the workspace
+  - [ ] unit test for the decision, Windows integration test for the flag
+  - [ ] verified in the app on Windows (JAPP-02CE-5D)

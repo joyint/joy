@@ -1,0 +1,14 @@
+id: JOY-0290-EA
+title: ai_setup probes tool binaries with which, which does not exist on Windows
+type: bug
+status: new
+priority: medium
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-16T05:07:51.217383377Z
+updated: 2026-09-16T05:07:51.217383377Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: crates/joy-ai/src/ai_setup.rs:754 runs 'which <tool>' to find an AI tool binary. Windows has no which; the probe always fails there, so a tool that IS installed looks missing. Found 2026-09-16 while inventorying the process spawns for JOY-028F-0B. Use a PATH lookup that works on all three platforms (the 'which' crate is already a common dependency, or resolve over PATH plus PATHEXT ourselves).
