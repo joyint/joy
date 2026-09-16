@@ -5,8 +5,8 @@
 //!
 //! Resolves the acting user's identity from:
 //! 1. Active session (if one exists for any member)
-//! 2. The member this device pinned for this project
-//! 3. `git config user.email`, a prefill for projects without auth
+//! 2. `git config user.email`, while it names a member of this project
+//! 3. The member this device pinned, for a machine with no git identity
 //!
 //! AI members authenticate via `joy auth --token`, which creates a
 //! session. There is no self-declared identity override.
@@ -50,8 +50,8 @@ impl Identity {
 ///
 /// Priority (D3.9 of the forge connection NG design):
 /// 1. JOY_SESSION -- ephemeral-key-bound AI session handle (ADR-033)
-/// 2. The member key: what git config names when it names a member of
-///    this project, else the member pinned on this device
+/// 2. The member key: git config while it names a member of this
+///    project, else the member pinned on this device
 /// 3. A human session for that member
 /// 4. Fallback: the same key, unauthenticated
 pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
