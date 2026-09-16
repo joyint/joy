@@ -86,27 +86,65 @@ fn bound_forge_waits() {
     });
 }
 
-/// What a forge contact's libgit2 error means, in words. A forge that
-/// runs into the wait bound surfaces as libgit2's raw EAGAIN, "SSL
-/// error: syscall failure: Resource temporarily unavailable", which says
-/// nothing about what happened (JOY-0278-85); that case is named for what
-/// it is, everything else is quoted as libgit2 says it.
-fn contact_error(e: &git2::Error) -> String {
-    let message = e.message();
-    let lower = message.to_ascii_lowercase();
-    if lower.contains("resource temporarily unavailable") || lower.contains("timed out") {
-        format!(
-            "the forge sent nothing for {} seconds (timed out): {message}",
-            SILENCE_BOUND_MS / 1000
-        )
-    } else {
-        message.to_string()
-    }
+/// What a forge contact's libgit2 error means, for the person
+/// (JOY-0295-36, design D1.8a). The error is handed to the classifier
+/// WHOLE - code, class, status number and message - because joy used to
+/// pass `e.message()` alone and prefix "(offline?)" onto it, which made
+/// a 404 over https read as "no connection to github.com". The plain
+/// sentence comes back from the state; libgit2's own words go to the
+/// detail line and never to a surface.
+fn contact_failed(
+    url: &str,
+    auth: &Auth,
+    direction: super::contact::ContactDirection,
+    e: git2::Error,
+) -> anyhow::Error {
+    let transport = super::contact::transport_of(url);
+    super::contact::failed(&super::contact::ContactEvidence::new(
+        e,
+        url,
+        direction,
+        auth.credential_source(transport),
+    ))
+}
+
+/// The remote URL a contact travels over, for the evidence above.
+fn remote_url_of(remote: &git2::Remote<'_>) -> String {
+    remote.url().unwrap_or_default().to_string()
 }
 
 impl Auth {
     pub fn token(token: impl Into<String>) -> Self {
         Auth::Token(token.into())
+    }
+
+    /// Whether a credential rides with a contact under this auth, which
+    /// is what decides its request weight (D1.9): a credentialed
+    /// request to a private repository is answered 401 once and
+    /// replayed, so it costs one request more than an anonymous one.
+    fn credentialed(&self) -> bool {
+        match self {
+            Auth::Token(token) => !token.is_empty(),
+            Auth::Local => true,
+        }
+    }
+
+    /// What joy presented, for the evidence of D1.8a. This is the
+    /// coarse answer the engine can give on its own; J4b refines it to
+    /// the source that actually answered the callback.
+    fn credential_source(
+        &self,
+        transport: super::contact::Transport,
+    ) -> super::contact::CredentialSource {
+        use super::contact::CredentialSource;
+        match self {
+            Auth::Token(token) if !token.is_empty() => CredentialSource::TokenPresented,
+            Auth::Token(_) => CredentialSource::NonePresented,
+            Auth::Local => match transport {
+                super::contact::Transport::Ssh => CredentialSource::AgentPresented,
+                _ => CredentialSource::HelperPresented,
+            },
+        }
     }
 
     fn callbacks(&self, config: Option<git2::Config>) -> git2::RemoteCallbacks<'static> {
@@ -252,7 +290,9 @@ fn err(e: git2::Error) -> anyhow::Error {
 
 /// Clone a forge URL into `dest` using the account token.
 pub fn clone(url: &str, auth: &Auth, dest: &Path) -> anyhow::Result<()> {
-    super::contact::run(url, "clone", || clone_raw(url, auth, dest))
+    super::contact::run(url, "clone", auth.credentialed(), || {
+        clone_raw(url, auth, dest)
+    })
 }
 
 fn clone_raw(url: &str, auth: &Auth, dest: &Path) -> anyhow::Result<()> {
@@ -263,7 +303,7 @@ fn clone_raw(url: &str, auth: &Auth, dest: &Path) -> anyhow::Result<()> {
     git2::build::RepoBuilder::new()
         .fetch_options(fetch)
         .clone(url, dest)
-        .map_err(err)?;
+        .map_err(|e| contact_failed(url, auth, super::contact::ContactDirection::Fetch, e))?;
     // the clone machinery runs libgit2's update_tips once; nothing here
     // ever reads FETCH_HEAD, so the checkout starts without one
     std::fs::remove_file(dest.join(".git/FETCH_HEAD")).ok();
@@ -325,33 +365,40 @@ fn download_ref(
     dst: &str,
 ) -> anyhow::Result<Option<git2::Oid>> {
     let mut remote = origin_or_first(repo)?;
-    let advertised = {
-        let connection = remote
-            .connect_auth(
-                git2::Direction::Fetch,
-                Some(auth.callbacks(cred_config(Some(repo)))),
-                None,
-            )
-            .map_err(|e| anyhow::anyhow!("fetch failed (offline?): {}", contact_error(&e)))?;
-        // an empty advertisement (freshly created forge) is a plain
-        // empty list since git2 0.21 — and an honest "nothing there"
-        connection
-            .list()
-            .map_err(err)?
-            .iter()
-            .find(|r| r.name() == src)
-            .map(|r| r.oid())
-    };
+    let url = remote_url_of(&remote);
+    // ONE connection for the advertisement AND the download (D1.9): the
+    // RemoteConnection disconnects on drop, and joy used to drop it
+    // before `remote.download`, so git_remote_download reconnected and
+    // paid the 401 challenge a second time. Downloading through
+    // `connection.remote()` while the connection is alive removes one
+    // handshake and one challenge per fetch, which is two HTTP requests
+    // of the host's budget.
+    let mut connection = remote
+        .connect_auth(
+            git2::Direction::Fetch,
+            Some(auth.callbacks(cred_config(Some(repo)))),
+            None,
+        )
+        .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Fetch, e))?;
+    // an empty advertisement (freshly created forge) is a plain
+    // empty list since git2 0.21, and an honest "nothing there"
+    let advertised = connection
+        .list()
+        .map_err(err)?
+        .iter()
+        .find(|r| r.name() == src)
+        .map(|r| r.oid());
     let Some(tip) = advertised else {
         return Ok(None);
     };
     let mut opts = git2::FetchOptions::new();
     opts.remote_callbacks(auth.callbacks(cred_config(Some(repo))));
     let refspec = format!("+{src}:{dst}");
-    remote
+    connection
+        .remote()
         .download(&[refspec.as_str()], Some(&mut opts))
-        .map_err(|e| anyhow::anyhow!("fetch failed (offline?): {}", contact_error(&e)))?;
-    let _ = remote.disconnect();
+        .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Fetch, e))?;
+    drop(connection);
     repo.reference(dst, tip, true, "joy-vcs: fetch")
         .map_err(err)?;
     Ok(Some(tip))
@@ -366,7 +413,9 @@ fn download_ref(
 /// A branch that is gone from the forge (renamed or deleted) is said out
 /// loud instead of surfacing as a phantom state.
 pub fn fetch_branch(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
-    super::contact::run_for(repo_dir, "fetch", || fetch_branch_raw(repo_dir, auth))
+    super::contact::run_for(repo_dir, "fetch", auth.credentialed(), || {
+        fetch_branch_raw(repo_dir, auth)
+    })
 }
 
 fn fetch_branch_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
@@ -476,7 +525,9 @@ pub fn commit_joy(
 /// object and no ref is sent. A refusal here is exactly the refusal a real
 /// push would meet.
 pub fn probe_write_access(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
-    super::contact::run_for(repo_dir, "probe", || probe_write_access_raw(repo_dir, auth))
+    super::contact::run_for(repo_dir, "probe", auth.credentialed(), || {
+        probe_write_access_raw(repo_dir, auth)
+    })
 }
 
 fn probe_write_access_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
@@ -484,19 +535,22 @@ fn probe_write_access_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
     let _s = span.enter();
     let repo = open(repo_dir).map_err(err)?;
     let mut remote = origin_or_first(&repo)?;
+    let url = remote_url_of(&remote);
     remote
         .connect_auth(
             git2::Direction::Push,
             Some(auth.callbacks(cred_config(Some(&repo)))),
             None,
         )
-        .map_err(|e| anyhow::anyhow!("push failed: {}", contact_error(&e)))?;
+        .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Push, e))?;
     let _ = remote.disconnect();
     Ok(())
 }
 
 pub fn push(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
-    super::contact::run_for(repo_dir, "push", || push_raw(repo_dir, auth))
+    super::contact::run_for(repo_dir, "push", auth.credentialed(), || {
+        push_raw(repo_dir, auth)
+    })
 }
 
 fn push_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
@@ -510,12 +564,13 @@ fn push_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
             .map_err(|_| anyhow::anyhow!("detached HEAD"))?
             .to_string();
         let mut remote = origin_or_first(&repo)?;
+        let url = remote_url_of(&remote);
         let mut opts = git2::PushOptions::new();
         opts.remote_callbacks(auth.callbacks(cred_config(Some(&repo))));
         let refspec = format!("refs/heads/{branch}:refs/heads/{branch}");
         remote
             .push(&[refspec.as_str()], Some(&mut opts))
-            .map_err(|e| anyhow::anyhow!("push failed: {}", contact_error(&e)))?;
+            .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Push, e))?;
         Ok(())
     })();
     if let Err(e) = &result {
@@ -537,7 +592,7 @@ fn push_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
 /// removed) — the stale destination is deleted then, so reconciles run
 /// against nothing rather than a stale state.
 pub fn fetch_ref(repo_dir: &Path, auth: &Auth, src: &str, dst: &str) -> anyhow::Result<bool> {
-    super::contact::run_for(repo_dir, "fetch", || {
+    super::contact::run_for(repo_dir, "fetch", auth.credentialed(), || {
         fetch_ref_raw(repo_dir, auth, src, dst)
     })
 }
@@ -585,18 +640,21 @@ pub fn checkout_gate(repo_dir: &Path) -> std::sync::Arc<std::sync::Mutex<()>> {
 
 /// Push one local ref to the same name on the forge.
 pub fn push_ref(repo_dir: &Path, auth: &Auth, refname: &str) -> anyhow::Result<()> {
-    super::contact::run_for(repo_dir, "push", || push_ref_raw(repo_dir, auth, refname))
+    super::contact::run_for(repo_dir, "push", auth.credentialed(), || {
+        push_ref_raw(repo_dir, auth, refname)
+    })
 }
 
 fn push_ref_raw(repo_dir: &Path, auth: &Auth, refname: &str) -> anyhow::Result<()> {
     let repo = open(repo_dir).map_err(err)?;
     let mut remote = origin_or_first(&repo)?;
+    let url = remote_url_of(&remote);
     let mut opts = git2::PushOptions::new();
     opts.remote_callbacks(auth.callbacks(cred_config(Some(&repo))));
     let refspec = format!("{refname}:{refname}");
     remote
         .push(&[refspec.as_str()], Some(&mut opts))
-        .map_err(|e| anyhow::anyhow!("push of {refname} failed: {}", contact_error(&e)))?;
+        .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Push, e))?;
     Ok(())
 }
 
@@ -605,37 +663,56 @@ fn push_ref_raw(repo_dir: &Path, auth: &Auth, refname: &str) -> anyhow::Result<(
 /// when the forge does not have the ref. Callers hold a registered
 /// project, so the remote always advertises at least its working branch
 /// (a fully ref-less remote trips a git2 empty-list edge).
+///
+/// A caller that wants two refs asks [`ls_remote_refs`] for both at
+/// once: the advertisement it reads carries every ref anyway.
 pub fn ls_remote_ref(
     repo_dir: &Path,
     auth: &Auth,
     refname: &str,
 ) -> anyhow::Result<Option<String>> {
-    super::contact::run_for(repo_dir, "ls-remote", || {
-        ls_remote_ref_raw(repo_dir, auth, refname)
+    Ok(ls_remote_refs(repo_dir, auth, &[refname])?.remove(refname))
+}
+
+/// The oids the forge holds for SEVERAL refs, from one advertisement
+/// (D1.9). `connection.list()` downloads the forge's whole ref list, so
+/// asking for a second ref costs nothing on top; asking twice costs a
+/// second connection and, on a private https remote, a second 401
+/// challenge. One poll tick that watches two refs therefore makes one
+/// contact. Refs the forge does not have are absent from the map.
+pub fn ls_remote_refs(
+    repo_dir: &Path,
+    auth: &Auth,
+    refnames: &[&str],
+) -> anyhow::Result<std::collections::HashMap<String, String>> {
+    super::contact::run_for(repo_dir, "ls-remote", auth.credentialed(), || {
+        ls_remote_refs_raw(repo_dir, auth, refnames)
     })
 }
 
-fn ls_remote_ref_raw(
+fn ls_remote_refs_raw(
     repo_dir: &Path,
     auth: &Auth,
-    refname: &str,
-) -> anyhow::Result<Option<String>> {
+    refnames: &[&str],
+) -> anyhow::Result<std::collections::HashMap<String, String>> {
     let repo = open(repo_dir).map_err(err)?;
     let mut remote = origin_or_first(&repo)?;
+    let url = remote_url_of(&remote);
     let connection = remote
         .connect_auth(
             git2::Direction::Fetch,
             Some(auth.callbacks(cred_config(Some(&repo)))),
             None,
         )
-        .map_err(|e| anyhow::anyhow!("ls-remote failed (offline?): {}", contact_error(&e)))?;
-    let head = connection
+        .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Fetch, e))?;
+    let found = connection
         .list()
         .map_err(err)?
         .iter()
-        .find(|r| r.name() == refname)
-        .map(|r| r.oid().to_string());
-    Ok(head)
+        .filter(|r| refnames.contains(&r.name()))
+        .map(|r| (r.name().to_string(), r.oid().to_string()))
+        .collect();
+    Ok(found)
 }
 
 /// Pull with a REAL merge (ADR JAPP-00D8): fetch, fast-forward when
@@ -1340,18 +1417,21 @@ pub fn tag_annotated(
 
 /// Push one tag to the forge (joy release publish's tag push).
 pub fn push_tag(repo_dir: &Path, auth: &Auth, tag: &str) -> anyhow::Result<()> {
-    super::contact::run_for(repo_dir, "push", || push_tag_raw(repo_dir, auth, tag))
+    super::contact::run_for(repo_dir, "push", auth.credentialed(), || {
+        push_tag_raw(repo_dir, auth, tag)
+    })
 }
 
 fn push_tag_raw(repo_dir: &Path, auth: &Auth, tag: &str) -> anyhow::Result<()> {
     let repo = open(repo_dir).map_err(err)?;
     let mut remote = origin_or_first(&repo)?;
+    let url = remote_url_of(&remote);
     let mut opts = git2::PushOptions::new();
     opts.remote_callbacks(auth.callbacks(cred_config(Some(&repo))));
     let refspec = format!("refs/tags/{tag}:refs/tags/{tag}");
     remote
         .push(&[refspec.as_str()], Some(&mut opts))
-        .map_err(|e| anyhow::anyhow!("tag push failed: {}", contact_error(&e)))?;
+        .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Push, e))?;
     Ok(())
 }
 
@@ -2065,7 +2145,9 @@ pub fn ensure_local_branch(repo_dir: &Path, branch: &str) -> anyhow::Result<()> 
 /// memory of its first day). FETCH_HEAD is not touched. Returns the
 /// branch names the forge advertises.
 pub fn fetch_heads(repo_dir: &Path, auth: &Auth) -> anyhow::Result<Vec<String>> {
-    super::contact::run_for(repo_dir, "fetch", || fetch_heads_raw(repo_dir, auth))
+    super::contact::run_for(repo_dir, "fetch", auth.credentialed(), || {
+        fetch_heads_raw(repo_dir, auth)
+    })
 }
 
 fn fetch_heads_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<Vec<String>> {
@@ -2078,25 +2160,26 @@ fn fetch_heads_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<Vec<String>> 
         .map_err(err)?
         .ok_or_else(|| anyhow::anyhow!("remote name is not utf-8"))?
         .to_string();
-    let heads: Vec<(String, git2::Oid)> = {
-        let connection = remote
-            .connect_auth(
-                git2::Direction::Fetch,
-                Some(auth.callbacks(cred_config(Some(&repo)))),
-                None,
-            )
-            .map_err(|e| anyhow::anyhow!("fetch failed (offline?): {}", contact_error(&e)))?;
-        connection
-            .list()
-            .map_err(err)?
-            .iter()
-            .filter_map(|r| {
-                r.name()
-                    .strip_prefix("refs/heads/")
-                    .map(|b| (b.to_string(), r.oid()))
-            })
-            .collect()
-    };
+    let url = remote_url_of(&remote);
+    // one connection for the advertisement and the download, as
+    // download_ref does (D1.9)
+    let mut connection = remote
+        .connect_auth(
+            git2::Direction::Fetch,
+            Some(auth.callbacks(cred_config(Some(&repo)))),
+            None,
+        )
+        .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Fetch, e))?;
+    let heads: Vec<(String, git2::Oid)> = connection
+        .list()
+        .map_err(err)?
+        .iter()
+        .filter_map(|r| {
+            r.name()
+                .strip_prefix("refs/heads/")
+                .map(|b| (b.to_string(), r.oid()))
+        })
+        .collect();
     if heads.is_empty() {
         return Ok(Vec::new());
     }
@@ -2107,10 +2190,11 @@ fn fetch_heads_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<Vec<String>> 
     let refspec_strs: Vec<&str> = refspecs.iter().map(String::as_str).collect();
     let mut opts = git2::FetchOptions::new();
     opts.remote_callbacks(auth.callbacks(cred_config(Some(&repo))));
-    remote
+    connection
+        .remote()
         .download(&refspec_strs, Some(&mut opts))
-        .map_err(|e| anyhow::anyhow!("fetch failed (offline?): {}", contact_error(&e)))?;
-    let _ = remote.disconnect();
+        .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Fetch, e))?;
+    drop(connection);
     // the tracking refs by hand, as download_ref does: update_tips would
     // write FETCH_HEAD
     for (b, tip) in &heads {
@@ -2251,13 +2335,25 @@ mod tests {
         let started = std::time::Instant::now();
         let result = fetch_branch(tmp.path(), &Auth::token("x"));
         let took = started.elapsed();
-        let error = result
-            .expect_err("a silent forge cannot deliver a branch")
-            .to_string();
-        // and the error says so, not libgit2's raw EAGAIN (JOY-0278-85)
+        let error = result.expect_err("a silent forge cannot deliver a branch");
+        // and the state is "nobody answered", not a certificate fault:
+        // the bound surfaces as libgit2's raw EAGAIN under class Ssl
+        // (JOY-0278-85), and the classifier reads it for what it is
+        let sentence = error.to_string();
+        assert_eq!(
+            crate::vcs::contact::failure_of(&error),
+            crate::vcs::contact::Failure::Offline,
+            "the bound fired: {sentence}"
+        );
         assert!(
-            error.contains("sent nothing for 15 seconds"),
-            "the error names the bound: {error}"
+            sentence.contains("No connection to 127.0.0.1"),
+            "the sentence names the host: {sentence}"
+        );
+        // libgit2's own words stay in the detail line (D1.8b)
+        let detail = crate::vcs::contact::detail_of(&error).unwrap_or_default();
+        assert!(
+            !sentence.contains("libgit2") && detail.starts_with("libgit2:"),
+            "sentence {sentence:?}, detail {detail:?}"
         );
         assert!(
             took >= std::time::Duration::from_secs(10) && took < std::time::Duration::from_secs(25),
@@ -2774,6 +2870,51 @@ mod engine_invariant_tests {
         assert!(
             !fetch_head.exists(),
             "refresh_branch_from_forge wrote FETCH_HEAD"
+        );
+    }
+
+    /// ONE advertisement answers for several refs (D1.9): the working
+    /// branch and a side ref come back from the same contact, and a ref
+    /// the forge does not have is simply absent. This is what turns a
+    /// poll tick that watches two refs into one contact.
+    #[test]
+    fn one_advertisement_answers_for_several_refs() {
+        let rig = rig();
+        let auth = Auth::token("");
+        // a side ref on the forge, the way the chat store pushes one
+        let forge_repo = git2::Repository::open_bare(&rig.forge).unwrap();
+        let tip = forge_repo.head().unwrap().target().unwrap();
+        forge_repo
+            .reference("refs/joy/chats", tip, true, "chats")
+            .unwrap();
+        let branch = open(&rig.clone_dir)
+            .unwrap()
+            .head()
+            .unwrap()
+            .shorthand()
+            .unwrap()
+            .to_string();
+        let head_ref = format!("refs/heads/{branch}");
+
+        let found = ls_remote_refs(
+            &rig.clone_dir,
+            &auth,
+            &[head_ref.as_str(), "refs/joy/chats", "refs/joy/absent"],
+        )
+        .unwrap();
+        assert_eq!(found.len(), 2, "{found:?}");
+        assert_eq!(found[&head_ref], tip.to_string());
+        assert_eq!(found["refs/joy/chats"], tip.to_string());
+        assert!(!found.contains_key("refs/joy/absent"));
+
+        // the single ref verb is that same advertisement, one name wide
+        assert_eq!(
+            ls_remote_ref(&rig.clone_dir, &auth, "refs/joy/chats").unwrap(),
+            Some(tip.to_string())
+        );
+        assert_eq!(
+            ls_remote_ref(&rig.clone_dir, &auth, "refs/joy/absent").unwrap(),
+            None
         );
     }
 
