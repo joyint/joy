@@ -316,6 +316,7 @@ impl GitVcs {
 /// Default VCS provider. Returns the Git implementation.
 pub mod contact;
 pub mod forge;
+pub mod maintenance;
 
 pub fn default_vcs() -> GitVcs {
     GitVcs

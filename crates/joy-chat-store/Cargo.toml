@@ -8,7 +8,6 @@ repository = "https://github.com/joyint/joy"
 homepage = "https://joyint.com/en/joy"
 
 [dependencies]
-joy-process = { workspace = true }
 joy-chat = { version = "0.20.0", path = "../joy-chat" }
 joy-core = { version = "0.20.0", path = "../joy-core" }
 joy-model = { workspace = true }

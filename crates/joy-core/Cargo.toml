@@ -30,6 +30,14 @@ sha2 = "0.10.9"
 argon2 = "0.5"
 rand = "0.8"
 hex = "0.4"
+# vcs::maintenance asks whether it may set an object's mtime before it
+# removes an unreferenced neighbour of it (D3.7): libgit2 protects an
+# object it reuses with `utimes`, so where that call is refused joy must
+# not sweep. filetime is the one portable `utimes`: on Windows it opens
+# with FILE_WRITE_ATTRIBUTES exactly like libgit2 does, which std's
+# File::set_modified cannot (a loose object carries the read only
+# attribute there).
+filetime = "0.2"
 zeroize = { version = "1", features = ["derive"] }
 base64ct = { version = "1", features = ["alloc"] }
 uuid = { version = "1", features = ["v4", "v7", "serde"] }

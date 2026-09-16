@@ -161,37 +161,32 @@ fn read_chat_at(repo: &Repository, root_tree: &Tree, id: &str) -> Result<Option<
     read_chat_tree(repo, &chat_tree)
 }
 
-/// How many chat writes pass between two maintenance checks.
-const MAINTAIN_EVERY: usize = 64;
-static WRITES_SINCE_MAINTENANCE: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(0);
-
-/// Let git tidy its object store now and then (JOY-023C-1E).
+/// Pack and sweep this store when it is worth it (design D3.7).
 ///
-/// Every chat write is a commit, and these go through libgit2, which never
-/// runs the auto-gc the git binary runs after its own commits. Nothing
-/// else packed or pruned either, so a project only ever grew: the
+/// Every chat write is a commit, and these go through libgit2, which
+/// never runs the auto-gc the git binary runs after its own commits.
+/// Nothing else packed or pruned either, so a project only ever grew: the
 /// operator's sandbox reached 39 MB of `.git` for 0.7 MiB of actual
-/// content, in 6140 loose objects and not a single pack.
+/// content, in 6140 loose objects and not a single pack, 72 percent of
+/// them unreachable (JOY-023C-1E).
 ///
-/// `--auto` means git decides whether there is anything worth doing, which
-/// is why this can sit on the write path at all. Best effort throughout: a
-/// missing git binary, a locked repo or a busy gc leave the store as it is
-/// and the next write tries again.
+/// What used to stand here was `git gc --auto` in a child process. That
+/// broke the git2-only rule, it was a hazard next to a shallow checkout
+/// (an externally written commit-graph bypasses the shallow grafts), and
+/// its "every 64th write in this process" counter said nothing about the
+/// store: a CLI run is one process, so it fired on the first write every
+/// time. [`joy_core::vcs::maintenance`] decides per checkout instead, on
+/// the loose object estimate, the wall clock floor and the per-checkout
+/// gate, and the grace window is the one for a checkout joy does not own,
+/// because a person's own git may be writing objects joy cannot see.
+///
+/// Best effort throughout: a store that cannot be packed or swept stays
+/// as it is and the next write tries again.
 fn maintain_occasionally(repo: &Repository) {
-    use std::sync::atomic::Ordering;
-    let n = WRITES_SINCE_MAINTENANCE.fetch_add(1, Ordering::Relaxed);
-    if !n.is_multiple_of(MAINTAIN_EVERY) {
-        return;
-    }
-    let git_dir = repo.path().to_path_buf();
-    let _ = joy_process::command("git")
-        .arg("--git-dir")
-        .arg(&git_dir)
-        .args(["gc", "--auto", "--quiet"])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
+    let _ = joy_core::vcs::maintenance::maintain_if_due(
+        repo,
+        &joy_core::vcs::maintenance::Options::foreign_checkout(),
+    );
 }
 
 /// Commit `root_tree` onto `parent` and move the chats ref there, but ONLY
@@ -212,6 +207,15 @@ pub(crate) fn commit_root(
     root_tree: &Tree,
     message: &str,
 ) -> Result<Option<Oid>, JoyError> {
+    // The swap needs the commit's id, so the object cannot be written
+    // after it, but it can be left unwritten when the ref has ALREADY
+    // moved, and taken back out when the swap loses anyway (D3.7). Both
+    // halves matter: the losing attempt used to leave its commit and its
+    // trees in the store for ever, and up to eight attempts per write is
+    // how the sandbox got 505 orphans out of 761 commits.
+    if !ref_is_where_the_caller_read_it(repo, parent) {
+        return Ok(None);
+    }
     let sig = signature(repo)?;
     let parents: Vec<&Commit> = parent.into_iter().collect();
     // No ref name here: the commit object first, the ref move separately
@@ -230,8 +234,30 @@ pub(crate) fn commit_root(
     };
     if moved {
         maintain_occasionally(repo);
+        return Ok(Some(oid));
     }
-    Ok(moved.then_some(oid))
+    // Lost the race in the window between the check and the swap. The
+    // commit is nobody's now, unless the winner happened to write the
+    // byte-identical commit and the ref points at exactly this id, in
+    // which case it is the store's tip and stays.
+    if repo.refname_to_id(CHATS_REF).ok() != Some(oid) {
+        joy_core::vcs::maintenance::discard_loose_object(repo, oid);
+    }
+    Ok(None)
+}
+
+/// Whether the ref still stands where the caller read it, which is the
+/// precondition the compare-and-swap below enforces a second time. Asked
+/// BEFORE the commit object is written so the ordinary lost race costs no
+/// object at all; the swap still decides, because another writer can
+/// arrive between the two.
+fn ref_is_where_the_caller_read_it(repo: &Repository, parent: Option<&Commit>) -> bool {
+    let current = repo.refname_to_id(CHATS_REF).ok();
+    match (parent, current) {
+        (Some(base), Some(now)) => base.id() == now,
+        (None, None) => true,
+        _ => false,
+    }
 }
 
 /// LEGACY READER — see [`read_chat_tree`]; the migration's tests are the
@@ -1049,6 +1075,138 @@ mod tests {
         // second run: still gone, still no error
         remove_chat(root, "old").unwrap();
         assert!(load_chat(root, "old").unwrap().is_none());
+    }
+
+    // ---- maintenance of the store (design D3.7) ------------------------
+
+    /// Loose objects in a store, counted the way the sweep enumerates
+    /// them: the two-hex fanout directories under `objects/`.
+    fn loose_count(root: &Path) -> usize {
+        let objects = open_repo(root).unwrap().path().join("objects");
+        let mut n = 0;
+        for fanout in std::fs::read_dir(&objects).unwrap().flatten() {
+            let name = fanout.file_name().to_string_lossy().to_string();
+            if name.len() == 2 && name.bytes().all(|b| b.is_ascii_hexdigit()) {
+                n += std::fs::read_dir(fanout.path()).unwrap().count();
+            }
+        }
+        n
+    }
+
+    /// Every byte the object store occupies, loose and packed.
+    fn store_bytes(root: &Path) -> u64 {
+        fn walk(dir: &Path) -> u64 {
+            let Ok(entries) = std::fs::read_dir(dir) else {
+                return 0;
+            };
+            entries
+                .flatten()
+                .map(|e| match e.file_type() {
+                    Ok(t) if t.is_dir() => walk(&e.path()),
+                    _ => e.metadata().map(|m| m.len()).unwrap_or(0),
+                })
+                .sum()
+        }
+        walk(&open_repo(root).unwrap().path().join("objects"))
+    }
+
+    /// One commit that nothing points at, with its own tree and blob:
+    /// what a compare-and-swap that lost the race used to leave behind on
+    /// every attempt, eight times per write in the worst case.
+    fn lost_write(repo: &Repository, n: usize) {
+        let blob = repo.blob(format!("lost write {n}").as_bytes()).unwrap();
+        let mut tb = repo.treebuilder(None).unwrap();
+        tb.insert("log", blob, i32::from(FileMode::Blob)).unwrap();
+        let tree = repo.find_tree(tb.write().unwrap()).unwrap();
+        let sig = signature(repo).unwrap();
+        repo.commit(None, &sig, &sig, "lost [no-item]", &tree, &[])
+            .unwrap();
+    }
+
+    /// The sweep of D3.7 on the shape this store actually has: chats on
+    /// `refs/joy/chats`, which gets no reflog, plus the orphans of lost
+    /// races. The orphans go, every chat stays readable, and the store
+    /// shrinks.
+    #[test]
+    fn the_sweep_reclaims_lost_writes_and_every_chat_survives() {
+        let dir = repo();
+        let chats: Vec<String> = (0..20).map(|c| format!("chat-{c}")).collect();
+        for chat in &chats {
+            let names: Vec<String> = (0..10).map(|m| format!("{chat}-event-{m}")).collect();
+            let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+            save_sealed_stub(dir.path(), chat, &refs);
+        }
+        let repo = open_repo(dir.path()).unwrap();
+        for n in 0..200 {
+            lost_write(&repo, n);
+        }
+        let before = loose_count(dir.path());
+
+        let outcome = joy_core::vcs::maintenance::maintain(
+            &repo,
+            // The grace window is a parameter precisely so a case can ask
+            // for "everything old enough"; the product asks for 14 days
+            // here and joy-core's own cases assert that window.
+            &joy_core::vcs::maintenance::Options {
+                grace: std::time::Duration::ZERO,
+                ..joy_core::vcs::maintenance::Options::foreign_checkout()
+            },
+        )
+        .unwrap();
+
+        assert!(
+            outcome.removed_unreferenced >= 200,
+            "every lost write and its tree goes: {outcome:?}"
+        );
+        let after = loose_count(dir.path());
+        assert!(after < before / 4, "the store shrinks: {before} -> {after}");
+        // D3.7's acceptance, in the numbers it is written in
+        assert!(after < 6700, "well under git's own loose object threshold");
+        assert!(
+            store_bytes(dir.path()) < 1_000_000,
+            "a store of 20 chats stays below 1 MB"
+        );
+        // Every chat is still there, with every one of its events.
+        for chat in &chats {
+            let names = log_names(dir.path(), chat);
+            assert_eq!(names.len(), 10, "{chat} lost events");
+            assert!(names.contains(&format!("{chat}-event-7")));
+        }
+        // …and the ref's whole history is still walkable, which is what
+        // a push to a forge needs.
+        let tip = ref_target(dir.path()).unwrap().unwrap();
+        let mut walk = repo.revwalk().unwrap();
+        walk.push(tip).unwrap();
+        assert_eq!(walk.count(), chats.len(), "one commit per chat, all there");
+    }
+
+    /// The other half of D3.7's root-cause fix: a write that sees the ref
+    /// already moved writes no object at all, so there is nothing for the
+    /// sweep to reclaim later.
+    #[test]
+    fn a_refused_write_leaves_no_commit_behind() {
+        let dir = repo();
+        save_sealed_stub(dir.path(), "general", &["one"]);
+        let repo = open_repo(dir.path()).unwrap();
+        let stale = ref_commit(&repo).unwrap().unwrap();
+        save_sealed_stub(dir.path(), "general", &["two"]);
+        // the tree of the write that is about to be refused exists
+        // either way; what must not appear is a commit on top of it
+        let empty = repo
+            .find_tree(repo.treebuilder(None).unwrap().write().unwrap())
+            .unwrap();
+        let before = loose_count(dir.path());
+
+        // a writer still holding the older tip
+        assert!(commit_root(&repo, Some(&stale), &empty, "stale [no-item]")
+            .unwrap()
+            .is_none());
+
+        assert_eq!(
+            loose_count(dir.path()),
+            before,
+            "a refused write must not cost the store an object"
+        );
     }
 }
 
