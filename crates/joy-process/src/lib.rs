@@ -137,19 +137,25 @@ mod tests {
         assert_eq!(probe_answer(child), "hidden");
     }
 
-    /// The other branch, on the same machine: a child that inherits a
-    /// visible console reports it. Skipped where the test binary itself
-    /// has no console (a CI shell can run without one) - then there is
-    /// nothing to inherit and nothing to assert.
+    /// The other branch: without the flag the child inherits whatever
+    /// this process has. On a person's terminal that is a visible
+    /// console window - the thing the CLI must keep. Under a CI runner
+    /// the test binary has no console itself (verified on
+    /// windows-latest), and then there is nothing to inherit, which the
+    /// child must report rather than opening a window of its own. Both
+    /// answers are an assertion; an early return here would be a test
+    /// that silently checks nothing.
     #[cfg(windows)]
     #[test]
     fn a_console_host_hands_its_console_down() {
-        if !host_has_console() {
-            return;
-        }
         let mut child = probe_command();
         prepare(&mut child, true);
-        assert_eq!(probe_answer(child), "visible");
+        let expected = if host_has_console() {
+            "visible"
+        } else {
+            "hidden"
+        };
+        assert_eq!(probe_answer(child), expected);
     }
 
     /// This binary, re-invoked with only [`console_probe`] selected.
