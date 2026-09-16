@@ -87,6 +87,17 @@ fn init_user_founds_and_auth_init_enrols_without_a_git_config() {
         project.contains("verify-key") || project.contains("verify_key"),
         "{project}"
     );
+
+    // ...and the next command still knows who acts here, with no git
+    // config anywhere in the chain: the device pin of D3.9 carries it.
+    let add = joy(&root, &home, &["add", "task", "First thing"]);
+    assert!(add.status.success(), "{}", text(&add));
+    let status = joy(&root, &home, &["auth", "status"]);
+    assert!(
+        text(&status).contains("a@b.c"),
+        "the session names the founder: {}",
+        text(&status)
+    );
 }
 
 /// D3.9: with no git config and nobody at the terminal (the test harness

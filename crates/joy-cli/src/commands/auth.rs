@@ -407,6 +407,11 @@ pub(crate) fn run_init(
     session_token.chat_seed = Some(hex::encode(seed.as_bytes()));
     session::save_session(&project_id, &session_token)?;
 
+    // Remember who acts here when git config cannot say it (D3.9): a
+    // founder who set this project up with `joy init --user` on a machine
+    // without a git identity is known to the next command too.
+    joy_core::identity::pin_acting_member(&root, &project, &session_member);
+
     if anonymous {
         println!("Authentication initialized for {email} (anonymous mode).");
         println!(
