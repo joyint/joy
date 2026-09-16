@@ -20,7 +20,6 @@ use crate::auth::{attestation, generate_salt, seed as seed_mod, session, Identit
 use crate::error::JoyError;
 use crate::model::project::Project;
 use crate::store;
-use crate::vcs::Vcs;
 
 /// The identity material a redeemer derived from their chosen passphrase,
 /// hex-encoded exactly as it is stored on the member.
@@ -189,20 +188,30 @@ pub fn reverse_attest_founder(project: &mut Project, redeemer: &str, keypair: &I
 /// The whole local redemption: derive the identity from the chosen
 /// passphrase, apply it, persist, and open a session. The CLI and the desktop
 /// app both call this; only the presentation of the recovery key differs.
+///
+/// `member` is the member the HOST resolved (D3.9): `--user`, the app's
+/// mask, the device pin. This function no longer reads git config, so a
+/// founder created on a machine without one can enrol. `None` leaves the
+/// answer to the OTP, which is an identity proof of its own.
 pub fn redeem_with_passphrase(
     root: &Path,
     otp: &str,
     passphrase: &str,
+    member: Option<&str>,
 ) -> Result<EnrollmentOutcome, JoyError> {
     crate::auth::validate_passphrase(passphrase)?;
 
-    let email = crate::vcs::default_vcs().user_email()?;
     let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
     let mut project = store::load_project(root)?;
-    // The OTP finds its member (JOY-0257-FC); the raw address only
+    // The OTP finds its member (JOY-0257-FC); the named member only
     // survives as the fallthrough so apply_enrollment can answer with
     // its precise refusal texts.
-    let member_key = member_for_redemption(&project, &email, otp).unwrap_or_else(|| email.clone());
+    let member_key = match member.map(str::trim).filter(|m| !m.is_empty()) {
+        Some(named) => {
+            member_for_redemption(&project, named, otp).unwrap_or_else(|| named.to_string())
+        }
+        None => member_for_redemption(&project, "", otp).ok_or(JoyError::UnknownActingMember)?,
+    };
 
     // Wrapped-seed onboarding (ADR-039): a fresh random seed, wrapped under
     // both the passphrase KEK and the recovery KEK.
@@ -234,6 +243,10 @@ pub fn redeem_with_passphrase(
     let project_id = session::project_id(root)?;
     let token = session::create_session(&keypair, &member_key, &project_id, None);
     session::save_session(&project_id, &token)?;
+
+    // Remember who enrolled here when git config cannot name them, so the
+    // next command on this machine knows the acting member without one.
+    crate::identity::pin_acting_member(root, &project, &member_key);
 
     Ok(EnrollmentOutcome {
         keypair,

@@ -1,10 +1,12 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
+use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 
 use crate::embedded::{self, EmbeddedFile};
 use crate::error::JoyError;
+use crate::host::HostKind;
 use crate::model::project::{derive_acronym, Project};
 use crate::store;
 use crate::vcs::{default_vcs, Vcs};
@@ -59,10 +61,116 @@ pub struct InitOptions {
     pub root: PathBuf,
     pub name: Option<String>,
     pub acronym: Option<String>,
-    /// Override the creator member email. Falls back to git config user.email.
+    /// The founder's address, named by the host (`joy init --user`, the
+    /// desktop's setup mask). Git config is only a prefill behind it.
     pub user: Option<String>,
     /// Project language code (ISO 639-1, e.g. "en", "de"). Defaults to "en".
     pub language: Option<String>,
+    /// Who is behind this process. Decided by the host, never here (D1.1).
+    pub host: HostKind,
+    /// How an [`HostKind::Interactive`] host asks for the founder's address
+    /// when neither `user` nor git config knows one. `None` means "do not
+    /// ask", which is what every background host passes.
+    pub ask: Option<Box<dyn AskFounderAddress>>,
+}
+
+impl InitOptions {
+    /// A project in `root` with everything else left to the defaults: no
+    /// name, no acronym, no address, a background host that asks nobody.
+    pub fn new(root: PathBuf) -> Self {
+        InitOptions {
+            root,
+            name: None,
+            acronym: None,
+            user: None,
+            language: None,
+            host: HostKind::default(),
+            ask: None,
+        }
+    }
+}
+
+/// How a host asks a person for the founding address (D3.9). Implemented
+/// by the CLI over the terminal and by the desktop over its setup mask;
+/// a test implements it over a scripted answer.
+pub trait AskFounderAddress {
+    /// The address the person typed, or `None` when they gave none.
+    fn ask_founder_address(&mut self) -> Result<Option<String>, JoyError>;
+}
+
+/// The terminal ask: two sentences and one line of input. Generic over
+/// its reader and writer so a test drives it with a fake stdin.
+///
+/// The question goes to the WRITER (the CLI passes stderr), so `joy init`
+/// keeps one thing on stdout.
+pub struct TerminalAsk<R: BufRead, W: Write> {
+    input: R,
+    output: W,
+    tries: u32,
+}
+
+impl<R: BufRead, W: Write> TerminalAsk<R, W> {
+    pub fn new(input: R, output: W) -> Self {
+        TerminalAsk {
+            input,
+            output,
+            tries: 3,
+        }
+    }
+}
+
+impl TerminalAsk<std::io::BufReader<std::io::Stdin>, std::io::Stderr> {
+    /// The ask a person typing `joy init` sees.
+    pub fn stdio() -> Self {
+        TerminalAsk::new(std::io::BufReader::new(std::io::stdin()), std::io::stderr())
+    }
+}
+
+impl<R: BufRead, W: Write> AskFounderAddress for TerminalAsk<R, W> {
+    fn ask_founder_address(&mut self) -> Result<Option<String>, JoyError> {
+        let io = |e: std::io::Error| JoyError::Git(format!("cannot ask for the address: {e}"));
+        writeln!(
+            self.output,
+            "This project does not know who you are yet, and git config names nobody."
+        )
+        .map_err(io)?;
+        writeln!(
+            self.output,
+            "Your address becomes the founding member of this project."
+        )
+        .map_err(io)?;
+        for _ in 0..self.tries {
+            write!(self.output, "Address: ").map_err(io)?;
+            self.output.flush().map_err(io)?;
+            let mut line = String::new();
+            if self.input.read_line(&mut line).map_err(io)? == 0 {
+                // stdin closed: nobody is answering after all.
+                return Ok(None);
+            }
+            let answer = line.trim();
+            if answer.is_empty() {
+                return Ok(None);
+            }
+            if looks_like_an_address(answer) {
+                return Ok(Some(answer.to_string()));
+            }
+            writeln!(self.output, "An address looks like you@example.com.").map_err(io)?;
+        }
+        Ok(None)
+    }
+}
+
+/// The shape check the ask applies before it accepts a typed answer: one
+/// `@`, something on both sides, no whitespace. Deliberately not an RFC
+/// 5322 parser; it catches a typo, it does not judge an address.
+fn looks_like_an_address(candidate: &str) -> bool {
+    let Some((local, domain)) = candidate.split_once('@') else {
+        return false;
+    };
+    !local.is_empty()
+        && !domain.is_empty()
+        && !domain.contains('@')
+        && !candidate.chars().any(char::is_whitespace)
 }
 
 #[derive(Debug)]
@@ -70,6 +178,10 @@ pub struct InitResult {
     pub project_dir: PathBuf,
     pub git_initialized: bool,
     pub git_existed: bool,
+    /// The founding member this init registered. The caller's next step
+    /// (setting up authentication) takes it from here instead of asking
+    /// git config a second time (D3.9).
+    pub founder: String,
 }
 
 pub struct OnboardResult {
@@ -78,7 +190,9 @@ pub struct OnboardResult {
 }
 
 pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
-    let root = &options.root;
+    let mut options = options;
+    let root_dir = options.root.clone();
+    let root = root_dir.as_path();
     let joy_dir = store::joy_dir(root);
 
     if store::is_initialized(root) {
@@ -91,8 +205,13 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
     // the founder's identity (--user or git user.email) BEFORE writing anything,
     // and fail fast with guidance rather than leave a member-less project on disk
     // that cannot be recovered without re-init (JOY-01CA-AF).
-    let founder_email =
-        resolve_founder_email(root, options.user.as_deref())?.ok_or(JoyError::NoFounderIdentity)?;
+    let founder_email = match resolve_founder_email(root, options.user.as_deref())? {
+        Some(email) => email,
+        // Nothing on file and nothing given. A host with a person in front
+        // of it asks; every other host refuses by name (D3.9) instead of
+        // telling a server to run `git config`.
+        None => ask_for_founder_address(root, options.host, options.ask.as_deref_mut())?,
+    };
 
     // Detect or initialize git
     let vcs = default_vcs();
@@ -174,7 +293,33 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
         project_dir: joy_dir,
         git_initialized,
         git_existed,
+        founder: founder_email,
     })
+}
+
+/// The founding address from the person at this terminal, or the named
+/// refusal of D3.9. An `Interactive` host without an ask (a `--json` run,
+/// a piped stdin) refuses like a background host: there is nobody to answer.
+fn ask_for_founder_address(
+    root: &Path,
+    host: HostKind,
+    ask: Option<&mut (dyn AskFounderAddress + 'static)>,
+) -> Result<String, JoyError> {
+    if !host.may_ask() {
+        return Err(JoyError::NoFounderIdentity);
+    }
+    let Some(ask) = ask else {
+        return Err(JoyError::NoFounderIdentity);
+    };
+    let answer = ask
+        .ask_founder_address()?
+        .map(|a| a.trim().to_string())
+        .filter(|a| !a.is_empty())
+        .ok_or(JoyError::NoFounderIdentity)?;
+    // A typed address is an explicit override and passes the same alias
+    // guard as `--user`.
+    refuse_forge_alias(root, &answer)?;
+    Ok(answer)
 }
 
 /// Resolve the founding member's e-mail: an explicit `--user` override, else the
@@ -193,14 +338,30 @@ fn resolve_founder_email(
         .filter(|s| !s.is_empty())
         .or_else(|| default_vcs().user_email().ok().filter(|s| !s.is_empty()));
     if let Some(email) = &email {
-        let remotes = default_vcs().all_remotes(root).unwrap_or_default();
-        if let Some(spec) = crate::forge_plugins::responsible_plugin(None, root, &remotes) {
-            if crate::forge_plugins::resolve(spec, root, email).is_some() {
-                return Err(JoyError::FounderAliasIdentity(email.clone()));
-            }
-        }
+        refuse_forge_alias(root, email)?;
     }
     Ok(email)
+}
+
+/// The capture guard itself, applied to EVERY founding address: the one
+/// from git config, the one `--user` names, and the one a person types at
+/// the ask. Decided this way on purpose (D4.4): an explicit override is
+/// not a reason to let a forge alias become a member key, because the
+/// split identity it produces is the same in both cases, and the person
+/// who typed it cannot see that their forge handed them an alias. The
+/// surfaces that OFFER addresses filter aliases out before they show them,
+/// so a person only meets this refusal when they type one themselves.
+///
+/// Whether an address is an alias stays the responsible plugin's judgement
+/// alone; without remotes or plugins nothing changes.
+fn refuse_forge_alias(root: &Path, email: &str) -> Result<(), JoyError> {
+    let remotes = default_vcs().all_remotes(root).unwrap_or_default();
+    if let Some(spec) = crate::forge_plugins::responsible_plugin(None, root, &remotes) {
+        if crate::forge_plugins::resolve(spec, root, email).is_some() {
+            return Err(JoyError::FounderAliasIdentity(email.to_string()));
+        }
+    }
+    Ok(())
 }
 
 /// Outcome of [`ensure_founder`].
@@ -517,15 +678,156 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    /// An ask with the answers a person would have typed. `None` is the
+    /// person who typed nothing.
+    struct ScriptedAsk {
+        answers: Vec<Option<String>>,
+        asked: usize,
+    }
+
+    impl ScriptedAsk {
+        fn saying(answer: &str) -> Self {
+            ScriptedAsk {
+                answers: vec![Some(answer.to_string())],
+                asked: 0,
+            }
+        }
+
+        fn silent() -> Self {
+            ScriptedAsk {
+                answers: vec![None],
+                asked: 0,
+            }
+        }
+    }
+
+    impl AskFounderAddress for ScriptedAsk {
+        fn ask_founder_address(&mut self) -> Result<Option<String>, JoyError> {
+            let answer = self.answers.get(self.asked).cloned().unwrap_or(None);
+            self.asked += 1;
+            Ok(answer)
+        }
+    }
+
+    /// The ask over a fake stdin: one line, and that line is the founder.
+    #[test]
+    fn the_terminal_ask_reads_the_address_from_its_input() {
+        let mut asked = Vec::new();
+        let answer = TerminalAsk::new(
+            std::io::Cursor::new("founder@example.com\n".as_bytes()),
+            &mut asked,
+        )
+        .ask_founder_address()
+        .unwrap();
+        assert_eq!(answer.as_deref(), Some("founder@example.com"));
+        let shown = String::from_utf8(asked).unwrap();
+        assert!(shown.contains("does not know who you are"), "{shown}");
+        assert!(shown.contains("Address: "), "{shown}");
+    }
+
+    /// A typo is answered with the shape, not with a member named "oops".
+    #[test]
+    fn the_terminal_ask_asks_again_after_something_that_is_no_address() {
+        let mut asked = Vec::new();
+        let answer = TerminalAsk::new(
+            std::io::Cursor::new("oops\nfounder@example.com\n".as_bytes()),
+            &mut asked,
+        )
+        .ask_founder_address()
+        .unwrap();
+        assert_eq!(answer.as_deref(), Some("founder@example.com"));
+        assert!(String::from_utf8(asked)
+            .unwrap()
+            .contains("looks like you@example.com"));
+    }
+
+    /// Three typos end the ask instead of looping forever, and a closed
+    /// stdin ends it at once: both are "nobody answered".
+    #[test]
+    fn the_terminal_ask_gives_up_instead_of_looping() {
+        let mut asked = Vec::new();
+        assert_eq!(
+            TerminalAsk::new(std::io::Cursor::new("a\nb\nc\nd\n".as_bytes()), &mut asked)
+                .ask_founder_address()
+                .unwrap(),
+            None
+        );
+        let mut closed = Vec::new();
+        assert_eq!(
+            TerminalAsk::new(std::io::Cursor::new(&b""[..]), &mut closed)
+                .ask_founder_address()
+                .unwrap(),
+            None
+        );
+        let mut empty = Vec::new();
+        assert_eq!(
+            TerminalAsk::new(std::io::Cursor::new("\n".as_bytes()), &mut empty)
+                .ask_founder_address()
+                .unwrap(),
+            None
+        );
+    }
+
+    /// D3.9: a host with a person in front of it takes the typed address.
+    #[test]
+    fn an_interactive_host_takes_the_address_the_person_types() {
+        let dir = tempdir().unwrap();
+        let mut ask = ScriptedAsk::saying("founder@example.com");
+        let founder =
+            ask_for_founder_address(dir.path(), HostKind::Interactive, Some(&mut ask)).unwrap();
+        assert_eq!(founder, "founder@example.com");
+        assert_eq!(ask.asked, 1);
+    }
+
+    /// D3.9: a background or delegated host refuses with the named
+    /// sentence and asks nobody, even when an ask is at hand.
+    #[test]
+    fn a_host_with_nobody_at_it_refuses_by_name() {
+        let dir = tempdir().unwrap();
+        for host in [HostKind::Background, HostKind::Delegated] {
+            let mut ask = ScriptedAsk::saying("founder@example.com");
+            let err = ask_for_founder_address(dir.path(), host, Some(&mut ask)).unwrap_err();
+            assert_eq!(
+                err.to_string(),
+                "this project does not know who you are; run joy init --user <address>"
+            );
+            assert_eq!(ask.asked, 0, "{host:?} must ask nobody");
+        }
+    }
+
+    /// An interactive host that brought no ask (a `--json` run, a piped
+    /// stdin) is in the same position as a background one.
+    #[test]
+    fn an_interactive_host_without_an_ask_refuses_too() {
+        let dir = tempdir().unwrap();
+        let err = ask_for_founder_address(dir.path(), HostKind::Interactive, None).unwrap_err();
+        assert!(matches!(err, JoyError::NoFounderIdentity));
+        let mut silent = ScriptedAsk::silent();
+        let err = ask_for_founder_address(dir.path(), HostKind::Interactive, Some(&mut silent))
+            .unwrap_err();
+        assert!(matches!(err, JoyError::NoFounderIdentity));
+    }
+
+    /// The shape check the ask applies: enough to catch a typo, not a
+    /// judgement about the address.
+    #[test]
+    fn an_address_has_one_at_sign_and_no_spaces() {
+        assert!(looks_like_an_address("a@b.c"));
+        assert!(!looks_like_an_address("a@b@c"));
+        assert!(!looks_like_an_address("nobody"));
+        assert!(!looks_like_an_address("@example.com"));
+        assert!(!looks_like_an_address("me@"));
+        assert!(!looks_like_an_address("me @example.com"));
+    }
+
     #[test]
     fn init_creates_directory_structure() {
         let dir = tempdir().unwrap();
         let result = init(InitOptions {
-            root: dir.path().to_path_buf(),
             name: Some("Test Project".into()),
             acronym: Some("TP".into()),
             user: Some("test@example.com".to_string()),
-            language: None,
+            ..InitOptions::new(dir.path().to_path_buf())
         })
         .unwrap();
 
@@ -547,11 +849,10 @@ mod tests {
     fn init_writes_project_metadata() {
         let dir = tempdir().unwrap();
         init(InitOptions {
-            root: dir.path().to_path_buf(),
             name: Some("My App".into()),
             acronym: Some("MA".into()),
             user: Some("test@example.com".to_string()),
-            language: None,
+            ..InitOptions::new(dir.path().to_path_buf())
         })
         .unwrap();
 
@@ -565,11 +866,10 @@ mod tests {
     fn init_derives_name_from_directory() {
         let dir = tempdir().unwrap();
         init(InitOptions {
-            root: dir.path().to_path_buf(),
             name: None,
             acronym: None,
             user: Some("test@example.com".to_string()),
-            language: None,
+            ..InitOptions::new(dir.path().to_path_buf())
         })
         .unwrap();
 
@@ -584,20 +884,18 @@ mod tests {
     fn init_fails_if_already_initialized() {
         let dir = tempdir().unwrap();
         init(InitOptions {
-            root: dir.path().to_path_buf(),
             name: Some("Test".into()),
             acronym: None,
             user: Some("test@example.com".to_string()),
-            language: None,
+            ..InitOptions::new(dir.path().to_path_buf())
         })
         .unwrap();
 
         let err = init(InitOptions {
-            root: dir.path().to_path_buf(),
             name: Some("Test".into()),
             acronym: None,
             user: Some("test@example.com".to_string()),
-            language: None,
+            ..InitOptions::new(dir.path().to_path_buf())
         })
         .unwrap_err();
 
@@ -608,11 +906,10 @@ mod tests {
     fn init_creates_gitignore_with_credentials_entry() {
         let dir = tempdir().unwrap();
         init(InitOptions {
-            root: dir.path().to_path_buf(),
             name: Some("Test".into()),
             acronym: None,
             user: Some("test@example.com".to_string()),
-            language: None,
+            ..InitOptions::new(dir.path().to_path_buf())
         })
         .unwrap();
 
@@ -626,11 +923,10 @@ mod tests {
         let dir = tempdir().unwrap();
         // First init creates the block
         init(InitOptions {
-            root: dir.path().to_path_buf(),
             name: Some("Test".into()),
             acronym: None,
             user: Some("test@example.com".to_string()),
-            language: None,
+            ..InitOptions::new(dir.path().to_path_buf())
         })
         .unwrap();
         let first = std::fs::read_to_string(dir.path().join(".gitignore")).unwrap();
@@ -647,11 +943,10 @@ mod tests {
     fn init_writes_gitattributes_block_with_joy_yaml_and_union_log() {
         let dir = tempdir().unwrap();
         init(InitOptions {
-            root: dir.path().to_path_buf(),
             name: Some("Test".into()),
             acronym: None,
             user: Some("test@example.com".to_string()),
-            language: None,
+            ..InitOptions::new(dir.path().to_path_buf())
         })
         .unwrap();
 
@@ -672,11 +967,10 @@ mod tests {
     fn init_does_not_duplicate_gitattributes_block() {
         let dir = tempdir().unwrap();
         init(InitOptions {
-            root: dir.path().to_path_buf(),
             name: Some("Test".into()),
             acronym: None,
             user: Some("test@example.com".to_string()),
-            language: None,
+            ..InitOptions::new(dir.path().to_path_buf())
         })
         .unwrap();
         let first = std::fs::read_to_string(dir.path().join(".gitattributes")).unwrap();
@@ -692,11 +986,10 @@ mod tests {
     fn init_registers_merge_driver_in_git_config() {
         let dir = tempdir().unwrap();
         init(InitOptions {
-            root: dir.path().to_path_buf(),
             name: Some("Test".into()),
             acronym: None,
             user: Some("test@example.com".to_string()),
-            language: None,
+            ..InitOptions::new(dir.path().to_path_buf())
         })
         .unwrap();
 
@@ -713,11 +1006,10 @@ mod tests {
     fn init_initializes_git_if_needed() {
         let dir = tempdir().unwrap();
         let result = init(InitOptions {
-            root: dir.path().to_path_buf(),
             name: Some("Test".into()),
             acronym: None,
             user: Some("test@example.com".to_string()),
-            language: None,
+            ..InitOptions::new(dir.path().to_path_buf())
         })
         .unwrap();
 

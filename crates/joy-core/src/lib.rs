@@ -16,6 +16,7 @@ pub mod forge_plugins;
 pub mod fortune;
 pub mod git_ops;
 pub mod guard;
+pub mod host;
 pub mod identity;
 pub mod init;
 pub mod items;

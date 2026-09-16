@@ -1155,9 +1155,43 @@ pub fn joy_dirty_fingerprint(repo_dir: &Path) -> Vec<String> {
         .collect()
 }
 
-/// The repo's configured identity (user.name, user.email) — what the CLI
-/// would commit as; it must map to a Joy member (Git-Integration
-/// concept). An honest error when it is not configured.
+/// The commit signature of the acting member (D4.5 of the forge
+/// connection NG design): the ONE place that decides what git2 stamps on
+/// a commit joy writes.
+///
+/// * Open mode: the e-mail is the member id (the member's address) and
+///   the name is `config_name` when the caller established that git
+///   config maps to THIS member, else the member id. joy never signs with
+///   a name it cannot attribute.
+/// * Anonymous mode (ADR-042): the opaque `m-<id>` in BOTH fields, never
+///   the address, so a git2 commit cannot undo the privacy mode.
+/// * Both fields are guaranteed non-empty, because `git_signature_new`
+///   refuses an empty name or e-mail; when no member is known at all the
+///   caller gets the typed error instead of a commit signed by nobody.
+pub fn member_signature(
+    member: &str,
+    config_name: Option<&str>,
+) -> Result<(String, String), crate::error::JoyError> {
+    let member = member.trim();
+    if member.is_empty() {
+        return Err(crate::error::JoyError::UnknownActingMember);
+    }
+    if crate::member_id::is_opaque_member_id(member) {
+        return Ok((member.to_string(), member.to_string()));
+    }
+    let name = config_name
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .unwrap_or(member);
+    Ok((name.to_string(), member.to_string()))
+}
+
+/// PREFILL ONLY (D4.5): the identity the repository's git config carries.
+/// It is a suggestion for a mask and the source of the DISPLAY NAME in
+/// [`member_signature`], never the identity of a commit and never a member
+/// key on its own. Demoted from "what the CLI commits as": a Joy commit is
+/// signed for the acting member, which joy resolves through
+/// `joy_core::identity`, and a project may have no git config at all.
 pub fn repo_identity(repo_dir: &Path) -> anyhow::Result<(String, String)> {
     let repo = open(repo_dir).map_err(err)?;
     let sig = repo.signature().map_err(|e| {
@@ -2217,6 +2251,55 @@ mod init_on_git2_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// D4.5, open mode: the e-mail is the member, and the display name is
+    /// the git config name only when that config maps to this member.
+    #[test]
+    fn an_open_mode_signature_carries_the_member_as_the_address() {
+        assert_eq!(
+            member_signature("scotty@example.com", Some("Scotty")).unwrap(),
+            ("Scotty".to_string(), "scotty@example.com".to_string())
+        );
+        // no name joy can attribute: the member id stands in for it
+        assert_eq!(
+            member_signature("scotty@example.com", None).unwrap(),
+            (
+                "scotty@example.com".to_string(),
+                "scotty@example.com".to_string()
+            )
+        );
+        // an empty or blank configured name is not a name (git2 refuses it)
+        assert_eq!(
+            member_signature("scotty@example.com", Some("   ")).unwrap(),
+            (
+                "scotty@example.com".to_string(),
+                "scotty@example.com".to_string()
+            )
+        );
+    }
+
+    /// D4.5, anonymous mode (ADR-042): the opaque id in BOTH fields, and
+    /// no git config name can smuggle a person's name into a commit.
+    #[test]
+    fn an_anonymous_signature_is_the_opaque_id_in_both_fields() {
+        let id = crate::member_id::opaque_member_id(&"ab".repeat(32)).unwrap();
+        assert!(crate::member_id::is_opaque_member_id(&id));
+        assert_eq!(
+            member_signature(&id, Some("Scotty")).unwrap(),
+            (id.clone(), id.clone())
+        );
+    }
+
+    /// D4.5: no member, no commit, and the sentence says what to do.
+    #[test]
+    fn a_signature_without_a_member_is_the_typed_error() {
+        let err = member_signature("   ", Some("Scotty")).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "this project does not know who you are, pick your member"
+        );
+        assert!(matches!(err, crate::error::JoyError::UnknownActingMember));
+    }
 
     /// A forge that accepts the connection and then says nothing, the way
     /// Codeberg's proxy did on 2026-09-03 before its own 504 at thirty

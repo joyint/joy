@@ -9,18 +9,29 @@
 
 load setup
 
-@test "joy init fails fast without a git identity and leaves nothing behind" {
+@test "joy init refuses by name when nobody can be asked, and leaves nothing behind" {
     # setup() configured a git identity; remove it to model a fresh repo whose
     # author never ran `git config`. HOME is isolated to TEST_DIR, so there is no
-    # global identity to fall back on either.
+    # global identity to fall back on either. bats gives joy no terminal, so
+    # this is the background host of D3.9: it refuses instead of asking.
     git config --unset user.email
     git config --unset user.name || true
 
     run joy init --name "Late Identity"
     [ "$status" -ne 0 ]
-    # The error names the fix (set git user.email or pass --user).
-    [[ "$output" == *"user.email"* ]]
+    # The named refusal sentence, with the way out in it.
+    [[ "$output" == *"this project does not know who you are; run joy init --user <address>"* ]]
     # Fail-fast must not leave a half-initialized project on disk.
+    [ ! -d .joy ]
+}
+
+@test "joy init under a delegation session refuses by name" {
+    git config --unset user.email
+    git config --unset user.name || true
+
+    JOY_SESSION="sid:0000" run joy init --name "Delegated"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"this project does not know who you are; run joy init --user <address>"* ]]
     [ ! -d .joy ]
 }
 

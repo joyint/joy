@@ -681,11 +681,10 @@ mod tests {
     fn repo() -> tempfile::TempDir {
         let dir = tempfile::tempdir().expect("tempdir");
         joy_core::init::init(joy_core::init::InitOptions {
-            root: dir.path().to_path_buf(),
             name: Some("Chats".into()),
             acronym: Some("CH".into()),
             user: Some("horst@example.com".into()),
-            language: None,
+            ..joy_core::init::InitOptions::new(dir.path().to_path_buf())
         })
         .unwrap();
         let seed = [5u8; 32];
@@ -1101,11 +1100,10 @@ mod channel_tests {
     fn repo() -> tempfile::TempDir {
         let dir = tempfile::tempdir().expect("tempdir");
         joy_core::init::init(joy_core::init::InitOptions {
-            root: dir.path().to_path_buf(),
             name: Some("Chats".into()),
             acronym: Some("CH".into()),
             user: Some("horst@example.com".into()),
-            language: None,
+            ..joy_core::init::InitOptions::new(dir.path().to_path_buf())
         })
         .unwrap();
         let seed = [5u8; 32];

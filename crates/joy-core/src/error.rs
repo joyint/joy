@@ -8,12 +8,17 @@ pub enum JoyError {
     #[error("project already initialized at {0}")]
     AlreadyInitialized(PathBuf),
 
-    #[error(
-        "cannot register the founding member: no git user.email is set and no --user was given.\n\
-         Set your identity first, then re-run:\n  git config user.email \"you@example.com\"\n  \
-         git config user.name \"Your Name\"\nor: joy init --user you@example.com"
-    )]
+    /// No founding address and nobody to ask for one: the named refusal of
+    /// the forge connection NG design (D3.9). A host that CAN ask a person
+    /// asks instead of raising this.
+    #[error("this project does not know who you are; run joy init --user <address>")]
     NoFounderIdentity,
+
+    /// A write needs an acting member and none is known: no delegation
+    /// session, no member pinned on this device, and no git config that
+    /// names a member of this project (D4.5).
+    #[error("this project does not know who you are, pick your member")]
+    UnknownActingMember,
 
     #[error(
         "{0} is a forge alias address, not an identity (JOY-0253-8A).\n\

@@ -188,7 +188,7 @@ pub fn run(args: AuthArgs) -> Result<()> {
         Some(AuthCommand::Recover(a)) => run_recover(a, args.passphrase.as_deref(), stdin),
         None => {
             if let Some(otp) = args.otp.as_deref() {
-                run_auth_otp(otp, args.passphrase.as_deref(), stdin)
+                run_auth_otp(otp, args.passphrase.as_deref(), stdin, args.user.as_deref())
             } else {
                 run_auth(
                     args.passphrase.as_deref(),
@@ -301,8 +301,11 @@ pub(crate) fn run_init(
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
     let mut project = store::read_project(&project_path)?;
 
-    // Determine who we are
-    let email = resolve_user(user_flag)?;
+    // Determine who we are. The member is NAMED here (D3.9): `--user`,
+    // else the member this device pinned, else git config as a prefill,
+    // else the project's only member. A founder created with
+    // `joy init --user` on a machine without a git config enrols this way.
+    let email = joy_core::identity::acting_member(&root, &project, user_flag)?;
     let member = project.member_by_email(&email);
     if member.is_none() {
         anyhow::bail!(
@@ -1475,20 +1478,31 @@ fn run_recover(
 /// currently has no attestation, reverse-attests the founder with the
 /// redeemer's fresh identity key (JOY-00FD-93). Closes the attestation
 /// chain implicitly, without CLI output.
-fn run_auth_otp(otp: &str, passphrase_flag: Option<&str>, passphrase_stdin: bool) -> Result<()> {
+fn run_auth_otp(
+    otp: &str,
+    passphrase_flag: Option<&str>,
+    passphrase_stdin: bool,
+    user_flag: Option<&str>,
+) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
-    let email = joy_core::vcs::default_vcs().user_email()?;
+    // Who redeems is the host's answer, not git config's (D3.9). When
+    // nothing here names a member, the OTP still does: it is an identity
+    // proof of its own (JOY-0257-FC), so an unresolvable name is no reason
+    // to refuse before the redemption was even tried.
+    let project = store::load_project(&root)?;
+    let member = joy_core::identity::acting_member(&root, &project, user_flag).ok();
 
     // The redemption itself (verify the OTP, derive and apply the wrapped
     // seed, close the founder attestation, open a session) lives in joy-core
     // so the desktop app runs the exact same flow instead of shelling out or
     // re-implementing it; only the I/O below is the CLI's.
     let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "Choose passphrase: ")?;
-    let outcome = joy_core::auth::enroll::redeem_with_passphrase(&root, otp, &passphrase)?;
+    let outcome =
+        joy_core::auth::enroll::redeem_with_passphrase(&root, otp, &passphrase, member.as_deref())?;
 
-    println!("Authentication initialized for {}.", email);
+    println!("Authentication initialized for {}.", outcome.member_key);
     println!("Public key registered. Session active (24h).");
     println!();
     println!("RECOVERY KEY (write this down now, it is shown only once):");
@@ -1498,7 +1512,7 @@ fn run_auth_otp(otp: &str, passphrase_flag: Option<&str>, passphrase_stdin: bool
     println!("Use it with `joy auth recover --recovery-key` if you ever forget");
     println!("your passphrase. Joy never stores the plaintext recovery key.");
 
-    joy_core::git_ops::auto_git_post_command(&root, "auth otp", &email);
+    joy_core::git_ops::auto_git_post_command(&root, "auth otp", &outcome.member_key);
 
     Ok(())
 }

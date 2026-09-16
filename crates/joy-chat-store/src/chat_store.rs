@@ -530,11 +530,10 @@ mod tests {
     fn project() -> (tempfile::TempDir, [u8; 32], [u8; 32]) {
         let dir = tempfile::tempdir().unwrap();
         joy_core::init::init(joy_core::init::InitOptions {
-            root: dir.path().to_path_buf(),
             name: Some("Sealed".into()),
             acronym: Some("SL".into()),
             user: Some("horst@example.com".into()),
-            language: None,
+            ..joy_core::init::InitOptions::new(dir.path().to_path_buf())
         })
         .unwrap();
         let (horst_seed, anna_seed) = ([1u8; 32], [3u8; 32]);
