@@ -1,0 +1,8 @@
+# Every child process goes through joy-process (JOY-028F-0B). Under a
+# GUI host on Windows a direct spawn opens a console WINDOW, which is
+# what the desktop app flashed all day; the helper decides per host and
+# is the only place allowed to build a Command.
+disallowed-methods = [
+    { path = "std::process::Command::new", reason = "use joy_process::command(..) so a GUI host on Windows opens no console window" },
+    { path = "tokio::process::Command::new", reason = "build it with joy_process::command(..) and convert: tokio::process::Command::from(..)" },
+]

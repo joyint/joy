@@ -15,7 +15,7 @@
 
 use std::io::Read;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
@@ -320,7 +320,7 @@ fn run_query_full(
     env: Option<(&str, &str)>,
     timeout: Duration,
 ) -> Option<String> {
-    let mut command = Command::new(binary);
+    let mut command = joy_process::command(binary);
     if let Some((var, value)) = env {
         command.env(var, value);
     }

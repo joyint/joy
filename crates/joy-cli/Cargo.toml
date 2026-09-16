@@ -13,6 +13,7 @@ name = "joy"
 path = "src/main.rs"
 
 [dependencies]
+joy-process = { workspace = true }
 joy-core = { version = "0.20.0", path = "../joy-core", features = ["tutorial"] }
 tempfile = "3"
 joy-chat = { version = "0.20.0", path = "../joy-chat" }

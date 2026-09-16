@@ -8,6 +8,7 @@ repository = "https://github.com/joyint/joy"
 homepage = "https://joyint.com/en/joy"
 
 [dependencies]
+joy-process = { workspace = true }
 joy-core = { version = "0.20.0", path = "../joy-core" }
 # The lane records its session-mode decisions (JOY-0280-A5); the same
 # subscriber joy-core feeds. Unconditional, so the `acp` feature builds

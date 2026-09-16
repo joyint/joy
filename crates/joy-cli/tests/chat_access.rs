@@ -9,13 +9,12 @@
 //! delegation token) is part of the answer.
 
 use std::path::Path;
-use std::process::Command;
 
 const PASS: &str = "correct horse battery staple";
 
 /// Run `joy` in `root` with its own HOME, and return stdout.
 fn joy(root: &Path, home: &Path, args: &[&str]) -> String {
-    let out = Command::new(env!("CARGO_BIN_EXE_joy"))
+    let out = joy_process::command(env!("CARGO_BIN_EXE_joy"))
         .args(args)
         .current_dir(root)
         .env("HOME", home)
@@ -38,7 +37,7 @@ fn project(dir: &Path) -> (std::path::PathBuf, std::path::PathBuf) {
     std::fs::create_dir_all(&root).unwrap();
     std::fs::create_dir_all(&home).unwrap();
     let git = |args: &[&str]| {
-        Command::new("git")
+        joy_process::command("git")
             .args(args)
             .current_dir(&root)
             .output()
@@ -111,7 +110,7 @@ fn a_passphrase_change_keeps_the_chats_readable() {
 /// Run `joy`, returning stdout even when the command failed (the caller
 /// asserts on the content).
 fn joy_try(root: &Path, home: &Path, args: &[&str]) -> String {
-    let out = Command::new(env!("CARGO_BIN_EXE_joy"))
+    let out = joy_process::command(env!("CARGO_BIN_EXE_joy"))
         .args(args)
         .current_dir(root)
         .env("HOME", home)

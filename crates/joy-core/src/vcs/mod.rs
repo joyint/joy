@@ -9,7 +9,6 @@
 //! on the binary.
 
 use std::path::Path;
-use std::process::Command;
 
 use crate::error::JoyError;
 
@@ -49,7 +48,7 @@ pub struct GitVcs;
 /// Run a git command and return stdout as a trimmed string.
 /// Returns a descriptive error if git is not found or the command fails.
 fn git_output(root: &Path, args: &[&str]) -> Result<String, JoyError> {
-    let output = Command::new("git")
+    let output = joy_process::command("git")
         .args(args)
         .current_dir(root)
         .output()
@@ -76,7 +75,7 @@ fn git_output(root: &Path, args: &[&str]) -> Result<String, JoyError> {
 
 /// Run a git command silently (ignore stdout/stderr), return Ok/Err.
 fn git_run(root: &Path, args: &[&str]) -> Result<(), JoyError> {
-    let output = Command::new("git")
+    let output = joy_process::command("git")
         .args(args)
         .current_dir(root)
         .output()
@@ -305,7 +304,7 @@ pub fn commit_unix_time(rev: &str) -> Option<i64> {
     if rev.is_empty() || rev.starts_with('%') {
         return None;
     }
-    let out = Command::new("git")
+    let out = joy_process::command("git")
         .args(["log", "-1", "--format=%ct", rev])
         .output()
         .ok()?;
@@ -318,7 +317,7 @@ pub fn commit_unix_time(rev: &str) -> Option<i64> {
 /// Staged paths relative to the repo root (added/modified/renamed), via
 /// `git diff --cached --name-only`.
 pub fn staged_paths(root: &Path) -> Vec<String> {
-    let out = Command::new("git")
+    let out = joy_process::command("git")
         .arg("-C")
         .arg(root)
         .args(["diff", "--cached", "--name-only", "--diff-filter=ACMR"])
@@ -335,7 +334,7 @@ pub fn staged_paths(root: &Path) -> Vec<String> {
 
 /// Whether `remote` is configured in this checkout.
 pub fn remote_exists(root: &Path, remote: &str) -> bool {
-    Command::new("git")
+    joy_process::command("git")
         .arg("-C")
         .arg(root)
         .args(["remote", "get-url", remote])
@@ -377,7 +376,12 @@ fn transfer(root: &Path, args: &[&str]) -> RefTransfer {
             .unwrap_or_default()
     );
     let _s = span.enter();
-    match Command::new("git").arg("-C").arg(root).args(args).output() {
+    match joy_process::command("git")
+        .arg("-C")
+        .arg(root)
+        .args(args)
+        .output()
+    {
         Ok(out) if out.status.success() => RefTransfer::Done,
         Ok(out) => RefTransfer::Refused(String::from_utf8_lossy(&out.stderr).into_owned()),
         Err(e) => RefTransfer::GitUnavailable(e.to_string()),
@@ -386,7 +390,7 @@ fn transfer(root: &Path, args: &[&str]) -> RefTransfer {
 
 /// Whether git tracks `path` in this checkout.
 pub fn path_is_tracked(root: &Path, path: &str) -> bool {
-    let output = Command::new("git")
+    let output = joy_process::command("git")
         .arg("-C")
         .arg(root)
         .args(["ls-files", "--error-unmatch", "--", path])
@@ -398,7 +402,7 @@ pub fn path_is_tracked(root: &Path, path: &str) -> bool {
 
 /// Untrack `path` (keep the file). Warns and answers false on failure.
 pub fn rm_cached(root: &Path, path: &str) -> bool {
-    let status = Command::new("git")
+    let status = joy_process::command("git")
         .arg("-C")
         .arg(root)
         .args(["rm", "--cached", "-r", "--quiet", "--", path])
@@ -416,7 +420,7 @@ pub fn rm_cached(root: &Path, path: &str) -> bool {
 
 /// Remove `path` from tree and index. Warns and answers false on failure.
 pub fn rm_hard(root: &Path, path: &str) -> bool {
-    let status = Command::new("git")
+    let status = joy_process::command("git")
         .arg("-C")
         .arg(root)
         .args(["rm", "-r", "--quiet", "--ignore-unmatch", "--", path])

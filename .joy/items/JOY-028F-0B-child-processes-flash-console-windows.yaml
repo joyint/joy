@@ -1,15 +1,17 @@
 id: JOY-028F-0B
 title: Child processes flash console windows under a GUI host on Windows
 type: bug
-status: new
+status: in-progress
 priority: high
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 - review
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-16T05:07:38.296799803Z
-updated: 2026-09-16T05:07:38.296799803Z
+updated: 2026-09-16T05:18:53.863127031Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Reported 2026-09-15 from the first install of the public Windows build (JAPP-02CE-5D): the desktop app opens and closes console windows in the background continuously. macOS and Linux never showed it, and never can: a console window is a Windows-only concept.
@@ -35,3 +37,7 @@ description: |-
   - [ ] clippy disallowed-methods across the workspace
   - [ ] unit test for the decision, Windows integration test for the flag
   - [ ] verified in the app on Windows (JAPP-02CE-5D)
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-16T05:18:53.791342540Z
+  text: 'Plan: 1) crates/joy-process: pub fn command(program) -> std::process::Command, plus the pure decision fn no_console_child() so the rule is testable everywhere; on Windows GetConsoleWindow() (windows-sys, cfg(windows) only, cached in a OnceLock) decides, and when it is null the command gets CREATE_NO_WINDOW and GIT_TERMINAL_PROMPT=0. 2) Route every spawn in joy-core (vcs/mod.rs, forge_plugins.rs, tutorial.rs), joy-chat-store (chat_ref.rs), joy-ai (ai_setup.rs), joy-cli (editor.rs, crypt.rs, ps_alias.rs) and the three forge plugins through it. 3) clippy.toml disallowed-methods for std::process::Command::new and tokio::process::Command::new, allowed inside joy-process only. 4) Unit tests for the decision on every platform; a cfg(windows) integration test that calls FreeConsole() and asserts the child has no visible console window. 5) just check in joy, then cargo check in the app worktree (path dep on joy-core, CONTRIBUTING: check downstream). Branch fix/joy-no-window-spawns in a worktree; the app side follows in JAPP-02CE-5D.'

@@ -14,7 +14,7 @@
 //! so the module stays free of `anyhow`; CLI callers convert with `?`.
 
 use std::io::{self, IsTerminal, Write};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use termimad::MadSkin;
 
@@ -102,7 +102,11 @@ fn print_full(markdown: &str, use_pager: bool) -> io::Result<()> {
             Some((c, a)) => (*c, a),
             None => continue,
         };
-        let mut child = match Command::new(cmd).args(args).stdin(Stdio::piped()).spawn() {
+        let mut child = match joy_process::command(cmd)
+            .args(args)
+            .stdin(Stdio::piped())
+            .spawn()
+        {
             Ok(c) => c,
             Err(_) => continue,
         };
