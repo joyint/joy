@@ -1,7 +1,7 @@
 id: JOY-028F-0B
 title: Child processes flash console windows under a GUI host on Windows
 type: bug
-status: in-progress
+status: review
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -11,7 +11,7 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-16T05:07:38.296799803Z
-updated: 2026-09-16T05:18:53.863127031Z
+updated: 2026-09-16T05:29:02.538830011Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Reported 2026-09-15 from the first install of the public Windows build (JAPP-02CE-5D): the desktop app opens and closes console windows in the background continuously. macOS and Linux never showed it, and never can: a console window is a Windows-only concept.
@@ -41,3 +41,6 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-09-16T05:18:53.791342540Z
   text: 'Plan: 1) crates/joy-process: pub fn command(program) -> std::process::Command, plus the pure decision fn no_console_child() so the rule is testable everywhere; on Windows GetConsoleWindow() (windows-sys, cfg(windows) only, cached in a OnceLock) decides, and when it is null the command gets CREATE_NO_WINDOW and GIT_TERMINAL_PROMPT=0. 2) Route every spawn in joy-core (vcs/mod.rs, forge_plugins.rs, tutorial.rs), joy-chat-store (chat_ref.rs), joy-ai (ai_setup.rs), joy-cli (editor.rs, crypt.rs, ps_alias.rs) and the three forge plugins through it. 3) clippy.toml disallowed-methods for std::process::Command::new and tokio::process::Command::new, allowed inside joy-process only. 4) Unit tests for the decision on every platform; a cfg(windows) integration test that calls FreeConsole() and asserts the child has no visible console window. 5) just check in joy, then cargo check in the app worktree (path dep on joy-core, CONTRIBUTING: check downstream). Branch fix/joy-no-window-spawns in a worktree; the app side follows in JAPP-02CE-5D.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-16T05:29:02.483451893Z
+  text: '[x] crates/joy-process: command() builds every child; on Windows prepare() sets CREATE_NO_WINDOW and GIT_TERMINAL_PROMPT=0 exactly when GetConsoleWindow() is null (cached in a OnceLock). [x] Routed: joy-core (vcs/mod.rs, forge_plugins.rs, tutorial.rs), joy-chat-store (chat_ref.rs), joy-ai (ai_setup.rs), joy-cli (editor.rs, crypt.rs, ps_alias.rs, two test files) and joy-github/-gitlab/-gitea - 27 files. [x] clippy.toml disallows std::process::Command::new and tokio::process::Command::new; joy-process allows it for itself. [x] Tests: the program survives preparation and a unix command carries no extra env, everywhere; on Windows three more, driving both branches of prepare() against a probe that re-runs this test binary and reports whether its console window is visible. [x] Verified on Linux: cargo fmt, cargo clippy --workspace --all-targets -D warnings, the full suite green. [x] Downstream per CONTRIBUTING: cargo check --all-targets green in the desktop crate and in platform, both against this joy (worktrees are laid out as siblings). [ ] The Windows tests have not run yet - they need the windows-latest CI leg. [ ] The symptom itself is verified on a real Windows install in JAPP-02CE-5D. Commit a47ba81 on fix/joy-no-window-spawns.'
