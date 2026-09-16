@@ -1,0 +1,28 @@
+id: JOY-029C-01
+title: 'J4b: resolver assembly'
+type: story
+status: new
+priority: medium
+deps:
+- JOY-029B-B0
+- JOY-0294-D5
+- JOY-0299-98
+- JOY-029A-5A
+- JOY-0295-36
+capabilities:
+- plan
+- implement
+- review
+effort: 5
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-16T23:23:35.990911720Z
+updated: 2026-09-16T23:24:20.319199723Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Package J4b of the forge connection NG rebuild (JI epic JI-0190-3A; wave 2; owner project JOY). Design: joy/docs/design/forge-connection-ng.md (v5), section 4, and the design sections the package names. Read those sections before starting; every rule there is binding.
+
+  Depends on: J3 (token and web-url), J4a, J4h, J4p, J5.
+  Files: joy/crates/joy-core/src/vcs/forge.rs:116-190, the new resolver module.
+  Work: the candidate order of D1.2 with the twin trigger of decision 11 and the transport memory, twin computation and refusal conditions, insteadOf prediction, the push side tracking ref write and `push_update_reference`, the token cache with TTL, the `ContactEvidence` assembly handed to the classifier **J5 owns** (this package no longer defines the classifier, it feeds it), and the host kind parameter.
+  Acceptance: an ssh remote on a machine with a working agent stays on ssh even when a gh token exists, and `.git/config` is unchanged; the same remote on a machine with no agent and no readable key goes to the twin on the first contact and says which credential it used; a repository with a `pushInsteadOf` rule stays on ssh and says why; after a push over the twin, ahead and behind reads 0; a push whose ref the server rejected fails with the server's sentence instead of returning success; a 403 on a private organisation repository produces `needs_org_approval` with the approval URL; a 404 over https is never reported as offline, and each of these reads the state names J5 defined in wave 0.
+  Parallel with: J3, J10, A1, J8, P3, P7, P4, P5, P9.

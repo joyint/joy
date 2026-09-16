@@ -1,0 +1,23 @@
+id: JOY-029E-9D
+title: 'J8: distribution shape'
+type: story
+status: new
+priority: medium
+deps:
+- JOY-0298-E4
+capabilities:
+- plan
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-16T23:23:36.063574104Z
+updated: 2026-09-16T23:24:20.524830Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Package J8 of the forge connection NG rebuild (JI epic JI-0190-3A; wave 2; owner project JOY). Design: joy/docs/design/forge-connection-ng.md (v5), section 4, and the design sections the package names. Read those sections before starting; every rule there is binding.
+
+  Depends on: J2.
+  Files: joy/dist-workspace.toml, the crate manifests, joy/.github/workflows/release.yml.
+  Acceptance: a tag produces exactly one archive set per target containing joy and the connector, and winget matches exactly one asset; the Windows binaries are signed before bundling.
+  Parallel with: J3, J4b, J10, A1.

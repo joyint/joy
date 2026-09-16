@@ -1,0 +1,25 @@
+id: JOY-029A-5A
+title: 'J4p: proxies and the trust store (new)'
+type: story
+status: new
+priority: high
+deps:
+- JOY-0295-36
+- JOY-0299-98
+capabilities:
+- plan
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-16T23:23:35.816475479Z
+updated: 2026-09-16T23:24:19.772978607Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Package J4p of the forge connection NG rebuild (JI epic JI-0190-3A; wave 1; owner project JOY). Design: joy/docs/design/forge-connection-ng.md (v5), section 4, and the design sections the package names. Read those sections before starting; every rule there is binding.
+
+  Depends on: J5 (the `tls_untrusted` and `proxy_auth` state names), J4h (the `certificate_check` module whose x509 branch this package fills).
+  Files: joy/crates/joy-core/src/vcs/proxy.rs (new), vcs/forge.rs (every `FetchOptions`, `PushOptions` and `connect_auth` call site listed in D1.11), joy/crates/joy-core/src/lib.rs (the one time `git2::opts` call), app/apps/desktop/src-tauri/src/lib.rs:261-310.
+  Work: `options_for(url, repo)` with the three outcomes, joy's own NO_PROXY matcher with whitespace trimming, `ALL_PROXY` through `ProxyOptions::url`, proxy credentials through the helper runner as URL userinfo, `GIT_PROXY_SPECIFIED` whenever a proxy is known, the SOCKS refusal, the Linux only CA escape hatch from `forges.yaml` and `http.sslCAInfo`, the x509 branch of the one `certificate_check` closure J4h owns, with its `tls_untrusted` sentence and state and its `CertificatePassthrough` return (never a second callback), and the extended environment import in the desktop.
+  Acceptance: with `HTTPS_PROXY` set and a proxy that requires Basic, a fetch succeeds and no proxy password appears in any log line or error text; with `NO_PROXY="a.com, b.com"` a contact to b.com bypasses the proxy; a `socks5://` proxy produces the named sentence and no attempt; an intercepting CA installed with `update-ca-certificates` is trusted on Linux with no joy setting; the same CA not installed produces `tls_untrusted` with the issuer in the detail line and libgit2's own verdict is what refused it; the desktop app and the CLI behave identically on one machine with a proxy set only in the shell profile.
+  Parallel with: J2, J4h, A3, A6, P1b.

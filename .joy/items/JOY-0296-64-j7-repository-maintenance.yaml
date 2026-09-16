@@ -1,0 +1,27 @@
+id: JOY-0296-64
+title: 'J7: repository maintenance'
+type: story
+status: in-progress
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- plan
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-16T23:23:35.588680747Z
+updated: 2026-09-16T23:25:37.653717975Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Package J7 of the forge connection NG rebuild (JI epic JI-0190-3A; wave 0; owner project JOY). Design: joy/docs/design/forge-connection-ng.md (v5), section 4, and the design sections the package names. Read those sections before starting; every rule there is binding.
+
+  Files: joy/crates/joy-core/src/vcs/maintenance.rs (new), joy/crates/joy-chat-store/src/chat_ref.rs:164-232, joy/tests/integration/chat_store_maintenance.bats.
+  Work: the whole of D3.7: the per checkout trigger with the loose object estimate and the time floor, the keep set from refs, reflogs and the index, the pack, the two class sweep, the never delete a pack rule, the mtime rule and its two skip cases, the Windows best effort unlink, the removal of the `git gc --auto` spawn, the `core.logAllRefUpdates=always` detection, the CAS ordering fix.
+  Acceptance: a store built from 20 chats of 10 messages ends below 1 MB with all chats intact and under 6700 loose objects; a second process holding an object open does not crash the sweep and the object is still readable afterwards; no object younger than the grace window is removed; no `git` process is spawned anywhere in the chat write path.
+  Parallel with: J1, J4a, J5, J9, P1a.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-16T23:25:37.653717144Z
+  text: 'Plan: (1) new module joy-core/src/vcs/maintenance.rs per D3.7: per checkout trigger with loose object estimate, ten minute floor and the 6700 threshold, keep set from refs, HEAD, reflogs and index, PackBuilder pack, the two class sweep with the 14 day or 24 hour grace window, never deleting a pack, mtime rule with the two skip cases, Windows best effort unlink; (2) chat_ref.rs: remove the git gc --auto spawn, call the maintenance from the write path, fix the CAS ordering so the commit object is written after the compare and swap; (3) the core.logAllRefUpdates=always detection; (4) integration test chat_store_maintenance.bats plus unit tests. Worktree: .claude/worktrees/fcng-J7/joy on branch feat/forge-connection-ng-j7.'

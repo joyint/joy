@@ -1,0 +1,25 @@
+id: JOY-029B-B0
+title: 'J3: sign in verbs, keychain, OAuth, refresh lock'
+type: story
+status: new
+priority: medium
+deps:
+- JOY-0293-12
+- JOY-0298-E4
+capabilities:
+- plan
+- implement
+- review
+effort: 6
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-16T23:23:35.952874568Z
+updated: 2026-09-16T23:24:19.922367760Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Package J3 of the forge connection NG rebuild (JI epic JI-0190-3A; wave 2; owner project JOY). Design: joy/docs/design/forge-connection-ng.md (v5), section 4, and the design sections the package names. Read those sections before starting; every rule there is binding.
+
+  Depends on: J1, J2.
+  Files: the connector crate, a new `joy-forge-auth` module, joy/crates/joy-core/src/forge_plugins.rs (verb wiring).
+  Work: `token`, `token-store`, `login`, `logout`, `repositories`, `web-url`, `create-repository` with the shapes of D2.4 as amended by D4.1c (every answer that names a token carries `login` and `chose_by`); keychain storage with the corrected feature set, `Entry::new` only, the 0600 fallback and the foreign CLI read by spawning; the device grant for GitHub and GitLab; PKCE loopback for the Gitea family; the scope sets and `--for`; the login choice order and the pin of D4.1c; the refresh lock of D2.6a, taken on the cross process file lock primitive J4a landed in wave 0 (`joy_core::util::file_lock`).
+  Acceptance: `joy-forge github login --host github.com` prints the verification line within 15 s and the caller sees it before the process exits; after a successful login `token --host github.com` answers `"source":"keychain"` with the granted scopes; on a machine with a signed in gh, `token` answers `"source":"gh"` with zero clicks and zero dialogs; `token-store` reads a token from stdin, validates it and stores it, and `ps` during the run shows no token; `logout` removes the entry and revokes the token while the platform's token for the same user still works; two joy processes refreshing the same Codeberg entry at once produce one refresh and one `busy`, and the token still works afterwards; a host with two gh accounts answers `token` for a repository only the second account can reach, and reports `"chose_by":"probe"`; **`joy release publish` against a github.com remote succeeds on a machine with neither gh nor curl**, which is the acceptance J2 could not carry because the connector had no credential of its own in wave 1.
+  Parallel with: J4b, J10, A1, J8, P3, P7, P4, P5, P9.

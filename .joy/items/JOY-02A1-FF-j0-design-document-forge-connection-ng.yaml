@@ -1,0 +1,17 @@
+id: JOY-02A1-FF
+title: 'J0: design document forge connection NG in joy/docs/design'
+type: task
+status: closed
+priority: high
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-16T23:23:36.642811761Z
+updated: 2026-09-16T23:25:37.301613032Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: Carries the design document joy/docs/design/forge-connection-ng.md (v5) and the package index of the forge connection NG rebuild (JI epic JI-0190-3A) into the joy repository on branch feat/forge-connection-ng. The document is the binding reference for packages J0 to J11.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-16T23:25:37.220667568Z
+  text: Design v5 copied to joy/docs/design/forge-connection-ng.md; the package index lives in the JI epic JI-0190-3A and in the JOY stories JOY-0293-12 to JOY-02A1-FF. Closed with the commit that adds the document.

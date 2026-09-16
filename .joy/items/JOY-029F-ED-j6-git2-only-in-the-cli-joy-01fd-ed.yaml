@@ -1,0 +1,29 @@
+id: JOY-029F-ED
+title: 'J6: git2 only in the CLI (JOY-01FD-ED)'
+type: story
+status: new
+priority: medium
+deps:
+- JOY-029C-01
+- JOY-0299-98
+- JOY-0296-64
+- JOY-029D-3E
+capabilities:
+- plan
+- implement
+- review
+effort: 5
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-16T23:23:36.248251078Z
+updated: 2026-09-16T23:24:20.847523111Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Package J6 of the forge connection NG rebuild (JI epic JI-0190-3A; wave 3; owner project JOY). Design: joy/docs/design/forge-connection-ng.md (v5), section 4, and the design sections the package names. Read those sections before starting; every rule there is binding.
+
+  Depends on: J4b, J4h, J7, J10. The `forge-net` flip of D3.1 is this package's own first commit (joy/crates/joy-cli/Cargo.toml).
+  Files: joy/crates/joy-core/src/vcs/mod.rs, joy/crates/joy-cli/**, joy/crates/joy-core/src/commit_msg.rs, joy/crates/joy-core/src/init.rs:255-271, joy/crates/joy-cli/Cargo.toml.
+  Work: the call list of D3.2, the in process validator of D3.3, path scoped commits of D3.4 including the `commit_all` and `commit_everything` audit for clean filters, the hook chaining of D3.5, one failure vocabulary with `--json`, the non interactive rule.
+  Acceptance: `joy` works end to end on a machine with no git binary, including chat push and release tag; a commit without an item reference is refused by joy itself; a repository with husky keeps its hooks and joy's commit-msg check runs before them; an agent under `JOY_SESSION` never prompts and prints stable status words; no ssh contact fails with "invalid or unknown remote ssh hostkey" without a way to accept.
+  Note on ordering: J10 is a hard dependency, because J6 removes the last `git push` call sites (vcs/mod.rs:270-283) and with them the last place where OpenSSH's own trust on first use applies. J4h must be green before J6 for the same reason.
+
+  This package is the existing item JOY-01FD-ED (git2 only in the CLI, operator decision 2026-09-09); this story carries the package text and closes together with it.

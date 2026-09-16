@@ -1,0 +1,21 @@
+id: JOY-0293-12
+title: 'J1: plugin runner v2, protocol v2, resolution'
+type: story
+status: new
+priority: high
+capabilities:
+- plan
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-16T23:23:35.443033552Z
+updated: 2026-09-16T23:23:35.443033552Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Package J1 of the forge connection NG rebuild (JI epic JI-0190-3A; wave 0; owner project JOY). Design: joy/docs/design/forge-connection-ng.md (v5), section 4, and the design sections the package names. Read those sections before starting; every rule there is binding.
+
+  Files: joy/crates/joy-core/src/forge_plugins.rs, joy/docs/plugins.md.
+  Work: concurrent stdout read with a deadline, piped stderr, structured `PluginOutcome`, streaming runner, process group kill, per verb timeouts, rootless invocation, `--host` and `--host-kind` accepted everywhere, the resolution contract (`set_plugin_dirs`, executable directory, PATH) with the `joy-forge` first name order, the `version` verb and the protocol 1 detector (exit 2, empty stdout), a warn log on spawn failure, non zero exit and timeout (the same log P1a needs). The approved JI item of decision 29, working title "forge connection NG: new commands, flags and features", exists before this package's first commit, because `--host` and `--host-kind` are part of it.
+  Acceptance: a plugin answer of 1 MB is returned intact instead of timing out; a plugin that exits 3 with text on stderr produces an error naming the plugin and the text, not `None`; a binary placed next to the calling executable is found on macOS and Linux without PATH; `claims --host github.com` works with no project on disk; a protocol 1 `joy-github` placed in `~/.cargo/bin` is reported as protocol 1 and a protocol 2 binary named `joy-forge` in the same directory (a test stub in J1; the real binary is J2's) wins the name order.
+  Parallel with: J4a, J5, J7, J9, P1a.

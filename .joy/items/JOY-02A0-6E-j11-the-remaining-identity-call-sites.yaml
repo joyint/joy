@@ -1,0 +1,23 @@
+id: JOY-02A0-6E
+title: 'J11: the remaining identity call sites in the CLI (new)'
+type: story
+status: new
+priority: medium
+deps:
+- JOY-0297-1A
+capabilities:
+- plan
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-16T23:23:36.476221991Z
+updated: 2026-09-16T23:24:20.962295969Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Package J11 of the forge connection NG rebuild (JI epic JI-0190-3A; wave 3; owner project JOY). Design: joy/docs/design/forge-connection-ng.md (v5), section 4, and the design sections the package names. Read those sections before starting; every rule there is binding.
+
+  Depends on: J9.
+  Files: joy/crates/joy-cli/src (the auth, crypt, chat, board, project, ai, event log and enroll commands), joy/crates/joy-core/src/identity.rs.
+  Work: the remaining `user_email()` call sites of D3.9 (20 in 9 files at the time of writing, minus the two J9 moves) move onto `joy_core::identity::resolve_identity`, which reads the delegation session first, then the project's member pin, and git config only as a prefill where a person is asked for an address. No command reads git config as its identity source afterwards.
+  Acceptance: every joy command that needs an identity works in a repository with no git config once the member is known; removing `user.email` from git config in a joy project changes no joy command's behaviour. Until this package is green, the "Level 1 solo" journey row stays partly and names J11.

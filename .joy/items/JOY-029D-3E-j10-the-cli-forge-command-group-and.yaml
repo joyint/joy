@@ -1,0 +1,25 @@
+id: JOY-029D-3E
+title: 'J10: the CLI forge command group and the interactive gate (new)'
+type: story
+status: new
+priority: medium
+deps:
+- JOY-0293-12
+- JOY-029B-B0
+capabilities:
+- plan
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-16T23:23:36.027483013Z
+updated: 2026-09-16T23:24:20.458697880Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Package J10 of the forge connection NG rebuild (JI epic JI-0190-3A; wave 2; owner project JOY). Design: joy/docs/design/forge-connection-ng.md (v5), section 4, and the design sections the package names. Read those sections before starting; every rule there is binding.
+
+  Depends on: J1, J3.
+  Files: joy/crates/joy-cli/src/lib.rs (one `Commands` variant), joy/crates/joy-cli/src/commands/forge.rs (new), joy/crates/joy-core/Cargo.toml, joy/crates/joy-cli/Cargo.toml, app/apps/desktop/src-tauri/Cargo.toml, joy/crates/joy-github/src/github.rs:297,310, joy/docs/plugins.md, the platform CI pipeline.
+  Work: the whole of D3.10 and D3.11, the host kind set once in `cli_main`, the two help strings, and the approved JI item of decision 29, working title "forge connection NG: new commands, flags and features", which names every flag, option and feature the design adds and which exists before this package's first commit.
+  Acceptance: `joy forge login --host github.com` on a machine with no gh prints a URL and a code and ends with a stored credential; `joy forge login --token-stdin --host codeberg.org < token` stores a validated token and `ps` during the run shows no token; `joy forge status --json` lists the host with source, scopes and expiry and exits 1 when nothing is signed in; a protocol 1 `joy-github` in the executable's directory makes `joy forge login` print the binary's path and the `rm` line while `joy release publish` still works; `cargo tree -e features -i joy-core --manifest-path platform/Cargo.toml` contains no `interactive` and the CI guard fails when it does; `JOY_SESSION=... joy forge login --host github.com` refuses immediately with the delegation sentence.
+  Parallel with: J3, J4b, A1, J8, P3, P7, P4, P5, P9.

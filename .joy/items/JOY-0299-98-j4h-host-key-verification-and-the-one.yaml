@@ -1,0 +1,25 @@
+id: JOY-0299-98
+title: 'J4h: host key verification and the one certificate callback (new)'
+type: story
+status: new
+priority: high
+deps:
+- JOY-0294-D5
+- JOY-0295-36
+capabilities:
+- plan
+- implement
+- review
+effort: 5
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-16T23:23:35.767703495Z
+updated: 2026-09-16T23:24:19.611672807Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Package J4h of the forge connection NG rebuild (JI epic JI-0190-3A; wave 1; owner project JOY). Design: joy/docs/design/forge-connection-ng.md (v5), section 4, and the design sections the package names. Read those sections before starting; every rule there is binding.
+
+  Depends on: J4a (the ssh config parser that supplies its file list), J5 (the state names its refusal reports).
+  Files: joy/crates/joy-core/src/vcs/known_hosts.rs (new), joy/crates/joy-core/src/vcs/certificates.rs (new, the one `certificate_check` closure), vcs/forge.rs (callback wiring), joy/crates/joy-core/data/host-keys.json (new pin file), the pin build step in joy's build recipes.
+  Work: the whole of D1.4a: the single `certificate_check` closure of `vcs::certificates`, installed in every `RemoteCallbacks` joy builds, carrying joy's own state for host and port and dispatching on the certificate kind (the host key branch is this package's work, the x509 branch's slot is filled by J4p and stays one closure), the file list from the ssh config parse of J4a, plain, bracketed and hashed matching, `@revoked`, certificate host keys refused by name, the pre validation of `~/.ssh/known_hosts` for libssh2 parseability, the append under the cross process file lock J4a landed in wave 0 (`joy_core::util::file_lock`), the per host kind rule, the pin file for the three public forges behind decision 23 (until the operator decides, the pin file ships empty and `Background` and `Delegated` hosts refuse an unknown host with `needs_host_trust`), **the Codeberg pin build step** (a blob taken once, checked against Codeberg's published fingerprints at build time and again in CI), and the substituted refusal sentence.
+  Acceptance: a fresh machine with an empty known_hosts contacts github.com over ssh and is offered the fingerprint, which matches the one GitHub publishes; accepting writes one hashed line and the next run is silent; a changed key is refused in all three host kinds with both fingerprints and the file and line number; a hashed entry written by OpenSSH matches; a `Background` host refuses with `needs_host_trust`, the state name J5 already defines, and prints the line to paste; a known_hosts file with one unparsable line is reported by line number instead of killing the connection; once decision 23 is taken, the Codeberg pin file is produced by the build step and its fingerprints equal the ones Codeberg publishes, and until then the pin file is empty and a `Background` host refuses an unknown host by name; an https contact in the same process goes through the same closure and no second `certificate_check` is installed anywhere in the tree.
+  Parallel with: J2, J4p, A3, A6, P1b.
