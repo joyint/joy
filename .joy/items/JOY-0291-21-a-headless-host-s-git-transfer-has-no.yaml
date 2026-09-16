@@ -1,0 +1,14 @@
+id: JOY-0291-21
+title: A headless host's git transfer has no deadline and a plugin kill leaves gh and curl behind
+type: bug
+status: new
+priority: medium
+capabilities:
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-16T08:16:02.725475764Z
+updated: 2026-09-16T08:16:02.725475764Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Found in the JOY-028F-0B review (2026-09-16). vcs::transfer (fetch_ref/push_ref) and git_run (push, push_tag) call .output() with no timeout. Under a headless host (desktop app, or a joy started hidden) the prompts are disarmed now, so a credential-less remote fails fast - but a slow or silent forge still blocks the caller for ever, where forge_plugins::run_query_full already bounds its child. And that bound kills only the plugin: on Windows there is no job object, so a gh or curl grandchild survives the kill in a console nobody can see, and a retried release can create the release twice. Also on the write path: chat_ref::maintain_occasionally runs git gc --auto synchronously; on Windows gc cannot auto-detach, so every 64th chat write can block for the whole gc with no signal at all. Wanted: a bounded runner for the git binary shared with forge_plugins (try_wait loop, kill on deadline), a job object or tree kill on Windows, and gc off the write path.'
