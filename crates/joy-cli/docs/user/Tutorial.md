@@ -482,7 +482,7 @@ Settable keys: `name`, `description`, `language`. Read-only: `acronym`, `created
 
 ### Members and Capabilities
 
-Joy tracks project members and their capabilities. Members are added automatically during `joy init` (from `git config user.email`) or manually:
+Joy tracks project members and their capabilities. The founding member is added during `joy init`: from `joy init --user <address>`, else from `git config user.email`, and on a terminal joy asks for the address when neither is set. Further members are added manually:
 
 ```sh
 joy project member add pete@example.com
