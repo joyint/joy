@@ -19,7 +19,6 @@
 use anyhow::{anyhow, Result};
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
 
 pub fn edit_text(
     editor_flag: Option<&str>,
@@ -36,7 +35,7 @@ pub fn edit_text(
         let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
     }
 
-    let status = Command::new("sh")
+    let status = joy_process::command("sh")
         .arg("-c")
         .arg(format!("{editor} \"$@\""))
         .arg("sh")

@@ -1995,6 +1995,7 @@ dependencies = [
  "joy-chat-store",
  "joy-core",
  "joy-crypt",
+ "joy-process",
  "minijinja",
  "rand 0.8.7",
  "serde",
@@ -2056,6 +2057,7 @@ dependencies = [
  "joy-core",
  "joy-crypt",
  "joy-model",
+ "joy-process",
  "serde",
  "serde_json",
  "serde_yaml_ng",
@@ -2084,6 +2086,7 @@ dependencies = [
  "joy-chat-store",
  "joy-core",
  "joy-crypt",
+ "joy-process",
  "joy-telemetry",
  "minijinja",
  "predicates",
@@ -2118,6 +2121,7 @@ dependencies = [
  "insta",
  "joy-crypt",
  "joy-model",
+ "joy-process",
  "joy-token",
  "libc",
  "minijinja",
@@ -2162,6 +2166,7 @@ version = "0.20.0"
 dependencies = [
  "anyhow",
  "clap",
+ "joy-process",
  "serde",
  "serde_json",
 ]
@@ -2172,6 +2177,7 @@ version = "0.20.0"
 dependencies = [
  "anyhow",
  "clap",
+ "joy-process",
  "serde",
  "serde_json",
 ]
@@ -2182,6 +2188,7 @@ version = "0.20.0"
 dependencies = [
  "anyhow",
  "clap",
+ "joy-process",
  "serde",
  "serde_json",
 ]
@@ -2193,6 +2200,13 @@ dependencies = [
  "serde",
  "serde_json",
  "ts-rs",
+]
+
+[[package]]
+name = "joy-process"
+version = "0.20.0"
+dependencies = [
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

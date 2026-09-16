@@ -185,7 +185,7 @@ fn maintain_occasionally(repo: &Repository) {
         return;
     }
     let git_dir = repo.path().to_path_buf();
-    let _ = std::process::Command::new("git")
+    let _ = joy_process::command("git")
         .arg("--git-dir")
         .arg(&git_dir)
         .args(["gc", "--auto", "--quiet"])

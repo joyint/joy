@@ -124,7 +124,7 @@ mod platform {
     /// points at a file PowerShell never loads: the alias then exists, looks
     /// right, and does nothing.
     fn ask_profile_path(edition: PsEdition) -> Option<PathBuf> {
-        let out = std::process::Command::new(ps_exe(edition))
+        let out = joy_process::command(ps_exe(edition))
             .args(["-NoProfile", "-Command", "$PROFILE.CurrentUserAllHosts"])
             .output()
             .ok()?;
@@ -147,7 +147,7 @@ mod platform {
     /// edition's own `Get-ExecutionPolicy`; on any error we assume not blocked so
     /// as not to nag.
     fn scripts_disabled(edition: PsEdition) -> bool {
-        let out = std::process::Command::new(ps_exe(edition))
+        let out = joy_process::command(ps_exe(edition))
             .args(["-NoProfile", "-Command", "Get-ExecutionPolicy"])
             .output();
         match out {
@@ -164,7 +164,7 @@ mod platform {
     /// Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. Returns whether
     /// it succeeded plus any error text (e.g. when a group policy locks it).
     fn enable_local_scripts(edition: PsEdition) -> (bool, String) {
-        let out = std::process::Command::new(ps_exe(edition))
+        let out = joy_process::command(ps_exe(edition))
             .args([
                 "-NoProfile",
                 "-Command",

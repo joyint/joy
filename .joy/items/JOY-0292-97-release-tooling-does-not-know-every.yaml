@@ -1,0 +1,14 @@
+id: JOY-0292-97
+title: 'Release tooling does not know every crate: publish list and version-files are hand-kept'
+type: bug
+status: new
+priority: medium
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-16T08:16:02.779719586Z
+updated: 2026-09-16T08:16:02.779719586Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Found in the JOY-028F-0B review. justfile publish-crates carries a hand-written ordered crate list and says every member is in it or has publish = false; joy-telemetry is in neither (joy-cli depends on it), and joy-process was added the same way until the review caught it. release.version-files in project.yaml is a second hand-kept list with the same gap: crates/joy-telemetry/Cargo.toml is missing, so the next joy release bump leaves it at the old version and cargo update fails on the pin. Wanted: derive the publish order from cargo metadata (workspace members minus publish = false, in dependency order) and a check that every member''s Cargo.toml is in release.version-files; add crates/joy-telemetry/Cargo.toml now (joy project set release.version-files --add needs the manage capability, an operator runs it).'

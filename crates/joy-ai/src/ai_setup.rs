@@ -751,7 +751,7 @@ pub fn remove_legacy_ai_artifacts(root: &Path) -> Vec<String> {
 }
 
 pub fn which(binary: &str) -> bool {
-    std::process::Command::new("which")
+    joy_process::command("which")
         .arg(binary)
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -1513,7 +1513,7 @@ mod setup_tests {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         let git = |args: &[&str]| {
-            std::process::Command::new("git")
+            joy_process::command("git")
                 .arg("-C")
                 .arg(root)
                 .args(args)
@@ -1546,7 +1546,7 @@ mod setup_tests {
     fn untrack_gitignored_tool_files_is_noop_when_nothing_tracked() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
-        std::process::Command::new("git")
+        joy_process::command("git")
             .arg("-C")
             .arg(root)
             .args(["init", "-q"])
@@ -1565,7 +1565,7 @@ mod setup_tests {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         let git = |args: &[&str]| {
-            std::process::Command::new("git")
+            joy_process::command("git")
                 .arg("-C")
                 .arg(root)
                 .args(args)

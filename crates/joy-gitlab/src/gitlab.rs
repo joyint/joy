@@ -143,7 +143,7 @@ fn verified_emails(token_env: Option<&str>) -> Vec<String> {
             let Ok(token) = std::env::var(var) else {
                 return Vec::new();
             };
-            run_stdout(Command::new("curl").args([
+            run_stdout(joy_process::command("curl").args([
                 "--fail",
                 "--silent",
                 "--max-time",
@@ -153,7 +153,7 @@ fn verified_emails(token_env: Option<&str>) -> Vec<String> {
                 "https://gitlab.com/api/v4/user/emails",
             ]))
         }
-        None => run_stdout(Command::new("glab").args(["api", "user/emails"])),
+        None => run_stdout(joy_process::command("glab").args(["api", "user/emails"])),
     };
     let Some(raw) = raw else { return Vec::new() };
     #[derive(serde::Deserialize)]
@@ -239,7 +239,7 @@ fn api_get(url: &str, token_env: Option<&str>) -> Option<ApiAnswer> {
     let token = token_env
         .and_then(|var| std::env::var(var).ok())
         .filter(|t| !t.is_empty());
-    let mut child = Command::new("curl")
+    let mut child = joy_process::command("curl")
         .args([
             "--silent",
             "--max-time",

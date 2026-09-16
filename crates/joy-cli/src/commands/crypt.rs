@@ -642,7 +642,7 @@ fn run_edit(file: &str, passphrase: Option<&str>, stdin: bool) -> Result<()> {
     // Run via `sh -c` so EDITOR can be a shell command with flags or
     // pipes ("code -w", "vim -O", ...). The temp path arrives as $1.
     let cmd_line = format!("{} \"$@\"", editor);
-    let status = std::process::Command::new("sh")
+    let status = joy_process::command("sh")
         .arg("-c")
         .arg(&cmd_line)
         .arg("sh")

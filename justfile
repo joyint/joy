@@ -74,7 +74,16 @@ fmt-check:
 # here at all - a missing dependency and a duplicated attribute in it
 # surfaced from the desktop build instead (JOY-0280-A5, 2026-09-09).
 lint:
-    cargo clippy --workspace --all-features -- -D warnings
+    cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+# The Windows-only code (joy-process: CREATE_NO_WINDOW, GetConsoleWindow)
+# never compiles on a Linux or macOS box, so a typo there used to surface
+# on the windows-latest CI leg only. Type-checking it for the Windows
+# target needs no linker; the target's std is a one-time download.
+# Type-check the Windows-only code from any host
+check-windows:
+    rustup target add x86_64-pc-windows-msvc >/dev/null
+    cargo check -p joy-process --all-targets --target x86_64-pc-windows-msvc
 
 # Abort if the local Rust stable toolchain is behind the latest release.
 # Prevents clippy-version drift between local and CI.
@@ -97,7 +106,7 @@ sync-tutorial:
 # Run fmt-check, lint, test
 # The fast gate, for every commit: static checks plus the functional
 # core. Seconds, not minutes, so nobody is tempted to skip it.
-check: _toolchain-check sync-tutorial fmt-check lint guard-vcs test-unit test-cmd test-smoke
+check: _toolchain-check sync-tutorial fmt-check lint check-windows guard-vcs test-unit test-cmd test-smoke
 
 # Git lives in ONE place (JOY-0265-D7): joy-core/src/vcs, plus the chat
 # store's object plumbing (a git-object database, its own storage layer).
@@ -108,9 +117,9 @@ guard-vcs:
     set -euo pipefail
     cd "{{justfile_directory()}}"
     bad=0
-    for f in $(grep -rl 'Command::new("git")' crates/*/src --include='*.rs' | grep -v 'crates/joy-core/src/vcs/'); do
+    for f in $(grep -rl 'command("git")' crates/*/src --include='*.rs' | grep -v 'crates/joy-core/src/vcs/' | grep -v 'crates/joy-process/'); do
         test_start=$(grep -n '#\[cfg(test)\]' "$f" | head -1 | cut -d: -f1)
-        for line in $(grep -n 'Command::new("git")' "$f" | cut -d: -f1); do
+        for line in $(grep -n 'command("git")' "$f" | cut -d: -f1); do
             if [ -z "$test_start" ] || [ "$line" -lt "$test_start" ]; then
                 echo "guard-vcs: $f calls git directly (line $line); git belongs in joy-core/src/vcs"
                 bad=1
@@ -277,7 +286,7 @@ publish-crates: sync-tutorial
     # joy-bi rides after joy-core (its only internal dependency); the two
     # forge plugins have none. Every workspace member is either in this
     # list or carries publish = false -- the gap that made JOY-0247-E1.
-    crates=(joy-model joy-chat joy-core joy-bi joy-github joy-gitlab joy-gitea joy-chat-store joy-ai joy-cli)
+    crates=(joy-process joy-model joy-chat joy-core joy-bi joy-github joy-gitlab joy-gitea joy-chat-store joy-ai joy-cli)
     for crate in "${crates[@]}"; do
         version=$(cargo pkgid --quiet -p "$crate" 2>/dev/null | sed 's/.*[#@]\(.*\)/\1/')
         if [ -z "$version" ]; then

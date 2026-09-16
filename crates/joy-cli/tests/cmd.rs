@@ -8,7 +8,7 @@ fn cli_tests() {
 
 #[test]
 fn version_matches_cargo_toml() {
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_joy"))
+    let output = joy_process::command(env!("CARGO_BIN_EXE_joy"))
         .arg("--version")
         .output()
         .expect("failed to run joy --version");

@@ -156,7 +156,7 @@ fn verified_emails(token_env: Option<&str>) -> Vec<String> {
             let Ok(token) = std::env::var(var) else {
                 return Vec::new();
             };
-            run_stdout(Command::new("curl").args([
+            run_stdout(joy_process::command("curl").args([
                 "--fail",
                 "--silent",
                 "--max-time",
@@ -168,7 +168,7 @@ fn verified_emails(token_env: Option<&str>) -> Vec<String> {
                 "https://api.github.com/user/emails",
             ]))
         }
-        None => run_stdout(Command::new("gh").args(["api", "user/emails"])),
+        None => run_stdout(joy_process::command("gh").args(["api", "user/emails"])),
     };
     let Some(raw) = raw else { return Vec::new() };
     #[derive(serde::Deserialize)]
@@ -191,7 +191,7 @@ fn verified_emails(token_env: Option<&str>) -> Vec<String> {
 /// The public profile address (`/user`.email), visible without extra
 /// scope when the person set one. gh-authenticated only (local use).
 fn public_email() -> Option<String> {
-    let raw = run_stdout(Command::new("gh").args(["api", "user"]))?;
+    let raw = run_stdout(joy_process::command("gh").args(["api", "user"]))?;
     #[derive(serde::Deserialize)]
     struct User {
         email: Option<String>,
@@ -276,7 +276,7 @@ pub fn resolve_answer(email: &str) -> serde_json::Value {
 pub fn release_answer(tag: &str, title: &str, notes: &str) -> anyhow::Result<serde_json::Value> {
     use anyhow::{anyhow, bail};
     // Check gh is available…
-    let gh_probe = Command::new("gh").arg("--version").output();
+    let gh_probe = joy_process::command("gh").arg("--version").output();
     let gh_ver = match gh_probe {
         Ok(out) if out.status.success() => {
             let raw = String::from_utf8_lossy(&out.stdout).trim().to_string();
@@ -299,7 +299,7 @@ pub fn release_answer(tag: &str, title: &str, notes: &str) -> anyhow::Result<ser
         Err(e) => bail!("failed to run gh: {e}"),
     };
     // …and authenticated.
-    let auth = Command::new("gh")
+    let auth = joy_process::command("gh")
         .args(["auth", "status"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -312,7 +312,7 @@ pub fn release_answer(tag: &str, title: &str, notes: &str) -> anyhow::Result<ser
     }
 
     // An existing release keeps its url; the notes are prepended once.
-    let existing = Command::new("gh")
+    let existing = joy_process::command("gh")
         .args(["release", "view", tag, "--json", "url,body"])
         .output();
     if let Ok(output) = existing {
@@ -324,7 +324,7 @@ pub fn release_answer(tag: &str, title: &str, notes: &str) -> anyhow::Result<ser
                 let body = parsed["body"].as_str().unwrap_or("");
                 if !body.contains(notes.trim()) {
                     let combined = format!("{}\n\n{}", notes.trim_end(), body);
-                    let edit = Command::new("gh")
+                    let edit = joy_process::command("gh")
                         .args(["release", "edit", tag, "--notes", &combined])
                         .output()
                         .map_err(|e| anyhow!("failed to run gh release edit: {e}"))?;
@@ -340,7 +340,7 @@ pub fn release_answer(tag: &str, title: &str, notes: &str) -> anyhow::Result<ser
         }
     }
 
-    let create = Command::new("gh")
+    let create = joy_process::command("gh")
         .args(["release", "create", tag, "--title", title, "--notes", notes])
         .output()
         .map_err(|e| anyhow!("failed to run gh release create: {e}"))?;
@@ -401,7 +401,7 @@ fn api_get(url: &str, accept: &str, token_env: Option<&str>) -> Option<ApiAnswer
     let token = token_env
         .and_then(|var| std::env::var(var).ok())
         .filter(|t| !t.is_empty());
-    let mut child = Command::new("curl")
+    let mut child = joy_process::command("curl")
         .args([
             "--silent",
             "--max-time",

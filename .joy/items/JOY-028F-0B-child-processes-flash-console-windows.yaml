@@ -1,0 +1,55 @@
+id: JOY-028F-0B
+title: Child processes flash console windows under a GUI host on Windows
+type: bug
+status: review
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-16T05:07:38.296799803Z
+updated: 2026-09-16T08:16:02.878507073Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Reported 2026-09-15 from the first install of the public Windows build (JAPP-02CE-5D): the desktop app opens and closes console windows in the background continuously. macOS and Linux never showed it, and never can: a console window is a Windows-only concept.
+
+  Cause: a GUI process (windows_subsystem = "windows") has no console, so every console child spawned without CREATE_NO_WINDOW gets its own console WINDOW. Joy spawns git, gh, curl, sh, powershell and plugin binaries; none of them sets the flag. In the shipped build joy-core still ran git for resolve_identity on the app's periodic ticks, which is what made it constant; c533162 moved the identity lookups to git2, but the remaining spawns keep flashing.
+
+  The rule (one rule, no per-call switches, JI-017C-E1): on Windows a child gets CREATE_NO_WINDOW exactly when THIS process has no console (GetConsoleWindow() is null). Never unconditionally: with a console inherited from the CLI, the flag would give the child a separate invisible console and break everything that talks to the terminal - the pager in joy ai tutorial, the editor, joy int and other plugins with inherited stdio, and ssh's passphrase prompt on fetch/push. A GUI host has nothing to inherit, so the flag is free there. A child started WITH the flag owns a windowless console its own children inherit, so plugins and their gh/curl calls stay quiet without knowing anything.
+
+  Without a console nobody can answer a prompt either, so the same helper sets GIT_TERMINAL_PROMPT=0 there: an app-side git fetch that wants credentials must fail, not hang invisibly. Git Credential Manager keeps working, it draws its own window.
+
+  Plan:
+  - New crate joy-process (MIT, zero deps except windows-sys under cfg(windows)). It is its own crate because the forge plugins (joy-github, joy-gitlab, joy-gitea) do not depend on joy-core. joy_process::command(program) -> std::process::Command, preconfigured. tokio callers use tokio::process::Command::from(..).
+  - Route every spawn through it: joy-core (vcs/mod.rs, forge_plugins.rs, tutorial.rs), joy-chat-store (chat_ref.rs git gc), joy-ai (ai_setup.rs), joy-cli (editor.rs, crypt.rs, ps_alias.rs), and the three forge plugins.
+  - clippy.toml disallowed-methods for std::process::Command::new and tokio::process::Command::new, allowed only inside joy-process.
+  - Tests: the flag decision is a pure function, unit-tested everywhere; a Windows integration test calls FreeConsole(), spawns a probe through the helper and asserts the child has no visible console window.
+
+  Out of scope, tracked separately: the app-side spawns (JAPP-02CE-5D) and the platform's (docker, git, python3 - Linux only, lint parity).
+
+  Nebenbefund to file separately: ai_setup.rs:754 shells out to which, which does not exist on Windows.
+
+  - [ ] joy-process crate with the console check
+  - [ ] every joy spawn routed through it
+  - [ ] clippy disallowed-methods across the workspace
+  - [ ] unit test for the decision, Windows integration test for the flag
+  - [ ] verified in the app on Windows (JAPP-02CE-5D)
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-16T05:18:53.791342540Z
+  text: 'Plan: 1) crates/joy-process: pub fn command(program) -> std::process::Command, plus the pure decision fn no_console_child() so the rule is testable everywhere; on Windows GetConsoleWindow() (windows-sys, cfg(windows) only, cached in a OnceLock) decides, and when it is null the command gets CREATE_NO_WINDOW and GIT_TERMINAL_PROMPT=0. 2) Route every spawn in joy-core (vcs/mod.rs, forge_plugins.rs, tutorial.rs), joy-chat-store (chat_ref.rs), joy-ai (ai_setup.rs), joy-cli (editor.rs, crypt.rs, ps_alias.rs) and the three forge plugins through it. 3) clippy.toml disallowed-methods for std::process::Command::new and tokio::process::Command::new, allowed inside joy-process only. 4) Unit tests for the decision on every platform; a cfg(windows) integration test that calls FreeConsole() and asserts the child has no visible console window. 5) just check in joy, then cargo check in the app worktree (path dep on joy-core, CONTRIBUTING: check downstream). Branch fix/joy-no-window-spawns in a worktree; the app side follows in JAPP-02CE-5D.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-16T05:29:02.483451893Z
+  text: '[x] crates/joy-process: command() builds every child; on Windows prepare() sets CREATE_NO_WINDOW and GIT_TERMINAL_PROMPT=0 exactly when GetConsoleWindow() is null (cached in a OnceLock). [x] Routed: joy-core (vcs/mod.rs, forge_plugins.rs, tutorial.rs), joy-chat-store (chat_ref.rs), joy-ai (ai_setup.rs), joy-cli (editor.rs, crypt.rs, ps_alias.rs, two test files) and joy-github/-gitlab/-gitea - 27 files. [x] clippy.toml disallows std::process::Command::new and tokio::process::Command::new; joy-process allows it for itself. [x] Tests: the program survives preparation and a unix command carries no extra env, everywhere; on Windows three more, driving both branches of prepare() against a probe that re-runs this test binary and reports whether its console window is visible. [x] Verified on Linux: cargo fmt, cargo clippy --workspace --all-targets -D warnings, the full suite green. [x] Downstream per CONTRIBUTING: cargo check --all-targets green in the desktop crate and in platform, both against this joy (worktrees are laid out as siblings). [ ] The Windows tests have not run yet - they need the windows-latest CI leg. [ ] The symptom itself is verified on a real Windows install in JAPP-02CE-5D. Commit a47ba81 on fix/joy-no-window-spawns.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-16T05:42:51.024130049Z
+  text: '[x] Windows verified by CI (PR joyint/joy#18, run 35060031420 and the re-run after 798019f): all five joy-process tests compile and pass on windows-latest, and the whole suite with them. The first run exposed a test that checked nothing - a_console_host_hands_its_console_down returned early because the CI test binary has no console of its own, finishing in under a millisecond while the spawn test beside it took nineteen. It now asserts per host (terminal: handed down and visible; no console: nothing to hand down, the child stays hidden) and takes 7ms, so it really spawns the probe. Also added here: cargo check --target x86_64-pc-windows-msvc catches platform-specific code on the Linux box before a push. Remaining: the symptom on a real Windows install (JAPP-02CE-5D).'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-16T08:06:03.753422381Z
+  text: 'Review (2026-09-16, eight angles on the app branch and eight on this one) sends it back for rework. Confirmed: (1) a_console_host_hands_its_console_down expects a VISIBLE inherited console, but under ConPTY (Windows Terminal, VS Code) the console window is a hidden pseudo-console window, so the test is red on the common Windows dev setup; and from a console-less interactive parent the no-flag child gets a visible console, so the same test is environment-dependent either way - it tests the OS, not our code, and goes. (2) The doc claims a CREATE_NO_WINDOW child has a null GetConsoleWindow(); on Windows 10/11 it owns a conhost with a hidden window (non-null). The decision stays the null check - a hidden window is also what ConPTY gives, where the child MUST inherit - but the doc is corrected. (3) justfile guard-vcs greps Command::new("git"), which now matches nothing, so the JOY-0265-D7 rule was unenforced. (4) just lint runs clippy without --all-targets, so the disallowed-methods rule never saw test code - the two joy-cli test files were found by hand. (5) publish-crates does not list joy-process, so the next cargo publish -p joy-core would be rejected (the JOY-0247-E1 gap again). (6) windows-sys is declared twice in joy-process. (7) The earlier comment says cargo check --target x86_64-pc-windows-msvc was ''added here'' - it was run by hand; it becomes a just recipe now. (8) console_probe is listed as a passing test although it is the child half of another test. Not fixed here, filed separately: git transfers through the binary have no timeout, and GIT_TERMINAL_PROMPT=0 does not silence ssh''s passphrase or host-key prompt, so a GUI host''s push can hang invisibly where it used to flash a window.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-16T08:16:02.825484469Z
+  text: '[x] Rework done in 8230370: joy-process decides the window only and exposes headless(); the git prompts (GIT_TERMINAL_PROMPT=0 plus ssh BatchMode, yielding to the person''s own ssh choice) live in joy-core vcs behind one git() builder for every git the module runs. [x] No console cache; doc corrected on hidden console windows (CREATE_NO_WINDOW child, ConPTY). [x] The environment-dependent inherit-branch spawn test is gone, the probe is #[ignore]d; two vcs tests cover the headless git env. [x] Gates: guard-vcs greps command("git") again, lint and CI clippy run --all-targets (--all-features in CI), just check-windows type-checks the Windows-only code from any host and is part of just check, publish-crates lists joy-process, one windows-sys declaration, repository/homepage set. [x] Verified on Linux: fmt, clippy --workspace --all-targets --all-features -D warnings, guard-vcs, check-windows, the full suite with all features; app desktop crate 132 tests green three times against this joy. [ ] Operator step, manage capability: cd joy && joy project set release.version-files --add crates/joy-process/Cargo.toml (the same for joy-telemetry, see the new item). [ ] CI Windows leg on the pushed rework. Follow-ups filed: the bounded git transfer and orphaned grandchildren, and the hand-kept release lists.'

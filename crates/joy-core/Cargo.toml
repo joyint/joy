@@ -9,6 +9,7 @@ homepage = "https://joyint.com/en/joy"
 readme = "README.md"
 
 [dependencies]
+joy-process = { workspace = true }
 joy-model = { workspace = true }
 joy-crypt = { workspace = true }
 joy-token = { workspace = true }
