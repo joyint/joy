@@ -9,6 +9,7 @@
 //! on the binary.
 
 use std::path::Path;
+use std::process::Command;
 
 use crate::error::JoyError;
 
@@ -45,20 +46,55 @@ pub trait Vcs {
 /// Git implementation of the VCS trait.
 pub struct GitVcs;
 
+/// The git binary, built for this host. Every git the vcs module runs
+/// starts here (guard-vcs keeps the binary inside this module).
+///
+/// A headless host (joy-process: on Windows a process without a
+/// console, the desktop app or a joy started hidden) has nobody to
+/// answer a question, and git's questions do not fail on their own
+/// there: they wait on the child's window-less console for ever, where
+/// they used to flash a window a person could at least type into
+/// (JOY-028F-0B). So the same host that hides the window disarms the
+/// prompts: git's own (`GIT_TERMINAL_PROMPT=0`, Git Credential Manager
+/// still draws its own window) and ssh's passphrase and host-key
+/// prompts (`BatchMode=yes`). The ssh part yields to anyone who chose
+/// their own ssh: `GIT_SSH_COMMAND`, `GIT_SSH`, or `core.sshCommand` in
+/// the person's config all win.
+fn git() -> Command {
+    git_for(joy_process::headless())
+}
+
+fn git_for(headless: bool) -> Command {
+    let mut command = joy_process::command("git");
+    if headless {
+        command.env("GIT_TERMINAL_PROMPT", "0");
+        if !ssh_is_chosen() {
+            command.env("GIT_SSH_COMMAND", "ssh -o BatchMode=yes");
+        }
+    }
+    command
+}
+
+/// Whether the person picked their own ssh for git, by any of git's
+/// three ways, in which case a batch-mode default would override it.
+fn ssh_is_chosen() -> bool {
+    std::env::var_os("GIT_SSH_COMMAND").is_some()
+        || std::env::var_os("GIT_SSH").is_some()
+        || git2::Config::open_default()
+            .and_then(|config| config.get_string("core.sshCommand"))
+            .is_ok()
+}
+
 /// Run a git command and return stdout as a trimmed string.
 /// Returns a descriptive error if git is not found or the command fails.
 fn git_output(root: &Path, args: &[&str]) -> Result<String, JoyError> {
-    let output = joy_process::command("git")
-        .args(args)
-        .current_dir(root)
-        .output()
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                JoyError::Git("git is not installed or not in PATH".into())
-            } else {
-                JoyError::Git(format!("failed to run git {}: {e}", args.join(" ")))
-            }
-        })?;
+    let output = git().args(args).current_dir(root).output().map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            JoyError::Git("git is not installed or not in PATH".into())
+        } else {
+            JoyError::Git(format!("failed to run git {}: {e}", args.join(" ")))
+        }
+    })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -75,17 +111,13 @@ fn git_output(root: &Path, args: &[&str]) -> Result<String, JoyError> {
 
 /// Run a git command silently (ignore stdout/stderr), return Ok/Err.
 fn git_run(root: &Path, args: &[&str]) -> Result<(), JoyError> {
-    let output = joy_process::command("git")
-        .args(args)
-        .current_dir(root)
-        .output()
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                JoyError::Git("git is not installed or not in PATH".into())
-            } else {
-                JoyError::Git(format!("failed to run git {}: {e}", args.join(" ")))
-            }
-        })?;
+    let output = git().args(args).current_dir(root).output().map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            JoyError::Git("git is not installed or not in PATH".into())
+        } else {
+            JoyError::Git(format!("failed to run git {}: {e}", args.join(" ")))
+        }
+    })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -304,7 +336,7 @@ pub fn commit_unix_time(rev: &str) -> Option<i64> {
     if rev.is_empty() || rev.starts_with('%') {
         return None;
     }
-    let out = joy_process::command("git")
+    let out = git()
         .args(["log", "-1", "--format=%ct", rev])
         .output()
         .ok()?;
@@ -317,7 +349,7 @@ pub fn commit_unix_time(rev: &str) -> Option<i64> {
 /// Staged paths relative to the repo root (added/modified/renamed), via
 /// `git diff --cached --name-only`.
 pub fn staged_paths(root: &Path) -> Vec<String> {
-    let out = joy_process::command("git")
+    let out = git()
         .arg("-C")
         .arg(root)
         .args(["diff", "--cached", "--name-only", "--diff-filter=ACMR"])
@@ -334,7 +366,7 @@ pub fn staged_paths(root: &Path) -> Vec<String> {
 
 /// Whether `remote` is configured in this checkout.
 pub fn remote_exists(root: &Path, remote: &str) -> bool {
-    joy_process::command("git")
+    git()
         .arg("-C")
         .arg(root)
         .args(["remote", "get-url", remote])
@@ -376,12 +408,7 @@ fn transfer(root: &Path, args: &[&str]) -> RefTransfer {
             .unwrap_or_default()
     );
     let _s = span.enter();
-    match joy_process::command("git")
-        .arg("-C")
-        .arg(root)
-        .args(args)
-        .output()
-    {
+    match git().arg("-C").arg(root).args(args).output() {
         Ok(out) if out.status.success() => RefTransfer::Done,
         Ok(out) => RefTransfer::Refused(String::from_utf8_lossy(&out.stderr).into_owned()),
         Err(e) => RefTransfer::GitUnavailable(e.to_string()),
@@ -390,7 +417,7 @@ fn transfer(root: &Path, args: &[&str]) -> RefTransfer {
 
 /// Whether git tracks `path` in this checkout.
 pub fn path_is_tracked(root: &Path, path: &str) -> bool {
-    let output = joy_process::command("git")
+    let output = git()
         .arg("-C")
         .arg(root)
         .args(["ls-files", "--error-unmatch", "--", path])
@@ -402,7 +429,7 @@ pub fn path_is_tracked(root: &Path, path: &str) -> bool {
 
 /// Untrack `path` (keep the file). Warns and answers false on failure.
 pub fn rm_cached(root: &Path, path: &str) -> bool {
-    let status = joy_process::command("git")
+    let status = git()
         .arg("-C")
         .arg(root)
         .args(["rm", "--cached", "-r", "--quiet", "--", path])
@@ -420,7 +447,7 @@ pub fn rm_cached(root: &Path, path: &str) -> bool {
 
 /// Remove `path` from tree and index. Warns and answers false on failure.
 pub fn rm_hard(root: &Path, path: &str) -> bool {
-    let status = joy_process::command("git")
+    let status = git()
         .arg("-C")
         .arg(root)
         .args(["rm", "-r", "--quiet", "--ignore-unmatch", "--", path])
@@ -439,6 +466,35 @@ pub fn rm_hard(root: &Path, path: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A host with a person at it keeps git's questions: nothing is
+    /// added to the environment.
+    #[test]
+    fn a_seen_host_leaves_the_prompts_alone() {
+        assert_eq!(git_for(false).get_envs().count(), 0);
+    }
+
+    /// A headless host disarms them, and yields on ssh to a person's
+    /// own choice.
+    #[test]
+    fn a_headless_host_disarms_the_prompts() {
+        let command = git_for(true);
+        let env: Vec<(String, String)> = command
+            .get_envs()
+            .map(|(k, v)| {
+                (
+                    k.to_string_lossy().into_owned(),
+                    v.map(|v| v.to_string_lossy().into_owned())
+                        .unwrap_or_default(),
+                )
+            })
+            .collect();
+        assert!(env.contains(&("GIT_TERMINAL_PROMPT".into(), "0".into())));
+        let batch = env
+            .iter()
+            .any(|(k, v)| k == "GIT_SSH_COMMAND" && v == "ssh -o BatchMode=yes");
+        assert_eq!(batch, !ssh_is_chosen());
+    }
 
     #[test]
     #[ignore] // requires git user.email configured

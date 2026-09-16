@@ -69,7 +69,7 @@ jobs:
           # iterating on a red build does not recompile every dependency from
           # scratch on the next run (matters most for the slow windows leg).
           cache-on-failure: true
-      - run: cargo clippy --workspace -- -D warnings
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
         working-directory: joy
 
   test:

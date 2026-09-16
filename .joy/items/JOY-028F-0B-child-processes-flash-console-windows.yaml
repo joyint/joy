@@ -1,7 +1,7 @@
 id: JOY-028F-0B
 title: Child processes flash console windows under a GUI host on Windows
 type: bug
-status: review
+status: in-progress
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -11,7 +11,7 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-16T05:07:38.296799803Z
-updated: 2026-09-16T05:42:51.024131271Z
+updated: 2026-09-16T08:06:03.753423994Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Reported 2026-09-15 from the first install of the public Windows build (JAPP-02CE-5D): the desktop app opens and closes console windows in the background continuously. macOS and Linux never showed it, and never can: a console window is a Windows-only concept.
@@ -47,3 +47,6 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-09-16T05:42:51.024130049Z
   text: '[x] Windows verified by CI (PR joyint/joy#18, run 35060031420 and the re-run after 798019f): all five joy-process tests compile and pass on windows-latest, and the whole suite with them. The first run exposed a test that checked nothing - a_console_host_hands_its_console_down returned early because the CI test binary has no console of its own, finishing in under a millisecond while the spawn test beside it took nineteen. It now asserts per host (terminal: handed down and visible; no console: nothing to hand down, the child stays hidden) and takes 7ms, so it really spawns the probe. Also added here: cargo check --target x86_64-pc-windows-msvc catches platform-specific code on the Linux box before a push. Remaining: the symptom on a real Windows install (JAPP-02CE-5D).'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-16T08:06:03.753422381Z
+  text: 'Review (2026-09-16, eight angles on the app branch and eight on this one) sends it back for rework. Confirmed: (1) a_console_host_hands_its_console_down expects a VISIBLE inherited console, but under ConPTY (Windows Terminal, VS Code) the console window is a hidden pseudo-console window, so the test is red on the common Windows dev setup; and from a console-less interactive parent the no-flag child gets a visible console, so the same test is environment-dependent either way - it tests the OS, not our code, and goes. (2) The doc claims a CREATE_NO_WINDOW child has a null GetConsoleWindow(); on Windows 10/11 it owns a conhost with a hidden window (non-null). The decision stays the null check - a hidden window is also what ConPTY gives, where the child MUST inherit - but the doc is corrected. (3) justfile guard-vcs greps Command::new("git"), which now matches nothing, so the JOY-0265-D7 rule was unenforced. (4) just lint runs clippy without --all-targets, so the disallowed-methods rule never saw test code - the two joy-cli test files were found by hand. (5) publish-crates does not list joy-process, so the next cargo publish -p joy-core would be rejected (the JOY-0247-E1 gap again). (6) windows-sys is declared twice in joy-process. (7) The earlier comment says cargo check --target x86_64-pc-windows-msvc was ''added here'' - it was run by hand; it becomes a just recipe now. (8) console_probe is listed as a passing test although it is the child half of another test. Not fixed here, filed separately: git transfers through the binary have no timeout, and GIT_TERMINAL_PROMPT=0 does not silence ssh''s passphrase or host-key prompt, so a GUI host''s push can hang invisibly where it used to flash a window.'

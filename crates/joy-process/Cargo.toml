@@ -4,13 +4,12 @@ version = "0.20.0"
 edition = "2021"
 license = "MIT"
 description = "Every child process joy starts, built the same way: no console window under a GUI host on Windows"
+repository = "https://github.com/joyint/joy"
+homepage = "https://joyint.com/en/joy"
 
+# Bindings only, so the test's extra module (IsWindowVisible) costs the
+# library nothing and one declaration serves both.
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_System_Console"] }
-
-# The console-window test asks whether the child's console has a VISIBLE
-# window, which is the symptom the operator saw.
-[target.'cfg(windows)'.dev-dependencies]
 windows-sys = { version = "0.61", features = [
     "Win32_System_Console",
     "Win32_UI_WindowsAndMessaging",
