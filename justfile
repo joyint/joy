@@ -307,13 +307,17 @@ setup:
 # joy-forge, and the legacy forge plugins joy-core's identity fallback
 # queries, JOY-0251-AA)
 #
-# The layout a release archive has (JOY-029E-9D): joy, joy-forge and the
-# host key pin file of design D1.4a side by side, so a locally installed
-# joy resolves the connector by the name order of D2.2 and reads the pin
-# file beside its own binary. The three legacy names stay in this recipe
+# The layout an install has (JOY-029E-9D): joy and joy-forge in the bin
+# directory, so joy resolves the connector by the name order of D2.2,
+# and the host key pin file of design D1.4a under the prefix's share
+# directory, which is the second candidate of pins::candidates and the
+# path the installers of W1 write. Not into ~/.local/bin: a pin file
+# there is the first candidate and would shadow the share copy for
+# good. The `rm` line clears exactly that, because an earlier revision
+# of this recipe wrote one. The three legacy names stay in the recipe
 # on purpose: a machine that carries them is the shadowing case of D2.2a.
 install:
-    cargo build --release -p joy-cli -p joy-bi -p joy-github -p joy-gitlab -p joy-gitea && mkdir -p ~/.local/bin && cp target/release/joy target/release/joy-forge target/release/joy-bi target/release/joy-github target/release/joy-gitlab target/release/joy-gitea ~/.local/bin/ && cp crates/joy-core/data/host-keys.json ~/.local/bin/
+    cargo build --release -p joy-cli -p joy-bi -p joy-github -p joy-gitlab -p joy-gitea && mkdir -p ~/.local/bin ~/.local/share/joy && cp target/release/joy target/release/joy-forge target/release/joy-bi target/release/joy-github target/release/joy-gitlab target/release/joy-gitea ~/.local/bin/ && rm -f ~/.local/bin/host-keys.json && cp crates/joy-core/data/host-keys.json ~/.local/share/joy/
 
 # Auto-commit known generated files (.joy/, lockfiles)
 [private]

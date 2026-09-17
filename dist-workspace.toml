@@ -46,4 +46,12 @@ targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-da
 # `<prefix>/share/joy/host-keys.json`. An archive that lost the file
 # still runs; the loader then falls back to the copy compiled into the
 # binary, which ships empty while decision 23 is open.
+#
+# This key fills the archive and nothing else. An install has a prefix,
+# and writing the file to `<prefix>/share/joy/host-keys.json` belongs to
+# the hand written installers of package W1, whose acceptance now names
+# it. The installers dist generates from this file copy binaries only
+# and have no setting for a data file, so an install through them, and
+# every `joy update`, which runs them, carries no pin file; D1.4a names
+# that gap and the three ways out of it.
 include = ["crates/joy-core/data/host-keys.json"]

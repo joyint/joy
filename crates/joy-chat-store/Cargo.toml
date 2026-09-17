@@ -7,11 +7,10 @@ description = "Git storage for Joy's sealed chats: blobs, trees and the chats re
 repository = "https://github.com/joyint/joy"
 homepage = "https://joyint.com/en/joy"
 
-# Not a cargo-dist App. The release ships exactly one archive set per
-# target, the one joy-cli produces, with joy and joy-forge in it (design
-# D2.1). This crate is publishable, so the day it grows a binary it would
-# otherwise become an App of its own at the next tag and make the winget
-# `installers-regex` match more than one asset.
+# Not a cargo-dist App: only joy-cli is (design D2.1). Why every
+# publishable crate beside it carries this key is written once, in the
+# "Check the release shape" step of .github/workflows/release.yml, which
+# is also what fails when a crate loses it.
 [package.metadata.dist]
 dist = false
 

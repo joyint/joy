@@ -7,11 +7,11 @@ description = "Joy BI reference plugin: milestone and velocity reports as JoyNod
 repository = "https://github.com/joyint/joy"
 homepage = "https://joyint.com/en/joy"
 
-# Not a cargo-dist App. joy-bi is a reference plugin that a person builds
-# or `cargo install`s; it is not part of the one archive set the release
-# ships (design D2.1), and as an App of its own it made the winget
-# `installers-regex` of .github/workflows/release.yml match two Windows
-# zips instead of one.
+# Not a cargo-dist App, and the one crate that was one: joy-bi has a
+# binary, so its Windows zip is what made the winget `installers-regex`
+# match two assets. It is a reference plugin a person builds or
+# `cargo install`s, not part of the archive set the release ships
+# (design D2.1; the rule is in .github/workflows/release.yml).
 [package.metadata.dist]
 dist = false
 
