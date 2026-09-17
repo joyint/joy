@@ -2499,6 +2499,19 @@ fn skip_filtered<'a>(
     filtered: &'a std::cell::RefCell<Vec<String>>,
 ) -> impl FnMut(&Path, &[u8]) -> i32 + 'a {
     move |path: &Path, _spec: &[u8]| -> i32 {
+        // A path that is GONE from the working tree is a deletion, and
+        // a deletion writes no content: there is no blob a filter could
+        // have rewritten, so removing the entry is exactly what
+        // `git add -A` does and joy lets it through. Asked with
+        // `symlink_metadata`, so a dangling symlink counts as present
+        // rather than as a deletion.
+        let present = repo
+            .workdir()
+            .map(|workdir| workdir.join(path).symlink_metadata().is_ok())
+            .unwrap_or(true);
+        if !present {
+            return 0;
+        }
         match external_filter(repo, path) {
             Some(filter) => {
                 let named = format!("{} (filter={filter})", path.display());
@@ -2777,7 +2790,10 @@ pub fn set_unborn_branch(dir: &Path, branch: &str) -> anyhow::Result<()> {
 /// is refused by name here as well, wherever its index entry came from:
 /// D3.4's rule is absolute for a person's checkout ("joy never commits
 /// such a path"), and this verb is the one the desktop's release record
-/// still reaches.
+/// still reaches. That also refuses a pointer git's own filter wrote
+/// correctly, and that is the safe direction on purpose: joy cannot
+/// tell the two entries apart, and the sentence it prints ("commit them
+/// with git") is the right instruction for both.
 pub fn commit_index(
     repo_dir: &Path,
     message: &str,
@@ -4357,6 +4373,52 @@ mod clean_filter_tests {
         assert!(text.contains("big.bin"), "{text}");
         assert!(text.contains("filter=lfs"), "{text}");
         assert!(text.contains("runs none"), "{text}");
+    }
+
+    /// A DELETED filtered path is not refused: there is no content for a
+    /// filter to have rewritten, so committing the deletion is what
+    /// `git add -A` followed by `git commit` did, and refusing it would
+    /// leave a person unable to record a release after deleting an
+    /// asset.
+    #[test]
+    fn a_deleted_filtered_path_is_not_a_refusal() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let repo = git2::Repository::init(root).unwrap();
+        std::fs::write(root.join(".gitattributes"), "*.bin filter=lfs -text\n").unwrap();
+        // Tracked the way git would have left it: the pointer git's own
+        // clean filter wrote, committed. Seeded through git2 directly,
+        // because joy's own commit verbs are the ones under test and
+        // they refuse exactly this.
+        std::fs::write(root.join("big.bin"), "version https://git-lfs/spec/v1\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new(".gitattributes")).unwrap();
+        index.add_path(Path::new("big.bin")).unwrap();
+        index.write().unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let signature = git2::Signature::now("T", "t@example.com").unwrap();
+        repo.commit(
+            Some("HEAD"),
+            &signature,
+            &signature,
+            "seed [no-item]",
+            &repo.find_tree(tree_id).unwrap(),
+            &[],
+        )
+        .unwrap();
+
+        std::fs::remove_file(root.join("big.bin")).unwrap();
+        stage_all(root).expect("a deletion carries no content to rewrite");
+        let oid = commit_index(root, "drop it [no-item]", "T", "t@example.com").unwrap();
+        let tree = repo
+            .find_commit(git2::Oid::from_str(&oid).unwrap())
+            .unwrap()
+            .tree()
+            .unwrap();
+        assert!(
+            tree.get_path(Path::new("big.bin")).is_err(),
+            "the deletion is committed"
+        );
     }
 
     /// `commit_all` is the platform's job worktree, where nobody can act

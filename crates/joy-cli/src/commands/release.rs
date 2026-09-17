@@ -306,7 +306,7 @@ fn record(args: RecordArgs) -> Result<()> {
     // bypass the rule names, so it cannot fire as the message stands:
     // the guard is here so a later change to that constant cannot
     // write an unreferenced commit, and
-    // `joy-core/tests/commit_msg_rule.rs` pins that it would.  And no
+    // `joy-core/tests/commit_msg_rule.rs` pins that it would. And no
     // joy command takes a commit message from a person, so on a machine
     // without git this half of D3.3 has nothing else to refuse; a
     // person's own `git commit` is refused by the installed hook, which
