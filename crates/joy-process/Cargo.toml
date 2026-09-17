@@ -7,6 +7,13 @@ description = "Every child process joy starts, built the same way: no console wi
 repository = "https://github.com/joyint/joy"
 homepage = "https://joyint.com/en/joy"
 
+# Not a cargo-dist App: only joy-cli is (design D2.1). Why every
+# publishable crate beside it carries this key is written once, in the
+# "Check the release shape" step of .github/workflows/release.yml, which
+# is also what fails when a crate loses it.
+[package.metadata.dist]
+dist = false
+
 # Bindings only, so the test's extra module (IsWindowVisible) costs the
 # library nothing and one declaration serves both.
 [target.'cfg(windows)'.dependencies]

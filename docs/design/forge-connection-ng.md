@@ -197,6 +197,10 @@ joy cannot read libgit2's verdict on the host key branch: git2 0.21 drops the `v
 
 **Pinned fingerprints.** joy ships the published host keys of github.com (and ssh.github.com), gitlab.com (and altssh.gitlab.com) and codeberg.org as full key blobs for every published type, in a data file inside the release, not as code. The pin is consulted only when no file read above contains any line for that host, and only for these hosts. `Interactive` still shows the fingerprint and adds "this is the key <forge> publishes at <URL>"; `Background` and `Delegated` accept the pinned key and write nothing. A known_hosts line always wins over the pin. Stated plainly: pinning replaces the person's first contact decision with trust in the joy release, and it makes joy refuse a legitimate key rotation at those three hosts until a new pin ships, so the mismatch sentence for a pinned host names the joy version and the forge's fingerprint page, and the pin file can be replaced without rebuilding. joy never fetches fingerprints at contact time. Codeberg publishes fingerprints only (https://docs.codeberg.org/security/ssh-fingerprint/), so its pin is built from a blob taken once and checked against the published fingerprints at build time. That build step is J4h's work and is named in J4h's acceptance. Until decision 23 is answered, the `Background` and `Delegated` half of this section rests on the pin, which is why the journey row in section 3 reads partly and not yes.
 
+**Where the pin file lives, and who puts it there.** The loader reads two paths in this order: `<directory of the running binary>/host-keys.json`, then `<prefix>/share/joy/host-keys.json`, where the prefix is the parent of that directory (`joy_core::vcs::known_hosts::pins::candidates`). A release archive carries the file in its root beside `joy` and `joy-forge` (J8, the `include` key of joy/dist-workspace.toml), so a person who only unpacks an archive and runs joy out of it has the pins. An install has a prefix, so an installer writes the file to `<prefix>/share/joy/host-keys.json`, which is `$HOME/.local/share/joy/host-keys.json` for the install directory both hand written installers default to. Placing it is W1's work and is named in W1's acceptance, together with naming it in the install receipt, so that a second install run replaces it and a key rotation reaches installed machines as a replaced file. It is never written into the install directory itself: a copy there wins over the share copy for good and would shadow every later rotation.
+
+**What no package places yet, named rather than discovered at the first rotation.** The installer scripts cargo-dist generates (`joy-cli-installer.sh`, `joy-cli-installer.ps1`) copy the binaries of the archive and nothing else, and dist 0.31 has no setting for a data file, so two paths onto a machine carry no pin file: an install through the generated script, and every `joy update`, which downloads and runs that same script. Those installs read the pins compiled into the binary, which is the empty set. A winget install extracts the whole archive into its package directory, so the file sits beside `joy.exe` there, but what komac writes into the manifest once a second executable is in that directory is unverified and the first tag after J8 has to be watched. The answers open to us, to be settled together with decision 23 because an empty pin set makes none of it urgent: joy's own `update` command copies the pin file out of the downloaded archive once axoupdater returns; get.joyint.com keeps serving the hand written scripts and the generated ones leave the release; or the pins go back into the binary and a rotation becomes a release. Until then the sentence "the pin file can be replaced without rebuilding" holds for an archive and for an install made by the hand written installers, and for nothing else.
+
 #### D1.5 The https twin, tracking refs and per ref push statuses
 
 The twin is computed only for a contact; the configured remote is never rewritten.
@@ -1027,7 +1031,7 @@ Parallel with: J3, J4b, A1, J8, P3, P7, P4, P5, P9.
 **J8 (joy): distribution shape.**
 Depends on: J2.
 Files: joy/dist-workspace.toml, the crate manifests, joy/.github/workflows/release.yml.
-Acceptance: a tag produces exactly one archive set per target containing joy and the connector, and winget matches exactly one asset; the Windows binaries are signed before bundling.
+Acceptance: a tag produces exactly one archive set per target containing joy, the connector and the pin file of D1.4a, and winget matches exactly one asset; the Windows binaries are signed before bundling. J8 puts the pin file into the archive; placing it on an installed machine belongs to W1, and the install paths that carry no pin file at all are named in D1.4a.
 Parallel with: J3, J4b, J10, A1.
 
 **A1 (app): sidecars and bundling.**
@@ -1130,7 +1134,8 @@ Parallel with: J6, A4, A5, P2, P6, P8 (it starts when A2 is green).
 **W1 (website): installer scripts.**
 Depends on: J8.
 Files: website/public/install/joy.sh:110-120, website/public/install/joy.ps1:80-95.
-Acceptance: after the one command install, `joy release publish` on a github.com remote reaches the connector with no further install step; the receipt lists every installed binary and `joy update` updates all of them.
+Work: install both binaries out of the one archive, write the archive's `host-keys.json` to `<prefix>/share/joy/host-keys.json` (D1.4a), and name all of it in the install receipt.
+Acceptance: after the one command install, `joy release publish` on a github.com remote reaches the connector with no further install step; the receipt lists every installed binary and `joy update` updates all of them; the pin file of D1.4a lies at `$HOME/.local/share/joy/host-keys.json` and nowhere inside the install directory, a second run of the installer replaces it, and the receipt names it.
 
 **W2 (website and docs): copy and documentation.**
 Depends on: J6, A2, A4, A5.
