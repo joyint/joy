@@ -665,7 +665,18 @@ pub fn verdict(evidence: &ContactEvidence) -> Verdict {
 /// the one `certificate_check` closure stashed it while the contact ran
 /// and decided nothing with it (D1.4a).
 fn detail_line(failure: Failure, evidence: &ContactEvidence) -> String {
-    let libgit2 = format!("libgit2: {}", evidence.error.message());
+    // libgit2's own words, with a credential taken out of them where
+    // one could be in them at all: it has a message that echoes the
+    // proxy URL joy built back at the caller (http.c:340-342), and
+    // D1.11 promises the proxy password never reaches a text a person
+    // reads. Off that path the message is handed on untouched, so an
+    // ssh remote's `git@` stays what it is.
+    let message = if super::proxy::carried_credential() {
+        super::proxy::scrubbed(evidence.error.message())
+    } else {
+        evidence.error.message().to_string()
+    };
+    let libgit2 = format!("libgit2: {message}");
     if failure != Failure::TlsUntrusted {
         return libgit2;
     }

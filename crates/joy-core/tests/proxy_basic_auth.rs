@@ -17,12 +17,15 @@
 //! resolve the host, and only a contact that really went through the
 //! proxy can return objects.
 //!
-//! Two notes on how literally to read it. The remote speaks plain http,
-//! as in tests/forge_request_budget.rs, so the variable that decides
-//! here is `HTTP_PROXY`; `HTTPS_PROXY` is set to the same proxy and is
-//! asserted separately, on the decision rather than on the wire,
-//! because an https remote would need a certificate authority this test
-//! cannot install. And it owns its process: the proxy variables are
+//! Two notes on how literally to read it. The first test's remote
+//! speaks plain http, as in tests/forge_request_budget.rs, so the
+//! variable that decides there is `HTTP_PROXY`. `HTTPS_PROXY` is the
+//! second test's: an https remote tunnels through the same proxy with
+//! `CONNECT`, and the credential joy injected into the proxy URL
+//! arrives on the wire there, which is the acceptance sentence as it is
+//! written. That one stops at the TLS handshake, because a certificate
+//! authority is the one thing this test cannot install. And the file
+//! owns its process: the proxy variables and the tracing subscriber are
 //! process state.
 
 #![cfg(unix)]
@@ -35,8 +38,8 @@ use std::sync::{Arc, Mutex};
 use joy_core::vcs::forge::{fetch_ref, Auth};
 use joy_core::vcs::proxy::{self, Environment, Outcome};
 
-/// The proxy variables and the gap table are process state: the three
-/// tests below run one at a time.
+/// The proxy variables, the gap table and the global tracing subscriber
+/// are process state: the four tests below run one at a time.
 static SERIAL: Mutex<()> = Mutex::new(());
 
 const CHATS_REF: &str = "refs/joy/chats";
@@ -270,6 +273,27 @@ fn forge_repository(dir: &std::path::Path) -> (Vec<(String, git2::Oid)>, git2::O
 
 // ---- every tracing line this process wrote ----------------------------
 
+/// The subscriber is installed GLOBALLY, once, and not with the thread
+/// local `with_default`: "no proxy password in any log line" is a
+/// promise about the whole process, and joy's credential helper runner
+/// writes on threads of its own (it reads the helper's two pipes on two
+/// spawned threads), which a thread local subscriber would never see.
+/// This binary owns its process, so it may take the global slot.
+static RECORDER: std::sync::OnceLock<Recorder> = std::sync::OnceLock::new();
+
+/// The global recorder, emptied for the test that is about to run. The
+/// tests hold [`SERIAL`] while they use it.
+fn recorder() -> Recorder {
+    let recorder = RECORDER.get_or_init(|| {
+        let recorder = Recorder::default();
+        tracing::subscriber::set_global_default(recorder.clone())
+            .expect("this test binary owns its process");
+        recorder
+    });
+    recorder.lines.lock().unwrap().clear();
+    recorder.clone()
+}
+
 #[derive(Clone, Default)]
 struct Recorder {
     lines: Arc<Mutex<Vec<String>>>,
@@ -376,15 +400,13 @@ fn a_fetch_through_a_proxy_that_requires_basic_succeeds_and_leaks_nothing() {
     drop(config);
     drop(repo);
 
-    let recorder = Recorder::default();
-    let fetched = tracing::subscriber::with_default(recorder.clone(), || {
-        fetch_ref(
-            &checkout,
-            &Auth::LocalAs(joy_core::vcs::HostKind::Background),
-            CHATS_REF,
-            "refs/joy/chats-tracking",
-        )
-    })
+    let recorder = recorder();
+    let fetched = fetch_ref(
+        &checkout,
+        &Auth::LocalAs(joy_core::vcs::HostKind::Background),
+        CHATS_REF,
+        "refs/joy/chats-tracking",
+    )
     .expect("the fetch went through the proxy");
     assert!(fetched, "the ref was advertised through the proxy");
 
@@ -465,8 +487,14 @@ fn a_fetch_through_a_proxy_that_requires_basic_succeeds_and_leaks_nothing() {
 /// fetch fails after the proxy said 200. What is asserted is the whole
 /// proxy conversation up to that point, and that the failure text
 /// carries no password.
+///
+/// It needs no network and no TLS backend, so it runs in the default
+/// suite with the rest: the proxy is on the loopback interface and
+/// `forge.invalid` is never resolved by anything, because libgit2 dials
+/// the PROXY and asks it for `CONNECT forge.invalid:443`. This is the
+/// test that proves the acceptance sentence as it is written, with
+/// `HTTPS_PROXY` set, so it must not be one that nobody runs.
 #[test]
-#[cfg(feature = "forge-net")]
 fn an_https_remote_reaches_the_proxy_through_connect_with_its_credential() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -497,15 +525,13 @@ fn an_https_remote_reaches_the_proxy_through_connect_with_its_credential() {
     drop(config);
     drop(repo);
 
-    let recorder = Recorder::default();
-    let outcome = tracing::subscriber::with_default(recorder.clone(), || {
-        fetch_ref(
-            &checkout,
-            &Auth::LocalAs(joy_core::vcs::HostKind::Background),
-            CHATS_REF,
-            "refs/joy/chats-tracking",
-        )
-    });
+    let recorder = recorder();
+    let outcome = fetch_ref(
+        &checkout,
+        &Auth::LocalAs(joy_core::vcs::HostKind::Background),
+        CHATS_REF,
+        "refs/joy/chats-tracking",
+    );
     let text = match outcome {
         Ok(_) => String::new(),
         Err(e) => format!("{e:#}"),

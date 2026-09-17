@@ -91,6 +91,22 @@ fn no_proxy_grammar_is_libgit2s() {
     assert!(!no_proxy_matches("acme.example", 443, ",,"));
 }
 
+/// A pattern whose port is not a port names a port no contact can have,
+/// and matches nothing. libgit2 compares the port TEXT
+/// (net.c:1100-1103), so `acme.example:99999` matches no contact there
+/// either; reading it as "this entry names no port" would bypass the
+/// proxy for that host on EVERY port, which is the opposite of what the
+/// person wrote.
+#[test]
+fn a_port_that_is_not_a_port_matches_nothing() {
+    assert!(!no_proxy_matches("acme.example", 443, "acme.example:99999"));
+    assert!(!no_proxy_matches("acme.example", 99, "acme.example:99999"));
+    // and the rest of the list is still read
+    assert!(no_proxy_matches("b.com", 443, "acme.example:99999, b.com"));
+    // a leading zero is still a port, because it parses
+    assert!(no_proxy_matches("acme.example", 443, "acme.example:0443"));
+}
+
 /// The half libgit2 does not do: `http_proxy_config` never looks at
 /// no_proxy (remote.c:1085-1133), so a proxy from git config was used
 /// for a host the person excluded. joy applies the list to every
@@ -375,6 +391,34 @@ fn a_helper_credential_rides_in_the_url_and_never_in_the_name() {
     assert!(printed.contains("proxy.acme.example:8080"), "{printed}");
 }
 
+/// The helper is asked with `protocol=http` for an `https://` proxy
+/// too (D1.11). It is one login, to one machine in the middle: a person
+/// who stored it once must not have to store it a second time because
+/// the proxy URL gained an `s`.
+#[test]
+fn an_https_proxy_is_looked_up_under_protocol_http() {
+    let mut asked: Vec<String> = Vec::new();
+    let mut credential = |proxy: &ProxyUrl| {
+        asked.push(proxy.credential_url());
+        None
+    };
+    let proxy = decide(
+        "https://github.com/o/r.git",
+        None,
+        None,
+        &env_with(Some("https://proxy.acme.example:8443"), None),
+        &mut credential,
+    )
+    .expect("no refusal");
+    assert_eq!(asked, vec!["http://proxy.acme.example:8443".to_string()]);
+    // and the proxy itself is still dialled over https
+    assert_eq!(
+        proxy.url.as_deref(),
+        Some("https://proxy.acme.example:8443")
+    );
+    assert_eq!(proxy.name(), Some("proxy.acme.example:8443"));
+}
+
 /// What the person wrote into their own configuration is used as
 /// written, and no helper is asked.
 #[test]
@@ -457,6 +501,36 @@ fn a_proxy_url_is_redacted_for_every_text_a_person_reads() {
     assert_eq!(
         redacted("proxy.acme.example:8080"),
         "proxy.acme.example:8080"
+    );
+}
+
+/// libgit2 has one message that echoes the proxy URL joy built,
+/// userinfo included: `git_error_set(GIT_ERROR_HTTP, "invalid URL:
+/// '%s'", proxy)` (http.c:340-342). Whatever a text that reaches a
+/// person came from, the credential is taken out of it.
+#[test]
+fn a_libgit2_message_that_echoes_the_proxy_url_loses_the_credential() {
+    assert_eq!(
+        scrubbed("invalid URL: 'http://picard:secret@proxy.acme.example:8080'"),
+        "invalid URL: 'http://<credential>@proxy.acme.example:8080'"
+    );
+    // the whole authority, and not one character past it
+    assert_eq!(
+        scrubbed("failed http://picard:s@e%40cret@proxy.acme:8080/path@x now"),
+        "failed http://<credential>@proxy.acme:8080/path@x now"
+    );
+    // a message with no URL in it is handed back as it stands
+    let plain = "the SSL certificate is invalid";
+    assert_eq!(scrubbed(plain), plain);
+    // and so is a URL that carries no userinfo
+    let clean = "failed to connect to https://github.com/o/r.git";
+    assert_eq!(scrubbed(clean), clean);
+    // an ssh remote's user name is a user name, not a credential, but
+    // this runs only where a credentialed proxy was configured, so the
+    // safe reading wins
+    assert_eq!(
+        scrubbed("ssh://git@github.com/o/r"),
+        "ssh://<credential>@github.com/o/r"
     );
 }
 

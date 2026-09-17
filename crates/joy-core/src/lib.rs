@@ -66,48 +66,58 @@ pub mod version_files;
 /// and the `Once` makes every call after the first free.
 pub fn apply_ca_locations() {
     static APPLIED: std::sync::Once = std::sync::Once::new();
-    APPLIED.call_once(|| {
-        match ca_locations() {
-            vcs::proxy::CaDecision::Nothing => {}
-            vcs::proxy::CaDecision::Apply(entries) => {
-                for entry in entries {
-                    // SAFETY: a libgit2 global option, set inside the
-                    // `Once` above and never changed afterwards, before
-                    // any contact of this process is opened.
-                    let applied = unsafe {
-                        match entry.kind {
-                            vcs::proxy::CaKind::Bundle => {
-                                git2::opts::set_ssl_cert_file(entry.value.as_str())
-                            }
-                            vcs::proxy::CaKind::Directory => {
-                                git2::opts::set_ssl_cert_dir(entry.value.as_str())
-                            }
+    APPLIED.call_once(|| apply_ca_decision(ca_locations()));
+}
+
+/// The applying half of [`apply_ca_locations`], with the decision as a
+/// parameter rather than read from the machine.
+///
+/// It is separate because the `Once` above can be spent exactly once
+/// per process, while the branch that REPORTS a location libgit2 will
+/// not take is the one a person's day depends on: a CA they believe is
+/// installed and is not. That branch is reachable here.
+pub fn apply_ca_decision(decision: vcs::proxy::CaDecision) {
+    match decision {
+        vcs::proxy::CaDecision::Nothing => {}
+        vcs::proxy::CaDecision::Apply(entries) => {
+            for entry in entries {
+                // SAFETY: a libgit2 global option, set from inside the
+                // `Once` of `apply_ca_locations` and never changed
+                // afterwards, before any contact of this process is
+                // opened.
+                let applied = unsafe {
+                    match entry.kind {
+                        vcs::proxy::CaKind::Bundle => {
+                            git2::opts::set_ssl_cert_file(entry.value.as_str())
                         }
-                    };
-                    match applied {
-                        Ok(()) => tracing::info!(
-                            key = %entry.key,
-                            source = %entry.source,
-                            path = %entry.value,
-                            "certificate authority location applied"
-                        ),
-                        Err(e) => tracing::warn!(
-                            key = %entry.key,
-                            source = %entry.source,
-                            path = %entry.value,
-                            error = %e,
-                            "certificate authority location could not be applied"
-                        ),
+                        vcs::proxy::CaKind::Directory => {
+                            git2::opts::set_ssl_cert_dir(entry.value.as_str())
+                        }
                     }
-                }
-            }
-            vcs::proxy::CaDecision::Refused(sentences) => {
-                for sentence in sentences {
-                    tracing::warn!("{sentence}");
+                };
+                match applied {
+                    Ok(()) => tracing::info!(
+                        key = %entry.key,
+                        source = %entry.source,
+                        path = %entry.value,
+                        "certificate authority location applied"
+                    ),
+                    Err(e) => tracing::warn!(
+                        key = %entry.key,
+                        source = %entry.source,
+                        path = %entry.value,
+                        error = %e,
+                        "certificate authority location could not be applied"
+                    ),
                 }
             }
         }
-    });
+        vcs::proxy::CaDecision::Refused(sentences) => {
+            for sentence in sentences {
+                tracing::warn!("{sentence}");
+            }
+        }
+    }
 }
 
 /// What this machine's configuration says about certificate authority

@@ -49,7 +49,9 @@
 //! passes it as `ProxyOptions::url`. The credential never touches the
 //! person's git config, and it never appears in a log line or an error
 //! text: [`Proxy`] prints its NAME, which is `host:port` and nothing
-//! else, and its `Debug` is written by hand for that reason.
+//! else, its `Debug` is written by hand for that reason, and the one
+//! libgit2 message that could echo the URL back goes through
+//! [`scrubbed`] on its way to a person.
 //!
 //! **Not supported, and said so instead of failing obscurely**: SOCKS
 //! proxies. libgit2 parses any proxy URL as an HTTP proxy and always
@@ -179,18 +181,37 @@ impl std::fmt::Display for Unsupported {
 
 impl std::error::Error for Unsupported {}
 
+/// What one contact's proxy left behind for the evidence: its name, and
+/// whether joy put a credential into the URL it handed libgit2.
+#[derive(Clone)]
+struct Noted {
+    name: String,
+    credentialed: bool,
+}
+
 thread_local! {
     /// The proxy THIS thread's contact went through, for the evidence
     /// of D1.8c: a 407 names the proxy and never the forge. libgit2
     /// calls back on the contact's own thread, which is the same scope
     /// the certificate cell of [`super::certificates`] uses.
-    static CURRENT: RefCell<Option<String>> = const { RefCell::new(None) };
+    static CURRENT: RefCell<Option<Noted>> = const { RefCell::new(None) };
 }
 
 /// The proxy of the contact running on this thread, if joy configured
 /// one.
 pub fn current() -> Option<String> {
-    CURRENT.with(|cell| cell.borrow().clone())
+    CURRENT.with(|cell| cell.borrow().as_ref().map(|noted| noted.name.clone()))
+}
+
+/// Whether the proxy URL this contact handed libgit2 carried a
+/// credential, which is what decides whether libgit2's own words need
+/// [`scrubbed`] before a person reads them.
+pub fn carried_credential() -> bool {
+    CURRENT.with(|cell| {
+        cell.borrow()
+            .as_ref()
+            .is_some_and(|noted| noted.credentialed)
+    })
 }
 
 /// Forget what the last contact on this thread went through. Called by
@@ -199,8 +220,13 @@ pub fn forget() {
     CURRENT.with(|cell| *cell.borrow_mut() = None);
 }
 
-pub(crate) fn note(name: Option<&str>) {
-    CURRENT.with(|cell| *cell.borrow_mut() = name.map(str::to_string));
+pub(crate) fn note(name: Option<&str>, credentialed: bool) {
+    CURRENT.with(|cell| {
+        *cell.borrow_mut() = name.map(|name| Noted {
+            name: name.to_string(),
+            credentialed,
+        })
+    });
 }
 
 /// THE proxy options of one contact (D1.11).
@@ -224,7 +250,7 @@ pub fn options_for(url: &str, repo: Option<&git2::Repository>) -> Result<Proxy, 
         &Environment::of_this_process(),
         &mut credential,
     )?;
-    note(proxy.name());
+    note(proxy.name(), proxy.credentialed);
     match (proxy.outcome, proxy.name()) {
         (Outcome::Specified, Some(name)) => tracing::debug!(
             proxy = name,
@@ -492,7 +518,15 @@ fn pattern_matches(host: &str, port: u16, pattern: &str) -> bool {
         // separator; a bare IPv6 address has no port and its colons
         // belong to the address.
         Some((domain, tail)) if tail.chars().all(|c| c.is_ascii_digit()) && !tail.is_empty() => {
-            (domain, tail.parse::<u16>().ok())
+            match tail.parse::<u16>() {
+                Ok(port) => (domain, Some(port)),
+                // A port no contact can have: libgit2 compares the port
+                // TEXT (net.c:1100-1103), so `acme.example:99999` matches
+                // nothing there. It must not become "this pattern names
+                // no port", which would bypass the proxy for the host on
+                // every port.
+                Err(_) => return false,
+            }
         }
         _ => (rest, None),
     };
@@ -615,9 +649,16 @@ impl ProxyUrl {
     }
 
     /// What joy asks its credential helper runner about: `protocol=http`
-    /// and `host=<proxyhost>[:port]` (D1.11).
+    /// and `host=<proxyhost>[:port]` (D1.11), whatever the proxy's own
+    /// scheme is.
+    ///
+    /// The protocol is `http` for an `https://` proxy too, and that is
+    /// the design's word: it is one login, to one machine in the middle,
+    /// and a person who stored it once should not have to store it
+    /// again because the proxy URL gained a `s`. libgit2 presents the
+    /// userinfo the same way either way (http.c:141-152).
     fn credential_url(&self) -> String {
-        format!("{}://{}", self.scheme, self.name)
+        format!("http://{}", self.name)
     }
 }
 
@@ -648,6 +689,46 @@ pub fn redacted(value: &str) -> String {
         Some((_, host)) => format!("{scheme}<credential>@{host}"),
         None => format!("{scheme}{rest}"),
     }
+}
+
+/// Any URL in a text libgit2 wrote, with its userinfo taken out.
+///
+/// There is one libgit2 message that echoes the proxy URL joy built,
+/// userinfo included: `git_error_set(GIT_ERROR_HTTP, "invalid URL:
+/// '%s'", proxy)` (http.c:340-342), reached when `git_net_url_parse_http`
+/// succeeds on that URL and `git_net_url_valid` then refuses it. joy
+/// validates the host and the port itself and percent encodes the
+/// userinfo, so this is a narrow door, but D1.11's promise is absolute
+/// ("never appears in a log line or an error text") and the defence is
+/// cheap. [`redacted`] does the same for one URL joy holds as a whole;
+/// this does it for a sentence with a URL somewhere inside it.
+pub fn scrubbed(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find("://") {
+        let (head, after) = rest.split_at(at + 3);
+        out.push_str(head);
+        // The authority runs to the path, the query, the fragment or
+        // whatever punctuation the message wrapped the URL in.
+        let end = after
+            .find(|c: char| {
+                c.is_whitespace() || matches!(c, '/' | '?' | '#' | '\'' | '"' | '`' | '<' | '>')
+            })
+            .unwrap_or(after.len());
+        let (authority, tail) = after.split_at(end);
+        match authority.rsplit_once('@') {
+            // The LAST `@`, because a percent decoded password may hold
+            // one of its own.
+            Some((_, host)) => {
+                out.push_str("<credential>@");
+                out.push_str(host);
+            }
+            None => out.push_str(authority),
+        }
+        rest = tail;
+    }
+    out.push_str(rest);
+    out
 }
 
 /// Everything but the unreserved set of RFC 3986 is encoded: joy has no

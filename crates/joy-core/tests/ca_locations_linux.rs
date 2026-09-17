@@ -3,7 +3,7 @@
 
 //! The Linux only certificate authority escape hatch of D1.12.
 //!
-//! Three things are proven here, and one is stated rather than proven.
+//! Four things are proven here, and one is stated rather than proven.
 //!
 //! - A machine with nothing configured applies nothing: OpenSSL's own
 //!   default verify paths decide, which git2 fills with openssl-probe
@@ -15,24 +15,28 @@
 //! - `ca_bundle` and `ca_dir` from `forges.yaml` and `http.sslCAInfo`
 //!   and `http.sslCAPath` from git config are read, joy's own file
 //!   winning for the same kind.
+//! - A location libgit2 will not take is REPORTED by name, with the key
+//!   it came from and the file it names, instead of leaving a person
+//!   with a CA they believe is installed.
 //! - The applied locations really reach libgit2: a readable PEM is
-//!   accepted by `git2::opts::set_ssl_cert_file` and an unreadable one
-//!   is reported by name instead of being swallowed.
+//!   accepted by `git2::opts::set_ssl_cert_file`.
 //!
-//! It owns its process: HOME, XDG_CONFIG_HOME and the libgit2 option it
-//! sets are process state.
+//! Only the last of those needs a TLS backend, so only it runs under
+//! `forge-net`: without that feature libgit2 is compiled with no TLS
+//! backend and `GIT_OPT_SET_SSL_CERT_LOCATIONS` answers "TLS backend
+//! doesn't support certificate locations" (settings.c:207-223) on every
+//! target, Linux included. The three criteria a person's day depends on
+//! run in the default suite, because a criterion nobody runs is not
+//! met.
 //!
-//! It runs under `forge-net`, because that is the build that speaks TLS
-//! at all: without it libgit2 is compiled with no TLS backend and
-//! `GIT_OPT_SET_SSL_CERT_LOCATIONS` answers "TLS backend doesn't
-//! support certificate locations" (settings.c:207-223) on every target,
-//! Linux included. The desktop and the platform build with it.
+//! The file owns its process: HOME, XDG_CONFIG_HOME and the libgit2
+//! option it sets are process state.
 
-#![cfg(all(target_os = "linux", feature = "forge-net"))]
+#![cfg(target_os = "linux")]
 
 use std::sync::{Arc, Mutex};
 
-use joy_core::vcs::proxy::{CaDecision, CaKind};
+use joy_core::vcs::proxy::{CaDecision, CaEntry, CaKind};
 
 /// Every tracing line this process wrote, so that the branch which only
 /// logs can be read.
@@ -71,6 +75,7 @@ impl tracing::Subscriber for Recorder {
 /// a certificate in it does; the machine's own bundle is the one that
 /// is certainly valid and certainly present on a Linux host that has
 /// ever spoken TLS.
+#[cfg(feature = "forge-net")]
 fn a_real_bundle() -> Option<std::path::PathBuf> {
     [
         "/etc/ssl/certs/ca-certificates.crt",
@@ -86,36 +91,50 @@ fn a_real_bundle() -> Option<std::path::PathBuf> {
 /// at a time.
 static SERIAL: Mutex<()> = Mutex::new(());
 
-#[test]
-fn the_hatch_reads_both_sources_and_reaches_libgit2() {
-    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+/// A HOME with nothing in it, which is what "no joy setting" means.
+fn an_empty_home() -> tempfile::TempDir {
     let home = tempfile::tempdir().expect("tempdir");
     std::env::set_var("HOME", home.path());
     std::env::set_var("XDG_CONFIG_HOME", home.path().join(".config"));
     std::env::set_var("GIT_CONFIG_NOSYSTEM", "1");
+    home
+}
 
-    // Nothing configured: joy sets nothing and the system store decides
-    // alone, which is what makes `update-ca-certificates` enough.
+/// The acceptance criterion: an intercepting CA installed with
+/// `update-ca-certificates` is trusted on Linux with NO joy setting.
+/// What joy owes for that is to set nothing at all, so that OpenSSL's
+/// default verify paths are what decides, and that is what this asserts.
+#[test]
+fn nothing_configured_is_nothing_applied_and_the_system_store_decides() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let _home = an_empty_home();
     assert_eq!(joy_core::ca_locations(), CaDecision::Nothing);
+    // and applying that decision touches no libgit2 option and says
+    // nothing, because there is nothing to say
+    let recorder = Recorder::default();
+    tracing::subscriber::with_default(recorder.clone(), || {
+        joy_core::apply_ca_decision(CaDecision::Nothing)
+    });
+    assert!(
+        recorder.lines.lock().unwrap().is_empty(),
+        "a machine with nothing configured hears nothing"
+    );
+}
 
+/// Both sources are read, and joy's own file wins over whatever the
+/// workstation image left in git config for the same kind. The paths
+/// here name nothing that exists: this half is the READING, and it is
+/// the same on every Linux host.
+#[test]
+fn the_hatch_reads_forges_yaml_and_the_two_git_config_keys() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let home = an_empty_home();
     let joy_config = home.path().join(".config").join("joy");
     std::fs::create_dir_all(&joy_config).expect("config dir");
-    let Some(bundle) = a_real_bundle() else {
-        // A Linux host with no certificate bundle at all cannot say
-        // anything about this criterion, and inventing a PEM here would
-        // test the test.
-        eprintln!("no system certificate bundle on this host; the apply half is not run");
-        return;
-    };
-    let certs_dir = home.path().join("certs");
-    std::fs::create_dir_all(&certs_dir).expect("certs dir");
     std::fs::write(
         joy_config.join("forges.yaml"),
-        format!(
-            "- host: git.acme.example\n  kind: gitlab\n  ca_bundle: {}\n  ca_dir: {}\n",
-            bundle.display(),
-            certs_dir.display()
-        ),
+        "- host: git.acme.example\n  kind: gitlab\n  ca_bundle: /etc/acme/ca.pem\n  \
+         ca_dir: /etc/acme/certs\n",
     )
     .expect("write forges.yaml");
     // The key a corporate workstation image already carries, which
@@ -123,7 +142,7 @@ fn the_hatch_reads_both_sources_and_reaches_libgit2() {
     // whole 1.9.6 tree).
     std::fs::write(
         home.path().join(".gitconfig"),
-        format!("[http]\n\tsslCAInfo = {}\n", bundle.display()),
+        "[http]\n\tsslCAInfo = /etc/image/ca.pem\n\tsslCAPath = /etc/image/certs\n",
     )
     .expect("write gitconfig");
 
@@ -141,15 +160,95 @@ fn the_hatch_reads_both_sources_and_reaches_libgit2() {
         "joy's own file wins the bundle"
     );
     assert_eq!(entries[0].kind, CaKind::Bundle);
-    assert_eq!(entries[0].value, bundle.display().to_string());
+    assert_eq!(entries[0].value, "/etc/acme/ca.pem");
     assert_eq!(entries[1].key, "ca_dir");
     assert_eq!(entries[1].kind, CaKind::Directory);
+    assert_eq!(entries[1].value, "/etc/acme/certs");
+}
 
-    // And they really reach libgit2: the option exists on this build
-    // (it is compiled for OpenSSL and mbedTLS alone,
-    // settings.c:207-223) and it takes the file.
+/// A location libgit2 will not take is reported BY NAME, which is what
+/// keeps a person from believing a CA is installed when it is not.
+///
+/// This drives the applying half with the decision as a parameter,
+/// because the one time wrapper around it can be spent only once per
+/// process. Why libgit2 refuses differs with the build and does not
+/// matter to the branch under test: under `forge-net` OpenSSL refuses a
+/// file that holds no certificate, and without a TLS backend libgit2
+/// refuses the option itself (settings.c:207-223).
+#[test]
+fn a_location_libgit2_will_not_take_is_reported_by_name() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = tempfile::tempdir().expect("tempdir");
+    let not_a_bundle = dir.path().join("not-a-bundle.pem");
+    std::fs::write(&not_a_bundle, "this is not a certificate\n").expect("write");
+    let decision = CaDecision::Apply(vec![CaEntry {
+        key: "ca_bundle".to_string(),
+        source: "/home/picard/.config/joy/forges.yaml".to_string(),
+        value: not_a_bundle.display().to_string(),
+        kind: CaKind::Bundle,
+    }]);
+
     let recorder = Recorder::default();
-    tracing::subscriber::with_default(recorder.clone(), joy_core::apply_ca_locations);
+    tracing::subscriber::with_default(recorder.clone(), || joy_core::apply_ca_decision(decision));
+    let lines = recorder.lines.lock().unwrap().clone();
+    let reported = lines
+        .iter()
+        .find(|line| line.contains("certificate authority location could not be applied"))
+        .unwrap_or_else(|| panic!("the refusal is reported: {lines:#?}"));
+    assert!(reported.contains("ca_bundle"), "the key: {reported}");
+    assert!(
+        reported.contains("forges.yaml"),
+        "and where it came from: {reported}"
+    );
+    assert!(
+        reported.contains(&not_a_bundle.display().to_string()),
+        "and the location itself: {reported}"
+    );
+}
+
+/// Every refused entry of a macOS or Windows machine is said out loud,
+/// and no libgit2 option is touched for it.
+#[test]
+fn a_refused_entry_is_said_out_loud() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let recorder = Recorder::default();
+    tracing::subscriber::with_default(recorder.clone(), || {
+        joy_core::apply_ca_decision(CaDecision::Refused(vec![
+            "joy ignores ca_bundle".to_string()
+        ]))
+    });
+    let lines = recorder.lines.lock().unwrap().clone();
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.contains("joy ignores ca_bundle")),
+        "{lines:#?}"
+    );
+}
+
+/// And the locations really reach libgit2: the option exists on this
+/// build (it is compiled for OpenSSL and mbedTLS alone,
+/// settings.c:207-223) and it takes a real bundle.
+#[test]
+#[cfg(feature = "forge-net")]
+fn an_applied_bundle_reaches_libgit2() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(bundle) = a_real_bundle() else {
+        // A Linux host with no certificate bundle at all cannot say
+        // anything about this criterion, and inventing a PEM here would
+        // test the test.
+        eprintln!("no system certificate bundle on this host; the apply half is not run");
+        return;
+    };
+    let decision = CaDecision::Apply(vec![CaEntry {
+        key: "ca_bundle".to_string(),
+        source: "/home/picard/.config/joy/forges.yaml".to_string(),
+        value: bundle.display().to_string(),
+        kind: CaKind::Bundle,
+    }]);
+
+    let recorder = Recorder::default();
+    tracing::subscriber::with_default(recorder.clone(), || joy_core::apply_ca_decision(decision));
     let lines = recorder.lines.lock().unwrap().clone();
     assert!(
         lines.iter().any(
@@ -163,26 +262,5 @@ fn the_hatch_reads_both_sources_and_reaches_libgit2() {
             .iter()
             .all(|line| !line.contains("could not be applied")),
         "and nothing failed: {lines:#?}"
-    );
-}
-
-/// The other half of the apply: a location that is not a certificate
-/// bundle fails, which is what joy reports by name instead of leaving
-/// a person with a CA they believe is installed. The one time wrapper
-/// is spent by the test above, so this one drives the libgit2 option
-/// directly, which is what that wrapper does inside its `Once`.
-#[test]
-fn a_bundle_that_is_not_one_is_reported_by_name() {
-    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-    let dir = tempfile::tempdir().expect("tempdir");
-    let not_a_bundle = dir.path().join("not-a-bundle.pem");
-    std::fs::write(&not_a_bundle, "this is not a certificate\n").expect("write");
-    // SAFETY: a libgit2 global option. This test binary sets it in this
-    // test and in the one above, both single threaded, and nothing in
-    // this binary opens a TLS connection.
-    let applied = unsafe { git2::opts::set_ssl_cert_file(not_a_bundle.to_str().expect("utf-8")) };
-    assert!(
-        applied.is_err(),
-        "OpenSSL refuses a file that holds no certificate, and joy reports it"
     );
 }

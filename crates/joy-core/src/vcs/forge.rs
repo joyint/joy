@@ -3239,7 +3239,7 @@ mod tests {
                 "proxy authentication required but no callback set",
             )
         };
-        super::super::proxy::note(Some("proxy.acme.example:8080"));
+        super::super::proxy::note(Some("proxy.acme.example:8080"), false);
         let failure = contact_failed(
             "https://github.com/joyint/joy.git",
             &Auth::Local,
@@ -3272,6 +3272,61 @@ mod tests {
             text.contains("A proxy in front of github.com"),
             "and an unnamed proxy is said to be in front of the forge: {text}"
         );
+    }
+
+    /// D1.11's promise is absolute: the proxy password never appears in
+    /// a log line or an error text. libgit2 has one message that echoes
+    /// the proxy URL joy built straight back ("invalid URL: '%s'",
+    /// http.c:340-342), so the detail line takes the credential out of
+    /// libgit2's own words whenever this contact carried one.
+    #[test]
+    fn a_libgit2_message_that_carries_the_proxy_url_loses_the_password() {
+        let libgit2 = || {
+            git2::Error::new(
+                git2::ErrorCode::GenericError,
+                git2::ErrorClass::Http,
+                "invalid URL: 'http://picard:tea-earl-grey-hot@proxy.acme.example:8080'",
+            )
+        };
+        super::super::proxy::note(Some("proxy.acme.example:8080"), true);
+        let evidence = super::super::contact::ContactEvidence::new(
+            libgit2(),
+            "https://github.com/joyint/joy.git",
+            super::super::contact::ContactDirection::Fetch,
+            super::super::contact::CredentialSource::TokenPresented,
+        )
+        .through_proxy("proxy.acme.example:8080".to_string());
+        let verdict = super::super::contact::verdict(&evidence);
+        assert!(
+            !verdict.detail.contains("tea-earl-grey-hot"),
+            "the password is out of the detail line: {}",
+            verdict.detail
+        );
+        assert_eq!(
+            verdict.detail,
+            "libgit2: invalid URL: 'http://<credential>@proxy.acme.example:8080'"
+        );
+
+        // A contact whose proxy carried no credential keeps libgit2's
+        // words exactly as they stand.
+        super::super::proxy::note(Some("proxy.acme.example:8080"), false);
+        let evidence = super::super::contact::ContactEvidence::new(
+            git2::Error::new(
+                git2::ErrorCode::GenericError,
+                git2::ErrorClass::Net,
+                "failed to resolve address for ssh://git@forge.acme.example",
+            ),
+            "https://github.com/joyint/joy.git",
+            super::super::contact::ContactDirection::Fetch,
+            super::super::contact::CredentialSource::TokenPresented,
+        );
+        assert!(
+            super::super::contact::verdict(&evidence)
+                .detail
+                .contains("ssh://git@forge.acme.example"),
+            "nothing is scrubbed off that path"
+        );
+        super::super::proxy::forget();
     }
 
     /// D4.5, open mode: the e-mail is the member, and the display name is
