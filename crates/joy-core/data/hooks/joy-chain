@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Joy hook chaining (design D3.5).
+#
+# joy OWNS core.hooksPath, because git's core.hooksPath REPLACES the
+# hook location entirely: not setting it would leave joy's commit-msg
+# check out of the person's active hook path, and the item rule would
+# be enforced for nobody on exactly the team repositories it is written
+# for. Owning it means running what was there before, so `joy init` and
+# `joy update` record the path they replaced in
+# .joy/hooks/chained-path, and every joy hook ends here.
+#
+# Usage: joy-chain <hook-name> [args...]
+#
+# Exit 0 when there is nothing to chain to; otherwise the chained
+# hook's own exit code is this hook's, which is what git reads. That
+# keeps husky, lefthook and pre-commit alive beside joy's own check.
+#
+# .joy/hooks/ is gitignored, so the recorded path travels with the
+# checkout of the person who has it and never with the team.
+
+set -uo pipefail
+
+name="${1:-}"
+[ -n "$name" ] || exit 0
+shift
+
+here="$(cd "$(dirname "$0")" && pwd)" || exit 0
+
+chained=""
+if [ -f "$here/chained-path" ]; then
+    chained="$(head -1 "$here/chained-path" | tr -d '\r')"
+fi
+if [ -z "$chained" ]; then
+    # No previous value: git's own default location, which is
+    # $GIT_COMMON_DIR/hooks - the common dir, so a linked worktree
+    # reaches the same hooks the main checkout has. NOT
+    # `rev-parse --git-path hooks`: that one applies core.hooksPath,
+    # which is joy's own path now, and the chain would point at itself.
+    gitdir="$(git rev-parse --git-common-dir 2>/dev/null)" || gitdir=""
+    [ -n "$gitdir" ] || gitdir="$(git rev-parse --git-dir 2>/dev/null)" || gitdir=""
+    [ -n "$gitdir" ] && chained="$gitdir/hooks"
+fi
+[ -n "$chained" ] || exit 0
+
+# A relative core.hooksPath is relative to the working tree, and git
+# runs every hook from there.
+case "$chained" in
+    /*) ;;
+    *) chained="$(pwd)/$chained" ;;
+esac
+
+# Never chain back into joy's own hooks: that would be this script
+# calling itself for ever.
+resolved="$(cd "$chained" 2>/dev/null && pwd)" || exit 0
+[ "$resolved" != "$here" ] || exit 0
+
+next="$resolved/$name"
+[ -x "$next" ] || exit 0
+exec "$next" "$@"

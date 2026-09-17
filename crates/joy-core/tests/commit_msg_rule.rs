@@ -92,6 +92,17 @@ fn the_hook_and_the_validator_answer_the_same_corpus() {
         include_str!("../data/hooks/commit-msg"),
     )
     .unwrap();
+    // The chain tail of D3.5 rides with the hook: without it the hook
+    // stops at joy's own verdict, which is the same answer here (there
+    // is nothing to chain to in this directory) but a different code
+    // path, and the test has to exercise the one that ships.
+    let chainer = root.join("joy-chain");
+    std::fs::write(&chainer, include_str!("../data/hooks/joy-chain")).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&chainer, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
     std::fs::create_dir_all(root.join(".joy")).unwrap();
     std::fs::write(
         root.join(".joy/project.yaml"),

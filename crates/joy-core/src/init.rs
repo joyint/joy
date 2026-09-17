@@ -22,7 +22,25 @@ pub const HOOK_FILES: &[EmbeddedFile] = &[
         target: "hooks/prepare-commit-msg",
         executable: true,
     },
+    // The tail of every joy hook (design D3.5): joy owns
+    // `core.hooksPath`, so it runs what was there before.
+    EmbeddedFile {
+        content: include_str!("../data/hooks/joy-chain"),
+        target: "hooks/joy-chain",
+        executable: true,
+    },
 ];
+
+/// The hook path joy owns, as `core.hooksPath` spells it: relative to
+/// the working tree, so it is the same value in every clone.
+pub const JOY_HOOKS_PATH: &str = ".joy/hooks";
+
+/// Where joy remembers the hook path it replaced (design D3.5).
+///
+/// A file joy writes, not a git config key, so it travels with the
+/// checkout of the person who has it and never with the team:
+/// `.joy/hooks/` is in the managed gitignore block.
+pub const CHAINED_PATH_FILE: &str = "hooks/chained-path";
 
 pub const CONFIG_FILES: &[EmbeddedFile] = &[EmbeddedFile {
     content: include_str!("../data/config.defaults.yaml"),
@@ -229,6 +247,10 @@ pub struct InitResult {
 pub struct OnboardResult {
     pub hooks_installed: bool,
     pub hooks_already_set: bool,
+    /// The hook path joy took over and now chains to, when there was
+    /// one (design D3.5). `None` when `core.hooksPath` was unset, in
+    /// which case joy's hooks chain to git's own `$GIT_DIR/hooks`.
+    pub chained: Option<String>,
 }
 
 pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
@@ -496,7 +518,8 @@ pub fn onboard(root: &Path) -> Result<OnboardResult, JoyError> {
     Ok(result)
 }
 
-/// Sync hook files and set core.hooksPath.
+/// Sync hook files, remember the hook path joy replaces, and set
+/// core.hooksPath (design D3.5).
 fn install_hooks(root: &Path) -> Result<OnboardResult, JoyError> {
     let actions = embedded::sync_files(root, HOOK_FILES)?;
     let hooks_installed = actions.iter().any(|a| a.action != "up to date");
@@ -504,16 +527,57 @@ fn install_hooks(root: &Path) -> Result<OnboardResult, JoyError> {
     // Set core.hooksPath if not already pointing to .joy/hooks
     let vcs = default_vcs();
     let current = vcs.config_get(root, "core.hooksPath").unwrap_or_default();
-    let already_set = current == ".joy/hooks";
+    let already_set = current == JOY_HOOKS_PATH;
 
+    let mut chained = None;
     if !already_set {
-        vcs.config_set(root, "core.hooksPath", ".joy/hooks")?;
+        chained = record_chained_hooks(root, &current)?;
+        vcs.config_set(root, "core.hooksPath", JOY_HOOKS_PATH)?;
     }
 
     Ok(OnboardResult {
         hooks_installed,
         hooks_already_set: already_set,
+        chained,
     })
+}
+
+/// Remember the hook path joy is about to replace, so every joy hook
+/// can run it afterwards (design D3.5), and say so ONCE.
+///
+/// `core.hooksPath` replaces the hook location entirely, so the
+/// alternative - not setting it - means joy's commit-msg check is absent
+/// from the person's active hook path and the item rule is enforced for
+/// nobody on exactly the team repositories it is written for. Owning the
+/// path and chaining keeps husky, lefthook and pre-commit alive beside
+/// it.
+///
+/// Nothing is written when there was no previous value: joy's hooks then
+/// chain to git's own `$GIT_DIR/hooks`, which is what git would have run.
+/// Nothing is written for joy's own path either, so a second `joy update`
+/// cannot overwrite the recorded path with `.joy/hooks` and break the
+/// chain.
+pub fn record_chained_hooks(root: &Path, previous: &str) -> Result<Option<String>, JoyError> {
+    let previous = previous.trim();
+    if previous.is_empty() || previous == JOY_HOOKS_PATH {
+        return Ok(None);
+    }
+    let path = store::joy_dir(root).join(CHAINED_PATH_FILE);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| JoyError::CreateDir {
+            path: parent.to_path_buf(),
+            source: e,
+        })?;
+    }
+    std::fs::write(&path, format!("{previous}\n")).map_err(|e| JoyError::WriteFile {
+        path: path.clone(),
+        source: e,
+    })?;
+    // Said once, here, because this is the one moment the takeover
+    // happens: afterwards `core.hooksPath` is joy's and nothing records
+    // anything again. stderr, so a `--json` answer stays one envelope.
+    eprintln!("joy installed its hooks and kept yours: {previous} still runs after joy's.");
+    Ok(Some(previous.to_string()))
 }
 
 pub const GITIGNORE_BLOCK_START: &str = "### joy:start -- managed by joy, do not edit manually";

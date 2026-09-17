@@ -13,11 +13,15 @@ MSG_FILE="$1"
 SOURCE="${2:-}"
 
 # Fail open: if joy is not on PATH, do nothing and let the commit proceed.
-if ! command -v joy >/dev/null 2>&1; then
-    exit 0
+# Never let a hook error abort the commit; the suggestion is a convenience.
+if command -v joy >/dev/null 2>&1; then
+    joy prepare-commit-msg "$MSG_FILE" "$SOURCE" >/dev/null 2>&1 || true
 fi
 
-# Never let a hook error abort the commit; the suggestion is a convenience.
-joy prepare-commit-msg "$MSG_FILE" "$SOURCE" >/dev/null 2>&1 || true
-
-exit 0
+# Then the hooks that were here before joy took core.hooksPath (design
+# D3.5). Their exit code is this hook's: joy's own step is a
+# convenience, theirs is not. A checkout whose .joy/hooks predates the
+# chainer simply stops here.
+CHAINER="$(dirname "$0")/joy-chain"
+[ -x "$CHAINER" ] || exit 0
+exec "$CHAINER" prepare-commit-msg "$@"

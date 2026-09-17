@@ -332,7 +332,7 @@ struct HooksPathItem;
 impl HooksPathItem {
     fn current(&self, root: &Path) -> bool {
         let vcs = crate::vcs::default_vcs();
-        vcs.config_get(root, "core.hooksPath").ok().as_deref() == Some(".joy/hooks")
+        vcs.config_get(root, "core.hooksPath").ok().as_deref() == Some(init::JOY_HOOKS_PATH)
     }
 }
 
@@ -356,7 +356,14 @@ impl UpdateItem for HooksPathItem {
         let before = self.current(root);
         let vcs = crate::vcs::default_vcs();
         if vcs.is_repo(root) {
-            vcs.config_set(root, "core.hooksPath", ".joy/hooks")?;
+            // The first `joy update` that finds a FOREIGN path records
+            // it and says so once, so the hooks the person installed
+            // keep running after joy's (design D3.5).
+            if !before {
+                let previous = vcs.config_get(root, "core.hooksPath").unwrap_or_default();
+                init::record_chained_hooks(root, &previous)?;
+            }
+            vcs.config_set(root, "core.hooksPath", init::JOY_HOOKS_PATH)?;
         }
         Ok(vec![RefreshRow {
             name: "core.hooksPath".into(),
