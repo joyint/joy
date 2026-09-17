@@ -17,7 +17,15 @@ pub enum JoyError {
     /// A write needs an acting member and none is known: no delegation
     /// session, no member pinned on this device, and no git config that
     /// names a member of this project (D4.5).
-    #[error("this project does not know who you are, pick your member")]
+    ///
+    /// The first line is the sentence D4.5 writes for the desktop, where
+    /// the remedy is the member picker. The second names the remedy of a
+    /// host that has no picker, because this error reaches the command
+    /// line too (`joy auth init`, a commit joy writes).
+    #[error(
+        "this project does not know who you are, pick your member\n\
+         On the command line, name it: --user <address>"
+    )]
     UnknownActingMember,
 
     #[error(

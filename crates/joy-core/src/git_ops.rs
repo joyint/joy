@@ -7,6 +7,7 @@
 
 use std::path::Path;
 
+use crate::error::JoyError;
 use crate::model::config::AutoGit;
 use crate::store;
 use crate::vcs::default_vcs;
@@ -48,7 +49,17 @@ pub fn auto_git_add(root: &Path, paths: &[&str]) {
 /// if auto-git >= Commit.
 ///
 /// `summary` is the commit subject line (e.g. "add JOY-005D Auto-add...").
-/// `identity` is the Joy identity string for Co-Authored-By.
+/// `identity` is the Joy identity string for Co-Authored-By, as
+/// [`crate::identity::Identity::log_user`] writes it: the acting member,
+/// optionally followed by `delegated-by:<human>`.
+///
+/// The commit is signed for that acting member (D4.5), not for whatever
+/// `git config` on this machine says: joy knows who acts, the machine
+/// setting is a prefill for the display name, and in an anonymous project
+/// the opaque member id is the only thing that may reach a commit
+/// (ADR-042). This is also why the commit itself is written through git2
+/// rather than by a git process: a project founded without a git config
+/// has nothing for `git commit` to sign with.
 pub fn auto_git_post_command(root: &Path, summary: &str, identity: &str) {
     let level = auto_git_level();
     if !level.should_commit() {
@@ -58,13 +69,21 @@ pub fn auto_git_post_command(root: &Path, summary: &str, identity: &str) {
     let vcs = default_vcs();
 
     let message = format!("joy: {summary}\n\nCo-Authored-By: {identity}");
-    if let Err(e) = vcs.commit(root, &message) {
-        let err = e.to_string();
-        // "nothing to commit" is not an error worth warning about
-        if !err.contains("nothing to commit") {
-            eprintln!("Warning: auto-git commit failed: {e}");
+    let signature = match acting_signature(root, identity) {
+        Ok(signature) => signature,
+        Err(e) => {
+            eprintln!("Warning: auto-git commit skipped: {e}");
+            return;
         }
-        return;
+    };
+    match crate::vcs::forge::commit_index_if_changed(root, &message, &signature.0, &signature.1) {
+        // nothing staged that HEAD does not already carry: not an error
+        Ok(None) => return,
+        Ok(Some(_)) => {}
+        Err(e) => {
+            eprintln!("Warning: auto-git commit failed: {e}");
+            return;
+        }
     }
 
     if level.should_push() {
@@ -73,6 +92,23 @@ pub fn auto_git_post_command(root: &Path, summary: &str, identity: &str) {
             eprintln!("Warning: auto-git push failed: {e}");
         }
     }
+}
+
+/// The two signature fields for the member `identity` names.
+///
+/// `identity` is the event-log form, so the acting member is its first
+/// word and a `delegated-by:` note may follow it. When the caller could
+/// not name anybody (no session, no pin, no git config), the project's
+/// own answer is asked for before giving up, so the message a person sees
+/// is the typed one and not git2's parse error.
+fn acting_signature(root: &Path, identity: &str) -> Result<(String, String), JoyError> {
+    let member = identity.split_whitespace().next().unwrap_or_default();
+    if !member.is_empty() {
+        return crate::identity::commit_signature(root, member);
+    }
+    let project = store::load_project(root)?;
+    let member = crate::identity::acting_member(root, &project, None)?;
+    crate::identity::commit_signature(root, &member)
 }
 
 #[cfg(test)]

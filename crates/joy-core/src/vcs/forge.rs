@@ -444,7 +444,7 @@ pub fn commit_joy(
     index.write().map_err(err)?;
     let tree_id = index.write_tree().map_err(err)?;
     let tree = repo.find_tree(tree_id).map_err(err)?;
-    let signature = git2::Signature::now(author_name, author_email).map_err(err)?;
+    let signature = signature_now(author_name, author_email)?;
     let parent = repo
         .head()
         .ok()
@@ -692,7 +692,7 @@ pub fn pull_merge(
     resolve_conflicts_yaml_aware(&repo, &mut index)?;
     let tree_id = index.write_tree_to(&repo).map_err(err)?;
     let tree = repo.find_tree(tree_id).map_err(err)?;
-    let sig = git2::Signature::now(author_name, author_email).map_err(err)?;
+    let sig = signature_now(author_name, author_email)?;
     repo.commit(
         Some("HEAD"),
         &sig,
@@ -998,7 +998,7 @@ pub fn commit_index(
     let mut index = repo.index().map_err(err)?;
     let tree_id = index.write_tree().map_err(err)?;
     let tree = repo.find_tree(tree_id).map_err(err)?;
-    let signature = git2::Signature::now(author_name, author_email).map_err(err)?;
+    let signature = signature_now(author_name, author_email)?;
     let parent = repo
         .head()
         .ok()
@@ -1016,6 +1016,46 @@ pub fn commit_index(
         )
         .map_err(err)?;
     Ok(oid.to_string())
+}
+
+/// [`commit_index`] for the automatic commits joy writes after a command
+/// (`auto_git_post_command`): the same commit, and `Ok(None)` instead of
+/// an empty one when the index holds nothing the parent does not already
+/// have. That is the "nothing to commit" the git binary used to answer.
+pub fn commit_index_if_changed(
+    repo_dir: &Path,
+    message: &str,
+    author_name: &str,
+    author_email: &str,
+) -> anyhow::Result<Option<String>> {
+    let repo = open(repo_dir).map_err(err)?;
+    let mut index = repo.index().map_err(err)?;
+    if index.has_conflicts() {
+        anyhow::bail!("the index has unresolved conflicts");
+    }
+    let tree_id = index.write_tree().map_err(err)?;
+    let parent = repo
+        .head()
+        .ok()
+        .and_then(|h| h.target())
+        .and_then(|oid| repo.find_commit(oid).ok());
+    if parent.as_ref().map(|p| p.tree_id()) == Some(tree_id) {
+        return Ok(None);
+    }
+    let tree = repo.find_tree(tree_id).map_err(err)?;
+    let signature = signature_now(author_name, author_email)?;
+    let parents: Vec<&git2::Commit> = parent.iter().collect();
+    let oid = repo
+        .commit(
+            Some("HEAD"),
+            &signature,
+            &signature,
+            message,
+            &tree,
+            &parents,
+        )
+        .map_err(err)?;
+    Ok(Some(oid.to_string()))
 }
 
 /// Configure a named remote.
@@ -1092,7 +1132,7 @@ pub fn commit_everything(
     index.write().map_err(err)?;
     let tree_id = index.write_tree().map_err(err)?;
     let tree = repo.find_tree(tree_id).map_err(err)?;
-    let sig = git2::Signature::now(author_name, author_email).map_err(err)?;
+    let sig = signature_now(author_name, author_email)?;
     let parent = repo
         .head()
         .ok()
@@ -1184,6 +1224,25 @@ pub fn member_signature(
         .filter(|name| !name.is_empty())
         .unwrap_or(member);
     Ok((name.to_string(), member.to_string()))
+}
+
+/// The ONE way joy builds a `git2::Signature` (D4.5): every commit, tag
+/// and merge joy writes goes through here, so the rule cannot be true in
+/// one function and false in the next.
+///
+/// It applies [`member_signature`] to what the caller carries, which
+/// guarantees the two things libgit2 and ADR-042 need: both strings are
+/// non-empty (`git_signature_new` refuses an empty name or e-mail,
+/// signature.c:68-99), and an anonymous member id never grows an address
+/// or a person's name beside it. A caller with no member at all gets the
+/// typed `UnknownActingMember` instead of libgit2's "failed to parse
+/// signature".
+fn signature_now(
+    author_name: &str,
+    author_email: &str,
+) -> anyhow::Result<git2::Signature<'static>> {
+    let (name, email) = member_signature(author_email, Some(author_name))?;
+    git2::Signature::now(&name, &email).map_err(err)
 }
 
 /// PREFILL ONLY (D4.5): the identity the repository's git config carries.
@@ -1340,7 +1399,7 @@ pub fn commit_paths(
         return Ok(None);
     }
     let tree = repo.find_tree(tree_id).map_err(err)?;
-    let signature = git2::Signature::now(author_name, author_email).map_err(err)?;
+    let signature = signature_now(author_name, author_email)?;
     let parents: Vec<&git2::Commit> = parent.iter().collect();
     let oid = repo
         .commit(
@@ -1366,7 +1425,7 @@ pub fn tag_annotated(
 ) -> anyhow::Result<()> {
     let repo = open(repo_dir).map_err(err)?;
     let head = repo.head().map_err(err)?.peel_to_commit().map_err(err)?;
-    let signature = git2::Signature::now(author_name, author_email).map_err(err)?;
+    let signature = signature_now(author_name, author_email)?;
     repo.tag(name, head.as_object(), &signature, message, true)
         .map_err(err)?;
     Ok(())
@@ -1487,7 +1546,7 @@ pub fn commit_all(
         return Ok(None); // nothing but (excluded) .joy noise changed
     }
     let tree = repo.find_tree(tree_id).map_err(err)?;
-    let signature = git2::Signature::now(author_name, author_email).map_err(err)?;
+    let signature = signature_now(author_name, author_email)?;
     let parents: Vec<&git2::Commit> = parent.iter().collect();
     let oid = repo
         .commit(
@@ -1852,7 +1911,7 @@ fn land_branch_yaml_inner(
     resolve_conflicts_yaml_aware(&repo, &mut index)?;
     let tree_id = index.write_tree_to(&repo).map_err(err)?;
     let tree = repo.find_tree(tree_id).map_err(err)?;
-    let sig = git2::Signature::now(author_name, author_email).map_err(err)?;
+    let sig = signature_now(author_name, author_email)?;
     let oid = repo
         .commit(Some("HEAD"), &sig, &sig, message, &tree, &[&head, &their])
         .map_err(err)?;
@@ -1951,7 +2010,7 @@ pub fn merge_branch(
     }
     let mut index = repo.index()?;
     let tree = repo.find_tree(index.write_tree()?)?;
-    let sig = git2::Signature::now(author_name, author_email)?;
+    let sig = signature_now(author_name, author_email)?;
     let oid = repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &[&head, &their])?;
     repo.cleanup_state().ok();
     // reset the working tree to the merged commit
@@ -2290,14 +2349,58 @@ mod tests {
         );
     }
 
+    /// D4.5, at the gate every commit goes through: `signature_now` is
+    /// the only way joy builds a signature, so an empty display name can
+    /// no longer reach libgit2 as "failed to parse signature", and an
+    /// anonymous member id cannot pick up a name on the way in.
+    #[test]
+    fn every_commit_passes_the_signature_gate() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        std::fs::write(dir.path().join("a.txt"), "a").unwrap();
+        stage_paths(dir.path(), &["a.txt"]).unwrap();
+
+        // A member with no configured name: the member stands in for it,
+        // where git2 would have refused the empty string outright.
+        let oid = commit_index(dir.path(), "first", "", "scotty@example.com").unwrap();
+        let commit = repo
+            .find_commit(git2::Oid::from_str(&oid).unwrap())
+            .unwrap();
+        assert_eq!(commit.author().name().ok(), Some("scotty@example.com"));
+        assert_eq!(commit.author().email().ok(), Some("scotty@example.com"));
+
+        // An anonymous member id keeps both fields, whatever name a
+        // caller carries beside it.
+        let id = crate::member_id::opaque_member_id(&"cd".repeat(32)).unwrap();
+        std::fs::write(dir.path().join("a.txt"), "b").unwrap();
+        stage_paths(dir.path(), &["a.txt"]).unwrap();
+        let oid = commit_index(dir.path(), "second", "Scotty", &id).unwrap();
+        let commit = repo
+            .find_commit(git2::Oid::from_str(&oid).unwrap())
+            .unwrap();
+        assert_eq!(commit.author().name().ok(), Some(id.as_str()));
+        assert_eq!(commit.author().email().ok(), Some(id.as_str()));
+
+        // Nobody at all: the typed error, not libgit2's parse failure.
+        let err = commit_index(dir.path(), "third", "Scotty", "  ").unwrap_err();
+        assert!(
+            err.to_string()
+                .starts_with("this project does not know who you are, pick your member"),
+            "{err}"
+        );
+    }
+
     /// D4.5: no member, no commit, and the sentence says what to do.
     #[test]
     fn a_signature_without_a_member_is_the_typed_error() {
         let err = member_signature("   ", Some("Scotty")).unwrap_err();
-        assert_eq!(
-            err.to_string(),
-            "this project does not know who you are, pick your member"
+        assert!(
+            err.to_string()
+                .starts_with("this project does not know who you are, pick your member"),
+            "{err}"
         );
+        // the command line has no picker, so the sentence names its remedy
+        assert!(err.to_string().contains("--user <address>"), "{err}");
         assert!(matches!(err, crate::error::JoyError::UnknownActingMember));
     }
 

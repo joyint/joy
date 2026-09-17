@@ -59,6 +59,9 @@ sysinfo = { version = "0.33", default-features = false, features = ["system"] }
 
 [dev-dependencies]
 assert_cmd = "2"
+# Reading back what joy committed (the signature fields of D4.5). joy-core
+# already builds this exact git2; the tests just look at the result.
+git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2"] }
 predicates = "3"
 tempfile = "3"
 trycmd = "0.15"

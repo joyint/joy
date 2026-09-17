@@ -92,6 +92,17 @@ fn init_user_founds_and_auth_init_enrols_without_a_git_config() {
     // config anywhere in the chain: the device pin of D3.9 carries it.
     let add = joy(&root, &home, &["add", "task", "First thing"]);
     assert!(add.status.success(), "{}", text(&add));
+
+    // The session lasts 24 hours; the project does not end with it.
+    // Re-authenticating finds the same member the same way, so the
+    // founder is not locked out of his own project tomorrow.
+    let again = joy(
+        &root,
+        &home,
+        &["auth", "--passphrase", "correct horse battery staple"],
+    );
+    assert!(again.status.success(), "{}", text(&again));
+    assert!(text(&again).contains("a@b.c"), "{}", text(&again));
     let status = joy(&root, &home, &["auth", "status"]);
     assert!(
         text(&status).contains("a@b.c"),
@@ -117,10 +128,13 @@ fn init_without_an_identity_and_without_a_person_refuses_by_name() {
     assert!(!root.join(".joy").exists());
 }
 
-/// The same command under a delegation session: refused with the same
-/// sentence, and an agent is never asked to type an address.
+/// A `JOY_SESSION` that names no live session is no delegation: the host
+/// is what it was without it, here a background one, and it refuses with
+/// the same sentence. The delegated branch itself (a live session on a
+/// terminal, which must beat the terminal) is proven in joy-core's
+/// `delegated_host` test, where a real session can be minted.
 #[test]
-fn init_under_a_delegation_session_refuses_by_name() {
+fn init_with_a_session_value_that_names_nothing_refuses_by_name() {
     let (_dir, root, home) = machine();
     let init = joy_process::command(env!("CARGO_BIN_EXE_joy"))
         .args(["init", "--name", "Delegated"])
@@ -140,4 +154,74 @@ fn init_under_a_delegation_session_refuses_by_name() {
         text(&init)
     );
     assert!(!root.join(".joy").exists());
+}
+
+/// The acceptance of J9 in the product: a commit joy writes in an
+/// anonymous mode project carries the opaque `m-<hex>` id in BOTH
+/// signature fields. The git config of this checkout names a person by
+/// name and address, and none of it may reach the commit (ADR-042).
+#[test]
+fn an_anonymous_project_commits_under_the_opaque_id() {
+    let (_dir, root, home) = machine();
+
+    let init = joy(
+        &root,
+        &home,
+        &[
+            "init",
+            "--name",
+            "Anon",
+            "--user",
+            "scotty@example.com",
+            "--anonymous",
+            "--passphrase",
+            "correct horse battery staple",
+        ],
+    );
+    assert!(init.status.success(), "{}", text(&init));
+
+    // This machine DOES have a git identity, in the checkout itself, and
+    // it is the identity `git commit` would have signed with.
+    let repo = git2::Repository::open(&root).unwrap();
+    let mut config = repo.config().unwrap();
+    config.set_str("user.name", "Scotty Real").unwrap();
+    config.set_str("user.email", "scotty@example.com").unwrap();
+
+    // joy commits its own writes from here on.
+    std::fs::write(
+        root.join(".joy/config.yaml"),
+        "workflow:\n  auto-git: commit\n",
+    )
+    .unwrap();
+
+    let add = joy(&root, &home, &["add", "task", "First thing"]);
+    assert!(add.status.success(), "{}", text(&add));
+
+    let head = repo.head().unwrap().peel_to_commit().unwrap();
+    assert!(
+        head.summary()
+            .ok()
+            .flatten()
+            .unwrap_or("")
+            .starts_with("joy: add"),
+        "joy wrote the commit at HEAD: {:?}",
+        head.summary().ok().flatten()
+    );
+    let fields = [
+        head.author().name().unwrap().to_string(),
+        head.author().email().unwrap().to_string(),
+        head.committer().name().unwrap().to_string(),
+        head.committer().email().unwrap().to_string(),
+    ];
+    for field in &fields {
+        assert!(
+            field.starts_with("m-"),
+            "every signature field is the opaque member id, got {fields:?}"
+        );
+        assert!(!field.contains('@'), "no address in {fields:?}");
+        assert!(!field.contains("Scotty"), "no person's name in {fields:?}");
+    }
+    assert_eq!(fields[0], fields[1]);
+    assert_eq!(fields[0], fields[2]);
+    assert_eq!(fields[0], fields[3]);
 }

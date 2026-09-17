@@ -2079,6 +2079,7 @@ dependencies = [
  "clap",
  "clap_complete",
  "crossterm 0.28.1",
+ "git2",
  "glob",
  "hex",
  "joy-ai",
