@@ -14,7 +14,10 @@ the whole contract.
 - **Errors**: message on stderr, non-zero exit (2 for "no project").
 - **Reads, no writes**: plugins compute over the project (joy-core or the
   files). Anything that mutates the project goes through `joy` itself so
-  Guard, event log, and audit trail apply.
+  Guard, event log, and audit trail apply. The FORGE connectors are the
+  named exception and a class of their own: they authenticate, they
+  hold state, and two of their verbs write on the forge. Their section
+  below says which, and what each one changes.
 
 ## The node tree
 

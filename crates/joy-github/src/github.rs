@@ -848,6 +848,11 @@ mod tests {
             api_base("ghe.example.org", &ctx),
             "https://ghe.example.org/api/v3"
         );
+        // and therefore the addresses of the person on THAT instance
+        assert_eq!(
+            format!("{}/user/emails", api_base("ghe.example.org", &ctx)),
+            "https://ghe.example.org/api/v3/user/emails"
+        );
     }
 
     /// And an operator's `forges.yaml` overrides even that (D2.5).
