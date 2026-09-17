@@ -36,6 +36,7 @@ pub mod templates;
 #[cfg(feature = "tutorial")]
 pub mod tutorial;
 pub mod update;
+pub mod util;
 pub mod vcs;
 pub mod version_bump;
 pub mod version_files;

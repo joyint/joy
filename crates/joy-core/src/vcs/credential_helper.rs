@@ -1,0 +1,1433 @@
+// Copyright (c) 2026 Joydev GmbH (joydev.com)
+// SPDX-License-Identifier: MIT
+
+//! joy's own credential helper runner (design D1.3).
+//!
+//! `git2::Cred::credential_helper` is not used anywhere in joy, and
+//! this module is the reason. git2 builds the string
+//! `git credential-<name>` for every short helper name and runs it
+//! through `sh -c` (cred.rs:310-316, :395), which spawns a GIT PROCESS
+//! for a credential - on a product that has no git binary to spawn
+//! (ADR: git2 only), on Windows where `sh` may not be on PATH at all,
+//! and only ever with the `get` operation, which is why a revoked Git
+//! Credential Manager entry is replayed on every single contact.
+//!
+//! What joy does instead:
+//!
+//! - the helper binary is spawned BY ITS OWN NAME,
+//!   `git-credential-<name>`, found in Git for Windows' own directories
+//!   through its registry keys or in git's libexec directory on unix;
+//! - the config lookup includes the PORT, which git2 drops
+//!   (cred.rs:323-330), and reads EVERY value of a multivar, not only
+//!   the last one, with an empty value resetting the chain the way git
+//!   does it;
+//! - a shell shaped value (`!...`) is split with a quote-aware argv
+//!   splitter, because `gh` always single-quotes its Windows path, and
+//!   only a value that genuinely needs a shell gets one: Git for
+//!   Windows' own `usr\bin\sh.exe` on Windows, `/bin/sh` on unix,
+//!   never `sh` from PATH;
+//! - `store` and `erase` are run beside `get`, so an accepted
+//!   credential is remembered and a refused one is forgotten instead of
+//!   being replayed;
+//! - the helper's stderr is captured and quoted in the failure, which
+//!   is the difference between "authentication failed" and "helper
+//!   'manager': fatal: Cannot prompt because user interactivity has
+//!   been disabled.";
+//! - the environment that silences a helper's own dialogs is set PER
+//!   SPAWN through `Command::env` (never `std::env::set_var`, which
+//!   would leak into every other thread of a desktop app) and only for
+//!   the host kinds that have nobody to answer a dialog.
+
+use std::collections::HashMap;
+use std::io::{Read, Write};
+use std::path::PathBuf;
+use std::process::Stdio;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+use super::host_kind::HostKind;
+use super::remote_url::RemoteUrl;
+
+/// How long a helper may take when nobody can answer it. An
+/// interactive host has no bound at all: a person typing into a Git
+/// Credential Manager window is not a hang. A worker has one, because
+/// a helper that waits for a dialog nobody sees would otherwise stop
+/// the sync for ever.
+const QUIET_DEADLINE: Duration = Duration::from_secs(30);
+
+/// How long an answer is reused without asking the helper again
+/// (design D1.7: a 1 Hz poll must not spawn a .NET process per
+/// contact).
+const CACHE_TTL: Duration = Duration::from_secs(300);
+
+/// What joy asks a helper about: git's credential protocol, one
+/// `key=value` line each.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Request {
+    pub protocol: String,
+    /// The host, with `:port` when the URL carries one and in brackets
+    /// when it is an IPv6 literal. git2 writes no host at all for an IP
+    /// literal (cred.rs:214-220), so a helper keyed on an internal
+    /// address never answers there.
+    pub host: String,
+    /// The repository path, sent only when `useHttpPath` is set.
+    pub path: Option<String>,
+    /// The user name, when the URL or the config names one.
+    pub username: Option<String>,
+    /// The URL as configured, for the most specific config key.
+    pub url: String,
+}
+
+impl Request {
+    /// The request for a remote URL; `None` for a transport no helper
+    /// answers for (ssh has its own chain, design D1.2).
+    pub fn for_url(url: &str) -> Option<Request> {
+        let parsed = RemoteUrl::parse(url)?;
+        if !parsed.transport.takes_helper() {
+            return None;
+        }
+        Some(Request {
+            protocol: parsed.transport.protocol().to_string(),
+            host: parsed.host_field(),
+            path: Some(parsed.path.clone()).filter(|p| !p.is_empty()),
+            username: parsed.user.clone(),
+            url: url.to_string(),
+        })
+    }
+
+    /// `<protocol>://<host>[:<port>]`: the middle config key and the
+    /// key of the per-host cache.
+    pub fn host_key(&self) -> String {
+        format!("{}://{}", self.protocol, self.host)
+    }
+
+    /// The lines joy writes on the helper's stdin, terminated by the
+    /// blank line that ends a credential description.
+    fn lines(&self, with_path: bool, credential: Option<&Credential>) -> String {
+        let mut text = format!("protocol={}\nhost={}\n", self.protocol, self.host);
+        if with_path {
+            if let Some(path) = &self.path {
+                text.push_str(&format!("path={path}\n"));
+            }
+        }
+        let username = credential
+            .map(|c| c.username.clone())
+            .or_else(|| self.username.clone());
+        if let Some(username) = username {
+            text.push_str(&format!("username={username}\n"));
+        }
+        if let Some(credential) = credential {
+            text.push_str(&format!("password={}\n", credential.password));
+        }
+        text.push('\n');
+        text
+    }
+}
+
+/// The three operations of git's credential protocol.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Op {
+    Get,
+    Store,
+    Erase,
+}
+
+impl Op {
+    fn word(self) -> &'static str {
+        match self {
+            Op::Get => "get",
+            Op::Store => "store",
+            Op::Erase => "erase",
+        }
+    }
+}
+
+/// One credential a helper answered with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Credential {
+    pub username: String,
+    pub password: String,
+    /// The configured value that produced it, for the detail line and
+    /// for `store` and `erase` later.
+    pub helper: String,
+}
+
+/// A helper that could not be run, or ran and said no, with the text
+/// it wrote on stderr. The text is the whole point: GCM's own sentence
+/// names the cause, joy's would not.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HelperFailure {
+    pub helper: String,
+    pub detail: String,
+}
+
+impl std::fmt::Display for HelperFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "helper '{}': {}", self.helper, self.detail)
+    }
+}
+
+impl std::error::Error for HelperFailure {}
+
+// ---- the config chain -------------------------------------------------
+
+/// Every helper the config names for this request, most specific
+/// first, with the empty value resetting everything named before it.
+///
+/// git reads all three keys and all values of each; git2 reads two
+/// keys without the port and keeps only the last value of each
+/// (config_list.c:160-201, cred.rs:323-330).
+pub fn configured_helpers(config: &git2::Config, request: &Request) -> Vec<String> {
+    let mut chain = Vec::new();
+    for key in helper_keys(request) {
+        for value in multivar(config, &format!("credential.{key}helper")) {
+            let value = value.trim().to_string();
+            if value.is_empty() {
+                // "the empty string ... resets the helper list to empty"
+                // (git-config(1), credential.helper).
+                chain.clear();
+            } else {
+                chain.push(value);
+            }
+        }
+    }
+    chain
+}
+
+/// Whether the repository path belongs in the request
+/// (`credential.useHttpPath`).
+///
+/// Unlike the helper chain this is a single value: the most specific
+/// key that carries one decides, and inside that key the last value
+/// wins, the way git reads every single-valued setting.
+pub fn use_http_path(config: &git2::Config, request: &Request) -> bool {
+    most_specific(config, request, "useHttpPath")
+        .and_then(|value| git2::Config::parse_bool(value.as_str()).ok())
+        .unwrap_or(false)
+}
+
+/// The user name the config names for this request, if any.
+pub fn configured_username(config: &git2::Config, request: &Request) -> Option<String> {
+    most_specific(config, request, "username")
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+/// The value of `credential.<...>.<name>` from the most specific key
+/// that carries one.
+fn most_specific(config: &git2::Config, request: &Request, name: &str) -> Option<String> {
+    helper_keys(request)
+        .into_iter()
+        .find_map(|key| multivar(config, &format!("credential.{key}{name}")).pop())
+}
+
+/// The three key prefixes of D1.3, least specific LAST so that the
+/// chain reads most specific first.
+fn helper_keys(request: &Request) -> Vec<String> {
+    let mut keys = vec![format!("{}.", request.url)];
+    let host_key = request.host_key();
+    if !keys.iter().any(|k| k.trim_end_matches('.') == host_key) {
+        keys.push(format!("{host_key}."));
+    }
+    keys.push(String::new());
+    keys
+}
+
+/// Every value of a multivar, in config order. An absent key is an
+/// empty list, never an error: a repository without a credential
+/// section is the normal case.
+fn multivar(config: &git2::Config, name: &str) -> Vec<String> {
+    let mut values = Vec::new();
+    if let Ok(entries) = config.multivar(name, None) {
+        let _ = entries.for_each(|entry| {
+            values.push(entry.value().unwrap_or_default().to_string());
+        });
+    }
+    values
+}
+
+// ---- what a configured value means ------------------------------------
+
+/// A resolved helper: what joy spawns, and how.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Spawn {
+    /// The binary itself, with its arguments. No shell involved.
+    Direct { program: PathBuf, args: Vec<String> },
+    /// A value that genuinely needs a shell (a pipe, a variable, a
+    /// redirection), run by a shell joy names by its absolute path.
+    Shell { shell: PathBuf, command: String },
+}
+
+/// Where a short helper name is looked up, and which shell runs a
+/// shell shaped value. Built from the machine in production and handed
+/// in by the tests.
+#[derive(Debug, Clone, Default)]
+pub struct Search {
+    pub dirs: Vec<PathBuf>,
+    pub shell: Option<PathBuf>,
+}
+
+impl Search {
+    /// This machine's places, in the order D1.3 names them.
+    pub fn of_this_machine() -> Search {
+        let mut dirs = Vec::new();
+        let mut shell = None;
+        #[cfg(windows)]
+        {
+            for install in git_for_windows_dirs() {
+                dirs.push(install.join("mingw64").join("bin"));
+                dirs.push(install.join("mingw64").join("libexec").join("git-core"));
+                dirs.push(install.join("cmd"));
+                let candidate = install.join("usr").join("bin").join("sh.exe");
+                if shell.is_none() && candidate.is_file() {
+                    shell = Some(candidate);
+                }
+            }
+            for libexec in git_for_windows_values("LibexecPath") {
+                dirs.push(PathBuf::from(libexec));
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            // git's own libexec, reached from the git binary's place
+            // WITHOUT running git: joy never spawns it (ADR: git2 only).
+            if let Some(bin) = which("git") {
+                if let Some(prefix) = bin.parent().and_then(|dir| dir.parent()) {
+                    dirs.push(prefix.join("libexec").join("git-core"));
+                    // Debian and its derivatives ship git-core under
+                    // lib, not libexec.
+                    dirs.push(prefix.join("lib").join("git-core"));
+                }
+            }
+            let sh = PathBuf::from("/bin/sh");
+            if sh.is_file() {
+                shell = Some(sh);
+            }
+        }
+        dirs.extend(path_dirs());
+        dirs.dedup();
+        Search { dirs, shell }
+    }
+
+    /// The binary called `git-credential-<name>`, if this machine has
+    /// one. joy never falls back to the string `git credential-<name>`:
+    /// that is a git process, and joy spawns none.
+    pub fn named_helper(&self, name: &str) -> Option<PathBuf> {
+        let plain = format!("git-credential-{name}");
+        let names: Vec<String> = if cfg!(windows) {
+            vec![
+                format!("{plain}.exe"),
+                format!("{plain}.cmd"),
+                format!("{plain}.bat"),
+                plain.clone(),
+            ]
+        } else {
+            vec![plain.clone()]
+        };
+        for dir in &self.dirs {
+            for candidate in &names {
+                let path = dir.join(candidate);
+                if path.is_file() {
+                    return Some(path);
+                }
+            }
+        }
+        None
+    }
+}
+
+/// What a configured value turns into, or why it cannot be run.
+pub fn resolve(value: &str, search: &Search) -> Result<Spawn, HelperFailure> {
+    let failure = |detail: String| HelperFailure {
+        helper: value.to_string(),
+        detail,
+    };
+    let trimmed = value.trim();
+    if let Some(rest) = trimmed.strip_prefix('!') {
+        let rest = rest.trim();
+        if needs_shell(rest) {
+            let shell = search.shell.clone().ok_or_else(|| {
+                failure(
+                    "this helper needs a shell and joy found none (no /bin/sh, no Git for Windows sh.exe)"
+                        .to_string(),
+                )
+            })?;
+            return Ok(Spawn::Shell {
+                shell,
+                command: rest.to_string(),
+            });
+        }
+        let argv = split_argv(rest)
+            .ok_or_else(|| failure("the helper value has an unterminated quote".to_string()))?;
+        let mut argv = argv.into_iter();
+        let program = argv
+            .next()
+            .ok_or_else(|| failure("the helper value is empty".to_string()))?;
+        return Ok(Spawn::Direct {
+            program: PathBuf::from(program),
+            args: argv.collect(),
+        });
+    }
+    if is_absolute(trimmed) {
+        // An absolute path is used as it stands. Only when the whole
+        // value is not a file does joy read arguments out of it, which
+        // is how `/usr/bin/git-credential-foo --timeout 5` still runs
+        // without a shell.
+        let whole = PathBuf::from(trimmed);
+        if whole.is_file() || !trimmed.contains(' ') {
+            return Ok(Spawn::Direct {
+                program: whole,
+                args: Vec::new(),
+            });
+        }
+        let argv = split_argv(trimmed)
+            .ok_or_else(|| failure("the helper value has an unterminated quote".to_string()))?;
+        let mut argv = argv.into_iter();
+        let program = argv
+            .next()
+            .ok_or_else(|| failure("the helper value is empty".to_string()))?;
+        return Ok(Spawn::Direct {
+            program: PathBuf::from(program),
+            args: argv.collect(),
+        });
+    }
+    if trimmed.is_empty() {
+        return Err(failure("the helper value is empty".to_string()));
+    }
+    let (name, args) = match split_argv(trimmed) {
+        Some(argv) if !argv.is_empty() => {
+            let mut argv = argv.into_iter();
+            (argv.next().unwrap_or_default(), argv.collect::<Vec<_>>())
+        }
+        _ => (trimmed.to_string(), Vec::new()),
+    };
+    match search.named_helper(&name) {
+        Some(program) => Ok(Spawn::Direct { program, args }),
+        None => Err(failure(format!(
+            "no binary named git-credential-{name} was found; joy does not fall back to a git process"
+        ))),
+    }
+}
+
+/// Whether a shell shaped value needs a real shell, or is just a
+/// command line with quotes in it. gh's own value,
+/// `!'C:\Program Files\GitHub CLI\gh.exe' auth git-credential`, is the
+/// second kind and must not be handed to a shell that may not exist.
+pub fn needs_shell(value: &str) -> bool {
+    let mut quote = None;
+    for c in value.chars() {
+        match quote {
+            Some(q) if c == q => quote = None,
+            Some(_) => {}
+            None => match c {
+                '\'' | '"' => quote = Some(c),
+                '|' | '&' | ';' | '<' | '>' | '(' | ')' | '$' | '`' | '\n' | '*' | '?' | '['
+                | ']' | '{' | '}' | '~' => return true,
+                _ => {}
+            },
+        }
+    }
+    false
+}
+
+/// Split a command line into argv, honouring single and double
+/// quotes. `None` when a quote is never closed.
+///
+/// A backslash keeps its literal meaning unless it stands in front of
+/// a character a shell would escape (a space, a quote, another
+/// backslash, and inside double quotes `$` and a backtick). That is
+/// the one rule that reads a Windows path and an escaped space the way
+/// both were meant: `"C:\Program Files\gh.exe"` stays a path, and
+/// `/opt/my\ helper` stays one word.
+pub fn split_argv(value: &str) -> Option<Vec<String>> {
+    let mut argv = Vec::new();
+    let mut current = String::new();
+    let mut started = false;
+    let mut quote: Option<char> = None;
+    let mut chars = value.chars().peekable();
+    while let Some(c) = chars.next() {
+        match quote {
+            Some(q) if c == q => quote = None,
+            Some('"') if c == '\\' => {
+                let next = chars.peek().copied();
+                match next {
+                    Some('"') | Some('\\') | Some('$') | Some('`') => {
+                        current.push(chars.next().unwrap_or_default());
+                    }
+                    _ => current.push(c),
+                }
+            }
+            Some(_) => current.push(c),
+            None => match c {
+                '\'' | '"' => {
+                    quote = Some(c);
+                    started = true;
+                }
+                '\\' => {
+                    started = true;
+                    let next = chars.peek().copied();
+                    match next {
+                        Some(' ') | Some('\'') | Some('"') | Some('\\') => {
+                            current.push(chars.next().unwrap_or_default());
+                        }
+                        _ => current.push(c),
+                    }
+                }
+                c if c.is_whitespace() => {
+                    if started {
+                        argv.push(std::mem::take(&mut current));
+                        started = false;
+                    }
+                }
+                c => {
+                    started = true;
+                    current.push(c);
+                }
+            },
+        }
+    }
+    if quote.is_some() {
+        return None;
+    }
+    if started {
+        argv.push(current);
+    }
+    Some(argv)
+}
+
+fn is_absolute(value: &str) -> bool {
+    if value.starts_with('/') {
+        return true;
+    }
+    // A Windows path, recognised on every host so that a config
+    // written on Windows reads the same everywhere.
+    let bytes = value.as_bytes();
+    if bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && (bytes[2] == b'\\' || bytes[2] == b'/')
+    {
+        return true;
+    }
+    value.starts_with("\\\\")
+}
+
+fn path_dirs() -> Vec<PathBuf> {
+    std::env::var_os("PATH")
+        .map(|path| std::env::split_paths(&path).collect())
+        .unwrap_or_default()
+}
+
+/// The first `name` on PATH. Used to FIND git's libexec directory, not
+/// to run git.
+#[cfg(not(windows))]
+fn which(name: &str) -> Option<PathBuf> {
+    path_dirs().into_iter().find_map(|dir| {
+        let candidate = dir.join(name);
+        candidate.is_file().then_some(candidate)
+    })
+}
+
+/// Git for Windows' install paths, from its own registry keys
+/// (install.iss:157-162 writes them), user hive first.
+#[cfg(windows)]
+fn git_for_windows_dirs() -> Vec<PathBuf> {
+    git_for_windows_values("InstallPath")
+        .into_iter()
+        .map(PathBuf::from)
+        .collect()
+}
+
+#[cfg(windows)]
+fn git_for_windows_values(value: &str) -> Vec<String> {
+    use windows_sys::Win32::System::Registry::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+
+    let mut found = Vec::new();
+    for root in [HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE] {
+        if let Some(text) = registry_string(root, "Software\\GitForWindows", value) {
+            if !text.is_empty() && !found.contains(&text) {
+                found.push(text);
+            }
+        }
+    }
+    found
+}
+
+/// One `REG_SZ` value, or `None` when the key, the value or the
+/// installation is not there.
+#[cfg(windows)]
+fn registry_string(
+    root: windows_sys::Win32::System::Registry::HKEY,
+    subkey: &str,
+    value: &str,
+) -> Option<String> {
+    use windows_sys::Win32::Foundation::ERROR_SUCCESS;
+    use windows_sys::Win32::System::Registry::{RegGetValueW, RRF_RT_REG_SZ};
+
+    let subkey = wide(subkey);
+    let value = wide(value);
+    let mut size: u32 = 0;
+    let probe = unsafe {
+        RegGetValueW(
+            root,
+            subkey.as_ptr(),
+            value.as_ptr(),
+            RRF_RT_REG_SZ,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            &mut size,
+        )
+    };
+    if probe != ERROR_SUCCESS || size == 0 {
+        return None;
+    }
+    let mut buffer = vec![0u16; (size as usize).div_ceil(2) + 1];
+    let mut size_again = size;
+    let read = unsafe {
+        RegGetValueW(
+            root,
+            subkey.as_ptr(),
+            value.as_ptr(),
+            RRF_RT_REG_SZ,
+            std::ptr::null_mut(),
+            buffer.as_mut_ptr().cast(),
+            &mut size_again,
+        )
+    };
+    if read != ERROR_SUCCESS {
+        return None;
+    }
+    let end = buffer.iter().position(|&c| c == 0).unwrap_or(buffer.len());
+    Some(String::from_utf16_lossy(&buffer[..end]))
+}
+
+#[cfg(windows)]
+fn wide(text: &str) -> Vec<u16> {
+    text.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+// ---- running one helper -----------------------------------------------
+
+/// What a helper answered.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Answer {
+    pub username: Option<String>,
+    pub password: Option<String>,
+    /// The helper said "stop asking anybody else".
+    pub quit: bool,
+}
+
+/// Run one helper for one operation.
+pub fn run(
+    spawn: &Spawn,
+    label: &str,
+    op: Op,
+    request: &Request,
+    credential: Option<&Credential>,
+    with_path: bool,
+    kind: HostKind,
+) -> Result<Answer, HelperFailure> {
+    let failure = |detail: String| HelperFailure {
+        helper: label.to_string(),
+        detail,
+    };
+    let mut command = match spawn {
+        Spawn::Direct { program, args } => {
+            let mut command = joy_process::command(program);
+            command.args(args);
+            command.arg(op.word());
+            command
+        }
+        Spawn::Shell { shell, command } => {
+            let mut spawned = joy_process::command(shell);
+            spawned.arg("-c");
+            spawned.arg(format!("{command} {}", op.word()));
+            spawned
+        }
+    };
+    // Per spawn, never through the process environment: a desktop app
+    // sets these for ONE child, not for every thread it runs
+    // (design D1.3). An interactive host sets none of them, because
+    // there the helper's own window is the way in.
+    if !kind.may_prompt() {
+        command.env("GCM_INTERACTIVE", "never");
+        command.env("GCM_GUI_PROMPT", "0");
+        command.env("GIT_TERMINAL_PROMPT", "0");
+    }
+    command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = command
+        .spawn()
+        .map_err(|e| failure(format!("could not be started: {e}")))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        // Write errors are ignored the way git ignores them: a helper
+        // that answers without reading is not an error.
+        let _ = stdin.write_all(request.lines(with_path, credential).as_bytes());
+    }
+    let mut stdout = child.stdout.take();
+    let mut stderr = child.stderr.take();
+    let out_reader = std::thread::spawn(move || {
+        let mut text = String::new();
+        if let Some(pipe) = stdout.as_mut() {
+            let _ = pipe.read_to_string(&mut text);
+        }
+        text
+    });
+    let err_reader = std::thread::spawn(move || {
+        let mut text = String::new();
+        if let Some(pipe) = stderr.as_mut() {
+            let _ = pipe.read_to_string(&mut text);
+        }
+        text
+    });
+    let deadline = (!kind.may_prompt()).then(|| Instant::now() + QUIET_DEADLINE);
+    let status = wait_bounded(&mut child, deadline);
+    let stdout = out_reader.join().unwrap_or_default();
+    let stderr = err_reader.join().unwrap_or_default();
+    let status = match status {
+        Ok(status) => status,
+        Err(detail) => return Err(failure(quoted(&detail, &stderr))),
+    };
+    if !status.success() {
+        let code = status
+            .code()
+            .map(|c| format!("exit {c}"))
+            .unwrap_or_else(|| "killed by a signal".to_string());
+        return Err(failure(quoted(&code, &stderr)));
+    }
+    Ok(parse_answer(&stdout))
+}
+
+/// The child's status, killing it when the bound runs out.
+fn wait_bounded(
+    child: &mut std::process::Child,
+    deadline: Option<Instant>,
+) -> Result<std::process::ExitStatus, String> {
+    let Some(deadline) = deadline else {
+        return child.wait().map_err(|e| format!("did not finish: {e}"));
+    };
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(status),
+            Ok(None) => {}
+            Err(e) => return Err(format!("did not finish: {e}")),
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!(
+                "did not answer within {} seconds and was stopped",
+                QUIET_DEADLINE.as_secs()
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// The failure detail: what happened, and what the helper itself said.
+/// GCM's own sentence is the one that names the cause.
+fn quoted(what: &str, stderr: &str) -> String {
+    let said = stderr
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    if said.is_empty() {
+        what.to_string()
+    } else {
+        said
+    }
+}
+
+fn parse_answer(stdout: &str) -> Answer {
+    let mut answer = Answer::default();
+    for line in stdout.lines() {
+        if line.is_empty() {
+            break;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        match key.trim() {
+            "username" => answer.username = Some(value.to_string()),
+            "password" => answer.password = Some(value.to_string()),
+            "quit" => answer.quit = git2::Config::parse_bool(value).unwrap_or(false),
+            _ => {}
+        }
+    }
+    answer
+}
+
+// ---- the chain, the cache and the outcome -----------------------------
+
+struct Remembered {
+    request: Request,
+    credential: Credential,
+    /// The helper as it was resolved for `get`, kept so that `store`
+    /// and `erase` reach the same binary without looking it up again.
+    spawn: Spawn,
+    with_path: bool,
+    kind: HostKind,
+}
+
+struct State {
+    /// Answers, per `<protocol>://<host>[:<port>]`.
+    cache: HashMap<String, (Instant, Credential)>,
+    /// What was handed to libgit2 last and not yet confirmed, per
+    /// host key. Only a FRESH helper answer lands here, so a poll that
+    /// reuses the cached credential spawns nothing at all.
+    presented: HashMap<String, Remembered>,
+}
+
+static STATE: Mutex<Option<State>> = Mutex::new(None);
+
+fn with_state<T>(body: impl FnOnce(&mut State) -> T) -> T {
+    let mut guard = STATE.lock().unwrap_or_else(|e| e.into_inner());
+    let state = guard.get_or_insert_with(|| State {
+        cache: HashMap::new(),
+        presented: HashMap::new(),
+    });
+    body(state)
+}
+
+/// Ask the configured chain for a credential for `url`.
+///
+/// `Ok(None)` means "nobody answered", which is not a failure: a
+/// repository with no helper configured is the normal case. `Err`
+/// means a helper ran and said something worth repeating.
+pub fn get(
+    config: &git2::Config,
+    url: &str,
+    username: Option<&str>,
+    kind: HostKind,
+) -> Result<Option<Credential>, HelperFailure> {
+    get_from(config, url, username, kind, &Search::of_this_machine())
+}
+
+/// [`get`] with the search path handed in, so a test can point the
+/// lookup at a directory of its own instead of the machine's.
+pub fn get_from(
+    config: &git2::Config,
+    url: &str,
+    username: Option<&str>,
+    kind: HostKind,
+    search: &Search,
+) -> Result<Option<Credential>, HelperFailure> {
+    let Some(mut request) = Request::for_url(url) else {
+        return Ok(None);
+    };
+    if request.username.is_none() {
+        request.username = username
+            .map(str::to_string)
+            .or_else(|| configured_username(config, &request));
+    }
+    let key = request.host_key();
+    if let Some(hit) = with_state(|state| match state.cache.get(&key) {
+        Some((at, credential)) if at.elapsed() < CACHE_TTL => Some(credential.clone()),
+        _ => None,
+    }) {
+        return Ok(Some(hit));
+    }
+    let with_path = use_http_path(config, &request);
+    let mut username = request.username.clone();
+    let mut password = None;
+    let mut first_failure = None;
+    for value in configured_helpers(config, &request) {
+        let spawn = match resolve(&value, search) {
+            Ok(spawn) => spawn,
+            Err(e) => {
+                tracing::debug!(helper = %value, detail = %e.detail, "credential helper not resolved");
+                first_failure.get_or_insert(e);
+                continue;
+            }
+        };
+        match run(&spawn, &value, Op::Get, &request, None, with_path, kind) {
+            Ok(answer) => {
+                if username.is_none() {
+                    username = answer.username;
+                }
+                if password.is_none() {
+                    password = answer.password;
+                }
+                if answer.quit {
+                    break;
+                }
+            }
+            Err(e) => {
+                tracing::debug!(helper = %value, detail = %e.detail, "credential helper failed");
+                first_failure.get_or_insert(e);
+            }
+        }
+        if username.is_some() && password.is_some() {
+            let credential = Credential {
+                username: username.clone().unwrap_or_default(),
+                password: password.clone().unwrap_or_default(),
+                helper: value,
+            };
+            with_state(|state| {
+                state
+                    .cache
+                    .insert(key.clone(), (Instant::now(), credential.clone()));
+                state.presented.insert(
+                    key.clone(),
+                    Remembered {
+                        request: request.clone(),
+                        credential: credential.clone(),
+                        spawn: spawn.clone(),
+                        with_path,
+                        kind,
+                    },
+                );
+            });
+            return Ok(Some(credential));
+        }
+    }
+    match first_failure {
+        Some(failure) => Err(failure),
+        None => Ok(None),
+    }
+}
+
+/// Tell the helper that answered how its credential fared. The
+/// outcome goes to that helper and to no other: a helper that never
+/// saw the credential has nothing to store or erase.
+fn tell(remembered: &Remembered, op: Op) {
+    let label = remembered.credential.helper.clone();
+    if let Err(e) = run(
+        &remembered.spawn,
+        &label,
+        op,
+        &remembered.request,
+        Some(&remembered.credential),
+        remembered.with_path,
+        remembered.kind,
+    ) {
+        tracing::debug!(helper = %label, op = op.word(), detail = %e.detail, "credential helper did not take the outcome");
+    }
+}
+
+/// The contact that used the last helper credential for this URL
+/// succeeded: the helper is told to `store` it. Called once per fresh
+/// answer, never per contact, so a 1 Hz poll spawns nothing.
+pub fn accepted(url: &str) {
+    let Some(request) = Request::for_url(url) else {
+        return;
+    };
+    let key = request.host_key();
+    let Some(remembered) = with_state(|state| state.presented.remove(&key)) else {
+        return;
+    };
+    tell(&remembered, Op::Store);
+}
+
+/// The credential was refused: the helper is told to `erase` it and
+/// joy forgets it. This is the replay bug git2 cannot fix, because it
+/// never runs anything but `get` (cred.rs:395, :415).
+pub fn refused(url: &str) {
+    let Some(request) = Request::for_url(url) else {
+        return;
+    };
+    let key = request.host_key();
+    let Some(remembered) = with_state(|state| {
+        state.cache.remove(&key);
+        state.presented.remove(&key)
+    }) else {
+        return;
+    };
+    tell(&remembered, Op::Erase);
+}
+
+/// Drop every cached answer. For the tests and for a host that knows
+/// its credentials changed.
+pub fn forget_all() {
+    with_state(|state| {
+        state.cache.clear();
+        state.presented.clear();
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::*;
+
+    fn config_from(text: &str, dir: &Path) -> git2::Config {
+        let path = dir.join("gitconfig");
+        std::fs::write(&path, text).unwrap();
+        git2::Config::open(&path).unwrap()
+    }
+
+    fn request(url: &str) -> Request {
+        Request::for_url(url).unwrap()
+    }
+
+    #[test]
+    fn the_chain_reads_every_value_most_specific_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = config_from(
+            "[credential]\n\thelper = global-one\n\thelper = global-two\n\
+             [credential \"https://gitea.example.com:8443\"]\n\thelper = host-one\n\
+             [credential \"https://gitea.example.com:8443/o/r.git\"]\n\thelper = exact\n",
+            dir.path(),
+        );
+        let chain = configured_helpers(&config, &request("https://gitea.example.com:8443/o/r.git"));
+        assert_eq!(chain, vec!["exact", "host-one", "global-one", "global-two"]);
+    }
+
+    #[test]
+    fn the_port_is_part_of_the_key_unlike_git2() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = config_from(
+            "[credential \"https://gitea.example.com:8443\"]\n\thelper = with-port\n\
+             [credential \"https://gitea.example.com\"]\n\thelper = without-port\n",
+            dir.path(),
+        );
+        let chain = configured_helpers(&config, &request("https://gitea.example.com:8443/o/r.git"));
+        assert_eq!(chain, vec!["with-port"]);
+    }
+
+    #[test]
+    fn an_empty_value_resets_the_chain() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = config_from(
+            "[credential]\n\thelper = never-runs\n\thelper =\n\thelper = the-only-one\n",
+            dir.path(),
+        );
+        let chain = configured_helpers(&config, &request("https://github.com/o/r.git"));
+        assert_eq!(chain, vec!["the-only-one"]);
+    }
+
+    #[test]
+    fn use_http_path_and_the_configured_username_are_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = config_from(
+            "[credential]\n\tuseHttpPath = false\n\tusername = everyone\n             [credential \"https://gitea.example.com\"]\n\tuseHttpPath = true\n\tusername = deploy\n",
+            dir.path(),
+        );
+        let req = request("https://gitea.example.com/o/r.git");
+        // The host's own setting wins over the global one.
+        assert!(use_http_path(&config, &req));
+        assert_eq!(
+            configured_username(&config, &req).as_deref(),
+            Some("deploy")
+        );
+        let elsewhere = request("https://github.com/o/r.git");
+        assert!(!use_http_path(&config, &elsewhere));
+        assert_eq!(
+            configured_username(&config, &elsewhere).as_deref(),
+            Some("everyone")
+        );
+    }
+
+    #[test]
+    fn the_request_lines_are_gits_own() {
+        let req = request("https://gitea.example.com:8443/owner/repo.git");
+        assert_eq!(
+            req.lines(false, None),
+            "protocol=https\nhost=gitea.example.com:8443\n\n"
+        );
+        assert_eq!(
+            req.lines(true, None),
+            "protocol=https\nhost=gitea.example.com:8443\npath=owner/repo.git\n\n"
+        );
+        let with_credential = req.lines(
+            false,
+            Some(&Credential {
+                username: "u".into(),
+                password: "p".into(),
+                helper: "h".into(),
+            }),
+        );
+        assert_eq!(
+            with_credential,
+            "protocol=https\nhost=gitea.example.com:8443\nusername=u\npassword=p\n\n"
+        );
+    }
+
+    #[test]
+    fn an_ip_literal_host_is_written_out() {
+        let req = request("https://10.0.0.7/o/r.git");
+        assert!(req.lines(false, None).contains("host=10.0.0.7\n"));
+    }
+
+    #[test]
+    fn an_ssh_remote_has_no_helper_request_at_all() {
+        assert!(Request::for_url("git@github.com:o/r.git").is_none());
+        assert!(Request::for_url("ssh://git@github.com/o/r.git").is_none());
+    }
+
+    #[test]
+    fn ghs_single_quoted_windows_path_is_split_not_shelled() {
+        let value = "!'C:\\Program Files\\GitHub CLI\\gh.exe' auth git-credential";
+        assert!(!needs_shell(value.strip_prefix('!').unwrap()));
+        let search = Search {
+            dirs: Vec::new(),
+            shell: None,
+        };
+        let spawn = resolve(value, &search).unwrap();
+        assert_eq!(
+            spawn,
+            Spawn::Direct {
+                program: PathBuf::from("C:\\Program Files\\GitHub CLI\\gh.exe"),
+                args: vec!["auth".to_string(), "git-credential".to_string()],
+            }
+        );
+    }
+
+    #[test]
+    fn a_value_that_really_needs_a_shell_gets_one_by_absolute_path() {
+        let search = Search {
+            dirs: Vec::new(),
+            shell: Some(PathBuf::from("/bin/sh")),
+        };
+        let spawn = resolve("!f() { echo password=x; }; f", &search).unwrap();
+        match spawn {
+            Spawn::Shell { shell, command } => {
+                assert_eq!(shell, PathBuf::from("/bin/sh"));
+                assert_eq!(command, "f() { echo password=x; }; f");
+            }
+            other => panic!("expected a shell spawn, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_short_name_becomes_the_binarys_own_name_never_a_git_process() {
+        let dir = tempfile::tempdir().unwrap();
+        let binary = dir.path().join(if cfg!(windows) {
+            "git-credential-manager.exe"
+        } else {
+            "git-credential-manager"
+        });
+        std::fs::write(&binary, b"#!/bin/sh\n").unwrap();
+        let search = Search {
+            dirs: vec![dir.path().to_path_buf()],
+            shell: None,
+        };
+        let spawn = resolve("manager", &search).unwrap();
+        assert_eq!(
+            spawn,
+            Spawn::Direct {
+                program: binary,
+                args: Vec::new()
+            }
+        );
+    }
+
+    #[test]
+    fn a_short_name_with_no_binary_is_named_and_never_guessed() {
+        let search = Search {
+            dirs: vec![PathBuf::from("/nowhere/at/all")],
+            shell: None,
+        };
+        let failure = resolve("manager", &search).unwrap_err();
+        assert!(
+            failure.detail.contains("git-credential-manager"),
+            "{failure}"
+        );
+        assert!(!failure.detail.contains("git credential-"), "{failure}");
+    }
+
+    #[test]
+    fn an_absolute_path_is_used_as_it_stands() {
+        let search = Search::default();
+        let spawn = resolve("/usr/local/bin/my-helper", &search).unwrap();
+        assert_eq!(
+            spawn,
+            Spawn::Direct {
+                program: PathBuf::from("/usr/local/bin/my-helper"),
+                args: Vec::new()
+            }
+        );
+    }
+
+    #[test]
+    fn argv_splitting_keeps_quoted_spaces_together() {
+        assert_eq!(
+            split_argv("'/a b/c' one 'two three'").unwrap(),
+            vec!["/a b/c", "one", "two three"]
+        );
+        assert_eq!(
+            split_argv("\"C:\\Program Files\\x.exe\" get").unwrap(),
+            vec!["C:\\Program Files\\x.exe", "get"]
+        );
+        assert_eq!(
+            split_argv("/opt/my\\ helper get").unwrap(),
+            vec!["/opt/my helper", "get"]
+        );
+        assert_eq!(split_argv("'unterminated"), None);
+    }
+
+    // ---- the fake helpers -------------------------------------------
+    //
+    // These run a real child process, which needs a shell interpreter
+    // for the script: unix only. The Windows leg of CI runs every test
+    // above this line, and the parts that are platform specific there
+    // (the registry lookup, the .exe suffix) are covered by the
+    // resolution tests, which need no child at all.
+
+    /// The cache, the "presented" record and the fake scripts are
+    /// process-wide, so the tests that run a helper run one at a time.
+    static SERIAL: Mutex<()> = Mutex::new(());
+
+    /// A freshly written script can answer ETXTBSY when another thread
+    /// of this process happens to be between `fork` and `exec` while
+    /// the write handle is still open. That is a property of running
+    /// tests in threads, not of the runner, so the test retries.
+    #[cfg(unix)]
+    fn get_retrying(
+        config: &git2::Config,
+        url: &str,
+        kind: HostKind,
+        search: &Search,
+    ) -> Result<Option<Credential>, HelperFailure> {
+        for _ in 0..10 {
+            match get_from(config, url, None, kind, search) {
+                Err(e) if e.detail.contains("Text file busy") => {
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                other => return other,
+            }
+        }
+        get_from(config, url, None, kind, search)
+    }
+
+    #[cfg(unix)]
+    fn fake_helper(dir: &Path, name: &str, body: &str) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let path = dir.join(name);
+        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_helper_is_asked_in_gits_own_protocol_and_answers_a_credential() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        forget_all();
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("asked");
+        fake_helper(
+            dir.path(),
+            "git-credential-fake",
+            &format!(
+                "echo \"op=$1\" >> {log}\ncat >> {log}\necho username=x-access-token\necho password=s3cret",
+                log = log.display()
+            ),
+        );
+        // A git binary that would shout if joy ever spawned one. joy
+        // spawns the helper by its own name, so this file stays absent.
+        fake_helper(
+            dir.path(),
+            "git",
+            &format!("touch {}", dir.path().join("git-was-run").display()),
+        );
+        let config = config_from("[credential]\n\thelper = fake\n", dir.path());
+        let search = Search {
+            dirs: vec![dir.path().to_path_buf()],
+            shell: None,
+        };
+        let credential = get_retrying(
+            &config,
+            "https://ghes.internal.example/o/r.git",
+            HostKind::Background,
+            &search,
+        )
+        .unwrap()
+        .expect("a credential");
+        assert_eq!(credential.username, "x-access-token");
+        assert_eq!(credential.password, "s3cret");
+        let asked = std::fs::read_to_string(&log).unwrap();
+        assert!(asked.contains("op=get"), "{asked}");
+        assert!(asked.contains("protocol=https"), "{asked}");
+        assert!(asked.contains("host=ghes.internal.example"), "{asked}");
+        assert!(
+            !dir.path().join("git-was-run").exists(),
+            "joy spawned a git process"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_quiet_host_disarms_the_helpers_own_prompts_and_an_interactive_one_does_not() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        for (kind, expected) in [
+            (HostKind::Background, "never 0 0"),
+            (HostKind::Delegated, "never 0 0"),
+            (HostKind::Interactive, "unset unset unset"),
+        ] {
+            forget_all();
+            let dir = tempfile::tempdir().unwrap();
+            let log = dir.path().join("env");
+            fake_helper(
+                dir.path(),
+                "git-credential-fake",
+                &format!(
+                    "echo \"${{GCM_INTERACTIVE:-unset}} ${{GCM_GUI_PROMPT:-unset}} ${{GIT_TERMINAL_PROMPT:-unset}}\" > {log}\necho password=p\necho username=u",
+                    log = log.display()
+                ),
+            );
+            let config = config_from("[credential]\n\thelper = fake\n", dir.path());
+            let search = Search {
+                dirs: vec![dir.path().to_path_buf()],
+                shell: None,
+            };
+            get_retrying(&config, "https://github.com/o/r.git", kind, &search)
+                .unwrap()
+                .expect("a credential");
+            assert_eq!(
+                std::fs::read_to_string(&log).unwrap().trim(),
+                expected,
+                "for {kind}"
+            );
+        }
+        forget_all();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_helper_that_refuses_is_quoted_with_its_own_sentence() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        forget_all();
+        let dir = tempfile::tempdir().unwrap();
+        fake_helper(
+            dir.path(),
+            "git-credential-manager",
+            "echo 'fatal: Cannot prompt because user interactivity has been disabled.' >&2\nexit 1",
+        );
+        let config = config_from("[credential]\n\thelper = manager\n", dir.path());
+        let search = Search {
+            dirs: vec![dir.path().to_path_buf()],
+            shell: None,
+        };
+        let failure = get_retrying(
+            &config,
+            "https://github.com/o/r.git",
+            HostKind::Background,
+            &search,
+        )
+        .unwrap_err();
+        assert_eq!(
+            failure.to_string(),
+            "helper 'manager': fatal: Cannot prompt because user interactivity has been disabled."
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_accepted_credential_is_stored_and_a_refused_one_is_erased() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        for (outcome, expected) in [("accepted", "store"), ("refused", "erase")] {
+            forget_all();
+            let dir = tempfile::tempdir().unwrap();
+            let log = dir.path().join("ops");
+            fake_helper(
+                dir.path(),
+                "git-credential-fake",
+                &format!(
+                    "echo \"$1\" >> {log}\nif [ \"$1\" = get ]; then echo username=u; echo password=p; fi",
+                    log = log.display()
+                ),
+            );
+            let config = config_from("[credential]\n\thelper = fake\n", dir.path());
+            let search = Search {
+                dirs: vec![dir.path().to_path_buf()],
+                shell: None,
+            };
+            let url = "https://codeberg.org/o/r.git";
+            get_retrying(&config, url, HostKind::Background, &search)
+                .unwrap()
+                .expect("a credential");
+            match outcome {
+                "accepted" => accepted(url),
+                _ => refused(url),
+            }
+            let ops = std::fs::read_to_string(&log).unwrap();
+            assert_eq!(
+                ops.split_whitespace().collect::<Vec<_>>(),
+                vec!["get", expected],
+                "for {outcome}"
+            );
+        }
+        forget_all();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_second_ask_inside_the_ttl_spawns_nothing() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        forget_all();
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("spawns");
+        fake_helper(
+            dir.path(),
+            "git-credential-fake",
+            &format!(
+                "if [ \"$1\" = get ]; then echo . >> {log}; fi\necho username=u\necho password=p",
+                log = log.display()
+            ),
+        );
+        let config = config_from("[credential]\n\thelper = fake\n", dir.path());
+        let search = Search {
+            dirs: vec![dir.path().to_path_buf()],
+            shell: None,
+        };
+        let url = "https://gitlab.com/o/r.git";
+        for _ in 0..3 {
+            get_retrying(&config, url, HostKind::Background, &search)
+                .unwrap()
+                .expect("a credential");
+        }
+        assert_eq!(
+            std::fs::read_to_string(&log).unwrap().lines().count(),
+            1,
+            "a poll must not spawn a helper per contact"
+        );
+        // A refusal drops the cached answer, so the next ask asks again.
+        refused(url);
+        get_retrying(&config, url, HostKind::Background, &search)
+            .unwrap()
+            .expect("a credential");
+        assert_eq!(std::fs::read_to_string(&log).unwrap().lines().count(), 2);
+        forget_all();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_shell_shaped_value_runs_under_the_shell_joy_names() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        forget_all();
+        let dir = tempfile::tempdir().unwrap();
+        let config = config_from(
+            "[credential]\n\thelper = \"!f() { echo username=u; echo password=$((1+1)); }; f\"\n",
+            dir.path(),
+        );
+        let search = Search {
+            dirs: Vec::new(),
+            shell: Some(PathBuf::from("/bin/sh")),
+        };
+        let credential = get_retrying(
+            &config,
+            "https://github.com/o/r.git",
+            HostKind::Background,
+            &search,
+        )
+        .unwrap()
+        .expect("a credential");
+        assert_eq!(credential.password, "2");
+        forget_all();
+    }
+
+    #[test]
+    fn an_answer_is_read_up_to_the_blank_line() {
+        let answer = parse_answer("username=u\npassword=p\n\nquit=1\n");
+        assert_eq!(answer.username.as_deref(), Some("u"));
+        assert_eq!(answer.password.as_deref(), Some("p"));
+        assert!(!answer.quit);
+        assert!(parse_answer("quit=1\n").quit);
+    }
+}

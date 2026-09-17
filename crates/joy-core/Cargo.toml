@@ -44,6 +44,15 @@ minijinja = { workspace = true }
 # binary/library stays self-contained and cross-compiles cleanly.
 git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2", "cred"] }
 tracing = "0.1"
+# The person's ssh config, parsed by joy: libgit2 reads none of it (no
+# hit for ssh_config, IdentityFile or SSH_AUTH_SOCK in its sources), so
+# HostName, Port, User, IdentityFile and the known-hosts settings would
+# otherwise be invisible to every joy contact (design D1.4).
+ssh2-config = "0.8"
+# The one cross-process advisory file lock (design D2.6a): flock on
+# unix, LockFileEx on Windows, no libc of its own. It lands here once so
+# that no later package grows a lock dependency beside it.
+fs4 = "1.1"
 
 # TypeScript binding generation for the canonical wire types the desktop
 # consumes (e.g. AgentMode). Optional so library consumers stay lean; the
@@ -59,6 +68,16 @@ terminal_size = { version = "0.4", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+# Git for Windows writes its install path into its own registry keys
+# (install.iss:157-162), and that is where a credential helper binary
+# lives on Windows. Bindings only, the same crate joy-process already
+# uses there.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_System_Registry",
+] }
 
 [features]
 fast-kdf = ["joy-crypt/fast-kdf"]   # Use minimal Argon2id params (for testing only, NOT secure)

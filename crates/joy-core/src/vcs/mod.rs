@@ -315,7 +315,14 @@ impl GitVcs {
 
 /// Default VCS provider. Returns the Git implementation.
 pub mod contact;
+pub mod credential_helper;
 pub mod forge;
+pub mod host_kind;
+pub mod remote_url;
+pub mod ssh_auth;
+pub mod ssh_config;
+
+pub use host_kind::HostKind;
 
 pub fn default_vcs() -> GitVcs {
     GitVcs
