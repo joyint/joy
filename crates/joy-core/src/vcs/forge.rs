@@ -353,10 +353,20 @@ impl Auth {
         }
     }
 
+    /// THE callbacks of one contact. Both slots are filled here and
+    /// nowhere else: the credential resolver of D1.1, and the ONE
+    /// `certificate_check` closure of D1.4a, which git2 0.21 holds one
+    /// of per contact (remote_callbacks.rs:27) and which decides the
+    /// ssh host key and lets libgit2 decide the TLS chain.
     fn callbacks(&self, source: CredSource) -> git2::RemoteCallbacks<'static> {
         bound_forge_waits();
         let mut callbacks = git2::RemoteCallbacks::new();
+        // built before the resolver takes `source`: both read the
+        // remote URL as the person configured it, which is what carries
+        // the port and the `Host` alias (D1.4)
+        let trust = super::certificates::check(self.host_kind(), source.configured.clone());
         callbacks.credentials(self.credential_source(source));
+        callbacks.certificate_check(trust);
         callbacks
     }
 }
@@ -684,6 +694,16 @@ impl ChainState {
 fn guard_transport(url: Option<&str>) -> anyhow::Result<()> {
     if let Some(sentence) = url.and_then(super::ssh_config::refusal_for_url) {
         anyhow::bail!("{sentence}");
+    }
+    // An ssh contact reads `~/.ssh/known_hosts` inside libgit2 before
+    // joy's own callback runs, and ONE line libssh2 cannot parse makes
+    // it discard the whole file and end the connection with "error
+    // reading known_hosts" (D1.4a). Said here, once per process, with
+    // the line number.
+    if url.map(super::contact::transport_of) == Some(super::contact::Transport::Ssh) {
+        if let Some(sentence) = super::known_hosts::user_file_refusal() {
+            anyhow::bail!("{sentence}");
+        }
     }
     Ok(())
 }
