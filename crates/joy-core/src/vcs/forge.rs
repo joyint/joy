@@ -1104,7 +1104,7 @@ pub fn commit_joy(
     index.write().map_err(err)?;
     let tree_id = index.write_tree().map_err(err)?;
     let tree = repo.find_tree(tree_id).map_err(err)?;
-    let signature = git2::Signature::now(author_name, author_email).map_err(err)?;
+    let signature = signature_now(repo_dir, author_name, author_email)?;
     let parent = repo
         .head()
         .ok()
@@ -1413,7 +1413,7 @@ pub fn pull_merge(
     resolve_conflicts_yaml_aware(&repo, &mut index)?;
     let tree_id = index.write_tree_to(&repo).map_err(err)?;
     let tree = repo.find_tree(tree_id).map_err(err)?;
-    let sig = git2::Signature::now(author_name, author_email).map_err(err)?;
+    let sig = signature_now(repo_dir, author_name, author_email)?;
     repo.commit(
         Some("HEAD"),
         &sig,
@@ -1719,7 +1719,7 @@ pub fn commit_index(
     let mut index = repo.index().map_err(err)?;
     let tree_id = index.write_tree().map_err(err)?;
     let tree = repo.find_tree(tree_id).map_err(err)?;
-    let signature = git2::Signature::now(author_name, author_email).map_err(err)?;
+    let signature = signature_now(repo_dir, author_name, author_email)?;
     let parent = repo
         .head()
         .ok()
@@ -1737,6 +1737,101 @@ pub fn commit_index(
         )
         .map_err(err)?;
     Ok(oid.to_string())
+}
+
+/// The commit joy writes for itself after a command
+/// (`auto_git_post_command`), scoped to the paths joy wrote (D3.4 of the
+/// forge connection NG design).
+///
+/// The tree is the parent's tree with the entries under `pathspecs`
+/// replaced by what the index holds there, so nothing else in the index
+/// reaches the commit: a person's half finished `git add -p` is neither
+/// swept into a "joy: ..." commit nor able to hide joy's own change
+/// behind a whole tree comparison. After the git2 only move there is no
+/// pre-commit hook left to stand in the way, which is why the rule lives
+/// in the commit path itself.
+///
+/// `Ok(None)` when that scoped tree is the parent's: the "nothing to
+/// commit" the git binary used to answer.
+///
+/// A pathspec is a literal path relative to the repository root, and it
+/// covers everything below it when it names a directory. joy's own paths
+/// are literal (`.joy`, `SECURITY.md`, a version file a release bumped),
+/// never globs.
+pub fn commit_index_paths(
+    repo_dir: &Path,
+    pathspecs: &[String],
+    message: &str,
+    author_name: &str,
+    author_email: &str,
+) -> anyhow::Result<Option<String>> {
+    let repo = open(repo_dir).map_err(err)?;
+    let index = repo.index().map_err(err)?;
+    if index.has_conflicts() {
+        anyhow::bail!("the index has unresolved conflicts");
+    }
+    let parent = repo
+        .head()
+        .ok()
+        .and_then(|h| h.target())
+        .and_then(|oid| repo.find_commit(oid).ok());
+
+    // Start from what is committed, so every path outside the scope is
+    // exactly what the parent had, whatever the index says about it.
+    let mut scoped = git2::Index::new().map_err(err)?;
+    if let Some(parent) = &parent {
+        scoped
+            .read_tree(&parent.tree().map_err(err)?)
+            .map_err(err)?;
+    }
+    let in_scope = |path: &str| {
+        pathspecs
+            .iter()
+            .any(|spec| path == spec || path.starts_with(&format!("{spec}/")))
+    };
+    // Drop the scope from the snapshot (this is what commits a deletion),
+    // then take it back from the index.
+    let doomed: Vec<PathBuf> = scoped
+        .iter()
+        .filter_map(|entry| entry_path(&entry))
+        .filter(|path| in_scope(&path.to_string_lossy()))
+        .collect();
+    for path in doomed {
+        scoped.remove_path(&path).map_err(err)?;
+    }
+    for entry in index.iter() {
+        let Some(path) = entry_path(&entry) else {
+            continue;
+        };
+        if in_scope(&path.to_string_lossy()) {
+            scoped.add(&entry).map_err(err)?;
+        }
+    }
+
+    let tree_id = scoped.write_tree_to(&repo).map_err(err)?;
+    if parent.as_ref().map(|p| p.tree_id()) == Some(tree_id) {
+        return Ok(None);
+    }
+    let tree = repo.find_tree(tree_id).map_err(err)?;
+    let signature = signature_now(repo_dir, author_name, author_email)?;
+    let parents: Vec<&git2::Commit> = parent.iter().collect();
+    let oid = repo
+        .commit(
+            Some("HEAD"),
+            &signature,
+            &signature,
+            message,
+            &tree,
+            &parents,
+        )
+        .map_err(err)?;
+    Ok(Some(oid.to_string()))
+}
+
+/// The path of an index entry as a path, or `None` for a name no
+/// filesystem on this machine could hold anyway.
+fn entry_path(entry: &git2::IndexEntry) -> Option<PathBuf> {
+    std::str::from_utf8(&entry.path).ok().map(PathBuf::from)
 }
 
 /// Configure a named remote.
@@ -1813,7 +1908,7 @@ pub fn commit_everything(
     index.write().map_err(err)?;
     let tree_id = index.write_tree().map_err(err)?;
     let tree = repo.find_tree(tree_id).map_err(err)?;
-    let sig = git2::Signature::now(author_name, author_email).map_err(err)?;
+    let sig = signature_now(repo_dir, author_name, author_email)?;
     let parent = repo
         .head()
         .ok()
@@ -1876,9 +1971,92 @@ pub fn joy_dirty_fingerprint(repo_dir: &Path) -> Vec<String> {
         .collect()
 }
 
-/// The repo's configured identity (user.name, user.email) — what the CLI
-/// would commit as; it must map to a Joy member (Git-Integration
-/// concept). An honest error when it is not configured.
+/// The commit signature of the acting member (D4.5 of the forge
+/// connection NG design): the ONE place that decides what git2 stamps on
+/// a commit joy writes.
+///
+/// `project` is the project the commit lands in, and it is what decides
+/// the rule, never the shape of `member`: the caller may hand this an
+/// address (every auth and crypt path still holds one until J11 lands),
+/// and in an anonymous project that address is resolved to its opaque id
+/// before anything is signed. Deciding by shape would have signed the
+/// address that was handed in, which is exactly what ADR-042 forbids.
+///
+/// * Open mode: the e-mail is the member id (the member's address) and
+///   the name is `config_name` when the caller established that git
+///   config maps to THIS member, else the member id. joy never signs with
+///   a name it cannot attribute.
+/// * Anonymous mode (ADR-042): the opaque `m-<id>` in BOTH fields, never
+///   the address and never a person's name, so a git2 commit cannot undo
+///   the privacy mode. An address the project cannot map to a member is
+///   refused rather than signed with: in an anonymous project there is no
+///   safe way to write it down.
+/// * Both fields are guaranteed non-empty, because `git_signature_new`
+///   refuses an empty name or e-mail; when no member is known at all the
+///   caller gets the typed error instead of a commit signed by nobody.
+pub fn member_signature(
+    project: Option<&crate::model::project::Project>,
+    member: &str,
+    config_name: Option<&str>,
+) -> Result<(String, String), crate::error::JoyError> {
+    let member = member.trim();
+    if member.is_empty() {
+        return Err(crate::error::JoyError::UnknownActingMember);
+    }
+    let anonymous =
+        project.is_some_and(|p| p.privacy_mode() == crate::model::project::PrivacyMode::Anonymous);
+    // The at-rest key of this member in THIS project: the map key when the
+    // caller already had one, else the key the address resolves to.
+    let key = project.and_then(|p| {
+        p.member_by_key(member)
+            .is_some()
+            .then(|| member.to_string())
+            .or_else(|| crate::privacy::member_key_for_email(p, member))
+    });
+    let key = match key {
+        Some(key) => key,
+        // An anonymous project that cannot name this member must not fall
+        // back to what it was handed: that string is an address.
+        None if anonymous => return Err(crate::error::JoyError::UnknownActingMember),
+        None => member.to_string(),
+    };
+    if anonymous || crate::member_id::is_opaque_member_id(&key) {
+        return Ok((key.clone(), key));
+    }
+    let name = config_name
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .unwrap_or(&key);
+    Ok((name.to_string(), key))
+}
+
+/// The ONE way joy builds a `git2::Signature` (D4.5): every commit, tag
+/// and merge joy writes goes through here, so the rule cannot be true in
+/// one function and false in the next.
+///
+/// It applies [`member_signature`] to what the caller carries, against
+/// the project in `repo_dir`, which guarantees the three things libgit2
+/// and ADR-042 need: both strings are non-empty (`git_signature_new`
+/// refuses an empty name or e-mail, signature.c:68-99), an anonymous
+/// project signs with the opaque member id whether the caller carried the
+/// id or the address, and a caller with no member at all gets the typed
+/// `UnknownActingMember` instead of libgit2's "failed to parse signature".
+fn signature_now(
+    repo_dir: &Path,
+    author_name: &str,
+    author_email: &str,
+) -> anyhow::Result<git2::Signature<'static>> {
+    let project = crate::store::load_project(repo_dir).ok();
+    let (name, email) = member_signature(project.as_ref(), author_email, Some(author_name))?;
+    git2::Signature::now(&name, &email).map_err(err)
+}
+
+/// PREFILL ONLY (D4.5): the identity the repository's git config carries.
+/// It is a suggestion for a mask and the source of the DISPLAY NAME in
+/// [`member_signature`], never the identity of a commit and never a member
+/// key on its own. Demoted from "what the CLI commits as": a Joy commit is
+/// signed for the acting member, which joy resolves through
+/// `joy_core::identity`, and a project may have no git config at all.
 pub fn repo_identity(repo_dir: &Path) -> anyhow::Result<(String, String)> {
     let repo = open(repo_dir).map_err(err)?;
     let sig = repo.signature().map_err(|e| {
@@ -2033,7 +2211,7 @@ pub fn commit_paths(
         return Ok(None);
     }
     let tree = repo.find_tree(tree_id).map_err(err)?;
-    let signature = git2::Signature::now(author_name, author_email).map_err(err)?;
+    let signature = signature_now(repo_dir, author_name, author_email)?;
     let parents: Vec<&git2::Commit> = parent.iter().collect();
     let oid = repo
         .commit(
@@ -2059,7 +2237,7 @@ pub fn tag_annotated(
 ) -> anyhow::Result<()> {
     let repo = open(repo_dir).map_err(err)?;
     let head = repo.head().map_err(err)?.peel_to_commit().map_err(err)?;
-    let signature = git2::Signature::now(author_name, author_email).map_err(err)?;
+    let signature = signature_now(repo_dir, author_name, author_email)?;
     repo.tag(name, head.as_object(), &signature, message, true)
         .map_err(err)?;
     Ok(())
@@ -2185,7 +2363,7 @@ pub fn commit_all(
         return Ok(None); // nothing but (excluded) .joy noise changed
     }
     let tree = repo.find_tree(tree_id).map_err(err)?;
-    let signature = git2::Signature::now(author_name, author_email).map_err(err)?;
+    let signature = signature_now(worktree_dir, author_name, author_email)?;
     let parents: Vec<&git2::Commit> = parent.iter().collect();
     let oid = repo
         .commit(
@@ -2550,7 +2728,7 @@ fn land_branch_yaml_inner(
     resolve_conflicts_yaml_aware(&repo, &mut index)?;
     let tree_id = index.write_tree_to(&repo).map_err(err)?;
     let tree = repo.find_tree(tree_id).map_err(err)?;
-    let sig = git2::Signature::now(author_name, author_email).map_err(err)?;
+    let sig = signature_now(repo_dir, author_name, author_email)?;
     let oid = repo
         .commit(Some("HEAD"), &sig, &sig, message, &tree, &[&head, &their])
         .map_err(err)?;
@@ -2649,7 +2827,7 @@ pub fn merge_branch(
     }
     let mut index = repo.index()?;
     let tree = repo.find_tree(index.write_tree()?)?;
-    let sig = git2::Signature::now(author_name, author_email)?;
+    let sig = signature_now(repo_dir, author_name, author_email)?;
     let oid = repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &[&head, &their])?;
     repo.cleanup_state().ok();
     // reset the working tree to the merged commit
@@ -2962,6 +3140,149 @@ mod init_on_git2_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// D4.5, open mode: the e-mail is the member, and the display name is
+    /// the git config name only when that config maps to this member.
+    #[test]
+    fn an_open_mode_signature_carries_the_member_as_the_address() {
+        assert_eq!(
+            member_signature(None, "scotty@example.com", Some("Scotty")).unwrap(),
+            ("Scotty".to_string(), "scotty@example.com".to_string())
+        );
+        // no name joy can attribute: the member id stands in for it
+        assert_eq!(
+            member_signature(None, "scotty@example.com", None).unwrap(),
+            (
+                "scotty@example.com".to_string(),
+                "scotty@example.com".to_string()
+            )
+        );
+        // an empty or blank configured name is not a name (git2 refuses it)
+        assert_eq!(
+            member_signature(None, "scotty@example.com", Some("   ")).unwrap(),
+            (
+                "scotty@example.com".to_string(),
+                "scotty@example.com".to_string()
+            )
+        );
+    }
+
+    /// D4.5, anonymous mode (ADR-042): the opaque id in BOTH fields, and
+    /// no git config name can smuggle a person's name into a commit.
+    #[test]
+    fn an_anonymous_signature_is_the_opaque_id_in_both_fields() {
+        let id = crate::member_id::opaque_member_id(&"ab".repeat(32)).unwrap();
+        assert!(crate::member_id::is_opaque_member_id(&id));
+        assert_eq!(
+            member_signature(None, &id, Some("Scotty")).unwrap(),
+            (id.clone(), id.clone())
+        );
+    }
+
+    /// D4.5, at the gate every commit goes through: `signature_now` is
+    /// the only way joy builds a signature, so an empty display name can
+    /// no longer reach libgit2 as "failed to parse signature", and an
+    /// anonymous member id cannot pick up a name on the way in.
+    #[test]
+    fn every_commit_passes_the_signature_gate() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        std::fs::write(dir.path().join("a.txt"), "a").unwrap();
+        stage_paths(dir.path(), &["a.txt"]).unwrap();
+
+        // A member with no configured name: the member stands in for it,
+        // where git2 would have refused the empty string outright.
+        let oid = commit_index(dir.path(), "first", "", "scotty@example.com").unwrap();
+        let commit = repo
+            .find_commit(git2::Oid::from_str(&oid).unwrap())
+            .unwrap();
+        assert_eq!(commit.author().name().ok(), Some("scotty@example.com"));
+        assert_eq!(commit.author().email().ok(), Some("scotty@example.com"));
+
+        // An anonymous member id keeps both fields, whatever name a
+        // caller carries beside it.
+        let id = crate::member_id::opaque_member_id(&"cd".repeat(32)).unwrap();
+        std::fs::write(dir.path().join("a.txt"), "b").unwrap();
+        stage_paths(dir.path(), &["a.txt"]).unwrap();
+        let oid = commit_index(dir.path(), "second", "Scotty", &id).unwrap();
+        let commit = repo
+            .find_commit(git2::Oid::from_str(&oid).unwrap())
+            .unwrap();
+        assert_eq!(commit.author().name().ok(), Some(id.as_str()));
+        assert_eq!(commit.author().email().ok(), Some(id.as_str()));
+
+        // Nobody at all: the typed error, not libgit2's parse failure.
+        let err = commit_index(dir.path(), "third", "Scotty", "  ").unwrap_err();
+        assert!(
+            err.to_string()
+                .starts_with("this project does not know who you are, pick your member"),
+            "{err}"
+        );
+    }
+
+    /// D3.4: a commit joy writes carries joy's own paths and nothing
+    /// else, and a person's half staged work neither rides along nor
+    /// hides joy's change behind a whole tree comparison.
+    #[test]
+    fn a_scoped_commit_leaves_the_persons_staged_work_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        std::fs::create_dir_all(dir.path().join(".joy")).unwrap();
+        std::fs::write(dir.path().join(".joy/project.yaml"), "name: first").unwrap();
+        std::fs::write(dir.path().join("src.rs"), "half finished").unwrap();
+        stage_paths(dir.path(), &[".joy", "src.rs"]).unwrap();
+
+        let scope = vec![".joy".to_string()];
+        let oid = commit_index_paths(dir.path(), &scope, "joy: first", "m", "m@e.c")
+            .unwrap()
+            .expect("joy's own path changed");
+        let tree = repo
+            .find_commit(git2::Oid::from_str(&oid).unwrap())
+            .unwrap()
+            .tree()
+            .unwrap();
+        assert!(tree.get_path(Path::new(".joy/project.yaml")).is_ok());
+        assert!(
+            tree.get_path(Path::new("src.rs")).is_err(),
+            "the person's staged file is not joy's to commit"
+        );
+
+        // Nothing of joy's changed since: the staged `src.rs` must not
+        // make joy believe there is something to commit.
+        assert!(
+            commit_index_paths(dir.path(), &scope, "joy: again", "m", "m@e.c")
+                .unwrap()
+                .is_none()
+        );
+
+        // A deletion under joy's own paths is a change like any other.
+        std::fs::remove_file(dir.path().join(".joy/project.yaml")).unwrap();
+        stage_paths(dir.path(), &[".joy"]).unwrap();
+        let oid = commit_index_paths(dir.path(), &scope, "joy: gone", "m", "m@e.c")
+            .unwrap()
+            .expect("the deletion is a change");
+        let tree = repo
+            .find_commit(git2::Oid::from_str(&oid).unwrap())
+            .unwrap()
+            .tree()
+            .unwrap();
+        assert!(tree.get_path(Path::new(".joy/project.yaml")).is_err());
+        assert!(tree.get_path(Path::new("src.rs")).is_err());
+    }
+
+    /// D4.5: no member, no commit, and the sentence says what to do.
+    #[test]
+    fn a_signature_without_a_member_is_the_typed_error() {
+        let err = member_signature(None, "   ", Some("Scotty")).unwrap_err();
+        assert!(
+            err.to_string()
+                .starts_with("this project does not know who you are, pick your member"),
+            "{err}"
+        );
+        // the command line has no picker, so the sentence names its remedy
+        assert!(err.to_string().contains("--user <address>"), "{err}");
+        assert!(matches!(err, crate::error::JoyError::UnknownActingMember));
+    }
 
     /// A forge that accepts the connection and then says nothing, the way
     /// Codeberg's proxy did on 2026-09-03 before its own 504 at thirty

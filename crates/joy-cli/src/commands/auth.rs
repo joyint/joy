@@ -188,7 +188,7 @@ pub fn run(args: AuthArgs) -> Result<()> {
         Some(AuthCommand::Recover(a)) => run_recover(a, args.passphrase.as_deref(), stdin),
         None => {
             if let Some(otp) = args.otp.as_deref() {
-                run_auth_otp(otp, args.passphrase.as_deref(), stdin)
+                run_auth_otp(otp, args.passphrase.as_deref(), stdin, args.user.as_deref())
             } else {
                 run_auth(
                     args.passphrase.as_deref(),
@@ -202,13 +202,17 @@ pub fn run(args: AuthArgs) -> Result<()> {
 }
 
 /// Resolve the member-selector for this invocation. `--user` always
-/// wins; otherwise we fall back to git config user.email. Centralised
-/// here so every auth path uses the same rule (JOY-00F3-AE).
-fn resolve_user(user_flag: Option<&str>) -> Result<String> {
-    match user_flag {
-        Some(u) if !u.is_empty() => Ok(u.to_string()),
-        _ => Ok(joy_core::vcs::default_vcs().user_email()?),
-    }
+/// wins; otherwise the member this device pinned when a person last
+/// authenticated in this project, and git config only as the prefill
+/// behind both (D3.9). Centralised here so every auth path uses the same
+/// rule (JOY-00F3-AE), and the same rule `joy auth init` uses, so a
+/// founder who never had a git config is not locked out of his own
+/// project when the session expires.
+fn resolve_user(root: &Path, user_flag: Option<&str>) -> Result<String> {
+    let project = store::load_project(root)?;
+    Ok(joy_core::identity::acting_member(
+        root, &project, user_flag,
+    )?)
 }
 
 /// Resolve token from --token flag or JOY_TOKEN env var.
@@ -301,8 +305,13 @@ pub(crate) fn run_init(
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
     let mut project = store::read_project(&project_path)?;
 
-    // Determine who we are
-    let email = resolve_user(user_flag)?;
+    // Determine who we are. The member is NAMED here (D3.9): `--user`,
+    // else the member this device pinned, else git config as a prefill.
+    // The project is never guessed from, not even when it has exactly one
+    // member: the project file travels with every clone. A founder
+    // created with `joy init --user` on a machine without a git config
+    // enrols through the pin.
+    let email = joy_core::identity::acting_member(&root, &project, user_flag)?;
     let member = project.member_by_email(&email);
     if member.is_none() {
         anyhow::bail!(
@@ -404,6 +413,11 @@ pub(crate) fn run_init(
     session_token.chat_seed = Some(hex::encode(seed.as_bytes()));
     session::save_session(&project_id, &session_token)?;
 
+    // Remember who acts here when git config cannot say it (D3.9): a
+    // founder who set this project up with `joy init --user` on a machine
+    // without a git identity is known to the next command too.
+    joy_core::identity::pin_acting_member(&root, &project, &session_member);
+
     if anonymous {
         println!("Authentication initialized for {email} (anonymous mode).");
         println!(
@@ -453,7 +467,7 @@ fn run_auth(
     }
 
     // Human authentication via passphrase
-    let email = resolve_user(user_flag)?;
+    let email = resolve_user(&root, user_flag)?;
     auth_with_passphrase(
         &root,
         &project,
@@ -924,7 +938,7 @@ fn run_token_add(
 ) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
-    let email = resolve_user(user_flag)?;
+    let email = resolve_user(&root, user_flag)?;
     let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "Passphrase: ")?;
 
     let (encoded, hours) =
@@ -1475,20 +1489,31 @@ fn run_recover(
 /// currently has no attestation, reverse-attests the founder with the
 /// redeemer's fresh identity key (JOY-00FD-93). Closes the attestation
 /// chain implicitly, without CLI output.
-fn run_auth_otp(otp: &str, passphrase_flag: Option<&str>, passphrase_stdin: bool) -> Result<()> {
+fn run_auth_otp(
+    otp: &str,
+    passphrase_flag: Option<&str>,
+    passphrase_stdin: bool,
+    user_flag: Option<&str>,
+) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
-    let email = joy_core::vcs::default_vcs().user_email()?;
+    // Who redeems is the host's answer, not git config's (D3.9). When
+    // nothing here names a member, the OTP still does: it is an identity
+    // proof of its own (JOY-0257-FC), so an unresolvable name is no reason
+    // to refuse before the redemption was even tried.
+    let project = store::load_project(&root)?;
+    let member = joy_core::identity::acting_member(&root, &project, user_flag).ok();
 
     // The redemption itself (verify the OTP, derive and apply the wrapped
     // seed, close the founder attestation, open a session) lives in joy-core
     // so the desktop app runs the exact same flow instead of shelling out or
     // re-implementing it; only the I/O below is the CLI's.
     let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "Choose passphrase: ")?;
-    let outcome = joy_core::auth::enroll::redeem_with_passphrase(&root, otp, &passphrase)?;
+    let outcome =
+        joy_core::auth::enroll::redeem_with_passphrase(&root, otp, &passphrase, member.as_deref())?;
 
-    println!("Authentication initialized for {}.", email);
+    println!("Authentication initialized for {}.", outcome.member_key);
     println!("Public key registered. Session active (24h).");
     println!();
     println!("RECOVERY KEY (write this down now, it is shown only once):");
@@ -1498,7 +1523,7 @@ fn run_auth_otp(otp: &str, passphrase_flag: Option<&str>, passphrase_stdin: bool
     println!("Use it with `joy auth recover --recovery-key` if you ever forget");
     println!("your passphrase. Joy never stores the plaintext recovery key.");
 
-    joy_core::git_ops::auto_git_post_command(&root, "auth otp", &email);
+    joy_core::git_ops::auto_git_post_command(&root, "auth otp", &outcome.member_key);
 
     Ok(())
 }

@@ -59,6 +59,9 @@ sysinfo = { version = "0.33", default-features = false, features = ["system"] }
 
 [dev-dependencies]
 assert_cmd = "2"
+# Reading back what joy committed (the signature fields of D4.5). joy-core
+# already builds this exact git2; the tests just look at the result.
+git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2"] }
 predicates = "3"
 tempfile = "3"
 trycmd = "0.15"
@@ -69,3 +72,9 @@ tui = ["dep:ratatui", "dep:crossterm"]
 server = ["dep:axum", "dep:tower-http"]
 full = ["tui", "server"]
 fast-kdf = ["joy-core/fast-kdf"]
+
+# A terminal for the founding question of D3.9: the only way to prove what
+# `joy init` does for a person at a terminal is to give it one, and
+# `openpty` is the whole of what that takes. Tests only, unix only.
+[target.'cfg(unix)'.dev-dependencies]
+libc = "0.2"

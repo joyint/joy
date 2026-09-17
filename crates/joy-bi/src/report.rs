@@ -208,11 +208,10 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
         std::fs::create_dir_all(&dir).expect("mkdir");
         joy_core::init::init(joy_core::init::InitOptions {
-            root: dir.clone(),
             name: Some("BI Test".into()),
             acronym: Some("BT".into()),
             user: Some("bi@example.com".into()),
-            language: None,
+            ..joy_core::init::InitOptions::new(dir.clone())
         })
         .expect("init");
         dir
