@@ -113,10 +113,66 @@ fn an_explicitly_named_alias_is_refused() {
     assert!(!dir.path().join(".joy").exists());
 }
 
+/// A writer a test can read back, so the case can check what the person
+/// at the terminal was actually told.
+#[derive(Clone, Default)]
+struct Transcript(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl Transcript {
+    fn text(&self) -> String {
+        String::from_utf8_lossy(&self.0.lock().unwrap()).to_string()
+    }
+}
+
+impl std::io::Write for Transcript {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 /// An address a person types at the ask is an override like any other and
-/// meets the same guard.
+/// meets the same guard: it is refused, the refusal is SAID, and the
+/// person is asked again. The alias never becomes a member key, and the
+/// person keeps the init they were in the middle of.
 #[test]
-fn an_alias_typed_at_the_ask_is_refused_too() {
+fn an_alias_typed_at_the_ask_is_rejected_and_the_person_asked_again() {
+    plugin_stub_on_the_path();
+    let dir = tempfile::tempdir().unwrap();
+    checkout_with_a_github_remote(dir.path());
+
+    let transcript = Transcript::default();
+    let result = init::init(InitOptions {
+        name: Some("Typed".into()),
+        host: HostKind::Interactive,
+        ask: Some(Box::new(TerminalAsk::new(
+            std::io::Cursor::new(format!("{ALIAS}\n{REAL}\n").into_bytes()),
+            transcript.clone(),
+        ))),
+        ..InitOptions::new(dir.path().to_path_buf())
+    })
+    .expect("the second answer founds the project");
+
+    assert_eq!(result.founder, REAL);
+    let said = transcript.text();
+    assert!(said.contains("is a forge alias address"), "{said}");
+    // The two opening sentences are said once, not once per try.
+    assert_eq!(
+        said.matches("becomes the founding member").count(),
+        1,
+        "{said}"
+    );
+    let project = std::fs::read_to_string(dir.path().join(".joy/project.yaml")).unwrap();
+    assert!(!project.contains(ALIAS), "{project}");
+}
+
+/// Three aliases and nothing else: joy gives up with the same named
+/// refusal a host that cannot ask gets, and leaves nothing behind.
+#[test]
+fn only_aliases_end_the_run_with_the_named_refusal() {
     plugin_stub_on_the_path();
     let dir = tempfile::tempdir().unwrap();
     checkout_with_a_github_remote(dir.path());
@@ -125,17 +181,14 @@ fn an_alias_typed_at_the_ask_is_refused_too() {
         name: Some("Typed".into()),
         host: HostKind::Interactive,
         ask: Some(Box::new(TerminalAsk::new(
-            std::io::Cursor::new(format!("{ALIAS}\n").into_bytes()),
-            Vec::new(),
+            std::io::Cursor::new(format!("{ALIAS}\n").repeat(3).into_bytes()),
+            Transcript::default(),
         ))),
         ..InitOptions::new(dir.path().to_path_buf())
     })
     .unwrap_err();
 
-    assert!(
-        matches!(err, JoyError::FounderAliasIdentity(ref a) if a == ALIAS),
-        "{err}"
-    );
+    assert!(matches!(err, JoyError::NoFounderIdentity), "{err}");
     assert!(!dir.path().join(".joy").exists());
 }
 

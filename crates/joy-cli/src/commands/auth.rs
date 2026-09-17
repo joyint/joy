@@ -306,9 +306,11 @@ pub(crate) fn run_init(
     let mut project = store::read_project(&project_path)?;
 
     // Determine who we are. The member is NAMED here (D3.9): `--user`,
-    // else the member this device pinned, else git config as a prefill,
-    // else the project's only member. A founder created with
-    // `joy init --user` on a machine without a git config enrols this way.
+    // else the member this device pinned, else git config as a prefill.
+    // The project is never guessed from, not even when it has exactly one
+    // member: the project file travels with every clone. A founder
+    // created with `joy init --user` on a machine without a git config
+    // enrols through the pin.
     let email = joy_core::identity::acting_member(&root, &project, user_flag)?;
     let member = project.member_by_email(&email);
     if member.is_none() {

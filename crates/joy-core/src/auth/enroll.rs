@@ -203,14 +203,28 @@ pub fn redeem_with_passphrase(
 
     let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
     let mut project = store::load_project(root)?;
-    // The OTP finds its member (JOY-0257-FC); the named member only
-    // survives as the fallthrough so apply_enrollment can answer with
-    // its precise refusal texts.
+    // The OTP finds its member (JOY-0257-FC); a NAMED member only
+    // survives as the fallthrough so apply_enrollment can answer with its
+    // precise refusal texts ("is not a registered project member",
+    // "already completed setup", "incorrect OTP").
+    //
+    // With nobody named there is no such fallthrough, and the refusal has
+    // to be answered here: the one thing that is certainly wrong is the
+    // password, because a matching one would have found its member
+    // without any help. Answering `UnknownActingMember` instead would
+    // send the person looking for their member when the password is what
+    // they mistyped.
     let member_key = match member.map(str::trim).filter(|m| !m.is_empty()) {
         Some(named) => {
             member_for_redemption(&project, named, otp).unwrap_or_else(|| named.to_string())
         }
-        None => member_for_redemption(&project, "", otp).ok_or(JoyError::UnknownActingMember)?,
+        None => member_for_redemption(&project, "", otp).ok_or_else(|| {
+            JoyError::AuthFailed(
+                "the one-time password matches no pending invitation in this project.\n\
+                 Check the password, or name your member: --user <address>"
+                    .into(),
+            )
+        })?,
     };
 
     // Wrapped-seed onboarding (ADR-039): a fresh random seed, wrapped under

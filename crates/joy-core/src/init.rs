@@ -80,6 +80,22 @@ impl InitOptions {
     pub fn new(root: PathBuf) -> Self {
         InitOptions {
             root,
+            ..InitOptions::default()
+        }
+    }
+}
+
+impl Default for InitOptions {
+    /// Everything unset and a background host, with an EMPTY root that
+    /// the caller is expected to replace ([`InitOptions::new`] does).
+    ///
+    /// It exists so an out-of-repo caller (the desktop's
+    /// `joy_init_project`) can write `InitOptions { root, user, ..
+    /// Default::default() }` and keep compiling when this struct grows a
+    /// field, instead of breaking on the next joy-core bump.
+    fn default() -> Self {
+        InitOptions {
+            root: PathBuf::new(),
             name: None,
             acronym: None,
             user: None,
@@ -96,7 +112,20 @@ impl InitOptions {
 pub trait AskFounderAddress {
     /// The address the person typed, or `None` when they gave none.
     fn ask_founder_address(&mut self) -> Result<Option<String>, JoyError>;
+
+    /// Tell the person why the address they just typed was not taken, so
+    /// the next call can ask again. Only the forge alias guard produces
+    /// one of these: a typo in the shape is caught inside the ask itself.
+    /// The default says nothing, which is right for a mask that shows the
+    /// refusal on its own.
+    fn reject_founder_address(&mut self, _reason: &str) -> Result<(), JoyError> {
+        Ok(())
+    }
 }
+
+/// How often a person may answer the founding question before joy gives
+/// up on this run. The same three the shape check inside the ask allows.
+const FOUNDER_ASK_TRIES: u32 = 3;
 
 /// The terminal ask: two sentences and one line of input. Generic over
 /// its reader and writer so a test drives it with a fake stdin.
@@ -107,6 +136,10 @@ pub struct TerminalAsk<R: BufRead, W: Write> {
     input: R,
     output: W,
     tries: u32,
+    /// Whether the two opening sentences were already written. They say
+    /// why the question is being asked, which is worth saying once and
+    /// tiresome to repeat when a rejected answer brings the person back.
+    introduced: bool,
 }
 
 impl<R: BufRead, W: Write> TerminalAsk<R, W> {
@@ -114,7 +147,8 @@ impl<R: BufRead, W: Write> TerminalAsk<R, W> {
         TerminalAsk {
             input,
             output,
-            tries: 3,
+            tries: FOUNDER_ASK_TRIES,
+            introduced: false,
         }
     }
 }
@@ -129,16 +163,19 @@ impl TerminalAsk<std::io::BufReader<std::io::Stdin>, std::io::Stderr> {
 impl<R: BufRead, W: Write> AskFounderAddress for TerminalAsk<R, W> {
     fn ask_founder_address(&mut self) -> Result<Option<String>, JoyError> {
         let io = |e: std::io::Error| JoyError::Git(format!("cannot ask for the address: {e}"));
-        writeln!(
-            self.output,
-            "This project does not know who you are yet, and git config names nobody."
-        )
-        .map_err(io)?;
-        writeln!(
-            self.output,
-            "Your address becomes the founding member of this project."
-        )
-        .map_err(io)?;
+        if !self.introduced {
+            self.introduced = true;
+            writeln!(
+                self.output,
+                "This project does not know who you are yet, and git config names nobody."
+            )
+            .map_err(io)?;
+            writeln!(
+                self.output,
+                "Your address becomes the founding member of this project."
+            )
+            .map_err(io)?;
+        }
         for _ in 0..self.tries {
             write!(self.output, "Address: ").map_err(io)?;
             self.output.flush().map_err(io)?;
@@ -157,6 +194,11 @@ impl<R: BufRead, W: Write> AskFounderAddress for TerminalAsk<R, W> {
             writeln!(self.output, "An address looks like you@example.com.").map_err(io)?;
         }
         Ok(None)
+    }
+
+    fn reject_founder_address(&mut self, reason: &str) -> Result<(), JoyError> {
+        writeln!(self.output, "{reason}")
+            .map_err(|e| JoyError::Git(format!("cannot ask for the address: {e}")))
     }
 }
 
@@ -308,6 +350,13 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
 /// The founding address from the person at this terminal, or the named
 /// refusal of D3.9. An `Interactive` host without an ask (a `--json` run,
 /// a piped stdin) refuses like a background host: there is nobody to answer.
+///
+/// A typed address passes the same alias guard as `--user`, and a refused
+/// one is ASKED AGAIN rather than ending the run: the person who pastes
+/// the noreply address their forge shows them has made the same kind of
+/// mistake as a typo, and the ask already exists to let them correct one.
+/// After [`FOUNDER_ASK_TRIES`] answers joy gives up with the same named
+/// refusal a host that cannot ask gets.
 fn ask_for_founder_address(
     root: &Path,
     host: HostKind,
@@ -319,15 +368,21 @@ fn ask_for_founder_address(
     let Some(ask) = ask else {
         return Err(JoyError::NoFounderIdentity);
     };
-    let answer = ask
-        .ask_founder_address()?
-        .map(|a| a.trim().to_string())
-        .filter(|a| !a.is_empty())
-        .ok_or(JoyError::NoFounderIdentity)?;
-    // A typed address is an explicit override and passes the same alias
-    // guard as `--user`.
-    refuse_forge_alias(root, &answer)?;
-    Ok(answer)
+    for _ in 0..FOUNDER_ASK_TRIES {
+        let answer = ask
+            .ask_founder_address()?
+            .map(|a| a.trim().to_string())
+            .filter(|a| !a.is_empty())
+            .ok_or(JoyError::NoFounderIdentity)?;
+        match refuse_forge_alias(root, &answer) {
+            Ok(()) => return Ok(answer),
+            Err(alias @ JoyError::FounderAliasIdentity(_)) => {
+                ask.reject_founder_address(&alias.to_string())?;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Err(JoyError::NoFounderIdentity)
 }
 
 /// Resolve the founding member's e-mail: an explicit `--user` override, else the
