@@ -1,0 +1,13 @@
+id: JOY-02A5-47
+title: A clone needs a depth and a progress callback (app package A4)
+type: task
+status: closed
+priority: high
+capabilities:
+- implement
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-17T18:08:28Z
+updated: 2026-09-17T18:08:28Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'The engine half of D4.3 of the forge connection NG design, driven by app package A4 (JAPP-02D7-4B) and opened here because the change is joy''s: forge::clone took a URL, an auth and a destination, downloaded the whole history and told nobody how far it had got. It grows two arguments. CLONE_DEPTH_FULL is libgit2''s own 0, the whole history, which is what the CLI and the platform ask for; the desktop asks for 1, the lean shape of D4.3, because libgit2 1.9.6 has neither a sparse checkout nor a partial clone and history is the only part a clone can leave behind. The constant carries the caveat that belongs to the number and not to its callers, that the local transport refuses any depth at all (transports/local.c:310). The progress callback is libgit2''s transfer callback: it is called while the pack arrives with the bytes AND the objects the engine counts, and its answer decides whether the transfer goes on, so a person''s cancel stops a download nobody wants any more instead of waiting for its last byte. Tested against a git smart-HTTP server in process, because neither half can be shown over a path: the local transport refuses the depth, and a local clone copies the object database and counts nothing. No default test contacts a real forge.'

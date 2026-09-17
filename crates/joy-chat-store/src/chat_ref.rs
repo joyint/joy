@@ -1398,6 +1398,25 @@ mod tests {
 mod forge_sync_tests {
     use super::*;
 
+    /// A clone of the whole history with nobody watching it: the depth and
+    /// the progress callback a clone grew for the desktop (D4.3) are of no
+    /// use here, because the local transport these tests clone over
+    /// refuses any depth at all.
+    fn clone_full(
+        url: &str,
+        auth: &joy_core::vcs::forge::Auth,
+        dest: &std::path::Path,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        joy_core::vcs::forge::clone(
+            url,
+            auth,
+            dest,
+            joy_core::vcs::forge::CLONE_DEPTH_FULL,
+            &mut |_| true,
+        )?;
+        Ok(())
+    }
+
     /// A poll that finds the forge unchanged never touches the checkout
     /// gate (JOY-027F-EB). The test HOLDS the gate and polls from another
     /// thread: the old pass took the gate before asking the forge and
@@ -1491,8 +1510,8 @@ mod forge_sync_tests {
         // both sides clone BEFORE any chat exists
         let a = base.join("a");
         let b = base.join("b");
-        joy_core::vcs::forge::clone(forge.to_str().unwrap(), &auth, &a).expect("clone a");
-        joy_core::vcs::forge::clone(forge.to_str().unwrap(), &auth, &b).expect("clone b");
+        clone_full(forge.to_str().unwrap(), &auth, &a).expect("clone a");
+        clone_full(forge.to_str().unwrap(), &auth, &b).expect("clone b");
 
         let now = chrono::Utc::now();
         // A writes and syncs: the forge now holds A's ref
@@ -1579,7 +1598,7 @@ mod forge_sync_tests {
             .unwrap();
 
         let checkout = base.join("checkout");
-        joy_core::vcs::forge::clone(
+        clone_full(
             forge.to_str().unwrap(),
             &joy_core::vcs::forge::Auth::token("x"),
             &checkout,

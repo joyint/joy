@@ -79,6 +79,8 @@ fn a_clone_reads_no_proxy_from_a_system_config_git_would_not_read() {
         "http://127.0.0.1:1/forge.git",
         &Auth::LocalAs(HostKind::Background),
         &dest,
+        forge::CLONE_DEPTH_FULL,
+        &mut |_| true,
     )
     .expect_err("nothing listens on port 1");
     let text = format!("{failure:#}");
