@@ -190,7 +190,7 @@ struct StateFile {
     hosts: BTreeMap<String, HostMemory>,
 }
 
-static STATE_PATH: Mutex<Option<Option<PathBuf>>> = Mutex::new(None);
+static STATE_PATH: Mutex<Option<PathBuf>> = Mutex::new(None);
 
 /// Put the transport memory somewhere else than `app_state_dir()`.
 ///
@@ -199,15 +199,21 @@ static STATE_PATH: Mutex<Option<Option<PathBuf>>> = Mutex::new(None);
 /// ([`crate::forge_plugins::set_plugin_dirs`]), and it is set the same
 /// way: by a host that knows better, and by the tests, which must never
 /// write into the person's own state directory.
+///
+/// `None` puts it back where D1.2 says it lives, exactly as
+/// `set_gaps("")` and `set_plugin_dirs(vec![])` restore their own
+/// defaults. It does NOT switch the memory off: a host that asked for
+/// the default and got no memory at all would lose the whole of D1.2's
+/// transport memory without a word.
 pub fn set_state_file(path: Option<PathBuf>) {
-    *STATE_PATH.lock().unwrap_or_else(|e| e.into_inner()) = Some(path);
+    *STATE_PATH.lock().unwrap_or_else(|e| e.into_inner()) = path;
 }
 
 /// Where the transport memory lives: `<app_state_dir>/forge-state.json`
 /// (D1.2), or wherever [`set_state_file`] pointed it.
 pub fn state_file() -> Option<PathBuf> {
     if let Some(override_path) = STATE_PATH.lock().unwrap_or_else(|e| e.into_inner()).clone() {
-        return override_path;
+        return Some(override_path);
     }
     crate::auth::session::app_state_dir()
         .ok()
@@ -622,6 +628,15 @@ static FACTS: Mutex<Option<BTreeMap<String, CachedFacts>>> = Mutex::new(None);
 /// (D1.7: `min(expires_at - 60 s, 5 minutes)`).
 const FACTS_TTL: Duration = Duration::from_secs(5 * 60);
 
+/// How long the ABSENCE of a token is reused. D1.7 gives a TTL to a
+/// token, not to its lack: a person who has just run `joy forge login`
+/// in another process must not be told "nobody is signed in to
+/// github.com" for the next five minutes by a desktop that cached the
+/// refusal. The window exists only so that one operation's two legs and
+/// the next tick of a poll do not each spawn a connector; five seconds
+/// is five ticks of the fastest poll D1.9 allows, which is one second.
+const NO_TOKEN_TTL: Duration = Duration::from_secs(5);
+
 /// The grace D1.7 takes off a stated expiry.
 const EXPIRY_GRACE: Duration = Duration::from_secs(60);
 
@@ -645,8 +660,21 @@ pub fn invalidate_all_facts() {
         .clear();
 }
 
-fn facts_key(host: &str, remote: &str) -> String {
-    format!("{}\u{1}{remote}", host.to_ascii_lowercase())
+/// The key one connector answer is remembered under.
+///
+/// The ACCESS is part of it, because the call really carries `--for
+/// read|write` and on a host with several logins the direction is what
+/// tells a login that may only read the repository from one that may
+/// push to it (D4.1c step 4). Without it a fetch that ran first would
+/// lend its read scoped token to the push behind it, the forge would
+/// answer 403 on receive-pack, and D1.8b would read that as
+/// `no_push_rights` for a person who may push.
+fn facts_key(host: &str, remote: &str, access: crate::forge_plugins::Access) -> String {
+    format!(
+        "{}\u{1}{remote}\u{1}{}",
+        host.to_ascii_lowercase(),
+        access.as_str()
+    )
 }
 
 fn cached_facts(key: &str) -> Option<HostFacts> {
@@ -725,7 +753,11 @@ pub fn host_facts(
     direction: ContactDirection,
 ) -> HostFacts {
     let host = super::contact::host_of(remote);
-    let key = facts_key(&host, remote);
+    let access = match direction {
+        ContactDirection::Push => crate::forge_plugins::Access::Write,
+        ContactDirection::Fetch => crate::forge_plugins::Access::Read,
+    };
+    let key = facts_key(&host, remote, access);
     if let Some(facts) = cached_facts(&key) {
         return facts;
     }
@@ -751,10 +783,6 @@ pub fn host_facts(
         cache_facts(&key, &facts, FACTS_TTL);
         return facts;
     };
-    let access = match direction {
-        ContactDirection::Push => crate::forge_plugins::Access::Write,
-        ContactDirection::Fetch => crate::forge_plugins::Access::Read,
-    };
     let answer = crate::forge_plugins::token_for(spec, &target, access, &context);
     let mut ttl = FACTS_TTL;
     let token = match answer {
@@ -776,6 +804,12 @@ pub fn host_facts(
             None
         }
     };
+    // A token that is not there is not a token: it is remembered for
+    // the short window above and re-asked, so a sign in that happened
+    // in another process is seen within seconds (D1.7).
+    if token.is_none() {
+        ttl = NO_TOKEN_TTL;
+    }
     let facts = HostFacts {
         claimed: ForgeKind::from_plugin_id(spec.id),
         claimed_by_plugin: true,
@@ -793,13 +827,22 @@ pub fn host_facts(
 /// that presents the other one; otherwise the kind the connector id
 /// names decides. The third shape, a token as the user name with an
 /// empty password, is never one of the answers.
+///
+/// A name never DECIDES the kind on its own, because two families share
+/// each of the two names: `x-access-token` is GitHub and GitHub
+/// Enterprise Server, and `oauth2` is GitLab, Gitea, Forgejo and
+/// Codeberg (D1.6). Where the connector's own id already names a family
+/// of that shape, the id keeps it: the kind travels on into
+/// `Auth::ClaimedToken` and into the remembered `shape`, and a Gitea
+/// recorded as GitLab is inherited by the next reader of the row.
 fn token_kind(plugin_id: &str, username: Option<&str>) -> Option<ForgeKind> {
+    let claimed = ForgeKind::from_plugin_id(plugin_id);
+    let of_shape = |shape: &str| claimed.filter(|kind| kind.token_user() == shape);
     match username.map(str::trim) {
-        Some("x-access-token") => return Some(ForgeKind::GitHub),
-        Some("oauth2") => return Some(ForgeKind::GitLab),
-        _ => {}
+        Some("x-access-token") => of_shape("x-access-token").or(Some(ForgeKind::GitHub)),
+        Some("oauth2") => of_shape("oauth2").or(Some(ForgeKind::GitLab)),
+        _ => claimed,
     }
-    ForgeKind::from_plugin_id(plugin_id)
 }
 
 // ---------------------------------------------------------------------
@@ -872,8 +915,16 @@ pub struct Leg {
 /// operation": a third attempt happens only after a person acted.
 #[derive(Debug, Clone)]
 pub struct Plan {
-    /// The host the throttle, the memory and the ownership join all key
-    /// on: the host of the CONFIGURED remote, whatever the twin dials.
+    /// The host the memory and the ownership join key on: the host of
+    /// the CONFIGURED remote, whatever the twin dials. It is the person's
+    /// own address for this forge, so `ssh.github.com` stays
+    /// `ssh.github.com` in their row and in the join.
+    ///
+    /// The THROTTLE is not keyed on it and must not be: D1.9's budget is
+    /// requests per second per host per machine, and the machine that
+    /// counts them is the one a socket is opened to. Each leg is
+    /// therefore charged to the host it really dials, which is
+    /// github.com for the twin of an `ssh.github.com` remote.
     pub host: String,
     pub legs: Vec<Leg>,
     pub notes: Vec<String>,
@@ -915,11 +966,16 @@ impl Plan {
 /// gathered. Pure: every machine fact, every connector answer and the
 /// git config are arguments, so the rule of D1.2 can be read and tested
 /// without a forge, an agent or a connector.
+///
+/// `kind` is the host kind of D1.1, and it decides exactly one thing
+/// here: whether the twin may be dialled with no credential at all
+/// (D1.2, "No anonymous polling").
 pub fn plan_with(
     configured: &str,
     facts: &HostFacts,
     memory: Option<&HostMemory>,
     probe: &SshProbe,
+    kind: HostKind,
     insteadof: &dyn Fn(&str) -> Option<String>,
 ) -> Plan {
     let host = super::contact::host_of(configured);
@@ -952,7 +1008,7 @@ pub fn plan_with(
 
     // An ssh remote. The twin is a consequence of "no working local ssh
     // credential", never of "a token exists" (D1.2 rule 2).
-    let twin = twin_leg(configured, &host, facts, insteadof, &mut notes);
+    let twin = twin_leg(configured, &host, facts, kind, insteadof, &mut notes);
     let state = memory.map(|memory| memory.state);
     if state == Some(TransportState::SshWorked) {
         notes.push(format!(
@@ -1012,6 +1068,7 @@ fn twin_leg(
     configured: &str,
     host: &str,
     facts: &HostFacts,
+    kind: HostKind,
     insteadof: &dyn Fn(&str) -> Option<String>,
     notes: &mut Vec<String>,
 ) -> Option<Leg> {
@@ -1043,17 +1100,34 @@ fn twin_leg(
         notes.push(TwinRefusal::InsteadOf { rewritten }.sentence(host));
         return None;
     }
-    let Some(token) = facts.token.clone() else {
-        notes.push(format!(
-            "nobody is signed in to {host}, so joy has no https credential to try"
-        ));
-        return None;
+    // "Nobody is signed in" is NOT one of D1.5's four refusals, and
+    // D1.2 allows exactly one contact without a credential: "A person
+    // initiated one off operation (a clone, an explicit 'check now') may
+    // contact an https remote with no credential. A poll or a worker
+    // tick may not." A public repository whose remote is ssh, on a
+    // machine with no readable key and nobody signed in, is reachable
+    // over the twin and over nothing else; refusing it here reported an
+    // ssh fault for a repository anyone may read.
+    let credential = match facts.token.clone() {
+        Some(token) => LegCredential::Token(token),
+        None if kind == HostKind::Interactive => {
+            notes.push(format!(
+                "nobody is signed in to {host}, so joy tries its https address with whatever this machine holds"
+            ));
+            LegCredential::Machine
+        }
+        None => {
+            notes.push(format!(
+                "nobody is signed in to {host}, so joy has no https credential to try"
+            ));
+            return None;
+        }
     };
     Some(Leg {
         way: Way::Twin,
         url,
         transport: Transport::Https,
-        credential: LegCredential::Token(token),
+        credential,
     })
 }
 
@@ -1096,11 +1170,16 @@ pub fn took_ssh_auth_failure() -> bool {
 pub(crate) fn with_state_file<T>(work: impl FnOnce(&Path) -> T) -> T {
     static SERIAL: Mutex<()> = Mutex::new(());
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    // Put back whatever was there, which for a plain `cargo test` is
+    // the default: `set_state_file(None)` now MEANS the default, so a
+    // case that ended must not leave the next one writing rows into the
+    // person's own state directory.
+    let before = STATE_PATH.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join(STATE_FILE);
     set_state_file(Some(path.clone()));
     let out = work(&path);
-    set_state_file(None);
+    set_state_file(before);
     out
 }
 

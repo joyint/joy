@@ -1019,19 +1019,20 @@ fn contact_plan(
     // protocol), both take the engine as it was: one contact over the
     // remote that was configured. Asking a connector about a directory
     // would spawn three processes per contact and learn nothing.
-    if !auth.is_local() || super::contact::transport_of(&url) == super::contact::Transport::Local {
+    let transport = super::contact::transport_of(&url);
+    if !auth.is_local() || transport == super::contact::Transport::Local {
         return Ok(Plan::single(&url, LegCredential::Machine));
     }
     let host = super::contact::host_of(&url);
+    let over_ssh = transport == super::contact::Transport::Ssh;
     // Trigger (a) of D1.2, established BEFORE the contact: has this
     // machine any ssh credential for the host at all?
-    let probe = match super::contact::transport_of(&url) {
-        super::contact::Transport::Ssh => {
-            super::resolver::probe_ssh(&host, Some(&url), auth.host_kind())
-        }
-        _ => super::resolver::SshProbe::empty(),
+    let probe = if over_ssh {
+        super::resolver::probe_ssh(&host, Some(&url), auth.host_kind())
+    } else {
+        super::resolver::SshProbe::empty()
     };
-    let memory = fresh_memory(&host, &probe);
+    let memory = fresh_memory(&host, &probe, over_ssh);
     // A host ssh already worked for never goes to the twin, whatever
     // tokens exist (D1.2 rule 3), so no connector is asked for one. A
     // person who reaches their forge over ssh is never sent through a
@@ -1061,6 +1062,7 @@ fn contact_plan(
         &facts,
         memory.as_ref(),
         &probe,
+        auth.host_kind(),
         &rule,
     ))
 }
@@ -1068,12 +1070,23 @@ fn contact_plan(
 /// This host's memory row, unless one of the facts it was written under
 /// has changed (D1.2 rule 3a: an agent that appears, an identity that
 /// appears, a key file whose mtime moved).
+///
+/// `over_ssh` says whether THIS operation's remote is an ssh one, and it
+/// is what makes the comparison honest. Only an ssh operation runs the
+/// probe; every other transport is handed `SshProbe::empty()`, whose
+/// signals hold no key file at all, while a row written from an ssh
+/// contact carries the six identity files `ssh_auth::identity_files`
+/// names. The two can never compare equal, so an https remote on the
+/// same host would drop the row of the ssh remote beside it and the
+/// machine would forget which credential reached that forge.
 fn fresh_memory(
     host: &str,
     probe: &super::resolver::SshProbe,
+    over_ssh: bool,
 ) -> Option<super::resolver::HostMemory> {
     let memory = super::resolver::recall(host)?;
-    if memory.state == super::resolver::TransportState::NoSshCredential
+    if over_ssh
+        && memory.state == super::resolver::TransportState::NoSshCredential
         && memory.signals != probe.signals
     {
         super::resolver::forget(host);
@@ -5430,6 +5443,139 @@ mod resolver_assembly_tests {
                 TransportState::SshWorked
             );
         });
+    }
+
+    /// D1.2 rule 3a, at the one place that implements it: the row is
+    /// dropped as soon as one of the facts it was written under changes.
+    /// Nothing else in the tree drops it, so deleting this rule's body
+    /// has to fail here.
+    #[test]
+    fn a_no_ssh_credential_row_is_dropped_when_the_machine_changes_under_it() {
+        crate::vcs::resolver::with_state_file(|_| {
+            let written = SshSignals {
+                agent_socket: None,
+                agent_identities: 0,
+                keys: [("/home/scotty/.ssh/id_ed25519".to_string(), 111)]
+                    .into_iter()
+                    .collect(),
+            };
+            let row = |signals: &SshSignals| {
+                crate::vcs::resolver::remember(
+                    "github.com",
+                    crate::vcs::resolver::HostMemory::new(TransportState::NoSshCredential)
+                        .with_signals(signals.clone()),
+                );
+            };
+            let probe = |signals: &SshSignals| SshProbe {
+                candidates: 0,
+                signals: signals.clone(),
+                notes: Vec::new(),
+            };
+
+            // The same machine: the row stands.
+            row(&written);
+            assert_eq!(
+                fresh_memory("github.com", &probe(&written), true)
+                    .expect("the row survives an unchanged machine")
+                    .state,
+                TransportState::NoSshCredential
+            );
+
+            // An agent that appears is exactly the change D1.2 names.
+            let with_an_agent = SshSignals {
+                agent_socket: Some("/tmp/agent.sock".to_string()),
+                agent_identities: 2,
+                ..written.clone()
+            };
+            assert!(fresh_memory("github.com", &probe(&with_an_agent), true).is_none());
+            assert!(
+                crate::vcs::resolver::recall("github.com").is_none(),
+                "and the row is gone, not merely unread"
+            );
+
+            // So is a key file whose mtime moved.
+            row(&written);
+            let key_touched = SshSignals {
+                keys: [("/home/scotty/.ssh/id_ed25519".to_string(), 222)]
+                    .into_iter()
+                    .collect(),
+                ..written.clone()
+            };
+            assert!(fresh_memory("github.com", &probe(&key_touched), true).is_none());
+
+            // The two states rule 3a does not name keep their rows
+            // whatever the machine looks like: `ssh-failed` is the
+            // forge's verdict and `ssh-worked` is a fact about the
+            // credential, and neither is a claim about this machine's
+            // chain.
+            for state in [TransportState::SshFailed, TransportState::SshWorked] {
+                crate::vcs::resolver::remember(
+                    "github.com",
+                    crate::vcs::resolver::HostMemory::new(state).with_signals(written.clone()),
+                );
+                assert_eq!(
+                    fresh_memory("github.com", &probe(&with_an_agent), true)
+                        .expect("kept")
+                        .state,
+                    state
+                );
+            }
+        });
+    }
+
+    /// The same rule, from the other side: an https or a local remote
+    /// runs no probe at all, so the empty signals it carries are not
+    /// evidence that the machine changed. Two projects on one host, one
+    /// over ssh and one over https, are the normal case, and every
+    /// operation on the https one used to delete the ssh one's row.
+    #[test]
+    fn a_remote_that_is_not_ssh_never_drops_the_ssh_row_beside_it() {
+        crate::vcs::resolver::with_state_file(|_| {
+            let written = SshSignals {
+                agent_socket: Some("/tmp/agent.sock".to_string()),
+                agent_identities: 1,
+                keys: [("/home/scotty/.ssh/id_ed25519".to_string(), 111)]
+                    .into_iter()
+                    .collect(),
+            };
+            crate::vcs::resolver::remember(
+                "github.com",
+                crate::vcs::resolver::HostMemory::new(TransportState::NoSshCredential)
+                    .with_signals(written)
+                    .with_credential(super::super::contact::Transport::Https, "token"),
+            );
+            let memory = fresh_memory("github.com", &SshProbe::empty(), false)
+                .expect("an https contact leaves the ssh row alone");
+            assert_eq!(memory.credential.as_deref(), Some("token"));
+            assert!(
+                crate::vcs::resolver::used("github.com").is_some(),
+                "and the sentence that says which credential joy used is still there"
+            );
+        });
+    }
+
+    /// must_fix of the J4b review: the thread local of D1.2 rule 3b is
+    /// read and cleared, and a refusal one operation left behind is
+    /// never read as the next one's. `clone` fails outside any plan and
+    /// clears nothing, so the clearing has to happen where the next leg
+    /// starts.
+    #[test]
+    fn a_refusal_left_by_an_earlier_contact_is_not_this_leg_s() {
+        let auth_failure = git2::Error::new(
+            git2::ErrorCode::Auth,
+            git2::ErrorClass::Ssh,
+            "the forge refused this key",
+        );
+        crate::vcs::resolver::note_contact_error(
+            super::super::contact::Transport::Ssh,
+            &auth_failure,
+        );
+        // What the leg preamble does before the contact runs.
+        crate::vcs::resolver::took_ssh_auth_failure();
+        assert!(
+            !crate::vcs::resolver::took_ssh_auth_failure(),
+            "a stale refusal would send this operation to the twin and write a 24 hour row"
+        );
     }
 
     /// D1.5: with neither an ssh credential nor a token there is

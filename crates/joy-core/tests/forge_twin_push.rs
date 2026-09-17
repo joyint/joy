@@ -928,8 +928,12 @@ fn the_connector_is_asked_once_per_host_and_carries_the_project_s_pinned_login()
     );
 
     forge::push(&checkout, &Auth::local(HostKind::Background)).expect("push");
-    // A second operation on the same host: the connector answered once
-    // and its answer is what this one reads.
+    // A second operation on the same host IN THE SAME DIRECTION: the
+    // connector answered once and its answer is what this one reads.
+    forge::push(&checkout, &Auth::local(HostKind::Background)).expect("push again");
+    // And one in the other direction, which is a different question:
+    // `--for read` may be answered by a login that may not push, so the
+    // write scoped answer is not replayed for it (D4.1c step 4).
     let advertised = forge::ls_remote_refs(
         &checkout,
         &Auth::local(HostKind::Background),
@@ -941,28 +945,39 @@ fn the_connector_is_asked_once_per_host_and_carries_the_project_s_pinned_login()
     let tokens = machine.calls("token");
     assert_eq!(
         tokens.len(),
+        2,
+        "asked per host and per direction, never per contact (D1.7): {tokens:?}"
+    );
+    for call in &tokens {
+        assert!(
+            call.contains("--login scotty-work"),
+            "the pin travels on the call: {call}"
+        );
+        assert!(
+            call.contains("--host-kind background"),
+            "and so does the host kind of D1.1: {call}"
+        );
+    }
+    assert_eq!(
+        tokens
+            .iter()
+            .filter(|call| call.contains("--for write"))
+            .count(),
         1,
-        "asked per host and not per contact (D1.7): {tokens:?}"
+        "a push asks for a login that may write, once for both pushes: {tokens:?}"
     );
-    assert!(
-        tokens[0].contains("--login scotty-work"),
-        "the pin travels on the call: {}",
-        tokens[0]
-    );
-    assert!(
-        tokens[0].contains("--host-kind background"),
-        "and so does the host kind of D1.1: {}",
-        tokens[0]
-    );
-    assert!(
-        tokens[0].contains("--for write"),
-        "a push asks for a login that may write (D4.1c step 4): {}",
-        tokens[0]
+    assert_eq!(
+        tokens
+            .iter()
+            .filter(|call| call.contains("--for read"))
+            .count(),
+        1,
+        "and a fetch asks for its own: {tokens:?}"
     );
     assert_eq!(
         machine.calls("web-url").len(),
-        1,
-        "and the twin's address with it"
+        2,
+        "the twin's address rides with the answer, once per direction"
     );
     drop(machine);
 }

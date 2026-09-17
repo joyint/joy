@@ -63,6 +63,7 @@ fn an_ssh_remote_with_a_working_chain_stays_on_ssh_even_with_a_token() {
         &github_facts(),
         None,
         &ssh_ready(),
+        HostKind::Background,
         &no_rule,
     );
     assert_eq!(plan.legs[0].way, Way::Configured);
@@ -86,6 +87,7 @@ fn a_host_whose_memory_says_ssh_worked_never_goes_to_the_twin() {
         &github_facts(),
         Some(&memory),
         &ssh_ready(),
+        HostKind::Background,
         &no_rule,
     );
     assert_eq!(plan.legs.len(), 1, "one leg, and it is ssh: {plan:#?}");
@@ -101,6 +103,7 @@ fn no_agent_and_no_readable_key_goes_to_the_twin_on_the_first_contact() {
         &github_facts(),
         None,
         &ssh_empty(),
+        HostKind::Background,
         &no_rule,
     );
     assert_eq!(
@@ -126,6 +129,7 @@ fn a_remembered_ssh_failure_puts_the_twin_first_and_keeps_ssh_behind_it() {
         &github_facts(),
         Some(&memory),
         &ssh_ready(),
+        HostKind::Background,
         &no_rule,
     );
     assert_eq!(plan.legs[0].way, Way::Twin);
@@ -140,6 +144,7 @@ fn an_https_remote_offers_the_token_and_then_the_helper_in_one_contact() {
         &github_facts(),
         None,
         &SshProbe::empty(),
+        HostKind::Background,
         &no_rule,
     );
     assert_eq!(plan.legs.len(), 1, "one contact, not two: {plan:#?}");
@@ -154,29 +159,83 @@ fn an_https_remote_with_no_token_still_asks_the_credential_helper() {
         &HostFacts::none(),
         None,
         &SshProbe::empty(),
+        HostKind::Background,
         &no_rule,
     );
     assert_eq!(plan.legs.len(), 1);
     assert!(matches!(plan.legs[0].credential, LegCredential::Machine));
 }
 
+/// The facts of a host a connector claims and nobody is signed in to.
+fn signed_in_to_nothing() -> HostFacts {
+    HostFacts {
+        claimed: Some(ForgeKind::GitHub),
+        claimed_by_plugin: true,
+        web_url: None,
+        token: None,
+    }
+}
+
+/// D1.2, "No anonymous polling": "A poll or a worker tick may not"
+/// contact an https remote with no credential. A `Background` host is
+/// the sync worker and the chat poll, so it stays on the transport it
+/// has a credential for, whatever that is worth.
 #[test]
-fn an_ssh_remote_with_no_token_anywhere_never_grows_a_twin_leg() {
+fn a_background_operation_with_no_token_anywhere_never_grows_a_twin_leg() {
     let plan = plan_with(
         "git@github.com:acme/widgets.git",
-        &HostFacts {
-            claimed: Some(ForgeKind::GitHub),
-            claimed_by_plugin: true,
-            web_url: None,
-            token: None,
-        },
+        &signed_in_to_nothing(),
         None,
         &ssh_empty(),
+        HostKind::Background,
         &no_rule,
     );
     assert_eq!(plan.legs.len(), 1);
     assert_eq!(plan.legs[0].transport, Transport::Ssh);
     assert!(plan.why().contains("nobody is signed in to github.com"));
+}
+
+/// The other half of the same sentence: "A person initiated one off
+/// operation (a clone, an explicit 'check now') MAY contact an https
+/// remote with no credential." That is the whole journey of a public
+/// repository whose remote is ssh, on a Windows desktop with no
+/// readable key and nobody signed in: the twin answers and the ssh
+/// chain never could. "Nobody is signed in" is not one of D1.5's four
+/// refusals.
+#[test]
+fn an_interactive_operation_may_try_the_twin_with_no_token_at_all() {
+    let plan = plan_with(
+        "git@github.com:acme/widgets.git",
+        &signed_in_to_nothing(),
+        None,
+        &ssh_empty(),
+        HostKind::Interactive,
+        &no_rule,
+    );
+    assert_eq!(plan.legs.len(), 1, "{plan:#?}");
+    assert_eq!(plan.legs[0].way, Way::Twin);
+    assert_eq!(plan.legs[0].url, "https://github.com/acme/widgets.git");
+    assert!(
+        matches!(plan.legs[0].credential, LegCredential::Machine),
+        "no token, so the machine's own chain rides it (D1.3)"
+    );
+    assert!(
+        plan.why()
+            .contains("nobody is signed in to github.com, so joy tries its https address"),
+        "and it says why: {}",
+        plan.why()
+    );
+    // The four refusals of D1.5 still refuse it: a host nobody claims
+    // and no table knows has no twin, signed in or not.
+    let unknown = plan_with(
+        "git@forge.acme-internal.example:acme/widgets.git",
+        &HostFacts::none(),
+        None,
+        &ssh_empty(),
+        HostKind::Interactive,
+        &no_rule,
+    );
+    assert!(!unknown.uses_twin(), "{unknown:#?}");
 }
 
 // ---- the twin and its refusals (D1.5) --------------------------------
@@ -226,6 +285,7 @@ fn a_host_nobody_claims_and_no_table_knows_has_no_twin() {
             token: Some(a_token()),
             ..HostFacts::none()
         },
+        HostKind::Background,
         &no_rule,
         &mut notes,
     );
@@ -248,6 +308,7 @@ fn a_connector_that_claims_a_host_without_naming_its_web_base_has_no_twin() {
             web_url: None,
             token: Some(a_token()),
         },
+        HostKind::Background,
         &no_rule,
         &mut notes,
     );
@@ -287,6 +348,7 @@ fn a_connector_web_url_beats_the_table_and_reaches_a_self_hosted_sub_path() {
         "git@code.acme.example:acme/widgets.git",
         "code.acme.example",
         &facts,
+        HostKind::Background,
         &no_rule,
         &mut notes,
     )
@@ -305,6 +367,7 @@ fn a_push_insteadof_rule_that_matches_the_twin_keeps_the_remote_on_ssh() {
         &github_facts(),
         None,
         &ssh_empty(),
+        HostKind::Background,
         &rewrite,
     );
     assert_eq!(plan.legs.len(), 1);
@@ -426,26 +489,30 @@ fn a_row_older_than_the_ttl_is_not_read() {
     });
 }
 
+/// The facts a row is written under travel into it and come back out
+/// unchanged, which is what the comparison of D1.2 rule 3a reads.
+///
+/// The RULE itself - which row is dropped, and when - lives in
+/// `forge::fresh_memory` and is proven there
+/// (`a_no_ssh_credential_row_is_dropped_when_the_machine_changes_under_it`).
+/// This case only pins the carrier: a `keys` map that did not survive
+/// the round trip would make every comparison unequal and drop every
+/// row, and a row that forgot its agent socket would drop none.
 #[test]
-fn the_memory_survives_only_until_the_machine_changes_under_it() {
+fn the_facts_a_row_was_written_under_survive_the_round_trip() {
     with_state_file(|_| {
         let signals = SshSignals {
-            agent_socket: None,
-            agent_identities: 0,
-            keys: BTreeMap::new(),
+            agent_socket: Some("/tmp/agent.sock".to_string()),
+            agent_identities: 2,
+            keys: [("/home/scotty/.ssh/id_ed25519".to_string(), 111)]
+                .into_iter()
+                .collect(),
         };
         remember(
             "github.com",
             HostMemory::new(TransportState::NoSshCredential).with_signals(signals.clone()),
         );
-        let remembered = recall("github.com").expect("fresh");
-        // An agent that appears is exactly the change D1.2 names.
-        let now = SshSignals {
-            agent_socket: Some("/tmp/agent.sock".to_string()),
-            agent_identities: 2,
-            keys: BTreeMap::new(),
-        };
-        assert_ne!(remembered.signals, now);
+        assert_eq!(recall("github.com").expect("fresh").signals, signals);
         forget("github.com");
         assert!(recall("github.com").is_none());
     });
@@ -486,6 +553,28 @@ fn a_connector_user_name_decides_the_shape_and_the_id_is_the_fallback() {
     assert_eq!(
         token_kind("github-enterprise", Some("")),
         Some(ForgeKind::GitHubEnterprise)
+    );
+    // Each of the two names is shared by a whole family (D1.6), so a
+    // name never overrules an id that already names a family of that
+    // shape: the kind travels on into `Auth::ClaimedToken` and into the
+    // remembered `shape`, and a Gitea recorded as GitLab is inherited
+    // by the next reader of the row.
+    for gitea in ["gitea", "forgejo", "codeberg"] {
+        assert_eq!(token_kind(gitea, Some("oauth2")), Some(ForgeKind::Gitea));
+    }
+    assert_eq!(
+        token_kind("gitlab", Some("oauth2")),
+        Some(ForgeKind::GitLab)
+    );
+    assert_eq!(
+        token_kind("github-enterprise", Some("x-access-token")),
+        Some(ForgeKind::GitHubEnterprise)
+    );
+    // A connector nobody's table knows still gets the shape its name
+    // asks for.
+    assert_eq!(
+        token_kind("sourcehut", Some("oauth2")),
+        Some(ForgeKind::GitLab)
     );
 }
 
