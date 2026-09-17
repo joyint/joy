@@ -46,6 +46,28 @@
 //! time and each of those resolves its version carrying dependencies
 //! against crates.io.
 //!
+//! What a per crate dry run proves instead, recorded because the
+//! acceptance of JOY-02A4-89 asks for it: all thirteen were run at
+//! version 0.20.0 on 2026-09-17 (`cargo publish -p <crate> --dry-run
+//! --allow-dirty`) and four went green, joy-process, joy-model,
+//! joy-chat and joy-bi. The other nine failed on the state of the
+//! registry and not one on the order in the list: seven because the
+//! dependency's NAME is absent from crates.io (joy-process for
+//! joy-core, joy-forge-net and joy-ai; joy-forge-net for the three
+//! connectors and joy-cli), and two, joy-telemetry and joy-chat-store,
+//! because the tarball resolves joy-core and joy-chat 0.20.0 from
+//! crates.io, the same version number as this tree but older content,
+//! and the verification compile fails against it. The crate by crate
+//! result with cargo's own messages sits in the `publish-crates`
+//! comment in the justfile, beside the fact that the next successful
+//! upload claims seven crates.io names that have never been taken,
+//! joy-telemetry among them, permanently. A per crate dry run can only
+//! go green for a crate whose internal dependencies already sit on
+//! crates.io at exactly the version this tree asks for, which after a
+//! bump is true of none of them until the upload before it has
+//! happened. That is why these three tests hold the list and a dry run
+//! cannot.
+//!
 //! The edge that prompted it was joy-core -> joy-forge-net, added for
 //! the shared NO_PROXY matcher while joy-forge-net still rode after
 //! joy-core in the list. That edge is gone: the matcher lives in the
@@ -364,10 +386,25 @@ fn every_published_crate_has_its_version_bumped() {
         let text = std::fs::read_to_string(root.join(path))
             .unwrap_or_else(|e| panic!("cannot read {path}: {e}"));
         let own_is_bumped = bumped(path);
-        if !(own_is_bumped || (inherits_version(&text) && root_is_bumped)) {
-            stale.push(format!(
-                "  {path}: its own `version` is a literal in a file the bump does not rewrite"
-            ));
+        // The two ways are exclusive, not alternatives to be tried in
+        // turn: a manifest that inherits carries no literal of its own,
+        // so its version rides on the root manifest and on nothing else.
+        // Asking `own_is_bumped` first would pass a crate that sits in
+        // BOTH release.version-files and `[workspace.package]` while the
+        // root manifest sits in no list, and the bump would then rewrite
+        // no version for it at all (JOY-02A4-89).
+        let inherits = inherits_version(&text);
+        if !version_moves_with_the_bump(inherits, own_is_bumped, root_is_bumped) {
+            stale.push(if inherits {
+                format!(
+                    "  {path}: it inherits its `version` from the root manifest, \
+                     which is in no file the bump rewrites"
+                )
+            } else {
+                format!(
+                    "  {path}: its own `version` is a literal in a file the bump does not rewrite"
+                )
+            });
         }
         for dependency in internal_dependencies(&text) {
             if !root.join("crates").join(&dependency.name).is_dir() {
@@ -399,6 +436,43 @@ fn every_published_crate_has_its_version_bumped() {
          inherit from the root manifest, which is in that list \
          (`version.workspace = true`, `<dep> = {{ workspace = true }}`).",
         stale.join("\n")
+    );
+}
+
+/// Whether `joy release bump` moves one crate's own version, given
+/// whether the crate inherits it, whether its manifest is in
+/// `release.version-files` and whether the root manifest is.
+///
+/// The two ways are exclusive. A manifest that inherits holds no
+/// literal, so being in the list buys it nothing and only the root
+/// manifest's entry counts; a manifest that spells the version out is
+/// not helped by the root manifest's entry at all.
+fn version_moves_with_the_bump(inherits: bool, own_is_bumped: bool, root_is_bumped: bool) -> bool {
+    if inherits {
+        root_is_bumped
+    } else {
+        own_is_bumped
+    }
+}
+
+/// The false pass the condition used to allow (JOY-02A4-89): written as
+/// `own_is_bumped || (inherits && root_is_bumped)`, a crate that sat in
+/// `release.version-files` AND inherited its version passed while the
+/// root manifest sat in no list, and the bump then rewrote nothing in
+/// either file, which is precisely the stale crate this test exists to
+/// catch. The test above reads the real tree, where that combination
+/// does not occur today, so the rule is held here on its own.
+#[test]
+fn a_crate_that_inherits_its_version_rides_on_the_root_manifest_alone() {
+    assert!(
+        !version_moves_with_the_bump(true, true, false),
+        "an inheriting crate in the list is still stale while the root manifest is out of it"
+    );
+    assert!(version_moves_with_the_bump(true, false, true));
+    assert!(version_moves_with_the_bump(false, true, false));
+    assert!(
+        !version_moves_with_the_bump(false, false, true),
+        "a literal in a crate's own manifest is not rewritten by the root manifest's entry"
     );
 }
 
