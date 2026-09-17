@@ -1263,8 +1263,11 @@ fn remember_failure(plan: &Plan, leg: &Leg, ssh_auth_failed: bool) {
 /// returns `Ok(())`: `git_push_finish` fails only when the pack could
 /// not be unpacked (push.c:537-540), and the per-ref status is
 /// delivered only through that callback (remote.c:3034-3038).
+/// One ref's name and what the forge said about it: `None` is "taken".
+type RefStatus = (String, Option<String>);
+
 #[derive(Clone, Default)]
-struct PushStatus(std::rc::Rc<std::cell::RefCell<Vec<(String, Option<String>)>>>);
+struct PushStatus(std::rc::Rc<std::cell::RefCell<Vec<RefStatus>>>);
 
 impl PushStatus {
     /// The refs the forge accepted. Empty when the server advertised no
@@ -1370,8 +1373,8 @@ fn write_tracking_ref(
 /// fetch side. After a push of the chat ref the engine sets it to the
 /// pushed oid as well, so the union merge reconciles against what the
 /// forge holds (D1.5).
-const CHATS_REF: &str = "refs/joy/chats";
-const CHATS_TRACKING_REF: &str = "refs/joy/chats-remote";
+pub const CHATS_REF: &str = "refs/joy/chats";
+pub const CHATS_TRACKING_REF: &str = "refs/joy/chats-remote";
 
 fn write_chats_tracking_ref(
     repo: &git2::Repository,
@@ -5256,5 +5259,141 @@ mod credential_shape_tests {
             );
         }
         assert!(guard_transport_with(None, || panic!("no remote read known_hosts")).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod resolver_assembly_tests {
+    //! The rules the engine applies BETWEEN two legs of a plan
+    //! (package J4b, design D1.2 and D1.5). The twin push itself has a
+    //! real forge behind it in `tests/forge_twin_push.rs`; what is
+    //! decided here is which failure is followed and which row it
+    //! writes, and neither needs a socket.
+    use super::*;
+    use crate::vcs::resolver::{HostToken, SshProbe, SshSignals, TransportState};
+
+    fn ssh_leg() -> Leg {
+        Leg {
+            way: Way::Configured,
+            url: "git@github.com:acme/widgets.git".to_string(),
+            transport: super::super::contact::Transport::Ssh,
+            credential: LegCredential::Machine,
+        }
+    }
+
+    fn twin_leg() -> Leg {
+        Leg {
+            way: Way::Twin,
+            url: "https://github.com/acme/widgets.git".to_string(),
+            transport: super::super::contact::Transport::Https,
+            credential: LegCredential::Token(HostToken {
+                token: "a-token".to_string(),
+                kind: Some(ForgeKind::GitHub),
+                login: None,
+                source: Some("keychain".to_string()),
+            }),
+        }
+    }
+
+    fn plan_of(legs: Vec<Leg>, probe: SshProbe) -> Plan {
+        Plan {
+            host: "github.com".to_string(),
+            legs,
+            notes: Vec::new(),
+            probe,
+        }
+    }
+
+    fn with_candidates(candidates: usize) -> SshProbe {
+        SshProbe {
+            candidates,
+            signals: SshSignals::default(),
+            notes: Vec::new(),
+        }
+    }
+
+    /// D1.2 rule 3b names ONE refusal, and the engine follows that one
+    /// and no other. A DNS fault or a refused host key says nothing
+    /// about the person's ssh credential, and following it to the twin
+    /// would spend a second contact and report the wrong cause.
+    #[test]
+    fn only_an_ssh_authentication_failure_is_followed_to_the_twin() {
+        assert!(may_follow(&ssh_leg(), true));
+        assert!(!may_follow(&ssh_leg(), false));
+        // The twin is the guess and the machine's own credential is the
+        // fact, so a twin that failed is always followed.
+        assert!(may_follow(&twin_leg(), false));
+    }
+
+    #[test]
+    fn an_ssh_authentication_failure_writes_the_row_and_nothing_else_does() {
+        crate::vcs::resolver::with_state_file(|_| {
+            let plan = plan_of(vec![ssh_leg(), twin_leg()], with_candidates(1));
+            remember_failure(&plan, &plan.legs[0], false);
+            assert!(
+                crate::vcs::resolver::recall("github.com").is_none(),
+                "a timeout is not a refusal of a credential"
+            );
+            remember_failure(&plan, &plan.legs[0], true);
+            let memory = crate::vcs::resolver::recall("github.com").expect("the row of rule 3b");
+            assert_eq!(memory.state, TransportState::SshFailed);
+        });
+    }
+
+    #[test]
+    fn a_twin_that_carried_the_contact_records_why_the_ssh_side_did_not() {
+        crate::vcs::resolver::with_state_file(|_| {
+            // Nothing to offer over ssh at all: the row says so, and it
+            // is the row that is dropped as soon as an agent appears.
+            let plan = plan_of(vec![twin_leg()], with_candidates(0));
+            remember_success(&plan, &plan.legs[0], Some("token"));
+            let memory = crate::vcs::resolver::recall("github.com").expect("a row");
+            assert_eq!(memory.state, TransportState::NoSshCredential);
+            assert_eq!(memory.transport.as_deref(), Some("https"));
+
+            // The machine DOES hold an ssh credential and the host
+            // refused it: the same twin, a different reason.
+            let plan = plan_of(vec![twin_leg()], with_candidates(2));
+            remember_success(&plan, &plan.legs[0], Some("token"));
+            assert_eq!(
+                crate::vcs::resolver::recall("github.com").unwrap().state,
+                TransportState::SshFailed
+            );
+        });
+    }
+
+    /// A contact that handed nothing over proves nothing about a
+    /// transport: a public repository answers the first request.
+    #[test]
+    fn a_contact_that_presented_nothing_writes_no_row() {
+        crate::vcs::resolver::with_state_file(|_| {
+            let plan = plan_of(vec![ssh_leg()], with_candidates(1));
+            remember_success(&plan, &plan.legs[0], None);
+            assert!(crate::vcs::resolver::recall("github.com").is_none());
+            remember_success(&plan, &plan.legs[0], Some("agent"));
+            assert_eq!(
+                crate::vcs::resolver::recall("github.com").unwrap().state,
+                TransportState::SshWorked
+            );
+        });
+    }
+
+    /// D1.5: with neither an ssh credential nor a token there is
+    /// nothing to probe with, and the answer is `needs_sign_in` and
+    /// never `no_push_rights`. This is the Windows case of D1.2 rule 5.
+    #[test]
+    fn a_machine_with_nothing_to_present_is_not_probed_at_all() {
+        assert!(nothing_to_present(&plan_of(
+            vec![ssh_leg()],
+            with_candidates(0)
+        )));
+        assert!(
+            !nothing_to_present(&plan_of(vec![twin_leg()], with_candidates(0))),
+            "a token is something to present"
+        );
+        assert!(
+            !nothing_to_present(&plan_of(vec![ssh_leg()], with_candidates(1))),
+            "an ssh candidate is something to present"
+        );
     }
 }

@@ -1077,5 +1077,21 @@ pub fn took_ssh_auth_failure() -> bool {
     SSH_AUTH_FAILED.with(|failed| failed.replace(false))
 }
 
+/// Run `work` against a state file of its own, one case at a time.
+///
+/// The file is process state; every test module in the crate that
+/// writes it takes this one lock, so a case never reads another's rows.
+#[cfg(test)]
+pub(crate) fn with_state_file<T>(work: impl FnOnce(&Path) -> T) -> T {
+    static SERIAL: Mutex<()> = Mutex::new(());
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join(STATE_FILE);
+    set_state_file(Some(path.clone()));
+    let out = work(&path);
+    set_state_file(None);
+    out
+}
+
 #[cfg(test)]
 mod tests;

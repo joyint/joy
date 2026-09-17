@@ -364,19 +364,6 @@ fn push_insteadof_is_read_on_a_push_and_not_on_a_fetch() {
 
 // ---- the transport memory (D1.2) -------------------------------------
 
-/// The state file is process state; the cases that write it run one at
-/// a time and put it back.
-fn with_state_file<T>(work: impl FnOnce(&Path) -> T) -> T {
-    static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-    let dir = tempfile::tempdir().expect("tempdir");
-    let path = dir.path().join("forge-state.json");
-    set_state_file(Some(path.clone()));
-    let out = work(&path);
-    set_state_file(None);
-    out
-}
-
 #[test]
 fn the_memory_is_written_at_0600_and_read_back() {
     with_state_file(|path| {
