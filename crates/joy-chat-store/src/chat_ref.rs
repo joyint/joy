@@ -180,19 +180,33 @@ fn read_chat_at(repo: &Repository, root_tree: &Tree, id: &str) -> Result<Option<
 /// gate, and the grace window is the one for a checkout joy does not own,
 /// because a person's own git may be writing objects joy cannot see.
 ///
-/// The window is the one for a checkout joy does not own, on every host.
-/// D3.7 allows 24 hours where joy is the sole writer (the platform's
-/// project clone, a desktop only store), but the chat store cannot tell
-/// the two apart from here: the same function serves a person's own
-/// checkout and the platform's clone. The conservative window costs a
-/// store 13 days of garbage it could have freed; the other mistake would
-/// cost somebody else's objects. When the write path learns which kind
-/// of store it is writing (P8), it selects `Options::owned_store()` and
-/// nothing else about this changes.
+/// The window is the one for a checkout joy does not own, on every host,
+/// and that is a DEVIATION from D3.7, reported at the package level
+/// because the design document is the shared contract of J0..J11 and no
+/// package edits it. D3.7 asks for 24 hours where joy is the sole writer
+/// (the platform's project clone, a desktop only store), and the chat
+/// store cannot tell the two apart from here: the same function serves a
+/// person's own checkout, where another git may be writing objects joy
+/// cannot see, and the platform's clone. The conservative window costs a
+/// store 13 days of garbage it could have freed (the 38.89 MiB of
+/// JOY-023C-1E held longer); the other mistake would cost somebody
+/// else's objects. When the write path learns which kind of store it is
+/// writing (P8 for the platform's clone, the desktop's own packaging for
+/// the other), it selects `Options::owned_store()` and nothing else
+/// about this changes.
 ///
 /// Best effort throughout: a store that cannot be packed or swept stays
 /// as it is and the next write tries again.
 fn maintain_occasionally(repo: &Repository) {
+    // The `Outcome` is dropped, deliberately and not for free: a chat
+    // write has nowhere to put numbers, and the one statement a person
+    // must hear (`core.logAllRefUpdates=always`, which makes the sweep
+    // reclaim nothing for ever) is said by maintenance itself rather
+    // than left for a caller to notice. The counters that go nowhere
+    // here (`skipped_unfreshenable` above all, which is every object an
+    // agent's container wrote as another uid) belong to the maintenance
+    // owner D5 names, the platform's sync worker lane, and that lane
+    // does not exist yet.
     let _ = joy_core::vcs::maintenance::maintain_if_due(
         repo,
         &joy_core::vcs::maintenance::Options::foreign_checkout(),
@@ -219,10 +233,12 @@ pub(crate) fn commit_root(
 ) -> Result<Option<Oid>, JoyError> {
     // The swap needs the commit's id, so the object cannot be written
     // after it, but it can be left unwritten when the ref has ALREADY
-    // moved, and taken back out when the swap loses anyway (D3.7). Both
-    // halves matter: the losing attempt used to leave its commit and its
-    // trees in the store for ever, and up to eight attempts per write is
-    // how the sandbox got 505 orphans out of 761 commits.
+    // moved, and taken back out when the swap loses anyway. D3.7 asks
+    // for the ordering; the two protections on the discard below are
+    // this package's reading of what makes that safe. Both halves
+    // matter: the losing attempt used to leave its commit and its trees
+    // in the store for ever, and up to eight attempts per write is how
+    // the sandbox got 505 orphans out of 761 commits.
     if !ref_is_where_the_caller_read_it(repo, parent) {
         return Ok(None);
     }
@@ -260,8 +276,8 @@ pub(crate) fn commit_root(
         return Ok(Some(oid));
     }
     // Lost the race in the window between the check and the swap, so the
-    // commit is nobody's. It is unlinked only under both of the
-    // protections D3.7 names for a deletion outside the sweep: this
+    // commit is nobody's. It is unlinked only under both protections a
+    // deletion outside the sweep has to carry: this
     // attempt created the object (nobody else's copy), and the live
     // history does not reach it (not the tip, not an ancestor of it).
     discard_lost_commit(repo, oid, created_here);
@@ -1192,6 +1208,11 @@ mod tests {
     /// `refs/joy/chats`, which gets no reflog, plus the orphans of lost
     /// races. The orphans go, every chat stays readable, and the store
     /// shrinks.
+    ///
+    /// The chats here are `save_sealed_stub` fixtures, so "all chats
+    /// intact" is asserted against this crate's own writer shape and not
+    /// against a message written through the CLI. The CLI path is
+    /// asserted where it lives, in tests/integration/chat_store_maintenance.bats.
     #[test]
     fn the_sweep_reclaims_lost_writes_and_every_chat_survives() {
         let dir = repo();
@@ -1227,10 +1248,18 @@ mod tests {
         );
         let after = loose_count(dir.path());
         assert!(after < before / 4, "the store shrinks: {before} -> {after}");
-        // D3.7's acceptance, in the numbers it is written in. The loose
-        // object number is comfortable rather than tight at this size (a
-        // few hundred objects against 6700); the threshold itself is
-        // exercised where the trigger is, in joy-core's own cases.
+        // D3.7's two acceptance numbers, and what this case does NOT
+        // prove about them: after the sweep this store holds on the
+        // order of forty objects and a hundred kilobytes, so both
+        // assertions pass by a factor of a hundred and neither is a
+        // statement about "a store like the operator's sandbox" (6140
+        // loose objects, 38.89 MiB). Building that store in a unit test
+        // costs minutes for a ratio the two assertions above already
+        // measure, so it is not built here: what carries the criterion
+        // is `removed_unreferenced >= 200` and the shrink below a
+        // quarter, plus the trigger cases in joy-core that exercise the
+        // 6700 threshold itself. The numbers stay as a floor under a
+        // regression that would make the store GROW.
         assert!(after < 6700, "well under git's own loose object threshold");
         assert!(
             store_bytes(dir.path()) < 1_000_000,

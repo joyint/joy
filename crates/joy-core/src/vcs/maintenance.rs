@@ -125,14 +125,19 @@ impl Options {
     /// only store): 24 hours, which still covers a job container writing
     /// into the same object store.
     ///
-    /// No caller yet, and that is not an oversight: the chat store's
-    /// write path cannot tell the two cases apart from where it stands,
-    /// so it asks for the conservative window. The platform's project
-    /// clone is where this belongs, and it selects it when the chat
-    /// store's write path carries the kind of store it writes (P8). The
-    /// only mistake this constructor can make is the expensive one (a
-    /// store swept 13 days later than it could be), never the unsafe
-    /// one.
+    /// DEVIATION, reported at the package level rather than written
+    /// into the design, which this package does not own: no caller
+    /// selects this today, so a desktop only store and the platform's
+    /// project clone both run on the 14 day window D3.7 gives a foreign
+    /// checkout. The chat store's write path is the only caller there
+    /// is and it cannot tell the two cases apart from where it stands:
+    /// the same function serves a person's own checkout, where another
+    /// git may be writing objects joy cannot see, and a store joy alone
+    /// writes. Carrying the kind of store into that path is P8's change
+    /// (the platform's project clone) and the desktop's own packaging;
+    /// until then the only mistake this makes is the expensive one (a
+    /// store swept 13 days later than it could be, which is the 38.89
+    /// MiB of JOY-023C-1E held longer), never the unsafe one.
     pub fn owned_store() -> Self {
         Self {
             grace: GRACE_OWNED_STORE,
@@ -179,6 +184,12 @@ pub struct Outcome {
     /// holding the file. Counted apart from [`Outcome::skipped_in_use`]
     /// so that counter can answer the question it exists for.
     pub skipped_unlink_failed: usize,
+    /// A keep set object the pack builder refused (a damaged loose
+    /// object, or one another process removed between the walk and the
+    /// pack). It is skipped and counted, never packed and above all
+    /// never treated as class A, because its loose copy is the only
+    /// copy there is.
+    pub skipped_unpackable: usize,
     /// The keep set walk ran out of its budget, so this run did nothing
     /// at all: no pack and, above all, no sweep, because a partial keep
     /// set would remove reachable objects.
@@ -212,9 +223,21 @@ pub struct Outcome {
 /// beside another writer (the keep set, the grace window, class A only
 /// for objects that are in the pack joy just wrote) is an argument about
 /// concurrent writers in general and holds for a writer in this process
-/// exactly as it holds for one in another process. What maintenance does
-/// need is that two runs never overlap on one store, and that is what
-/// this gate is.
+/// exactly as it holds for one in another process.
+///
+/// What this gate gives is precise and smaller than "two runs never
+/// overlap on one store": it is a `Mutex` in a process local map, so it
+/// serialises the runs of THIS process. Two `joy chat send` processes
+/// that both find the on disk stamp older than the floor can still run
+/// on one store at the same time, because the stamp is read before the
+/// gate is taken and neither is a lock. That overlap is benign rather
+/// than merely tolerated: both walk the same refs to the same keep set,
+/// class A only unlinks objects the running process has just written
+/// into its own pack, class B only unlinks objects outside a keep set
+/// both agree on, and no pack is ever removed. An advisory lock file
+/// would make the statement absolute; it is not what this package
+/// ships, and the design sentence that reads as if the gate gave that
+/// is reported as a deviation.
 ///
 /// Best effort: a store somebody else is maintaining right now is left
 /// to them, and the next write tries again.
@@ -250,7 +273,10 @@ pub fn maintain(repo: &Repository, opts: &Options) -> Result<Outcome, JoyError> 
         ..Outcome::default()
     };
     if outcome.log_all_ref_updates_always {
-        report_log_all_ref_updates_once(&common);
+        // Said to the person, not only to a log the CLI has no
+        // subscriber for; the returned bool is for the test that pins
+        // the "once" half.
+        let _said = report_log_all_ref_updates_once(&common);
     }
 
     let Some(keep) = keep_set(repo, opts.keep_set_budget) else {
@@ -264,15 +290,16 @@ pub fn maintain(repo: &Repository, opts: &Options) -> Result<Outcome, JoyError> 
     let loose = loose_objects(&common);
     outcome.loose_seen = loose.len();
 
-    let (packed, pack_landed) = pack_loose_keep_set(repo, &keep, &loose)?;
-    outcome.packed = packed.len();
+    let pack = pack_loose_keep_set(repo, &keep, &loose)?;
+    outcome.packed = pack.oids.len();
+    outcome.skipped_unpackable = pack.unpackable;
 
     let now = SystemTime::now();
     let mut probe = FreshenProbe::default();
     for object in &loose {
         // Class A: the object is in the pack joy just wrote, so every
         // reader finds it there. Age does not matter.
-        if pack_landed && packed.contains(&object.oid) {
+        if pack.landed && pack.oids.contains(&object.oid) {
             match unlink_best_effort(&object.path) {
                 Unlink::Gone => outcome.removed_packed += 1,
                 Unlink::InUse => outcome.skipped_in_use += 1,
@@ -397,7 +424,10 @@ fn store_key(repo: &Repository) -> PathBuf {
 /// file joy writes inside the git directory and reads by its mtime;
 /// where it cannot be written (a read only or foreign owned `.git`) the
 /// in-process map still holds. It is the one piece of state joy leaves
-/// in a checkout it does not own, and D3.7 names it.
+/// in a checkout it does not own. D3.7 asks for a wall clock floor per
+/// checkout and does not say where it lives; the file is this package's
+/// addition and is reported as a deviation, because the design document
+/// is the shared contract of J0..J11 and no package edits it.
 fn stamp_path(store: &Path) -> PathBuf {
     store.join("joy").join("maintenance-stamp")
 }
@@ -475,7 +505,17 @@ fn keep_set(repo: &Repository, budget: Duration) -> Option<HashSet<Oid>> {
     let mut reflogs: Vec<String> = PSEUDO_REFS.iter().map(|name| (*name).to_string()).collect();
 
     if let Ok(refs) = repo.references() {
-        for reference in refs.flatten() {
+        for (n, reference) in refs.flatten().enumerate() {
+            // The budget covers the PROLOGUE, not only the object walk.
+            // Enumerating every reference and opening a reflog for each
+            // of them is one file open per ref, so a checkout with tens
+            // of thousands of refs (a large fork, a tag heavy release
+            // repository) would spend a chat write's whole latency here
+            // before the walk ever starts. One clock read per 256 refs,
+            // the same rate the walk uses.
+            if n.is_multiple_of(256) && over_budget(deadline) {
+                return None;
+            }
             if let Some(oid) = reference.target() {
                 tips.push(oid);
             } else if let Ok(resolved) = reference.resolve() {
@@ -489,7 +529,10 @@ fn keep_set(repo: &Repository, budget: Duration) -> Option<HashSet<Oid>> {
         }
     }
 
-    for name in &reflogs {
+    for (n, name) in reflogs.iter().enumerate() {
+        if n.is_multiple_of(256) && over_budget(deadline) {
+            return None;
+        }
         let Ok(reflog) = repo.reflog(name) else {
             continue;
         };
@@ -519,8 +562,14 @@ fn keep_set(repo: &Repository, budget: Duration) -> Option<HashSet<Oid>> {
     // Linked worktrees keep their own HEAD, their own index and their own
     // pseudo refs under .git/worktrees/<name>/, which lives in the COMMON
     // directory. A detached HEAD there names a commit no reference does.
+    if over_budget(deadline) {
+        return None;
+    }
     if let Ok(worktrees) = fs::read_dir(common.join("worktrees")) {
         for dir in worktrees.flatten() {
+            if over_budget(deadline) {
+                return None;
+            }
             let dir = dir.path();
             for name in PSEUDO_REFS {
                 tips.extend(oids_in_pseudo_ref(&dir.join(name)));
@@ -634,14 +683,14 @@ fn pack_loose_keep_set(
     repo: &Repository,
     keep: &HashSet<Oid>,
     loose: &[LooseObject],
-) -> Result<(HashSet<Oid>, bool), JoyError> {
-    let packed: HashSet<Oid> = loose
+) -> Result<Packed, JoyError> {
+    let candidates: Vec<Oid> = loose
         .iter()
         .map(|object| object.oid)
         .filter(|oid| keep.contains(oid))
         .collect();
-    if packed.is_empty() {
-        return Ok((packed, false));
+    if candidates.is_empty() {
+        return Ok(Packed::default());
     }
     // The common directory again: `.git/worktrees/<name>/objects/pack`
     // is a directory no odb ever reads.
@@ -649,8 +698,30 @@ fn pack_loose_keep_set(
     let before = pack_files(&pack_dir);
 
     let mut builder = repo.packbuilder().map_err(git)?;
-    for oid in &packed {
-        builder.insert_object(*oid, None).map_err(git)?;
+    let mut packed: HashSet<Oid> = HashSet::new();
+    let mut unpackable = 0usize;
+    for oid in candidates {
+        // One damaged loose object must not end maintenance for this
+        // store for ever. The closure keeps an oid whose header it could
+        // not read (it is in the keep set, so the sweep leaves it alone
+        // either way), and the builder refuses exactly that object;
+        // aborting here would make `maintain` answer `Err` on every run
+        // while the caller swallows it, which is the module's own rule
+        // ("maintenance never fails a write over a store it found
+        // damaged") broken in the quietest possible way.
+        if builder.insert_object(oid, None).is_ok() {
+            packed.insert(oid);
+        } else {
+            unpackable += 1;
+        }
+    }
+    if packed.is_empty() {
+        // Nothing went in, so nothing may be treated as packed. There is
+        // no pack to write either.
+        return Ok(Packed {
+            unpackable,
+            ..Packed::default()
+        });
     }
     builder.write(&pack_dir, 0).map_err(git)?;
     // The new pack is only usable once the odb knows about it. This
@@ -668,7 +739,21 @@ fn pack_loose_keep_set(
         Some(name) => pack_dir.join(format!("pack-{name}.pack")).is_file(),
         None => pack_files(&pack_dir).difference(&before).count() > 0,
     };
-    Ok((packed, landed))
+    Ok(Packed {
+        oids: packed,
+        landed,
+        unpackable,
+    })
+}
+
+/// What step 2 produced: the objects that really went into the new pack
+/// (never the ones that were merely offered to it), whether the pack
+/// landed on disk, and how many keep set objects the builder refused.
+#[derive(Default)]
+struct Packed {
+    oids: HashSet<Oid>,
+    landed: bool,
+    unpackable: usize,
 }
 
 fn pack_files(pack_dir: &Path) -> HashSet<PathBuf> {
@@ -715,7 +800,15 @@ fn loose_objects(store_dir: &Path) -> Vec<LooseObject> {
             let Some(rest) = entry.file_name().to_str().map(str::to_string) else {
                 continue;
             };
-            if !rest.bytes().all(|b| b.is_ascii_hexdigit()) {
+            // The LENGTH matters as much as the alphabet.
+            // `Oid::from_str` accepts any prefix of 1 to 40 hex
+            // characters and zero fills the rest, so a stray
+            // `objects/ab/cd` would become the object id `abcd000...0`,
+            // which is in no keep set and would be swept once it is old
+            // enough. A sha1 object name is the other 38 digits of the
+            // id; a store with another hash simply parses as no id at
+            // all here and is left alone, which is the safe direction.
+            if rest.len() != 38 || !rest.bytes().all(|b| b.is_ascii_hexdigit()) {
                 continue;
             }
             let Ok(oid) = Oid::from_str(&format!("{prefix}{rest}")) else {
@@ -756,6 +849,19 @@ fn loose_path(store_dir: &Path, oid: Oid) -> PathBuf {
 /// question: a loose object owned by somebody else cannot be `utimes`ed
 /// by joy even where the directory is writable. One probe per fanout
 /// directory, so at most 256 per run.
+///
+/// The price of the ownership half is worth naming, because it is paid
+/// on the store D5 is about. In the platform's job container the project
+/// clone is bind mounted read write and an agent's own `git commit`
+/// writes into the same object store, typically as another uid. Every
+/// object it leaves there is `skipped_unfreshenable` for ever: class B
+/// never collects it, so that store grows until the maintenance owner
+/// D5 gives it (the platform's sync worker lane, which does not exist
+/// yet) sweeps it as the uid that owns the objects. The counter says so,
+/// and today nobody reads the counter: the chat store drops the whole
+/// `Outcome`. This is faithful to the rule (without a working `utimes`
+/// another process cannot protect the object, so joy must not remove
+/// it) and it is not free.
 #[derive(Default)]
 struct FreshenProbe {
     dirs: HashMap<PathBuf, Option<Owner>>,
@@ -946,15 +1052,42 @@ fn logs_every_ref_update(repo: &Repository) -> bool {
         .unwrap_or(false)
 }
 
-fn report_log_all_ref_updates_once(git_dir: &Path) {
-    let mut guard = REPORTED_LOG_ALL.lock().unwrap_or_else(|e| e.into_inner());
-    let reported = guard.get_or_insert_with(HashSet::new);
-    if reported.insert(git_dir.to_path_buf()) {
-        tracing::warn!(
-            store = %git_dir.display(),
-            "core.logAllRefUpdates=always keeps a reflog for every ref, so unreachable objects stay reachable and joy's maintenance can free almost nothing"
-        );
+/// The sentence itself, in one place so a test can read it.
+fn log_all_ref_updates_sentence(store: &Path) -> String {
+    format!(
+        "Warning: core.logAllRefUpdates=always is set in {}, so git keeps a reflog for every ref. \
+Unreachable objects stay reachable through it and joy's maintenance can free almost nothing. \
+Unset it, or set it to true, to let joy reclaim the store.",
+        store.display()
+    )
+}
+
+/// Say it once per store and process. Answers whether THIS call said it.
+///
+/// On stderr, not only as a `tracing` event. The host D3.7 singles out
+/// here is the CLI ("a CLI command is one process per write"), and the
+/// `joy` binary installs no tracing subscriber at all, so an event alone
+/// is dropped on the floor exactly where the sentence is needed: the
+/// keep set grows to cover every lost chat commit, the sweep reclaims
+/// nothing on every run for ever, and the person is told nothing. The
+/// desktop and the platform do install a subscriber and get the
+/// structured event as well.
+fn report_log_all_ref_updates_once(git_dir: &Path) -> bool {
+    {
+        let mut guard = REPORTED_LOG_ALL.lock().unwrap_or_else(|e| e.into_inner());
+        if !guard
+            .get_or_insert_with(HashSet::new)
+            .insert(git_dir.to_path_buf())
+        {
+            return false;
+        }
     }
+    eprintln!("{}", log_all_ref_updates_sentence(git_dir));
+    tracing::warn!(
+        store = %git_dir.display(),
+        "core.logAllRefUpdates=always keeps a reflog for every ref, so unreachable objects stay reachable and joy's maintenance can free almost nothing"
+    );
+    true
 }
 
 fn git(e: git2::Error) -> JoyError {
@@ -1186,8 +1319,8 @@ mod tests {
     }
 
     #[test]
-    fn log_all_ref_updates_always_is_detected() {
-        let (_dir, repo) = repo();
+    fn log_all_ref_updates_always_is_detected_and_said_once() {
+        let (dir, repo) = repo();
         commit_on_ref(&repo, "refs/joy/chats", "a chat");
         repo.config()
             .unwrap()
@@ -1197,6 +1330,105 @@ mod tests {
         let outcome = maintain(&repo, &eager()).unwrap();
 
         assert!(outcome.log_all_ref_updates_always);
+        // …and the run SAID so. Asserting the bool on the struct alone
+        // would pass just as well with the sentence going nowhere, which
+        // is what it did: the CLI installs no tracing subscriber, so the
+        // warning event was dropped on the host D3.7 singles out. The
+        // run above is the first report for this store, so a second ask
+        // must answer false.
+        let store = repo.commondir().to_path_buf();
+        assert!(
+            !report_log_all_ref_updates_once(&store),
+            "the run must have reported it already, and only once"
+        );
+        let sentence = log_all_ref_updates_sentence(&store);
+        assert!(sentence.contains("core.logAllRefUpdates=always"));
+        assert!(sentence.contains(&dir.path().to_string_lossy().to_string()));
+    }
+
+    /// The first ask for a store reports, every later one is silent.
+    #[test]
+    fn the_log_all_sentence_is_said_once_per_store() {
+        let store = tempfile::tempdir().unwrap();
+        assert!(report_log_all_ref_updates_once(store.path()));
+        assert!(!report_log_all_ref_updates_once(store.path()));
+    }
+
+    /// Both windows D3.7 names, pinned. `owned_store` has no caller yet
+    /// (a deviation reported at the package level, not written into the
+    /// design, which this package does not own), so the constant would
+    /// otherwise be free to rot unnoticed.
+    #[test]
+    fn the_two_grace_windows_are_the_ones_the_design_names() {
+        assert_eq!(
+            Options::foreign_checkout().grace,
+            Duration::from_secs(14 * 24 * 60 * 60)
+        );
+        assert_eq!(
+            Options::owned_store().grace,
+            Duration::from_secs(24 * 60 * 60)
+        );
+        assert_eq!(
+            Options::owned_store().loose_threshold,
+            Options::foreign_checkout().loose_threshold
+        );
+    }
+
+    /// One damaged loose object must not end maintenance for this store
+    /// for ever. The closure keeps an oid whose header it cannot read,
+    /// the pack builder refuses exactly that object, and aborting there
+    /// would make every later run answer `Err` into a caller that
+    /// swallows it: no pack and no sweep again, silently.
+    #[test]
+    fn a_damaged_object_is_skipped_instead_of_ending_maintenance() {
+        let (dir, repo) = repo();
+        let blob = repo.blob(b"the object that goes bad").unwrap();
+        let mut builder = repo.treebuilder(None).unwrap();
+        builder.insert("body", blob, 0o100_644).unwrap();
+        let tree = repo.find_tree(builder.write().unwrap()).unwrap();
+        let sig = signature();
+        let commit = repo.commit(None, &sig, &sig, "a chat", &tree, &[]).unwrap();
+        repo.reference("refs/joy/chats", commit, true, "a chat")
+            .unwrap();
+        // Damage the blob in place: the name is still a valid object id,
+        // so it is in the keep set through the tree, and nothing can
+        // read it.
+        // A loose object file is created read only, so it is replaced
+        // rather than written over.
+        let damaged = loose_path(&dir.path().join(".git"), blob);
+        fs::remove_file(&damaged).unwrap();
+        fs::write(&damaged, b"not zlib, not an object").unwrap();
+
+        let outcome = maintain(&repo, &eager()).unwrap();
+
+        assert!(outcome.skipped_unpackable >= 1, "{outcome:?}");
+        assert!(damaged.exists(), "a keep set object is never swept");
+        // and the run is repeatable, which is the whole point
+        let second = maintain(&repo, &eager()).unwrap();
+        assert!(second.skipped_unpackable >= 1, "{second:?}");
+    }
+
+    /// `Oid::from_str` accepts any prefix of 1 to 40 hex characters and
+    /// zero fills the rest, so a short all hex file name would become an
+    /// object id nothing keeps, and the sweep would unlink a file that
+    /// is not an object at all.
+    #[test]
+    fn a_short_hex_file_name_is_not_an_object() {
+        let (dir, repo) = repo();
+        commit_on_ref(&repo, "refs/joy/chats", "a chat");
+        let stray = dir.path().join(".git").join("objects").join("ab");
+        fs::create_dir_all(&stray).unwrap();
+        let stray = stray.join("cd");
+        fs::write(&stray, b"somebody left this here").unwrap();
+        backdate(&stray, GRACE_FOREIGN_CHECKOUT + Duration::from_secs(60));
+
+        let found = loose_objects(&dir.path().join(".git"));
+        assert!(
+            !found.iter().any(|object| object.path == stray),
+            "a name shorter than 38 hex digits is not an object name"
+        );
+        maintain(&repo, &eager()).unwrap();
+        assert!(stray.exists(), "and the sweep leaves it where it is");
     }
 
     #[test]
@@ -1229,18 +1461,21 @@ mod tests {
 
         // The child opens the loose object, says so, waits for a line,
         // and then reads the file through the descriptor it still holds.
-        // A failing spawn fails the case: this is an acceptance
-        // criterion, and a criterion that passes when its second process
-        // never started proves nothing.
-        let mut child = joy_process::command("sh")
+        // A host without a POSIX shell cannot be asked this question at
+        // all, so the case says so and stops instead of failing: a panic
+        // there would rename "not testable here" to "broken".
+        let spawned = joy_process::command("sh")
             .arg("-c")
             .arg("exec 3< \"$1\"; echo open; read _; wc -c <&3")
             .arg("sh")
             .arg(&path)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
-            .spawn()
-            .expect("a POSIX shell is needed to hold an object open");
+            .spawn();
+        let Ok(mut child) = spawned else {
+            eprintln!("skipped: no POSIX shell on PATH to hold an object open");
+            return;
+        };
         let mut out = BufReader::new(child.stdout.take().unwrap());
         let mut line = String::new();
         out.read_line(&mut line).unwrap();
@@ -1299,7 +1534,12 @@ mod tests {
         let tip = commit_on_ref(&repo, "refs/heads/main", "one");
         repo.set_head("refs/heads/main").unwrap();
         let _ = tip;
-        let wt_dir = dir.path().parent().unwrap().join("linked-worktree");
+        // A second tempdir, never a fixed name beside the first one: a
+        // path like `/tmp/linked-worktree` is shared by every concurrent
+        // run of this binary (two worktrees, a CI matrix) and a failing
+        // run would leave it behind and poison the next one.
+        let outside = tempfile::tempdir().unwrap();
+        let wt_dir = outside.path().join("linked-worktree");
         let worktree = repo.worktree("linked", &wt_dir, None).unwrap();
         let wrepo = Repository::open_from_worktree(&worktree).unwrap();
 
@@ -1329,7 +1569,6 @@ mod tests {
         assert!(second_path.exists());
         assert!(discard_loose_object(&wrepo, second));
         assert!(!second_path.exists());
-        std::fs::remove_dir_all(&wt_dir).ok();
     }
 
     /// The keep set walk is synchronous on a chat write, so it is

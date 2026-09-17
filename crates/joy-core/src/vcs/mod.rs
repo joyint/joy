@@ -372,7 +372,15 @@ pub fn staged_paths(root: &Path) -> Vec<String> {
 /// nor the user's ambient credentials, and there is nothing a git
 /// process adds. It sat on the chat write path as
 /// `git -C <root> remote get-url origin`, one spawn per send and per
-/// read, which is one of the two J7 acceptance asks about (D3.2, D3.7).
+/// read, and the git2 only rule leaves no room for it (D3.2, D3.7).
+///
+/// The two answers are not identical, and the difference is deliberate:
+/// `git remote get-url <name>` fails for a remote that carries only
+/// `remote.<name>.pushurl`, while `git_remote_lookup` succeeds whenever
+/// either `url` or `pushurl` is configured. A remote joy can push to is
+/// a remote that exists, which is the question every caller here asks
+/// (the chat send and read gate in joy-cli), so the git2 answer is the
+/// better one. Pinned by the cases below because it is a silent change.
 pub fn remote_exists(root: &Path, remote: &str) -> bool {
     git2::Repository::discover(root)
         .and_then(|repo| repo.find_remote(remote).map(|_| ()))
@@ -507,6 +515,34 @@ mod tests {
         let result = vcs.user_email();
         assert!(result.is_ok());
         assert!(!result.unwrap().is_empty());
+    }
+
+    /// `remote_exists` moved from a `git remote get-url` spawn to
+    /// git2, so what it answers is pinned here rather than only "no git
+    /// process ran".
+    #[test]
+    fn remote_exists_answers_off_the_configured_remotes() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        repo.remote("origin", "https://example.invalid/a.git")
+            .unwrap();
+
+        assert!(remote_exists(dir.path(), "origin"));
+        assert!(!remote_exists(dir.path(), "upstream"));
+
+        // A remote with a push url and no fetch url exists too. The git
+        // process this replaced said no here; joy asks whether there is
+        // a remote to push to, and there is.
+        repo.config()
+            .unwrap()
+            .set_str("remote.mirror.pushurl", "https://example.invalid/b.git")
+            .unwrap();
+        assert!(remote_exists(dir.path(), "mirror"));
+
+        // A directory that is no checkout at all has no remotes, and the
+        // answer is false rather than an error.
+        let plain = tempfile::tempdir().unwrap();
+        assert!(!remote_exists(plain.path(), "origin"));
     }
 
     #[test]

@@ -49,10 +49,6 @@ make_the_store_look_full() {
     done
 }
 
-loose_objects() {
-    find .git/objects -type f -path '*/??/*' | grep -v '/17/' || true
-}
-
 # The loose file of one object, by id.
 loose_path() {
     echo ".git/objects/${1:0:2}/${1:2}"
@@ -84,10 +80,14 @@ packs() {
     run -1 grep -q -- "gc" "$GIT_CALLS"
     # Neither the chat store nor joy's maintenance spawns anything: both
     # are git2 throughout. What is left on the CLI chat path is exactly
-    # ONE git process, the delivery push (joy_core::vcs::push_ref), which
-    # stays a git process until joy-cli enables joy-core's `forge-net`
-    # feature; that packaging change is J6's, and the J7 package block
-    # names it. Pinned here so the count cannot grow quietly.
+    # ONE git process, the delivery push (joy_core::vcs::push_ref).
+    # J7's acceptance asks for none at all, and this is the package's one
+    # DEVIATION from it, reported rather than argued away: a push needs a
+    # transport, so it leaves the git binary only once joy-cli enables
+    # joy-core's `forge-net` feature, which is J6's packaging change
+    # (D3.1, D3.2). The other spawn that stood on this path, the
+    # `remote get-url` probe, is git2 now. Pinned at exactly one so the
+    # count cannot grow quietly while the last one is retired.
     calls="$(sort -u "$GIT_CALLS")"
     [ "$(printf '%s\n' "$calls" | grep -c .)" -eq 1 ]
     [[ "$calls" == *"push --quiet origin refs/joy/chats:refs/joy/chats"* ]]
