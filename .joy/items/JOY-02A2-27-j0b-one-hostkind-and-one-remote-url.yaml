@@ -1,0 +1,19 @@
+id: JOY-02A2-27
+title: 'J0b: one HostKind and one remote URL parser after the Wave 0 merge'
+type: task
+status: in-progress
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-17T04:15:48.351158465Z
+updated: 2026-09-17T04:15:48.474279621Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Consolidation after the Wave 0 integration (JI epic JI-0190-3A). The merge left two independent HostKind types for the one word D1.1 defines: joy_core::host::HostKind (J9, with detect(terminal) and may_ask(), used by joy-cli cli_main, init.rs and the J9 tests) and joy_core::vcs::host_kind::HostKind (J4a, with may_prompt(), used by forge.rs, credential_helper.rs, ssh_auth.rs). Make them one type in one module with one detection and both predicates, and update every caller. It also left two URL parsers on the same seam: contact::transport_of / contact::host_of (J5, string scan, three variant Transport) and remote_url::RemoteUrl::parse (J4a, a real parser, five variant Transport). Keep the real parser, make contact use it, and keep the three D1.8a transport words as a view over it. Acceptance: one HostKind type in the tree; contact.rs derives host and transport through RemoteUrl; cargo test --workspace and cargo test -p joy-core --features forge-net stay green; no behaviour change for any test.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-17T04:15:48.474277117Z
+  text: 'Plan: pick joy_core::host as the home of HostKind (it is where the CLI entry point sets it), move may_prompt there, re-export from vcs for the engine, delete vcs::host_kind; make contact::host_of and transport_of thin wrappers over remote_url::RemoteUrl::parse; run the whole workspace. Worktree: the shared joy worktree on feat/forge-connection-ng, directly, since no other package runs in joy right now.'
