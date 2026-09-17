@@ -402,6 +402,20 @@ pub fn candidate_for(key: &KeyFile, kind: HostKind, windows: bool) -> Result<Ssh
     })
 }
 
+/// The key files joy would consider for a host: the ones the config
+/// NAMES, or ssh's own defaults when it names none. This is the list
+/// [`chain_for`] walks, and the list the transport memory of design
+/// D1.2 watches: a `no-ssh-credential` entry is dropped as soon as one
+/// of these files changes, which needs their names before any of them
+/// is a candidate.
+pub fn identity_files(settings: &HostSettings) -> Vec<PathBuf> {
+    if settings.identity_files.is_empty() {
+        default_identity_files()
+    } else {
+        settings.identity_files.clone()
+    }
+}
+
 /// ssh's own default identity files, in ssh's own order: the order
 /// `ssh` adds them in when the config names none (readconf.c /
 /// ssh.c's `add_identity_file` calls), which is RSA first and DSA

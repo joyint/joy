@@ -322,6 +322,7 @@ pub mod known_hosts;
 pub mod maintenance;
 pub mod proxy;
 pub mod remote_url;
+pub mod resolver;
 pub mod ssh_auth;
 pub mod ssh_config;
 
