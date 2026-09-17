@@ -52,6 +52,77 @@ fn user_reply() -> Reply {
     .with_header("X-OAuth-Scopes", "repo, user:email")
 }
 
+/// J3's acceptance, on the store D2.6 calls the normal case: after a
+/// successful login `token` answers `"source":"keychain"` with the
+/// granted scopes, and the 0600 file is not written at all.
+///
+/// The store here is an in process one with an operating system's
+/// semantics (it persists across `Entry` objects). A test must never
+/// write into the person's own keychain, and on a machine with a real
+/// Secret Service `Vault::real` would.
+#[test]
+fn a_login_stores_its_token_in_the_credential_store_and_token_reads_it_back() {
+    let fake = FakeForge::start(|call| match call.path.as_str() {
+        "/login/device/code" => Reply::json(
+            200,
+            r#"{"device_code":"dev-1","user_code":"WDJB-MJHT",
+                "verification_uri":"https://forge.test/login/device",
+                "expires_in":900,"interval":5}"#,
+        ),
+        "/login/oauth/access_token" => Reply::json(
+            200,
+            r#"{"access_token":"gho_in_the_keychain","token_type":"bearer",
+                "scope":"repo,user:email"}"#,
+        ),
+        "/user" => user_reply(),
+        _ => Reply::not_found(),
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let forge = TestForge::device(fake.base());
+    let vault = Vault::fake_keychain_at(dir.path().join("config"));
+    let ctx = interactive(
+        Ctx::bare(dir.path().join("project"))
+            .with_vault(vault.clone())
+            .with_state_dir(dir.path().join("state")),
+    );
+    let mut events: Vec<Value> = Vec::new();
+    assert_eq!(
+        verbs::login(
+            &forge,
+            &Target::Host("forge.test".into()),
+            Purpose::Write,
+            &ctx,
+            &mut events,
+            &NoWait::default(),
+        ),
+        0
+    );
+    let result = &events_of(&events, "result")[0];
+    assert_eq!(result["stored"], "keychain", "{result}");
+    assert_eq!(result["login"], "scotty");
+    assert_eq!(result["scopes"], "repo user:email");
+
+    let answer = verbs::token(&forge, &Target::Host("forge.test".into()), None, &ctx);
+    assert_eq!(answer["source"], "keychain", "{answer}");
+    assert_eq!(answer["token"], "gho_in_the_keychain");
+    assert_eq!(answer["login"], "scotty");
+    assert_eq!(answer["scopes"], "repo user:email");
+    // Step 3 of D4.1c: the only login the host holds, and the list it
+    // reads comes from the index entry, because `Entry::new` cannot
+    // enumerate.
+    assert_eq!(answer["chose_by"], "only");
+    assert!(
+        !vault.file().exists(),
+        "a store that answered means no 0600 file at all"
+    );
+
+    // And `logout` takes it out of that same store.
+    let out = verbs::logout(&forge, &Target::Host("forge.test".into()), &ctx);
+    assert_eq!(out["removed"], true, "{out}");
+    assert_eq!(out["source"], "keychain");
+    assert!(vault.logins("forge.test").is_empty());
+}
+
 /// D2.4 and D2.7: the device grant, end to end. The verification event
 /// carries the code and the URL, `slow_down` adds five seconds, the
 /// `result` names the login and the store, and the token never appears

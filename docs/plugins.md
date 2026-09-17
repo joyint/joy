@@ -310,7 +310,9 @@ that trusts the creating application alone.
 - Where the operating system's credential store cannot answer, the
   connector writes the entry itself, to `<config>/forge-tokens.json`,
   mode 0600 in a 0700 directory, and says `"source": "file"` rather
-  than pretending. That is the honest case on a headless server, in a
+  than pretending. "Cannot answer" is detected and not guessed: after a
+  write the entry is read back through a NEW handle, and a store that
+  cannot answer with what was just written did not persist it. That is the honest case on a headless server, in a
   container and on any machine whose store refuses.
 - The granted scope set is stored beside the token in the same entry,
   space separated, and is what the local `scope_missing` check below
