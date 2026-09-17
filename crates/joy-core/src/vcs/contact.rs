@@ -1196,6 +1196,43 @@ pub fn detail_of(error: &anyhow::Error) -> Option<String> {
         .and_then(|c| c.detail.clone())
 }
 
+/// One failed contact as the [`JoyError`] a store level API answers
+/// with, WITHOUT losing the verdict (JOY-02A3-E4).
+///
+/// A caller that returns `JoyError` used to write
+/// `JoyError::Git(format!("chats fetch failed: {e}"))`, which threw the
+/// state away: the desktop banner then had one string and had to guess,
+/// which is exactly what D1.8a forbids. Here the [`ContactError`]
+/// travels on as itself, so a surface reads `failure`, `next_try` and
+/// the detail line.
+///
+/// `context` names the operation ("chats fetch") and joins the DETAIL
+/// line, never the sentence: the sentence is the one plain line a
+/// person reads (D1.8b, wording rules). An error that never passed the
+/// classifier - a local fault before any socket - keeps the old shape
+/// and the old text, so nothing that reads a git error changes.
+///
+/// That second arm is unreachable from the three chat ref call sites
+/// as they stand: [`run`] wraps EVERY failure of theirs into a
+/// [`ContactError`], local faults included, so `push_ref`, `fetch_ref`
+/// and `ls_remote_ref` answer nothing else. It is kept because this
+/// function takes any `anyhow::Error` and a caller may hand in one that
+/// never went through a contact, and it is proven by a test that does.
+///
+/// [`JoyError`]: crate::error::JoyError
+pub fn as_joy_error(context: &str, error: anyhow::Error) -> crate::error::JoyError {
+    match error.downcast::<ContactError>() {
+        Ok(mut contact) => {
+            contact.detail = Some(match contact.detail.take() {
+                Some(detail) => format!("{context}; {detail}"),
+                None => context.to_string(),
+            });
+            crate::error::JoyError::Contact(Box::new(contact))
+        }
+        Err(other) => crate::error::JoyError::Git(format!("{context} failed: {other}")),
+    }
+}
+
 // ---- the budget, in HTTP requests per second (D1.9) -------------------
 
 /// The canonical budget table of D1.9, in HTTP REQUESTS per second per
