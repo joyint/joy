@@ -475,6 +475,12 @@ fn union_chat_subtrees(
 /// merge — ONE decision tree for every venue), then push when the local
 /// ref carries commits the forge still needs. Chats live on this ref,
 /// never the working branch, so `git log`/`git pull` ignore them.
+///
+/// A failed contact comes back as [`JoyError::Contact`] and carries the
+/// classifier's verdict with it (D1.8b, JOY-02A3-E4): the state, the
+/// sentence, the detail line and the moment the forge serves again. A
+/// surface therefore names the state and offers its one action instead
+/// of reading prose joy flattened on the way up.
 pub fn sync_with_forge(root: &Path, auth: &joy_core::vcs::forge::Auth) -> Result<(), JoyError> {
     // Push FIRST (JAPP-01A3-4A): after a write the forge is usually
     // strictly behind this checkout, so one roundtrip delivers and the
@@ -490,7 +496,7 @@ pub fn sync_with_forge(root: &Path, auth: &joy_core::vcs::forge::Auth) -> Result
     }
     if pull_from_forge(root, auth)? {
         joy_core::vcs::forge::push_ref(root, auth, CHATS_REF)
-            .map_err(|e| JoyError::Git(format!("chats push failed: {e}")))?;
+            .map_err(|e| joy_core::vcs::contact::as_joy_error("chats push", e))?;
     }
     Ok(())
 }
@@ -600,7 +606,7 @@ pub fn pull_from_forge(root: &Path, auth: &joy_core::vcs::forge::Auth) -> Result
 /// [`fetch_ref`]: joy_core::vcs::forge::fetch_ref
 pub fn fetch_from_forge(root: &Path, auth: &joy_core::vcs::forge::Auth) -> Result<bool, JoyError> {
     joy_core::vcs::forge::fetch_ref(root, auth, CHATS_REF, CHATS_TRACKING_REF)
-        .map_err(|e| JoyError::Git(format!("chats fetch failed: {e}")))
+        .map_err(|e| joy_core::vcs::contact::as_joy_error("chats fetch", e))
 }
 
 /// The oid the FORGE's chat ref points at, without fetching anything
@@ -611,7 +617,7 @@ pub fn remote_hash(
     auth: &joy_core::vcs::forge::Auth,
 ) -> Result<Option<String>, JoyError> {
     joy_core::vcs::forge::ls_remote_ref(root, auth, CHATS_REF)
-        .map_err(|e| JoyError::Git(format!("chats ls-remote failed: {e}")))
+        .map_err(|e| joy_core::vcs::contact::as_joy_error("chats ls-remote", e))
 }
 
 /// Reconcile the local [`CHATS_REF`] with an already-fetched
@@ -1609,5 +1615,51 @@ mod forge_sync_tests {
         }
 
         std::fs::remove_dir_all(&base).ok();
+    }
+
+    /// A failed chat contact carries the classifier's verdict up to its
+    /// caller (JOY-02A3-E4): the banner reads a STATE and shows the one
+    /// sentence, instead of parsing a string joy flattened on the way.
+    /// The forge here is a path that is no repository, which is the one
+    /// failed contact a test can produce with no network at all.
+    #[test]
+    fn a_failed_chat_sync_carries_the_contact_verdict() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("checkout");
+        let repo = git2::Repository::init(&root).unwrap();
+        let sig = git2::Signature::now("Seed", "seed@example.com").unwrap();
+        let oid = repo.index().unwrap().write_tree().unwrap();
+        {
+            let tree = repo.find_tree(oid).unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "seed", &tree, &[])
+                .unwrap();
+        }
+        repo.remote("origin", tmp.path().join("nowhere.git").to_str().unwrap())
+            .unwrap();
+        drop(repo);
+
+        let auth = joy_core::vcs::forge::Auth::token("x");
+        // what the engine itself says about this contact
+        let raw = joy_core::vcs::forge::fetch_ref(&root, &auth, CHATS_REF, CHATS_TRACKING_REF)
+            .expect_err("a forge that is not there answers nothing");
+        let state = joy_core::vcs::contact::failure_of(&raw);
+        let sentence = raw.to_string();
+
+        let error =
+            sync_with_forge(&root, &auth).expect_err("a forge that is not there cannot be synced");
+        let contact = error
+            .contact()
+            .expect("the verdict travels with the error, not inside a string");
+        // the same verdict arrives, state and all, and it was decided by
+        // the classifier and not by reading a string
+        assert_eq!(contact.failure, state);
+        assert_eq!(error.failure(), state);
+        assert_eq!(error.to_string(), sentence, "one sentence for the person");
+        assert!(!error.to_string().contains("libgit2"), "{error}");
+        let detail = contact.detail.clone().expect("a detail line for the log");
+        assert!(
+            detail.starts_with("chats fetch"),
+            "the operation names itself on the detail line: {detail}"
+        );
     }
 }

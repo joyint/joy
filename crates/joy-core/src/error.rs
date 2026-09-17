@@ -77,6 +77,17 @@ pub enum JoyError {
     #[error("git error: {0}")]
     Git(String),
 
+    /// A forge contact that failed, carried TYPED (JOY-02A3-E4): the
+    /// classifier's verdict travels with the error instead of being
+    /// flattened into prose, so a surface names the state and offers
+    /// its one action (D1.8b) rather than parsing a sentence.
+    ///
+    /// `Display` is the plain sentence the person reads and nothing
+    /// else; libgit2's own words and the sources joy tried stay on the
+    /// error's detail line, which a details view opens deliberately.
+    #[error("{0}")]
+    Contact(Box<crate::vcs::contact::ContactError>),
+
     #[error("template error: {0}")]
     Template(String),
 
@@ -103,6 +114,29 @@ pub enum JoyError {
 
     #[error("{0}")]
     Other(String),
+}
+
+impl JoyError {
+    /// The verdict behind this error when it is a failed forge contact:
+    /// the state for the banner, the sentence, the detail line and the
+    /// moment the forge serves again (D1.8b). `None` for every other
+    /// error, and a caller that only wants the state can read
+    /// [`crate::vcs::contact::Failure::Error`] for those.
+    pub fn contact(&self) -> Option<&crate::vcs::contact::ContactError> {
+        match self {
+            JoyError::Contact(contact) => Some(contact),
+            _ => None,
+        }
+    }
+
+    /// The state a surface shows for this error: the classifier's
+    /// verdict when the error came from a contact, and `error`
+    /// otherwise - never guessed at from prose (D1.8a).
+    pub fn failure(&self) -> crate::vcs::contact::Failure {
+        self.contact()
+            .map(|contact| contact.failure)
+            .unwrap_or(crate::vcs::contact::Failure::Error)
+    }
 }
 
 impl From<joy_crypt::Error> for JoyError {

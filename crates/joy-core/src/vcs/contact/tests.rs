@@ -891,6 +891,54 @@ fn the_error_shows_the_sentence_and_hides_the_engine() {
     assert!(detail_of(&e).unwrap().contains("401"));
 }
 
+/// A store level API answers with `JoyError` and must not lose the
+/// verdict on the way (JOY-02A3-E4): the state, the sentence, the
+/// detail line and the next try all survive, and the operation's name
+/// joins the DETAIL line and never the sentence.
+#[test]
+fn a_contact_error_reaches_a_joy_error_with_its_verdict_intact() {
+    let ev = https_fetch(
+        error(
+            Code::GenericError,
+            Class::Http,
+            "unexpected http status code: 401",
+        ),
+        "github.com",
+    );
+    let sentence = failed(&ev).to_string();
+    let e = as_joy_error("chats fetch", failed(&ev));
+
+    let carried = e.contact().expect("the verdict travels on");
+    assert_eq!(carried.failure, Failure::NeedsSignIn);
+    assert_eq!(e.failure(), Failure::NeedsSignIn);
+    assert_eq!(e.to_string(), sentence, "the sentence is the person's line");
+    assert!(
+        !e.to_string().contains("chats fetch") && !e.to_string().contains("401"),
+        "{e}"
+    );
+    let detail = carried.detail.clone().expect("a detail line");
+    assert!(detail.starts_with("chats fetch; "), "{detail}");
+    assert!(detail.contains("401"), "{detail}");
+}
+
+/// The other half: an error that never passed the classifier keeps the
+/// shape and the text it always had, so a caller that reads a git error
+/// reads the same string as before.
+#[test]
+fn an_error_that_is_no_contact_keeps_the_old_git_error() {
+    let e = as_joy_error(
+        "chats fetch",
+        anyhow::anyhow!("chat x is in the retired pre-sealing layout"),
+    );
+    assert!(e.contact().is_none());
+    assert_eq!(e.failure(), Failure::Error);
+    assert!(matches!(e, crate::error::JoyError::Git(_)));
+    assert_eq!(
+        e.to_string(),
+        "git error: chats fetch failed: chat x is in the retired pre-sealing layout"
+    );
+}
+
 /// An error that never passed the classifier is not guessed at from its
 /// prose: the forge answered, so it is `error` and never `offline`.
 #[test]
