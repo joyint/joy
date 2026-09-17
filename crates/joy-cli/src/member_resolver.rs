@@ -15,7 +15,6 @@ use joy_core::member_ref::{install, MemberResolver};
 use joy_core::members_file::{self, MembersFile, MEMBERS_ZONE};
 use joy_core::model::project::{PrivacyMode, Project};
 use joy_core::store;
-use joy_core::vcs::Vcs;
 use joy_crypt::zone::{unwrap_for_member, ZoneKey};
 
 /// Build and install the member resolver for the current command.
@@ -66,12 +65,10 @@ fn passphrase_members_key(root: &std::path::Path, project: &Project) -> Option<Z
     let passphrase = std::env::var("JOY_PASSPHRASE")
         .ok()
         .filter(|s| !s.is_empty())?;
-    let email = joy_core::vcs::default_vcs().user_email().ok()?;
-    let member_key = joy_core::privacy::member_key_for_email(project, &email)?;
+    let member_key = joy_core::identity::acting_member_key(root).ok()?;
     let member = project.member_by_key(&member_key)?;
     let unlocked = auth::unlock_identity(member, &passphrase).ok()?;
     let wrap = member.members_wrap.as_deref()?;
-    let _ = root;
     unwrap_for_member(wrap, MEMBERS_ZONE, &unlocked.seed).ok()
 }
 

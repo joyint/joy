@@ -8,7 +8,6 @@ use joy_core::filter;
 use joy_core::items;
 use joy_core::model::item::{Item, Status, Validity};
 use joy_core::store;
-use joy_core::vcs::Vcs;
 
 use crate::color;
 use crate::commands::ai as ai_cmd;
@@ -818,10 +817,9 @@ fn welcome_and_maybe_init(cwd: &std::path::Path) -> Result<()> {
     let acronym_default = derive_acronym(&name);
     let acronym = prompt::ask_text("Acronym", Some(&acronym_default))?;
 
-    let git_email = joy_core::vcs::default_vcs()
-        .user_email()
-        .ok()
-        .filter(|s| !s.is_empty());
+    // A person is at the terminal and is being asked, so git config may
+    // offer an address; it decides nothing (D3.9).
+    let git_email = joy_core::identity::git_config_prefill();
     let user = prompt::ask_text("User", git_email.as_deref())?;
     let language = prompt::ask_text("Language (e.g. en, de)", Some("en"))?;
 

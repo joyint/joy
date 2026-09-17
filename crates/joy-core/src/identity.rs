@@ -181,10 +181,36 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
         }
     }
 
-    // 2. Human session by git email
+    // 2. The human session of the member the key names.
     if let Some(ref pid) = project_id {
         if let Some(session_identity) = session_identity(root, &member_key, pid, &project) {
             return Ok(session_identity);
+        }
+    }
+
+    // 2a. The key names nobody: ask the sessions on this device who they
+    // belong to (D3.9, J11).
+    //
+    // A person who authenticated while git config named them keeps no
+    // pin, by the rule of [`pin_acting_member`], so removing
+    // `user.email` afterwards would otherwise leave joy with nothing and
+    // a joy project would once more stand on a git setting. Their
+    // session is still here: it is this device's own state, it is bound
+    // to this terminal and it is signed by their key, so it is a
+    // stronger statement of who is acting than any config. Exactly one
+    // live human session for this project answers; two or more are
+    // ambiguous and answer nothing, and the person then names themselves
+    // (`--user`) or authenticates again.
+    if let Some(ref pid) = project_id {
+        let names_a_member = project
+            .as_ref()
+            .is_some_and(|p| p.has_member_key(&member_key));
+        if !names_a_member {
+            if let Some(member) = the_one_live_human_session(root, &project) {
+                if let Some(session_identity) = session_identity(root, &member, pid, &project) {
+                    return Ok(session_identity);
+                }
+            }
         }
     }
 
@@ -194,6 +220,27 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
         delegated_by: None,
         authenticated: false,
     })
+}
+
+/// The single human member of this project with a live, valid session on
+/// this device, or `None` when none or more than one has one.
+///
+/// The session files are this device's state; [`check_session`] then
+/// checks the member's signature, the project and the terminal binding,
+/// so a file somebody dropped there authenticates nobody.
+fn the_one_live_human_session(root: &Path, project: &Option<Project>) -> Option<String> {
+    let members = project.as_ref()?;
+    let mut found: Option<String> = None;
+    for key in members.member_keys() {
+        if is_ai_member(key) || !check_session(root, key, project) {
+            continue;
+        }
+        if found.is_some() {
+            return None;
+        }
+        found = Some(key.clone());
+    }
+    found
 }
 
 /// Try to build an Identity from an active session for a member.
@@ -341,6 +388,45 @@ fn set_member_pin(root: &Path, member: Option<&str>) -> Result<(), JoyError> {
     })
 }
 
+/// The at-rest member key the current command acts as (D3.9, package
+/// J11). Every joy-cli command that needs to know who is acting asks
+/// this and nothing else, so the order lives in one place:
+/// [`resolve_identity`] reads the delegation session first, then the
+/// member this device pinned, and git config only as the prefill behind
+/// both.
+///
+/// The answer is a key of the member map, never an address: an anonymous
+/// project (ADR-042) answers with its opaque `m-<hex>` id, so a caller
+/// that puts the answer into `project.yaml`, a session file or a commit
+/// trailer writes no cleartext address there by accident.
+///
+/// [`JoyError::UnknownActingMember`] when nothing answers at all: no
+/// session, no pin and no git config. A command that lets a person name
+/// somebody (`--user`) asks [`acting_member`] instead, which takes that
+/// name first.
+pub fn acting_member_key(root: &Path) -> Result<String, JoyError> {
+    let member = resolve_identity(root)?.member.id().to_string();
+    if member.trim().is_empty() {
+        return Err(JoyError::UnknownActingMember);
+    }
+    Ok(member)
+}
+
+/// The address joy OFFERS a person when it asks them who they are: git
+/// config `user.email`, empty treated as absent.
+///
+/// This is the one use of git config that D3.9 keeps, and it is a
+/// prefill, never a source: the person at the terminal sees it and can
+/// type something else. Nothing that decides an identity on its own may
+/// call it; those call [`acting_member_key`] or [`acting_member`].
+pub fn git_config_prefill() -> Option<String> {
+    crate::vcs::default_vcs()
+        .user_email()
+        .ok()
+        .map(|email| email.trim().to_string())
+        .filter(|email| !email.is_empty())
+}
+
 /// The member a local enrolment or authentication acts as, resolved
 /// WITHOUT demanding a git config (D3.9): the address the host named
 /// (`--user`, the app's mask), then the member pinned on this device,
@@ -366,11 +452,7 @@ pub fn acting_member(
     if let Some(pin) = pinned_member(root, project) {
         return Ok(pin);
     }
-    crate::vcs::default_vcs()
-        .user_email()
-        .ok()
-        .filter(|e| !e.trim().is_empty())
-        .ok_or(JoyError::UnknownActingMember)
+    git_config_prefill().ok_or(JoyError::UnknownActingMember)
 }
 
 /// The signature a commit of `member` carries in THIS checkout (D4.5).

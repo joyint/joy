@@ -13,8 +13,6 @@ use joy_ai::ai_setup::{
 
 use std::sync::atomic::AtomicBool;
 
-use joy_core::vcs::Vcs;
-
 use crate::color;
 
 static QUIET: AtomicBool = AtomicBool::new(false);
@@ -267,20 +265,17 @@ fn ensure_human_auth_initialized(
 ) -> anyhow::Result<Option<String>> {
     let project_path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
     let project = joy_core::store::read_project(&project_path)?;
-    let email = joy_core::vcs::default_vcs().user_email()?;
-    // Resolve the member honoring the project's privacy mode. In anonymous
-    // mode (ADR-042) the member map is keyed by an opaque id, not the
-    // cleartext e-mail, so a direct `members.get(&email)` would spuriously
-    // report the founder as unregistered right after `joy init --anonymous`.
-    let member_key =
-        joy_core::privacy::member_key_for_email(&project, &email).ok_or_else(|| {
-            anyhow::anyhow!(
-                "{} is not a registered project member. Run `joy project member add {}` first.",
-                email,
-                email
-            )
-        })?;
-    let member = project.member_by_key(&member_key).unwrap();
+    // Who acts here comes from the session, then this device's pin, then
+    // git config as a prefill (D3.9), and it is already an at-rest member
+    // key, so anonymous mode (ADR-042) needs no second lookup path.
+    let member_key = joy_core::identity::acting_member_key(root)?;
+    let member = project.member_by_key(&member_key).ok_or_else(|| {
+        anyhow::anyhow!(
+            "{} is not a registered project member. Run `joy project member add {}` first.",
+            member_key,
+            member_key
+        )
+    })?;
     if member.verify_key.is_some() {
         return Ok(None);
     }
@@ -1018,20 +1013,18 @@ fn setup_new_tools(
 
             // Derive the attesting human's keypair on first need.
             if acting.is_none() {
-                let email = joy_core::vcs::default_vcs().user_email()?;
+                // The attester is the member acting here (D3.9), named by
+                // their on-disk member key: in anonymous mode (ADR-042) the
+                // stored attester is then the opaque id and never a cleartext
+                // address, and verification resolves it through the member
+                // map, which is keyed by that id.
+                let attester_id = joy_core::identity::acting_member_key(root)?;
                 let kp = crate::commands::project::derive_acting_keypair(
                     &project,
-                    &email,
+                    &attester_id,
                     passphrase,
                     passphrase_stdin,
                 )?;
-                // Reference the attester by their on-disk member key so that in
-                // anonymous mode (ADR-042) the stored attester is the opaque id,
-                // never the cleartext e-mail. This keeps the committed
-                // project.yaml e-mail-free and lets verification resolve the
-                // attester via the member map, which is keyed by that id.
-                let attester_id =
-                    joy_core::privacy::member_key_for_email(&project, &email).unwrap_or(email);
                 acting = Some((attester_id, kp));
             }
             let (attester_id, attester_kp) = acting.as_ref().unwrap();

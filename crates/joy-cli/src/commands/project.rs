@@ -19,7 +19,6 @@ use joy_core::project_meta::{
     scalar_str, set_value, value_as_optional_string, wildcard_prefix, LIST_KEYS, PROJECT_KEYS,
 };
 use joy_core::store;
-use joy_core::vcs::Vcs;
 use joy_core::version_files::{
     version_files_add, version_files_get, version_files_rm, version_files_set, AddOutcome,
 };
@@ -607,14 +606,12 @@ fn set_privacy(
     }
 
     // A real switch: unlock the acting member's seed (auth), then migrate.
-    let git_email = joy_core::vcs::default_vcs().user_email()?;
-    let member_key = joy_core::privacy::member_key_for_email(project, &git_email)
-        .ok_or_else(|| anyhow::anyhow!("{git_email} is not a member of this project"))?;
+    let member_key = joy_core::identity::acting_member_key(&ctx.root)?;
     let member = project
         .member_by_key(&member_key)
-        .expect("member_key came from the member map");
+        .ok_or_else(|| anyhow::anyhow!("{member_key} is not a member of this project"))?;
     if member.verify_key.is_none() {
-        bail!("{git_email} has no identity. Run `joy auth init` first.");
+        bail!("{member_key} has no identity. Run `joy auth init` first.");
     }
     let passphrase = match args.passphrase.clone().or_else(|| {
         std::env::var("JOY_PASSPHRASE")
@@ -1066,7 +1063,7 @@ fn run_member(
             // Authenticate the acting manage member by passphrase. Their
             // identity key will sign the attestation placed on the new
             // member's entry (JOY-00FC-1D).
-            let attester_email = joy_core::vcs::default_vcs().user_email()?;
+            let attester_key = joy_core::identity::acting_member_key(&ctx.root)?;
             let is_ai = a.id.starts_with("ai:");
 
             // When `--with-token` is set for an AI member, the same
@@ -1087,7 +1084,7 @@ fn run_member(
             };
             let attester_kp = derive_acting_keypair(
                 project,
-                &attester_email,
+                &attester_key,
                 captured_passphrase.as_deref(),
                 a.passphrase_stdin,
             )?;
@@ -1112,12 +1109,11 @@ fn run_member(
                 &capabilities,
                 otp_hash_opt.as_deref(),
             );
-            // Reference the attester by their on-disk member key so anonymous
-            // mode (ADR-042) records the opaque id, never the cleartext e-mail.
-            let attester_id = joy_core::privacy::member_key_for_email(project, &attester_email)
-                .unwrap_or_else(|| attester_email.clone());
+            // The attester is referenced by their on-disk member key, so
+            // anonymous mode (ADR-042) records the opaque id and never a
+            // cleartext address.
             let attestation = joy_core::auth::attestation::sign_attestation(
-                &attester_id,
+                &attester_key,
                 &attester_kp,
                 signed_fields,
             );
@@ -1140,7 +1136,7 @@ fn run_member(
                     .expect("captured when is_ai && with_token");
                 Some(crate::commands::auth::create_delegation_token(
                     &ctx.root,
-                    &attester_email,
+                    &attester_key,
                     passphrase,
                     &a.id,
                     None,
@@ -1334,10 +1330,10 @@ fn run_member(
             // 5. Re-sign: any capability or interaction-level change invalidates
             //    the stored attestation (it covers `capabilities`), so the
             //    acting manage member re-signs over the new fields.
-            let acting_email = joy_core::vcs::default_vcs().user_email()?;
+            let acting_key = joy_core::identity::acting_member_key(&ctx.root)?;
             let acting_kp = derive_acting_keypair(
                 project,
-                &acting_email,
+                &acting_key,
                 a.passphrase.as_deref(),
                 a.passphrase_stdin,
             )?;
@@ -1346,10 +1342,8 @@ fn run_member(
                 &member.capabilities,
                 member.enrollment_verifier.as_deref(),
             );
-            let attester_id = joy_core::privacy::member_key_for_email(project, &acting_email)
-                .unwrap_or_else(|| acting_email.clone());
             member.attestation = Some(joy_core::auth::attestation::sign_attestation(
-                &attester_id,
+                &acting_key,
                 &acting_kp,
                 signed_fields,
             ));
@@ -1383,13 +1377,11 @@ fn run_member(
 
             // JOY-00FE-F6: self-remove is blocked and directs the user to
             // another manage member.
-            let acting_email = joy_core::vcs::default_vcs().user_email()?;
-            if a.id == acting_email {
+            let acting_key = joy_core::identity::acting_member_key(&ctx.root)?;
+            if a.id == acting_key {
                 let others: Vec<&String> = project
                     .members()
-                    .filter(|(email, m)| {
-                        **email != acting_email && m.has_capability(&Capability::Manage)
-                    })
+                    .filter(|(key, m)| **key != acting_key && m.has_capability(&Capability::Manage))
                     .map(|(email, _)| email)
                     .collect();
                 let list = if others.is_empty() {
@@ -1439,7 +1431,7 @@ fn run_member(
             } else {
                 Some(derive_acting_keypair(
                     project,
-                    &acting_email,
+                    &acting_key,
                     a.passphrase.as_deref(),
                     a.passphrase_stdin,
                 )?)
@@ -1463,7 +1455,7 @@ fn run_member(
                         orphan.enrollment_verifier.as_deref(),
                     );
                     let new_attestation = joy_core::auth::attestation::sign_attestation(
-                        &acting_email,
+                        &acting_key,
                         &kp,
                         signed_fields,
                     );
@@ -1499,12 +1491,10 @@ fn run_member(
                 bail!("erasure applies only to anonymous projects (privacy: anonymous)");
             }
             // Unlock the acting manage member's seed; it grants members.yaml access.
-            let git_email = joy_core::vcs::default_vcs().user_email()?;
-            let operator_key = joy_core::privacy::member_key_for_email(project, &git_email)
-                .ok_or_else(|| anyhow::anyhow!("{git_email} is not a member of this project"))?;
+            let operator_key = joy_core::identity::acting_member_key(&ctx.root)?;
             let operator = project
                 .member_by_key(&operator_key)
-                .expect("operator_key came from the member map");
+                .ok_or_else(|| anyhow::anyhow!("{operator_key} is not a member of this project"))?;
             let passphrase = a.passphrase.clone().or_else(|| {
                 std::env::var("JOY_PASSPHRASE")
                     .ok()
@@ -1577,29 +1567,25 @@ fn default_member_capabilities() -> MemberCapabilities {
     MemberCapabilities::Specific(map)
 }
 
-/// Derive and verify the acting human member's identity keypair from their
+/// Derive and verify the acting member's identity keypair from their
 /// passphrase. Used to sign attestations on `joy project member add`.
+///
+/// `member_key` is an at-rest member map key, the shape
+/// [`joy_core::identity::acting_member_key`] answers with, so an
+/// anonymous project (ADR-042) needs no second lookup path.
 pub(crate) fn derive_acting_keypair(
     project: &Project,
-    email: &str,
+    member_key: &str,
     passphrase_flag: Option<&str>,
     passphrase_stdin: bool,
 ) -> Result<IdentityKeypair> {
-    let member = {
-        // Resolve the member honoring the privacy mode: in anonymous mode
-        // (ADR-042) the member map is keyed by an opaque id, not the cleartext
-        // e-mail, so a direct `members.get(email)` would miss the founder when
-        // `joy ai init` registers an AI member in an anonymous project.
-        let member_key = joy_core::privacy::member_key_for_email(project, email)
-            .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member", email))?;
-        project
-            .member_by_key(&member_key)
-            .expect("member_key resolved from email must exist")
-    };
+    let member = project
+        .member_by_key(member_key)
+        .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member", member_key))?;
     if member.verify_key.is_none() {
         anyhow::bail!(
             "{} has no registered public key. Run `joy auth init` first.",
-            email
+            member_key
         );
     }
     let passphrase =

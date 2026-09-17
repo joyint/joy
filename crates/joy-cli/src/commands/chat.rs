@@ -15,7 +15,6 @@ use crate::color;
 use clap::{Args, Subcommand};
 
 use joy_core::vcs::contact::Failure;
-use joy_core::vcs::Vcs;
 
 #[derive(Args)]
 pub struct ChatArgs {
@@ -479,10 +478,10 @@ fn establish_reader_seed(
     let Ok(project) = joy_core::store::load_project(root) else {
         return Ok(());
     };
-    let Ok(email) = joy_core::vcs::default_vcs().user_email() else {
+    let Ok(member_key) = joy_core::identity::acting_member_key(root) else {
         return Ok(());
     };
-    let Some(member) = project.member_by_email(&email) else {
+    let Some(member) = project.member_by_key(&member_key) else {
         return Ok(());
     };
     if member.verify_key.is_none() {

@@ -18,7 +18,6 @@ use clap::{Args, Subcommand};
 
 use joy_core::model::project::Project;
 use joy_core::store;
-use joy_core::vcs::Vcs;
 
 use crate::color;
 use crate::commands::auth::read_passphrase;
@@ -163,13 +162,19 @@ pub fn run(args: CryptArgs) -> Result<()> {
     }
 }
 
+/// The root, the project, and the at-rest key of the member acting
+/// here. The member comes from [`joy_core::identity::acting_member_key`]
+/// and therefore from the session, then this device's pin, then git
+/// config as a prefill (D3.9); it is a member map key, so every lookup
+/// below is by key and an anonymous project (ADR-042) needs no special
+/// case.
 fn load_context() -> Result<(std::path::PathBuf, Project, String)> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
     let project = store::read_project(&project_path)?;
-    let email = joy_core::vcs::default_vcs().user_email()?;
-    Ok((root, project, email))
+    let acting = joy_core::identity::acting_member_key(&root)?;
+    Ok((root, project, acting))
 }
 
 /// Unwrap the acting member's wrap for the zone, or generate a fresh
@@ -180,14 +185,14 @@ fn unlock_zone(
     passphrase_stdin: bool,
     autocreate: bool,
 ) -> Result<UnlockedZone> {
-    let (root, project, email) = load_context()?;
+    let (root, project, acting_key) = load_context()?;
     let acting = project
-        .member_by_email(&email)
-        .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member", email))?;
+        .member_by_key(&acting_key)
+        .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member", acting_key))?;
     if acting.verify_key.is_none() {
         bail!(
             "Authentication not initialized for {}. Run `joy auth init` first.",
-            email
+            acting_key
         );
     }
     let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "Passphrase: ")?;
@@ -199,7 +204,7 @@ fn unlock_zone(
             if !autocreate {
                 bail!(
                     "{} has no access to zone '{}'. Ask a member with access to grant first.",
-                    joy_core::member_ref::resolve_str(&email),
+                    joy_core::member_ref::resolve_str(&acting_key),
                     zone
                 );
             }
@@ -210,7 +215,7 @@ fn unlock_zone(
     Ok(UnlockedZone {
         root,
         project,
-        acting_email: email,
+        acting_member: acting_key,
         acting_seed: unlocked.seed,
         zone: zone.to_string(),
         zone_key,
@@ -220,7 +225,8 @@ fn unlock_zone(
 struct UnlockedZone {
     root: std::path::PathBuf,
     project: Project,
-    acting_email: String,
+    /// The at-rest member key of the member who unlocked the zone.
+    acting_member: String,
     acting_seed: [u8; 32],
     zone: String,
     zone_key: joy_crypt::zone::ZoneKey,
@@ -239,10 +245,7 @@ impl UnlockedZone {
             .or_default();
         let wrap_hex =
             joy_crypt::zone::wrap_for_self(&self.zone_key, &self.zone, &self.acting_seed);
-        let m = self
-            .project
-            .member_by_email_mut(&self.acting_email)
-            .unwrap();
+        let m = self.project.member_by_key_mut(&self.acting_member).unwrap();
         m.crypt_wraps.insert(self.zone.clone(), wrap_hex);
 
         let project_path = store::joy_dir(&self.root).join(store::PROJECT_FILE);
@@ -262,7 +265,7 @@ impl UnlockedZone {
     fn finalize(self, summary: &str) -> Result<()> {
         let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
         joy_core::git_ops::auto_git_add(&self.root, &[&rel]);
-        joy_core::git_ops::auto_git_post_command(&self.root, summary, &self.acting_email);
+        joy_core::git_ops::auto_git_post_command(&self.root, summary, &self.acting_member);
         Ok(())
     }
 }
@@ -452,10 +455,10 @@ fn unlock_for_file(
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
     let project = store::read_project(&project_path)?;
-    let email = joy_core::vcs::default_vcs().user_email()?;
+    let acting_key = joy_core::identity::acting_member_key(&root)?;
     let acting = project
-        .member_by_email(&email)
-        .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member", email))?;
+        .member_by_key(&acting_key)
+        .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member", acting_key))?;
 
     // Determine the zone: either from the blob magic on disk or from
     // the project's zones[].paths registry.
@@ -800,7 +803,7 @@ fn run_rm_all(zone: &str, passphrase: Option<&str>, stdin: bool) -> Result<()> {
 }
 
 fn run_zone_list() -> Result<()> {
-    let (root, project, _email) = load_context()?;
+    let (root, project, _acting) = load_context()?;
     println!("{}", color::header("Crypt zones"));
     println!();
     if project.crypt.is_empty() {
@@ -844,7 +847,7 @@ fn run_zone_list() -> Result<()> {
 }
 
 fn run_zone_rm(name: &str) -> Result<()> {
-    let (root, mut project, email) = load_context()?;
+    let (root, mut project, acting) = load_context()?;
     if !project.crypt.zones.contains_key(name) {
         bail!("zone '{}' is not registered", name);
     }
@@ -870,7 +873,7 @@ fn run_zone_rm(name: &str) -> Result<()> {
     store::write_yaml_preserve(&project_path, &project)?;
     let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
     joy_core::git_ops::auto_git_add(&root, &[&rel]);
-    joy_core::git_ops::auto_git_post_command(&root, &format!("crypt zone rm {name}"), &email);
+    joy_core::git_ops::auto_git_post_command(&root, &format!("crypt zone rm {name}"), &acting);
     println!("Removed zone '{}'.", name);
     Ok(())
 }
@@ -891,7 +894,7 @@ fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>, stdin: b
 
     let granter_verify_hex = unlocked
         .project
-        .member_by_email(&unlocked.acting_email)
+        .member_by_key(&unlocked.acting_member)
         .and_then(|m| m.verify_key.clone())
         .ok_or_else(|| anyhow::anyhow!("granter has no verify_key registered"))?;
     let granter_verify_key = joy_core::auth::PublicKey::from_hex(&granter_verify_hex)?;
@@ -958,7 +961,7 @@ fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>, stdin: b
             &unlocked.zone,
             &unlocked.acting_seed,
         );
-        let g = project.member_by_email_mut(&unlocked.acting_email).unwrap();
+        let g = project.member_by_key_mut(&unlocked.acting_member).unwrap();
         g.crypt_wraps
             .entry(unlocked.zone.clone())
             .or_insert(granter_wrap);
@@ -972,7 +975,7 @@ fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>, stdin: b
                 "crypt grant {ai_id} (zone {}, {count} delegations)",
                 unlocked.zone
             ),
-            &unlocked.acting_email,
+            &unlocked.acting_member,
         );
         println!(
             "Granted {ai_id} access to zone '{}' for {count} operator delegation(s).",
@@ -1011,7 +1014,7 @@ fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>, stdin: b
     // when this is the first add+grant in the same session).
     let granter_wrap =
         joy_crypt::zone::wrap_for_self(&unlocked.zone_key, &unlocked.zone, &unlocked.acting_seed);
-    let g = project.member_by_email_mut(&unlocked.acting_email).unwrap();
+    let g = project.member_by_key_mut(&unlocked.acting_member).unwrap();
     g.crypt_wraps
         .entry(unlocked.zone.clone())
         .or_insert(granter_wrap);
@@ -1022,7 +1025,7 @@ fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>, stdin: b
     joy_core::git_ops::auto_git_post_command(
         &unlocked.root,
         &format!("crypt grant {target_member} (zone {})", unlocked.zone),
-        &unlocked.acting_email,
+        &unlocked.acting_member,
     );
     println!(
         "Granted {} access to zone '{}'.",
@@ -1034,7 +1037,7 @@ fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>, stdin: b
 
 fn run_revoke(zone: &str, target_member: &str) -> Result<()> {
     use joy_core::model::project::is_ai_member;
-    let (root, mut project, email) = load_context()?;
+    let (root, mut project, acting) = load_context()?;
     // `target_member` is polymorphic (see run_grant): resolve AI ids by at-rest
     // key, human identifiers by privacy-aware e-mail lookup (ADR-042).
     let target_exists = if is_ai_member(target_member) {
@@ -1076,7 +1079,7 @@ fn run_revoke(zone: &str, target_member: &str) -> Result<()> {
     joy_core::git_ops::auto_git_post_command(
         &root,
         &format!("crypt revoke {target_member} (zone {zone})"),
-        &email,
+        &acting,
     );
     println!(
         "Revoked {}'s access to zone '{}'.",
@@ -1092,7 +1095,7 @@ fn run_revoke(zone: &str, target_member: &str) -> Result<()> {
 }
 
 fn run_list(zone: &str) -> Result<()> {
-    let (root, project, _email) = load_context()?;
+    let (root, project, _acting) = load_context()?;
     let cfg = &project.crypt;
     println!("{}", color::header(&format!("Crypt zone: {zone}")));
     println!();
@@ -1156,14 +1159,14 @@ fn run_list(zone: &str) -> Result<()> {
 }
 
 fn run_status() -> Result<()> {
-    let (root, project, email) = load_context()?;
+    let (root, project, acting_key) = load_context()?;
     let cfg = &project.crypt;
     let zone_count = cfg.zones.len();
     // Metadata walk: count items in any zone without prompting.
     let metas = joy_core::items::list_item_metadata(&root).unwrap_or_default();
     let item_count_total = metas.iter().filter(|m| m.zone().is_some()).count();
     let me_access = project
-        .member_by_email(&email)
+        .member_by_key(&acting_key)
         .map(|m| m.crypt_wraps.len())
         .unwrap_or(0);
 

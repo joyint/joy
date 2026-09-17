@@ -14,7 +14,6 @@
 
 use anyhow::Result;
 use joy_core::context::Context;
-use joy_core::vcs::Vcs;
 
 use crate::commands::auth::read_passphrase;
 
@@ -66,11 +65,14 @@ pub fn ensure_zone_keys_with_stdin(passphrase_flag: Option<&str>, from_stdin: bo
     };
     let project_path = joy_core::store::joy_dir(&root).join(joy_core::store::PROJECT_FILE);
     let project = joy_core::store::read_project(&project_path)?;
-    let email = match joy_core::vcs::default_vcs().user_email() {
-        Ok(e) => e,
-        Err(_) => return Ok(()),
+    // Who acts here is the session, then this device's pin, then git
+    // config as a prefill (D3.9): the AI branch below is reached because
+    // JOY_SESSION named an AI member, not because a git config happened
+    // to spell one.
+    let Ok(member_key) = joy_core::identity::acting_member_key(&root) else {
+        return Ok(());
     };
-    let Some(member) = project.member_by_email(&email) else {
+    let Some(member) = project.member_by_key(&member_key) else {
         return Ok(());
     };
 
@@ -78,7 +80,7 @@ pub fn ensure_zone_keys_with_stdin(passphrase_flag: Option<&str>, from_stdin: bo
     // JOY_SESSION unwraps zone keys via per-(operator, AI) wraps under
     // crypt.zones.<zone>.delegations.<ai>.<operator>. No passphrase
     // prompt - the operator already authenticated at token issuance.
-    if joy_core::model::project::is_ai_member(&email) {
+    if joy_core::model::project::is_ai_member(&member_key) {
         let env_value = match std::env::var("JOY_SESSION") {
             Ok(v) => v,
             Err(_) => return Ok(()),
@@ -91,7 +93,7 @@ pub fn ensure_zone_keys_with_stdin(passphrase_flag: Option<&str>, from_stdin: bo
         };
         let mut keys = std::collections::BTreeMap::new();
         for (zone_name, zone) in &project.crypt.zones {
-            let Some(per_ai) = zone.delegations.get(&email) else {
+            let Some(per_ai) = zone.delegations.get(&member_key) else {
                 continue;
             };
             // Try each operator wrap: the AI session derives from one
