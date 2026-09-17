@@ -223,15 +223,7 @@ fn warn_about_a_missing_item(message: &str, project: Option<&Project>) {
     let Some(acronym) = project.and_then(|p| p.acronym.as_deref()) else {
         return;
     };
-    if let Err(e) = crate::commit_msg::validate(message, acronym) {
-        // One line, not the hook's full diagnostic: the person did not
-        // write this message and cannot fix it, and the commit happened
-        // anyway. The diagnostic belongs to the paths that refuse.
-        eprintln!(
-            "Warning: the commit joy just wrote references no {} item: {}",
-            e.acronym, e.subject
-        );
-    }
+    crate::commit_msg::warn_unless_referenced(message, acronym);
 }
 
 #[cfg(test)]

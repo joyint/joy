@@ -886,6 +886,25 @@ fn rewritten_by_insteadof(repo: &git2::Repository, url: &str) -> bool {
 /// `origin`, or the first configured remote — a checkout the product
 /// made always has `origin`, but a repo a person wired by hand may not
 /// (the desktop opens those too).
+/// The item reference rule of D3.3, applied to a commit the ENGINE
+/// writes for a host that has nobody to ask: the platform's job and
+/// item writes, the seeding paths, the agent fallback commit.
+///
+/// libgit2 runs no hooks, so `.joy/hooks/commit-msg` never sees these
+/// messages and the rule it enforces for a person's `git commit` would
+/// be enforced for nobody. It warns and proceeds here, because a
+/// refusal would strand a write that already happened (D3.3); the
+/// commands a person runs refuse instead.
+fn warn_about_a_missing_item(repo_dir: &Path, message: &str) {
+    let Some(acronym) = crate::store::load_project(repo_dir)
+        .ok()
+        .and_then(|project| project.acronym)
+    else {
+        return;
+    };
+    crate::commit_msg::warn_unless_referenced(message, &acronym);
+}
+
 fn origin_or_first<'r>(repo: &'r git2::Repository) -> anyhow::Result<git2::Remote<'r>> {
     match repo.find_remote("origin") {
         Ok(remote) => Ok(remote),
@@ -1687,6 +1706,7 @@ pub fn commit_joy(
     author_name: &str,
     author_email: &str,
 ) -> anyhow::Result<Option<String>> {
+    warn_about_a_missing_item(repo_dir, message);
     let repo = open(repo_dir).map_err(err)?;
     let mut status_opts = git2::StatusOptions::new();
     status_opts
@@ -2768,6 +2788,7 @@ pub fn commit_everything(
     author_name: &str,
     author_email: &str,
 ) -> anyhow::Result<String> {
+    warn_about_a_missing_item(repo_dir, message);
     let repo = open(repo_dir).map_err(err)?;
     let mut index = repo.index().map_err(err)?;
     index
@@ -3063,6 +3084,7 @@ pub fn commit_paths(
     author_name: &str,
     author_email: &str,
 ) -> anyhow::Result<Option<String>> {
+    warn_about_a_missing_item(repo_dir, message);
     let repo = open(repo_dir).map_err(err)?;
     let mut index = repo.index().map_err(err)?;
     index
@@ -3237,6 +3259,7 @@ pub fn commit_all(
     author_name: &str,
     author_email: &str,
 ) -> anyhow::Result<Option<String>> {
+    warn_about_a_missing_item(worktree_dir, message);
     let repo = open(worktree_dir).map_err(err)?;
     let parent = repo
         .head()

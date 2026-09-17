@@ -245,6 +245,22 @@ pub fn validate(message: &str, acronym: &str) -> Result<(), CommitMsgError> {
     })
 }
 
+/// D3.3 for joy's OWN automatic commits: warn and proceed.
+///
+/// A refusal here would strand the write joy has already made with
+/// uncommitted `.joy` changes and a message the person never typed and
+/// cannot fix. One line, not the full ADR-015 diagnostic, for the same
+/// reason: the diagnostic belongs to the paths that refuse, which are
+/// the commands a person ran.
+pub fn warn_unless_referenced(message: &str, acronym: &str) {
+    if let Err(e) = validate(message, acronym) {
+        eprintln!(
+            "Warning: the commit joy just wrote references no {} item: {}",
+            e.acronym, e.subject
+        );
+    }
+}
+
 /// `ACRONYM-[0-9A-Fa-f]{4}(-[0-9A-Fa-f]{2})?` anywhere in `message`. The
 /// optional suffix changes nothing about whether the message matches (a
 /// four digit id is already a match), so only the first group is checked,

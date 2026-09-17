@@ -288,15 +288,61 @@ fn record(args: RecordArgs) -> Result<()> {
         &log_user,
     );
 
-    // Git: add + commit + local tag. No push, no forge call.
+    // Git: stage + commit + local tag. No push, no forge call.
+    //
+    // Only what joy wrote (D3.4): its own directory and the version
+    // files `joy release bump` patched. This used to be `git add -A`
+    // followed by a commit of the whole index, so a half finished
+    // `git add -p` of the person's went up inside a "bump to vX"
+    // commit; after the git2 only move no pre-commit hook stands in
+    // the way of that either.
+    let message = format!("bump to {version} [no-item]");
+    // A person ran this command, so the item rule REFUSES here rather
+    // than warning (D3.3). The message carries `[no-item]`, which is
+    // the bypass the rule names, so this passes unless somebody
+    // changes the message without reading the rule.
+    joy_core::commit_msg::validate(&message, acronym).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let paths = joy_owned_paths(&ctx.root);
+    let specs: Vec<&str> = paths.iter().map(String::as_str).collect();
     let git = vcs::default_vcs();
-    git.check_version()?;
-    git.add_all(&ctx.root)?;
-    git.commit(&ctx.root, &format!("bump to {version} [no-item]"))?;
+    git.add(&ctx.root, &specs)?;
+    let (author, email) = joy_core::identity::acting_signature(&ctx.root)?;
+    if joy_core::vcs::forge::commit_index_paths(&ctx.root, &paths, &message, &author, &email)?
+        .is_none()
+    {
+        println!("Nothing of joy's changed since the last commit; no release commit written.");
+    } else if !joy_core::vcs::default_vcs().is_clean(&ctx.root)? {
+        // Said once, because it is a real change from `git add -A`:
+        // what the person had lying around is still lying around.
+        println!(
+            "Other changes in this checkout stay uncommitted; joy commits only what it wrote."
+        );
+    }
     let markdown_notes = releases::render_release_markdown(&release);
     git.tag_annotated(&ctx.root, &version, &markdown_notes)?;
     println!("Tag {version} created locally. Next: `joy release publish`.");
     Ok(())
+}
+
+/// The paths a release commit may touch: joy's own directory, plus the
+/// files `release.version-files` names, which are the ones
+/// `joy release bump` patched. Repository relative, with forward
+/// slashes, the way an index entry spells them.
+fn joy_owned_paths(root: &std::path::Path) -> Vec<String> {
+    let mut paths = vec![store::JOY_DIR.to_string()];
+    for file in read_version_files(root) {
+        for full in version_bump::expand(root, &file.path).unwrap_or_default() {
+            if let Ok(rel) = full.strip_prefix(root) {
+                let rel = rel.to_string_lossy().replace('\\', "/");
+                if !rel.is_empty() {
+                    paths.push(rel);
+                }
+            }
+        }
+    }
+    paths.sort();
+    paths.dedup();
+    paths
 }
 
 fn publish(args: PublishArgs) -> Result<()> {
@@ -307,7 +353,6 @@ fn publish(args: PublishArgs) -> Result<()> {
     let acronym = project.acronym.as_deref().unwrap_or("JOY");
 
     let git = vcs::default_vcs();
-    git.check_version()?;
 
     let version = match args.version {
         Some(v) if v.starts_with('v') => v,
@@ -334,8 +379,14 @@ fn publish(args: PublishArgs) -> Result<()> {
 
     let remote = git.default_remote(&ctx.root)?;
     println!("Pushing to {remote}...");
-    git.push(&ctx.root, &remote)?;
-    git.push_tag(&ctx.root, &remote, &version)?;
+    // The one failure vocabulary of D3.8: a refused push says the
+    // state, the plain sentence and the one next step, in `--json` mode
+    // as the envelope this command's caller reads.
+    let host = crate::contact_report::host_of_checkout(&ctx.root);
+    git.push(&ctx.root, &remote)
+        .map_err(|e| crate::contact_report::Refusal::of(&host, &e).fail())?;
+    git.push_tag(&ctx.root, &remote, &version)
+        .map_err(|e| crate::contact_report::Refusal::of(&host, &e).fail())?;
     println!("Pushed {version} to {remote}.");
 
     let markdown_notes = releases::render_release_markdown(&release);

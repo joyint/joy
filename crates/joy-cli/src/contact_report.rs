@@ -21,7 +21,9 @@
 //!   = detail: <libgit2's own words, the operation, the sources tried>
 //! ```
 //!
-//! `--json` and stdout. A contact that is NOT the command's answer -
+//! `--json` and stdout. A contact that IS the command's answer prints
+//! the envelope the rest of the CLI prints and exits 1
+//! ([`Refusal::fail`]). A contact that is NOT the command's answer -
 //! the chat delivery after a send, which is best effort and never fatal
 //! - may not write to stdout at all in `--json` mode, because stdout
 //! carries exactly one envelope (ADR-036) and a second object there is a
@@ -103,6 +105,28 @@ impl Refusal {
         if let Some(detail) = &self.detail {
             eprintln!("  = detail: {detail}");
         }
+    }
+}
+
+impl Refusal {
+    /// End the command with this refusal, which is what a command whose
+    /// ANSWER is the contact does (`joy release publish`). In `--json`
+    /// mode the envelope goes to stdout and the process exits 1,
+    /// exactly as `joy forge login` does; otherwise the lines become
+    /// the error the CLI prints.
+    pub fn fail(self) -> anyhow::Error {
+        if output::is_json() {
+            let _ = output::emit(&self);
+            std::process::exit(1);
+        }
+        let mut text = format!("{}\n  = note: state {}", self.message, self.state);
+        if let Some(action) = &self.action {
+            text.push_str(&format!("\n  = help: {action}"));
+        }
+        if let Some(detail) = &self.detail {
+            text.push_str(&format!("\n  = detail: {detail}"));
+        }
+        anyhow::anyhow!(text)
     }
 }
 
