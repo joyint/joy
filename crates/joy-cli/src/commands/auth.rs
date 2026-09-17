@@ -1188,17 +1188,32 @@ pub(crate) fn create_delegation_token(
     let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
     let mut project_mut = store::read_project(&project_path)?;
     if new_entry {
-        if let Some(m) = project_mut.member_by_email_mut(operator_email) {
-            m.ai_delegations.insert(
-                ai_member.to_string(),
-                joy_core::model::project::AiDelegationEntry {
-                    delegation_verifier: delegation_keypair.public_key().to_hex(),
-                    delegation_salt: delegation_salt_hex.clone(),
-                    created: chrono::Utc::now(),
-                    rotated: None,
-                },
-            );
-        }
+        // By the operator's at-rest KEY, the one resolved at the top of
+        // this function, and never by their address again. The lookup
+        // here used to be `member_by_email_mut(operator_email)`, which
+        // resolves an ADDRESS through the member map's e-mail matcher. It
+        // found the operator while the acting member was still a git
+        // config address; since identity resolution answers with the
+        // member this device pinned (D3.9, package J11), an anonymous
+        // project hands this function the operator's opaque `m-<hex>` id,
+        // no address matches it, and the `if let` wrote NOTHING. The
+        // token was printed all the same, and redeeming it then failed
+        // with "no delegation registered for <ai> by <operator>": a token
+        // that could never work, from a command that reported success. A
+        // member the map cannot find is an error here now, so the next
+        // shape of this mistake cannot be a silent one.
+        let m = project_mut
+            .member_by_key_mut(&member_key)
+            .ok_or_else(|| anyhow::anyhow!("{member_key} is not a registered project member."))?;
+        m.ai_delegations.insert(
+            ai_member.to_string(),
+            joy_core::model::project::AiDelegationEntry {
+                delegation_verifier: delegation_keypair.public_key().to_hex(),
+                delegation_salt: delegation_salt_hex.clone(),
+                created: chrono::Utc::now(),
+                rotated: None,
+            },
+        );
     }
 
     // F4 (JI-0175-B0): give the AI member its own verify_key so chats wrap

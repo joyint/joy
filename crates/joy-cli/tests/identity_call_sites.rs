@@ -149,6 +149,10 @@ fn text(output: &Output) -> String {
 
 const PASSPHRASE: &str = "correct horse battery staple";
 const SECOND_PASSPHRASE: &str = "second pass phrase entirely";
+/// The address the founder is named by. In an anonymous project it is
+/// the last place it is ever written: from `init` on, the member map
+/// knows the founder by an opaque id alone.
+const FOUNDER: &str = "a@b.c";
 
 /// Found the project and enrol the founder, so the member is known.
 fn found_and_enrol(machine: &Machine) {
@@ -164,6 +168,63 @@ fn found_and_enrol(machine: &Machine) {
     assert!(init.status.success(), "{}", text(&init));
     let auth = machine.joy(&["auth", "init", "--passphrase", PASSPHRASE]);
     assert!(auth.status.success(), "{}", text(&auth));
+}
+
+/// Found the project in anonymous mode (ADR-042). The founder identity is
+/// established by `init` itself, because the very first committed
+/// project.yaml has to be keyed by the opaque id already; there is no
+/// separate `auth init` step afterwards.
+fn found_anonymously(machine: &Machine) {
+    let init = machine.joy(&[
+        "init",
+        "--name",
+        "Ledger",
+        "--acronym",
+        "LG",
+        "--user",
+        FOUNDER,
+        "--anonymous",
+        "--passphrase",
+        PASSPHRASE,
+    ]);
+    assert!(init.status.success(), "{}", text(&init));
+}
+
+/// The `created_by` of the one item in the project, raw as it is stored.
+fn the_actor_of_the_only_item(machine: &Machine) -> String {
+    let items = machine.root.join(".joy").join("items");
+    let mut files: Vec<_> = std::fs::read_dir(&items)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    assert_eq!(files.len(), 1, "one item: {files:?}");
+    let text = std::fs::read_to_string(files.pop().unwrap()).unwrap();
+    text.lines()
+        .find_map(|line| line.strip_prefix("created_by: "))
+        .expect("the item says who created it")
+        .to_string()
+}
+
+/// Whether the address appears in ANY file under `.joy/`, read as bytes
+/// so the encrypted members file is searched like the rest.
+fn joy_dir_mentions(machine: &Machine, needle: &str) -> bool {
+    fn walk(dir: &std::path::Path, needle: &[u8], found: &mut bool) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                walk(&path, needle, found);
+            } else if std::fs::read(&path)
+                .unwrap()
+                .windows(needle.len())
+                .any(|w| w == needle)
+            {
+                *found = true;
+            }
+        }
+    }
+    let mut found = false;
+    walk(&machine.root.join(".joy"), needle.as_bytes(), &mut found);
+    found
 }
 
 /// One command of the script, with what it printed. `label` names the
@@ -973,6 +1034,64 @@ fn a_delegation_session_acts_for_the_operator_where_a_passphrase_is_needed() {
         text(&changed).contains("a@b.c") && !text(&changed).contains("ai:claude@joy"),
         "the operator is the one whose passphrase changed: {}",
         text(&changed)
+    );
+}
+
+/// An anonymous project hands every command the operator's OPAQUE id,
+/// because that is what the member map is keyed by and what the member
+/// pin behind `resolve_identity` holds (D3.9, package J11). Two writes on
+/// the token path were still keyed by ADDRESS, and an address matches no
+/// opaque id, so both quietly wrote nothing:
+///
+///  - `joy auth token add` skipped the `ai_delegations` entry it had just
+///    derived the token from, and printed the token anyway;
+///  - redeeming that token minted a session with no delegating operator
+///    in its claims, which the F2 check refuses on the AI's next command.
+///
+/// The result was an AI that could be registered, delegated and handed a
+/// token, and still not act: the commands that failed all reported
+/// success, and the refusal arrived one step later as a hint on stderr
+/// while the item was quietly written by the HUMAN instead. This is the
+/// whole path, in the mode that breaks it.
+#[test]
+fn an_ai_token_of_an_anonymous_project_redeems_and_the_ai_acts() {
+    let machine = Machine::new();
+    found_anonymously(&machine);
+
+    // Register the AI, issue its token, redeem it. Every step asserts its
+    // own success, so the one that breaks names itself.
+    let session = machine.a_delegation_session("ai:claude@joy");
+
+    // The delegation the token was issued from is written down, under the
+    // operator's own member entry. This is the entry redemption looks for,
+    // and the one that used to be silently skipped here.
+    let project = std::fs::read_to_string(machine.root.join(".joy").join("project.yaml")).unwrap();
+    assert!(
+        project.contains("ai_delegations:") && project.contains("delegation_verifier:"),
+        "the issued delegation is recorded in project.yaml: {project}"
+    );
+
+    // The AI acts. Not "a command succeeds": the item has to be written
+    // BY the AI, for the operator behind it, or the fallback identity has
+    // simply stood in for a session that was refused.
+    let written = machine.joy_with_session(&["add", "task", "Work of an AI"], Some(&session));
+    assert!(written.status.success(), "{}", text(&written));
+    assert!(
+        !text(&written).contains("names no delegating operator"),
+        "the session was refused: {}",
+        text(&written)
+    );
+    let actor = the_actor_of_the_only_item(&machine);
+    assert!(
+        actor.starts_with("ai:claude@joy delegated-by:m-"),
+        "the AI acts for the operator, by opaque id: {actor}"
+    );
+
+    // And the point of the mode is kept: naming the operator at rest
+    // wrote no address anywhere under .joy/.
+    assert!(
+        !joy_dir_mentions(&machine, FOUNDER),
+        "the founder's address must not reach a project file"
     );
 }
 
