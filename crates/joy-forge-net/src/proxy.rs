@@ -12,7 +12,12 @@
 //!   config too, because libgit2 applies it to the environment branch
 //!   only while git applies it always. Entries are trimmed, because
 //!   libgit2 does not trim and `NO_PROXY="a.com, b.com"` silently loses
-//!   `b.com` there.
+//!   `b.com` there. There is ONE such matcher for the whole product
+//!   ([`no_proxy_matches`], JOY-02A3-E4): the engine's
+//!   `joy_core::vcs::proxy::no_proxy_matches` is this function, so an
+//!   excluded host is excluded for a git contact and for a REST call
+//!   by the same rule. It sits here and not in the engine because a
+//!   connector must not link libgit2 (D2.1).
 //! - `ALL_PROXY` / `all_proxy` is read, because libgit2 never reads it
 //!   and git does.
 //!
@@ -80,7 +85,7 @@ pub fn choose(
     let host = crate::url::host_of(url).unwrap_or_default();
     let port = port_of(url);
     if let Some(list) = env.var("NO_PROXY").or_else(|| env.var("no_proxy")) {
-        if no_proxy_matches(&list, &host, port) {
+        if no_proxy_matches(&host, port, &list) {
             return Ok(ProxyChoice::Direct);
         }
     }
@@ -188,52 +193,108 @@ pub fn redact(proxy: &str) -> String {
     }
 }
 
-/// libgit2's NO_PROXY grammar (net.c:1070-1117), plus the trimming
-/// D1.11 adds: comma separated entries, `*` for everything, `*.domain`
-/// and `.domain` for a suffix, `host:port` for one port. No CIDR.
-pub fn no_proxy_matches(list: &str, host: &str, port: Option<u16>) -> bool {
-    for raw in list.split(',') {
-        let entry = raw.trim();
-        if entry.is_empty() {
-            continue;
-        }
-        if entry == "*" {
-            return true;
-        }
-        let (pattern, entry_port) = match entry.rsplit_once(':') {
-            Some((head, tail)) if tail.chars().all(|c| c.is_ascii_digit()) && !tail.is_empty() => {
-                (head, tail.parse::<u16>().ok())
-            }
-            _ => (entry, None),
-        };
-        if let (Some(entry_port), Some(port)) = (entry_port, port) {
-            if entry_port != port {
-                continue;
-            }
-        } else if entry_port.is_some() {
-            continue;
-        }
-        let pattern = pattern.trim().to_ascii_lowercase();
-        let host = host.to_ascii_lowercase();
-        let matched = if let Some(suffix) = pattern.strip_prefix('*') {
-            host.ends_with(suffix)
-        } else if let Some(bare) = pattern.strip_prefix('.') {
-            host.ends_with(&pattern) || host == bare
-        } else {
-            host == pattern
-        };
-        if matched {
-            return true;
-        }
-    }
-    false
+/// THE NO_PROXY matcher (D1.11), and there is one: the engine's
+/// `joy_core::vcs::proxy::no_proxy_matches` is this function, so a host
+/// the person excluded is excluded for a git contact and for a
+/// connector's REST call by the same rule. It lives on this side of the
+/// two because a connector must not link libgit2 (D2.1) while the
+/// engine may depend on the shared network layer.
+///
+/// The grammar is libgit2's (net.c:1070-1117): a comma separated list
+/// of `*`, `*.domain`, `.domain`, `host` and `host:port`, with no CIDR
+/// and no wildcard inside a name. The one difference is deliberate:
+/// every entry is TRIMMED, because libgit2 compares the bytes as they
+/// stand and `NO_PROXY="a.com, b.com"` therefore silently loses
+/// `b.com`, which is the shape a person writes.
+pub fn no_proxy_matches(host: &str, port: u16, list: &str) -> bool {
+    list.split(',')
+        .map(str::trim)
+        .any(|pattern| pattern_matches(host, port, pattern))
 }
 
-fn port_of(url: &str) -> Option<u16> {
-    let rest = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
-    let authority = rest.split(['/', '?']).next()?;
-    let authority = authority.rsplit('@').next()?;
-    authority.rsplit_once(':')?.1.parse().ok()
+fn pattern_matches(host: &str, port: u16, pattern: &str) -> bool {
+    if pattern.is_empty() {
+        return false;
+    }
+    if pattern == "*" {
+        return true;
+    }
+    let (wildcard, rest) = if let Some(rest) = pattern.strip_prefix("*.") {
+        (true, rest)
+    } else if let Some(rest) = pattern.strip_prefix('.') {
+        (true, rest)
+    } else {
+        (false, pattern)
+    };
+    // An IPv6 pattern is written in brackets, and so is the host in a
+    // URL; joy compares the bare addresses.
+    let rest = rest.trim_start_matches('[');
+    let (domain, wanted_port) = match rest.rsplit_once(':') {
+        // `[::1]:8080` splits at the LAST colon, which is the port
+        // separator; a bare IPv6 address has no port and its colons
+        // belong to the address.
+        Some((domain, tail)) if tail.chars().all(|c| c.is_ascii_digit()) && !tail.is_empty() => {
+            match tail.parse::<u16>() {
+                Ok(port) => (domain, Some(port)),
+                // A port no contact can have: libgit2 compares the port
+                // TEXT (net.c:1100-1103), so `acme.example:99999` matches
+                // nothing there. It must not become "this pattern names
+                // no port", which would bypass the proxy for the host on
+                // every port.
+                Err(_) => return false,
+            }
+        }
+        _ => (rest, None),
+    };
+    let domain = domain.trim_end_matches(']');
+    if domain.is_empty() {
+        return false;
+    }
+    // A pattern's port MUST match when it names one (net.c:1100-1103).
+    if let Some(wanted) = wanted_port {
+        if wanted != port {
+            return false;
+        }
+    }
+    let host = host.trim_start_matches('[').trim_end_matches(']');
+    if !wildcard {
+        return host.eq_ignore_ascii_case(domain);
+    }
+    if host.len() < domain.len() {
+        return false;
+    }
+    let suffix = &host[host.len() - domain.len()..];
+    if !suffix.eq_ignore_ascii_case(domain) {
+        return false;
+    }
+    // `*.domain` matches `domain` itself and `foo.domain`, and nothing
+    // that merely ends in those letters (net.c:1109-1116).
+    host.len() == domain.len() || host.as_bytes()[host.len() - domain.len() - 1] == b'.'
+}
+
+/// The port a contact to `url` really opens, which is what a `host:port`
+/// entry of NO_PROXY is compared against: the one the URL names, or the
+/// scheme's own. The engine derives it the same way (D1.11), so
+/// `NO_PROXY="api.acme.example:443"` excludes the host on both sides.
+fn port_of(url: &str) -> u16 {
+    let secure = url
+        .trim_start()
+        .to_ascii_lowercase()
+        .starts_with("https://");
+    let default = if secure { 443 } else { 80 };
+    let Some(rest) = url.split_once("://").map(|(_, rest)| rest) else {
+        return default;
+    };
+    let Some(authority) = rest.split(['/', '?']).next() else {
+        return default;
+    };
+    let Some(authority) = authority.rsplit('@').next() else {
+        return default;
+    };
+    authority
+        .rsplit_once(':')
+        .and_then(|(_, tail)| tail.parse().ok())
+        .unwrap_or(default)
 }
 
 #[cfg(test)]
@@ -307,21 +368,72 @@ mod tests {
 
     #[test]
     fn no_proxy_knows_the_wildcard_the_suffix_and_the_port() {
-        assert!(no_proxy_matches("*", "anything.example", None));
-        assert!(no_proxy_matches("*.example.com", "git.example.com", None));
-        assert!(no_proxy_matches(".example.com", "git.example.com", None));
-        assert!(no_proxy_matches(".example.com", "example.com", None));
-        assert!(!no_proxy_matches("example.com", "git.example.com", None));
+        assert!(no_proxy_matches("anything.example", 443, "*"));
+        assert!(no_proxy_matches("git.example.com", 443, "*.example.com"));
+        // `*.domain` covers the domain itself (net.c:1109-1116), the
+        // reading the engine has always had
+        assert!(no_proxy_matches("example.com", 443, "*.example.com"));
+        assert!(no_proxy_matches("git.example.com", 443, ".example.com"));
+        assert!(no_proxy_matches("example.com", 443, ".example.com"));
+        assert!(!no_proxy_matches("git.example.com", 443, "example.com"));
+        assert!(!no_proxy_matches("notexample.com", 443, "*.example.com"));
+        assert!(no_proxy_matches("GIT.example.com", 443, "git.EXAMPLE.com"));
         assert!(no_proxy_matches(
-            "git.example.com:8443",
             "git.example.com",
-            Some(8443)
+            8443,
+            "git.example.com:8443"
         ));
         assert!(!no_proxy_matches(
-            "git.example.com:8443",
             "git.example.com",
-            Some(443)
+            443,
+            "git.example.com:8443"
         ));
+        // no CIDR, here as in the engine
+        assert!(!no_proxy_matches("10.0.0.7", 443, "10.0.0.0/8"));
+        assert!(no_proxy_matches("10.0.0.7", 443, "10.0.0.7"));
+        assert!(!no_proxy_matches("acme.example", 443, ""));
+        assert!(!no_proxy_matches("acme.example", 443, ",,"));
+    }
+
+    /// The bug JOY-02A3-E4 names: an entry whose port is no port at all
+    /// used to parse as `None`, which read as "this entry names no
+    /// port" and bypassed the proxy for that host on EVERY port. It
+    /// matches nothing now, and the rest of the list still counts.
+    #[test]
+    fn a_port_that_is_not_a_port_never_bypasses_the_proxy() {
+        assert!(!no_proxy_matches("acme.example", 443, "acme.example:99999"));
+        assert!(!no_proxy_matches("acme.example", 99, "acme.example:99999"));
+        assert!(no_proxy_matches("b.com", 443, "acme.example:99999, b.com"));
+
+        let env = Map::new(&[
+            ("https_proxy", "http://proxy.example:3128"),
+            ("NO_PROXY", "acme.example:99999"),
+        ]);
+        assert_eq!(
+            choose("https://acme.example/api", &empty(), &env).unwrap(),
+            ProxyChoice::Proxy("http://proxy.example:3128".into()),
+            "a port no contact can have must not turn the proxy off"
+        );
+    }
+
+    /// A `host:port` entry is compared against the port the contact
+    /// really opens, and an https URL without a port opens 443. The
+    /// engine derives the port the same way, so both sides answer the
+    /// same for the same NO_PROXY.
+    #[test]
+    fn the_schemes_own_port_is_what_an_entrys_port_is_compared_against() {
+        let env = Map::new(&[
+            ("https_proxy", "http://proxy.example:3128"),
+            ("NO_PROXY", "api.acme.example:443"),
+        ]);
+        assert_eq!(
+            choose("https://api.acme.example/v1/user", &empty(), &env).unwrap(),
+            ProxyChoice::Direct
+        );
+        assert_eq!(
+            choose("https://api.acme.example:8443/v1/user", &empty(), &env).unwrap(),
+            ProxyChoice::Proxy("http://proxy.example:3128".into())
+        );
     }
 
     /// A proxy from git config is subject to NO_PROXY too, which is the

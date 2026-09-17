@@ -482,7 +482,14 @@ fn env_proxy(target: &RemoteUrl, env: &Environment) -> Option<String> {
     per_scheme.or_else(|| env.all_proxy.clone())
 }
 
-/// joy's own NO_PROXY evaluation (D1.11).
+/// joy's own NO_PROXY evaluation (D1.11), which is ONE function for the
+/// whole product (JOY-02A3-E4): this is
+/// [`joy_forge_net::proxy::no_proxy_matches`], so a host the person
+/// excluded is excluded for a git contact here and for a connector's
+/// REST call there, by the same rule and with the same answer. The
+/// implementation lives in the shared network layer and not here,
+/// because a connector must not link libgit2 (D2.1) while this crate
+/// may depend on that layer.
 ///
 /// The grammar is libgit2's (net.c:1070-1117): a comma separated list
 /// of `*`, `*.domain`, `.domain`, `host` and `host:port`, with no CIDR
@@ -490,70 +497,9 @@ fn env_proxy(target: &RemoteUrl, env: &Environment) -> Option<String> {
 /// every entry is TRIMMED, because libgit2 compares the bytes as they
 /// stand and `NO_PROXY="a.com, b.com"` therefore silently loses
 /// `b.com`, which is the shape a person writes.
+#[inline]
 pub fn no_proxy_matches(host: &str, port: u16, list: &str) -> bool {
-    list.split(',')
-        .map(str::trim)
-        .any(|pattern| pattern_matches(host, port, pattern))
-}
-
-fn pattern_matches(host: &str, port: u16, pattern: &str) -> bool {
-    if pattern.is_empty() {
-        return false;
-    }
-    if pattern == "*" {
-        return true;
-    }
-    let (wildcard, rest) = if let Some(rest) = pattern.strip_prefix("*.") {
-        (true, rest)
-    } else if let Some(rest) = pattern.strip_prefix('.') {
-        (true, rest)
-    } else {
-        (false, pattern)
-    };
-    // An IPv6 pattern is written in brackets, and so is the host in a
-    // URL; joy compares the bare addresses.
-    let rest = rest.trim_start_matches('[');
-    let (domain, wanted_port) = match rest.rsplit_once(':') {
-        // `[::1]:8080` splits at the LAST colon, which is the port
-        // separator; a bare IPv6 address has no port and its colons
-        // belong to the address.
-        Some((domain, tail)) if tail.chars().all(|c| c.is_ascii_digit()) && !tail.is_empty() => {
-            match tail.parse::<u16>() {
-                Ok(port) => (domain, Some(port)),
-                // A port no contact can have: libgit2 compares the port
-                // TEXT (net.c:1100-1103), so `acme.example:99999` matches
-                // nothing there. It must not become "this pattern names
-                // no port", which would bypass the proxy for the host on
-                // every port.
-                Err(_) => return false,
-            }
-        }
-        _ => (rest, None),
-    };
-    let domain = domain.trim_end_matches(']');
-    if domain.is_empty() {
-        return false;
-    }
-    // A pattern's port MUST match when it names one (net.c:1100-1103).
-    if let Some(wanted) = wanted_port {
-        if wanted != port {
-            return false;
-        }
-    }
-    let host = host.trim_start_matches('[').trim_end_matches(']');
-    if !wildcard {
-        return host.eq_ignore_ascii_case(domain);
-    }
-    if host.len() < domain.len() {
-        return false;
-    }
-    let suffix = &host[host.len() - domain.len()..];
-    if !suffix.eq_ignore_ascii_case(domain) {
-        return false;
-    }
-    // `*.domain` matches `domain` itself and `foo.domain`, and nothing
-    // that merely ends in those letters (net.c:1109-1116).
-    host.len() == domain.len() || host.as_bytes()[host.len() - domain.len() - 1] == b'.'
+    joy_forge_net::proxy::no_proxy_matches(host, port, list)
 }
 
 // ---- the proxy URL -----------------------------------------------------

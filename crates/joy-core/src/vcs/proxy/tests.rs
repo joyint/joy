@@ -107,6 +107,36 @@ fn a_port_that_is_not_a_port_matches_nothing() {
     assert!(no_proxy_matches("acme.example", 443, "acme.example:0443"));
 }
 
+/// One matcher for the whole product (JOY-02A3-E4): the engine's
+/// evaluation IS the connector's, so a NO_PROXY the person wrote cannot
+/// mean one thing to a git contact and another to a REST call. The
+/// corpus is the grammar's corners plus the port that is not a port,
+/// which is where the two had drifted apart.
+#[test]
+fn the_engine_and_the_connector_share_one_matcher() {
+    for (host, port, list) in [
+        ("acme.example", 443u16, "*"),
+        ("acme.example", 443, "*.acme.example"),
+        ("git.acme.example", 443, "*.acme.example"),
+        ("git.acme.example", 443, ".acme.example"),
+        ("notacme.example", 443, "*.acme.example"),
+        ("acme.example", 443, "acme.example:99999"),
+        ("acme.example", 99, "acme.example:99999"),
+        ("b.com", 443, "acme.example:99999, b.com"),
+        ("acme.example", 8443, "acme.example:8443"),
+        ("acme.example", 443, "acme.example:8443"),
+        ("b.com", 443, "a.com, b.com"),
+        ("10.0.0.7", 443, "10.0.0.0/8"),
+        ("acme.example", 443, ",,"),
+    ] {
+        assert_eq!(
+            no_proxy_matches(host, port, list),
+            joy_forge_net::proxy::no_proxy_matches(host, port, list),
+            "{host}:{port} against {list:?}"
+        );
+    }
+}
+
 /// The half libgit2 does not do: `http_proxy_config` never looks at
 /// no_proxy (remote.c:1085-1133), so a proxy from git config was used
 /// for a host the person excluded. joy applies the list to every
