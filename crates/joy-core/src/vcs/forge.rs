@@ -1142,6 +1142,7 @@ fn over_plan<T>(
                 super::contact::forge_name(&plan.host)
             ),
             detail: (!plan.notes.is_empty()).then(|| plan.why()),
+            action: None,
             next_try: None,
         }));
     }
@@ -1335,6 +1336,7 @@ impl PushStatus {
             failure: super::contact::Failure::Error,
             message: format!("{host} refused to update {}", refs.join(", ")),
             detail: Some(rejected.join("; ")),
+            action: None,
             next_try: None,
         }))
     }

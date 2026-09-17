@@ -461,6 +461,18 @@ pub fn set_host_family(host: &str, family: HostFamily) {
         .insert(host.to_ascii_lowercase(), family);
 }
 
+/// Forget every taught family and go back to the guess by host name.
+/// Process state, like [`set_gaps`] and [`set_oracle`]: a host that
+/// re-reads `forges.yaml`, and every test that taught one, puts it back
+/// the way it found it.
+pub fn clear_host_families() {
+    FAMILIES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(HashMap::new)
+        .clear();
+}
+
 /// The forge family behind a host.
 pub fn host_family(host: &str) -> HostFamily {
     let host = host.to_ascii_lowercase();
@@ -505,7 +517,13 @@ pub enum OracleAnswer {
     /// A limit, with the wait `x-ratelimit-reset` or `retry-after` named.
     RateLimited { wait: Option<Duration> },
     /// The login is fine, the organisation has not approved Joy.
-    NeedsOrgApproval,
+    ///
+    /// The `url` is the page the person opens to ask for that approval,
+    /// when the forge named one. D1.8b carries the URL for `needs_sso`
+    /// the same way, and the acceptance of package J4b asks for it here
+    /// as well: a person told "your organisation must approve Joy" and
+    /// not told where cannot act on the sentence.
+    NeedsOrgApproval { url: Option<String> },
     /// The forge refuses, and no waiting helps.
     Denied,
 }
@@ -541,8 +559,10 @@ pub fn set_oracle(oracle: Arc<dyn RateLimitOracle>) {
     *ORACLE.lock().unwrap_or_else(|e| e.into_inner()) = Some(oracle);
 }
 
-#[cfg(test)]
-pub(crate) fn clear_oracle() {
+/// Take the oracle back out, and forget what it answered. The counter
+/// part of [`set_oracle`], for a host that installs one for a while and
+/// for every test that does.
+pub fn clear_oracle() {
     *ORACLE.lock().unwrap_or_else(|e| e.into_inner()) = None;
     ORACLE_ASKED
         .lock()
@@ -649,7 +669,7 @@ pub fn verdict(evidence: &ContactEvidence) -> Verdict {
         guidance: decision
             .guidance
             .or_else(|| failure.guidance().map(str::to_string)),
-        action: None,
+        action: decision.action,
         wait: decision.wait,
         detail: detail_line(failure, evidence),
     }
@@ -711,6 +731,10 @@ struct Decision {
     wait: Option<Duration>,
     sentence: Option<String>,
     guidance: Option<String>,
+    /// The address the one action opens, when the evidence named one
+    /// (D1.8b: the `X-GitHub-SSO` header's URL for `needs_sso`, and the
+    /// oracle's approval page for `needs_org_approval`).
+    action: Option<String>,
 }
 
 /// A state that says everything about itself.
@@ -720,6 +744,7 @@ fn plain(failure: Failure) -> Decision {
         wait: None,
         sentence: None,
         guidance: None,
+        action: None,
     }
 }
 
@@ -873,6 +898,7 @@ fn decide_by_status(ev: &ContactEvidence, family: HostFamily, status: u16) -> De
                 wait: Some(oracle_wait.unwrap_or(STRIKE_LASTS)),
                 sentence: None,
                 guidance: None,
+                action: None,
             }
         }
         403 | 404 if ev.direction == ContactDirection::Push && ev.token_worked_before => {
@@ -888,8 +914,16 @@ fn decide_by_status(ev: &ContactEvidence, family: HostFamily, status: u16) -> De
                         failure: Failure::RateLimited,
                         sentence: None,
                         guidance: None,
+                        action: None,
                     },
-                    Some(OracleAnswer::NeedsOrgApproval) => plain(Failure::NeedsOrgApproval),
+                    // The approval page the forge named IS the
+                    // action of D1.8b: a person told that their
+                    // organisation must approve Joy and not told where
+                    // cannot act on the sentence.
+                    Some(OracleAnswer::NeedsOrgApproval { url }) => Decision {
+                        action: url,
+                        ..plain(Failure::NeedsOrgApproval)
+                    },
                     Some(OracleAnswer::Denied) => plain(Failure::Denied),
                     // no oracle installed, or it could not answer: joy
                     // does not invent a wall it has no evidence for
@@ -907,6 +941,7 @@ fn decide_by_status(ev: &ContactEvidence, family: HostFamily, status: u16) -> De
                         forge_name(&ev.host)
                     )),
                     guidance: None,
+                    action: None,
                 },
                 _ => plain(Failure::Error),
             }
@@ -923,6 +958,7 @@ fn decide_by_status(ev: &ContactEvidence, family: HostFamily, status: u16) -> De
                         ev.host
                     )),
                     guidance: None,
+                    action: None,
                 }
             }
         }
@@ -931,6 +967,7 @@ fn decide_by_status(ev: &ContactEvidence, family: HostFamily, status: u16) -> De
             wait: None,
             sentence: Some(format!("{} is not answering right now", ev.host)),
             guidance: None,
+            action: None,
         },
         _ => plain(Failure::Error),
     }
@@ -974,6 +1011,7 @@ fn proxy_auth(ev: &ContactEvidence, message: &str) -> Decision {
         wait: None,
         sentence,
         guidance,
+        action: None,
     }
 }
 
@@ -1097,6 +1135,13 @@ pub struct ContactError {
     pub message: String,
     /// libgit2's own text and the sources joy tried; never the banner.
     pub detail: Option<String>,
+    /// The address the one action of [`Failure::next_step`] opens, when
+    /// the evidence named one: the `X-GitHub-SSO` header's URL for
+    /// `needs_sso`, and the approval page the oracle named for
+    /// `needs_org_approval` (D1.8b). A surface renders the step as the
+    /// label and opens this; a state whose action needs no address
+    /// carries `None`.
+    pub action: Option<String>,
     pub next_try: Option<SystemTime>,
 }
 
@@ -1137,6 +1182,7 @@ fn error_of(verdict: Verdict) -> anyhow::Error {
         failure: verdict.failure,
         message,
         detail: (!detail.is_empty()).then_some(detail),
+        action: verdict.action,
         next_try: verdict.wait.map(|w| SystemTime::now() + w),
     })
 }
@@ -1194,6 +1240,16 @@ pub fn detail_of(error: &anyhow::Error) -> Option<String> {
     error
         .downcast_ref::<ContactError>()
         .and_then(|c| c.detail.clone())
+}
+
+/// The address behind this failure's one action, when the forge named
+/// one (D1.8b): the sign-on page of `needs_sso`, and the approval page
+/// of `needs_org_approval`. A surface opens it; it is never a secret and
+/// never libgit2's own text.
+pub fn action_of(error: &anyhow::Error) -> Option<String> {
+    error
+        .downcast_ref::<ContactError>()
+        .and_then(|c| c.action.clone())
 }
 
 // ---- the budget, in HTTP requests per second (D1.9) -------------------
@@ -1935,6 +1991,9 @@ pub fn run<T>(
                 failure,
                 message,
                 detail,
+                // the address the classifier already found, carried
+                // through the re-wrap instead of being dropped here
+                action: action_of(&e),
                 next_try,
             }))
         }
@@ -1973,6 +2032,7 @@ pub fn run_poll<T>(
                 failure: Failure::RateLimited,
                 message: anonymous_poll_reason(&host),
                 detail: None,
+                action: None,
                 next_try: Some(next_try),
             }));
         }

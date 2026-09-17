@@ -471,6 +471,12 @@ impl Drop for Machine {
         resolver::set_state_file(None);
         resolver::invalidate_all_facts();
         contact::set_gaps("");
+        // Everything a case taught this process, taken back: libtest
+        // guarantees no order, and a case that ran after one which left
+        // 127.0.0.1 taught as a GitHub host with a fixed oracle would
+        // read another case's forge.
+        contact::clear_host_families();
+        contact::clear_oracle();
         std::env::remove_var("JOY_STUB_ARGV");
         match self.path.take() {
             Some(path) => std::env::set_var("PATH", path),
@@ -478,6 +484,24 @@ impl Drop for Machine {
         }
         let _ = &self.root;
     }
+}
+
+/// Put one readable, unencrypted ssh key into this machine's home, so
+/// the probe of D1.2 trigger (a) finds a candidate and the plan keeps
+/// an ssh leg behind the twin.
+///
+/// The blob is the smallest thing `examine` reads as an openssh-key-v1
+/// file that is not encrypted: the magic, then the cipher name `none`.
+/// Nothing ever hands it to libssh2 in these cases; what is under test
+/// is the SHAPE of the plan, which is decided before any socket.
+fn with_a_readable_key(home: &Path) {
+    let dir = home.join(".ssh");
+    std::fs::create_dir_all(&dir).expect("ssh dir");
+    std::fs::write(
+        dir.join("id_ed25519"),
+        "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmU=\n-----END OPENSSH PRIVATE KEY-----\n",
+    )
+    .expect("write the key");
 }
 
 /// A bare forge with one commit on `refs/heads/main`.
@@ -770,10 +794,13 @@ fn the_states_j5_defined_read_through_a_contact_over_the_twin() {
     assert_eq!(contact::failure_of(&missing), contact::Failure::Error);
 
     // A 403 on a private organisation repository, with the oracle of
-    // D2.10 answering for a GitHub host.
+    // D2.10 answering for a GitHub host - and the approval page it
+    // named, which is what the acceptance sentence asks for.
     contact::set_host_family("127.0.0.1", contact::HostFamily::GitHub);
     contact::set_oracle(Arc::new(FixedOracle(
-        contact::OracleAnswer::NeedsOrgApproval,
+        contact::OracleAnswer::NeedsOrgApproval {
+            url: Some(APPROVAL_PAGE.to_string()),
+        },
     )));
     server.refuse.store(403, Ordering::SeqCst);
     let walled = forge::fetch_ref(
@@ -791,8 +818,78 @@ fn the_states_j5_defined_read_through_a_contact_over_the_twin() {
     assert_eq!(
         contact::Failure::NeedsOrgApproval.next_step(),
         Some("open the approval page"),
-        "the state names the step; the address behind it belongs to the surface"
+        "the state names the step"
     );
+    assert_eq!(
+        contact::action_of(&walled).as_deref(),
+        Some(APPROVAL_PAGE),
+        "and the page that step opens travels with it: {walled}"
+    );
+    drop(machine);
+}
+
+/// The approval page a GitHub organisation's owner acts on. The oracle
+/// reads it off the forge's answer (D2.7c); these cases hand it in.
+const APPROVAL_PAGE: &str = "https://github.com/orgs/acme/policies/applications";
+
+/// must_fix of the J4b review, and the acceptance sentence with it: on a
+/// TWO leg plan the twin's verdict is what the person is told.
+///
+/// The plan here is the one D1.2 rule 3b makes on a machine that still
+/// has an ssh credential: the memory says `ssh-failed`, so the twin goes
+/// first and the configured ssh remote stays behind it. When the twin
+/// answers 403 and the oracle says the organisation has not approved
+/// Joy, that is the answer - not the ssh leg's own refusal, which is
+/// what a run that follows every twin failure would report instead.
+#[test]
+fn a_twin_that_answered_403_is_not_followed_by_the_ssh_leg() {
+    let _serial = lock();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let forge_dir = tmp.path().join("forge.git");
+    let base = forge_repository(&forge_dir);
+    let server = serve(forge_dir.clone(), Answer::Ok);
+    let machine = machine(&server.url("forge.git"), "a-token");
+    with_a_readable_key(&machine.root);
+    // The row of rule 3b, and a machine that HAS something to offer over
+    // ssh: that is what makes the plan two legs long.
+    resolver::remember(
+        "joy-test.invalid",
+        HostMemory::new(TransportState::SshFailed),
+    );
+
+    let checkout = tmp.path().join("checkout");
+    checkout_ahead(
+        &checkout,
+        &forge_dir,
+        "ssh://git@joy-test.invalid/forge.git",
+        base,
+    );
+    // The push establishes what D1.8b needs to tell a 403 that means
+    // "your organisation has not approved Joy" from one that means
+    // anything else: a token that worked on this host before.
+    forge::push(&checkout, &Auth::local(HostKind::Background)).expect("the twin carried the push");
+    assert_eq!(server.pushes.load(Ordering::SeqCst), 1);
+
+    contact::set_host_family("127.0.0.1", contact::HostFamily::GitHub);
+    contact::set_oracle(Arc::new(FixedOracle(
+        contact::OracleAnswer::NeedsOrgApproval {
+            url: Some(APPROVAL_PAGE.to_string()),
+        },
+    )));
+    server.refuse.store(403, Ordering::SeqCst);
+    let walled = forge::fetch_ref(
+        &checkout,
+        &Auth::local(HostKind::Background),
+        "refs/joy/chats",
+        "refs/joy/chats-tracking",
+    )
+    .expect_err("the forge answered 403");
+    assert_eq!(
+        contact::failure_of(&walled),
+        contact::Failure::NeedsOrgApproval,
+        "the twin's verdict, and not the ssh leg's: {walled}"
+    );
+    assert_eq!(contact::action_of(&walled).as_deref(), Some(APPROVAL_PAGE));
     drop(machine);
 }
 
