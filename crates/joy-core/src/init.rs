@@ -419,8 +419,9 @@ fn resolve_founder_email(
 /// alone; without remotes or plugins nothing changes.
 fn refuse_forge_alias(root: &Path, email: &str) -> Result<(), JoyError> {
     let remotes = default_vcs().all_remotes(root).unwrap_or_default();
-    if let Some(spec) = crate::forge_plugins::responsible_plugin(None, root, &remotes) {
-        if crate::forge_plugins::resolve(spec, root, email).is_some() {
+    let ctx = crate::forge_plugins::CallContext::in_project(root);
+    if let Some(spec) = crate::forge_plugins::responsible_plugin(None, &ctx, &remotes) {
+        if crate::forge_plugins::resolve(spec, email, &ctx).is_some() {
             return Err(JoyError::FounderAliasIdentity(email.to_string()));
         }
     }

@@ -78,10 +78,10 @@ pub fn member_key_for_email_or_forge(
     let remotes = crate::vcs::default_vcs()
         .all_remotes(root)
         .unwrap_or_default();
-    let spec = crate::forge_plugins::responsible_plugin(project.forge.as_deref(), root, &remotes)?;
-    let default_facts = crate::forge_plugins::CallerFacts::default();
-    let facts = facts.unwrap_or(&default_facts);
-    let acting = crate::forge_plugins::identity(spec, root, facts)?;
+    let ctx = crate::forge_plugins::CallContext::in_project(root)
+        .with_facts(facts.cloned().unwrap_or_default());
+    let spec = crate::forge_plugins::responsible_plugin(project.forge.as_deref(), &ctx, &remotes)?;
+    let acting = crate::forge_plugins::identity(spec, None, &ctx)?;
     // Direction one: the unresolved address belongs to the ACTOR (their
     // alias in the git config) and the plugin can vouch for their real
     // addresses — try those through the same resolution.
@@ -100,7 +100,7 @@ pub fn member_key_for_email_or_forge(
         .map(|(key, _)| key)
         .filter(|key| !key.starts_with("ai:"))
         .find(|key| {
-            crate::forge_plugins::resolve(spec, root, key).is_some_and(|owner| {
+            crate::forge_plugins::resolve(spec, key, &ctx).is_some_and(|owner| {
                 match (&owner.user_id, &acting.user_id) {
                     // the numeric account id is the strongest join
                     (Some(a), Some(b)) => a == b,

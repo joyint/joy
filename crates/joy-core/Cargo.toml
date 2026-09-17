@@ -85,14 +85,28 @@ terminal_size = { version = "0.4", optional = true }
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# The runner's process group kill is proved by asking whether a
+# grandchild is still alive, which is `kill(pid, 0)` and nothing else.
+[target.'cfg(unix)'.dev-dependencies]
+libc = "0.2"
+
 # Git for Windows writes its install path into its own registry keys
 # (install.iss:157-162), and that is where a credential helper binary
 # lives on Windows. Bindings only, the same crate joy-process already
 # uses there.
+#
+# The job object is the second reason (design D2.3): Windows has no
+# process group joy could signal, so the connector runner puts every
+# child into a job object and ends the job. `Win32_Security` and
+# `Win32_System_Threading` come along because the job object's own
+# signatures name `SECURITY_ATTRIBUTES` and `IO_COUNTERS`.
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_JobObjects",
     "Win32_System_Registry",
+    "Win32_System_Threading",
 ] }
 
 [features]
@@ -126,6 +140,12 @@ forge-net = ["git2/https", "git2/ssh", "git2/vendored-openssl"]
 [dev-dependencies]
 insta = { version = "1.41", features = ["yaml"] }
 tempfile = "3"
+# An integration test sees only the dev-dependencies, so the two crates
+# the connector runner's tests read answers and log lines with are named
+# again here. Same versions as above, so cargo unifies them and nothing
+# extra is compiled.
+serde_json = { workspace = true }
+tracing = "0.1"
 # The credential helper runner takes a `git2::Config`, so the test that
 # proves the J4a acceptance "a credential on a machine with no git on
 # PATH" has to build one. Same version and features as above, so cargo
