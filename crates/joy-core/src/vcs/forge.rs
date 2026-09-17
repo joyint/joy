@@ -117,6 +117,20 @@ pub fn token_user(host: &str, claimed: Option<ForgeKind>) -> &'static str {
         .unwrap_or("oauth2")
 }
 
+/// Whether the libgit2 this build links can reach an https or ssh
+/// remote at all (D3.1).
+///
+/// The `forge-net` feature is what compiles the two transports in, and
+/// a build without it answers every contact with "unsupported URL
+/// protocol", which is a fault of the BUILD and not of the person's
+/// network, credential or host. Callers use it to say that once, in
+/// plain words, instead of letting the classifier read a packaging
+/// mistake as `error`.
+pub fn transports_available() -> bool {
+    let version = git2::Version::get();
+    version.https() && version.ssh()
+}
+
 /// How this checkout talks to its forge.
 ///
 /// The platform authenticates with the account's OAuth token; the

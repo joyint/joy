@@ -27,7 +27,17 @@ joy-process = { workspace = true }
 # types at, so it carries `login`, `logout` and the token paste. The
 # platform asks for `forge-net` alone and must never see this feature,
 # which `just guard-interactive` checks.
-joy-core = { version = "0.20.0", path = "../joy-core", features = ["tutorial", "interactive"] }
+#
+# `forge-net` is the packaging fact of D3.1. Until now only the desktop
+# asked for it, and the CLI reached a forge by spawning the git binary.
+# With the git2 only move (D3.2) every CLI contact - the chat ref
+# transfer, the release push, the tag push - travels through libgit2, and
+# without the https and ssh transports compiled in libgit2 answers each
+# of them with "unsupported URL protocol", which the classifier reads as
+# `error` and no person can act on. The cost is stated rather than
+# hidden: on unix this pulls vendored OpenSSL into every CLI build and
+# into `cargo install joy-cli`.
+joy-core = { version = "0.20.0", path = "../joy-core", features = ["tutorial", "interactive", "forge-net"] }
 # The forge connectors, linked as LIBRARIES into the `joy-forge` bin
 # above. `joy` itself never calls them: nothing in its call graph
 # references these crates, so the linker drops them from that binary.
