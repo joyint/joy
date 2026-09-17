@@ -130,11 +130,15 @@ fn init_without_an_identity_and_without_a_person_refuses_by_name() {
 
 /// A `JOY_SESSION` that names no live session is no delegation: the host
 /// is what it was without it, here a background one, and it refuses with
-/// the same sentence. The delegated branch itself (a live session on a
-/// terminal, which must beat the terminal) is proven in joy-core's
-/// `delegated_host` test, where a real session can be minted.
+/// the same sentence rather than tripping over the value.
+///
+/// This case proves exactly that and no more: with a pipe for a terminal
+/// the refusal would have come anyway. The acceptance criterion about a
+/// delegated host ("the same command under JOY_SESSION refuses with the
+/// named sentence") needs a terminal to mean anything, and it is covered
+/// in `founder_terminal.rs`, where joy gets one and a real session.
 #[test]
-fn init_with_a_session_value_that_names_nothing_refuses_by_name() {
+fn init_with_a_stale_session_value_refuses_like_a_background_host() {
     let (_dir, root, home) = machine();
     let init = joy_process::command(env!("CARGO_BIN_EXE_joy"))
         .args(["init", "--name", "Delegated"])

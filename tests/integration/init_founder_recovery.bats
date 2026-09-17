@@ -25,14 +25,24 @@ load setup
     [ ! -d .joy ]
 }
 
-@test "joy init under a delegation session refuses by name" {
-    git config --unset user.email
-    git config --unset user.name || true
+@test "joy init under a live delegation session refuses by name" {
+    # A REAL session, not a leftover value: setup_ai_session mints one the
+    # way an agent gets it. bats gives joy no terminal, so the terminal
+    # beating part of the rule is proven in the pty cases of joy-cli's
+    # founder_terminal.rs; what this case adds is that the whole chain
+    # (a live session, a fresh checkout, no git identity) refuses by name.
+    setup_human_auth
+    setup_ai_session ai:test@joy
 
-    JOY_SESSION="sid:0000" run joy init --name "Delegated"
+    mkdir -p "$TEST_DIR/delegated"
+    cd "$TEST_DIR/delegated"
+    git init --quiet
+
+    run joy init --name "Delegated"
     [ "$status" -ne 0 ]
     [[ "$output" == *"this project does not know who you are; run joy init --user <address>"* ]]
     [ ! -d .joy ]
+    cd "$TEST_DIR"
 }
 
 @test "joy init succeeds once a git identity is set (the documented recovery)" {
