@@ -103,6 +103,27 @@ pub enum JoyError {
     #[error("authentication failed: {0}")]
     AuthFailed(String),
 
+    /// An anonymous project could not name the member who just proved
+    /// their identity (ADR-042). The member map keys them by an opaque
+    /// id, and the address behind it lives only in the encrypted
+    /// `members.yaml`: without that file there is nothing to check the
+    /// attestation against, because an attestation never signs the id,
+    /// and nothing to tell the person they authenticated AS.
+    ///
+    /// Said out loud rather than answered with the id. Falling back to
+    /// the id produces an attestation check that fails with "the entry
+    /// appears to have been tampered with", which points a person at
+    /// their own entry when the truth is a missing file.
+    #[error(
+        "this project cannot name the member {0}: its encrypted members.yaml \
+         could not be opened.\n\
+         Anonymous mode keeps every address there, and that address is what \
+         an attestation signs and what a login tells you. Check that \
+         .joy/members.yaml is present and current (git pull), or ask a \
+         manage member to re-add you."
+    )]
+    AnonymousMemberUnnamed(String),
+
     #[error("crypto error: {0}")]
     Crypto(joy_crypt::Error),
 

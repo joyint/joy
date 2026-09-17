@@ -106,6 +106,38 @@ impl Machine {
         }
     }
 
+    /// Invite `email` and redeem the invitation as them: the real
+    /// two-sided flow, ending with `email` enrolled, holding
+    /// [`SECOND_PASSPHRASE`], and pinned as the member this device acts
+    /// as. Returns the redemption's output.
+    fn a_second_enrolled_member(&self, email: &str) -> Output {
+        let invited = self.joy(&[
+            "project",
+            "member",
+            "add",
+            email,
+            "--capabilities",
+            "all",
+            "--passphrase",
+            PASSPHRASE,
+        ]);
+        assert!(invited.status.success(), "{}", text(&invited));
+        let otp = text(&invited)
+            .split_whitespace()
+            .find(|word| is_a_one_time_password(word))
+            .expect("the invitation prints a one-time password")
+            .to_string();
+        self.joy(&[
+            "auth",
+            "--otp",
+            &otp,
+            "--user",
+            email,
+            "--passphrase",
+            SECOND_PASSPHRASE,
+        ])
+    }
+
     /// Register an AI member with full rights, issue a delegation token
     /// for it and redeem it. Returns the `JOY_SESSION` value.
     fn a_delegation_session(&self, ai: &str) -> String {
@@ -149,6 +181,10 @@ fn text(output: &Output) -> String {
 
 const PASSPHRASE: &str = "correct horse battery staple";
 const SECOND_PASSPHRASE: &str = "second pass phrase entirely";
+/// The address the founder is named by. In an anonymous project it is
+/// the last place it is ever written: from `init` on, the member map
+/// knows the founder by an opaque id alone.
+const FOUNDER: &str = "a@b.c";
 
 /// Found the project and enrol the founder, so the member is known.
 fn found_and_enrol(machine: &Machine) {
@@ -164,6 +200,63 @@ fn found_and_enrol(machine: &Machine) {
     assert!(init.status.success(), "{}", text(&init));
     let auth = machine.joy(&["auth", "init", "--passphrase", PASSPHRASE]);
     assert!(auth.status.success(), "{}", text(&auth));
+}
+
+/// Found the project in anonymous mode (ADR-042). The founder identity is
+/// established by `init` itself, because the very first committed
+/// project.yaml has to be keyed by the opaque id already; there is no
+/// separate `auth init` step afterwards.
+fn found_anonymously(machine: &Machine) {
+    let init = machine.joy(&[
+        "init",
+        "--name",
+        "Ledger",
+        "--acronym",
+        "LG",
+        "--user",
+        FOUNDER,
+        "--anonymous",
+        "--passphrase",
+        PASSPHRASE,
+    ]);
+    assert!(init.status.success(), "{}", text(&init));
+}
+
+/// The `created_by` of the one item in the project, raw as it is stored.
+fn the_actor_of_the_only_item(machine: &Machine) -> String {
+    let items = machine.root.join(".joy").join("items");
+    let mut files: Vec<_> = std::fs::read_dir(&items)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    assert_eq!(files.len(), 1, "one item: {files:?}");
+    let text = std::fs::read_to_string(files.pop().unwrap()).unwrap();
+    text.lines()
+        .find_map(|line| line.strip_prefix("created_by: "))
+        .expect("the item says who created it")
+        .to_string()
+}
+
+/// Whether the address appears in ANY file under `.joy/`, read as bytes
+/// so the encrypted members file is searched like the rest.
+fn joy_dir_mentions(machine: &Machine, needle: &str) -> bool {
+    fn walk(dir: &std::path::Path, needle: &[u8], found: &mut bool) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                walk(&path, needle, found);
+            } else if std::fs::read(&path)
+                .unwrap()
+                .windows(needle.len())
+                .any(|w| w == needle)
+            {
+                *found = true;
+            }
+        }
+    }
+    let mut found = false;
+    walk(&machine.root.join(".joy"), needle.as_bytes(), &mut found);
+    found
 }
 
 /// One command of the script, with what it printed. `label` names the
@@ -973,6 +1066,269 @@ fn a_delegation_session_acts_for_the_operator_where_a_passphrase_is_needed() {
         text(&changed).contains("a@b.c") && !text(&changed).contains("ai:claude@joy"),
         "the operator is the one whose passphrase changed: {}",
         text(&changed)
+    );
+}
+
+/// An anonymous project hands every command the operator's OPAQUE id,
+/// because that is what the member map is keyed by and what the member
+/// pin behind `resolve_identity` holds (D3.9, package J11). Two writes on
+/// the token path were still keyed by ADDRESS, and an address matches no
+/// opaque id, so both quietly wrote nothing:
+///
+///  - `joy auth token add` skipped the `ai_delegations` entry it had just
+///    derived the token from, and printed the token anyway;
+///  - redeeming that token minted a session with no delegating operator
+///    in its claims, which the F2 check refuses on the AI's next command.
+///
+/// The result was an AI that could be registered, delegated and handed a
+/// token, and still not act: the commands that failed all reported
+/// success, and the refusal arrived one step later as a hint on stderr
+/// while the item was quietly written by the HUMAN instead. This is the
+/// whole path, in the mode that breaks it.
+#[test]
+fn an_ai_token_of_an_anonymous_project_redeems_and_the_ai_acts() {
+    let machine = Machine::new();
+    found_anonymously(&machine);
+
+    // Register the AI, issue its token, redeem it. Every step asserts its
+    // own success, so the one that breaks names itself.
+    let session = machine.a_delegation_session("ai:claude@joy");
+
+    // The delegation the token was issued from is written down, under the
+    // operator's own member entry. This is the entry redemption looks for,
+    // and the one that used to be silently skipped here.
+    let project = std::fs::read_to_string(machine.root.join(".joy").join("project.yaml")).unwrap();
+    assert!(
+        project.contains("ai_delegations:") && project.contains("delegation_verifier:"),
+        "the issued delegation is recorded in project.yaml: {project}"
+    );
+
+    // The AI acts. Not "a command succeeds": the item has to be written
+    // BY the AI, for the operator behind it, or the fallback identity has
+    // simply stood in for a session that was refused.
+    let written = machine.joy_with_session(&["add", "task", "Work of an AI"], Some(&session));
+    assert!(written.status.success(), "{}", text(&written));
+    assert!(
+        !text(&written).contains("names no delegating operator"),
+        "the session was refused: {}",
+        text(&written)
+    );
+    let actor = the_actor_of_the_only_item(&machine);
+    assert!(
+        actor.starts_with("ai:claude@joy delegated-by:m-"),
+        "the AI acts for the operator, by opaque id: {actor}"
+    );
+
+    // And the point of the mode is kept: naming the operator at rest
+    // wrote no address anywhere under .joy/.
+    assert!(
+        !joy_dir_mentions(&machine, FOUNDER),
+        "the founder's address must not reach a project file"
+    );
+}
+
+/// A delegation token names its operator by their at-rest member key, in
+/// both spellings the issuing command accepts.
+///
+/// `joy auth token add` takes the operator from `identity::acting_member`,
+/// which hands back whatever it was given: the member this device pinned,
+/// which in an anonymous project is the opaque id, or the raw string of a
+/// `--user` flag, which is an address a person typed. The token used to
+/// carry that string as its `delegated_by` claim, so the SAME operator of
+/// the SAME project was written into the token two different ways, and
+/// one of them was a cleartext address inside a credential that is then
+/// pasted into chats, CI variables and agent configuration. The claim is
+/// resolved once, at issuance, so neither end has to accept two forms and
+/// the address never leaves the project.
+#[test]
+fn a_token_names_its_operator_by_key_however_the_operator_was_named() {
+    let machine = Machine::new();
+    found_anonymously(&machine);
+
+    let add = machine.joy(&[
+        "project",
+        "member",
+        "add",
+        "ai:claude@joy",
+        "--capabilities",
+        "all",
+        "--passphrase",
+        PASSPHRASE,
+    ]);
+    assert!(add.status.success(), "{}", text(&add));
+
+    // Named by address, which is the spelling that used to reach the
+    // claim unresolved.
+    let issued = machine.joy(&[
+        "auth",
+        "token",
+        "add",
+        "ai:claude@joy",
+        "--user",
+        FOUNDER,
+        "--passphrase",
+        PASSPHRASE,
+        "--json",
+    ]);
+    assert!(issued.status.success(), "{}", text(&issued));
+    let token = json_string(&text(&issued), "token");
+
+    let claims = joy_core::auth::token::decode_token(&token)
+        .expect("the token decodes")
+        .claims;
+    assert!(
+        claims.delegated_by.starts_with("m-"),
+        "the operator is claimed by opaque id: {}",
+        claims.delegated_by
+    );
+    assert!(
+        !token.contains(FOUNDER) && !claims.delegated_by.contains(FOUNDER),
+        "no address rides in the token: {token}"
+    );
+
+    // And the token still works: the key form is what redemption and the
+    // F2 check read, and the AI acts for the operator behind it.
+    let redeemed = machine.joy(&["auth", "--token", &token, "--json"]);
+    assert!(redeemed.status.success(), "{}", text(&redeemed));
+    let session = json_string(&text(&redeemed), "session_env");
+    let written = machine.joy_with_session(&["add", "task", "Work of an AI"], Some(&session));
+    assert!(written.status.success(), "{}", text(&written));
+    let actor = the_actor_of_the_only_item(&machine);
+    assert_eq!(
+        actor,
+        format!("ai:claude@joy delegated-by:{}", claims.delegated_by),
+        "the item names the operator by the very id the token claimed"
+    );
+    assert!(
+        !joy_dir_mentions(&machine, FOUNDER),
+        "the founder's address must not reach a project file"
+    );
+}
+
+/// D3.9 promises a person that naming themselves once settles it: this
+/// device remembers the member, and every later command knows them. In an
+/// ANONYMOUS project what the device remembers is the opaque `m-<hex>`
+/// id, because that is the member map's key (ADR-042), and three things
+/// on the login path still wanted an address where the pin hands them an
+/// id:
+///
+///  - the attestation check, which compares against the identifier the
+///    attestation SIGNED, and an attestation never signs an opaque id;
+///  - the re-lock of files left unlocked, which looked its member up by
+///    address and so found nobody and re-locked nothing;
+///  - the line the person reads, which printed the opaque id at them.
+///
+/// The first one locked every returning member of a multi-member
+/// anonymous project out of their own project, with a message saying
+/// their entry looked tampered with, until they typed `--user <address>`
+/// again. That is the opposite of what the pin is for.
+#[test]
+fn an_anonymous_project_knows_its_members_from_the_pin_alone() {
+    let machine = Machine::new();
+    found_and_enrol(&machine);
+    let second = machine.a_second_enrolled_member("b@c.d");
+    assert!(second.status.success(), "{}", text(&second));
+
+    // The second member's enrolment reverse-attested the founder, so
+    // from here on both members carry an attestation over their address.
+    let anonymous = machine.joy(&[
+        "project",
+        "set",
+        "privacy",
+        "anonymous",
+        "--passphrase",
+        SECOND_PASSPHRASE,
+    ]);
+    assert!(anonymous.status.success(), "{}", text(&anonymous));
+
+    // b@c.d is the member this device pinned, and is the one the plain
+    // `joy auth` speaks for: no address is typed anywhere below.
+    let returning = machine.joy(&["auth", "--passphrase", SECOND_PASSPHRASE]);
+    assert!(
+        returning.status.success(),
+        "a pinned member of an anonymous project authenticates: {}",
+        text(&returning)
+    );
+    // And is told who they are in words, not as the project's own id.
+    assert!(
+        text(&returning).contains("Authenticated as b@c.d"),
+        "{}",
+        text(&returning)
+    );
+    assert!(
+        !text(&returning).contains("Authenticated as m-"),
+        "an opaque id is never what a person is shown (ADR-042): {}",
+        text(&returning)
+    );
+
+    // The founder, named once, is then equally known from the pin alone.
+    let named = machine.joy(&["auth", "--user", "a@b.c", "--passphrase", PASSPHRASE]);
+    assert!(named.status.success(), "{}", text(&named));
+    let again = machine.joy(&["auth", "--passphrase", PASSPHRASE]);
+    assert!(again.status.success(), "{}", text(&again));
+    assert!(
+        text(&again).contains("Authenticated as a@b.c"),
+        "{}",
+        text(&again)
+    );
+}
+
+/// And when members.yaml is the thing that is missing, the login says
+/// THAT, instead of quietly going on with the opaque id.
+///
+/// An anonymous project keeps every address in the encrypted
+/// members.yaml, and the login reads its own address out of it: that
+/// address is what the attestation signed and what the person is told
+/// they authenticated as. If the file cannot be opened there is no
+/// honest answer, and the identifier the caller came in holding is the
+/// opaque id in exactly this case. Handing that to the attestation check
+/// produced "the entry appears to have been tampered with", which points
+/// a person at their own member entry when the truth is a file they can
+/// git pull; with no attestation to check it produced "Authenticated as
+/// m-...", which is the line ADR-042 exists to prevent.
+#[test]
+fn a_login_says_when_an_anonymous_project_cannot_name_its_member() {
+    let machine = Machine::new();
+    found_and_enrol(&machine);
+    let second = machine.a_second_enrolled_member("b@c.d");
+    assert!(second.status.success(), "{}", text(&second));
+    let anonymous = machine.joy(&[
+        "project",
+        "set",
+        "privacy",
+        "anonymous",
+        "--passphrase",
+        SECOND_PASSPHRASE,
+    ]);
+    assert!(anonymous.status.success(), "{}", text(&anonymous));
+
+    // A checkout that has the project file but not the members file: the
+    // shape of a stale pull, or of a member whose access was never
+    // wrapped.
+    std::fs::remove_file(machine.root.join(".joy").join("members.yaml")).unwrap();
+
+    let returning = machine.joy(&["auth", "--passphrase", SECOND_PASSPHRASE]);
+    assert!(
+        !returning.status.success(),
+        "a login that cannot name its member does not succeed: {}",
+        text(&returning)
+    );
+    assert!(
+        text(&returning).contains("cannot name the member")
+            && text(&returning).contains("members.yaml"),
+        "the refusal names the member it cannot place and the file that \
+         would have placed them: {}",
+        text(&returning)
+    );
+    assert!(
+        !text(&returning).contains("tampered"),
+        "the member's own entry is not what is wrong: {}",
+        text(&returning)
+    );
+    assert!(
+        !text(&returning).contains("Authenticated as"),
+        "nobody is told they authenticated: {}",
+        text(&returning)
     );
 }
 

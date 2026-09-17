@@ -31,9 +31,12 @@ pub struct RedeemedSession {
     pub session_env: String,
     /// The AI member the session acts as.
     pub member: String,
-    /// The delegating operator's e-mail, from the token claims (for
-    /// display and audit; resolve to an at-rest key before writing it into
-    /// a repo).
+    /// The delegating operator as the token claims name them: their
+    /// at-rest member key for every token joy issues now, or a cleartext
+    /// address for one issued before that was resolved at issuance. For
+    /// display and audit; put it through
+    /// [`crate::privacy::delegated_by_at_rest`] before writing it into a
+    /// repo, which answers with the key for either form.
     pub delegated_by: String,
 }
 

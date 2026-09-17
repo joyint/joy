@@ -59,9 +59,9 @@ load setup
     # Edit as a different identity.
     DEV_OTP=$(joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE" | extract_otp)
     setup_member_auth "dev@example.com" "$DEV_PASSPHRASE"
-    git config user.email "dev@example.com"
+    act_as dev@example.com "$DEV_PASSPHRASE"
     joy comment edit "$id" 1 "edited body" >/dev/null
-    git config user.email "test@example.com"
+    act_as_founder
 
     run joy show "$id"
     [ "$status" -eq 0 ]

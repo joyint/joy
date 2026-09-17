@@ -69,13 +69,21 @@ load setup
     ! grep -q "test@example.com" .joy/project.yaml
 }
 
-@test "joy ai init fails clearly when caller is not a project member" {
+@test "joy ai init fails clearly when nobody on this machine has said who acts" {
     joy init --name "Test Project" 2>/dev/null
-    # Switch git identity to someone who has never been added to the project.
-    git config user.email "stranger@example.com"
+    # This case used to point git config at a stranger. Since package J11
+    # that says nothing about who acts (D3.9), and a stranger cannot
+    # claim a member at all: what is left is the machine that answers
+    # nobody, which is a fresh clone or a second one. `joy ai init` takes
+    # no `--user`, so it cannot be told here either; it has to refuse,
+    # and the refusal has to say how to settle it.
+    forget_this_device
     PATH_OVERRIDE="$(dirname "$JOY_BIN"):/usr/bin:/bin"
     run env PATH="$PATH_OVERRIDE" joy ai init --passphrase "$TEST_PASSPHRASE" </dev/null
     [ "$status" -ne 0 ]
-    [[ "$output" == *"stranger@example.com"* ]]
-    [[ "$output" == *"not a registered project member"* ]]
+    [[ "$output" == *"does not know who you are"* ]]
+    [[ "$output" == *"joy auth --user <address>"* ]]
+    # And it refused BEFORE registering anything: no AI member was
+    # written by a command that could not name its attester.
+    ! grep -q "ai:" .joy/project.yaml
 }

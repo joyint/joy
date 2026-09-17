@@ -28,11 +28,12 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 
 @test "joy auth init rejects unregistered member" {
     joy init --name "Auth Test"
-    git config user.email stranger@example.com
-    run joy auth init --passphrase "$TEST_PASSPHRASE"
+    # Naming yourself is how a person says who they are since package
+    # J11; git config is only what joy OFFERS them (D3.9). A stranger who
+    # names themselves is told the project does not know them.
+    run joy auth init --user stranger@example.com --passphrase "$TEST_PASSPHRASE"
     [ "$status" -ne 0 ]
     [[ "$output" == *"not a registered project member"* ]]
-    git config user.email test@example.com
 }
 
 @test "joy auth init rejects double initialization" {
@@ -169,25 +170,22 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
     DEV_OTP=$(joy project member add dev@example.com --capabilities "implement,create" --passphrase "$TEST_PASSPHRASE" | extract_otp)
-    # Dev cannot reset others (no manage capability)
-    git config user.email dev@example.com
-    joy auth --otp "$DEV_OTP" --passphrase "alpha bravo charlie delta echo foxtrot"
+    # Dev cannot reset others (no manage capability). Redeeming the
+    # invitation enrols dev and pins them as the member acting here.
+    joy auth --otp "$DEV_OTP" --user dev@example.com --passphrase "alpha bravo charlie delta echo foxtrot"
     run joy auth reset test@example.com --passphrase "alpha bravo charlie delta echo foxtrot"
     [ "$status" -ne 0 ]
     [[ "$output" == *"manage"* ]]
-    git config user.email test@example.com
 }
 
 @test "joy auth reset other member as manage user" {
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
     DEV_OTP=$(joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE" | extract_otp)
-    # Dev redeems their invitation
-    git config user.email dev@example.com
-    joy auth --otp "$DEV_OTP" --passphrase "alpha bravo charlie delta echo foxtrot"
-    git config user.email test@example.com
-    # Re-authenticate as lead (dev's redemption overwrote the session)
-    joy auth --passphrase "$TEST_PASSPHRASE"
+    # Dev redeems their invitation, which pins dev on this device.
+    joy auth --otp "$DEV_OTP" --user dev@example.com --passphrase "alpha bravo charlie delta echo foxtrot"
+    # Back to the lead, who has to be named because dev is pinned here.
+    act_as_founder
     # Lead (manage user) resets dev
     run joy auth reset dev@example.com --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
@@ -363,16 +361,19 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
     DEV_OTP=$(joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE" | extract_otp)
-    # Dev redeems their invitation
-    git config user.email dev@example.com
-    joy auth --otp "$DEV_OTP" --passphrase "alpha bravo charlie delta echo foxtrot"
-    # Both should have active sessions
+    # Dev redeems their invitation, which opens dev's session and pins
+    # dev as the member acting here.
+    joy auth --otp "$DEV_OTP" --user dev@example.com --passphrase "alpha bravo charlie delta echo foxtrot"
     run joy auth status
     [ "$status" -eq 0 ]
     [[ "$output" == *"dev@example.com"* ]]
     [[ "$output" == *"Expires:"* ]]
-    # Switch back to lead
-    git config user.email test@example.com
+    # Both sessions are live at once: dev's redemption opened a slot of
+    # its own and left the lead's alone. `joy auth status` reports only
+    # whoever is acting, so the store is where two of them are visible.
+    [ "$(ls "$XDG_STATE_HOME"/joy/sessions/*.json | wc -l)" -eq 2 ]
+    # Switch back to the lead, who is reported with a live session too.
+    act_as_founder
     run joy auth status
     [ "$status" -eq 0 ]
     [[ "$output" == *"test@example.com"* ]]
@@ -383,14 +384,16 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
     DEV_OTP=$(joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE" | extract_otp)
-    git config user.email dev@example.com
-    joy auth --otp "$DEV_OTP" --passphrase "alpha bravo charlie delta echo foxtrot"
+    joy auth --otp "$DEV_OTP" --user dev@example.com --passphrase "alpha bravo charlie delta echo foxtrot"
+    [ "$(ls "$XDG_STATE_HOME"/joy/sessions/*.json | wc -l)" -eq 2 ]
     # Dev deauths
     joy deauth
     run joy auth status
-    [[ "$output" == *"No active session"* ]]
-    # Lead still has session
-    git config user.email test@example.com
+    [[ "$output" == *"No active session for dev@example.com"* ]]
+    # Exactly one session was removed, dev's own: the lead's is still
+    # there, and still reports as live when the lead acts.
+    [ "$(ls "$XDG_STATE_HOME"/joy/sessions/*.json | wc -l)" -eq 1 ]
+    act_as_founder
     run joy auth status
     [[ "$output" == *"test@example.com"* ]]
     [[ "$output" == *"Expires:"* ]]
@@ -559,8 +562,7 @@ YAML
     joy auth init --passphrase "$TEST_PASSPHRASE"
     OTP=$(joy project member add alice@example.com --passphrase "$TEST_PASSPHRASE" \
         | sed -n 's/^[[:space:]]*One-time password:[[:space:]]*\([A-Za-z0-9-]*\).*$/\1/p' | head -1)
-    git config user.email alice@example.com
-    joy auth --otp "$OTP" --passphrase "alpha bravo charlie delta echo foxtrot"
+    joy auth --otp "$OTP" --user alice@example.com --passphrase "alpha bravo charlie delta echo foxtrot"
 
     # alice's capability block is now multi-line (defaults exclude
     # manage/delete, so nine capability keys each render on their own
@@ -839,10 +841,10 @@ YAML
     [ -n "$OTP" ]
 
     # Bob redeems the OTP so he has a verify_key registered for ECDH.
-    git config user.email bob@example.com
-    joy auth --otp "$OTP" --passphrase "alpha bravo charlie delta echo foxtrot" \
+    joy auth --otp "$OTP" --user bob@example.com --passphrase "alpha bravo charlie delta echo foxtrot" \
         | grep -q "Authentication initialized"
-    git config user.email test@example.com
+    # Back to the founder, whom bob's redemption un-pinned here.
+    act_as_founder >/dev/null
 
     # Founder seeds the default zone via a real path, then grants Bob.
     mkdir -p secret

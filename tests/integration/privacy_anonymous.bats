@@ -154,12 +154,11 @@ _emails_present() { grep -rlq "$TEST_EMAIL" .joy/; }
     [ "$status" -eq 0 ]
     [[ "$output" == *"Authenticated as test@example.com"* ]]
 
-    # The co-member authenticates too.
-    git config user.email "dev@example.com"
-    run joy auth --passphrase "$DEV_PASSPHRASE"
+    # The co-member authenticates too. They name themselves by address,
+    # and the anonymous member map matches it back to their opaque id.
+    run joy auth --user dev@example.com --passphrase "$DEV_PASSPHRASE"
     [ "$status" -eq 0 ]
     [[ "$output" == *"Authenticated as dev@example.com"* ]]
-    git config user.email "test@example.com"
 
     # No member e-mail leaked into project.yaml.
     run grep -cE 'test@example|dev@example' .joy/project.yaml

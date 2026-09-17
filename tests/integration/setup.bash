@@ -16,12 +16,18 @@ export PATH="$(dirname "$JOY_BIN"):$PATH"
 
 TEST_PASSPHRASE="correct horse battery staple extra words"
 
+# The address every project here is founded by. `setup` writes it into
+# the sandbox git config, which is where `joy init` OFFERS it (D3.9 keeps
+# git config as a prefill and nothing more), and `act_as_founder` names
+# it when a test has to come back from acting as somebody else.
+FOUNDER_EMAIL="test@example.com"
+
 # Create a temporary project directory for each test
 setup() {
     TEST_DIR="$(mktemp -d)"
     cd "$TEST_DIR" || exit 1
     git init --quiet
-    git config user.email "test@example.com"
+    git config user.email "$FOUNDER_EMAIL"
     git config user.name "Test User"
     # Isolate per-user state between tests. axoupdater reads its
     # install receipt from ~/.config/<pkg>/ (hard-coded relative to
@@ -76,6 +82,34 @@ extract_otp() {
     grep -oE '[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}' | head -1
 }
 
+# Act as `member` from here on: authenticate as them, which opens their
+# session AND pins them as the member this device acts as (D3.9).
+#
+# This is how a test says who is working now. It used to be `git config
+# user.email <member>`, and since package J11 that changes nothing at
+# all: no joy command decides an identity from git config any more, so a
+# test that switched that way went on acting as whoever was
+# authenticated last. Naming the member is the only way left, and it is
+# also the way a person does it.
+act_as() {
+    local member="$1"
+    local passphrase="$2"
+    joy auth --user "$member" --passphrase "$passphrase"
+}
+
+# Back to the member the project was founded by.
+act_as_founder() {
+    act_as "$FOUNDER_EMAIL" "$TEST_PASSPHRASE"
+}
+
+# A fresh clone, or a second machine: the project travels in the
+# repository, this device's own state does not. Both the sessions and the
+# member pin live in it, so afterwards nothing on this machine says who
+# acts here.
+forget_this_device() {
+    rm -rf "$XDG_STATE_HOME/joy"
+}
+
 # Enrol another member (e.g. dev@example.com) by redeeming their invitation,
 # the real flow: a manage member adds them (emitting an OTP), the invitee
 # proves it. Setting a fresh identity WITHOUT the OTP is refused (an invited
@@ -85,14 +119,11 @@ setup_member_auth() {
     local member="$1"
     local passphrase="$2"
     local otp="${3:-$DEV_OTP}"
-    local original_email
-    original_email=$(git config user.email)
-    git config user.email "$member"
-    joy auth --otp "$otp" --passphrase "$passphrase"
-    git config user.email "$original_email"
-    # Re-authenticate as original (the redemption opened the invitee's session,
-    # overwriting the session file).
-    joy auth --passphrase "$TEST_PASSPHRASE"
+    # The invitee names themselves, the way an invited person does on
+    # their own machine. The redemption pins them here, so the way back
+    # to the founder names the founder.
+    joy auth --otp "$otp" --user "$member" --passphrase "$passphrase"
+    act_as_founder
 }
 
 # Switch back to human identity.

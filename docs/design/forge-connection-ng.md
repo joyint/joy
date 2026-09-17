@@ -647,12 +647,19 @@ Packing alone is not maintenance. On the measured store, 6140 loose objects and 
 
 #### D3.9 What stays on git config, and what does not
 
-Twenty call sites of `user_email()` remain in joy-cli (measured on 2026-09-17: 20 hits in 9 files, auth, crypt, chat, board, project, ai, event log, enroll). "joy needs no git config" is therefore not yet a true sentence for the CLI, and the docs may not claim it. Two parts move now, because they are the ones the level 1 journey stands on:
+Twenty call sites of `user_email()` were counted in joy-cli when this was written (2026-09-17: 20 hits in 9 files, auth, crypt, chat, board, project, ai, event log, enroll). None of them is left. "joy needs no git config" is a true sentence for the CLI now, and the docs may say it. It was closed in two steps:
 
-- `joy init` takes `--user <address>` (it already does, init.rs:59-96), and on an `Interactive` host with no git config it asks for the address instead of failing with `NoFounderIdentity`. On a `Background` or `Delegated` host it refuses with the named sentence "this project does not know who you are; run joy init --user <address>".
-- `joy auth init` and the enrollment path take the member explicitly (`redeem_with_passphrase`, enroll.rs:199), so a founder created without git config can enrol.
+- J9 took the founding step, the one the level 1 journey stands on. `joy init` takes `--user <address>` (it already did, init.rs:59-96), and on an `Interactive` host with no git config it asks for the address instead of failing with `NoFounderIdentity`. On a `Background` or `Delegated` host it refuses with the named sentence "this project does not know who you are; run joy init --user <address>". `joy auth init` and the enrollment path take the member explicitly (`redeem_with_passphrase`, enroll.rs:199), so a founder created without git config can enrol.
+- J11 took every other call site onto `joy_core::identity::resolve_identity`. That function reads the delegation session first, then the member this device pinned, and nothing after that. There is no git config step in it, not even as a last resort, so a machine whose `user.email` happens to name a member is refused exactly like one with no git identity at all: `JoyError::UnknownActingMember` says so and names the one command that settles it. Founding, enrolling and authenticating write the pin, which is what makes "name yourself once and this device remembers" true.
 
-The remaining call sites are package J11 (wave 3, depends on J9): they move onto `joy_core::identity::resolve_identity`, which reads the session first, then the project's member pin, and git config only as a prefill. The journey map grades level 1 partly until J11 lands, and the row names J11 rather than an unnamed follow up.
+Two jobs are left to git config afterwards, and both are OFFERS rather than sources:
+
+- the address joy offers a person when it asks them who they are: `identity::git_config_prefill`, and the founder prefill inside `init::resolve_founder_email`. The person can type something else, and `--user` beats the offer everywhere it exists.
+- the display NAME of a commit signature, and only when that name maps to the acting member (D4.5). Removing only `user.email` and keeping `user.name` therefore leaves the author line byte identical.
+
+`event_log::get_git_email` stays public with no caller inside joy, for the desktop's four remaining callers, which move onto the acting member in D4.5. It is named after what it reads rather than after an identity, so nobody reaches for it by accident.
+
+One consequence is worth writing down, because it cost two defects in wave 3: what `resolve_identity` answers with is a member KEY, where the git config it replaced was an address. In an anonymous project (ADR-042) those are different strings, and every lookup on a path that now receives one must be by key. The two that were not were `create_delegation_token`, which recorded the delegation it had just issued under an address and so recorded nothing, and the login path, which compared the opaque id against the address an attestation signs. Both are fixed; a third, `privacy::delegated_by_at_rest`, takes either form on purpose, because a token issued with `--user` carries an address and one issued from the pin carries a key.
 
 #### D3.10 The CLI's door to a forge (new)
 
@@ -891,7 +898,7 @@ Grades are re graded honestly against v3. "yes" means the design closes the jour
 
 | Journey | Persona | Served | The step that changed, and the package |
 | --- | --- | --- | --- |
-| Level 1 solo, everything local, no account | Scotty | partly | The founding step is closed: `joy init` asks for the address on an interactive terminal and refuses by name on a background host (D3.9, J9). The remaining `user_email` call sites in joy-cli (20 in 9 files at the time of writing, minus the two J9 moves) are package J11, which moves them onto `resolve_identity`; until J11 lands a person with no git config still meets git config in auth, chat and board commands, and the row stays partly for that one reason (D3.9, J9, J11) |
+| Level 1 solo, everything local, no account | Scotty | yes | The founding step closed in J9: `joy init` asks for the address on an interactive terminal and refuses by name on a background host (D3.9, J9). The rest closed in J11: no `user_email` call site is left in joy-cli, an identity is the delegation session or the member this device pinned, and a person with no git config meets none in auth, crypt, chat, board, project or ai. Removing `user.email` from a joy project changes no joy command's behaviour, which is J11's acceptance and is asserted by driving the binary twice over the same script, once with the config and once without (D3.9, J9, J11) |
 | Scotty installs with one command | Scotty | yes | The installer ships the connector beside joy and records both in the receipt (D2.1, J8, W1) |
 | Scotty signs in to a forge from the terminal | Scotty | yes | New: `joy forge login`, `--token-stdin`, `status`, `logout`, `plugins` (D3.10, J10). This is the door every "sign in to the forge" sentence now points at |
 | Scotty delegates to his AI tool locally | Scotty, Data | partly | Credentials and identity work headless (D1.10, D3.8, D3.11); installing the agent CLI itself is still a manual step outside the app |
