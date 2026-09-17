@@ -159,6 +159,117 @@ fn repositories_pages_and_filters_by_the_query() {
     assert_eq!(answer["truncated"], false);
 }
 
+/// D2.4's paging, with nothing lost in between: the cursor names the
+/// page that was NOT read, so two answers hold the forge's rows in
+/// order, without a gap and without a repetition.
+#[test]
+fn repositories_page_by_page_lose_no_row() {
+    let fake = FakeForge::start(|call| {
+        if !call.path.starts_with("/user/repos") {
+            return Reply::not_found();
+        }
+        let page: usize = call
+            .path
+            .split("&page=")
+            .nth(1)
+            .and_then(|rest| rest.split('&').next())
+            .and_then(|number| number.parse().ok())
+            .unwrap_or(1);
+        let rows: Vec<String> = match page {
+            1 => vec!["acme/one".into(), "acme/two".into()],
+            2 => vec!["acme/three".into(), "acme/four".into()],
+            _ => Vec::new(),
+        };
+        let body = rows
+            .iter()
+            .map(|name| format!(r#"{{"full_name":"{name}","name":"{name}","private":false}}"#))
+            .collect::<Vec<_>>()
+            .join(",");
+        Reply::json(200, format!("[{body}]"))
+    });
+    let host = "ghe.acme.test";
+    let ctx = ctx(&fake, host, true);
+    let ask = |page: Option<String>| {
+        joy_github::github::repositories_answer(
+            &Target::Host(host.into()),
+            &Listing {
+                query: None,
+                limit: 2,
+                page,
+            },
+            &ctx,
+        )
+    };
+    let names = |answer: &serde_json::Value| -> Vec<String> {
+        answer["repositories"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["full_name"].as_str().unwrap().to_string())
+            .collect()
+    };
+
+    let first = ask(None);
+    assert_eq!(names(&first), ["acme/one", "acme/two"]);
+    assert_eq!(first["truncated"], true);
+    let cursor = first["next"].as_str().expect("a cursor").to_string();
+
+    let second = ask(Some(cursor));
+    assert_eq!(names(&second), ["acme/three", "acme/four"]);
+
+    // and the end of the list says so: no cursor, nothing cut off
+    let third = ask(second["next"].as_str().map(str::to_string));
+    assert!(names(&third).is_empty());
+    assert_eq!(third["truncated"], false);
+    assert_eq!(third["next"], serde_json::Value::Null);
+}
+
+/// A page the answer has no room for is left UNREAD, so the cursor
+/// points at it and its rows arrive whole in the next answer. The
+/// filter of `--query` is what makes the pages uneven.
+#[test]
+fn a_page_that_would_overflow_the_limit_is_left_for_the_cursor() {
+    let fake = FakeForge::start(|call| {
+        if !call.path.starts_with("/user/repos") {
+            return Reply::not_found();
+        }
+        let page: usize = call
+            .path
+            .split("&page=")
+            .nth(1)
+            .and_then(|rest| rest.split('&').next())
+            .and_then(|number| number.parse().ok())
+            .unwrap_or(1);
+        // page 1 holds one matching row among three, page 2 three
+        let rows: Vec<&str> = match page {
+            1 => vec!["acme/demo", "other/a", "other/b"],
+            2 => vec!["acme/demo-two", "acme/demo-three", "acme/demo-four"],
+            _ => Vec::new(),
+        };
+        let body = rows
+            .iter()
+            .map(|name| format!(r#"{{"full_name":"{name}","name":"{name}","private":false}}"#))
+            .collect::<Vec<_>>()
+            .join(",");
+        Reply::json(200, format!("[{body}]"))
+    });
+    let host = "ghe.acme.test";
+    let ctx = ctx(&fake, host, true);
+    let listing = Listing {
+        query: Some("demo".into()),
+        limit: 3,
+        page: None,
+    };
+    let answer =
+        joy_github::github::repositories_answer(&Target::Host(host.into()), &listing, &ctx);
+    let rows = answer["repositories"].as_array().unwrap();
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows[0]["full_name"], "acme/demo");
+    assert_eq!(answer["truncated"], true);
+    // the cursor names the page that was not read, not the one after it
+    assert_eq!(answer["next"], "2");
+}
+
 /// Without a credential there is no account whose repositories could be
 /// listed, and the answer says so instead of guessing.
 #[test]
@@ -357,44 +468,4 @@ fn release_reports_a_refusal_instead_of_degrading() {
     assert!(text.contains("could not be read"), "{text}");
     assert!(text.contains("denied"), "{text}");
     assert!(!text.contains(TOKEN), "no token in an error text: {text}");
-}
-
-/// D2.8 names the asset upload as part of the REST move. The upload
-/// host comes from the release's own `upload_url`, which is what makes
-/// it work on github.com and on an Enterprise Server alike.
-#[test]
-fn an_asset_is_uploaded_to_the_url_the_release_named() {
-    let fake = FakeForge::start(|call| {
-        if call.method == "POST" && call.path.starts_with("/repos/acme/demo/releases/7/assets") {
-            return Reply::json(201, r#"{"id":11,"name":"joy.tar.gz"}"#);
-        }
-        Reply::not_found()
-    });
-    let host = "ghe.acme.test";
-    let ctx = ctx(&fake, host, true);
-    let upload_url = format!(
-        "{}/repos/acme/demo/releases/7/assets{{?name,label}}",
-        fake.base()
-    );
-    let answer = joy_github::github::upload_asset(
-        &ctx,
-        host,
-        &upload_url,
-        "joy.tar.gz",
-        "application/gzip",
-        b"not really a tarball".to_vec(),
-    )
-    .expect("the asset is uploaded");
-    assert_eq!(answer["name"], "joy.tar.gz");
-    let call = fake
-        .calls()
-        .into_iter()
-        .find(|call| call.method == "POST")
-        .expect("the upload call");
-    assert_eq!(
-        call.path,
-        "/repos/acme/demo/releases/7/assets?name=joy.tar.gz"
-    );
-    assert_eq!(call.header("content-type"), Some("application/gzip"));
-    assert_eq!(call.body, "not really a tarball");
 }

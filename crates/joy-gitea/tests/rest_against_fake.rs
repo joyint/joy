@@ -74,12 +74,10 @@ fn a_scope_refusal_names_what_the_instance_asked_for() {
         joy_gitea::gitea::create_repository_answer(&Target::Host(HOST.into()), &new, &ctx(&fake));
     assert_eq!(answer["state"], "scope_missing");
     assert_eq!(answer["verb"], "create-repository");
-    // joy's own set for this verb group is what a person signs in with
-    assert_eq!(
-        answer["needed"],
-        serde_json::json!(["write:user", "write:repository"])
-    );
-    assert_eq!(answer["have"], serde_json::json!(["write:repository"]));
+    // what the route demanded is what a person is asked to sign in with
+    assert_eq!(answer["needed"], serde_json::json!(["write:repository"]));
+    // and what they hold is what they hold, never the opposite
+    assert_eq!(answer["have"], serde_json::json!(["read:user"]));
 }
 
 #[test]

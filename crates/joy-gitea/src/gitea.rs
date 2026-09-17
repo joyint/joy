@@ -171,16 +171,34 @@ pub fn classify(answer: &Answer) -> &'static str {
 
 /// The `required=...` list out of Gitea's own refusal:
 /// "token does not have at least one of required scope(s), required=[read:repository], token scope=read:user"
+///
+/// D2.7c: this list is what goes into `needed`.
 pub fn required_scopes(body: &str) -> Option<Vec<String>> {
-    let rest = body.split("required=").nth(1)?;
+    scope_list(body, "required=")
+}
+
+/// The `token scope=...` list out of the same refusal: what the token
+/// actually holds, which is what `have` carries (D2.7c). Gitea is the
+/// only forge of the three that names it in the refusal itself; until
+/// the connector keeps the granted set beside its own token (J3), this
+/// is the only place the set can be read at all.
+pub fn token_scopes(body: &str) -> Option<Vec<String>> {
+    scope_list(body, "token scope=")
+}
+
+/// One of the two lists of Gitea's refusal. Both forms occur, bracketed
+/// (`required=[a,b]`) and bare (`token scope=a,b`), so the list ends at
+/// the closing bracket or at the end of the sentence.
+fn scope_list(body: &str, key: &str) -> Option<Vec<String>> {
+    let rest = body.split(key).nth(1)?;
     let list = rest
         .trim_start()
         .trim_start_matches('[')
-        .split(']')
+        .split(&[']', '\n'][..])
         .next()
         .unwrap_or("")
-        .split(&[',', '"'][..])
-        .map(str::trim)
+        .split(&[',', '"', '}'][..])
+        .map(|scope| scope.trim().trim_end_matches(['.', ';']))
         .filter(|scope| !scope.is_empty() && !scope.contains(' '))
         .map(str::to_string)
         .collect::<Vec<_>>();
@@ -404,6 +422,10 @@ pub fn repositories_answer(target: &Target, listing: &Listing, ctx: &Ctx) -> Val
         .and_then(|p| p.parse().ok())
         .unwrap_or(1);
     let limit = listing.limit.max(1);
+    // Bounded by the caller's limit as well as by the instance's page
+    // maximum, so no page is ever cut in half: a cursor is a page
+    // number, and the rest of a half read page would never be shown
+    // again (D2.4).
     let per_page = limit.clamp(1, 50);
     let mut repositories: Vec<Value> = Vec::new();
     let mut more = false;
@@ -419,18 +441,22 @@ pub fn repositories_answer(target: &Target, listing: &Listing, ctx: &Ctx) -> Val
             return unknown_state();
         };
         let full_page = entries.len() >= per_page;
-        for entry in &entries {
-            if let Some(row) = repository_row(entry, listing.query.as_deref()) {
-                repositories.push(row);
-            }
-        }
-        page += 1;
-        if repositories.len() >= limit {
-            repositories.truncate(limit);
+        let rows: Vec<Value> = entries
+            .iter()
+            .filter_map(|entry| repository_row(entry, listing.query.as_deref()))
+            .collect();
+        if !repositories.is_empty() && repositories.len() + rows.len() > limit {
             more = true;
             break;
         }
+        repositories.extend(rows);
+        page += 1;
         if !full_page {
+            // the instance had nothing more to give
+            break;
+        }
+        if repositories.len() >= limit {
+            more = true;
             break;
         }
     }
@@ -466,6 +492,16 @@ fn repository_row(entry: &Value, query: Option<&str>) -> Option<Value> {
 /// The CREATE-REPOSITORY answer. `POST /user/repos` is checked twice by
 /// Gitea, by the /user group and by the route, which is why the scope
 /// set for it is `write:user write:repository` (D2.7a).
+///
+/// There is no local pre check here, and it is not an omission: D2.7c
+/// builds that check on "the plugin records the granted scope set
+/// beside the token in the same entry", and Gitea has no endpoint that
+/// names the set of the token in use (`GET /user` does not, and
+/// `/users/{u}/tokens` wants basic auth, not a token). Until the
+/// connector keeps its own entry (J3), the set is unknown here, and an
+/// unknown set is never reported as a missing one. What the instance
+/// refuses is classified instead, from the two lists it writes into the
+/// refusal itself, so a scope problem is still never `denied`.
 pub fn create_repository_answer(target: &Target, new: &NewRepository, ctx: &Ctx) -> Value {
     let Some(host) = target.host() else {
         return unknown_state();
@@ -496,10 +532,14 @@ pub fn create_repository_answer(target: &Target, new: &NewRepository, ctx: &Ctx)
     if !answer.ok() {
         let state = classify(&answer);
         if state == "scope_missing" {
-            // Gitea names the scopes it wanted; joy's own set is what a
-            // person is asked to sign in with.
-            let have = required_scopes(&answer.body).unwrap_or_default();
-            let needed = scope::missing("gitea", Group::CreateRepository, &[]);
+            // Gitea names both lists in the refusal it writes: what the
+            // route demanded goes into `needed`, what the token holds
+            // into `have` (D2.7c). Where it named no demand, joy's own
+            // set for the verb is what a person is asked to sign in
+            // with.
+            let needed = required_scopes(&answer.body)
+                .unwrap_or_else(|| scope::missing("gitea", Group::CreateRepository, &[]));
+            let have = token_scopes(&answer.body).unwrap_or_default();
             return scope::scope_missing(&host, "create-repository", &needed, &have);
         }
         return json!({
@@ -610,6 +650,16 @@ mod tests {
         assert_eq!(classify(&answer), "scope_missing");
         assert_eq!(classify(&Answer::new(403, "{}", Vec::new())), "denied");
         assert_eq!(required_scopes("{}"), None);
+        // and the second list of the same sentence is what the token
+        // holds, which is what `have` carries and never the other way
+        assert_eq!(token_scopes(body), Some(vec!["read:user".to_string()]));
+        assert_eq!(
+            token_scopes(
+                r#"{"message":"... required=[write:user,write:repository], token scope=read:user,read:repository"}"#
+            ),
+            Some(vec!["read:user".to_string(), "read:repository".to_string()])
+        );
+        assert_eq!(token_scopes("{}"), None);
     }
 }
 

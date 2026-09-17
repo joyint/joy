@@ -3,12 +3,13 @@
 
 //! Forge abstraction: create releases on hosting platforms.
 //!
-//! Since JOY-0256-64 the forge knowledge lives in the forge PLUGINS
+//! Since JOY-0256-64 the forge knowledge lives in the forge CONNECTORS
 //! (docs/plugins.md): joy-core's registry names them, `claims` decides
-//! whose remote a project is, and the plugin's `release` verb does the
-//! actual work (joy-github shells gh; a forge without a release backend
-//! answers `unsupported` and publish keeps its tag-only path). Nothing
-//! in here parses a forge URL or shells a forge CLI any more.
+//! whose remote a project is, and the connector's `release` verb does
+//! the actual work (over its own HTTP client since JOY-0298-E4, design
+//! D2.8; a forge without a release backend answers `unsupported` and
+//! publish keeps its tag-only path). Nothing in here parses a forge URL
+//! or shells a forge CLI any more.
 
 use std::io::{IsTerminal, Write};
 use std::path::Path;

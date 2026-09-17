@@ -103,6 +103,22 @@ pub fn missing(forge: &str, group: Group, granted: &[String]) -> Vec<String> {
     missing
 }
 
+/// What `create-repository` needs, which on GitHub depends on the
+/// repository's visibility: "public_repo or repo scope to create a
+/// public repository, and repo scope to create a private repository"
+/// (D2.7a). Everywhere else the visibility makes no difference.
+pub fn missing_for_create(forge: &str, private: bool, granted: &[String]) -> Vec<String> {
+    if forge == "github" && private {
+        let has_repo = granted.iter().any(|scope| scope == "repo");
+        return if has_repo {
+            Vec::new()
+        } else {
+            vec!["repo".to_string()]
+        };
+    }
+    missing(forge, Group::CreateRepository, granted)
+}
+
 /// The local answer of D2.7c, on exit code 0. It is an answer and not a
 /// failure, and the host renders it as one sentence with one button.
 pub fn scope_missing(
@@ -203,6 +219,32 @@ mod tests {
         assert_eq!(
             missing("github", Group::RepositoryFacts, &public),
             vec!["repo".to_string()]
+        );
+    }
+
+    /// D2.7a names the one place where the visibility decides the
+    /// scope: `public_repo` creates a PUBLIC repository and nothing
+    /// else, so a private one is refused locally instead of spending
+    /// the write request.
+    #[test]
+    fn a_public_only_token_creates_a_public_repository_and_not_a_private_one() {
+        let public = set("public_repo,user:email");
+        assert!(missing_for_create("github", false, &public).is_empty());
+        assert_eq!(
+            missing_for_create("github", true, &public),
+            vec!["repo".to_string()]
+        );
+        let full = set("repo,user:email");
+        assert!(missing_for_create("github", true, &full).is_empty());
+        // the visibility changes nothing on the other two forges
+        let gitlab = set("read_api write_repository");
+        assert_eq!(
+            missing_for_create("gitlab", false, &gitlab),
+            vec!["api".to_string()]
+        );
+        assert_eq!(
+            missing_for_create("gitlab", true, &gitlab),
+            vec!["api".to_string()]
         );
     }
 

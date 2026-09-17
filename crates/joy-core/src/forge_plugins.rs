@@ -1469,9 +1469,18 @@ impl CallContext {
     }
 }
 
-/// The verbs a protocol 1 connector still answers, with `--remote` only
-/// (D2.2a). Everything else asked of one is `plugin_outdated`.
+/// The verbs a protocol 1 connector still answers (D2.2a). Everything
+/// else asked of one is `plugin_outdated`.
 const LEGACY_VERBS: &[&str] = &["claims", "identity", "resolve", "store", "files", "release"];
+
+/// The verbs whose protocol 1 parser takes `--remote`. It is three of
+/// the six: protocol 1 gave `identity` `--login`, `--user-id` and
+/// `--token-env`, `resolve` `--email`, and `release` `--tag`, `--title`
+/// and `--notes-file` and nothing else. clap refuses an argument it
+/// does not know with exit code 2 and an empty stdout, which D2.2a
+/// reads as "stale binary", so handing one of those three a target
+/// would end `joy release publish` on a machine with an old connector.
+const LEGACY_TARGET_VERBS: &[&str] = &["claims", "store", "files"];
 
 /// The argument list for one call, in the order the connector's parser
 /// sees it: the forge id for the combined binary, the verb, the target,
@@ -1489,7 +1498,9 @@ fn call_args(
     }
     args.push(verb.to_string());
     if let Some(target) = target {
-        args.extend(target.args());
+        if resolved.protocol >= PROTOCOL || LEGACY_TARGET_VERBS.contains(&verb) {
+            args.extend(target.args());
+        }
     }
     args.extend(extra.iter().map(|arg| (*arg).to_string()));
     if let Some(var) = ctx.facts.token_env.as_deref() {
@@ -1858,8 +1869,10 @@ pub struct ReleaseOutcome {
 /// `target` names the repository. It became necessary when the verb
 /// moved off gh onto the connector's own HTTP client (D2.8): gh read
 /// the repository out of the working directory's git remote, and the
-/// REST call has to be told. It is the same `--remote` every other verb
-/// takes, so a protocol 1 connector understands it too.
+/// REST call has to be told. A protocol 1 connector is asked the way it
+/// understands, without the target ([`LEGACY_TARGET_VERBS`]): its
+/// release runs through gh in the working directory, so an old machine
+/// keeps publishing (D2.2a).
 pub fn release(
     spec: &ForgePluginSpec,
     target: Option<&Target>,
@@ -2117,6 +2130,40 @@ mod tests {
         assert_eq!(
             call_args(&resolved, "identity", None, &[], &ctx),
             vec!["identity", "--login", "scotty"]
+        );
+    }
+
+    /// D2.2a's promise that an old machine keeps publishing: protocol 1
+    /// `release` knew `--tag`, `--title` and `--notes-file` and nothing
+    /// else, so the target joy now passes stays home. On protocol 2 it
+    /// travels, because that is where the REST call needs it (D2.8).
+    #[test]
+    fn a_protocol_one_release_is_asked_without_the_repository() {
+        let ctx = CallContext::rootless();
+        let target = Target::remote("https://github.com/example/demo.git");
+        let extra = ["--tag", "v1", "--title", "v1", "--notes-file", "/tmp/n.md"];
+        let old = resolved_stub("/home/s/.cargo/bin/joy-github", 1);
+        assert_eq!(
+            call_args(&old, "release", Some(&target), &extra, &ctx),
+            vec![
+                "release",
+                "--tag",
+                "v1",
+                "--title",
+                "v1",
+                "--notes-file",
+                "/tmp/n.md"
+            ]
+        );
+        let new = resolved_stub("/home/s/.cargo/bin/joy-forge", PROTOCOL);
+        let args = call_args(&new, "release", Some(&target), &extra, &ctx);
+        assert!(
+            args.windows(2).any(|pair| pair
+                == [
+                    "--remote".to_string(),
+                    "https://github.com/example/demo.git".to_string()
+                ]),
+            "{args:?}"
         );
     }
 

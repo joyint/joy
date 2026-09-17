@@ -192,6 +192,37 @@ fn the_full_set_creates_the_project() {
     assert_eq!(post.json().unwrap()["visibility"], "private");
 }
 
+/// D2.7c's 404 rule: "404 is `gone` only when the set contains
+/// `read_api` or `api`". A token that holds `write_repository` alone
+/// meets the API as an anonymous caller, so GitLab hides a private
+/// project behind the same 404 a deleted one gets, and the person must
+/// not be told their repository is gone.
+#[test]
+fn a_404_on_a_set_that_cannot_read_the_api_is_not_a_verdict() {
+    let fake = FakeForge::start(|call| {
+        if call.path == "/personal_access_tokens/self" {
+            return Reply::json(200, r#"{"scopes":["write_repository"]}"#);
+        }
+        Reply::not_found()
+    });
+    let store = joy_gitlab::gitlab::store_answer(&remote(), &ctx(&fake));
+    assert_eq!(store["state"], "unknown");
+}
+
+/// The same 404 IS the verdict once the set could have seen a private
+/// project.
+#[test]
+fn a_404_on_a_set_that_reads_the_api_is_gone() {
+    let fake = FakeForge::start(|call| {
+        if let Some(reply) = read_write_token(call) {
+            return reply;
+        }
+        Reply::not_found()
+    });
+    let store = joy_gitlab::gitlab::store_answer(&remote(), &ctx(&fake));
+    assert_eq!(store["state"], "gone");
+}
+
 /// D2.7c: a 403 whose WWW-Authenticate names an insufficient scope is a
 /// scope problem, and the answer says so instead of `denied`.
 #[test]

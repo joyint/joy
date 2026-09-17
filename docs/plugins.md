@@ -251,6 +251,26 @@ A caller that has a token of its own hands it over by NAME
 reaches the forge in an `Authorization` header. It is never an argument,
 so no process list can carry it.
 
+A named variable is the whole answer for that call: when it holds
+nothing, the call has no credential, and nothing else is consulted. A
+multi-account host must never act as the machine's own account because
+its variable happened to be empty.
+
+Where no caller named a variable, the connector reads the forge's own,
+which is what a person or a CI runner exports anyway, and only then does
+it spawn the forge CLI.
+
+| forge | variables | read for |
+| --- | --- | --- |
+| GitHub | `GH_TOKEN`, `GITHUB_TOKEN` | github.com only |
+| GitHub Enterprise | `GH_ENTERPRISE_TOKEN`, `GITHUB_ENTERPRISE_TOKEN` | every other host |
+| GitLab | `GITLAB_TOKEN` | every host |
+| Gitea, Forgejo | `GITEA_TOKEN` | every host |
+
+The GitHub split is gh's own: a github.com token is never sent to
+somebody's Enterprise Server, and an Enterprise token never to
+github.com.
+
 The configuration of those three CLIs is looked for per operating
 system: gh in `GH_CONFIG_DIR`, `XDG_CONFIG_HOME/gh`, `%AppData%\GitHub CLI`
 and `~/.config/gh`; glab in `GLAB_CONFIG_DIR`, `~/.config/glab-cli` and
@@ -336,7 +356,10 @@ it hung). Each one carries the file that answered.
   when the repository is there without a store, with the caller's push
   permission and the branch the forge names as its default;
   `{"state": "gone"}` when the forge does not show the caller the
-  repository (deleted or no access, which forges answer alike);
+  repository (deleted or no access, which forges answer alike) AND the
+  credential could have seen a private one: GitHub and GitLab both
+  answer 404 rather than 403 for a private repository, so a 404 an
+  anonymous caller or a narrow token got is `unknown`, never `gone`;
   `{"state": "unknown"}` when the forge could not be asked. Only the
   last is not a verdict. Without `--token-env` the forge is asked
   anonymously and sees public repositories only.
@@ -384,7 +407,10 @@ it hung). Each one carries the file that answered.
   is non-zero, and `joy release publish` fails with it. Idempotence is
   the plugin's duty: a release that already exists (a tag-triggered
   forge workflow may have made it) keeps its URL and gets the notes
-  prepended exactly once (JOY-0248-AE).
+  prepended exactly once (JOY-0248-AE). The verb carries NOTES and no
+  assets: no argument names one, and joy's own publish never uploaded
+  one. The asset upload (on uploads.github.com, from the release's own
+  `upload_url`) lands with the argument that carries it.
 
 Rules, in addition to the base contract:
 
@@ -451,7 +477,7 @@ passes 10 MB.
 
 | target | `joy-forge`, release, stripped | measured |
 | --- | --- | --- |
-| x86_64-unknown-linux-gnu | 3.78 MB | 2026-09-17 |
+| x86_64-unknown-linux-gnu | 3.79 MB (3 971 064 bytes) | 2026-09-17 |
 | aarch64-unknown-linux-gnu | open, the release build measures it | |
 | x86_64-apple-darwin | open, the release build measures it | |
 | aarch64-apple-darwin | open, the release build measures it | |
@@ -470,7 +496,18 @@ How to reproduce one row:
 For comparison, the three separate protocol 1 plugins were 3.3 MB
 stripped together, of which about 3 MB was a duplicated std, clap and
 serde floor; the connector now carries rustls, its own HTTP stack and
-the three forges in one file for 3.78 MB.
+the three forges in one file for 3.79 MB.
+
+Said plainly, because it is the operator's decision and not the
+measurement's: decision 6 was argued with "three plugins cost 3.3 MB
+and one binary is about 1.2 MB", and that half of it did not survive
+contact with the build. The consolidation did not shrink the total, it
+grew it by about half a megabyte, because the three old plugins shelled out to
+curl and gh while this one brings its own TLS stack. What the decision
+still buys is what the rest of it named: one archive, one installer
+change, one receipt, one sidecar per platform, and no ambiguity in the
+winget `installers-regex`. The 10 MB revisit threshold is untouched and
+far away; the premise is what changed.
 
 `joy` itself grows by nothing worth measuring: `axoupdater`, which the
 self-update path already needs, brings `ureq` and `rustls` into that

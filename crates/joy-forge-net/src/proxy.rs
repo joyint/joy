@@ -18,6 +18,15 @@
 //!
 //! A SOCKS proxy is refused by name instead of failing obscurely, with
 //! the sentence the engine uses.
+//!
+//! One source of D1.11 is deliberately NOT here yet: the proxy password
+//! that lives in the machine's credential helper. D1.11 resolves it
+//! "through the helper runner of D1.3" and builds
+//! `http://user:pass@proxy:port` in memory, and that runner is J4p's
+//! work in the engine. Until it exists, the connector uses the userinfo
+//! the proxy URL already carries, which is the same amount a person has
+//! today; when J4p lands, the helper answer is fed in here in one place
+//! ([`choose`]'s result) and nothing else changes.
 
 use crate::gitconfig::GitConfig;
 

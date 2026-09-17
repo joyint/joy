@@ -13,6 +13,7 @@ start_fake_forge() {
     mkdir -p "$FAKE_FORGE_DIR"
     : > "$FAKE_FORGE_DIR/calls"
     : > "$FAKE_FORGE_DIR/release_body"
+    : > "$FAKE_FORGE_DIR/authorization"
     # fd 3 is bats' own output stream: a child that keeps it open holds
     # the whole run open after the last test, so it is closed here
     # along with the two the server would write to.
@@ -69,6 +70,13 @@ STUB
 # calls; a server left running would otherwise outlive the whole run.
 teardown() {
     stop_fake_forge
+    # a case that trimmed the PATH (the "no gh, no curl" acceptance)
+    # hands the real one back before anything here runs
+    if [ -n "${SAVED_PATH:-}" ]; then
+        PATH="$SAVED_PATH"
+        export PATH
+        unset SAVED_PATH
+    fi
     cd /
     rm -rf "$TEST_DIR"
     unset HOME

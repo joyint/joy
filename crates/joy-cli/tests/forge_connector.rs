@@ -229,6 +229,58 @@ fn a_release_is_published_end_to_end_over_rest() {
     assert!(body["body"].as_str().unwrap().contains("Fixed the thing"));
 }
 
+/// J2's acceptance in full: `joy release publish` succeeds on a machine
+/// without curl **with `GH_TOKEN` set**. The caller names no variable
+/// (joy-core has no forge knowledge and therefore no variable name to
+/// pass), the PATH is empty so there is no gh to spawn either, and the
+/// token still reaches the forge in a header: the connector reads the
+/// forge's own variable (D2.4's `env` source).
+#[test]
+fn a_release_is_published_with_only_the_forges_own_variable_set() {
+    let dir = setup();
+    let fake = FakeForge::start(|call| match (call.method.as_str(), call.path.as_str()) {
+        ("GET", "/repos/example/demo/releases/tags/v0.3.0") => Reply::not_found(),
+        ("POST", "/repos/example/demo/releases") => Reply::json(
+            201,
+            r#"{"id":4,"html_url":"https://github.com/example/demo/releases/tag/v0.3.0"}"#,
+        ),
+        _ => Reply::not_found(),
+    });
+    // github.com itself, because the variable a forge's tooling reads
+    // is chosen per host: GH_TOKEN for github.com, the enterprise pair
+    // for anything else.
+    write_forges_yaml(&dir, "github.com", "github", &fake.base());
+    let notes = dir.join("notes-env.md");
+    std::fs::write(&notes, "## Changes\n\nFixed the thing\n").expect("the notes file");
+    const TOKEN: &str = "gho_only-in-the-environment";
+    std::env::set_var("GH_TOKEN", TOKEN);
+    let outcome = forge_plugins::release(
+        spec("github"),
+        Some(&Target::remote("https://github.com/example/demo.git")),
+        "v0.3.0",
+        "v0.3.0 - Third",
+        &notes,
+        // no CallerFacts at all: exactly what `joy release publish`
+        // builds
+        &CallContext::rootless(),
+    )
+    .expect("the release is published");
+    assert_eq!(
+        outcome.url.as_deref(),
+        Some("https://github.com/example/demo/releases/tag/v0.3.0")
+    );
+    let post = fake
+        .calls()
+        .into_iter()
+        .find(|call| call.method == "POST")
+        .expect("the create call");
+    assert_eq!(
+        post.authorization(),
+        Some(format!("Bearer {TOKEN}").as_str())
+    );
+    std::env::remove_var("GH_TOKEN");
+}
+
 /// A forge with no release backend still answers `unsupported`, so
 /// publish keeps its tag-only path instead of failing.
 #[test]
@@ -284,20 +336,32 @@ fn no_call_ever_carries_a_token_in_its_argument_list() {
         .spawn()
         .expect("the connector starts");
 
+    // Poll until the argument list is the CONNECTOR's own and complete.
+    // Right after the fork /proc holds the parent's argv, and a moment
+    // later a half written one, so "not empty" is not the signal: the
+    // last argument joy passes is, and it is read last.
     let deadline = Instant::now() + Duration::from_secs(5);
     let mut seen = String::new();
     while Instant::now() < deadline {
-        match std::fs::read(format!("/proc/{}/cmdline", child.id())) {
-            Ok(raw) if !raw.is_empty() => {
-                seen = String::from_utf8_lossy(&raw).replace('\0', " ");
+        if let Ok(raw) = std::fs::read(format!("/proc/{}/cmdline", child.id())) {
+            let text = String::from_utf8_lossy(&raw).replace('\0', " ");
+            if text.contains("--host-kind background") {
+                seen = text;
                 break;
             }
-            _ => std::thread::sleep(Duration::from_millis(20)),
         }
+        std::thread::sleep(Duration::from_millis(20));
     }
     let status = child.wait().expect("the connector exits");
     assert!(status.success(), "the connector answered");
-    assert!(!seen.is_empty(), "the argument list was readable");
+    assert!(
+        !seen.is_empty(),
+        "the connector's own argument list was never readable"
+    );
+    assert!(
+        seen.contains(CONNECTOR),
+        "the process read was ours: {seen}"
+    );
     assert!(
         seen.contains("--token-env GH_TOKEN"),
         "the VARIABLE travels in argv: {seen}"

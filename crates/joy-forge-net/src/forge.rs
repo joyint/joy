@@ -273,7 +273,8 @@ impl Ctx {
     }
 
     /// The token for this host, from the sources wave 1 has (D2.4, J2):
-    /// the variable the caller named, or gh, spawned (decision 19).
+    /// the variable the caller named, the forge's own environment
+    /// variables, or the forge CLI, spawned (decision 19).
     ///
     /// The connector grows its own store in J3; until then a token that
     /// is nowhere here means the forge is asked anonymously, which sees
@@ -290,12 +291,24 @@ impl Ctx {
     }
 
     fn find_token(&self, forge: &str, host: &str) -> Option<String> {
+        // A caller that names a variable names the credential FOR THIS
+        // CALL, and that is the whole answer: a multi-account host whose
+        // variable happens to be empty must never end up acting as the
+        // machine's own account, so nothing below this branch runs.
         if let Some(var) = self.token_env.as_deref() {
-            if let Ok(value) = std::env::var(var) {
-                if !value.trim().is_empty() {
-                    return Some(value);
-                }
-            }
+            return read_variable(var);
+        }
+        // The forge's own variables, the `source: "env"` of D2.4. J2's
+        // acceptance is a release published "with `GH_TOKEN` set", and
+        // `joy release publish` names no variable: it asks joy-core for
+        // the release verb, which has no forge knowledge and therefore
+        // no variable name to pass. So the connector, which is where
+        // all forge knowledge lives, reads the forge's own.
+        if let Some(value) = token_variables(forge, host)
+            .iter()
+            .find_map(|name| read_variable(name))
+        {
+            return Some(value);
         }
         // Decision 19: a foreign credential is obtained by SPAWNING the
         // CLI, never by reading its store, and that is also the only
@@ -313,6 +326,35 @@ impl Ctx {
     /// D1.11 and the Linux CA keys of D1.12).
     pub fn git_config(&self) -> &GitConfig {
         &self.git
+    }
+}
+
+/// One environment variable, where it holds something.
+fn read_variable(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+/// The environment variables a forge's own tooling puts a token in, in
+/// the order that tooling reads them.
+///
+/// GitHub's pair is split by host the way gh splits it, so a github.com
+/// token is never sent to somebody's Enterprise Server and the other
+/// way round. A variable is read only for the host it belongs to.
+pub fn token_variables(forge: &str, host: &str) -> &'static [&'static str] {
+    match forge {
+        "github" => {
+            if host == "github.com" || host.ends_with(".github.com") {
+                &["GH_TOKEN", "GITHUB_TOKEN"]
+            } else {
+                &["GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"]
+            }
+        }
+        "gitlab" => &["GITLAB_TOKEN"],
+        "gitea" => &["GITEA_TOKEN"],
+        _ => &[],
     }
 }
 
@@ -338,6 +380,45 @@ mod tests {
         let host = Target::Host("GitHub.com".into());
         assert_eq!(host.host().as_deref(), Some("github.com"));
         assert_eq!(host.repo_path(), None);
+    }
+
+    /// The `env` source of D2.4, split by host the way gh splits it: a
+    /// github.com token never travels to an Enterprise Server.
+    #[test]
+    fn the_forges_own_token_variables_are_read_per_host() {
+        assert_eq!(
+            token_variables("github", "github.com"),
+            ["GH_TOKEN", "GITHUB_TOKEN"]
+        );
+        assert_eq!(
+            token_variables("github", "ghe.acme.test"),
+            ["GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"]
+        );
+        assert_eq!(token_variables("gitlab", "gitlab.com"), ["GITLAB_TOKEN"]);
+        assert_eq!(token_variables("gitea", "git.acme.test"), ["GITEA_TOKEN"]);
+        assert!(token_variables("sourcehut", "sr.ht").is_empty());
+    }
+
+    /// Two rules in one case: the forge's own variable answers a call
+    /// that named none (J2's `GH_TOKEN` acceptance), and a call that
+    /// DID name one gets that variable and nothing else, even when it
+    /// holds nothing.
+    #[test]
+    fn a_named_variable_is_the_whole_answer_and_the_forges_own_fills_the_gap() {
+        std::env::set_var("GH_TOKEN", "gho_from_the_environment");
+        std::env::set_var("JOY_TEST_EMPTY_TOKEN", "");
+        let ambient = Ctx::bare(std::env::temp_dir());
+        assert_eq!(
+            ambient.token("github", "github.com").as_deref(),
+            Some("gho_from_the_environment")
+        );
+        // which variable belongs to which host is the case above; no
+        // forge CLI is spawned here, because both answers are found
+        // before that step
+        let named = Ctx::bare(std::env::temp_dir()).with_token_env("JOY_TEST_EMPTY_TOKEN");
+        assert_eq!(named.token("github", "github.com"), None);
+        std::env::remove_var("GH_TOKEN");
+        std::env::remove_var("JOY_TEST_EMPTY_TOKEN");
     }
 
     #[test]

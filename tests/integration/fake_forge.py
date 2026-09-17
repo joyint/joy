@@ -18,6 +18,9 @@ wants to set or read:
   <state-dir>/login          the login `GET /user` answers
   <state-dir>/release_body   the notes of the release for the tag; an
                              empty file means there is no release yet
+  <state-dir>/authorization  the Authorization header of the LAST
+                             request, so a test can prove which
+                             credential reached the forge
 """
 
 import json
@@ -50,6 +53,7 @@ class Handler(BaseHTTPRequestHandler):
     def record(self, body):
         with open(os.path.join(STATE, "calls"), "a", encoding="utf-8") as handle:
             handle.write(f"{self.command} {self.path} {body}\n")
+        write("authorization", self.headers.get("Authorization") or "")
 
     def reply(self, status, payload):
         raw = json.dumps(payload).encode("utf-8")

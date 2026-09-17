@@ -294,7 +294,30 @@ pub fn store_answer(target: &Target, ctx: &Ctx) -> Value {
                 &format!("{project_url}/protected_branches?per_page=100"),
             )
         },
+        // Asked only where the 404 branch needs it, because it costs a
+        // request of its own (D1.9).
+        || may_see_private(ctx, &host),
     )
+}
+
+/// Whether a 404 is a verdict (D2.7c): "404 is `gone` only when the set
+/// contains `read_api` or `api`".
+///
+/// GitLab answers 404, not 403, for a private project the caller may
+/// not see, and `write_repository` "Uses Git-over-HTTP. Does not
+/// support API authentication.", so a token with that scope alone meets
+/// the API as an anonymous caller and sees the same 404. Reporting it
+/// as "gone" would tell a read only member their repository is deleted.
+/// A set the instance will not name stays "not known", and an unknown
+/// set is never taken for a wide one.
+fn may_see_private(ctx: &Ctx, host: &str) -> bool {
+    if ctx.token("gitlab", host).is_none() {
+        return false;
+    }
+    match granted_scopes(ctx, host) {
+        Some(granted) => scope::missing("gitlab", Group::RepositoryFacts, &granted).is_empty(),
+        None => false,
+    }
 }
 
 /// The decision over the answers, pure. Anything but a clear 2xx or 404
@@ -303,6 +326,7 @@ fn store_verdict(
     file: Option<Answer>,
     project: impl FnOnce() -> Option<Answer>,
     protected: impl FnOnce() -> Option<Answer>,
+    may_see_private: impl FnOnce() -> bool,
 ) -> Value {
     let Some(file) = file else {
         return unknown_state();
@@ -323,8 +347,11 @@ fn store_verdict(
         404 => {
             return match store_body {
                 Some(body) => json!({ "state": "store", "project_yaml": body }),
-                None => json!({ "state": "gone" }),
-            }
+                // Not a verdict about the project unless the caller's
+                // set could have seen a private one.
+                None if may_see_private() => json!({ "state": "gone" }),
+                None => unknown_state(),
+            };
         }
         _ => return unknown_state(),
     }
@@ -471,6 +498,10 @@ pub fn repositories_answer(target: &Target, listing: &Listing, ctx: &Ctx) -> Val
         .and_then(|p| p.parse().ok())
         .unwrap_or(1);
     let limit = listing.limit.max(1);
+    // The page size is bounded by the caller's limit too, so no page has
+    // to be cut in half: a cursor is a page number, and the rest of a
+    // half read page would be lost to every later answer (D2.4).
+    let per_page = limit.clamp(1, TREE_PAGE);
     let mut repositories: Vec<Value> = Vec::new();
     let mut more = false;
     loop {
@@ -480,7 +511,7 @@ pub fn repositories_answer(target: &Target, listing: &Listing, ctx: &Ctx) -> Val
             .map(|q| format!("&search={}", encode_segment(q)))
             .unwrap_or_default();
         let url = format!(
-            "{base}/projects?membership=true&order_by=updated_at&per_page={TREE_PAGE}&page={page}{search}"
+            "{base}/projects?membership=true&order_by=updated_at&per_page={per_page}&page={page}{search}"
         );
         let Some(answer) = api_get(ctx, &host, &url) else {
             return unknown_state();
@@ -491,15 +522,20 @@ pub fn repositories_answer(target: &Target, listing: &Listing, ctx: &Ctx) -> Val
         let Ok(entries) = serde_json::from_str::<Vec<Value>>(&answer.body) else {
             return unknown_state();
         };
-        let full_page = entries.len() >= TREE_PAGE;
-        repositories.extend(entries.iter().map(repository_row));
-        page += 1;
-        if repositories.len() >= limit {
-            repositories.truncate(limit);
+        let full_page = entries.len() >= per_page;
+        let rows: Vec<Value> = entries.iter().map(repository_row).collect();
+        if !repositories.is_empty() && repositories.len() + rows.len() > limit {
             more = true;
             break;
         }
+        repositories.extend(rows);
+        page += 1;
         if !full_page {
+            // the instance had nothing more to give
+            break;
+        }
+        if repositories.len() >= limit {
+            more = true;
             break;
         }
     }
@@ -744,6 +780,7 @@ mod store_tests {
             answer(200, "name: Demo\n"),
             || answer(200, r#"{"statistics": {"repository_size": 4096}}"#),
             || panic!("no third request when the store is there"),
+            || panic!("a store that reads is never a question of scopes"),
         );
         assert_eq!(verdict["state"], "store");
         assert_eq!(verdict["project_yaml"], "name: Demo\n");
@@ -755,10 +792,15 @@ mod store_tests {
     fn a_store_stays_a_store_when_the_project_call_is_refused() {
         // a Reporter role is needed for statistics; without it the
         // field is absent and that is not an error (D2.4)
-        let verdict = store_verdict(answer(200, "name: Demo\n"), || answer(200, "{}"), || None);
+        let verdict = store_verdict(
+            answer(200, "name: Demo\n"),
+            || answer(200, "{}"),
+            || None,
+            || false,
+        );
         assert_eq!(verdict["state"], "store");
         assert_eq!(verdict["size_bytes"], Value::Null);
-        let no_project = store_verdict(answer(200, "name: Demo\n"), || None, || None);
+        let no_project = store_verdict(answer(200, "name: Demo\n"), || None, || None, || false);
         assert_eq!(
             no_project,
             json!({ "state": "store", "project_yaml": "name: Demo\n" })
@@ -767,14 +809,22 @@ mod store_tests {
 
     #[test]
     fn a_404_asks_the_project_whether_it_is_gone_or_only_storeless() {
+        // D2.7c: the same pair is "gone" only for a caller whose set
+        // could have seen a private project, and "not known" for
+        // everybody else, an anonymous caller included.
         assert_eq!(
-            store_verdict(answer(404, "{}"), || answer(404, "{}"), || None),
+            store_verdict(answer(404, "{}"), || answer(404, "{}"), || None, || true),
             json!({ "state": "gone" })
+        );
+        assert_eq!(
+            store_verdict(answer(404, "{}"), || answer(404, "{}"), || None, || false),
+            json!({ "state": "unknown" })
         );
         let missing = store_verdict(
             answer(404, "{}"),
             || project(40, Some("main")),
             || panic!("a maintainer needs no protection list"),
+            || true,
         );
         assert_eq!(missing["state"], "missing");
         assert_eq!(missing["may_create"], true);
@@ -809,10 +859,13 @@ mod store_tests {
     #[test]
     fn anything_unclear_stays_unanswered() {
         let unknown = json!({ "state": "unknown" });
-        assert_eq!(store_verdict(None, || None, || None), unknown);
-        assert_eq!(store_verdict(answer(401, ""), || None, || None), unknown);
+        assert_eq!(store_verdict(None, || None, || None, || true), unknown);
         assert_eq!(
-            store_verdict(answer(404, ""), || answer(500, ""), || None),
+            store_verdict(answer(401, ""), || None, || None, || true),
+            unknown
+        );
+        assert_eq!(
+            store_verdict(answer(404, ""), || answer(500, ""), || None, || true),
             unknown
         );
     }

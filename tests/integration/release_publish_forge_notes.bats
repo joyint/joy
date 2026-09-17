@@ -96,10 +96,25 @@ run the installer"
     start_fake_forge
     point_forge_at_fake github.com github
     : > "$FAKE_FORGE_DIR/release_body"
-    # no gh at all: the token comes from the variable the caller names
+    # The machine of J2's acceptance: no gh and no curl exist at all.
+    # The PATH is built from nothing but joy (with the connector beside
+    # it) and the handful of tools this case itself needs, so a gh or a
+    # curl on the developer's machine cannot answer for the connector.
+    mkdir -p "$TEST_DIR/min-bin"
+    for tool in git grep; do
+        ln -sf "$(command -v "$tool")" "$TEST_DIR/min-bin/$tool"
+    done
+    SAVED_PATH="$PATH"
+    PATH="$(dirname "$JOY_BIN"):$TEST_DIR/min-bin"
+    export PATH SAVED_PATH
+    run -1 command -v gh
+    run -1 command -v curl
+    # the token is the forge's own variable, which is what a person or a
+    # CI runner exports
     export GH_TOKEN="gho_only-in-the-environment"
 
     run -0 joy release publish --forge github
     grep -q "POST /repos/example/demo/releases" "$FAKE_FORGE_DIR/calls"
+    grep -q "Bearer gho_only-in-the-environment" "$FAKE_FORGE_DIR/authorization"
     teardown_fake
 }

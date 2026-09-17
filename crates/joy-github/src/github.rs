@@ -241,6 +241,13 @@ fn verified_emails(ctx: &Ctx, host: &str) -> Vec<String> {
 /// profile address, where the person set one. Asked only where a
 /// credential exists.
 fn current_user(ctx: &Ctx, host: &str) -> Option<Value> {
+    current_account(ctx, host).and_then(|(user, _)| user)
+}
+
+/// The same `GET /user`, with the granted scope set that rides on its
+/// `X-OAuth-Scopes` header. One request carries both facts, and the
+/// budget of D1.9 counts requests, so the two are never asked apart.
+fn current_account(ctx: &Ctx, host: &str) -> Option<(Option<Value>, Option<Vec<String>>)> {
     // Nothing is asked without a credential: the endpoint is about the
     // account the token names (decision 20).
     ctx.token("github", host)?;
@@ -250,7 +257,11 @@ fn current_user(ctx: &Ctx, host: &str) -> Option<Value> {
         &format!("{}/user", api_base(host, ctx)),
         ACCEPT_JSON,
     )?;
-    answer.ok().then(|| answer.json()).flatten()
+    if !answer.ok() {
+        return None;
+    }
+    let scopes = granted_scopes(&answer);
+    Some((answer.json(), scopes))
 }
 
 /// The ACTOR answer (docs/plugins.md `identity`): who acts on GitHub.
@@ -478,10 +489,16 @@ pub fn repositories_answer(target: &Target, listing: &Listing, ctx: &Ctx) -> Val
         .and_then(|p| p.parse().ok())
         .unwrap_or(1);
     let limit = listing.limit.max(1);
+    // A cursor is a page number, so half a page has no number: the page
+    // size is bounded by the caller's limit as well as by the forge's
+    // maximum, and a page that would carry the answer past the limit is
+    // left unread for `next` to point at. Cutting one in half here
+    // would drop the rest of it out of every later answer too.
+    let per_page = limit.clamp(1, PAGE);
     let mut repositories: Vec<Value> = Vec::new();
     let mut more = false;
     loop {
-        let url = format!("{base}/user/repos?per_page={PAGE}&page={page}&sort=updated");
+        let url = format!("{base}/user/repos?per_page={per_page}&page={page}&sort=updated");
         let Some(answer) = api_get(ctx, &host, &url, ACCEPT_JSON) else {
             return unknown_state();
         };
@@ -491,19 +508,23 @@ pub fn repositories_answer(target: &Target, listing: &Listing, ctx: &Ctx) -> Val
         let Ok(entries) = serde_json::from_str::<Vec<Value>>(&answer.body) else {
             return unknown_state();
         };
-        let full_page = entries.len() >= PAGE;
-        for entry in &entries {
-            if let Some(repository) = repository_row(entry, listing.query.as_deref()) {
-                repositories.push(repository);
-            }
-        }
-        page += 1;
-        if repositories.len() >= limit {
-            repositories.truncate(limit);
-            more = full_page || repositories.len() >= limit;
+        let full_page = entries.len() >= per_page;
+        let rows: Vec<Value> = entries
+            .iter()
+            .filter_map(|entry| repository_row(entry, listing.query.as_deref()))
+            .collect();
+        if !repositories.is_empty() && repositories.len() + rows.len() > limit {
+            more = true;
             break;
         }
+        repositories.extend(rows);
+        page += 1;
         if !full_page {
+            // the forge had nothing more to give
+            break;
+        }
+        if repositories.len() >= limit {
+            more = true;
             break;
         }
     }
@@ -548,11 +569,13 @@ pub fn create_repository_answer(target: &Target, new: &NewRepository, ctx: &Ctx)
         return json!({ "state": "needs_sign_in", "host": host });
     }
     let base = api_base(&host, ctx);
+    // One `GET /user` carries both facts this verb needs: who the token
+    // speaks for, and what it may do (the `X-OAuth-Scopes` header).
+    let (user, granted) = current_account(ctx, &host).unwrap_or((None, None));
     // The local pre check of D2.7c: answer without spending a request
     // when the granted set cannot carry the verb.
-    let user = current_user(ctx, &host);
-    if let Some(scopes) = user.as_ref().and_then(|_| last_scopes(ctx, &host)) {
-        let missing = scope::missing("github", Group::CreateRepository, &scopes);
+    if let Some(scopes) = granted {
+        let missing = scope::missing_for_create("github", new.private, &scopes);
         if !missing.is_empty() {
             return scope::scope_missing(&host, "create-repository", &missing, &scopes);
         }
@@ -590,7 +613,7 @@ pub fn create_repository_answer(target: &Target, new: &NewRepository, ctx: &Ctx)
         let state = classify(&answer);
         if state == "scope_missing" {
             let have = granted_scopes(&answer).unwrap_or_default();
-            let needed = scope::missing("github", Group::CreateRepository, &have);
+            let needed = scope::missing_for_create("github", new.private, &have);
             return scope::scope_missing(&host, "create-repository", &needed, &have);
         }
         return json!({
@@ -607,17 +630,6 @@ pub fn create_repository_answer(target: &Target, new: &NewRepository, ctx: &Ctx)
         "default_branch": created.get("default_branch").and_then(|v| v.as_str()),
         "web_url": created.get("html_url").and_then(|v| v.as_str()),
     })
-}
-
-/// The granted set of the token in use, asked once through `GET /user`.
-fn last_scopes(ctx: &Ctx, host: &str) -> Option<Vec<String>> {
-    let answer = api_get(
-        ctx,
-        host,
-        &format!("{}/user", api_base(host, ctx)),
-        ACCEPT_JSON,
-    )?;
-    granted_scopes(&answer)
 }
 
 /// GitHub's own error sentence, where it sent one.
@@ -658,9 +670,12 @@ pub fn release_answer(
         )
     })?;
     let token = ctx.token("github", &host).ok_or_else(|| {
+        // Name the variables this host reads, so the sentence is the
+        // fix and not a category.
+        let variables = joy_forge_net::forge::token_variables("github", &host).join(" or ");
         anyhow!(
             "no GitHub credential for {host}\n  \
-             = help: set a token in the variable the caller names, or run `gh auth login`"
+             = help: set {variables}, hand one over with --token-env, or run `gh auth login`"
         )
     })?;
     let http = ctx.http(&host)?;
@@ -733,51 +748,13 @@ pub fn release_answer(
     }))
 }
 
-/// Attach a file to a release (D2.8: "plus the asset upload on
-/// uploads.github.com").
-///
-/// The upload host is NOT derived here: GitHub names it per release in
-/// `upload_url`, which is what makes this work on github.com and on a
-/// GitHub Enterprise Server alike.
-pub fn upload_asset(
-    ctx: &Ctx,
-    host: &str,
-    upload_url: &str,
-    name: &str,
-    content_type: &str,
-    bytes: Vec<u8>,
-) -> anyhow::Result<Value> {
-    use anyhow::{anyhow, bail};
-    let token = ctx
-        .token("github", host)
-        .ok_or_else(|| anyhow!("no GitHub credential for {host}"))?;
-    let http = ctx.http(host)?;
-    let url = format!(
-        "{}?name={}",
-        upload_template(upload_url),
-        joy_forge_net::url::encode_segment(name)
-    );
-    let answer = http
-        .post(&url)
-        .header("Accept", ACCEPT_JSON)
-        .bearer(&token)
-        .timeout(std::time::Duration::from_secs(90))
-        .send_bytes(content_type, bytes)?;
-    if !answer.ok() {
-        bail!(
-            "the asset {name} could not be uploaded: {} ({})",
-            message_of(&answer),
-            classify(&answer)
-        );
-    }
-    Ok(answer.json().unwrap_or_default())
-}
-
-/// GitHub's `upload_url` is a URI template: `https://uploads.github.com/
-/// repos/o/r/releases/1/assets{?name,label}`. Strip the template part.
-pub fn upload_template(url: &str) -> &str {
-    url.split('{').next().unwrap_or(url).trim_end_matches('/')
-}
+// No verb carries an asset yet. D2.8 names the asset upload on
+// uploads.github.com as part of the release move, and the upload host
+// is per release (GitHub puts it in the release's own `upload_url`,
+// which is what would make it work on an Enterprise Server too), but
+// `release` takes notes and nothing else in the verb catalogue of
+// D2.4, and joy's own publish never uploaded one either. The code for
+// it lands with the argument that carries it.
 
 #[cfg(test)]
 mod tests {
@@ -877,14 +854,6 @@ mod tests {
         assert_eq!(owner["login"], "bob");
         assert_eq!(owner["user_id"], "99");
         assert_eq!(resolve_answer("bob@example.com")["known"], false);
-    }
-
-    #[test]
-    fn an_upload_url_template_loses_its_placeholder() {
-        assert_eq!(
-            upload_template("https://uploads.github.com/repos/o/r/releases/1/assets{?name,label}"),
-            "https://uploads.github.com/repos/o/r/releases/1/assets"
-        );
     }
 
     fn answer(status: u16, body: &str) -> Option<Answer> {
