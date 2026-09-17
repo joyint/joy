@@ -18,6 +18,7 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 use serde_json::{json, Value};
 
+use crate::auth::Purpose;
 use crate::config::Instances;
 use crate::forge::{Ctx, Forge, HostKind, Listing, NewRepository, ReleaseRequest, Target};
 
@@ -118,6 +119,50 @@ enum Command {
         #[arg(long)]
         private: bool,
     },
+    /// The credential this machine holds for the host, and which login
+    /// it belongs to (D2.4, D4.1c).
+    Token {
+        #[arg(long)]
+        remote: Option<String>,
+        #[arg(long)]
+        host: Option<String>,
+    },
+    /// Read ONE token from stdin, validate it with `identity` and store
+    /// it. The token is never an argument (D2.4).
+    TokenStore {
+        #[arg(long)]
+        remote: Option<String>,
+        #[arg(long)]
+        host: Option<String>,
+    },
+    /// Sign in to the forge. Newline delimited JSON events on stdout;
+    /// the connector never opens a browser (D2.4, D2.7).
+    Login {
+        #[arg(long)]
+        remote: Option<String>,
+        #[arg(long)]
+        host: Option<String>,
+        /// Which access the sign in asks for: read, write, create or
+        /// release (D2.7a).
+        #[arg(long = "for")]
+        purpose: Option<String>,
+    },
+    /// Remove the credential this connector holds, and revoke it at the
+    /// forge where the forge offers that (D2.4).
+    Logout {
+        #[arg(long)]
+        remote: Option<String>,
+        #[arg(long)]
+        host: Option<String>,
+    },
+    /// The https twin of a remote: only the forge knows the web base of
+    /// a self hosted instance (D1.5, D2.4).
+    WebUrl {
+        #[arg(long)]
+        remote: Option<String>,
+        #[arg(long)]
+        host: Option<String>,
+    },
     /// Create (or complete) the release for a tag.
     Release {
         #[arg(long)]
@@ -194,8 +239,59 @@ where
         Command::Identity { user_id, .. } => user_id.clone(),
         _ => None,
     };
-    let ctx = Ctx::new(host_kind, cli.login, user_id, cli.token_env, root);
+    let mut ctx = Ctx::new(host_kind, cli.login, user_id, cli.token_env, root);
+    // The login order of D4.1c is per remote, so every token lookup
+    // inside a verb needs the remote without every verb passing it on.
+    ctx.remote = remote_of(&cli.command);
+    if let Command::Login {
+        remote,
+        host,
+        purpose,
+    } = &cli.command
+    {
+        let purpose = match purpose.as_deref().map(str::parse::<Purpose>) {
+            Some(Ok(purpose)) => purpose,
+            Some(Err(message)) => {
+                eprintln!("joy: {message}");
+                return 2;
+            }
+            None => Purpose::default(),
+        };
+        let target = target(remote.as_deref(), host.as_deref())
+            .unwrap_or_else(|| Target::Host(String::new()));
+        return crate::auth::verbs::login(
+            forge,
+            &target,
+            purpose,
+            &ctx,
+            &mut crate::auth::oauth::Stdout,
+            &crate::auth::oauth::RealClock,
+        );
+    }
     answer(forge, &cli.command, &ctx)
+}
+
+/// The remote a verb was asked about, where it names one.
+fn remote_of(command: &Command) -> Option<String> {
+    let remote = match command {
+        Command::Claims { remote, .. }
+        | Command::Identity { remote, .. }
+        | Command::Store { remote, .. }
+        | Command::Files { remote, .. }
+        | Command::Repositories { remote, .. }
+        | Command::CreateRepository { remote, .. }
+        | Command::Release { remote, .. }
+        | Command::Token { remote, .. }
+        | Command::TokenStore { remote, .. }
+        | Command::Login { remote, .. }
+        | Command::Logout { remote, .. }
+        | Command::WebUrl { remote, .. } => remote.as_deref(),
+        Command::Version | Command::Resolve { .. } => None,
+    };
+    remote
+        .map(str::trim)
+        .filter(|remote| !remote.is_empty())
+        .map(str::to_string)
 }
 
 /// The verb, answered. One JSON object on stdout, and for `release` the
@@ -255,6 +351,23 @@ fn answer(forge: &dyn Forge, command: &Command, ctx: &Ctx) -> i32 {
                 None => crate::forge::unknown_state(),
             }
         }
+        Command::Token { remote, host } => match target(remote.as_deref(), host.as_deref()) {
+            Some(target) => crate::auth::verbs::token(forge, &target, ctx),
+            None => json!({ "known": false, "reason": "unsupported-host" }),
+        },
+        Command::TokenStore { remote, host } => match target(remote.as_deref(), host.as_deref()) {
+            Some(target) => crate::auth::verbs::token_store(forge, &target, ctx),
+            None => json!({ "known": false, "reason": "unsupported-host" }),
+        },
+        Command::Login { .. } => unreachable!("answered as an event stream"),
+        Command::Logout { remote, host } => match target(remote.as_deref(), host.as_deref()) {
+            Some(target) => crate::auth::verbs::logout(forge, &target, ctx),
+            None => json!({ "removed": false, "revoked": false, "source": null }),
+        },
+        Command::WebUrl { remote, host } => match target(remote.as_deref(), host.as_deref()) {
+            Some(target) => crate::auth::verbs::web_url(forge, &target, ctx),
+            None => json!({ "known": false }),
+        },
         Command::Release {
             remote,
             host,
@@ -411,6 +524,35 @@ mod tests {
         }
         fn release(&self, _t: &Target, _r: &ReleaseRequest, _c: &Ctx) -> anyhow::Result<Value> {
             Ok(json!({ "unsupported": true }))
+        }
+        fn scopes(&self, _p: crate::auth::Purpose) -> &'static str {
+            ""
+        }
+        fn oauth(
+            &self,
+            _h: &str,
+            _p: crate::auth::Purpose,
+            _c: &Ctx,
+        ) -> Option<crate::auth::oauth::OAuth> {
+            None
+        }
+        fn account(&self, _h: &str, _t: &str, _c: &Ctx) -> Option<crate::forge::Account> {
+            None
+        }
+        fn reaches(&self, _h: &str, _p: &str, _t: &str, _c: &Ctx) -> Option<crate::forge::Reach> {
+            None
+        }
+        fn web_url(&self, t: &Target, c: &Ctx) -> Value {
+            crate::auth::verbs::https_twin(t, c)
+        }
+        fn https_username(&self) -> &'static str {
+            "x-access-token"
+        }
+        fn foreign_cli(&self) -> &'static str {
+            "gh"
+        }
+        fn foreign_logout_command(&self, host: &str) -> String {
+            format!("gh auth logout --hostname {host}")
         }
     }
 

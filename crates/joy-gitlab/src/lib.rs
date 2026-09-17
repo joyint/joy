@@ -14,7 +14,12 @@
 
 pub mod gitlab;
 
-use joy_forge_net::forge::{Ctx, Forge, Listing, NewRepository, ReleaseRequest, Target};
+use joy_forge_net::auth::oauth::OAuth;
+use joy_forge_net::auth::store::Record;
+use joy_forge_net::auth::Purpose;
+use joy_forge_net::forge::{
+    Account, Ctx, Forge, Listing, NewRepository, Reach, ReleaseRequest, Target,
+};
 use serde_json::{json, Value};
 
 /// The GitLab forge, as the dispatcher sees it.
@@ -67,5 +72,47 @@ impl Forge for GitLab {
         _ctx: &Ctx,
     ) -> anyhow::Result<Value> {
         Ok(json!({ "unsupported": true }))
+    }
+
+    fn scopes(&self, purpose: Purpose) -> &'static str {
+        gitlab::scopes_for(purpose)
+    }
+
+    fn oauth(&self, host: &str, purpose: Purpose, ctx: &Ctx) -> Option<OAuth> {
+        gitlab::oauth_for(host, purpose, ctx)
+    }
+
+    fn account(&self, host: &str, token: &str, ctx: &Ctx) -> Option<Account> {
+        gitlab::account_of(host, token, ctx)
+    }
+
+    fn reaches(&self, host: &str, repo_path: &str, token: &str, ctx: &Ctx) -> Option<Reach> {
+        gitlab::reaches_repo(host, repo_path, token, ctx)
+    }
+
+    fn web_url(&self, target: &Target, ctx: &Ctx) -> Value {
+        joy_forge_net::auth::verbs::https_twin(target, ctx)
+    }
+
+    fn revoke(&self, host: &str, record: &Record, ctx: &Ctx) -> bool {
+        gitlab::revoke_token(host, record, ctx)
+    }
+
+    /// GitLab requires this name beside a token in basic
+    /// authentication, which is the same word the engine already uses.
+    fn https_username(&self) -> &'static str {
+        "oauth2"
+    }
+
+    fn foreign_cli(&self) -> &'static str {
+        "glab"
+    }
+
+    fn foreign_logout_command(&self, host: &str) -> String {
+        format!("glab auth logout --hostname {host}")
+    }
+
+    fn foreign_logins(&self, host: &str) -> Vec<String> {
+        gitlab::glab_logins(host)
     }
 }

@@ -129,6 +129,11 @@ impl Http {
         self.request("PATCH", url)
     }
 
+    /// A DELETE.
+    pub fn delete(&self, url: &str) -> Request<'_> {
+        self.request("DELETE", url)
+    }
+
     /// A request with any method.
     pub fn request(&self, method: &'static str, url: &str) -> Request<'_> {
         Request {
@@ -231,6 +236,17 @@ impl Request<'_> {
     /// `Authorization: token <token>`, the shape the Gitea family takes.
     pub fn token_header(self, token: &str) -> Self {
         self.header("Authorization", format!("token {token}"))
+    }
+
+    /// `Authorization: Basic <user:secret>`, which GitHub's token
+    /// revocation endpoint asks for (D2.4: `DELETE
+    /// /applications/{client_id}/token`). A public OAuth client has no
+    /// secret, so the secret half is usually empty and the forge is
+    /// what decides whether that is enough.
+    pub fn basic(self, user: &str, secret: &str) -> Self {
+        use base64ct::{Base64, Encoding};
+        let encoded = Base64::encode_string(format!("{user}:{secret}").as_bytes());
+        self.header("Authorization", format!("Basic {encoded}"))
     }
 
     /// A different bound for this one request (an asset upload).

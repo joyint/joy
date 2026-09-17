@@ -34,3 +34,4 @@ anyhow = { workspace = true }
 
 [dev-dependencies]
 joy-forge-net = { workspace = true, features = ["fake-api"] }
+tempfile = "3"

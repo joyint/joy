@@ -13,6 +13,7 @@
 //! `/api/v3`, the token travels in a header, and the release verb runs
 //! over REST end to end.
 
+use joy_forge_net::auth::store::{Record, Vault};
 use joy_forge_net::config::Instances;
 use joy_forge_net::fake::{FakeForge, Reply};
 use joy_forge_net::forge::{Ctx, Listing, NewRepository, ReleaseRequest, Target};
@@ -468,4 +469,54 @@ fn release_reports_a_refusal_instead_of_degrading() {
     assert!(text.contains("could not be read"), "{text}");
     assert!(text.contains("denied"), "{text}");
     assert!(!text.contains(TOKEN), "no token in an error text: {text}");
+}
+
+/// D2.7c, the cheap half: the set the forge granted is stored beside
+/// the token (J3), so a verb that set cannot carry is refused locally,
+/// without a single request, and never reported as `denied`.
+#[test]
+fn a_stored_public_only_set_refuses_a_private_repository_without_a_request() {
+    let fake = FakeForge::start(|_| Reply::json(500, r#"{"message":"never asked"}"#));
+    let host = "ghe-scope.test";
+    let dir = tempfile::tempdir().expect("a sandbox");
+    let instances = Instances::from_text(&format!(
+        "- host: {host}\n  kind: github\n  api_base: {}\n",
+        fake.base()
+    ))
+    .expect("the instance file parses");
+    let ctx = Ctx::bare(std::env::temp_dir())
+        .with_instances(instances)
+        .with_vault(Vault::file_at(dir.path()))
+        .with_state_dir(dir.path());
+    ctx.vault()
+        .put(
+            host,
+            &Record {
+                token: "gho_public_only".into(),
+                login: Some("scotty".into()),
+                scopes: "public_repo user:email".into(),
+                ..Record::default()
+            },
+        )
+        .expect("the credential is stored");
+
+    let private = NewRepository {
+        name: "secret".into(),
+        owner: None,
+        private: true,
+    };
+    let answer =
+        joy_github::github::create_repository_answer(&Target::Host(host.into()), &private, &ctx);
+    assert_eq!(answer["state"], "scope_missing");
+    assert_eq!(answer["verb"], "create-repository");
+    assert_eq!(answer["needed"], serde_json::json!(["repo"]));
+    assert_eq!(
+        answer["have"],
+        serde_json::json!(["public_repo", "user:email"])
+    );
+    assert_eq!(answer["next"], "sign in again with wider access");
+    assert!(
+        fake.calls().is_empty(),
+        "the pre check spends no request at all"
+    );
 }

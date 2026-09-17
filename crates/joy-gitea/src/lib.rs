@@ -16,7 +16,11 @@
 
 pub mod gitea;
 
-use joy_forge_net::forge::{Ctx, Forge, Listing, NewRepository, ReleaseRequest, Target};
+use joy_forge_net::auth::oauth::OAuth;
+use joy_forge_net::auth::Purpose;
+use joy_forge_net::forge::{
+    Account, Ctx, Forge, Listing, NewRepository, Reach, ReleaseRequest, Target,
+};
 use serde_json::{json, Value};
 
 /// The Gitea forge, as the dispatcher sees it.
@@ -69,5 +73,48 @@ impl Forge for Gitea {
         _ctx: &Ctx,
     ) -> anyhow::Result<Value> {
         Ok(json!({ "unsupported": true }))
+    }
+
+    fn scopes(&self, purpose: Purpose) -> &'static str {
+        gitea::scopes_for(purpose)
+    }
+
+    fn oauth(&self, host: &str, purpose: Purpose, ctx: &Ctx) -> Option<OAuth> {
+        gitea::oauth_for(host, purpose, ctx)
+    }
+
+    fn account(&self, host: &str, token: &str, ctx: &Ctx) -> Option<Account> {
+        gitea::account_of(host, token, ctx)
+    }
+
+    fn reaches(&self, host: &str, repo_path: &str, token: &str, ctx: &Ctx) -> Option<Reach> {
+        gitea::reaches_repo(host, repo_path, token, ctx)
+    }
+
+    fn web_url(&self, target: &Target, ctx: &Ctx) -> Value {
+        joy_forge_net::auth::verbs::https_twin(target, ctx)
+    }
+
+    /// The Gitea family accepts this name beside a token in basic
+    /// authentication, which is the same word the engine already uses.
+    ///
+    /// There is no `revoke` beside it: the family offers no token
+    /// revocation endpoint an OAuth client may call, so `logout`
+    /// removes the entry and answers `"revoked": false` rather than
+    /// pretending. That is the trait's default.
+    fn https_username(&self) -> &'static str {
+        "oauth2"
+    }
+
+    fn foreign_cli(&self) -> &'static str {
+        "tea"
+    }
+
+    fn foreign_logout_command(&self, host: &str) -> String {
+        gitea::tea_logout_command(host)
+    }
+
+    fn foreign_logins(&self, host: &str) -> Vec<String> {
+        gitea::tea_logins_for(host)
     }
 }

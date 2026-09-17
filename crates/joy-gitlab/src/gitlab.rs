@@ -12,7 +12,11 @@
 //! instance, so a self hosted person's addresses came from a server
 //! they had never signed in to, or from nowhere.
 
-use joy_forge_net::forge::{unknown, unknown_state, Ctx, Listing, NewRepository, Target};
+use joy_forge_net::auth::oauth::{Flow, OAuth};
+use joy_forge_net::auth::Purpose;
+use joy_forge_net::forge::{
+    unknown, unknown_state, Account, Ctx, Listing, NewRepository, Reach, Target,
+};
 use joy_forge_net::http::Answer;
 use joy_forge_net::scope::{self, Group};
 use joy_forge_net::url::encode_segment;
@@ -574,10 +578,21 @@ pub fn create_repository_answer(target: &Target, new: &NewRepository, ctx: &Ctx)
     if ctx.token("gitlab", &host).is_none() {
         return json!({ "state": "needs_sign_in", "host": host });
     }
-    if let Some(granted) = granted_scopes(ctx, &host) {
-        let missing = scope::missing("gitlab", Group::CreateRepository, &granted);
-        if !missing.is_empty() {
-            return scope::scope_missing(&host, "create-repository", &missing, &granted);
+    // The local pre check of D2.7c, cheapest first: since J3 the set
+    // the forge granted is stored beside the token, so the two requests
+    // `granted_scopes` costs are spent only for a credential joy did
+    // not write itself.
+    if let Some(refused) =
+        joy_forge_net::auth::verbs::stored_create_gate(ctx, "gitlab", &host, new.private)
+    {
+        return refused;
+    }
+    if ctx.granted_scopes("gitlab", &host).is_none() {
+        if let Some(granted) = granted_scopes(ctx, &host) {
+            let missing = scope::missing("gitlab", Group::CreateRepository, &granted);
+            if !missing.is_empty() {
+                return scope::scope_missing(&host, "create-repository", &missing, &granted);
+            }
         }
     }
     let base = api_base(&host, ctx);
@@ -663,6 +678,211 @@ fn message_of(answer: &Answer) -> String {
                 .map(|m| m.to_string())
         })
         .unwrap_or_else(|| format!("GitLab answered {}", answer.status))
+}
+
+// -- the sign in half (D2.4, D2.7, package J3) --------------------------------
+
+/// The three scope sets of D2.7a. v2's single set was wrong in both
+/// directions and this is the replacement:
+///
+/// | Set | Scopes | Covers |
+/// | --- | --- | --- |
+/// | read only member | `read_api read_repository` | A, B, C, E |
+/// | read write member | `read_api write_repository` | A to E |
+/// | full | `api write_repository` | A to G |
+///
+/// `write_repository` "Uses Git-over-HTTP. Does not support API
+/// authentication.", so `create-repository` (POST /projects) and the
+/// Releases API need `api`. The registered application carries the
+/// union `api write_repository`, because since the fix for issue 543138
+/// a device request may narrow but never widen.
+pub fn scopes_for(purpose: Purpose) -> &'static str {
+    match purpose {
+        Purpose::Read => "read_api read_repository",
+        Purpose::Write => "read_api write_repository",
+        Purpose::Create | Purpose::Release => "api write_repository",
+    }
+}
+
+/// The OAuth application for a host (D2.7). GitLab has the device grant
+/// from 17.3; gitlab.com's OIDC discovery does not advertise the device
+/// endpoint, so the path is written down rather than discovered.
+pub fn oauth_for(host: &str, purpose: Purpose, ctx: &Ctx) -> Option<OAuth> {
+    let instance = ctx.instance(host);
+    let client_id = instance
+        .and_then(|entry| entry.client_id.clone())
+        .or_else(|| {
+            (host == "gitlab.com")
+                .then(|| joy_forge_net::auth::oauth::clients::GITLAB_COM.to_string())
+        })?;
+    // The API base may sit under a relative URL root, and the OAuth
+    // endpoints sit beside it and not under `/api/v4`.
+    let base = instance_root(host, ctx);
+    Some(OAuth {
+        client_id,
+        flow: Flow::Device,
+        device_endpoint: instance
+            .and_then(|entry| entry.device_endpoint.clone())
+            .unwrap_or_else(|| format!("{base}/oauth/authorize_device")),
+        auth_endpoint: instance
+            .and_then(|entry| entry.auth_endpoint.clone())
+            .unwrap_or_else(|| format!("{base}/oauth/authorize")),
+        token_endpoint: instance
+            .and_then(|entry| entry.token_endpoint.clone())
+            .unwrap_or_else(|| format!("{base}/oauth/token")),
+        scopes: instance
+            .and_then(|entry| entry.scopes.clone())
+            .unwrap_or_else(|| scopes_for(purpose).to_string()),
+    })
+}
+
+/// The instance root the OAuth endpoints hang off: the configured API
+/// base without its `/api/v4` tail (a relative URL install keeps its sub
+/// path that way), else the host itself.
+fn instance_root(host: &str, ctx: &Ctx) -> String {
+    let base = api_base(host, ctx);
+    base.strip_suffix("/api/v4")
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("https://{host}"))
+}
+
+/// One API GET with a NAMED token, for the calls that validate a token
+/// the context does not hold yet.
+fn api_get_as(ctx: &Ctx, host: &str, url: &str, token: &str) -> Option<Answer> {
+    let http = ctx.http(host).ok()?;
+    match http
+        .get(url)
+        .header("Accept", "application/json")
+        .bearer(token)
+        .call()
+    {
+        Ok(answer) => Some(answer),
+        Err(error) => {
+            eprintln!("joy-forge gitlab: {error}");
+            None
+        }
+    }
+}
+
+/// Who this token speaks for, asked of the instance's own API.
+pub fn account_of(host: &str, token: &str, ctx: &Ctx) -> Option<Account> {
+    let base = api_base(host, ctx);
+    let answer = api_get_as(ctx, host, &format!("{base}/user"), token)?;
+    if !answer.ok() {
+        return None;
+    }
+    let body = answer.json()?;
+    let login = body.get("username").and_then(|v| v.as_str())?.to_string();
+    let mut emails: Vec<String> = Vec::new();
+    if let Some(list) = api_get_as(ctx, host, &format!("{base}/user/emails"), token) {
+        if list.ok() {
+            #[derive(serde::Deserialize)]
+            struct Entry {
+                email: String,
+            }
+            if let Ok(entries) = serde_json::from_str::<Vec<Entry>>(&list.body) {
+                emails = entries.into_iter().map(|entry| entry.email).collect();
+            }
+        }
+    }
+    Some(Account {
+        login,
+        user_id: body
+            .get("id")
+            .and_then(|v| v.as_i64())
+            .map(|id| id.to_string()),
+        emails,
+        scopes: scopes_of(ctx, host, token).map(|scopes| scopes.join(" ")),
+    })
+}
+
+/// The granted set of a NAMED token: a personal access token's own
+/// record first, then the OAuth token's info. `None` means "not known",
+/// and an unknown set is never reported as a missing one (D2.7c).
+fn scopes_of(ctx: &Ctx, host: &str, token: &str) -> Option<Vec<String>> {
+    let base = api_base(host, ctx);
+    if let Some(answer) = api_get_as(
+        ctx,
+        host,
+        &format!("{base}/personal_access_tokens/self"),
+        token,
+    ) {
+        if answer.ok() {
+            if let Some(scopes) = string_list(&answer, "scopes") {
+                return Some(scopes);
+            }
+        }
+    }
+    let answer = api_get_as(
+        ctx,
+        host,
+        &format!("{}/oauth/token/info", instance_root(host, ctx)),
+        token,
+    )?;
+    answer.ok().then(|| string_list(&answer, "scope")).flatten()
+}
+
+/// Whether this token reaches `owner/repo`, and whether it may push
+/// (the probe of D4.1c).
+pub fn reaches_repo(host: &str, repo_path: &str, token: &str, ctx: &Ctx) -> Option<Reach> {
+    let url = format!(
+        "{}/projects/{}",
+        api_base(host, ctx),
+        encode_segment(repo_path)
+    );
+    let answer = api_get_as(ctx, host, &url, token)?;
+    if !answer.ok() {
+        // GitLab answers 404, not 403, for a private project the caller
+        // may not see: both mean "this login is not the one".
+        return Some(Reach::default());
+    }
+    let body = answer.json().unwrap_or_default();
+    let level = [
+        "/permissions/project_access/access_level",
+        "/permissions/group_access/access_level",
+    ]
+    .iter()
+    .filter_map(|pointer| body.pointer(pointer).and_then(|v| v.as_i64()))
+    .max()
+    .unwrap_or(0);
+    Some(Reach {
+        read: true,
+        push: level >= DEVELOPER,
+    })
+}
+
+/// Revoke a token at GitLab: the OAuth revocation endpoint, which a
+/// public client may call with its client id alone (RFC 7009).
+pub fn revoke_token(host: &str, record: &joy_forge_net::auth::store::Record, ctx: &Ctx) -> bool {
+    let Some(client_id) = record.client_id.as_deref() else {
+        return false;
+    };
+    let Ok(http) = ctx.http(host) else {
+        return false;
+    };
+    let body = joy_forge_net::auth::oauth::form(&[
+        ("client_id", client_id),
+        ("token", &record.token),
+        ("token_type_hint", "access_token"),
+    ]);
+    match http
+        .post(&format!("{}/oauth/revoke", instance_root(host, ctx)))
+        .header("Accept", "application/json")
+        .send_bytes("application/x-www-form-urlencoded", body.into_bytes())
+    {
+        Ok(answer) => answer.ok(),
+        Err(error) => {
+            eprintln!("joy-forge gitlab: {error}");
+            false
+        }
+    }
+}
+
+/// The login glab is signed in as on this host. glab holds ONE token
+/// per host block, so D4.1c's order collapses to step 3 here, and the
+/// list has at most one entry.
+pub fn glab_logins(host: &str) -> Vec<String> {
+    glab_login(host).into_iter().collect()
 }
 
 #[cfg(test)]
@@ -924,5 +1144,67 @@ mod files_tests {
             json!({ "state": "files", "paths": [], "truncated": false })
         );
         assert_eq!(files_verdict(|_| None), json!({ "state": "unknown" }));
+    }
+}
+
+#[cfg(test)]
+mod sign_in_tests {
+    use super::*;
+
+    fn ctx() -> Ctx {
+        Ctx::bare(std::env::temp_dir())
+    }
+
+    /// D2.7a's three sets, and the one contradiction they resolve:
+    /// `write_repository` "Does not support API authentication", so
+    /// creating a repository and publishing a release need `api`.
+    #[test]
+    fn the_three_scope_sets_are_the_ones_the_design_tabulates() {
+        assert_eq!(scopes_for(Purpose::Read), "read_api read_repository");
+        assert_eq!(scopes_for(Purpose::Write), "read_api write_repository");
+        assert_eq!(scopes_for(Purpose::Create), "api write_repository");
+        assert_eq!(scopes_for(Purpose::Release), "api write_repository");
+    }
+
+    /// D2.7: GitLab has the device grant from 17.3, and gitlab.com's
+    /// OIDC discovery does not advertise the endpoint, so the path is
+    /// written down.
+    #[test]
+    fn the_device_endpoint_is_the_instances_own_oauth_path() {
+        let ctx = ctx();
+        let public = oauth_for("gitlab.com", Purpose::Write, &ctx).unwrap();
+        assert_eq!(public.flow, Flow::Device);
+        assert_eq!(
+            public.device_endpoint,
+            "https://gitlab.com/oauth/authorize_device"
+        );
+        assert_eq!(public.token_endpoint, "https://gitlab.com/oauth/token");
+        assert_eq!(public.scopes, "read_api write_repository");
+        assert!(joy_forge_net::auth::oauth::clients::is_placeholder(
+            &public.client_id
+        ));
+        assert!(oauth_for("gitlab.acme.test", Purpose::Write, &ctx).is_none());
+    }
+
+    /// A relative URL install keeps its sub path: the OAuth endpoints
+    /// sit beside `/api/v4` and not under it.
+    #[test]
+    fn a_relative_url_install_keeps_its_sub_path_on_the_oauth_endpoints() {
+        let ctx = ctx().with_instances(
+            joy_forge_net::config::Instances::from_text(
+                "- host: git.acme.test\n  kind: gitlab\n  client_id: cid\n  api_base: https://git.acme.test/gitlab/api/v4\n",
+            )
+            .unwrap(),
+        );
+        let oauth = oauth_for("git.acme.test", Purpose::Create, &ctx).unwrap();
+        assert_eq!(
+            oauth.device_endpoint,
+            "https://git.acme.test/gitlab/oauth/authorize_device"
+        );
+        assert_eq!(
+            oauth.token_endpoint,
+            "https://git.acme.test/gitlab/oauth/token"
+        );
+        assert_eq!(oauth.scopes, "api write_repository");
     }
 }
