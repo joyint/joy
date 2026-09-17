@@ -94,12 +94,14 @@ setup_project_with_alice() {
     [ "$status" -ne 0 ]
     [[ "$output" == *"not a registered project member"* ]]
 
-    # so nobody acts here, and the write is refused as well
+    # so nobody acts here, and the write is refused as well. The refused
+    # login left no session and no pin behind, and git config names
+    # nobody since J11, so there is exactly ONE sentence a write can
+    # answer with here: name yourself. Asserting it by name is what
+    # keeps a regression in that sentence from passing as a refusal.
     run joy add idea "should be refused"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"not a registered project member"* ]] \
-        || [[ "$output" == *"must authenticate"* ]] \
-        || [[ "$output" == *"does not know who you are"* ]]
+    [[ "$output" == *"this project does not know who you are, pick your member"* ]]
 }
 
 @test "joy init refuses a forge alias as founder identity" {
@@ -123,11 +125,11 @@ setup_project_with_alice() {
     [ "$status" -ne 0 ]
     [[ "$output" == *"not a registered project member"* ]]
 
+    # nothing was pinned and no session was opened, so the write asks the
+    # caller to name themselves, in those words
     run joy add idea "stranger writes"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"not a registered project member"* ]] \
-        || [[ "$output" == *"must authenticate"* ]] \
-        || [[ "$output" == *"does not know who you are"* ]]
+    [[ "$output" == *"this project does not know who you are, pick your member"* ]]
 }
 
 @test "a legacy alias member key resolves back to the actor (direction two)" {
@@ -286,11 +288,11 @@ STUB
     [ "$status" -ne 0 ]
     [[ "$output" == *"not a registered project member"* ]]
 
+    # and the write after it asks the caller to name themselves, in those
+    # words: the lookalike host placed nobody, so nobody acts here
     run joy add idea "should be refused"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"not a registered project member"* ]] \
-        || [[ "$output" == *"must authenticate"* ]] \
-        || [[ "$output" == *"does not know who you are"* ]]
+    [[ "$output" == *"this project does not know who you are, pick your member"* ]]
 }
 
 # The glab STUB: the GitLab forge boundary, same shape as the gh twin.
