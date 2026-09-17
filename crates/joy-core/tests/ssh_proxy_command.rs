@@ -81,7 +81,13 @@ fn a_jump_host_is_refused_by_name_and_never_looked_up() {
 }
 
 fn forge_clone(url: &str, dest: &std::path::Path) -> String {
-    joy_core::vcs::forge::clone(url, &Auth::local(HostKind::Background), dest)
-        .expect_err("a jump host cannot be cloned")
-        .to_string()
+    joy_core::vcs::forge::clone(
+        url,
+        &Auth::local(HostKind::Background),
+        dest,
+        joy_core::vcs::forge::CLONE_DEPTH_FULL,
+        &mut |_| true,
+    )
+    .expect_err("a jump host cannot be cloned")
+    .to_string()
 }

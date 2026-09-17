@@ -1622,14 +1622,70 @@ fn err(e: git2::Error) -> anyhow::Error {
     super::contact::engine_fault("git", &e)
 }
 
+/// How much history a clone downloads (D4.3, design R6). `0` is
+/// libgit2's `GIT_FETCH_DEPTH_FULL`, the whole history, which is what
+/// the CLI and the platform ask for; the desktop asks for `1`, the lean
+/// shape: one snapshot of the default branch, with the full working tree
+/// on disk, because neither sparse checkout nor partial clone exists in
+/// libgit2 1.9.6.
+///
+/// Caveat that belongs to the number, not to its callers: the LOCAL
+/// transport refuses any depth at all ("shallow fetch is not supported
+/// by the local transport", transports/local.c:310), so a clone from a
+/// path on this machine must stay at [`CLONE_DEPTH_FULL`].
+pub const CLONE_DEPTH_FULL: i32 = 0;
+
+/// How far a running clone has got, as libgit2 counts it (D4.3: "a
+/// progress callback (bytes and objects)").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CloneProgress {
+    /// Bytes of the pack that have arrived.
+    pub received_bytes: u64,
+    /// Objects the forge has sent so far, and the number it announced.
+    pub received_objects: u32,
+    pub total_objects: u32,
+    /// Objects the indexer has written; the tail of a download that is
+    /// otherwise complete.
+    pub indexed_objects: u32,
+}
+
 /// Clone a forge URL into `dest` using the account token.
-pub fn clone(url: &str, auth: &Auth, dest: &Path) -> anyhow::Result<()> {
+///
+/// `depth` is [`CLONE_DEPTH_FULL`] for the whole history and `1` for the
+/// lean shape of D4.3. `progress` is called while the pack arrives and
+/// decides whether it goes on: returning `false` STOPS the transfer,
+/// which is how a person's cancel reaches libgit2 instead of waiting for
+/// the last byte of a download nobody wants any more. A stopped clone is
+/// an error here, and the caller that asked for the stop knows it did.
+pub fn clone(
+    url: &str,
+    auth: &Auth,
+    dest: &Path,
+    depth: i32,
+    progress: &mut dyn FnMut(CloneProgress) -> bool,
+) -> anyhow::Result<()> {
     super::contact::run(url, "clone", auth.credentialed(), || {
-        clone_raw(url, auth, dest)
+        clone_raw(url, auth, dest, depth, progress)
     })
 }
 
-fn clone_raw(url: &str, auth: &Auth, dest: &Path) -> anyhow::Result<()> {
+/// A clone of the whole history with nobody watching it, for the tests of
+/// this crate that clone from a path: the local transport refuses any
+/// depth at all, and a test repository on disk has no progress worth
+/// counting. The depth and the callback are exercised where they can be,
+/// against a server in process (tests/clone_depth_and_progress.rs).
+#[cfg(test)]
+fn clone_full(url: &str, auth: &Auth, dest: &Path) -> anyhow::Result<()> {
+    clone(url, auth, dest, CLONE_DEPTH_FULL, &mut |_| true)
+}
+
+fn clone_raw(
+    url: &str,
+    auth: &Auth,
+    dest: &Path,
+    depth: i32,
+    progress: &mut dyn FnMut(CloneProgress) -> bool,
+) -> anyhow::Result<()> {
     guard_transport(Some(url))?;
     std::fs::create_dir_all(dest.parent().expect("checkout dir has a parent"))?;
     // Before anything that reads git config, the proxy decision
@@ -1641,8 +1697,24 @@ fn clone_raw(url: &str, auth: &Auth, dest: &Path) -> anyhow::Result<()> {
     // speak to (SOCKS) is refused here by name and nothing is dialled.
     let proxy = proxy_for(url, None)?;
     let mut fetch = git2::FetchOptions::new();
-    fetch.remote_callbacks(auth.callbacks(cred_source_for_url(url)));
+    let mut callbacks = auth.callbacks(cred_source_for_url(url));
+    // The transfer callback of D4.3: the only place that knows how far a
+    // clone has got, and the only place a cancel can stop it.
+    callbacks.transfer_progress(move |stats| {
+        progress(CloneProgress {
+            received_bytes: stats.received_bytes() as u64,
+            received_objects: stats.received_objects() as u32,
+            total_objects: stats.total_objects() as u32,
+            indexed_objects: stats.indexed_objects() as u32,
+        })
+    });
+    fetch.remote_callbacks(callbacks);
     fetch.proxy_options(proxy.options());
+    // `0` is libgit2's own "the whole history", so a caller that wants
+    // everything sets nothing (include/git2/remote.h:771-778).
+    if depth != CLONE_DEPTH_FULL {
+        fetch.depth(depth);
+    }
     // The same address the other verbs dial (see `contact_remote`): a
     // clone from an ssh alias reaches the `HostName` the person's ssh
     // config names, which libgit2 reads nothing of (design D1.4).
@@ -4970,7 +5042,7 @@ mod tests {
 
         // Clone like the server does (file URLs ignore the token callback).
         let checkout = base.join("checkout");
-        clone(
+        clone_full(
             forge.to_str().unwrap(),
             &Auth::token("irrelevant"),
             &checkout,
@@ -4989,7 +5061,7 @@ mod tests {
             .is_none());
 
         let second = base.join("second");
-        clone(forge.to_str().unwrap(), &Auth::token("irrelevant"), &second).expect("clone 2");
+        clone_full(forge.to_str().unwrap(), &Auth::token("irrelevant"), &second).expect("clone 2");
         assert!(second.join(".joy/item.yaml").exists());
         pull_ff(&checkout, &Auth::token("irrelevant")).expect("pull up-to-date");
 
@@ -5034,7 +5106,7 @@ mod tests {
             .unwrap();
 
         let checkout = base.join("checkout");
-        clone(forge.to_str().unwrap(), &Auth::token("x"), &checkout).expect("clone");
+        clone_full(forge.to_str().unwrap(), &Auth::token("x"), &checkout).expect("clone");
 
         // job worktree on a fresh branch
         let wt = base.join("wt");
@@ -5121,7 +5193,7 @@ mod tests {
             .push(&[format!("refs/heads/{b}:refs/heads/{b}").as_str()], None)
             .unwrap();
         let checkout = base.join("checkout");
-        clone(forge.to_str().unwrap(), &Auth::token("x"), &checkout).unwrap();
+        clone_full(forge.to_str().unwrap(), &Auth::token("x"), &checkout).unwrap();
 
         // a dirty branch: code plus a direct .joy commit
         let wt = base.join("wt-dirty");
@@ -5193,7 +5265,7 @@ mod engine_invariant_tests {
         seed_repo.remote("origin", forge.to_str().unwrap()).unwrap();
         push_current_branch(&seed_repo);
         let clone_dir = tmp.path().join("clone");
-        clone(forge.to_str().unwrap(), &Auth::token(""), &clone_dir).expect("clone");
+        clone_full(forge.to_str().unwrap(), &Auth::token(""), &clone_dir).expect("clone");
         Rig {
             _tmp: tmp,
             forge,
