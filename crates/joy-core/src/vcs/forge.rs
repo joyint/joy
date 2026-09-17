@@ -302,8 +302,14 @@ fn cred_config(repo: Option<&git2::Repository>) -> Option<git2::Config> {
     }
 }
 
+/// A fault of libgit2 on this machine's own data: the index, a ref, a
+/// tree, a checkout. It reads exactly as it always did ("git: reference
+/// not found"), but it is TYPED, so the contact boundary can tell
+/// libgit2's words from joy's own plain sentences and keep them off the
+/// surface when such a fault happens inside a contact (D1.8b, wording
+/// rules).
 fn err(e: git2::Error) -> anyhow::Error {
-    anyhow::anyhow!("git: {}", e.message())
+    super::contact::engine_fault("git", &e)
 }
 
 /// Clone a forge URL into `dest` using the account token.

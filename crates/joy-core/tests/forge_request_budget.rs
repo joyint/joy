@@ -102,6 +102,26 @@ fn respond(stream: &mut TcpStream, status: u16, reason: &str, headers: &str, bod
 /// A git smart-HTTP server that demands Basic authentication, answers an
 /// advertisement and a packfile, and counts what it answered.
 fn serve(forge: std::path::PathBuf, refs: Vec<(String, git2::Oid)>, tip: git2::Oid) -> Server {
+    serve_kind(forge, refs, tip, true)
+}
+
+/// The same server for a PUBLIC repository: it never challenges, so
+/// libgit2 never asks joy for a credential and joy presents nothing.
+/// That is the remote of D1.9's no anonymous polling rule.
+fn serve_public(
+    forge: std::path::PathBuf,
+    refs: Vec<(String, git2::Oid)>,
+    tip: git2::Oid,
+) -> Server {
+    serve_kind(forge, refs, tip, false)
+}
+
+fn serve_kind(
+    forge: std::path::PathBuf,
+    refs: Vec<(String, git2::Oid)>,
+    tip: git2::Oid,
+    private: bool,
+) -> Server {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
     let port = listener.local_addr().unwrap().port();
     let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -151,7 +171,7 @@ fn serve(forge: std::path::PathBuf, refs: Vec<(String, git2::Oid)>, tip: git2::O
                         }
                     }
                     count.fetch_add(1, Ordering::SeqCst);
-                    let status = if !authenticated {
+                    let status = if private && !authenticated {
                         // the 401 every private repository answers first
                         respond(
                             &mut stream,
@@ -329,5 +349,123 @@ fn one_poll_tick_makes_one_contact_for_two_refs() {
         2,
         "the 401 and its replay, and nothing else: {seen:#?}"
     );
+    contact::set_gaps("");
+}
+
+/// J5's acceptance, measured from OUTSIDE the crate with the public
+/// API: "after a 429 the next contact to that host waits at least twice
+/// the gap". The next one, not the one after it: the slot for the next
+/// contact is reserved while the failing contact is still running, so
+/// the strike has to widen a reservation that already exists.
+#[test]
+fn after_a_429_the_next_contact_to_that_host_waits_twice_the_gap() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    // 100 ms per request, and a credentialed ls-remote is two requests
+    contact::set_gaps("limited.example=100,default=0");
+    let url = "https://limited.example/o/r.git";
+    let limited = || {
+        contact::failed(&contact::ContactEvidence::new(
+            git2::Error::new(
+                git2::ErrorCode::GenericError,
+                git2::ErrorClass::Http,
+                "unexpected http status code: 429",
+            ),
+            url,
+            contact::ContactDirection::Fetch,
+            contact::CredentialSource::TokenPresented,
+        ))
+    };
+
+    let refused = contact::run(url, "ls-remote", true, || Err::<(), _>(limited()))
+        .expect_err("the forge said 429");
+    assert_eq!(
+        contact::failure_of(&refused),
+        contact::Failure::RateLimited,
+        "{refused}"
+    );
+
+    let started = std::time::Instant::now();
+    contact::run(url, "ls-remote", true, || Ok(())).expect("every contact still goes out");
+    let waited = started.elapsed();
+    assert!(
+        waited >= std::time::Duration::from_millis(360),
+        "the next contact waits twice the 200 ms gap, waited {waited:?}"
+    );
+
+    contact::set_gaps("");
+}
+
+/// D1.9, no anonymous polling, on the desktop's own shape: `Auth::Local`
+/// says "the machine's own credentials" for every host, and on a host
+/// where the machine has none it hands over nothing at all. The engine
+/// learns that from the contact itself and polls the host once every
+/// fifteen minutes, with the sentence that says why.
+#[test]
+fn a_public_remote_nobody_is_signed_in_for_is_polled_every_fifteen_minutes() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let forge = tmp.path().join("forge.git");
+    let (refs, tip) = forge_repository(&forge);
+    let server = serve_public(forge.clone(), refs, tip);
+    contact::set_gaps("localhost=0,default=0");
+
+    let checkout = tmp.path().join("checkout");
+    let repo = git2::Repository::init(&checkout).expect("init");
+    // the same server under its OTHER name, so this test's host memory
+    // is its own and the order of the tests in this binary cannot
+    // change what it measures
+    repo.remote(
+        "origin",
+        &format!("http://localhost:{}/forge.git", server.port),
+    )
+    .expect("remote");
+    drop(repo);
+
+    // nothing is known yet, so the first poll goes out on the claim
+    assert_eq!(
+        contact::poll_period("localhost", "ls-remote", contact::Transport::Https, true),
+        std::time::Duration::from_secs(1)
+    );
+    let found = joy_core::vcs::forge::ls_remote_refs_poll(
+        &checkout,
+        &Auth::Local,
+        &[CHATS_REF, "refs/heads/main"],
+    )
+    .expect("a public advertisement needs no credential");
+    assert_eq!(found.len(), 2, "{found:?}");
+    assert_eq!(
+        server.requests.load(Ordering::SeqCst),
+        1,
+        "a public repository answers the first request: no challenge, no credential"
+    );
+
+    // and now the engine knows: nothing was ever presented here
+    assert!(!contact::credential_answers("localhost", true));
+    assert_eq!(
+        contact::poll_period("localhost", "ls-remote", contact::Transport::Https, true),
+        contact::ANONYMOUS_POLL_INTERVAL,
+        "an https remote with no credential is polled once every 15 minutes (D1.9)"
+    );
+
+    // the door holds the next tick of the window, and the surface says why
+    let held = joy_core::vcs::forge::ls_remote_ref_poll(&checkout, &Auth::Local, CHATS_REF)
+        .expect_err("the second poll inside the window is held");
+    assert_eq!(contact::failure_of(&held), contact::Failure::RateLimited);
+    assert!(
+        held.to_string().contains("15 minutes") && held.to_string().contains("Sign in"),
+        "the surface says why: {held}"
+    );
+    assert_eq!(
+        server.requests.load(Ordering::SeqCst),
+        1,
+        "and the forge was not contacted again"
+    );
+
+    // a person's own command is not a poll and is never held
+    let asked = joy_core::vcs::forge::ls_remote_ref(&checkout, &Auth::Local, CHATS_REF)
+        .expect("a person's own command goes out");
+    assert_eq!(asked, Some(tip.to_string()));
+    assert_eq!(server.requests.load(Ordering::SeqCst), 2);
+
     contact::set_gaps("");
 }

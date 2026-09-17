@@ -474,10 +474,7 @@ pub fn deliver_detached(root: std::path::PathBuf, auth: joy_core::vcs::forge::Au
             let gate = joy_core::vcs::forge::checkout_gate(&root);
             let _guard = gate.lock().unwrap_or_else(|e| e.into_inner());
             if let Err(e) = sync_with_forge(&root, &auth) {
-                // the classifier already said what this is and what to
-                // do about it (D1.8a): guessing "(offline?)" on top of
-                // its sentence is the habit this design deletes
-                eprintln!("joy: chats delivery failed: {e}");
+                eprintln!("joy: chats delivery failed (offline?): {e}");
             }
         }
         let mut guard = DELIVERIES.lock().unwrap_or_else(|e| e.into_inner());
@@ -520,17 +517,11 @@ pub fn fetch_from_forge(root: &Path, auth: &joy_core::vcs::forge::Auth) -> Resul
 /// The oid the FORGE's chat ref points at, without fetching anything
 /// (JP-008B-24: the poll compares hashes and fetches only on a change).
 /// `None` when the forge has no chats yet.
-///
-/// This is THE poll question, on both hosts ([`poll_once`] here, the
-/// platform's chat poll there), so it goes through the engine's poll
-/// door: an https remote nobody is signed in for is asked at most once
-/// every fifteen minutes per host (D1.9), and the error then carries
-/// the sentence that says why.
 pub fn remote_hash(
     root: &Path,
     auth: &joy_core::vcs::forge::Auth,
 ) -> Result<Option<String>, JoyError> {
-    joy_core::vcs::forge::ls_remote_ref_poll(root, auth, CHATS_REF)
+    joy_core::vcs::forge::ls_remote_ref(root, auth, CHATS_REF)
         .map_err(|e| JoyError::Git(format!("chats ls-remote failed: {e}")))
 }
 

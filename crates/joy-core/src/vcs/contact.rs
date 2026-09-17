@@ -22,8 +22,12 @@
 //!   - holds back the one contact nobody asked for: an https remote
 //!     with no credential is POLLED at most once every fifteen minutes
 //!     per host ([`run_poll`], D1.9), and the refusal carries the
-//!     sentence that says why. A person's own command goes through
-//!     [`run`] and is never held,
+//!     sentence that says why. What "no credential" means is not what
+//!     the caller hoped for but what the credential callbacks really
+//!     handed over on this host ([`credential_answers`]): on the
+//!     desktop `Auth::Local` claims one everywhere and a machine with
+//!     no helper entry presents nothing. A person's own command goes
+//!     through [`run`] and is never held,
 //!   - answers a 429 by slowing down, never by stopping (Horst,
 //!     2026-08-29): the gap for the host is doubled per strike, the
 //!     strike SURVIVES the next success and expires only with time, and
@@ -143,8 +147,12 @@ impl Failure {
             Failure::NeedsHostTrust => {
                 format!("This machine has never seen the host key of {host}.")
             }
+            // D4.7's own row, word for word: the state is reached when
+            // the connector answered `scope_missing` to a verb that
+            // creates a project, which is the one verb of D2.7a whose
+            // scope set is wider than the sync set.
             Failure::ScopeMissing => {
-                format!("Your {forge} sign in does not allow this.")
+                format!("Your {forge} sign in does not allow creating projects.")
             }
             Failure::PluginMissing => format!("The {forge} connector is missing on this machine."),
             Failure::PluginOutdated => {
@@ -169,6 +177,13 @@ impl Failure {
 
     /// The ONE next step that belongs to the sentence, or `None` when
     /// there is nothing the person can do but wait.
+    ///
+    /// This is the BUTTON of D4.7 and nothing else: a surface renders it
+    /// as a label, so it is always two or three words in the
+    /// imperative. What is behind the button, which can be a whole
+    /// sentence and can differ per operating system, is
+    /// [`Failure::guidance`]. Mixing the two printed "add your
+    /// organisation's CA with update-ca-certificates" on a button.
     pub fn next_step(self) -> Option<&'static str> {
         match self {
             Failure::NeedsSignIn => Some("sign in"),
@@ -178,25 +193,35 @@ impl Failure {
             Failure::ScopeMissing => Some("sign in again with wider access"),
             Failure::PluginMissing => Some("repair"),
             Failure::PluginOutdated => Some("show how to replace it"),
-            Failure::TlsUntrusted => Some(CA_NEXT_STEP),
+            Failure::TlsUntrusted => Some("show what to do"),
             Failure::ProxyAuth => Some("sign in to the proxy"),
             Failure::Offline => Some("retry"),
             Failure::NoPushRights | Failure::RateLimited | Failure::Denied | Failure::Error => None,
         }
     }
+
+    /// What is behind the button of [`Failure::next_step`]: the
+    /// instruction a person follows, which is prose and never a label
+    /// (D1.8c). Only the states whose next step needs one have it; for
+    /// every other state the button says it all.
+    pub fn guidance(self) -> Option<&'static str> {
+        match self {
+            Failure::TlsUntrusted => Some(CA_GUIDANCE),
+            _ => None,
+        }
+    }
 }
 
-/// The one next step for an untrusted certificate, per operating system
+/// What to do about an untrusted certificate, per operating system
 /// (D1.8c): the machine's own certificate store is what has to change,
 /// and joy never offers to skip the check.
 #[cfg(target_os = "linux")]
-const CA_NEXT_STEP: &str = "add your organisation's CA with update-ca-certificates";
+const CA_GUIDANCE: &str = "add your organisation's CA with update-ca-certificates";
 #[cfg(target_os = "macos")]
-const CA_NEXT_STEP: &str =
+const CA_GUIDANCE: &str =
     "add your organisation's CA to the login or System keychain and mark it trusted";
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-const CA_NEXT_STEP: &str =
-    "your administrator must install the CA in the Windows certificate store";
+const CA_GUIDANCE: &str = "your administrator must install the CA in the Windows certificate store";
 
 // ---- the evidence a classifier is allowed to read (D1.8a) ------------
 
@@ -556,8 +581,19 @@ pub struct Verdict {
     pub failure: Failure,
     /// The plain sentence for the surface. Never libgit2's own text.
     pub sentence: String,
-    /// The ONE next step, or `None` when there is nothing to do.
+    /// The ONE next step, as a BUTTON label of D4.7 ("sign in",
+    /// "retry", "show what to do"), or `None` when there is nothing to
+    /// do but wait.
     pub next_step: Option<String>,
+    /// What is behind that button: the instruction in prose, when the
+    /// step needs one (D1.8c, the per OS certificate sentence and the
+    /// proxy's Windows integrated authentication case). A surface
+    /// renders [`Verdict::next_step`] as the label and this as the
+    /// text; it never prints this on a button.
+    pub guidance: Option<String>,
+    /// The URL the action opens, when the evidence carried one (D1.8b:
+    /// for `needs_sso` the `X-GitHub-SSO` header's URL is the action).
+    pub action: Option<String>,
     /// How long to wait, when the forge or its documentation said so.
     pub wait: Option<Duration>,
     /// libgit2's own verdict, for the log and for the details view a
@@ -590,9 +626,11 @@ pub fn verdict(evidence: &ContactEvidence) -> Verdict {
     Verdict {
         failure,
         sentence,
-        next_step: decision
-            .next_step
-            .or_else(|| failure.next_step().map(str::to_string)),
+        next_step: failure.next_step().map(str::to_string),
+        guidance: decision
+            .guidance
+            .or_else(|| failure.guidance().map(str::to_string)),
+        action: None,
         wait: decision.wait,
         detail: format!("libgit2: {}", evidence.error.message()),
     }
@@ -612,12 +650,13 @@ fn rate_limited_sentence(host: &str, wait: Duration) -> String {
 
 /// What the classifier decided: the state, plus the parts of the
 /// sentence a state alone cannot know (the proxy's own name, the wait,
-/// the one next step that differs from the state's usual one).
+/// the instruction that differs from the state's usual one). The BUTTON
+/// belongs to the state and is never decided here (D4.7).
 struct Decision {
     failure: Failure,
     wait: Option<Duration>,
     sentence: Option<String>,
-    next_step: Option<String>,
+    guidance: Option<String>,
 }
 
 /// A state that says everything about itself.
@@ -626,7 +665,7 @@ fn plain(failure: Failure) -> Decision {
         failure,
         wait: None,
         sentence: None,
-        next_step: None,
+        guidance: None,
     }
 }
 
@@ -637,15 +676,38 @@ fn decide(ev: &ContactEvidence) -> Decision {
     let message = ev.error.message().to_ascii_lowercase();
     let family = host_family(&ev.host);
 
-    // ssh first: its class is unambiguous, and an ssh host key refusal
-    // must not be read as an https certificate problem.
-    if class == Class::Ssh || (ev.transport == Transport::Ssh && code == Code::Auth) {
+    // ssh first, and by the CODE before the class (D1.8a reads the code
+    // first): an ssh host key refusal must not be read as an https
+    // certificate problem, and it does not always carry class `Ssh`.
+    // libgit2 refuses an unknown host key itself with
+    // `GIT_ERROR_SSH`/`GIT_ECERTIFICATE` (ssh_libssh2.c:759-767), but
+    // when joy's own `certificate_check` closure refuses (D1.4a, J4h)
+    // the class is whatever the closure set, or `GIT_ERROR_NET` when it
+    // set nothing at all, while the code stays `GIT_ECERTIFICATE`.
+    // Reading the class alone classified joy's own host key refusal as
+    // `offline` and told a person with an unknown host key "No
+    // connection to github.com." with a retry button.
+    if class == Class::Ssh
+        || (ev.transport == Transport::Ssh && matches!(code, Code::Auth | Code::Certificate))
+    {
         match code {
             Code::Auth => return plain(Failure::NeedsSignIn),
             Code::Certificate => return plain(Failure::NeedsHostTrust),
             // GIT_EEOF and ONLY GIT_EEOF is the row of D1.8b: libgit2
             // read the remote's own stderr and returns GIT_EEOF with it
-            // as the message (ssh_libssh2.c:138-139). Every other
+            // as the message (ssh_libssh2.c:136-140).
+            //
+            // That the code REACHES this classifier is read off the
+            // source, because no test here can make a real forge refuse
+            // an ssh push: `ssh_stream_read` returns GIT_EEOF,
+            // `git_smart__recv` hands a negative return value back
+            // unchanged (smart.c:16-35), the ref advertisement returns
+            // it unchanged again (smart_protocol.c:57-59, :290-296),
+            // and git2 builds its error from the RETURN code plus
+            // `git_error_last` (git2 0.21 error.rs:34-63), so
+            // `error.code()` is `Eof` and `error.class()` is `Ssh`.
+            // Both a refused fetch and a refused push read the
+            // advertisement first, so both arrive here. Every other
             // generic GIT_ERROR_SSH is a transport fault of this
             // machine, not a refusal of this login: "failed to start
             // SSH session" (:578), "unable to initialize libssh2"
@@ -723,7 +785,14 @@ fn decide_by_status(ev: &ContactEvidence, family: HostFamily, status: u16) -> De
     match status {
         401 => plain(Failure::NeedsSignIn),
         429 => {
-            let wait = match (family, ev.transport) {
+            // D1.8b: the wait comes from the plugin on GitHub only,
+            // "otherwise from the strike table". The strike table's
+            // number is STRIKE_LASTS, the same window `run` sets when
+            // it records the strike, so a 429 on any host can name a
+            // number and the sentence of D4.7 reads "Codeberg is rate
+            // limiting us, retrying in 10 minutes." instead of
+            // "retrying later."
+            let oracle_wait = match (family, ev.transport) {
                 (HostFamily::GitHub, Transport::Https) => match ask_oracle(&ev.host, status) {
                     Some(OracleAnswer::RateLimited { wait }) => wait,
                     // the oracle answered something else for a 429: the
@@ -734,9 +803,9 @@ fn decide_by_status(ev: &ContactEvidence, family: HostFamily, status: u16) -> De
             };
             Decision {
                 failure: Failure::RateLimited,
-                wait,
+                wait: Some(oracle_wait.unwrap_or(STRIKE_LASTS)),
                 sentence: None,
-                next_step: None,
+                guidance: None,
             }
         }
         403 | 404 if ev.direction == ContactDirection::Push && ev.token_worked_before => {
@@ -746,10 +815,12 @@ fn decide_by_status(ev: &ContactEvidence, family: HostFamily, status: u16) -> De
             match (family, ev.transport) {
                 (HostFamily::GitHub, Transport::Https) => match ask_oracle(&ev.host, status) {
                     Some(OracleAnswer::RateLimited { wait }) => Decision {
+                        // an oracle that named no number leaves the
+                        // strike table's own window, as for a 429
+                        wait: Some(wait.unwrap_or(STRIKE_LASTS)),
                         failure: Failure::RateLimited,
-                        wait,
                         sentence: None,
-                        next_step: None,
+                        guidance: None,
                     },
                     Some(OracleAnswer::NeedsOrgApproval) => plain(Failure::NeedsOrgApproval),
                     Some(OracleAnswer::Denied) => plain(Failure::Denied),
@@ -768,7 +839,7 @@ fn decide_by_status(ev: &ContactEvidence, family: HostFamily, status: u16) -> De
                         "{} refused this login for a while after too many failed sign ins.",
                         forge_name(&ev.host)
                     )),
-                    next_step: None,
+                    guidance: None,
                 },
                 _ => plain(Failure::Error),
             }
@@ -784,7 +855,7 @@ fn decide_by_status(ev: &ContactEvidence, family: HostFamily, status: u16) -> De
                         "{} does not have this repository (renamed, deleted or not visible to this login)",
                         ev.host
                     )),
-                    next_step: None,
+                    guidance: None,
                 }
             }
         }
@@ -792,7 +863,7 @@ fn decide_by_status(ev: &ContactEvidence, family: HostFamily, status: u16) -> De
             failure: Failure::Offline,
             wait: None,
             sentence: Some(format!("{} is not answering right now", ev.host)),
-            next_step: None,
+            guidance: None,
         },
         _ => plain(Failure::Error),
     }
@@ -818,19 +889,24 @@ fn proxy_auth(ev: &ContactEvidence, message: &str) -> Decision {
         .as_ref()
         .map(|proxy| format!("The proxy {proxy} needs a user name and a password."));
     let unsupported = message.contains(PROXY_AUTH_SENTENCES[1]);
-    let next_step = if unsupported && !cfg!(windows) {
+    let guidance = if unsupported && !cfg!(windows) {
         Some(format!(
             "this proxy requires Windows integrated authentication, which joy cannot do on this system; ask for a proxy password or a bypass rule for {}",
             ev.host
         ))
     } else {
-        None
+        // the alternative of D1.8c, on the detail line and only when
+        // joy knows the proxy's own name: inventing one would send a
+        // person at a machine that does not exist
+        ev.proxy
+            .as_ref()
+            .map(|proxy| format!("or set http.proxy to http://user@{proxy}"))
     };
     Decision {
         failure: Failure::ProxyAuth,
         wait: None,
         sentence,
-        next_step,
+        guidance,
     }
 }
 
@@ -870,6 +946,36 @@ pub fn classify_plugin(evidence: &PluginEvidence) -> Failure {
         PluginEvidence::ScopeMissing => Failure::ScopeMissing,
         PluginEvidence::NeedsSso { .. } => Failure::NeedsSso,
     }
+}
+
+/// [`classify_plugin`] with the words and the action, so a connector
+/// answer reaches a surface the same way a libgit2 failure does. The
+/// `needs_sso` row of D1.8b says the `X-GitHub-SSO` header's URL IS the
+/// action, so it is carried here and not thrown away; `host` names the
+/// forge the connector answered for, which is what the sentences of
+/// D4.7 put in front of "connector".
+pub fn plugin_verdict(evidence: &PluginEvidence, host: &str) -> Verdict {
+    let failure = classify_plugin(evidence);
+    Verdict {
+        failure,
+        sentence: failure.sentence(host),
+        next_step: failure.next_step().map(str::to_string),
+        guidance: failure.guidance().map(str::to_string),
+        action: match evidence {
+            PluginEvidence::NeedsSso { url } => url.clone(),
+            _ => None,
+        },
+        wait: None,
+        // no libgit2 was involved: the connector's answer is the whole
+        // evidence, and it is already said in plain words
+        detail: String::new(),
+    }
+}
+
+/// One connector answer as the error joy carries upwards, the way
+/// [`failed`] does it for a libgit2 failure.
+pub fn plugin_failed(evidence: &PluginEvidence, host: &str) -> anyhow::Error {
+    error_of(plugin_verdict(evidence, host))
 }
 
 // ---- the detail line (D1.8b, wording rules) --------------------------
@@ -942,18 +1048,61 @@ impl std::error::Error for ContactError {}
 /// upwards: the classifier decides the state, the state decides the
 /// sentence, and libgit2's own words go to the detail line.
 pub fn failed(evidence: &ContactEvidence) -> anyhow::Error {
-    let verdict = verdict(evidence);
-    let message = match verdict.next_step {
+    error_of(verdict(evidence))
+}
+
+/// One verdict as the error joy carries upwards. The sentence and the
+/// button are what a person reads; the instruction behind the button
+/// joins libgit2's own words on the detail line, which is where D1.8c
+/// puts the proxy's alternative and where a surface that cannot render
+/// a button finds the instruction at all.
+fn error_of(verdict: Verdict) -> anyhow::Error {
+    let message = match &verdict.next_step {
         Some(step) => format!("{} ({step})", verdict.sentence),
-        None => verdict.sentence,
+        None => verdict.sentence.clone(),
+    };
+    let detail = match &verdict.guidance {
+        Some(guidance) if verdict.detail.is_empty() => guidance.clone(),
+        Some(guidance) => format!("{guidance}; {}", verdict.detail),
+        None => verdict.detail.clone(),
     };
     anyhow::Error::new(ContactError {
         failure: verdict.failure,
         message,
-        detail: Some(verdict.detail),
+        detail: (!detail.is_empty()).then_some(detail),
         next_try: verdict.wait.map(|w| SystemTime::now() + w),
     })
 }
+
+/// A local fault of the git engine, carried TYPED so the contact
+/// boundary can tell libgit2's own text from joy's own sentences
+/// (D1.8b: the raw libgit2 text never becomes the sentence a person
+/// reads for a failed contact).
+///
+/// Outside a contact - reading a checkout, writing an index, resolving
+/// a ref - it is still what a developer needs and it displays
+/// unchanged. Inside one, [`run`] moves it to the detail line and the
+/// state provides the sentence.
+#[derive(Debug)]
+pub struct EngineFault {
+    message: String,
+}
+
+/// The fault of one libgit2 call on local data, in libgit2's own words
+/// and under joy's own prefix ("git: reference not found").
+pub fn engine_fault(what: &str, e: &git2::Error) -> anyhow::Error {
+    anyhow::Error::new(EngineFault {
+        message: format!("{what}: {}", e.message()),
+    })
+}
+
+impl std::fmt::Display for EngineFault {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for EngineFault {}
 
 /// The meaning of any error that came out of the engine: a
 /// [`ContactError`] says it directly. An error that never passed the
@@ -1062,8 +1211,10 @@ pub fn poll_period_for(
 ) -> Duration {
     // No anonymous polling (D1.9): an https remote nobody is signed in
     // for is checked once every 15 minutes per host, whatever the
-    // budget would allow.
-    if transport == Transport::Https && !credentialed {
+    // budget would allow. What "signed in" means is not what the caller
+    // hopes but what joy really handed over here
+    // ([`credential_answers`]).
+    if transport == Transport::Https && !credential_answers(host, credentialed) {
         return ANONYMOUS_POLL_INTERVAL;
     }
     let cost = gap_for(host) * requests(verb, transport, credentialed) * projects.max(1);
@@ -1089,22 +1240,32 @@ pub fn anonymous_poll_reason(host: &str) -> String {
 
 static ANONYMOUS_POLLS: Mutex<Option<HashMap<String, Instant>>> = Mutex::new(None);
 
-/// The gate for an anonymous poll: `None` when the poll may go out (and
-/// the slot is taken), `Some(next try)` when it may not. A person's own
-/// command is not a poll and never asks this, which is why [`run`] does
-/// not charge it and [`run_poll`] does.
-pub fn anonymous_poll_gate(host: &str) -> Option<SystemTime> {
+/// The gate for an anonymous poll, ASKED: `None` when the poll may go
+/// out, `Some(next try)` when it may not. It takes nothing; the slot is
+/// taken by [`note_anonymous_poll`] once the poll has really been made,
+/// so a poll that never reached the forge (the host was down) does not
+/// burn a fifteen minute window it never used.
+///
+/// A person's own command is not a poll and never asks this, which is
+/// why [`run`] does not charge it and [`run_poll`] does.
+pub fn anonymous_poll_due(host: &str) -> Option<SystemTime> {
     let now = Instant::now();
     let mut guard = ANONYMOUS_POLLS.lock().unwrap_or_else(|e| e.into_inner());
     let polls = guard.get_or_insert_with(HashMap::new);
-    if let Some(last) = polls.get(host) {
-        let waited = now.duration_since(*last);
-        if waited < ANONYMOUS_POLL_INTERVAL {
-            return Some(SystemTime::now() + (ANONYMOUS_POLL_INTERVAL - waited));
-        }
-    }
-    polls.insert(host.to_string(), now);
-    None
+    let last = polls.get(host)?;
+    let waited = now.duration_since(*last);
+    (waited < ANONYMOUS_POLL_INTERVAL)
+        .then(|| SystemTime::now() + (ANONYMOUS_POLL_INTERVAL - waited))
+}
+
+/// Take this host's anonymous poll slot: the next one waits the fifteen
+/// minutes of D1.9.
+pub fn note_anonymous_poll(host: &str) {
+    ANONYMOUS_POLLS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(HashMap::new)
+        .insert(host.to_string(), Instant::now());
 }
 
 #[cfg(test)]
@@ -1175,32 +1336,80 @@ fn gap_for(host: &str) -> Duration {
     })
 }
 
+/// What one turn at the throttle reserved. The reservation for the NEXT
+/// contact is made on the way out, with the gap that was in force at
+/// that moment, so a strike recorded afterwards has to widen it
+/// ([`widen_for_strike`]).
+struct Turn {
+    /// how long this contact waited in line
+    waited: Duration,
+    /// the moment this contact was let go, which is where the next
+    /// host's slot is measured from
+    start: Instant,
+    /// what this verb costs on this host BEFORE the strike doubling
+    base_gap: Duration,
+}
+
 /// Wait for this host's turn: the gap the verb's requests cost, doubled
 /// once per standing strike. Takes the slot on the way out, so
 /// concurrent callers line up one behind the other instead of leaving
 /// together.
-fn take_turn(host: &str, verb: &str, transport: Transport, credentialed: bool) -> Duration {
-    let mut gap = gap_for(host) * requests(verb, transport, credentialed);
+fn take_turn(host: &str, verb: &str, transport: Transport, credentialed: bool) -> Turn {
+    let base_gap = gap_for(host) * requests(verb, transport, credentialed);
     // A forge that said 429 is never stopped, only slowed (Horst,
     // 2026-08-29): `strikes` is the exponent it is documented to be.
-    let strikes = strikes_for(host);
-    if strikes > 0 {
-        gap *= 1u32 << strikes.min(MAX_STRIKE_EXPONENT);
-    }
+    let gap = base_gap * strike_factor(strikes_for(host));
     if gap.is_zero() {
-        return Duration::ZERO;
+        return Turn {
+            waited: Duration::ZERO,
+            start: Instant::now(),
+            base_gap,
+        };
     }
-    let waited = with_throttle(|t| {
+    let (waited, start) = with_throttle(|t| {
         let now = Instant::now();
         let free = t.next_free.get(host).copied().unwrap_or(now);
         let start = free.max(now);
         t.next_free.insert(host.to_string(), start + gap);
-        start.saturating_duration_since(now)
+        (start.saturating_duration_since(now), start)
     });
     if !waited.is_zero() {
         std::thread::sleep(waited);
     }
-    waited
+    Turn {
+        waited,
+        start,
+        base_gap,
+    }
+}
+
+/// How much wider the gap is after `strikes` strikes: the exponent of
+/// D1.9, capped.
+fn strike_factor(strikes: u32) -> u32 {
+    1u32 << strikes.min(MAX_STRIKE_EXPONENT)
+}
+
+/// Push the reservation this contact made forward, because the contact
+/// came back with a 429.
+///
+/// D1.9 and J5's acceptance criterion say "after a 429 the NEXT contact
+/// to that host waits at least twice the gap". The slot for that next
+/// contact was already reserved by [`take_turn`] on the way out, with
+/// the gap that was in force before the forge said 429, so recording
+/// the strike alone reached only the contact after next: the very
+/// contact that runs straight back into the limit went out on the old
+/// gap.
+fn widen_for_strike(host: &str, turn: &Turn) {
+    if turn.base_gap.is_zero() {
+        return;
+    }
+    let free = turn.start + turn.base_gap * strike_factor(strikes_for(host));
+    with_throttle(|t| {
+        let entry = t.next_free.entry(host.to_string()).or_insert(free);
+        if *entry < free {
+            *entry = free;
+        }
+    });
 }
 
 #[cfg(test)]
@@ -1361,6 +1570,57 @@ fn take_credential_presented() -> bool {
     PRESENTED.with(|p| p.replace(false))
 }
 
+/// Whether joy has ever really handed a credential to this host in this
+/// process. `None` until a contact to the host has been made.
+static CREDENTIAL_PRESENTED: Mutex<Option<HashMap<String, bool>>> = Mutex::new(None);
+
+/// Whether joy has anything to present to this host.
+///
+/// `claimed` is what the CALLER says its `Auth` carries, and on the
+/// desktop that is a hope rather than a fact: `Auth::Local` is "the
+/// machine's own credentials" and claims a credential for every host,
+/// while a machine with no helper entry and no agent key for this host
+/// presents nothing at all (the callback ends in `Cred::default()`,
+/// which is "I have nothing"). Keying the no anonymous polling rule of
+/// D1.9 on the claim alone meant the rule never fired on the desktop
+/// and an https remote nobody is signed in for was polled every two
+/// seconds.
+///
+/// So the claim is overruled by what the credential callbacks really
+/// handed over here ([`note_credential_presented`]), which [`run`]
+/// records per host. Until a contact has been made there is nothing to
+/// overrule it with, so the first contact goes out on the claim and
+/// teaches this memory what it is worth.
+pub fn credential_answers(host: &str, claimed: bool) -> bool {
+    claimed
+        && CREDENTIAL_PRESENTED
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .and_then(|m| m.get(host).copied())
+            .unwrap_or(true)
+}
+
+fn note_credential_answer(host: &str, presented: bool) {
+    if host.is_empty() {
+        return;
+    }
+    CREDENTIAL_PRESENTED
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(HashMap::new)
+        .insert(host.to_string(), presented);
+}
+
+#[cfg(test)]
+pub(crate) fn reset_credential_memory() {
+    CREDENTIAL_PRESENTED
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(HashMap::new)
+        .clear();
+}
+
 fn note_credential_worked(host: &str) {
     if host.is_empty() {
         return;
@@ -1402,24 +1662,30 @@ pub fn run<T>(
     let transport = transport_of(url);
     let span = tracing::info_span!("forge.contact", verb, forge = %host);
     let _s = span.enter();
-    let waited = take_turn(&host, verb, transport, credentialed);
-    if !waited.is_zero() {
+    let turn = take_turn(&host, verb, transport, credentialed);
+    if !turn.waited.is_zero() {
         tracing::debug!(
-            waited_ms = waited.as_millis() as u64,
+            waited_ms = turn.waited.as_millis() as u64,
             requests = requests(verb, transport, credentialed),
             "forge contact throttled"
         );
     }
     let started = Instant::now();
     take_credential_presented();
-    match work() {
+    let outcome = work();
+    let presented = take_credential_presented();
+    match outcome {
         Ok(value) => {
             // a contact that never had to present anything (a public
             // repository answers the first request) proves nothing about
             // a credential
-            if credentialed && take_credential_presented() {
+            if credentialed && presented {
                 note_credential_worked(&host);
             }
+            // but it does prove what joy has for this host: the forge
+            // answered and joy handed nothing over, which is what the
+            // no anonymous polling rule of D1.9 needs to know
+            note_credential_answer(&host, presented);
             tracing::debug!(
                 took_ms = started.elapsed().as_millis() as u64,
                 "forge contact ok"
@@ -1428,12 +1694,28 @@ pub fn run<T>(
         }
         Err(e) => {
             let failure = failure_of(&e);
+            // what joy really had for this host: a credential it
+            // presented, or - when the host answered by ASKING for one
+            // and joy had nothing - the proof that it has none. Every
+            // other failure (nobody answered, a certificate, a local
+            // fault) says nothing either way and leaves the memory
+            // alone, so a network outage never makes joy believe it is
+            // signed out.
+            if presented {
+                note_credential_answer(&host, true);
+            } else if failure == Failure::NeedsSignIn {
+                note_credential_answer(&host, false);
+            }
             let next_try = match failure {
                 Failure::RateLimited => {
                     // the strike window paces the next contacts to this
                     // host; the forge's own number, when it named one,
                     // is what this caller is told to wait
                     let window_ends = strike(&host);
+                    // and the NEXT contact pays the doubled gap at
+                    // once: its slot was reserved on the way out, with
+                    // the gap that was in force before the 429
+                    widen_for_strike(&host, &turn);
                     Some(next_try_of(&e).unwrap_or(window_ends))
                 }
                 _ => next_try_of(&e),
@@ -1453,10 +1735,24 @@ pub fn run<T>(
                 detail = detail_of(&e).unwrap_or_default(),
                 "forge contact failed"
             );
+            // An error that never passed the classifier keeps its own
+            // sentence, because joy wrote it and it is a plain one
+            // ("branch x not found on the forge"). The one exception is
+            // libgit2's own text, which arrives typed as an
+            // [`EngineFault`] and never becomes the person-facing
+            // sentence of a contact (D1.8b, wording rules): it moves to
+            // the detail line and the state says the rest.
+            let (message, detail) = match e.downcast_ref::<EngineFault>() {
+                Some(fault) => (
+                    format!("The {verb} could not be completed in this checkout."),
+                    Some(fault.to_string()),
+                ),
+                None => (e.to_string(), detail_of(&e)),
+            };
             Err(anyhow::Error::new(ContactError {
                 failure,
-                message: e.to_string(),
-                detail: detail_of(&e),
+                message,
+                detail,
                 next_try,
             }))
         }
@@ -1478,18 +1774,39 @@ pub fn run_poll<T>(
     work: impl FnOnce() -> anyhow::Result<T>,
 ) -> anyhow::Result<T> {
     let host = host_of(url);
-    if transport_of(url) == Transport::Https && !credentialed {
-        if let Some(next_try) = anonymous_poll_gate(&host) {
+    let anonymous = |host: &str| {
+        transport_of(url) == Transport::Https && !credential_answers(host, credentialed)
+    };
+    if anonymous(&host) {
+        if let Some(next_try) = anonymous_poll_due(&host) {
             tracing::debug!(forge = %host, "anonymous poll held back (D1.9)");
             return Err(anyhow::Error::new(ContactError {
-                failure: Failure::NeedsSignIn,
+                // a held poll is a WAIT joy imposes on itself, not a
+                // refusal by the forge. `rate_limited` is the word for
+                // that, and it is one of the two words the pre-NG
+                // reader already knows (D1.8b, createForgeSync.ts:98-118):
+                // `needs_sign_in` reads as "denied" there and would
+                // have blocked writes for a poll that was merely
+                // throttled.
+                failure: Failure::RateLimited,
                 message: anonymous_poll_reason(&host),
                 detail: None,
                 next_try: Some(next_try),
             }));
         }
     }
-    run(url, verb, credentialed, work)
+    let result = run(url, verb, credentialed, work);
+    // The slot is taken AFTER the poll, and only for a poll that really
+    // went out with nothing to present and really reached the forge. A
+    // poll that found nobody home burnt no window, and a poll that did
+    // present a credential never rode this gate at all. `run` has just
+    // taught `credential_answers` what this host is worth, so this
+    // second look is the honest one.
+    let reached = !matches!(&result, Err(e) if failure_of(e) == Failure::Offline);
+    if reached && anonymous(&host) {
+        note_anonymous_poll(&host);
+    }
+    result
 }
 
 /// [`run`] for a checkout: the forge is the checkout's remote.
