@@ -306,7 +306,11 @@ that trusts the creating application alone.
 
 - The entry is addressed with `Entry::new(service, user)` and nothing
   else: the service is `joy-forge`, the user is `<host>` or
-  `<host>|<login>`.
+  `<host>|<login>`. One more entry exists beside the credentials, under
+  the service `joy-forge.logins`: `Entry::new` cannot enumerate a store,
+  and "the only login this host holds" and the probe order below both
+  need the list, so the list of logins per host is an entry of its own.
+  It holds names, never a token.
 - Where the operating system's credential store cannot answer, the
   connector writes the entry itself, to `<config>/forge-tokens.json`,
   mode 0600 in a 0700 directory, and says `"source": "file"` rather
@@ -332,6 +336,40 @@ that trusts the creating application alone.
 - A `--host-kind delegated` call never opens this person's credential
   store at all. Its credential travels in the variable the caller named
   (`--token-env`), and the interactive verbs are refused there anyway.
+
+#### Where the credential really lies, per operating system
+
+"Never on disk in joy's hands" was the old sentence here, and it was
+never the whole truth: the operating system's store IS a file, with the
+operating system's rules on it. What those rules are is worth knowing
+before a token is put there, so they are written out rather than
+implied. The connector asks the `keyring` crate for exactly four
+features, `apple-native`, `windows-native`, `linux-native-sync-persistent`
+and `crypto-rust`, and that choice is what each line below describes.
+
+| Operating system | Where the token lies | Who can read it | What it survives |
+| --- | --- | --- | --- |
+| Windows | Credential Manager, a generic credential | any process of this logon session, with no prompt | a reboot; the entry is written `CRED_PERSIST_ENTERPRISE`, so it roams with a roaming profile |
+| macOS | the login keychain, a generic password | the binary that created it, with no prompt; another binary raises the allow-or-deny dialog | a reboot, and the keychain's own lock state decides when it can be read |
+| Linux, session bus present | the Secret Service collection (GNOME Keyring, KWallet), with kernel keyutils kept in front of it as an in memory cache | any process of this session that can reach the bus | a reboot, provided the collection is unlocked again; the keyutils half never does |
+| Linux, no session bus or locked collection | `<config>/forge-tokens.json`, mode 0600 in a 0700 directory | this user, and root | a reboot |
+| Anywhere the store refuses | the same 0600 file | this user, and root | a reboot |
+
+Two consequences a person can act on. On Windows and on Linux with a
+session bus, any other program you run is on the same side of the door
+as joy is: the store protects the token from other USERS and from a
+stolen disk, not from software you started yourself. And the 0600 file
+is a real outcome, not a bug report: a headless server, a container and
+a desktop whose keyring nobody unlocked all land there, the `source`
+field of every answer says `file` when they do, and `joy forge status`
+prints it.
+
+The `linux-native` feature alone would be the kernel keyutils store,
+which is "completely in-memory and will not persist across reboots"
+(keyring 3.6.3, `src/keyutils.rs`). That is why the persistent Secret
+Service collection is asked for beside it, and why the desktop app asks
+for the same four features: a machine should have one answer about
+where a secret lives, not one per binary.
 
 Which login answers for a remote is decided in one order, and every
 answer says which step decided (`chose_by`): the device local pin for
@@ -405,12 +443,13 @@ cargo feature, which is OFF by default. joy-cli turns it on, because the
 CLI is what a person types at. The platform asks for `forge-net` alone,
 so the module is not in the server binary at all.
 
-The desktop is meant to carry it too (design D3.11), and its manifest
-lives in the app repository: as this is written
-`app/apps/desktop/src-tauri/Cargo.toml` still asks for `ts` and
-`forge-net` only, so a desktop build has no `login`, no `logout` and no
-`token-store` in it. That manifest line belongs with the first desktop
-call site, and until it lands no guard in THIS repository can see it.
+The desktop carries it too (design D3.11), because that is the build
+with a window in front of a person: its manifest
+(`app/apps/desktop/src-tauri/Cargo.toml`) asks for `ts`, `forge-net` and
+`interactive`. That manifest lives in the app repository, so no guard in
+THIS repository can see it; the app's own build is what would notice if
+the line went away, and the platform's guard is what keeps the feature
+out of the server.
 
 Two more layers sit behind the feature:
 
