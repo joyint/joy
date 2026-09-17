@@ -309,6 +309,22 @@ fn one_fetch_of_a_private_remote_costs_three_requests() {
     );
     assert!(repo.find_commit(tip).is_ok(), "the commit was downloaded");
 
+    // The other half of the credential memory the test above reads:
+    // a token that really went over the wire IS remembered. The
+    // resolver of D1.1 hands every candidate over inside its own chain
+    // (D1.2), so the note of D1.8b has to sit on each of the chain's
+    // hand-over points; the sibling test proves the negative case, and
+    // without this one an engine that noted nothing at all would pass
+    // both.
+    assert!(
+        contact::credential_answers("127.0.0.1", true),
+        "a token the forge accepted is what joy has for this host (D1.9)"
+    );
+    assert!(
+        contact::token_worked_before("127.0.0.1"),
+        "and a 404 on this host is no longer read as 'never signed in' (D1.8b)"
+    );
+
     contact::set_gaps("");
 }
 
