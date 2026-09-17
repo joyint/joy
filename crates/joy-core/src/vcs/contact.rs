@@ -651,7 +651,31 @@ pub fn verdict(evidence: &ContactEvidence) -> Verdict {
             .or_else(|| failure.guidance().map(str::to_string)),
         action: None,
         wait: decision.wait,
-        detail: format!("libgit2: {}", evidence.error.message()),
+        detail: detail_line(failure, evidence),
+    }
+}
+
+/// libgit2's own verdict for the log and the details view, with what
+/// only joy knows in front of it.
+///
+/// For `tls_untrusted` that is the issuer of the certificate the host
+/// offered (D1.8c): libgit2's sentence names no certificate at all, and
+/// "issued by 'Acme Corporate Root CA'" is what tells an intercepting
+/// proxy from an expired certificate at a glance. The x509 branch of
+/// the one `certificate_check` closure stashed it while the contact ran
+/// and decided nothing with it (D1.4a).
+fn detail_line(failure: Failure, evidence: &ContactEvidence) -> String {
+    let libgit2 = format!("libgit2: {}", evidence.error.message());
+    if failure != Failure::TlsUntrusted {
+        return libgit2;
+    }
+    match super::certificates::x509_note().and_then(|note| note.issuer) {
+        Some(issuer) => format!("issued by '{issuer}', chain not trusted; {libgit2}"),
+        // A certificate the branch never saw (the failure came before
+        // the handshake, or the issuer has no common name): the state
+        // is still `tls_untrusted`, and the detail line says what there
+        // is rather than inventing a name.
+        None => libgit2,
     }
 }
 
@@ -1779,6 +1803,10 @@ pub fn run<T>(
     // and whatever the last contact's host key check left in this
     // thread's cell (D1.4a)
     super::certificates::forget_refusal();
+    // and the proxy the last contact went through (D1.11): this one
+    // decides its own, and a 407 must never name another contact's
+    // machine
+    super::proxy::forget();
     // Whatever an earlier contact left waiting for a verdict is not
     // this contact's business: a fresh credential that the last
     // contact never got a verdict on (it failed for a reason that had

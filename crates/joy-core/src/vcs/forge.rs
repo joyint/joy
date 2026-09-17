@@ -191,12 +191,27 @@ fn contact_failed(
     e: git2::Error,
 ) -> anyhow::Error {
     let transport = super::contact::transport_of(url);
-    super::contact::failed(&super::contact::ContactEvidence::new(
+    let mut evidence = super::contact::ContactEvidence::new(
         e,
         url,
         direction,
         auth.credential_evidence(transport),
-    ))
+    );
+    // The proxy THIS contact really went through (D1.8c): a 407 names
+    // the proxy and never the forge, and the name is joy's own
+    // decision, so it travels in the cell `proxy::options_for` filled
+    // rather than through fifteen call sites.
+    if let Some(proxy) = super::proxy::current() {
+        evidence = evidence.through_proxy(proxy);
+    }
+    super::contact::failed(&evidence)
+}
+
+/// THE proxy options of one contact (D1.11), with the refusal of a
+/// proxy joy cannot speak to turned into the failure the caller
+/// returns. No socket is opened for a refused proxy.
+fn proxy_for(url: &str, repo: Option<&git2::Repository>) -> anyhow::Result<super::proxy::Proxy> {
+    super::proxy::options_for(url, repo).map_err(|refused| anyhow::anyhow!("{refused}"))
 }
 
 /// The remote URL a contact travels over, for the evidence above.
@@ -815,6 +830,15 @@ fn origin_or_first<'r>(repo: &'r git2::Repository) -> anyhow::Result<git2::Remot
 /// process state, so it is changed only when the variable changes, under
 /// one lock.
 fn git_environment() {
+    git_config_environment();
+    // The one process wide TLS trust decision of D1.12, which must run
+    // before the first contact and does so here, because every entry
+    // into libgit2 passes through this function. It reads git config,
+    // so it runs after the search path above is settled.
+    crate::apply_ca_locations();
+}
+
+fn git_config_environment() {
     static APPLIED: std::sync::Mutex<Option<bool>> = std::sync::Mutex::new(None);
     let nosystem = std::env::var("GIT_CONFIG_NOSYSTEM").is_ok_and(|value| git_bool(&value));
     let mut applied = APPLIED.lock().unwrap_or_else(|e| e.into_inner());
@@ -928,8 +952,12 @@ pub fn clone(url: &str, auth: &Auth, dest: &Path) -> anyhow::Result<()> {
 fn clone_raw(url: &str, auth: &Auth, dest: &Path) -> anyhow::Result<()> {
     guard_transport(Some(url))?;
     std::fs::create_dir_all(dest.parent().expect("checkout dir has a parent"))?;
+    // The proxy of D1.11, before the first socket: a proxy joy cannot
+    // speak to (SOCKS) is refused here by name and nothing is dialled.
+    let proxy = proxy_for(url, None)?;
     let mut fetch = git2::FetchOptions::new();
     fetch.remote_callbacks(auth.callbacks(cred_source_for_url(url)));
+    fetch.proxy_options(proxy.options());
     git_environment();
     // The same address the other verbs dial (see `contact_remote`): a
     // clone from an ssh alias reaches the `HostName` the person's ssh
@@ -1010,6 +1038,7 @@ fn download_ref(
     // remote was written as (design D1.4).
     let mut remote = contact_remote(repo)?;
     let url = remote_url_of(&remote);
+    let proxy = proxy_for(&url, Some(repo))?;
     // ONE connection for the advertisement AND the download (D1.9): the
     // RemoteConnection disconnects on drop, and joy used to drop it
     // before `remote.download`, so git_remote_download reconnected and
@@ -1021,7 +1050,7 @@ fn download_ref(
         .connect_auth(
             git2::Direction::Fetch,
             Some(auth.callbacks(cred_source(Some(repo)))),
-            None,
+            Some(proxy.options()),
         )
         .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Fetch, e))?;
     // an empty advertisement (freshly created forge) is a plain
@@ -1040,6 +1069,7 @@ fn download_ref(
     };
     let mut opts = git2::FetchOptions::new();
     opts.remote_callbacks(auth.callbacks(cred_source(Some(repo))));
+    opts.proxy_options(proxy.options());
     let refspec = format!("+{src}:{dst}");
     connection
         .remote()
@@ -1185,11 +1215,12 @@ fn probe_write_access_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
     // remote was written as (design D1.4).
     let mut remote = contact_remote(&repo)?;
     let url = remote_url_of(&remote);
+    let proxy = proxy_for(&url, Some(&repo))?;
     remote
         .connect_auth(
             git2::Direction::Push,
             Some(auth.callbacks(cred_source(Some(&repo)))),
-            None,
+            Some(proxy.options()),
         )
         .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Push, e))?;
     let _ = remote.disconnect();
@@ -1216,8 +1247,10 @@ fn push_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
         // remote was written as (design D1.4).
         let mut remote = contact_remote(&repo)?;
         let url = remote_url_of(&remote);
+        let proxy = proxy_for(&url, Some(&repo))?;
         let mut opts = git2::PushOptions::new();
         opts.remote_callbacks(auth.callbacks(cred_source(Some(&repo))));
+        opts.proxy_options(proxy.options());
         let refspec = format!("refs/heads/{branch}:refs/heads/{branch}");
         remote
             .push(&[refspec.as_str()], Some(&mut opts))
@@ -1302,8 +1335,10 @@ fn push_ref_raw(repo_dir: &Path, auth: &Auth, refname: &str) -> anyhow::Result<(
     // remote was written as (design D1.4).
     let mut remote = contact_remote(&repo)?;
     let url = remote_url_of(&remote);
+    let proxy = proxy_for(&url, Some(&repo))?;
     let mut opts = git2::PushOptions::new();
     opts.remote_callbacks(auth.callbacks(cred_source(Some(&repo))));
+    opts.proxy_options(proxy.options());
     let refspec = format!("{refname}:{refname}");
     remote
         .push(&[refspec.as_str()], Some(&mut opts))
@@ -1378,11 +1413,12 @@ fn ls_remote_refs_raw(
     // remote was written as (design D1.4).
     let mut remote = contact_remote(&repo)?;
     let url = remote_url_of(&remote);
+    let proxy = proxy_for(&url, Some(&repo))?;
     let connection = remote
         .connect_auth(
             git2::Direction::Fetch,
             Some(auth.callbacks(cred_source(Some(&repo)))),
-            None,
+            Some(proxy.options()),
         )
         .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Fetch, e))?;
     let found = connection
@@ -2292,8 +2328,10 @@ fn push_tag_raw(repo_dir: &Path, auth: &Auth, tag: &str) -> anyhow::Result<()> {
     // remote was written as (design D1.4).
     let mut remote = contact_remote(&repo)?;
     let url = remote_url_of(&remote);
+    let proxy = proxy_for(&url, Some(&repo))?;
     let mut opts = git2::PushOptions::new();
     opts.remote_callbacks(auth.callbacks(cred_source(Some(&repo))));
+    opts.proxy_options(proxy.options());
     let refspec = format!("refs/tags/{tag}:refs/tags/{tag}");
     remote
         .push(&[refspec.as_str()], Some(&mut opts))
@@ -3036,13 +3074,14 @@ fn fetch_heads_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<Vec<String>> 
     // remote was written as (design D1.4).
     let mut remote = contact_remote(&repo)?;
     let url = remote_url_of(&remote);
+    let proxy = proxy_for(&url, Some(&repo))?;
     // one connection for the advertisement and the download, as
     // download_ref does (D1.9)
     let mut connection = remote
         .connect_auth(
             git2::Direction::Fetch,
             Some(auth.callbacks(cred_source(Some(&repo)))),
-            None,
+            Some(proxy.options()),
         )
         .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Fetch, e))?;
     let heads: Vec<(String, git2::Oid)> = connection
@@ -3065,6 +3104,7 @@ fn fetch_heads_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<Vec<String>> 
     let refspec_strs: Vec<&str> = refspecs.iter().map(String::as_str).collect();
     let mut opts = git2::FetchOptions::new();
     opts.remote_callbacks(auth.callbacks(cred_source(Some(&repo))));
+    opts.proxy_options(proxy.options());
     connection
         .remote()
         .download(&refspec_strs, Some(&mut opts))
@@ -3176,6 +3216,55 @@ mod init_on_git2_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The proxy of THIS contact reaches the failure (D1.11, D1.8c).
+    /// joy's own decision travels in a cell, because the alternative is
+    /// a parameter on fifteen call sites, and `contact_failed` puts it
+    /// into the evidence: a 407 then names the machine in the middle
+    /// and never the forge.
+    #[test]
+    fn a_407_behind_a_proxy_names_the_proxy_and_the_cell_is_per_contact() {
+        let libgit2 = || {
+            git2::Error::new(
+                git2::ErrorCode::Auth,
+                git2::ErrorClass::Http,
+                "proxy authentication required but no callback set",
+            )
+        };
+        super::super::proxy::note(Some("proxy.acme.example:8080"));
+        let failure = contact_failed(
+            "https://github.com/joyint/joy.git",
+            &Auth::Local,
+            super::super::contact::ContactDirection::Fetch,
+            libgit2(),
+        );
+        let text = format!("{failure}");
+        assert!(
+            text.contains("proxy.acme.example:8080"),
+            "the proxy is named: {text}"
+        );
+        assert!(!text.contains("github.com"), "and the forge is not: {text}");
+
+        // The cell belongs to one contact: the boundary forgets it
+        // before the next one runs, and a contact that took no proxy
+        // names none.
+        super::super::proxy::forget();
+        let failure = contact_failed(
+            "https://github.com/joyint/joy.git",
+            &Auth::Local,
+            super::super::contact::ContactDirection::Fetch,
+            libgit2(),
+        );
+        let text = format!("{failure}");
+        assert!(
+            !text.contains("proxy.acme.example"),
+            "the last contact's proxy is not this one's: {text}"
+        );
+        assert!(
+            text.contains("A proxy in front of github.com"),
+            "and an unnamed proxy is said to be in front of the forge: {text}"
+        );
+    }
 
     /// D4.5, open mode: the e-mail is the member, and the display name is
     /// the git config name only when that config maps to this member.
