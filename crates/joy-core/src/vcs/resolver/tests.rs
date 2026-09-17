@@ -234,6 +234,31 @@ fn a_host_nobody_claims_and_no_table_knows_has_no_twin() {
 }
 
 #[test]
+fn a_connector_that_claims_a_host_without_naming_its_web_base_has_no_twin() {
+    // Only the connector knows where a self hosted instance answers:
+    // it may sit under a nested sub path, or behind a different
+    // SSH_DOMAIN entirely. A claim alone is not an address.
+    let mut notes = Vec::new();
+    let leg = twin_leg(
+        "git@code.acme.example:acme/widgets.git",
+        "code.acme.example",
+        &HostFacts {
+            claimed: Some(ForgeKind::Gitea),
+            claimed_by_plugin: true,
+            web_url: None,
+            token: Some(a_token()),
+        },
+        &no_rule,
+        &mut notes,
+    );
+    assert!(leg.is_none());
+    assert!(
+        notes[0].contains("did not name its https address"),
+        "and it says which of the two refusals this is: {notes:?}"
+    );
+}
+
+#[test]
 fn fewer_than_two_path_segments_has_no_twin() {
     assert_eq!(
         twin_from_table("git@github.com:widgets.git"),

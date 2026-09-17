@@ -421,6 +421,11 @@ pub enum TwinRefusal {
     /// The host has no dot, so it is a local alias and not a forge
     /// address.
     NotAHostName,
+    /// A connector claims the host but did not name its web base, and
+    /// the engine's table does not know the host either. Only the
+    /// connector knows where a self hosted instance answers, which may
+    /// be a nested sub path or a different host entirely.
+    NoWebBase,
     /// An `insteadOf` or a `pushInsteadOf` rule matches the twin.
     /// `git_remote_create_anonymous` applies those rules
     /// (remote.c:237-256) and git2 0.21 binds neither
@@ -443,6 +448,9 @@ impl TwinRefusal {
             TwinRefusal::NotAHostName => {
                 format!("{host} is not a forge host name, so joy built no https address for it")
             }
+            TwinRefusal::NoWebBase => format!(
+                "the forge connector that claims {host} did not name its https address, so joy has no https address to try"
+            ),
             TwinRefusal::InsteadOf { rewritten } => format!(
                 "your git config rewrites the https address of {host} to {rewritten}, so joy stays on the remote you configured"
             ),
@@ -1014,19 +1022,22 @@ fn twin_leg(
     let source = dialled.as_deref().unwrap_or(configured);
     let url = match facts.web_url.clone() {
         Some(url) => url,
-        None => {
-            if !facts.claimed_by_plugin && table_host(&super::contact::host_of(source)).is_none() {
-                notes.push(TwinRefusal::UnknownHost.sentence(host));
+        None => match twin_from_table(source) {
+            Ok(url) => url,
+            // A host the table does not know is refused by two
+            // different sentences, because the two are two different
+            // situations for the person: nobody claims this host at
+            // all, or a connector claims it and did not say where its
+            // web base is.
+            Err(TwinRefusal::UnknownHost) if facts.claimed_by_plugin => {
+                notes.push(TwinRefusal::NoWebBase.sentence(host));
                 return None;
             }
-            match twin_from_table(source) {
-                Ok(url) => url,
-                Err(refusal) => {
-                    notes.push(refusal.sentence(host));
-                    return None;
-                }
+            Err(refusal) => {
+                notes.push(refusal.sentence(host));
+                return None;
             }
-        }
+        },
     };
     if let Some(rewritten) = insteadof(&url) {
         notes.push(TwinRefusal::InsteadOf { rewritten }.sentence(host));
