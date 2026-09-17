@@ -390,13 +390,17 @@ publish-crates: sync-tutorial
         exit 1
     fi
     # Order matters: dependents after dependencies.
-    # joy-bi rides after joy-core (its only internal dependency); the
-    # three forge connectors ride after joy-forge-net, which is what
-    # they share, and joy-cli after all of them, because it links the
-    # three and ships the `joy-forge` binary (JOY-0298-E4). Every
-    # workspace member is either in this list or carries
-    # publish = false -- the gap that made JOY-0247-E1.
-    crates=(joy-process joy-model joy-chat joy-core joy-bi joy-forge-net joy-github joy-gitlab joy-gitea joy-chat-store joy-ai joy-cli)
+    # joy-forge-net rides BEFORE joy-core, because the engine takes the
+    # one NO_PROXY matcher from it (JOY-02A3-E4); joy-bi rides after
+    # joy-core (its only internal dependency); the three forge
+    # connectors ride after joy-forge-net, which is what they share,
+    # and joy-cli after all of them, because it links the three and
+    # ships the `joy-forge` binary (JOY-0298-E4). Every workspace
+    # member is either in this list or carries publish = false -- the
+    # gap that made JOY-0247-E1. `publish_order_matches_the_crates`
+    # (joy-core/tests/publish_order.rs) holds this list to its own rule,
+    # so a new edge cannot break a release halfway through again.
+    crates=(joy-process joy-model joy-chat joy-forge-net joy-core joy-bi joy-github joy-gitlab joy-gitea joy-chat-store joy-ai joy-cli)
     for crate in "${crates[@]}"; do
         version=$(cargo pkgid --quiet -p "$crate" 2>/dev/null | sed 's/.*[#@]\(.*\)/\1/')
         if [ -z "$version" ]; then
