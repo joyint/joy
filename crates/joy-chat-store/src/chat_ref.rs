@@ -51,12 +51,17 @@ use joy_core::error::JoyError;
 
 /// The dedicated ref chats live on. Outside `refs/heads/`, so it never
 /// appears in `git log`, `git branch`, or a plain `git pull`.
-pub const CHATS_REF: &str = "refs/joy/chats";
+///
+/// Declared in the engine and re-exported here, because the engine sets
+/// the tracking ref below itself after a push of this one (design
+/// D1.5): two copies of the name would be two chances to drift, and the
+/// one that drifts is the one nobody reads.
+pub const CHATS_REF: &str = joy_core::vcs::forge::CHATS_REF;
 
 /// The local tracking ref a fetch of [`CHATS_REF`] lands on before the
 /// reconcile (every sync path uses the same name, so a half-finished sync
 /// never leaks state between callers).
-pub const CHATS_TRACKING_REF: &str = "refs/joy/chats-remote";
+pub const CHATS_TRACKING_REF: &str = joy_core::vcs::forge::CHATS_TRACKING_REF;
 
 /// How often a ref write retries when another writer moved the tip
 /// first (JOY-023B-7E). Contention is short: the loser re-reads the new

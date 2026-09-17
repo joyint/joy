@@ -723,7 +723,9 @@ impl RateLimitOracle for CountingOracle {
 }
 
 /// The oracle hook of D2.10: asked on a GitHub host after a 403, asked
-/// once per host per strike window, and its answer is the state.
+/// once per host per strike window, and its answer is the state - with
+/// the approval page it named, which is the action of that state
+/// (D1.8b, and the acceptance of package J4b).
 #[test]
 fn the_oracle_is_asked_once_per_host_and_decides_the_github_403() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
@@ -731,7 +733,9 @@ fn the_oracle_is_asked_once_per_host_and_decides_the_github_403() {
     let asked = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     set_oracle(std::sync::Arc::new(CountingOracle {
         asked: asked.clone(),
-        answer: Some(OracleAnswer::NeedsOrgApproval),
+        answer: Some(OracleAnswer::NeedsOrgApproval {
+            url: Some("https://github.com/orgs/acme/policies/applications".to_string()),
+        }),
     }));
     let forbidden = || {
         https_fetch(
@@ -744,6 +748,18 @@ fn the_oracle_is_asked_once_per_host_and_decides_the_github_403() {
         )
     };
     assert_eq!(classify(&forbidden()), Failure::NeedsOrgApproval);
+    let walled = verdict(&forbidden());
+    assert_eq!(walled.next_step.as_deref(), Some("open the approval page"));
+    assert_eq!(
+        walled.action.as_deref(),
+        Some("https://github.com/orgs/acme/policies/applications"),
+        "the page the button opens travels with the state"
+    );
+    assert_eq!(
+        action_of(&failed(&forbidden())).as_deref(),
+        Some("https://github.com/orgs/acme/policies/applications"),
+        "and survives the way to the caller"
+    );
     assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 1);
     // D2.10 limits the CALL, not the verdict: inside the strike window
     // the connector is not asked again AND its answer still stands, so a
