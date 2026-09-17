@@ -4,6 +4,8 @@ version = "0.20.0"
 edition = "2021"
 license = "MIT"
 description = "The telemetry core of joy's Rust components: OTel-shaped records from tracing, a rolling file sink, redaction"
+repository = "https://github.com/joyint/joy"
+homepage = "https://joyint.com/en/joy"
 
 # Not a cargo-dist App: only joy-cli is (design D2.1). Why every
 # publishable crate beside it carries this key is written once, in the

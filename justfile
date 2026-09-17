@@ -466,14 +466,24 @@ publish-crates: sync-tutorial
     # refresh lock takes `joy_core::util::file_lock` and its NO_PROXY
     # matcher is the engine's (D2.6a, JOY-02A3-E4); the three forge
     # connectors ride after joy-forge-net, which is what they share,
-    # and joy-cli after all of them, because it links the three and
-    # ships the `joy-forge` binary (JOY-0298-E4). Every workspace
+    # joy-telemetry rides after joy-core too, its only internal
+    # dependency; and joy-cli after all of them, because it links the
+    # three and ships the `joy-forge` binary (JOY-0298-E4).
+    # joy-telemetry is published rather than marked publish = false
+    # because joy-cli takes it with a version AND a path
+    # (JOY-02A4-89): cargo resolves such a dependency against the
+    # registry when it packages the dependent, so neither
+    # `cargo publish -p joy-cli` nor `cargo install joy-cli` can work
+    # while joy-telemetry is absent from crates.io. Every workspace
     # member is either in this list or carries publish = false -- the
-    # gap that made JOY-0247-E1.
-    # `every_crate_is_published_after_the_crates_it_depends_on`
-    # (joy-core/tests/publish_order.rs) holds this list to its own rule,
-    # so a new edge cannot break a release halfway through again.
-    crates=(joy-process joy-model joy-chat joy-core joy-bi joy-forge-net joy-github joy-gitlab joy-gitea joy-chat-store joy-ai joy-cli)
+    # gap that made JOY-0247-E1. Both halves of that rule are tests in
+    # joy-core/tests/publish_order.rs:
+    # `every_crate_is_published_after_the_crates_it_depends_on` holds
+    # this list to the order rule, and
+    # `every_workspace_member_is_published_or_marked_unpublishable`
+    # holds it to the completeness rule, so neither a new edge nor a new
+    # crate can break a release halfway through again.
+    crates=(joy-process joy-model joy-chat joy-core joy-bi joy-telemetry joy-forge-net joy-github joy-gitlab joy-gitea joy-chat-store joy-ai joy-cli)
     for crate in "${crates[@]}"; do
         version=$(cargo pkgid --quiet -p "$crate" 2>/dev/null | sed 's/.*[#@]\(.*\)/\1/')
         if [ -z "$version" ]; then

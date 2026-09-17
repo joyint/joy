@@ -14,6 +14,15 @@
 //! release, and did. This test is that hold: it reads the list and the
 //! manifests and answers the same question cargo will.
 //!
+//! The exemption this file carried until JOY-02A4-89 is gone with it:
+//! joy-cli takes `joy-telemetry = { version = "0.20.0", path =
+//! "../joy-telemetry" }` (added 2026-08-28, after the last release)
+//! while joy-telemetry rode in neither the publish list nor a
+//! `publish = false` key, so `cargo publish -p joy-cli` could not
+//! resolve it and the release died after eleven uploads. joy-telemetry
+//! is published now, in the list between joy-bi and joy-forge-net, and
+//! every such edge fails this test instead of a release.
+//!
 //! The edge that prompted it was joy-core -> joy-forge-net, added for
 //! the shared NO_PROXY matcher while joy-forge-net still rode after
 //! joy-core in the list. That edge is gone: the matcher lives in the
@@ -24,18 +33,6 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-
-/// Workspace crates a published crate depends on that `publish-crates`
-/// does NOT upload. There is one, and it is a release breaker that
-/// predates this test: joy-cli takes `joy-telemetry = { version =
-/// "0.20.0", path = "../joy-telemetry" }` (added 2026-08-28, after the
-/// last release), joy-telemetry is in neither the publish list nor
-/// marked `publish = false`, and no such crate exists on crates.io, so
-/// `cargo publish -p joy-cli` cannot resolve it. Fixing it means
-/// uploading a new public crate name, which is the operator's call, so
-/// it is named here instead of hidden: every OTHER such edge fails this
-/// test at once.
-const NOT_UPLOADED_YET: &[&str] = &["joy-telemetry"];
 
 #[test]
 fn every_crate_is_published_after_the_crates_it_depends_on() {
@@ -71,7 +68,6 @@ fn every_crate_is_published_after_the_crates_it_depends_on() {
                     "  {crate_name} (position {index}) depends on {dependency}, \
                      which publish-crates uploads later (position {at})"
                 )),
-                None if NOT_UPLOADED_YET.contains(&dependency.as_str()) => {}
                 None => violations.push(format!(
                     "  {crate_name} depends on the workspace crate {dependency}, \
                      which publish-crates never uploads"
@@ -130,4 +126,84 @@ fn internal_dependencies(manifest: &str) -> Vec<String> {
         }
     }
     names
+}
+
+/// The other half of the justfile's rule: "Every workspace member is
+/// either in this list or carries publish = false". The order test
+/// above only sees crates a published crate depends on, so a new
+/// workspace member that nothing depends on yet would sit outside both
+/// the list and the rule until someone added the first edge, which is
+/// the shape of JOY-0247-E1 and of JOY-02A4-89. This test reads the
+/// workspace members and answers the question directly.
+#[test]
+fn every_workspace_member_is_published_or_marked_unpublishable() {
+    let root = workspace_root();
+    let Ok(justfile) = std::fs::read_to_string(root.join("justfile")) else {
+        // A packaged crate carries no justfile, and no workspace either.
+        return;
+    };
+    let order =
+        publish_list(&justfile).expect("the publish-crates recipe names a `crates=(...)` list");
+    let workspace =
+        std::fs::read_to_string(root.join("Cargo.toml")).expect("the workspace manifest");
+
+    let mut missing = Vec::new();
+    for member in workspace_members(&workspace) {
+        let name = member
+            .rsplit('/')
+            .next()
+            .expect("a member path ends in the crate directory")
+            .to_string();
+        if order.contains(&name) {
+            continue;
+        }
+        let manifest = root.join(&member).join("Cargo.toml");
+        let text = std::fs::read_to_string(&manifest)
+            .unwrap_or_else(|e| panic!("cannot read {}: {e}", manifest.display()));
+        if publishes(&text) {
+            missing.push(format!(
+                "  {name} is a workspace member that publish-crates never uploads \
+                 and that carries no `publish = false`"
+            ));
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "the publishable crate set and the publish-crates list disagree:\n{}\n\
+         Add the crate to the justfile's `crates=(...)` list in dependency order, \
+         or give its manifest `publish = false`.",
+        missing.join("\n")
+    );
+}
+
+/// The `members = [...]` paths of the workspace manifest.
+fn workspace_members(manifest: &str) -> Vec<String> {
+    let mut members = Vec::new();
+    let mut in_members = false;
+    for line in manifest.lines().map(str::trim) {
+        if line.starts_with("members") && line.contains('[') {
+            in_members = true;
+            continue;
+        }
+        if !in_members {
+            continue;
+        }
+        if line.starts_with(']') {
+            break;
+        }
+        let path = line.trim_end_matches(',').trim_matches('"');
+        if !path.is_empty() {
+            members.push(path.to_string());
+        }
+    }
+    members
+}
+
+/// Whether a manifest would be uploaded by `cargo publish`, that is,
+/// whether it lacks `publish = false`.
+fn publishes(manifest: &str) -> bool {
+    !manifest
+        .lines()
+        .map(str::trim)
+        .any(|line| line.starts_with("publish") && line.contains("false"))
 }
