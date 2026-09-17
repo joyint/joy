@@ -144,15 +144,28 @@ impl Sandbox {
     }
 }
 
-/// What `ps` would show for a running child: its argument list.
+/// Every argument list `ps` would have shown for a running child,
+/// until the one the child really has appears.
+///
+/// Sampling once is not enough and "not empty yet" is the wrong bound:
+/// between the fork and the exec the child still carries the PARENT's
+/// argv, so a single early read can be non-empty and belong to another
+/// process entirely, which made this case fail under a loaded machine.
+/// Every sample is kept and the caller asserts over all of them, so
+/// nothing a `ps` could have caught is thrown away.
 #[cfg(target_os = "linux")]
-fn process_list_of(pid: u32) -> String {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+fn process_lists_of(pid: u32, until: &str) -> Vec<String> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let mut seen: Vec<String> = Vec::new();
     loop {
         let raw = std::fs::read(format!("/proc/{pid}/cmdline")).unwrap_or_default();
         let text = String::from_utf8_lossy(&raw).replace('\0', " ");
-        if !text.trim().is_empty() || std::time::Instant::now() >= deadline {
-            return text;
+        let done = text.contains(until);
+        if !text.trim().is_empty() {
+            seen.push(text);
+        }
+        if done || std::time::Instant::now() >= deadline {
+            return seen;
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
@@ -290,14 +303,21 @@ fn the_token_of_a_token_store_is_never_in_the_process_list() {
         .stderr(Stdio::piped())
         .spawn()
         .expect("the connector");
-    // `/proc/<pid>/cmdline` is empty for the moment between the fork
-    // and the exec, so it is read until the child has its own.
-    let cmdline = process_list_of(child.id());
+    // `/proc/<pid>/cmdline` is read until the child has its OWN argv,
+    // and every sample along the way is asserted over.
+    let cmdlines = process_lists_of(child.id(), "token-store");
+    for cmdline in &cmdlines {
+        assert!(
+            !cmdline.contains("ghp_"),
+            "the process list carried a token: {cmdline}"
+        );
+    }
     assert!(
-        !cmdline.contains("ghp_"),
-        "the process list carried a token: {cmdline}"
+        cmdlines
+            .last()
+            .is_some_and(|last| last.contains("token-store")),
+        "the child's own argument list was never read: {cmdlines:?}"
     );
-    assert!(cmdline.contains("token-store"), "{cmdline}");
     {
         let mut stdin = child.stdin.take().expect("the child's stdin");
         stdin.write_all(b"ghp_the_pasted_secret\n").unwrap();

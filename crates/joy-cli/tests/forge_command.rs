@@ -396,9 +396,19 @@ fn a_token_from_stdin_is_stored_and_never_in_the_process_list() {
         .stderr(Stdio::piped())
         .spawn()
         .expect("joy runs");
-    let cmdline = process_list_of(child.id());
-    assert!(!cmdline.contains("ghp_"), "{cmdline}");
-    assert!(cmdline.contains("--token-stdin"), "{cmdline}");
+    let cmdlines = process_lists_of(child.id(), "--token-stdin");
+    for cmdline in &cmdlines {
+        assert!(
+            !cmdline.contains("ghp_"),
+            "a process list carried the token: {cmdline}"
+        );
+    }
+    assert!(
+        cmdlines
+            .last()
+            .is_some_and(|last| last.contains("--token-stdin")),
+        "the child's own argument list was never read: {cmdlines:?}"
+    );
     {
         let mut stdin = child.stdin.take().expect("the child's stdin");
         stdin.write_all(b"ghp_the_pasted_secret\n").unwrap();
@@ -737,15 +747,27 @@ fn a_protocol_1_connector_refuses_login_with_the_path_and_the_rm_line() {
 // Helpers
 // ---------------------------------------------------------------------
 
-/// What `ps` would show for a running child: its argument list.
+/// Every argument list `ps` would have shown for a running child,
+/// until the one the child really has appears.
+///
+/// Sampling once is not enough and "not empty yet" is the wrong bound:
+/// between the fork and the exec the child still carries the PARENT's
+/// argv, so a single early read can be non-empty and belong to another
+/// process entirely. Every sample is kept and the caller asserts over
+/// all of them, so nothing a `ps` could have caught is thrown away.
 #[cfg(target_os = "linux")]
-fn process_list_of(pid: u32) -> String {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+fn process_lists_of(pid: u32, until: &str) -> Vec<String> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let mut seen: Vec<String> = Vec::new();
     loop {
         let raw = std::fs::read(format!("/proc/{pid}/cmdline")).unwrap_or_default();
         let text = String::from_utf8_lossy(&raw).replace('\0', " ");
-        if !text.trim().is_empty() || std::time::Instant::now() >= deadline {
-            return text;
+        let done = text.contains(until);
+        if !text.trim().is_empty() {
+            seen.push(text);
+        }
+        if done || std::time::Instant::now() >= deadline {
+            return seen;
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
