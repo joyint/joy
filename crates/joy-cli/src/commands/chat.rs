@@ -14,7 +14,6 @@ use anyhow::Result;
 use crate::color;
 use clap::{Args, Subcommand};
 
-use joy_core::vcs::contact::Failure;
 use joy_core::vcs::Vcs;
 
 #[derive(Args)]
@@ -96,152 +95,85 @@ fn acting_member(root: &std::path::Path) -> Result<joy_core::member_ref::MemberR
 /// Sync `refs/joy/chats` with the project's remote (JOY-0227-5E): fetch
 /// into the tracking ref, reconcile locally through joy-chat (adopt /
 /// fast-forward / message-union merge), push when the local ref is
-/// ahead. Network runs through the git CLI so the user's ambient auth
-/// (ssh agent, credential helper) applies -- no token plumbing.
+/// ahead.
+///
+/// The transfer runs through the git2 engine, like every other host's
+/// (D3.2): the CLI used to spawn `git fetch` and `git push` here, which
+/// was the last git process on the chat write path and the one thing a
+/// machine without a git binary could not do. The chat SEMANTICS were
+/// never this file's - they live in `joy_chat_store::chat_ref` and every
+/// host composes the same ones now.
 ///
 /// NEVER fatal: a chat is committed locally before any network I/O, so a
-/// failed sync only delays visibility. Failures classify like the app
-/// sync worker: a missing remote ref is the normal first sync; auth
-/// errors are permanent (fix access); everything else is transient and
-/// the next send or read retries.
-/// Push-first delivery after a write (JOY-026C-34): the local chats ref
-/// goes up as it is; a refusal (someone else pushed first) is the one
-/// case that fetches, unites and pushes again through [`sync_ref`].
-fn deliver_ref(root: &std::path::Path) {
+/// failed sync only delays visibility. What the failure MEANS comes from
+/// the engine's classifier (D1.8a) and is said in the one vocabulary of
+/// D3.8; the four substring rules that used to read git's stderr here
+/// are gone with the git process that wrote it.
+fn chat_auth() -> joy_core::vcs::forge::Auth {
+    // The machine's own credentials, for the host kind `cli_main`
+    // decided (D1.1). An agent under JOY_SESSION is `Delegated`, so
+    // nothing below can raise a prompt (D1.10).
+    joy_core::vcs::forge::Auth::LocalAs(joy_core::host::process_host())
+}
+
+/// The remote a chat sync uses, and whether this project has one at all.
+/// A project without it is local-only: chats stay local and nothing is
+/// said about a forge that is not there.
+fn chat_remote(root: &std::path::Path) -> Option<String> {
     let remote = joy_core::store::load_config()
         .sync
         .map(|s| s.remote)
         .unwrap_or_else(|| "origin".to_string());
-    if !joy_core::vcs::remote_exists(root, &remote) {
+    joy_core::vcs::remote_exists(root, &remote).then_some(remote)
+}
+
+/// Push-first delivery after a write (JOY-026C-34): the local chats ref
+/// goes up as it is; a refusal (someone else pushed first) is the one
+/// case that fetches, unites and pushes again. That whole decision is
+/// `chat_ref::sync_with_forge`, which is what the desktop and the
+/// platform run too.
+fn deliver_ref(root: &std::path::Path) {
+    if chat_remote(root).is_none() {
         return;
     }
-    let push_spec = format!(
-        "{}:{}",
-        joy_chat_store::chat_ref::CHATS_REF,
-        joy_chat_store::chat_ref::CHATS_REF
-    );
-    match joy_core::vcs::push_ref(root, &remote, &push_spec) {
-        joy_core::vcs::RefTransfer::Done => {}
-        joy_core::vcs::RefTransfer::Refused(stderr) => {
-            let lower = stderr.to_ascii_lowercase();
-            // nothing local to push yet: not a refusal
-            if lower.contains("src refspec") {
-                return;
-            }
-            // the forge moved first: the full round unites and retries
-            if lower.contains("rejected")
-                || lower.contains("fetch first")
-                || lower.contains("non-fast-forward")
-            {
-                sync_ref(root);
-                return;
-            }
-            report_refusal(root, Way::Push, &stderr);
-        }
-        joy_core::vcs::RefTransfer::GitUnavailable(e) => {
-            eprintln!("chat stays committed locally, push failed (git unavailable: {e})");
-        }
+    if let Err(e) = joy_chat_store::chat_ref::sync_with_forge(root, &chat_auth()) {
+        report_refusal(root, Way::Push, &e);
     }
 }
 
+/// Fetch, reconcile, and push back what the forge still lacks: what a
+/// READ does before it shows anything (JOY-022A-4D).
 fn sync_ref(root: &std::path::Path) {
-    let remote = joy_core::store::load_config()
-        .sync
-        .map(|s| s.remote)
-        .unwrap_or_else(|| "origin".to_string());
-    // A project without this remote is local-only: chats stay local.
-    if !joy_core::vcs::remote_exists(root, &remote) {
+    if chat_remote(root).is_none() {
         return;
     }
-    let fetch_spec = format!(
-        "+{}:{}",
-        joy_chat_store::chat_ref::CHATS_REF,
-        joy_chat_store::chat_ref::CHATS_TRACKING_REF
-    );
-    match joy_core::vcs::fetch_ref(root, &remote, &fetch_spec) {
-        joy_core::vcs::RefTransfer::Done => {}
-        joy_core::vcs::RefTransfer::Refused(stderr) => {
-            // No remote chats yet: the normal first sync, nothing to merge.
-            if !stderr.contains("couldn't find remote ref") {
-                report_refusal(root, Way::Fetch, &stderr);
-            }
-        }
-        joy_core::vcs::RefTransfer::GitUnavailable(e) => {
-            eprintln!("chats not fetched (git unavailable: {e}); local state shown");
-            return;
-        }
-    }
-    let push_needed = match joy_chat_store::chat_ref::reconcile_with_tracking(root) {
+    let auth = chat_auth();
+    // A forge that does not have the chat ref yet is the normal first
+    // sync: the engine answers `Ok(false)` for it and says nothing.
+    let push_needed = match joy_chat_store::chat_ref::pull_from_forge(root, &auth) {
         Ok(needed) => needed,
         Err(e) => {
-            eprintln!("chat ref reconcile failed: {e}");
+            report_refusal(root, Way::Fetch, &e);
             return;
         }
     };
     if !push_needed {
         return;
     }
-    let push_spec = format!(
-        "{}:{}",
-        joy_chat_store::chat_ref::CHATS_REF,
-        joy_chat_store::chat_ref::CHATS_REF
-    );
-    match joy_core::vcs::push_ref(root, &remote, &push_spec) {
-        joy_core::vcs::RefTransfer::Done => {}
-        joy_core::vcs::RefTransfer::Refused(stderr) => {
-            report_refusal(root, Way::Push, &stderr);
-        }
-        joy_core::vcs::RefTransfer::GitUnavailable(e) => {
-            eprintln!("chat stays committed locally, push failed (git unavailable: {e})")
-        }
+    if let Err(e) = joy_core::vcs::forge::push_ref(root, &auth, joy_chat_store::chat_ref::CHATS_REF)
+    {
+        report_refusal(
+            root,
+            Way::Push,
+            &joy_core::vcs::contact::as_joy_error("chats push", e),
+        );
     }
 }
 
-/// What a refused ref transfer means, in the ONE failure vocabulary the
-/// CLI speaks (D3.8: the private classifier of this file is retired and
-/// the `contact::Failure` words take its place).
-///
-/// The text is read and not a `git2::Error`, because this path still
-/// runs the git binary (`vcs::push_ref`); package J6 replaces it with a
-/// git2 contact, and then the evidence the real classifier wants is
-/// there and this bridge goes. Until then the words a person and an
-/// agent read are already the final ones.
-fn sync_failure(way: Way, stderr: &str) -> Failure {
-    let s = stderr.to_lowercase();
-    if s.contains("403") {
-        // The DIRECTION decides what a 403 means. On a push it is the
-        // ordinary "read yes, write no". On a fetch it is a token that
-        // may not read this repository at all, and telling that person
-        // they can read but not write is simply false.
-        return match way {
-            Way::Push => Failure::NoPushRights,
-            Way::Fetch => Failure::NeedsSignIn,
-        };
-    }
-    if s.contains("permission denied")
-        || s.contains("authentication")
-        || s.contains("401")
-        || s.contains("access denied")
-        || s.contains("could not read username")
-    {
-        return Failure::NeedsSignIn;
-    }
-    if s.contains("host key verification failed") || s.contains("unknown remote ssh hostkey") {
-        return Failure::NeedsHostTrust;
-    }
-    if s.contains("could not resolve")
-        || s.contains("unable to access")
-        || s.contains("connection")
-        || s.contains("timed out")
-    {
-        return Failure::Offline;
-    }
-    Failure::Error
-}
-
-/// Which way the refused transfer went. Half the evidence of a ref
-/// transfer is its direction, and the classifier reads it: the same
-/// HTTP status means different things on a fetch and on a push.
+/// Which way the refused transfer went. It no longer decides what the
+/// failure MEANS - the engine's classifier reads the direction itself
+/// (D1.8a), so the same HTTP status can mean two things there - it
+/// decides only what this command says did not happen.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Way {
     Fetch,
@@ -266,39 +198,16 @@ impl Way {
     }
 }
 
-/// What a refused chat sync says, in the full vocabulary of D3.8: the
-/// state's sentence with the ONE next step (for `needs_sign_in` the
-/// door this CLI now has, D3.10), the state WORD an agent reads, and
-/// the raw line git gave us as the detail.
+/// What a refused chat sync says, in the one vocabulary of D3.8: the
+/// state's sentence, the state WORD an agent reads, the ONE next step
+/// (for `needs_sign_in` the door this CLI now has, D3.10), and the
+/// engine's detail line.
 ///
-/// The detail is not decoration: four substring rules classify this
-/// text, and a failure none of them recognises has to stay debuggable.
-fn report_refusal(root: &std::path::Path, way: Way, stderr: &str) {
-    let host = joy_core::vcs::forge::remote_url(root)
-        .map(|url| joy_core::vcs::contact::host_of(&url))
-        .unwrap_or_default();
-    let failure = sync_failure(way, stderr);
-    // The shape the rest of this CLI uses for a refusal: the sentence,
-    // then the state word, then the one next step, then the line the
-    // machine really printed.
-    eprintln!("{}: {}", way.headline(), failure.sentence(&host));
-    eprintln!("  = note: state {}; {}", failure.reason(), way.tail());
-    if let Some(action) = crate::commands::forge::action_line(failure, &host) {
-        eprintln!("  = help: {action}");
-    }
-    if let Some(detail) = detail_line(stderr) {
-        eprintln!("  = detail: {detail}");
-    }
-}
-
-/// The first line git really printed, which is the detail of D3.8. An
-/// empty stderr has none, and nothing is invented for it.
-fn detail_line(stderr: &str) -> Option<String> {
-    stderr
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
-        .map(str::to_string)
+/// A sync is never this command's answer, so it never writes to stdout
+/// and never changes the exit code.
+fn report_refusal(root: &std::path::Path, way: Way, error: &joy_core::error::JoyError) {
+    let host = crate::contact_report::host_of_checkout(root);
+    crate::contact_report::Refusal::of(&host, error).say_aside(way.headline(), way.tail());
 }
 
 /// The @mention view of one chat for `me` (JOY-0226-27): when the newest
@@ -898,49 +807,60 @@ fn run_command(root: &std::path::Path, command: ChatCommand) -> Result<()> {
 #[cfg(test)]
 mod sync_tests {
     use super::*;
+    use joy_core::error::JoyError;
+    use joy_core::vcs::contact::{ContactError, Failure};
 
-    /// The direction is half the evidence (D1.8a): the same 403 is
-    /// "you may not write" on a push and "sign in" on a fetch.
-    #[test]
-    fn a_403_means_something_different_in_each_direction() {
-        let stderr = "remote: HTTP 403 forbidden";
-        assert_eq!(sync_failure(Way::Push, stderr), Failure::NoPushRights);
-        assert_eq!(sync_failure(Way::Fetch, stderr), Failure::NeedsSignIn);
+    fn refused(failure: Failure, message: &str) -> JoyError {
+        JoyError::Contact(Box::new(ContactError {
+            failure,
+            message: message.to_string(),
+            detail: Some("chats push; libgit2 said so".into()),
+            action: None,
+            next_try: None,
+        }))
     }
 
+    /// The vocabulary is the classifier's, and this file only decides
+    /// what did not happen. The four substring rules that used to read
+    /// git's stderr here are gone with the git process (D3.8).
     #[test]
     fn the_words_of_the_classifier_are_the_words_of_this_file() {
+        let error = refused(Failure::NoPushRights, "You can read this repository.");
+        let refusal = crate::contact_report::Refusal::of("github.com", &error);
+        assert_eq!(refusal.state, "no_push_rights");
+        assert_eq!(refusal.message, "You can read this repository.");
         assert_eq!(
-            sync_failure(Way::Push, "fatal: Authentication failed"),
-            Failure::NeedsSignIn
-        );
-        assert_eq!(
-            sync_failure(Way::Fetch, "Host key verification failed."),
-            Failure::NeedsHostTrust
-        );
-        assert_eq!(
-            sync_failure(
-                Way::Fetch,
-                "fatal: unable to access 'https://x/': Could not resolve host"
-            ),
-            Failure::Offline
-        );
-        // and a line no rule recognises is not called offline
-        assert_eq!(
-            sync_failure(Way::Push, "fatal: the remote end hung up unexpectedly"),
-            Failure::Error
+            refusal.detail.as_deref(),
+            Some("chats push; libgit2 said so")
         );
     }
 
-    /// An unclassified failure keeps the line git printed: without it
-    /// the person is told "GitHub answered with an error" and nothing
-    /// else, and nobody can debug that.
+    /// The two halves of the line this file has always printed: a chat
+    /// is committed before any contact, so a failed delivery says the
+    /// chat is safe and a failed fetch says what is on the screen.
     #[test]
-    fn the_raw_git_line_survives_as_the_detail() {
+    fn each_direction_says_what_did_not_happen_and_what_comes_next() {
         assert_eq!(
-            detail_line("\n  fatal: the remote end hung up unexpectedly\nmore\n").as_deref(),
-            Some("fatal: the remote end hung up unexpectedly")
+            Way::Push.headline(),
+            "chat stays committed locally, push failed"
         );
-        assert_eq!(detail_line("   \n"), None);
+        assert_eq!(Way::Push.tail(), "the next send or read retries");
+        assert_eq!(Way::Fetch.headline(), "chats not fetched");
+        assert_eq!(
+            Way::Fetch.tail(),
+            "local state shown, the next send or read retries"
+        );
+    }
+
+    /// A project with no remote is local only: nothing is contacted and
+    /// nothing is said about a forge that is not there.
+    #[test]
+    fn a_checkout_without_the_remote_contacts_nobody() {
+        let dir = tempfile::tempdir().unwrap();
+        git2::Repository::init(dir.path()).unwrap();
+        assert!(chat_remote(dir.path()).is_none());
+        // Neither entry point may panic or contact anything here.
+        sync_ref(dir.path());
+        deliver_ref(dir.path());
     }
 }

@@ -4,6 +4,7 @@
 mod color;
 mod commands;
 mod complete;
+mod contact_report;
 mod crypt_session;
 mod editor;
 mod effort;

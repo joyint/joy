@@ -2238,6 +2238,22 @@ pub fn remotes(dir: &Path) -> Vec<(String, String)> {
         .collect()
 }
 
+/// The remote joy contacts for this checkout: `origin` when it is
+/// configured, otherwise the first one git2 lists (D1.1).
+///
+/// This is [`origin_or_first`]'s rule by name, so a caller that asks
+/// which remote it is talking to and the engine that talks to it name
+/// the same one. The git process this replaced answered `git remote`
+/// and took the first line, which is alphabetical order: in a checkout
+/// with a `backup` remote beside `origin` the two disagreed, and the
+/// person was told about a host joy never contacted.
+pub fn default_remote_name(dir: &Path) -> Option<String> {
+    let repo = open(dir).ok()?;
+    origin_or_first(&repo)
+        .ok()
+        .and_then(|remote| remote.name().ok().flatten().map(str::to_string))
+}
+
 /// `path`, given relative to `dir`, as the repository sees it: relative
 /// to its working tree, with forward slashes. `dir` may be a subdirectory.
 fn workdir_relative(repo: &git2::Repository, dir: &Path, path: &str) -> Option<String> {
@@ -2283,6 +2299,224 @@ pub fn stage_paths(dir: &Path, paths: &[&str]) -> anyhow::Result<()> {
         .map_err(err)?;
     index.update_all(specs.iter(), None).map_err(err)?;
     index.write().map_err(err)
+}
+
+/// Stage every change in the working tree, as `git add -A` does: new and
+/// changed files go in, deleted ones come out, ignored ones are left
+/// alone. The pathspec is the whole tree, so it does not matter where
+/// inside the checkout `dir` sits.
+///
+/// Callers in a PERSON's checkout should prefer [`stage_paths`]: this
+/// one sweeps whatever else the person had lying around into the index
+/// (D3.4). It stays for the checkouts joy owns.
+pub fn stage_all(dir: &Path) -> anyhow::Result<()> {
+    let repo = open(dir).map_err(err)?;
+    let mut index = repo.index().map_err(err)?;
+    index
+        .add_all(["*"], git2::IndexAddOption::DEFAULT, None)
+        .map_err(err)?;
+    index.update_all(["*"], None).map_err(err)?;
+    index.write().map_err(err)
+}
+
+/// Every local tag whose name starts with `v` or `V`, newest first:
+/// `git tag --list --sort=-v:refname` without a git process.
+///
+/// The order is git's version order and not a string sort, so `v1.10.0`
+/// comes before `v1.9.0`. A name that carries no numbers at all keeps
+/// its place among its equals by name, descending, which is what git's
+/// version sort falls back to.
+pub fn version_tags(dir: &Path) -> Vec<String> {
+    let Ok(repo) = open(dir) else {
+        return Vec::new();
+    };
+    let Ok(names) = repo.tag_names(None) else {
+        return Vec::new();
+    };
+    let mut tags: Vec<String> = names
+        .iter()
+        .flatten()
+        .flatten()
+        .filter(|name| name.starts_with('v') || name.starts_with('V'))
+        .map(str::to_string)
+        .collect();
+    tags.sort_by(|a, b| version_key(b).cmp(&version_key(a)).then_with(|| b.cmp(a)));
+    tags
+}
+
+/// A tag name as the numbers git's `v:refname` sort compares: every run
+/// of digits in order, so `v1.10.0` sorts above `v1.9.0`.
+fn version_key(name: &str) -> Vec<u64> {
+    let mut parts = Vec::new();
+    let mut digits = String::new();
+    for c in name.chars() {
+        if c.is_ascii_digit() {
+            digits.push(c);
+        } else if !digits.is_empty() {
+            parts.push(digits.parse().unwrap_or(0));
+            digits.clear();
+        }
+    }
+    if !digits.is_empty() {
+        parts.push(digits.parse().unwrap_or(0));
+    }
+    parts
+}
+
+/// The newest `v*` tag REACHABLE from HEAD:
+/// `git describe --tags --abbrev=0 --match 'v*'`.
+///
+/// Not the same question as [`latest_version_tag`], which takes the
+/// newest tag in the repository whether HEAD can see it or not. A
+/// release branch that has not merged the newest tag needs this one.
+pub fn describe_version_tag(dir: &Path) -> Option<String> {
+    let repo = open(dir).ok()?;
+    let mut options = git2::DescribeOptions::new();
+    options.describe_tags().pattern("v*");
+    let described = repo.describe(&options).ok()?;
+    let mut format = git2::DescribeFormatOptions::new();
+    format.abbreviated_size(0);
+    described
+        .format(Some(&format))
+        .ok()
+        .filter(|name| !name.is_empty())
+}
+
+/// Whether a tag names HEAD itself: `git describe --tags --exact-match
+/// HEAD`, which is `--candidates=0` and nothing else.
+pub fn head_is_tagged(dir: &Path) -> bool {
+    let Ok(repo) = open(dir) else {
+        return false;
+    };
+    let mut options = git2::DescribeOptions::new();
+    options.describe_tags().max_candidates_tags(0);
+    repo.describe(&options)
+        .and_then(|described| described.format(None))
+        .is_ok()
+}
+
+/// Whether the index tracks `path`, a file or a directory:
+/// `git ls-files --error-unmatch -- <path>`.
+///
+/// The match is literal, the way every other path rule in this file
+/// matches (`commit_index_paths`): the entry itself, or an entry under
+/// it when `path` names a directory. joy's own paths are literal
+/// (`AGENTS.md`, `.vibe/`, `.joy/capabilities/`), never globs, and a
+/// libgit2 pathspec would answer a different question for a name that
+/// happens to carry a glob character.
+pub fn path_is_tracked(dir: &Path, path: &str) -> bool {
+    let Ok(repo) = open(dir) else {
+        return false;
+    };
+    let Some(rel) = workdir_relative(&repo, dir, path) else {
+        return false;
+    };
+    let Ok(index) = repo.index() else {
+        return false;
+    };
+    let tracked = index_paths_under(&index, &rel).next().is_some();
+    tracked
+}
+
+/// The index entries `spec` covers, as repository relative paths: the
+/// entry that IS the path, plus everything below it when the path names
+/// a directory. A trailing slash is part of how joy writes a directory
+/// and is not part of the entry name.
+fn index_paths_under<'i>(index: &'i git2::Index, spec: &str) -> impl Iterator<Item = PathBuf> + 'i {
+    let spec = spec.trim_end_matches('/').to_string();
+    let below = format!("{spec}/");
+    index.iter().filter_map(move |entry| {
+        let path = entry_path(&entry)?;
+        let name = path.to_string_lossy().replace('\\', "/");
+        (name == spec || name.starts_with(&below)).then_some(path)
+    })
+}
+
+/// Drop `path` from the index and leave the file on disk:
+/// `git rm --cached -r -- <path>`. Answers how many entries went.
+pub fn untrack_path(dir: &Path, path: &str) -> anyhow::Result<usize> {
+    let repo = open(dir).map_err(err)?;
+    let rel = workdir_relative(&repo, dir, path)
+        .ok_or_else(|| anyhow::anyhow!("{path} is outside the working tree"))?;
+    let mut index = repo.index().map_err(err)?;
+    let doomed: Vec<PathBuf> = index_paths_under(&index, &rel).collect();
+    for path in &doomed {
+        index.remove_path(path).map_err(err)?;
+    }
+    if !doomed.is_empty() {
+        index.write().map_err(err)?;
+    }
+    Ok(doomed.len())
+}
+
+/// Drop `path` from the index AND from the working tree:
+/// `git rm -r --ignore-unmatch -- <path>`.
+///
+/// The file goes whether or not the index tracked it, which is what the
+/// one caller (joy's own legacy artefact cleanup) means and what it had
+/// to write a second `remove_dir_all` for around the git process.
+pub fn remove_path(dir: &Path, path: &str) -> anyhow::Result<()> {
+    untrack_path(dir, path)?;
+    let full = dir.join(path);
+    let gone = if full.is_dir() {
+        std::fs::remove_dir_all(&full)
+    } else {
+        std::fs::remove_file(&full)
+    };
+    match gone {
+        Ok(()) => Ok(()),
+        // `--ignore-unmatch`: a path that is not there is done, not failed.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(anyhow::anyhow!("{}: {e}", full.display())),
+    }
+}
+
+/// The commit time of `rev` in seconds since the epoch:
+/// `git log -1 --format=%ct <rev>`. `None` when the rev does not
+/// resolve or `dir` is no checkout.
+pub fn commit_unix_time(dir: &Path, rev: &str) -> Option<i64> {
+    let rev = rev.trim();
+    if rev.is_empty() {
+        return None;
+    }
+    let repo = open(dir).ok()?;
+    let object = repo.revparse_single(rev).ok()?;
+    let seconds = object.peel_to_commit().ok()?.time().seconds();
+    Some(seconds)
+}
+
+/// The paths the index adds, changes or renames against HEAD:
+/// `git diff --cached --name-only --diff-filter=ACMR`, repository
+/// relative and in the order the diff reports them.
+///
+/// A repository with no commit yet compares against the empty tree, so
+/// the first commit's staged files are named like any other.
+pub fn staged_paths(dir: &Path) -> Vec<String> {
+    let Ok(repo) = open(dir) else {
+        return Vec::new();
+    };
+    let head = repo.head().ok().and_then(|head| head.peel_to_tree().ok());
+    let Ok(diff) = repo.diff_tree_to_index(head.as_ref(), None, None) else {
+        return Vec::new();
+    };
+    diff.deltas()
+        .filter(|delta| {
+            matches!(
+                delta.status(),
+                git2::Delta::Added
+                    | git2::Delta::Modified
+                    | git2::Delta::Renamed
+                    | git2::Delta::Copied
+            )
+        })
+        .filter_map(|delta| {
+            delta
+                .new_file()
+                .path()
+                .map(|p| p.to_string_lossy().replace('\\', "/"))
+        })
+        .filter(|path| !path.is_empty())
+        .collect()
 }
 
 /// Is `dir` itself a repository, bare or the top of a working tree? Unlike
@@ -2877,6 +3111,15 @@ pub fn tag_annotated(
     Ok(())
 }
 
+/// Create a lightweight tag on HEAD, replacing one of the same name.
+pub fn tag_lightweight(repo_dir: &Path, name: &str) -> anyhow::Result<()> {
+    let repo = open(repo_dir).map_err(err)?;
+    let head = repo.head().map_err(err)?.peel_to_commit().map_err(err)?;
+    repo.tag_lightweight(name, head.as_object(), true)
+        .map_err(err)?;
+    Ok(())
+}
+
 /// Push one tag to the forge (joy release publish's tag push).
 pub fn push_tag(repo_dir: &Path, auth: &Auth, tag: &str) -> anyhow::Result<()> {
     over_plan(
@@ -2896,6 +3139,31 @@ pub fn push_tag(repo_dir: &Path, auth: &Auth, tag: &str) -> anyhow::Result<()> {
             let refspec = format!("refs/tags/{tag}:refs/tags/{tag}");
             remote
                 .push(&[refspec.as_str()], Some(&mut opts))
+                .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Push, e))?;
+            status.verdict(&super::contact::host_of(&url))
+        },
+    )
+}
+
+/// Push every local tag to the forge, which is what `git push --tags`
+/// did: one refspec, one connection, whatever the tags are called.
+pub fn push_all_tags(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
+    over_plan(
+        repo_dir,
+        auth,
+        "push",
+        super::contact::ContactDirection::Push,
+        false,
+        |repo, remote, leg_auth, _leg| {
+            let url = remote_url_of(remote);
+            let proxy = proxy_for(&url, Some(repo))?;
+            let (callbacks, status) =
+                push_callbacks(leg_auth, auth.host_kind(), cred_source(Some(repo)));
+            let mut opts = git2::PushOptions::new();
+            opts.remote_callbacks(callbacks);
+            opts.proxy_options(proxy.options());
+            remote
+                .push(&["refs/tags/*:refs/tags/*"], Some(&mut opts))
                 .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Push, e))?;
             status.verdict(&super::contact::host_of(&url))
         },

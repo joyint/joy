@@ -405,6 +405,21 @@ pub fn commit_signature(root: &Path, member: &str) -> Result<(String, String), J
     crate::vcs::forge::member_signature(project.as_ref(), member, config_name.as_deref())
 }
 
+/// The two signature fields the member acting in `root` commits with
+/// (D4.5), for a caller that holds no identity of its own.
+///
+/// This is what the git binary used to take from `user.name` and
+/// `user.email` when joy shelled `git commit`. libgit2 asks for the
+/// signature instead, and joy knows who acts, so the answer is joy's
+/// identity resolution: the session's member under a delegation, the
+/// pinned member, else the address git config carries. A project
+/// founded without a git config is therefore committable, which it was
+/// not while a git process wrote the commit.
+pub fn acting_signature(root: &Path) -> Result<(String, String), JoyError> {
+    let member = resolve_identity(root)?.member.id().to_string();
+    commit_signature(root, &member)
+}
+
 /// Check whether the project has any AI members.
 pub fn has_ai_members(root: &Path) -> bool {
     let project = load_project_optional(root);
