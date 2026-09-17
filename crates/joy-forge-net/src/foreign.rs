@@ -139,15 +139,78 @@ pub fn gh_token(host: &str, login: Option<&str>) -> Option<String> {
     run_for_stdout(command)
 }
 
+/// The token glab holds for a host. `glab auth token` does not exist;
+/// the credential helper does, and it is the command D2.4 names. It is
+/// a hidden cobra command and may change without notice, which is why
+/// the failure here is simply "no token".
+pub fn glab_token(host: &str) -> Option<String> {
+    let mut command = joy_process::command("glab");
+    command.args(["auth", "credential-helper", "get"]);
+    credential_helper_token(command, host)
+}
+
+/// The token tea holds for a host. `tea logins list` prints no token;
+/// `tea login helper get` does, and it refreshes an OAuth token on the
+/// way, which is the second reason decision 19 spawns the CLI instead
+/// of reading its store.
+pub fn tea_token(host: &str) -> Option<String> {
+    let mut command = joy_process::command("tea");
+    command.args(["login", "helper", "get"]);
+    credential_helper_token(command, host)
+}
+
+/// Run a credential helper shaped command: the question goes in on
+/// stdin, and the answer comes back as `password=<token>` on stdout.
+/// The token is never an argument in either direction.
+fn credential_helper_token(mut command: std::process::Command, host: &str) -> Option<String> {
+    use std::io::Write;
+    let mut child = command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    {
+        let mut stdin = child.stdin.take()?;
+        write!(stdin, "protocol=https\nhost={host}\n\n").ok()?;
+    }
+    let output = wait_bounded(child)?;
+    let text = String::from_utf8(output).ok()?;
+    parse_helper_answer(&text)
+}
+
+/// The `password=` line of a credential helper answer.
+pub fn parse_helper_answer(text: &str) -> Option<String> {
+    for line in text.lines() {
+        if let Some(value) = line.trim().strip_prefix("password=") {
+            let value = value.trim();
+            if !value.is_empty() {
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
+}
+
 /// Run a CLI and take its stdout, bounded. Stdin is closed so a CLI
 /// that would ask something fails instead of waiting forever.
 fn run_for_stdout(mut command: std::process::Command) -> Option<String> {
-    let mut child = command
+    let child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
         .ok()?;
+    let output = wait_bounded(child)?;
+    let token = String::from_utf8(output).ok()?;
+    let token = token.trim().to_string();
+    (!token.is_empty()).then_some(token)
+}
+
+/// Wait for a child under [`CLI_TIMEOUT`] and take its stdout. A CLI
+/// that hangs (a locked keychain with no prompt agent) is killed
+/// instead of eating the verb's whole deadline.
+fn wait_bounded(mut child: std::process::Child) -> Option<Vec<u8>> {
     let deadline = std::time::Instant::now() + CLI_TIMEOUT;
     loop {
         match child.try_wait() {
@@ -168,10 +231,7 @@ fn run_for_stdout(mut command: std::process::Command) -> Option<String> {
             Err(_) => return None,
         }
     }
-    let output = child.wait_with_output().ok()?;
-    let token = String::from_utf8(output.stdout).ok()?;
-    let token = token.trim().to_string();
-    (!token.is_empty()).then_some(token)
+    child.wait_with_output().ok().map(|output| output.stdout)
 }
 
 #[cfg(test)]
@@ -181,6 +241,16 @@ mod tests {
     /// The discovery order is the one D2.4 names, and the explicit
     /// variable always wins so a test and a workstation image can point
     /// at their own file.
+    #[test]
+    fn a_credential_helper_answer_yields_its_password_line_and_nothing_else() {
+        assert_eq!(
+            parse_helper_answer("username=oauth2\npassword=glpat-secret\n").as_deref(),
+            Some("glpat-secret")
+        );
+        assert_eq!(parse_helper_answer("username=oauth2\n"), None);
+        assert_eq!(parse_helper_answer("password=\n"), None);
+    }
+
     #[test]
     fn the_config_order_per_cli_is_the_one_the_design_names() {
         let gh = gh_config_dirs();

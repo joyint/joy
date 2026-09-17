@@ -207,7 +207,12 @@ fn string_list(answer: &Answer, key: &str) -> Option<Vec<String>> {
 }
 
 /// The account's addresses, best effort, from the INSTANCE's own API.
+/// Without a credential nothing is asked: an anonymous request cannot
+/// name an account (decision 20).
 fn verified_emails(ctx: &Ctx, host: &str) -> Vec<String> {
+    if ctx.token("gitlab", host).is_none() {
+        return Vec::new();
+    }
     let Some(answer) = api_get(ctx, host, &format!("{}/user/emails", api_base(host, ctx))) else {
         return Vec::new();
     };

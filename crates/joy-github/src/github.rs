@@ -202,8 +202,13 @@ pub fn classify(answer: &Answer) -> &'static str {
 }
 
 /// The account's verified addresses, best effort. With a token the
-/// instance's OWN API is asked; without one there is nothing to ask.
+/// instance's OWN API is asked; without one there is nothing to ask,
+/// and nothing is asked: an anonymous request cannot name an account,
+/// and joy never spends a contact it knows the answer to (decision 20).
 fn verified_emails(ctx: &Ctx, host: &str) -> Vec<String> {
+    if ctx.token("github", host).is_none() {
+        return Vec::new();
+    }
     let Some(answer) = api_get(
         ctx,
         host,
@@ -233,8 +238,12 @@ fn verified_emails(ctx: &Ctx, host: &str) -> Vec<String> {
 }
 
 /// The authenticated account (`GET /user`): the login and the public
-/// profile address, where the person set one.
+/// profile address, where the person set one. Asked only where a
+/// credential exists.
 fn current_user(ctx: &Ctx, host: &str) -> Option<Value> {
+    // Nothing is asked without a credential: the endpoint is about the
+    // account the token names (decision 20).
+    ctx.token("github", host)?;
     let answer = api_get(
         ctx,
         host,

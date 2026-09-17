@@ -18,6 +18,14 @@ path = "src/lib.rs"
 name = "joy-github"
 path = "src/main.rs"
 
+# The connector ships as ONE binary in the joy archive (design D2.1).
+# This legacy name exists for `cargo install joy-github` users during the
+# deprecation window of D2.2a and must not become a cargo-dist App of
+# its own: four extra Apps per tag also make the winget
+# `installers-regex` ambiguous (.github/workflows/release.yml).
+[package.metadata.dist]
+dist = false
+
 [dependencies]
 joy-forge-net = { workspace = true }
 serde = { workspace = true }

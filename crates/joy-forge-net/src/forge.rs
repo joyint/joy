@@ -297,14 +297,16 @@ impl Ctx {
                 }
             }
         }
-        // D2.4 names `glab auth credential-helper` and `tea login
-        // helper get` as the other two device side sources; both belong
-        // to the `token` verb J3 builds, together with the connector's
-        // own keychain entry.
-        if forge == "github" {
-            return crate::foreign::gh_token(host, self.login.as_deref());
+        // Decision 19: a foreign credential is obtained by SPAWNING the
+        // CLI, never by reading its store, and that is also the only
+        // way the CLI's own refresh runs. The connector grows a store
+        // of its own in J3; these three are what a device has today.
+        match forge {
+            "github" => crate::foreign::gh_token(host, self.login.as_deref()),
+            "gitlab" => crate::foreign::glab_token(host),
+            "gitea" => crate::foreign::tea_token(host),
+            _ => None,
         }
-        None
     }
 
     /// The git configuration this call reads (the proxy sources of
