@@ -23,6 +23,23 @@
 //! is published now, in the list between joy-bi and joy-forge-net, and
 //! every such edge fails this test instead of a release.
 //!
+//! Membership and order are two of the three things a per crate
+//! publish needs; the third is that the versions agree, and it is not
+//! in this repository's hands alone. `joy release bump` rewrites the
+//! version only in the files of `release.version-files`
+//! (.joy/project.yaml), so a crate that is in the publish list and not
+//! in that list keeps the old version while every dependent is bumped
+//! past it. `every_published_crate_has_its_version_bumped` is that
+//! third hold, and it fails today: see its message for the paths that
+//! are missing.
+//!
+//! What is NOT proof of any of this: a green
+//! `cargo publish --workspace --dry-run`. With `--workspace` cargo
+//! verifies each crate against the siblings it just packaged locally,
+//! while `just publish-crates` runs `cargo publish -p <crate>` one at a
+//! time and each of those resolves its version carrying dependencies
+//! against crates.io.
+//!
 //! The edge that prompted it was joy-core -> joy-forge-net, added for
 //! the shared NO_PROXY matcher while joy-forge-net still rode after
 //! joy-core in the list. That edge is gone: the matcher lives in the
@@ -149,21 +166,21 @@ fn every_workspace_member_is_published_or_marked_unpublishable() {
 
     let mut missing = Vec::new();
     for member in workspace_members(&workspace) {
-        let name = member
-            .rsplit('/')
-            .next()
-            .expect("a member path ends in the crate directory")
-            .to_string();
-        if order.contains(&name) {
-            continue;
-        }
         let manifest = root.join(&member).join("Cargo.toml");
         let text = std::fs::read_to_string(&manifest)
             .unwrap_or_else(|e| panic!("cannot read {}: {e}", manifest.display()));
+        // The package name out of the manifest, not the directory the
+        // manifest lies in: cargo uploads the name and the publish list
+        // names it, and the two need not equal the directory.
+        let name = package_name(&text)
+            .unwrap_or_else(|| panic!("{} names no package", manifest.display()));
+        if order.contains(&name) {
+            continue;
+        }
         if publishes(&text) {
             missing.push(format!(
-                "  {name} is a workspace member that publish-crates never uploads \
-                 and that carries no `publish = false`"
+                "  {name} ({member}) is a workspace member that publish-crates never \
+                 uploads and that carries no `publish = false`"
             ));
         }
     }
@@ -176,27 +193,66 @@ fn every_workspace_member_is_published_or_marked_unpublishable() {
     );
 }
 
-/// The `members = [...]` paths of the workspace manifest.
+/// The `members = [...]` paths of the workspace manifest, in both the
+/// multi line form this workspace uses and the inline
+/// `members = ["a", "b"]` form, which a reformatting would produce and
+/// which an line oriented reader would otherwise swallow whole.
 fn workspace_members(manifest: &str) -> Vec<String> {
     let mut members = Vec::new();
     let mut in_members = false;
     for line in manifest.lines().map(str::trim) {
-        if line.starts_with("members") && line.contains('[') {
-            in_members = true;
-            continue;
-        }
+        let mut rest = line;
         if !in_members {
-            continue;
+            let Some(after) = line
+                .strip_prefix("members")
+                .map(str::trim_start)
+                .and_then(|a| a.strip_prefix('='))
+                .map(str::trim_start)
+                .and_then(|a| a.strip_prefix('['))
+            else {
+                continue;
+            };
+            in_members = true;
+            rest = after;
         }
-        if line.starts_with(']') {
+        let end = rest.find(']');
+        let body = match end {
+            Some(at) => &rest[..at],
+            None => rest,
+        };
+        for entry in body.split(',') {
+            let path = entry.trim().trim_matches('"');
+            if !path.is_empty() && !path.starts_with('#') {
+                members.push(path.to_string());
+            }
+        }
+        if end.is_some() {
             break;
-        }
-        let path = line.trim_end_matches(',').trim_matches('"');
-        if !path.is_empty() {
-            members.push(path.to_string());
         }
     }
     members
+}
+
+/// The `name` of a manifest's `[package]` section.
+fn package_name(manifest: &str) -> Option<String> {
+    let mut in_package = false;
+    for line in manifest.lines().map(str::trim) {
+        if let Some(section) = line.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+            in_package = section == "package";
+            continue;
+        }
+        if !in_package {
+            continue;
+        }
+        if let Some(value) = line
+            .strip_prefix("name")
+            .map(str::trim_start)
+            .and_then(|v| v.strip_prefix('='))
+        {
+            return Some(value.trim().trim_matches('"').to_string());
+        }
+    }
+    None
 }
 
 /// Whether a manifest would be uploaded by `cargo publish`, that is,
@@ -206,4 +262,84 @@ fn publishes(manifest: &str) -> bool {
         .lines()
         .map(str::trim)
         .any(|line| line.starts_with("publish") && line.contains("false"))
+}
+
+/// The third hold, and the one the two tests above cannot give:
+/// `joy release bump` (joy-core/src/version_bump.rs) replaces every
+/// quoted occurrence of the current version in the files of
+/// `release.version-files` and touches no other file. A crate that
+/// `publish-crates` uploads but whose manifest is not in that list
+/// therefore keeps its old version while every crate that depends on
+/// it is bumped, and `cargo publish -p <dependent>` asks crates.io for
+/// a version of it that was never uploaded. That is what JOY-0246-B7
+/// was ("Release bump misses the chat crates: version-files list
+/// incomplete"), and three crates sit in the same gap again.
+///
+/// This test reads .joy/project.yaml, which no package of the forge
+/// connection NG plan may edit, so it is red until the operator adds
+/// the paths its message names.
+#[test]
+fn every_published_crate_has_its_version_bumped() {
+    let root = workspace_root();
+    let Ok(justfile) = std::fs::read_to_string(root.join("justfile")) else {
+        // A packaged crate carries no justfile, and no workspace either.
+        return;
+    };
+    if !root.join(".joy").join("project.yaml").is_file() {
+        // Nor a joy project: this is a source tree check.
+        return;
+    }
+    let order =
+        publish_list(&justfile).expect("the publish-crates recipe names a `crates=(...)` list");
+    let workspace =
+        std::fs::read_to_string(root.join("Cargo.toml")).expect("the workspace manifest");
+    let configured = joy_core::version_files::version_files_get(&root)
+        .expect("release.version-files in .joy/project.yaml");
+
+    // The manifest path per package name, so a crate whose directory
+    // differs from its name is still looked up by the name the publish
+    // list uses.
+    let mut manifest_of: HashMap<String, String> = HashMap::new();
+    for member in workspace_members(&workspace) {
+        let manifest = root.join(&member).join("Cargo.toml");
+        let text = std::fs::read_to_string(&manifest)
+            .unwrap_or_else(|e| panic!("cannot read {}: {e}", manifest.display()));
+        if let Some(name) = package_name(&text) {
+            manifest_of.insert(name, format!("{member}/Cargo.toml"));
+        }
+    }
+
+    let mut missing = Vec::new();
+    for crate_name in &order {
+        let Some(path) = manifest_of.get(crate_name) else {
+            continue;
+        };
+        if !configured.iter().any(|entry| covers(entry, path)) {
+            missing.push(format!("  {path}"));
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "these crates are published but their version is never bumped, so the next \
+         release resolves a dependency that was never uploaded:\n{}\n\
+         Add each path to release.version-files in .joy/project.yaml \
+         (`joy project set release.version-files --add <path>`). The same gap was \
+         JOY-0246-B7 for the chat crates and JOY-02A4-89 for these.",
+        missing.join("\n")
+    );
+}
+
+/// Whether a `release.version-files` entry names `path`. Entries are
+/// plain paths here; a single `*` is honoured because the bump reader
+/// expands globs (version_bump.rs `expand_glob`).
+fn covers(entry: &str, path: &str) -> bool {
+    match entry.split_once('*') {
+        None => entry == path,
+        Some((prefix, suffix)) => {
+            path.len() >= prefix.len() + suffix.len()
+                && path.starts_with(prefix)
+                && path.ends_with(suffix)
+                && !path[prefix.len()..path.len() - suffix.len()].contains('/')
+        }
+    }
 }
