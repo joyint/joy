@@ -15,21 +15,25 @@ pub enum JoyError {
     NoFounderIdentity,
 
     /// A write needs an acting member and none is known: no delegation
-    /// session, no member pinned on this device, and no git config that
-    /// names a member of this project (D4.5).
+    /// session and no member pinned on this device (D4.5). git config is
+    /// not consulted here since package J11, so a checkout whose
+    /// `user.email` names a member is refused as clearly as one with no
+    /// git identity at all.
     ///
-    /// The first line is the sentence D4.5 writes for the desktop, where
-    /// the remedy is the member picker. The second names the remedy of a
-    /// host that has no picker, because this error reaches the command
-    /// line too, and from commands that take no `--user` of their own
-    /// (`joy crypt`, `joy deauth`, `joy auth passphrase`). The one remedy
-    /// that works for all of them is to authenticate once: that pins the
-    /// member on this device (D3.9), and every later command knows them.
+    /// The first line is the sentence D4.5 writes, and it is the whole
+    /// remedy in the app, whose host has a member picker. The rest is
+    /// marked as the command line's own, because this error reaches the
+    /// command line too, and from commands that take no `--user` of their
+    /// own (`joy crypt`, `joy deauth`, `joy auth passphrase`). The one
+    /// remedy that works for all of them is to authenticate once: that
+    /// pins the member on this device (D3.9), and every later command
+    /// knows them.
     #[error(
         "this project does not know who you are, pick your member\n\
-         On the command line, name yourself once: joy auth --user <address>, \
-         or joy auth init --user <address> when this member has no passphrase \
-         here yet. This device remembers the member afterwards."
+         In the app that is the member picker. On the command line, name \
+         yourself once: joy auth --user <address>, or joy auth init --user \
+         <address> when this member has no passphrase here yet. Either way, \
+         this device remembers the member afterwards."
     )]
     UnknownActingMember,
 

@@ -670,6 +670,32 @@ fn auth_with_token(
     Ok(())
 }
 
+/// Where `joy auth status` got the member it just named (D3.9), in the
+/// words a person can act on.
+///
+/// The order is the resolver's own: a delegation session names the AI and
+/// the operator behind it, the device pin is this machine's own state,
+/// and nothing else answers. The pin is worth naming because it is
+/// invisible otherwise: a person who once ran `joy auth --user
+/// somebody-else` has changed what this machine answers with, and the
+/// only way to see it was to guess. Naming it also names the way to
+/// change it, which is to authenticate as somebody else.
+fn identity_source(
+    root: &std::path::Path,
+    project: &joy_core::model::project::Project,
+    identity: &joy_core::identity::Identity,
+) -> String {
+    if identity.delegated_by.is_some() {
+        return "delegation session in JOY_SESSION".to_string();
+    }
+    match joy_core::identity::pinned_member(root, project).as_deref() {
+        Some(pin) if pin == identity.member.id() => {
+            "remembered on this device (`joy auth --user <address>` changes it)".to_string()
+        }
+        _ => "this session".to_string(),
+    }
+}
+
 /// `joy auth status` — show current session state and any AI sessions
 /// the calling user has delegated to.
 fn run_status() -> Result<()> {
@@ -678,8 +704,23 @@ fn run_status() -> Result<()> {
 
     let identity =
         joy_core::identity::resolve_identity(&root).map_err(|e| anyhow::anyhow!("{e}"))?;
+    // Nothing on this device says who acts here: no delegation session
+    // and no pin, which is a fresh clone or a second machine, and git
+    // config is not an answer (D3.9). Say the sentence that names the
+    // remedy instead of printing "No active session for " with an empty
+    // name in it.
+    if identity.member.id().trim().is_empty() {
+        return Err(joy_core::error::JoyError::UnknownActingMember.into());
+    }
     let project = store::load_project(&root)?;
     let project_id = session::project_id(&root)?;
+    // Where the answer came from, so a person can see that this machine
+    // decided it once and how to decide it again: a delegation session
+    // names the AI, a pin is this device's own state, and `joy auth
+    // --user <address>` replaces it (D3.9). Without this line a machine
+    // that answers with a member nobody expected looks like a machine
+    // reading somebody's mind.
+    let source = identity_source(&root, &project, &identity);
 
     // AI identities authenticate via the env-carried session (per-session
     // file); humans via their per-member slot. Try env first, slot second.
@@ -759,6 +800,7 @@ fn run_status() -> Result<()> {
                 color::label("Member:    "),
                 color::user(&identity.member)
             );
+            println!("  {} {}", color::label("Source:    "), source);
             if let Some(ref by) = identity.delegated_by {
                 println!("  {} {}", color::label("Delegated: "), by);
             }
@@ -785,6 +827,7 @@ fn run_status() -> Result<()> {
                 identity.member
             ))
         );
+        println!("  {} {}", color::label("Source:    "), source);
     } else {
         println!(
             "  {}",
@@ -793,6 +836,7 @@ fn run_status() -> Result<()> {
                 identity.member
             ))
         );
+        println!("  {} {}", color::label("Source:    "), source);
     }
 
     if !delegated_sessions.is_empty() {

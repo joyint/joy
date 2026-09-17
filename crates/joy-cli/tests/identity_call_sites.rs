@@ -47,7 +47,28 @@ impl Machine {
         self.joy_with_session(args, None)
     }
 
+    /// Run `joy` with `JOY_PASSPHRASE` in the environment, the way a
+    /// script or the desktop's sidecar does. It is the door the member
+    /// resolver uses to open an anonymous project's member map without a
+    /// session, and it asks who acts here to know whose seed to derive.
+    fn joy_with_a_passphrase_in_the_environment(&self, args: &[&str]) -> Output {
+        let mut command = self.base_command(args);
+        command.env_remove("JOY_SESSION");
+        command.env("JOY_PASSPHRASE", PASSPHRASE);
+        command.output().expect("joy runs")
+    }
+
     fn joy_with_session(&self, args: &[&str], session: Option<&str>) -> Output {
+        let mut command = self.base_command(args);
+        command.env_remove("JOY_PASSPHRASE");
+        match session {
+            Some(value) => command.env("JOY_SESSION", value),
+            None => command.env_remove("JOY_SESSION"),
+        };
+        command.output().expect("joy runs")
+    }
+
+    fn base_command(&self, args: &[&str]) -> std::process::Command {
         let mut command = joy_process::command(env!("CARGO_BIN_EXE_joy"));
         command
             .args(args)
@@ -56,15 +77,10 @@ impl Machine {
             .env("XDG_STATE_HOME", self.home.join(".state"))
             .env("XDG_CONFIG_HOME", self.home.join(".config"))
             .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env_remove("JOY_PASSPHRASE")
             .env_remove("GIT_AUTHOR_EMAIL")
             .env_remove("GIT_COMMITTER_EMAIL")
             .env_remove("EMAIL");
-        match session {
-            Some(value) => command.env("JOY_SESSION", value),
-            None => command.env_remove("JOY_SESSION"),
-        };
-        command.output().expect("joy runs")
+        command
     }
 
     /// Write a global `user.email`, the way `git config --global` would.
@@ -170,6 +186,13 @@ fn identity_script(machine: &Machine) -> Vec<Step> {
             vec!["crypt", "add", "LG-0001", "--passphrase", PASSPHRASE],
         ),
         ("crypt status", vec!["crypt", "status"]),
+        // The AI setup path: it attests the tool member it registers
+        // with the acting human's key, and it bootstraps that human's
+        // authentication when there is none.
+        (
+            "ai init",
+            vec!["ai", "init", "--tool", "claude", "--passphrase", PASSPHRASE],
+        ),
         (
             "chat send",
             vec![
@@ -260,35 +283,295 @@ fn identity_script(machine: &Machine) -> Vec<Step> {
         .collect()
 }
 
+/// The identity call sites the script above cannot host, because every
+/// one of them takes something away: a zone grant, a zone, a member's
+/// authentication. They run in one order that leaves each of them
+/// reachable, ending with the acting member's own reset.
+///
+/// This is where `joy auth reset` (auth.rs), `joy crypt grant`,
+/// `joy crypt revoke` and `joy crypt zone rm` (crypt.rs) and
+/// `joy auth delegation rotate` (auth.rs) are driven. `joy auth reset`
+/// is here for a second reason: it looked the acting member up by
+/// address and then by key, which failed outright in a project whose
+/// member map is not keyed by an address; the move onto
+/// `acting_human_key` fixed that, and this is the case that says so.
+fn taking_something_away_script(machine: &Machine) -> Vec<Step> {
+    let commands: Vec<(&'static str, Vec<&str>)> = vec![
+        ("add an item", vec!["add", "task", "First thing"]),
+        (
+            "crypt add",
+            vec!["crypt", "add", "LG-0001", "--passphrase", PASSPHRASE],
+        ),
+        (
+            "crypt grant",
+            vec!["crypt", "grant", "a@b.c", "--passphrase", PASSPHRASE],
+        ),
+        (
+            "member add",
+            vec![
+                "project",
+                "member",
+                "add",
+                "b@c.d",
+                "--passphrase",
+                PASSPHRASE,
+            ],
+        ),
+        // A member with no access: the early return, which still had to
+        // know who was asking.
+        ("crypt revoke a stranger", vec!["crypt", "revoke", "b@c.d"]),
+        // Resetting somebody ELSE needs the manage capability, and the
+        // acting member has to be found for it to be checked at all.
+        (
+            "auth reset another member",
+            vec!["auth", "reset", "b@c.d", "--passphrase", PASSPHRASE],
+        ),
+        (
+            "ai member add",
+            vec![
+                "project",
+                "member",
+                "add",
+                "ai:claude@joy",
+                "--capabilities",
+                "all",
+                "--passphrase",
+                PASSPHRASE,
+            ],
+        ),
+        (
+            "token add",
+            vec![
+                "auth",
+                "token",
+                "add",
+                "ai:claude@joy",
+                "--passphrase",
+                PASSPHRASE,
+            ],
+        ),
+        (
+            "delegation rotate",
+            vec![
+                "auth",
+                "delegation",
+                "rotate",
+                "ai:claude@joy",
+                "--passphrase",
+                PASSPHRASE,
+            ],
+        ),
+        (
+            "crypt rm",
+            vec!["crypt", "rm", "LG-0001", "--passphrase", PASSPHRASE],
+        ),
+        ("crypt revoke myself", vec!["crypt", "revoke", "a@b.c"]),
+        ("crypt zone rm", vec!["crypt", "zone", "rm", "default"]),
+        (
+            "auth reset myself",
+            vec!["auth", "reset", "--passphrase", PASSPHRASE],
+        ),
+    ];
+    commands
+        .into_iter()
+        .map(|(label, args)| {
+            let output = machine.joy(&args);
+            Step {
+                label,
+                ok: output.status.success(),
+                text: redact(&text(&output)),
+            }
+        })
+        .collect()
+}
+
+/// The privacy migration and the erasure behind it (`joy project set
+/// privacy`, `joy project member erase`), which no other script can
+/// host: the migration rekeys every human member, so the address a
+/// machine was founded with stops being a member key halfway through.
+///
+/// This is the one command that used to be rescued by git config on a
+/// machine that had one: the pin still named the address, the address
+/// was no longer a key, and `member_key_for_email` found the new id from
+/// the config. With git config out of the identity (J11) the migration
+/// has to re-pin the acting member itself, and this script is where that
+/// is checked, on a machine that has no config to fall back on.
+fn privacy_migration_script(machine: &Machine) -> Vec<Step> {
+    // The third field says whether this step carries `JOY_PASSPHRASE`:
+    // the member resolver's own door into an anonymous member map, which
+    // also has to know who acts here.
+    let commands: Vec<(&'static str, Vec<&str>, bool)> = vec![
+        (
+            "set privacy anonymous",
+            vec![
+                "project",
+                "set",
+                "privacy",
+                "anonymous",
+                "--passphrase",
+                PASSPHRASE,
+            ],
+            false,
+        ),
+        // The rekey invalidated the session, because it was bound to the
+        // old member key. Authenticating again needs the pin the
+        // migration rewrote, and no `--user`.
+        (
+            "auth again",
+            vec!["auth", "--passphrase", PASSPHRASE],
+            false,
+        ),
+        ("auth status", vec!["auth", "status"], false),
+        // The member resolver, through its passphrase door: an opaque id
+        // is shown as the person's address again, and the seed it
+        // derives to open the map is the acting member's.
+        (
+            "member show",
+            vec!["project", "member", "show", "a@b.c"],
+            true,
+        ),
+        (
+            "member erase",
+            vec![
+                "project",
+                "member",
+                "erase",
+                "a@b.c",
+                "--passphrase",
+                PASSPHRASE,
+            ],
+            false,
+        ),
+        (
+            "set privacy open",
+            vec![
+                "project",
+                "set",
+                "privacy",
+                "open",
+                "--passphrase",
+                PASSPHRASE,
+            ],
+            false,
+        ),
+    ];
+    commands
+        .into_iter()
+        .map(|(label, args, with_passphrase_env)| {
+            let output = match with_passphrase_env {
+                true => machine.joy_with_a_passphrase_in_the_environment(&args),
+                false => machine.joy(&args),
+            };
+            Step {
+                label,
+                ok: output.status.success(),
+                text: redact(&text(&output)),
+            }
+        })
+        .collect()
+}
+
 /// Take out what differs between two equal runs by nature: the countdown
-/// of a session, the one-time password of a new member, the recovery key
-/// and the milliseconds a chat write took. A chat line keeps everything
-/// after its timestamp, because the name in it is the point. The rest
-/// must match line for line.
+/// of a session, the one-time password of a new member, the recovery key,
+/// a delegation token, the clock in front of a chat line and the
+/// milliseconds a chat write took.
+///
+/// Every one of them is replaced BY VALUE, never by dropping the line it
+/// sits on. Dropping lines is what hides a difference: an identity that
+/// changed on a line which happens to carry the word "Expires:", or
+/// inside the first sixteen characters of a chat line, would pass a
+/// comparison that threw those lines away. Here every other word on such
+/// a line is still compared, and the shape of what is removed is checked
+/// character by character.
 fn redact(output: &str) -> String {
     output
         .lines()
-        .filter(|line| {
-            !line.contains("Expires:")
-                && !line.contains("One-time password")
-                && !line.contains("--otp")
-                && !line.contains("joy_r_")
-                && !line.contains("message sent")
-        })
-        .map(without_a_timestamp)
+        .map(redact_line)
         .collect::<Vec<_>>()
         .join("\n")
 }
 
-/// A chat message is printed as `<date> <time>  <member>  <text>`. Cut
-/// the clock off the front and keep the rest.
+fn redact_line(line: &str) -> String {
+    let line = without_a_timestamp(line);
+    // `Expires:   23h 59m`: the label stays, the countdown goes.
+    if let Some((head, _)) = line.split_once("Expires:") {
+        return format!("{head}Expires: <countdown>");
+    }
+    // `message sent (10 ms)`: how long a chat write took.
+    if let Some((head, _)) = line.split_once(" (") {
+        if head.trim_start().starts_with("message sent") {
+            return format!("{head} (<duration>)");
+        }
+    }
+    // Word by word for the rest, so the spacing and every other word of
+    // the line are preserved exactly.
+    line.split(' ')
+        .map(redact_word)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// One word, with whatever punctuation joy printed around it kept in
+/// place: a recovery key, a delegation token and a one-time password are
+/// fresh on every run and nothing else about them is asserted here.
+fn redact_word(word: &str) -> String {
+    let bare = word.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-');
+    if bare.is_empty() {
+        return word.to_string();
+    }
+    for (prefix, token) in [("joy_r_", "<recovery-key>"), ("joy_t_", "<token>")] {
+        if bare.starts_with(prefix) {
+            // The whole word, quotes and base64 padding included: the
+            // padding is part of the value and its length is not
+            // something this comparison has an opinion about.
+            return token.to_string();
+        }
+    }
+    if is_a_one_time_password(bare) {
+        return word.replace(bare, "<otp>");
+    }
+    // An opaque member id (ADR-042) is derived from the member's
+    // verify_key, so two machines that enrolled the same person hold
+    // different ones. The id is replaced; an address printed beside it is
+    // not, which is the whole point of comparing these runs.
+    match joy_core::member_id::is_opaque_member_id(bare) {
+        true => word.replace(bare, "<member-id>"),
+        false => word.to_string(),
+    }
+}
+
+/// A one-time password as `joy project member add` prints it: three
+/// groups of four upper-case letters and digits, joined by dashes. No
+/// member key has that shape: an address carries an `@` and an opaque id
+/// is `m-` and one group of hex.
+fn is_a_one_time_password(word: &str) -> bool {
+    let groups: Vec<&str> = word.split('-').collect();
+    groups.len() == 3
+        && groups.iter().all(|group| {
+            group.len() == 4
+                && group
+                    .chars()
+                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+        })
+}
+
+/// A chat message is printed as `<date> <time>  <member>  <text>`.
+/// Replace the clock in front of it and keep the rest.
+///
+/// The shape is checked at every one of those sixteen characters, so a
+/// line that merely begins with "20" keeps all of its text, the name in
+/// it included.
 fn without_a_timestamp(line: &str) -> String {
-    let stamped = line.len() > 16
-        && line.starts_with("20")
-        && line.as_bytes()[4] == b'-'
-        && line.as_bytes()[13] == b':';
+    let bytes = line.as_bytes();
+    if bytes.len() < 16 {
+        return line.to_string();
+    }
+    let digits = [0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15];
+    let punctuation = [(4, b'-'), (7, b'-'), (10, b' '), (13, b':')];
+    let stamped = digits.iter().all(|&at| bytes[at].is_ascii_digit())
+        && punctuation.iter().all(|&(at, c)| bytes[at] == c);
     match stamped {
-        true => line[16..].to_string(),
+        true => format!("<time>{}", &line[16..]),
         false => line.to_string(),
     }
 }
@@ -349,6 +632,201 @@ fn removing_user_email_changes_no_command() {
     for step in &removed {
         assert!(step.ok, "`joy {}` failed: {}", step.label, step.text);
     }
+}
+
+/// Both halves of the acceptance, for the verbs that take something
+/// away: they work on a machine with no git config, and removing
+/// `user.email` changes nothing they print.
+///
+/// One comparison for both, because the script can only be run once per
+/// machine: each of these commands removes the thing the next one would
+/// have needed.
+#[test]
+fn the_verbs_that_take_something_away_ignore_the_git_config_too() {
+    let with_config = Machine::new();
+    with_config.git_config_says("a@b.c");
+    found_and_enrol(&with_config);
+
+    let without_config = Machine::new();
+    without_config.git_config_says("a@b.c");
+    found_and_enrol(&without_config);
+    without_config.forget_the_git_config();
+
+    let kept = taking_something_away_script(&with_config);
+    let removed = taking_something_away_script(&without_config);
+
+    assert_eq!(kept.len(), removed.len());
+    for (kept, removed) in kept.iter().zip(removed.iter()) {
+        assert_eq!(kept.label, removed.label);
+        assert_eq!(
+            (kept.ok, kept.text.as_str()),
+            (removed.ok, removed.text.as_str()),
+            "`joy {}` behaved differently without a git config",
+            kept.label
+        );
+    }
+    for step in &removed {
+        assert!(step.ok, "`joy {}` failed: {}", step.label, step.text);
+    }
+}
+
+/// Both halves of the acceptance for the privacy migration: it works on
+/// a machine with no git config, and removing `user.email` changes
+/// nothing it prints. The opaque ids in the output are redacted by
+/// value, because they are derived from each machine's own key.
+#[test]
+fn the_privacy_migration_keeps_knowing_who_acts() {
+    let with_config = Machine::new();
+    with_config.git_config_says("a@b.c");
+    found_and_enrol(&with_config);
+
+    let without_config = Machine::new();
+    without_config.git_config_says("a@b.c");
+    found_and_enrol(&without_config);
+    without_config.forget_the_git_config();
+
+    let kept = privacy_migration_script(&with_config);
+    let removed = privacy_migration_script(&without_config);
+
+    assert_eq!(kept.len(), removed.len());
+    for (kept, removed) in kept.iter().zip(removed.iter()) {
+        assert_eq!(kept.label, removed.label);
+        assert_eq!(
+            (kept.ok, kept.text.as_str()),
+            (removed.ok, removed.text.as_str()),
+            "`joy {}` behaved differently without a git config",
+            kept.label
+        );
+    }
+    for step in &removed {
+        assert!(step.ok, "`joy {}` failed: {}", step.label, step.text);
+    }
+}
+
+/// The half of D3.9 that git config used to answer, and must not: a
+/// fresh clone or a second machine, WITH a git config that names a
+/// registered member of this very project.
+///
+/// Before J11 that config was the deciding identity source, so this
+/// machine acted as the person it named without anybody on it ever
+/// saying so. Now nothing answers, every command that needs an identity
+/// says so in the same sentence, and naming the member once settles it.
+/// A read-only command keeps working throughout, because it needs no
+/// member.
+#[test]
+fn a_git_config_alone_does_not_decide_who_acts() {
+    let machine = Machine::new();
+    machine.git_config_says("a@b.c");
+    found_and_enrol(&machine);
+    // The project file travels to the new machine; this device's session
+    // and pin do not. The git config stays, and it names the founder.
+    machine.forget_the_device_state();
+
+    for (label, args) in [
+        ("auth status", vec!["auth", "status"]),
+        ("crypt status", vec!["crypt", "status"]),
+        ("add an item", vec!["add", "task", "First thing"]),
+        ("deauth", vec!["deauth"]),
+    ] {
+        let output = machine.joy(&args);
+        assert!(
+            !output.status.success(),
+            "`joy {label}` answered from git config: {}",
+            text(&output)
+        );
+        assert!(
+            text(&output).contains("this project does not know who you are"),
+            "`joy {label}` says what is missing: {}",
+            text(&output)
+        );
+        assert!(
+            text(&output).contains("joy auth --user <address>"),
+            "`joy {label}` names the remedy: {}",
+            text(&output)
+        );
+    }
+
+    // Reading needs no member, and it never did.
+    let ls = machine.joy(&["ls"]);
+    assert!(ls.status.success(), "{}", text(&ls));
+
+    // Naming the member once is the whole remedy, and it is the same one
+    // the machine with no git config at all is given.
+    let named = machine.joy(&["auth", "--user", "a@b.c", "--passphrase", PASSPHRASE]);
+    assert!(named.status.success(), "{}", text(&named));
+    let status = machine.joy(&["auth", "status"]);
+    assert!(status.status.success(), "{}", text(&status));
+    assert!(text(&status).contains("a@b.c"), "{}", text(&status));
+    // ...and `joy auth status` says where the answer came from, because a
+    // pin is this device's own state and nothing else on the machine
+    // shows it.
+    assert!(
+        text(&status).contains("remembered on this device"),
+        "the source of the answer is named: {}",
+        text(&status)
+    );
+}
+
+/// A delegation session answers WHO is acting, and nothing about what
+/// they may do (D3.9): the rights question is the guard's, and the crypt
+/// verbs that change who can read a zone ask it.
+///
+/// This is the shape J11 creates and therefore has to close: a machine
+/// with no git config at all, where these verbs used to be stopped by
+/// git2's "user.email is empty" and by nothing else. An AI session with
+/// no manage capability, and one with every capability there is, are
+/// both refused, and no passphrase is asked for on the way.
+#[test]
+fn a_delegation_session_cannot_change_who_reads_a_zone() {
+    let machine = Machine::new();
+    found_and_enrol(&machine);
+    let item = machine.joy(&["add", "task", "First thing"]);
+    assert!(item.status.success(), "{}", text(&item));
+    let encrypted = machine.joy(&["crypt", "add", "LG-0001", "--passphrase", PASSPHRASE]);
+    assert!(encrypted.status.success(), "{}", text(&encrypted));
+    let session = machine.a_delegation_session("ai:claude@joy");
+
+    for (label, args) in [
+        (
+            "crypt revoke",
+            vec!["crypt", "revoke", "a@b.c", "--zone", "default"],
+        ),
+        (
+            "crypt grant",
+            vec![
+                "crypt",
+                "grant",
+                "ai:claude@joy",
+                "--zone",
+                "default",
+                "--passphrase",
+                PASSPHRASE,
+            ],
+        ),
+        ("crypt zone rm", vec!["crypt", "zone", "rm", "default"]),
+    ] {
+        let output = machine.joy_with_session(&args, Some(&session));
+        assert!(
+            !output.status.success(),
+            "`joy {label}` let a delegation session change a zone's readers: {}",
+            text(&output)
+        );
+        assert!(
+            text(&output).contains("ai:claude@joy") && text(&output).contains("manage"),
+            "`joy {label}` names the AI and the right it lacks: {}",
+            text(&output)
+        );
+    }
+
+    // The human whose access the AI tried to revoke still has it.
+    let status = machine.joy(&["crypt", "status"]);
+    assert!(status.status.success(), "{}", text(&status));
+    let zone_still_readable = machine.joy(&["crypt", "ls"]);
+    assert!(
+        zone_still_readable.status.success(),
+        "{}",
+        text(&zone_still_readable)
+    );
 }
 
 /// The order of D3.9, at its top: a delegation session outranks git

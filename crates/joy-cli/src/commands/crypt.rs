@@ -181,6 +181,31 @@ fn load_context() -> Result<(std::path::PathBuf, Project, String)> {
     Ok((root, project, acting))
 }
 
+/// The rights question for a crypt verb that changes who can READ a zone.
+///
+/// `joy crypt grant`, `joy crypt revoke` and `joy crypt zone rm` write
+/// `project.yaml` and change what a member can decrypt, so they ask the
+/// same question `joy project member add` asks
+/// ([`joy_core::guard::Action::ManageProject`], and therefore the
+/// `manage` capability): an AI member never performs a manage action,
+/// whatever its capability list says, and a human without `manage` is
+/// refused too.
+///
+/// Identity and rights are two questions (D3.9). J11 answered the first
+/// one from the session and the device pin, which is why this one has to
+/// be asked out loud here: before it, a machine with no git config
+/// refused these verbs by accident, with git2's "user.email is empty",
+/// and an accident is not an authorization check. The verbs that only
+/// encrypt or decrypt the caller's own content (`add`, `rm`, `read`,
+/// `write`, `edit`, `lock`, `unlock`) are not manage actions and are not
+/// gated here; they are gated by the zone wrap they need.
+fn enforce_zone_rights() -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
+    joy_core::guard::enforce(&root, &joy_core::guard::Action::ManageProject, "crypt")?;
+    Ok(())
+}
+
 /// Unwrap the acting member's wrap for the zone, or generate a fresh
 /// zone key if `autocreate` is allowed and no wrap exists.
 fn unlock_zone(
@@ -852,6 +877,7 @@ fn run_zone_list() -> Result<()> {
 
 fn run_zone_rm(name: &str) -> Result<()> {
     let (root, mut project, acting) = load_context()?;
+    enforce_zone_rights()?;
     if !project.crypt.zones.contains_key(name) {
         bail!("zone '{}' is not registered", name);
     }
@@ -884,6 +910,11 @@ fn run_zone_rm(name: &str) -> Result<()> {
 
 fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>, stdin: bool) -> Result<()> {
     use joy_core::model::project::is_ai_member;
+    // Who acts here, then whether they may: the refusal comes before the
+    // passphrase prompt, so a member without `manage` is not asked for a
+    // secret it will not use.
+    let (_root, _project, _acting) = load_context()?;
+    enforce_zone_rights()?;
     let unlocked = unlock_zone(zone, passphrase, stdin, false)?;
     // `target_member` is a user-supplied identifier that is polymorphic by
     // kind: an `ai:` synthetic id for AI tools (always the at-rest map key),
@@ -1042,6 +1073,7 @@ fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>, stdin: b
 fn run_revoke(zone: &str, target_member: &str) -> Result<()> {
     use joy_core::model::project::is_ai_member;
     let (root, mut project, acting) = load_context()?;
+    enforce_zone_rights()?;
     // `target_member` is polymorphic (see run_grant): resolve AI ids by at-rest
     // key, human identifiers by privacy-aware e-mail lookup (ADR-042).
     let target_exists = if is_ai_member(target_member) {

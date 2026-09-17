@@ -189,3 +189,63 @@ fn a_joy_commit_leaves_the_persons_staged_work_where_it_was() {
     let index = repo.index().unwrap();
     assert!(index.get_path(Path::new("src.rs"), 0).is_some());
 }
+
+/// The second half of J11's acceptance, on the one observable git config
+/// still decides: the display NAME of a commit joy writes (D4.5, "name is
+/// git config `user.name` when it maps to the acting member").
+///
+/// Removing ONLY `user.email` and keeping `user.name` used to drop the
+/// name from every commit, because the name was gated on the address
+/// mapping to the acting member. It is not a crash and not a wrong
+/// author, but it is a behaviour that changed when `user.email` went, and
+/// the criterion says none does. With no address in the config the
+/// question is answered by the member this device pinned instead, so the
+/// author line is identical before and after.
+#[test]
+fn removing_only_user_email_leaves_the_author_line_alone() {
+    let (_dir, root, home) = machine();
+
+    // A machine whose git config names the person by both name and
+    // address, the way a working checkout does.
+    std::fs::write(
+        home.join(".gitconfig"),
+        "[user]\n\temail = alice@example.com\n\tname = Alice Anderson\n",
+    )
+    .unwrap();
+
+    let init = joy(
+        &root,
+        &home,
+        &["init", "--name", "Ledger", "--user", "alice@example.com"],
+    );
+    assert!(init.status.success(), "{}", text(&init));
+    let auth = joy(&root, &home, &["auth", "init", "--passphrase", PASSPHRASE]);
+    assert!(auth.status.success(), "{}", text(&auth));
+    auto_git_commit(&root);
+
+    let first = joy(&root, &home, &["add", "task", "First thing"]);
+    assert!(first.status.success(), "{}", text(&first));
+    let with_the_address = head_fields(&root);
+    assert_eq!(
+        with_the_address,
+        [
+            "Alice Anderson".to_string(),
+            "alice@example.com".to_string(),
+            "Alice Anderson".to_string(),
+            "alice@example.com".to_string(),
+        ],
+        "the configured name rides along while the address names the member"
+    );
+
+    // Only `user.email` goes. The name stays exactly where it was, and so
+    // does the member this device pinned.
+    std::fs::write(home.join(".gitconfig"), "[user]\n\tname = Alice Anderson\n").unwrap();
+
+    let second = joy(&root, &home, &["add", "task", "Second thing"]);
+    assert!(second.status.success(), "{}", text(&second));
+    assert_eq!(
+        head_fields(&root),
+        with_the_address,
+        "removing user.email changed the author line"
+    );
+}

@@ -631,6 +631,19 @@ fn set_privacy(
         joy_core::privacy::switch_to_open(&ctx.root, project, &unlocked.seed)?
     };
 
+    // The migration rekeyed every human member, so this device's pin
+    // names a key that no longer exists. Re-pin the acting member under
+    // their new key: since J11 the pin is the whole answer to "who acts
+    // here" (D3.9), and a machine that has just migrated its own project
+    // must not be the one machine that no longer knows. `renamed` is
+    // (old key, new key) in both directions.
+    let migrated_key = renamed
+        .iter()
+        .find(|(from, _)| *from == member_key)
+        .map(|(_, to)| to.clone())
+        .unwrap_or_else(|| member_key.clone());
+    joy_core::identity::pin_acting_member(&ctx.root, project, &migrated_key);
+
     // The migration rewrote project.yaml, members.yaml, items and logs.
     joy_core::git_ops::auto_git_add(&ctx.root, &[store::JOY_DIR]);
     let log_user = ctx.log_user();
