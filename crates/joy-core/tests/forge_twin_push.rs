@@ -742,6 +742,60 @@ fn a_host_that_ssh_worked_for_is_never_taken_to_the_twin() {
     drop(machine);
 }
 
+/// D1.2 rule 3b, and the engine's own rule that one contact's refusal is
+/// never read as the next one's.
+///
+/// `clone` fails outside any plan, so nothing there takes the cell the
+/// resolver reads: a person whose wrong key was refused on a clone had
+/// the NEXT operation on that thread read its own timeout or DNS fault
+/// as an ssh authentication failure, spend a second contact on the twin
+/// and write a 24 hour `ssh-failed` row for a host whose ssh credential
+/// was never refused. The leg preamble takes the cell, so the row here
+/// is never written.
+#[test]
+fn a_refusal_from_an_earlier_operation_writes_no_row_for_this_one() {
+    let _serial = lock();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let machine = machine_without_a_connector();
+
+    let checkout = tmp.path().join("checkout");
+    let repo = git2::Repository::init(&checkout).expect("init");
+    repo.remote("origin", "ssh://git@joy-test.invalid/acme/widgets.git")
+        .expect("remote");
+    drop(repo);
+
+    // What a clone over an ssh URL with the wrong key leaves behind on
+    // this thread.
+    joy_core::vcs::resolver::note_contact_error(
+        contact::Transport::Ssh,
+        &git2::Error::new(
+            git2::ErrorCode::Auth,
+            git2::ErrorClass::Ssh,
+            "the forge refused this key",
+        ),
+    );
+
+    // This operation's own failure is a name that resolves nowhere, and
+    // that is not a refusal of anybody's credential.
+    let failed = forge::fetch_ref(
+        &checkout,
+        &Auth::local(HostKind::Background),
+        "refs/joy/chats",
+        "refs/joy/chats-tracking",
+    )
+    .expect_err("joy-test.invalid resolves nowhere");
+    assert_ne!(
+        contact::failure_of(&failed),
+        contact::Failure::NeedsSignIn,
+        "the case only means something while this failure is not an authentication one: {failed}"
+    );
+    assert!(
+        resolver::recall("joy-test.invalid").is_none(),
+        "a refusal that belonged to an earlier operation wrote this host's row"
+    );
+    drop(machine);
+}
+
 /// The oracle of D2.10, as far as this test needs one: it says what the
 /// case installs it to say.
 struct FixedOracle(contact::OracleAnswer);
