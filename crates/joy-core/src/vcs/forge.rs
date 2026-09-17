@@ -1130,7 +1130,11 @@ fn over_plan<T>(
     // openssh-key-v1 file and the machine has no token either: a probe
     // would come back "the forge refuses you" for a person who is
     // simply not signed in, and the banner would offer the wrong action.
-    if verb == "probe" && nothing_to_present(&plan) {
+    // Only a caller that resolves has a probe to read: every other one
+    // gets `Plan::single`, whose probe is empty because none was ever
+    // RUN, and an ssh remote plus a token holding caller would be
+    // refused here without a socket being opened.
+    if verb == "probe" && auth.is_local() && nothing_to_present(&plan) {
         return Err(anyhow::Error::new(super::contact::ContactError {
             failure: super::contact::Failure::NeedsSignIn,
             message: format!(
@@ -1145,6 +1149,16 @@ fn over_plan<T>(
     let mut last: Option<anyhow::Error> = None;
     for (at, leg) in plan.legs.iter().enumerate() {
         let auth_for_leg = leg_auth(auth, leg);
+        // Whatever an earlier contact on this thread left in the two
+        // cells is not this leg's. The credential cell is taken below,
+        // inside the contact; the ssh refusal cell is taken HERE,
+        // because `clone` and every verb that contacts outside a plan
+        // set it too and nothing there clears it, and because a leg the
+        // throttle holds back never enters the closure at all. A
+        // refusal that is not this leg's would send the next operation
+        // to the twin and write a 24 hour `ssh-failed` row for a host
+        // whose ssh credential was never refused (D1.2 rule 3b).
+        super::resolver::took_ssh_auth_failure();
         let used: std::cell::Cell<Option<&'static str>> = std::cell::Cell::new(None);
         let outcome = {
             let repo = &repo;
@@ -1173,7 +1187,8 @@ fn over_plan<T>(
                 return Ok(value);
             }
             Err(e) => {
-                let follow = at < last_leg && may_follow(leg, ssh_auth_failed);
+                let follow = at < last_leg
+                    && may_follow(leg, ssh_auth_failed, super::contact::failure_of(&e));
                 remember_failure(&plan, leg, ssh_auth_failed);
                 last = Some(e);
                 if !follow {
@@ -1199,17 +1214,29 @@ fn nothing_to_present(plan: &Plan) -> bool {
 
 /// Whether the next leg may be tried after this one failed.
 ///
-/// An ssh contact is followed by the twin for exactly ONE refusal, the
-/// authentication class failure of D1.2 rule 3b. A DNS fault, a
-/// timeout, a refused host key or a proxy that wants a login of its own
-/// say nothing about the person's ssh credential, and following them to
-/// the twin would spend a second contact and report the wrong cause.
-/// A twin that failed is followed by the configured remote, because the
-/// token was the guess and the machine's own credential is the fact.
-fn may_follow(leg: &Leg, ssh_auth_failed: bool) -> bool {
+/// Each way has exactly one refusal it may be followed for, and the
+/// reason is the same on both sides: the leg presented a credential and
+/// that credential was refused, so the other transport's credential is
+/// worth one contact. Everything else is a verdict the forge or the
+/// network already gave about THIS operation.
+///
+/// - An ssh contact is followed by the twin for the authentication class
+///   failure of D1.2 rule 3b and for nothing else. A DNS fault, a
+///   timeout, a refused host key or a proxy that wants a login of its
+///   own say nothing about the person's ssh credential.
+/// - A twin contact is followed by the configured remote when the token
+///   it carried was refused, which is `needs_sign_in` (`code == Auth` on
+///   https, or status 401, D1.8b). Following any other verdict would
+///   spend a second contact and then report the wrong cause, because
+///   this loop returns the LAST leg's error: a 403 that means "your
+///   organisation must approve Joy" would reach the person as an ssh
+///   sign in prompt, a ref the forge rejected by name would be pushed a
+///   second time, and a fault inside this checkout would be contacted
+///   for twice.
+fn may_follow(leg: &Leg, ssh_auth_failed: bool, failure: super::contact::Failure) -> bool {
     match leg.way {
         Way::Configured => leg.transport == super::contact::Transport::Ssh && ssh_auth_failed,
-        Way::Twin => true,
+        Way::Twin => failure == super::contact::Failure::NeedsSignIn,
     }
 }
 
@@ -5312,11 +5339,42 @@ mod resolver_assembly_tests {
     /// would spend a second contact and report the wrong cause.
     #[test]
     fn only_an_ssh_authentication_failure_is_followed_to_the_twin() {
-        assert!(may_follow(&ssh_leg(), true));
-        assert!(!may_follow(&ssh_leg(), false));
-        // The twin is the guess and the machine's own credential is the
-        // fact, so a twin that failed is always followed.
-        assert!(may_follow(&twin_leg(), false));
+        use super::super::contact::Failure;
+        assert!(may_follow(&ssh_leg(), true, Failure::NeedsSignIn));
+        assert!(!may_follow(&ssh_leg(), false, Failure::Offline));
+        assert!(
+            !may_follow(&ssh_leg(), false, Failure::NeedsSignIn),
+            "an https 401 and an ssh refusal are the same state; only the raw error tells them apart"
+        );
+    }
+
+    /// The twin has exactly one refusal it may be followed for too: the
+    /// token it carried was refused. Every other verdict is one the
+    /// forge already gave about this operation, and following it would
+    /// hand the person the LAST leg's error instead - an ssh sign in
+    /// prompt for an organisation that has not approved Joy, a second
+    /// push of a ref the forge rejected by name, a second contact for a
+    /// fault inside this checkout.
+    #[test]
+    fn a_twin_is_followed_only_when_the_token_it_carried_was_refused() {
+        use super::super::contact::Failure;
+        assert!(may_follow(&twin_leg(), false, Failure::NeedsSignIn));
+        for verdict in [
+            Failure::NeedsOrgApproval,
+            Failure::NoPushRights,
+            Failure::RateLimited,
+            Failure::Offline,
+            Failure::TlsUntrusted,
+            Failure::Denied,
+            // a rejected ref and a fault of this checkout both arrive
+            // as `error` (contact.rs wraps every failure of the closure)
+            Failure::Error,
+        ] {
+            assert!(
+                !may_follow(&twin_leg(), false, verdict),
+                "{verdict:?} is an answer, not a reason for a second contact"
+            );
+        }
     }
 
     #[test]
