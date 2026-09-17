@@ -22,40 +22,131 @@
 
 use std::path::{Path, PathBuf};
 
-/// The user name a forge expects beside an access token in HTTP basic auth.
-/// Every forge takes the token as the password, but each one wants its own
-/// name in front of it, and sending the wrong one is refused as if we could
-/// not authenticate at all (JP-00D8-94: Codeberg answered
-/// "server requires authentication that we do not support" for a token it
-/// would have accepted). Host-based, because that is all the credentials
-/// callback is handed.
-fn basic_auth_user(url: &str) -> &'static str {
-    let lower = url.to_ascii_lowercase();
-    if lower.contains("github.com") {
-        // GitHub ignores the name but documents this one.
-        "x-access-token"
-    } else if lower.contains("gitlab") {
-        // GitLab: an OAuth token rides under this fixed name.
-        "oauth2"
-    } else {
-        // Gitea and Codeberg: the token IS the name, with no password.
-        ""
+use super::host_kind::HostKind;
+
+/// The forge family a host belongs to, as far as authentication goes
+/// (design D1.6). It comes from the plugin that claims the host
+/// (`claims`), and from the engine's own table for the three hosts
+/// every joy knows when no plugin claimed it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ForgeKind {
+    GitHub,
+    /// GitHub Enterprise Server. The same shape as github.com on a
+    /// host name that says nothing about it, which is why the claim
+    /// matters: without it the first attempt is a guess.
+    GitHubEnterprise,
+    GitLab,
+    /// Gitea, Forgejo and Codeberg: one implementation, one shape.
+    Gitea,
+}
+
+impl ForgeKind {
+    /// The kind a forge plugin's id names (`forge_plugins::FORGE_PLUGINS`).
+    pub fn from_plugin_id(id: &str) -> Option<ForgeKind> {
+        match id.trim().to_ascii_lowercase().as_str() {
+            "github" => Some(ForgeKind::GitHub),
+            "github-enterprise" | "ghes" => Some(ForgeKind::GitHubEnterprise),
+            "gitlab" => Some(ForgeKind::GitLab),
+            "gitea" | "forgejo" | "codeberg" => Some(ForgeKind::Gitea),
+            _ => None,
+        }
     }
+
+    /// The user name this forge expects beside an access token.
+    ///
+    /// Every forge takes the token as the PASSWORD; each one wants its
+    /// own name in front of it. GitHub documents `x-access-token`,
+    /// GitLab requires `oauth2` (doc/api/oauth2.md:409-417), and the
+    /// Gitea family takes the token as the password under any name and
+    /// is given `oauth2` too (forgejo services/auth/method/util.go:60-67).
+    pub fn token_user(self) -> &'static str {
+        match self {
+            ForgeKind::GitHub | ForgeKind::GitHubEnterprise => "x-access-token",
+            ForgeKind::GitLab | ForgeKind::Gitea => "oauth2",
+        }
+    }
+}
+
+/// The engine's own table, for github.com, gitlab.com and codeberg.org
+/// and for nothing else (design D1.1, D1.5: "Engine fallback table for
+/// github.com, gitlab.com and codeberg.org only").
+///
+/// There is no guess by name here, and that is the point of D1.6. A
+/// substring rule would classify a Gitea reachable at
+/// `github.internal.example` as GitHub Enterprise, send it
+/// `x-access-token` and, because the second shape is offered only to a
+/// host no table knows, never offer it `oauth2` either: a valid token
+/// would look refused. That is exactly what the deleted
+/// `basic_auth_user` did with `lower.contains("gitlab")`. A
+/// self-hosted host is identified by the plugin that claims it (D2
+/// `claims`), never by its name.
+///
+/// The sub-domain form is part of the table because the two public
+/// forges answer ssh under one: ssh.github.com is github.com and
+/// altssh.gitlab.com is gitlab.com (D1.5).
+pub fn known_forge_kind(host: &str) -> Option<ForgeKind> {
+    let host = host.trim().to_ascii_lowercase();
+    let host = host.split(':').next().unwrap_or(&host);
+    let is = |name: &str| host == name || host.ends_with(&format!(".{name}"));
+    if is("github.com") {
+        return Some(ForgeKind::GitHub);
+    }
+    if is("gitlab.com") {
+        return Some(ForgeKind::GitLab);
+    }
+    if is("codeberg.org") {
+        return Some(ForgeKind::Gitea);
+    }
+    None
+}
+
+/// The user name to send beside an access token for this host.
+///
+/// The shape "token as the user name with an EMPTY password" is never
+/// sent (design D1.6). It is what joy sent to Codeberg and to every
+/// unknown host until now; on GitLab it always fails and counts
+/// towards the failed-authentication ban, and on Codeberg it produced
+/// "server requires authentication that we do not support" for a token
+/// that would have been accepted (JP-00D8-94). An unknown host gets
+/// `oauth2`, the name GitLab requires, the Gitea family accepts and
+/// GitHub ignores.
+pub fn token_user(host: &str, claimed: Option<ForgeKind>) -> &'static str {
+    claimed
+        .or_else(|| known_forge_kind(host))
+        .map(ForgeKind::token_user)
+        .unwrap_or("oauth2")
 }
 
 /// How this checkout talks to its forge.
 ///
-/// The platform authenticates with the account's OAuth token; the desktop
-/// app with whatever the person's machine holds (ssh-agent, credential
-/// helper). One enum instead of two engines, so every caller gets the
-/// same retry discipline and the same honest errors.
+/// The platform authenticates with the account's OAuth token; the
+/// desktop app with whatever the person's machine holds (ssh-agent,
+/// credential helper). One enum instead of two engines, so every
+/// caller gets the same retry discipline and the same honest errors.
+///
+/// Two of the four variants carry a host fact the other two default:
+/// the forge kind a plugin claimed (design D1.6) and the host kind
+/// (design D1.1). They are separate variants and not fields so that
+/// every caller written before the resolver keeps compiling and keeps
+/// working, under the quiet defaults.
 pub enum Auth {
-    /// A forge access token (platform): tried in the shape this forge
-    /// expects, then the other common shape, then the machine's helper.
+    /// A forge access token (platform), for a host whose forge kind
+    /// joy reads from the host name.
     Token(String),
-    /// The machine's own credentials (desktop): ssh-agent for ssh
-    /// remotes, the git credential helper for https ones.
+    /// A forge access token for a host whose forge kind a plugin
+    /// claimed: the credential has the right shape on the FIRST
+    /// attempt, which is what a GitHub Enterprise Server host whose
+    /// name says nothing needs.
+    ClaimedToken(String, ForgeKind),
+    /// The machine's own credentials (desktop), for a host that has
+    /// not said who it is. Defaults to [`HostKind::Background`], the
+    /// quiet one: a host that never named its kind must not be handed
+    /// a prompt nobody will answer.
     Local,
+    /// The machine's own credentials for a host that named its kind
+    /// (design D1.1): the whole prompt rule of design D1.10 hangs off
+    /// this word.
+    LocalAs(HostKind),
 }
 
 /// How long a forge contact waits on a silent forge, set once for the
@@ -104,7 +195,7 @@ fn contact_failed(
         e,
         url,
         direction,
-        auth.credential_source(transport),
+        auth.credential_evidence(transport),
     ))
 }
 
@@ -127,6 +218,7 @@ fn presented(cred: Result<git2::Cred, git2::Error>) -> Result<git2::Cred, git2::
 }
 
 impl Auth {
+    /// A token for a host joy identifies by its name.
     pub fn token(token: impl Into<String>) -> Self {
         Auth::Token(token.into())
     }
@@ -137,95 +229,527 @@ impl Auth {
     /// replayed, so it costs one request more than an anonymous one.
     fn credentialed(&self) -> bool {
         match self {
-            Auth::Token(token) => !token.is_empty(),
-            Auth::Local => true,
+            Auth::Token(token) | Auth::ClaimedToken(token, _) => !token.is_empty(),
+            Auth::Local | Auth::LocalAs(_) => true,
         }
     }
 
     /// What joy presented, for the evidence of D1.8a. This is the
-    /// coarse answer the engine can give on its own; J4b refines it to
-    /// the source that actually answered the callback.
-    fn credential_source(
+    /// coarse answer the engine can give before a contact is made; what
+    /// the chain below really handed over is noted per contact through
+    /// [`presented`], and J4b refines this to the source that actually
+    /// answered the callback.
+    fn credential_evidence(
         &self,
         transport: super::contact::Transport,
     ) -> super::contact::CredentialSource {
         use super::contact::CredentialSource;
         match self {
-            Auth::Token(token) if !token.is_empty() => CredentialSource::TokenPresented,
-            Auth::Token(_) => CredentialSource::NonePresented,
-            Auth::Local => match transport {
+            Auth::Token(token) | Auth::ClaimedToken(token, _) if !token.is_empty() => {
+                CredentialSource::TokenPresented
+            }
+            Auth::Token(_) | Auth::ClaimedToken(..) => CredentialSource::NonePresented,
+            Auth::Local | Auth::LocalAs(_) => match transport {
                 super::contact::Transport::Ssh => CredentialSource::AgentPresented,
                 _ => CredentialSource::HelperPresented,
             },
         }
     }
 
-    fn callbacks(&self, config: Option<git2::Config>) -> git2::RemoteCallbacks<'static> {
-        bound_forge_waits();
-        let mut callbacks = git2::RemoteCallbacks::new();
+    /// A token for a host a plugin claimed, whose shape is therefore
+    /// right on the first attempt.
+    pub fn token_for(token: impl Into<String>, forge: ForgeKind) -> Self {
+        Auth::ClaimedToken(token.into(), forge)
+    }
+
+    /// The machine's own credentials, for a host that names its kind.
+    pub fn local(kind: HostKind) -> Self {
+        Auth::LocalAs(kind)
+    }
+
+    /// Who is at the other end (design D1.1). A token host is the
+    /// platform or a worker, which is never asked anything.
+    pub fn host_kind(&self) -> HostKind {
         match self {
-            Auth::Token(token) => {
-                let token = token.clone();
-                // Attempt 1: the account token, in the shape this forge
-                // expects. Attempt 2: the other common shape, so a forge we
-                // have not met (a self-hosted GitLab behind a custom host
-                // name, say) still gets a fair try instead of a
-                // wrong-looking refusal. Attempt 3: the machine's git
-                // credential helper (gh, osxkeychain) — the dev fake-login
-                // has no real token, and local devs DO have helper
-                // credentials. Then STOP: retrying the same credentials
-                // forever is exactly what libgit2 reports as "too many
-                // redirects or authentication replays".
-                let attempts = std::cell::Cell::new(0u32);
-                callbacks.credentials(move |url, username, _allowed| {
-                    attempts.set(attempts.get() + 1);
-                    match attempts.get() {
-                        1 if !token.is_empty() => presented(match basic_auth_user(url) {
-                            "" => git2::Cred::userpass_plaintext(&token, ""),
-                            user => git2::Cred::userpass_plaintext(user, &token),
-                        }),
-                        2 if !token.is_empty() => presented(match basic_auth_user(url) {
-                            "" => git2::Cred::userpass_plaintext("x-access-token", &token),
-                            _ => git2::Cred::userpass_plaintext(&token, ""),
-                        }),
-                        n if n <= 3 => match &config {
-                            Some(config) => {
-                                presented(git2::Cred::credential_helper(config, url, username))
-                            }
-                            None => Err(git2::Error::from_str("no credential config")),
-                        },
-                        _ => Err(git2::Error::from_str(
-                            "authentication failed (token and credential helper both rejected)",
-                        )),
-                    }
-                });
+            Auth::Token(_) | Auth::ClaimedToken(..) => HostKind::Background,
+            Auth::Local => HostKind::default(),
+            Auth::LocalAs(kind) => *kind,
+        }
+    }
+
+    /// The forge kind a plugin claimed for this host, if any.
+    fn claimed_kind(&self) -> Option<ForgeKind> {
+        match self {
+            Auth::ClaimedToken(_, forge) => Some(*forge),
+            _ => None,
+        }
+    }
+
+    /// The credentials callback for this host, as the closure itself.
+    ///
+    /// It is built here and not inside [`Auth::callbacks`] so that it
+    /// can be driven the way libgit2 drives it: git2 0.21 keeps the
+    /// installed callback in a private field
+    /// (remote_callbacks.rs:20-29), so a `RemoteCallbacks` cannot be
+    /// asked what it would answer, and the shape decision of D1.6
+    /// would have no test.
+    fn credential_source(
+        &self,
+        source: CredSource,
+    ) -> impl FnMut(&str, Option<&str>, git2::CredentialType) -> Result<git2::Cred, git2::Error> + 'static
+    {
+        let kind = self.host_kind();
+        let token = match self {
+            Auth::Token(token) | Auth::ClaimedToken(token, _) => {
+                Some(token.clone()).filter(|t| !t.is_empty())
             }
-            Auth::Local => {
-                let attempts = std::cell::Cell::new(0u32);
-                callbacks.credentials(move |url, username, allowed| {
-                    attempts.set(attempts.get() + 1);
-                    if attempts.get() > 3 {
-                        return Err(git2::Error::from_str(
-                            "authentication failed (agent and credential helper both rejected)",
+            Auth::Local | Auth::LocalAs(_) => None,
+        };
+        let claimed = self.claimed_kind();
+        // The same resolver for both: for a token host it serves the
+        // two cases a token cannot, a remote an insteadOf rule rewrote
+        // to ssh and a token the forge refused.
+        let mut chain = LocalChain::new(kind);
+        let mut attempts = 0u32;
+        let mut token_refused = false;
+        move |url: &str, username: Option<&str>, allowed: git2::CredentialType| {
+            // Design D1.6: honour the `allowed` mask. Without this, an
+            // insteadOf rewrite to ssh answers "authentication
+            // callback returned unsupported credentials type"
+            // (ssh_libssh2.c:415-418) and the person is told the token
+            // is wrong.
+            let Some(token) = token
+                .as_deref()
+                .filter(|_| allowed.contains(git2::CredentialType::USER_PASS_PLAINTEXT))
+            else {
+                return chain.credential(url, username, allowed, &source);
+            };
+            attempts += 1;
+            let host = host_of_url(url);
+            match attempts {
+                1 => presented(git2::Cred::userpass_plaintext(
+                    token_user(&host, claimed),
+                    token,
+                )),
+                // Only for a host nobody claimed and no table knows: a
+                // self-hosted forge joy has not met. Never the
+                // empty-password shape (D1.6).
+                2 if claimed.is_none() && known_forge_kind(&host).is_none() => presented(
+                    git2::Cred::userpass_plaintext(other_token_user(&host), token),
+                ),
+                _ => {
+                    if !token_refused {
+                        token_refused = true;
+                        // The chain's sentence would otherwise name
+                        // only what came after the token.
+                        chain.note(format!(
+                            "{host} refused the access token (sent as {})",
+                            token_user(&host, claimed)
                         ));
                     }
-                    if allowed.contains(git2::CredentialType::SSH_KEY) {
-                        return presented(git2::Cred::ssh_key_from_agent(
-                            username.unwrap_or("git"),
-                        ));
-                    }
-                    if allowed.contains(git2::CredentialType::USER_PASS_PLAINTEXT) {
-                        if let Some(config) = &config {
-                            return presented(git2::Cred::credential_helper(config, url, username));
-                        }
-                    }
-                    // nothing to offer: NOT a credential (D1.8b)
-                    git2::Cred::default()
-                });
+                    chain.credential(url, username, allowed, &source)
+                }
             }
         }
+    }
+
+    fn callbacks(&self, source: CredSource) -> git2::RemoteCallbacks<'static> {
+        bound_forge_waits();
+        let mut callbacks = git2::RemoteCallbacks::new();
+        callbacks.credentials(self.credential_source(source));
         callbacks
     }
+}
+
+/// The other of the two names, for the one host joy knows nothing
+/// about. The empty-password shape is not one of the two.
+fn other_token_user(host: &str) -> &'static str {
+    match token_user(host, None) {
+        "oauth2" => "x-access-token",
+        _ => "oauth2",
+    }
+}
+
+fn host_of_url(url: &str) -> String {
+    super::remote_url::RemoteUrl::parse(url)
+        .map(|parsed| parsed.host)
+        .unwrap_or_default()
+}
+
+/// One candidate the resolver offers libgit2, in the order of design
+/// D1.2.
+enum Step {
+    Agent,
+    Key {
+        path: PathBuf,
+        public: Option<PathBuf>,
+        passphrase: Option<String>,
+    },
+    Helper,
+}
+
+/// What was handed over last. libgit2 re-enters the credentials
+/// callback while the answer is `GIT_EAUTH` (ssh_libssh2.c:855-880),
+/// so a second call IS the refusal of the first answer, and the only
+/// place joy can see one from inside the callback.
+enum Presented {
+    Agent,
+    Key(PathBuf),
+    Helper,
+}
+
+/// The resolver of design D1.1 for one contact: built on the first
+/// callback invocation from the URL libgit2 is really contacting
+/// (after insteadOf and after a redirect), then walked one candidate
+/// per re-entry. There is no three-attempt cap any more, only the
+/// length of the chain.
+struct LocalChain {
+    kind: HostKind,
+    /// Notes from before the chain was built (the token the forge
+    /// refused), so that the one sentence at the end names everything
+    /// that was tried and not only the ssh and helper half.
+    prelude: Vec<String>,
+    state: Option<ChainState>,
+}
+
+struct ChainState {
+    kind: HostKind,
+    host: String,
+    /// The user name, decided once and never changed: libgit2 keeps
+    /// the first one for the whole contact (ssh_libssh2.c:865).
+    user: String,
+    steps: std::collections::VecDeque<Step>,
+    /// Why each missing candidate is missing, in the person's words.
+    notes: Vec<String>,
+    presented: Option<Presented>,
+    usernames: u32,
+    defaulted: bool,
+    /// `SSH_AUTH_SOCK` pointed at this host's `IdentityAgent`, for as
+    /// long as this contact lasts. Dropped with the chain, which is
+    /// dropped with the callbacks of this contact, so the socket of a
+    /// `Host work` does not follow every later github.com contact of
+    /// the same desktop process (design D1.4).
+    _agent: super::ssh_config::AgentScope,
+}
+
+impl LocalChain {
+    fn new(kind: HostKind) -> LocalChain {
+        LocalChain {
+            kind,
+            prelude: Vec::new(),
+            state: None,
+        }
+    }
+
+    /// Add something the person should read in the final sentence.
+    fn note(&mut self, note: String) {
+        match &mut self.state {
+            Some(state) => state.notes.push(note),
+            None => self.prelude.push(note),
+        }
+    }
+
+    fn credential(
+        &mut self,
+        url: &str,
+        username_from_url: Option<&str>,
+        allowed: git2::CredentialType,
+        source: &CredSource,
+    ) -> Result<git2::Cred, git2::Error> {
+        if self.state.is_none() {
+            let mut state = ChainState::prepare(
+                url,
+                username_from_url,
+                self.kind,
+                source.configured.as_deref(),
+            );
+            let mut notes = std::mem::take(&mut self.prelude);
+            notes.append(&mut state.notes);
+            state.notes = notes;
+            self.state = Some(state);
+        }
+        let state = self.state.as_mut().expect("the chain was just prepared");
+        if allowed.contains(git2::CredentialType::USERNAME) {
+            return state.user_name();
+        }
+        state.note_refusal(url);
+        loop {
+            let Some(step) = state.take_next(allowed) else {
+                if !state.defaulted && allowed.contains(git2::CredentialType::DEFAULT) {
+                    state.defaulted = true;
+                    // nothing to offer: NOT a credential, so it is not
+                    // noted as one (D1.8b, [`presented`])
+                    return git2::Cred::default();
+                }
+                return Err(git2::Error::from_str(&state.exhausted()));
+            };
+            match step {
+                Step::Agent => {
+                    state.presented = Some(Presented::Agent);
+                    return presented(git2::Cred::ssh_key_from_agent(&state.user));
+                }
+                Step::Key {
+                    path,
+                    public,
+                    passphrase,
+                } => {
+                    state.presented = Some(Presented::Key(path.clone()));
+                    return presented(git2::Cred::ssh_key(
+                        &state.user,
+                        public.as_deref(),
+                        &path,
+                        passphrase.as_deref(),
+                    ));
+                }
+                Step::Helper => match source.config.as_ref() {
+                    Some(config) => {
+                        match super::credential_helper::get(
+                            config,
+                            url,
+                            username_from_url,
+                            state.kind,
+                        ) {
+                            Ok(Some(credential)) => {
+                                state.presented = Some(Presented::Helper);
+                                return presented(git2::Cred::userpass_plaintext(
+                                    &credential.username,
+                                    &credential.password,
+                                ));
+                            }
+                            Ok(None) => state.notes.push(format!(
+                                "no credential helper is configured for {}",
+                                state.host
+                            )),
+                            Err(failure) => state.notes.push(failure.to_string()),
+                        }
+                    }
+                    None => state.notes.push(
+                        "there is no git configuration to read a credential helper from"
+                            .to_string(),
+                    ),
+                },
+            }
+        }
+    }
+}
+
+impl ChainState {
+    fn prepare(
+        url: &str,
+        username_from_url: Option<&str>,
+        kind: HostKind,
+        configured: Option<&str>,
+    ) -> ChainState {
+        let parsed = super::remote_url::RemoteUrl::parse(url);
+        let host = parsed
+            .as_ref()
+            .map(|p| p.host.clone())
+            .unwrap_or_else(|| url.to_string());
+        let url_user = username_from_url
+            .map(str::to_string)
+            .or_else(|| parsed.as_ref().and_then(|p| p.user.clone()));
+        let mut notes = Vec::new();
+        let mut steps = std::collections::VecDeque::new();
+        let mut user = url_user.clone().unwrap_or_else(|| "git".to_string());
+        let mut agent_scope = super::ssh_config::AgentScope::none();
+        match parsed.as_ref().map(|p| p.transport) {
+            Some(super::remote_url::Transport::Ssh) => {
+                let settings = super::ssh_config::for_contact(&host, configured);
+                match settings.refusal() {
+                    // A host joy cannot reach at all. The contact is
+                    // refused before this by `guard_transport`; this
+                    // is the second line of defence, for a URL that
+                    // only appeared after an insteadOf rewrite.
+                    Some(sentence) => notes.push(sentence),
+                    None => {
+                        // Before the agent is probed, because the probe
+                        // reads the same variable libssh2 will read.
+                        agent_scope = super::ssh_config::AgentScope::apply(&settings);
+                        let agent = super::ssh_auth::probe_agent();
+                        let chain = super::ssh_auth::chain_for(
+                            &host,
+                            url_user.as_deref(),
+                            &settings,
+                            kind,
+                            &agent,
+                            cfg!(windows),
+                        );
+                        user = chain.user;
+                        notes.extend(chain.notes);
+                        for candidate in chain.candidates {
+                            steps.push_back(match candidate {
+                                super::ssh_auth::SshCandidate::Agent => Step::Agent,
+                                super::ssh_auth::SshCandidate::Key {
+                                    path,
+                                    public,
+                                    passphrase,
+                                } => Step::Key {
+                                    path,
+                                    public,
+                                    passphrase,
+                                },
+                            });
+                        }
+                    }
+                }
+            }
+            Some(transport) if transport.takes_helper() => steps.push_back(Step::Helper),
+            _ => {}
+        }
+        ChainState {
+            kind,
+            host,
+            user,
+            steps,
+            notes,
+            presented: None,
+            usernames: 0,
+            defaulted: false,
+            _agent: agent_scope,
+        }
+    }
+
+    /// The one user name, however often libgit2 asks for it.
+    fn user_name(&mut self) -> Result<git2::Cred, git2::Error> {
+        self.usernames += 1;
+        if self.usernames > 3 {
+            return Err(git2::Error::from_str(&format!(
+                "{} kept asking for a user name; joy answered {} every time",
+                self.host, self.user
+            )));
+        }
+        git2::Cred::username(&self.user)
+    }
+
+    /// A re-entry means the forge refused what was offered last.
+    fn note_refusal(&mut self, url: &str) {
+        match self.presented.take() {
+            Some(Presented::Agent) => self.notes.push(format!(
+                "the ssh agent's identities were refused by {}",
+                self.host
+            )),
+            Some(Presented::Key(path)) => self.notes.push(format!(
+                "key {} was refused by {}",
+                path.display(),
+                self.host
+            )),
+            Some(Presented::Helper) => {
+                self.notes.push(format!(
+                    "the credential from your credential helper was refused by {}",
+                    self.host
+                ));
+                // The half git2 never runs: the helper is told to
+                // erase it, so the next contact does not replay a
+                // revoked entry (cred.rs:395, :415).
+                super::credential_helper::refused(url);
+            }
+            None => {}
+        }
+    }
+
+    fn take_next(&mut self, allowed: git2::CredentialType) -> Option<Step> {
+        while let Some(step) = self.steps.pop_front() {
+            let fits = match &step {
+                Step::Agent | Step::Key { .. } => allowed.contains(git2::CredentialType::SSH_KEY),
+                Step::Helper => allowed.contains(git2::CredentialType::USER_PASS_PLAINTEXT),
+            };
+            if fits {
+                return Some(step);
+            }
+            self.notes.push(format!(
+                "{} does not accept the credential joy had for it",
+                self.host
+            ));
+        }
+        None
+    }
+
+    /// Everything joy tried and everything it could not try, in one
+    /// sentence. This is what the person reads instead of libgit2's
+    /// "error authenticating".
+    fn exhausted(&self) -> String {
+        let mut sentence = format!("no usable credential for {}", self.host);
+        if !self.notes.is_empty() {
+            sentence.push_str(": ");
+            sentence.push_str(&self.notes.join("; "));
+        }
+        sentence
+    }
+}
+
+/// Refuse a remote joy cannot speak to BEFORE libgit2 opens a socket
+/// (design D1.4). A host behind `ProxyCommand` or `ProxyJump` would
+/// otherwise be contacted directly and fail with a DNS or connect
+/// error that names the wrong cause.
+fn guard_transport(url: Option<&str>) -> anyhow::Result<()> {
+    if let Some(sentence) = url.and_then(super::ssh_config::refusal_for_url) {
+        anyhow::bail!("{sentence}");
+    }
+    Ok(())
+}
+
+/// [`guard_transport`] for a remote that is already open.
+fn guard_remote(remote: &git2::Remote<'_>) -> anyhow::Result<()> {
+    guard_transport(remote.url().ok())
+}
+
+/// The remote joy really contacts for this checkout: the configured
+/// one ([`origin_or_first`]), refused when joy cannot speak to it at
+/// all, and dialled at the address the person's ssh config names.
+///
+/// libgit2 reads no ssh config and opens the socket itself from the
+/// URL, so `git@work:owner/repo.git` with `Host work / HostName
+/// git.example.com / Port 2222` would be looked up as the literal
+/// name `work` on port 22 and fail with a DNS error (design D1.4).
+/// Where the config renames the host or moves the port, joy therefore
+/// hands libgit2 an anonymous remote on the real address. The
+/// configured remote and `.git/config` are never touched, and a remote
+/// the config does not rename is returned exactly as it is, so the
+/// named remote (with its refspecs) stays the normal case.
+fn contact_remote(repo: &git2::Repository) -> anyhow::Result<git2::Remote<'_>> {
+    let remote = origin_or_first(repo)?;
+    guard_remote(&remote)?;
+    let Some(url) = remote.url().ok() else {
+        return Ok(remote);
+    };
+    if rewritten_by_insteadof(repo, url) {
+        return Ok(remote);
+    }
+    let Some(dialled) = super::ssh_config::effective_url(url) else {
+        return Ok(remote);
+    };
+    drop(remote);
+    repo.remote_anonymous(&dialled).map_err(err)
+}
+
+/// Whether an `insteadOf` rule rewrites this URL, in which case joy
+/// leaves the address alone.
+///
+/// libgit2 applies those rules itself, to the URL as CONFIGURED
+/// (remote.c:254-255, :509-510), and git applies them before ssh ever
+/// reads its config. joy's own `HostName` rewrite runs before libgit2
+/// builds the remote, so it would hide such a rule and dial the alias's
+/// `HostName` where the person meant the rule's target. Which rule wins
+/// (the longest prefix) is J4b's prediction (design D1.5); the question
+/// here is only whether there is one at all.
+fn rewritten_by_insteadof(repo: &git2::Repository, url: &str) -> bool {
+    let Ok(config) = repo.config() else {
+        return false;
+    };
+    let mut matched = false;
+    for glob in ["url.*.insteadof", "url.*.pushinsteadof"] {
+        let Ok(entries) = config.entries(Some(glob)) else {
+            continue;
+        };
+        let _ = entries.for_each(|entry| {
+            if let Ok(prefix) = entry.value() {
+                if !prefix.is_empty() && url.starts_with(prefix) {
+                    matched = true;
+                }
+            }
+        });
+    }
+    matched
 }
 
 /// `origin`, or the first configured remote — a checkout the product
@@ -291,15 +815,61 @@ fn open(dir: &Path) -> Result<git2::Repository, git2::Error> {
     git2::Repository::discover(dir)
 }
 
-/// The credential-helper config for a repo: repo-level settings
-/// (insteadOf, per-repo helpers) included; the global config as the
-/// fallback when there is no repo yet (clone).
-fn cred_config(repo: Option<&git2::Repository>) -> Option<git2::Config> {
+/// Everything the credential resolver needs about one contact beside
+/// the URL libgit2 hands it.
+pub(crate) struct CredSource {
+    /// The credential-helper config for a repo: repo-level settings
+    /// (insteadOf, per-repo helpers) included; the global config as
+    /// the fallback when there is no repo yet (clone).
+    config: Option<git2::Config>,
+    /// The remote URL as the person configured it.
+    ///
+    /// libgit2 hands the callback the URL it is DIALLING, which after
+    /// joy's own `HostName` rewrite ([`contact_remote`]) names the real
+    /// host. The `Host work` block that produced that rewrite, and with
+    /// it the `IdentityFile`, the `IdentityAgent` and the `User` the
+    /// person wrote under it, would then be invisible to the chain
+    /// (design D1.4).
+    configured: Option<String>,
+}
+
+/// The source for a contact on a repository: its config, and the URL
+/// of the remote the contact runs over ([`origin_or_first`]).
+fn cred_source(repo: Option<&git2::Repository>) -> CredSource {
     git_environment();
     match repo {
-        Some(r) => r.config().and_then(|mut c| c.snapshot()).ok(),
-        None => git2::Config::open_default().ok(),
+        Some(r) => CredSource {
+            config: r.config().and_then(|mut c| c.snapshot()).ok(),
+            configured: origin_or_first(r)
+                .ok()
+                .and_then(|remote| remote.url().ok().map(str::to_string)),
+        },
+        None => CredSource {
+            config: git2::Config::open_default().ok(),
+            configured: None,
+        },
     }
+}
+
+impl CredSource {
+    /// Nothing to read: no config and no configured remote. What the
+    /// shape tests hand the resolver, so that the decision under test
+    /// is the one the URL and the claim make.
+    #[cfg(test)]
+    fn none() -> CredSource {
+        CredSource {
+            config: None,
+            configured: None,
+        }
+    }
+}
+
+/// The source for a contact that has no repository yet: a clone, where
+/// the URL the caller named IS the configured remote.
+fn cred_source_for_url(url: &str) -> CredSource {
+    let mut source = cred_source(None);
+    source.configured = Some(url.to_string());
+    source
 }
 
 /// A fault of libgit2 on this machine's own data: the index, a ref, a
@@ -320,14 +890,26 @@ pub fn clone(url: &str, auth: &Auth, dest: &Path) -> anyhow::Result<()> {
 }
 
 fn clone_raw(url: &str, auth: &Auth, dest: &Path) -> anyhow::Result<()> {
+    guard_transport(Some(url))?;
     std::fs::create_dir_all(dest.parent().expect("checkout dir has a parent"))?;
     let mut fetch = git2::FetchOptions::new();
-    fetch.remote_callbacks(auth.callbacks(cred_config(None)));
+    fetch.remote_callbacks(auth.callbacks(cred_source_for_url(url)));
     git_environment();
-    git2::build::RepoBuilder::new()
+    // The same address the other verbs dial (see `contact_remote`): a
+    // clone from an ssh alias reaches the `HostName` the person's ssh
+    // config names, which libgit2 reads nothing of (design D1.4).
+    let dialled = super::ssh_config::effective_url(url);
+    let cloned = git2::build::RepoBuilder::new()
         .fetch_options(fetch)
-        .clone(url, dest)
+        .clone(dialled.as_deref().unwrap_or(url), dest)
         .map_err(|e| contact_failed(url, auth, super::contact::ContactDirection::Fetch, e))?;
+    if dialled.is_some() {
+        // The new checkout keeps the remote the caller named, not the
+        // address joy dialled it at: the alias is the person's, the
+        // rewrite belongs to one contact.
+        cloned.remote_set_url("origin", url).map_err(err)?;
+    }
+    drop(cloned);
     // the clone machinery runs libgit2's update_tips once; nothing here
     // ever reads FETCH_HEAD, so the checkout starts without one
     std::fs::remove_file(dest.join(".git/FETCH_HEAD")).ok();
@@ -388,7 +970,9 @@ fn download_ref(
     src: &str,
     dst: &str,
 ) -> anyhow::Result<Option<git2::Oid>> {
-    let mut remote = origin_or_first(repo)?;
+    // The address the ssh config really names, not the alias the
+    // remote was written as (design D1.4).
+    let mut remote = contact_remote(repo)?;
     let url = remote_url_of(&remote);
     // ONE connection for the advertisement AND the download (D1.9): the
     // RemoteConnection disconnects on drop, and joy used to drop it
@@ -400,7 +984,7 @@ fn download_ref(
     let mut connection = remote
         .connect_auth(
             git2::Direction::Fetch,
-            Some(auth.callbacks(cred_config(Some(repo)))),
+            Some(auth.callbacks(cred_source(Some(repo)))),
             None,
         )
         .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Fetch, e))?;
@@ -419,7 +1003,7 @@ fn download_ref(
         return Ok(None);
     };
     let mut opts = git2::FetchOptions::new();
-    opts.remote_callbacks(auth.callbacks(cred_config(Some(repo))));
+    opts.remote_callbacks(auth.callbacks(cred_source(Some(repo))));
     let refspec = format!("+{src}:{dst}");
     connection
         .remote()
@@ -561,12 +1145,14 @@ fn probe_write_access_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
     let span = tracing::info_span!("git.probe_write", repo = %repo_dir.display());
     let _s = span.enter();
     let repo = open(repo_dir).map_err(err)?;
-    let mut remote = origin_or_first(&repo)?;
+    // The address the ssh config really names, not the alias the
+    // remote was written as (design D1.4).
+    let mut remote = contact_remote(&repo)?;
     let url = remote_url_of(&remote);
     remote
         .connect_auth(
             git2::Direction::Push,
-            Some(auth.callbacks(cred_config(Some(&repo)))),
+            Some(auth.callbacks(cred_source(Some(&repo)))),
             None,
         )
         .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Push, e))?;
@@ -590,10 +1176,12 @@ fn push_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
             .shorthand()
             .map_err(|_| anyhow::anyhow!("detached HEAD"))?
             .to_string();
-        let mut remote = origin_or_first(&repo)?;
+        // The address the ssh config really names, not the alias the
+        // remote was written as (design D1.4).
+        let mut remote = contact_remote(&repo)?;
         let url = remote_url_of(&remote);
         let mut opts = git2::PushOptions::new();
-        opts.remote_callbacks(auth.callbacks(cred_config(Some(&repo))));
+        opts.remote_callbacks(auth.callbacks(cred_source(Some(&repo))));
         let refspec = format!("refs/heads/{branch}:refs/heads/{branch}");
         remote
             .push(&[refspec.as_str()], Some(&mut opts))
@@ -674,10 +1262,12 @@ pub fn push_ref(repo_dir: &Path, auth: &Auth, refname: &str) -> anyhow::Result<(
 
 fn push_ref_raw(repo_dir: &Path, auth: &Auth, refname: &str) -> anyhow::Result<()> {
     let repo = open(repo_dir).map_err(err)?;
-    let mut remote = origin_or_first(&repo)?;
+    // The address the ssh config really names, not the alias the
+    // remote was written as (design D1.4).
+    let mut remote = contact_remote(&repo)?;
     let url = remote_url_of(&remote);
     let mut opts = git2::PushOptions::new();
-    opts.remote_callbacks(auth.callbacks(cred_config(Some(&repo))));
+    opts.remote_callbacks(auth.callbacks(cred_source(Some(&repo))));
     let refspec = format!("{refname}:{refname}");
     remote
         .push(&[refspec.as_str()], Some(&mut opts))
@@ -748,12 +1338,14 @@ fn ls_remote_refs_raw(
     refnames: &[&str],
 ) -> anyhow::Result<std::collections::HashMap<String, String>> {
     let repo = open(repo_dir).map_err(err)?;
-    let mut remote = origin_or_first(&repo)?;
+    // The address the ssh config really names, not the alias the
+    // remote was written as (design D1.4).
+    let mut remote = contact_remote(&repo)?;
     let url = remote_url_of(&remote);
     let connection = remote
         .connect_auth(
             git2::Direction::Fetch,
-            Some(auth.callbacks(cred_config(Some(&repo)))),
+            Some(auth.callbacks(cred_source(Some(&repo)))),
             None,
         )
         .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Fetch, e))?;
@@ -1351,12 +1943,18 @@ pub fn remote_branch_names(repo_dir: &Path) -> Vec<String> {
     names
 }
 
-/// The first remote's URL (forge detection lives with the caller).
+/// The URL of the remote joy actually contacts: `origin`, or the
+/// first configured one ([`origin_or_first`]). Forge detection lives
+/// with the caller.
+///
+/// This used to read `remotes.get(0)` while every contact took
+/// `origin` (design D1.1). In a checkout with more than one remote the
+/// two disagreed, and with them the throttle key, the credential
+/// shape, the transport memory and the ownership join key - all keyed
+/// on a host joy was not talking to.
 pub fn remote_url(repo_dir: &Path) -> Option<String> {
     let repo = open(repo_dir).ok()?;
-    let remotes = repo.remotes().ok()?;
-    let name = remotes.get(0).ok()??;
-    let remote = repo.find_remote(name).ok()?;
+    let remote = origin_or_first(&repo).ok()?;
     remote.url().ok().map(|u| u.to_string())
 }
 
@@ -1476,10 +2074,12 @@ pub fn push_tag(repo_dir: &Path, auth: &Auth, tag: &str) -> anyhow::Result<()> {
 
 fn push_tag_raw(repo_dir: &Path, auth: &Auth, tag: &str) -> anyhow::Result<()> {
     let repo = open(repo_dir).map_err(err)?;
-    let mut remote = origin_or_first(&repo)?;
+    // The address the ssh config really names, not the alias the
+    // remote was written as (design D1.4).
+    let mut remote = contact_remote(&repo)?;
     let url = remote_url_of(&remote);
     let mut opts = git2::PushOptions::new();
-    opts.remote_callbacks(auth.callbacks(cred_config(Some(&repo))));
+    opts.remote_callbacks(auth.callbacks(cred_source(Some(&repo))));
     let refspec = format!("refs/tags/{tag}:refs/tags/{tag}");
     remote
         .push(&[refspec.as_str()], Some(&mut opts))
@@ -2206,19 +2806,28 @@ fn fetch_heads_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<Vec<String>> 
     let span = tracing::info_span!("git.fetch-heads", repo = %repo_dir.display());
     let _s = span.enter();
     let repo = open(repo_dir).map_err(err)?;
-    let mut remote = origin_or_first(&repo)?;
-    let remote_name = remote
-        .name()
-        .map_err(err)?
-        .ok_or_else(|| anyhow::anyhow!("remote name is not utf-8"))?
-        .to_string();
+    // The tracking refs are named after the CONFIGURED remote, which
+    // is read before the contact: the contact itself may run over an
+    // anonymous remote when the ssh config renames the host, and an
+    // anonymous remote has no name (see `contact_remote`).
+    let remote_name = {
+        let configured = origin_or_first(&repo)?;
+        configured
+            .name()
+            .map_err(err)?
+            .ok_or_else(|| anyhow::anyhow!("remote name is not utf-8"))?
+            .to_string()
+    };
+    // The address the ssh config really names, not the alias the
+    // remote was written as (design D1.4).
+    let mut remote = contact_remote(&repo)?;
     let url = remote_url_of(&remote);
     // one connection for the advertisement and the download, as
     // download_ref does (D1.9)
     let mut connection = remote
         .connect_auth(
             git2::Direction::Fetch,
-            Some(auth.callbacks(cred_config(Some(&repo)))),
+            Some(auth.callbacks(cred_source(Some(&repo)))),
             None,
         )
         .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Fetch, e))?;
@@ -2241,7 +2850,7 @@ fn fetch_heads_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<Vec<String>> 
         .collect();
     let refspec_strs: Vec<&str> = refspecs.iter().map(String::as_str).collect();
     let mut opts = git2::FetchOptions::new();
-    opts.remote_callbacks(auth.callbacks(cred_config(Some(&repo))));
+    opts.remote_callbacks(auth.callbacks(cred_source(Some(&repo))));
     connection
         .remote()
         .download(&refspec_strs, Some(&mut opts))
@@ -3181,32 +3790,427 @@ mod pull_merge_tests {
 }
 
 #[cfg(test)]
-mod basic_auth_tests {
+mod credential_shape_tests {
+    use super::*;
+
+    /// The user name and the password inside a plaintext credential.
+    ///
+    /// git2 0.21 exposes no accessor for either (`Cred` holds one raw
+    /// pointer and hands out only `credtype`), so the test reads
+    /// libgit2's own public struct, `git_credential_userpass_plaintext`
+    /// from include/git2/credential.h: the credential header, then the
+    /// two strings. This is the only way to see what joy would send
+    /// over the wire. The credential is leaked, which is what a test
+    /// can afford.
+    fn userpass(cred: git2::Cred) -> (String, String) {
+        #[repr(C)]
+        struct RawUserpass {
+            credtype: u32,
+            free: Option<extern "C" fn(*mut std::ffi::c_void)>,
+            username: *const std::ffi::c_char,
+            password: *const std::ffi::c_char,
+        }
+        assert_eq!(
+            cred.credtype(),
+            git2::Cred::userpass_plaintext("u", "p").unwrap().credtype(),
+            "not a user-and-password credential"
+        );
+        unsafe {
+            let raw = cred.unwrap().cast::<RawUserpass>();
+            let user = std::ffi::CStr::from_ptr((*raw).username)
+                .to_string_lossy()
+                .into_owned();
+            let password = std::ffi::CStr::from_ptr((*raw).password)
+                .to_string_lossy()
+                .into_owned();
+            (user, password)
+        }
+    }
+
+    fn is_userpass(cred: &git2::Cred) -> bool {
+        cred.credtype() == git2::Cred::userpass_plaintext("u", "p").unwrap().credtype()
+    }
+
+    /// The claim decides the shape, and the FIRST attempt carries it.
+    /// This is the acceptance sentence of J4a for a GitHub Enterprise
+    /// Server host whose name says nothing about GitHub: without the
+    /// claim there is no first attempt that can be right, because the
+    /// engine's table knows three hosts and guesses at none.
+    #[test]
+    fn a_claimed_ghes_host_is_sent_x_access_token_on_the_first_attempt() {
+        let url = "https://source.acme-internal.example/o/r.git";
+        assert_eq!(known_forge_kind("source.acme-internal.example"), None);
+        let mut credentials = Auth::token_for("ghp_token", ForgeKind::GitHubEnterprise)
+            .credential_source(CredSource::none());
+        let first = credentials(url, None, git2::CredentialType::USER_PASS_PLAINTEXT)
+            .expect("a credential on the first attempt");
+        assert_eq!(
+            userpass(first),
+            ("x-access-token".to_string(), "ghp_token".to_string())
+        );
+        // A claimed host never gets the other name on the second
+        // attempt: the claim is not a guess to be corrected.
+        let mut gitlab =
+            Auth::token_for("glpat", ForgeKind::GitLab).credential_source(CredSource::none());
+        let first = gitlab(url, None, git2::CredentialType::USER_PASS_PLAINTEXT).unwrap();
+        assert_eq!(userpass(first), ("oauth2".to_string(), "glpat".to_string()));
+        let second = gitlab(url, None, git2::CredentialType::USER_PASS_PLAINTEXT);
+        assert!(
+            second.is_err(),
+            "a claimed host has one shape, not two, and then the chain"
+        );
+    }
+
+    #[test]
+    fn an_unclaimed_host_tries_the_second_shape_and_a_known_one_does_not() {
+        let unknown = "https://forge.acme-internal.example/o/r.git";
+        let mut credentials = Auth::token("tok").credential_source(CredSource::none());
+        let first = credentials(unknown, None, git2::CredentialType::USER_PASS_PLAINTEXT).unwrap();
+        assert_eq!(userpass(first), ("oauth2".to_string(), "tok".to_string()));
+        let second = credentials(unknown, None, git2::CredentialType::USER_PASS_PLAINTEXT).unwrap();
+        assert_eq!(
+            userpass(second),
+            ("x-access-token".to_string(), "tok".to_string()),
+            "the empty-password shape is never one of the two (D1.6)"
+        );
+        // Then the chain, and its sentence names the token as well as
+        // what came after it.
+        let exhausted = match credentials(unknown, None, git2::CredentialType::USER_PASS_PLAINTEXT)
+        {
+            Ok(_) => panic!("nothing else to offer"),
+            Err(e) => e,
+        };
+        assert!(
+            exhausted.message().contains("refused the access token"),
+            "{}",
+            exhausted.message()
+        );
+        assert!(
+            exhausted.message().contains("forge.acme-internal.example"),
+            "{}",
+            exhausted.message()
+        );
+
+        // github.com is in the table, so there is no second shape to
+        // try: one attempt, then the chain.
+        let known = "https://github.com/o/r.git";
+        let mut credentials = Auth::token("tok").credential_source(CredSource::none());
+        let first = credentials(known, None, git2::CredentialType::USER_PASS_PLAINTEXT).unwrap();
+        assert_eq!(
+            userpass(first),
+            ("x-access-token".to_string(), "tok".to_string())
+        );
+        let exhausted = match credentials(known, None, git2::CredentialType::USER_PASS_PLAINTEXT) {
+            Ok(_) => panic!("nothing else to offer"),
+            Err(e) => e,
+        };
+        assert!(
+            exhausted
+                .message()
+                .contains("refused the access token (sent as x-access-token)"),
+            "{}",
+            exhausted.message()
+        );
+    }
+
+    /// Design D1.6: the callback honours the `allowed` mask. Without
+    /// it, an insteadOf rewrite to ssh makes libgit2 answer
+    /// "authentication callback returned unsupported credentials type"
+    /// (ssh_libssh2.c:415-418) and the person is told the token is
+    /// wrong.
+    #[test]
+    fn a_mask_without_user_and_password_never_gets_the_token() {
+        let mut credentials =
+            Auth::token_for("ghp_token", ForgeKind::GitHub).credential_source(CredSource::none());
+        // An https URL with an ssh-only mask: the chain holds a helper
+        // step, which this mask cannot take, so the answer is the
+        // sentence and never the token.
+        let refused = match credentials(
+            "https://github.com/o/r.git",
+            None,
+            git2::CredentialType::SSH_KEY,
+        ) {
+            Ok(_) => panic!("a token is not an ssh key"),
+            Err(e) => e,
+        };
+        assert!(refused.message().contains("github.com"), "{refused}");
+        assert!(
+            !refused.message().contains("refused the access token"),
+            "the token was never offered, so it was never refused: {refused}"
+        );
+
+        // And the ssh URL an insteadOf rewrite produces: libgit2 asks
+        // for the user name first, then for a key. Whatever this
+        // machine's agent and key files hold, a user-and-password
+        // credential is the one answer that must not come back.
+        let ssh = "ssh://git@nothing.example.invalid/o/r.git";
+        let user = credentials(ssh, None, git2::CredentialType::USERNAME)
+            .expect("the one user name of this contact");
+        assert_eq!(
+            user.credtype(),
+            git2::Cred::username("git").unwrap().credtype()
+        );
+        if let Ok(offered) = credentials(ssh, Some("git"), git2::CredentialType::SSH_KEY) {
+            assert!(
+                !is_userpass(&offered),
+                "an ssh mask must never be answered with the token"
+            );
+        }
+    }
+
+    #[test]
+    fn a_host_with_no_token_goes_straight_to_the_local_chain() {
+        for auth in [
+            Auth::Local,
+            Auth::local(HostKind::Interactive),
+            Auth::token(""),
+        ] {
+            let mut credentials = auth.credential_source(CredSource::none());
+            let answer = credentials(
+                "https://gitea.example.com/o/r.git",
+                None,
+                git2::CredentialType::USER_PASS_PLAINTEXT,
+            );
+            let error = answer.err().expect("no configuration, so no credential");
+            assert!(
+                error.message().contains("git configuration"),
+                "{}",
+                error.message()
+            );
+        }
+    }
+
     /// Each forge wants its own name in front of the token. Sending
     /// GitHub's convention to Codeberg is what made a valid token look
-    /// like an unsupported authentication method.
+    /// like an unsupported authentication method (JP-00D8-94).
     #[test]
     fn every_forge_gets_the_name_it_expects() {
+        assert_eq!(token_user("github.com", None), "x-access-token");
+        assert_eq!(token_user("gitlab.com", None), "oauth2");
+        assert_eq!(token_user("gitlab.self-hosted.example", None), "oauth2");
+        // Design D1.6: the Gitea family takes oauth2 as well, never
+        // the token as the user name with an empty password.
+        assert_eq!(token_user("codeberg.org", None), "oauth2");
+        assert_eq!(token_user("gitea.int.joydev.com", None), "oauth2");
+    }
+
+    /// The table knows three hosts and guesses at no other, which is
+    /// what D1.1 and D1.5 say it holds. A Gitea that answers at
+    /// `github.internal.example` would otherwise be classified as
+    /// GitHub Enterprise by its name alone, be sent `x-access-token`,
+    /// and never be offered `oauth2` either, because the second shape
+    /// is kept for hosts no table knows: a valid token would look
+    /// refused.
+    #[test]
+    fn the_engine_table_holds_three_hosts_and_guesses_at_none() {
+        assert_eq!(known_forge_kind("github.com"), Some(ForgeKind::GitHub));
+        assert_eq!(known_forge_kind("ssh.github.com"), Some(ForgeKind::GitHub));
+        assert_eq!(known_forge_kind("gitlab.com"), Some(ForgeKind::GitLab));
         assert_eq!(
-            super::basic_auth_user("https://github.com/owner/repo.git"),
+            known_forge_kind("altssh.gitlab.com"),
+            Some(ForgeKind::GitLab)
+        );
+        assert_eq!(known_forge_kind("codeberg.org"), Some(ForgeKind::Gitea));
+        for guessable in [
+            "github.internal.example",
+            "gitlab.acme.example",
+            "gitea.int.joydev.com",
+            "forgejo.example.org",
+            "source.acme-internal.example",
+        ] {
+            assert_eq!(known_forge_kind(guessable), None, "for {guessable}");
+        }
+        // A Gitea behind a name that says GitHub gets both shapes, one
+        // per attempt, and the second one is the one it accepts.
+        let url = "https://github.internal.example/o/r.git";
+        let mut credentials = Auth::token("tok").credential_source(CredSource::none());
+        let first = credentials(url, None, git2::CredentialType::USER_PASS_PLAINTEXT).unwrap();
+        assert_eq!(userpass(first), ("oauth2".to_string(), "tok".to_string()));
+        let second = credentials(url, None, git2::CredentialType::USER_PASS_PLAINTEXT).unwrap();
+        assert_eq!(
+            userpass(second),
+            ("x-access-token".to_string(), "tok".to_string())
+        );
+    }
+
+    #[test]
+    fn a_claimed_host_decides_the_shape_whatever_its_name_says() {
+        // A GitHub Enterprise Server host with nothing in its name:
+        // only the plugin's claim gets the shape right on the first
+        // attempt.
+        let host = "source.acme-internal.example";
+        assert_eq!(known_forge_kind(host), None);
+        assert_eq!(
+            token_user(host, Some(ForgeKind::GitHubEnterprise)),
             "x-access-token"
         );
+        assert_eq!(token_user(host, Some(ForgeKind::Gitea)), "oauth2");
+        // And the claim wins over a name that points elsewhere.
         assert_eq!(
-            super::basic_auth_user("https://gitlab.com/owner/repo.git"),
-            "oauth2"
+            token_user("gitlab.acme.example", Some(ForgeKind::GitHubEnterprise)),
+            "x-access-token"
         );
+    }
+
+    #[test]
+    fn the_empty_password_shape_is_never_sent() {
+        for host in [
+            "github.com",
+            "gitlab.com",
+            "codeberg.org",
+            "gitea.example.com",
+            "anything.else.example",
+            "",
+        ] {
+            assert!(!token_user(host, None).is_empty(), "for {host}");
+            assert!(!other_token_user(host).is_empty(), "for {host}");
+            assert_ne!(token_user(host, None), other_token_user(host));
+        }
+    }
+
+    #[test]
+    fn the_plugin_ids_map_onto_the_families() {
+        assert_eq!(ForgeKind::from_plugin_id("github"), Some(ForgeKind::GitHub));
+        assert_eq!(ForgeKind::from_plugin_id("GitLab"), Some(ForgeKind::GitLab));
+        assert_eq!(ForgeKind::from_plugin_id("forgejo"), Some(ForgeKind::Gitea));
+        assert_eq!(ForgeKind::from_plugin_id("sourcehut"), None);
+    }
+
+    #[test]
+    fn a_host_that_never_named_its_kind_is_the_quiet_one() {
+        assert_eq!(Auth::Local.host_kind(), HostKind::Background);
+        assert!(!Auth::Local.host_kind().may_prompt());
         assert_eq!(
-            super::basic_auth_user("https://gitlab.self-hosted.example/o/r.git"),
-            "oauth2"
+            Auth::local(HostKind::Interactive).host_kind(),
+            HostKind::Interactive
         );
-        // Gitea and Codeberg take the token AS the name, with no password.
+        assert!(Auth::local(HostKind::Interactive).host_kind().may_prompt());
+        // A token host is the platform or a worker: never asked.
+        assert_eq!(Auth::token("t").host_kind(), HostKind::Background);
         assert_eq!(
-            super::basic_auth_user("https://codeberg.org/joyint/forge-test.git"),
-            ""
+            Auth::token_for("t", ForgeKind::GitLab).claimed_kind(),
+            Some(ForgeKind::GitLab)
         );
+        assert_eq!(Auth::token("t").claimed_kind(), None);
+    }
+
+    /// The normal case stays the normal case: a remote the ssh config
+    /// does not rename is handed to libgit2 exactly as configured, with
+    /// its name and its refspecs. The rewrite itself, and the settings
+    /// that keep coming from the alias's own `Host` block, are pinned
+    /// in tests/ssh_config_alias.rs, which owns HOME.
+    #[test]
+    fn a_remote_no_ssh_config_renames_is_contacted_as_it_stands() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        repo.remote("origin", "https://github.com/joyint/joy.git")
+            .unwrap();
+        let remote = contact_remote(&repo).expect("the configured remote");
+        assert_eq!(remote.url().ok(), Some("https://github.com/joyint/joy.git"));
         assert_eq!(
-            super::basic_auth_user("https://gitea.int.joydev.com/joyint/joy.git"),
-            ""
+            remote.name().ok().flatten(),
+            Some("origin"),
+            "the named remote, so its refspecs and its tracking refs stand"
         );
+    }
+
+    /// git applies an `insteadOf` rule before ssh ever reads its
+    /// config, and so does libgit2 (remote.c:254-255, :509-510). Where
+    /// there is such a rule, joy's own `HostName` rewrite stands back,
+    /// so the rule's target is what is dialled.
+    #[test]
+    fn an_insteadof_rule_keeps_joys_own_rewrite_out_of_the_way() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        {
+            let mut config = repo.config().unwrap();
+            config
+                .set_str("url.git@github.com:.insteadOf", "work:")
+                .unwrap();
+            config
+                .set_str("url.git@codeberg.org:.pushInsteadOf", "cb:")
+                .unwrap();
+        }
+        assert!(rewritten_by_insteadof(&repo, "work:joyint/joy.git"));
+        assert!(rewritten_by_insteadof(&repo, "cb:joyint/joy.git"));
+        assert!(!rewritten_by_insteadof(&repo, "git@work:joyint/joy.git"));
+        assert!(!rewritten_by_insteadof(
+            &repo,
+            "https://github.com/joyint/joy.git"
+        ));
+    }
+
+    #[test]
+    fn an_https_remote_offers_the_helper_and_says_so_when_it_has_none() {
+        let mut state = ChainState::prepare(
+            "https://gitea.example.com/o/r.git",
+            None,
+            HostKind::Background,
+            None,
+        );
+        assert_eq!(state.host, "gitea.example.com");
+        assert_eq!(state.steps.len(), 1);
+        // With no git config in hand the chain is exhausted at once,
+        // and the sentence says which host and why.
+        let mut chain = LocalChain::new(HostKind::Background);
+        let error = match chain.credential(
+            "https://gitea.example.com/o/r.git",
+            None,
+            git2::CredentialType::USER_PASS_PLAINTEXT,
+            &CredSource::none(),
+        ) {
+            Ok(_) => panic!("a chain with no configuration cannot answer"),
+            Err(e) => e,
+        };
+        assert!(
+            error.message().contains("gitea.example.com"),
+            "{}",
+            error.message()
+        );
+        assert!(
+            error.message().contains("git configuration"),
+            "{}",
+            error.message()
+        );
+        let _ = state.take_next(git2::CredentialType::USER_PASS_PLAINTEXT);
+    }
+
+    #[test]
+    fn the_user_name_stays_the_same_however_often_it_is_asked() {
+        let mut state = ChainState::prepare(
+            "ssh://deploy@git.example.invalid/o/r.git",
+            None,
+            HostKind::Background,
+            None,
+        );
+        let first = state.user.clone();
+        assert_eq!(first, "deploy");
+        for _ in 0..3 {
+            assert!(state.user_name().is_ok());
+            assert_eq!(state.user, first);
+        }
+        // And it does not loop for ever when a forge keeps asking.
+        assert!(state.user_name().is_err());
+    }
+
+    #[test]
+    fn a_candidate_the_forge_does_not_accept_is_skipped_not_offered() {
+        let mut state = ChainState::prepare(
+            "https://gitea.example.com/o/r.git",
+            None,
+            HostKind::Background,
+            None,
+        );
+        // An https chain holds a helper step, which an ssh-only mask
+        // cannot take: it is skipped, and the chain is then empty.
+        assert!(state.take_next(git2::CredentialType::SSH_KEY).is_none());
+        assert!(state.exhausted().contains("gitea.example.com"));
+    }
+
+    #[test]
+    fn a_remote_with_nothing_in_the_way_is_not_guarded_against() {
+        assert!(guard_transport(None).is_ok());
+        assert!(guard_transport(Some("https://github.com/o/r.git")).is_ok());
+        assert!(guard_transport(Some("/srv/git/local.git")).is_ok());
     }
 }

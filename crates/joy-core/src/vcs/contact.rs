@@ -1350,6 +1350,20 @@ struct Turn {
     base_gap: Duration,
 }
 
+impl Turn {
+    /// The turn a contact that opens no socket takes: none. A host joy
+    /// refuses to speak to at all (ProxyCommand, ProxyJump, design
+    /// D1.4) sends no request, so it reserves no slot and, with a zero
+    /// `base_gap`, widens none either ([`widen_for_strike`]).
+    fn none() -> Turn {
+        Turn {
+            waited: Duration::ZERO,
+            start: Instant::now(),
+            base_gap: Duration::ZERO,
+        }
+    }
+}
+
 /// Wait for this host's turn: the gap the verb's requests cost, doubled
 /// once per standing strike. Takes the slot on the way out, so
 /// concurrent callers line up one behind the other instead of leaving
@@ -1658,11 +1672,27 @@ pub fn run<T>(
     credentialed: bool,
     work: impl FnOnce() -> anyhow::Result<T>,
 ) -> anyhow::Result<T> {
-    let host = host_of(url);
+    // The host joy really contacts: the person's ssh config may name
+    // another one behind an alias, and the throttle, the strike gate
+    // and the log all key on the host a socket is opened to, not on
+    // the alias it was written as (design D1.1, D1.4).
+    let dialled = super::ssh_config::effective_url(url);
+    let host = host_of(dialled.as_deref().unwrap_or(url));
     let transport = transport_of(url);
     let span = tracing::info_span!("forge.contact", verb, forge = %host);
     let _s = span.enter();
-    let turn = take_turn(&host, verb, transport, credentialed);
+    // A host joy refuses to speak to at all (ProxyCommand, ProxyJump)
+    // opens no socket, so it spends no turn: the refusal below costs
+    // the host's gap nothing (design D1.4).
+    let opens_a_socket = super::ssh_config::refusal_for_url(url).is_none();
+    // A forge that said 429 is never stopped, only slowed (Horst,
+    // 2026-08-29: throttle, never block): while a strike stands, this
+    // host's gap is doubled inside take_turn; the contact still goes out.
+    let turn = if opens_a_socket {
+        take_turn(&host, verb, transport, credentialed)
+    } else {
+        Turn::none()
+    };
     if !turn.waited.is_zero() {
         tracing::debug!(
             waited_ms = turn.waited.as_millis() as u64,
@@ -1672,10 +1702,20 @@ pub fn run<T>(
     }
     let started = Instant::now();
     take_credential_presented();
+    // Whatever an earlier contact left waiting for a verdict is not
+    // this contact's business: a fresh credential that the last
+    // contact never got a verdict on (it failed for a reason that had
+    // nothing to do with the credential) must not be stored because
+    // this one succeeds, possibly with a token and no helper at all.
+    super::credential_helper::forget_presented(url);
     let outcome = work();
     let presented = take_credential_presented();
     match outcome {
         Ok(value) => {
+            // The strike is NOT cleared here (D1.9): it stands until
+            // STRIKE_LASTS has passed since the last 429, so one lucky
+            // contact between two refusals cannot take the brake off.
+            //
             // a contact that never had to present anything (a public
             // repository answers the first request) proves nothing about
             // a credential
@@ -1686,6 +1726,12 @@ pub fn run<T>(
             // answered and joy handed nothing over, which is what the
             // no anonymous polling rule of D1.9 needs to know
             note_credential_answer(&host, presented);
+            // The contact carried a credential joy's helper runner had
+            // just produced: the helper is told to store it (git's
+            // `approve`). A credential that came from the cache, or
+            // from no helper at all, leaves nothing to tell, so a poll
+            // spawns nothing here (design D1.3, D1.7).
+            super::credential_helper::accepted(url);
             tracing::debug!(
                 took_ms = started.elapsed().as_millis() as u64,
                 "forge contact ok"
