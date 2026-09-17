@@ -325,6 +325,12 @@ pub fn run<T>(
     match work() {
         Ok(value) => {
             clear(&host);
+            // The contact carried a credential joy's helper runner had
+            // just produced: the helper is told to store it (git's
+            // `approve`). A credential that came from the cache, or
+            // from no helper at all, leaves nothing to tell, so a poll
+            // spawns nothing here (design D1.3, D1.7).
+            super::credential_helper::accepted(url);
             tracing::debug!(
                 took_ms = started.elapsed().as_millis() as u64,
                 "forge contact ok"
