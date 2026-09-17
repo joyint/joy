@@ -1273,6 +1273,65 @@ fn an_anonymous_project_knows_its_members_from_the_pin_alone() {
     );
 }
 
+/// And when members.yaml is the thing that is missing, the login says
+/// THAT, instead of quietly going on with the opaque id.
+///
+/// An anonymous project keeps every address in the encrypted
+/// members.yaml, and the login reads its own address out of it: that
+/// address is what the attestation signed and what the person is told
+/// they authenticated as. If the file cannot be opened there is no
+/// honest answer, and the identifier the caller came in holding is the
+/// opaque id in exactly this case. Handing that to the attestation check
+/// produced "the entry appears to have been tampered with", which points
+/// a person at their own member entry when the truth is a file they can
+/// git pull; with no attestation to check it produced "Authenticated as
+/// m-...", which is the line ADR-042 exists to prevent.
+#[test]
+fn a_login_says_when_an_anonymous_project_cannot_name_its_member() {
+    let machine = Machine::new();
+    found_and_enrol(&machine);
+    let second = machine.a_second_enrolled_member("b@c.d");
+    assert!(second.status.success(), "{}", text(&second));
+    let anonymous = machine.joy(&[
+        "project",
+        "set",
+        "privacy",
+        "anonymous",
+        "--passphrase",
+        SECOND_PASSPHRASE,
+    ]);
+    assert!(anonymous.status.success(), "{}", text(&anonymous));
+
+    // A checkout that has the project file but not the members file: the
+    // shape of a stale pull, or of a member whose access was never
+    // wrapped.
+    std::fs::remove_file(machine.root.join(".joy").join("members.yaml")).unwrap();
+
+    let returning = machine.joy(&["auth", "--passphrase", SECOND_PASSPHRASE]);
+    assert!(
+        !returning.status.success(),
+        "a login that cannot name its member does not succeed: {}",
+        text(&returning)
+    );
+    assert!(
+        text(&returning).contains("cannot name the member")
+            && text(&returning).contains("members.yaml"),
+        "the refusal names the member it cannot place and the file that \
+         would have placed them: {}",
+        text(&returning)
+    );
+    assert!(
+        !text(&returning).contains("tampered"),
+        "the member's own entry is not what is wrong: {}",
+        text(&returning)
+    );
+    assert!(
+        !text(&returning).contains("Authenticated as"),
+        "nobody is told they authenticated: {}",
+        text(&returning)
+    );
+}
+
 /// Pull one string field out of a `--json` payload without a JSON parser
 /// in the dev dependencies. The payloads here are machine written and
 /// carry no escapes in these fields.

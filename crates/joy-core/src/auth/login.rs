@@ -12,7 +12,7 @@ use std::path::Path;
 
 use crate::auth::{attestation, seed as seed_mod, session, IdentityKeypair, PublicKey, Salt};
 use crate::error::JoyError;
-use crate::model::project::{Attestation, Member, PrivacyMode, Project};
+use crate::model::project::{is_ai_member, Attestation, Member, PrivacyMode, Project};
 use crate::store;
 
 /// What a successful login produced.
@@ -30,7 +30,8 @@ pub struct LoginOutcome {
     /// telling somebody they are an opaque id is the one thing ADR-042
     /// asks every output not to do: there this is the address out of
     /// members.yaml, which this very login opened on its way past the
-    /// attestation check. Never empty.
+    /// attestation check, and a login that cannot read it fails instead
+    /// of answering with the id. Never empty, and never an opaque id.
     pub address: String,
     /// Files opportunistically re-encrypted during login (ADR-040).
     pub relocked: usize,
@@ -153,8 +154,20 @@ fn finish_login(
     // rather than taken from whatever the caller came in holding.
     let attested_id = match view.privacy_mode() {
         PrivacyMode::Open => member_key.clone(),
+        // An AI member keeps its synthetic key through the switch to
+        // anonymous mode: it gets no members.yaml row, because there is
+        // no person behind it to keep out of a committed file, and the
+        // key is what an attestation over it signs, exactly as in open
+        // mode.
+        _ if is_ai_member(&member_key) => member_key.clone(),
+        // A person, in anonymous mode: only members.yaml can say who
+        // they are, and if it cannot, this says so. The fallback that
+        // used to stand here handed the opaque id to the attestation
+        // check, which no attestation signs, so a missing members.yaml
+        // came back as "the entry appears to have been tampered with"
+        // and sent a person looking at their own entry.
         _ => anonymous_attested_address(root, view, &member_key, seed.as_bytes())
-            .unwrap_or_else(|| email.to_string()),
+            .ok_or_else(|| JoyError::AnonymousMemberUnnamed(member_key.clone()))?,
     };
     // What the person is told they just authenticated as. Open mode keeps
     // saying the address they came in with; anonymous mode says the one
@@ -237,8 +250,11 @@ pub fn cached_members_zone_key(
 /// settles it, and the device remembers.
 ///
 /// `None` when the members file cannot be opened (a member without a
-/// wrap, a missing file); the caller then falls back to the identifier it
-/// was given, which is what happened before this existed.
+/// wrap, a missing or stale file). The caller has nothing to fall back
+/// to then: the identifier it was given is the opaque id in exactly the
+/// case this exists for, so it raises
+/// [`JoyError::AnonymousMemberUnnamed`] rather than answer with an id
+/// that no attestation signs and that ADR-042 shows nobody.
 fn anonymous_attested_address(
     root: &Path,
     project: &Project,
