@@ -85,6 +85,53 @@ impl Sandbox {
         command
     }
 
+    /// Put a fake `gh` on this sandbox's PATH, with a `hosts.yml` that
+    /// names these logins, the active one first.
+    ///
+    /// Spawning a forge CLI by name is what decision 19 asks for, so a
+    /// test of that path has to have one to spawn. This one prints a
+    /// token per `--user` and nothing else, exactly as
+    /// `gh auth token` does.
+    fn with_gh(&self, host: &str, logins: &[&str]) {
+        let bin = self.path().join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let script = "#!/bin/sh\n\
+             user=\"\"\n\
+             while [ $# -gt 0 ]; do\n\
+             case \"$1\" in\n\
+             --user) user=\"$2\"; shift 2;;\n\
+             *) shift;;\n\
+             esac\n\
+             done\n\
+             if [ -z \"$user\" ]; then user=\"$GH_ACTIVE\"; fi\n\
+             echo \"gh-token-of-$user\"\n";
+        let path = bin.join("gh");
+        std::fs::write(&path, script).unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let config = self.path().join("gh-config");
+        std::fs::create_dir_all(&config).unwrap();
+        let mut hosts = format!("{host}:\n    users:\n");
+        for login in logins {
+            hosts.push_str(&format!("        {login}:\n            oauth_token: x\n"));
+        }
+        hosts.push_str(&format!(
+            "    user: {}\n    git_protocol: https\n",
+            logins.first().copied().unwrap_or_default()
+        ));
+        std::fs::write(config.join("hosts.yml"), hosts).unwrap();
+    }
+
+    /// The connector with the fake `gh` reachable.
+    fn connector_with_gh(&self, active: &str) -> std::process::Command {
+        let mut command = self.connector();
+        command
+            .env("PATH", self.path().join("bin"))
+            .env("GH_CONFIG_DIR", self.path().join("gh-config"))
+            .env("GH_ACTIVE", active);
+        command
+    }
+
     /// Put one credential in the file store, the way a finished `login`
     /// would have.
     fn seed(&self, host: &str, login: &str, record: Value) {
@@ -348,4 +395,174 @@ fn a_delegated_login_is_refused_by_the_connector_itself() {
     let message = answer["message"].as_str().unwrap();
     assert!(message.contains("--token-stdin"), "{message}");
     assert!(fake.calls().is_empty(), "nothing was contacted");
+}
+
+/// J3's acceptance, through the shipped binary: `login` prints the
+/// verification line within fifteen seconds and the CALLER SEES IT
+/// BEFORE THE PROCESS EXITS. The line is read off the child's stdout
+/// while it is still polling the forge.
+#[test]
+fn a_login_prints_its_verification_line_while_it_is_still_running() {
+    let fake = FakeForge::start(|call| match call.path.as_str() {
+        "/login/device/code" => Reply::json(
+            200,
+            r#"{"device_code":"dev-1","user_code":"WDJB-MJHT",
+                "verification_uri":"https://forge.test/login/device",
+                "expires_in":900,"interval":5}"#,
+        ),
+        // Nobody ever finishes the sign in: the point is the FIRST
+        // line, and the child is ended once it has been read.
+        "/login/oauth/access_token" => Reply::json(200, r#"{"error":"authorization_pending"}"#),
+        _ => Reply::not_found(),
+    });
+    let sandbox = Sandbox::new("forge.test", "github", &format!("{}/api/v3", fake.base()));
+    std::fs::write(
+        sandbox.path().join("config/joy/forges.yaml"),
+        format!(
+            "- host: forge.test\n  kind: github\n  api_base: {base}/api/v3\n  \
+             client_id: test-client\n  device_endpoint: {base}/login/device/code\n  \
+             token_endpoint: {base}/login/oauth/access_token\n",
+            base = fake.base()
+        ),
+    )
+    .unwrap();
+    let mut child = sandbox
+        .connector()
+        .args([
+            "github",
+            "login",
+            "--host",
+            "forge.test",
+            "--host-kind",
+            "interactive",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("the connector");
+    let stdout = child.stdout.take().expect("the child's stdout");
+    let (tx, rx) = std::sync::mpsc::channel::<String>();
+    std::thread::spawn(move || {
+        use std::io::BufRead;
+        let mut line = String::new();
+        if std::io::BufReader::new(stdout).read_line(&mut line).is_ok() {
+            let _ = tx.send(line);
+        }
+    });
+    let line = rx
+        .recv_timeout(std::time::Duration::from_secs(15))
+        .expect("the verification line inside fifteen seconds");
+    // The child is still polling: it has not exited, and this line
+    // reached the caller anyway.
+    assert!(
+        matches!(child.try_wait(), Ok(None)),
+        "the caller sees the line BEFORE the process exits"
+    );
+    let event: Value = serde_json::from_str(line.trim()).expect("one JSON object per line");
+    assert_eq!(event["event"], "verification");
+    assert_eq!(event["code"], "WDJB-MJHT");
+    assert_eq!(event["url"], "https://forge.test/login/device");
+    assert_eq!(event["host"], "forge.test");
+    assert_eq!(event["interval"], 5);
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// J3's acceptance: on a machine with a signed in gh, `token` answers
+/// `"source":"gh"` with zero clicks and zero dialogs. There is no
+/// credential of joy's own here, and no credential store is reachable
+/// either, so the only way to the token is spawning gh (decision 19).
+#[test]
+fn a_signed_in_gh_answers_the_token_verb_by_being_spawned() {
+    let fake = FakeForge::start(|_| Reply::not_found());
+    let sandbox = Sandbox::new("forge.test", "github", &format!("{}/api/v3", fake.base()));
+    sandbox.with_gh("forge.test", &["scotty"]);
+    let output = sandbox
+        .connector_with_gh("scotty")
+        .args(["github", "token", "--host", "forge.test"])
+        .output()
+        .expect("the connector");
+    let answer = answer_of(&output);
+    assert_eq!(answer["known"], true, "{answer}");
+    assert_eq!(answer["source"], "gh");
+    assert_eq!(answer["token"], "gh-token-of-scotty");
+    assert!(
+        fake.calls().is_empty(),
+        "reading gh's token costs no forge request"
+    );
+    // joy never writes, refreshes or revokes what gh owns: `logout`
+    // names gh's own command and removes nothing (D2.6).
+    let out = sandbox
+        .connector_with_gh("scotty")
+        .args(["github", "logout", "--host", "forge.test"])
+        .output()
+        .expect("the connector");
+    let answer = answer_of(&out);
+    assert_eq!(answer["removed"], false);
+    assert_eq!(answer["source"], "gh");
+    assert_eq!(answer["command"], "gh auth logout --hostname forge.test");
+}
+
+/// J3's acceptance: a host with TWO gh accounts answers `token` for a
+/// repository only the second account can reach, and reports
+/// `"chose_by":"probe"`.
+///
+/// This is the trap gh documents itself: "Without the --user flag, the
+/// active account for the host is chosen", and the active account here
+/// is the one that cannot reach the repository.
+#[test]
+fn a_host_with_two_gh_accounts_probes_for_the_one_that_reaches_the_repository() {
+    let fake = FakeForge::start(|call| match call.path.as_str() {
+        "/api/v3/repos/acme/widgets" => {
+            if call.authorization() == Some("Bearer gh-token-of-work") {
+                Reply::json(200, r#"{"permissions":{"push":true}}"#)
+            } else {
+                // GitHub answers 404, not 403, for a private repository
+                // the caller may not see.
+                Reply::not_found()
+            }
+        }
+        _ => Reply::not_found(),
+    });
+    let sandbox = Sandbox::new("forge.test", "github", &format!("{}/api/v3", fake.base()));
+    // scotty is the ACTIVE account and cannot reach it; work can.
+    sandbox.with_gh("forge.test", &["scotty", "work"]);
+    let output = sandbox
+        .connector_with_gh("scotty")
+        .args([
+            "github",
+            "token",
+            "--remote",
+            "https://forge.test/acme/widgets.git",
+        ])
+        .output()
+        .expect("the connector");
+    let answer = answer_of(&output);
+    assert_eq!(answer["known"], true, "{answer}");
+    assert_eq!(answer["login"], "work");
+    assert_eq!(answer["token"], "gh-token-of-work");
+    assert_eq!(answer["source"], "gh");
+    assert_eq!(answer["chose_by"], "probe");
+    assert_eq!(
+        fake.calls().len(),
+        2,
+        "one request per candidate, never per contact"
+    );
+
+    // The winner is remembered per remote, so the second call spends
+    // nothing (D4.1c).
+    let again = sandbox
+        .connector_with_gh("scotty")
+        .args([
+            "github",
+            "token",
+            "--remote",
+            "https://forge.test/acme/widgets.git",
+        ])
+        .output()
+        .expect("the connector");
+    let again = answer_of(&again);
+    assert_eq!(again["login"], "work");
+    assert_eq!(again["chose_by"], "memory");
+    assert_eq!(fake.calls().len(), 2, "the memory spends no request");
 }

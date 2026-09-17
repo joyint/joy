@@ -169,19 +169,50 @@ fn resolved_of(record: Record, source: Source, chose_by: Option<ChoseBy>) -> Res
 // -- the token verb (D2.4, D4.1c) ---------------------------------------------
 
 /// `token --remote <url> | --host <h> [--login <name>]`.
+///
+/// The whole login order of D4.1c runs here, over the whole candidate
+/// set: the connector's own logins AND the ones the forge CLI holds.
+/// [`own_token_full`] cannot do it, because the candidate list is forge
+/// knowledge and that function has none; what it knows is the entry,
+/// which is what every other verb needs from it.
 pub fn token(forge: &dyn Forge, target: &Target, ctx: &Ctx) -> Value {
     let Some(host) = target.host() else {
         return json!({ "known": false, "reason": "unsupported-host" });
     };
-    match own_token_full(ctx, &host) {
-        Own::Found(resolved) => return answer(forge, &host, &resolved),
-        Own::Busy => return lock::busy_answer(),
-        Own::Nothing => {}
+    let own = ctx.vault().logins(&host);
+    let foreign = forge.foreign_logins(&host);
+    let candidates = choose::probe_order(&own, &foreign);
+    let memory = ctx
+        .remote
+        .as_deref()
+        .and_then(|remote| pin::remembered(ctx.state_dir(), remote));
+    let chosen = choose::without_probe(
+        ctx.login.as_deref(),
+        pin::pinned(ctx.root(), &host).as_deref(),
+        memory.as_deref(),
+        &candidates,
+    );
+    match chosen {
+        Some((login, chose_by)) => match named_login(forge, &host, &login, chose_by, ctx) {
+            Own::Found(resolved) => return answer(forge, &host, &resolved),
+            Own::Busy => return lock::busy_answer(),
+            // A login this machine no longer holds: fall through and
+            // let the probe and the remaining sources decide.
+            Own::Nothing => {}
+        },
+        // Nobody is named and no login is known by name either: the
+        // `<host>` form of D2.6's entry addressing is what is left.
+        None if candidates.is_empty() => match own_token_full(ctx, &host) {
+            Own::Found(resolved) => return answer(forge, &host, &resolved),
+            Own::Busy => return lock::busy_answer(),
+            Own::Nothing => {}
+        },
+        None => {}
     }
     // Several logins and nothing that names one: the probe of D4.1c,
     // one request per candidate, per remote and never per contact.
     if let Some(path) = target.repo_path() {
-        match probe(forge, &host, &path, ctx) {
+        match probe(forge, &host, &path, &candidates, ctx) {
             Probed::Found(resolved) => {
                 if let Some(remote) = ctx.remote.as_deref() {
                     if let Some(login) = resolved.login.as_deref() {
@@ -211,17 +242,33 @@ pub fn token(forge: &dyn Forge, target: &Target, ctx: &Ctx) -> Value {
             // A host that holds several logins and nothing that names
             // one has an answer a person can act on, and "no-login"
             // alone is not it (D4.1c).
-            let known = ctx.vault().logins(&host);
-            if known.len() > 1 {
+            if candidates.len() > 1 {
                 answer["message"] = json!(format!(
                     "This machine holds several {} logins ({}). \
                      Say which one with --login, or ask about a repository.",
                     forge.display(),
-                    known.join(", ")
+                    candidates.join(", ")
                 ));
             }
             answer
         }
+    }
+}
+
+/// The credential of ONE named login: the connector's own entry first,
+/// then the forge CLI for that login, spawned.
+fn named_login(forge: &dyn Forge, host: &str, login: &str, chose_by: ChoseBy, ctx: &Ctx) -> Own {
+    if let Some((record, source)) = ctx.vault().get(host, Some(login)) {
+        return match fresh(ctx, host, record, source) {
+            Ok((record, source)) => {
+                Own::Found(Box::new(resolved_of(record, source, Some(chose_by))))
+            }
+            Err(()) => Own::Busy,
+        };
+    }
+    match foreign_token(forge, host, login, chose_by) {
+        Some(resolved) => Own::Found(Box::new(resolved)),
+        None => Own::Nothing,
     }
 }
 
@@ -248,25 +295,21 @@ enum Probed {
     NotAsked,
 }
 
-fn probe(forge: &dyn Forge, host: &str, repo_path: &str, ctx: &Ctx) -> Probed {
-    let vault = ctx.vault();
-    let own = vault.logins(host);
-    let foreign = forge.foreign_logins(host);
-    let order = choose::probe_order(&own, &foreign);
-    if order.len() < 2 {
+fn probe(
+    forge: &dyn Forge,
+    host: &str,
+    repo_path: &str,
+    candidates: &[String],
+    ctx: &Ctx,
+) -> Probed {
+    if candidates.len() < 2 {
         // One candidate is step 3, not step 4, and zero is nothing.
         return Probed::NotAsked;
     }
-    for login in &order {
-        let candidate = match vault.get(host, Some(login)) {
-            Some((record, source)) => match fresh(ctx, host, record, source) {
-                Ok((record, source)) => resolved_of(record, source, Some(ChoseBy::Probe)),
-                Err(()) => continue,
-            },
-            None => match foreign_token(forge, host, login) {
-                Some(resolved) => resolved,
-                None => continue,
-            },
+    for login in candidates {
+        let candidate = match named_login(forge, host, login, ChoseBy::Probe, ctx) {
+            Own::Found(resolved) => *resolved,
+            _ => continue,
         };
         if let Some(reach) = forge.reaches(host, repo_path, &candidate.token, ctx) {
             if reach.read {
@@ -274,11 +317,16 @@ fn probe(forge: &dyn Forge, host: &str, repo_path: &str, ctx: &Ctx) -> Probed {
             }
         }
     }
-    Probed::NoneReach(order)
+    Probed::NoneReach(candidates.to_vec())
 }
 
 /// A foreign CLI's token for one named login, by spawning it.
-fn foreign_token(forge: &dyn Forge, host: &str, login: &str) -> Option<Resolved> {
+fn foreign_token(
+    forge: &dyn Forge,
+    host: &str,
+    login: &str,
+    chose_by: ChoseBy,
+) -> Option<Resolved> {
     let (token, source) = match forge.foreign_cli() {
         "gh" => (crate::foreign::gh_token(host, Some(login))?, Source::Gh),
         "glab" => (crate::foreign::glab_token(host)?, Source::Glab),
@@ -291,7 +339,7 @@ fn foreign_token(forge: &dyn Forge, host: &str, login: &str) -> Option<Resolved>
         source,
         scopes: None,
         expires_at: None,
-        chose_by: Some(ChoseBy::Probe),
+        chose_by: Some(chose_by),
     })
 }
 
@@ -656,8 +704,14 @@ pub fn logout(forge: &dyn Forge, target: &Target, ctx: &Ctx) -> Value {
     }
     // Nothing of joy's own. If a forge CLI holds one, say whose it is
     // and which command removes it.
-    if foreign_token(forge, &host, login.as_deref().unwrap_or_default()).is_some()
-        || !forge.foreign_logins(&host).is_empty()
+    if !forge.foreign_logins(&host).is_empty()
+        || foreign_token(
+            forge,
+            &host,
+            login.as_deref().unwrap_or_default(),
+            ChoseBy::Only,
+        )
+        .is_some()
     {
         return json!({
             "removed": false,
