@@ -78,21 +78,17 @@ packs() {
 
     # the spawn that used to stand here, in every shape it could take
     run -1 grep -q -- "gc" "$GIT_CALLS"
-    # Neither the chat store nor joy's maintenance spawns anything: both
-    # are git2 throughout. What is left on the CLI chat path is exactly
-    # ONE git process, the delivery push (joy_core::vcs::push_ref).
-    # J7's acceptance asks for none at all, and this is the package's one
-    # DEVIATION from it, reported rather than argued away: a push needs a
-    # transport, so it leaves the git binary only once joy-cli enables
-    # joy-core's `forge-net` feature, which is J6's packaging change
-    # (D3.1, D3.2). The other spawn that stood on this path, the
-    # `remote get-url` probe, is git2 now. Pinned at exactly one so the
-    # count cannot grow quietly while the last one is retired.
-    calls="$(sort -u "$GIT_CALLS")"
-    [ "$(printf '%s\n' "$calls" | grep -c .)" -eq 1 ]
-    [[ "$calls" == *"push --quiet origin refs/joy/chats:refs/joy/chats"* ]]
-    # the probe that used to stand beside it is git2 now
-    run -1 grep -q -- "remote get-url" "$GIT_CALLS"
+    # NOTHING on the chat write path spawns git any more: not the store,
+    # not the maintenance, not the delivery push. J7 had to leave the
+    # push behind because a transport needs joy-core's `forge-net`
+    # feature and joy-cli did not enable it; J6 enables it (D3.1) and
+    # moves the transfer onto the engine (D3.2), so the count this case
+    # pins is ZERO. The `remote get-url` probe that stood beside it is
+    # git2 too.
+    [ ! -s "$GIT_CALLS" ]
+    # ...and the delivery really happened, so the count above is a pin
+    # on a path that ran and not on one that was skipped.
+    run -0 git --git-dir="$TEST_DIR/remote.git" rev-parse refs/joy/chats
     # and the message is there
     run -0 joy chat show general --passphrase "$TEST_PASSPHRASE"
     [[ "$output" == *"one line"* ]]

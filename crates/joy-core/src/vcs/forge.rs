@@ -837,20 +837,43 @@ fn guard_remote(remote: &git2::Remote<'_>) -> anyhow::Result<()> {
 /// configured remote and `.git/config` are never touched, and a remote
 /// the config does not rename is returned exactly as it is, so the
 /// named remote (with its refspecs) stays the normal case.
-fn contact_remote(repo: &git2::Repository) -> anyhow::Result<git2::Remote<'_>> {
+fn contact_remote(
+    repo: &git2::Repository,
+    direction: super::contact::ContactDirection,
+) -> anyhow::Result<git2::Remote<'_>> {
     let remote = origin_or_first(repo)?;
     guard_remote(&remote)?;
-    let Some(url) = remote.url().ok() else {
+    let Some(configured) = remote.url().ok().map(str::to_string) else {
         return Ok(remote);
     };
-    if rewritten_by_insteadof(repo, url) {
-        return Ok(remote);
+    // git honours `remote.<name>.pushurl` for a push, and libgit2 only
+    // half does: `git_remote__urlfordirection` picks the TRANSPORT from
+    // the push url and the local transport then pushes to
+    // `remote->url` (transports/local.c:396-397). A remote with an
+    // https url and a path push url - the shape a person uses to keep a
+    // push on the machine while the fetch url names the forge - fails
+    // there with "failed to resolve path <the https url>". Dialling the
+    // push url itself is what git does, and it makes the two agree.
+    let push_url = (direction == super::contact::ContactDirection::Push)
+        .then(|| remote.pushurl().ok().flatten().map(str::to_string))
+        .flatten()
+        .filter(|pushurl| *pushurl != configured);
+    let url = push_url.clone().unwrap_or(configured);
+    // joy's own `HostName` rewrite, unless an `insteadOf` rule owns the
+    // address (libgit2 applies those itself).
+    let dialled = (!rewritten_by_insteadof(repo, &url))
+        .then(|| super::ssh_config::effective_url(&url))
+        .flatten();
+    match (push_url, dialled) {
+        // Nothing to change: the CONFIGURED remote, so its refspecs and
+        // its tracking refs still stand.
+        (None, None) => Ok(remote),
+        (push, dialled) => {
+            let url = dialled.or(push).unwrap_or(url);
+            drop(remote);
+            repo.remote_anonymous(&url).map_err(err)
+        }
     }
-    let Some(dialled) = super::ssh_config::effective_url(url) else {
-        return Ok(remote);
-    };
-    drop(remote);
-    repo.remote_anonymous(&dialled).map_err(err)
 }
 
 /// Whether an `insteadOf` rule rewrites this URL, in which case joy
@@ -1176,9 +1199,13 @@ fn leg_auth(auth: &Auth, leg: &Leg) -> Auth {
 /// [`contact_remote`], so the ssh config's `HostName` still applies; the
 /// twin is an anonymous remote on an address that is never written into
 /// `.git/config`.
-fn leg_remote<'r>(repo: &'r git2::Repository, leg: &Leg) -> anyhow::Result<git2::Remote<'r>> {
+fn leg_remote<'r>(
+    repo: &'r git2::Repository,
+    leg: &Leg,
+    direction: super::contact::ContactDirection,
+) -> anyhow::Result<git2::Remote<'r>> {
     match leg.way {
-        Way::Configured => contact_remote(repo),
+        Way::Configured => contact_remote(repo, direction),
         Way::Twin => repo.remote_anonymous(&leg.url).map_err(err),
     }
 }
@@ -1246,7 +1273,7 @@ fn over_plan<T>(
             let used = &used;
             let contact = move || -> anyhow::Result<T> {
                 take_used_credential();
-                let mut remote = leg_remote(repo, leg)?;
+                let mut remote = leg_remote(repo, leg, direction)?;
                 let answer = work(repo, &mut remote, auth_for_leg, leg);
                 used.set(take_used_credential());
                 answer
@@ -5619,13 +5646,65 @@ mod credential_shape_tests {
     /// its name and its refspecs. The rewrite itself, and the settings
     /// that keep coming from the alias's own `Host` block, are pinned
     /// in tests/ssh_config_alias.rs, which owns HOME.
+    /// `remote.<name>.pushurl`, which git honours for a push and
+    /// libgit2 only half does: it picks the transport from the push url
+    /// and then hands the local transport `remote->url`
+    /// (transports/local.c:396-397), so the shape "fetch from the forge,
+    /// push to a path on this machine" failed with "failed to resolve
+    /// path <the https url>". joy dials the push url itself.
+    #[test]
+    fn a_push_goes_to_the_push_url_and_a_fetch_does_not() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        repo.remote("origin", "https://github.com/joyint/joy.git")
+            .unwrap();
+        repo.config()
+            .unwrap()
+            .set_str("remote.origin.pushurl", "/srv/mirrors/joy.git")
+            .unwrap();
+
+        let push = contact_remote(&repo, super::super::contact::ContactDirection::Push).unwrap();
+        assert_eq!(push.url().ok(), Some("/srv/mirrors/joy.git"));
+        drop(push);
+
+        let fetch = contact_remote(&repo, super::super::contact::ContactDirection::Fetch).unwrap();
+        assert_eq!(fetch.url().ok(), Some("https://github.com/joyint/joy.git"));
+        assert_eq!(
+            fetch.name().ok().flatten(),
+            Some("origin"),
+            "a fetch keeps the named remote and its refspecs"
+        );
+    }
+
+    /// A remote without a push url is the named remote in both
+    /// directions, so nothing about the ordinary case changes.
+    #[test]
+    fn a_remote_without_a_push_url_is_the_named_one_either_way() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        repo.remote("origin", "https://codeberg.org/joyint/joy.git")
+            .unwrap();
+        for direction in [
+            super::super::contact::ContactDirection::Push,
+            super::super::contact::ContactDirection::Fetch,
+        ] {
+            let remote = contact_remote(&repo, direction).unwrap();
+            assert_eq!(remote.name().ok().flatten(), Some("origin"));
+            assert_eq!(
+                remote.url().ok(),
+                Some("https://codeberg.org/joyint/joy.git")
+            );
+        }
+    }
+
     #[test]
     fn a_remote_no_ssh_config_renames_is_contacted_as_it_stands() {
         let dir = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init(dir.path()).unwrap();
         repo.remote("origin", "https://github.com/joyint/joy.git")
             .unwrap();
-        let remote = contact_remote(&repo).expect("the configured remote");
+        let remote = contact_remote(&repo, super::super::contact::ContactDirection::Fetch)
+            .expect("the configured remote");
         assert_eq!(remote.url().ok(), Some("https://github.com/joyint/joy.git"));
         assert_eq!(
             remote.name().ok().flatten(),

@@ -15,7 +15,7 @@
 //! `joy-core/tests/commit_msg_rule.rs` covers.
 
 use std::path::Path;
-use std::process::{Command, Output};
+use std::process::Output;
 
 /// Run `joy` in `root` with an isolated home, so nothing of this
 /// machine answers for the project under test.
@@ -44,7 +44,7 @@ fn bash() -> Option<&'static str> {
     ["/bin/bash", "/usr/bin/bash", "bash"]
         .into_iter()
         .find(|c| {
-            Command::new(c)
+            joy_process::command(c)
                 .arg("-c")
                 .arg("exit 0")
                 .status()
@@ -67,7 +67,7 @@ fn make_executable(_path: &Path) {}
 fn commit_msg_hook(shell: &str, root: &Path, message: &str) -> Output {
     let msg_file = root.join(".git/COMMIT_EDITMSG");
     std::fs::write(&msg_file, message).unwrap();
-    Command::new(shell)
+    joy_process::command(shell)
         .arg(".joy/hooks/commit-msg")
         .arg(&msg_file)
         .current_dir(root)

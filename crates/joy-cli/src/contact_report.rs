@@ -23,9 +23,9 @@
 //!
 //! `--json` and stdout. A contact that IS the command's answer prints
 //! the envelope the rest of the CLI prints and exits 1
-//! ([`Refusal::fail`]). A contact that is NOT the command's answer -
-//! the chat delivery after a send, which is best effort and never fatal
-//! - may not write to stdout at all in `--json` mode, because stdout
+//! ([`Refusal::fail`]). A contact that is NOT the command's answer (the
+//! chat delivery after a send, which is best effort and never fatal)
+//! may not write to stdout at all in `--json` mode, because stdout
 //! carries exactly one envelope (ADR-036) and a second object there is a
 //! corrupt answer. It goes to stderr as one JSON object instead, with
 //! the same fields ([`Refusal::say_aside`]), so an agent reads the same

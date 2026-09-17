@@ -108,20 +108,41 @@ sync-tutorial:
 # core. Seconds, not minutes, so nobody is tempted to skip it.
 check: _toolchain-check sync-tutorial fmt-check lint check-windows guard-vcs guard-certificate-check guard-interactive test-unit test-cmd test-smoke
 
-# Git lives in ONE place (JOY-0265-D7): joy-core/src/vcs, plus the chat
-# store's object plumbing (a git-object database, its own storage layer).
-# git2 elsewhere is compile-guarded (dev-dependency only); this guards
-# the git BINARY calls. Tests may shell git to build fixtures.
+# ZERO git processes (JOY-01FD-ED, design D3.2). Not "git lives in one
+# place" any more: joy runs on git2 alone, because the operator's reason
+# is mobile and the app has to work on a machine with no git binary at
+# all. joy-core/src/vcs is therefore no longer exempt - it is where the
+# last spawns were.
+#
+# Two things the old rule got wrong are fixed here:
+#
+#   1. It looked only for `joy_process::command("git")`. A plain
+#      `Command::new("git")` walked straight past it.
+#   2. It treated everything after a file's FIRST `#[cfg(test)]` as test
+#      code. `ai_setup.rs` has a `#[cfg(test)] fn` helper at line 195
+#      with production code below it, so every line after 195 had a free
+#      pass; JOY-01FD-ED names the same accident in chat_ref.rs, whose
+#      `gc --auto` spawn passed the guard by luck and not by sanction.
+#      The boundary is now the `#[cfg(test)]` that carries a MODULE,
+#      which is the one that runs to the end of the file.
+#
+# Test code may still build a fixture with git: a fixture is not the
+# product. joy-process is exempt as a whole because it names no program
+# - what it carries is the doc comment and the tests of the spawn
+# helper itself.
 guard-vcs:
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{justfile_directory()}}"
     bad=0
-    for f in $(grep -rl 'command("git")' crates/*/src --include='*.rs' | grep -v 'crates/joy-core/src/vcs/' | grep -v 'crates/joy-process/'); do
-        test_start=$(grep -n '#\[cfg(test)\]' "$f" | head -1 | cut -d: -f1)
-        for line in $(grep -n 'command("git")' "$f" | cut -d: -f1); do
+    spawn='(joy_process::command|Command::new)\("git"\)'
+    for f in $(grep -rlE "$spawn" crates/*/src --include='*.rs' | grep -v 'crates/joy-process/'); do
+        test_start=$(grep -n -A 1 -E '^ *#\[cfg\(test\)\] *$' "$f" \
+            | grep -B 1 -E '^[0-9]+-[ ]*(pub )?mod ' | head -1 | cut -d: -f1)
+        # a mention in a comment is prose, not a spawn
+        for line in $(grep -nE "$spawn" "$f" | grep -vE '^[0-9]+: *(//|\*|/\*)' | cut -d: -f1); do
             if [ -z "$test_start" ] || [ "$line" -lt "$test_start" ]; then
-                echo "guard-vcs: $f calls git directly (line $line); git belongs in joy-core/src/vcs"
+                echo "guard-vcs: $f spawns a git process (line $line); joy runs git2 only (design D3.2)"
                 bad=1
             fi
         done

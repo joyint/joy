@@ -16,7 +16,6 @@
 //! D3.3 in the first place.
 
 use std::path::Path;
-use std::process::Command;
 
 const ACRONYM: &str = "JOY";
 
@@ -44,18 +43,16 @@ const CASES: &[&str] = &[
 ];
 
 fn shell() -> Option<&'static str> {
-    for candidate in ["/bin/bash", "/usr/bin/bash", "bash"] {
-        if Command::new(candidate)
-            .arg("-c")
-            .arg("exit 0")
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
-        {
-            return Some(candidate);
-        }
-    }
-    None
+    ["/bin/bash", "/usr/bin/bash", "bash"]
+        .into_iter()
+        .find(|candidate| {
+            joy_process::command(candidate)
+                .arg("-c")
+                .arg("exit 0")
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+        })
 }
 
 /// Run the shipped hook over `message` in a directory that looks like a
@@ -64,7 +61,7 @@ fn hook_accepts(shell: &str, dir: &Path, message: &str) -> bool {
     let msg_file = dir.join("COMMIT_EDITMSG");
     std::fs::write(&msg_file, message).unwrap();
     let hook = dir.join("commit-msg");
-    Command::new(shell)
+    joy_process::command(shell)
         .arg(&hook)
         .arg(&msg_file)
         .current_dir(dir)

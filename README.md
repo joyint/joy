@@ -55,7 +55,7 @@ joy init     # installs commit-msg hook, sets up git hooks path
 joy ai init  # optional: configure AI tool integration
 ```
 
-`joy init` detects the existing project and switches to onboarding mode - it installs the commit-msg hook and sets `core.hooksPath` without touching project data.
+`joy init` detects the existing project and switches to onboarding mode - it installs the commit-msg hook and sets `core.hooksPath` without touching project data. If your repository already had hooks (husky, lefthook, pre-commit), Joy remembers their path and runs them after its own check, and says so once.
 
 ## Features
 
