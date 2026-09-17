@@ -167,7 +167,13 @@ impl GitVcs {
     ///
     /// In a PERSON's checkout the scoped [`GitVcs::add`] is the right
     /// verb (D3.4): this one takes whatever else was lying around with
-    /// it, and no pre-commit hook stands in the way any more.
+    /// it, and no pre-commit hook stands in the way any more. What it
+    /// will NOT do is write a path an external content filter governs:
+    /// libgit2 runs no filter program, so a changed `filter=lfs` asset
+    /// would be staged as its own bytes where the pointer belongs, and
+    /// [`forge::stage_all`] refuses such a path by name instead
+    /// (D3.4). The desktop's release record is the caller that made
+    /// this necessary here and not only in the sweeping commit verbs.
     pub fn add_all(&self, root: &Path) -> Result<(), JoyError> {
         forge::stage_all(root).map_err(|e| JoyError::Git(format!("git add -A failed: {e}")))
     }
@@ -176,6 +182,14 @@ impl GitVcs {
     /// project says is acting (D4.5): libgit2 asks who commits, and the
     /// answer is joy's identity resolution and not `git config`, so a
     /// project founded without one can still be committed to.
+    ///
+    /// It commits the WHOLE index, so like [`GitVcs::add_all`] it is a
+    /// verb for a host that staged what it wanted; the scoped path a
+    /// person's checkout wants is
+    /// [`forge::commit_index_paths`](forge::commit_index_paths), which
+    /// `joy release record` and the auto-git commit both take. A path
+    /// an external content filter governs is refused by name here too,
+    /// whoever staged it (D3.4).
     pub fn commit(&self, root: &Path, message: &str) -> Result<(), JoyError> {
         let (name, email) = crate::identity::acting_signature(root)?;
         forge::commit_index(root, message, &name, &email)

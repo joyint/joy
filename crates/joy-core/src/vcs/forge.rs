@@ -962,6 +962,40 @@ fn refuse_filtered_paths(filtered: Vec<String>) -> anyhow::Result<()> {
     )
 }
 
+/// The paths a commit of `index` would write that an external content
+/// filter governs, refused by name (D3.4).
+///
+/// The question is asked of the paths the commit really carries, which
+/// is the index against the parent's tree: a deletion writes no content
+/// and is not one of them, and a filtered path nobody staged is none of
+/// this verb's business.
+fn refuse_filtered_staged_paths(
+    repo: &git2::Repository,
+    index: &git2::Index,
+    parent: Option<&git2::Commit>,
+) -> anyhow::Result<()> {
+    let tree = parent
+        .map(|commit| commit.tree())
+        .transpose()
+        .map_err(err)?;
+    let diff = repo
+        .diff_tree_to_index(tree.as_ref(), Some(index), None)
+        .map_err(err)?;
+    let mut filtered = Vec::new();
+    for delta in diff.deltas() {
+        if delta.status() == git2::Delta::Deleted {
+            continue;
+        }
+        let Some(path) = delta.new_file().path() else {
+            continue;
+        };
+        if let Some(filter) = external_filter(repo, path) {
+            filtered.push(format!("{} (filter={filter})", path.display()));
+        }
+    }
+    refuse_filtered_paths(filtered)
+}
+
 fn origin_or_first<'r>(repo: &'r git2::Repository) -> anyhow::Result<git2::Remote<'r>> {
     match repo.find_remote("origin") {
         Ok(remote) => Ok(remote),
@@ -2390,14 +2424,57 @@ pub fn stage_paths(dir: &Path, paths: &[&str]) -> anyhow::Result<()> {
 /// Callers in a PERSON's checkout should prefer [`stage_paths`]: this
 /// one sweeps whatever else the person had lying around into the index
 /// (D3.4). It stays for the checkouts joy owns.
+///
+/// A path an external content filter governs is refused by name and
+/// nothing is written: this is the verb that turns a file into a blob,
+/// and libgit2 runs no filter program, so staging a changed
+/// `filter=lfs` asset here puts the file's own bytes where the pointer
+/// belongs (D3.4). The refusal happens before the index is written, so
+/// the checkout is left exactly as it was.
 pub fn stage_all(dir: &Path) -> anyhow::Result<()> {
     let repo = open(dir).map_err(err)?;
     let mut index = repo.index().map_err(err)?;
+    let filtered = std::cell::RefCell::new(Vec::new());
+    // Both halves need the guard: `update_all` writes the blob of a
+    // CHANGED tracked file, which is exactly the lfs asset case.
     index
-        .add_all(["*"], git2::IndexAddOption::DEFAULT, None)
+        .add_all(
+            ["*"],
+            git2::IndexAddOption::DEFAULT,
+            Some(&mut skip_filtered(&repo, &filtered)),
+        )
         .map_err(err)?;
-    index.update_all(["*"], None).map_err(err)?;
+    index
+        .update_all(["*"], Some(&mut skip_filtered(&repo, &filtered)))
+        .map_err(err)?;
+    refuse_filtered_paths(filtered.into_inner())?;
     index.write().map_err(err)
+}
+
+/// The staging callback of the sweeping verbs: skip a path an external
+/// content filter governs and remember it for [`refuse_filtered_paths`].
+///
+/// libgit2 calls this only for paths that really differ from the index
+/// (`git_index_add_all` walks the index to worktree diff, index.c:3599),
+/// so a filtered asset nobody touched costs nothing and an unchanged
+/// pointer git wrote stays exactly as git wrote it.
+fn skip_filtered<'a>(
+    repo: &'a git2::Repository,
+    filtered: &'a std::cell::RefCell<Vec<String>>,
+) -> impl FnMut(&Path, &[u8]) -> i32 + 'a {
+    move |path: &Path, _spec: &[u8]| -> i32 {
+        match external_filter(repo, path) {
+            Some(filter) => {
+                let named = format!("{} (filter={filter})", path.display());
+                let mut list = filtered.borrow_mut();
+                if !list.contains(&named) {
+                    list.push(named);
+                }
+                1 // skip, and the refusal says why
+            }
+            None => 0,
+        }
+    }
 }
 
 /// Every local tag whose name starts with `v` or `V`, newest first:
@@ -2658,6 +2735,13 @@ pub fn set_unborn_branch(dir: &Path, branch: &str) -> anyhow::Result<()> {
 
 /// Commit exactly what the index holds, as `author`: joy init stages the
 /// files it wrote, and a host commits them without guessing which.
+///
+/// It commits the WHOLE index, so it belongs to a host that staged what
+/// it wanted and to no other. A path an external content filter governs
+/// is refused by name here as well, wherever its index entry came from:
+/// D3.4's rule is absolute for a person's checkout ("joy never commits
+/// such a path"), and this verb is the one the desktop's release record
+/// still reaches.
 pub fn commit_index(
     repo_dir: &Path,
     message: &str,
@@ -2666,14 +2750,15 @@ pub fn commit_index(
 ) -> anyhow::Result<String> {
     let repo = open(repo_dir).map_err(err)?;
     let mut index = repo.index().map_err(err)?;
-    let tree_id = index.write_tree().map_err(err)?;
-    let tree = repo.find_tree(tree_id).map_err(err)?;
     let signature = signature_now(repo_dir, author_name, author_email)?;
     let parent = repo
         .head()
         .ok()
         .and_then(|h| h.target())
         .and_then(|oid| repo.find_commit(oid).ok());
+    refuse_filtered_staged_paths(&repo, &index, parent.as_ref())?;
+    let tree_id = index.write_tree().map_err(err)?;
+    let tree = repo.find_tree(tree_id).map_err(err)?;
     let parents: Vec<&git2::Commit> = parent.iter().collect();
     let oid = repo
         .commit(
@@ -2863,17 +2948,7 @@ pub fn commit_everything(
         .add_all(
             ["."],
             git2::IndexAddOption::DEFAULT,
-            Some(&mut |path: &Path, _spec: &[u8]| -> i32 {
-                match external_filter(&repo, path) {
-                    Some(filter) => {
-                        filtered
-                            .borrow_mut()
-                            .push(format!("{} (filter={filter})", path.display()));
-                        1 // skip, and the refusal below says why
-                    }
-                    None => 0,
-                }
-            }),
+            Some(&mut skip_filtered(&repo, &filtered)),
         )
         .map_err(err)?;
     refuse_filtered_paths(filtered.into_inner())?;
@@ -4238,6 +4313,72 @@ mod clean_filter_tests {
             assert!(text.contains("filter=lfs"), "{sweeper}: {text}");
             assert!(text.contains("runs none"), "{sweeper}: {text}");
         }
+    }
+
+    /// The two verbs a PERSON's checkout still reaches, which the first
+    /// audit missed because this package created them: the desktop's
+    /// release record is `add_all` plus `commit` (release_ops.rs:343),
+    /// and before the git2 only move those were `git add -A` and
+    /// `git commit`, which DID run the person's clean filter. Now they
+    /// refuse the path instead of writing the file where the pointer
+    /// belongs, and the index is left exactly as it was.
+    #[test]
+    fn the_verbs_a_persons_checkout_reaches_refuse_a_filtered_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let repo = git2::Repository::init(root).unwrap();
+        std::fs::write(root.join(".gitattributes"), "*.psd filter=lfs -text\n").unwrap();
+        std::fs::write(root.join("art.psd"), "pointer, please").unwrap();
+
+        // 1. the staging verb: this is where a file becomes a blob.
+        let failed = stage_all(root).expect_err("a filtered path is refused");
+        let text = failed.to_string();
+        assert!(text.contains("art.psd"), "{text}");
+        assert!(text.contains("filter=lfs"), "{text}");
+        let index = repo.index().unwrap();
+        assert!(
+            index.get_path(Path::new("art.psd"), 0).is_none(),
+            "nothing was written to the index"
+        );
+
+        // 2. the commit verb, for an entry that got in some other way.
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("art.psd")).unwrap();
+        index.write().unwrap();
+        let failed = commit_index(root, "bump to v1.2.3 [no-item]", "T", "t@example.com")
+            .expect_err("a commit of a filtered path is refused wherever the entry came from");
+        let text = failed.to_string();
+        assert!(text.contains("art.psd"), "{text}");
+        assert!(repo.head().is_err(), "no commit was written: {text}");
+    }
+
+    /// ...and the same two verbs are untouched in a checkout that has
+    /// no such attribute, including the release record shape the
+    /// desktop runs: stage everything, commit the index.
+    #[test]
+    fn the_same_verbs_commit_an_ordinary_checkout_as_before() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let repo = git2::Repository::init(root).unwrap();
+        std::fs::write(root.join("Cargo.toml"), "version = \"0.0.2\"\n").unwrap();
+
+        stage_all(root).unwrap();
+        let oid = commit_index(root, "bump to v0.0.2 [no-item]", "T", "t@example.com").unwrap();
+        let commit = repo
+            .find_commit(git2::Oid::from_str(&oid).unwrap())
+            .unwrap();
+        assert!(commit
+            .tree()
+            .unwrap()
+            .get_path(Path::new("Cargo.toml"))
+            .is_ok());
+
+        // A second round, where the path is tracked and CHANGED: that is
+        // `update_all`'s half of `git add -A`, and the guard sits on it
+        // too.
+        std::fs::write(root.join("Cargo.toml"), "version = \"0.0.3\"\n").unwrap();
+        stage_all(root).unwrap();
+        assert!(commit_index(root, "bump to v0.0.3 [no-item]", "T", "t@example.com").is_ok());
     }
 
     /// A repository without such an attribute is untouched by the
