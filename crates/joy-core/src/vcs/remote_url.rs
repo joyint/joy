@@ -129,6 +129,22 @@ impl RemoteUrl {
     }
 }
 
+/// The transport a URL's SCHEME names, for a text [`RemoteUrl::parse`]
+/// refused: `https://host:99999/o/r.git` carries no readable authority,
+/// but it is still an https remote, and every caller that only needs
+/// the branch (D1.8a) should hear that rather than "local". `None` for
+/// a text with no scheme and for a scheme joy does not speak.
+pub fn scheme_transport(url: &str) -> Option<Transport> {
+    match split_scheme(url.trim())? {
+        ("https", _) => Some(Transport::Https),
+        ("http", _) => Some(Transport::Http),
+        ("ssh", _) | ("git+ssh", _) => Some(Transport::Ssh),
+        ("git", _) => Some(Transport::Git),
+        ("file", _) => Some(Transport::Local),
+        _ => None,
+    }
+}
+
 /// A `file://` URL is local; joy keeps the path and stops there.
 fn local(rest: &str) -> Option<RemoteUrl> {
     let path = rest.strip_prefix("//").unwrap_or(rest);
@@ -388,5 +404,36 @@ mod tests {
         let parsed = RemoteUrl::parse("https://someone@gitlab.com/o/r.git").unwrap();
         assert_eq!(parsed.user.as_deref(), Some("someone"));
         assert_eq!(parsed.host, "gitlab.com");
+    }
+
+    /// The scheme alone still names a transport for a URL the full
+    /// parser refuses, so a broken remote keeps the branch it belongs
+    /// to instead of falling to "local".
+    #[test]
+    fn the_scheme_names_a_transport_even_when_the_rest_is_unreadable() {
+        assert_eq!(
+            scheme_transport("https://host.example.com:99999/o/r.git"),
+            Some(Transport::Https)
+        );
+        assert_eq!(
+            scheme_transport("HTTP://host.example.com/o/r"),
+            Some(Transport::Http)
+        );
+        assert_eq!(
+            scheme_transport("git+ssh://host.example.com/o/r"),
+            Some(Transport::Ssh)
+        );
+        assert_eq!(
+            scheme_transport("git://host.example.com/o/r"),
+            Some(Transport::Git)
+        );
+        assert_eq!(
+            scheme_transport("file:///srv/repo.git"),
+            Some(Transport::Local)
+        );
+        // A scheme joy does not speak, and a text with no scheme.
+        assert_eq!(scheme_transport("ftps://host.example.com/o/r"), None);
+        assert_eq!(scheme_transport("git@github.com:o/r.git"), None);
+        assert_eq!(scheme_transport("/srv/repo.git"), None);
     }
 }

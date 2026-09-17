@@ -348,7 +348,12 @@ impl ContactEvidence {
 pub fn transport_of(url: &str) -> Transport {
     match super::remote_url::RemoteUrl::parse(url) {
         Some(parsed) => Transport::of(parsed.transport),
-        None => Transport::Local,
+        // A text the parser refuses is a path on this machine, unless
+        // it still NAMES a transport: `https://host:99999/o/r.git` is a
+        // broken https remote and not a local one, and calling it local
+        // would hand the classifier the local-fault wording for a
+        // contact that really went to a forge.
+        None => super::remote_url::scheme_transport(url).map_or(Transport::Local, Transport::of),
     }
 }
 
@@ -1485,37 +1490,53 @@ pub fn host_of(url: &str) -> String {
     match super::remote_url::RemoteUrl::parse(url) {
         Some(parsed) => parsed.host,
         // Not a remote URL: either a path on this machine, which has no
-        // host, or a host name that was taken out of a URL already.
-        // [`forge_name`] and the throttle are handed both.
+        // host, a host name that was taken out of a URL already, or a
+        // URL the parser refused (a port that is not a port, say). The
+        // throttle is handed all three, so a name is read out of the
+        // text rather than dropped.
         None => bare_host(url),
     }
 }
 
-/// A host that is already a host, lowercased so that every key joy
-/// builds from it matches: `github.com`, `git.example.org:2222`. A path
-/// has none, and answers with the empty string.
+/// The host of a text the parser refused, lowercased so that every key
+/// joy builds from it matches: a host that is already a host
+/// (`github.com`), or the host part of a URL that is a URL in shape but
+/// not in detail (`https://github.com:99999/o/r.git` ->
+/// `github.com`). A port is not part of the name, and a path on this
+/// machine has no name at all and answers with the empty string.
+///
+/// This is the only text joy still scans instead of parsing, and it
+/// runs only where the parser has already said no: a throttle key of
+/// `https` (the SCHEME read as the host) would put every malformed
+/// remote on one gate.
 fn bare_host(text: &str) -> String {
+    // A scheme is not a host. The parser refused this text, so the
+    // scheme is dropped here the way the parser drops it.
     let text = text.trim();
+    let text = text.split_once("://").map_or(text, |(_, rest)| rest);
     // A path the parser refused for the same reason it refuses it as a
     // remote (`scp_like`): `..` is not a forge, and a key built from it
     // would name one.
     if text.starts_with(['/', '.', '~']) {
         return String::new();
     }
-    let rest = text.rsplit('@').next().unwrap_or(text);
-    rest.split(['/', ':'])
-        .next()
-        .unwrap_or_default()
+    let rest = text.rsplit_once('@').map_or(text, |(_, host)| host);
+    rest.split_once(['/', ':'])
+        .map_or(rest, |(host, _)| host)
         .to_ascii_lowercase()
 }
 
-/// A user-facing name for the forge behind a URL or a host.
-pub fn forge_name(url: &str) -> String {
-    let host = host_of(url);
-    match host.as_str() {
+/// A user-facing name for the forge with this HOST: the host every
+/// caller already has out of [`host_of`], never a URL. Reading a URL
+/// twice is how the sentence of D4.7 and the throttle key end up
+/// naming two different forges.
+pub fn forge_name(host: &str) -> String {
+    match host {
         "github.com" => "GitHub".into(),
         "gitlab.com" => "GitLab".into(),
         "codeberg.org" => "Codeberg".into(),
+        // No host: a path on this machine, or a text nothing could read
+        // a host out of. The sentence still needs a subject.
         "" => "the forge".into(),
         other => other.to_string(),
     }

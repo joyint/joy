@@ -1049,8 +1049,13 @@ fn hosts_and_names_come_out_of_every_url_shape() {
     assert_eq!(host_of("https://codeberg.org/joyint/x.git"), "codeberg.org");
     assert_eq!(host_of("git@github.com:joyint/x.git"), "github.com");
     assert_eq!(host_of("https://user:tok@gitlab.com/a/b"), "gitlab.com");
-    assert_eq!(forge_name("https://codeberg.org/a/b"), "Codeberg");
-    assert_eq!(forge_name("https://git.example.org/a/b"), "git.example.org");
+    // `forge_name` names a HOST, the one its caller already read out
+    // of the URL, so the sentence and the throttle key never disagree.
+    assert_eq!(forge_name(&host_of("https://codeberg.org/a/b")), "Codeberg");
+    assert_eq!(
+        forge_name(&host_of("https://git.example.org/a/b")),
+        "git.example.org"
+    );
     assert_eq!(transport_of("https://codeberg.org/a/b"), Transport::Https);
     assert_eq!(transport_of("git@github.com:a/b.git"), Transport::Ssh);
     assert_eq!(transport_of("ssh://git@github.com/a/b"), Transport::Ssh);
@@ -1081,9 +1086,53 @@ fn the_host_comes_out_of_the_one_url_parser() {
     assert_eq!(host_of("github.com"), "github.com");
     assert_eq!(forge_name("github.com"), "GitHub");
     assert_eq!(forge_name("git.example.org"), "git.example.org");
+    // An IPv6 host is one name in the sentence too, not the digits in
+    // front of its first colon.
+    assert_eq!(
+        forge_name(&host_of("https://[2001:db8::1]/o/r")),
+        "2001:db8::1"
+    );
     // A path on this machine has no host and no forge.
     assert_eq!(host_of("../sibling.git"), "");
-    assert_eq!(forge_name("/tmp/forge.git"), "the forge");
+    assert_eq!(forge_name(&host_of("/tmp/forge.git")), "the forge");
+}
+
+/// A URL that is a URL in shape but not in detail (a port no port
+/// number fits) is still that forge's URL: the scheme is never the
+/// host, or every broken remote in the tree would share one throttle
+/// gate named `https`, and the transport is still the one the scheme
+/// names, or the D1.8a classifier reads a forge fault as a local one.
+#[test]
+fn a_url_the_parser_refuses_still_names_its_host_and_its_transport() {
+    assert_eq!(host_of("https://github.com:99999/o/r.git"), "github.com");
+    assert_eq!(host_of("ftps://host.example.com/o/r"), "host.example.com");
+    assert_eq!(
+        host_of("svn+ssh://host.example.com/o/r"),
+        "host.example.com"
+    );
+    assert_eq!(
+        host_of("https://user@host.example.com:99999/o/r"),
+        "host.example.com"
+    );
+    // A scheme and nothing else names nothing.
+    assert_eq!(host_of("https://"), "");
+    assert_eq!(
+        forge_name(&host_of("https://github.com:99999/o/r.git")),
+        "GitHub"
+    );
+    assert_eq!(
+        transport_of("https://github.com:99999/o/r.git"),
+        Transport::Https
+    );
+    assert_eq!(
+        transport_of("ssh://git@github.com:99999/o/r.git"),
+        Transport::Ssh
+    );
+    // A scheme joy does not speak is nothing joy contacts.
+    assert_eq!(
+        transport_of("ftps://host.example.com/o/r"),
+        Transport::Local
+    );
 }
 
 /// The three words of D1.8a over the five shapes the parser knows:
