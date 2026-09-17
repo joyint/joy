@@ -16,8 +16,9 @@
 //! `ca_bundle` / `ca_dir` in `forges.yaml`, and `http.sslCAInfo` /
 //! `http.sslCAPath` from git config, because that is the setting a
 //! corporate workstation image already carries. On macOS and Windows
-//! those are refused with the sentence that names the system store,
-//! because the engine cannot honour them there either
+//! those are refused with one sentence per entry that names the entry,
+//! where it came from and the step that does work there, because the
+//! engine cannot honour them there either
 //! (`GIT_OPT_SET_SSL_CERT_LOCATIONS` is compiled for OpenSSL and
 //! mbedTLS only).
 //!
@@ -42,35 +43,101 @@ pub enum Trust {
     },
 }
 
-/// The sentence a person reads when they set a CA file on an operating
-/// system whose store joy cannot replace.
-pub const FOREIGN_CA_SENTENCE: &str =
-    "git's http.sslCAInfo does not apply here; install the certificate in the system keychain (macOS) or the Windows certificate store.";
+/// Where a refused entry came from, for the sentence that names it.
+const FORGES_YAML: &str = "forges.yaml";
+const GIT_CONFIG: &str = "git config";
+
+/// The sentence a person reads when they set a CA location on an
+/// operating system whose store joy cannot replace (D1.12).
+///
+/// It is word for word the sentence `joy_core::vcs::proxy` prints for
+/// the same entry on the engine side, and its per OS step is the
+/// `tls_untrusted` next step of D1.8c, so a person behind an
+/// intercepting CA reads ONE instruction and not two, whichever half of
+/// joy made the contact.
+pub fn foreign_ca_sentence(key: &str, source: &str) -> String {
+    // The connector ships for Linux, macOS and Windows and nothing else
+    // (docs/plugins.md, "The size of the connector"), and Linux never
+    // reaches this sentence, so the two stores that refuse are the
+    // whole of the choice.
+    let step = if cfg!(windows) {
+        "your administrator must install the CA in the Windows certificate store"
+    } else {
+        "add your organisation's CA to the login or System keychain and mark it trusted"
+    };
+    format!(
+        "joy ignores {key} from {source}: it does not apply here, because this system checks \
+         certificates against its own store. To trust an internal CA, {step}."
+    )
+}
+
+/// One configured CA location, with the key it was written under and
+/// the place it came from, so that a refusal can name both (D1.12).
+struct Configured {
+    key: &'static str,
+    source: &'static str,
+    path: PathBuf,
+}
+
+/// The `forges.yaml` entry wins over the git config key, and whichever
+/// answers keeps its own name.
+fn configured(
+    from_instance: Option<PathBuf>,
+    instance_key: &'static str,
+    from_git: Option<PathBuf>,
+    git_key: &'static str,
+) -> Option<Configured> {
+    if let Some(path) = from_instance {
+        return Some(Configured {
+            key: instance_key,
+            source: FORGES_YAML,
+            path,
+        });
+    }
+    from_git.map(|path| Configured {
+        key: git_key,
+        source: GIT_CONFIG,
+        path,
+    })
+}
 
 /// The trust for one instance: the configured files where this
 /// operating system can honour them, the platform store otherwise.
 ///
-/// `report` receives the refusal sentence where one is due, so the
-/// caller decides where it goes (the connector writes it on stderr).
+/// `report` receives one refusal sentence per refused entry, so the
+/// caller decides where they go (the connector writes them on stderr).
 pub fn decide(
     instance: Option<&Instance>,
     config: &GitConfig,
     report: &mut dyn FnMut(&str),
 ) -> Trust {
-    let bundle = instance
-        .and_then(|i| i.ca_bundle.clone())
-        .or_else(|| config.get("http", "sslcainfo").map(PathBuf::from));
-    let dir = instance
-        .and_then(|i| i.ca_dir.clone())
-        .or_else(|| config.get("http", "sslcapath").map(PathBuf::from));
+    let bundle = configured(
+        instance.and_then(|i| i.ca_bundle.clone()),
+        "ca_bundle",
+        config.get("http", "sslcainfo").map(PathBuf::from),
+        "http.sslCAInfo",
+    );
+    let dir = configured(
+        instance.and_then(|i| i.ca_dir.clone()),
+        "ca_dir",
+        config.get("http", "sslcapath").map(PathBuf::from),
+        "http.sslCAPath",
+    );
     if bundle.is_none() && dir.is_none() {
         return Trust::Platform;
     }
     if !cfg!(target_os = "linux") {
-        report(FOREIGN_CA_SENTENCE);
+        // One sentence per entry and not one for the pair: somebody who
+        // set two keys is told about both, by name.
+        for entry in [&bundle, &dir].into_iter().flatten() {
+            report(&foreign_ca_sentence(entry.key, entry.source));
+        }
         return Trust::Platform;
     }
-    Trust::Files { bundle, dir }
+    Trust::Files {
+        bundle: bundle.map(|entry| entry.path),
+        dir: dir.map(|entry| entry.path),
+    }
 }
 
 /// Every certificate in a bundle file and a directory of PEM files.
@@ -199,7 +266,40 @@ mod tests {
             assert!(said.is_empty());
         } else {
             assert_eq!(trust, Trust::Platform);
-            assert_eq!(said, vec![FOREIGN_CA_SENTENCE.to_string()]);
+            assert_eq!(said, vec![foreign_ca_sentence("ca_bundle", "forges.yaml")]);
+        }
+    }
+
+    // D1.12 quotes this sentence, and `joy_core::vcs::proxy::ca_refusal`
+    // builds the same one for the same entry on the engine side. The
+    // half of joy that refuses is not the half CI runs on, so the
+    // wording is checked here on every operating system.
+    #[test]
+    fn the_refusal_names_the_entry_its_source_and_the_step_of_this_system() {
+        let said = foreign_ca_sentence("http.sslCAInfo", "git config");
+        assert!(
+            said.starts_with(
+                "joy ignores http.sslCAInfo from git config: it does not apply here, because \
+                 this system checks certificates against its own store. To trust an internal \
+                 CA, "
+            ),
+            "{said}"
+        );
+        if cfg!(windows) {
+            assert!(
+                said.ends_with(
+                    "your administrator must install the CA in the Windows certificate store."
+                ),
+                "{said}"
+            );
+        } else {
+            assert!(
+                said.ends_with(
+                    "add your organisation's CA to the login or System keychain and mark it \
+                     trusted."
+                ),
+                "{said}"
+            );
         }
     }
 
