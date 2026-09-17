@@ -188,6 +188,79 @@ pub fn build_suggestion(inp: &Inputs) -> String {
     assemble("", &trailers, &comments)
 }
 
+/// A commit message that references no Joy item (D3.3 of the forge
+/// connection NG design). Carries what the ADR-015 diagnostic needs, so
+/// the text is built once and every caller prints the same thing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommitMsgError {
+    /// The project acronym the message had to name.
+    pub acronym: String,
+    /// The first line of the message, quoted back in the diagnostic.
+    pub subject: String,
+}
+
+impl std::fmt::Display for CommitMsgError {
+    /// The ADR-015 diagnostic the bash hook prints, so a caller that
+    /// refuses can print this and nothing else.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self { acronym, subject } = self;
+        writeln!(f, "commit message must reference a Joy item")?;
+        writeln!(f, "  |")?;
+        writeln!(f, "  | {subject}")?;
+        writeln!(f, "  | ^ no {acronym}-XXXX item ID found")?;
+        writeln!(f, "  |")?;
+        writeln!(
+            f,
+            "  = help: add an item ID to your commit message (e.g. {acronym}-0001)"
+        )?;
+        write!(
+            f,
+            "  = note: use [no-item] tag for infrastructure commits without a Joy item"
+        )
+    }
+}
+
+impl std::error::Error for CommitMsgError {}
+
+/// The item reference rule of `.joy/hooks/commit-msg`, in process (D3.3).
+///
+/// libgit2 runs no hooks, so every commit joy writes itself passes this
+/// instead of the bash hook. The rule is the hook's, verbatim: a
+/// `[no-item]` anywhere bypasses it, an empty acronym is no rule at all
+/// (the hook exits 0 when it finds none), and an item id is the acronym
+/// followed by four hex digits and an optional two more, matched anywhere
+/// in the message.
+///
+/// The merge exemption is the CALLER's: the hook reads `MERGE_HEAD` from
+/// the git directory, and this function is given a message and nothing
+/// else. joy's own commit paths never write a merge commit through it.
+pub fn validate(message: &str, acronym: &str) -> Result<(), CommitMsgError> {
+    let acronym = acronym.trim();
+    if acronym.is_empty() || message.contains("[no-item]") || references_item(message, acronym) {
+        return Ok(());
+    }
+    Err(CommitMsgError {
+        acronym: acronym.to_string(),
+        subject: message.lines().next().unwrap_or_default().to_string(),
+    })
+}
+
+/// `ACRONYM-[0-9A-Fa-f]{4}(-[0-9A-Fa-f]{2})?` anywhere in `message`. The
+/// optional suffix changes nothing about whether the message matches (a
+/// four digit id is already a match), so only the first group is checked,
+/// exactly as the hook's `grep -E` decides it.
+fn references_item(message: &str, acronym: &str) -> bool {
+    let needle = format!("{acronym}-");
+    message.match_indices(&needle).any(|(at, _)| {
+        message[at + needle.len()..]
+            .chars()
+            .take(4)
+            .filter(|c| c.is_ascii_hexdigit())
+            .count()
+            == 4
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -328,5 +401,39 @@ mod tests {
         let first = msg.lines().next().unwrap();
         assert!(first.contains("[JOY-0005-EE]"));
         assert!(first.contains("[JOY-0006-FF]"));
+    }
+
+    /// D3.3: the in-process rule answers exactly what the bash hook
+    /// answers, for the cases the hook enumerates.
+    #[test]
+    fn the_item_rule_matches_the_hook() {
+        assert!(validate("feat: [JOY-0005-EE] do it", "JOY").is_ok());
+        assert!(validate("feat: JOY-0005 do it", "JOY").is_ok());
+        assert!(validate("chore: bump the app [no-item]", "JOY").is_ok());
+        // An id somewhere in the body counts, as `grep -E` over the whole
+        // message counts it.
+        assert!(validate("joy: add a task\n\nrefs JOY-00ab", "JOY").is_ok());
+        // No acronym, no rule: the hook exits 0 on a project without one.
+        assert!(validate("joy: anything", "").is_ok());
+
+        // Too few digits, the wrong acronym, and nothing at all.
+        assert!(validate("joy: add a task", "JOY").is_err());
+        assert!(validate("feat: JOY-12 do it", "JOY").is_err());
+        assert!(validate("feat: [ANO-0005-EE] do it", "JOY").is_err());
+    }
+
+    /// The refusal carries the ADR-015 diagnostic, so a caller only has
+    /// to print it.
+    #[test]
+    fn the_refusal_reads_like_the_hook() {
+        let err = validate("joy: auth passphrase", "ANO").unwrap_err();
+        let text = err.to_string();
+        assert!(
+            text.contains("commit message must reference a Joy item"),
+            "{text}"
+        );
+        assert!(text.contains("| joy: auth passphrase"), "{text}");
+        assert!(text.contains("no ANO-XXXX item ID found"), "{text}");
+        assert!(text.contains("use [no-item] tag"), "{text}");
     }
 }

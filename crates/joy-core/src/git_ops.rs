@@ -5,10 +5,13 @@
 //! All operations are best-effort: failures print a warning but never
 //! abort the Joy command.
 
-use std::path::Path;
+use std::collections::{BTreeSet, HashMap};
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 
 use crate::error::JoyError;
 use crate::model::config::AutoGit;
+use crate::model::project::Project;
 use crate::store;
 use crate::vcs::default_vcs;
 
@@ -42,6 +45,58 @@ pub fn auto_git_add(root: &Path, paths: &[&str]) {
     }
     if let Err(e) = vcs.add(root, &kept) {
         eprintln!("Warning: auto-git add failed: {e}");
+        return;
+    }
+    remember_joy_paths(root, &kept);
+}
+
+/// The paths joy itself staged in this process, per project root (D3.4).
+/// [`auto_git_post_command`] commits these and nothing else, so a commit
+/// joy writes carries joy's own writes and never a person's half staged
+/// work. Process state on purpose: it is the record of what THIS run did,
+/// and it must not outlive the run or travel to another checkout.
+static JOY_STAGED: OnceLock<Mutex<HashMap<PathBuf, BTreeSet<String>>>> = OnceLock::new();
+
+fn joy_staged() -> &'static Mutex<HashMap<PathBuf, BTreeSet<String>>> {
+    JOY_STAGED.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Record paths joy staged in `root`, normalised the way an index entry
+/// spells them (forward slashes, no leading `./`).
+fn remember_joy_paths(root: &Path, paths: &[&str]) {
+    let Ok(mut staged) = joy_staged().lock() else {
+        return;
+    };
+    let entry = staged.entry(root.to_path_buf()).or_default();
+    for path in paths {
+        let path = path.replace('\\', "/");
+        let path = path.trim_start_matches("./").trim_matches('/');
+        if !path.is_empty() {
+            entry.insert(path.to_string());
+        }
+    }
+}
+
+/// What the next commit in `root` may touch: joy's own directory, which
+/// is joy's by definition, plus every path this run staged (SECURITY.md,
+/// `.gitignore`, `.gitattributes`, a version file a release bumped).
+/// Taken out of the record, so a second command in the same process does
+/// not re-commit the first one's scope.
+fn take_joy_paths(root: &Path) -> Vec<String> {
+    let mut paths = BTreeSet::from([store::JOY_DIR.to_string()]);
+    if let Ok(mut staged) = joy_staged().lock() {
+        if let Some(own) = staged.remove(root) {
+            paths.extend(own);
+        }
+    }
+    paths.into_iter().collect()
+}
+
+/// Put a scope back after a commit that did not happen, so the paths are
+/// not lost for the next write in the same run.
+fn return_joy_paths(root: &Path, paths: Vec<String>) {
+    if let Ok(mut staged) = joy_staged().lock() {
+        staged.entry(root.to_path_buf()).or_default().extend(paths);
     }
 }
 
@@ -67,21 +122,26 @@ pub fn auto_git_post_command(root: &Path, summary: &str, identity: &str) {
     }
 
     let vcs = default_vcs();
+    let project = store::load_project(root).ok();
 
     let message = format!("joy: {summary}\n\nCo-Authored-By: {identity}");
-    let signature = match acting_signature(root, identity) {
+    warn_about_a_missing_item(&message, project.as_ref());
+    let signature = match acting_signature(root, identity, project.as_ref()) {
         Ok(signature) => signature,
         Err(e) => {
             eprintln!("Warning: auto-git commit skipped: {e}");
             return;
         }
     };
-    match crate::vcs::forge::commit_index_if_changed(root, &message, &signature.0, &signature.1) {
-        // nothing staged that HEAD does not already carry: not an error
+    let paths = take_joy_paths(root);
+    match crate::vcs::forge::commit_index_paths(root, &paths, &message, &signature.0, &signature.1)
+    {
+        // nothing under joy's paths that HEAD does not already carry
         Ok(None) => return,
         Ok(Some(_)) => {}
         Err(e) => {
             eprintln!("Warning: auto-git commit failed: {e}");
+            return_joy_paths(root, paths);
             return;
         }
     }
@@ -101,14 +161,41 @@ pub fn auto_git_post_command(root: &Path, summary: &str, identity: &str) {
 /// not name anybody (no session, no pin, no git config), the project's
 /// own answer is asked for before giving up, so the message a person sees
 /// is the typed one and not git2's parse error.
-fn acting_signature(root: &Path, identity: &str) -> Result<(String, String), JoyError> {
+fn acting_signature(
+    root: &Path,
+    identity: &str,
+    project: Option<&Project>,
+) -> Result<(String, String), JoyError> {
     let member = identity.split_whitespace().next().unwrap_or_default();
     if !member.is_empty() {
         return crate::identity::commit_signature(root, member);
     }
-    let project = store::load_project(root)?;
-    let member = crate::identity::acting_member(root, &project, None)?;
+    let project = project.ok_or(JoyError::UnknownActingMember)?;
+    let member = crate::identity::acting_member(root, project, None)?;
     crate::identity::commit_signature(root, &member)
+}
+
+/// The item reference rule of D3.3, applied to joy's own commit.
+///
+/// libgit2 runs no hooks, so `.joy/hooks/commit-msg` never sees the
+/// commits joy writes for itself and the rule it enforces for a person's
+/// `git commit` would be enforced for nobody here. It WARNS and proceeds,
+/// as D3.3 decides: refusing would strand the write joy just made with
+/// uncommitted `.joy` changes and no way for the person to fix a message
+/// they never typed.
+fn warn_about_a_missing_item(message: &str, project: Option<&Project>) {
+    let Some(acronym) = project.and_then(|p| p.acronym.as_deref()) else {
+        return;
+    };
+    if let Err(e) = crate::commit_msg::validate(message, acronym) {
+        // One line, not the hook's full diagnostic: the person did not
+        // write this message and cannot fix it, and the commit happened
+        // anyway. The diagnostic belongs to the paths that refuse.
+        eprintln!(
+            "Warning: the commit joy just wrote references no {} item: {}",
+            e.acronym, e.subject
+        );
+    }
 }
 
 #[cfg(test)]

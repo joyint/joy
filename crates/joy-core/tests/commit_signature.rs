@@ -104,6 +104,62 @@ fn a_commit_in_an_anonymous_project_carries_the_opaque_id_in_both_fields() {
     }
 }
 
+/// The rule is the PROJECT's, not the shape of the string the caller
+/// carries: hand the gate the person's address in an anonymous project
+/// and it signs with the opaque id all the same. Every auth and crypt
+/// path still holds a raw address until J11 moves them onto
+/// `resolve_identity`, so this is the case that decides whether a git2
+/// commit can undo ADR-042.
+#[test]
+fn an_address_in_an_anonymous_project_is_still_signed_as_the_opaque_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let seed = founded(root, "scotty@example.com");
+
+    joy_core::vcs::forge::local_config_set(root, "user.name", "Scotty").unwrap();
+    joy_core::vcs::forge::local_config_set(root, "user.email", "scotty@example.com").unwrap();
+
+    let mut project = joy_core::store::load_project(root).unwrap();
+    let renamed = joy_core::privacy::switch_to_anonymous(root, &mut project, &seed).unwrap();
+    let opaque = renamed
+        .into_iter()
+        .find(|(email, _)| email == "scotty@example.com")
+        .map(|(_, id)| id)
+        .expect("the founder was rekeyed");
+
+    // The ADDRESS goes in, the opaque id comes out, in both fields.
+    let (name, email) = joy_core::identity::commit_signature(root, "scotty@example.com").unwrap();
+    assert_eq!(name, opaque);
+    assert_eq!(email, opaque);
+
+    // The same through the gate every commit passes: the caller's name
+    // and address are both dropped.
+    let project = joy_core::store::load_project(root).unwrap();
+    assert_eq!(
+        joy_core::vcs::forge::member_signature(
+            Some(&project),
+            "scotty@example.com",
+            Some("Scotty")
+        )
+        .unwrap(),
+        (opaque.clone(), opaque.clone())
+    );
+
+    // An address this project cannot map to a member is refused, not
+    // signed with: in an anonymous project there is no safe way to write
+    // it down.
+    let err = joy_core::vcs::forge::member_signature(
+        Some(&project),
+        "stranger@example.com",
+        Some("Stranger"),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(err, joy_core::error::JoyError::UnknownActingMember),
+        "{err}"
+    );
+}
+
 /// Open mode: the e-mail is the member, and the git config name rides
 /// along only while it maps to that very member.
 #[test]

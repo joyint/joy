@@ -284,9 +284,16 @@ pub fn pin_acting_member(root: &Path, project: &Project, member: &str) {
         return;
     }
     let git_email = crate::vcs::default_vcs().user_email().unwrap_or_default();
+    // The SAME resolution `resolve_identity` applies to git config, forge
+    // fallback included (JOY-0253-8A): a machine whose git config holds a
+    // forge alias that the plugin maps to this member is answered
+    // correctly without a pin, so it must not keep one either. The two
+    // functions would otherwise disagree about what "git config names
+    // them" means, and the pin would outrank a config that was fine.
     let git_config_names_them = !git_email.trim().is_empty()
         && (git_email == member
-            || crate::privacy::member_key_for_email(project, &git_email).as_deref()
+            || crate::privacy::member_key_for_email_or_forge(project, root, &git_email, None)
+                .as_deref()
                 == Some(member));
     let wanted = (!git_config_names_them).then_some(member);
     if let Err(e) = set_member_pin(root, wanted) {
@@ -369,20 +376,33 @@ pub fn acting_member(
 /// The signature a commit of `member` carries in THIS checkout (D4.5).
 /// git config is consulted for the display name only, and only when it
 /// maps to this very member; everything else comes from the member id.
+///
+/// `member` may be an address rather than a member key: until J11 lands,
+/// every auth and crypt path still holds one. The project decides what is
+/// signed, so an address in an anonymous project is signed as its opaque
+/// id and never as itself (ADR-042).
 pub fn commit_signature(root: &Path, member: &str) -> Result<(String, String), JoyError> {
     let project = load_project_optional(root);
+    // The at-rest key of the acting member, so the name check below
+    // compares like with like whatever the caller was holding.
+    let key = project.as_ref().and_then(|p| {
+        p.member_by_key(member)
+            .is_some()
+            .then(|| member.to_string())
+            .or_else(|| crate::privacy::member_key_for_email(p, member))
+    });
     let config_name = crate::vcs::forge::repo_identity(root)
         .ok()
         .and_then(|(name, email)| {
-            let maps_to_member = match project.as_ref() {
-                Some(p) => {
-                    crate::privacy::member_key_for_email(p, &email).as_deref() == Some(member)
+            let maps_to_member = match (project.as_ref(), key.as_deref()) {
+                (Some(p), Some(key)) => {
+                    crate::privacy::member_key_for_email(p, &email).as_deref() == Some(key)
                 }
-                None => email == member,
+                _ => email == member,
             };
             maps_to_member.then_some(name)
         });
-    crate::vcs::forge::member_signature(member, config_name.as_deref())
+    crate::vcs::forge::member_signature(project.as_ref(), member, config_name.as_deref())
 }
 
 /// Check whether the project has any AI members.
