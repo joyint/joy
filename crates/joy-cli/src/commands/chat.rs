@@ -116,15 +116,24 @@ fn chat_auth() -> joy_core::vcs::forge::Auth {
     joy_core::vcs::forge::Auth::LocalAs(joy_core::host::process_host())
 }
 
-/// The remote a chat sync uses, and whether this project has one at all.
-/// A project without it is local-only: chats stay local and nothing is
+/// Whether this project has a forge a chat sync can reach at all. A
+/// project without one is local only: chats stay local and nothing is
 /// said about a forge that is not there.
-fn chat_remote(root: &std::path::Path) -> Option<String> {
-    let remote = joy_core::store::load_config()
-        .sync
-        .map(|s| s.remote)
-        .unwrap_or_else(|| "origin".to_string());
-    joy_core::vcs::remote_exists(root, &remote).then_some(remote)
+///
+/// The probe asks the question the transfer that follows really asks.
+/// `chat_ref::sync_with_forge` and `forge::push_ref` contact the remote
+/// `origin_or_first` picks (D1.1), which is what
+/// `forge::default_remote_name` names. This used to read
+/// `sync.remote` (default `origin`) instead, the only reader of that key
+/// in the product, and the two questions disagreed in both directions:
+/// a project with `sync: {remote: upstream}` and both remotes
+/// configured passed the probe and then pushed `refs/joy/chats` to
+/// `origin`, a host the person never nominated, while a project whose
+/// only remote is `upstream` skipped chat sync entirely although the
+/// engine would have used `upstream`. The key is not honoured anywhere
+/// now, and `model::config::SyncConfig` says so.
+fn has_chat_remote(root: &std::path::Path) -> bool {
+    joy_core::vcs::forge::default_remote_name(root).is_some()
 }
 
 /// Push-first delivery after a write (JOY-026C-34): the local chats ref
@@ -133,7 +142,7 @@ fn chat_remote(root: &std::path::Path) -> Option<String> {
 /// `chat_ref::sync_with_forge`, which is what the desktop and the
 /// platform run too.
 fn deliver_ref(root: &std::path::Path) {
-    if chat_remote(root).is_none() {
+    if !has_chat_remote(root) {
         return;
     }
     if let Err(e) = joy_chat_store::chat_ref::sync_with_forge(root, &chat_auth()) {
@@ -144,7 +153,7 @@ fn deliver_ref(root: &std::path::Path) {
 /// Fetch, reconcile, and push back what the forge still lacks: what a
 /// READ does before it shows anything (JOY-022A-4D).
 fn sync_ref(root: &std::path::Path) {
-    if chat_remote(root).is_none() {
+    if !has_chat_remote(root) {
         return;
     }
     let auth = chat_auth();
@@ -858,9 +867,27 @@ mod sync_tests {
     fn a_checkout_without_the_remote_contacts_nobody() {
         let dir = tempfile::tempdir().unwrap();
         git2::Repository::init(dir.path()).unwrap();
-        assert!(chat_remote(dir.path()).is_none());
+        assert!(!has_chat_remote(dir.path()));
         // Neither entry point may panic or contact anything here.
         sync_ref(dir.path());
         deliver_ref(dir.path());
+    }
+
+    /// The probe and the contact ask ONE question. A checkout whose only
+    /// remote is not called `origin` syncs chats, because that is the
+    /// remote `origin_or_first` contacts; the old probe asked
+    /// `sync.remote` (default `origin`) and skipped it.
+    #[test]
+    fn a_checkout_whose_only_remote_is_not_origin_still_syncs() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        repo.remote("upstream", "https://example.invalid/a.git")
+            .unwrap();
+        assert!(has_chat_remote(dir.path()));
+        assert_eq!(
+            joy_core::vcs::forge::default_remote_name(dir.path()).as_deref(),
+            Some("upstream"),
+            "the probe names the remote the engine contacts"
+        );
     }
 }

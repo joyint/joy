@@ -337,9 +337,11 @@ pub fn staged_paths(root: &Path) -> Vec<String> {
 /// `git remote get-url <name>` fails for a remote that carries only
 /// `remote.<name>.pushurl`, while `git_remote_lookup` succeeds whenever
 /// either `url` or `pushurl` is configured. A remote joy can push to is
-/// a remote that exists, which is the question every caller here asks
-/// (the chat send and read gate in joy-cli), so the git2 answer is the
-/// better one. Pinned by the cases below because it is a silent change.
+/// a remote that exists, so the git2 answer is the better one, and it
+/// is pinned by the cases below because it is a silent change. The chat
+/// gate that used to ask this by NAME asks
+/// [`forge::default_remote_name`] instead, so that the probe and the
+/// contact name one remote (D1.1).
 pub fn remote_exists(root: &Path, remote: &str) -> bool {
     git2::Repository::discover(root)
         .and_then(|repo| repo.find_remote(remote).map(|_| ()))

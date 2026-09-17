@@ -85,6 +85,16 @@ pub struct InteractionLevelConfig {
 
 pub use joy_model::InteractionLevel;
 
+/// The `sync:` block of `.joy/config.yaml`. Nothing in the product
+/// reads it any more.
+///
+/// `remote` had one reader, the chat sync gate in joy-cli, and it asked
+/// a different question than the transfer that followed: the engine
+/// contacts the remote `origin_or_first` picks (design D1.1), so a
+/// configured name could send the probe to one host and the push to
+/// another. The key is therefore not honoured, and the shape stays so
+/// that a `.joy/config.yaml` which carries it still parses instead of
+/// failing a person's next command. `auto` never had a reader at all.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SyncConfig {
     pub remote: String,
