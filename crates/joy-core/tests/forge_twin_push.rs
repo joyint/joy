@@ -369,6 +369,8 @@ struct Machine {
     /// Every connector call, one argv per line, so a case can read what
     /// really went over the wire and how often.
     argv: PathBuf,
+    /// The PATH this process had before the case emptied it.
+    path: Option<std::ffi::OsString>,
 }
 
 impl Machine {
@@ -390,6 +392,17 @@ impl Machine {
 }
 
 fn machine(twin: &str, token: &str) -> Machine {
+    machine_with(Some((twin, token)))
+}
+
+/// The same machine with no connector installed anywhere: no claim, no
+/// token, and therefore no twin. Together with the empty home above
+/// this is a desktop that is signed in to nothing at all.
+fn machine_without_a_connector() -> Machine {
+    machine_with(None)
+}
+
+fn machine_with(connector: Option<(&str, &str)>) -> Machine {
     let home = tempfile::tempdir().expect("tempdir");
     std::env::set_var("HOME", home.path());
     std::env::set_var("USERPROFILE", home.path());
@@ -404,6 +417,19 @@ fn machine(twin: &str, token: &str) -> Machine {
     std::fs::create_dir_all(&bin).expect("bin");
     let argv = home.path().join("argv.log");
     std::env::set_var("JOY_STUB_ARGV", &argv);
+    let path = std::env::var_os("PATH");
+    let Some((twin, token)) = connector else {
+        // No connector on any of the three search paths of D2.2: the
+        // registered directories, the executable's own and PATH.
+        std::env::set_var("PATH", &bin);
+        forge_plugins::set_plugin_dirs(vec![bin]);
+        return Machine {
+            root: home.path().to_path_buf(),
+            argv,
+            path,
+            _home: home,
+        };
+    };
     let stub = bin.join(forge_plugins::COMBINED_BINARY);
     std::fs::write(
         &stub,
@@ -434,6 +460,7 @@ esac
     Machine {
         root: home.path().to_path_buf(),
         argv,
+        path,
         _home: home,
     }
 }
@@ -445,6 +472,10 @@ impl Drop for Machine {
         resolver::invalidate_all_facts();
         contact::set_gaps("");
         std::env::remove_var("JOY_STUB_ARGV");
+        match self.path.take() {
+            Some(path) => std::env::set_var("PATH", path),
+            None => std::env::remove_var("PATH"),
+        }
         let _ = &self.root;
     }
 }
@@ -832,5 +863,105 @@ fn the_connector_is_asked_once_per_host_and_carries_the_project_s_pinned_login()
         1,
         "and the twin's address with it"
     );
+    drop(machine);
+}
+
+/// D1.5: "`probe_write_access_raw` runs on THE TRANSPORT THAT CARRIES
+/// THE CREDENTIAL for this operation, not always on the configured
+/// remote. If the operation would push over the twin, the probe uses
+/// the twin."
+#[test]
+fn the_probe_runs_on_the_transport_that_carries_the_credential() {
+    let _serial = lock();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let forge_dir = tmp.path().join("forge.git");
+    let base = forge_repository(&forge_dir);
+    let server = serve(forge_dir.clone(), Answer::Ok);
+    let machine = machine(&server.url("forge.git"), "a-token");
+
+    let checkout = tmp.path().join("checkout");
+    checkout_ahead(&checkout, &forge_dir, "ssh://git@127.0.0.1/forge.git", base);
+
+    forge::probe_write_access(&checkout, &Auth::local(HostKind::Background))
+        .expect("the twin carries the credential, so the twin is probed");
+    assert!(
+        server.requests.load(Ordering::SeqCst) > 0,
+        "the probe really reached the twin"
+    );
+    drop(machine);
+}
+
+/// D1.5, the other half: "If neither transport has a credential, the
+/// probe is not run at all and the state is `needs_sign_in`, never
+/// `no_push_rights`." This closes the contradiction where the Windows
+/// case could not produce the state the banner needs: WinCNG reads no
+/// openssh-key-v1 file, so that machine has no ssh credential either.
+#[test]
+fn a_machine_with_no_credential_at_all_is_needs_sign_in_and_never_no_push_rights() {
+    let _serial = lock();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let forge_dir = tmp.path().join("forge.git");
+    let base = forge_repository(&forge_dir);
+    let server = serve(forge_dir.clone(), Answer::Ok);
+    let machine = machine_without_a_connector();
+
+    let checkout = tmp.path().join("checkout");
+    checkout_ahead(&checkout, &forge_dir, "ssh://git@127.0.0.1/forge.git", base);
+
+    let refused = forge::probe_write_access(&checkout, &Auth::local(HostKind::Background))
+        .expect_err("there is nothing to probe with");
+    assert_eq!(
+        contact::failure_of(&refused),
+        contact::Failure::NeedsSignIn,
+        "{refused}"
+    );
+    assert_eq!(
+        server.requests.load(Ordering::SeqCst),
+        0,
+        "and nothing was dialled to find that out"
+    );
+    drop(machine);
+}
+
+/// D1.5: "`refs/joy/chats` has no libgit2 tracking ref on either remote
+/// and needs none. joy keeps its own, `refs/joy/chats-remote` ... after
+/// a successful push of the chat ref the engine sets it to the pushed
+/// oid as well, so the union merge reconciles against what the forge
+/// holds."
+#[test]
+fn a_chat_push_sets_the_chat_tracking_ref_to_what_the_forge_now_holds() {
+    let _serial = lock();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let forge_dir = tmp.path().join("forge.git");
+    let base = forge_repository(&forge_dir);
+    let server = serve(forge_dir.clone(), Answer::Ok);
+    let machine = machine(&server.url("forge.git"), "a-token");
+
+    let checkout = tmp.path().join("checkout");
+    let tip = checkout_ahead(&checkout, &forge_dir, "ssh://git@127.0.0.1/forge.git", base);
+    {
+        let repo = git2::Repository::open(&checkout).expect("open");
+        repo.reference("refs/joy/chats", tip, true, "a chat")
+            .expect("chat ref");
+        assert!(
+            repo.find_reference("refs/joy/chats-remote").is_err(),
+            "nothing has been pushed yet"
+        );
+    }
+
+    forge::push_ref(
+        &checkout,
+        &Auth::local(HostKind::Background),
+        "refs/joy/chats",
+    )
+    .expect("the twin carried the chat ref");
+
+    let repo = git2::Repository::open(&checkout).expect("open");
+    assert_eq!(
+        repo.refname_to_id("refs/joy/chats-remote").ok(),
+        Some(tip),
+        "the reconcile runs against what the forge holds"
+    );
+    assert_eq!(server.pushes.load(Ordering::SeqCst), 1);
     drop(machine);
 }
