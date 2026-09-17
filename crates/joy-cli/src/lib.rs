@@ -75,6 +75,7 @@ Project & Members:
   config   Show or modify configuration
   ai       AI tool integration
   chat     Inspect the project chats (.joy/chats)
+  forge    Sign in to a forge, and see which connector answers
 
 Maintenance:
   update       Update the joy binary and sync this repo's joy-managed state
@@ -190,6 +191,8 @@ enum Commands {
     Find(commands::find::FindArgs),
     /// Show release notes for a version
     Release(commands::release::ReleaseArgs),
+    /// Sign in to a forge, and see which connector answers
+    Forge(commands::forge::ForgeArgs),
     /// Show the board (default when no command given)
     #[command(hide = true)]
     Board(BoardArgs),
@@ -520,6 +523,7 @@ pub fn cli_main() -> anyhow::Result<()> {
             ),
             Some(Commands::Find(args)) => commands::find::run(args),
             Some(Commands::Release(args)) => commands::release::run(args),
+            Some(Commands::Forge(args)) => commands::forge::run(args),
             Some(Commands::Board(args)) => commands::board::run(args),
             Some(Commands::Config(_)) => unreachable!("handled above"),
             Some(Commands::Ai(args)) => commands::ai::run(args),

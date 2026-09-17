@@ -1,0 +1,8 @@
+# The new command group is reachable and its help parses on every
+# platform (design D3.10, package J10). Like help.toml, the stdout text
+# is not asserted: clap generates it and a snapshot of it is not
+# portable across operating systems. What is asserted is that the group
+# exists, which is what a person typing `joy forge` finds out.
+bin.name = "joy"
+args = ["forge", "--help"]
+status.code = 0

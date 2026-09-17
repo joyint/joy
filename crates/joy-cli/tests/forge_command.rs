@@ -1,0 +1,794 @@
+// Copyright (c) 2026 Joydev GmbH (joydev.com)
+// SPDX-License-Identifier: LicenseRef-Commercial
+
+//! `joy forge`, driven as the person and the agent drive it
+//! (JOY-029D-3E, package J10 of the forge connection NG design: D3.10
+//! and D3.11).
+//!
+//! Every case runs the shipped `joy` binary as a process against a FAKE
+//! connector: a shell script that answers the protocol 2 verbs, plus a
+//! second one that answers like a binary from before the handshake
+//! existed. No forge is contacted, no forge CLI is on the PATH (it is
+//! emptied for every child), and every child gets a HOME and an XDG
+//! configuration directory of its own, so nothing on the developer's
+//! machine can answer for it and nothing it writes leaves the sandbox.
+//!
+//! Unix only: the stubs are shell scripts and the terminal cases need
+//! `openpty`. What they prove is not a unix rule; the host decision
+//! itself is `joy_core::host::HostKind::detect`, which joy-core tests on
+//! every platform.
+
+#![cfg(unix)]
+
+use std::io::{Read, Write};
+use std::os::fd::{FromRawFd, OwnedFd};
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
+
+use serde_json::Value;
+
+/// A connector that speaks protocol 2 and answers every verb this
+/// package's cases need. It records its own argv, so a case can prove
+/// what was NOT run as well as what was.
+const CONNECTOR: &str = r#"#!/bin/sh
+if [ -n "$JOY_STUB_ARGV" ]; then
+  echo "$@" >> "$JOY_STUB_ARGV"
+fi
+if [ "$1" = "version" ]; then
+  echo '{"protocol":2,"plugin":"joy-forge 0.21.0","forges":["github","gitlab","gitea"]}'
+  exit 0
+fi
+forge="$1"
+shift
+verb="$1"
+shift
+host=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --host) host="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+source="${JOY_STUB_SOURCE:-keychain}"
+case "$verb" in
+  claims)
+    if [ "$forge" = "github" ]; then echo '{"claims":true}'; else echo '{"claims":false}'; fi
+    ;;
+  token)
+    if [ "${JOY_STUB_SIGNED_IN:-1}" = "1" ]; then
+      printf '{"known":true,"host":"%s","login":"scotty","token":"x","username":"x-access-token","source":"%s","scopes":"repo user:email","expires_at":null,"chose_by":"only"}\n' "$host" "$source"
+    else
+      echo '{"known":false,"reason":"no-login"}'
+    fi
+    ;;
+  login)
+    printf '{"event":"verification","host":"%s","url":"https://github.test/login/device","url_complete":null,"code":"WDJB-MJHT","expires_in":900,"interval":5}\n' "$host"
+    echo '{"event":"result","known":true,"login":"scotty","user_id":"12345","emails":["s@example.test"],"scopes":"repo user:email","stored":"keychain","source":"device"}'
+    ;;
+  token-store)
+    read -r token
+    case "$token" in
+      ghp_*)
+        printf '{"known":true,"host":"%s","login":"scotty","source":"file","scopes":"repo"}\n' "$host"
+        ;;
+      *)
+        echo '{"known":false,"reason":"no-login","message":"the forge did not accept this token"}'
+        ;;
+    esac
+    ;;
+  logout)
+    printf '{"removed":true,"revoked":true,"source":"%s","login":"scotty"}\n' "$source"
+    ;;
+  *)
+    echo "error: unrecognized subcommand '$verb'" >&2
+    exit 2
+    ;;
+esac
+"#;
+
+/// A connector from before the handshake existed: its parser rejects
+/// `version` and exits 2 with nothing on stdout, which is the detector
+/// of D2.2a. It still answers the six legacy verbs, `release` among
+/// them.
+const LEGACY_CONNECTOR: &str = r#"#!/bin/sh
+case "$1" in
+  claims) echo '{"claims":true}' ;;
+  identity) echo '{"known":true,"login":"legacy"}' ;;
+  resolve) echo '{"known":false}' ;;
+  store) echo '{"state":"gone"}' ;;
+  files) echo '{"state":"unknown"}' ;;
+  release) echo '{"url":"https://github.test/o/r/releases/tag/v1"}' ;;
+  *)
+    echo "error: unrecognized subcommand '$1'" >&2
+    echo "Usage: joy-github <COMMAND>" >&2
+    exit 2
+    ;;
+esac
+"#;
+
+/// One machine per case: its own HOME, its own configuration and state
+/// directories, and its own connector directory.
+struct Machine {
+    dir: tempfile::TempDir,
+}
+
+impl Machine {
+    fn new() -> Machine {
+        let dir = tempfile::tempdir().expect("a sandbox");
+        for sub in ["home", "config/joy", "state", "plugins"] {
+            std::fs::create_dir_all(dir.path().join(sub)).expect("the sandbox directories");
+        }
+        Machine { dir }
+    }
+
+    fn path(&self) -> &Path {
+        self.dir.path()
+    }
+
+    fn plugins(&self) -> PathBuf {
+        self.dir.path().join("plugins")
+    }
+
+    /// Put one connector script in this machine's plugin directory.
+    fn connector(&self, name: &str, body: &str) -> PathBuf {
+        let path = self.plugins().join(name);
+        std::fs::write(&path, body).expect("write the connector");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
+            .expect("make the connector executable");
+        path
+    }
+
+    /// An operator's instance list (D2.5), which is one of the three
+    /// sources of `joy forge status`'s host set.
+    fn forges_yaml(&self, host: &str, kind: &str) {
+        std::fs::write(
+            self.path().join("config/joy/forges.yaml"),
+            format!("- host: {host}\n  kind: {kind}\n"),
+        )
+        .expect("write forges.yaml");
+    }
+
+    /// `joy`, with nothing of the developer's machine in reach: no
+    /// PATH, no forge CLI, no session, and the connector of this
+    /// machine as the only one findable.
+    fn joy(&self, args: &[&str]) -> std::process::Command {
+        let mut command = joy_process::command(env!("CARGO_BIN_EXE_joy"));
+        command
+            .args(args)
+            .current_dir(self.path())
+            .env_clear()
+            .env("PATH", "")
+            .env("HOME", self.path().join("home"))
+            .env("XDG_CONFIG_HOME", self.path().join("config"))
+            .env("XDG_STATE_HOME", self.path().join("state"))
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            // The documented test hook of D2.2, and the reason it
+            // exists: a case has to be able to say which binary
+            // answers.
+            .env("JOY_PLUGIN_DIR", self.plugins());
+        command
+    }
+
+    fn run(&self, args: &[&str]) -> Answer {
+        let output = self.joy(args).output().expect("joy runs");
+        Answer::of(output)
+    }
+}
+
+/// What a `joy` run said and how it ended.
+struct Answer {
+    ok: bool,
+    code: Option<i32>,
+    stdout: String,
+    stderr: String,
+}
+
+impl Answer {
+    fn of(output: std::process::Output) -> Answer {
+        Answer {
+            ok: output.status.success(),
+            code: output.status.code(),
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        }
+    }
+
+    /// The one envelope a `--json` run prints on stdout, unwrapped.
+    fn data(&self) -> Value {
+        let envelope: Value = serde_json::from_str(self.stdout.trim()).unwrap_or_else(|e| {
+            panic!(
+                "stdout is not one JSON envelope ({e}): {}\nstderr: {}",
+                self.stdout, self.stderr
+            )
+        });
+        assert_eq!(envelope["version"], 1, "{}", self.stdout);
+        envelope["data"].clone()
+    }
+}
+
+// ---------------------------------------------------------------------
+// A terminal, for the cases that need a person at one
+// ---------------------------------------------------------------------
+
+/// A pty pair: what the case holds, and what the child gets as its
+/// three standard streams. Without one the host kind is `Background`
+/// whatever else is true, and the interactive half of D3.11 is never
+/// entered.
+struct Terminal {
+    person: std::fs::File,
+    child: OwnedFd,
+}
+
+impl Terminal {
+    fn open() -> Terminal {
+        let mut controller = 0;
+        let mut follower = 0;
+        // SAFETY: openpty writes two valid descriptors or returns -1,
+        // and both are taken over by owning types below.
+        let rc = unsafe {
+            libc::openpty(
+                &mut controller,
+                &mut follower,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
+        assert_eq!(rc, 0, "openpty");
+        // SAFETY: both descriptors come from openpty and are owned here.
+        unsafe {
+            Terminal {
+                person: std::fs::File::from_raw_fd(controller),
+                child: OwnedFd::from_raw_fd(follower),
+            }
+        }
+    }
+
+    fn stdio(&self) -> [Stdio; 3] {
+        [
+            Stdio::from(self.child.try_clone().unwrap()),
+            Stdio::from(self.child.try_clone().unwrap()),
+            Stdio::from(self.child.try_clone().unwrap()),
+        ]
+    }
+}
+
+/// Run `joy` on a terminal and return everything the person would have
+/// seen, plus whether it succeeded.
+fn on_a_terminal(machine: &Machine, args: &[&str], typed: &str) -> (bool, String) {
+    let terminal = Terminal::open();
+    let [stdin, stdout, stderr] = terminal.stdio();
+    let mut command = machine.joy(args);
+    command.stdin(stdin).stdout(stdout).stderr(stderr);
+    let mut child = command.spawn().expect("joy runs");
+    // Every copy on this side has to go, or the read below never sees
+    // the end of the child's output.
+    drop(command);
+    drop(terminal.child);
+
+    let mut person = terminal.person;
+    person.write_all(typed.as_bytes()).unwrap();
+    person.flush().unwrap();
+
+    let mut reader = person.try_clone().unwrap();
+    let drain = std::thread::spawn(move || {
+        let mut seen = Vec::new();
+        let mut buffer = [0u8; 4096];
+        while let Ok(read) = reader.read(&mut buffer) {
+            if read == 0 {
+                break;
+            }
+            seen.extend_from_slice(&buffer[..read]);
+        }
+        String::from_utf8_lossy(&seen).to_string()
+    });
+
+    let ok = wait_with_a_bound(&mut child);
+    drop(person);
+    let seen = drain.join().unwrap_or_default();
+    (ok, seen)
+}
+
+fn wait_with_a_bound(child: &mut std::process::Child) -> bool {
+    for _ in 0..600 {
+        match child.try_wait().unwrap() {
+            Some(status) => return status.success(),
+            None => std::thread::sleep(std::time::Duration::from_millis(100)),
+        }
+    }
+    let _ = child.kill();
+    panic!("joy did not finish: it is waiting for an answer nobody scripted");
+}
+
+// ---------------------------------------------------------------------
+// login (D3.10)
+// ---------------------------------------------------------------------
+
+/// The acceptance of J10, first sentence: `joy forge login --host
+/// github.com` on a machine with no gh prints a URL and a code and ends
+/// with a stored credential.
+///
+/// It runs on a terminal, because that is what makes this host
+/// `Interactive`; with a pipe the host is `Background` and D3.11's
+/// refusal would answer instead, which is the case below.
+#[test]
+fn login_on_a_terminal_prints_the_url_and_the_code_and_signs_in() {
+    let machine = Machine::new();
+    machine.connector("joy-forge", CONNECTOR);
+
+    let (ok, seen) = on_a_terminal(&machine, &["forge", "login", "--host", "github.test"], "");
+
+    assert!(ok, "{seen}");
+    assert!(seen.contains("https://github.test/login/device"), "{seen}");
+    assert!(seen.contains("WDJB-MJHT"), "{seen}");
+    assert!(
+        seen.contains("Signed in to github.test as scotty"),
+        "{seen}"
+    );
+    assert!(
+        seen.contains("15 minutes"),
+        "the countdown is shown: {seen}"
+    );
+}
+
+/// The acceptance of J10, last sentence: `JOY_SESSION=... joy forge
+/// login --host github.com` refuses IMMEDIATELY with the delegation
+/// sentence. "Immediately" is proved by the connector's own argv log:
+/// no `login` ever reached it.
+#[test]
+fn login_under_a_delegation_session_refuses_by_name_and_spawns_no_login() {
+    let machine = Machine::new();
+    machine.connector("joy-forge", CONNECTOR);
+    let session = a_live_session(&machine);
+    let argv = machine.path().join("argv.log");
+
+    let output = machine
+        .joy(&["forge", "login", "--host", "github.test", "--json"])
+        .env("JOY_SESSION", &session)
+        .env("JOY_STUB_ARGV", &argv)
+        .output()
+        .expect("joy runs");
+    let answer = Answer::of(output);
+
+    assert_eq!(answer.code, Some(1), "{}", answer.stderr);
+    let data = answer.data();
+    assert_eq!(data["host"], "github.test");
+    assert_eq!(data["state"], "needs_sign_in");
+    let message = data["message"].as_str().unwrap_or_default();
+    assert!(
+        message.contains("needs a person at this machine")
+            && message.contains("delegation session")
+            && message.contains("--token-stdin"),
+        "{message}"
+    );
+    let log = std::fs::read_to_string(&argv).unwrap_or_default();
+    assert!(
+        !log.contains(" login "),
+        "the refusal happened before any sign in was started: {log}"
+    );
+}
+
+/// The acceptance of J10, second sentence: `joy forge login
+/// --token-stdin --host codeberg.org < token` stores a validated token,
+/// and `ps` during the run shows no token.
+///
+/// The token path is NOT what D3.11 refuses: it is the headless door of
+/// D2.4, written for exactly the machines that have no person at them,
+/// and this case runs with pipes, which is a `Background` host.
+#[test]
+#[cfg(target_os = "linux")]
+fn a_token_from_stdin_is_stored_and_never_in_the_process_list() {
+    let machine = Machine::new();
+    machine.connector("joy-forge", CONNECTOR);
+
+    let mut child = machine
+        .joy(&[
+            "forge",
+            "login",
+            "--host",
+            "codeberg.test",
+            "--token-stdin",
+            "--json",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("joy runs");
+    let cmdline = process_list_of(child.id());
+    assert!(!cmdline.contains("ghp_"), "{cmdline}");
+    assert!(cmdline.contains("--token-stdin"), "{cmdline}");
+    {
+        let mut stdin = child.stdin.take().expect("the child's stdin");
+        stdin.write_all(b"ghp_the_pasted_secret\n").unwrap();
+    }
+    let answer = Answer::of(child.wait_with_output().expect("joy ends"));
+
+    assert!(answer.ok, "{}", answer.stderr);
+    let data = answer.data();
+    assert_eq!(data["state"], "signed-in");
+    assert_eq!(data["host"], "codeberg.test");
+    assert_eq!(data["login"], "scotty");
+    assert_eq!(data["source"], "token");
+    assert_eq!(data["stored"], "file");
+    assert!(
+        !answer.stdout.contains("ghp_") && !answer.stderr.contains("ghp_"),
+        "the token was printed: {}{}",
+        answer.stdout,
+        answer.stderr
+    );
+}
+
+/// An empty line is not a token, and the refusal says so without
+/// pretending anything was stored.
+#[test]
+fn an_empty_line_is_refused_instead_of_stored() {
+    let machine = Machine::new();
+    machine.connector("joy-forge", CONNECTOR);
+
+    let mut child = machine
+        .joy(&["forge", "login", "--host", "github.test", "--token-stdin"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("joy runs");
+    child
+        .stdin
+        .take()
+        .expect("the child's stdin")
+        .write_all(b"\n")
+        .unwrap();
+    let answer = Answer::of(child.wait_with_output().expect("joy ends"));
+
+    assert!(!answer.ok, "{}{}", answer.stdout, answer.stderr);
+    assert!(answer.stderr.contains("empty input"), "{}", answer.stderr);
+}
+
+/// A token the forge refuses ends the command with exit 1 and a state
+/// word, not with a success nobody can tell from a real sign in.
+#[test]
+fn a_token_the_forge_refuses_exits_one_with_a_state() {
+    let machine = Machine::new();
+    machine.connector("joy-forge", CONNECTOR);
+
+    let mut child = machine
+        .joy(&[
+            "forge",
+            "login",
+            "--host",
+            "github.test",
+            "--token-stdin",
+            "--json",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("joy runs");
+    child
+        .stdin
+        .take()
+        .expect("the child's stdin")
+        .write_all(b"not-a-token\n")
+        .unwrap();
+    let answer = Answer::of(child.wait_with_output().expect("joy ends"));
+
+    assert_eq!(answer.code, Some(1));
+    let data = answer.data();
+    assert_eq!(data["state"], "needs_sign_in");
+    assert_eq!(
+        data["action"], "run `joy forge login --host github.test`",
+        "every failure names the next step"
+    );
+}
+
+// ---------------------------------------------------------------------
+// status (D3.10)
+// ---------------------------------------------------------------------
+
+/// The acceptance of J10, third sentence: `joy forge status --json`
+/// lists the host with source, scopes and expiry, and exits 1 when
+/// nothing is signed in.
+#[test]
+fn status_lists_the_host_with_its_source_and_scopes() {
+    let machine = Machine::new();
+    machine.connector("joy-forge", CONNECTOR);
+    machine.forges_yaml("github.test", "github");
+
+    let answer = machine.run(&["forge", "status", "--json"]);
+
+    assert!(answer.ok, "{}", answer.stderr);
+    let data = answer.data();
+    let host = &data["hosts"][0];
+    assert_eq!(host["host"], "github.test");
+    assert_eq!(host["forge"], "github");
+    assert_eq!(host["login"], "scotty");
+    assert_eq!(host["state"], "signed-in");
+    assert_eq!(host["source"], "keychain");
+    assert_eq!(host["scopes"], "repo user:email");
+    assert!(host["expires_at"].is_null(), "{host}");
+    // and which binary answered, with its path and its protocol
+    assert_eq!(host["plugin"]["id"], "github");
+    assert_eq!(host["plugin"]["protocol"], 2);
+    assert_eq!(
+        host["plugin"]["path"],
+        machine.plugins().join("joy-forge").display().to_string()
+    );
+}
+
+#[test]
+fn status_exits_one_when_nothing_is_signed_in() {
+    let machine = Machine::new();
+    machine.connector("joy-forge", CONNECTOR);
+    machine.forges_yaml("github.test", "github");
+
+    let output = machine
+        .joy(&["forge", "status", "--json"])
+        .env("JOY_STUB_SIGNED_IN", "0")
+        .output()
+        .expect("joy runs");
+    let answer = Answer::of(output);
+
+    assert_eq!(answer.code, Some(1), "{}", answer.stdout);
+    // The envelope is printed FIRST and the process then exits with the
+    // code, the way `joy auth status` does it.
+    let data = answer.data();
+    assert_eq!(data["hosts"][0]["state"], "none");
+    assert_eq!(data["hosts"][0]["source"], "none");
+}
+
+// ---------------------------------------------------------------------
+// logout (D3.10, D2.6)
+// ---------------------------------------------------------------------
+
+#[test]
+fn logout_removes_joys_own_credential() {
+    let machine = Machine::new();
+    machine.connector("joy-forge", CONNECTOR);
+
+    let answer = machine.run(&["forge", "logout", "--host", "github.test", "--json"]);
+
+    assert!(answer.ok, "{}", answer.stderr);
+    let data = answer.data();
+    assert_eq!(data["host"], "github.test");
+    assert_eq!(data["removed"], true);
+    assert_eq!(data["revoked"], true);
+    assert_eq!(data["source"], "keychain");
+}
+
+/// A credential that came from gh is removed by gh and by nobody else,
+/// so joy removes nothing and names the foreign command (D2.6, D3.10).
+#[test]
+fn logout_names_the_foreign_command_for_a_foreign_credential() {
+    let machine = Machine::new();
+    machine.connector("joy-forge", CONNECTOR);
+
+    let output = machine
+        .joy(&["forge", "logout", "--host", "github.test"])
+        .env("JOY_STUB_SOURCE", "gh")
+        .output()
+        .expect("joy runs");
+    let answer = Answer::of(output);
+
+    assert!(answer.ok, "{}", answer.stderr);
+    assert!(
+        answer
+            .stdout
+            .contains("the token for github.test comes from gh")
+            && answer
+                .stdout
+                .contains("gh auth logout --hostname github.test"),
+        "{}",
+        answer.stdout
+    );
+}
+
+/// `--all` works on the whole host set and answers one object per host.
+#[test]
+fn logout_all_answers_for_every_host_of_the_set() {
+    let machine = Machine::new();
+    machine.connector("joy-forge", CONNECTOR);
+    machine.forges_yaml("github.test", "github");
+
+    let answer = machine.run(&["forge", "logout", "--all", "--json"]);
+
+    assert!(answer.ok, "{}", answer.stderr);
+    let data = answer.data();
+    assert_eq!(data["hosts"][0]["host"], "github.test");
+    assert_eq!(data["hosts"][0]["removed"], true);
+}
+
+/// Neither a host nor `--all`: joy refuses rather than guessing which
+/// credential to delete.
+#[test]
+fn logout_without_a_host_refuses_instead_of_guessing() {
+    let machine = Machine::new();
+    machine.connector("joy-forge", CONNECTOR);
+
+    let answer = machine.run(&["forge", "logout"]);
+
+    assert!(!answer.ok);
+    assert!(answer.stderr.contains("needs a host"), "{}", answer.stderr);
+}
+
+// ---------------------------------------------------------------------
+// plugins, and the stale binary (D2.2a, D3.12)
+// ---------------------------------------------------------------------
+
+/// `joy forge plugins` is the diagnostic: which file answered, where it
+/// was found, what it speaks, and what is wrong with the picture.
+#[test]
+fn plugins_names_the_file_that_answers_and_the_stale_one_beside_it() {
+    let machine = Machine::new();
+    machine.connector("joy-forge", CONNECTOR);
+    let stale = machine.connector("joy-github", LEGACY_CONNECTOR);
+
+    let answer = machine.run(&["forge", "plugins", "--json"]);
+
+    assert!(answer.ok, "{}", answer.stderr);
+    let data = answer.data();
+    let github = data["plugins"]
+        .as_array()
+        .expect("a row per registry id")
+        .iter()
+        .find(|row| row["id"] == "github")
+        .expect("the github row")
+        .clone();
+    assert_eq!(
+        github["protocol"], 2,
+        "the fresh binary wins the name order"
+    );
+    assert_eq!(github["version"], "joy-forge 0.21.0");
+    assert_eq!(
+        github["path"],
+        machine.plugins().join("joy-forge").display().to_string()
+    );
+    assert_eq!(github["problem"], "shadowed-legacy");
+    assert_eq!(
+        github["found_in"], "JOY_PLUGIN_DIR",
+        "the row says which step of the search order found the file"
+    );
+    assert_eq!(
+        github["shadowed"][0],
+        format!("rm {}", stale.display()),
+        "the exact line that removes the stale binary"
+    );
+}
+
+/// The acceptance of J10, fourth sentence: a protocol 1 `joy-github`
+/// alone on the machine makes `joy forge login` print the binary's path
+/// and the `rm` line, while the legacy `release` verb that binary DOES
+/// answer keeps working.
+#[test]
+fn a_protocol_1_connector_refuses_login_with_the_path_and_the_rm_line() {
+    let machine = Machine::new();
+    let stale = machine.connector("joy-github", LEGACY_CONNECTOR);
+
+    let answer = machine.run(&["forge", "login", "--host", "github.test", "--json"]);
+
+    assert_eq!(answer.code, Some(1), "{}", answer.stdout);
+    let data = answer.data();
+    assert_eq!(data["state"], "plugin_outdated");
+    let message = data["message"].as_str().unwrap_or_default();
+    assert!(message.contains(&stale.display().to_string()), "{message}");
+    assert!(
+        message.contains(&format!("rm {}", stale.display())),
+        "{message}"
+    );
+    assert_eq!(
+        data["action"], "run `joy forge plugins` to see which binary answered",
+        "the state decides the next step"
+    );
+
+    // And the verb a protocol 1 connector still answers keeps working,
+    // which is what "joy release publish still works" rests on (D2.2a).
+    let notes = machine.path().join("notes.md");
+    std::fs::write(&notes, "the notes").unwrap();
+    joy_core::forge_plugins::set_plugin_dirs(vec![machine.plugins()]);
+    let outcome = joy_core::forge_plugins::release(
+        joy_core::forge_plugins::by_id("github").expect("the registry row"),
+        Some(&joy_core::forge_plugins::Target::remote(
+            "https://github.test/o/r.git",
+        )),
+        "v1",
+        "v1",
+        &notes,
+        &joy_core::forge_plugins::CallContext::rootless(),
+    )
+    .expect("the legacy connector still publishes");
+    assert_eq!(
+        outcome.url.as_deref(),
+        Some("https://github.test/o/r/releases/tag/v1")
+    );
+}
+
+// ---------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------
+
+/// What `ps` would show for a running child: its argument list.
+#[cfg(target_os = "linux")]
+fn process_list_of(pid: u32) -> String {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        let raw = std::fs::read(format!("/proc/{pid}/cmdline")).unwrap_or_default();
+        let text = String::from_utf8_lossy(&raw).replace('\0', " ");
+        if !text.trim().is_empty() || std::time::Instant::now() >= deadline {
+            return text;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+
+/// A `JOY_SESSION` that names a delegation joy can really load, minted
+/// the way an agent gets one: a project with an AI member, a delegation
+/// token, and the redemption that prints the handle. A leftover or
+/// malformed value would make the process no less interactive than it
+/// already was, so the refusal it proves needs a real one.
+fn a_live_session(machine: &Machine) -> String {
+    let root = machine.path().join("home/delegator");
+    std::fs::create_dir_all(&root).unwrap();
+    let joy = |args: &[&str]| -> (bool, String) {
+        let output = machine
+            .joy(args)
+            .current_dir(&root)
+            .output()
+            .expect("joy runs");
+        (
+            output.status.success(),
+            format!(
+                "{}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            ),
+        )
+    };
+    let passphrase = "correct horse battery staple";
+    let (ok, seen) = joy(&["init", "--name", "Delegator", "--user", "human@example.com"]);
+    assert!(ok, "{seen}");
+    // The commands that mint a delegation still read a git identity
+    // (their call sites are package J11); this checkout gets one of its
+    // own, repository local, so the machine under test keeps none.
+    let repo = git2::Repository::open(&root).unwrap();
+    let mut config = repo.config().unwrap();
+    config.set_str("user.name", "The Human").unwrap();
+    config.set_str("user.email", "human@example.com").unwrap();
+    for args in [
+        vec!["auth", "init", "--passphrase", passphrase],
+        vec![
+            "project",
+            "member",
+            "add",
+            "ai:claude@joy",
+            "--passphrase",
+            passphrase,
+        ],
+    ] {
+        let (ok, seen) = joy(&args);
+        assert!(ok, "{args:?}: {seen}");
+    }
+    let (ok, token) = joy(&[
+        "auth",
+        "token",
+        "add",
+        "ai:claude@joy",
+        "--passphrase",
+        passphrase,
+    ]);
+    assert!(ok, "{token}");
+    let token = token
+        .lines()
+        .find_map(|line| line.trim().strip_prefix('"')?.strip_suffix('"'))
+        .expect("the token is printed")
+        .to_string();
+    let (ok, handle) = joy(&["auth", "--token", &token]);
+    assert!(ok, "{handle}");
+    handle
+        .lines()
+        .find_map(|line| line.strip_prefix("export JOY_SESSION="))
+        .expect("the redemption prints the handle")
+        .trim()
+        .to_string()
+}
