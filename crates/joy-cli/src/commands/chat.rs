@@ -14,6 +14,7 @@ use anyhow::Result;
 use crate::color;
 use clap::{Args, Subcommand};
 
+use joy_core::vcs::contact::Failure;
 use joy_core::vcs::Vcs;
 
 #[derive(Args)]
@@ -135,10 +136,7 @@ fn deliver_ref(root: &std::path::Path) {
                 sync_ref(root);
                 return;
             }
-            eprintln!(
-                "chat stays committed locally, push failed ({}); the next send or read retries",
-                classify_sync_error(&stderr)
-            );
+            report_refusal(root, Way::Push, &stderr);
         }
         joy_core::vcs::RefTransfer::GitUnavailable(e) => {
             eprintln!("chat stays committed locally, push failed (git unavailable: {e})");
@@ -165,10 +163,7 @@ fn sync_ref(root: &std::path::Path) {
         joy_core::vcs::RefTransfer::Refused(stderr) => {
             // No remote chats yet: the normal first sync, nothing to merge.
             if !stderr.contains("couldn't find remote ref") {
-                eprintln!(
-                    "chats not fetched ({}); local state shown, the next send or read retries",
-                    classify_sync_error(&stderr)
-                );
+                report_refusal(root, Way::Fetch, &stderr);
             }
         }
         joy_core::vcs::RefTransfer::GitUnavailable(e) => {
@@ -194,10 +189,7 @@ fn sync_ref(root: &std::path::Path) {
     match joy_core::vcs::push_ref(root, &remote, &push_spec) {
         joy_core::vcs::RefTransfer::Done => {}
         joy_core::vcs::RefTransfer::Refused(stderr) => {
-            eprintln!(
-                "chat stays committed locally, push failed ({}); the next send or read retries",
-                classify_sync_error(&stderr)
-            );
+            report_refusal(root, Way::Push, &stderr);
         }
         joy_core::vcs::RefTransfer::GitUnavailable(e) => {
             eprintln!("chat stays committed locally, push failed (git unavailable: {e})")
@@ -205,26 +197,108 @@ fn sync_ref(root: &std::path::Path) {
     }
 }
 
-/// One-line failure classification, mirroring the app sync worker's
-/// transient/permanent split.
-fn classify_sync_error(stderr: &str) -> String {
+/// What a refused ref transfer means, in the ONE failure vocabulary the
+/// CLI speaks (D3.8: the private classifier of this file is retired and
+/// the `contact::Failure` words take its place).
+///
+/// The text is read and not a `git2::Error`, because this path still
+/// runs the git binary (`vcs::push_ref`); package J6 replaces it with a
+/// git2 contact, and then the evidence the real classifier wants is
+/// there and this bridge goes. Until then the words a person and an
+/// agent read are already the final ones.
+fn sync_failure(way: Way, stderr: &str) -> Failure {
     let s = stderr.to_lowercase();
+    if s.contains("403") {
+        // The DIRECTION decides what a 403 means. On a push it is the
+        // ordinary "read yes, write no". On a fetch it is a token that
+        // may not read this repository at all, and telling that person
+        // they can read but not write is simply false.
+        return match way {
+            Way::Push => Failure::NoPushRights,
+            Way::Fetch => Failure::NeedsSignIn,
+        };
+    }
     if s.contains("permission denied")
         || s.contains("authentication")
-        || s.contains("403")
         || s.contains("401")
         || s.contains("access denied")
+        || s.contains("could not read username")
     {
-        "no access to the remote -- check your credentials".to_string()
-    } else if s.contains("could not resolve")
+        return Failure::NeedsSignIn;
+    }
+    if s.contains("host key verification failed") || s.contains("unknown remote ssh hostkey") {
+        return Failure::NeedsHostTrust;
+    }
+    if s.contains("could not resolve")
         || s.contains("unable to access")
         || s.contains("connection")
+        || s.contains("timed out")
     {
-        "offline?".to_string()
-    } else {
-        let line = stderr.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
-        format!("transient: {}", line.trim())
+        return Failure::Offline;
     }
+    Failure::Error
+}
+
+/// Which way the refused transfer went. Half the evidence of a ref
+/// transfer is its direction, and the classifier reads it: the same
+/// HTTP status means different things on a fetch and on a push.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Way {
+    Fetch,
+    Push,
+}
+
+impl Way {
+    /// What did not happen, and what happens next; the two halves of
+    /// the line this file has always printed.
+    fn headline(self) -> &'static str {
+        match self {
+            Way::Fetch => "chats not fetched",
+            Way::Push => "chat stays committed locally, push failed",
+        }
+    }
+
+    fn tail(self) -> &'static str {
+        match self {
+            Way::Fetch => "local state shown, the next send or read retries",
+            Way::Push => "the next send or read retries",
+        }
+    }
+}
+
+/// What a refused chat sync says, in the full vocabulary of D3.8: the
+/// state's sentence with the ONE next step (for `needs_sign_in` the
+/// door this CLI now has, D3.10), the state WORD an agent reads, and
+/// the raw line git gave us as the detail.
+///
+/// The detail is not decoration: four substring rules classify this
+/// text, and a failure none of them recognises has to stay debuggable.
+fn report_refusal(root: &std::path::Path, way: Way, stderr: &str) {
+    let host = joy_core::vcs::forge::remote_url(root)
+        .map(|url| joy_core::vcs::contact::host_of(&url))
+        .unwrap_or_default();
+    let failure = sync_failure(way, stderr);
+    // The shape the rest of this CLI uses for a refusal: the sentence,
+    // then the state word, then the one next step, then the line the
+    // machine really printed.
+    eprintln!("{}: {}", way.headline(), failure.sentence(&host));
+    eprintln!("  = note: state {}; {}", failure.reason(), way.tail());
+    if let Some(action) = crate::commands::forge::action_line(failure, &host) {
+        eprintln!("  = help: {action}");
+    }
+    if let Some(detail) = detail_line(stderr) {
+        eprintln!("  = detail: {detail}");
+    }
+}
+
+/// The first line git really printed, which is the detail of D3.8. An
+/// empty stderr has none, and nothing is invented for it.
+fn detail_line(stderr: &str) -> Option<String> {
+    stderr
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(str::to_string)
 }
 
 /// The @mention view of one chat for `me` (JOY-0226-27): when the newest
@@ -819,4 +893,54 @@ fn run_command(root: &std::path::Path, command: ChatCommand) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod sync_tests {
+    use super::*;
+
+    /// The direction is half the evidence (D1.8a): the same 403 is
+    /// "you may not write" on a push and "sign in" on a fetch.
+    #[test]
+    fn a_403_means_something_different_in_each_direction() {
+        let stderr = "remote: HTTP 403 forbidden";
+        assert_eq!(sync_failure(Way::Push, stderr), Failure::NoPushRights);
+        assert_eq!(sync_failure(Way::Fetch, stderr), Failure::NeedsSignIn);
+    }
+
+    #[test]
+    fn the_words_of_the_classifier_are_the_words_of_this_file() {
+        assert_eq!(
+            sync_failure(Way::Push, "fatal: Authentication failed"),
+            Failure::NeedsSignIn
+        );
+        assert_eq!(
+            sync_failure(Way::Fetch, "Host key verification failed."),
+            Failure::NeedsHostTrust
+        );
+        assert_eq!(
+            sync_failure(
+                Way::Fetch,
+                "fatal: unable to access 'https://x/': Could not resolve host"
+            ),
+            Failure::Offline
+        );
+        // and a line no rule recognises is not called offline
+        assert_eq!(
+            sync_failure(Way::Push, "fatal: the remote end hung up unexpectedly"),
+            Failure::Error
+        );
+    }
+
+    /// An unclassified failure keeps the line git printed: without it
+    /// the person is told "GitHub answered with an error" and nothing
+    /// else, and nobody can debug that.
+    #[test]
+    fn the_raw_git_line_survives_as_the_detail() {
+        assert_eq!(
+            detail_line("\n  fatal: the remote end hung up unexpectedly\nmore\n").as_deref(),
+            Some("fatal: the remote end hung up unexpectedly")
+        );
+        assert_eq!(detail_line("   \n"), None);
+    }
 }

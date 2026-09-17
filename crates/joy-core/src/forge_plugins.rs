@@ -2151,6 +2151,11 @@ pub fn token_for(
     )
 }
 
+/// The verbs that need a person at the machine (D3.11): compiled into a
+/// build that asked for them, and into no other. A binary without the
+/// feature cannot call `login`, `logout` or `token-store`, because the
+/// code is not in it.
+#[cfg(feature = "interactive")]
 pub mod interactive;
 
 /// The connector responsible for this project: the `forge:` override

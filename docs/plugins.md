@@ -352,6 +352,86 @@ about the network and none about any login, so the memory of that
 remote stays where it is and the answer says the forge could not be
 asked.
 
+### Signing in from the CLI: `joy forge`
+
+The CLI's door to all of this is one command group, and every sentence
+in joy that says "sign in to the forge" points at it:
+
+    joy forge login [--host <host>] [--token-stdin] [--for read|write|create|release] [--login <name>]
+    joy forge status [--host <host>]
+    joy forge logout [--host <host> | --all]
+    joy forge plugins
+
+Without `--host` the host comes from this project's remote, the one joy
+really contacts (`origin`, or the first configured one). There is no
+`--remote <url>` here; that option belongs to the connector protocol.
+
+`login` runs the connector's `login` verb through the streaming runner
+and prints the verification URL and the code on stderr while the
+connector polls; joy never opens a browser. `--token-stdin` reads ONE
+line from stdin instead, hands it to `token-store`, which validates it
+before storing, and refuses an empty line. The token is never an
+argument, so no process list can carry it, and there is no
+`--token <value>`.
+
+`status` prints one row per host: the host, its forge, the login, the
+state, where the credential came from, the granted scopes, the expiry,
+and which binary answered with its path and protocol. The host set is
+the hosts of `forges.yaml`, the hosts of this project's remotes and the
+hosts joy's own credential file holds; a credential that lives in the
+operating system's store alone cannot be enumerated, so such a host is
+shown when `forges.yaml`, a remote or `--host` names it. `status` exits
+1 when no host in its set is signed in, and `login` exits 1 on every
+state other than `signed-in`.
+
+`logout` calls the connector's `logout`. A credential that came from
+gh, glab or tea is removed by nobody but that CLI, so joy removes
+nothing and prints the foreign command instead.
+
+`plugins` is the diagnostic, and it contacts no forge: one row per
+registry id with the file that answers, the search step that found it,
+its protocol and version, a `problem` word (`shadowed-legacy`,
+`plugin_outdated`, `plugin_missing`) and the `rm` line for a stale
+binary beside the fresh one.
+
+With `--json` each of the four answers is exactly one envelope
+`{"version":1,"data":{...}}` on stdout, and every diagnostic stays on
+stderr.
+
+### The verbs that need a person, and the builds that do not have them
+
+`login`, `logout` and `token-store` live behind joy-core's `interactive`
+cargo feature, which is OFF by default. joy-cli turns it on, because the
+CLI is what a person types at. The platform asks for `forge-net` alone,
+so the module is not in the server binary at all.
+
+The desktop is meant to carry it too (design D3.11), and its manifest
+lives in the app repository: as this is written
+`app/apps/desktop/src-tauri/Cargo.toml` still asks for `ts` and
+`forge-net` only, so a desktop build has no `login`, no `logout` and no
+`token-store` in it. That manifest line belongs with the first desktop
+call site, and until it lands no guard in THIS repository can see it.
+
+Two more layers sit behind the feature:
+
+- the call takes a progress sink and a cancel token, both mandatory, so
+  nothing starts a fifteen minute browser flow by accident;
+- a build that does carry the feature still refuses `login` when the
+  host kind is `background` or `delegated`, instantly and by name: the
+  agent image builds joy-cli from source, so a delegated agent has
+  `joy forge login` on its PATH and has to be told to sign in on the
+  machine that owns the session, or to store a token there with
+  `--token-stdin`.
+
+`just guard-interactive` checks what is in reach of this repository:
+that joy-core leaves the feature off, that joy-cli is the only crate
+here that asks for it, and, where the platform is checked out beside
+joy, that
+`cargo tree -e features -i joy-core --manifest-path ../platform/Cargo.toml`
+carries no `interactive` node. The platform's own pipeline runs that
+last check where the platform really is; the recipe says which half it
+was able to do.
+
 ### Scopes, and the `scope_missing` answer
 
 Every connector knows which scope set each verb group needs, and
@@ -581,13 +661,19 @@ tracked separately.
 
 There is nothing to configure. `cargo install joy-cli` ships the
 `joy-forge` connector beside `joy`, and the installers put both in the
-same archive, so `joy update` keeps them in lockstep. Sign in with your
-forge's own CLI (`gh auth login`, `glab auth login`, `tea login add`) as
-you would anyway. From then on joy resolves alias addresses
-through it, and a project on a host you are signed in to is recognized
-on its own. No environment variable: the connector reads the CLI's
-configuration, asks that CLI for a token when it needs one, and speaks
-to the forge itself.
+same archive, so `joy update` keeps them in lockstep. Sign in with joy
+itself:
+
+    joy forge login --host github.com
+
+or keep using your forge's own CLI (`gh auth login`, `glab auth login`,
+`tea login add`) as you would anyway; joy reads either. From then on joy
+resolves alias addresses through it, and a project on a host you are
+signed in to is recognized on its own. No environment variable: the
+connector reads the CLI's configuration, asks that CLI for a token when
+it needs one, and speaks to the forge itself. `joy forge status` says
+which of the two answered for a host, and `joy forge plugins` says which
+binary answered at all.
 
 Two levers exist. Per project, when a project lives on an instance
 nobody is signed in to locally (a GitHub Enterprise Server, a

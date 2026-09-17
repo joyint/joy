@@ -82,6 +82,15 @@ jobs:
           cache-on-failure: true
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
         working-directory: joy
+      - uses: extractions/setup-just@v3
+      # The interactive gate of design D3.11: the sign in verbs may be
+      # compiled into joy-cli and the desktop and into nothing else. The
+      # half that reads the manifests runs here; the half that reads the
+      # platform's own `cargo tree` runs in the platform's pipeline,
+      # where that repository is checked out. The recipe says which half
+      # it did.
+      - run: just guard-interactive
+        working-directory: joy
 
   test:
     name: Test (${{ matrix.os }})

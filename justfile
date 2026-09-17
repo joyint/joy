@@ -106,7 +106,7 @@ sync-tutorial:
 # Run fmt-check, lint, test
 # The fast gate, for every commit: static checks plus the functional
 # core. Seconds, not minutes, so nobody is tempted to skip it.
-check: _toolchain-check sync-tutorial fmt-check lint check-windows guard-vcs guard-certificate-check test-unit test-cmd test-smoke
+check: _toolchain-check sync-tutorial fmt-check lint check-windows guard-vcs guard-certificate-check guard-interactive test-unit test-cmd test-smoke
 
 # Git lives in ONE place (JOY-0265-D7): joy-core/src/vcs, plus the chat
 # store's object plumbing (a git-object database, its own storage layer).
@@ -175,6 +175,66 @@ guard-certificate-check:
     if [ "$builds" != "1" ]; then
         echo "guard-certificate-check: $installer builds RemoteCallbacks $builds times, expected exactly 1"
         bad=1
+    fi
+    exit $bad
+
+# The interactive gate of design D3.11: `login`, `logout` and the token
+# paste are compiled OUT of every build that must not perform them, and
+# the platform is the build that must not. Three things can let that
+# drift back, so three things are checked here:
+#
+#   1. joy-core declares `interactive` and leaves it off by default.
+#   2. exactly one manifest in this workspace asks joy-core for it, and
+#      it is joy-cli's. The desktop's manifest lives in the app
+#      repository and is out of reach here, so nothing below can see
+#      whether it asks: that one is the app pipeline's to check.
+#   3. the platform's OWN resolved graph carries no `interactive`
+#      feature node, which is the check D3.11 writes down and the only
+#      one no manifest reading can replace. It needs the platform
+#      checked out beside joy; where it is not, the recipe says so and
+#      the manifest half still runs.
+#
+# The manifest path is a parameter so the guard can be pointed at a
+# fixture and shown to FAIL, which is half of what a guard has to prove.
+# The fixture needs no invention: this repository's OWN workspace graph
+# carries the feature, because joy-cli asks for it, so
+# `just guard-interactive Cargo.toml` prints the offending node and
+# exits 1.
+guard-interactive manifest="../platform/Cargo.toml":
+    #!/usr/bin/env bash
+    set -uo pipefail
+    cd "{{justfile_directory()}}"
+    bad=0
+    core=crates/joy-core/Cargo.toml
+    if ! grep -qE '^interactive = \[\]' "$core"; then
+        echo "guard-interactive: $core does not declare the feature as \`interactive = []\`"
+        bad=1
+    fi
+    if grep -qE '^default = .*"interactive"' "$core"; then
+        echo "guard-interactive: $core has interactive in its DEFAULT features; D3.11 wants it off"
+        bad=1
+    fi
+    askers=$(grep -lE '^joy-core = .*"interactive"' crates/*/Cargo.toml | sort | tr '\n' ' ')
+    askers=${askers% }
+    if [ "$askers" != "crates/joy-cli/Cargo.toml" ]; then
+        echo "guard-interactive: the crates asking joy-core for interactive are '$askers', expected only crates/joy-cli/Cargo.toml"
+        bad=1
+    fi
+    if [ -f "{{manifest}}" ]; then
+        tree=$(cargo tree -e features -i joy-core --manifest-path "{{manifest}}" 2>&1) || {
+            echo "guard-interactive: cargo tree over {{manifest}} failed:"
+            echo "$tree"
+            exit 1
+        }
+        if grep -q 'interactive' <<<"$tree"; then
+            echo "guard-interactive: {{manifest}} builds joy-core WITH the interactive feature:"
+            grep -n 'interactive' <<<"$tree"
+            bad=1
+        else
+            echo "guard-interactive: {{manifest}} builds joy-core without interactive"
+        fi
+    else
+        echo "guard-interactive: {{manifest}} is not here, so only the manifests of this repository were checked"
     fi
     exit $bad
 
