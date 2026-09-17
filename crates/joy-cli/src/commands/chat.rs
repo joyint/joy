@@ -14,6 +14,7 @@ use anyhow::Result;
 use crate::color;
 use clap::{Args, Subcommand};
 
+use joy_core::vcs::contact::Failure;
 use joy_core::vcs::Vcs;
 
 #[derive(Args)]
@@ -136,8 +137,8 @@ fn deliver_ref(root: &std::path::Path) {
                 return;
             }
             eprintln!(
-                "chat stays committed locally, push failed ({}); the next send or read retries",
-                classify_sync_error(&stderr)
+                "chat stays committed locally, push failed: {}; the next send or read retries",
+                sync_sentence(root, &stderr)
             );
         }
         joy_core::vcs::RefTransfer::GitUnavailable(e) => {
@@ -166,8 +167,8 @@ fn sync_ref(root: &std::path::Path) {
             // No remote chats yet: the normal first sync, nothing to merge.
             if !stderr.contains("couldn't find remote ref") {
                 eprintln!(
-                    "chats not fetched ({}); local state shown, the next send or read retries",
-                    classify_sync_error(&stderr)
+                    "chats not fetched: {}; local state shown, the next send or read retries",
+                    sync_sentence(root, &stderr)
                 );
             }
         }
@@ -195,8 +196,8 @@ fn sync_ref(root: &std::path::Path) {
         joy_core::vcs::RefTransfer::Done => {}
         joy_core::vcs::RefTransfer::Refused(stderr) => {
             eprintln!(
-                "chat stays committed locally, push failed ({}); the next send or read retries",
-                classify_sync_error(&stderr)
+                "chat stays committed locally, push failed: {}; the next send or read retries",
+                sync_sentence(root, &stderr)
             );
         }
         joy_core::vcs::RefTransfer::GitUnavailable(e) => {
@@ -205,25 +206,53 @@ fn sync_ref(root: &std::path::Path) {
     }
 }
 
-/// One-line failure classification, mirroring the app sync worker's
-/// transient/permanent split.
-fn classify_sync_error(stderr: &str) -> String {
+/// What a refused ref transfer means, in the ONE failure vocabulary the
+/// CLI speaks (D3.8: the private classifier of this file is retired and
+/// the `contact::Failure` words take its place).
+///
+/// The text is read and not a `git2::Error`, because this path still
+/// runs the git binary (`vcs::push_ref`); package J6 replaces it with a
+/// git2 contact, and then the evidence the real classifier wants is
+/// there and this bridge goes. Until then the words a person and an
+/// agent read are already the final ones.
+fn sync_failure(stderr: &str) -> Failure {
     let s = stderr.to_lowercase();
+    if s.contains("403") {
+        return Failure::NoPushRights;
+    }
     if s.contains("permission denied")
         || s.contains("authentication")
-        || s.contains("403")
         || s.contains("401")
         || s.contains("access denied")
+        || s.contains("could not read username")
     {
-        "no access to the remote -- check your credentials".to_string()
-    } else if s.contains("could not resolve")
+        return Failure::NeedsSignIn;
+    }
+    if s.contains("host key verification failed") || s.contains("unknown remote ssh hostkey") {
+        return Failure::NeedsHostTrust;
+    }
+    if s.contains("could not resolve")
         || s.contains("unable to access")
         || s.contains("connection")
+        || s.contains("timed out")
     {
-        "offline?".to_string()
-    } else {
-        let line = stderr.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
-        format!("transient: {}", line.trim())
+        return Failure::Offline;
+    }
+    Failure::Error
+}
+
+/// The sentence a chat sync failure prints: the state's own sentence,
+/// then the ONE next step, which for `needs_sign_in` is the door this
+/// CLI now has (D3.10).
+fn sync_sentence(root: &std::path::Path, stderr: &str) -> String {
+    let host = joy_core::vcs::forge::remote_url(root)
+        .map(|url| joy_core::vcs::contact::host_of(&url))
+        .unwrap_or_default();
+    let failure = sync_failure(stderr);
+    let sentence = failure.sentence(&host);
+    match crate::commands::forge::action_line(failure, &host) {
+        Some(action) => format!("{} {}", sentence, action),
+        None => sentence,
     }
 }
 

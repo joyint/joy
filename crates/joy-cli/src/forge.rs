@@ -59,14 +59,16 @@ impl ForgeRelease for PluginForge {
         // out of the working directory; the connector's own REST call
         // has to be told (D2.8), and the remote is what tells it.
         let target = default_remote_url(root).map(Target::remote);
-        let outcome = forge_plugins::release(self.spec, target.as_ref(), tag, title, &notes_file, &ctx)
-            .map_err(|e| {
-                anyhow!(
-                    "{e}\n  = note: state {}\n  \
-                     = help: install the connector or set `forge: none` to publish without a forge release",
-                    e.state()
-                )
-            })?;
+        let outcome =
+            forge_plugins::release(self.spec, target.as_ref(), tag, title, &notes_file, &ctx)
+                .map_err(|e| {
+                    anyhow!(
+                        "{e}\n  = note: state {}\n  \
+                     = help: run `joy forge plugins` to see which binary answered, install the \
+                     connector, or set `forge: none` to publish without a forge release",
+                        e.state()
+                    )
+                })?;
         if outcome.unsupported {
             // the plugin's forge has no release backend yet: same
             // downgrade the lenient project.yaml path always offered
@@ -217,11 +219,21 @@ fn auto_detect(root: &Path) -> Result<Resolution> {
                     .join(", ");
                 format!("configured remotes: {list}")
             };
+            // The second half of the sentence is the new door (D3.10):
+            // a host whose connector nobody is signed in to claims
+            // nothing, and "add a remote" is the wrong advice for a
+            // person who has the remote already.
+            let host = remotes
+                .first()
+                .map(|(_, url)| vcs::contact::host_of(url))
+                .unwrap_or_default();
             bail!(
                 "no supported forge detected from git remotes ({remote_summary})\n  \
                  = help: add a remote on a supported host ({}), pass --forge <value>, \
-                 or set `forge: none` with `joy project set forge none` to publish without a forge release",
-                supported_forges().join(", ")
+                 {}, or set `forge: none` with `joy project set forge none` to publish \
+                 without a forge release",
+                supported_forges().join(", "),
+                crate::commands::forge::sign_in_line(&host)
             )
         }
         1 => {

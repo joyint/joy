@@ -685,7 +685,8 @@ pub fn release_answer(
         let variables = joy_forge_net::forge::token_variables("github", &host).join(" or ");
         anyhow!(
             "no GitHub credential for {host}\n  \
-             = help: set {variables}, hand one over with --token-env, or run `gh auth login`"
+             = help: run `joy forge login --host {host}`, set {variables}, or hand one over \
+             with --token-env"
         )
     })?;
     // The local pre check of D2.7c: a token whose stored set cannot
