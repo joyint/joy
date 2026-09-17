@@ -313,6 +313,19 @@ fn run_query_timeout(
     run_query_full(binary, root, args, None, timeout)
 }
 
+/// The one place a plugin call can fail silently, so the one place that
+/// says so (forge connection NG, D5 and D2.3, packages J1 and P1a).
+///
+/// The ANSWER stays best effort: every failure is still `None` and every
+/// caller still degrades to "unknown". What changes is that the failure
+/// leaves a trace. Without it, a connector that is missing, shadowed by
+/// a stale binary, refused or slow turns into "unknown" for the person
+/// and into nothing at all for the operator, which is exactly how a
+/// broken server image survived a working day.
+///
+/// Every line carries the plugin and the verb, because both are what a
+/// reader needs to act: the binary to look for and the question that was
+/// asked.
 fn run_query_full(
     binary: &str,
     root: &Path,
@@ -320,38 +333,87 @@ fn run_query_full(
     env: Option<(&str, &str)>,
     timeout: Duration,
 ) -> Option<String> {
+    let verb = args.first().copied().unwrap_or("");
     let mut command = joy_process::command(binary);
     if let Some((var, value)) = env {
         command.env(var, value);
     }
-    let mut child = command
+    let mut child = match command
         .args(args)
         .current_dir(root)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .spawn()
-        .ok()?;
+    {
+        Ok(child) => child,
+        Err(e) => {
+            tracing::warn!(
+                plugin = binary,
+                verb,
+                error = %e,
+                "the forge plugin could not be started"
+            );
+            return None;
+        }
+    };
     let deadline = Instant::now() + timeout;
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
                 if !status.success() {
+                    let code = status
+                        .code()
+                        .map(|c| c.to_string())
+                        .unwrap_or_else(|| "a signal".to_string());
+                    tracing::warn!(
+                        plugin = binary,
+                        verb,
+                        code = %code,
+                        "the forge plugin refused the verb"
+                    );
                     return None;
                 }
                 let mut out = String::new();
-                child.stdout.take()?.read_to_string(&mut out).ok()?;
+                match child.stdout.take() {
+                    Some(mut pipe) => {
+                        if let Err(e) = pipe.read_to_string(&mut out) {
+                            tracing::warn!(
+                                plugin = binary,
+                                verb,
+                                error = %e,
+                                "the forge plugin's answer could not be read"
+                            );
+                            return None;
+                        }
+                    }
+                    None => return None,
+                }
                 return Some(out);
             }
             Ok(None) => {
                 if Instant::now() >= deadline {
                     let _ = child.kill();
                     let _ = child.wait();
+                    tracing::warn!(
+                        plugin = binary,
+                        verb,
+                        timeout_secs = timeout.as_secs(),
+                        "the forge plugin did not answer in time and was stopped"
+                    );
                     return None;
                 }
                 std::thread::sleep(Duration::from_millis(25));
             }
-            Err(_) => return None,
+            Err(e) => {
+                tracing::warn!(
+                    plugin = binary,
+                    verb,
+                    error = %e,
+                    "the forge plugin could not be waited for"
+                );
+                return None;
+            }
         }
     }
 }
@@ -488,7 +550,8 @@ mod tests {
             .and_then(|o| serde_json::from_str::<ClaimsAnswer>(&o).ok())
             .is_none());
         assert!(run_query(spec.binary, root, &["nope"]).is_none());
-        // a missing binary is silently no answer
+        // a missing binary is no answer to the CALLER (and a warn line
+        // to the operator, see below)
         let missing = ForgePluginSpec {
             id: "ghost",
             binary: "joy-does-not-exist-anywhere",
@@ -497,5 +560,104 @@ mod tests {
         assert!(identity(&missing, root, &CallerFacts::default()).is_none());
         assert!(resolve(&missing, root, "x@y").is_none());
         assert!(store(&missing, root, "url", &CallerFacts::default()).is_none());
+    }
+
+    /// Best effort is not the same as silent (forge connection NG, D5):
+    /// the answer degrades to "unknown", and the operator gets one warn
+    /// line per failed call naming the plugin and the verb. Without it a
+    /// connector that is missing, refused or slow is invisible until a
+    /// person complains about a result nobody can explain.
+    #[cfg(unix)]
+    #[test]
+    fn a_failing_plugin_call_is_warned_with_the_plugin_and_the_verb() {
+        let dir = tempfile::tempdir().unwrap();
+        let stub = dir.path().join("joy-refusing");
+        {
+            let mut f = std::fs::File::create(&stub).unwrap();
+            writeln!(f, "#!/bin/sh").unwrap();
+            writeln!(f, "exit 3").unwrap();
+        }
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let log = WarnLog::default();
+        tracing::subscriber::with_default(log.clone(), || {
+            // not installed at all
+            assert!(run_query("joy-does-not-exist-anywhere", dir.path(), &["claims"]).is_none());
+            // installed and refusing (retried: a fresh executable can
+            // still be ETXTBSY while a parallel test forks)
+            for _ in 0..20 {
+                if log.lines().iter().any(|l| l.contains("refused the verb")) {
+                    break;
+                }
+                assert!(run_query(
+                    &stub.display().to_string(),
+                    dir.path(),
+                    &["identity", "--login", "alice"]
+                )
+                .is_none());
+                std::thread::sleep(Duration::from_millis(25));
+            }
+        });
+        let lines = log.lines();
+        let missing = lines
+            .iter()
+            .find(|line| line.contains("could not be started"))
+            .unwrap_or_else(|| panic!("no line about the missing plugin in {lines:?}"));
+        assert!(missing.contains("joy-does-not-exist-anywhere"), "{missing}");
+        assert!(missing.contains("claims"), "{missing}");
+        let refused = lines
+            .iter()
+            .find(|line| line.contains("refused the verb"))
+            .unwrap_or_else(|| panic!("no line about the refusing plugin in {lines:?}"));
+        assert!(refused.contains("joy-refusing"), "{refused}");
+        assert!(refused.contains("identity"), "{refused}");
+        // `code` is recorded with Display, so it carries no quotes
+        assert!(refused.contains("code=3"), "{refused}");
+    }
+
+    /// Keeps the fields of every warn event, so a test can read the line
+    /// an operator would read. Hand written on purpose: joy-core carries
+    /// no subscriber crate, not even for tests.
+    #[cfg(unix)]
+    #[derive(Clone, Default)]
+    struct WarnLog(std::sync::Arc<std::sync::Mutex<Vec<String>>>);
+
+    #[cfg(unix)]
+    impl WarnLog {
+        fn lines(&self) -> Vec<String> {
+            self.0.lock().expect("the warn log").clone()
+        }
+    }
+
+    #[cfg(unix)]
+    impl tracing::Subscriber for WarnLog {
+        fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
+            *metadata.level() <= tracing::Level::WARN
+        }
+        fn new_span(&self, _span: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+            tracing::span::Id::from_u64(1)
+        }
+        fn record(&self, _span: &tracing::span::Id, _values: &tracing::span::Record<'_>) {}
+        fn record_follows_from(&self, _span: &tracing::span::Id, _follows: &tracing::span::Id) {}
+        fn event(&self, event: &tracing::Event<'_>) {
+            struct Fields<'a>(&'a mut String);
+            impl tracing::field::Visit for Fields<'_> {
+                fn record_debug(
+                    &mut self,
+                    field: &tracing::field::Field,
+                    value: &dyn std::fmt::Debug,
+                ) {
+                    use std::fmt::Write;
+                    let _ = write!(self.0, " {}={value:?}", field.name());
+                }
+            }
+            let mut line = String::new();
+            event.record(&mut Fields(&mut line));
+            self.0.lock().expect("the warn log").push(line);
+        }
+        fn enter(&self, _span: &tracing::span::Id) {}
+        fn exit(&self, _span: &tracing::span::Id) {}
     }
 }
