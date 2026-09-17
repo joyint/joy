@@ -1,0 +1,4 @@
+{
+  "note": "The pin file of design D1.4a, as a release ships it, and EMPTY because decision 23 is open. joy therefore pins nothing today: a host key no known_hosts file knows is unknown, and a Background or Delegated host refuses it with needs_host_trust and the line to paste. The blobs that answering decision 23 would ship are parked beside this file in host-keys.published.json, which no joy binary carries. joy reads THIS file from the release at run time (beside the joy binary, or in <prefix>/share/joy beside its bin directory), so answering the decision is a file that is copied and a key rotation at a pinned forge is a file that is replaced, never a joy that is rebuilt.",
+  "hosts": []
+}

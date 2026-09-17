@@ -106,7 +106,7 @@ sync-tutorial:
 # Run fmt-check, lint, test
 # The fast gate, for every commit: static checks plus the functional
 # core. Seconds, not minutes, so nobody is tempted to skip it.
-check: _toolchain-check sync-tutorial fmt-check lint check-windows guard-vcs test-unit test-cmd test-smoke
+check: _toolchain-check sync-tutorial fmt-check lint check-windows guard-vcs guard-certificate-check test-unit test-cmd test-smoke
 
 # Git lives in ONE place (JOY-0265-D7): joy-core/src/vcs, plus the chat
 # store's object plumbing (a git-object database, its own storage layer).
@@ -126,6 +126,113 @@ guard-vcs:
             fi
         done
     done
+    exit $bad
+
+# The ONE `certificate_check` closure (design D1.4a). git2 0.21 holds
+# exactly one such slot per contact (remote_callbacks.rs:27), so a
+# second installer anywhere in the tree would silently take the ssh
+# host key decision away from joy_core::vcs::certificates and hand it
+# back to libgit2, which reads one file with strcmp. The module that
+# OWNS the closure may name it; exactly one call site may install it.
+guard-certificate-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    owner='crates/joy-core/src/vcs/certificates'
+    installer='crates/joy-core/src/vcs/forge.rs'
+    # EVERY Rust file of the workspace, not only crates/*/src: a
+    # builder in an integration test or in a build script takes the
+    # decision away from joy just as quietly as one beside the engine.
+    # Both spellings of the builder count, `new()` and `default()`.
+    builder='RemoteCallbacks::(new|default)\('
+    bad=0
+    while IFS=: read -r file line _; do
+        case "$file" in
+            "$owner".rs|"$owner"/*) continue ;;
+            "$installer") continue ;;
+        esac
+        echo "guard-certificate-check: $file:$line installs a second certificate_check; the one closure lives in $owner.rs"
+        bad=1
+    done < <(grep -rn --include='*.rs' 'certificate_check(' crates || true)
+    # occurrences, not lines: two installs written on one line are two
+    installs=$(grep -o 'certificate_check(' "$installer" | wc -l | tr -d '[:space:]')
+    if [ "$installs" != "1" ]; then
+        echo "guard-certificate-check: $installer installs certificate_check $installs times, expected exactly 1"
+        bad=1
+    fi
+    # and the other half of the same rule: the closure goes into EVERY
+    # RemoteCallbacks joy builds, which holds only while they are all
+    # built in the one place that installs it
+    while IFS=: read -r file line _; do
+        case "$file" in
+            "$owner".rs|"$owner"/*) continue ;;
+            "$installer") continue ;;
+        esac
+        echo "guard-certificate-check: $file:$line builds a RemoteCallbacks outside $installer, so it carries no certificate_check"
+        bad=1
+    done < <(grep -rnE --include='*.rs' "$builder" crates || true)
+    builds=$(grep -oE "$builder" "$installer" | wc -l | tr -d '[:space:]')
+    if [ "$builds" != "1" ]; then
+        echo "guard-certificate-check: $installer builds RemoteCallbacks $builds times, expected exactly 1"
+        bad=1
+    fi
+    exit $bad
+
+# Take the pinned host keys off the three public forges again and check
+# them against crates/joy-core/data/host-keys.published.json and
+# against the fingerprints the forges publish (design D1.4a: the
+# Codeberg pin is a blob taken once and checked against a page that
+# publishes fingerprints only). This is the build step of D1.4a, and CI
+# runs it every night (.github/workflows/ci.yaml, job host-key-pins),
+# so a rotation or a hand-edited pin is noticed by a job and not by a
+# person whose contact failed. Needs the network; the offline half of
+# the same check is the unit test pins_match_the_published_fingerprints.
+# The file it checks is the one parked BESIDE the release: the pin file
+# a release ships is empty while decision 23 is open.
+check-host-key-pins:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    pins=crates/joy-core/data/host-keys.published.json
+    bad=0
+    # 1. every recorded blob is the key its recorded fingerprint names
+    while read -r host type key fingerprint; do
+        computed=$(printf '%s %s\n' "$type" "$key" | ssh-keygen -lf - | awk '{print $2}')
+        if [ "$computed" != "$fingerprint" ]; then
+            echo "pin $host $type: the blob hashes to $computed, the file records $fingerprint"
+            bad=1
+        fi
+    done < <(jq -r '.hosts[] | .host as $h | .keys[] | "\($h) \(.type) \(.key) \(.fingerprint)"' "$pins")
+    # 2. the host still serves exactly the recorded blobs
+    while read -r host port; do
+        scanned=$(ssh-keyscan -T 20 -p "$port" -t rsa,ecdsa,ed25519 "$host" 2>/dev/null \
+            | grep -v '^#' | awk '{print $2" "$3}' | sort)
+        recorded=$(jq -r --arg h "$host" '.hosts[] | select(.host==$h) | .keys[] | "\(.type) \(.key)"' "$pins" | sort)
+        if [ "$scanned" != "$recorded" ]; then
+            echo "pin $host:$port: the keys the host serves are not the recorded ones"
+            diff <(echo "$recorded") <(echo "$scanned") || true
+            bad=1
+        fi
+    done < <(jq -r '.hosts[] | "\(.host) \(.port)"' "$pins")
+    # 3. the page each forge publishes still carries the recorded
+    # fingerprints. GitHub publishes them as JSON, GitLab and Codeberg
+    # as prose, so the prose pages are searched for the strings.
+    github=$(curl -sS --max-time 30 https://api.github.com/meta | jq -r '.ssh_key_fingerprints[]')
+    pages=$(curl -sS --max-time 30 https://docs.gitlab.com/user/gitlab_com/ \
+            https://docs.codeberg.org/security/ssh-fingerprint/)
+    while read -r host fingerprint; do
+        bare=${fingerprint#SHA256:}
+        case "$host" in
+            # a here string and not a pipe: `grep -q` leaves the
+            # writer with SIGPIPE, and under `pipefail` that reads as a
+            # failed search for a fingerprint that was found
+            github.com|ssh.github.com)
+                grep -qxF "$bare" <<<"$github" || { echo "pin $host: $fingerprint is not on GitHub's page"; bad=1; } ;;
+            *)
+                grep -qF "$bare" <<<"$pages" || { echo "pin $host: $fingerprint is not on the forge's page"; bad=1; } ;;
+        esac
+    done < <(jq -r '.hosts[] | .host as $h | .keys[] | "\($h) \(.fingerprint)"' "$pins")
+    if [ "$bad" = "0" ]; then echo "host key pins: all blobs, hosts and published fingerprints agree"; fi
     exit $bad
 
 # Everything, for the nightly run and before a release.

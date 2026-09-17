@@ -711,7 +711,20 @@ fn decide(ev: &ContactEvidence) -> Decision {
     {
         match code {
             Code::Auth => return plain(Failure::NeedsSignIn),
-            Code::Certificate => return plain(Failure::NeedsHostTrust),
+            // The sentence joy's own `certificate_check` closure wrote
+            // for THIS contact, when it was joy that refused (D1.4a,
+            // J4h): libgit2 overwrites the callback's message with
+            // "invalid or unknown remote ssh hostkey"
+            // (ssh_libssh2.c:765) and only the code survives, so the
+            // sentence travels in a cell of `vcs::certificates` and is
+            // substituted here. Where libgit2 refused on its own there
+            // is no sentence and the state speaks for itself.
+            Code::Certificate => {
+                return Decision {
+                    sentence: super::certificates::take_refusal(),
+                    ..plain(Failure::NeedsHostTrust)
+                }
+            }
             // GIT_EEOF and ONLY GIT_EEOF is the row of D1.8b: libgit2
             // read the remote's own stderr and returns GIT_EEOF with it
             // as the message (ssh_libssh2.c:136-140).
@@ -1763,6 +1776,9 @@ pub fn run<T>(
     }
     let started = Instant::now();
     take_credential_presented();
+    // and whatever the last contact's host key check left in this
+    // thread's cell (D1.4a)
+    super::certificates::forget_refusal();
     // Whatever an earlier contact left waiting for a verdict is not
     // this contact's business: a fresh credential that the last
     // contact never got a verdict on (it failed for a reason that had

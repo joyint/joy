@@ -65,6 +65,13 @@ tracing = "0.1"
 # HostName, Port, User, IdentityFile and the known-hosts settings would
 # otherwise be invisible to every joy contact (design D1.4).
 ssh2-config = "0.8"
+# A hashed known_hosts entry is `HMAC-SHA1(salt, host)` and nothing
+# else (knownhost.c:416-441), and Ubuntu ships `HashKnownHosts yes`, so
+# joy cannot answer "do I know this host" without it (design D1.4a).
+# SHA-1 is used here exactly as ssh uses it, to look a name up in a
+# file joy did not write, and for nothing joy signs or trusts.
+hmac = "0.12"
+sha1 = "0.10"
 # The one cross-process advisory file lock (design D2.6a): flock on
 # unix, LockFileEx on Windows, no libc of its own. It lands here once so
 # that no later package grows a lock dependency beside it.
