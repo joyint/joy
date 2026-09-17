@@ -322,3 +322,75 @@ fn an_automatic_commit_without_an_item_warns_and_still_happens() {
         head.summary()
     );
 }
+
+/// D3.8 on the last contact that sat outside the one vocabulary. With
+/// `workflow.auto-git: push` a forge contact runs after nearly every
+/// joy write, and a refused one said `Warning: auto-git push failed:
+/// <prose>`: no state word, no next step, and no object under `--json`,
+/// so the widest contact path in the product was the one an agent could
+/// not read. It says the same words as every other contact now, and it
+/// is still never fatal.
+#[test]
+fn a_refused_auto_git_push_speaks_the_one_failure_vocabulary() {
+    let (_dir, root, home) = machine();
+
+    let init = joy(
+        &root,
+        &home,
+        &["init", "--name", "Pushed", "--user", "scotty@example.com"],
+    );
+    assert!(init.status.success(), "{}", text(&init));
+
+    // A remote nothing answers, so the push after the commit is refused
+    // for certain, with no network anywhere near it.
+    let repo = git2::Repository::open(&root).unwrap();
+    repo.remote("origin", root.join("no-such-forge.git").to_str().unwrap())
+        .unwrap();
+    std::fs::write(
+        root.join(".joy/config.yaml"),
+        "workflow:\n  auto-git: push\n",
+    )
+    .unwrap();
+
+    let added = joy(&root, &home, &["add", "task", "First thing"]);
+    assert!(
+        added.status.success(),
+        "a refused push never fails the write: {}",
+        text(&added)
+    );
+    let said = String::from_utf8_lossy(&added.stderr).to_string();
+    assert!(said.contains("auto-git push failed"), "{said}");
+    assert!(said.contains("= note: state "), "{said}");
+
+    // The commit is there: what failed is the delivery.
+    let head = repo.head().unwrap().peel_to_commit().unwrap();
+    assert!(
+        head.summary()
+            .ok()
+            .flatten()
+            .unwrap_or_default()
+            .starts_with("joy: add"),
+        "{:?}",
+        head.summary()
+    );
+
+    // And for an agent: one object on stderr, while stdout stays the
+    // command's own answer (ADR-036).
+    let json = joy(&root, &home, &["--json", "add", "task", "Second thing"]);
+    assert!(json.status.success(), "{}", text(&json));
+    let answer = String::from_utf8_lossy(&json.stdout).to_string();
+    assert!(
+        !answer.contains("\"state\""),
+        "the refusal never reaches stdout: {answer:?}"
+    );
+    let stderr = String::from_utf8_lossy(&json.stderr).to_string();
+    let line = stderr
+        .lines()
+        .find(|line| line.starts_with('{'))
+        .unwrap_or_else(|| panic!("a machine readable refusal on stderr: {stderr:?}"));
+    let refusal: serde_json::Value = serde_json::from_str(line).unwrap();
+    assert!(
+        !refusal["state"].as_str().unwrap_or_default().is_empty(),
+        "the object carries the state word: {line}"
+    );
+}
