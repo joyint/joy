@@ -84,7 +84,13 @@ pub fn choose(
 ) -> Result<ProxyChoice, ProxyRefusal> {
     let host = crate::url::host_of(url).unwrap_or_default();
     let port = port_of(url);
-    if let Some(list) = env.var("NO_PROXY").or_else(|| env.var("no_proxy")) {
+    // The LOWER case name first, in every variable: that is libgit2's
+    // own order and the one curl and git follow, and it is the order
+    // the engine reads (`vcs::proxy::Environment::of_this_process`).
+    // Read the other way round, a machine that carries both spellings
+    // with different values got one answer for a git contact and
+    // another for a REST call (JOY-02A3-E4).
+    if let Some(list) = env.var("no_proxy").or_else(|| env.var("NO_PROXY")) {
         if no_proxy_matches(&host, port, &list) {
             return Ok(ProxyChoice::Direct);
         }
@@ -135,7 +141,8 @@ fn url_keys(url: &str, host: &str) -> Vec<String> {
 }
 
 /// The environment, in git's order: the scheme's own variable in both
-/// cases, then `ALL_PROXY`, which libgit2 never reads.
+/// cases, then `all_proxy`, which libgit2 never reads. The lower case
+/// spelling wins wherever both are set, here as in the engine.
 fn from_env(url: &str, env: &dyn EnvSource) -> Option<String> {
     let secure = url
         .trim_start()
@@ -151,7 +158,7 @@ fn from_env(url: &str, env: &dyn EnvSource) -> Option<String> {
             return Some(value);
         }
     }
-    env.var("ALL_PROXY").or_else(|| env.var("all_proxy"))
+    env.var("all_proxy").or_else(|| env.var("ALL_PROXY"))
 }
 
 /// libgit2 parses every proxy URL as an HTTP proxy and always speaks
@@ -345,6 +352,63 @@ mod tests {
         assert_eq!(
             choose("https://api.github.com/user", &empty(), &env).unwrap(),
             ProxyChoice::Proxy("http://secure.example:3128".into())
+        );
+    }
+
+    /// Both spellings of a variable, different values: the lower case
+    /// one wins, here as in the engine (JOY-02A3-E4). Read the other
+    /// way round, one NO_PROXY meant one thing to a git contact and
+    /// another to a REST call on the same machine.
+    #[test]
+    fn the_lower_case_spelling_of_a_variable_is_the_one_that_counts() {
+        let env = Map::new(&[
+            ("https_proxy", "http://proxy.example:3128"),
+            ("no_proxy", "acme.example"),
+            ("NO_PROXY", "other.example"),
+        ]);
+        assert_eq!(
+            choose("https://acme.example/api", &empty(), &env).unwrap(),
+            ProxyChoice::Direct
+        );
+        assert_eq!(
+            choose("https://other.example/api", &empty(), &env).unwrap(),
+            ProxyChoice::Proxy("http://proxy.example:3128".into())
+        );
+        let env = Map::new(&[
+            ("all_proxy", "http://lower.example:3128"),
+            ("ALL_PROXY", "http://upper.example:3128"),
+        ]);
+        assert_eq!(
+            choose("https://acme.example/api", &empty(), &env).unwrap(),
+            ProxyChoice::Proxy("http://lower.example:3128".into())
+        );
+    }
+
+    /// An IPv6 literal is bracketed in a URL and bare in the engine's
+    /// reading of it, and the matcher compares the bare addresses. The
+    /// host used to be read as `[`, so no NO_PROXY entry could ever
+    /// exclude such a host on this side (JOY-02A3-E4).
+    #[test]
+    fn a_bracketed_ipv6_host_is_excluded_like_it_is_in_the_engine() {
+        for entry in ["[::1]", "[::1]:8443"] {
+            let env = Map::new(&[
+                ("https_proxy", "http://proxy.example:3128"),
+                ("no_proxy", entry),
+            ]);
+            assert_eq!(
+                choose("https://[::1]:8443/api", &empty(), &env).unwrap(),
+                ProxyChoice::Direct,
+                "NO_PROXY={entry}"
+            );
+        }
+        let env = Map::new(&[
+            ("https_proxy", "http://proxy.example:3128"),
+            ("no_proxy", "[::1]:8443"),
+        ]);
+        assert_eq!(
+            choose("https://[::1]:9443/api", &empty(), &env).unwrap(),
+            ProxyChoice::Proxy("http://proxy.example:3128".into()),
+            "the entry names a port and the contact opens another one"
         );
     }
 

@@ -112,27 +112,48 @@ fn a_port_that_is_not_a_port_matches_nothing() {
 /// mean one thing to a git contact and another to a REST call. The
 /// corpus is the grammar's corners plus the port that is not a port,
 /// which is where the two had drifted apart.
+///
+/// Every row carries the answer D1.11 requires, because the identity
+/// alone would hold just as well if both sides were wrong together;
+/// the identity is asserted after it, as the cheap guard against a
+/// second copy growing somewhere.
 #[test]
 fn the_engine_and_the_connector_share_one_matcher() {
-    for (host, port, list) in [
-        ("acme.example", 443u16, "*"),
-        ("acme.example", 443, "*.acme.example"),
-        ("git.acme.example", 443, "*.acme.example"),
-        ("git.acme.example", 443, ".acme.example"),
-        ("notacme.example", 443, "*.acme.example"),
-        ("acme.example", 443, "acme.example:99999"),
-        ("acme.example", 99, "acme.example:99999"),
-        ("b.com", 443, "acme.example:99999, b.com"),
-        ("acme.example", 8443, "acme.example:8443"),
-        ("acme.example", 443, "acme.example:8443"),
-        ("b.com", 443, "a.com, b.com"),
-        ("10.0.0.7", 443, "10.0.0.0/8"),
-        ("acme.example", 443, ",,"),
+    for (host, port, list, expected) in [
+        ("acme.example", 443u16, "*", true),
+        // `*.domain` and `.domain` cover the domain itself
+        ("acme.example", 443, "*.acme.example", true),
+        ("git.acme.example", 443, "*.acme.example", true),
+        ("git.acme.example", 443, ".acme.example", true),
+        // and nothing that merely ends in those letters
+        ("notacme.example", 443, "*.acme.example", false),
+        // a port no contact can have matches nothing, on no port
+        ("acme.example", 443, "acme.example:99999", false),
+        ("acme.example", 99, "acme.example:99999", false),
+        // and the rest of the list still counts
+        ("b.com", 443, "acme.example:99999, b.com", true),
+        // a pattern's port must match when it names one
+        ("acme.example", 8443, "acme.example:8443", true),
+        ("acme.example", 443, "acme.example:8443", false),
+        // entries are trimmed, which libgit2 does not do
+        ("b.com", 443, "a.com, b.com", true),
+        // no CIDR in this grammar
+        ("10.0.0.7", 443, "10.0.0.0/8", false),
+        // an IPv6 literal is compared bare, bracket or not
+        ("::1", 8443, "[::1]", true),
+        ("::1", 8443, "[::1]:8443", true),
+        ("::1", 443, "[::1]:8443", false),
+        ("acme.example", 443, ",,", false),
     ] {
         assert_eq!(
             no_proxy_matches(host, port, list),
-            joy_forge_net::proxy::no_proxy_matches(host, port, list),
+            expected,
             "{host}:{port} against {list:?}"
+        );
+        assert_eq!(
+            no_proxy_matches(host, port, list),
+            joy_forge_net::proxy::no_proxy_matches(host, port, list),
+            "two matchers again: {host}:{port} against {list:?}"
         );
     }
 }
