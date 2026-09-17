@@ -65,3 +65,5 @@
 2026-09-17T21:01:13.581Z JOY-02A5-10 item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-09-17T21:01:31.414Z JOY-02A5-10 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-09-17T21:01:31.459Z JOY-02A5-10 comment.added [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-09-17T23:22:25.106Z JOY-02A5-10 guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-09-17T23:22:25.145Z JOY-02A5-10 guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
