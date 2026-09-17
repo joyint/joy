@@ -143,6 +143,14 @@ ts = ["dep:ts-rs", "joy-model/ts"]
 # bundle at runtime. On Windows openssl-sys is not a dependency at all
 # (WinHTTP / WinCNG), so the feature is inert there.
 forge-net = ["git2/https", "git2/ssh", "git2/vendored-openssl"]
+# The three connector verbs that need a person at the machine:
+# `login`, `logout` and the token paste (design D3.11). OFF by default,
+# so a build that must never sign in does not carry them at all: the
+# module `forge_plugins::interactive` is compiled only with this
+# feature, and the platform asks for `forge-net` alone. joy-cli and the
+# desktop turn it on; `just guard-interactive` keeps the platform's
+# manifest from drifting back.
+interactive = []
 
 [dev-dependencies]
 insta = { version = "1.41", features = ["yaml"] }

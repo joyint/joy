@@ -23,7 +23,11 @@ path = "src/bin/joy-forge.rs"
 
 [dependencies]
 joy-process = { workspace = true }
-joy-core = { version = "0.20.0", path = "../joy-core", features = ["tutorial"] }
+# `interactive` is the feature of D3.11: this binary is the CLI a person
+# types at, so it carries `login`, `logout` and the token paste. The
+# platform asks for `forge-net` alone and must never see this feature,
+# which `just guard-interactive` checks.
+joy-core = { version = "0.20.0", path = "../joy-core", features = ["tutorial", "interactive"] }
 # The forge connectors, linked as LIBRARIES into the `joy-forge` bin
 # above. `joy` itself never calls them: nothing in its call graph
 # references these crates, so the linker drops them from that binary.

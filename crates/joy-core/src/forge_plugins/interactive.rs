@@ -67,6 +67,12 @@ pub struct LoginOutcome {
     /// `keychain` or `file`: which store took the token (D2.6).
     #[serde(default)]
     pub stored: Option<String>,
+    /// How the credential was obtained, where the connector says so
+    /// (`device`, `pkce`, `token`). Which grant a forge runs is the
+    /// connector's knowledge, so joy reports what it is told and never
+    /// guesses: `None` means the connector named none.
+    #[serde(default)]
+    pub source: Option<String>,
     #[serde(default)]
     pub expires_at: Option<String>,
 }
@@ -131,6 +137,11 @@ pub fn login(
             stderr: NO_PERSON_HERE.to_string(),
         });
     }
+    // A protocol 1 connector answers none of the sign in verbs (D2.2a),
+    // and streaming into one would spend the login's whole deadline on
+    // a clap usage error. The refusal names the file and the `rm` line
+    // instead, which is what the person has to act on.
+    super::refuse_outdated(spec, "login", Some(target))?;
     let args = super::call_args(
         spec,
         "login",
@@ -213,6 +224,7 @@ pub fn token_store(
     token: &str,
     ctx: &CallContext,
 ) -> Result<ForgeToken, PluginError> {
+    super::refuse_outdated(spec, "token-store", Some(target))?;
     let args = super::call_args(spec, "token-store", Some(target), &[], ctx);
     let outcome = run_with_stdin(
         spec,
@@ -338,5 +350,50 @@ mod tests {
     fn the_refusal_sentence_names_the_headless_door() {
         assert!(NO_PERSON_HERE.contains("--token-stdin"));
         assert!(NO_PERSON_HERE.contains("delegation session"));
+    }
+
+    /// A binary from before the handshake answers none of the sign in
+    /// verbs (D2.2a), and it is refused BEFORE it is started: the path
+    /// below exists on no machine, so a spawn would fail with another
+    /// error entirely, and the one that comes back names the file and
+    /// the `rm` line instead of spending a login's deadline on a clap
+    /// usage error.
+    #[test]
+    fn a_protocol_1_connector_is_refused_before_it_is_started() {
+        let stale = ResolvedPlugin {
+            id: "github",
+            display: "GitHub",
+            binary_names: super::super::by_id("github").unwrap().binary_names,
+            resolved_path: std::path::PathBuf::from("/nonexistent/joy-github"),
+            found_in: super::super::FoundIn::Path,
+            protocol: 1,
+            plugin_version: None,
+        };
+        let target = Target::host("github.com");
+        let ctx = super::super::CallContext::rootless().with_host_kind(HostKind::Interactive);
+        let mut sink = |_: &serde_json::Value| {};
+        let refused = login(
+            &stale,
+            &target,
+            Access::Write,
+            &mut sink,
+            &CancelToken::new(),
+            &ctx,
+        )
+        .expect_err("a protocol 1 connector cannot sign anybody in");
+        assert!(
+            matches!(refused, PluginError::Outdated { .. }),
+            "{refused:?}"
+        );
+        assert_eq!(refused.state(), "plugin_outdated");
+        assert!(refused.to_string().contains("rm /nonexistent/joy-github"));
+
+        // `ForgeToken` carries a secret and has no `Debug`, so the
+        // answer is matched rather than unwrapped.
+        match token_store(&stale, &target, "ghp_x", &ctx) {
+            Err(PluginError::Outdated { .. }) => {}
+            Err(other) => panic!("nor can it store a token for anybody: {other:?}"),
+            Ok(_) => panic!("a protocol 1 connector must not be asked to store a token"),
+        }
     }
 }
