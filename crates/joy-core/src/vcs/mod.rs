@@ -318,6 +318,7 @@ pub mod contact;
 pub mod credential_helper;
 pub mod forge;
 pub mod host_kind;
+pub mod maintenance;
 pub mod remote_url;
 pub mod ssh_auth;
 pub mod ssh_config;
@@ -372,14 +373,25 @@ pub fn staged_paths(root: &Path) -> Vec<String> {
 }
 
 /// Whether `remote` is configured in this checkout.
+///
+/// git2, not a git process. Reading the remote list is local plumbing:
+/// it needs no transport, so it needs neither the `forge-net` feature
+/// nor the user's ambient credentials, and there is nothing a git
+/// process adds. It sat on the chat write path as
+/// `git -C <root> remote get-url origin`, one spawn per send and per
+/// read, and the git2 only rule leaves no room for it (D3.2, D3.7).
+///
+/// The two answers are not identical, and the difference is deliberate:
+/// `git remote get-url <name>` fails for a remote that carries only
+/// `remote.<name>.pushurl`, while `git_remote_lookup` succeeds whenever
+/// either `url` or `pushurl` is configured. A remote joy can push to is
+/// a remote that exists, which is the question every caller here asks
+/// (the chat send and read gate in joy-cli), so the git2 answer is the
+/// better one. Pinned by the cases below because it is a silent change.
 pub fn remote_exists(root: &Path, remote: &str) -> bool {
-    git()
-        .arg("-C")
-        .arg(root)
-        .args(["remote", "get-url", remote])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    git2::Repository::discover(root)
+        .and_then(|repo| repo.find_remote(remote).map(|_| ()))
+        .is_ok()
 }
 
 /// One CLI-git ref transfer (fetch or push) with the outcome a caller
@@ -510,6 +522,34 @@ mod tests {
         let result = vcs.user_email();
         assert!(result.is_ok());
         assert!(!result.unwrap().is_empty());
+    }
+
+    /// `remote_exists` moved from a `git remote get-url` spawn to
+    /// git2, so what it answers is pinned here rather than only "no git
+    /// process ran".
+    #[test]
+    fn remote_exists_answers_off_the_configured_remotes() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        repo.remote("origin", "https://example.invalid/a.git")
+            .unwrap();
+
+        assert!(remote_exists(dir.path(), "origin"));
+        assert!(!remote_exists(dir.path(), "upstream"));
+
+        // A remote with a push url and no fetch url exists too. The git
+        // process this replaced said no here; joy asks whether there is
+        // a remote to push to, and there is.
+        repo.config()
+            .unwrap()
+            .set_str("remote.mirror.pushurl", "https://example.invalid/b.git")
+            .unwrap();
+        assert!(remote_exists(dir.path(), "mirror"));
+
+        // A directory that is no checkout at all has no remotes, and the
+        // answer is false rather than an error.
+        let plain = tempfile::tempdir().unwrap();
+        assert!(!remote_exists(plain.path(), "origin"));
     }
 
     #[test]

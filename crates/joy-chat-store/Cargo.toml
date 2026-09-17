@@ -8,7 +8,6 @@ repository = "https://github.com/joyint/joy"
 homepage = "https://joyint.com/en/joy"
 
 [dependencies]
-joy-process = { workspace = true }
 joy-chat = { version = "0.20.0", path = "../joy-chat" }
 joy-core = { version = "0.20.0", path = "../joy-core" }
 joy-model = { workspace = true }
@@ -31,4 +30,8 @@ ts = ["joy-chat/ts", "joy-core/ts"]
 
 [dev-dependencies]
 tempfile = "3"
+# The maintenance cases age the store the way the operator's store is
+# aged, so the shipped 14 day window can be asserted instead of a zero
+# window no host ever runs.
+filetime = "0.2"
 insta = { version = "1.41", features = ["yaml"] }

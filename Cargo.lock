@@ -2081,6 +2081,7 @@ name = "joy-chat-store"
 version = "0.20.0"
 dependencies = [
  "chrono",
+ "filetime",
  "git2",
  "hex",
  "insta",
@@ -2088,7 +2089,6 @@ dependencies = [
  "joy-core",
  "joy-crypt",
  "joy-model",
- "joy-process",
  "serde",
  "serde_json",
  "serde_yaml_ng",
@@ -2145,6 +2145,7 @@ dependencies = [
  "argon2",
  "base64ct",
  "chrono",
+ "filetime",
  "fs4",
  "git2",
  "glob",
