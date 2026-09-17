@@ -82,11 +82,11 @@ setup_bob_with_crypt() {
     joy add task "shared secret" >/dev/null
     joy crypt add CT-0001 --passphrase "$PASS_BOB" >/dev/null
 
-    # Bob (still the active git identity) registers Alice as a member,
-    # capturing her invitation OTP; Alice then redeems it herself.
+    # Bob (still the member acting here) registers Alice, capturing her
+    # invitation OTP; Alice then redeems it herself, which enrols her and
+    # makes her the member this device acts as.
     ALICE_OTP=$(joy project member add alice@example.com --passphrase "$PASS_BOB" | extract_otp)
-    git config user.email "alice@example.com"
-    joy auth --otp "$ALICE_OTP" --passphrase "$PASS_ALICE" >/dev/null
+    joy auth --otp "$ALICE_OTP" --user alice@example.com --passphrase "$PASS_ALICE" >/dev/null
 
     # Alice has no zone access yet. ls must list the locked row, not error.
     run joy ls
@@ -99,14 +99,13 @@ setup_bob_with_crypt() {
     run joy show CT-0001
     [ "$status" -ne 0 ]
 
-    # Bob grants Alice. Switch git identity back to Bob to act as him.
-    git config user.email "bob@example.com"
-    joy auth --passphrase "$PASS_BOB" >/dev/null
+    # Bob grants Alice. Naming Bob is what makes this device act as him
+    # again: since package J11 the git config decides nothing (D3.9).
+    act_as bob@example.com "$PASS_BOB" >/dev/null
     joy crypt grant alice@example.com --passphrase "$PASS_BOB" >/dev/null
 
-    # Switch to Alice and re-auth (auth file is per-process).
-    git config user.email "alice@example.com"
-    joy auth --passphrase "$PASS_ALICE" >/dev/null
+    # And back to Alice, who is named the same way.
+    act_as alice@example.com "$PASS_ALICE" >/dev/null
 
     # Alice now reads the item with her own passphrase.
     JOY_PASSPHRASE="$PASS_ALICE" run joy show CT-0001

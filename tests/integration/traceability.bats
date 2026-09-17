@@ -121,11 +121,11 @@ EOF
     ITEM_ID=$(joy ls 2>/dev/null | grep "Warn test" | awk '{print $1}')
     # Developer tries review transition (needs Review cap, dev lacks it)
     joy status "$ITEM_ID" in-progress
-    git config user.email dev@example.com
-    joy auth --otp "$DEV_OTP" --passphrase "alpha bravo charlie delta echo foxtrot"
+    # Dev redeems their invitation, which enrols them and makes them the
+    # member this device acts as (D3.9); git config would change nothing.
+    joy auth --otp "$DEV_OTP" --user dev@example.com --passphrase "alpha bravo charlie delta echo foxtrot"
     joy status "$ITEM_ID" review
     grep -q "guard.warned.*dev@example.com" .joy/logs/*.log
-    git config user.email test@example.com
 }
 
 # ============================================================

@@ -20,6 +20,7 @@ FOUNDER_PASSPHRASE="correct horse battery staple extra words"
 ALICE_PASSPHRASE="alpha bravo charlie delta echo foxtrot"
 BOB_PASSPHRASE="golf hotel india juliett kilo lima"
 CAROL_PASSPHRASE="mike november oscar papa quebec romeo"
+EVE_PASSPHRASE="echo foxtrot golf hotel india juliett"
 
 # Extract the OTP code from 'joy project member add' output.
 # Expected format in output: a line like "One-time password: XXX-XXX-XXX".
@@ -47,11 +48,29 @@ add_member_capture_otp() {
     MEMBER_OTP=$(extract_otp "$out")
 }
 
-# Switch the test identity to a different email (simulates a new clone by
-# another developer). Preserves founder's state via git history.
+# Act as `email` from here on: authenticating names the member, opens
+# their session and pins them as the member this device acts as (D3.9).
+#
+# This used to be `git config user.email <email>`, and since package J11
+# that changes nothing at all: no joy command decides an identity from
+# git config any more, so a test switching that way went on acting as
+# whoever authenticated last. A person switches by saying who they are,
+# and so does a test.
 become_member() {
     local email="$1"
-    git config user.email "$email"
+    local passphrase="$2"
+    joy auth --user "$email" --passphrase "$passphrase"
+}
+
+# An invited member's first act in their own checkout: redeem the
+# invitation, which sets their passphrase, enrols them and pins them
+# here. The OTP proves the invitation; `--user` is the address the
+# invitee types, which is what git config used to offer them.
+enroll_member() {
+    local email="$1"
+    local passphrase="$2"
+    local otp="${3:-$MEMBER_OTP}"
+    joy auth --otp "$otp" --user "$email" --passphrase "$passphrase"
 }
 
 # ============================================================
@@ -111,8 +130,7 @@ become_member() {
     run bash -c 'grep -B1 "test@example.com:" .joy/project.yaml | head -3'
 
     # Alice redeems OTP and sets her passphrase.
-    become_member alice@example.com
-    run joy auth --otp "$MEMBER_OTP" --passphrase "$ALICE_PASSPHRASE"
+    run joy auth --otp "$MEMBER_OTP" --user alice@example.com --passphrase "$ALICE_PASSPHRASE"
     [ "$status" -eq 0 ]
     # Redemption output should be minimal - no explicit mention of
     # reverse-attesting the founder (silent behavior per the 8-point design).
@@ -140,8 +158,8 @@ become_member() {
     add_member_capture_otp alice@example.com
     [ -n "$MEMBER_OTP" ]
 
-    become_member "12345+alice@users.noreply.github.com"
-    run joy auth --otp "$MEMBER_OTP" --passphrase "$ALICE_PASSPHRASE"
+    run joy auth --otp "$MEMBER_OTP" --user "12345+alice@users.noreply.github.com" \
+        --passphrase "$ALICE_PASSPHRASE"
     [ "$status" -eq 0 ]
 
     # invitation spent on the invited slot, both members enrolled
@@ -160,18 +178,16 @@ become_member() {
     setup_founder
     # Alice is added, redeems, reverse-attests founder.
     add_member_capture_otp alice@example.com
-    become_member alice@example.com
-    joy auth --otp "$MEMBER_OTP" --passphrase "$ALICE_PASSPHRASE"
+    enroll_member alice@example.com "$ALICE_PASSPHRASE"
 
     # Capture founder's current attestation signature.
     local before_sig
     before_sig=$(grep -A10 "test@example.com:" .joy/project.yaml | grep "signature:" | head -1)
 
     # Alice (now manage) adds bob.
-    become_member test@example.com   # go back to manage
+    become_member test@example.com "$FOUNDER_PASSPHRASE"   # go back to manage
     add_member_capture_otp bob@example.com
-    become_member bob@example.com
-    joy auth --otp "$MEMBER_OTP" --passphrase "$BOB_PASSPHRASE"
+    enroll_member bob@example.com "$BOB_PASSPHRASE"
 
     # Founder's attestation is unchanged.
     local after_sig
@@ -188,8 +204,7 @@ become_member() {
     # Alice must have `manage` to trigger the self-remove guard at all;
     # the member-add default excludes manage/delete, so grant explicitly.
     add_member_capture_otp alice@example.com all
-    become_member alice@example.com
-    joy auth --otp "$MEMBER_OTP" --passphrase "$ALICE_PASSPHRASE"
+    enroll_member alice@example.com "$ALICE_PASSPHRASE"
 
     # Alice attempts to remove herself.
     run joy project member rm alice@example.com --passphrase "$ALICE_PASSPHRASE"
@@ -209,22 +224,19 @@ become_member() {
     # alice. Carol stays on defaults but the grep uses -A20 so it still
     # finds her attester line past her capability block.
     add_member_capture_otp alice@example.com all
-    become_member alice@example.com
-    joy auth --otp "$MEMBER_OTP" --passphrase "$ALICE_PASSPHRASE"
+    enroll_member alice@example.com "$ALICE_PASSPHRASE"
 
     # Alice (as manage) adds carol; alice is carol's attester.
     MEMBER_OTP=$(joy project member add carol@example.com --passphrase "$ALICE_PASSPHRASE" \
         | sed -n 's/^[[:space:]]*One-time password:[[:space:]]*\([A-Za-z0-9-]*\).*$/\1/p' | head -1)
-    become_member carol@example.com
-    joy auth --otp "$MEMBER_OTP" --passphrase "$CAROL_PASSPHRASE"
+    enroll_member carol@example.com "$CAROL_PASSPHRASE"
     grep -A20 "carol@example.com:" .joy/project.yaml | grep -q "attester: alice@example.com"
 
     # Founder adds bob as another manage member.
-    become_member test@example.com
+    become_member test@example.com "$FOUNDER_PASSPHRASE"
     MEMBER_OTP=$(joy project member add bob@example.com --capabilities all --passphrase "$FOUNDER_PASSPHRASE" \
         | sed -n 's/^[[:space:]]*One-time password:[[:space:]]*\([A-Za-z0-9-]*\).*$/\1/p' | head -1)
-    become_member bob@example.com
-    joy auth --otp "$MEMBER_OTP" --passphrase "$BOB_PASSPHRASE"
+    enroll_member bob@example.com "$BOB_PASSPHRASE"
 
     # Bob removes alice. Alice attested carol, so carol must be
     # re-attested by bob as part of the removal.
@@ -245,8 +257,7 @@ become_member() {
     # Add a legitimate second member so the attestation-required invariant
     # (fires once two verify_keys exist) applies to every member.
     add_member_capture_otp alice@example.com
-    become_member alice@example.com
-    joy auth --otp "$MEMBER_OTP" --passphrase "$ALICE_PASSPHRASE"
+    enroll_member alice@example.com "$ALICE_PASSPHRASE"
 
     # Simulate a manual yaml edit: insert eve as a member without
     # attestation, without going through 'joy project member add'.
@@ -260,12 +271,12 @@ become_member() {
     } { print }' .joy/project.yaml > .joy/project.yaml.tmp \
         && mv .joy/project.yaml.tmp .joy/project.yaml
 
-    become_member eve@attacker.com
-    # Eve tries to bootstrap her auth (joy auth init sets her verify_key)
-    # and then authenticate. The attestation check at joy auth rejects
-    # her because her entry has no attestation.
-    joy auth init --passphrase "echo foxtrot golf hotel india juliett"
-    run joy auth --passphrase "echo foxtrot golf hotel india juliett"
+    # Eve names herself (the member map now lists her) and tries to
+    # bootstrap her auth: joy auth init sets her verify_key, and then she
+    # authenticates. The attestation check at joy auth rejects her
+    # because her entry has no attestation.
+    joy auth init --user eve@attacker.com --passphrase "$EVE_PASSPHRASE"
+    run joy auth --user eve@attacker.com --passphrase "$EVE_PASSPHRASE"
     [ "$status" -ne 0 ]
     [[ "$output" == *"attestation"* ]] || [[ "$output" == *"tampered"* ]] || [[ "$output" == *"not valid"* ]]
     # Error points the user at the recovery path.
@@ -283,8 +294,12 @@ become_member() {
     # stripping attestations from a fresh project).
     setup_founder
     add_member_capture_otp alice@example.com
-    become_member alice@example.com
-    joy auth --otp "$MEMBER_OTP" --passphrase "$ALICE_PASSPHRASE"
+    enroll_member alice@example.com "$ALICE_PASSPHRASE"
+
+    # Back to the founder BEFORE the project is put into its pre-feature
+    # state, so the authentication below is the first one the auto-seal
+    # can happen in.
+    become_member test@example.com "$FOUNDER_PASSPHRASE"
 
     # Strip every attestation block (simulating pre-feature state).
     python3 -c "
@@ -299,7 +314,6 @@ with open('.joy/project.yaml', 'w') as f:
 
     # Deauth and re-auth as founder. Auto-seal triggers: founder signs
     # attestations for everyone else (just alice here).
-    become_member test@example.com
     joy deauth
     run joy auth --passphrase "$FOUNDER_PASSPHRASE"
     [ "$status" -eq 0 ]
@@ -317,8 +331,7 @@ with open('.joy/project.yaml', 'w') as f:
 @test "tampered attestation signature fails joy auth" {
     setup_founder
     add_member_capture_otp alice@example.com
-    become_member alice@example.com
-    joy auth --otp "$MEMBER_OTP" --passphrase "$ALICE_PASSPHRASE"
+    enroll_member alice@example.com "$ALICE_PASSPHRASE"
 
     # Flip one hex character in alice's attestation signature.
     # Uses perl for cross-platform sed-style in-place edit on the first
@@ -340,18 +353,17 @@ with open('.joy/project.yaml', 'w') as f:
     add_member_capture_otp alice@example.com
     [ -n "$MEMBER_OTP" ]
 
-    become_member alice@example.com
     # Setting up a fresh identity instead of redeeming would leave alice with a
     # self-chosen verify_key. The attestation signs e-mail, capabilities and the
     # enrollment verifier but NOT the key, so nothing downstream would notice.
-    run joy auth init --passphrase "$ALICE_PASSPHRASE"
+    run joy auth init --user alice@example.com --passphrase "$ALICE_PASSPHRASE"
     [ "$status" -ne 0 ]
     [[ "$output" == *"one-time password is required"* ]]
     # Only the founder is enrolled; alice's slot is untouched.
     [ "$(grep -cE '^    verify_key:' .joy/project.yaml)" = "1" ]
 
     # Redeeming the invitation is the way in.
-    run joy auth --otp "$MEMBER_OTP" --passphrase "$ALICE_PASSPHRASE"
+    run joy auth --otp "$MEMBER_OTP" --user alice@example.com --passphrase "$ALICE_PASSPHRASE"
     [ "$status" -eq 0 ]
     [ "$(grep -cE '^    verify_key:' .joy/project.yaml)" = "2" ]
 }
