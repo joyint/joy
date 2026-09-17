@@ -703,6 +703,98 @@ fn the_x509_branch_decides_nothing_and_names_the_issuer() {
     assert_eq!(x509_note(), Some(X509Note::default()));
 }
 
+/// What package J4p writes into this branch: the state and the
+/// sentence (D1.8c). The branch decides nothing, so the state comes
+/// from the classifier reading the error the operation returned, and
+/// the issuer this branch stashed is what the detail line puts in
+/// front of libgit2's own text.
+#[test]
+fn the_issuer_this_branch_stashed_reaches_the_tls_untrusted_detail_line() {
+    forget_refusal();
+    let mut trust = Trust::new(HostKind::Background, None);
+    let der = certificate("Acme Corporate Root CA", "github.com");
+    assert!(matches!(
+        trust.x509(&der),
+        Ok(Status::CertificatePassthrough)
+    ));
+    // The three texts the three TLS backends produce for a chain they
+    // do not trust: openssl.c:381-384, stransport.c:117-120 and
+    // winhttp.c:718-740. The state has to be the same on all three.
+    let cases = [
+        (
+            git2::Error::new(
+                git2::ErrorCode::Certificate,
+                git2::ErrorClass::Ssl,
+                "the SSL certificate is invalid",
+            ),
+            "the SSL certificate is invalid",
+        ),
+        (
+            git2::Error::new(
+                git2::ErrorCode::Certificate,
+                git2::ErrorClass::Ssl,
+                "untrusted connection error",
+            ),
+            "untrusted connection error",
+        ),
+        (
+            git2::Error::new(
+                git2::ErrorCode::GenericError,
+                git2::ErrorClass::Http,
+                "SSL certificate signed by unknown CA",
+            ),
+            "SSL certificate signed by unknown CA",
+        ),
+    ];
+    for (error, text) in cases {
+        let evidence = super::super::contact::ContactEvidence::new(
+            error,
+            "https://github.com/joyint/joy.git",
+            super::super::contact::ContactDirection::Fetch,
+            super::super::contact::CredentialSource::TokenPresented,
+        );
+        let verdict = super::super::contact::verdict(&evidence);
+        assert_eq!(
+            verdict.failure,
+            super::super::contact::Failure::TlsUntrusted,
+            "{text}"
+        );
+        assert_eq!(
+            verdict.sentence,
+            "The certificate for github.com is not trusted by this machine's certificate store."
+        );
+        assert_eq!(
+            verdict.detail,
+            format!("issued by 'Acme Corporate Root CA', chain not trusted; libgit2: {text}"),
+            "the issuer in front of libgit2's own words"
+        );
+        // one next step, and the instruction behind it is the one this
+        // operating system's store needs
+        assert_eq!(verdict.next_step.as_deref(), Some("show what to do"));
+        assert!(
+            verdict.guidance.is_some(),
+            "the per OS certificate instruction of D1.8c"
+        );
+    }
+    // A failure that is not the certificate keeps libgit2's line alone,
+    // even while a certificate was seen on this contact.
+    let evidence = super::super::contact::ContactEvidence::new(
+        git2::Error::new(
+            git2::ErrorCode::GenericError,
+            git2::ErrorClass::Net,
+            "unexpected http status code: 404",
+        ),
+        "https://github.com/joyint/joy.git",
+        super::super::contact::ContactDirection::Fetch,
+        super::super::contact::CredentialSource::TokenPresented,
+    );
+    assert_eq!(
+        super::super::contact::verdict(&evidence).detail,
+        "libgit2: unexpected http status code: 404"
+    );
+    forget_refusal();
+}
+
 /// The J4h acceptance: an https contact goes through the SAME closure.
 /// It needs the network and a real forge, which is why it is ignored by
 /// default; `cargo test -p joy-core --features forge-net -- --ignored`
