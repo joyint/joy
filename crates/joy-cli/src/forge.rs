@@ -15,7 +15,7 @@ use std::path::Path;
 
 use anyhow::{anyhow, bail, Result};
 
-use joy_core::forge_plugins::{self, ForgePluginSpec};
+use joy_core::forge_plugins::{self, CallContext, ForgePluginSpec, Target};
 use joy_core::vcs;
 
 /// Trait for hosting platform operations.
@@ -48,12 +48,18 @@ impl ForgeRelease for PluginForge {
         let dir = tempfile::tempdir()?;
         let notes_file = dir.path().join("notes.md");
         std::fs::write(&notes_file, notes)?;
-        let outcome = forge_plugins::release(self.spec, root, tag, title, &notes_file)
-            .ok_or_else(|| {
+        // The connector's own stderr is captured now (D2.3), so its
+        // message travels INSIDE the error instead of on a terminal
+        // that may not exist. The state name comes along for the same
+        // reason: missing, outdated, refused and timed out are four
+        // different things to do next.
+        let ctx = CallContext::in_project(root);
+        let outcome = forge_plugins::release(self.spec, tag, title, &notes_file, &ctx)
+            .map_err(|e| {
                 anyhow!(
-                    "the forge plugin {} could not create the release (its message is above)\n  \
-                     = help: install the plugin or set `forge: none` to publish without a forge release",
-                    self.spec.binary
+                    "{e}\n  = note: state {}\n  \
+                     = help: install the connector or set `forge: none` to publish without a forge release",
+                    e.state()
                 )
             })?;
         if outcome.unsupported {
@@ -174,11 +180,12 @@ fn auto_detect(root: &Path) -> Result<Resolution> {
     // One claims round per registry plugin: a plugin that claims any
     // remote is a candidate. The plugin decides what is "its" URL —
     // joy never parses a forge URL itself (JOY-0256-64).
+    let ctx = CallContext::in_project(root);
     let mut claimed: Vec<(String, &'static ForgePluginSpec)> = Vec::new();
     for spec in forge_plugins::FORGE_PLUGINS {
         if let Some((name, _)) = remotes
             .iter()
-            .find(|(_, url)| forge_plugins::claims(spec, root, url))
+            .find(|(_, url)| forge_plugins::claims(spec, &Target::remote(url.as_str()), &ctx))
         {
             claimed.push((name.clone(), spec));
         }
