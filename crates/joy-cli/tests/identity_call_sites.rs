@@ -127,6 +127,21 @@ fn identity_script(machine: &Machine) -> Vec<Step> {
         ),
         ("crypt status", vec!["crypt", "status"]),
         (
+            "chat send",
+            vec![
+                "chat",
+                "send",
+                "general",
+                "hello there",
+                "--passphrase",
+                PASSPHRASE,
+            ],
+        ),
+        (
+            "chat show",
+            vec!["chat", "show", "general", "--passphrase", PASSPHRASE],
+        ),
+        (
             "member add",
             vec![
                 "project",
@@ -201,9 +216,11 @@ fn identity_script(machine: &Machine) -> Vec<Step> {
         .collect()
 }
 
-/// Drop the lines that differ between two equal runs by nature: the
-/// countdown of a session, the one-time password of a new member and the
-/// recovery key. Everything else must match line for line.
+/// Take out what differs between two equal runs by nature: the countdown
+/// of a session, the one-time password of a new member, the recovery key
+/// and the milliseconds a chat write took. A chat line keeps everything
+/// after its timestamp, because the name in it is the point. The rest
+/// must match line for line.
 fn redact(output: &str) -> String {
     output
         .lines()
@@ -212,9 +229,24 @@ fn redact(output: &str) -> String {
                 && !line.contains("One-time password")
                 && !line.contains("--otp")
                 && !line.contains("joy_r_")
+                && !line.contains("message sent")
         })
+        .map(without_a_timestamp)
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// A chat message is printed as `<date> <time>  <member>  <text>`. Cut
+/// the clock off the front and keep the rest.
+fn without_a_timestamp(line: &str) -> String {
+    let stamped = line.len() > 16
+        && line.starts_with("20")
+        && line.as_bytes()[4] == b'-'
+        && line.as_bytes()[13] == b':';
+    match stamped {
+        true => line[16..].to_string(),
+        false => line.to_string(),
+    }
 }
 
 /// The acceptance of J11, first half: every joy command that needs an
