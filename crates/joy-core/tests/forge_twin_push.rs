@@ -76,21 +76,27 @@ fn pkt(line: &str) -> Vec<u8> {
     format!("{:04x}{line}", line.len() + 4).into_bytes()
 }
 
-/// The `git-receive-pack` advertisement. The capability list carries
-/// `report-status`, which is what makes the per-ref answers below
-/// reach `push_update_reference` at all (remote.c:3034-3038).
-fn advertisement(refs: &[(String, git2::Oid)]) -> Vec<u8> {
-    let mut body = pkt("# service=git-receive-pack\n");
+/// The advertisement of one service. On the push side the capability
+/// list carries `report-status`, which is what makes the per-ref
+/// answers below reach `push_update_reference` at all
+/// (remote.c:3034-3038).
+fn advertisement(service: &str, refs: &[(String, git2::Oid)]) -> Vec<u8> {
+    let caps = if service == "git-receive-pack" {
+        "report-status delete-refs agent=joy-test"
+    } else {
+        "agent=joy-test"
+    };
+    let mut body = pkt(&format!("# service={service}\n"));
     body.extend_from_slice(b"0000");
     if refs.is_empty() {
         body.extend_from_slice(&pkt(&format!(
-            "{} capabilities^{{}}\0report-status delete-refs agent=joy-test\n",
+            "{} capabilities^{{}}\0{caps}\n",
             git2::Oid::ZERO_SHA1
         )));
     }
     for (i, (name, oid)) in refs.iter().enumerate() {
         let line = if i == 0 {
-            format!("{oid} {name}\0report-status delete-refs agent=joy-test\n")
+            format!("{oid} {name}\0{caps}\n")
         } else {
             format!("{oid} {name}\n")
         };
@@ -273,13 +279,24 @@ fn serve(forge: PathBuf, answer: Answer) -> Server {
                     }
                 }
                 if path.contains("/info/refs") {
+                    // The service the client asked for: a fetch and a
+                    // push read the same file under two names, and a
+                    // client that is handed the other one's service
+                    // line stops there.
+                    let service = if path.contains("service=git-receive-pack") {
+                        "git-receive-pack"
+                    } else {
+                        "git-upload-pack"
+                    };
                     let refs = refs_of(&forge);
                     respond(
                         &mut stream,
                         200,
                         "OK",
-                        "Content-Type: application/x-git-receive-pack-advertisement\r\nCache-Control: no-cache\r\n",
-                        &advertisement(&refs),
+                        &format!(
+                            "Content-Type: application/x-{service}-advertisement\r\nCache-Control: no-cache\r\n"
+                        ),
+                        &advertisement(service, &refs),
                     );
                     continue;
                 }
@@ -349,6 +366,27 @@ fn refs_of(forge: &Path) -> Vec<(String, git2::Oid)> {
 struct Machine {
     _home: tempfile::TempDir,
     root: PathBuf,
+    /// Every connector call, one argv per line, so a case can read what
+    /// really went over the wire and how often.
+    argv: PathBuf,
+}
+
+impl Machine {
+    /// The calls of one verb the connector really answered. The first
+    /// word of an argv is the forge id of the combined binary, the
+    /// second is the verb.
+    fn calls(&self, verb: &str) -> Vec<String> {
+        std::fs::read_to_string(&self.argv)
+            .unwrap_or_default()
+            .lines()
+            .filter(|line| {
+                line.split_whitespace()
+                    .nth(1)
+                    .is_some_and(|second| second == verb)
+            })
+            .map(str::to_string)
+            .collect()
+    }
 }
 
 fn machine(twin: &str, token: &str) -> Machine {
@@ -364,11 +402,16 @@ fn machine(twin: &str, token: &str) -> Machine {
 
     let bin = home.path().join("bin");
     std::fs::create_dir_all(&bin).expect("bin");
+    let argv = home.path().join("argv.log");
+    std::env::set_var("JOY_STUB_ARGV", &argv);
     let stub = bin.join(forge_plugins::COMBINED_BINARY);
     std::fs::write(
         &stub,
         format!(
             r#"#!/bin/sh
+if [ -n "$JOY_STUB_ARGV" ]; then
+  echo "$@" >> "$JOY_STUB_ARGV"
+fi
 if [ "$1" = "version" ]; then
   echo '{{"protocol":2,"plugin":"joy-forge 0.21.0","forges":["github","gitlab","gitea"]}}'
   exit 0
@@ -390,6 +433,7 @@ esac
 
     Machine {
         root: home.path().to_path_buf(),
+        argv,
         _home: home,
     }
 }
@@ -400,6 +444,7 @@ impl Drop for Machine {
         resolver::set_state_file(None);
         resolver::invalidate_all_facts();
         contact::set_gaps("");
+        std::env::remove_var("JOY_STUB_ARGV");
         let _ = &self.root;
     }
 }
@@ -712,6 +757,80 @@ fn the_states_j5_defined_read_through_a_contact_over_the_twin() {
         contact::Failure::NeedsOrgApproval.next_step(),
         Some("open the approval page"),
         "the state names the step; the address behind it belongs to the surface"
+    );
+    drop(machine);
+}
+
+/// D1.7: "The forge token is asked from the plugin per host, not per
+/// contact ... A 1 Hz chat poll must not spawn a plugin or a .NET GCM
+/// process per contact." And D4.1c: the login the project pinned in its
+/// own app state travels on every connector call as `--login`.
+///
+/// The pin lives in the per project app state file joy-core computes,
+/// never in `project.yaml`: that file is the project's shared,
+/// committed file and joy syncs it to the forge, so a pin there
+/// publishes one person's work account to the whole team.
+#[test]
+fn the_connector_is_asked_once_per_host_and_carries_the_project_s_pinned_login() {
+    let _serial = lock();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let forge_dir = tmp.path().join("forge.git");
+    let base = forge_repository(&forge_dir);
+    let server = serve(forge_dir.clone(), Answer::Ok);
+    let machine = machine(&server.url("forge.git"), "a-token");
+
+    let checkout = tmp.path().join("checkout");
+    checkout_ahead(&checkout, &forge_dir, "ssh://git@127.0.0.1/forge.git", base);
+
+    let pin = joy_core::auth::session::app_state_project_file(&checkout).expect("app state path");
+    std::fs::create_dir_all(pin.parent().expect("a parent")).expect("state dir");
+    std::fs::write(
+        &pin,
+        r#"{"member":"scotty","forgeLogin":{"127.0.0.1":"scotty-work"}}"#,
+    )
+    .expect("write the pin");
+    assert_eq!(
+        resolver::pinned_login(&checkout, "127.0.0.1").as_deref(),
+        Some("scotty-work"),
+        "the engine reads the pin out of the project's own app state"
+    );
+
+    forge::push(&checkout, &Auth::local(HostKind::Background)).expect("push");
+    // A second operation on the same host: the connector answered once
+    // and its answer is what this one reads.
+    let advertised = forge::ls_remote_refs(
+        &checkout,
+        &Auth::local(HostKind::Background),
+        &["refs/heads/main"],
+    )
+    .expect("ls-remote");
+    assert!(advertised.contains_key("refs/heads/main"));
+
+    let tokens = machine.calls("token");
+    assert_eq!(
+        tokens.len(),
+        1,
+        "asked per host and not per contact (D1.7): {tokens:?}"
+    );
+    assert!(
+        tokens[0].contains("--login scotty-work"),
+        "the pin travels on the call: {}",
+        tokens[0]
+    );
+    assert!(
+        tokens[0].contains("--host-kind background"),
+        "and so does the host kind of D1.1: {}",
+        tokens[0]
+    );
+    assert!(
+        tokens[0].contains("--for write"),
+        "a push asks for a login that may write (D4.1c step 4): {}",
+        tokens[0]
+    );
+    assert_eq!(
+        machine.calls("web-url").len(),
+        1,
+        "and the twin's address with it"
     );
     drop(machine);
 }

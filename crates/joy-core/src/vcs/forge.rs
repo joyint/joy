@@ -187,7 +187,6 @@ fn bound_forge_waits() {
 /// detail line and never to a surface.
 fn contact_failed(
     url: &str,
-    auth: &Auth,
     direction: super::contact::ContactDirection,
     e: git2::Error,
 ) -> anyhow::Error {
@@ -197,10 +196,14 @@ fn contact_failed(
     // this was an ssh authentication failure, which is the one refusal
     // that sends a contact to the twin.
     super::resolver::note_contact_error(transport, &e);
-    // What really answered the credential callback of this contact beats
-    // the coarse claim the `Auth` could make before it (D1.8a).
-    let credential =
-        super::contact::presented_source().unwrap_or_else(|| auth.credential_evidence(transport));
+    // WHAT JOY PUT ON THE WIRE for this contact, which is what D1.8a
+    // asks for and what the field is documented as. It used to be the
+    // coarse claim an `Auth` can make before a contact: `Auth::Local`
+    // claims a credential for every host, and a contact that ended in
+    // `Cred::default()` (which is "I have nothing") was then handed to
+    // the classifier as one that presented the machine's own credential.
+    let credential = super::contact::presented_source()
+        .unwrap_or(super::contact::CredentialSource::NonePresented);
     let mut evidence = super::contact::ContactEvidence::new(e, url, direction, credential);
     // The proxy THIS contact really went through (D1.8c): a 407 names
     // the proxy and never the forge, and the name is joy's own
@@ -278,28 +281,6 @@ impl Auth {
         match self {
             Auth::Token(token) | Auth::ClaimedToken(token, _) => !token.is_empty(),
             Auth::Local | Auth::LocalAs(_) => true,
-        }
-    }
-
-    /// What joy presented, for the evidence of D1.8a. This is the
-    /// coarse answer the engine can give before a contact is made; what
-    /// the chain below really handed over is noted per contact through
-    /// [`presented`], and J4b refines this to the source that actually
-    /// answered the callback.
-    fn credential_evidence(
-        &self,
-        transport: super::contact::Transport,
-    ) -> super::contact::CredentialSource {
-        use super::contact::CredentialSource;
-        match self {
-            Auth::Token(token) | Auth::ClaimedToken(token, _) if !token.is_empty() => {
-                CredentialSource::TokenPresented
-            }
-            Auth::Token(_) | Auth::ClaimedToken(..) => CredentialSource::NonePresented,
-            Auth::Local | Auth::LocalAs(_) => match transport {
-                super::contact::Transport::Ssh => CredentialSource::AgentPresented,
-                _ => CredentialSource::HelperPresented,
-            },
         }
     }
 
@@ -1235,12 +1216,15 @@ fn remember_success(plan: &Plan, leg: &Leg, used: Option<&'static str>) {
         Way::Twin if plan.probe.usable() => super::resolver::TransportState::SshFailed,
         Way::Twin => super::resolver::TransportState::NoSshCredential,
     };
-    super::resolver::remember(
-        &plan.host,
-        super::resolver::HostMemory::new(state)
-            .with_credential(leg.transport, credential)
-            .with_signals(plan.probe.signals.clone()),
-    );
+    let mut memory = super::resolver::HostMemory::new(state)
+        .with_credential(leg.transport, credential)
+        .with_signals(plan.probe.signals.clone());
+    // D1.6: "The shape that worked is remembered per host next to the
+    // transport memory." It is a user name and never a secret.
+    if let LegCredential::Token(token) = &leg.credential {
+        memory.shape = Some(token_user(&plan.host, token.kind).to_string());
+    }
+    super::resolver::remember(&plan.host, memory);
 }
 
 /// Trigger (b) of D1.2: the ssh contact failed with an authentication
@@ -1436,7 +1420,7 @@ fn clone_raw(url: &str, auth: &Auth, dest: &Path) -> anyhow::Result<()> {
     let cloned = git2::build::RepoBuilder::new()
         .fetch_options(fetch)
         .clone(dialled.as_deref().unwrap_or(url), dest)
-        .map_err(|e| contact_failed(url, auth, super::contact::ContactDirection::Fetch, e))?;
+        .map_err(|e| contact_failed(url, super::contact::ContactDirection::Fetch, e))?;
     if dialled.is_some() {
         // The new checkout keeps the remote the caller named, not the
         // address joy dialled it at: the alias is the person's, the
@@ -1521,7 +1505,7 @@ fn download_over(
             Some(auth.callbacks_as(kind, cred_source(Some(repo)))),
             Some(proxy.options()),
         )
-        .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Fetch, e))?;
+        .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Fetch, e))?;
     // an empty advertisement (freshly created forge) is a plain
     // empty list since git2 0.21, and an honest "nothing there"
     let advertised = connection
@@ -1529,7 +1513,7 @@ fn download_over(
         // the advertisement is a forge contact like any other: its
         // failure is read by the classifier, never copied raw onto a
         // surface (D1.8b, wording rules)
-        .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Fetch, e))?
+        .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Fetch, e))?
         .iter()
         .find(|r| r.name() == src)
         .map(|r| r.oid());
@@ -1543,7 +1527,7 @@ fn download_over(
     connection
         .remote()
         .download(&[refspec.as_str()], Some(&mut opts))
-        .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Fetch, e))?;
+        .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Fetch, e))?;
     drop(connection);
     repo.reference(dst, tip, true, "joy-vcs: fetch")
         .map_err(err)?;
@@ -1695,9 +1679,7 @@ pub fn probe_write_access(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
                     Some(leg_auth.callbacks_as(auth.host_kind(), cred_source(Some(repo)))),
                     Some(proxy.options()),
                 )
-                .map_err(|e| {
-                    contact_failed(&url, leg_auth, super::contact::ContactDirection::Push, e)
-                })?;
+                .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Push, e))?;
             let _ = remote.disconnect();
             Ok(())
         },
@@ -1732,9 +1714,7 @@ pub fn push(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
             let refspec = format!("refs/heads/{branch}:refs/heads/{branch}");
             remote
                 .push(&[refspec.as_str()], Some(&mut opts))
-                .map_err(|e| {
-                    contact_failed(&url, leg_auth, super::contact::ContactDirection::Push, e)
-                })?;
+                .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Push, e))?;
             status.verdict(&super::contact::host_of(&url))?;
             write_tracking_ref(repo, leg, &status, &branch, tip);
             Ok(())
@@ -1832,9 +1812,7 @@ pub fn push_ref(repo_dir: &Path, auth: &Auth, refname: &str) -> anyhow::Result<(
             let refspec = format!("{refname}:{refname}");
             remote
                 .push(&[refspec.as_str()], Some(&mut opts))
-                .map_err(|e| {
-                    contact_failed(&url, leg_auth, super::contact::ContactDirection::Push, e)
-                })?;
+                .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Push, e))?;
             status.verdict(&super::contact::host_of(&url))?;
             write_chats_tracking_ref(repo, &status, refname, tip);
             Ok(())
@@ -1916,14 +1894,10 @@ fn ls_remote_refs_over(
                     Some(leg_auth.callbacks_as(auth.host_kind(), cred_source(Some(repo)))),
                     Some(proxy.options()),
                 )
-                .map_err(|e| {
-                    contact_failed(&url, leg_auth, super::contact::ContactDirection::Fetch, e)
-                })?;
+                .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Fetch, e))?;
             let found = connection
                 .list()
-                .map_err(|e| {
-                    contact_failed(&url, leg_auth, super::contact::ContactDirection::Fetch, e)
-                })?
+                .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Fetch, e))?
                 .iter()
                 .filter(|r| refnames.contains(&r.name()))
                 .map(|r| (r.name().to_string(), r.oid().to_string()))
@@ -2836,9 +2810,7 @@ pub fn push_tag(repo_dir: &Path, auth: &Auth, tag: &str) -> anyhow::Result<()> {
             let refspec = format!("refs/tags/{tag}:refs/tags/{tag}");
             remote
                 .push(&[refspec.as_str()], Some(&mut opts))
-                .map_err(|e| {
-                    contact_failed(&url, leg_auth, super::contact::ContactDirection::Push, e)
-                })?;
+                .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Push, e))?;
             status.verdict(&super::contact::host_of(&url))
         },
     )
@@ -3597,14 +3569,10 @@ pub fn fetch_heads(repo_dir: &Path, auth: &Auth) -> anyhow::Result<Vec<String>> 
                     Some(leg_auth.callbacks_as(auth.host_kind(), cred_source(Some(repo)))),
                     Some(proxy.options()),
                 )
-                .map_err(|e| {
-                    contact_failed(&url, leg_auth, super::contact::ContactDirection::Fetch, e)
-                })?;
+                .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Fetch, e))?;
             let heads: Vec<(String, git2::Oid)> = connection
                 .list()
-                .map_err(|e| {
-                    contact_failed(&url, leg_auth, super::contact::ContactDirection::Fetch, e)
-                })?
+                .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Fetch, e))?
                 .iter()
                 .filter_map(|r| {
                     r.name()
@@ -3626,9 +3594,7 @@ pub fn fetch_heads(repo_dir: &Path, auth: &Auth) -> anyhow::Result<Vec<String>> 
             connection
                 .remote()
                 .download(&refspec_strs, Some(&mut opts))
-                .map_err(|e| {
-                    contact_failed(&url, leg_auth, super::contact::ContactDirection::Fetch, e)
-                })?;
+                .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Fetch, e))?;
             drop(connection);
             // the tracking refs by hand, as download_over does:
             // update_tips would write FETCH_HEAD
@@ -3756,7 +3722,6 @@ mod tests {
         super::super::proxy::note(Some("proxy.acme.example:8080"), false);
         let failure = contact_failed(
             "https://github.com/joyint/joy.git",
-            &Auth::Local,
             super::super::contact::ContactDirection::Fetch,
             libgit2(),
         );
@@ -3773,7 +3738,6 @@ mod tests {
         super::super::proxy::forget();
         let failure = contact_failed(
             "https://github.com/joyint/joy.git",
-            &Auth::Local,
             super::super::contact::ContactDirection::Fetch,
             libgit2(),
         );
