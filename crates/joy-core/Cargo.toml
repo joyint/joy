@@ -42,7 +42,15 @@ minijinja = { workspace = true }
 # `vendored-libgit2` compiles the bundled libgit2 from source and links it
 # statically: nothing external is expected on the system, so the single
 # binary/library stays self-contained and cross-compiles cleanly.
-git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2", "cred"] }
+# git2's `cred` feature is NOT asked for: its only content is
+# `Cred::credential_helper` and `CredentialHelper`, the API design D1.3
+# forbids because it spawns `git credential-<name>` through `sh -c`
+# (cred.rs:310-316, :395). joy runs helpers itself in
+# vcs::credential_helper. The lean build therefore cannot call it at
+# all; under `forge-net` git2 pulls `cred` in behind `https` and `ssh`
+# (git2 0.21 Cargo.toml), so there the rule stays a convention that
+# this comment and the module doc carry.
+git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2"] }
 tracing = "0.1"
 # The person's ssh config, parsed by joy: libgit2 reads none of it (no
 # hit for ssh_config, IdentityFile or SSH_AUTH_SOCK in its sources), so
@@ -110,3 +118,8 @@ forge-net = ["git2/https", "git2/ssh", "git2/vendored-openssl"]
 [dev-dependencies]
 insta = { version = "1.41", features = ["yaml"] }
 tempfile = "3"
+# The credential helper runner takes a `git2::Config`, so the test that
+# proves the J4a acceptance "a credential on a machine with no git on
+# PATH" has to build one. Same version and features as above, so cargo
+# unifies it and nothing extra is compiled.
+git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2"] }

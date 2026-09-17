@@ -14,7 +14,7 @@
 //! Its own test binary: it moves HOME, which is process state.
 
 use joy_core::vcs::forge::Auth;
-use joy_core::vcs::{ssh_config, HostKind};
+use joy_core::vcs::{contact, ssh_config, HostKind};
 
 #[test]
 fn a_jump_host_is_refused_by_name_and_never_looked_up() {
@@ -24,7 +24,9 @@ fn a_jump_host_is_refused_by_name_and_never_looked_up() {
         home.path().join(".ssh").join("config"),
         "Host jump.example.invalid\n  ProxyCommand /usr/bin/corkscrew proxy 8080 %h %p\n\
          \nHost hop.example.invalid\n  ProxyJump bastion.example.invalid\n\
-         \nHost plain.example.invalid\n  User deploy\n",
+         \nHost plain.example.invalid\n  User deploy\n\
+         \nHost *\n  ServerAliveInterval 60\n\
+         \nMatch exec \"nc -z vpn.corp.invalid 22\"\n  ProxyJump gateway.corp.invalid\n",
     )
     .unwrap();
     std::env::set_var("HOME", home.path());
@@ -45,11 +47,30 @@ fn a_jump_host_is_refused_by_name_and_never_looked_up() {
     // A host without a rule is not refused, and neither is https.
     assert!(ssh_config::refusal_for_url("git@plain.example.invalid:o/r.git").is_none());
     assert!(ssh_config::refusal_for_url("https://jump.example.invalid/o/r.git").is_none());
+    // The `Match exec` block at the end of the file carries a
+    // ProxyJump, and ssh2-config does not know the `Match` keyword, so
+    // without joy's own scoping that rule would belong to the `Host *`
+    // block above it and joy would refuse EVERY ssh remote on this
+    // machine (design D1.4: refused by name, for the host that carries
+    // the rule).
+    assert!(ssh_config::refusal_for_url("git@github.com:o/r.git").is_none());
+    assert!(ssh_config::refusal_for_url("git@plain.example.invalid:o/r.git").is_none());
 
     // And the contact itself stops before any lookup: the error is the
-    // sentence, not a name resolution failure.
+    // sentence, not a name resolution failure. A refusal that opens no
+    // socket also spends no turn of the host's gap, so two of them in
+    // a row do not sit out a throttle wait for a contact that never
+    // happened (design D1.4).
+    contact::set_gaps("jump.example.invalid=5000,default=0");
     let dest = tempfile::tempdir().unwrap();
+    let started = std::time::Instant::now();
     let failed = forge_clone("git@jump.example.invalid:o/r.git", &dest.path().join("c"));
+    let again = forge_clone("git@jump.example.invalid:o/r.git", &dest.path().join("d"));
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(3),
+        "a refusal that never opens a socket must not wait out the host's gap"
+    );
+    assert!(again.contains("ProxyCommand"), "{again}");
     assert!(failed.contains("ProxyCommand"), "{failed}");
     for wrong in ["resolve", "dns", "getaddrinfo", "connect"] {
         assert!(

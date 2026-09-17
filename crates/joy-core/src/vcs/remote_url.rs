@@ -168,11 +168,21 @@ fn split_scheme(url: &str) -> Option<(&str, &str)> {
 
 /// The scp-like form `[user@]host:path`, which is ssh. A Windows drive
 /// letter (`C:\repo`) and a plain path are not.
+///
+/// Two shapes carry a bracket, and libgit2 reads both
+/// (`git_net_url_parse_scp`, net.c:661-806), so joy reads both:
+/// `git@[::1]:owner/repo.git`, where the bracket holds an IPv6
+/// address, and `[git@host:2222]:owner/repo.git`, the only scp-like
+/// shape that carries a PORT, which design D1.5 names by name. Read as
+/// a plain `host:path` the second one yields the host `host` and the
+/// path `2222]:owner/repo.git`, and every key joy builds from a remote
+/// (the throttle, the twin, the helper lookup) is then built from
+/// nonsense.
 fn scp_like(url: &str) -> Option<RemoteUrl> {
     if url.starts_with('/') || url.starts_with('.') || url.starts_with('~') {
         return None;
     }
-    let (authority, path) = url.split_once(':')?;
+    let (authority, path) = split_authority(url)?;
     if authority.is_empty() || path.starts_with('\\') {
         return None;
     }
@@ -181,6 +191,17 @@ fn scp_like(url: &str) -> Option<RemoteUrl> {
     if authority.len() == 1 && authority.chars().all(|c| c.is_ascii_alphabetic()) {
         return None;
     }
+    // `[user@host:port]` wraps user, host and port together; a bracket
+    // holding an IPv6 address and nothing else is the address itself,
+    // which is how libgit2 tells the two apart (`is_ipv6`,
+    // net.c:621-644).
+    let (authority, ported) = match authority
+        .strip_prefix('[')
+        .and_then(|inside| inside.strip_suffix(']'))
+    {
+        Some(inside) if !is_ipv6_text(inside) => (inside, true),
+        _ => (authority, false),
+    };
     let (user, host) = match authority.rsplit_once('@') {
         Some((user, host)) => (non_empty(user), host),
         None => (None, authority),
@@ -188,17 +209,42 @@ fn scp_like(url: &str) -> Option<RemoteUrl> {
     if host.is_empty() || host.contains('/') {
         return None;
     }
-    let (host, _, bracketed) = split_host_port(host)?;
+    let (host, port, bracketed) = split_host_port(host)?;
     Some(RemoteUrl {
         transport: Transport::Ssh,
         user,
         host,
-        // The scp-like form cannot carry a port at all; ssh reads it
-        // from the config, and so does joy.
-        port: None,
+        // Without the brackets the scp-like form cannot carry a port at
+        // all; ssh reads it from the config, and so does joy.
+        port: port.filter(|_| ported),
         path: path.to_string(),
         bracketed,
     })
+}
+
+/// The authority and the path of an scp-like remote, split at the
+/// colon that introduces the path: the first one OUTSIDE every
+/// bracket. A colon inside a bracket belongs to an IPv6 address or to
+/// the port of the bracketed form, and libgit2 skips those the same
+/// way, with a bracket counter (net.c:661-806).
+fn split_authority(url: &str) -> Option<(&str, &str)> {
+    let mut depth = 0usize;
+    for (at, byte) in url.bytes().enumerate() {
+        match byte {
+            b'[' => depth += 1,
+            b']' => depth = depth.saturating_sub(1),
+            b':' if depth == 0 => return Some((&url[..at], &url[at + 1..])),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Whether the text between brackets is an IPv6 address: hex digits
+/// and colons, more than one colon. libgit2's own test (net.c:621-644).
+fn is_ipv6_text(inside: &str) -> bool {
+    inside.chars().filter(|c| *c == ':').count() > 1
+        && inside.chars().all(|c| c == ':' || c.is_ascii_hexdigit())
 }
 
 /// `host`, `host:port`, `[v6]` or `[v6]:port`.
@@ -237,6 +283,50 @@ mod tests {
         assert_eq!(parsed.host, "github.com");
         assert_eq!(parsed.port, None);
         assert_eq!(parsed.path, "owner/repo.git");
+    }
+
+    /// The bracketed form design D1.5 names by name. Read as a plain
+    /// `host:path` it yields the host `git.example.com` with the path
+    /// `2222]:owner/repo.git`, and every key joy builds from a remote
+    /// is then built from nonsense.
+    #[test]
+    fn the_bracketed_scp_form_carries_a_port_and_the_path_after_it() {
+        let parsed = RemoteUrl::parse("[git@git.example.com:2222]:owner/repo.git").unwrap();
+        assert_eq!(parsed.transport, Transport::Ssh);
+        assert_eq!(parsed.user.as_deref(), Some("git"));
+        assert_eq!(parsed.host, "git.example.com");
+        assert_eq!(parsed.port, Some(2222));
+        assert_eq!(parsed.path, "owner/repo.git");
+        assert_eq!(parsed.host_key(), "ssh://git.example.com:2222");
+        // Without a user, and with an IPv6 address inside.
+        let bare = RemoteUrl::parse("[git.example.com:2222]:o/r.git").unwrap();
+        assert_eq!(bare.host, "git.example.com");
+        assert_eq!(bare.port, Some(2222));
+        assert_eq!(bare.user, None);
+        let v6 = RemoteUrl::parse("[git@[2001:db8::1]:2222]:o/r.git").unwrap();
+        assert_eq!(v6.host, "2001:db8::1");
+        assert_eq!(v6.port, Some(2222));
+        assert!(v6.bracketed);
+        assert_eq!(v6.host_field(), "[2001:db8::1]:2222");
+    }
+
+    /// A bracket that holds an address and nothing else is the
+    /// address, and the colon after it is the path separator, which is
+    /// how libgit2 tells the two bracketed shapes apart (`is_ipv6`,
+    /// net.c:621-644).
+    #[test]
+    fn an_ipv6_address_in_the_scp_form_is_an_address_and_not_a_port() {
+        let parsed = RemoteUrl::parse("[2001:db8::1]:owner/repo.git").unwrap();
+        assert_eq!(parsed.transport, Transport::Ssh);
+        assert_eq!(parsed.host, "2001:db8::1");
+        assert_eq!(parsed.port, None);
+        assert_eq!(parsed.path, "owner/repo.git");
+        assert!(parsed.bracketed);
+        let with_user = RemoteUrl::parse("git@[2001:db8::1]:owner/repo.git").unwrap();
+        assert_eq!(with_user.host, "2001:db8::1");
+        assert_eq!(with_user.user.as_deref(), Some("git"));
+        assert_eq!(with_user.port, None);
+        assert_eq!(with_user.path, "owner/repo.git");
     }
 
     #[test]

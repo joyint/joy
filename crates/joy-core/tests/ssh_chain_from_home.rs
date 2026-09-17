@@ -33,8 +33,10 @@ fn the_default_keys_are_found_and_the_locked_one_is_named_not_offered() {
     let home = tempfile::tempdir().unwrap();
     let ssh = home.path().join(".ssh");
     std::fs::create_dir_all(&ssh).unwrap();
-    // ssh's own default names: the encrypted ed25519 key comes first
-    // in ssh's order, the readable rsa key after it.
+    // ssh's own default names, in ssh's own order: id_rsa is the first
+    // one `ssh` adds when the config names none, id_ed25519 comes
+    // after it (readconf/ssh.c `add_identity_file`). The rsa key here
+    // is readable, the ed25519 one is locked.
     std::fs::write(ssh.join("id_ed25519"), openssh_key("aes256-ctr")).unwrap();
     std::fs::write(
         ssh.join("id_rsa"),
@@ -84,8 +86,17 @@ fn the_default_keys_are_found_and_the_locked_one_is_named_not_offered() {
         chain.notes
     );
 
-    // On Windows the same directory yields no key at all, and says so
-    // by name for the OpenSSH one.
+    // On Windows the key step keeps only the classic PKCS#1 key and
+    // says by name why the OpenSSH one is not there. The agent IS
+    // offered although joy's own probe found none: on Windows libssh2
+    // reaches Pageant through a window message and the OpenSSH agent
+    // service through the named pipe `\\.\pipe\openssh-ssh-agent`
+    // (agent.c:432-439, agent_win.c:124), and neither of them sets
+    // `SSH_AUTH_SOCK`, so "no SSH_AUTH_SOCK" is not "no agent" there.
+    // It costs one `GIT_EAUTH` round when no agent answers, because
+    // libgit2 maps a failed agent connect to
+    // `LIBSSH2_ERROR_AUTHENTICATION_FAILED` and re-enters the callback
+    // (ssh_libssh2.c:245-249, :369-372).
     let windows = ssh_auth::chain_for(
         "github.com",
         Some("git"),
@@ -96,12 +107,23 @@ fn the_default_keys_are_found_and_the_locked_one_is_named_not_offered() {
     );
     assert_eq!(
         windows.candidates,
-        vec![SshCandidate::Key {
-            path: ssh.join("id_rsa"),
-            public: Some(ssh.join("id_rsa.pub")),
-            passphrase: None,
-        }],
-        "the classic PKCS#1 key is the one Windows can read"
+        vec![
+            SshCandidate::Agent,
+            SshCandidate::Key {
+                path: ssh.join("id_rsa"),
+                public: Some(ssh.join("id_rsa.pub")),
+                passphrase: None,
+            }
+        ],
+        "the classic PKCS#1 key is the one Windows can read, after whatever Windows' own agent holds"
+    );
+    assert!(
+        windows
+            .notes
+            .iter()
+            .any(|note| note.contains("Windows' own agent")),
+        "{:?}",
+        windows.notes
     );
     assert!(
         windows.notes.iter().any(|note| note

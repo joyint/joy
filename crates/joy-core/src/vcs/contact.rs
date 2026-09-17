@@ -308,13 +308,26 @@ pub fn run<T>(
     verb: &'static str,
     work: impl FnOnce() -> anyhow::Result<T>,
 ) -> anyhow::Result<T> {
-    let host = host_of(url);
+    // The host joy really contacts: the person's ssh config may name
+    // another one behind an alias, and the throttle, the strike gate
+    // and the log all key on the host a socket is opened to, not on
+    // the alias it was written as (design D1.1, D1.4).
+    let dialled = super::ssh_config::effective_url(url);
+    let host = host_of(dialled.as_deref().unwrap_or(url));
     let span = tracing::info_span!("forge.contact", verb, forge = %host);
     let _s = span.enter();
+    // A host joy refuses to speak to at all (ProxyCommand, ProxyJump)
+    // opens no socket, so it spends no turn: the refusal below costs
+    // the host's gap nothing (design D1.4).
+    let opens_a_socket = super::ssh_config::refusal_for_url(url).is_none();
     // A forge that said 429 is never stopped, only slowed (Horst,
     // 2026-08-29: throttle, never block): while a strike stands, this
     // host's gap is doubled inside take_turn; the contact still goes out.
-    let waited = take_turn(&host);
+    let waited = if opens_a_socket {
+        take_turn(&host)
+    } else {
+        Duration::ZERO
+    };
     if !waited.is_zero() {
         tracing::debug!(
             waited_ms = waited.as_millis() as u64,
@@ -322,6 +335,12 @@ pub fn run<T>(
         );
     }
     let started = Instant::now();
+    // Whatever an earlier contact left waiting for a verdict is not
+    // this contact's business: a fresh credential that the last
+    // contact never got a verdict on (it failed for a reason that had
+    // nothing to do with the credential) must not be stored because
+    // this one succeeds, possibly with a token and no helper at all.
+    super::credential_helper::forget_presented(url);
     match work() {
         Ok(value) => {
             clear(&host);

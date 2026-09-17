@@ -272,25 +272,56 @@ pub fn chain_for(
     agent: &Agent,
     windows: bool,
 ) -> SshChain {
-    let user = settings
-        .user
-        .clone()
-        .or_else(|| url_user.map(str::to_string))
+    // The URL's user wins over the config's, which is ssh's own order:
+    // `ssh user@host` is `-l user`, and a command line option beats a
+    // `User` line in the config ("command-line options ... then
+    // ~/.ssh/config", ssh(1)). The other way round, a person with
+    // `Host github.com / User theirname` would authenticate every
+    // `git@github.com:` remote as `theirname`.
+    let user = url_user
+        .map(str::to_string)
+        .or_else(|| settings.user.clone())
         .unwrap_or_else(|| "git".to_string());
     let mut candidates = Vec::new();
     let mut notes = Vec::new();
+    // On Windows the agent is offered even when joy's own probe found
+    // nothing: neither the OpenSSH agent service (a named pipe) nor
+    // Pageant (a window message) sets `SSH_AUTH_SOCK`, and libssh2
+    // reaches both through its own win32 backend, which takes no
+    // socket path at all. Leaving the agent out there would empty the
+    // whole chain on the very machines where the key file step is
+    // empty too, because WinCNG reads no openssh-key-v1 file
+    // (design D1.2 rule 5, D1.4).
     if agent.usable() {
         candidates.push(SshCandidate::Agent);
+    } else if windows && *agent == Agent::Missing {
+        candidates.push(SshCandidate::Agent);
+        notes.push(format!(
+            "no SSH_AUTH_SOCK is set, so joy offered {host} whatever Windows' own agent holds (the OpenSSH agent service or Pageant)"
+        ));
     } else {
         notes.push(agent.sentence(host));
     }
-    let identity_files = if settings.identity_files.is_empty() {
-        default_identity_files()
-    } else {
+    // A file the config NAMES is reported when it is not there; ssh's
+    // own defaults are not, because most of the six never exist.
+    let named = !settings.identity_files.is_empty();
+    let identity_files = if named {
         settings.identity_files.clone()
+    } else {
+        default_identity_files()
     };
     for path in identity_files {
         if !path.is_file() {
+            if named {
+                // D1.4: reported by name, not silently. A typo in the
+                // config would otherwise produce "no usable credential
+                // for <host>" with no mention of the key that was asked
+                // for.
+                notes.push(format!(
+                    "key {}: your ssh config names this file for {host} and it is not there",
+                    path.display()
+                ));
+            }
             continue;
         }
         let key = match examine(&path) {
@@ -353,8 +384,16 @@ pub fn candidate_for(key: &KeyFile, kind: HostKind, windows: bool) -> Result<Ssh
         }
     }
     let public = {
-        let candidate = key.path.with_extension("pub");
-        candidate.is_file().then_some(candidate)
+        // ssh APPENDS `.pub` to the whole file name. `with_extension`
+        // would replace one, so a key file called `work.key` would be
+        // given `work.pub`, which is either absent or somebody else's
+        // public key.
+        let candidate = key.path.file_name().map(|name| {
+            let mut name = name.to_os_string();
+            name.push(".pub");
+            key.path.with_file_name(name)
+        });
+        candidate.filter(|candidate| candidate.is_file())
     };
     Ok(SshCandidate::Key {
         path: key.path.clone(),
@@ -363,17 +402,20 @@ pub fn candidate_for(key: &KeyFile, kind: HostKind, windows: bool) -> Result<Ssh
     })
 }
 
-/// ssh's own default identity files, in ssh's own order.
+/// ssh's own default identity files, in ssh's own order: the order
+/// `ssh` adds them in when the config names none (readconf.c /
+/// ssh.c's `add_identity_file` calls), which is RSA first and DSA
+/// last, not the newest key type first.
 fn default_identity_files() -> Vec<PathBuf> {
     let Some(home) = home_ssh_dir() else {
         return Vec::new();
     };
     [
-        "id_ed25519",
+        "id_rsa",
         "id_ecdsa",
         "id_ecdsa_sk",
+        "id_ed25519",
         "id_ed25519_sk",
-        "id_rsa",
         "id_dsa",
     ]
     .iter()
@@ -655,8 +697,9 @@ mod tests {
             },
             false,
         );
-        // The config's user wins over the URL's, and it is decided once.
-        assert_eq!(chain.user, "deploy");
+        // The URL's user wins over the config's, the way `ssh -l` wins
+        // over a `User` line, and it is decided once.
+        assert_eq!(chain.user, "fromurl");
         assert_eq!(chain.candidates.len(), 2);
         assert_eq!(chain.candidates[0], SshCandidate::Agent);
         assert_eq!(
@@ -667,10 +710,28 @@ mod tests {
                 passphrase: None
             }
         );
-        // The locked key is named, the absent one is not a story.
-        assert_eq!(chain.notes.len(), 1);
+        // The locked key is named, and so is the one the config asked
+        // for that is not there.
+        assert_eq!(chain.notes.len(), 2);
         assert!(chain.notes[0].contains("passphrase needed, skipped"));
         assert!(chain.notes[0].contains(&locked.display().to_string()));
+        assert!(
+            chain.notes[1].contains("and it is not there"),
+            "{}",
+            chain.notes[1]
+        );
+        assert!(chain.notes[1].contains("absent"), "{}", chain.notes[1]);
+
+        // With no user in the URL the config's `User` is what is left.
+        let from_config = chain_for(
+            "git.example.com",
+            None,
+            &settings,
+            HostKind::Background,
+            &Agent::Missing,
+            false,
+        );
+        assert_eq!(from_config.user, "deploy");
     }
 
     #[test]

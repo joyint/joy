@@ -48,12 +48,18 @@ use std::time::{Duration, Instant};
 use super::host_kind::HostKind;
 use super::remote_url::RemoteUrl;
 
-/// How long a helper may take when nobody can answer it. An
-/// interactive host has no bound at all: a person typing into a Git
-/// Credential Manager window is not a hang. A worker has one, because
-/// a helper that waits for a dialog nobody sees would otherwise stop
-/// the sync for ever.
+/// How long a helper may take when nobody can answer it. A worker
+/// needs this bound, because a helper that waits for a dialog nobody
+/// sees would otherwise stop the sync for ever.
 const QUIET_DEADLINE: Duration = Duration::from_secs(30);
+
+/// How long a helper may take when a person CAN answer it. A Git
+/// Credential Manager window a person is typing into is not a hang, so
+/// the bound is generous, but there is one: this call sits inside
+/// libgit2's credentials callback, and a dialog that opened behind
+/// another window and is never answered would otherwise hang the whole
+/// fetch with no way out (design D1.3, D1.10).
+const PROMPT_DEADLINE: Duration = Duration::from_secs(600);
 
 /// How long an answer is reused without asking the helper again
 /// (design D1.7: a 1 Hz poll must not spawn a .NET process per
@@ -172,24 +178,36 @@ impl std::error::Error for HelperFailure {}
 // ---- the config chain -------------------------------------------------
 
 /// Every helper the config names for this request, most specific
-/// first, with the empty value resetting everything named before it.
+/// first, with the empty value resetting the values of its own key.
 ///
 /// git reads all three keys and all values of each; git2 reads two
 /// keys without the port and keeps only the last value of each
 /// (config_list.c:160-201, cred.rs:323-330).
+///
+/// The reset is per key, and that is a considered difference from git.
+/// git resets in config-READ order, where `credential.<exact url>`
+/// normally stands in the repository's own config and is therefore
+/// read after a global `credential.helper`; joy walks the keys most
+/// specific first, as D1.3 lists them, so honouring the reset across
+/// keys would let an empty global `credential.helper` wipe the
+/// entries written for one exact URL. Inside one key the values ARE in
+/// config order, so the empty value resets them the way git does it:
+/// "the empty string ... resets the helper list to empty"
+/// (git-config(1), credential.helper), which is how a repository
+/// switches its global helper off.
 pub fn configured_helpers(config: &git2::Config, request: &Request) -> Vec<String> {
     let mut chain = Vec::new();
     for key in helper_keys(request) {
+        let mut from_key = Vec::new();
         for value in multivar(config, &format!("credential.{key}helper")) {
             let value = value.trim().to_string();
             if value.is_empty() {
-                // "the empty string ... resets the helper list to empty"
-                // (git-config(1), credential.helper).
-                chain.clear();
+                from_key.clear();
             } else {
-                chain.push(value);
+                from_key.push(value);
             }
         }
+        chain.append(&mut from_key);
     }
     chain
 }
@@ -305,7 +323,11 @@ impl Search {
             }
         }
         dirs.extend(path_dirs());
-        dirs.dedup();
+        // PATH repeats a directory often enough, and rarely next to
+        // itself, so `dedup` alone would leave the repeats in and stat
+        // each of them again for every helper name.
+        let mut seen = std::collections::HashSet::new();
+        dirs.retain(|dir| seen.insert(dir.clone()));
         Search { dirs, shell }
     }
 
@@ -682,8 +704,12 @@ pub fn run(
         }
         text
     });
-    let deadline = (!kind.may_prompt()).then(|| Instant::now() + QUIET_DEADLINE);
-    let status = wait_bounded(&mut child, deadline);
+    let bound = if kind.may_prompt() {
+        PROMPT_DEADLINE
+    } else {
+        QUIET_DEADLINE
+    };
+    let status = wait_bounded(&mut child, bound);
     let stdout = out_reader.join().unwrap_or_default();
     let stderr = err_reader.join().unwrap_or_default();
     let status = match status {
@@ -695,19 +721,22 @@ pub fn run(
             .code()
             .map(|c| format!("exit {c}"))
             .unwrap_or_else(|| "killed by a signal".to_string());
+        // The exit code is kept here rather than in the detail: the
+        // detail is the helper's own sentence (see `quoted`).
+        tracing::debug!(helper = label, op = op.word(), status = %code, "credential helper refused");
         return Err(failure(quoted(&code, &stderr)));
     }
     Ok(parse_answer(&stdout))
 }
 
-/// The child's status, killing it when the bound runs out.
+/// The child's status, killing it when the bound runs out. Every host
+/// kind has a bound: an unbounded `wait` here is a hung fetch, because
+/// this runs inside libgit2's credentials callback.
 fn wait_bounded(
     child: &mut std::process::Child,
-    deadline: Option<Instant>,
+    bound: Duration,
 ) -> Result<std::process::ExitStatus, String> {
-    let Some(deadline) = deadline else {
-        return child.wait().map_err(|e| format!("did not finish: {e}"));
-    };
+    let deadline = Instant::now() + bound;
     loop {
         match child.try_wait() {
             Ok(Some(status)) => return Ok(status),
@@ -719,15 +748,22 @@ fn wait_bounded(
             let _ = child.wait();
             return Err(format!(
                 "did not answer within {} seconds and was stopped",
-                QUIET_DEADLINE.as_secs()
+                bound.as_secs()
             ));
         }
         std::thread::sleep(Duration::from_millis(20));
     }
 }
 
-/// The failure detail: what happened, and what the helper itself said.
-/// GCM's own sentence is the one that names the cause.
+/// The failure detail: what the helper itself said, and what happened
+/// when it said nothing.
+///
+/// The helper's own sentence stands alone, because it is the one that
+/// names the cause and because design D1.3 names the result exactly:
+/// "helper 'manager': fatal: Cannot prompt because user interactivity
+/// has been disabled." An exit code in front of it would add a number
+/// nobody can act on to a sentence that already says everything. The
+/// code is not lost: [`run`] logs it beside the detail.
 fn quoted(what: &str, stderr: &str) -> String {
     let said = stderr
         .lines()
@@ -766,9 +802,13 @@ fn parse_answer(stdout: &str) -> Answer {
 struct Remembered {
     request: Request,
     credential: Credential,
-    /// The helper as it was resolved for `get`, kept so that `store`
-    /// and `erase` reach the same binary without looking it up again.
-    spawn: Spawn,
+    /// EVERY helper of the chain as it was resolved for `get`, in
+    /// order, kept so that `store` and `erase` reach the same binaries
+    /// without looking them up again. Not only the one that answered:
+    /// git runs both operations on the whole chain, which is what
+    /// fills a `cache` helper standing in front of `manager` and what
+    /// erases a revoked entry a second helper still holds (D1.3).
+    chain: Vec<(String, Spawn)>,
     with_path: bool,
     kind: HostKind,
 }
@@ -832,19 +872,34 @@ pub fn get_from(
         return Ok(Some(hit));
     }
     let with_path = use_http_path(config, &request);
-    let mut username = request.username.clone();
-    let mut password = None;
-    let mut first_failure = None;
-    for value in configured_helpers(config, &request) {
-        let spawn = match resolve(&value, search) {
-            Ok(spawn) => spawn,
+    // The whole chain is resolved before the first helper runs, so
+    // that `store` and `erase` can reach every one of them later, the
+    // way git does: a `cache` helper standing in front of `manager`
+    // only ever fills up on `store`, and it never sees the credential
+    // if the runner stops looking after the helper that answered.
+    // A failure keeps the place of its helper in the chain, so the one
+    // that is reported is still the first thing that went wrong.
+    let values = configured_helpers(config, &request);
+    let mut failures: Vec<Option<HelperFailure>> = values.iter().map(|_| None).collect();
+    let mut resolved: Vec<(usize, String, Spawn)> = Vec::new();
+    for (at, value) in values.into_iter().enumerate() {
+        match resolve(&value, search) {
+            Ok(spawn) => resolved.push((at, value, spawn)),
             Err(e) => {
                 tracing::debug!(helper = %value, detail = %e.detail, "credential helper not resolved");
-                first_failure.get_or_insert(e);
-                continue;
+                failures[at] = Some(e);
             }
-        };
-        match run(&spawn, &value, Op::Get, &request, None, with_path, kind) {
+        }
+    }
+    let chain: Vec<(String, Spawn)> = resolved
+        .iter()
+        .map(|(_, value, spawn)| (value.clone(), spawn.clone()))
+        .collect();
+    let mut username = request.username.clone();
+    let mut password = None;
+    for (at, value, spawn) in &resolved {
+        let mut quit = false;
+        match run(spawn, value, Op::Get, &request, None, with_path, kind) {
             Ok(answer) => {
                 if username.is_none() {
                     username = answer.username;
@@ -852,20 +907,18 @@ pub fn get_from(
                 if password.is_none() {
                     password = answer.password;
                 }
-                if answer.quit {
-                    break;
-                }
+                quit = answer.quit;
             }
             Err(e) => {
                 tracing::debug!(helper = %value, detail = %e.detail, "credential helper failed");
-                first_failure.get_or_insert(e);
+                failures[*at] = Some(e);
             }
         }
         if username.is_some() && password.is_some() {
             let credential = Credential {
                 username: username.clone().unwrap_or_default(),
                 password: password.clone().unwrap_or_default(),
-                helper: value,
+                helper: value.clone(),
             };
             with_state(|state| {
                 state
@@ -876,7 +929,7 @@ pub fn get_from(
                     Remembered {
                         request: request.clone(),
                         credential: credential.clone(),
-                        spawn: spawn.clone(),
+                        chain: chain.clone(),
                         with_path,
                         kind,
                     },
@@ -884,28 +937,42 @@ pub fn get_from(
             });
             return Ok(Some(credential));
         }
+        if quit {
+            // git's own order: the credential is checked for
+            // completeness BEFORE `quit` is honoured (credential.c,
+            // `credential_fill`), so a helper that answers username,
+            // password and quit=1 in one block is believed and its
+            // credential is used, not thrown away.
+            break;
+        }
     }
-    match first_failure {
+    match failures.into_iter().flatten().next() {
         Some(failure) => Err(failure),
         None => Ok(None),
     }
 }
 
-/// Tell the helper that answered how its credential fared. The
-/// outcome goes to that helper and to no other: a helper that never
-/// saw the credential has nothing to store or erase.
+/// Tell the chain how its credential fared.
+///
+/// Every helper of the chain hears it, not only the one that answered:
+/// git runs `store` and `erase` over the whole configured list
+/// (credential.c, `credential_approve` and `credential_reject`). That
+/// is what fills a `cache` helper standing in front of `manager`, and
+/// it is the only way a revoked entry a second helper still holds is
+/// erased instead of replayed on the next contact.
 fn tell(remembered: &Remembered, op: Op) {
-    let label = remembered.credential.helper.clone();
-    if let Err(e) = run(
-        &remembered.spawn,
-        &label,
-        op,
-        &remembered.request,
-        Some(&remembered.credential),
-        remembered.with_path,
-        remembered.kind,
-    ) {
-        tracing::debug!(helper = %label, op = op.word(), detail = %e.detail, "credential helper did not take the outcome");
+    for (label, spawn) in &remembered.chain {
+        if let Err(e) = run(
+            spawn,
+            label,
+            op,
+            &remembered.request,
+            Some(&remembered.credential),
+            remembered.with_path,
+            remembered.kind,
+        ) {
+            tracing::debug!(helper = %label, op = op.word(), detail = %e.detail, "credential helper did not take the outcome");
+        }
     }
 }
 
@@ -938,6 +1005,23 @@ pub fn refused(url: &str) {
         return;
     };
     tell(&remembered, Op::Erase);
+}
+
+/// Forget what is waiting for a verdict for this URL's host, without
+/// telling any helper anything.
+///
+/// A contact calls this before it starts: a fresh answer that the last
+/// contact left behind because that contact failed for a reason that
+/// had nothing to do with the credential (no route, 500, a timeout)
+/// must not be `store`d later because some other contact to the same
+/// host succeeded with another credential. The cached answer itself
+/// stays, so this costs no helper spawn (design D1.3, D1.7).
+pub fn forget_presented(url: &str) {
+    let Some(request) = Request::for_url(url) else {
+        return;
+    };
+    let key = request.host_key();
+    with_state(|state| state.presented.remove(&key));
 }
 
 /// Drop every cached answer. For the tests and for a host that knows
@@ -1420,6 +1504,32 @@ mod tests {
         .expect("a credential");
         assert_eq!(credential.password, "2");
         forget_all();
+    }
+
+    /// Every host kind has a bound, the interactive one included. The
+    /// call sits inside libgit2's credentials callback, so a dialog a
+    /// person never answers would otherwise hang the whole fetch with
+    /// no way out (design D1.3, D1.10). The bound under test is a
+    /// short one; what is pinned is that `wait_bounded` takes a
+    /// duration and not an option, so there is no "wait for ever"
+    /// branch left to fall into.
+    #[cfg(unix)]
+    #[test]
+    fn a_helper_that_never_answers_is_stopped_whoever_is_watching() {
+        assert!(
+            PROMPT_DEADLINE > QUIET_DEADLINE,
+            "a person typing is not a hang, but it is not for ever either"
+        );
+        let mut child = joy_process::command("/bin/sh")
+            .args(["-c", "sleep 30"])
+            .stdout(Stdio::null())
+            .spawn()
+            .expect("a sleeping child");
+        let started = Instant::now();
+        let detail = wait_bounded(&mut child, Duration::from_millis(150))
+            .expect_err("a child that never answers is stopped");
+        assert!(detail.contains("was stopped"), "{detail}");
+        assert!(started.elapsed() < Duration::from_secs(5));
     }
 
     #[test]
