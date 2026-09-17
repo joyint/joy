@@ -1023,8 +1023,17 @@ fn run_token_add(
     Ok(())
 }
 
-/// Create a delegation token for `ai_member` issued by the human at
-/// `operator_email`. Returns `(encoded_token, ttl_hours)`.
+/// Create a delegation token for `ai_member` issued by the human
+/// `operator`. Returns `(encoded_token, ttl_hours)`.
+///
+/// `operator` names the issuing human in EITHER of the two forms a
+/// caller can hold: an address a person typed (`joy auth token add
+/// --user`), or their at-rest member key, which is what identity
+/// resolution answers with since package J11 (D3.9) and what `joy
+/// project member add --with-token` has always passed. It is not an
+/// e-mail: in an anonymous project the key is the opaque `m-<hex>` id
+/// (ADR-042). The first thing this function does is resolve it to the
+/// key, and nothing below looks at the raw string again.
 ///
 /// Shared between `joy auth token add` and `joy project member add
 /// --with-token` so both code paths use the same delegation key
@@ -1032,7 +1041,7 @@ fn run_token_add(
 /// caller is responsible for any user-facing output.
 pub(crate) fn create_delegation_token(
     root: &Path,
-    operator_email: &str,
+    operator: &str,
     operator_passphrase: &str,
     ai_member: &str,
     ttl_hours_override: Option<i64>,
@@ -1064,20 +1073,20 @@ pub(crate) fn create_delegation_token(
     // or an at-rest member key (`joy_core::identity::acting_human_key`, and
     // the device pin behind it, D3.9); both must find the same member.
     let member_key = project
-        .member_key_for_email(operator_email)
+        .member_key_for_email(operator)
         .or_else(|| {
             project
-                .has_member_key(operator_email)
-                .then(|| operator_email.to_string())
+                .has_member_key(operator)
+                .then(|| operator.to_string())
         })
-        .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member.", operator_email))?;
+        .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member.", operator))?;
     let member = project
         .member_by_key(&member_key)
         .expect("member_key came from the member map");
     if member.verify_key.is_none() {
         anyhow::bail!(
             "Authentication not initialized for {}. Run `joy auth init`.",
-            operator_email
+            operator
         );
     }
 
@@ -1184,8 +1193,20 @@ pub(crate) fn create_delegation_token(
             delegation_seed: &delegation_seed,
         },
         token::TokenIssueParams {
+            // The RESOLVED key, never the string the caller handed in.
+            // The claim is what redemption looks the operator up by and
+            // what `delegated_by_at_rest` turns into the `delegated-by:`
+            // of every committed actor, so a token issued with `--user
+            // alice@example.com` used to carry a cleartext address while
+            // one issued from the member pin carried `m-<hex>`: the same
+            // operator, two spellings, and both ends had to accept both.
+            // Issuing the key closes that at the source. In open mode
+            // the key IS the address, so nothing changes there; in
+            // anonymous mode no address is written into the token at
+            // all, which is what ADR-042 asks of everything that leaves
+            // this project.
             ai_member,
-            human: operator_email,
+            human: &member_key,
             project_id: &project_id,
             ttl,
         },
@@ -1199,18 +1220,19 @@ pub(crate) fn create_delegation_token(
     if new_entry {
         // By the operator's at-rest KEY, the one resolved at the top of
         // this function, and never by their address again. The lookup
-        // here used to be `member_by_email_mut(operator_email)`, which
-        // resolves an ADDRESS through the member map's e-mail matcher. It
-        // found the operator while the acting member was still a git
-        // config address; since identity resolution answers with the
-        // member this device pinned (D3.9, package J11), an anonymous
-        // project hands this function the operator's opaque `m-<hex>` id,
-        // no address matches it, and the `if let` wrote NOTHING. The
-        // token was printed all the same, and redeeming it then failed
-        // with "no delegation registered for <ai> by <operator>": a token
-        // that could never work, from a command that reported success. A
-        // member the map cannot find is an error here now, so the next
-        // shape of this mistake cannot be a silent one.
+        // here used to be `member_by_email_mut` on the caller's raw
+        // string, which resolves an ADDRESS through the member map's
+        // e-mail matcher. It found the operator while the acting member
+        // was still a git config address; since identity resolution
+        // answers with the member this device pinned (D3.9, package
+        // J11), an anonymous project hands this function the operator's
+        // opaque `m-<hex>` id, no address matches it, and the `if let`
+        // wrote NOTHING. The token was printed all the same, and
+        // redeeming it then failed with "no delegation registered for
+        // <ai> by <operator>": a token that could never work, from a
+        // command that reported success. A member the map cannot find is
+        // an error here now, so the next shape of this mistake cannot be
+        // a silent one.
         let m = project_mut
             .member_by_key_mut(&member_key)
             .ok_or_else(|| anyhow::anyhow!("{member_key} is not a registered project member."))?;

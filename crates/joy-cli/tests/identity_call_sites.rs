@@ -1127,6 +1127,84 @@ fn an_ai_token_of_an_anonymous_project_redeems_and_the_ai_acts() {
     );
 }
 
+/// A delegation token names its operator by their at-rest member key, in
+/// both spellings the issuing command accepts.
+///
+/// `joy auth token add` takes the operator from `identity::acting_member`,
+/// which hands back whatever it was given: the member this device pinned,
+/// which in an anonymous project is the opaque id, or the raw string of a
+/// `--user` flag, which is an address a person typed. The token used to
+/// carry that string as its `delegated_by` claim, so the SAME operator of
+/// the SAME project was written into the token two different ways, and
+/// one of them was a cleartext address inside a credential that is then
+/// pasted into chats, CI variables and agent configuration. The claim is
+/// resolved once, at issuance, so neither end has to accept two forms and
+/// the address never leaves the project.
+#[test]
+fn a_token_names_its_operator_by_key_however_the_operator_was_named() {
+    let machine = Machine::new();
+    found_anonymously(&machine);
+
+    let add = machine.joy(&[
+        "project",
+        "member",
+        "add",
+        "ai:claude@joy",
+        "--capabilities",
+        "all",
+        "--passphrase",
+        PASSPHRASE,
+    ]);
+    assert!(add.status.success(), "{}", text(&add));
+
+    // Named by address, which is the spelling that used to reach the
+    // claim unresolved.
+    let issued = machine.joy(&[
+        "auth",
+        "token",
+        "add",
+        "ai:claude@joy",
+        "--user",
+        FOUNDER,
+        "--passphrase",
+        PASSPHRASE,
+        "--json",
+    ]);
+    assert!(issued.status.success(), "{}", text(&issued));
+    let token = json_string(&text(&issued), "token");
+
+    let claims = joy_core::auth::token::decode_token(&token)
+        .expect("the token decodes")
+        .claims;
+    assert!(
+        claims.delegated_by.starts_with("m-"),
+        "the operator is claimed by opaque id: {}",
+        claims.delegated_by
+    );
+    assert!(
+        !token.contains(FOUNDER) && !claims.delegated_by.contains(FOUNDER),
+        "no address rides in the token: {token}"
+    );
+
+    // And the token still works: the key form is what redemption and the
+    // F2 check read, and the AI acts for the operator behind it.
+    let redeemed = machine.joy(&["auth", "--token", &token, "--json"]);
+    assert!(redeemed.status.success(), "{}", text(&redeemed));
+    let session = json_string(&text(&redeemed), "session_env");
+    let written = machine.joy_with_session(&["add", "task", "Work of an AI"], Some(&session));
+    assert!(written.status.success(), "{}", text(&written));
+    let actor = the_actor_of_the_only_item(&machine);
+    assert_eq!(
+        actor,
+        format!("ai:claude@joy delegated-by:{}", claims.delegated_by),
+        "the item names the operator by the very id the token claimed"
+    );
+    assert!(
+        !joy_dir_mentions(&machine, FOUNDER),
+        "the founder's address must not reach a project file"
+    );
+}
+
 /// D3.9 promises a person that naming themselves once settles it: this
 /// device remembers the member, and every later command knows them. In an
 /// ANONYMOUS project what the device remembers is the opaque `m-<hex>`
