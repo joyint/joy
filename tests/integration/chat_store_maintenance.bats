@@ -53,25 +53,46 @@ loose_objects() {
     find .git/objects -type f -path '*/??/*' | grep -v '/17/' || true
 }
 
+# The loose file of one object, by id.
+loose_path() {
+    echo ".git/objects/${1:0:2}/${1:2}"
+}
+
+# A remote the chat write path can actually push to, on the local
+# transport: without one the push branch of `joy chat send` is never
+# reached and a case that counts git processes counts nothing.
+add_local_remote() {
+    git init --quiet --bare "$TEST_DIR/remote.git"
+    git remote add origin "$TEST_DIR/remote.git"
+}
+
 packs() {
     find .git/objects/pack -name '*.pack' 2>/dev/null || true
 }
 
 @test "a chat write never asks a git process to tidy the store" {
     setup_human_auth
+    # WITH a remote, so the whole write path runs: the store write, the
+    # maintenance and the delivery. Without one the push is unreachable
+    # and the count below would be a pin on nothing.
+    add_local_remote
     record_git_calls
 
     run -0 joy chat send general "one line" --passphrase "$TEST_PASSPHRASE"
 
     # the spawn that used to stand here, in every shape it could take
     run -1 grep -q -- "gc" "$GIT_CALLS"
-    # The store's own crate spawns nothing at all any more. What is left
-    # on the chat path is ONE call from joy-cli, the remote probe
-    # (joy_core::vcs::remote_exists), a named CLI-git helper that D3.2
-    # moves to git2 in J6. Pinned here so the count cannot grow quietly.
+    # Neither the chat store nor joy's maintenance spawns anything: both
+    # are git2 throughout. What is left on the CLI chat path is exactly
+    # ONE git process, the delivery push (joy_core::vcs::push_ref), which
+    # stays a git process until joy-cli enables joy-core's `forge-net`
+    # feature; that packaging change is J6's, and the J7 package block
+    # names it. Pinned here so the count cannot grow quietly.
     calls="$(sort -u "$GIT_CALLS")"
-    [ "$(printf '%s\n' "$calls" | grep -c .)" -le 1 ]
-    [[ -z "$calls" || "$calls" == *"remote get-url"* ]]
+    [ "$(printf '%s\n' "$calls" | grep -c .)" -eq 1 ]
+    [[ "$calls" == *"push --quiet origin refs/joy/chats:refs/joy/chats"* ]]
+    # the probe that used to stand beside it is git2 now
+    run -1 grep -q -- "remote get-url" "$GIT_CALLS"
     # and the message is there
     run -0 joy chat show general --passphrase "$TEST_PASSPHRASE"
     [[ "$output" == *"one line"* ]]
@@ -79,6 +100,7 @@ packs() {
 
 @test "a store worth packing is packed by the write itself, without git" {
     setup_human_auth
+    add_local_remote
     record_git_calls
     make_the_store_look_full
     [ -z "$(packs)" ]
@@ -111,19 +133,28 @@ packs() {
     joy chat send general "before the sweep" --passphrase "$TEST_PASSPHRASE" >/dev/null
     make_the_store_look_full
 
-    # THIS shell is the second process: it holds a loose object open
-    # across the write that packs and sweeps.
-    held="$(loose_objects | head -1)"
-    [ -n "$held" ]
+    # THIS shell is the second process, and the object it holds open is
+    # the chat tip: reachable, so the sweep packs it and removes the
+    # loose copy (class A). Picking any loose file would prove nothing,
+    # because an orphan inside the 14 day window is not touched at all.
+    tip="$(git rev-parse refs/joy/chats)"
+    held="$(loose_path "$tip")"
+    [ -f "$held" ]
     size="$(wc -c < "$held")"
     exec 9< "$held"
 
     run -0 joy chat send general "during the sweep" --passphrase "$TEST_PASSPHRASE"
 
-    # the held descriptor still reads the whole object, whether or not
-    # the loose copy was swept into the pack
+    # the loose copy is gone: the sweep really did remove a file this
+    # shell had open
+    [ ! -e "$held" ]
+    [ -n "$(packs)" ]
+    # the held descriptor still reads the whole object, which is what an
+    # unlink under a live reader means on unix
     [ "$(wc -c <&9)" -eq "$size" ]
     exec 9<&-
+    # and every reader finds the object again, out of the pack
+    run -0 git cat-file -e "$tip"
 
     # and every chat is intact, read through whatever backend holds the
     # objects now

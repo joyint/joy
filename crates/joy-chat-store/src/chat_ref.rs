@@ -44,7 +44,7 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use chrono::Utc;
-use git2::{Commit, ErrorCode, FileMode, Oid, Repository, Signature, Time, Tree};
+use git2::{Commit, ErrorCode, FileMode, ObjectType, Oid, Repository, Signature, Time, Tree};
 
 use joy_chat::model::chat::{Chat, ChatMessage};
 use joy_core::error::JoyError;
@@ -180,6 +180,16 @@ fn read_chat_at(repo: &Repository, root_tree: &Tree, id: &str) -> Result<Option<
 /// gate, and the grace window is the one for a checkout joy does not own,
 /// because a person's own git may be writing objects joy cannot see.
 ///
+/// The window is the one for a checkout joy does not own, on every host.
+/// D3.7 allows 24 hours where joy is the sole writer (the platform's
+/// project clone, a desktop only store), but the chat store cannot tell
+/// the two apart from here: the same function serves a person's own
+/// checkout and the platform's clone. The conservative window costs a
+/// store 13 days of garbage it could have freed; the other mistake would
+/// cost somebody else's objects. When the write path learns which kind
+/// of store it is writing (P8), it selects `Options::owned_store()` and
+/// nothing else about this changes.
+///
 /// Best effort throughout: a store that cannot be packed or swept stays
 /// as it is and the next write tries again.
 fn maintain_occasionally(repo: &Repository) {
@@ -219,10 +229,23 @@ pub(crate) fn commit_root(
     let sig = signature(repo)?;
     let parents: Vec<&Commit> = parent.into_iter().collect();
     // No ref name here: the commit object first, the ref move separately
-    // and conditionally.
-    let oid = repo
-        .commit(None, &sig, &sig, message, root_tree, &parents)
+    // and conditionally. The object is built as a buffer and hashed
+    // BEFORE it is written, because the discard below may only ever
+    // remove an object THIS attempt created: chat commits carry a fixed
+    // signature with a day-coarsened time, so two writers over the same
+    // parent, tree and message produce the byte-identical commit, and
+    // the other writer's copy is not joy's to unlink.
+    let buffer = repo
+        .commit_create_buffer(&sig, &sig, message, root_tree, &parents)
         .map_err(git)?;
+    let predicted = Oid::hash_object(ObjectType::Commit, &buffer).map_err(git)?;
+    let existed_before = repo.odb().map(|odb| odb.exists(predicted)).unwrap_or(true);
+    let oid = repo
+        .odb()
+        .map_err(git)?
+        .write(ObjectType::Commit, &buffer)
+        .map_err(git)?;
+    let created_here = !existed_before && oid == predicted;
     let moved = match parent {
         // The ref must still be exactly where the caller read it.
         Some(base) => repo
@@ -236,14 +259,38 @@ pub(crate) fn commit_root(
         maintain_occasionally(repo);
         return Ok(Some(oid));
     }
-    // Lost the race in the window between the check and the swap. The
-    // commit is nobody's now, unless the winner happened to write the
-    // byte-identical commit and the ref points at exactly this id, in
-    // which case it is the store's tip and stays.
-    if repo.refname_to_id(CHATS_REF).ok() != Some(oid) {
-        joy_core::vcs::maintenance::discard_loose_object(repo, oid);
-    }
+    // Lost the race in the window between the check and the swap, so the
+    // commit is nobody's. It is unlinked only under both of the
+    // protections D3.7 names for a deletion outside the sweep: this
+    // attempt created the object (nobody else's copy), and the live
+    // history does not reach it (not the tip, not an ancestor of it).
+    discard_lost_commit(repo, oid, created_here);
     Ok(None)
+}
+
+/// Take a lost commit back out of the store, under both protections.
+/// `created_here` says this attempt wrote the object (another writer's
+/// byte-identical copy is not joy's to remove), and the history query
+/// says the chats ref does not reach it. Answers whether the object was
+/// unlinked.
+fn discard_lost_commit(repo: &Repository, oid: Oid, created_here: bool) -> bool {
+    if !created_here || chats_history_reaches(repo, oid) {
+        return false;
+    }
+    joy_core::vcs::maintenance::discard_loose_object(repo, oid)
+}
+
+/// Whether `refs/joy/chats` reaches this commit: its tip, or an ancestor
+/// of its tip. Asked immediately before an object is discarded, and
+/// answered conservatively: an error from the graph query reads as "yes,
+/// it is reachable", because the cost of a wrong yes is a dead object the
+/// sweep collects in 14 days and the cost of a wrong no is a chat
+/// history that no longer walks.
+fn chats_history_reaches(repo: &Repository, oid: Oid) -> bool {
+    let Ok(tip) = repo.refname_to_id(CHATS_REF) else {
+        return false;
+    };
+    tip == oid || repo.graph_descendant_of(tip, oid).unwrap_or(true)
 }
 
 /// Whether the ref still stands where the caller read it, which is the
@@ -1110,6 +1157,24 @@ mod tests {
         walk(&open_repo(root).unwrap().path().join("objects"))
     }
 
+    /// Put every loose object in the store `age` into the past, which is
+    /// what the operator's store looks like: the garbage there IS old.
+    /// Without this the acceptance case could only be run with a zero
+    /// grace window, which is a configuration joy never ships.
+    fn backdate_every_loose_object(root: &Path, age: std::time::Duration) {
+        let when = filetime::FileTime::from_system_time(std::time::SystemTime::now() - age);
+        let objects = open_repo(root).unwrap().commondir().join("objects");
+        for fanout in std::fs::read_dir(&objects).unwrap().flatten() {
+            let name = fanout.file_name().to_string_lossy().to_string();
+            if name.len() != 2 || !name.bytes().all(|b| b.is_ascii_hexdigit()) {
+                continue;
+            }
+            for object in std::fs::read_dir(fanout.path()).unwrap().flatten() {
+                filetime::set_file_mtime(object.path(), when).unwrap();
+            }
+        }
+    }
+
     /// One commit that nothing points at, with its own tree and blob:
     /// what a compare-and-swap that lost the race used to leave behind on
     /// every attempt, eight times per write in the worst case.
@@ -1140,17 +1205,19 @@ mod tests {
         for n in 0..200 {
             lost_write(&repo, n);
         }
+        // The shipped configuration, not a test-only window: the
+        // orphans are aged past the 14 days the product asks for, the
+        // way the operator's store is aged, and the run is the one joy
+        // performs.
+        backdate_every_loose_object(
+            dir.path(),
+            joy_core::vcs::maintenance::GRACE_FOREIGN_CHECKOUT + std::time::Duration::from_secs(60),
+        );
         let before = loose_count(dir.path());
 
         let outcome = joy_core::vcs::maintenance::maintain(
             &repo,
-            // The grace window is a parameter precisely so a case can ask
-            // for "everything old enough"; the product asks for 14 days
-            // here and joy-core's own cases assert that window.
-            &joy_core::vcs::maintenance::Options {
-                grace: std::time::Duration::ZERO,
-                ..joy_core::vcs::maintenance::Options::foreign_checkout()
-            },
+            &joy_core::vcs::maintenance::Options::foreign_checkout(),
         )
         .unwrap();
 
@@ -1160,7 +1227,10 @@ mod tests {
         );
         let after = loose_count(dir.path());
         assert!(after < before / 4, "the store shrinks: {before} -> {after}");
-        // D3.7's acceptance, in the numbers it is written in
+        // D3.7's acceptance, in the numbers it is written in. The loose
+        // object number is comfortable rather than tight at this size (a
+        // few hundred objects against 6700); the threshold itself is
+        // exercised where the trigger is, in joy-core's own cases.
         assert!(after < 6700, "well under git's own loose object threshold");
         assert!(
             store_bytes(dir.path()) < 1_000_000,
@@ -1178,6 +1248,51 @@ mod tests {
         let mut walk = repo.revwalk().unwrap();
         walk.push(tip).unwrap();
         assert_eq!(walk.count(), chats.len(), "one commit per chat, all there");
+    }
+
+    /// The discard after a lost swap is the one deletion in the package
+    /// that bypasses the keep set and the grace window, so it carries
+    /// both protections itself: only an object THIS attempt created, and
+    /// only one the live chats history does not reach. The chat store
+    /// signs with a fixed, day-coarsened signature, so two writers over
+    /// the same parent, tree and message really do produce the same
+    /// object id, and unlinking the winner's copy would break the
+    /// revwalk, the push and every read.
+    #[test]
+    fn a_lost_commit_is_discarded_only_when_it_is_this_attempt_s_and_unreachable() {
+        let dir = repo();
+        save_sealed_stub(dir.path(), "general", &["one"]);
+        save_sealed_stub(dir.path(), "general", &["two"]);
+        let repo = open_repo(dir.path()).unwrap();
+        let tip = ref_target(dir.path()).unwrap().unwrap();
+        let ancestor = repo.find_commit(tip).unwrap().parent_id(0).unwrap();
+        let objects = repo.commondir().join("objects");
+        let path_of = |oid: Oid| {
+            let hex = oid.to_string();
+            let (prefix, rest) = hex.split_at(2);
+            objects.join(prefix).join(rest)
+        };
+
+        // the tip and its ancestor: reachable, so never
+        assert!(!discard_lost_commit(&repo, tip, true));
+        assert!(path_of(tip).exists());
+        assert!(!discard_lost_commit(&repo, ancestor, true));
+        assert!(path_of(ancestor).exists());
+
+        // an unreachable commit this attempt did NOT create: not joy's
+        let sig = signature(&repo).unwrap();
+        let empty = repo
+            .find_tree(repo.treebuilder(None).unwrap().write().unwrap())
+            .unwrap();
+        let orphan = repo
+            .commit(None, &sig, &sig, "somebody else's [no-item]", &empty, &[])
+            .unwrap();
+        assert!(!discard_lost_commit(&repo, orphan, false));
+        assert!(path_of(orphan).exists());
+
+        // and the case the rule is for
+        assert!(discard_lost_commit(&repo, orphan, true));
+        assert!(!path_of(orphan).exists());
     }
 
     /// The other half of D3.7's root-cause fix: a write that sees the ref

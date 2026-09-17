@@ -366,14 +366,17 @@ pub fn staged_paths(root: &Path) -> Vec<String> {
 }
 
 /// Whether `remote` is configured in this checkout.
+///
+/// git2, not a git process. Reading the remote list is local plumbing:
+/// it needs no transport, so it needs neither the `forge-net` feature
+/// nor the user's ambient credentials, and there is nothing a git
+/// process adds. It sat on the chat write path as
+/// `git -C <root> remote get-url origin`, one spawn per send and per
+/// read, which is one of the two J7 acceptance asks about (D3.2, D3.7).
 pub fn remote_exists(root: &Path, remote: &str) -> bool {
-    git()
-        .arg("-C")
-        .arg(root)
-        .args(["remote", "get-url", remote])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    git2::Repository::discover(root)
+        .and_then(|repo| repo.find_remote(remote).map(|_| ()))
+        .is_ok()
 }
 
 /// One CLI-git ref transfer (fetch or push) with the outcome a caller
