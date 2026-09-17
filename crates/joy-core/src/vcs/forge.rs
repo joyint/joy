@@ -821,14 +821,11 @@ fn origin_or_first<'r>(repo: &'r git2::Repository) -> anyhow::Result<git2::Remot
     }
 }
 
-/// git's own rule for its system config, which libgit2 does not know: with
-/// `GIT_CONFIG_NOSYSTEM` true, the system-wide gitconfig is not read
-/// (git-config(1)). libgit2 always adds it, so a script that isolates
-/// HOME and sets the variable still found an identity from the machine's
-/// /etc/gitconfig in joy, where git itself found none (JOY-028D-46).
-/// Every entry into libgit2 below calls this first. The search path is
-/// process state, so it is changed only when the variable changes, under
-/// one lock.
+/// The process state libgit2 needs before joy reads anything through it:
+/// git's system config rule below, and the one TLS trust decision of
+/// D1.12. Every entry into libgit2 in this file calls this FIRST, and
+/// that includes every call that only reads git config, because the
+/// first of the two decides what git config even is.
 fn git_environment() {
     git_config_environment();
     // The one process wide TLS trust decision of D1.12, which must run
@@ -838,6 +835,13 @@ fn git_environment() {
     crate::apply_ca_locations();
 }
 
+/// git's own rule for its system config, which libgit2 does not know: with
+/// `GIT_CONFIG_NOSYSTEM` true, the system-wide gitconfig is not read
+/// (git-config(1)). libgit2 always adds it, so a script that isolates
+/// HOME and sets the variable still found an identity from the machine's
+/// /etc/gitconfig in joy, where git itself found none (JOY-028D-46).
+/// The search path is process state, so it is changed only when the
+/// variable changes, under one lock.
 fn git_config_environment() {
     static APPLIED: std::sync::Mutex<Option<bool>> = std::sync::Mutex::new(None);
     let nosystem = std::env::var("GIT_CONFIG_NOSYSTEM").is_ok_and(|value| git_bool(&value));
@@ -952,13 +956,17 @@ pub fn clone(url: &str, auth: &Auth, dest: &Path) -> anyhow::Result<()> {
 fn clone_raw(url: &str, auth: &Auth, dest: &Path) -> anyhow::Result<()> {
     guard_transport(Some(url))?;
     std::fs::create_dir_all(dest.parent().expect("checkout dir has a parent"))?;
+    // Before anything that reads git config, the proxy decision
+    // included: a clone is the one verb that reaches libgit2 without
+    // going through `open`, and `options_for` opens the default config
+    // (JOY-028D-46, the invariant above `git_config_environment`).
+    git_environment();
     // The proxy of D1.11, before the first socket: a proxy joy cannot
     // speak to (SOCKS) is refused here by name and nothing is dialled.
     let proxy = proxy_for(url, None)?;
     let mut fetch = git2::FetchOptions::new();
     fetch.remote_callbacks(auth.callbacks(cred_source_for_url(url)));
     fetch.proxy_options(proxy.options());
-    git_environment();
     // The same address the other verbs dial (see `contact_remote`): a
     // clone from an ssh alias reaches the `HostName` the person's ssh
     // config names, which libgit2 reads nothing of (design D1.4).
