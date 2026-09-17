@@ -23,6 +23,15 @@ pub struct LoginOutcome {
     /// The member-map key the session was created for (e-mail in open
     /// mode, opaque id in anonymous mode).
     pub member_key: String,
+    /// Who just authenticated, as a person reads it. In open mode that is
+    /// the address the caller logged in with, which is what they typed.
+    /// In anonymous mode the caller is usually holding the opaque `m-`
+    /// id, because that is what the member pin answers with (D3.9), and
+    /// telling somebody they are an opaque id is the one thing ADR-042
+    /// asks every output not to do: there this is the address out of
+    /// members.yaml, which this very login opened on its way past the
+    /// attestation check. Never empty.
+    pub address: String,
     /// Files opportunistically re-encrypted during login (ADR-040).
     pub relocked: usize,
     /// Whether the pre-feature auto-seal ran (JOY-0101-78).
@@ -139,15 +148,23 @@ fn finish_login(
     // The attestation binds the member's CANONICAL identity: in open mode
     // that is the member key itself. The raw login address may legally
     // differ (a forge alias resolved to its member, JOY-0253-8A) and must
-    // not fail the binding check. Anonymous mode keeps the address (the
-    // opaque key is never what an attestation signs).
-    let attested_id = if view.privacy_mode() == crate::model::project::PrivacyMode::Open {
-        member_key.as_str()
-    } else {
-        email
+    // not fail the binding check. Anonymous mode signs the ADDRESS, which
+    // the opaque member key is not, so it is read out of members.yaml
+    // rather than taken from whatever the caller came in holding.
+    let attested_id = match view.privacy_mode() {
+        PrivacyMode::Open => member_key.clone(),
+        _ => anonymous_attested_address(root, view, &member_key, seed.as_bytes())
+            .unwrap_or_else(|| email.to_string()),
+    };
+    // What the person is told they just authenticated as. Open mode keeps
+    // saying the address they came in with; anonymous mode says the one
+    // the id resolves to, and never the id.
+    let address = match view.privacy_mode() {
+        PrivacyMode::Open => email.to_string(),
+        _ => attested_id.clone(),
     };
     if let Some(att) = member.attestation.as_ref() {
-        verify_member_attestation(view, attested_id, member, att)?;
+        verify_member_attestation(view, &attested_id, member, att)?;
     } else if attestation::founder_must_be_attested(view) {
         return Err(JoyError::AuthFailed(format!(
             "{email} has no attestation and the project has multiple members. \
@@ -169,15 +186,30 @@ fn finish_login(
     // too, so its login pins exactly as the CLI's does.
     crate::identity::pin_acting_member(root, view, &member_key);
 
-    let relocked = relock_unlocked_files(root, view, email, seed.as_bytes());
+    let relocked = relock_unlocked_files(root, view, &member_key, seed.as_bytes());
 
     Ok(LoginOutcome {
         seed: *seed.as_bytes(),
         keypair,
         member_key,
+        address,
         relocked,
         sealed: sealed_project.is_some(),
     })
+}
+
+/// In anonymous mode, the members.yaml zone key for `member_key`, opened
+/// with that member's own seed (ADR-042).
+fn members_zone_key(
+    project: &Project,
+    member_key: &str,
+    seed: &[u8; 32],
+) -> Option<joy_crypt::zone::ZoneKey> {
+    if project.privacy_mode() != PrivacyMode::Anonymous {
+        return None;
+    }
+    let wrap = project.member_by_key(member_key)?.members_wrap.as_deref()?;
+    joy_crypt::zone::unwrap_for_member(wrap, crate::members_file::MEMBERS_ZONE, seed).ok()
 }
 
 /// In anonymous mode, the hex-encoded members.yaml zone key for
@@ -187,13 +219,35 @@ pub fn cached_members_zone_key(
     member_key: &str,
     seed: &[u8; 32],
 ) -> Option<String> {
-    if project.privacy_mode() != PrivacyMode::Anonymous {
-        return None;
-    }
-    let wrap = project.member_by_key(member_key)?.members_wrap.as_deref()?;
-    let zk =
-        joy_crypt::zone::unwrap_for_member(wrap, crate::members_file::MEMBERS_ZONE, seed).ok()?;
-    Some(hex::encode(zk.as_bytes()))
+    members_zone_key(project, member_key, seed).map(|zk| hex::encode(zk.as_bytes()))
+}
+
+/// The address an anonymous project's attestation for `member_key` was
+/// signed over: the member's own e-mail, out of the encrypted
+/// members.yaml, opened with the seed this login just derived.
+///
+/// An attestation never signs the opaque id (the id is this project's own
+/// invention and says nothing about the person), so the id cannot answer
+/// the binding check. Before package J11 the address arrived with the
+/// caller, because `joy auth` resolved its member from `git config
+/// user.email`. Now it arrives as the member this device pinned, which IS
+/// the opaque id, and every returning member of an anonymous project was
+/// told their own entry looked tampered with unless they typed `--user
+/// <address>` again. D3.9 promises the opposite: naming yourself once
+/// settles it, and the device remembers.
+///
+/// `None` when the members file cannot be opened (a member without a
+/// wrap, a missing file); the caller then falls back to the identifier it
+/// was given, which is what happened before this existed.
+fn anonymous_attested_address(
+    root: &Path,
+    project: &Project,
+    member_key: &str,
+    seed: &[u8; 32],
+) -> Option<String> {
+    let zone_key = members_zone_key(project, member_key, seed)?;
+    let members = crate::members_file::read(root, &zone_key).ok()?;
+    crate::privacy::email_for(project, member_key, Some(&members))
 }
 
 /// Verify the attestation against the attester's public key with the
@@ -273,10 +327,15 @@ pub fn maybe_auto_seal(
 pub fn relock_unlocked_files(
     root: &Path,
     project: &Project,
-    email: &str,
+    member_key: &str,
     seed: &[u8; 32],
 ) -> usize {
-    let Some(member) = project.member_by_email(email) else {
+    // By the at-rest KEY. The lookup was by address, and the caller has
+    // handed it the member this device pinned since package J11 (D3.9),
+    // which in an anonymous project is an opaque id that no address
+    // matcher resolves: the member was not found, and a login that says
+    // it re-locks quietly re-locked nothing.
+    let Some(member) = project.member_by_key(member_key) else {
         return 0;
     };
     let mut relocked = 0;

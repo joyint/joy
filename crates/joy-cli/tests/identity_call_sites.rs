@@ -106,6 +106,38 @@ impl Machine {
         }
     }
 
+    /// Invite `email` and redeem the invitation as them: the real
+    /// two-sided flow, ending with `email` enrolled, holding
+    /// [`SECOND_PASSPHRASE`], and pinned as the member this device acts
+    /// as. Returns the redemption's output.
+    fn a_second_enrolled_member(&self, email: &str) -> Output {
+        let invited = self.joy(&[
+            "project",
+            "member",
+            "add",
+            email,
+            "--capabilities",
+            "all",
+            "--passphrase",
+            PASSPHRASE,
+        ]);
+        assert!(invited.status.success(), "{}", text(&invited));
+        let otp = text(&invited)
+            .split_whitespace()
+            .find(|word| is_a_one_time_password(word))
+            .expect("the invitation prints a one-time password")
+            .to_string();
+        self.joy(&[
+            "auth",
+            "--otp",
+            &otp,
+            "--user",
+            email,
+            "--passphrase",
+            SECOND_PASSPHRASE,
+        ])
+    }
+
     /// Register an AI member with full rights, issue a delegation token
     /// for it and redeem it. Returns the `JOY_SESSION` value.
     fn a_delegation_session(&self, ai: &str) -> String {
@@ -1092,6 +1124,74 @@ fn an_ai_token_of_an_anonymous_project_redeems_and_the_ai_acts() {
     assert!(
         !joy_dir_mentions(&machine, FOUNDER),
         "the founder's address must not reach a project file"
+    );
+}
+
+/// D3.9 promises a person that naming themselves once settles it: this
+/// device remembers the member, and every later command knows them. In an
+/// ANONYMOUS project what the device remembers is the opaque `m-<hex>`
+/// id, because that is the member map's key (ADR-042), and three things
+/// on the login path still wanted an address where the pin hands them an
+/// id:
+///
+///  - the attestation check, which compares against the identifier the
+///    attestation SIGNED, and an attestation never signs an opaque id;
+///  - the re-lock of files left unlocked, which looked its member up by
+///    address and so found nobody and re-locked nothing;
+///  - the line the person reads, which printed the opaque id at them.
+///
+/// The first one locked every returning member of a multi-member
+/// anonymous project out of their own project, with a message saying
+/// their entry looked tampered with, until they typed `--user <address>`
+/// again. That is the opposite of what the pin is for.
+#[test]
+fn an_anonymous_project_knows_its_members_from_the_pin_alone() {
+    let machine = Machine::new();
+    found_and_enrol(&machine);
+    let second = machine.a_second_enrolled_member("b@c.d");
+    assert!(second.status.success(), "{}", text(&second));
+
+    // The second member's enrolment reverse-attested the founder, so
+    // from here on both members carry an attestation over their address.
+    let anonymous = machine.joy(&[
+        "project",
+        "set",
+        "privacy",
+        "anonymous",
+        "--passphrase",
+        SECOND_PASSPHRASE,
+    ]);
+    assert!(anonymous.status.success(), "{}", text(&anonymous));
+
+    // b@c.d is the member this device pinned, and is the one the plain
+    // `joy auth` speaks for: no address is typed anywhere below.
+    let returning = machine.joy(&["auth", "--passphrase", SECOND_PASSPHRASE]);
+    assert!(
+        returning.status.success(),
+        "a pinned member of an anonymous project authenticates: {}",
+        text(&returning)
+    );
+    // And is told who they are in words, not as the project's own id.
+    assert!(
+        text(&returning).contains("Authenticated as b@c.d"),
+        "{}",
+        text(&returning)
+    );
+    assert!(
+        !text(&returning).contains("Authenticated as m-"),
+        "an opaque id is never what a person is shown (ADR-042): {}",
+        text(&returning)
+    );
+
+    // The founder, named once, is then equally known from the pin alone.
+    let named = machine.joy(&["auth", "--user", "a@b.c", "--passphrase", PASSPHRASE]);
+    assert!(named.status.success(), "{}", text(&named));
+    let again = machine.joy(&["auth", "--passphrase", PASSPHRASE]);
+    assert!(again.status.success(), "{}", text(&again));
+    assert!(
+        text(&again).contains("Authenticated as a@b.c"),
+        "{}",
+        text(&again)
     );
 }
 

@@ -535,7 +535,16 @@ fn auth_with_passphrase(
     if outcome.relocked > 0 {
         println!("Re-locked {} unlocked file(s).", outcome.relocked);
     }
-    println!("Authenticated as {}. Session active (24h).", email);
+    // Who authenticated, as the person reads it. Not `email`: since
+    // package J11 that is the member this device pinned (D3.9), which in
+    // an anonymous project is an opaque `m-<hex>` id, and telling
+    // somebody they are "m-kapvns3ors" is the one thing ADR-042 asks
+    // every output not to do. The login resolved the address on its way
+    // through members.yaml and hands it back.
+    println!(
+        "Authenticated as {}. Session active (24h).",
+        outcome.address
+    );
 
     Ok(())
 }
