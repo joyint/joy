@@ -2239,6 +2239,7 @@ version = "0.20.0"
 dependencies = [
  "anyhow",
  "clap",
+ "joy-forge-net",
  "joy-process",
  "rustls-pki-types",
  "serde",

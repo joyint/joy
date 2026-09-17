@@ -34,3 +34,9 @@ rustls-pki-types = "1"
 # The in process fake forge API the connector crates test against. It is
 # a dev dependency of theirs, so a shipped connector never carries it.
 fake-api = []
+
+[dev-dependencies]
+# This crate's own tests drive the fake too (the proxy cases), and a
+# crate cannot dev-depend on itself, so the feature is turned on for
+# the test build here.
+joy-forge-net = { path = ".", features = ["fake-api"] }
