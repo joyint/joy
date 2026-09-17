@@ -3,13 +3,26 @@ name = "joy-github"
 version = "0.20.0"
 edition = "2021"
 license = "MIT"
-description = "Joy forge plugin for GitHub: claims/identity queries (alias addresses, acting login)"
+description = "Joy forge connector for GitHub: claims, identity, store, files, releases over the REST API"
 repository = "https://github.com/joyint/joy"
 homepage = "https://joyint.com/en/joy"
 
+[lib]
+name = "joy_github"
+path = "src/lib.rs"
+
+# The legacy name of D2.2a: a PATH fallback for `cargo install` users
+# until the deprecation window closes. The combined `joy-forge` binary
+# is a bin of joy-cli and carries the same code.
+[[bin]]
+name = "joy-github"
+path = "src/main.rs"
+
 [dependencies]
-joy-process = { workspace = true }
-clap = { workspace = true }
+joy-forge-net = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
+
+[dev-dependencies]
+joy-forge-net = { workspace = true, features = ["fake-api"] }

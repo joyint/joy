@@ -1854,8 +1854,15 @@ pub struct ReleaseOutcome {
 /// release nobody made must not look like a release that was made, so
 /// the caller gets the named reason (and with it the connector's own
 /// stderr, which is now captured rather than inherited).
+///
+/// `target` names the repository. It became necessary when the verb
+/// moved off gh onto the connector's own HTTP client (D2.8): gh read
+/// the repository out of the working directory's git remote, and the
+/// REST call has to be told. It is the same `--remote` every other verb
+/// takes, so a protocol 1 connector understands it too.
 pub fn release(
     spec: &ForgePluginSpec,
+    target: Option<&Target>,
     tag: &str,
     title: &str,
     notes_file: &Path,
@@ -1865,7 +1872,7 @@ pub fn release(
     query(
         spec,
         "release",
-        None,
+        target,
         &["--tag", tag, "--title", title, "--notes-file", &notes_path],
         ctx,
     )

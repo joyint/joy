@@ -54,7 +54,11 @@ impl ForgeRelease for PluginForge {
         // reason: missing, outdated, refused and timed out are four
         // different things to do next.
         let ctx = CallContext::in_project(root);
-        let outcome = forge_plugins::release(self.spec, tag, title, &notes_file, &ctx)
+        // Which repository the release belongs to. gh used to read this
+        // out of the working directory; the connector's own REST call
+        // has to be told (D2.8), and the remote is what tells it.
+        let target = default_remote_url(root).map(Target::remote);
+        let outcome = forge_plugins::release(self.spec, target.as_ref(), tag, title, &notes_file, &ctx)
             .map_err(|e| {
                 anyhow!(
                     "{e}\n  = note: state {}\n  \
@@ -74,6 +78,15 @@ impl ForgeRelease for PluginForge {
         }
         Ok(outcome.url)
     }
+}
+
+/// The URL of the remote a release is published to: the project's
+/// default remote, when it has one. A project with no remote has no
+/// repository on a forge either, and the connector says so.
+fn default_remote_url(root: &Path) -> Option<String> {
+    let git = vcs::default_vcs();
+    let remote = git.default_remote(root).ok()?;
+    git.remote_url(root, &remote).ok()
 }
 
 /// No-op forge for `forge: none` or explicit skip.
