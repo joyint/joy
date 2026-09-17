@@ -124,6 +124,13 @@ impl Verdict {
                     Some(&reason),
                     &identity.log_user(),
                 );
+                // A machine that does not know who acts is not a member
+                // being denied a right: it is a question nobody answered.
+                // The typed error carries the remedy and no "guard
+                // denied:" in front of it.
+                if identity.member.id().trim().is_empty() {
+                    return Err(JoyError::UnknownActingMember);
+                }
                 Err(JoyError::GuardDenied(reason))
             }
         }
@@ -196,6 +203,17 @@ impl Guard {
         // No members configured: no restrictions
         if self.members.is_empty() {
             return Verdict::Allow;
+        }
+
+        // Nobody is acting: no delegation session, and this device pinned
+        // no member (D3.9, package J11). git config is not consulted for
+        // an identity any more, so a fresh clone or a second machine
+        // arrives here, and an empty name in front of "is not a
+        // registered project member" is not a sentence anybody can act on. [`Verdict::enforce`] turns
+        // this one into `UnknownActingMember`, whose text names the
+        // remedy.
+        if identity.member.id().trim().is_empty() {
+            return Verdict::Deny(JoyError::UnknownActingMember.to_string());
         }
 
         // Look up the member

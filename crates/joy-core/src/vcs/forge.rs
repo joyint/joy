@@ -2183,6 +2183,34 @@ pub fn user_email() -> Option<String> {
         .filter(|email| !email.trim().is_empty())
 }
 
+/// `user.name` and `user.email` as `dir`'s merged config answers them
+/// (local over global over system), each `None` when it is unset or
+/// empty.
+///
+/// Unlike [`repo_identity`] this asks for neither of the two: libgit2's
+/// `Repository::signature` refuses to answer at all when `user.email` is
+/// missing, which would take the display NAME with it. D4.5 uses the name
+/// on its own, as a prefill, so the two values are read separately
+/// (package J11).
+pub fn user_identity(dir: &Path) -> (Option<String>, Option<String>) {
+    git_environment();
+    let config = match open(dir)
+        .and_then(|repo| repo.config())
+        .or_else(|_| git2::Config::open_default())
+    {
+        Ok(config) => config,
+        Err(_) => return (None, None),
+    };
+    let value = |key: &str| {
+        config
+            .get_string(key)
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+    };
+    (value("user.name"), value("user.email"))
+}
+
 /// A value of the repository's own config file (`git config --local`).
 pub fn local_config_get(dir: &Path, key: &str) -> Option<String> {
     let repo = open(dir).ok()?;
@@ -2672,11 +2700,18 @@ fn signature_now(
 }
 
 /// PREFILL ONLY (D4.5): the identity the repository's git config carries.
-/// It is a suggestion for a mask and the source of the DISPLAY NAME in
-/// [`member_signature`], never the identity of a commit and never a member
-/// key on its own. Demoted from "what the CLI commits as": a Joy commit is
-/// signed for the acting member, which joy resolves through
-/// `joy_core::identity`, and a project may have no git config at all.
+/// It is a suggestion for a mask, never the identity of a commit and
+/// never a member key on its own. Demoted from "what the CLI commits
+/// as": a Joy commit is signed for the acting member, which joy resolves
+/// through `joy_core::identity`, and a project may have no git config at
+/// all.
+///
+/// No joy command calls this any more. `commit_signature` used to take
+/// the display name from it and lost the name whenever `user.email` went
+/// missing, because `Repository::signature` answers only when both are
+/// set; it asks [`user_identity`] for the two values separately now
+/// (package J11). This stays public for the desktop, whose two callers
+/// D4.5 moves onto the acting member.
 pub fn repo_identity(repo_dir: &Path) -> anyhow::Result<(String, String)> {
     let repo = open(repo_dir).map_err(err)?;
     let sig = repo.signature().map_err(|e| {

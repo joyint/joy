@@ -3,7 +3,9 @@
 
 //! Who joy thinks is acting, and in which order it asks (D3.9 of the
 //! forge connection NG design, JOY-0297-1A): the session first, then the
-//! member this device pinned, then git config as a prefill.
+//! member this device pinned, and that is all. git config is a prefill
+//! for the paths that ask a person for an address, and it decides no
+//! identity, which is what makes removing `user.email` a no-op.
 //!
 //! ONE test in its own binary, on purpose. The question is about process
 //! state that has no per-thread version: HOME, libgit2's config search
@@ -14,7 +16,10 @@
 
 use std::path::Path;
 
-use joy_core::identity::{acting_member, pin_acting_member, pinned_member, resolve_identity};
+use joy_core::identity::{
+    acting_human_key, acting_member, acting_member_key, pin_acting_member, pinned_member,
+    resolve_identity,
+};
 use joy_core::init::{init, InitOptions};
 use joy_core::model::project::{Member, MemberCapabilities};
 
@@ -124,17 +129,33 @@ fn the_pin_answers_before_git_config_and_the_two_resolvers_agree() {
     assert_eq!(acting_member(root, &project, None).unwrap(), "a@b.c");
     assert_eq!(resolve_identity(root).unwrap().member.id(), "a@b.c");
 
-    // 4. The same project on a machine that pinned nobody: git config is
-    //    the prefill it was always meant to be.
+    // 4. The same project on a machine that pinned nobody, a fresh clone
+    //    or a second machine. git config is a PREFILL: the paths that ask
+    //    a person for an address offer it, and nothing decides an
+    //    identity from it. `resolve_identity` therefore answers with
+    //    nobody, and the callers that need a name say so, even though
+    //    `user.email` names a registered member of this very project.
     forget_the_pin(root);
     assert_eq!(pinned_member(root, &project), None);
     assert_eq!(
         acting_member(root, &project, None).unwrap(),
-        "bea@example.com"
+        "bea@example.com",
+        "the prefill a person is offered is still the git config address"
     );
     assert_eq!(
         resolve_identity(root).unwrap().member.id(),
-        "bea@example.com"
+        "",
+        "git config decides no identity (D3.9, package J11)"
+    );
+    let err = acting_member_key(root).unwrap_err();
+    assert!(
+        matches!(err, joy_core::error::JoyError::UnknownActingMember),
+        "{err}"
+    );
+    let err = acting_human_key(root).unwrap_err();
+    assert!(
+        matches!(err, joy_core::error::JoyError::UnknownActingMember),
+        "{err}"
     );
 
     // 5. A pin for somebody this project does not know is no answer at
@@ -152,26 +173,32 @@ fn the_pin_answers_before_git_config_and_the_two_resolvers_agree() {
     );
 
     // 6. Bea authenticates here, on a machine whose git config already
-    //    names her: nothing is pinned, because the machine answers
-    //    correctly on its own...
-    pin_acting_member(root, &project, "bea@example.com");
-    assert_eq!(pinned_member(root, &project), None);
-
-    // ...and an older pin, from the time this machine had no git
-    // identity, is dropped rather than left to outrank the git config
-    // that now names the person who just authenticated.
-    pin_acting_member(root, &project, "a@b.c");
-    assert_eq!(pinned_member(root, &project).as_deref(), Some("a@b.c"));
+    //    names her: the pin is written anyway. Dropping it because the
+    //    config agrees today would stand this project back on a git
+    //    setting tomorrow, when the setting goes.
     pin_acting_member(root, &project, "bea@example.com");
     assert_eq!(
-        pinned_member(root, &project),
-        None,
-        "the stale pin is gone, not merely outvoted"
+        pinned_member(root, &project).as_deref(),
+        Some("bea@example.com")
     );
+    forget_the_git_config(home.path());
     assert_eq!(
         acting_member(root, &project, None).unwrap(),
+        "bea@example.com",
+        "removing user.email changes nothing once the member is known here"
+    );
+    assert_eq!(
+        resolve_identity(root).unwrap().member.id(),
         "bea@example.com"
     );
+
+    // ...and the next person who authenticates here replaces the pin,
+    // which is the one way the answer on this machine changes.
+    git_config_says(home.path(), "bea@example.com");
+    pin_acting_member(root, &project, "a@b.c");
+    assert_eq!(pinned_member(root, &project).as_deref(), Some("a@b.c"));
+    assert_eq!(acting_member(root, &project, None).unwrap(), "a@b.c");
+    assert_eq!(resolve_identity(root).unwrap().member.id(), "a@b.c");
 
     // 7. Neither pin nor git config, and a project with exactly one human
     //    member: joy says it does not know, and names the way out. It does
