@@ -64,14 +64,25 @@ pub fn probe_order(own: &[String], foreign: &[String]) -> Vec<String> {
 /// The answer of step 5, with the sentence D4.1c writes: "None of your
 /// GitHub logins (work, scotty) can reach acme/widgets. Sign in with
 /// the login that can."
-pub fn no_login_for_repo(display: &str, logins: &[String], repo_path: &str) -> serde_json::Value {
+///
+/// `push` is the direction the call asked for. A login that reads a
+/// repository it may not push to is not an answer for a push, and
+/// saying it "cannot reach" the repository would send the person
+/// looking for the wrong thing.
+pub fn no_login_for_repo(
+    display: &str,
+    logins: &[String],
+    repo_path: &str,
+    push: bool,
+) -> serde_json::Value {
     let mut answer = serde_json::json!({
         "known": false,
         "reason": "no-login-for-repo",
     });
     if !logins.is_empty() {
+        let what = if push { "can push to" } else { "can reach" };
         answer["message"] = serde_json::Value::String(format!(
-            "None of your {display} logins ({}) can reach {repo_path}. \
+            "None of your {display} logins ({}) {what} {repo_path}. \
              Sign in with the login that can.",
             logins.join(", ")
         ));
@@ -140,14 +151,24 @@ mod tests {
 
     #[test]
     fn the_last_step_names_the_logins_that_could_not_reach_the_repository() {
-        let answer = no_login_for_repo("GitHub", &logins(&["work", "scotty"]), "acme/widgets");
+        let answer = no_login_for_repo(
+            "GitHub",
+            &logins(&["work", "scotty"]),
+            "acme/widgets",
+            false,
+        );
         assert_eq!(answer["known"], false);
         assert_eq!(answer["reason"], "no-login-for-repo");
         let message = answer["message"].as_str().unwrap();
         assert!(message.contains("work, scotty"), "{message}");
         assert!(message.contains("acme/widgets"), "{message}");
+        assert!(message.contains("can reach"), "{message}");
+        // a push asked for more than reading, and says so
+        let pushing = no_login_for_repo("GitHub", &logins(&["work"]), "acme/widgets", true);
+        let message = pushing["message"].as_str().unwrap();
+        assert!(message.contains("can push to acme/widgets"), "{message}");
         // a host with no logins at all has nothing to name
-        assert!(no_login_for_repo("GitHub", &[], "acme/widgets")
+        assert!(no_login_for_repo("GitHub", &[], "acme/widgets", false)
             .get("message")
             .is_none());
     }

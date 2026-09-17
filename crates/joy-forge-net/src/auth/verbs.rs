@@ -168,14 +168,21 @@ fn resolved_of(record: Record, source: Source, chose_by: Option<ChoseBy>) -> Res
 
 // -- the token verb (D2.4, D4.1c) ---------------------------------------------
 
-/// `token --remote <url> | --host <h> [--login <name>]`.
+/// `token --remote <url> | --host <h> [--for read|write|create|release]
+/// [--login <name>]`.
 ///
 /// The whole login order of D4.1c runs here, over the whole candidate
 /// set: the connector's own logins AND the ones the forge CLI holds.
 /// [`own_token_full`] cannot do it, because the candidate list is forge
 /// knowledge and that function has none; what it knows is the entry,
 /// which is what every other verb needs from it.
-pub fn token(forge: &dyn Forge, target: &Target, ctx: &Ctx) -> Value {
+///
+/// `--for` is the direction of D4.1c's step 4, "the first that answers
+/// 200, and for a push direction reports write, wins". Without it the
+/// probe prefers a login that can push and still accepts one that can
+/// only read, because a caller that stated no direction must not be
+/// refused a credential that would have worked.
+pub fn token(forge: &dyn Forge, target: &Target, purpose: Option<Purpose>, ctx: &Ctx) -> Value {
     let Some(host) = target.host() else {
         return json!({ "known": false, "reason": "unsupported-host" });
     };
@@ -211,24 +218,35 @@ pub fn token(forge: &dyn Forge, target: &Target, ctx: &Ctx) -> Value {
     }
     // Several logins and nothing that names one: the probe of D4.1c,
     // one request per candidate, per remote and never per contact.
+    let need = Need::of(purpose);
+    let mut unreachable = false;
     if let Some(path) = target.repo_path() {
-        match probe(forge, &host, &path, &candidates, ctx) {
-            Probed::Found(resolved) => {
-                if let Some(remote) = ctx.remote.as_deref() {
-                    if let Some(login) = resolved.login.as_deref() {
-                        pin::remember(ctx.state_dir(), remote, login);
-                    }
+        match probe(forge, &host, &path, &candidates, need, ctx) {
+            Probed::Found { login, pushes } => {
+                if let (Some(remote), Some(name), true) =
+                    (ctx.remote.as_deref(), login.login.as_deref(), pushes)
+                {
+                    pin::remember(ctx.state_dir(), remote, name);
                 }
-                return answer(forge, &host, &resolved);
+                return answer(forge, &host, &login);
             }
             Probed::NoneReach(tried) => {
                 // Whatever the memory said, it is wrong: no login this
-                // machine holds reaches the repository (D4.1c).
+                // machine holds reaches the repository (D4.1c). The
+                // forge answered every question, so this is knowledge
+                // and the stale memory goes.
                 if let Some(remote) = ctx.remote.as_deref() {
                     pin::forget_remote(ctx.state_dir(), remote);
                 }
-                return choose::no_login_for_repo(forge.display(), &tried, &path);
+                return choose::no_login_for_repo(forge.display(), &tried, &path, need.pushes());
             }
+            // The forge could not be asked at all: this machine is
+            // offline, a proxy refused, the instance is down. Nothing
+            // was learned, so nothing is concluded and NOTHING is
+            // thrown away: D1.8a's rule is that joy reads the evidence
+            // and does not destroy it, and the login memory of this
+            // remote is the answer the next online call gets for free.
+            Probed::Unreachable => unreachable = true,
             Probed::NotAsked => {}
         }
     }
@@ -242,7 +260,16 @@ pub fn token(forge: &dyn Forge, target: &Target, ctx: &Ctx) -> Value {
             // A host that holds several logins and nothing that names
             // one has an answer a person can act on, and "no-login"
             // alone is not it (D4.1c).
-            if candidates.len() > 1 {
+            if unreachable {
+                answer["message"] = json!(format!(
+                    "joy could not ask {} which of your logins ({}) reaches {}. \
+                     Say which one with --login, or try again when this machine \
+                     can reach {host}.",
+                    forge.display(),
+                    candidates.join(", "),
+                    target.repo_path().unwrap_or_default()
+                ));
+            } else if candidates.len() > 1 {
                 answer["message"] = json!(format!(
                     "This machine holds several {} logins ({}). \
                      Say which one with --login, or ask about a repository.",
@@ -252,6 +279,38 @@ pub fn token(forge: &dyn Forge, target: &Target, ctx: &Ctx) -> Value {
             }
             answer
         }
+    }
+}
+
+/// The credential for a remote the way every verb OTHER than `token`
+/// asks for it: the steps of D4.1c that spend no request first, and
+/// then the probe, which is the step `Ctx` cannot run on its own
+/// because the candidate list and the reach call are forge knowledge
+/// (D4.1c, and the `store`, `files`, `release`, `repositories` and
+/// `create-repository` verbs that all reach a credential through
+/// `Ctx::token`).
+///
+/// No direction is stated here, so the probe prefers a login that can
+/// push and accepts one that can only read.
+pub fn token_for_remote(forge: &dyn Forge, host: &str, ctx: &Ctx) -> Option<Resolved> {
+    let remote = ctx.remote.as_deref()?;
+    let path = crate::url::repo_path_of(remote)?;
+    let own = ctx.vault().logins(host);
+    let candidates = choose::probe_order(&own, &forge.foreign_logins(host));
+    match probe(forge, host, &path, &candidates, Need::PreferPush, ctx) {
+        Probed::Found { login, pushes } => {
+            if let (Some(name), true) = (login.login.as_deref(), pushes) {
+                pin::remember(ctx.state_dir(), remote, name);
+            }
+            Some(login)
+        }
+        Probed::NoneReach(_) => {
+            // The forge answered, so this is knowledge: the memory of
+            // this remote is stale and goes (D4.1c).
+            pin::forget_remote(ctx.state_dir(), remote);
+            None
+        }
+        Probed::Unreachable | Probed::NotAsked => None,
     }
 }
 
@@ -287,10 +346,55 @@ fn answer(forge: &dyn Forge, host: &str, resolved: &Resolved) -> Value {
     })
 }
 
+/// What the probe of D4.1c must find: "the first that answers 200, and
+/// for a push direction reports write, wins".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Need {
+    /// Reading is enough (`--for read`).
+    Read,
+    /// The login has to be able to push (`--for write|create|release`).
+    /// This is the case the section's "This is not academic" paragraph
+    /// is about: a login with Reporter rights answers 200 for a private
+    /// repository and then fails the push with 403, under the wrong
+    /// account.
+    Push,
+    /// No direction was stated. A login that can push outranks one that
+    /// can only read, and a reader still beats nothing: a caller that
+    /// asked for no direction must not be refused a credential that
+    /// would have worked.
+    PreferPush,
+}
+
+impl Need {
+    fn of(purpose: Option<Purpose>) -> Need {
+        match purpose {
+            Some(Purpose::Read) => Need::Read,
+            Some(_) => Need::Push,
+            None => Need::PreferPush,
+        }
+    }
+
+    /// Whether this need refuses a login that can only read.
+    fn pushes(self) -> bool {
+        matches!(self, Need::Push)
+    }
+}
+
 enum Probed {
-    Found(Resolved),
-    /// Every candidate was asked and none reached the repository.
+    /// The login that won, and whether it may push. D4.1c's memory is
+    /// "the login the transport memory recorded as the LAST ONE THAT
+    /// PUSHED SUCCESSFULLY to this remote", so a login that only reads
+    /// is never written into it: a later push would take it from the
+    /// memory, spend no request finding out, and fail 403 under an
+    /// account that was never going to work.
+    Found { login: Resolved, pushes: bool },
+    /// Every candidate was asked, the forge answered every time, and
+    /// none of them reaches the repository the way this call needs it.
     NoneReach(Vec<String>),
+    /// The forge could not be asked at all: a transport failure, not an
+    /// answer. Nothing was learned about any login, so the caller
+    /// concludes nothing and destroys nothing.
+    Unreachable,
     /// There was nothing to probe with.
     NotAsked,
 }
@@ -300,22 +404,56 @@ fn probe(
     host: &str,
     repo_path: &str,
     candidates: &[String],
+    need: Need,
     ctx: &Ctx,
 ) -> Probed {
     if candidates.len() < 2 {
         // One candidate is step 3, not step 4, and zero is nothing.
         return Probed::NotAsked;
     }
+    // One probe per remote for the life of this call, whichever verb
+    // asks for it: D4.1c allows one request per candidate per remote,
+    // and never one per contact.
+    if !ctx.first_probe(host, repo_path) {
+        return Probed::NotAsked;
+    }
+    // A login that reads but cannot push, kept aside: it is the answer
+    // only where no direction asked for more.
+    let mut reader: Option<Resolved> = None;
+    let mut silent = false;
     for login in candidates {
         let candidate = match named_login(forge, host, login, ChoseBy::Probe, ctx) {
             Own::Found(resolved) => *resolved,
             _ => continue,
         };
-        if let Some(reach) = forge.reaches(host, repo_path, &candidate.token, ctx) {
-            if reach.read {
-                return Probed::Found(candidate);
-            }
+        let Some(reach) = forge.reaches(host, repo_path, &candidate.token, ctx) else {
+            // The forge did not answer at all. That is evidence about
+            // the network and none about this login, so the verdict
+            // stays open (D1.8a).
+            silent = true;
+            continue;
+        };
+        if !reach.read {
+            continue;
         }
+        if reach.push || need == Need::Read {
+            return Probed::Found {
+                login: candidate,
+                pushes: reach.push,
+            };
+        }
+        if need == Need::PreferPush && reader.is_none() {
+            reader = Some(candidate);
+        }
+    }
+    if let Some(reader) = reader {
+        return Probed::Found {
+            login: reader,
+            pushes: false,
+        };
+    }
+    if silent {
+        return Probed::Unreachable;
     }
     Probed::NoneReach(candidates.to_vec())
 }
@@ -578,14 +716,14 @@ fn pkce_login(
         PKCE_WAIT.as_secs() as i64,
         1,
     ));
-    let mut ticked: Vec<Value> = Vec::new();
+    // Each tick is emitted AS IT HAPPENS. D2.4 asks for "one object per
+    // line, each flushed" precisely so the host can follow a running
+    // sign in; collecting them and replaying the lot afterwards would
+    // leave a Gitea, Forgejo or Codeberg login silent for up to fifteen
+    // minutes and then print nine hundred stale lines at once.
     let code = pkce.wait(PKCE_WAIT, |seconds_left| {
-        ticked.push(json!({ "event": "waiting", "seconds_left": seconds_left }));
-    });
-    for event in ticked {
-        events.emit(event);
-    }
-    let code = code?;
+        events.emit(json!({ "event": "waiting", "seconds_left": seconds_left }));
+    })?;
     match oauth::exchange_code(http, config, &code, pkce.verifier(), &pkce.redirect_uri()) {
         Poll::Granted(grant) => Ok(grant),
         other => Err(other),
@@ -667,9 +805,20 @@ fn finish(
 
 /// `logout --host <h> [--login <name>]`.
 ///
+/// This call WRITES, so it takes the refresh lock of D2.6a: "the lock
+/// lives in the plugin and is taken by every `token`, `login`,
+/// `token-store` and `logout` call that may write". Without it a
+/// refresh running beside this one re reads the entry under its own
+/// lock, sees the record this call is about to delete, renews it and
+/// writes it back, and the credential the person just revoked is alive
+/// again.
+///
 /// Where the credential came from a foreign CLI the connector removes
 /// nothing and names the foreign command: joy never refreshes, writes
-/// or revokes what gh, glab and tea own (D2.6).
+/// or revokes what gh, glab and tea own (D2.6). That branch SPAWNS, so
+/// it runs with no lock held: flock belongs to the open file
+/// description, and a child that unlocks takes the parent's lock away
+/// with it.
 pub fn logout(forge: &dyn Forge, target: &Target, ctx: &Ctx) -> Value {
     let Some(host) = target.host() else {
         return json!({ "removed": false, "revoked": false, "source": null });
@@ -689,19 +838,69 @@ pub fn logout(forge: &dyn Forge, target: &Target, ctx: &Ctx) -> Value {
             )
             .map(|(login, _)| login)
         });
+    // Several of joy's OWN logins and nothing that names one. Naming
+    // gh's command here would be a lie twice over: joy holds these
+    // credentials, and removing "the one" is not a thing this call may
+    // guess at.
+    if login.is_none() && known.len() > 1 {
+        return json!({
+            "removed": false,
+            "revoked": false,
+            "source": null,
+            "logins": known,
+            "message": format!(
+                "This machine holds several {} logins on {host} ({}). \
+                 Say which one to sign out with --login.",
+                forge.display(),
+                known.join(", ")
+            ),
+        });
+    }
+    // The lock first, the entry after it: the re read under the lock is
+    // what puts this delete and a refresh beside it into one order
+    // instead of two (D2.6a).
+    let guard = match lock::take(ctx.state_dir(), &host, login.as_deref()) {
+        Ok(guard) => guard,
+        Err(busy) => {
+            return json!({
+                "removed": false,
+                "revoked": false,
+                "source": null,
+                "reason": "busy",
+                "message": format!("{busy}; try again in a moment"),
+            })
+        }
+    };
     if let Some((record, source)) = vault.get(&host, login.as_deref()) {
         let revoked = forge.revoke(&host, &record, ctx);
-        let removed = vault.remove(&host, record.login.as_deref()).is_some();
+        let removed = vault.remove(&host, record.login.as_deref());
+        drop(guard);
         if let Some(login) = record.login.as_deref() {
             pin::forget_login(ctx.state_dir(), &host, login);
         }
-        return json!({
-            "removed": removed,
-            "revoked": revoked,
-            "source": source.as_str(),
-            "login": record.login,
-        });
+        return match removed {
+            Ok(removed) => json!({
+                "removed": removed.is_some(),
+                "revoked": revoked,
+                "source": source.as_str(),
+                "login": record.login,
+            }),
+            // The entry is still there. J3's acceptance is "`logout`
+            // removes the entry", so a state directory that could not
+            // be written is a refusal and never a reported success.
+            Err(message) => {
+                eprintln!("joy: {message}");
+                json!({
+                    "removed": false,
+                    "revoked": revoked,
+                    "source": source.as_str(),
+                    "login": record.login,
+                    "message": message,
+                })
+            }
+        };
     }
+    drop(guard);
     // Nothing of joy's own. If a forge CLI holds one, say whose it is
     // and which command removes it.
     if !forge.foreign_logins(&host).is_empty()

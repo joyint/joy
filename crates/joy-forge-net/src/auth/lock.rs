@@ -50,6 +50,15 @@ pub enum Busy {
     Unavailable(String),
 }
 
+impl std::fmt::Display for Busy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Busy::Held => write!(f, "another joy process is writing this credential"),
+            Busy::Unavailable(reason) => write!(f, "this credential could not be locked: {reason}"),
+        }
+    }
+}
+
 /// The lock file of one host and login: `forge-<first 16 hex of
 /// SHA256(host|login)>.lock` under the person's app state directory.
 ///

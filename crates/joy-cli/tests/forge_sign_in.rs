@@ -503,6 +503,125 @@ fn a_signed_in_gh_answers_the_token_verb_by_being_spawned() {
     assert_eq!(answer["command"], "gh auth logout --hostname forge.test");
 }
 
+/// D1.10, mechanism 5: "every plugin call carries the host kind as a
+/// protocol field, and the plugin uses it to skip any step that can
+/// raise an operating system dialog".
+///
+/// A DELEGATED session is not this machine's person. D3.11 already
+/// refuses `login`, `logout` and the token paste there, its credential
+/// travels in the variable the caller named, and the person's own
+/// credential store is none of its business: it is never opened at all.
+/// A BACKGROUND host is this person's own machine and keeps its entry,
+/// because the desktop's sync poll is a background host and needs it.
+#[test]
+fn a_delegated_session_never_opens_this_persons_credential_store() {
+    let fake = FakeForge::start(|_| Reply::not_found());
+    let sandbox = Sandbox::new("forge.test", "github", &format!("{}/api/v3", fake.base()));
+    sandbox.seed(
+        "forge.test",
+        "scotty",
+        serde_json::json!({ "token": "gho_of_this_person", "login": "scotty" }),
+    );
+
+    let delegated = sandbox
+        .connector()
+        .args([
+            "github",
+            "token",
+            "--host",
+            "forge.test",
+            "--host-kind",
+            "delegated",
+        ])
+        .output()
+        .expect("the connector");
+    let answer = answer_of(&delegated);
+    assert_eq!(answer["known"], false, "{answer}");
+    assert_eq!(answer["reason"], "no-keychain");
+    assert!(
+        !String::from_utf8_lossy(&delegated.stdout).contains("gho_of_this_person"),
+        "a delegated session never reads this person's entry"
+    );
+
+    for kind in ["background", "interactive"] {
+        let output = sandbox
+            .connector()
+            .args([
+                "github",
+                "token",
+                "--host",
+                "forge.test",
+                "--host-kind",
+                kind,
+            ])
+            .output()
+            .expect("the connector");
+        let answer = answer_of(&output);
+        assert_eq!(answer["token"], "gho_of_this_person", "{kind}: {answer}");
+        assert_eq!(answer["source"], "file");
+    }
+}
+
+/// D4.1c, step 4, through the shipped binary: `--for` is the direction
+/// of the probe, and "the first that answers 200, and for a push
+/// direction reports write, wins".
+#[test]
+fn the_for_flag_decides_which_login_the_probe_accepts() {
+    let fake = FakeForge::start(|call| match call.path.as_str() {
+        "/api/v3/repos/acme/widgets" => match call.authorization() {
+            // The ACTIVE account reads the repository and may not push.
+            Some("Bearer gh-token-of-scotty") => {
+                Reply::json(200, r#"{"permissions":{"push":false}}"#)
+            }
+            Some("Bearer gh-token-of-work") => Reply::json(200, r#"{"permissions":{"push":true}}"#),
+            _ => Reply::not_found(),
+        },
+        _ => Reply::not_found(),
+    });
+    let sandbox = Sandbox::new("forge.test", "github", &format!("{}/api/v3", fake.base()));
+    sandbox.with_gh("forge.test", &["scotty", "work"]);
+    let ask = |purpose: &str| {
+        let output = sandbox
+            .connector_with_gh("scotty")
+            .args([
+                "github",
+                "token",
+                "--remote",
+                "https://forge.test/acme/widgets.git",
+                "--for",
+                purpose,
+            ])
+            .output()
+            .expect("the connector");
+        answer_of(&output)
+    };
+    let reading = ask("read");
+    assert_eq!(reading["login"], "scotty", "{reading}");
+    assert_eq!(reading["chose_by"], "probe");
+    // The memory now names scotty, and a push must not take it: the
+    // probe for a push direction asks again and finds the login that
+    // can push.
+    let pushing = ask("write");
+    assert_eq!(pushing["login"], "work", "{pushing}");
+    assert_eq!(pushing["token"], "gh-token-of-work");
+
+    // A word that is not one of the four is a usage error, not a guess.
+    let wrong = sandbox
+        .connector()
+        .args([
+            "github",
+            "token",
+            "--host",
+            "forge.test",
+            "--for",
+            "everything",
+        ])
+        .output()
+        .expect("the connector");
+    assert_eq!(wrong.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&wrong.stderr).contains("read, write, create or release"));
+}
+
 /// J3's acceptance: a host with TWO gh accounts answers `token` for a
 /// repository only the second account can reach, and reports
 /// `"chose_by":"probe"`.

@@ -126,6 +126,12 @@ enum Command {
         remote: Option<String>,
         #[arg(long)]
         host: Option<String>,
+        /// Which access the token is for: read, write, create or
+        /// release. It is the direction of D4.1c's probe, "the first
+        /// that answers 200, and for a push direction reports write,
+        /// wins".
+        #[arg(long = "for")]
+        purpose: Option<String>,
     },
     /// Read ONE token from stdin, validate it with `identity` and store
     /// it. The token is never an argument (D2.4).
@@ -183,12 +189,16 @@ enum Command {
 /// Run the connector with this list of forges. Returns the process exit
 /// code: 0 for every answer, non-zero only where a verb reports a
 /// failure instead of degrading (D2.3, the `release` verb).
-pub fn run(forges: &[&dyn Forge], manifest: &Manifest) -> i32 {
+pub fn run(forges: &[&'static dyn Forge], manifest: &Manifest) -> i32 {
     run_from(forges, manifest, std::env::args_os())
 }
 
 /// [`run`] with an explicit argument list, for the tests.
-pub fn run_from<I, T>(forges: &[&dyn Forge], manifest: &Manifest, args: I) -> i32
+///
+/// The forges are `'static` because the context carries the one that
+/// answers: every verb reaches its credential through the login order
+/// of D4.1c, whose fourth step needs the forge itself (D4.1c).
+pub fn run_from<I, T>(forges: &[&'static dyn Forge], manifest: &Manifest, args: I) -> i32
 where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
@@ -239,7 +249,7 @@ where
         Command::Identity { user_id, .. } => user_id.clone(),
         _ => None,
     };
-    let mut ctx = Ctx::new(host_kind, cli.login, user_id, cli.token_env, root);
+    let mut ctx = Ctx::new(host_kind, cli.login, user_id, cli.token_env, root).with_forge(forge);
     // The login order of D4.1c is per remote, so every token lookup
     // inside a verb needs the remote without every verb passing it on.
     ctx.remote = remote_of(&cli.command);
@@ -249,13 +259,9 @@ where
         purpose,
     } = &cli.command
     {
-        let purpose = match purpose.as_deref().map(str::parse::<Purpose>) {
-            Some(Ok(purpose)) => purpose,
-            Some(Err(message)) => {
-                eprintln!("joy: {message}");
-                return 2;
-            }
-            None => Purpose::default(),
+        let purpose = match parse_purpose(purpose.as_deref()) {
+            Ok(purpose) => purpose.unwrap_or_default(),
+            Err(code) => return code,
         };
         let target = target(remote.as_deref(), host.as_deref())
             .unwrap_or_else(|| Target::Host(String::new()));
@@ -351,10 +357,20 @@ fn answer(forge: &dyn Forge, command: &Command, ctx: &Ctx) -> i32 {
                 None => crate::forge::unknown_state(),
             }
         }
-        Command::Token { remote, host } => match target(remote.as_deref(), host.as_deref()) {
-            Some(target) => crate::auth::verbs::token(forge, &target, ctx),
-            None => json!({ "known": false, "reason": "unsupported-host" }),
-        },
+        Command::Token {
+            remote,
+            host,
+            purpose,
+        } => {
+            let purpose = match parse_purpose(purpose.as_deref()) {
+                Ok(purpose) => purpose,
+                Err(code) => return code,
+            };
+            match target(remote.as_deref(), host.as_deref()) {
+                Some(target) => crate::auth::verbs::token(forge, &target, purpose, ctx),
+                None => json!({ "known": false, "reason": "unsupported-host" }),
+            }
+        }
         Command::TokenStore { remote, host } => match target(remote.as_deref(), host.as_deref()) {
             Some(target) => crate::auth::verbs::token_store(forge, &target, ctx),
             None => json!({ "known": false, "reason": "unsupported-host" }),
@@ -427,6 +443,20 @@ fn claims(forge: &dyn Forge, target: &Target, ctx: &Ctx) -> bool {
         return false;
     }
     forge.claims(&host, ctx)
+}
+
+/// The `--for` of a call, or the exit code of a word that is not one of
+/// the four. `None` is "no direction stated", which is not the same as
+/// the default: the probe of D4.1c reads the difference.
+fn parse_purpose(raw: Option<&str>) -> Result<Option<Purpose>, i32> {
+    match raw.map(str::parse::<Purpose>) {
+        Some(Ok(purpose)) => Ok(Some(purpose)),
+        Some(Err(message)) => {
+            eprintln!("joy: {message}");
+            Err(2)
+        }
+        None => Ok(None),
+    }
 }
 
 fn target(remote: Option<&str>, host: Option<&str>) -> Option<Target> {

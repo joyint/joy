@@ -271,8 +271,17 @@ pub struct Ctx {
     /// live. `None` is the person's own app state directory; a test
     /// names a temporary one so it takes no lock a person shares.
     state_dir: Option<PathBuf>,
+    /// The forge this call runs for, where the dispatcher named one.
+    /// It is what lets [`Ctx::token`] run the WHOLE login order of
+    /// D4.1c and not only the three steps that spend no request: the
+    /// candidate list and the reach call are forge knowledge.
+    forge: Option<&'static dyn Forge>,
     clients: Mutex<HashMap<String, Arc<Http>>>,
     tokens: Mutex<HashMap<String, Option<crate::auth::Resolved>>>,
+    /// The remotes this call has already probed. D4.1c allows one
+    /// request per candidate per remote and never one per contact, and
+    /// several verbs ask for the same token.
+    probed: Mutex<std::collections::HashSet<String>>,
 }
 
 impl Ctx {
@@ -296,10 +305,25 @@ impl Ctx {
             root,
             project_forge,
             remote: None,
-            vault: crate::auth::store::Vault::real(),
+            // Mechanism 5 of D1.10: every plugin call carries the host
+            // kind, and the plugin uses it to skip a step that can
+            // raise an operating system dialog. A DELEGATED session is
+            // not this machine's person: D3.11 already refuses `login`,
+            // `logout` and the token paste there, its credential
+            // travels in the variable the caller named
+            // (`--token-env`), and the person's own credential store is
+            // none of its business. It is therefore never opened, which
+            // is also the one keychain prompt joy can rule out rather
+            // than bound.
+            vault: match host_kind {
+                HostKind::Delegated => crate::auth::store::Vault::none(),
+                _ => crate::auth::store::Vault::real(),
+            },
             state_dir: None,
+            forge: None,
             clients: Mutex::new(HashMap::new()),
             tokens: Mutex::new(HashMap::new()),
+            probed: Mutex::new(std::collections::HashSet::new()),
         }
     }
 
@@ -319,9 +343,24 @@ impl Ctx {
             remote: None,
             vault: crate::auth::store::Vault::none(),
             state_dir: None,
+            forge: None,
             clients: Mutex::new(HashMap::new()),
             tokens: Mutex::new(HashMap::new()),
+            probed: Mutex::new(std::collections::HashSet::new()),
         }
+    }
+
+    /// Name the forge this call runs for, so that every verb reaches a
+    /// credential through the whole login order of D4.1c and not only
+    /// through the steps that spend no request (D4.1c, and the
+    /// `store`, `files`, `release`, `repositories` and
+    /// `create-repository` verbs that all ask [`Ctx::token`]).
+    ///
+    /// `'static` because a forge is a unit value the binary holds for
+    /// its whole run; nothing here keeps state.
+    pub fn with_forge(mut self, forge: &'static dyn Forge) -> Self {
+        self.forge = Some(forge);
+        self
     }
 
     /// Replace the configured instances (the tests and `bare` callers).
@@ -375,6 +414,17 @@ impl Ctx {
         self.state_dir.as_deref()
     }
 
+    /// Whether this call may probe this remote, and record that it did.
+    /// `false` means the probe already ran in this process: D4.1c's
+    /// budget is one request per candidate per remote, and the `token`
+    /// verb and [`Ctx::token`] ask the same question.
+    pub(crate) fn first_probe(&self, host: &str, repo_path: &str) -> bool {
+        self.probed
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(format!("{host}/{repo_path}"))
+    }
+
     /// The project root of this call.
     pub fn root(&self) -> &Path {
         &self.root
@@ -416,12 +466,24 @@ impl Ctx {
     /// granted set and the lifetime.
     pub fn resolved_token(&self, forge: &str, host: &str) -> Option<crate::auth::Resolved> {
         let key = format!("{forge}@{host}");
-        let mut tokens = self.tokens.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(resolved) = tokens.get(&key) {
+        // The lock is NOT held across the lookup. The lookup may spawn
+        // a forge CLI and may ask the forge itself (the probe of
+        // D4.1c), and neither of those may end up waiting for a mutex
+        // this same call is holding. Two calls racing cost one extra
+        // lookup and nothing else.
+        if let Some(resolved) = self
+            .tokens
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&key)
+        {
             return resolved.clone();
         }
         let resolved = self.find_token(forge, host);
-        tokens.insert(key, resolved.clone());
+        self.tokens
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(key, resolved.clone());
         resolved
     }
 
@@ -454,6 +516,15 @@ impl Ctx {
         // where it is past its lifetime.
         if let Some(resolved) = crate::auth::verbs::own_token(self, host) {
             return Some(resolved);
+        }
+        // Step 4 of D4.1c, for every verb and not only for `token`: a
+        // host with several logins, no pin and no memory is decided by
+        // one probe per candidate, or `joy release publish` publishes
+        // under whichever account the forge CLI last switched to.
+        if let Some(known) = self.forge {
+            if let Some(resolved) = crate::auth::verbs::token_for_remote(known, host, self) {
+                return Some(resolved);
+            }
         }
         if let Some(value) = token_variables(forge, host)
             .iter()

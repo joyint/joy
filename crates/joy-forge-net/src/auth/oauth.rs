@@ -111,7 +111,7 @@ pub fn unregistered_sentence(host: &str) -> String {
 }
 
 /// What the forge answered when it granted the token.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct Grant {
     pub access_token: String,
     pub refresh_token: Option<String>,
@@ -120,6 +120,23 @@ pub struct Grant {
     /// scope field at all, so there the caller stores what it asked for
     /// (D2.7c).
     pub scope: Option<String>,
+}
+
+/// Rule 1 of this module's parent: both tokens print as their
+/// fingerprint. A `Poll` carries a `Grant`, and `Poll` is what a failed
+/// assertion or a stray `{:?}` prints.
+impl std::fmt::Debug for Grant {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Grant")
+            .field("access_token", &super::Redacted(&self.access_token))
+            .field(
+                "refresh_token",
+                &self.refresh_token.as_deref().map(super::Redacted),
+            )
+            .field("expires_in", &self.expires_in)
+            .field("scope", &self.scope)
+            .finish()
+    }
 }
 
 impl Grant {
@@ -148,7 +165,7 @@ pub enum Poll {
 }
 
 /// What a device grant started.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct DeviceStart {
     pub device_code: String,
     pub user_code: String,
@@ -156,6 +173,22 @@ pub struct DeviceStart {
     pub verification_uri_complete: Option<String>,
     pub expires_in: i64,
     pub interval: i64,
+}
+
+/// The device code is the credential the poll spends, so it prints as
+/// its fingerprint like every other secret here. The USER code is the
+/// one the person reads aloud, and it prints as itself.
+impl std::fmt::Debug for DeviceStart {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DeviceStart")
+            .field("device_code", &super::Redacted(&self.device_code))
+            .field("user_code", &self.user_code)
+            .field("verification_uri", &self.verification_uri)
+            .field("verification_uri_complete", &self.verification_uri_complete)
+            .field("expires_in", &self.expires_in)
+            .field("interval", &self.interval)
+            .finish()
+    }
 }
 
 /// Where the newline delimited events of D2.4 go. One object per line,

@@ -359,6 +359,21 @@ fn the_token_verb_answers_from_the_connectors_own_entry() {
     assert_eq!(answer.chose_by.as_deref(), Some("only"));
     assert_eq!(answer.username.as_deref(), Some("x-access-token"));
     assert_eq!(answer.scopes.as_deref(), Some("repo user:email"));
+
+    // The same verb with a direction (D4.1c's step 4). One login holds
+    // the host, so no probe runs and the answer is the same one; what
+    // this proves is that the shipped binary takes the flag, because a
+    // flag it did not know would be a usage error and no answer at all.
+    let directed = forge_plugins::token_for(
+        spec("github"),
+        &Target::host("ghe-token.test"),
+        forge_plugins::Access::Write,
+        &CallContext::rootless(),
+    )
+    .expect("the connector answers a directed ask");
+    assert!(directed.known);
+    assert_eq!(directed.token.as_deref(), Some(TOKEN));
+    assert_eq!(directed.chose_by.as_deref(), Some("only"));
 }
 
 /// The connector's own credential file (D2.6), written the way a

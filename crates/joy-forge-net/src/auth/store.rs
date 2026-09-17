@@ -32,6 +32,22 @@
 //! answer with what was just written did not persist it. keyring's mock
 //! keeps the password inside the `Entry` object itself
 //! (`CredentialPersistence::EntryOnly`), so it fails exactly that read.
+//!
+//! Two rules hold for the file, and neither is optional:
+//!
+//! - **One writer at a time.** The file is ONE document for every host
+//!   and every login, while the refresh lock of D2.6a is per host and
+//!   login: two `login` runs for two logins on one host take two
+//!   different locks. Every read-modify-write of the file therefore
+//!   takes one more whole file lock, on the same primitive, beside the
+//!   document it protects. Without it the second writer's document
+//!   predates the first writer's commit and one login's entry is
+//!   silently gone.
+//! - **A write is a rename.** The document is written to a staging file
+//!   in the same directory and renamed over the target, so no reader
+//!   ever sees half of it. A truncate-then-write would make a crash mid
+//!   write lose every stored credential at once, because a file that
+//!   does not parse reads as "nothing is stored".
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -56,7 +72,7 @@ pub const FALLBACK_FILE: &str = "forge-tokens.json";
 /// One stored credential. Everything the refresh and the answers of
 /// D2.4 need is here, so a refresh needs no forge knowledge at all:
 /// `token_endpoint` and `client_id` are the ones the login used.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Record {
     /// The access token. The only secret in the record.
     pub token: String,
@@ -81,6 +97,34 @@ pub struct Record {
     pub token_endpoint: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_id: Option<String>,
+}
+
+/// The record prints its FINGERPRINT and never its token.
+///
+/// Rule 1 of this module's header is that a secret never reaches a log
+/// line, and `joy_core::forge_plugins::ForgeToken` keeps that rule by
+/// having no `Debug` at all. This type has to stay printable, because a
+/// failing test must be able to say which record it compared, so the
+/// two fields that must not travel are replaced by the twelve hex
+/// digits D2.6a already compares under the lock: they identify a token
+/// without carrying it. One `tracing::debug!(?record)` is therefore
+/// safe by construction and not by discipline.
+impl std::fmt::Debug for Record {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Record")
+            .field("token", &super::Redacted(&self.token))
+            .field("login", &self.login)
+            .field("user_id", &self.user_id)
+            .field("scopes", &self.scopes)
+            .field("expires_at", &self.expires_at)
+            .field(
+                "refresh_token",
+                &self.refresh_token.as_deref().map(super::Redacted),
+            )
+            .field("token_endpoint", &self.token_endpoint)
+            .field("client_id", &self.client_id)
+            .finish()
+    }
 }
 
 impl Record {
@@ -115,10 +159,122 @@ impl Record {
 /// operation, because a store can be there and still refuse.
 #[derive(Debug, Clone)]
 pub struct Vault {
-    /// Whether the operating system credential store may be asked.
-    keychain: bool,
+    /// The credential store this vault may ask.
+    keys: Keys,
     /// The 0600 file, used when the store cannot answer.
     file: PathBuf,
+}
+
+/// The credential store behind a vault.
+#[derive(Clone, Default)]
+enum Keys {
+    /// None at all: the 0600 file alone, or nothing.
+    #[default]
+    None,
+    /// The operating system's, through `keyring::Entry::new` and
+    /// nothing else (D2.6).
+    Os,
+    /// An in process store with the same semantics an operating
+    /// system's one has: it persists across `Entry` objects, which is
+    /// exactly the property keyring's own mock lacks and which the read
+    /// back of [`Keys::put_checked`] tests for. Behind `fake-api`, so a
+    /// shipped connector never carries it, and it is what lets a test
+    /// execute the keychain half of D2.6 at all: every test that drove
+    /// the file alone left the entry addressing, the login index and
+    /// the mock detector unproven.
+    #[cfg(feature = "fake-api")]
+    Fake(std::sync::Arc<std::sync::Mutex<BTreeMap<String, String>>>),
+}
+
+/// Rule 1 of this module's parent: the in process store of a test holds
+/// real token text, so it prints how many entries it has and never what
+/// is in them.
+impl std::fmt::Debug for Keys {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Keys::None => write!(f, "Keys::None"),
+            Keys::Os => write!(f, "Keys::Os"),
+            #[cfg(feature = "fake-api")]
+            Keys::Fake(store) => write!(
+                f,
+                "Keys::Fake({} entries)",
+                store.lock().unwrap_or_else(|e| e.into_inner()).len()
+            ),
+        }
+    }
+}
+
+impl Keys {
+    /// One entry read, through a NEW handle every time. Never
+    /// `new_with_target`, and never a foreign service: this reads what
+    /// this binary wrote and nothing else.
+    fn get(&self, service: &str, user: &str) -> Option<String> {
+        match self {
+            Keys::None => None,
+            // `NoEntry` is the normal answer for a host nobody signed
+            // in to; `NoStorageAccess` and `PlatformFailure` are a
+            // store that could not answer. Both end here, and the
+            // caller falls through to the 0600 file of D2.6.
+            Keys::Os => keyring::Entry::new(service, user).ok()?.get_password().ok(),
+            #[cfg(feature = "fake-api")]
+            Keys::Fake(store) => store
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get(&fake_key(service, user))
+                .cloned(),
+        }
+    }
+
+    fn set(&self, service: &str, user: &str, secret: &str) -> bool {
+        match self {
+            Keys::None => false,
+            Keys::Os => keyring::Entry::new(service, user)
+                .is_ok_and(|entry| entry.set_password(secret).is_ok()),
+            #[cfg(feature = "fake-api")]
+            Keys::Fake(store) => {
+                store
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .insert(fake_key(service, user), secret.to_string());
+                true
+            }
+        }
+    }
+
+    fn delete(&self, service: &str, user: &str) -> bool {
+        match self {
+            Keys::None => false,
+            Keys::Os => keyring::Entry::new(service, user)
+                .is_ok_and(|entry| entry.delete_credential().is_ok()),
+            #[cfg(feature = "fake-api")]
+            Keys::Fake(store) => store
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove(&fake_key(service, user))
+                .is_some(),
+        }
+    }
+
+    /// One entry written, then read back through a NEW handle.
+    ///
+    /// The read back is the mock detector of D2.6: keyring's in process
+    /// mock keeps the password inside the `Entry` object, so a second
+    /// entry for the same service and user finds nothing, and joy must
+    /// write its own file instead of believing a store that stored
+    /// nothing.
+    fn put_checked(&self, service: &str, user: &str, secret: &str) -> bool {
+        if !self.set(service, user, secret) {
+            return false;
+        }
+        self.get(service, user).as_deref() == Some(secret)
+    }
+}
+
+/// The key of one entry in the in process store, which addresses an
+/// entry by service and user exactly as `Entry::new` does.
+#[cfg(feature = "fake-api")]
+fn fake_key(service: &str, user: &str) -> String {
+    format!("{service}\n{user}")
 }
 
 impl Vault {
@@ -126,18 +282,43 @@ impl Vault {
     /// behind it.
     pub fn real() -> Self {
         Vault {
-            keychain: true,
+            keys: Keys::Os,
             file: default_file(),
         }
     }
 
     /// A vault that only ever uses the file under `dir`. This is the
-    /// fallback path of D2.6 on purpose, and it is what the tests
+    /// fallback path of D2.6 on purpose, and it is what most tests
     /// drive: a test must never write into the person's own keychain,
     /// and on a machine with a real Secret Service it would.
     pub fn file_at(dir: impl AsRef<Path>) -> Self {
         Vault {
-            keychain: false,
+            keys: Keys::None,
+            file: dir.as_ref().join(FALLBACK_FILE),
+        }
+    }
+
+    /// A vault whose credential store is an in process one and whose
+    /// file sits under `dir`: the shape [`Vault::real`] has on a
+    /// machine with a working store, with both halves somewhere a test
+    /// may write. Behind `fake-api`.
+    #[cfg(feature = "fake-api")]
+    pub fn fake_keychain_at(dir: impl AsRef<Path>) -> Self {
+        Vault {
+            keys: Keys::Fake(std::sync::Arc::new(std::sync::Mutex::new(BTreeMap::new()))),
+            file: dir.as_ref().join(FALLBACK_FILE),
+        }
+    }
+
+    /// A vault that asks the OPERATING SYSTEM's credential store and
+    /// falls back to a file under `dir`. Behind `fake-api`, and only a
+    /// test that has installed keyring's mock credential builder may
+    /// build one: on a machine with a real Secret Service this writes
+    /// into the person's own keychain.
+    #[cfg(feature = "fake-api")]
+    pub fn os_keychain_at(dir: impl AsRef<Path>) -> Self {
+        Vault {
+            keys: Keys::Os,
             file: dir.as_ref().join(FALLBACK_FILE),
         }
     }
@@ -147,14 +328,14 @@ impl Vault {
     /// no library call touches a credential store by accident.
     pub fn none() -> Self {
         Vault {
-            keychain: false,
+            keys: Keys::None,
             file: PathBuf::new(),
         }
     }
 
     /// Whether this vault can hold anything at all.
     pub fn is_none(&self) -> bool {
-        !self.keychain && self.file.as_os_str().is_empty()
+        matches!(self.keys, Keys::None) && self.file.as_os_str().is_empty()
     }
 
     /// The file this vault falls back to.
@@ -167,11 +348,9 @@ impl Vault {
         if self.is_none() {
             return None;
         }
-        if self.keychain {
-            if let Some(text) = keychain_get(SERVICE, &user_key(host, login)) {
-                if let Ok(record) = serde_json::from_str::<Record>(&text) {
-                    return Some((record, Source::Keychain));
-                }
+        if let Some(text) = self.keys.get(SERVICE, &user_key(host, login)) {
+            if let Ok(record) = serde_json::from_str::<Record>(&text) {
+                return Some((record, Source::Keychain));
             }
         }
         let file = self.read_file();
@@ -187,11 +366,9 @@ impl Vault {
             return Vec::new();
         }
         let mut logins: Vec<String> = Vec::new();
-        if self.keychain {
-            if let Some(text) = keychain_get(INDEX_SERVICE, host) {
-                if let Ok(known) = serde_json::from_str::<Vec<String>>(&text) {
-                    logins.extend(known);
-                }
+        if let Some(text) = self.keys.get(INDEX_SERVICE, host) {
+            if let Ok(known) = serde_json::from_str::<Vec<String>>(&text) {
+                logins.extend(known);
             }
         }
         for login in self.read_file().logins(host) {
@@ -210,38 +387,75 @@ impl Vault {
         }
         let login = record.login.as_deref();
         let text = serde_json::to_string(record).map_err(|e| e.to_string())?;
-        if self.keychain && keychain_put(SERVICE, &user_key(host, login), &text) {
+        if self
+            .keys
+            .put_checked(SERVICE, &user_key(host, login), &text)
+        {
             self.index_add(host, login);
             return Ok(Source::Keychain);
         }
-        let mut file = self.read_file();
+        let guard = self.hold_file()?;
+        let mut file = self.read_file_to_modify()?;
         file.put(host, record.clone());
-        self.write_file(&file)?;
+        let written = self.write_file(&file);
+        drop(guard);
+        written?;
         Ok(Source::File)
     }
 
     /// Remove one record from wherever it is. Answers which store held
-    /// it, and `None` when nothing was there.
-    pub fn remove(&self, host: &str, login: Option<&str>) -> Option<Source> {
+    /// it, `Ok(None)` when nothing was there, and an error when the
+    /// entry is still there because joy could not write the file: D2.4
+    /// answers `"removed": true`, so a read only or full state
+    /// directory has to be a refusal and never a silent success.
+    pub fn remove(&self, host: &str, login: Option<&str>) -> Result<Option<Source>, String> {
         if self.is_none() {
-            return None;
+            return Ok(None);
         }
         let mut removed = None;
-        if self.keychain && keychain_remove(SERVICE, &user_key(host, login)) {
+        if self.keys.delete(SERVICE, &user_key(host, login)) {
             self.index_remove(host, login);
             removed = Some(Source::Keychain);
         }
-        let mut file = self.read_file();
+        let guard = match self.hold_file() {
+            Ok(guard) => guard,
+            // The credential store already gave the entry up, so the
+            // call did what it said; the file half is reported as it
+            // is, and a vault that has no file at all has nothing to
+            // report.
+            Err(message) if removed.is_some() => {
+                eprintln!("joy: {message}");
+                return Ok(removed);
+            }
+            Err(message) => return Err(message),
+        };
+        let mut file = match self.read_file_to_modify() {
+            Ok(file) => file,
+            // Same rule as above: the credential store already gave the
+            // entry up, so the call did what it said.
+            Err(message) if removed.is_some() => {
+                eprintln!("joy: {message}");
+                return Ok(removed);
+            }
+            Err(message) => return Err(message),
+        };
         if file.remove(host, login) {
-            let _ = self.write_file(&file);
-            removed = removed.or(Some(Source::File));
+            let written = self.write_file(&file);
+            drop(guard);
+            match written {
+                Ok(()) => removed = removed.or(Some(Source::File)),
+                Err(message) if removed.is_some() => eprintln!("joy: {message}"),
+                Err(message) => return Err(message),
+            }
         }
-        removed
+        Ok(removed)
     }
 
     fn index_add(&self, host: &str, login: Option<&str>) {
         let Some(login) = login else { return };
-        let mut logins: Vec<String> = keychain_get(INDEX_SERVICE, host)
+        let mut logins: Vec<String> = self
+            .keys
+            .get(INDEX_SERVICE, host)
             .and_then(|text| serde_json::from_str(&text).ok())
             .unwrap_or_default();
         if logins.iter().any(|known| known == login) {
@@ -249,13 +463,13 @@ impl Vault {
         }
         logins.push(login.to_string());
         if let Ok(text) = serde_json::to_string(&logins) {
-            keychain_put(INDEX_SERVICE, host, &text);
+            self.keys.put_checked(INDEX_SERVICE, host, &text);
         }
     }
 
     fn index_remove(&self, host: &str, login: Option<&str>) {
         let Some(login) = login else { return };
-        let Some(text) = keychain_get(INDEX_SERVICE, host) else {
+        let Some(text) = self.keys.get(INDEX_SERVICE, host) else {
             return;
         };
         let Ok(mut logins) = serde_json::from_str::<Vec<String>>(&text) else {
@@ -263,12 +477,15 @@ impl Vault {
         };
         logins.retain(|known| known != login);
         if logins.is_empty() {
-            keychain_remove(INDEX_SERVICE, host);
+            self.keys.delete(INDEX_SERVICE, host);
         } else if let Ok(text) = serde_json::to_string(&logins) {
-            keychain_put(INDEX_SERVICE, host, &text);
+            self.keys.put_checked(INDEX_SERVICE, host, &text);
         }
     }
 
+    /// The document as it stands, for a READ. A file that is not there
+    /// and a file that cannot be read answer the same thing, because a
+    /// read has nothing better to say.
     fn read_file(&self) -> FileVault {
         if self.file.as_os_str().is_empty() {
             return FileVault::default();
@@ -277,6 +494,53 @@ impl Vault {
             .ok()
             .and_then(|text| serde_json::from_str(&text).ok())
             .unwrap_or_default()
+    }
+
+    /// The document as it stands, for a READ-MODIFY-WRITE.
+    ///
+    /// Here the difference matters: rewriting a document that did not
+    /// parse would replace every credential in it with the one entry
+    /// this call is about. "Not there" is an empty document; "there and
+    /// unreadable" is a refusal.
+    fn read_file_to_modify(&self) -> Result<FileVault, String> {
+        if self.file.as_os_str().is_empty() {
+            return Err("this connector call keeps no credentials".to_string());
+        }
+        let text = match std::fs::read_to_string(&self.file) {
+            Ok(text) => text,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(FileVault::default())
+            }
+            Err(error) => return Err(format!("{}: {error}", self.file.display())),
+        };
+        if text.trim().is_empty() {
+            return Ok(FileVault::default());
+        }
+        serde_json::from_str(&text).map_err(|error| {
+            format!(
+                "{} is not a credential file joy can read ({error}); joy will not overwrite it",
+                self.file.display()
+            )
+        })
+    }
+
+    /// Hold the document for a read-modify-write.
+    ///
+    /// The refresh lock of D2.6a is keyed by host and login, and this
+    /// file is one document for all of them, so that lock does not
+    /// serialise two logins of one host against each other. This one
+    /// does, on the same primitive, beside the file it protects.
+    ///
+    /// Lock order in the whole connector is refresh lock first, then
+    /// this one, and never the other way round.
+    fn hold_file(&self) -> Result<joy_core::util::file_lock::FileLock, String> {
+        if self.file.as_os_str().is_empty() {
+            return Err("this connector call keeps no credentials".to_string());
+        }
+        let mut path = self.file.clone().into_os_string();
+        path.push(".lock");
+        super::lock::take_at(Path::new(&path))
+            .map_err(|busy| format!("{}: {busy}", self.file.display()))
     }
 
     fn write_file(&self, vault: &FileVault) -> Result<(), String> {
@@ -360,39 +624,6 @@ pub fn user_key(host: &str, login: Option<&str>) -> String {
     }
 }
 
-/// One entry read. Never `new_with_target`, and never a foreign
-/// service: this reads what this binary wrote and nothing else.
-fn keychain_get(service: &str, user: &str) -> Option<String> {
-    let entry = keyring::Entry::new(service, user).ok()?;
-    // `NoEntry` is the normal answer for a host nobody signed in to;
-    // `NoStorageAccess` and `PlatformFailure` are a store that could not
-    // answer. Both end here, and the caller falls through to the 0600
-    // file of D2.6.
-    entry.get_password().ok()
-}
-
-/// One entry written, then read back through a NEW entry.
-///
-/// The read back is the mock detector of D2.6: keyring's in process
-/// mock keeps the password inside the `Entry` object, so a second entry
-/// for the same service and user finds nothing, and joy must write its
-/// own file instead of believing a store that stored nothing.
-fn keychain_put(service: &str, user: &str, secret: &str) -> bool {
-    let Ok(entry) = keyring::Entry::new(service, user) else {
-        return false;
-    };
-    if entry.set_password(secret).is_err() {
-        return false;
-    }
-    keychain_get(service, user).as_deref() == Some(secret)
-}
-
-fn keychain_remove(service: &str, user: &str) -> bool {
-    keyring::Entry::new(service, user)
-        .ok()
-        .is_some_and(|entry| entry.delete_credential().is_ok())
-}
-
 /// `<config>/forge-tokens.json`, in joy's own configuration directory.
 fn default_file() -> PathBuf {
     let dirs = crate::config::joy_config_dirs();
@@ -410,6 +641,14 @@ fn default_file() -> PathBuf {
 /// (D2.6). On Windows the directory's inherited ACL is what protects
 /// it, which is the same protection `%APPDATA%` gives every other
 /// credential file on that system.
+///
+/// The write is a STAGING FILE AND A RENAME, never a truncate and a
+/// write. A reader of this file maps "does not parse" to "nothing is
+/// stored", so a crash between the truncate and the last byte would
+/// make every credential on the machine disappear and every `token`
+/// call answer `no-login`. A rename inside one directory replaces the
+/// name in one step on every system joy ships to, so no reader ever
+/// sees half a document.
 fn write_private(path: &Path, text: &str) -> Result<(), String> {
     use std::io::Write;
     if let Some(parent) = path.parent() {
@@ -418,26 +657,52 @@ fn write_private(path: &Path, text: &str) -> Result<(), String> {
             private_dir(parent);
         }
     }
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
+    let staging = staging_path(path);
+    let write = |staging: &Path| -> Result<(), String> {
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options
+            .open(staging)
+            .map_err(|e| format!("{}: {e}", staging.display()))?;
+        // An existing staging file keeps its old mode when it is
+        // reopened, so the mode is set again rather than trusted.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(staging, std::fs::Permissions::from_mode(0o600));
+        }
+        file.write_all(text.as_bytes())
+            .map_err(|e| format!("{}: {e}", staging.display()))?;
+        // The bytes reach the disk before the name does, so a machine
+        // that loses power after the rename finds the new document and
+        // not an empty one.
+        file.sync_all()
+            .map_err(|e| format!("{}: {e}", staging.display()))?;
+        Ok(())
+    };
+    if let Err(message) = write(&staging) {
+        let _ = std::fs::remove_file(&staging);
+        return Err(message);
     }
-    let mut file = options
-        .open(path)
-        .map_err(|e| format!("{}: {e}", path.display()))?;
-    file.write_all(text.as_bytes())
-        .map_err(|e| format!("{}: {e}", path.display()))?;
-    // An existing file keeps its old mode when it is reopened, so the
-    // mode is set again rather than trusted.
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+    if let Err(error) = std::fs::rename(&staging, path) {
+        let _ = std::fs::remove_file(&staging);
+        return Err(format!("{}: {error}", path.display()));
     }
     Ok(())
+}
+
+/// The staging file of one document: the same name with `.new` after
+/// it, in the same directory, because a rename is only atomic inside
+/// one file system.
+fn staging_path(path: &Path) -> PathBuf {
+    let mut name = path.as_os_str().to_os_string();
+    name.push(".new");
+    PathBuf::from(name)
 }
 
 #[cfg(unix)]
@@ -490,10 +755,13 @@ mod tests {
         assert_eq!(logins, vec!["scotty".to_string(), "work".to_string()]);
         // two logins and no name: D4.1c decides that, not the vault
         assert!(vault.get("github.com", None).is_none());
-        assert_eq!(vault.remove("github.com", Some("work")), Some(Source::File));
+        assert_eq!(
+            vault.remove("github.com", Some("work")),
+            Ok(Some(Source::File))
+        );
         // now there is only one, so an unnamed ask finds it
         assert_eq!(vault.get("github.com", None).unwrap().0.token, "gho_b");
-        assert_eq!(vault.remove("github.com", Some("nobody")), None);
+        assert_eq!(vault.remove("github.com", Some("nobody")), Ok(None));
     }
 
     /// The fallback file is joy's own, and D2.6 says what it must look
@@ -526,7 +794,7 @@ mod tests {
         assert!(vault.get("github.com", None).is_none());
         assert!(vault.logins("github.com").is_empty());
         assert!(vault.put("github.com", &record("gho_a", "work")).is_err());
-        assert_eq!(vault.remove("github.com", None), None);
+        assert_eq!(vault.remove("github.com", None), Ok(None));
     }
 
     #[test]
@@ -543,6 +811,192 @@ mod tests {
         record.refresh_token = Some("r".into());
         record.token_endpoint = Some("https://example.test/token".into());
         assert!(record.can_refresh());
+    }
+
+    /// D2.6: the file is ONE document for every host and every login,
+    /// and the refresh lock of D2.6a is per host and login, so the
+    /// document has a lock of its own. Two writers for two logins of
+    /// one host must both survive.
+    #[test]
+    fn two_logins_of_one_host_written_at_once_both_survive() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = Vault::file_at(dir.path());
+        let writers: Vec<_> = ["scotty", "work", "ci", "release"]
+            .into_iter()
+            .map(|login| {
+                let vault = vault.clone();
+                std::thread::spawn(move || {
+                    vault
+                        .put("github.com", &record(&format!("gho_{login}"), login))
+                        .expect("the entry is written")
+                })
+            })
+            .collect();
+        for writer in writers {
+            assert_eq!(writer.join().unwrap(), Source::File);
+        }
+        let mut logins = vault.logins("github.com");
+        logins.sort();
+        assert_eq!(logins, vec!["ci", "release", "scotty", "work"]);
+        for login in ["scotty", "work", "ci", "release"] {
+            let (found, _) = vault.get("github.com", Some(login)).unwrap();
+            assert_eq!(found.token, format!("gho_{login}"));
+        }
+    }
+
+    /// The document lock is taken, and not merely documented: a second
+    /// writer waits for whoever holds it. flock belongs to the open
+    /// file description, so a second handle in this process contends
+    /// exactly as a second process does.
+    #[test]
+    fn a_writer_waits_for_the_document_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = Vault::file_at(dir.path());
+        vault.put("github.com", &record("gho_a", "work")).unwrap();
+        let mut lock_path = vault.file().to_path_buf().into_os_string();
+        lock_path.push(".lock");
+        let held = super::super::lock::take_at(Path::new(&lock_path)).expect("the document lock");
+        let (finished, waited) = std::sync::mpsc::channel();
+        let writer = {
+            let vault = vault.clone();
+            std::thread::spawn(move || {
+                let outcome = vault.put("github.com", &record("gho_b", "scotty"));
+                let _ = finished.send(());
+                outcome
+            })
+        };
+        assert!(
+            waited
+                .recv_timeout(std::time::Duration::from_millis(300))
+                .is_err(),
+            "a writer must wait for the document lock, not write beside it"
+        );
+        drop(held);
+        assert_eq!(writer.join().unwrap().unwrap(), Source::File);
+        assert_eq!(
+            vault.get("github.com", Some("work")).unwrap().0.token,
+            "gho_a",
+            "the first entry survived the second writer"
+        );
+        assert_eq!(
+            vault.get("github.com", Some("scotty")).unwrap().0.token,
+            "gho_b"
+        );
+    }
+
+    /// D2.6's keychain half, executed: the entry addressing, the login
+    /// index that `Entry::new` cannot enumerate, and the removal.
+    ///
+    /// The store here is an in process one with the semantics of an
+    /// operating system's (it persists across `Entry` objects); the
+    /// keyring call itself is the one line this cannot cover, and the
+    /// case below covers what happens when a store does NOT persist.
+    #[test]
+    #[cfg(feature = "fake-api")]
+    fn the_credential_store_holds_the_entry_the_index_and_nothing_in_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = Vault::fake_keychain_at(dir.path());
+        assert_eq!(
+            vault.put("github.com", &record("gho_a", "work")).unwrap(),
+            Source::Keychain
+        );
+        vault.put("github.com", &record("gho_b", "scotty")).unwrap();
+        let (found, source) = vault.get("github.com", Some("scotty")).unwrap();
+        assert_eq!(found.token, "gho_b");
+        assert_eq!(source, Source::Keychain);
+        assert!(
+            !vault.file().exists(),
+            "a store that answered means no 0600 file at all"
+        );
+        // `Entry::new` cannot enumerate, so the logins live in an index
+        // entry of their own, and D4.1c's step 3 and its probe order
+        // both read it.
+        let mut logins = vault.logins("github.com");
+        logins.sort();
+        assert_eq!(logins, vec!["scotty".to_string(), "work".to_string()]);
+        assert_eq!(
+            vault.remove("github.com", Some("work")),
+            Ok(Some(Source::Keychain))
+        );
+        assert_eq!(vault.logins("github.com"), vec!["scotty".to_string()]);
+        assert!(vault.get("github.com", Some("work")).is_none());
+        // the last login goes, and the index goes with it
+        assert_eq!(
+            vault.remove("github.com", Some("scotty")),
+            Ok(Some(Source::Keychain))
+        );
+        assert!(vault.logins("github.com").is_empty());
+        assert_eq!(vault.remove("github.com", Some("scotty")), Ok(None));
+    }
+
+    /// The mock detector of D2.6, against the store it was written for.
+    ///
+    /// keyring's own mock keeps the password inside the `Entry` object
+    /// (`CredentialPersistence::EntryOnly`), so the read back through a
+    /// NEW entry finds nothing. joy must then write its own 0600 file
+    /// instead of believing a store that stored nothing, and must say
+    /// `"stored":"file"` truthfully.
+    #[test]
+    #[cfg(feature = "fake-api")]
+    fn a_store_that_persists_nothing_is_detected_and_the_file_takes_over() {
+        keyring::set_default_credential_builder(keyring::mock::default_credential_builder());
+        let dir = tempfile::tempdir().unwrap();
+        let vault = Vault::os_keychain_at(dir.path());
+        assert_eq!(
+            vault.put("github.com", &record("gho_a", "work")).unwrap(),
+            Source::File,
+            "a store that cannot answer with what was just written did not persist it"
+        );
+        let (found, source) = vault.get("github.com", Some("work")).unwrap();
+        assert_eq!(found.token, "gho_a");
+        assert_eq!(source, Source::File);
+        assert!(vault.file().exists(), "the 0600 file of D2.6 took over");
+        assert_eq!(vault.logins("github.com"), vec!["work".to_string()]);
+        assert_eq!(
+            vault.remove("github.com", Some("work")),
+            Ok(Some(Source::File))
+        );
+    }
+
+    /// A document that does not parse is not a document to overwrite: a
+    /// reader maps "does not parse" to "nothing is stored", so writing
+    /// one entry over it would throw every other credential away.
+    #[test]
+    fn a_document_joy_cannot_read_is_never_overwritten() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = Vault::file_at(dir.path());
+        let damaged = "{ this is not what joy wrote";
+        std::fs::write(vault.file(), damaged).unwrap();
+        assert!(vault.put("github.com", &record("gho_a", "work")).is_err());
+        assert!(vault.remove("github.com", Some("work")).is_err());
+        assert_eq!(std::fs::read_to_string(vault.file()).unwrap(), damaged);
+        // An EMPTY file is not damage: it is a file nothing was written
+        // to yet, and the next write fills it.
+        std::fs::write(vault.file(), "").unwrap();
+        assert_eq!(
+            vault.put("github.com", &record("gho_a", "work")).unwrap(),
+            Source::File
+        );
+    }
+
+    /// The write is a staging file and a rename, so no reader ever sees
+    /// half a document and no crash can empty the file.
+    #[test]
+    fn a_write_leaves_no_staging_file_behind_and_replaces_the_document_whole() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = Vault::file_at(dir.path());
+        vault.put("github.com", &record("gho_a", "work")).unwrap();
+        let staging = staging_path(vault.file());
+        assert!(!staging.exists(), "the staging file is renamed, not left");
+        // Something in the staging file's place is a refusal, not a
+        // half written document: the entry that was there stays.
+        std::fs::create_dir(&staging).unwrap();
+        assert!(vault.put("github.com", &record("gho_b", "scotty")).is_err());
+        assert_eq!(
+            vault.get("github.com", Some("work")).unwrap().0.token,
+            "gho_a"
+        );
+        assert!(vault.get("github.com", Some("scotty")).is_none());
     }
 
     /// The record carries the granted set beside the token in the same

@@ -318,7 +318,18 @@ that trusts the creating application alone.
 - A token past its lifetime is refreshed under a cross process lock,
   one per host and login, in `<app state>/locks/`. The waiter never
   refreshes anyway: it looks again and, finding nothing usable,
-  answers `{"known": false, "reason": "busy"}`.
+  answers `{"known": false, "reason": "busy"}`. Every call that may
+  write takes it: `token`, `login`, `token-store` and `logout`.
+- The 0600 file is ONE document for every host and login, while that
+  lock is per host and login, so a read-modify-write of the file takes
+  one more whole file lock beside the document, and the document is
+  written to a staging file and renamed into place. Neither is
+  decoration: without the first, two logins of one host signing in at
+  once lose an entry; without the second, a crash mid write leaves a
+  file that does not parse, which reads as "nothing is stored".
+- A `--host-kind delegated` call never opens this person's credential
+  store at all. Its credential travels in the variable the caller named
+  (`--token-env`), and the interactive verbs are refused there anyway.
 
 Which login answers for a remote is decided in one order, and every
 answer says which step decided (`chose_by`): the device local pin for
@@ -326,7 +337,18 @@ that host in that project (`forgeLogin` in the project's app state
 file, never in the committed `project.yaml`), then the login the
 memory recorded for this remote, then the only login the host holds,
 then one probe per candidate (one REST call for `owner/repo`), and
-otherwise `{"known": false, "reason": "no-login-for-repo"}`.
+otherwise `{"known": false, "reason": "no-login-for-repo"}`. The same
+order runs inside every verb that needs a credential, not only inside
+`token`, and one remote is probed at most once per call.
+
+Two rules keep that order honest. The memory records only a login the
+forge reported as able to PUSH, because that is what the memory means
+and because a later push must not take a read-only login from it for
+free. And a forge that could not be ASKED is never reported as "none of
+your logins can reach this repository": a transport failure is evidence
+about the network and none about any login, so the memory of that
+remote stays where it is and the answer says the forge could not be
+asked.
 
 ### Scopes, and the `scope_missing` answer
 
@@ -453,13 +475,20 @@ it hung). Each one carries the file that answered.
   self hosted instance, which may sit under a nested sub path or behind
   a different ssh domain. No credential and no request.
 
-- `joy-<name> token --remote <url> | --host <h> [--login <name>]`
+- `joy-<name> token --remote <url> | --host <h> [--for read|write|create|release] [--login <name>]`
   The credential this machine holds, and which login it belongs to.
   Answer:
   `{"known":true,"host":"github.com","login":"scotty","token":"gho_...",`
   `"username":"x-access-token","source":"keychain|file|gh|glab|tea|env",`
   `"scopes":"repo user:email","expires_at":null,"chose_by":"pin|memory|only|probe"}`,
   or `{"known":false,"reason":"no-login|no-keychain|unsupported-host|no-login-for-repo|busy"}`.
+  `--for` is the DIRECTION the credential is wanted for, and it decides
+  what the probe accepts: `write`, `create` and `release` take only a
+  login the forge reports as able to push, `read` takes the first that
+  sees the repository, and without the flag a login that can push wins
+  over one that can only read but a reader is still an answer. Without
+  it a login with read-only rights answers 200 for a private repository,
+  wins the probe, and the push then fails under the wrong account.
 
 - `joy-<name> token-store --host <h> [--login <name>]`
   Read ONE token from **stdin**, validate it against the instance's own
@@ -489,6 +518,14 @@ it hung). Each one carries the file that answered.
   `.../grant`, which would kill every token of that app for the
   person). A credential a forge CLI owns is not joy's to remove: the
   answer names the foreign command in `command` and removes nothing.
+  This verb WRITES, so it takes the same refresh lock every other
+  writing verb takes; a call that cannot take it answers
+  `"removed": false` with `"reason": "busy"` rather than deleting an
+  entry another process is renewing. `"removed": true` means the entry
+  is gone: where the store or the file refused the write, the answer
+  says `false` and carries the reason in `message`. On a host that
+  holds several of joy's own logins with none of them named, nothing is
+  removed and the answer names them in `logins` and asks for `--login`.
 
 - `joy-<name> release --remote <url> --tag <t> --title <t> --notes-file <path>`
   (JOY-0256-64) Create — or complete — the release for this tag on

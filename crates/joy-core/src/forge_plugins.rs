@@ -2083,6 +2083,32 @@ pub struct ForgeToken {
     pub message: Option<String>,
 }
 
+/// What a call asks a credential FOR (`--for`, D2.7a and D4.1c). The
+/// words are the connector's; this is the list joy may send.
+///
+/// It lives here and not in [`interactive`] because two verbs take it:
+/// `login`, which is compiled out of the builds that must not sign in
+/// (D3.11), and `token`, which is a read verb and stays everywhere.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Access {
+    Read,
+    #[default]
+    Write,
+    Create,
+    Release,
+}
+
+impl Access {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Access::Read => "read",
+            Access::Write => "write",
+            Access::Create => "create",
+            Access::Release => "release",
+        }
+    }
+}
+
 /// The credential this machine holds for a host, and which login it
 /// belongs to (D2.4).
 ///
@@ -2090,12 +2116,39 @@ pub struct ForgeToken {
 /// from the forge's own environment variables or by spawning the forge
 /// CLI, and it never raises a prompt. It is therefore not one of the
 /// interactive verbs of D3.11 and stays compiled into every build.
+///
+/// No direction is stated here. Where the caller knows one, it asks
+/// with [`token_for`]: on a host with several logins the direction is
+/// what tells a login that may only READ the repository from one that
+/// may push to it (D4.1c).
 pub fn token(
     spec: &ForgePluginSpec,
     target: &Target,
     ctx: &CallContext,
 ) -> Result<ForgeToken, PluginError> {
     query(spec, "token", Some(target), &[], ctx)
+}
+
+/// [`token`] for a stated direction (`--for`, D4.1c's step 4: "the
+/// first that answers 200, and for a push direction reports write,
+/// wins").
+///
+/// A push that takes the credential of a login with read-only rights
+/// fails with 403 under an account that was never going to work, and
+/// the person is told their own repository refused them.
+pub fn token_for(
+    spec: &ForgePluginSpec,
+    target: &Target,
+    access: Access,
+    ctx: &CallContext,
+) -> Result<ForgeToken, PluginError> {
+    query(
+        spec,
+        "token",
+        Some(target),
+        &["--for", access.as_str()],
+        ctx,
+    )
 }
 
 pub mod interactive;

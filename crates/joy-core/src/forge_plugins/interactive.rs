@@ -39,27 +39,10 @@ use super::{
 };
 use crate::host::HostKind;
 
-/// What a sign in asks for (`--for`, D2.7a). The words are the
-/// connector's; this is the list joy may send.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Access {
-    Read,
-    #[default]
-    Write,
-    Create,
-    Release,
-}
-
-impl Access {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Access::Read => "read",
-            Access::Write => "write",
-            Access::Create => "create",
-            Access::Release => "release",
-        }
-    }
-}
+/// The word list of `--for`. It lives beside the read verbs, because
+/// `token` takes the same flag and stays in every build; this module is
+/// the one D3.11 compiles out.
+pub use super::Access;
 
 /// The sentence of D3.11 for a host that has no person at it. It names
 /// the headless door, because refusing without one would leave a CI
@@ -105,6 +88,19 @@ pub struct LogoutOutcome {
     /// joy never removes one itself (D2.6).
     #[serde(default)]
     pub command: Option<String>,
+    /// `busy` where another joy process is writing this credential:
+    /// `logout` writes, so it takes the refresh lock of D2.6a and never
+    /// deletes an entry beside a refresh.
+    #[serde(default)]
+    pub reason: Option<String>,
+    /// The logins this host holds, when there are several of joy's own
+    /// and the call named none. Nothing is removed then, and the caller
+    /// asks which one.
+    #[serde(default)]
+    pub logins: Vec<String>,
+    /// Why nothing was removed, where the connector wrote a sentence.
+    #[serde(default)]
+    pub message: Option<String>,
 }
 
 /// Sign in to a forge.

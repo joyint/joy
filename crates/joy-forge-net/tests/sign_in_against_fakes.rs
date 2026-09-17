@@ -136,7 +136,7 @@ fn a_device_login_streams_its_events_and_stores_the_token() {
 
     // And afterwards `token` answers with the stored credential, the
     // granted set and the login it belongs to (D2.4, D4.1c).
-    let answer = verbs::token(&forge, &Target::Host("forge.test".into()), &ctx);
+    let answer = verbs::token(&forge, &Target::Host("forge.test".into()), None, &ctx);
     assert_eq!(answer["known"], true);
     assert_eq!(answer["token"], "gho_from_the_fake");
     assert_eq!(answer["login"], "scotty");
@@ -318,6 +318,70 @@ fn a_pkce_login_answers_the_loopback_redirect_and_exchanges_the_code() {
     );
 }
 
+/// D2.4: "newline delimited JSON on stdout, one object per line, each
+/// flushed", and that is why the `waiting` ticks have to leave the
+/// connector WHILE it waits. A Gitea, Forgejo or Codeberg sign in waits
+/// up to fifteen minutes for the person; a connector that collected the
+/// ticks and printed them afterwards would be silent for all of it and
+/// then replay nine hundred stale lines at once.
+#[test]
+fn a_pkce_login_reports_the_seconds_left_while_it_is_still_waiting() {
+    let fake = FakeForge::start(|call| match call.path.as_str() {
+        _ if call.path.starts_with("/login/oauth/access_token") => {
+            Reply::json(200, r#"{"access_token":"gitea_token","expires_in":3600}"#)
+        }
+        "/user" => Reply::json(200, r#"{"login":"scotty","id":12345}"#),
+        _ => Reply::not_found(),
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let base = fake.base();
+    let root = dir.path().to_path_buf();
+    let (tx, rx) = std::sync::mpsc::channel::<Value>();
+    let handle = std::thread::spawn(move || {
+        let forge = TestForge::pkce(base);
+        let ctx = interactive(
+            Ctx::bare(root.join("project"))
+                .with_vault(Vault::file_at(root.join("config")))
+                .with_state_dir(root.join("state")),
+        );
+        let mut sink = Channel(tx);
+        verbs::login(
+            &forge,
+            &Target::Host("forge.test".into()),
+            Purpose::Write,
+            &ctx,
+            &mut sink,
+            &NoWait::default(),
+        )
+    });
+
+    let verification = rx
+        .recv_timeout(std::time::Duration::from_secs(15))
+        .expect("the verification event");
+    let url = verification["url"].as_str().unwrap().to_string();
+    let query = url.split_once('?').unwrap().1;
+    let state = field(query, "state");
+    let redirect = field(query, "redirect_uri");
+    let port: u16 = redirect.rsplit(':').next().unwrap().parse().unwrap();
+
+    // Nobody has opened the browser yet, and the connector is still
+    // waiting. The next event has to arrive anyway: the tick is about
+    // one a second.
+    let ticked = rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("a waiting event while the sign in is still running");
+    assert_eq!(
+        ticked["event"], "waiting",
+        "the seconds left are reported during the wait, not after it"
+    );
+    assert!(ticked["seconds_left"].as_i64().unwrap() > 0, "{ticked:?}");
+
+    knock(port, &format!("/?code=the-code&state={state}"));
+    assert_eq!(handle.join().unwrap(), 0);
+    let events: Vec<Value> = rx.try_iter().collect();
+    assert_eq!(events_of(&events, "result").len(), 1);
+}
+
 /// A redirect that does not carry this attempt's own state is a cross
 /// site request, and the code is never spent on it.
 #[test]
@@ -434,7 +498,7 @@ fn token_store_validates_the_token_with_the_forge_before_it_stores_it() {
     assert_eq!(refused["known"], false);
     assert_eq!(refused["reason"], "no-login");
     assert!(
-        verbs::token(&forge, &host, &ctx)["known"] == false,
+        verbs::token(&forge, &host, None, &ctx)["known"] == false,
         "a token the forge refused is never stored"
     );
 
@@ -451,7 +515,7 @@ fn token_store_validates_the_token_with_the_forge_before_it_stores_it() {
     assert_eq!(stored["chose_by"], "only");
 
     // and it is there for the next call
-    let again = verbs::token(&forge, &host, &ctx);
+    let again = verbs::token(&forge, &host, None, &ctx);
     assert_eq!(again["token"], "the-right-token");
     assert_eq!(again["login"], "scotty");
 
@@ -510,7 +574,7 @@ fn logout_removes_the_entry_and_revokes_the_token_at_the_forge() {
             .any(|call| call.path.ends_with("/grant")),
         "deleting the grant would kill every token of this app for the person"
     );
-    assert_eq!(verbs::token(&forge, &host, &ctx)["known"], false);
+    assert_eq!(verbs::token(&forge, &host, None, &ctx)["known"], false);
 }
 
 /// D2.4, D2.6: a credential joy did not write is not joy's to remove.
@@ -529,6 +593,155 @@ fn logout_names_the_foreign_command_for_a_foreign_credential() {
     assert_eq!(answer["revoked"], false);
     assert_eq!(answer["source"], "gh");
     assert_eq!(answer["command"], "gh auth logout --hostname forge.test");
+}
+
+/// D2.6a, verbatim: "the lock lives in the plugin and is taken by every
+/// `token`, `login`, `token-store` and `logout` call that may write".
+///
+/// `logout` writes: it deletes the entry. Without the lock a refresh
+/// running beside it re reads the entry under its own lock, sees the
+/// record this call is about to delete, renews it and writes it back,
+/// and the credential the person just revoked is alive again.
+#[test]
+fn logout_takes_the_refresh_lock_and_never_deletes_beside_a_refresh() {
+    let fake = FakeForge::start(|_| Reply::text(204, ""));
+    let dir = tempfile::tempdir().unwrap();
+    let forge = TestForge::device(fake.base());
+    let ctx = sandbox(dir.path());
+    let host = Target::Host("forge.test".into());
+    ctx.vault()
+        .put(
+            "forge.test",
+            &Record {
+                token: "gho_stored".into(),
+                login: Some("scotty".into()),
+                client_id: Some("test-client".into()),
+                ..Record::default()
+            },
+        )
+        .unwrap();
+
+    // Somebody else holds the lock of exactly this host and login.
+    // flock keys on the open file description, so a second handle in
+    // this process contends exactly as a second process does.
+    let path = joy_forge_net::auth::lock::lock_path(
+        Some(&dir.path().join("state")),
+        "forge.test",
+        Some("scotty"),
+    )
+    .unwrap();
+    let held = joy_forge_net::auth::lock::take_at(&path).expect("the first lock");
+
+    let answer = verbs::logout(&forge, &host, &ctx);
+    assert_eq!(answer["removed"], false);
+    assert_eq!(answer["revoked"], false);
+    assert_eq!(answer["reason"], "busy");
+    assert!(
+        fake.calls().is_empty(),
+        "nothing is revoked either: the entry was never read"
+    );
+    // and the credential is still exactly where it was
+    assert_eq!(
+        verbs::token(&forge, &host, None, &ctx)["token"],
+        "gho_stored"
+    );
+    drop(held);
+
+    // With the lock free the same call removes it.
+    let answer = verbs::logout(&forge, &host, &ctx);
+    assert_eq!(answer["removed"], true);
+    assert_eq!(answer["login"], "scotty");
+    assert!(path.exists(), "the lock file is never unlinked");
+}
+
+/// D2.4: `logout` on a host that holds two of joy's OWN logins removes
+/// nothing and names them. Naming gh's command there would be a lie
+/// twice over: joy holds these credentials, and which one to sign out
+/// is not a thing this call may guess at.
+#[test]
+fn logout_on_a_host_with_two_logins_asks_which_one() {
+    let fake = FakeForge::start(|_| Reply::text(204, ""));
+    let dir = tempfile::tempdir().unwrap();
+    // gh is signed in here too, so the foreign branch is reachable and
+    // this proves the answer is not it.
+    let forge = TestForge::device(fake.base()).with_foreign(&["ci"]);
+    let ctx = sandbox(dir.path());
+    let host = Target::Host("forge.test".into());
+    for login in ["scotty", "work"] {
+        ctx.vault()
+            .put(
+                "forge.test",
+                &Record {
+                    token: format!("token-of-{login}"),
+                    login: Some(login.into()),
+                    ..Record::default()
+                },
+            )
+            .unwrap();
+    }
+
+    let answer = verbs::logout(&forge, &host, &ctx);
+    assert_eq!(answer["removed"], false);
+    assert_eq!(answer["revoked"], false);
+    assert!(answer["source"].is_null(), "{answer}");
+    assert!(answer.get("command").is_none(), "this is not gh's business");
+    let message = answer["message"].as_str().unwrap();
+    assert!(message.contains("scotty, work"), "{message}");
+    assert!(message.contains("--login"), "{message}");
+    assert_eq!(answer["logins"], json!(["scotty", "work"]));
+    // and nothing was removed
+    assert_eq!(ctx.vault().logins("forge.test").len(), 2);
+
+    // Named, it removes exactly the one named.
+    let named = sandbox(dir.path()).with_login("work");
+    let answer = verbs::logout(&forge, &host, &named);
+    assert_eq!(answer["removed"], true);
+    assert_eq!(answer["login"], "work");
+    assert_eq!(ctx.vault().logins("forge.test"), vec!["scotty".to_string()]);
+}
+
+/// J3's acceptance is "`logout` removes the entry". A state directory
+/// that could not be written is a refusal and never a reported success:
+/// answering `"removed": true` while the token is still in the file is
+/// the one thing this verb must not do.
+#[test]
+fn logout_that_could_not_write_the_file_does_not_report_success() {
+    let fake = FakeForge::start(|_| Reply::text(204, ""));
+    let dir = tempfile::tempdir().unwrap();
+    let forge = TestForge::device(fake.base());
+    let ctx = sandbox(dir.path());
+    let host = Target::Host("forge.test".into());
+    ctx.vault()
+        .put(
+            "forge.test",
+            &Record {
+                token: "gho_stored".into(),
+                login: Some("scotty".into()),
+                client_id: Some("test-client".into()),
+                ..Record::default()
+            },
+        )
+        .unwrap();
+    // The document is written through a staging file and a rename;
+    // something else in the staging file's place makes the write fail
+    // the way a full or read only directory does.
+    let mut staging = ctx.vault().file().to_path_buf().into_os_string();
+    staging.push(".new");
+    std::fs::create_dir(&staging).unwrap();
+
+    let answer = verbs::logout(&forge, &host, &ctx);
+    assert_eq!(
+        answer["removed"], false,
+        "the entry is still there, so the answer says so: {answer}"
+    );
+    assert_eq!(answer["revoked"], true, "the forge revocation did happen");
+    let message = answer["message"].as_str().unwrap();
+    assert!(message.contains("forge-tokens.json"), "{message}");
+    assert!(!message.contains("gho_stored"), "no secret in a message");
+    assert_eq!(
+        verbs::token(&forge, &host, None, &ctx)["token"],
+        "gho_stored"
+    );
 }
 
 /// D2.6a: an expired token is refreshed exactly once, the whole answer
@@ -578,7 +791,7 @@ fn an_expired_token_is_refreshed_once_and_the_rotation_is_written_back() {
         )
         .unwrap();
 
-    let first = verbs::token(&forge, &host, &ctx);
+    let first = verbs::token(&forge, &host, None, &ctx);
     assert_eq!(first["token"], "fresh-0");
     assert_eq!(first["scopes"], "repo user:email");
     assert_eq!(refreshes.load(Ordering::SeqCst), 1);
@@ -591,7 +804,10 @@ fn an_expired_token_is_refreshed_once_and_the_rotation_is_written_back() {
 
     // A fresh context reads the stored token and refreshes nothing.
     let second = sandbox(dir.path());
-    assert_eq!(verbs::token(&forge, &host, &second)["token"], "fresh-0");
+    assert_eq!(
+        verbs::token(&forge, &host, None, &second)["token"],
+        "fresh-0"
+    );
     assert_eq!(
         refreshes.load(Ordering::SeqCst),
         1,
@@ -640,7 +856,7 @@ fn a_held_refresh_lock_answers_busy_and_refreshes_nothing() {
     .unwrap();
     let held = joy_forge_net::auth::lock::take_at(&path).expect("the first lock");
 
-    let answer = verbs::token(&forge, &host, &ctx);
+    let answer = verbs::token(&forge, &host, None, &ctx);
     assert_eq!(answer["known"], false);
     assert_eq!(answer["reason"], "busy");
     assert_eq!(
@@ -686,7 +902,7 @@ fn a_repository_only_the_second_login_reaches_is_chosen_by_the_probe() {
     }
     let remote = "https://forge.test/acme/widgets.git";
     let ctx = sandbox(dir.path()).with_remote(remote);
-    let answer = verbs::token(&forge, &Target::Remote(remote.into()), &ctx);
+    let answer = verbs::token(&forge, &Target::Remote(remote.into()), None, &ctx);
     assert_eq!(answer["known"], true);
     assert_eq!(answer["login"], "work");
     assert_eq!(answer["token"], "token-of-work");
@@ -696,10 +912,211 @@ fn a_repository_only_the_second_login_reaches_is_chosen_by_the_probe() {
     // The winner is remembered per normalised remote, so the next call
     // spends nothing at all (D4.1c).
     let next = sandbox(dir.path()).with_remote(remote);
-    let again = verbs::token(&forge, &Target::Remote(remote.into()), &next);
+    let again = verbs::token(&forge, &Target::Remote(remote.into()), None, &next);
     assert_eq!(again["login"], "work");
     assert_eq!(again["chose_by"], "memory");
     assert_eq!(fake.calls().len(), 2, "the memory spends no request");
+}
+
+/// D4.1c, step 4, verbatim: "the first that answers 200, and for a push
+/// direction reports write, wins".
+///
+/// This is the section's own "This is not academic" case: a private
+/// repository where the login the probe reaches first holds Reporter
+/// rights and the other holds Developer rights. The first one answers
+/// 200, so a probe that reads nothing but the status hands the push to
+/// the account that cannot push, and the push then fails 403 under the
+/// wrong login.
+#[test]
+fn a_push_direction_refuses_a_login_that_can_only_read() {
+    let fake = FakeForge::start(|call| match call.path.as_str() {
+        "/repos/acme/widgets" => match call.authorization() {
+            // Reporter: sees the repository, may not push.
+            Some("Bearer token-of-scotty") => Reply::json(200, r#"{"permissions":{"push":false}}"#),
+            // Developer: both.
+            Some("Bearer token-of-work") => Reply::json(200, r#"{"permissions":{"push":true}}"#),
+            _ => Reply::not_found(),
+        },
+        _ => Reply::not_found(),
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let forge = TestForge::device(fake.base());
+    let base = sandbox(dir.path());
+    for login in ["scotty", "work"] {
+        base.vault()
+            .put(
+                "forge.test",
+                &Record {
+                    token: format!("token-of-{login}"),
+                    login: Some(login.into()),
+                    ..Record::default()
+                },
+            )
+            .unwrap();
+    }
+    // `scotty` is asked first, so a probe that stops at the first 200
+    // picks the login that cannot push.
+    let remote = Target::Remote("https://forge.test/acme/widgets.git".into());
+
+    let pushing = verbs::token(&forge, &remote, Some(Purpose::Write), &sandbox(dir.path()));
+    assert_eq!(pushing["login"], "work", "{pushing}");
+    assert_eq!(pushing["token"], "token-of-work");
+    assert_eq!(pushing["chose_by"], "probe");
+
+    // `--for create` and `--for release` push too.
+    let creating = verbs::token(&forge, &remote, Some(Purpose::Create), &sandbox(dir.path()));
+    assert_eq!(creating["login"], "work", "{creating}");
+
+    // Reading is a different question, and `scotty` answers it first.
+    let reading = verbs::token(&forge, &remote, Some(Purpose::Read), &sandbox(dir.path()));
+    assert_eq!(reading["login"], "scotty", "{reading}");
+
+    // No direction stated: a login that can push outranks one that can
+    // only read, and a caller that asked for nothing is never refused a
+    // credential that would have worked.
+    let neither = verbs::token(&forge, &remote, None, &sandbox(dir.path()));
+    assert_eq!(neither["login"], "work", "{neither}");
+}
+
+/// D4.1c is the order for a REMOTE, and `token` is not the only verb
+/// that needs one: `store`, `files`, `release`, `repositories` and
+/// `create-repository` all reach their credential through `Ctx::token`.
+/// A host with two logins, no pin and no memory is decided by the probe
+/// there too, or `joy release publish` publishes under whichever
+/// account the forge CLI last switched to.
+#[test]
+fn every_verb_reaches_its_credential_through_the_whole_login_order() {
+    let fake = FakeForge::start(|call| match call.path.as_str() {
+        "/repos/acme/widgets" => match call.authorization() {
+            Some("Bearer token-of-scotty") => Reply::json(200, r#"{"permissions":{"push":false}}"#),
+            Some("Bearer token-of-work") => Reply::json(200, r#"{"permissions":{"push":true}}"#),
+            _ => Reply::not_found(),
+        },
+        _ => Reply::not_found(),
+    });
+    let dir = tempfile::tempdir().unwrap();
+    // A forge lives as long as the binary does, which is what lets the
+    // context carry the one that answers.
+    let forge: &'static TestForge = Box::leak(Box::new(TestForge::device(fake.base())));
+    let filling = sandbox(dir.path());
+    for login in ["scotty", "work"] {
+        filling
+            .vault()
+            .put(
+                "forge.test",
+                &Record {
+                    token: format!("token-of-{login}"),
+                    login: Some(login.into()),
+                    ..Record::default()
+                },
+            )
+            .unwrap();
+    }
+    let remote = "https://forge.test/acme/widgets.git";
+    let ctx = sandbox(dir.path()).with_remote(remote).with_forge(forge);
+
+    // This is the call every verb makes.
+    assert_eq!(
+        ctx.token("github", "forge.test").as_deref(),
+        Some("token-of-work"),
+        "the verb takes the login that can push, not the first one stored"
+    );
+    let spent = fake.calls().len();
+    assert_eq!(spent, 2, "one request per candidate");
+    // One probe per remote, never one per contact (D4.1c): the same
+    // question inside the same call spends nothing.
+    assert_eq!(
+        ctx.token("github", "forge.test").as_deref(),
+        Some("token-of-work")
+    );
+    assert_eq!(fake.calls().len(), spent);
+    assert_eq!(
+        joy_forge_net::auth::pin::remembered(Some(&dir.path().join("state")), remote).as_deref(),
+        Some("work"),
+        "and the winner is remembered, so the next call spends nothing either"
+    );
+}
+
+/// D4.1c, step 5, for a push: a repository every login can read and
+/// none can push to is not "cannot reach", and the sentence says which
+/// it is.
+#[test]
+fn a_repository_nobody_may_push_to_says_that_and_not_something_else() {
+    let fake = FakeForge::start(|call| match call.path.as_str() {
+        "/repos/acme/widgets" => Reply::json(200, r#"{"permissions":{"push":false}}"#),
+        _ => Reply::not_found(),
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let forge = TestForge::device(fake.base());
+    let ctx = sandbox(dir.path());
+    for login in ["scotty", "work"] {
+        ctx.vault()
+            .put(
+                "forge.test",
+                &Record {
+                    token: format!("token-of-{login}"),
+                    login: Some(login.into()),
+                    ..Record::default()
+                },
+            )
+            .unwrap();
+    }
+    let answer = verbs::token(
+        &forge,
+        &Target::Remote("https://forge.test/acme/widgets.git".into()),
+        Some(Purpose::Write),
+        &ctx,
+    );
+    assert_eq!(answer["reason"], "no-login-for-repo");
+    let message = answer["message"].as_str().unwrap();
+    assert!(message.contains("can push to acme/widgets"), "{message}");
+}
+
+/// D1.8a: the classifier reads the evidence, and joy does not destroy
+/// it. A forge that could not be ASKED has told joy nothing about any
+/// login, so "none of your logins can reach this repository" is a claim
+/// this call has no ground for, and the login memory of the remote is
+/// the answer the next online call would get for free.
+#[test]
+fn a_forge_that_cannot_be_reached_is_not_a_login_that_cannot_reach_it() {
+    let dir = tempfile::tempdir().unwrap();
+    // Port 1 on the loopback interface refuses at once: this is the
+    // laptop off the network, with no real network touched.
+    let forge = TestForge::device("http://127.0.0.1:1");
+    let state = dir.path().join("state");
+    let ctx = sandbox(dir.path());
+    for login in ["scotty", "work"] {
+        ctx.vault()
+            .put(
+                "forge.test",
+                &Record {
+                    token: format!("token-of-{login}"),
+                    login: Some(login.into()),
+                    ..Record::default()
+                },
+            )
+            .unwrap();
+    }
+    let remote = "https://forge.test/acme/widgets.git";
+    // What this machine learned when it was online, for a login whose
+    // entry it cannot read right now.
+    joy_forge_net::auth::pin::remember(Some(&state), remote, "ci");
+
+    let answer = verbs::token(&forge, &Target::Remote(remote.into()), None, &ctx);
+    assert_ne!(
+        answer["reason"], "no-login-for-repo",
+        "a forge that did not answer is not a login that cannot reach it: {answer}"
+    );
+    if answer["reason"] == "no-login" {
+        let message = answer["message"].as_str().unwrap_or_default();
+        assert!(message.contains("could not ask"), "{message}");
+        assert!(message.contains("scotty, work"), "{message}");
+    }
+    assert_eq!(
+        joy_forge_net::auth::pin::remembered(Some(&state), remote).as_deref(),
+        Some("ci"),
+        "the memory is evidence, and nothing here learned it was wrong"
+    );
 }
 
 /// D4.1c, step 5: when no login reaches the repository, the answer says
@@ -725,6 +1142,7 @@ fn no_login_that_reaches_the_repository_is_its_own_answer() {
     let answer = verbs::token(
         &forge,
         &Target::Remote("https://forge.test/acme/widgets.git".into()),
+        None,
         &ctx,
     );
     assert_eq!(answer["known"], false);
@@ -758,7 +1176,7 @@ fn the_device_local_pin_decides_without_a_single_request() {
     }
     // The `--login` of the call is a pin the caller states directly.
     let pinned = ctx.with_login("scotty");
-    let answer = verbs::token(&forge, &Target::Host("forge.test".into()), &pinned);
+    let answer = verbs::token(&forge, &Target::Host("forge.test".into()), None, &pinned);
     assert_eq!(answer["login"], "scotty");
     assert_eq!(answer["token"], "token-of-scotty");
     assert_eq!(answer["chose_by"], "pin");

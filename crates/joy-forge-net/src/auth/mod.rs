@@ -31,7 +31,10 @@
 //!
 //! 1. **A secret never leaves this module in the clear.** It travels in
 //!    a header or on stdin, never in an argument, never in a log line
-//!    and never in an error text.
+//!    and never in an error text. The rule is held by the types and not
+//!    by discipline: every type that carries a token prints its
+//!    [`fingerprint`] instead (`Record`, [`Resolved`], `oauth::Grant`),
+//!    so one `tracing::debug!(?resolved)` cannot leak one.
 //! 2. **The connector never opens a browser** (D2.4). It says where the
 //!    person must go; the host decides what to do with that.
 //! 3. **A refusal is an answer, not a failure.** Every verb here exits
@@ -149,7 +152,7 @@ impl Source {
 
 /// One token, ready to be used or reported. Every field of D2.4's
 /// `token` answer is here, so a caller cannot report half of it.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Resolved {
     pub token: String,
     pub login: Option<String>,
@@ -158,6 +161,21 @@ pub struct Resolved {
     pub scopes: Option<String>,
     pub expires_at: Option<String>,
     pub chose_by: Option<ChoseBy>,
+}
+
+/// Rule 1 of this module: the token prints as its fingerprint, which
+/// identifies it without carrying it.
+impl std::fmt::Debug for Resolved {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Resolved")
+            .field("token", &Redacted(&self.token))
+            .field("login", &self.login)
+            .field("source", &self.source)
+            .field("scopes", &self.scopes)
+            .field("expires_at", &self.expires_at)
+            .field("chose_by", &self.chose_by)
+            .finish()
+    }
 }
 
 impl Resolved {
@@ -183,6 +201,20 @@ pub fn fingerprint(token: &str) -> String {
     hex::encode(digest)[..12].to_string()
 }
 
+/// A secret inside a `{:?}`: its [`fingerprint`], never itself.
+///
+/// This is how rule 1 of this module is enforced rather than asked for.
+/// A type that carries a token writes its `Debug` by hand and puts the
+/// token through this, so the worst a stray `?record` can print is
+/// twelve hex digits of a hash.
+pub struct Redacted<'a>(pub &'a str);
+
+impl std::fmt::Debug for Redacted<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<secret {}>", fingerprint(self.0))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -202,6 +234,51 @@ mod tests {
         assert!(print.chars().all(|c| c.is_ascii_hexdigit()));
         assert_ne!(print, fingerprint("gho_another_secret"));
         assert!(!print.contains("secret"));
+    }
+
+    /// Rule 1, proved on the three types that carry a token: a `{:?}`
+    /// of any of them prints a fingerprint and never the secret.
+    #[test]
+    fn no_type_that_carries_a_token_can_print_one() {
+        let record = store::Record {
+            token: "gho_the_secret".to_string(),
+            login: Some("scotty".to_string()),
+            refresh_token: Some("rt_the_other_secret".to_string()),
+            ..store::Record::default()
+        };
+        let printed = format!("{record:?}");
+        assert!(!printed.contains("gho_the_secret"), "{printed}");
+        assert!(!printed.contains("rt_the_other_secret"), "{printed}");
+        assert!(
+            printed.contains(&fingerprint("gho_the_secret")),
+            "{printed}"
+        );
+        assert!(printed.contains("scotty"), "the login is not a secret");
+
+        let resolved = Resolved {
+            token: "gho_the_secret".to_string(),
+            login: Some("scotty".to_string()),
+            source: Source::Keychain,
+            scopes: Some("repo".to_string()),
+            expires_at: None,
+            chose_by: Some(ChoseBy::Only),
+        };
+        let printed = format!("{resolved:?}");
+        assert!(!printed.contains("gho_the_secret"), "{printed}");
+        assert!(printed.contains("Keychain"), "the source is not a secret");
+
+        let grant = oauth::Grant {
+            access_token: "gho_the_secret".to_string(),
+            refresh_token: Some("rt_the_other_secret".to_string()),
+            expires_in: Some(3600),
+            scope: Some("repo".to_string()),
+        };
+        let printed = format!("{grant:?}");
+        assert!(!printed.contains("gho_the_secret"), "{printed}");
+        assert!(!printed.contains("rt_the_other_secret"), "{printed}");
+        // and the same holds one level up, where a Poll carries it
+        let printed = format!("{:?}", oauth::Poll::Granted(grant));
+        assert!(!printed.contains("gho_the_secret"), "{printed}");
     }
 
     #[test]
