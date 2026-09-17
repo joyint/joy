@@ -869,6 +869,10 @@ pub struct Plan {
     pub host: String,
     pub legs: Vec<Leg>,
     pub notes: Vec<String>,
+    /// What the machine held for this host when the plan was made. The
+    /// memory row a contact writes records these, so the row can be
+    /// dropped as soon as one of them changes (D1.2 rule 3a).
+    pub probe: SshProbe,
 }
 
 impl Plan {
@@ -884,6 +888,7 @@ impl Plan {
                 credential,
             }],
             notes: Vec::new(),
+            probe: SshProbe::empty(),
         }
     }
 
@@ -933,6 +938,7 @@ pub fn plan_with(
                 ..machine
             }],
             notes,
+            probe: probe.clone(),
         };
     }
 
@@ -948,6 +954,7 @@ pub fn plan_with(
             host,
             legs: vec![machine],
             notes,
+            probe: probe.clone(),
         };
     }
     let no_credential = !probe.usable();
@@ -960,6 +967,7 @@ pub fn plan_with(
             host,
             legs: vec![machine],
             notes,
+            probe: probe.clone(),
         };
     };
     if wants_twin {
@@ -976,12 +984,18 @@ pub fn plan_with(
         } else {
             vec![twin, machine]
         };
-        return Plan { host, legs, notes };
+        return Plan {
+            host,
+            legs,
+            notes,
+            probe: probe.clone(),
+        };
     }
     Plan {
         host,
         legs: vec![machine, twin],
         notes,
+        probe: probe.clone(),
     }
 }
 
@@ -1037,6 +1051,30 @@ fn twin_leg(
 /// the error's own fields and never from its prose (D1.8a).
 pub fn is_ssh_auth_failure(error: &git2::Error) -> bool {
     error.class() == git2::ErrorClass::Ssh && error.code() == git2::ErrorCode::Auth
+}
+
+thread_local! {
+    /// Whether the contact running on this thread failed with trigger
+    /// (b) of D1.2. It is read off the RAW libgit2 error at the one
+    /// place that still holds one, because the classifier folds an ssh
+    /// authentication failure and an https 401 into the same state and
+    /// only one of the two may send an operation to the twin.
+    static SSH_AUTH_FAILED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// The engine hands every failed contact's raw error here before it is
+/// classified.
+pub fn note_contact_error(transport: Transport, error: &git2::Error) {
+    if transport == Transport::Ssh && is_ssh_auth_failure(error) {
+        SSH_AUTH_FAILED.with(|failed| failed.set(true));
+    }
+}
+
+/// Whether the contact that just ended was an ssh authentication
+/// failure. Reading it clears it, so one contact's refusal is never read
+/// as the next one's.
+pub fn took_ssh_auth_failure() -> bool {
+    SSH_AUTH_FAILED.with(|failed| failed.replace(false))
 }
 
 #[cfg(test)]

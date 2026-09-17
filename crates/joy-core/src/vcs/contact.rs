@@ -1676,6 +1676,12 @@ thread_local! {
     /// thread, synchronously, so a thread local is exactly the scope of
     /// one contact.
     static PRESENTED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// WHICH of the four sources answered that callback (D1.8a). The
+    /// coarse answer an `Auth` can give before a contact is made is a
+    /// claim; this is the fact, and the evidence handed to the
+    /// classifier prefers it.
+    static PRESENTED_SOURCE: std::cell::Cell<Option<CredentialSource>> =
+        const { std::cell::Cell::new(None) };
 }
 
 /// The credential callback says it handed something over (the engine
@@ -1688,8 +1694,22 @@ pub fn note_credential_presented() {
     PRESENTED.with(|p| p.set(true));
 }
 
+/// [`note_credential_presented`] with the source that really answered,
+/// which is what the evidence of D1.8a carries (J4b).
+pub fn note_credential(source: CredentialSource) {
+    note_credential_presented();
+    PRESENTED_SOURCE.with(|p| p.set(Some(source)));
+}
+
+/// What answered the credential callback of the contact running on this
+/// thread, if anything has yet.
+pub fn presented_source() -> Option<CredentialSource> {
+    PRESENTED_SOURCE.with(|p| p.get())
+}
+
 /// Read and clear the flag above.
 fn take_credential_presented() -> bool {
+    PRESENTED_SOURCE.with(|p| p.set(None));
     PRESENTED.with(|p| p.replace(false))
 }
 

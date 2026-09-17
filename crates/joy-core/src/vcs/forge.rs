@@ -129,6 +129,7 @@ pub fn token_user(host: &str, claimed: Option<ForgeKind>) -> &'static str {
 /// (design D1.1). They are separate variants and not fields so that
 /// every caller written before the resolver keeps compiling and keeps
 /// working, under the quiet defaults.
+#[derive(Clone)]
 pub enum Auth {
     /// A forge access token (platform), for a host whose forge kind
     /// joy reads from the host name.
@@ -191,18 +192,28 @@ fn contact_failed(
     e: git2::Error,
 ) -> anyhow::Error {
     let transport = super::contact::transport_of(url);
-    let mut evidence = super::contact::ContactEvidence::new(
-        e,
-        url,
-        direction,
-        auth.credential_evidence(transport),
-    );
+    // The two facts the RESOLVER reads, and it reads them off the raw
+    // error before anyone classifies it (D1.2 rule 3b, D1.8a): whether
+    // this was an ssh authentication failure, which is the one refusal
+    // that sends a contact to the twin.
+    super::resolver::note_contact_error(transport, &e);
+    // What really answered the credential callback of this contact beats
+    // the coarse claim the `Auth` could make before it (D1.8a).
+    let credential =
+        super::contact::presented_source().unwrap_or_else(|| auth.credential_evidence(transport));
+    let mut evidence = super::contact::ContactEvidence::new(e, url, direction, credential);
     // The proxy THIS contact really went through (D1.8c): a 407 names
     // the proxy and never the forge, and the name is joy's own
     // decision, so it travels in the cell `proxy::options_for` filled
     // rather than through fifteen call sites.
     if let Some(proxy) = super::proxy::current() {
         evidence = evidence.through_proxy(proxy);
+    }
+    // D1.7: "A 401 invalidates the cache immediately and triggers one re
+    // ask." The one re-ask is the next operation's own plan; nothing
+    // here loops.
+    if super::contact::wants_token_refresh(&evidence) {
+        super::resolver::invalidate_facts(&evidence.host);
     }
     super::contact::failed(&evidence)
 }
@@ -225,11 +236,32 @@ fn remote_url_of(remote: &git2::Remote<'_>) -> String {
 /// an anonymous contact as a credential that worked (D1.8b: it is what
 /// tells a 404 that means "no such repository" from a 404 that means
 /// "your organisation has not approved Joy").
-fn presented(cred: Result<git2::Cred, git2::Error>) -> Result<git2::Cred, git2::Error> {
+fn presented(
+    source: super::contact::CredentialSource,
+    word: &'static str,
+    cred: Result<git2::Cred, git2::Error>,
+) -> Result<git2::Cred, git2::Error> {
     if cred.is_ok() {
-        super::contact::note_credential_presented();
+        super::contact::note_credential(source);
+        USED_CREDENTIAL.with(|used| used.set(Some(word)));
     }
     cred
+}
+
+thread_local! {
+    /// The credential source of this contact in the four words the
+    /// transport memory keeps (`agent`, `key`, `helper`, `token`).
+    /// [`super::contact::CredentialSource`] has no word for a key FILE,
+    /// and the sentence a person reads about their own machine should
+    /// not call their `~/.ssh/id_ed25519` an agent (D1.2, D1.5).
+    static USED_CREDENTIAL: std::cell::Cell<Option<&'static str>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// The word the last credential of THIS contact carried, read and
+/// cleared.
+fn take_used_credential() -> Option<&'static str> {
+    USED_CREDENTIAL.with(|used| used.take())
 }
 
 impl Auth {
@@ -292,6 +324,14 @@ impl Auth {
         }
     }
 
+    /// Whether this caller resolves (D1.1): `Auth::Local` is "the
+    /// machine's own credentials", and the machine is what the resolver
+    /// of D1.2 is about. A caller that already holds a token (the
+    /// platform) makes one contact over the remote it was given.
+    fn is_local(&self) -> bool {
+        matches!(self, Auth::Local | Auth::LocalAs(_))
+    }
+
     /// The forge kind a plugin claimed for this host, if any.
     fn claimed_kind(&self) -> Option<ForgeKind> {
         match self {
@@ -308,12 +348,32 @@ impl Auth {
     /// (remote_callbacks.rs:20-29), so a `RemoteCallbacks` cannot be
     /// asked what it would answer, and the shape decision of D1.6
     /// would have no test.
+    /// The resolver under this `Auth`'s own host kind. Every contact
+    /// goes through [`Auth::callbacks_as`], which states the kind; this
+    /// is the shape tests' door to the closure, which git2 0.21 keeps
+    /// in a private field of `RemoteCallbacks` (remote_callbacks.rs:20-29)
+    /// and never hands back.
+    #[cfg(test)]
     fn credential_source(
         &self,
         source: CredSource,
     ) -> impl FnMut(&str, Option<&str>, git2::CredentialType) -> Result<git2::Cred, git2::Error> + 'static
     {
-        let kind = self.host_kind();
+        self.credential_source_as(self.host_kind(), source)
+    }
+
+    /// [`Auth::credential_source`] for a host kind that is not this
+    /// `Auth`'s own. A leg of the resolver's plan carries a token the
+    /// connector handed out (which would read as `Background`), while
+    /// the person behind the operation has not changed: the prompt rule
+    /// of D1.10 hangs off the CALLER's kind, not off the credential the
+    /// leg happens to use.
+    fn credential_source_as(
+        &self,
+        kind: HostKind,
+        source: CredSource,
+    ) -> impl FnMut(&str, Option<&str>, git2::CredentialType) -> Result<git2::Cred, git2::Error> + 'static
+    {
         let token = match self {
             Auth::Token(token) | Auth::ClaimedToken(token, _) => {
                 Some(token.clone()).filter(|t| !t.is_empty())
@@ -341,15 +401,19 @@ impl Auth {
             };
             attempts += 1;
             let host = host_of_url(url);
+            let token_presented = super::contact::CredentialSource::TokenPresented;
             match attempts {
-                1 => presented(git2::Cred::userpass_plaintext(
-                    token_user(&host, claimed),
-                    token,
-                )),
+                1 => presented(
+                    token_presented,
+                    "token",
+                    git2::Cred::userpass_plaintext(token_user(&host, claimed), token),
+                ),
                 // Only for a host nobody claimed and no table knows: a
                 // self-hosted forge joy has not met. Never the
                 // empty-password shape (D1.6).
                 2 if claimed.is_none() && known_forge_kind(&host).is_none() => presented(
+                    token_presented,
+                    "token",
                     git2::Cred::userpass_plaintext(other_token_user(&host), token),
                 ),
                 _ => {
@@ -374,13 +438,19 @@ impl Auth {
     /// of per contact (remote_callbacks.rs:27) and which decides the
     /// ssh host key and lets libgit2 decide the TLS chain.
     fn callbacks(&self, source: CredSource) -> git2::RemoteCallbacks<'static> {
+        self.callbacks_as(self.host_kind(), source)
+    }
+
+    /// [`Auth::callbacks`] for a stated host kind; see
+    /// [`Auth::credential_source_as`].
+    fn callbacks_as(&self, kind: HostKind, source: CredSource) -> git2::RemoteCallbacks<'static> {
         bound_forge_waits();
         let mut callbacks = git2::RemoteCallbacks::new();
         // built before the resolver takes `source`: both read the
         // remote URL as the person configured it, which is what carries
         // the port and the `Host` alias (D1.4)
-        let trust = super::certificates::check(self.host_kind(), source.configured.clone());
-        callbacks.credentials(self.credential_source(source));
+        let trust = super::certificates::check(kind, source.configured.clone());
+        callbacks.credentials(self.credential_source_as(kind, source));
         callbacks.certificate_check(trust);
         callbacks
     }
@@ -511,7 +581,11 @@ impl LocalChain {
             match step {
                 Step::Agent => {
                     state.presented = Some(Presented::Agent);
-                    return presented(git2::Cred::ssh_key_from_agent(&state.user));
+                    return presented(
+                        super::contact::CredentialSource::AgentPresented,
+                        "agent",
+                        git2::Cred::ssh_key_from_agent(&state.user),
+                    );
                 }
                 Step::Key {
                     path,
@@ -519,12 +593,19 @@ impl LocalChain {
                     passphrase,
                 } => {
                     state.presented = Some(Presented::Key(path.clone()));
-                    return presented(git2::Cred::ssh_key(
-                        &state.user,
-                        public.as_deref(),
-                        &path,
-                        passphrase.as_deref(),
-                    ));
+                    return presented(
+                        // D1.8a knows four sources and no fifth: a key
+                        // file is the machine's own ssh credential, the
+                        // same branch of the classifier the agent is on.
+                        super::contact::CredentialSource::AgentPresented,
+                        "key",
+                        git2::Cred::ssh_key(
+                            &state.user,
+                            public.as_deref(),
+                            &path,
+                            passphrase.as_deref(),
+                        ),
+                    );
                 }
                 Step::Helper => match source.config.as_ref() {
                     Some(config) => {
@@ -536,10 +617,14 @@ impl LocalChain {
                         ) {
                             Ok(Some(credential)) => {
                                 state.presented = Some(Presented::Helper);
-                                return presented(git2::Cred::userpass_plaintext(
-                                    &credential.username,
-                                    &credential.password,
-                                ));
+                                return presented(
+                                    super::contact::CredentialSource::HelperPresented,
+                                    "helper",
+                                    git2::Cred::userpass_plaintext(
+                                        &credential.username,
+                                        &credential.password,
+                                    ),
+                                );
                             }
                             Ok(None) => state.notes.push(format!(
                                 "no credential helper is configured for {}",
@@ -928,6 +1013,380 @@ impl CredSource {
     }
 }
 
+// ---- the resolver of D1.1, assembled (package J4b) --------------------
+
+use super::resolver::{Leg, LegCredential, Plan, Way};
+
+/// The candidate order for one operation on this checkout (D1.2).
+///
+/// A caller that already holds a credential (the platform's token)
+/// keeps the engine exactly as it was: one contact over the configured
+/// remote. Only `Auth::Local` resolves, which is what D1.1 means by
+/// "its body becomes a resolver".
+fn contact_plan(
+    repo: &git2::Repository,
+    auth: &Auth,
+    direction: super::contact::ContactDirection,
+) -> anyhow::Result<Plan> {
+    let url = {
+        let remote = origin_or_first(repo)?;
+        guard_remote(&remote)?;
+        remote_url_of(&remote)
+    };
+    if !auth.is_local() {
+        return Ok(Plan::single(&url, LegCredential::Machine));
+    }
+    let host = super::contact::host_of(&url);
+    // The connector is asked per HOST and not per contact (D1.7); the
+    // answer of the last five minutes is what a 1 Hz poll reads.
+    let root = repo.workdir().map(Path::to_path_buf);
+    let facts = super::resolver::host_facts(&url, root.as_deref(), auth.host_kind(), direction);
+    // Trigger (a) of D1.2, established BEFORE the contact: has this
+    // machine any ssh credential for the host at all?
+    let probe = match super::contact::transport_of(&url) {
+        super::contact::Transport::Ssh => {
+            super::resolver::probe_ssh(&host, Some(&url), auth.host_kind())
+        }
+        _ => super::resolver::SshProbe::empty(),
+    };
+    let memory = fresh_memory(&host, &probe);
+    // The insteadOf prediction of D1.5: `git_remote_create_anonymous`
+    // applies the person's rules to the twin, and git2 0.21 cannot be
+    // told to skip them, so joy asks the config what WOULD happen.
+    let config = repo.config().and_then(|mut c| c.snapshot()).ok();
+    let rule = |candidate: &str| -> Option<String> {
+        config
+            .as_ref()
+            .and_then(|config| super::resolver::insteadof_rewrite(config, candidate, direction))
+    };
+    Ok(super::resolver::plan_with(
+        &url,
+        &facts,
+        memory.as_ref(),
+        &probe,
+        &rule,
+    ))
+}
+
+/// This host's memory row, unless one of the facts it was written under
+/// has changed (D1.2 rule 3a: an agent that appears, an identity that
+/// appears, a key file whose mtime moved).
+fn fresh_memory(
+    host: &str,
+    probe: &super::resolver::SshProbe,
+) -> Option<super::resolver::HostMemory> {
+    let memory = super::resolver::recall(host)?;
+    if memory.state == super::resolver::TransportState::NoSshCredential
+        && memory.signals != probe.signals
+    {
+        super::resolver::forget(host);
+        return None;
+    }
+    Some(memory)
+}
+
+/// The `Auth` one leg contacts with: the caller's own for the
+/// configured remote, and the connector's token for the twin.
+fn leg_auth(auth: &Auth, leg: &Leg) -> Auth {
+    match &leg.credential {
+        LegCredential::Machine => auth.clone(),
+        LegCredential::Token(token) => match token.kind {
+            Some(kind) => Auth::token_for(token.token.clone(), kind),
+            None => Auth::token(token.token.clone()),
+        },
+    }
+}
+
+/// The remote one leg dials. The configured leg goes through
+/// [`contact_remote`], so the ssh config's `HostName` still applies; the
+/// twin is an anonymous remote on an address that is never written into
+/// `.git/config`.
+fn leg_remote<'r>(repo: &'r git2::Repository, leg: &Leg) -> anyhow::Result<git2::Remote<'r>> {
+    match leg.way {
+        Way::Configured => contact_remote(repo),
+        Way::Twin => repo.remote_anonymous(&leg.url).map_err(err),
+    }
+}
+
+/// Run one operation over the legs of its plan.
+///
+/// At most two contacts (D1.2), each with its own turn of the host's
+/// budget (D1.9: the throttle is charged per contact, with the verb it
+/// already receives), and the second only when the first's failure is
+/// one the design lets it follow.
+fn over_plan<T>(
+    repo_dir: &Path,
+    auth: &Auth,
+    verb: &'static str,
+    direction: super::contact::ContactDirection,
+    poll: bool,
+    mut work: impl FnMut(&git2::Repository, &mut git2::Remote<'_>, &Auth, &Leg) -> anyhow::Result<T>,
+) -> anyhow::Result<T> {
+    let repo = open(repo_dir).map_err(err)?;
+    let plan = contact_plan(&repo, auth, direction)?;
+    if !plan.notes.is_empty() {
+        tracing::debug!(forge = %plan.host, why = %plan.why(), "forge transport decided");
+    }
+    // D1.5: "If neither transport has a credential, the probe is not run
+    // at all and the state is `needs_sign_in`, never `no_push_rights`."
+    // This is the Windows case of D1.2 rule 5, where WinCNG reads no
+    // openssh-key-v1 file and the machine has no token either: a probe
+    // would come back "the forge refuses you" for a person who is
+    // simply not signed in, and the banner would offer the wrong action.
+    if verb == "probe" && nothing_to_present(&plan) {
+        return Err(anyhow::Error::new(super::contact::ContactError {
+            failure: super::contact::Failure::NeedsSignIn,
+            message: format!(
+                "Not signed in to {}, so joy cannot say whether you may push.",
+                super::contact::forge_name(&plan.host)
+            ),
+            detail: (!plan.notes.is_empty()).then(|| plan.why()),
+            next_try: None,
+        }));
+    }
+    let last_leg = plan.legs.len().saturating_sub(1);
+    let mut last: Option<anyhow::Error> = None;
+    for (at, leg) in plan.legs.iter().enumerate() {
+        let auth_for_leg = leg_auth(auth, leg);
+        let used: std::cell::Cell<Option<&'static str>> = std::cell::Cell::new(None);
+        let outcome = {
+            let repo = &repo;
+            let work = &mut work;
+            let auth_for_leg = &auth_for_leg;
+            let used = &used;
+            let contact = move || -> anyhow::Result<T> {
+                take_used_credential();
+                let mut remote = leg_remote(repo, leg)?;
+                let answer = work(repo, &mut remote, auth_for_leg, leg);
+                used.set(take_used_credential());
+                answer
+            };
+            if poll {
+                super::contact::run_poll(&leg.url, verb, auth_for_leg.credentialed(), contact)
+            } else {
+                super::contact::run(&leg.url, verb, auth_for_leg.credentialed(), contact)
+            }
+        };
+        // Read before the next leg runs: one contact's refusal must
+        // never be read as the next one's.
+        let ssh_auth_failed = super::resolver::took_ssh_auth_failure();
+        match outcome {
+            Ok(value) => {
+                remember_success(&plan, leg, used.get());
+                return Ok(value);
+            }
+            Err(e) => {
+                let follow = at < last_leg && may_follow(leg, ssh_auth_failed);
+                remember_failure(&plan, leg, ssh_auth_failed);
+                last = Some(e);
+                if !follow {
+                    break;
+                }
+            }
+        }
+    }
+    Err(last.unwrap_or_else(|| anyhow::anyhow!("no remote configured")))
+}
+
+/// Whether this plan has any credential to present at all: every leg is
+/// the configured ssh remote, and the machine holds no ssh credential
+/// for the host (D1.5, the probe rule).
+fn nothing_to_present(plan: &Plan) -> bool {
+    !plan.probe.usable()
+        && plan.legs.iter().all(|leg| {
+            leg.way == Way::Configured
+                && leg.transport == super::contact::Transport::Ssh
+                && !leg.credential.is_token()
+        })
+}
+
+/// Whether the next leg may be tried after this one failed.
+///
+/// An ssh contact is followed by the twin for exactly ONE refusal, the
+/// authentication class failure of D1.2 rule 3b. A DNS fault, a
+/// timeout, a refused host key or a proxy that wants a login of its own
+/// say nothing about the person's ssh credential, and following them to
+/// the twin would spend a second contact and report the wrong cause.
+/// A twin that failed is followed by the configured remote, because the
+/// token was the guess and the machine's own credential is the fact.
+fn may_follow(leg: &Leg, ssh_auth_failed: bool) -> bool {
+    match leg.way {
+        Way::Configured => leg.transport == super::contact::Transport::Ssh && ssh_auth_failed,
+        Way::Twin => true,
+    }
+}
+
+/// Write what authenticated into joy's own state file, and never into
+/// the person's `.git/config` (D1.2).
+fn remember_success(plan: &Plan, leg: &Leg, used: Option<&'static str>) {
+    let Some(credential) = used else {
+        // Nothing was handed over: a public repository answered the
+        // first request. That proves nothing about a transport.
+        return;
+    };
+    let state = match leg.way {
+        Way::Configured if leg.transport == super::contact::Transport::Ssh => {
+            super::resolver::TransportState::SshWorked
+        }
+        Way::Configured => return,
+        // The twin carried it, so the ssh side is what it was: either
+        // this machine has no ssh credential for the host, or the host
+        // refused the one it has.
+        Way::Twin if plan.probe.usable() => super::resolver::TransportState::SshFailed,
+        Way::Twin => super::resolver::TransportState::NoSshCredential,
+    };
+    super::resolver::remember(
+        &plan.host,
+        super::resolver::HostMemory::new(state)
+            .with_credential(leg.transport, credential)
+            .with_signals(plan.probe.signals.clone()),
+    );
+}
+
+/// Trigger (b) of D1.2: the ssh contact failed with an authentication
+/// class failure, so the host is remembered as `ssh-failed` for the TTL
+/// and the next operation starts at the twin.
+fn remember_failure(plan: &Plan, leg: &Leg, ssh_auth_failed: bool) {
+    if leg.way != Way::Configured || !ssh_auth_failed {
+        return;
+    }
+    super::resolver::remember(
+        &plan.host,
+        super::resolver::HostMemory::new(super::resolver::TransportState::SshFailed)
+            .with_signals(plan.probe.signals.clone()),
+    );
+}
+
+/// The per-ref statuses one push came back with (D1.5).
+///
+/// Without `push_update_reference` a push whose every ref was rejected
+/// returns `Ok(())`: `git_push_finish` fails only when the pack could
+/// not be unpacked (push.c:537-540), and the per-ref status is
+/// delivered only through that callback (remote.c:3034-3038).
+#[derive(Clone, Default)]
+struct PushStatus(std::rc::Rc<std::cell::RefCell<Vec<(String, Option<String>)>>>);
+
+impl PushStatus {
+    /// The refs the forge accepted. Empty when the server advertised no
+    /// `report-status` at all, which is "unconfirmed" and not "rejected"
+    /// (smart_protocol.c:1246-1250).
+    fn accepted(&self) -> Vec<String> {
+        self.0
+            .borrow()
+            .iter()
+            .filter(|(_, reason)| reason.is_none())
+            .map(|(name, _)| name.clone())
+            .collect()
+    }
+
+    /// The operation's verdict: every rejection the forge named, in the
+    /// forge's own words, on the detail line and nowhere else.
+    fn verdict(&self, host: &str) -> anyhow::Result<()> {
+        let rejected: Vec<String> = self
+            .0
+            .borrow()
+            .iter()
+            .filter_map(|(name, reason)| reason.as_ref().map(|reason| format!("{name}: {reason}")))
+            .collect();
+        if rejected.is_empty() {
+            return Ok(());
+        }
+        let refs: Vec<String> = self
+            .0
+            .borrow()
+            .iter()
+            .filter(|(_, reason)| reason.is_some())
+            .map(|(name, _)| name.clone())
+            .collect();
+        Err(anyhow::Error::new(super::contact::ContactError {
+            // D1.8b: the forge answered, so this is not "offline" and
+            // not a refusal of the login; a rejected ref is the row
+            // `error` is written for.
+            failure: super::contact::Failure::Error,
+            message: format!("{host} refused to update {}", refs.join(", ")),
+            detail: Some(rejected.join("; ")),
+            next_try: None,
+        }))
+    }
+}
+
+/// The callbacks of one push: the two slots of [`Auth::callbacks`] plus
+/// the per-ref status reader of D1.5.
+fn push_callbacks(
+    auth: &Auth,
+    kind: HostKind,
+    source: CredSource,
+) -> (git2::RemoteCallbacks<'static>, PushStatus) {
+    let status = PushStatus::default();
+    let mut callbacks = auth.callbacks_as(kind, source);
+    let seen = status.0.clone();
+    callbacks.push_update_reference(move |refname, reason| {
+        seen.borrow_mut()
+            .push((refname.to_string(), reason.map(str::to_string)));
+        Ok(())
+    });
+    (callbacks, status)
+}
+
+/// Point the branch's tracking ref at what was just pushed, after a
+/// push that did not go over a named remote (D1.5).
+///
+/// The twin is an anonymous remote and carries zero refspecs
+/// (remote.c:273-302), so `git_remote_update_tips` writes nothing and
+/// the ahead and behind counter would freeze at "1 ahead" for ever.
+/// Force is not a special case: libgit2's own `git_push_update_tips`
+/// creates the ref with force 1 and the message "update by push"
+/// (push.c:200-212), and joy does the same.
+fn write_tracking_ref(
+    repo: &git2::Repository,
+    leg: &Leg,
+    status: &PushStatus,
+    branch: &str,
+    tip: git2::Oid,
+) {
+    if leg.way != Way::Twin {
+        return;
+    }
+    let accepted = status.accepted();
+    if !accepted
+        .iter()
+        .any(|name| name == &format!("refs/heads/{branch}"))
+    {
+        // Either the ref was rejected (the caller is failing already) or
+        // the server advertised no `report-status`: unconfirmed, so no
+        // tracking ref, and the next ls-remote establishes the truth.
+        return;
+    }
+    let Ok(name) = tracking_ref_name(repo, branch) else {
+        return;
+    };
+    if let Err(e) = repo.reference(&name, tip, true, "update by push") {
+        tracing::debug!(error = %e, tracking = %name, "the tracking ref could not be written");
+    }
+}
+
+/// The chat ref has no libgit2 tracking ref on either remote and needs
+/// none; joy keeps its own (`refs/joy/chats-remote`), written by the
+/// fetch side. After a push of the chat ref the engine sets it to the
+/// pushed oid as well, so the union merge reconciles against what the
+/// forge holds (D1.5).
+const CHATS_REF: &str = "refs/joy/chats";
+const CHATS_TRACKING_REF: &str = "refs/joy/chats-remote";
+
+fn write_chats_tracking_ref(
+    repo: &git2::Repository,
+    status: &PushStatus,
+    refname: &str,
+    tip: git2::Oid,
+) {
+    if refname != CHATS_REF || !status.accepted().iter().any(|name| name == CHATS_REF) {
+        return;
+    }
+    if let Err(e) = repo.reference(CHATS_TRACKING_REF, tip, true, "update by push") {
+        tracing::debug!(error = %e, "the chat tracking ref could not be written");
+    }
+}
+
 /// The source for a contact that has no repository yet: a clone, where
 /// the URL the caller named IS the configured remote.
 fn cred_source_for_url(url: &str) -> CredSource {
@@ -1036,16 +1495,15 @@ fn tracking_ref_name(repo: &git2::Repository, branch: &str) -> anyhow::Result<St
 /// libgit2 remote.c truncate_fetch_head) — and that bare truncation is
 /// the whole torn-FETCH_HEAD class (JP-00DB-61, JAPP-0198-EA).
 /// `Ok(None)` when the forge does not advertise `src`.
-fn download_ref(
+fn download_over(
     repo: &git2::Repository,
+    remote: &mut git2::Remote<'_>,
     auth: &Auth,
+    kind: HostKind,
     src: &str,
     dst: &str,
 ) -> anyhow::Result<Option<git2::Oid>> {
-    // The address the ssh config really names, not the alias the
-    // remote was written as (design D1.4).
-    let mut remote = contact_remote(repo)?;
-    let url = remote_url_of(&remote);
+    let url = remote_url_of(remote);
     let proxy = proxy_for(&url, Some(repo))?;
     // ONE connection for the advertisement AND the download (D1.9): the
     // RemoteConnection disconnects on drop, and joy used to drop it
@@ -1057,7 +1515,7 @@ fn download_ref(
     let mut connection = remote
         .connect_auth(
             git2::Direction::Fetch,
-            Some(auth.callbacks(cred_source(Some(repo)))),
+            Some(auth.callbacks_as(kind, cred_source(Some(repo)))),
             Some(proxy.options()),
         )
         .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Fetch, e))?;
@@ -1076,7 +1534,7 @@ fn download_ref(
         return Ok(None);
     };
     let mut opts = git2::FetchOptions::new();
-    opts.remote_callbacks(auth.callbacks(cred_source(Some(repo))));
+    opts.remote_callbacks(auth.callbacks_as(kind, cred_source(Some(repo))));
     opts.proxy_options(proxy.options());
     let refspec = format!("+{src}:{dst}");
     connection
@@ -1098,26 +1556,30 @@ fn download_ref(
 /// A branch that is gone from the forge (renamed or deleted) is said out
 /// loud instead of surfacing as a phantom state.
 pub fn fetch_branch(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
-    super::contact::run_for(repo_dir, "fetch", auth.credentialed(), || {
-        fetch_branch_raw(repo_dir, auth)
-    })
-}
-
-fn fetch_branch_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
     let span = tracing::info_span!("git.fetch", repo = %repo_dir.display());
     let _s = span.enter();
-    let repo = open(repo_dir).map_err(err)?;
-    let head = repo.head().map_err(err)?;
-    let branch = head
-        .shorthand()
-        .map_err(|_| anyhow::anyhow!("detached HEAD"))?
-        .to_string();
-    let src = format!("refs/heads/{branch}");
-    let dst = tracking_ref_name(&repo, &branch)?;
-    match download_ref(&repo, auth, &src, &dst)? {
-        Some(_) => Ok(()),
-        None => anyhow::bail!("branch {branch} not found on the forge (renamed or deleted?)"),
-    }
+    over_plan(
+        repo_dir,
+        auth,
+        "fetch",
+        super::contact::ContactDirection::Fetch,
+        false,
+        |repo, remote, leg_auth, _leg| {
+            let head = repo.head().map_err(err)?;
+            let branch = head
+                .shorthand()
+                .map_err(|_| anyhow::anyhow!("detached HEAD"))?
+                .to_string();
+            let src = format!("refs/heads/{branch}");
+            let dst = tracking_ref_name(repo, &branch)?;
+            match download_over(repo, remote, leg_auth, auth.host_kind(), &src, &dst)? {
+                Some(_) => Ok(()),
+                None => {
+                    anyhow::bail!("branch {branch} not found on the forge (renamed or deleted?)")
+                }
+            }
+        },
+    )
 }
 
 /// The LOCAL half of a pull: fast-forward the working branch onto its
@@ -1210,61 +1672,71 @@ pub fn commit_joy(
 /// object and no ref is sent. A refusal here is exactly the refusal a real
 /// push would meet.
 pub fn probe_write_access(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
-    super::contact::run_for(repo_dir, "probe", auth.credentialed(), || {
-        probe_write_access_raw(repo_dir, auth)
-    })
-}
-
-fn probe_write_access_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
     let span = tracing::info_span!("git.probe_write", repo = %repo_dir.display());
     let _s = span.enter();
-    let repo = open(repo_dir).map_err(err)?;
-    // The address the ssh config really names, not the alias the
-    // remote was written as (design D1.4).
-    let mut remote = contact_remote(&repo)?;
-    let url = remote_url_of(&remote);
-    let proxy = proxy_for(&url, Some(&repo))?;
-    remote
-        .connect_auth(
-            git2::Direction::Push,
-            Some(auth.callbacks(cred_source(Some(&repo)))),
-            Some(proxy.options()),
-        )
-        .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Push, e))?;
-    let _ = remote.disconnect();
-    Ok(())
+    // The probe runs on THE TRANSPORT THAT CARRIES THE CREDENTIAL for
+    // this operation (D1.5), which is the first leg of the plan: where
+    // the push would go over the twin, the probe goes over the twin.
+    over_plan(
+        repo_dir,
+        auth,
+        "probe",
+        super::contact::ContactDirection::Push,
+        false,
+        |repo, remote, leg_auth, _leg| {
+            let url = remote_url_of(remote);
+            let proxy = proxy_for(&url, Some(repo))?;
+            remote
+                .connect_auth(
+                    git2::Direction::Push,
+                    Some(leg_auth.callbacks_as(auth.host_kind(), cred_source(Some(repo)))),
+                    Some(proxy.options()),
+                )
+                .map_err(|e| {
+                    contact_failed(&url, leg_auth, super::contact::ContactDirection::Push, e)
+                })?;
+            let _ = remote.disconnect();
+            Ok(())
+        },
+    )
 }
 
 pub fn push(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
-    super::contact::run_for(repo_dir, "push", auth.credentialed(), || {
-        push_raw(repo_dir, auth)
-    })
-}
-
-fn push_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
     let span = tracing::info_span!("git.push", repo = %repo_dir.display());
     let _s = span.enter();
-    let result = (|| -> anyhow::Result<()> {
-        let repo = open(repo_dir).map_err(err)?;
-        let head = repo.head().map_err(err)?;
-        let branch = head
-            .shorthand()
-            .map_err(|_| anyhow::anyhow!("detached HEAD"))?
-            .to_string();
-        // The address the ssh config really names, not the alias the
-        // remote was written as (design D1.4).
-        let mut remote = contact_remote(&repo)?;
-        let url = remote_url_of(&remote);
-        let proxy = proxy_for(&url, Some(&repo))?;
-        let mut opts = git2::PushOptions::new();
-        opts.remote_callbacks(auth.callbacks(cred_source(Some(&repo))));
-        opts.proxy_options(proxy.options());
-        let refspec = format!("refs/heads/{branch}:refs/heads/{branch}");
-        remote
-            .push(&[refspec.as_str()], Some(&mut opts))
-            .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Push, e))?;
-        Ok(())
-    })();
+    let result = over_plan(
+        repo_dir,
+        auth,
+        "push",
+        super::contact::ContactDirection::Push,
+        false,
+        |repo, remote, leg_auth, leg| {
+            let head = repo.head().map_err(err)?;
+            let branch = head
+                .shorthand()
+                .map_err(|_| anyhow::anyhow!("detached HEAD"))?
+                .to_string();
+            let tip = head
+                .target()
+                .ok_or_else(|| anyhow::anyhow!("unborn HEAD"))?;
+            let url = remote_url_of(remote);
+            let proxy = proxy_for(&url, Some(repo))?;
+            let (callbacks, status) =
+                push_callbacks(leg_auth, auth.host_kind(), cred_source(Some(repo)));
+            let mut opts = git2::PushOptions::new();
+            opts.remote_callbacks(callbacks);
+            opts.proxy_options(proxy.options());
+            let refspec = format!("refs/heads/{branch}:refs/heads/{branch}");
+            remote
+                .push(&[refspec.as_str()], Some(&mut opts))
+                .map_err(|e| {
+                    contact_failed(&url, leg_auth, super::contact::ContactDirection::Push, e)
+                })?;
+            status.verdict(&super::contact::host_of(&url))?;
+            write_tracking_ref(repo, leg, &status, &branch, tip);
+            Ok(())
+        },
+    );
     if let Err(e) = &result {
         // some callers defer a failed push to the write-behind worker; the
         // event still carries the cause with the repo context
@@ -1284,22 +1756,29 @@ fn push_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
 /// removed) — the stale destination is deleted then, so reconciles run
 /// against nothing rather than a stale state.
 pub fn fetch_ref(repo_dir: &Path, auth: &Auth, src: &str, dst: &str) -> anyhow::Result<bool> {
-    super::contact::run_for(repo_dir, "fetch", auth.credentialed(), || {
-        fetch_ref_raw(repo_dir, auth, src, dst)
-    })
-}
-
-fn fetch_ref_raw(repo_dir: &Path, auth: &Auth, src: &str, dst: &str) -> anyhow::Result<bool> {
-    let repo = open(repo_dir).map_err(err)?;
-    match download_ref(&repo, auth, src, dst)? {
-        Some(_) => Ok(true),
-        None => {
-            if let Ok(mut stale) = repo.find_reference(dst) {
-                stale.delete().ok();
+    over_plan(
+        repo_dir,
+        auth,
+        "fetch",
+        super::contact::ContactDirection::Fetch,
+        false,
+        |repo, remote, leg_auth, _leg| match download_over(
+            repo,
+            remote,
+            leg_auth,
+            auth.host_kind(),
+            src,
+            dst,
+        )? {
+            Some(_) => Ok(true),
+            None => {
+                if let Ok(mut stale) = repo.find_reference(dst) {
+                    stale.delete().ok();
+                }
+                Ok(false)
             }
-            Ok(false)
-        }
-    }
+        },
+    )
 }
 
 // ---- the ONE per-checkout gate (JP-00DB-61) ----------------------------
@@ -1332,26 +1811,32 @@ pub fn checkout_gate(repo_dir: &Path) -> std::sync::Arc<std::sync::Mutex<()>> {
 
 /// Push one local ref to the same name on the forge.
 pub fn push_ref(repo_dir: &Path, auth: &Auth, refname: &str) -> anyhow::Result<()> {
-    super::contact::run_for(repo_dir, "push", auth.credentialed(), || {
-        push_ref_raw(repo_dir, auth, refname)
-    })
-}
-
-fn push_ref_raw(repo_dir: &Path, auth: &Auth, refname: &str) -> anyhow::Result<()> {
-    let repo = open(repo_dir).map_err(err)?;
-    // The address the ssh config really names, not the alias the
-    // remote was written as (design D1.4).
-    let mut remote = contact_remote(&repo)?;
-    let url = remote_url_of(&remote);
-    let proxy = proxy_for(&url, Some(&repo))?;
-    let mut opts = git2::PushOptions::new();
-    opts.remote_callbacks(auth.callbacks(cred_source(Some(&repo))));
-    opts.proxy_options(proxy.options());
-    let refspec = format!("{refname}:{refname}");
-    remote
-        .push(&[refspec.as_str()], Some(&mut opts))
-        .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Push, e))?;
-    Ok(())
+    over_plan(
+        repo_dir,
+        auth,
+        "push",
+        super::contact::ContactDirection::Push,
+        false,
+        |repo, remote, leg_auth, _leg| {
+            let tip = repo.refname_to_id(refname).map_err(err)?;
+            let url = remote_url_of(remote);
+            let proxy = proxy_for(&url, Some(repo))?;
+            let (callbacks, status) =
+                push_callbacks(leg_auth, auth.host_kind(), cred_source(Some(repo)));
+            let mut opts = git2::PushOptions::new();
+            opts.remote_callbacks(callbacks);
+            opts.proxy_options(proxy.options());
+            let refspec = format!("{refname}:{refname}");
+            remote
+                .push(&[refspec.as_str()], Some(&mut opts))
+                .map_err(|e| {
+                    contact_failed(&url, leg_auth, super::contact::ContactDirection::Push, e)
+                })?;
+            status.verdict(&super::contact::host_of(&url))?;
+            write_chats_tracking_ref(repo, &status, refname, tip);
+            Ok(())
+        },
+    )
 }
 
 /// The oid the forge holds for `refname`, without fetching anything
@@ -1381,9 +1866,7 @@ pub fn ls_remote_refs(
     auth: &Auth,
     refnames: &[&str],
 ) -> anyhow::Result<std::collections::HashMap<String, String>> {
-    super::contact::run_for(repo_dir, "ls-remote", auth.credentialed(), || {
-        ls_remote_refs_raw(repo_dir, auth, refnames)
-    })
+    ls_remote_refs_over(repo_dir, auth, refnames, false)
 }
 
 /// [`ls_remote_ref`] as a POLL: a contact no person asked for, made by
@@ -1406,37 +1889,45 @@ pub fn ls_remote_refs_poll(
     auth: &Auth,
     refnames: &[&str],
 ) -> anyhow::Result<std::collections::HashMap<String, String>> {
-    super::contact::run_poll_for(repo_dir, "ls-remote", auth.credentialed(), || {
-        ls_remote_refs_raw(repo_dir, auth, refnames)
-    })
+    ls_remote_refs_over(repo_dir, auth, refnames, true)
 }
 
-fn ls_remote_refs_raw(
+fn ls_remote_refs_over(
     repo_dir: &Path,
     auth: &Auth,
     refnames: &[&str],
+    poll: bool,
 ) -> anyhow::Result<std::collections::HashMap<String, String>> {
-    let repo = open(repo_dir).map_err(err)?;
-    // The address the ssh config really names, not the alias the
-    // remote was written as (design D1.4).
-    let mut remote = contact_remote(&repo)?;
-    let url = remote_url_of(&remote);
-    let proxy = proxy_for(&url, Some(&repo))?;
-    let connection = remote
-        .connect_auth(
-            git2::Direction::Fetch,
-            Some(auth.callbacks(cred_source(Some(&repo)))),
-            Some(proxy.options()),
-        )
-        .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Fetch, e))?;
-    let found = connection
-        .list()
-        .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Fetch, e))?
-        .iter()
-        .filter(|r| refnames.contains(&r.name()))
-        .map(|r| (r.name().to_string(), r.oid().to_string()))
-        .collect();
-    Ok(found)
+    over_plan(
+        repo_dir,
+        auth,
+        "ls-remote",
+        super::contact::ContactDirection::Fetch,
+        poll,
+        |repo, remote, leg_auth, _leg| {
+            let url = remote_url_of(remote);
+            let proxy = proxy_for(&url, Some(repo))?;
+            let connection = remote
+                .connect_auth(
+                    git2::Direction::Fetch,
+                    Some(leg_auth.callbacks_as(auth.host_kind(), cred_source(Some(repo)))),
+                    Some(proxy.options()),
+                )
+                .map_err(|e| {
+                    contact_failed(&url, leg_auth, super::contact::ContactDirection::Fetch, e)
+                })?;
+            let found = connection
+                .list()
+                .map_err(|e| {
+                    contact_failed(&url, leg_auth, super::contact::ContactDirection::Fetch, e)
+                })?
+                .iter()
+                .filter(|r| refnames.contains(&r.name()))
+                .map(|r| (r.name().to_string(), r.oid().to_string()))
+                .collect();
+            Ok(found)
+        },
+    )
 }
 
 /// Pull with a REAL merge (ADR JAPP-00D8): fetch, fast-forward when
@@ -2325,26 +2816,29 @@ pub fn tag_annotated(
 
 /// Push one tag to the forge (joy release publish's tag push).
 pub fn push_tag(repo_dir: &Path, auth: &Auth, tag: &str) -> anyhow::Result<()> {
-    super::contact::run_for(repo_dir, "push", auth.credentialed(), || {
-        push_tag_raw(repo_dir, auth, tag)
-    })
-}
-
-fn push_tag_raw(repo_dir: &Path, auth: &Auth, tag: &str) -> anyhow::Result<()> {
-    let repo = open(repo_dir).map_err(err)?;
-    // The address the ssh config really names, not the alias the
-    // remote was written as (design D1.4).
-    let mut remote = contact_remote(&repo)?;
-    let url = remote_url_of(&remote);
-    let proxy = proxy_for(&url, Some(&repo))?;
-    let mut opts = git2::PushOptions::new();
-    opts.remote_callbacks(auth.callbacks(cred_source(Some(&repo))));
-    opts.proxy_options(proxy.options());
-    let refspec = format!("refs/tags/{tag}:refs/tags/{tag}");
-    remote
-        .push(&[refspec.as_str()], Some(&mut opts))
-        .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Push, e))?;
-    Ok(())
+    over_plan(
+        repo_dir,
+        auth,
+        "push",
+        super::contact::ContactDirection::Push,
+        false,
+        |repo, remote, leg_auth, _leg| {
+            let url = remote_url_of(remote);
+            let proxy = proxy_for(&url, Some(repo))?;
+            let (callbacks, status) =
+                push_callbacks(leg_auth, auth.host_kind(), cred_source(Some(repo)));
+            let mut opts = git2::PushOptions::new();
+            opts.remote_callbacks(callbacks);
+            opts.proxy_options(proxy.options());
+            let refspec = format!("refs/tags/{tag}:refs/tags/{tag}");
+            remote
+                .push(&[refspec.as_str()], Some(&mut opts))
+                .map_err(|e| {
+                    contact_failed(&url, leg_auth, super::contact::ContactDirection::Push, e)
+                })?;
+            status.verdict(&super::contact::host_of(&url))
+        },
+    )
 }
 
 /// The newest local `v*` version tag by semver order, or None (no tags,
@@ -2827,25 +3321,36 @@ fn land_branch_yaml_inner(
 /// the merge). Errors (offline, unborn remote ref) leave the local state.
 pub fn refresh_branch_from_forge(repo_dir: &Path, branch: &str, auth: &Auth) {
     let refresh = || -> anyhow::Result<()> {
-        let repo = open(repo_dir).map_err(err)?;
-        let tracking = format!("refs/joy/branch-refresh/{branch}");
-        let src = format!("refs/heads/{branch}");
-        // download_ref, like every fetch here: libgit2's update_tips (and
-        // its unconditional FETCH_HEAD truncation) never runs
-        let Some(tip) = download_ref(&repo, auth, &src, &tracking)? else {
-            anyhow::bail!("branch {branch} not on the forge");
-        };
-        repo.reference(
-            &format!("refs/heads/{branch}"),
-            tip,
-            true,
-            "joy-vcs: refresh job branch from forge",
+        over_plan(
+            repo_dir,
+            auth,
+            "fetch",
+            super::contact::ContactDirection::Fetch,
+            false,
+            |repo, remote, leg_auth, _leg| {
+                let tracking = format!("refs/joy/branch-refresh/{branch}");
+                let src = format!("refs/heads/{branch}");
+                // download_over, like every fetch here: libgit2's
+                // update_tips (and its unconditional FETCH_HEAD
+                // truncation) never runs
+                let Some(tip) =
+                    download_over(repo, remote, leg_auth, auth.host_kind(), &src, &tracking)?
+                else {
+                    anyhow::bail!("branch {branch} not on the forge");
+                };
+                repo.reference(
+                    &format!("refs/heads/{branch}"),
+                    tip,
+                    true,
+                    "joy-vcs: refresh job branch from forge",
+                )
+                .map_err(err)?;
+                if let Ok(mut done) = repo.find_reference(&tracking) {
+                    done.delete().ok();
+                }
+                Ok(())
+            },
         )
-        .map_err(err)?;
-        if let Ok(mut done) = repo.find_reference(&tracking) {
-            done.delete().ok();
-        }
-        Ok(())
     };
     if let Err(e) = refresh() {
         tracing::debug!(%branch, error = %e, "job branch refresh skipped; using local state");
@@ -3057,79 +3562,85 @@ pub fn ensure_local_branch(repo_dir: &Path, branch: &str) -> anyhow::Result<()> 
 /// memory of its first day). FETCH_HEAD is not touched. Returns the
 /// branch names the forge advertises.
 pub fn fetch_heads(repo_dir: &Path, auth: &Auth) -> anyhow::Result<Vec<String>> {
-    super::contact::run_for(repo_dir, "fetch", auth.credentialed(), || {
-        fetch_heads_raw(repo_dir, auth)
-    })
-}
-
-fn fetch_heads_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<Vec<String>> {
     let span = tracing::info_span!("git.fetch-heads", repo = %repo_dir.display());
     let _s = span.enter();
-    let repo = open(repo_dir).map_err(err)?;
-    // The tracking refs are named after the CONFIGURED remote, which
-    // is read before the contact: the contact itself may run over an
-    // anonymous remote when the ssh config renames the host, and an
-    // anonymous remote has no name (see `contact_remote`).
-    let remote_name = {
-        let configured = origin_or_first(&repo)?;
-        configured
-            .name()
-            .map_err(err)?
-            .ok_or_else(|| anyhow::anyhow!("remote name is not utf-8"))?
-            .to_string()
-    };
-    // The address the ssh config really names, not the alias the
-    // remote was written as (design D1.4).
-    let mut remote = contact_remote(&repo)?;
-    let url = remote_url_of(&remote);
-    let proxy = proxy_for(&url, Some(&repo))?;
-    // one connection for the advertisement and the download, as
-    // download_ref does (D1.9)
-    let mut connection = remote
-        .connect_auth(
-            git2::Direction::Fetch,
-            Some(auth.callbacks(cred_source(Some(&repo)))),
-            Some(proxy.options()),
-        )
-        .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Fetch, e))?;
-    let heads: Vec<(String, git2::Oid)> = connection
-        .list()
-        .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Fetch, e))?
-        .iter()
-        .filter_map(|r| {
-            r.name()
-                .strip_prefix("refs/heads/")
-                .map(|b| (b.to_string(), r.oid()))
-        })
-        .collect();
-    if heads.is_empty() {
-        return Ok(Vec::new());
-    }
-    let refspecs: Vec<String> = heads
-        .iter()
-        .map(|(b, _)| format!("+refs/heads/{b}:refs/remotes/{remote_name}/{b}"))
-        .collect();
-    let refspec_strs: Vec<&str> = refspecs.iter().map(String::as_str).collect();
-    let mut opts = git2::FetchOptions::new();
-    opts.remote_callbacks(auth.callbacks(cred_source(Some(&repo))));
-    opts.proxy_options(proxy.options());
-    connection
-        .remote()
-        .download(&refspec_strs, Some(&mut opts))
-        .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Fetch, e))?;
-    drop(connection);
-    // the tracking refs by hand, as download_ref does: update_tips would
-    // write FETCH_HEAD
-    for (b, tip) in &heads {
-        repo.reference(
-            &format!("refs/remotes/{remote_name}/{b}"),
-            *tip,
-            true,
-            "joy-vcs: fetch heads",
-        )
-        .map_err(err)?;
-    }
-    Ok(heads.into_iter().map(|(b, _)| b).collect())
+    over_plan(
+        repo_dir,
+        auth,
+        "fetch",
+        super::contact::ContactDirection::Fetch,
+        false,
+        |repo, remote, leg_auth, _leg| {
+            // The tracking refs are named after the CONFIGURED remote,
+            // which is read before the contact: the contact itself may
+            // run over an anonymous remote, either because the ssh
+            // config renames the host (`contact_remote`) or because it
+            // is the https twin, and an anonymous remote has no name.
+            let remote_name = {
+                let configured = origin_or_first(repo)?;
+                configured
+                    .name()
+                    .map_err(err)?
+                    .ok_or_else(|| anyhow::anyhow!("remote name is not utf-8"))?
+                    .to_string()
+            };
+            let url = remote_url_of(remote);
+            let proxy = proxy_for(&url, Some(repo))?;
+            // one connection for the advertisement and the download, as
+            // download_over does (D1.9)
+            let mut connection = remote
+                .connect_auth(
+                    git2::Direction::Fetch,
+                    Some(leg_auth.callbacks_as(auth.host_kind(), cred_source(Some(repo)))),
+                    Some(proxy.options()),
+                )
+                .map_err(|e| {
+                    contact_failed(&url, leg_auth, super::contact::ContactDirection::Fetch, e)
+                })?;
+            let heads: Vec<(String, git2::Oid)> = connection
+                .list()
+                .map_err(|e| {
+                    contact_failed(&url, leg_auth, super::contact::ContactDirection::Fetch, e)
+                })?
+                .iter()
+                .filter_map(|r| {
+                    r.name()
+                        .strip_prefix("refs/heads/")
+                        .map(|b| (b.to_string(), r.oid()))
+                })
+                .collect();
+            if heads.is_empty() {
+                return Ok(Vec::new());
+            }
+            let refspecs: Vec<String> = heads
+                .iter()
+                .map(|(b, _)| format!("+refs/heads/{b}:refs/remotes/{remote_name}/{b}"))
+                .collect();
+            let refspec_strs: Vec<&str> = refspecs.iter().map(String::as_str).collect();
+            let mut opts = git2::FetchOptions::new();
+            opts.remote_callbacks(leg_auth.callbacks_as(auth.host_kind(), cred_source(Some(repo))));
+            opts.proxy_options(proxy.options());
+            connection
+                .remote()
+                .download(&refspec_strs, Some(&mut opts))
+                .map_err(|e| {
+                    contact_failed(&url, leg_auth, super::contact::ContactDirection::Fetch, e)
+                })?;
+            drop(connection);
+            // the tracking refs by hand, as download_over does:
+            // update_tips would write FETCH_HEAD
+            for (b, tip) in &heads {
+                repo.reference(
+                    &format!("refs/remotes/{remote_name}/{b}"),
+                    *tip,
+                    true,
+                    "joy-vcs: fetch heads",
+                )
+                .map_err(err)?;
+            }
+            Ok(heads.into_iter().map(|(b, _)| b).collect())
+        },
+    )
 }
 
 /// The forge's default branch as the clone recorded it (`origin/HEAD`,
