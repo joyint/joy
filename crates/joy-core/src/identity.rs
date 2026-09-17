@@ -3,10 +3,11 @@
 
 //! Identity resolution for Joy CLI operations.
 //!
-//! Resolves the acting user's identity from:
-//! 1. Active session (if one exists for any member)
-//! 2. `git config user.email`, while it names a member of this project
-//! 3. The member this device pinned, for a machine with no git identity
+//! Resolves the acting user's identity from, in this order (D3.9):
+//! 1. The delegation session in `JOY_SESSION`
+//! 2. The member this device pinned, written when a person authenticated
+//!    here
+//! 3. `git config user.email`, a prefill for a machine that pinned nobody
 //!
 //! AI members authenticate via `joy auth --token`, which creates a
 //! session. There is no self-declared identity override.
@@ -48,10 +49,11 @@ impl Identity {
 
 /// Resolve the acting identity for the current operation.
 ///
-/// Priority (D3.9 of the forge connection NG design):
+/// Priority (D3.9 of the forge connection NG design): the session first,
+/// then the project's member pin, and git config only as a prefill.
 /// 1. JOY_SESSION -- ephemeral-key-bound AI session handle (ADR-033)
-/// 2. The member key: git config while it names a member of this
-///    project, else the member pinned on this device
+/// 2. The member key: the member this device pinned, else git config
+///    while it names a member of this project
 /// 3. A human session for that member
 /// 4. Fallback: the same key, unauthenticated
 pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
@@ -73,16 +75,21 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
     // the git config then still resolves to its member. In open mode (or
     // when nothing resolves) this is just the e-mail.
     //
-    // The device pin closes Scotty's case (D3.9): a person who enrolled on
-    // a machine whose git config names nobody is still known here, with no
-    // git config anywhere in the chain. It is consulted when git config
-    // names no member of this project, which is exactly the gap it was
-    // written for; a git config that DOES name a member keeps deciding, so
-    // two members sharing one machine and one checkout are unaffected.
+    // The device pin comes FIRST (D3.9): it is what the person who
+    // authenticated on this machine chose, while git config is a machine
+    // setting that nobody promised joy anything about. That order is the
+    // one D3.9 states, and it is the one `acting_member` below uses, so
+    // `joy auth status` and `joy auth init` can never disagree about who
+    // is acting here. A person who wants to act as somebody else on this
+    // machine names them (`--user`), and authenticating re-pins.
     let member_key = project
         .as_ref()
-        .and_then(|p| crate::privacy::member_key_for_email_or_forge(p, root, &git_email, None))
-        .or_else(|| project.as_ref().and_then(|p| pinned_member(root, p)))
+        .and_then(|p| pinned_member(root, p))
+        .or_else(|| {
+            project.as_ref().and_then(|p| {
+                crate::privacy::member_key_for_email_or_forge(p, root, &git_email, None)
+            })
+        })
         .unwrap_or_else(|| git_email.clone());
 
     // 1. JOY_SESSION: env var carries the ephemeral private key bound to
@@ -255,35 +262,64 @@ fn read_member_pin(root: &Path) -> Option<String> {
 /// travel to the team through a committed file.
 const MEMBER_PIN_KEY: &str = "member";
 
-/// Remember `member` as the one this device acts as in this project, but
-/// only when git config cannot name them: the pin exists for the person
-/// whose machine has no git identity (D3.9), and a machine that already
-/// answers correctly needs no second answer that could go stale.
+/// Remember `member` as the one this device acts as in this project.
+/// Called at the two moments where a person says who they are on this
+/// machine: founding the project, and authenticating in it.
+///
+/// The pin exists for the machine git config cannot answer for, and it is
+/// REMOVED again the moment git config can: it is read before git config
+/// (D3.9), so a pin left beside a working git identity would be the one
+/// thing on the machine that can go stale, and the person who changed
+/// their git config would never guess that an old pin outranks it.
+/// Together that gives one answer per machine: the pin when there is one,
+/// git config when there is none, and never a silent disagreement.
+///
+/// `project` is the project the member belongs to; a pin is only worth
+/// keeping for a member it actually knows.
 ///
 /// Best effort: a state directory that cannot be written costs a pin, not
 /// the enrolment that just succeeded.
 pub fn pin_acting_member(root: &Path, project: &Project, member: &str) {
-    let git_email = crate::vcs::default_vcs().user_email().unwrap_or_default();
-    if crate::privacy::member_key_for_email(project, &git_email).is_some() {
+    if project.member_by_key(member).is_none() {
         return;
     }
-    if let Err(e) = write_member_pin(root, member) {
+    let git_email = crate::vcs::default_vcs().user_email().unwrap_or_default();
+    let git_config_names_them = !git_email.trim().is_empty()
+        && (git_email == member
+            || crate::privacy::member_key_for_email(project, &git_email).as_deref()
+                == Some(member));
+    let wanted = (!git_config_names_them).then_some(member);
+    if let Err(e) = set_member_pin(root, wanted) {
         eprintln!("Warning: could not remember the acting member on this device: {e}");
     }
 }
 
-/// Write the pin into the per-project app state file, keeping every other
-/// key in it (the forge login of D4.1c lives in the same object).
-fn write_member_pin(root: &Path, member: &str) -> Result<(), JoyError> {
+/// Set or clear the pin in the per-project app state file, keeping every
+/// other key in it (the forge login of D4.1c lives in the same object).
+fn set_member_pin(root: &Path, member: Option<&str>) -> Result<(), JoyError> {
     let path = crate::auth::session::app_state_project_file(root)?;
-    let mut state: serde_json::Value = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|text| serde_json::from_str(&text).ok())
+    let existing = std::fs::read_to_string(&path).ok();
+    if existing.is_none() && member.is_none() {
+        return Ok(());
+    }
+    let mut state: serde_json::Value = existing
+        .as_deref()
+        .and_then(|text| serde_json::from_str(text).ok())
         .unwrap_or_else(|| serde_json::json!({}));
     if !state.is_object() {
         state = serde_json::json!({});
     }
-    state[MEMBER_PIN_KEY] = serde_json::Value::String(member.to_string());
+    match member {
+        Some(member) => state[MEMBER_PIN_KEY] = serde_json::Value::String(member.to_string()),
+        None => {
+            let Some(object) = state.as_object_mut() else {
+                return Ok(());
+            };
+            if object.remove(MEMBER_PIN_KEY).is_none() {
+                return Ok(());
+            }
+        }
+    }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| JoyError::CreateDir {
             path: parent.to_path_buf(),
@@ -301,8 +337,13 @@ fn write_member_pin(root: &Path, member: &str) -> Result<(), JoyError> {
 /// The member a local enrolment or authentication acts as, resolved
 /// WITHOUT demanding a git config (D3.9): the address the host named
 /// (`--user`, the app's mask), then the member pinned on this device,
-/// then git config as a prefill, then the project's only human member.
-/// The typed error when nothing answers.
+/// then git config as a prefill. The typed error when nothing answers.
+///
+/// These three are the whole list. Guessing a member from the project
+/// (for instance "it has only one human") is deliberately not in it: the
+/// project file travels with every clone, so a guess would let anyone who
+/// clones a project claim the member it guesses, while the pin is this
+/// device's own state and `--user` is a person speaking.
 ///
 /// The git config address is returned raw, not resolved to a member key,
 /// so every existing "X is not a registered project member" text keeps
@@ -318,18 +359,11 @@ pub fn acting_member(
     if let Some(pin) = pinned_member(root, project) {
         return Ok(pin);
     }
-    if let Some(email) = crate::vcs::default_vcs()
+    crate::vcs::default_vcs()
         .user_email()
         .ok()
         .filter(|e| !e.trim().is_empty())
-    {
-        return Ok(email);
-    }
-    let mut humans = project.member_keys().filter(|key| !is_ai_member(key));
-    match (humans.next(), humans.next()) {
-        (Some(only), None) => Ok(only.clone()),
-        _ => Err(JoyError::UnknownActingMember),
-    }
+        .ok_or(JoyError::UnknownActingMember)
 }
 
 /// The signature a commit of `member` carries in THIS checkout (D4.5).

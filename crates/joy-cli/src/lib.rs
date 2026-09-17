@@ -406,6 +406,29 @@ pub fn cli_main() -> anyhow::Result<()> {
         output::OutputMode::Display
     });
 
+    // Who is behind this process, decided ONCE, here, before anything
+    // dispatches (D1.1). Everything downstream reads the answer through
+    // `joy_core::host::process_host()` and never looks at the environment
+    // again. Two facts go into it: whether a person can be asked anything
+    // at all (a terminal on both ends, and not a `--json` run, whose
+    // stdout carries one envelope and nothing else), and whether joy's own
+    // session variable names a live delegation, which wins over the
+    // terminal because an agent that owns a terminal is still an agent.
+    //
+    // The subcommands git itself invokes are `Background` whoever started
+    // them: the hook helper and the merge driver run inside a `git commit`
+    // or a `git merge`, where a question has nobody to reach and a prompt
+    // would hang the git process that is waiting for them.
+    let machine_invoked = matches!(
+        &cli.command,
+        Some(Commands::PrepareCommitMsg(_)) | Some(Commands::Merge(_))
+    );
+    joy_core::host::set_process_host(if machine_invoked {
+        joy_core::host::HostKind::Background
+    } else {
+        joy_core::host::HostKind::detect(!cli.json && prompt::is_interactive())
+    });
+
     // Config subcommand handles its own validation, run it before load_config
     // to avoid duplicate warnings for invalid config state.
     if let Some(Commands::Config(args)) = cli.command {

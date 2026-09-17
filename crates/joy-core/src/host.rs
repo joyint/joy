@@ -58,6 +58,25 @@ impl HostKind {
     }
 }
 
+/// The kind the entry point of THIS process decided, set once.
+static PROCESS_HOST: std::sync::OnceLock<HostKind> = std::sync::OnceLock::new();
+
+/// Record the host kind of this process. Called exactly once, by the
+/// entry point of each host (D1.1): joy-cli in `cli_main`, the desktop
+/// when it starts an action, the platform never (it stays
+/// [`HostKind::Background`]). A second call is ignored, so no library
+/// code can talk a process into believing a person is present.
+pub fn set_process_host(kind: HostKind) {
+    let _ = PROCESS_HOST.set(kind);
+}
+
+/// The host kind of this process. [`HostKind::Background`] until an entry
+/// point said otherwise, which is the careful answer for every caller
+/// that never decided.
+pub fn process_host() -> HostKind {
+    PROCESS_HOST.get().copied().unwrap_or_default()
+}
+
 /// Whether `JOY_SESSION` names a delegation session that is still alive.
 /// A leftover or malformed value is not a delegation: it makes the process
 /// no less interactive than it already was.

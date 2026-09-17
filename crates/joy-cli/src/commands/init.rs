@@ -56,14 +56,11 @@ pub struct InitArgs {
 
 pub fn run(args: InitArgs) -> Result<()> {
     let root = std::env::current_dir()?;
-    // Who is behind this process, decided once, here (D1.1): a person at a
-    // terminal may be asked for the founding address; a hook, a pipe, a
-    // --json run and a delegated agent are refused by name instead
-    // (D3.9). `--json` is not a terminal for this purpose: its stdout
-    // carries one envelope and nothing else.
-    let host = joy_core::host::HostKind::detect(
-        !crate::output::is_json() && crate::prompt::is_interactive(),
-    );
+    // The host kind was decided once, at the entry point (D1.1); this
+    // command only reads it. A person at a terminal may be asked for the
+    // founding address; a hook, a pipe, a --json run and a delegated
+    // agent are refused by name instead (D3.9).
+    let host = joy_core::host::process_host();
     let options = InitOptions {
         name: args.name,
         acronym: args.acronym,
@@ -166,16 +163,21 @@ pub fn run(args: InitArgs) -> Result<()> {
             // bootstrap one (`joy project member add` attests with the caller's
             // key). Register the founder now that an identity is available
             // (JOY-01CA-AF).
-            match init::ensure_founder(&root, args.user.as_deref())? {
+            // The repair path asks the same question the fresh one does
+            // (D3.9): a person at a terminal is asked for the address
+            // instead of being sent to `git config`.
+            let mut ask = host
+                .may_ask()
+                .then(|| Box::new(init::TerminalAsk::stdio()) as Box<dyn init::AskFounderAddress>);
+            match init::ensure_founder(&root, args.user.as_deref(), host, ask.as_deref_mut())? {
                 init::FounderHeal::Registered(email) => {
                     println!("  Registered {email} as the founding member.");
                 }
                 init::FounderHeal::NoIdentity => {
                     println!();
-                    println!("This project has no founding member and no git user.email is set.");
-                    println!("  Set your identity and re-run, or pass --user:");
-                    println!("    git config user.email \"you@example.com\"");
-                    println!("    joy init");
+                    println!("This project has no founding member and nobody to ask for one.");
+                    println!("  Name the founding member and re-run:");
+                    println!("    joy init --user you@example.com");
                 }
                 init::FounderHeal::AlreadyPresent => {}
             }

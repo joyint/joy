@@ -269,6 +269,14 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
     )?;
 
     store::write_yaml(&joy_dir.join(store::PROJECT_FILE), &project)?;
+
+    // This device founded the project, so this device acts as the founder
+    // until somebody says otherwise (D3.9). Without the pin, the next
+    // command on a machine with no git config would have to guess, and a
+    // guess read from the committed project file would let anyone who
+    // clones the project claim the founder's member.
+    crate::identity::pin_acting_member(root, &project, &founder_email);
+
     let project_rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
     let defaults_rel = format!("{}/{}", store::JOY_DIR, store::CONFIG_DEFAULTS_FILE);
     crate::git_ops::auto_git_add(root, &[&project_rel, &defaults_rel]);
@@ -380,20 +388,39 @@ pub enum FounderHeal {
 /// configured, when the founder step was silently skipped (JOY-01CA-AF). New
 /// projects can no longer reach that state because [`init`] now fails fast.
 /// Idempotent: does nothing when the project already has members.
-pub fn ensure_founder(root: &Path, user_override: Option<&str>) -> Result<FounderHeal, JoyError> {
+///
+/// `host` and `ask` are the same two the fresh path takes, and for the
+/// same reason (D3.9): this is the command a person runs to repair a
+/// project, so a person at a terminal is asked for the address here too
+/// instead of being sent to `git config`. A background host answers
+/// [`FounderHeal::NoIdentity`] as before.
+pub fn ensure_founder(
+    root: &Path,
+    user_override: Option<&str>,
+    host: HostKind,
+    ask: Option<&mut (dyn AskFounderAddress + 'static)>,
+) -> Result<FounderHeal, JoyError> {
     let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
     let mut project = store::read_project(&project_path)?;
     if project.has_members() {
         return Ok(FounderHeal::AlreadyPresent);
     }
-    let Some(email) = resolve_founder_email(root, user_override)? else {
-        return Ok(FounderHeal::NoIdentity);
+    let email = match resolve_founder_email(root, user_override)? {
+        Some(email) => email,
+        None => match ask_for_founder_address(root, host, ask) {
+            Ok(typed) => typed,
+            // The refusal of a host that cannot ask is this function's own
+            // "nothing to heal with", which its caller already prints.
+            Err(JoyError::NoFounderIdentity) => return Ok(FounderHeal::NoIdentity),
+            Err(e) => return Err(e),
+        },
     };
     project.register_member(
         &email,
         crate::model::project::Member::new(crate::model::project::MemberCapabilities::All),
     )?;
     store::write_yaml(&project_path, &project)?;
+    crate::identity::pin_acting_member(root, &project, &email);
     let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
     crate::git_ops::auto_git_add(root, &[&rel]);
     Ok(FounderHeal::Registered(email))

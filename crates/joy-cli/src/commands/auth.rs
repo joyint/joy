@@ -202,13 +202,17 @@ pub fn run(args: AuthArgs) -> Result<()> {
 }
 
 /// Resolve the member-selector for this invocation. `--user` always
-/// wins; otherwise we fall back to git config user.email. Centralised
-/// here so every auth path uses the same rule (JOY-00F3-AE).
-fn resolve_user(user_flag: Option<&str>) -> Result<String> {
-    match user_flag {
-        Some(u) if !u.is_empty() => Ok(u.to_string()),
-        _ => Ok(joy_core::vcs::default_vcs().user_email()?),
-    }
+/// wins; otherwise the member this device pinned when a person last
+/// authenticated in this project, and git config only as the prefill
+/// behind both (D3.9). Centralised here so every auth path uses the same
+/// rule (JOY-00F3-AE), and the same rule `joy auth init` uses, so a
+/// founder who never had a git config is not locked out of his own
+/// project when the session expires.
+fn resolve_user(root: &Path, user_flag: Option<&str>) -> Result<String> {
+    let project = store::load_project(root)?;
+    Ok(joy_core::identity::acting_member(
+        root, &project, user_flag,
+    )?)
 }
 
 /// Resolve token from --token flag or JOY_TOKEN env var.
@@ -461,7 +465,7 @@ fn run_auth(
     }
 
     // Human authentication via passphrase
-    let email = resolve_user(user_flag)?;
+    let email = resolve_user(&root, user_flag)?;
     auth_with_passphrase(
         &root,
         &project,
@@ -932,7 +936,7 @@ fn run_token_add(
 ) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
-    let email = resolve_user(user_flag)?;
+    let email = resolve_user(&root, user_flag)?;
     let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "Passphrase: ")?;
 
     let (encoded, hours) =
