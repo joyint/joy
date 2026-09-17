@@ -19,7 +19,12 @@
 
 pub mod github;
 
-use joy_forge_net::forge::{Ctx, Forge, Listing, NewRepository, ReleaseRequest, Target};
+use joy_forge_net::auth::oauth::OAuth;
+use joy_forge_net::auth::store::Record;
+use joy_forge_net::auth::Purpose;
+use joy_forge_net::forge::{
+    Account, Ctx, Forge, Listing, NewRepository, Reach, ReleaseRequest, Target,
+};
 use serde_json::Value;
 
 /// The GitHub forge, as the dispatcher sees it.
@@ -72,5 +77,48 @@ impl Forge for GitHub {
         ctx: &Ctx,
     ) -> anyhow::Result<Value> {
         github::release_answer(target, request, ctx)
+    }
+
+    /// One set covers every verb group on GitHub (D2.7a), so `--for`
+    /// changes nothing here and the design says why: there is no read
+    /// only private scope on GitHub.
+    fn scopes(&self, _purpose: Purpose) -> &'static str {
+        github::SCOPES
+    }
+
+    fn oauth(&self, host: &str, purpose: Purpose, ctx: &Ctx) -> Option<OAuth> {
+        github::oauth_for(host, purpose, ctx)
+    }
+
+    fn account(&self, host: &str, token: &str, ctx: &Ctx) -> Option<Account> {
+        github::account_of(host, token, ctx)
+    }
+
+    fn reaches(&self, host: &str, repo_path: &str, token: &str, ctx: &Ctx) -> Option<Reach> {
+        github::reaches_repo(host, repo_path, token, ctx)
+    }
+
+    fn web_url(&self, target: &Target, ctx: &Ctx) -> Value {
+        joy_forge_net::auth::verbs::https_twin(target, ctx)
+    }
+
+    fn revoke(&self, host: &str, record: &Record, ctx: &Ctx) -> bool {
+        github::revoke_token(host, record, ctx)
+    }
+
+    fn https_username(&self) -> &'static str {
+        "x-access-token"
+    }
+
+    fn foreign_cli(&self) -> &'static str {
+        "gh"
+    }
+
+    fn foreign_logout_command(&self, host: &str) -> String {
+        format!("gh auth logout --hostname {host}")
+    }
+
+    fn foreign_logins(&self, host: &str) -> Vec<String> {
+        github::gh_logins(host)
     }
 }

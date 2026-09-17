@@ -11,8 +11,10 @@
 //! different thing and the only device side credential source this wave
 //! has.
 
+use joy_forge_net::auth::oauth::{Flow, OAuth};
+use joy_forge_net::auth::Purpose;
 use joy_forge_net::forge::{
-    unknown, unknown_state, Ctx, Listing, NewRepository, ReleaseRequest, Target,
+    unknown, unknown_state, Account, Ctx, Listing, NewRepository, Reach, ReleaseRequest, Target,
 };
 use joy_forge_net::http::Answer;
 use joy_forge_net::scope::{self, Group};
@@ -568,12 +570,20 @@ pub fn create_repository_answer(target: &Target, new: &NewRepository, ctx: &Ctx)
     if ctx.token("github", &host).is_none() {
         return json!({ "state": "needs_sign_in", "host": host });
     }
+    // The local pre check of D2.7c, cheapest first: since J3 the set
+    // the forge granted is stored beside the token, so a token that
+    // cannot create is refused before a single request is sent.
+    if let Some(refused) =
+        joy_forge_net::auth::verbs::stored_create_gate(ctx, "github", &host, new.private)
+    {
+        return refused;
+    }
     let base = api_base(&host, ctx);
     // One `GET /user` carries both facts this verb needs: who the token
     // speaks for, and what it may do (the `X-OAuth-Scopes` header).
     let (user, granted) = current_account(ctx, &host).unwrap_or((None, None));
-    // The local pre check of D2.7c: answer without spending a request
-    // when the granted set cannot carry the verb.
+    // The same pre check for a credential joy did not store: the header
+    // is where a classic token says what it may do.
     if let Some(scopes) = granted {
         let missing = scope::missing_for_create("github", new.private, &scopes);
         if !missing.is_empty() {
@@ -678,6 +688,18 @@ pub fn release_answer(
              = help: set {variables}, hand one over with --token-env, or run `gh auth login`"
         )
     })?;
+    // The local pre check of D2.7c: a token whose stored set cannot
+    // carry a release is told so, instead of the forge's refusal being
+    // reported as a failed publish.
+    if let Some(refused) = joy_forge_net::auth::verbs::stored_scope_gate(
+        ctx,
+        "github",
+        &host,
+        "release",
+        Group::Release,
+    ) {
+        return Ok(refused);
+    }
     let http = ctx.http(&host)?;
     let base = api_base(&host, ctx);
     let releases = format!("{base}/repos/{path}/releases");
@@ -755,6 +777,251 @@ pub fn release_answer(
 // `release` takes notes and nothing else in the verb catalogue of
 // D2.4, and joy's own publish never uploaded one either. The code for
 // it lands with the argument that carries it.
+
+// -- the sign in half (D2.4, D2.7, package J3) --------------------------------
+
+/// The scope set GitHub asks for (D2.7a). **One set covers A to G**:
+/// `repo user:email`. There is no read only private scope on GitHub, so
+/// the minimal scope demand cannot be met with an OAuth App; it is met
+/// later by a GitHub App or a fine grained token with Contents read,
+/// and the design says so instead of promising it now.
+pub const SCOPES: &str = "repo user:email";
+
+/// The sentence a read only member on GitHub hears (D2.7c). It is put
+/// on stderr because the connector has no screen: the host renders it.
+pub const READ_IS_WRITE: &str =
+    "GitHub grants read and write in one scope, so this sign in asks for both. \
+     joy never pushes without an explicit action.";
+
+/// The OAuth application for a host (D2.7).
+///
+/// github.com signs in through joy's own public client; GitHub
+/// Enterprise Server has instance local endpoints AND an instance local
+/// client id, and the app must be registered on the instance, which is
+/// what `forges.yaml` carries (D2.5). A GHES host with no configured
+/// client has no door, and `login` says so rather than sending a
+/// request nobody can answer.
+pub fn oauth_for(host: &str, purpose: Purpose, ctx: &Ctx) -> Option<OAuth> {
+    let instance = ctx.instance(host);
+    let client_id = instance
+        .and_then(|entry| entry.client_id.clone())
+        .or_else(|| {
+            (host == "github.com")
+                .then(|| joy_forge_net::auth::oauth::clients::GITHUB_COM.to_string())
+        })?;
+    if purpose == Purpose::Read {
+        eprintln!("joy: {READ_IS_WRITE}");
+    }
+    Some(OAuth {
+        client_id,
+        flow: Flow::Device,
+        device_endpoint: instance
+            .and_then(|entry| entry.device_endpoint.clone())
+            .unwrap_or_else(|| format!("https://{host}/login/device/code")),
+        auth_endpoint: instance
+            .and_then(|entry| entry.auth_endpoint.clone())
+            .unwrap_or_else(|| format!("https://{host}/login/oauth/authorize")),
+        token_endpoint: instance
+            .and_then(|entry| entry.token_endpoint.clone())
+            .unwrap_or_else(|| format!("https://{host}/login/oauth/access_token")),
+        scopes: instance
+            .and_then(|entry| entry.scopes.clone())
+            .unwrap_or_else(|| SCOPES.to_string()),
+    })
+}
+
+/// One API GET with a NAMED token, for the calls that validate a token
+/// the context does not hold yet (`token-store`, the probe of D4.1c).
+fn api_get_as(ctx: &Ctx, host: &str, url: &str, token: &str) -> Option<Answer> {
+    let http = ctx.http(host).ok()?;
+    match http
+        .get(url)
+        .header("Accept", ACCEPT_JSON)
+        .bearer(token)
+        .call()
+    {
+        Ok(answer) => Some(answer),
+        Err(error) => {
+            eprintln!("joy-forge github: {error}");
+            None
+        }
+    }
+}
+
+/// Who this token speaks for, asked of the instance's own API. This is
+/// the `identity` validation `token-store` runs before it stores
+/// anything, and what a finished `login` reports.
+pub fn account_of(host: &str, token: &str, ctx: &Ctx) -> Option<Account> {
+    let base = api_base(host, ctx);
+    let answer = api_get_as(ctx, host, &format!("{base}/user"), token)?;
+    if !answer.ok() {
+        return None;
+    }
+    let body = answer.json()?;
+    let login = body.get("login").and_then(|v| v.as_str())?.to_string();
+    let mut emails: Vec<String> = Vec::new();
+    if let Some(list) = api_get_as(ctx, host, &format!("{base}/user/emails"), token) {
+        if list.ok() {
+            #[derive(serde::Deserialize)]
+            struct Entry {
+                email: String,
+                #[serde(default)]
+                verified: bool,
+            }
+            if let Ok(entries) = serde_json::from_str::<Vec<Entry>>(&list.body) {
+                emails = entries
+                    .into_iter()
+                    .filter(|entry| entry.verified)
+                    .map(|entry| entry.email)
+                    .collect();
+            }
+        }
+    }
+    Some(Account {
+        login,
+        user_id: body
+            .get("id")
+            .and_then(|v| v.as_i64())
+            .map(|id| id.to_string()),
+        emails,
+        // The granted set rides on the answer's own header; a fine
+        // grained token carries none, and an unknown set must never be
+        // reported as a missing one (D2.7c).
+        scopes: granted_scopes(&answer).map(|scopes| scopes.join(" ")),
+    })
+}
+
+/// Whether this token reaches `owner/repo`, and whether it may push
+/// (the probe of D4.1c). One request, per remote and never per contact.
+pub fn reaches_repo(host: &str, repo_path: &str, token: &str, ctx: &Ctx) -> Option<Reach> {
+    let url = format!("{}/repos/{repo_path}", api_base(host, ctx));
+    let answer = api_get_as(ctx, host, &url, token)?;
+    if !answer.ok() {
+        // GitHub answers 404 rather than 403 for a private repository
+        // the caller may not see, so both mean "this login is not the
+        // one" and neither is an error.
+        return Some(Reach::default());
+    }
+    let body = answer.json().unwrap_or_default();
+    Some(Reach {
+        read: true,
+        push: body
+            .pointer("/permissions/push")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+    })
+}
+
+/// Revoke a token at GitHub: `DELETE /applications/{client_id}/token`,
+/// and never `.../grant`. Deleting the GRANT deletes every token of
+/// that app for the person, including the one another joy on another
+/// machine is using (contradiction 13 of the design).
+///
+/// The endpoint authenticates with the application's own credentials.
+/// joy registers a PUBLIC client, which has no secret, so a real
+/// github.com refusal here is expected until the operator decides
+/// otherwise; the entry is removed locally either way and the answer
+/// says `"revoked": false` rather than pretending.
+pub fn revoke_token(host: &str, record: &joy_forge_net::auth::store::Record, ctx: &Ctx) -> bool {
+    let Some(client_id) = record.client_id.as_deref() else {
+        return false;
+    };
+    let Ok(http) = ctx.http(host) else {
+        return false;
+    };
+    let url = format!("{}/applications/{client_id}/token", api_base(host, ctx));
+    match http
+        .delete(&url)
+        .header("Accept", ACCEPT_JSON)
+        .basic(client_id, "")
+        .send_json(&json!({ "access_token": record.token }))
+    {
+        // 204 is the documented success; anything else is a refusal
+        // this connector reports honestly.
+        Ok(answer) => answer.status == 204,
+        Err(error) => {
+            eprintln!("joy-forge github: {error}");
+            false
+        }
+    }
+}
+
+/// Every login gh is signed in as on this host, the active one first
+/// (D4.1c's probe candidate order).
+///
+/// gh keeps several accounts per host and documents the trap: "Without
+/// the --user flag, the active account for the host is chosen." A
+/// connector that asked `gh auth token --hostname H` and nothing else
+/// would hand back whichever account the person last switched to.
+pub fn gh_logins(host: &str) -> Vec<String> {
+    match joy_forge_net::foreign::first_readable(&joy_forge_net::foreign::gh_config_files()) {
+        Some((_, text)) => parse_logins(&text, host),
+        None => Vec::new(),
+    }
+}
+
+/// The `user:` and every key under `users:` of one host block of gh's
+/// hosts.yml, the active one first and each name once.
+pub fn parse_logins(text: &str, host: &str) -> Vec<String> {
+    let host = host.trim().to_ascii_lowercase();
+    let mut active: Option<String> = None;
+    let mut users: Vec<String> = Vec::new();
+    let mut in_host = false;
+    let mut users_indent: Option<usize> = None;
+    for line in text.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let indent = line.len() - line.trim_start().len();
+        if indent == 0 {
+            in_host = line
+                .trim_end()
+                .trim_end_matches(':')
+                .trim()
+                .to_ascii_lowercase()
+                == host;
+            users_indent = None;
+            continue;
+        }
+        if !in_host {
+            continue;
+        }
+        let trimmed = line.trim();
+        if let Some(name) = trimmed.strip_prefix("user:") {
+            let name = name.trim();
+            if !name.is_empty() {
+                active = Some(name.to_string());
+            }
+            continue;
+        }
+        if trimmed == "users:" {
+            users_indent = Some(indent);
+            continue;
+        }
+        match users_indent {
+            // A key nested under `users:` is a login name; anything at
+            // or above that indent ended the block.
+            Some(block) if indent > block && trimmed.ends_with(':') => {
+                let name = trimmed.trim_end_matches(':').trim();
+                if !name.is_empty() && !users.iter().any(|known| known == name) {
+                    users.push(name.to_string());
+                }
+            }
+            Some(block) if indent <= block => users_indent = None,
+            _ => {}
+        }
+    }
+    let mut logins: Vec<String> = Vec::new();
+    if let Some(active) = active {
+        logins.push(active);
+    }
+    for user in users {
+        if !logins.iter().any(|known| known == &user) {
+            logins.push(user);
+        }
+    }
+    logins
+}
 
 #[cfg(test)]
 mod tests {
@@ -1002,6 +1269,68 @@ mod tests {
         assert_eq!(
             classify(&Answer::new(401, "{}", Vec::new())),
             "needs_sign_in"
+        );
+    }
+
+    /// D2.7: github.com signs in through joy's public client with the
+    /// device grant; a GitHub Enterprise Server has instance local
+    /// endpoints AND an instance local client id, and without one there
+    /// is no door at all.
+    #[test]
+    fn the_device_grant_endpoints_are_the_instances_own() {
+        let ctx = ctx();
+        let public = oauth_for("github.com", Purpose::Write, &ctx).unwrap();
+        assert_eq!(public.flow, Flow::Device);
+        assert_eq!(
+            public.device_endpoint,
+            "https://github.com/login/device/code"
+        );
+        assert_eq!(
+            public.token_endpoint,
+            "https://github.com/login/oauth/access_token"
+        );
+        assert_eq!(public.scopes, SCOPES);
+        assert!(
+            joy_forge_net::auth::oauth::clients::is_placeholder(&public.client_id),
+            "the public client id is a placeholder until it is registered"
+        );
+        // A GHES host with nothing configured has no client id, so
+        // `login` says so instead of asking github.com about it.
+        assert!(oauth_for("ghe.acme.test", Purpose::Write, &ctx).is_none());
+        let configured = ctx.with_instances(
+            joy_forge_net::config::Instances::from_text(
+                "- host: ghe.acme.test\n  kind: github\n  client_id: Iv1.instance\n",
+            )
+            .unwrap(),
+        );
+        let instance = oauth_for("ghe.acme.test", Purpose::Write, &configured).unwrap();
+        assert_eq!(instance.client_id, "Iv1.instance");
+        assert_eq!(
+            instance.device_endpoint,
+            "https://ghe.acme.test/login/device/code"
+        );
+    }
+
+    /// D2.7a: one set covers A to G on GitHub, so `--for` changes
+    /// nothing, and D2.7c says the person is told why.
+    #[test]
+    fn github_asks_for_one_set_whatever_the_access_level_is() {
+        assert_eq!(SCOPES, "repo user:email");
+        assert!(READ_IS_WRITE.contains("never pushes without an explicit action"));
+    }
+
+    /// D4.1c: gh keeps several accounts per host, and the active one is
+    /// the first candidate of the probe order.
+    #[test]
+    fn every_gh_account_of_a_host_is_a_probe_candidate_the_active_one_first() {
+        let text = "github.com:\n    users:\n        work:\n            oauth_token: x\n        scotty:\n            oauth_token: y\n    user: scotty\n    git_protocol: ssh\ngithub.acme.test:\n    user: nobody\n";
+        assert_eq!(parse_logins(text, "github.com"), vec!["scotty", "work"]);
+        assert_eq!(parse_logins(text, "github.acme.test"), vec!["nobody"]);
+        assert!(parse_logins(text, "gitlab.com").is_empty());
+        // a host block with one account and no `users:` map still lists it
+        assert_eq!(
+            parse_logins("github.com:\n    user: solo\n", "github.com"),
+            vec!["solo"]
         );
     }
 

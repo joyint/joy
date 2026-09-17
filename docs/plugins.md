@@ -226,6 +226,11 @@ directory (`$XDG_CONFIG_HOME/joy/forges.yaml`, `~/.config/joy/forges.yaml`,
   kind: github            # github | gitlab | gitea
   api_base: https://git.acme.test/api/v3
   web_base: https://git.acme.test
+  client_id: Iv1.the-app-registered-on-this-instance
+  device_endpoint: https://git.acme.test/login/device/code
+  auth_endpoint: https://git.acme.test/login/oauth/authorize
+  token_endpoint: https://git.acme.test/login/oauth/access_token
+  scopes: repo user:email
   ca_bundle: /etc/pki/tls/certs/acme-root.pem   # Linux only
 ```
 
@@ -233,6 +238,16 @@ directory (`$XDG_CONFIG_HOME/joy/forges.yaml`, `~/.config/joy/forges.yaml`,
 CLI installed at all, and every verb asks the `api_base` named there.
 The project level `forge:` override keeps working and wins for that
 project.
+
+**The OAuth client id is configuration, not code.** An instance signs
+in through the application its own operator registered, which is what
+`client_id` and the three endpoints carry; only the defaults for
+github.com, gitlab.com and codeberg.org are built in, and those are
+still PLACEHOLDERS marked `REPLACE-ME` until joy's public clients are
+registered. Where a host has no usable client id, `login` says so in
+one sentence and names the two ways forward: store a token with
+`--token-stdin`, or put a `client_id` for that host into this file.
+Nothing is sent to a forge in the meantime.
 
 ### Where a token comes from
 
@@ -256,9 +271,12 @@ nothing, the call has no credential, and nothing else is consulted. A
 multi-account host must never act as the machine's own account because
 its variable happened to be empty.
 
-Where no caller named a variable, the connector reads the forge's own,
-which is what a person or a CI runner exports anyway, and only then does
-it spawn the forge CLI.
+Where no caller named a variable, the connector looks in its OWN entry
+first (the one `login` and `token-store` wrote, see "The connector's own
+credential" below), then at the forge's own variables, which is what a
+person or a CI runner exports anyway, and only then does it spawn the
+forge CLI. The `source` field of the `token` answer says which of the
+six it was: `keychain`, `file`, `gh`, `glab`, `tea` or `env`.
 
 | forge | variables | read for |
 | --- | --- | --- |
@@ -276,6 +294,63 @@ system: gh in `GH_CONFIG_DIR`, `XDG_CONFIG_HOME/gh`, `%AppData%\GitHub CLI`
 and `~/.config/gh`; glab in `GLAB_CONFIG_DIR`, `~/.config/glab-cli` and
 the XDG directory of the platform (including `%LOCALAPPDATA%\glab-cli`);
 tea in the XDG directory of the platform and then `~/.tea/tea.yml`.
+
+### The connector's own credential
+
+The connector binary owns one entry per host and login, and it is the
+only process that touches it: the app and the CLI call this same binary
+for `login`, `token`, `token-store` and `logout` instead of reading a
+store themselves. On macOS that is the only arrangement without a
+confirmation dialog, because a generic password is created with an ACL
+that trusts the creating application alone.
+
+- The entry is addressed with `Entry::new(service, user)` and nothing
+  else: the service is `joy-forge`, the user is `<host>` or
+  `<host>|<login>`.
+- Where the operating system's credential store cannot answer, the
+  connector writes the entry itself, to `<config>/forge-tokens.json`,
+  mode 0600 in a 0700 directory, and says `"source": "file"` rather
+  than pretending. "Cannot answer" is detected and not guessed: after a
+  write the entry is read back through a NEW handle, and a store that
+  cannot answer with what was just written did not persist it. That is the honest case on a headless server, in a
+  container and on any machine whose store refuses.
+- The granted scope set is stored beside the token in the same entry,
+  space separated, and is what the local `scope_missing` check below
+  reads.
+- A token past its lifetime is refreshed under a cross process lock,
+  one per host and login, in `<app state>/locks/`. The waiter never
+  refreshes anyway: it looks again and, finding nothing usable,
+  answers `{"known": false, "reason": "busy"}`. Every call that may
+  write takes it: `token`, `login`, `token-store` and `logout`.
+- The 0600 file is ONE document for every host and login, while that
+  lock is per host and login, so a read-modify-write of the file takes
+  one more whole file lock beside the document, and the document is
+  written to a staging file and renamed into place. Neither is
+  decoration: without the first, two logins of one host signing in at
+  once lose an entry; without the second, a crash mid write leaves a
+  file that does not parse, which reads as "nothing is stored".
+- A `--host-kind delegated` call never opens this person's credential
+  store at all. Its credential travels in the variable the caller named
+  (`--token-env`), and the interactive verbs are refused there anyway.
+
+Which login answers for a remote is decided in one order, and every
+answer says which step decided (`chose_by`): the device local pin for
+that host in that project (`forgeLogin` in the project's app state
+file, never in the committed `project.yaml`), then the login the
+memory recorded for this remote, then the only login the host holds,
+then one probe per candidate (one REST call for `owner/repo`), and
+otherwise `{"known": false, "reason": "no-login-for-repo"}`. The same
+order runs inside every verb that needs a credential, not only inside
+`token`, and one remote is probed at most once per call.
+
+Two rules keep that order honest. The memory records only a login the
+forge reported as able to PUSH, because that is what the memory means
+and because a later push must not take a read-only login from it for
+free. And a forge that could not be ASKED is never reported as "none of
+your logins can reach this repository": a transport failure is evidence
+about the network and none about any login, so the memory of that
+remote stays where it is and the answer says the forge could not be
+asked.
 
 ### Scopes, and the `scope_missing` answer
 
@@ -395,6 +470,65 @@ it hung). Each one carries the file that answered.
   to joyint.com when it has a remote repository, so this verb is what
   makes "picks or creates a repo" complete.
 
+- `joy-<name> web-url --remote <url>`
+  The https twin of this remote. Answer:
+  `{"known": true, "https_url": "https://git.acme.com/team/sub/repo.git"}`
+  or `{"known": false}`. Only the connector knows the web base of a
+  self hosted instance, which may sit under a nested sub path or behind
+  a different ssh domain. No credential and no request.
+
+- `joy-<name> token --remote <url> | --host <h> [--for read|write|create|release] [--login <name>]`
+  The credential this machine holds, and which login it belongs to.
+  Answer:
+  `{"known":true,"host":"github.com","login":"scotty","token":"gho_...",`
+  `"username":"x-access-token","source":"keychain|file|gh|glab|tea|env",`
+  `"scopes":"repo user:email","expires_at":null,"chose_by":"pin|memory|only|probe"}`,
+  or `{"known":false,"reason":"no-login|no-keychain|unsupported-host|no-login-for-repo|busy"}`.
+  `--for` is the DIRECTION the credential is wanted for, and it decides
+  what the probe accepts: `write`, `create` and `release` take only a
+  login the forge reports as able to push, `read` takes the first that
+  sees the repository, and without the flag a login that can push wins
+  over one that can only read but a reader is still an answer. Without
+  it a login with read-only rights answers 200 for a private repository,
+  wins the probe, and the push then fails under the wrong account.
+
+- `joy-<name> token-store --host <h> [--login <name>]`
+  Read ONE token from **stdin**, validate it against the instance's own
+  API, store it, and answer the same object as `token`. This is the
+  headless door: a Linux server, a CI runner, a Windows host with no
+  browser, and every Gitea family instance whose operator registered no
+  OAuth client. The token is never an argument, in either direction.
+
+- `joy-<name> login --remote <url> | --host <h> [--for read|write|create|release] [--login <name>]`
+  Sign in. Newline delimited JSON on stdout, one object per line, each
+  flushed as it happens:
+  `{"event":"verification","host":...,"url":...,"url_complete":...,"code":...,"expires_in":...,"interval":...}`,
+  then `{"event":"waiting","seconds_left":...}`,
+  `{"event":"slow_down","interval":...}`, and finally one
+  `{"event":"result","known":true,"login":...,"user_id":...,"emails":[...],"scopes":...,"stored":"keychain|file","expires_at":...}`
+  or
+  `{"event":"error","code":"access_denied|expired_token|unsupported|network|device_flow_disabled|invalid_scope","message":"..."}`.
+  **The connector never opens a browser and never prints the token.**
+  The host decides: the desktop opens the URL, the CLI prints it, and a
+  `--host-kind background` or `delegated` call is refused at once with
+  the sentence that names `--token-stdin`.
+
+- `joy-<name> logout --host <h> [--login <name>]`
+  Answer: `{"removed":bool,"revoked":bool,"source":"keychain|file|gh|glab|tea"}`.
+  The token is revoked at the forge where the forge offers it
+  (`DELETE /applications/{client_id}/token` on GitHub, never
+  `.../grant`, which would kill every token of that app for the
+  person). A credential a forge CLI owns is not joy's to remove: the
+  answer names the foreign command in `command` and removes nothing.
+  This verb WRITES, so it takes the same refresh lock every other
+  writing verb takes; a call that cannot take it answers
+  `"removed": false` with `"reason": "busy"` rather than deleting an
+  entry another process is renewing. `"removed": true` means the entry
+  is gone: where the store or the file refused the write, the answer
+  says `false` and carries the reason in `message`. On a host that
+  holds several of joy's own logins with none of them named, nothing is
+  removed and the answer names them in `logins` and asks for `--login`.
+
 - `joy-<name> release --remote <url> --tag <t> --title <t> --notes-file <path>`
   (JOY-0256-64) Create — or complete — the release for this tag on
   your forge; the notes arrive as a file because they are multi-line.
@@ -423,8 +557,10 @@ Rules, in addition to the base contract:
   "unknown". That includes the two failures that start no process at
   all, a connector nobody installed and a connector that speaks
   protocol 1, which are the two a silent "unknown" hides best.
-- **Read-only and side-effect free**, except the two verbs that name
-  their own side effect: `release` and `create-repository`.
+- **Read-only and side-effect free**, except the verbs that name their
+  own side effect: `release` and `create-repository` on the forge, and
+  `login`, `token-store` and `logout` on this machine's credential
+  store.
 - **No forge knowledge outside the plugin**: joy-core selects the
   responsible plugin purely by asking `claims` over the project's
   remotes (the registry in `joy_core::forge_plugins` lists the known
@@ -477,7 +613,7 @@ passes 10 MB.
 
 | target | `joy-forge`, release, stripped | measured |
 | --- | --- | --- |
-| x86_64-unknown-linux-gnu | 3.79 MB (3 971 064 bytes) | 2026-09-17 |
+| x86_64-unknown-linux-gnu | 5.38 MB (5 642 200 bytes) | 2026-09-17 |
 | aarch64-unknown-linux-gnu | open, the release build measures it | |
 | x86_64-apple-darwin | open, the release build measures it | |
 | aarch64-apple-darwin | open, the release build measures it | |
@@ -492,6 +628,14 @@ How to reproduce one row:
     cargo build --release --bin joy-forge
     strip -s target/release/joy-forge -o /tmp/joy-forge.stripped
     ls -l /tmp/joy-forge.stripped
+
+The credential store of the sign in verbs is what grew the Linux row
+from 3.79 MB to 5.38 MB: the keyring crate with the persistent Secret
+Service backing of D2.6, and libdbus vendored so the connector keeps
+linking nothing but libc, the way joy already vendors libgit2 and
+OpenSSL. The engine is not in there: the connector reaches joy-core for
+the file lock and the app state paths, and the linker drops the rest,
+libgit2 included.
 
 For comparison, the three separate protocol 1 plugins were 3.3 MB
 stripped together, of which about 3 MB was a duplicated std, clap and

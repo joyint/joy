@@ -281,6 +281,123 @@ fn a_release_is_published_with_only_the_forges_own_variable_set() {
     std::env::remove_var("GH_TOKEN");
 }
 
+/// J3's acceptance: `joy release publish` succeeds on a machine with
+/// **neither gh nor curl**, which is the one J2 could not carry because
+/// the connector had no credential of its own in wave 1.
+///
+/// Nothing is in the environment either: the host is an Enterprise
+/// Server, whose variables (`GH_ENTERPRISE_TOKEN`,
+/// `GITHUB_ENTERPRISE_TOKEN`) nothing sets, the PATH is empty, and the
+/// caller names no variable. The only credential on the machine is the
+/// connector's own entry, in the 0600 file of D2.6.
+#[test]
+fn a_release_is_published_from_the_connectors_own_credential_alone() {
+    let dir = setup();
+    let fake = FakeForge::start(|call| match (call.method.as_str(), call.path.as_str()) {
+        ("GET", "/repos/acme/publish/releases/tags/v0.4.0") => Reply::not_found(),
+        ("POST", "/repos/acme/publish/releases") => Reply::json(
+            201,
+            r#"{"id":5,"html_url":"https://ghe-publish.test/acme/publish/releases/tag/v0.4.0"}"#,
+        ),
+        _ => Reply::not_found(),
+    });
+    write_forges_yaml(&dir, "ghe-publish.test", "github", &fake.base());
+    const TOKEN: &str = "gho_only-in-the-connectors-own-entry";
+    write_own_credential(&dir, "ghe-publish.test", "scotty", TOKEN);
+    let notes = dir.join("notes-publish.md");
+    std::fs::write(&notes, "## Changes\n\nFixed the thing\n").expect("the notes file");
+    let outcome = forge_plugins::release(
+        spec("github"),
+        Some(&Target::remote("https://ghe-publish.test/acme/publish.git")),
+        "v0.4.0",
+        "v0.4.0 - Fourth",
+        &notes,
+        // no CallerFacts at all: exactly what `joy release publish`
+        // builds
+        &CallContext::rootless(),
+    )
+    .expect("the release is published");
+    assert_eq!(
+        outcome.url.as_deref(),
+        Some("https://ghe-publish.test/acme/publish/releases/tag/v0.4.0")
+    );
+    let post = fake
+        .calls()
+        .into_iter()
+        .find(|call| call.method == "POST")
+        .expect("the create call");
+    assert_eq!(
+        post.authorization(),
+        Some(format!("Bearer {TOKEN}").as_str()),
+        "the token came from the connector's own entry and travelled in a header"
+    );
+}
+
+/// The `token` verb answers from that same entry, with the login it
+/// belongs to and the step that chose it (D2.4, D4.1c).
+#[test]
+fn the_token_verb_answers_from_the_connectors_own_entry() {
+    let dir = setup();
+    const TOKEN: &str = "gho_the-entry-of-this-machine";
+    write_own_credential(&dir, "ghe-token.test", "scotty", TOKEN);
+    write_forges_yaml(
+        &dir,
+        "ghe-token.test",
+        "github",
+        "https://ghe-token.test/api/v3",
+    );
+    let answer = forge_plugins::token(
+        spec("github"),
+        &Target::host("ghe-token.test"),
+        &CallContext::rootless(),
+    )
+    .expect("the connector answers");
+    assert!(answer.known);
+    assert_eq!(answer.token.as_deref(), Some(TOKEN));
+    assert_eq!(answer.login.as_deref(), Some("scotty"));
+    assert_eq!(answer.source.as_deref(), Some("file"));
+    assert_eq!(answer.chose_by.as_deref(), Some("only"));
+    assert_eq!(answer.username.as_deref(), Some("x-access-token"));
+    assert_eq!(answer.scopes.as_deref(), Some("repo user:email"));
+
+    // The same verb with a direction (D4.1c's step 4). One login holds
+    // the host, so no probe runs and the answer is the same one; what
+    // this proves is that the shipped binary takes the flag, because a
+    // flag it did not know would be a usage error and no answer at all.
+    let directed = forge_plugins::token_for(
+        spec("github"),
+        &Target::host("ghe-token.test"),
+        forge_plugins::Access::Write,
+        &CallContext::rootless(),
+    )
+    .expect("the connector answers a directed ask");
+    assert!(directed.known);
+    assert_eq!(directed.token.as_deref(), Some(TOKEN));
+    assert_eq!(directed.chose_by.as_deref(), Some("only"));
+}
+
+/// The connector's own credential file (D2.6), written the way a
+/// finished `login` would have written it. The cases share one config
+/// directory, so the entry is merged under a lock.
+fn write_own_credential(dir: &Path, host: &str, login: &str, token: &str) {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _held = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let path = dir.join("config/joy/forge-tokens.json");
+    let mut file: serde_json::Value = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_else(|| serde_json::json!({ "hosts": {} }));
+    file["hosts"][host][login] = serde_json::json!({
+        "token": token,
+        "login": login,
+        "scopes": "repo user:email",
+    });
+    let staging = path.with_extension("json.new");
+    std::fs::write(&staging, serde_json::to_string_pretty(&file).unwrap())
+        .expect("write forge-tokens.json");
+    std::fs::rename(&staging, &path).expect("put forge-tokens.json in place");
+}
+
 /// A forge with no release backend still answers `unsupported`, so
 /// publish keeps its tag-only path instead of failing.
 #[test]

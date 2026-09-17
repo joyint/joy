@@ -128,6 +128,28 @@ pub struct ReleaseRequest {
     pub notes: String,
 }
 
+/// Who a token speaks for, asked of the instance's own API. This is
+/// what `token-store` validates a pasted token with before it stores
+/// it (D2.4), and what a finished `login` reports.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Account {
+    pub login: String,
+    pub user_id: Option<String>,
+    pub emails: Vec<String>,
+    /// The granted set the forge reported, space separated. `None`
+    /// means "not known", and an unknown set is never reported as a
+    /// missing one (D2.7c).
+    pub scopes: Option<String>,
+}
+
+/// What one probe of D4.1c found: whether this login sees the
+/// repository at all, and whether it may push to it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Reach {
+    pub read: bool,
+    pub push: bool,
+}
+
 /// One forge, as the dispatcher sees it.
 pub trait Forge: Sync {
     /// The id `project.yaml`'s `forge:` uses and the combined binary
@@ -162,6 +184,66 @@ pub trait Forge: Sync {
         request: &ReleaseRequest,
         ctx: &Ctx,
     ) -> anyhow::Result<Value>;
+
+    // -- the sign in half (D2.4, D2.7, package J3) ---------------------
+
+    /// The scope set this forge asks for at this level (D2.7a). The
+    /// `--for` flag picks the level; the forge owns the words.
+    fn scopes(&self, purpose: crate::auth::Purpose) -> &'static str;
+
+    /// The OAuth application and endpoints for this host (D2.7), or
+    /// `None` where no door exists: a self hosted instance whose
+    /// operator registered no client and put none in `forges.yaml`.
+    fn oauth(
+        &self,
+        host: &str,
+        purpose: crate::auth::Purpose,
+        ctx: &Ctx,
+    ) -> Option<crate::auth::oauth::OAuth>;
+
+    /// Who this token speaks for, asked of the instance's own API.
+    /// `None` when the forge does not accept it, which is what makes
+    /// `token-store` a validation and not a paste.
+    fn account(&self, host: &str, token: &str, ctx: &Ctx) -> Option<Account>;
+
+    /// Whether this token reaches `owner/repo` (the probe of D4.1c).
+    /// One request per candidate, never per contact. `None` means the
+    /// forge did not answer at all.
+    fn reaches(&self, host: &str, repo_path: &str, token: &str, ctx: &Ctx) -> Option<Reach>;
+
+    /// The https twin of a remote (D1.5, the `web-url` verb). Answered
+    /// from the address and the instance configuration alone: only the
+    /// forge knows the web base of a self hosted instance, which may
+    /// sit under a nested sub path or behind a different SSH domain.
+    fn web_url(&self, target: &Target, ctx: &Ctx) -> Value;
+
+    /// Revoke a token at the forge, where the forge offers it (D2.4).
+    /// `false` is the honest answer of a forge that offers nothing, and
+    /// the local entry is removed either way.
+    fn revoke(&self, _host: &str, _record: &crate::auth::store::Record, _ctx: &Ctx) -> bool {
+        false
+    }
+
+    /// The user name the https twin presents beside the token in basic
+    /// authentication (the `username` field of D2.4's `token` answer).
+    /// It is forge knowledge: GitHub takes `x-access-token`, GitLab
+    /// takes `oauth2`, the Gitea family takes the login.
+    fn https_username(&self) -> &'static str;
+
+    /// The forge CLI a credential may also come from: `gh`, `glab` or
+    /// `tea`. joy reads it by spawning that CLI and never writes,
+    /// refreshes or revokes it (D2.6, decision 19).
+    fn foreign_cli(&self) -> &'static str;
+
+    /// The command a person runs to remove the FOREIGN credential,
+    /// which `logout` names instead of removing anything itself.
+    fn foreign_logout_command(&self, host: &str) -> String;
+
+    /// The logins that CLI is signed in as on this host, for the probe
+    /// candidate order of D4.1c.
+    fn foreign_logins(&self, _host: &str) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 /// Everything one call carries besides its verb and its target.
@@ -176,9 +258,30 @@ pub struct Ctx {
     pub root: PathBuf,
     /// The `forge:` override of that project (D2.5).
     pub project_forge: Option<String>,
+    /// The remote this call is about, when the target is one. The login
+    /// order of D4.1c is per remote, so every `token` lookup inside a
+    /// verb needs it without every verb having to pass it along.
+    pub remote: Option<String>,
     git: GitConfig,
+    /// Where this call keeps credentials (D2.6). A library caller gets
+    /// [`crate::auth::store::Vault::none`], so nothing touches a
+    /// person's credential store by accident.
+    vault: crate::auth::store::Vault,
+    /// Where the refresh locks of D2.6a and the login memory of D4.1c
+    /// live. `None` is the person's own app state directory; a test
+    /// names a temporary one so it takes no lock a person shares.
+    state_dir: Option<PathBuf>,
+    /// The forge this call runs for, where the dispatcher named one.
+    /// It is what lets [`Ctx::token`] run the WHOLE login order of
+    /// D4.1c and not only the three steps that spend no request: the
+    /// candidate list and the reach call are forge knowledge.
+    forge: Option<&'static dyn Forge>,
     clients: Mutex<HashMap<String, Arc<Http>>>,
-    tokens: Mutex<HashMap<String, Option<String>>>,
+    tokens: Mutex<HashMap<String, Option<crate::auth::Resolved>>>,
+    /// The remotes this call has already probed. D4.1c allows one
+    /// request per candidate per remote and never one per contact, and
+    /// several verbs ask for the same token.
+    probed: Mutex<std::collections::HashSet<String>>,
 }
 
 impl Ctx {
@@ -201,8 +304,26 @@ impl Ctx {
             git: GitConfig::load(Some(&root)),
             root,
             project_forge,
+            remote: None,
+            // Mechanism 5 of D1.10: every plugin call carries the host
+            // kind, and the plugin uses it to skip a step that can
+            // raise an operating system dialog. A DELEGATED session is
+            // not this machine's person: D3.11 already refuses `login`,
+            // `logout` and the token paste there, its credential
+            // travels in the variable the caller named
+            // (`--token-env`), and the person's own credential store is
+            // none of its business. It is therefore never opened, which
+            // is also the one keychain prompt joy can rule out rather
+            // than bound.
+            vault: match host_kind {
+                HostKind::Delegated => crate::auth::store::Vault::none(),
+                _ => crate::auth::store::Vault::real(),
+            },
+            state_dir: None,
+            forge: None,
             clients: Mutex::new(HashMap::new()),
             tokens: Mutex::new(HashMap::new()),
+            probed: Mutex::new(std::collections::HashSet::new()),
         }
     }
 
@@ -219,9 +340,27 @@ impl Ctx {
             git: GitConfig::default(),
             project_forge: crate::config::project_forge(&root),
             root,
+            remote: None,
+            vault: crate::auth::store::Vault::none(),
+            state_dir: None,
+            forge: None,
             clients: Mutex::new(HashMap::new()),
             tokens: Mutex::new(HashMap::new()),
+            probed: Mutex::new(std::collections::HashSet::new()),
         }
+    }
+
+    /// Name the forge this call runs for, so that every verb reaches a
+    /// credential through the whole login order of D4.1c and not only
+    /// through the steps that spend no request (D4.1c, and the
+    /// `store`, `files`, `release`, `repositories` and
+    /// `create-repository` verbs that all ask [`Ctx::token`]).
+    ///
+    /// `'static` because a forge is a unit value the binary holds for
+    /// its whole run; nothing here keeps state.
+    pub fn with_forge(mut self, forge: &'static dyn Forge) -> Self {
+        self.forge = Some(forge);
+        self
     }
 
     /// Replace the configured instances (the tests and `bare` callers).
@@ -241,6 +380,49 @@ impl Ctx {
     pub fn with_login(mut self, login: impl Into<String>) -> Self {
         self.login = Some(login.into());
         self
+    }
+
+    /// Name the remote this call is about, so the login order of D4.1c
+    /// has its key.
+    pub fn with_remote(mut self, remote: impl Into<String>) -> Self {
+        self.remote = Some(remote.into());
+        self
+    }
+
+    /// Give this call a credential store (the connector's own real one,
+    /// or a file under a temporary directory in the tests).
+    pub fn with_vault(mut self, vault: crate::auth::store::Vault) -> Self {
+        self.vault = vault;
+        self
+    }
+
+    /// Where this call keeps credentials.
+    pub fn vault(&self) -> &crate::auth::store::Vault {
+        &self.vault
+    }
+
+    /// Name the directory the refresh locks and the login memory live
+    /// in, instead of the person's own app state directory.
+    pub fn with_state_dir(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.state_dir = Some(dir.into());
+        self
+    }
+
+    /// Where the refresh locks and the login memory live, when the
+    /// caller named a directory.
+    pub fn state_dir(&self) -> Option<&Path> {
+        self.state_dir.as_deref()
+    }
+
+    /// Whether this call may probe this remote, and record that it did.
+    /// `false` means the probe already ran in this process: D4.1c's
+    /// budget is one request per candidate per remote, and the `token`
+    /// verb and [`Ctx::token`] ask the same question.
+    pub(crate) fn first_probe(&self, host: &str, repo_path: &str) -> bool {
+        self.probed
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(format!("{host}/{repo_path}"))
     }
 
     /// The project root of this call.
@@ -272,54 +454,124 @@ impl Ctx {
         Ok(client)
     }
 
-    /// The token for this host, from the sources wave 1 has (D2.4, J2):
-    /// the variable the caller named, the forge's own environment
-    /// variables, or the forge CLI, spawned (decision 19).
-    ///
-    /// The connector grows its own store in J3; until then a token that
-    /// is nowhere here means the forge is asked anonymously, which sees
-    /// public repositories only.
+    /// The token for this host: the whole source order of D2.4, cached
+    /// per host for this process because the answer may cost a spawn.
     pub fn token(&self, forge: &str, host: &str) -> Option<String> {
-        let key = format!("{forge}@{host}");
-        let mut tokens = self.tokens.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(token) = tokens.get(&key) {
-            return token.clone();
-        }
-        let token = self.find_token(forge, host);
-        tokens.insert(key, token.clone());
-        token
+        self.resolved_token(forge, host)
+            .map(|resolved| resolved.token)
     }
 
-    fn find_token(&self, forge: &str, host: &str) -> Option<String> {
-        // A caller that names a variable names the credential FOR THIS
-        // CALL, and that is the whole answer: a multi-account host whose
-        // variable happens to be empty must never end up acting as the
-        // machine's own account, so nothing below this branch runs.
-        if let Some(var) = self.token_env.as_deref() {
-            return read_variable(var);
+    /// [`Ctx::token`] with everything D2.4's answer needs beside the
+    /// secret: which login it belongs to, which source held it, the
+    /// granted set and the lifetime.
+    pub fn resolved_token(&self, forge: &str, host: &str) -> Option<crate::auth::Resolved> {
+        let key = format!("{forge}@{host}");
+        // The lock is NOT held across the lookup. The lookup may spawn
+        // a forge CLI and may ask the forge itself (the probe of
+        // D4.1c), and neither of those may end up waiting for a mutex
+        // this same call is holding. Two calls racing cost one extra
+        // lookup and nothing else.
+        if let Some(resolved) = self
+            .tokens
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&key)
+        {
+            return resolved.clone();
         }
-        // The forge's own variables, the `source: "env"` of D2.4. J2's
-        // acceptance is a release published "with `GH_TOKEN` set", and
-        // `joy release publish` names no variable: it asks joy-core for
-        // the release verb, which has no forge knowledge and therefore
-        // no variable name to pass. So the connector, which is where
-        // all forge knowledge lives, reads the forge's own.
+        let resolved = self.find_token(forge, host);
+        self.tokens
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(key, resolved.clone());
+        resolved
+    }
+
+    /// The source order of D2.4: the connector's own entry, then the
+    /// forge CLI, spawned. Two sources sit outside that list and before
+    /// it, for reasons the design names:
+    ///
+    /// - the variable the CALLER named (`--token-env`) is the
+    ///   platform's per call hand over and the whole answer when it is
+    ///   given, because a multi account host whose variable happens to
+    ///   be empty must never end up acting as the machine's own
+    ///   account;
+    /// - the forge's own variables (`GH_TOKEN` and its siblings) come
+    ///   after the connector's own entry and before the forge CLI: they
+    ///   are what a CI runner has, and `joy release publish` names no
+    ///   variable of its own.
+    fn find_token(&self, forge: &str, host: &str) -> Option<crate::auth::Resolved> {
+        use crate::auth::Source;
+        if let Some(var) = self.token_env.as_deref() {
+            return read_variable(var).map(|token| crate::auth::Resolved {
+                token,
+                login: self.login.clone(),
+                source: Source::Env,
+                scopes: None,
+                expires_at: None,
+                chose_by: None,
+            });
+        }
+        // The connector's own entry, refreshed under the lock of D2.6a
+        // where it is past its lifetime.
+        if let Some(resolved) = crate::auth::verbs::own_token(self, host) {
+            return Some(resolved);
+        }
+        // Step 4 of D4.1c, for every verb and not only for `token`: a
+        // host with several logins, no pin and no memory is decided by
+        // one probe per candidate, or `joy release publish` publishes
+        // under whichever account the forge CLI last switched to.
+        if let Some(known) = self.forge {
+            if let Some(resolved) = crate::auth::verbs::token_for_remote(known, host, self) {
+                return Some(resolved);
+            }
+        }
         if let Some(value) = token_variables(forge, host)
             .iter()
             .find_map(|name| read_variable(name))
         {
-            return Some(value);
+            return Some(crate::auth::Resolved {
+                token: value,
+                login: self.login.clone(),
+                source: Source::Env,
+                scopes: None,
+                expires_at: None,
+                chose_by: None,
+            });
         }
         // Decision 19: a foreign credential is obtained by SPAWNING the
         // CLI, never by reading its store, and that is also the only
-        // way the CLI's own refresh runs. The connector grows a store
-        // of its own in J3; these three are what a device has today.
-        match forge {
-            "github" => crate::foreign::gh_token(host, self.login.as_deref()),
-            "gitlab" => crate::foreign::glab_token(host),
-            "gitea" => crate::foreign::tea_token(host),
-            _ => None,
-        }
+        // way the CLI's own refresh runs.
+        let (token, source) = match forge {
+            "github" => (
+                crate::foreign::gh_token(host, self.login.as_deref()),
+                Source::Gh,
+            ),
+            "gitlab" => (crate::foreign::glab_token(host), Source::Glab),
+            "gitea" => (crate::foreign::tea_token(host), Source::Tea),
+            _ => (None, Source::Env),
+        };
+        token.map(|token| crate::auth::Resolved {
+            token,
+            login: self.login.clone(),
+            source,
+            scopes: None,
+            expires_at: None,
+            chose_by: None,
+        })
+    }
+
+    /// The granted scope set of the credential this call will use,
+    /// where the source knows it. Since J3 the connector's own entry
+    /// carries it beside the token (D2.7c), so the local pre check
+    /// costs nothing: no request is spent to learn a set joy already
+    /// wrote down. `None` means "not known", and an unknown set is
+    /// never reported as a missing one.
+    pub fn granted_scopes(&self, forge: &str, host: &str) -> Option<Vec<String>> {
+        let resolved = self.resolved_token(forge, host)?;
+        let scopes = resolved.scopes?;
+        let granted = crate::scope::parse_granted(&scopes);
+        (!granted.is_empty()).then_some(granted)
     }
 
     /// The git configuration this call reads (the proxy sources of

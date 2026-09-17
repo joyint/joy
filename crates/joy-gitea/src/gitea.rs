@@ -14,7 +14,11 @@
 //! Since JOY-0298-E4 (design D2.8) every API call is made in process
 //! over the connector's own HTTP client.
 
-use joy_forge_net::forge::{unknown, unknown_state, Ctx, Listing, NewRepository, Target};
+use joy_forge_net::auth::oauth::{Flow, OAuth};
+use joy_forge_net::auth::Purpose;
+use joy_forge_net::forge::{
+    unknown, unknown_state, Account, Ctx, Listing, NewRepository, Reach, Target,
+};
 use joy_forge_net::http::Answer;
 use joy_forge_net::scope::{self, Group};
 use serde_json::{json, Value};
@@ -509,6 +513,15 @@ pub fn create_repository_answer(target: &Target, new: &NewRepository, ctx: &Ctx)
     let Some(token) = ctx.token("gitea", &host) else {
         return json!({ "state": "needs_sign_in", "host": host });
     };
+    // The local pre check of D2.7c. The family's API does not
+    // introspect a token, so before J3 the only way to learn the set
+    // was to be refused by it; now the set joy REQUESTED is stored
+    // beside the token and answers the question for free.
+    if let Some(refused) =
+        joy_forge_net::auth::verbs::stored_create_gate(ctx, "gitea", &host, new.private)
+    {
+        return refused;
+    }
     let base = api_base(&host, ctx);
     let url = match new.owner.as_deref() {
         Some(owner) => format!("{base}/orgs/{owner}/repos"),
@@ -568,6 +581,173 @@ fn message_of(answer: &Answer) -> String {
                 .map(str::to_string)
         })
         .unwrap_or_else(|| format!("the instance answered {}", answer.status))
+}
+
+// -- the sign in half (D2.4, D2.7, package J3) --------------------------------
+
+/// The scope sets of D2.7a. Gitea and Forgejo scope per CATEGORY and
+/// let the HTTP method pick the level ("use the http method to
+/// determine the access level"), so the read set and the write set
+/// differ by one word. `POST /user/repos` is checked twice, by the
+/// /user group and by the route, which is why creating a repository
+/// needs both categories at write level.
+pub fn scopes_for(purpose: Purpose) -> &'static str {
+    match purpose {
+        Purpose::Read => "read:user read:repository",
+        // Releases live under /repos, so the read write set covers them.
+        Purpose::Write | Purpose::Release => "read:user write:repository",
+        Purpose::Create => "write:user write:repository",
+    }
+}
+
+/// The OAuth application for a host (D2.7).
+///
+/// No device grant exists in any released version of Gitea or Forgejo,
+/// so the door is the authorization code flow with PKCE S256 on a
+/// loopback listener. The redirect URI must be registered as exactly
+/// `http://127.0.0.1`, with no port and no path, and bound to an
+/// ephemeral port at runtime.
+///
+/// The requested set always names at least one non OIDC scope: a grant
+/// carrying only openid, profile or email produces `AccessTokenScopeAll`,
+/// a token with the person's full rights.
+pub fn oauth_for(host: &str, purpose: Purpose, ctx: &Ctx) -> Option<OAuth> {
+    let instance = ctx.instance(host);
+    let client_id = instance
+        .and_then(|entry| entry.client_id.clone())
+        .or_else(|| {
+            (host == "codeberg.org")
+                .then(|| joy_forge_net::auth::oauth::clients::CODEBERG_ORG.to_string())
+        })?;
+    let base = instance_root(host, ctx);
+    let scopes = instance
+        .and_then(|entry| entry.scopes.clone())
+        .unwrap_or_else(|| scopes_for(purpose).to_string());
+    debug_assert!(
+        scopes.split_whitespace().any(|scope| scope.contains(':')),
+        "a Gitea grant with only OIDC scopes holds the person's full rights"
+    );
+    Some(OAuth {
+        client_id,
+        flow: Flow::Pkce,
+        // The family offers no device endpoint at all; the field stays
+        // empty so nothing can accidentally ask for one.
+        device_endpoint: String::new(),
+        auth_endpoint: instance
+            .and_then(|entry| entry.auth_endpoint.clone())
+            .unwrap_or_else(|| format!("{base}/login/oauth/authorize")),
+        token_endpoint: instance
+            .and_then(|entry| entry.token_endpoint.clone())
+            .unwrap_or_else(|| format!("{base}/login/oauth/access_token")),
+        scopes,
+    })
+}
+
+/// The instance root the OAuth endpoints hang off: the configured API
+/// base without its `/api/v1` tail, else the host itself.
+fn instance_root(host: &str, ctx: &Ctx) -> String {
+    let base = api_base(host, ctx);
+    base.strip_suffix("/api/v1")
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("https://{host}"))
+}
+
+/// One API GET with a NAMED token, for the calls that validate a token
+/// the context does not hold yet. Gitea's own scheme is
+/// `Authorization: token <t>`.
+fn api_get_as(ctx: &Ctx, host: &str, url: &str, token: &str) -> Option<Answer> {
+    let http = ctx.http(host).ok()?;
+    match http
+        .get(url)
+        .header("Accept", "application/json")
+        .token_header(token)
+        .call()
+    {
+        Ok(answer) => Some(answer),
+        Err(error) => {
+            eprintln!("joy-forge gitea: {error}");
+            None
+        }
+    }
+}
+
+/// Who this token speaks for, asked of the instance's own API.
+///
+/// The granted set is `None` on purpose: Gitea's `AccessTokenResponse`
+/// has no scope field, and the API does not introspect a token, so the
+/// caller stores the set it REQUESTED (D2.7c).
+pub fn account_of(host: &str, token: &str, ctx: &Ctx) -> Option<Account> {
+    let base = api_base(host, ctx);
+    let answer = api_get_as(ctx, host, &format!("{base}/user"), token)?;
+    if !answer.ok() {
+        return None;
+    }
+    let body = answer.json()?;
+    let login = body.get("login").and_then(|v| v.as_str())?.to_string();
+    let mut emails: Vec<String> = Vec::new();
+    if let Some(list) = api_get_as(ctx, host, &format!("{base}/user/emails"), token) {
+        if list.ok() {
+            #[derive(serde::Deserialize)]
+            struct Entry {
+                email: String,
+                #[serde(default)]
+                verified: bool,
+            }
+            if let Ok(entries) = serde_json::from_str::<Vec<Entry>>(&list.body) {
+                emails = entries
+                    .into_iter()
+                    .filter(|entry| entry.verified)
+                    .map(|entry| entry.email)
+                    .collect();
+            }
+        }
+    }
+    Some(Account {
+        login,
+        user_id: body
+            .get("id")
+            .and_then(|v| v.as_i64())
+            .map(|id| id.to_string()),
+        emails,
+        scopes: None,
+    })
+}
+
+/// Whether this token reaches `owner/repo`, and whether it may push
+/// (the probe of D4.1c).
+pub fn reaches_repo(host: &str, repo_path: &str, token: &str, ctx: &Ctx) -> Option<Reach> {
+    let url = format!("{}/repos/{repo_path}", api_base(host, ctx));
+    let answer = api_get_as(ctx, host, &url, token)?;
+    if !answer.ok() {
+        return Some(Reach::default());
+    }
+    let body = answer.json().unwrap_or_default();
+    Some(Reach {
+        read: true,
+        push: body
+            .pointer("/permissions/push")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+    })
+}
+
+/// Every login tea has on this host, in file order (D4.1c's probe
+/// candidate order). tea is multi login per host.
+pub fn tea_logins_for(host: &str) -> Vec<String> {
+    tea_logins()
+        .into_iter()
+        .filter(|login| joy_forge_net::url::host_of(&login.url).as_deref() == Some(host))
+        .map(|login| login.user)
+        .collect()
+}
+
+/// The command that removes a FOREIGN credential. tea names a login,
+/// not a host, so the sentence names the login where there is one.
+pub fn tea_logout_command(host: &str) -> String {
+    match tea_logins_for(host).first() {
+        Some(login) => format!("tea logins delete {login}"),
+        None => format!("tea logins delete <the login for {host}>"),
+    }
 }
 
 #[cfg(test)]
@@ -757,5 +937,80 @@ mod files_tests {
             json!({ "state": "files", "paths": [], "truncated": false })
         );
         assert_eq!(files_verdict(|_| None), json!({ "state": "unknown" }));
+    }
+}
+
+#[cfg(test)]
+mod sign_in_tests {
+    use super::*;
+
+    fn ctx() -> Ctx {
+        Ctx::bare(std::env::temp_dir())
+    }
+
+    /// D2.7a: the family scopes per CATEGORY and the HTTP method picks
+    /// the level, and `POST /user/repos` is checked twice, by the /user
+    /// group and by the route.
+    #[test]
+    fn the_scope_sets_name_both_categories_where_the_route_checks_both() {
+        assert_eq!(scopes_for(Purpose::Read), "read:user read:repository");
+        assert_eq!(scopes_for(Purpose::Write), "read:user write:repository");
+        assert_eq!(scopes_for(Purpose::Release), "read:user write:repository");
+        assert_eq!(scopes_for(Purpose::Create), "write:user write:repository");
+        // and every set names a non OIDC scope, or the grant would hold
+        // the person's full rights (D2.7)
+        for purpose in [
+            Purpose::Read,
+            Purpose::Write,
+            Purpose::Create,
+            Purpose::Release,
+        ] {
+            assert!(scopes_for(purpose)
+                .split_whitespace()
+                .any(|scope| scope.contains(':')));
+        }
+    }
+
+    /// D2.7: no device grant exists in any released version, so the
+    /// door is authorization code with PKCE on a loopback listener.
+    #[test]
+    fn the_family_signs_in_through_pkce_and_never_through_a_device_code() {
+        let ctx = ctx();
+        let codeberg = oauth_for("codeberg.org", Purpose::Write, &ctx).unwrap();
+        assert_eq!(codeberg.flow, Flow::Pkce);
+        assert!(
+            codeberg.device_endpoint.is_empty(),
+            "there is no device endpoint to ask"
+        );
+        assert_eq!(
+            codeberg.auth_endpoint,
+            "https://codeberg.org/login/oauth/authorize"
+        );
+        assert_eq!(
+            codeberg.token_endpoint,
+            "https://codeberg.org/login/oauth/access_token"
+        );
+        assert!(joy_forge_net::auth::oauth::clients::is_placeholder(
+            &codeberg.client_id
+        ));
+        // A self hosted instance has no door until its operator
+        // registers one and puts the client id into forges.yaml.
+        assert!(oauth_for("git.acme.test", Purpose::Write, &ctx).is_none());
+        let configured = ctx.with_instances(
+            joy_forge_net::config::Instances::from_text(
+                "- host: git.acme.test\n  kind: gitea\n  client_id: instance-cid\n",
+            )
+            .unwrap(),
+        );
+        let instance = oauth_for("git.acme.test", Purpose::Create, &configured).unwrap();
+        assert_eq!(instance.client_id, "instance-cid");
+        assert_eq!(instance.scopes, "write:user write:repository");
+    }
+
+    /// D2.6: joy never removes a foreign credential, and tea names a
+    /// LOGIN rather than a host.
+    #[test]
+    fn the_foreign_logout_command_names_teas_own_word() {
+        assert!(tea_logout_command("git.acme.test").starts_with("tea logins delete "));
     }
 }

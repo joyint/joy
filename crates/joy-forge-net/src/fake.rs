@@ -242,3 +242,236 @@ fn reason(status: u16) -> &'static str {
         _ => "Status",
     }
 }
+
+// -- a forge to drive the sign in verbs against (package J3) ------------------
+
+/// A forge whose every endpoint is the in process fake, for the tests
+/// of `auth::verbs`.
+///
+/// It exists so that `login`, `token`, `token-store` and `logout` can
+/// be proved without a real forge and without the three connector
+/// crates: the shapes of D2.4, the event stream, the refresh lock and
+/// the login order of D4.1c are the connector's own business, and this
+/// is the forge that stands still while they are checked.
+///
+/// Its id is `github`, so the scope tables of D2.7a apply unchanged.
+pub struct TestForge {
+    /// The fake's base URL, e.g. `http://127.0.0.1:34567`.
+    pub base: String,
+    pub flow: crate::auth::oauth::Flow,
+    pub client_id: String,
+    /// What a forge CLI would report as signed in on this host.
+    pub foreign: Vec<String>,
+}
+
+impl TestForge {
+    /// A device grant forge on this fake.
+    pub fn device(base: impl Into<String>) -> TestForge {
+        TestForge {
+            base: base.into(),
+            flow: crate::auth::oauth::Flow::Device,
+            client_id: "test-client".to_string(),
+            foreign: Vec::new(),
+        }
+    }
+
+    /// A PKCE loopback forge on this fake (the Gitea family's door).
+    pub fn pkce(base: impl Into<String>) -> TestForge {
+        TestForge {
+            base: base.into(),
+            flow: crate::auth::oauth::Flow::Pkce,
+            client_id: "test-client".to_string(),
+            foreign: Vec::new(),
+        }
+    }
+
+    /// Say which logins a forge CLI holds on this host.
+    pub fn with_foreign(mut self, logins: &[&str]) -> TestForge {
+        self.foreign = logins.iter().map(|login| login.to_string()).collect();
+        self
+    }
+}
+
+impl crate::forge::Forge for TestForge {
+    fn id(&self) -> &'static str {
+        "github"
+    }
+
+    fn display(&self) -> &'static str {
+        "TestForge"
+    }
+
+    fn claims(&self, _host: &str, _ctx: &crate::forge::Ctx) -> bool {
+        true
+    }
+
+    fn identity(&self, _t: &crate::forge::Target, _c: &crate::forge::Ctx) -> serde_json::Value {
+        crate::forge::unknown()
+    }
+
+    fn resolve(&self, _email: &str) -> serde_json::Value {
+        crate::forge::unknown()
+    }
+
+    fn store(&self, _t: &crate::forge::Target, _c: &crate::forge::Ctx) -> serde_json::Value {
+        crate::forge::unknown_state()
+    }
+
+    fn files(&self, _t: &crate::forge::Target, _c: &crate::forge::Ctx) -> serde_json::Value {
+        crate::forge::unknown_state()
+    }
+
+    fn repositories(
+        &self,
+        _t: &crate::forge::Target,
+        _l: &crate::forge::Listing,
+        _c: &crate::forge::Ctx,
+    ) -> serde_json::Value {
+        crate::forge::unknown_state()
+    }
+
+    fn create_repository(
+        &self,
+        _t: &crate::forge::Target,
+        _n: &crate::forge::NewRepository,
+        _c: &crate::forge::Ctx,
+    ) -> serde_json::Value {
+        crate::forge::unknown_state()
+    }
+
+    fn release(
+        &self,
+        _t: &crate::forge::Target,
+        _r: &crate::forge::ReleaseRequest,
+        _c: &crate::forge::Ctx,
+    ) -> anyhow::Result<serde_json::Value> {
+        Ok(serde_json::json!({ "unsupported": true }))
+    }
+
+    fn scopes(&self, purpose: crate::auth::Purpose) -> &'static str {
+        match purpose {
+            crate::auth::Purpose::Read => "repo:read user:email",
+            _ => "repo user:email",
+        }
+    }
+
+    fn oauth(
+        &self,
+        _host: &str,
+        purpose: crate::auth::Purpose,
+        _ctx: &crate::forge::Ctx,
+    ) -> Option<crate::auth::oauth::OAuth> {
+        Some(crate::auth::oauth::OAuth {
+            client_id: self.client_id.clone(),
+            flow: self.flow,
+            device_endpoint: format!("{}/login/device/code", self.base),
+            auth_endpoint: format!("{}/login/oauth/authorize", self.base),
+            token_endpoint: format!("{}/login/oauth/access_token", self.base),
+            scopes: self.scopes(purpose).to_string(),
+        })
+    }
+
+    fn account(
+        &self,
+        host: &str,
+        token: &str,
+        ctx: &crate::forge::Ctx,
+    ) -> Option<crate::forge::Account> {
+        let http = ctx.http(host).ok()?;
+        let answer = http
+            .get(&format!("{}/user", self.base))
+            .bearer(token)
+            .call()
+            .ok()?;
+        if !answer.ok() {
+            return None;
+        }
+        let body = answer.json()?;
+        Some(crate::forge::Account {
+            login: body.get("login")?.as_str()?.to_string(),
+            user_id: body
+                .get("id")
+                .and_then(|v| v.as_i64())
+                .map(|id| id.to_string()),
+            emails: body
+                .get("emails")
+                .and_then(|v| v.as_array())
+                .map(|list| {
+                    list.iter()
+                        .filter_map(|v| v.as_str())
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default(),
+            // The granted set, space separated, as D2.7c asks for it.
+            scopes: answer
+                .header("x-oauth-scopes")
+                .map(|raw| crate::scope::parse_granted(raw).join(" ")),
+        })
+    }
+
+    fn reaches(
+        &self,
+        host: &str,
+        repo_path: &str,
+        token: &str,
+        ctx: &crate::forge::Ctx,
+    ) -> Option<crate::forge::Reach> {
+        let http = ctx.http(host).ok()?;
+        let answer = http
+            .get(&format!("{}/repos/{repo_path}", self.base))
+            .bearer(token)
+            .call()
+            .ok()?;
+        if !answer.ok() {
+            return Some(crate::forge::Reach::default());
+        }
+        let body = answer.json().unwrap_or_default();
+        Some(crate::forge::Reach {
+            read: true,
+            push: body
+                .pointer("/permissions/push")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+        })
+    }
+
+    fn web_url(&self, target: &crate::forge::Target, ctx: &crate::forge::Ctx) -> serde_json::Value {
+        crate::auth::verbs::https_twin(target, ctx)
+    }
+
+    fn revoke(
+        &self,
+        host: &str,
+        record: &crate::auth::store::Record,
+        ctx: &crate::forge::Ctx,
+    ) -> bool {
+        let Some(client_id) = record.client_id.as_deref() else {
+            return false;
+        };
+        let Ok(http) = ctx.http(host) else {
+            return false;
+        };
+        http.delete(&format!("{}/applications/{client_id}/token", self.base))
+            .basic(client_id, "")
+            .send_json(&serde_json::json!({ "access_token": record.token }))
+            .map(|answer| answer.status == 204)
+            .unwrap_or(false)
+    }
+
+    fn https_username(&self) -> &'static str {
+        "x-access-token"
+    }
+
+    fn foreign_cli(&self) -> &'static str {
+        "gh"
+    }
+
+    fn foreign_logout_command(&self, host: &str) -> String {
+        format!("gh auth logout --hostname {host}")
+    }
+
+    fn foreign_logins(&self, _host: &str) -> Vec<String> {
+        self.foreign.clone()
+    }
+}

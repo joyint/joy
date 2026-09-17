@@ -11,9 +11,14 @@
 //! store of D1.12 (D2.8), the instance configuration of D2.5, the
 //! foreign CLI discovery of D2.4 and the scope sets of D2.7a and D2.7c.
 //!
+//! Since JOY-029B-B0 (package J3) the sign in half lives here too:
+//! [`auth`] is the connector's own credential entry, the refresh lock
+//! of D2.6a, the two OAuth doors of D2.7 and the login order of D4.1c.
+//!
 //! Nothing here knows a forge. A forge is a [`forge::Forge`]
 //! implementation the binary hands to [`cli::run`].
 
+pub mod auth;
 pub mod cli;
 pub mod config;
 #[cfg(feature = "fake-api")]
@@ -27,7 +32,9 @@ pub mod scope;
 pub mod trust;
 pub mod url;
 
+pub use auth::{ChoseBy, Purpose, Resolved, Source};
 pub use forge::{
-    Ctx, Forge, HostKind, Listing, NewRepository, ReleaseRequest, Target, DEFAULT_LIMIT,
+    Account, Ctx, Forge, HostKind, Listing, NewRepository, Reach, ReleaseRequest, Target,
+    DEFAULT_LIMIT,
 };
 pub use http::{Answer, Http, HttpError};
