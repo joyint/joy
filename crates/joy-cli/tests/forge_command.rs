@@ -420,6 +420,35 @@ fn a_token_from_stdin_is_stored_and_never_in_the_process_list() {
     );
 }
 
+/// A host with no terminal is refused too (D3.11), and the sentence is
+/// TRUE for it: a hook or a piped run is not a delegation session, and
+/// telling it that it is sends a person looking for an agent that does
+/// not exist. Both sentences name the headless door.
+#[test]
+fn login_without_a_terminal_refuses_without_inventing_a_session() {
+    let machine = Machine::new();
+    machine.connector("joy-forge", CONNECTOR);
+    let argv = machine.path().join("argv.log");
+
+    let output = machine
+        .joy(&["forge", "login", "--host", "github.test", "--json"])
+        .env("JOY_STUB_ARGV", &argv)
+        .output()
+        .expect("joy runs");
+    let answer = Answer::of(output);
+
+    assert_eq!(answer.code, Some(1), "{}", answer.stderr);
+    let message = answer.data()["message"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+    assert!(message.contains("no terminal to ask at"), "{message}");
+    assert!(!message.contains("delegation session"), "{message}");
+    assert!(message.contains("--token-stdin"), "{message}");
+    let log = std::fs::read_to_string(&argv).unwrap_or_default();
+    assert!(!log.contains(" login "), "nothing was started: {log}");
+}
+
 /// An empty line is not a token, and the refusal says so without
 /// pretending anything was stored.
 #[test]

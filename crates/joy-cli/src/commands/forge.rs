@@ -376,20 +376,33 @@ fn login(args: LoginArgs) -> Result<()> {
     if args.token_stdin {
         return login_with_token(&door, &resolved);
     }
-    // Layer 3 of D3.11, before the connector is started: a delegated
-    // session has no person at this machine, and the refusal is
-    // instant rather than a fifteen minute wait for a code nobody will
-    // type. joy-core refuses the same call for itself; this refusal
-    // exists so the sentence reaches the person without a spawn.
-    if matches!(
-        door.ctx.host_kind,
-        HostKind::Background | HostKind::Delegated
-    ) {
-        return refused(Refusal::new(
-            &door.host,
-            "needs_sign_in",
-            interactive::NO_PERSON_HERE,
-        ));
+    // Layer 3 of D3.11, before the connector is started: a host with
+    // nobody at it cannot type a verification code, and the refusal is
+    // instant rather than a fifteen minute wait for one. joy-core
+    // refuses the same call for itself; this refusal exists so the
+    // sentence reaches the caller without a spawn, and so that it can
+    // be true: a hook and a piped run are not delegation sessions, and
+    // telling them they are sends a person looking for an agent that
+    // does not exist. Both sentences name the headless door, because
+    // refusing without one would leave a CI runner with nothing to do.
+    match door.ctx.host_kind {
+        HostKind::Delegated => {
+            return refused(Refusal::new(
+                &door.host,
+                "needs_sign_in",
+                interactive::NO_PERSON_HERE,
+            ))
+        }
+        HostKind::Background => {
+            return refused(Refusal::new(
+                &door.host,
+                "needs_sign_in",
+                "joy forge login needs a person at this machine; this process has no terminal \
+                 to ask at. Run it in a terminal, or store a token with joy forge login \
+                 --token-stdin",
+            ))
+        }
+        HostKind::Interactive => {}
     }
     let access: Access = args.access.map(Access::from).unwrap_or_default();
     let mut progress = LoginProgress::default();
@@ -1098,7 +1111,7 @@ fn plugins() -> Result<()> {
             println!("  problem: {problem}");
         }
         for line in &row.shadowed {
-            println!("  a second binary answers for this forge; remove it with: {line}");
+            println!("  another binary for this forge is installed and unused; {line}");
         }
     }
     Ok(())
