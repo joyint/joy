@@ -52,8 +52,8 @@ minijinja = { workspace = true }
 # The vcs::forge engine (JOY-0265-D7) is the ONE headless git layer for
 # every consumer; local plumbing needs no transport, so the lean default
 # stays. Network transports are opt-in via the `forge-net` feature below:
-# the platform and the desktop app enable it, the CLI stays lean (its
-# user-facing verbs run the git binary so hooks and user config fire).
+# the platform, the desktop app and the CLI enable it (D3.1; before the
+# git2 only move the CLI's user-facing verbs ran the git binary).
 # `vendored-libgit2` compiles the bundled libgit2 from source and links it
 # statically: nothing external is expected on the system, so the single
 # binary/library stays self-contained and cross-compiles cleanly.
@@ -133,9 +133,11 @@ tutorial = ["dep:termimad", "dep:inquire", "dep:terminal_size"]
 # unions come from the single Rust definition. Off by default.
 ts = ["dep:ts-rs", "joy-model/ts"]
 # Network transports for vcs::forge (https for token auth, ssh for the
-# desktop's agent auth). Off by default so CLI builds stay lean; a lean
-# build still compiles the engine, it just cannot reach an https/ssh
-# remote at runtime.
+# desktop's agent auth). Off by default so a library consumer that never
+# contacts a forge stays lean; a lean build still compiles the engine, it
+# just cannot reach an https/ssh remote at runtime. Every host that DOES
+# contact a forge asks for it: the platform, the desktop, and since D3.1
+# joy-cli too, whose forge contacts used to be git processes.
 #
 # `vendored-openssl` for the same reason libgit2 is vendored above: the
 # ssh transport needs OpenSSL as libssh2's crypto backend (and, off

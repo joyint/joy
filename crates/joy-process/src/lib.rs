@@ -28,13 +28,16 @@
 //!
 //! Where nobody can see a console, nobody can answer a prompt either.
 //! That is a different rule with a different owner: it belongs to the
-//! program that asks. This crate only tells the owner - [`headless`] -
-//! and joy-core's git boundary turns it into `GIT_TERMINAL_PROMPT=0` and
-//! a batch-mode ssh, so a headless fetch fails instead of waiting on a
-//! question in a window that does not exist.
+//! program that asks. This crate only tells the owner - [`headless`].
+//!
+//! Who may be asked anything is NOT this crate's answer any more:
+//! `joy_core::host::HostKind`, set once by the entry point of each host,
+//! decides that (design D1.1 and D1.10), and `headless` answers false on
+//! every unix host so it never could. What is left here is the window
+//! rule and nothing else.
 //!
 //! Async callers build the same command and convert it:
-//! `tokio::process::Command::from(joy_process::command("git"))`.
+//! `tokio::process::Command::from(joy_process::command("joy-forge"))`.
 
 // The one crate that may build a Command directly; `clippy.toml` sends
 // everyone else here.
@@ -105,9 +108,10 @@ fn host_has_console() -> bool {
 /// there a prompt without a controlling terminal already fails on its
 /// own (git and ssh both give up without a tty).
 ///
-/// For the programs that ask questions. joy-core's git boundary reads
-/// it and disarms git's and ssh's prompts, because an answer nobody can
-/// give would otherwise leave the caller waiting for ever.
+/// For the programs that ask questions: joy's credential helper runner
+/// is the one that reads it, and the host kind of D1.1 is what really
+/// decides whether a person may be asked. joy runs no git process at
+/// all any more (design D3.2), so nothing here is about git.
 pub fn headless() -> bool {
     !host_has_console()
 }

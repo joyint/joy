@@ -64,6 +64,14 @@ pub fn bump_all(
     Ok(results)
 }
 
+/// The files one `release.version-files` entry names, which may be a
+/// glob. Public because the commit that records a release has to stage
+/// exactly the files the bump patched and nothing else (D3.4), and that
+/// is this list.
+pub fn expand(root: &Path, pattern: &str) -> Result<Vec<PathBuf>> {
+    expand_glob(root, pattern)
+}
+
 fn expand_glob(root: &Path, pattern: &str) -> Result<Vec<PathBuf>> {
     let full_pattern = root.join(pattern).to_string_lossy().to_string();
     let paths: Vec<PathBuf> = glob::glob(&full_pattern)

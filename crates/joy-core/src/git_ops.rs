@@ -152,8 +152,63 @@ pub fn auto_git_post_command(root: &Path, summary: &str, identity: &str) {
     if level.should_push() {
         let remote = vcs.default_remote(root).unwrap_or_else(|_| "origin".into());
         if let Err(e) = vcs.push(root, &remote) {
-            eprintln!("Warning: auto-git push failed: {e}");
+            say_contact_aside(
+                root,
+                "auto-git push failed",
+                "the commit stays local, the next joy write retries",
+                &e,
+            );
         }
+    }
+}
+
+/// How this host says a forge refusal that is NOT the command's answer.
+///
+/// `root` is the checkout whose remote was contacted, `headline` says
+/// what did not happen and `tail` what happens next; the error carries
+/// the classifier's verdict.
+pub type ContactAside = fn(root: &Path, headline: &str, tail: &str, error: &JoyError);
+
+static CONTACT_ASIDE: OnceLock<ContactAside> = OnceLock::new();
+
+/// Lend joy-core this host's way of saying such a refusal.
+///
+/// The auto-git push is a forge contact, and with `workflow.auto-git:
+/// push` it runs after nearly every joy write, so its failure has to
+/// speak the one vocabulary of D3.8 like every other contact: the state
+/// word, the plain sentence, the one next step, and in `--json` mode one
+/// object on stderr rather than a line of prose. The words live here
+/// (`vcs::contact`), the `--json` decision and the CLI's own next steps
+/// live in joy-cli, so the host installs its sink once at its entry
+/// point. A host that installs nothing still says the same three
+/// things, without the JSON and without a `joy` command in the help
+/// line, so no path is left silent.
+pub fn set_contact_aside(sink: ContactAside) {
+    let _ = CONTACT_ASIDE.set(sink);
+}
+
+fn say_contact_aside(root: &Path, headline: &str, tail: &str, error: &JoyError) {
+    if let Some(sink) = CONTACT_ASIDE.get() {
+        sink(root, headline, tail, error);
+        return;
+    }
+    let failure = error.failure();
+    let contact = error.contact();
+    // The host joy really contacted, so the sentence names no other
+    // (D1.1). Empty when there is none, and then it names none.
+    let host = crate::vcs::forge::remote_url(root)
+        .map(|url| crate::vcs::contact::host_of(&url))
+        .unwrap_or_default();
+    let message = contact
+        .map(|c| c.message.clone())
+        .unwrap_or_else(|| failure.sentence(&host));
+    eprintln!("{headline}: {message}");
+    eprintln!("  = note: state {}; {tail}", failure.reason());
+    if let Some(action) = contact
+        .and_then(|c| c.action.clone())
+        .or_else(|| failure.guidance().map(str::to_string))
+    {
+        eprintln!("  = help: {action}");
     }
 }
 
@@ -223,15 +278,7 @@ fn warn_about_a_missing_item(message: &str, project: Option<&Project>) {
     let Some(acronym) = project.and_then(|p| p.acronym.as_deref()) else {
         return;
     };
-    if let Err(e) = crate::commit_msg::validate(message, acronym) {
-        // One line, not the hook's full diagnostic: the person did not
-        // write this message and cannot fix it, and the commit happened
-        // anyway. The diagnostic belongs to the paths that refuse.
-        eprintln!(
-            "Warning: the commit joy just wrote references no {} item: {}",
-            e.acronym, e.subject
-        );
-    }
+    crate::commit_msg::warn_unless_referenced(message, acronym);
 }
 
 #[cfg(test)]

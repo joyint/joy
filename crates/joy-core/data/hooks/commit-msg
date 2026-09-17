@@ -8,14 +8,24 @@ set -euo pipefail
 MSG_FILE="$1"
 MSG=$(cat "$MSG_FILE")
 
+# joy's own check passed: run the hooks that were here before joy took
+# core.hooksPath (design D3.5). Their exit code is this hook's. A
+# checkout whose .joy/hooks predates the chainer simply stops here, so
+# a stale hook directory can never block a commit.
+chain() {
+    chainer="$(dirname "$0")/joy-chain"
+    [ -x "$chainer" ] || exit 0
+    exec "$chainer" commit-msg "$MSG_FILE"
+}
+
 # Allow merge commits
 if [ -f "$(git rev-parse --git-dir)/MERGE_HEAD" ] 2>/dev/null; then
-    exit 0
+    chain
 fi
 
 # Allow [no-item] bypass
 if echo "$MSG" | grep -qF '[no-item]'; then
-    exit 0
+    chain
 fi
 
 # Read project acronym from .joy/project.yaml
@@ -27,20 +37,20 @@ fi
 
 if [ -z "$PROJECT_FILE" ]; then
     # No Joy project found, skip validation
-    exit 0
+    chain
 fi
 
 ACRONYM=$(grep -E '^acronym:' "$PROJECT_FILE" | head -1 | sed 's/^acronym:[[:space:]]*//' | tr -d '"' | tr -d "'")
 
 if [ -z "$ACRONYM" ]; then
-    exit 0
+    chain
 fi
 
 # Check for item ID pattern: ACRONYM-XXXX or ACRONYM-XXXX-YY (ADR-027)
 PATTERN="${ACRONYM}-[0-9A-Fa-f]{4}(-[0-9A-Fa-f]{2})?"
 
 if echo "$MSG" | grep -qE "$PATTERN"; then
-    exit 0
+    chain
 fi
 
 # Error output (ADR-015 diagnostic format)

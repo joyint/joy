@@ -6,11 +6,13 @@
 //! the platform's runtime-checkout layer and shared by the platform, the
 //! desktop app, and everything else that syncs a checkout with a forge.
 //!
-//! Two mechanics live under the one vcs roof, each with its reason: the
-//! CLI verbs in [`super`] run the git BINARY because user hooks and user
-//! config must fire; everything here is HEADLESS work (server worker,
-//! app worker) that must never fire hooks and authenticates with tokens
-//! or the machine's stored credentials.
+//! There is ONE mechanic under the vcs roof now (design D3.2,
+//! JOY-01FD-ED): everything is this engine. The CLI verbs in [`super`]
+//! used to run the git BINARY so that a person's hooks and config would
+//! fire; they run here instead, because a machine without a git binary
+//! has to work too. What the binary did for them is done in process: the
+//! item rule of D3.3, the path scoped commits of D3.4, and the hook
+//! chaining of D3.5 that keeps a person's own hooks running.
 //!
 //! FETCH_HEAD is never written or read here. It is the one file git
 //! updates without a lock, and sharing it tore syncs apart twice: a
@@ -115,6 +117,20 @@ pub fn token_user(host: &str, claimed: Option<ForgeKind>) -> &'static str {
         .or_else(|| known_forge_kind(host))
         .map(ForgeKind::token_user)
         .unwrap_or("oauth2")
+}
+
+/// Whether the libgit2 this build links can reach an https or ssh
+/// remote at all (D3.1).
+///
+/// The `forge-net` feature is what compiles the two transports in, and
+/// a build without it answers every contact with "unsupported URL
+/// protocol", which is a fault of the BUILD and not of the person's
+/// network, credential or host. Callers use it to say that once, in
+/// plain words, instead of letting the classifier read a packaging
+/// mistake as `error`.
+pub fn transports_available() -> bool {
+    let version = git2::Version::get();
+    version.https() && version.ssh()
 }
 
 /// How this checkout talks to its forge.
@@ -823,20 +839,43 @@ fn guard_remote(remote: &git2::Remote<'_>) -> anyhow::Result<()> {
 /// configured remote and `.git/config` are never touched, and a remote
 /// the config does not rename is returned exactly as it is, so the
 /// named remote (with its refspecs) stays the normal case.
-fn contact_remote(repo: &git2::Repository) -> anyhow::Result<git2::Remote<'_>> {
+fn contact_remote(
+    repo: &git2::Repository,
+    direction: super::contact::ContactDirection,
+) -> anyhow::Result<git2::Remote<'_>> {
     let remote = origin_or_first(repo)?;
     guard_remote(&remote)?;
-    let Some(url) = remote.url().ok() else {
+    let Some(configured) = remote.url().ok().map(str::to_string) else {
         return Ok(remote);
     };
-    if rewritten_by_insteadof(repo, url) {
-        return Ok(remote);
+    // git honours `remote.<name>.pushurl` for a push, and libgit2 only
+    // half does: `git_remote__urlfordirection` picks the TRANSPORT from
+    // the push url and the local transport then pushes to
+    // `remote->url` (transports/local.c:396-397). A remote with an
+    // https url and a path push url - the shape a person uses to keep a
+    // push on the machine while the fetch url names the forge - fails
+    // there with "failed to resolve path <the https url>". Dialling the
+    // push url itself is what git does, and it makes the two agree.
+    let push_url = (direction == super::contact::ContactDirection::Push)
+        .then(|| remote.pushurl().ok().flatten().map(str::to_string))
+        .flatten()
+        .filter(|pushurl| *pushurl != configured);
+    let url = push_url.clone().unwrap_or(configured);
+    // joy's own `HostName` rewrite, unless an `insteadOf` rule owns the
+    // address (libgit2 applies those itself).
+    let dialled = (!rewritten_by_insteadof(repo, &url))
+        .then(|| super::ssh_config::effective_url(&url))
+        .flatten();
+    match (push_url, dialled) {
+        // Nothing to change: the CONFIGURED remote, so its refspecs and
+        // its tracking refs still stand.
+        (None, None) => Ok(remote),
+        (push, dialled) => {
+            let url = dialled.or(push).unwrap_or(url);
+            drop(remote);
+            repo.remote_anonymous(&url).map_err(err)
+        }
     }
-    let Some(dialled) = super::ssh_config::effective_url(url) else {
-        return Ok(remote);
-    };
-    drop(remote);
-    repo.remote_anonymous(&dialled).map_err(err)
 }
 
 /// Whether an `insteadOf` rule rewrites this URL, in which case joy
@@ -872,6 +911,127 @@ fn rewritten_by_insteadof(repo: &git2::Repository, url: &str) -> bool {
 /// `origin`, or the first configured remote — a checkout the product
 /// made always has `origin`, but a repo a person wired by hand may not
 /// (the desktop opens those too).
+/// The item reference rule of D3.3, applied to a commit the ENGINE
+/// writes for a host that has nobody to ask: the platform's job and
+/// item writes, the seeding paths, the agent fallback commit.
+///
+/// libgit2 runs no hooks, so `.joy/hooks/commit-msg` never sees these
+/// messages and the rule it enforces for a person's `git commit` would
+/// be enforced for nobody. It warns and proceeds here, because a
+/// refusal would strand a write that already happened (D3.3); the
+/// commands a person runs refuse instead.
+fn warn_about_a_missing_item(repo_dir: &Path, message: &str) {
+    let Some(acronym) = crate::store::load_project(repo_dir)
+        .ok()
+        .and_then(|project| project.acronym)
+    else {
+        return;
+    };
+    crate::commit_msg::warn_unless_referenced(message, &acronym);
+}
+
+/// The external clean/smudge filter `.gitattributes` puts on `path`,
+/// if any (D3.4's clean filter rule).
+///
+/// libgit2 runs NO filter program: `filter=lfs` on a path means a git
+/// commit stores a pointer and a libgit2 commit stores the file's whole
+/// content, which breaks the repository quietly and is only noticed by
+/// the next person who clones it. joy therefore refuses such a path
+/// instead of writing it wrong.
+fn external_filter(repo: &git2::Repository, path: &Path) -> Option<String> {
+    repo.get_attr(path, "filter", git2::AttrCheckFlags::default())
+        .ok()
+        .flatten()
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+/// The refusal for the paths [`external_filter`] named, in the words
+/// the person needs to act: which paths, which filter, and what to do
+/// with them instead.
+fn refuse_filtered_paths(filtered: Vec<String>) -> anyhow::Result<()> {
+    if filtered.is_empty() {
+        return Ok(());
+    }
+    anyhow::bail!(
+        "these paths are governed by an external content filter, and joy's git \
+         engine runs none: {}\n  = note: committing them here would store the \
+         file instead of the filter's pointer\n  \
+         = help: commit them with git, or take them out of this working tree",
+        filtered.join(", ")
+    )
+}
+
+/// The paths a commit of `index` would write that an external content
+/// filter governs, refused by name (D3.4).
+///
+/// The question is asked of the paths the commit really carries, which
+/// is the index against the parent's tree: a deletion writes no content
+/// and is not one of them, and a filtered path nobody staged is none of
+/// this verb's business.
+fn refuse_filtered_staged_paths(
+    repo: &git2::Repository,
+    index: &git2::Index,
+    parent: Option<&git2::Commit>,
+) -> anyhow::Result<()> {
+    let tree = parent
+        .map(|commit| commit.tree())
+        .transpose()
+        .map_err(err)?;
+    let diff = repo
+        .diff_tree_to_index(tree.as_ref(), Some(index), None)
+        .map_err(err)?;
+    let mut filtered = Vec::new();
+    for delta in diff.deltas() {
+        if delta.status() == git2::Delta::Deleted {
+            continue;
+        }
+        let Some(path) = delta.new_file().path() else {
+            continue;
+        };
+        if let Some(filter) = external_filter(repo, path) {
+            filtered.push(format!("{} (filter={filter})", path.display()));
+        }
+    }
+    refuse_filtered_paths(filtered)
+}
+
+/// The paths this checkout has staged or changed OUTSIDE `pathspecs`:
+/// what a person had going that a scoped joy commit did not take
+/// (D3.4).
+///
+/// Tracked paths only, index against HEAD and worktree against index.
+/// Untracked files are no answer to "was something of yours skipped":
+/// `git add -A` would have taken them, but a build directory and an
+/// editor's scratch file make that sentence true in nearly every real
+/// repository, which is how a true sentence becomes noise. A checkout
+/// this cannot read answers nothing rather than guessing, for the same
+/// reason: [`worktree_dirty`] answers `true` on an unreadable checkout
+/// because it must never delete on doubt, and a SENTENCE must never be
+/// said on doubt.
+pub fn changes_outside(repo_dir: &Path, pathspecs: &[String]) -> Vec<String> {
+    let Ok(repo) = open(repo_dir) else {
+        return Vec::new();
+    };
+    let mut opts = git2::StatusOptions::new();
+    opts.include_untracked(false).include_ignored(false);
+    let Ok(statuses) = repo.statuses(Some(&mut opts)) else {
+        return Vec::new();
+    };
+    let mut paths: Vec<String> = statuses
+        .iter()
+        .filter_map(|entry| entry.path().ok().map(str::to_string))
+        .filter(|path| {
+            !pathspecs
+                .iter()
+                .any(|spec| path == spec || path.starts_with(&format!("{spec}/")))
+        })
+        .collect();
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
 fn origin_or_first<'r>(repo: &'r git2::Repository) -> anyhow::Result<git2::Remote<'r>> {
     match repo.find_remote("origin") {
         Ok(remote) => Ok(remote),
@@ -1111,9 +1271,13 @@ fn leg_auth(auth: &Auth, leg: &Leg) -> Auth {
 /// [`contact_remote`], so the ssh config's `HostName` still applies; the
 /// twin is an anonymous remote on an address that is never written into
 /// `.git/config`.
-fn leg_remote<'r>(repo: &'r git2::Repository, leg: &Leg) -> anyhow::Result<git2::Remote<'r>> {
+fn leg_remote<'r>(
+    repo: &'r git2::Repository,
+    leg: &Leg,
+    direction: super::contact::ContactDirection,
+) -> anyhow::Result<git2::Remote<'r>> {
     match leg.way {
-        Way::Configured => contact_remote(repo),
+        Way::Configured => contact_remote(repo, direction),
         Way::Twin => repo.remote_anonymous(&leg.url).map_err(err),
     }
 }
@@ -1181,7 +1345,7 @@ fn over_plan<T>(
             let used = &used;
             let contact = move || -> anyhow::Result<T> {
                 take_used_credential();
-                let mut remote = leg_remote(repo, leg)?;
+                let mut remote = leg_remote(repo, leg, direction)?;
                 let answer = work(repo, &mut remote, auth_for_leg, leg);
                 used.set(take_used_credential());
                 answer
@@ -1673,6 +1837,7 @@ pub fn commit_joy(
     author_name: &str,
     author_email: &str,
 ) -> anyhow::Result<Option<String>> {
+    warn_about_a_missing_item(repo_dir, message);
     let repo = open(repo_dir).map_err(err)?;
     let mut status_opts = git2::StatusOptions::new();
     status_opts
@@ -2252,6 +2417,22 @@ pub fn remotes(dir: &Path) -> Vec<(String, String)> {
         .collect()
 }
 
+/// The remote joy contacts for this checkout: `origin` when it is
+/// configured, otherwise the first one git2 lists (D1.1).
+///
+/// This is [`origin_or_first`]'s rule by name, so a caller that asks
+/// which remote it is talking to and the engine that talks to it name
+/// the same one. The git process this replaced answered `git remote`
+/// and took the first line, which is alphabetical order: in a checkout
+/// with a `backup` remote beside `origin` the two disagreed, and the
+/// person was told about a host joy never contacted.
+pub fn default_remote_name(dir: &Path) -> Option<String> {
+    let repo = open(dir).ok()?;
+    origin_or_first(&repo)
+        .ok()
+        .and_then(|remote| remote.name().ok().flatten().map(str::to_string))
+}
+
 /// `path`, given relative to `dir`, as the repository sees it: relative
 /// to its working tree, with forward slashes. `dir` may be a subdirectory.
 fn workdir_relative(repo: &git2::Repository, dir: &Path, path: &str) -> Option<String> {
@@ -2297,6 +2478,280 @@ pub fn stage_paths(dir: &Path, paths: &[&str]) -> anyhow::Result<()> {
         .map_err(err)?;
     index.update_all(specs.iter(), None).map_err(err)?;
     index.write().map_err(err)
+}
+
+/// Stage every change in the working tree, as `git add -A` does: new and
+/// changed files go in, deleted ones come out, ignored ones are left
+/// alone. The pathspec is the whole tree, so it does not matter where
+/// inside the checkout `dir` sits.
+///
+/// Callers in a PERSON's checkout should prefer [`stage_paths`]: this
+/// one sweeps whatever else the person had lying around into the index
+/// (D3.4). It stays for the checkouts joy owns.
+///
+/// A path an external content filter governs is refused by name and
+/// nothing is written: this is the verb that turns a file into a blob,
+/// and libgit2 runs no filter program, so staging a changed
+/// `filter=lfs` asset here puts the file's own bytes where the pointer
+/// belongs (D3.4). The refusal happens before the index is written, so
+/// the checkout is left exactly as it was.
+pub fn stage_all(dir: &Path) -> anyhow::Result<()> {
+    let repo = open(dir).map_err(err)?;
+    let mut index = repo.index().map_err(err)?;
+    let filtered = std::cell::RefCell::new(Vec::new());
+    // Both halves need the guard: `update_all` writes the blob of a
+    // CHANGED tracked file, which is exactly the lfs asset case.
+    index
+        .add_all(
+            ["*"],
+            git2::IndexAddOption::DEFAULT,
+            Some(&mut skip_filtered(&repo, &filtered)),
+        )
+        .map_err(err)?;
+    index
+        .update_all(["*"], Some(&mut skip_filtered(&repo, &filtered)))
+        .map_err(err)?;
+    refuse_filtered_paths(filtered.into_inner())?;
+    index.write().map_err(err)
+}
+
+/// The staging callback of the sweeping verbs: skip a path an external
+/// content filter governs and remember it for [`refuse_filtered_paths`].
+///
+/// libgit2 calls this only for paths that really differ from the index
+/// (`git_index_add_all` walks the index to worktree diff, index.c:3599),
+/// so a filtered asset nobody touched costs nothing and an unchanged
+/// pointer git wrote stays exactly as git wrote it.
+fn skip_filtered<'a>(
+    repo: &'a git2::Repository,
+    filtered: &'a std::cell::RefCell<Vec<String>>,
+) -> impl FnMut(&Path, &[u8]) -> i32 + 'a {
+    move |path: &Path, _spec: &[u8]| -> i32 {
+        // A path that is GONE from the working tree is a deletion, and
+        // a deletion writes no content: there is no blob a filter could
+        // have rewritten, so removing the entry is exactly what
+        // `git add -A` does and joy lets it through. Asked with
+        // `symlink_metadata`, so a dangling symlink counts as present
+        // rather than as a deletion.
+        let present = repo
+            .workdir()
+            .map(|workdir| workdir.join(path).symlink_metadata().is_ok())
+            .unwrap_or(true);
+        if !present {
+            return 0;
+        }
+        match external_filter(repo, path) {
+            Some(filter) => {
+                let named = format!("{} (filter={filter})", path.display());
+                let mut list = filtered.borrow_mut();
+                if !list.contains(&named) {
+                    list.push(named);
+                }
+                1 // skip, and the refusal says why
+            }
+            None => 0,
+        }
+    }
+}
+
+/// Every local tag whose name starts with `v` or `V`, newest first:
+/// `git tag --list --sort=-v:refname` without a git process.
+///
+/// The order is git's version order and not a string sort, so `v1.10.0`
+/// comes before `v1.9.0`. A name that carries no numbers at all keeps
+/// its place among its equals by name, descending, which is what git's
+/// version sort falls back to.
+pub fn version_tags(dir: &Path) -> Vec<String> {
+    let Ok(repo) = open(dir) else {
+        return Vec::new();
+    };
+    let Ok(names) = repo.tag_names(None) else {
+        return Vec::new();
+    };
+    let mut tags: Vec<String> = names
+        .iter()
+        .flatten()
+        .flatten()
+        .filter(|name| name.starts_with('v') || name.starts_with('V'))
+        .map(str::to_string)
+        .collect();
+    tags.sort_by(|a, b| version_key(b).cmp(&version_key(a)).then_with(|| b.cmp(a)));
+    tags
+}
+
+/// A tag name as the numbers git's `v:refname` sort compares: every run
+/// of digits in order, so `v1.10.0` sorts above `v1.9.0`.
+fn version_key(name: &str) -> Vec<u64> {
+    let mut parts = Vec::new();
+    let mut digits = String::new();
+    for c in name.chars() {
+        if c.is_ascii_digit() {
+            digits.push(c);
+        } else if !digits.is_empty() {
+            parts.push(digits.parse().unwrap_or(0));
+            digits.clear();
+        }
+    }
+    if !digits.is_empty() {
+        parts.push(digits.parse().unwrap_or(0));
+    }
+    parts
+}
+
+/// The newest `v*` tag REACHABLE from HEAD:
+/// `git describe --tags --abbrev=0 --match 'v*'`.
+///
+/// Not the same question as [`latest_version_tag`], which takes the
+/// newest tag in the repository whether HEAD can see it or not. A
+/// release branch that has not merged the newest tag needs this one.
+pub fn describe_version_tag(dir: &Path) -> Option<String> {
+    let repo = open(dir).ok()?;
+    let mut options = git2::DescribeOptions::new();
+    options.describe_tags().pattern("v*");
+    let described = repo.describe(&options).ok()?;
+    let mut format = git2::DescribeFormatOptions::new();
+    format.abbreviated_size(0);
+    described
+        .format(Some(&format))
+        .ok()
+        .filter(|name| !name.is_empty())
+}
+
+/// Whether a tag names HEAD itself: `git describe --tags --exact-match
+/// HEAD`, which is `--candidates=0` and nothing else.
+pub fn head_is_tagged(dir: &Path) -> bool {
+    let Ok(repo) = open(dir) else {
+        return false;
+    };
+    let mut options = git2::DescribeOptions::new();
+    options.describe_tags().max_candidates_tags(0);
+    repo.describe(&options)
+        .and_then(|described| described.format(None))
+        .is_ok()
+}
+
+/// Whether the index tracks `path`, a file or a directory:
+/// `git ls-files --error-unmatch -- <path>`.
+///
+/// The match is literal, the way every other path rule in this file
+/// matches (`commit_index_paths`): the entry itself, or an entry under
+/// it when `path` names a directory. joy's own paths are literal
+/// (`AGENTS.md`, `.vibe/`, `.joy/capabilities/`), never globs, and a
+/// libgit2 pathspec would answer a different question for a name that
+/// happens to carry a glob character.
+pub fn path_is_tracked(dir: &Path, path: &str) -> bool {
+    let Ok(repo) = open(dir) else {
+        return false;
+    };
+    let Some(rel) = workdir_relative(&repo, dir, path) else {
+        return false;
+    };
+    let Ok(index) = repo.index() else {
+        return false;
+    };
+    let tracked = index_paths_under(&index, &rel).next().is_some();
+    tracked
+}
+
+/// The index entries `spec` covers, as repository relative paths: the
+/// entry that IS the path, plus everything below it when the path names
+/// a directory. A trailing slash is part of how joy writes a directory
+/// and is not part of the entry name.
+fn index_paths_under<'i>(index: &'i git2::Index, spec: &str) -> impl Iterator<Item = PathBuf> + 'i {
+    let spec = spec.trim_end_matches('/').to_string();
+    let below = format!("{spec}/");
+    index.iter().filter_map(move |entry| {
+        let path = entry_path(&entry)?;
+        let name = path.to_string_lossy().replace('\\', "/");
+        (name == spec || name.starts_with(&below)).then_some(path)
+    })
+}
+
+/// Drop `path` from the index and leave the file on disk:
+/// `git rm --cached -r -- <path>`. Answers how many entries went.
+pub fn untrack_path(dir: &Path, path: &str) -> anyhow::Result<usize> {
+    let repo = open(dir).map_err(err)?;
+    let rel = workdir_relative(&repo, dir, path)
+        .ok_or_else(|| anyhow::anyhow!("{path} is outside the working tree"))?;
+    let mut index = repo.index().map_err(err)?;
+    let doomed: Vec<PathBuf> = index_paths_under(&index, &rel).collect();
+    for path in &doomed {
+        index.remove_path(path).map_err(err)?;
+    }
+    if !doomed.is_empty() {
+        index.write().map_err(err)?;
+    }
+    Ok(doomed.len())
+}
+
+/// Drop `path` from the index AND from the working tree:
+/// `git rm -r --ignore-unmatch -- <path>`.
+///
+/// The file goes whether or not the index tracked it, which is what the
+/// one caller (joy's own legacy artefact cleanup) means and what it had
+/// to write a second `remove_dir_all` for around the git process.
+pub fn remove_path(dir: &Path, path: &str) -> anyhow::Result<()> {
+    untrack_path(dir, path)?;
+    let full = dir.join(path);
+    let gone = if full.is_dir() {
+        std::fs::remove_dir_all(&full)
+    } else {
+        std::fs::remove_file(&full)
+    };
+    match gone {
+        Ok(()) => Ok(()),
+        // `--ignore-unmatch`: a path that is not there is done, not failed.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(anyhow::anyhow!("{}: {e}", full.display())),
+    }
+}
+
+/// The commit time of `rev` in seconds since the epoch:
+/// `git log -1 --format=%ct <rev>`. `None` when the rev does not
+/// resolve or `dir` is no checkout.
+pub fn commit_unix_time(dir: &Path, rev: &str) -> Option<i64> {
+    let rev = rev.trim();
+    if rev.is_empty() {
+        return None;
+    }
+    let repo = open(dir).ok()?;
+    let object = repo.revparse_single(rev).ok()?;
+    let seconds = object.peel_to_commit().ok()?.time().seconds();
+    Some(seconds)
+}
+
+/// The paths the index adds, changes or renames against HEAD:
+/// `git diff --cached --name-only --diff-filter=ACMR`, repository
+/// relative and in the order the diff reports them.
+///
+/// A repository with no commit yet compares against the empty tree, so
+/// the first commit's staged files are named like any other.
+pub fn staged_paths(dir: &Path) -> Vec<String> {
+    let Ok(repo) = open(dir) else {
+        return Vec::new();
+    };
+    let head = repo.head().ok().and_then(|head| head.peel_to_tree().ok());
+    let Ok(diff) = repo.diff_tree_to_index(head.as_ref(), None, None) else {
+        return Vec::new();
+    };
+    diff.deltas()
+        .filter(|delta| {
+            matches!(
+                delta.status(),
+                git2::Delta::Added
+                    | git2::Delta::Modified
+                    | git2::Delta::Renamed
+                    | git2::Delta::Copied
+            )
+        })
+        .filter_map(|delta| {
+            delta
+                .new_file()
+                .path()
+                .map(|p| p.to_string_lossy().replace('\\', "/"))
+        })
+        .filter(|path| !path.is_empty())
+        .collect()
 }
 
 /// Is `dir` itself a repository, bare or the top of a working tree? Unlike
@@ -2357,6 +2812,16 @@ pub fn set_unborn_branch(dir: &Path, branch: &str) -> anyhow::Result<()> {
 
 /// Commit exactly what the index holds, as `author`: joy init stages the
 /// files it wrote, and a host commits them without guessing which.
+///
+/// It commits the WHOLE index, so it belongs to a host that staged what
+/// it wanted and to no other. A path an external content filter governs
+/// is refused by name here as well, wherever its index entry came from:
+/// D3.4's rule is absolute for a person's checkout ("joy never commits
+/// such a path"), and this verb is the one the desktop's release record
+/// still reaches. That also refuses a pointer git's own filter wrote
+/// correctly, and that is the safe direction on purpose: joy cannot
+/// tell the two entries apart, and the sentence it prints ("commit them
+/// with git") is the right instruction for both.
 pub fn commit_index(
     repo_dir: &Path,
     message: &str,
@@ -2365,14 +2830,15 @@ pub fn commit_index(
 ) -> anyhow::Result<String> {
     let repo = open(repo_dir).map_err(err)?;
     let mut index = repo.index().map_err(err)?;
-    let tree_id = index.write_tree().map_err(err)?;
-    let tree = repo.find_tree(tree_id).map_err(err)?;
     let signature = signature_now(repo_dir, author_name, author_email)?;
     let parent = repo
         .head()
         .ok()
         .and_then(|h| h.target())
         .and_then(|oid| repo.find_commit(oid).ok());
+    refuse_filtered_staged_paths(&repo, &index, parent.as_ref())?;
+    let tree_id = index.write_tree().map_err(err)?;
+    let tree = repo.find_tree(tree_id).map_err(err)?;
     let parents: Vec<&git2::Commit> = parent.iter().collect();
     let oid = repo
         .commit(
@@ -2542,17 +3008,30 @@ pub fn changed_paths_between(
 /// Stage EVERYTHING and commit it (seeding and harness use; product
 /// writes go through [`commit_joy`] / [`commit_all`], which respect the
 /// `.joy` boundary).
+///
+/// Only for a checkout joy OWNS (D3.4): in a person's checkout this
+/// sweeps up whatever they had lying around, and there is no pre-commit
+/// hook left to stand in the way of that. A path an external content
+/// filter governs is refused by name rather than written wrong, because
+/// libgit2 runs no filter program.
 pub fn commit_everything(
     repo_dir: &Path,
     message: &str,
     author_name: &str,
     author_email: &str,
 ) -> anyhow::Result<String> {
+    warn_about_a_missing_item(repo_dir, message);
     let repo = open(repo_dir).map_err(err)?;
     let mut index = repo.index().map_err(err)?;
+    let filtered = std::cell::RefCell::new(Vec::new());
     index
-        .add_all(["."], git2::IndexAddOption::DEFAULT, None)
+        .add_all(
+            ["."],
+            git2::IndexAddOption::DEFAULT,
+            Some(&mut skip_filtered(&repo, &filtered)),
+        )
         .map_err(err)?;
+    refuse_filtered_paths(filtered.into_inner())?;
     index.write().map_err(err)?;
     let tree_id = index.write_tree().map_err(err)?;
     let tree = repo.find_tree(tree_id).map_err(err)?;
@@ -2850,6 +3329,7 @@ pub fn commit_paths(
     author_name: &str,
     author_email: &str,
 ) -> anyhow::Result<Option<String>> {
+    warn_about_a_missing_item(repo_dir, message);
     let repo = open(repo_dir).map_err(err)?;
     let mut index = repo.index().map_err(err)?;
     index
@@ -2898,6 +3378,15 @@ pub fn tag_annotated(
     Ok(())
 }
 
+/// Create a lightweight tag on HEAD, replacing one of the same name.
+pub fn tag_lightweight(repo_dir: &Path, name: &str) -> anyhow::Result<()> {
+    let repo = open(repo_dir).map_err(err)?;
+    let head = repo.head().map_err(err)?.peel_to_commit().map_err(err)?;
+    repo.tag_lightweight(name, head.as_object(), true)
+        .map_err(err)?;
+    Ok(())
+}
+
 /// Push one tag to the forge (joy release publish's tag push).
 pub fn push_tag(repo_dir: &Path, auth: &Auth, tag: &str) -> anyhow::Result<()> {
     over_plan(
@@ -2917,6 +3406,31 @@ pub fn push_tag(repo_dir: &Path, auth: &Auth, tag: &str) -> anyhow::Result<()> {
             let refspec = format!("refs/tags/{tag}:refs/tags/{tag}");
             remote
                 .push(&[refspec.as_str()], Some(&mut opts))
+                .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Push, e))?;
+            status.verdict(&super::contact::host_of(&url))
+        },
+    )
+}
+
+/// Push every local tag to the forge, which is what `git push --tags`
+/// did: one refspec, one connection, whatever the tags are called.
+pub fn push_all_tags(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
+    over_plan(
+        repo_dir,
+        auth,
+        "push",
+        super::contact::ContactDirection::Push,
+        false,
+        |repo, remote, leg_auth, _leg| {
+            let url = remote_url_of(remote);
+            let proxy = proxy_for(&url, Some(repo))?;
+            let (callbacks, status) =
+                push_callbacks(leg_auth, auth.host_kind(), cred_source(Some(repo)));
+            let mut opts = git2::PushOptions::new();
+            opts.remote_callbacks(callbacks);
+            opts.proxy_options(proxy.options());
+            remote
+                .push(&["refs/tags/*:refs/tags/*"], Some(&mut opts))
                 .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Push, e))?;
             status.verdict(&super::contact::host_of(&url))
         },
@@ -2984,12 +3498,26 @@ pub fn create_worktree(
 /// left uncommitted — item state never rides a job branch (JP-006D-28), so
 /// `.joy` paths are excluded from staging (and any `.joy` change the agent
 /// staged itself is unstaged first).
+///
+/// Only for a checkout joy OWNS, which for this verb is the platform's
+/// job worktree (D3.4). A path an external content filter governs is
+/// left OUT of the commit and named in the log, rather than refused:
+/// libgit2 runs no filter program, so committing a `filter=lfs` path
+/// here would store the file where the pointer belongs and nobody would
+/// notice until the next clone, but this worktree has no person at it.
+/// `refuse_filtered_paths`' advice ("commit them with git, or take them
+/// out of this working tree") is advice for somebody who can act, and
+/// aborting the whole job commit for one such path would throw away
+/// every other path the agent wrote in that job. D3.4's absolute
+/// refusal is written for a person's checkout, and [`commit_everything`]
+/// and [`commit_index`] keep it.
 pub fn commit_all(
     worktree_dir: &Path,
     message: &str,
     author_name: &str,
     author_email: &str,
 ) -> anyhow::Result<Option<String>> {
+    warn_about_a_missing_item(worktree_dir, message);
     let repo = open(worktree_dir).map_err(err)?;
     let parent = repo
         .head()
@@ -3002,19 +3530,37 @@ pub fn commit_all(
         repo.reset_default(Some(p.as_object()), [".joy"]).ok();
     }
     let mut index = repo.index().map_err(err)?;
+    let filtered = std::cell::RefCell::new(Vec::new());
     index
         .add_all(
             ["*"],
             git2::IndexAddOption::DEFAULT,
             Some(&mut |path: &Path, _spec: &[u8]| -> i32 {
                 if path.starts_with(".joy") {
-                    1 // skip: item state never rides the job branch
-                } else {
-                    0
+                    return 1; // skip: item state never rides the job branch
+                }
+                match external_filter(&repo, path) {
+                    Some(filter) => {
+                        filtered
+                            .borrow_mut()
+                            .push(format!("{} (filter={filter})", path.display()));
+                        1 // skip, and the refusal below says why
+                    }
+                    None => 0,
                 }
             }),
         )
         .map_err(err)?;
+    // Skipped and said, not refused: see this function's own doc. The
+    // job's log is where a platform host says such a thing, and the
+    // rest of the agent's work still lands.
+    let skipped = filtered.into_inner();
+    if !skipped.is_empty() {
+        tracing::warn!(
+            paths = %skipped.join(", "),
+            "left out of this commit: joy's git engine runs no external content filter"
+        );
+    }
     index.write().map_err(err)?;
     let tree_id = index.write_tree().map_err(err)?;
     if parent.as_ref().map(|p| p.tree_id()) == Some(tree_id) {
@@ -3805,6 +4351,271 @@ mod init_on_git2_tests {
         // a branch that has a commit is not moved
         set_unborn_branch(&repo_dir, "other").unwrap();
         assert_eq!(repo.head().unwrap().name().ok(), Some("refs/heads/trunk"));
+    }
+}
+
+#[cfg(test)]
+mod clean_filter_tests {
+    use super::*;
+
+    /// The audit D3.4 asks for, as a fact rather than an assumption:
+    /// libgit2 runs NO external filter. A `filter=lfs` path committed
+    /// through git2 would carry the file's own bytes where git would
+    /// have stored a pointer, and nobody would notice until the next
+    /// clone.
+    #[test]
+    fn libgit2_runs_no_clean_filter_so_the_content_would_be_the_blob() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let repo = git2::Repository::init(root).unwrap();
+        std::fs::write(root.join(".gitattributes"), "*.bin filter=lfs -text\n").unwrap();
+        std::fs::write(root.join("big.bin"), "the whole file, not a pointer").unwrap();
+
+        // Staged the plain way, without the guard below.
+        let mut index = repo.index().unwrap();
+        index
+            .add_all(["."], git2::IndexAddOption::DEFAULT, None)
+            .unwrap();
+        index.write().unwrap();
+        let entry = index.get_path(Path::new("big.bin"), 0).unwrap();
+        let blob = repo.find_blob(entry.id).unwrap();
+        assert_eq!(
+            std::str::from_utf8(blob.content()).unwrap(),
+            "the whole file, not a pointer",
+            "libgit2 stored the file itself, which is why the guard exists"
+        );
+        // ...and the attribute is readable, which is what the guard reads.
+        assert_eq!(
+            external_filter(&repo, Path::new("big.bin")).as_deref(),
+            Some("lfs")
+        );
+        assert_eq!(external_filter(&repo, Path::new(".gitattributes")), None);
+    }
+
+    /// So a commit path with a person behind it refuses such a path by
+    /// name instead of writing it wrong.
+    #[test]
+    fn the_sweeping_commit_path_refuses_a_filtered_path_by_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        git2::Repository::init(root).unwrap();
+        std::fs::write(root.join(".gitattributes"), "*.bin filter=lfs -text\n").unwrap();
+        std::fs::write(root.join("big.bin"), "content").unwrap();
+
+        let failed = commit_everything(root, "seed [no-item]", "T", "t@example.com")
+            .expect_err("a filtered path is refused");
+        let text = failed.to_string();
+        assert!(text.contains("big.bin"), "{text}");
+        assert!(text.contains("filter=lfs"), "{text}");
+        assert!(text.contains("runs none"), "{text}");
+    }
+
+    /// A DELETED filtered path is not refused: there is no content for a
+    /// filter to have rewritten, so committing the deletion is what
+    /// `git add -A` followed by `git commit` did, and refusing it would
+    /// leave a person unable to record a release after deleting an
+    /// asset.
+    #[test]
+    fn a_deleted_filtered_path_is_not_a_refusal() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let repo = git2::Repository::init(root).unwrap();
+        std::fs::write(root.join(".gitattributes"), "*.bin filter=lfs -text\n").unwrap();
+        // Tracked the way git would have left it: the pointer git's own
+        // clean filter wrote, committed. Seeded through git2 directly,
+        // because joy's own commit verbs are the ones under test and
+        // they refuse exactly this.
+        std::fs::write(root.join("big.bin"), "version https://git-lfs/spec/v1\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new(".gitattributes")).unwrap();
+        index.add_path(Path::new("big.bin")).unwrap();
+        index.write().unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let signature = git2::Signature::now("T", "t@example.com").unwrap();
+        repo.commit(
+            Some("HEAD"),
+            &signature,
+            &signature,
+            "seed [no-item]",
+            &repo.find_tree(tree_id).unwrap(),
+            &[],
+        )
+        .unwrap();
+
+        std::fs::remove_file(root.join("big.bin")).unwrap();
+        stage_all(root).expect("a deletion carries no content to rewrite");
+        let oid = commit_index(root, "drop it [no-item]", "T", "t@example.com").unwrap();
+        let tree = repo
+            .find_commit(git2::Oid::from_str(&oid).unwrap())
+            .unwrap()
+            .tree()
+            .unwrap();
+        assert!(
+            tree.get_path(Path::new("big.bin")).is_err(),
+            "the deletion is committed"
+        );
+    }
+
+    /// `commit_all` is the platform's job worktree, where nobody can act
+    /// on that refusal and where an all-or-nothing abort throws away
+    /// every other path the agent wrote in the job. It leaves the
+    /// filtered path out, says so in the log, and commits the rest.
+    #[test]
+    fn the_job_worktree_keeps_the_rest_of_the_work() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let repo = git2::Repository::init(root).unwrap();
+        std::fs::write(root.join(".gitattributes"), "*.bin filter=lfs -text\n").unwrap();
+        std::fs::write(root.join("big.bin"), "content, where a pointer belongs").unwrap();
+        std::fs::write(root.join("src.rs"), "the work of the job").unwrap();
+
+        let oid = commit_all(root, "work [no-item]", "T", "t@example.com")
+            .expect("the job commit is written")
+            .expect("something changed");
+        let tree = repo
+            .find_commit(git2::Oid::from_str(&oid).unwrap())
+            .unwrap()
+            .tree()
+            .unwrap();
+        assert!(
+            tree.get_path(Path::new("src.rs")).is_ok(),
+            "the agent's work is in the commit"
+        );
+        assert!(
+            tree.get_path(Path::new("big.bin")).is_err(),
+            "the filtered path is not, because its blob would be the file"
+        );
+        // ...and it is still there for whoever can commit it properly.
+        assert!(root.join("big.bin").is_file());
+    }
+
+    /// The two verbs a PERSON's checkout still reaches, which the first
+    /// audit missed because this package created them: the desktop's
+    /// release record is `add_all` plus `commit` (release_ops.rs:343),
+    /// and before the git2 only move those were `git add -A` and
+    /// `git commit`, which DID run the person's clean filter. Now they
+    /// refuse the path instead of writing the file where the pointer
+    /// belongs, and the index is left exactly as it was.
+    #[test]
+    fn the_verbs_a_persons_checkout_reaches_refuse_a_filtered_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let repo = git2::Repository::init(root).unwrap();
+        std::fs::write(root.join(".gitattributes"), "*.psd filter=lfs -text\n").unwrap();
+        std::fs::write(root.join("art.psd"), "pointer, please").unwrap();
+
+        // 1. the staging verb: this is where a file becomes a blob.
+        let failed = stage_all(root).expect_err("a filtered path is refused");
+        let text = failed.to_string();
+        assert!(text.contains("art.psd"), "{text}");
+        assert!(text.contains("filter=lfs"), "{text}");
+        let index = repo.index().unwrap();
+        assert!(
+            index.get_path(Path::new("art.psd"), 0).is_none(),
+            "nothing was written to the index"
+        );
+
+        // 2. the commit verb, for an entry that got in some other way.
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("art.psd")).unwrap();
+        index.write().unwrap();
+        let failed = commit_index(root, "bump to v1.2.3 [no-item]", "T", "t@example.com")
+            .expect_err("a commit of a filtered path is refused wherever the entry came from");
+        let text = failed.to_string();
+        assert!(text.contains("art.psd"), "{text}");
+        assert!(repo.head().is_err(), "no commit was written: {text}");
+    }
+
+    /// ...and the same two verbs are untouched in a checkout that has
+    /// no such attribute, including the release record shape the
+    /// desktop runs: stage everything, commit the index.
+    #[test]
+    fn the_same_verbs_commit_an_ordinary_checkout_as_before() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let repo = git2::Repository::init(root).unwrap();
+        std::fs::write(root.join("Cargo.toml"), "version = \"0.0.2\"\n").unwrap();
+
+        stage_all(root).unwrap();
+        let oid = commit_index(root, "bump to v0.0.2 [no-item]", "T", "t@example.com").unwrap();
+        let commit = repo
+            .find_commit(git2::Oid::from_str(&oid).unwrap())
+            .unwrap();
+        assert!(commit
+            .tree()
+            .unwrap()
+            .get_path(Path::new("Cargo.toml"))
+            .is_ok());
+
+        // A second round, where the path is tracked and CHANGED: that is
+        // `update_all`'s half of `git add -A`, and the guard sits on it
+        // too.
+        std::fs::write(root.join("Cargo.toml"), "version = \"0.0.3\"\n").unwrap();
+        stage_all(root).unwrap();
+        assert!(commit_index(root, "bump to v0.0.3 [no-item]", "T", "t@example.com").is_ok());
+    }
+
+    /// The sentence `joy release record` prints when something of the
+    /// person's was skipped has to be true. `worktree_dirty` counts
+    /// untracked files and answers `true` on an unreadable checkout, so
+    /// it said so in nearly every real repository, including ones where
+    /// nothing of the person's was staged at all.
+    #[test]
+    fn only_a_tracked_change_outside_joys_paths_counts_as_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let repo = git2::Repository::init(root).unwrap();
+        std::fs::create_dir_all(root.join(".joy")).unwrap();
+        std::fs::write(root.join(".joy/project.yaml"), "acronym: JOY\n").unwrap();
+        std::fs::write(root.join("Cargo.toml"), "version = \"0.0.1\"\n").unwrap();
+        commit_everything(root, "seed [no-item]", "T", "t@example.com").unwrap();
+        let joys = vec![".joy".to_string(), "Cargo.toml".to_string()];
+
+        // A build directory and an editor's scratch file: untracked, and
+        // no answer to the question.
+        std::fs::create_dir_all(root.join("target/debug")).unwrap();
+        std::fs::write(root.join("target/debug/joy"), "binary").unwrap();
+        std::fs::write(root.join(".src.rs.swp"), "vim").unwrap();
+        assert!(
+            changes_outside(root, &joys).is_empty(),
+            "untracked files are not the person's skipped work"
+        );
+        assert!(worktree_dirty(root), "...which is what the old test asked");
+
+        // joy's own paths changed: also no answer, they are what joy
+        // just committed.
+        std::fs::write(root.join(".joy/project.yaml"), "acronym: JOY\nname: x\n").unwrap();
+        std::fs::write(root.join("Cargo.toml"), "version = \"0.0.2\"\n").unwrap();
+        assert!(changes_outside(root, &joys).is_empty());
+
+        // A tracked file of the person's, changed: that IS an answer.
+        std::fs::write(root.join("src.rs"), "half finished\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("src.rs")).unwrap();
+        index.write().unwrap();
+        assert_eq!(changes_outside(root, &joys), vec!["src.rs".to_string()]);
+    }
+
+    /// A repository without such an attribute is untouched by the
+    /// guard: every ordinary checkout commits exactly as before.
+    #[test]
+    fn an_ordinary_checkout_commits_as_it_always_did() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let repo = git2::Repository::init(root).unwrap();
+        std::fs::write(root.join(".gitattributes"), "*.yaml merge=joy-yaml\n").unwrap();
+        std::fs::write(root.join("a.txt"), "plain").unwrap();
+
+        let oid = commit_everything(root, "seed [no-item]", "T", "t@example.com").unwrap();
+        let commit = repo
+            .find_commit(git2::Oid::from_str(&oid).unwrap())
+            .unwrap();
+        assert!(commit.tree().unwrap().get_path(Path::new("a.txt")).is_ok());
+
+        std::fs::write(root.join("b.txt"), "more").unwrap();
+        assert!(commit_all(root, "work [no-item]", "T", "t@example.com")
+            .unwrap()
+            .is_some());
     }
 }
 
@@ -5193,13 +6004,65 @@ mod credential_shape_tests {
     /// its name and its refspecs. The rewrite itself, and the settings
     /// that keep coming from the alias's own `Host` block, are pinned
     /// in tests/ssh_config_alias.rs, which owns HOME.
+    /// `remote.<name>.pushurl`, which git honours for a push and
+    /// libgit2 only half does: it picks the transport from the push url
+    /// and then hands the local transport `remote->url`
+    /// (transports/local.c:396-397), so the shape "fetch from the forge,
+    /// push to a path on this machine" failed with "failed to resolve
+    /// path <the https url>". joy dials the push url itself.
+    #[test]
+    fn a_push_goes_to_the_push_url_and_a_fetch_does_not() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        repo.remote("origin", "https://github.com/joyint/joy.git")
+            .unwrap();
+        repo.config()
+            .unwrap()
+            .set_str("remote.origin.pushurl", "/srv/mirrors/joy.git")
+            .unwrap();
+
+        let push = contact_remote(&repo, super::super::contact::ContactDirection::Push).unwrap();
+        assert_eq!(push.url().ok(), Some("/srv/mirrors/joy.git"));
+        drop(push);
+
+        let fetch = contact_remote(&repo, super::super::contact::ContactDirection::Fetch).unwrap();
+        assert_eq!(fetch.url().ok(), Some("https://github.com/joyint/joy.git"));
+        assert_eq!(
+            fetch.name().ok().flatten(),
+            Some("origin"),
+            "a fetch keeps the named remote and its refspecs"
+        );
+    }
+
+    /// A remote without a push url is the named remote in both
+    /// directions, so nothing about the ordinary case changes.
+    #[test]
+    fn a_remote_without_a_push_url_is_the_named_one_either_way() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        repo.remote("origin", "https://codeberg.org/joyint/joy.git")
+            .unwrap();
+        for direction in [
+            super::super::contact::ContactDirection::Push,
+            super::super::contact::ContactDirection::Fetch,
+        ] {
+            let remote = contact_remote(&repo, direction).unwrap();
+            assert_eq!(remote.name().ok().flatten(), Some("origin"));
+            assert_eq!(
+                remote.url().ok(),
+                Some("https://codeberg.org/joyint/joy.git")
+            );
+        }
+    }
+
     #[test]
     fn a_remote_no_ssh_config_renames_is_contacted_as_it_stands() {
         let dir = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init(dir.path()).unwrap();
         repo.remote("origin", "https://github.com/joyint/joy.git")
             .unwrap();
-        let remote = contact_remote(&repo).expect("the configured remote");
+        let remote = contact_remote(&repo, super::super::contact::ContactDirection::Fetch)
+            .expect("the configured remote");
         assert_eq!(remote.url().ok(), Some("https://github.com/joyint/joy.git"));
         assert_eq!(
             remote.name().ok().flatten(),

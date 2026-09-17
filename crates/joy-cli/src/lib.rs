@@ -4,6 +4,7 @@
 mod color;
 mod commands;
 mod complete;
+mod contact_report;
 mod crypt_session;
 mod editor;
 mod effort;
@@ -349,6 +350,20 @@ fn auto_sync_repo() {
     }
 }
 
+/// Say a forge refusal joy-core met on a path that is not the command's
+/// answer, in the words of [`contact_report`] (D3.8): the state, the
+/// plain sentence and the one next step, as one JSON object on stderr in
+/// `--json` mode so that stdout stays the command's one envelope.
+fn say_a_contact_aside(
+    root: &std::path::Path,
+    headline: &str,
+    tail: &str,
+    error: &joy_core::error::JoyError,
+) {
+    let host = contact_report::host_of_checkout(root);
+    contact_report::Refusal::of(&host, error).say_aside(headline, tail);
+}
+
 /// Lend joy-core this terminal for the host key question of D1.4a, and
 /// only where there is a person at it.
 ///
@@ -505,6 +520,14 @@ pub fn cli_main() -> anyhow::Result<()> {
     });
 
     install_host_key_question(joy_core::host::process_host());
+
+    // ...and this host's way of saying a forge refusal that is not the
+    // command's answer, so joy-core's own contacts speak the one
+    // vocabulary of D3.8 too. The auto-git push is the one that needed
+    // it: with `workflow.auto-git: push` it runs after nearly every joy
+    // write, and it said `Warning: auto-git push failed: <prose>` with
+    // no state word, no next step and no object under `--json`.
+    joy_core::git_ops::set_contact_aside(say_a_contact_aside);
 
     // Config subcommand handles its own validation, run it before load_config
     // to avoid duplicate warnings for invalid config state.

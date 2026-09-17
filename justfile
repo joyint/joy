@@ -108,20 +108,61 @@ sync-tutorial:
 # core. Seconds, not minutes, so nobody is tempted to skip it.
 check: _toolchain-check sync-tutorial fmt-check lint check-windows guard-vcs guard-certificate-check guard-interactive test-unit test-cmd test-smoke
 
-# Git lives in ONE place (JOY-0265-D7): joy-core/src/vcs, plus the chat
-# store's object plumbing (a git-object database, its own storage layer).
-# git2 elsewhere is compile-guarded (dev-dependency only); this guards
-# the git BINARY calls. Tests may shell git to build fixtures.
+# ZERO git processes (JOY-01FD-ED, design D3.2). Not "git lives in one
+# place" any more: joy runs on git2 alone, because the operator's reason
+# is mobile and the app has to work on a machine with no git binary at
+# all. joy-core/src/vcs is therefore no longer exempt - it is where the
+# last spawns were.
+#
+# Two things the old rule got wrong are fixed here:
+#
+#   1. It looked only for `joy_process::command("git")`. A plain
+#      `Command::new("git")` walked straight past it.
+#   2. It treated everything after ONE `#[cfg(test)]` as test code, so a
+#      file with production code after a test module had a free pass for
+#      the rest of its length. Taking the first `#[cfg(test)] mod`
+#      instead only narrowed the hole: `crates/joy-core/src/store.rs`
+#      carries `mod platform_dir_tests` at line 190 and roughly a
+#      thousand lines of production code after it. The boundary is now
+#      EVERY `#[cfg(test)]` region of the file, each one from its
+#      attribute to the end of the item it carries. rustfmt puts a top
+#      level item at column zero, so that end is the next line which is
+#      exactly `}`; an item whose signature wraps, and a nested
+#      (indented) test module, are not recognised at all, and a spawn
+#      inside one of those is REPORTED rather than excused. The guard
+#      errs towards refusing, which is the only direction a guard may
+#      err in.
+#
+# Test code may still build a fixture with git: a fixture is not the
+# product. joy-process is exempt as a whole because it names no program
+# - what it carries is the doc comment and the tests of the spawn
+# helper itself.
 guard-vcs:
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{justfile_directory()}}"
     bad=0
-    for f in $(grep -rl 'command("git")' crates/*/src --include='*.rs' | grep -v 'crates/joy-core/src/vcs/' | grep -v 'crates/joy-process/'); do
-        test_start=$(grep -n '#\[cfg(test)\]' "$f" | head -1 | cut -d: -f1)
-        for line in $(grep -n 'command("git")' "$f" | cut -d: -f1); do
-            if [ -z "$test_start" ] || [ "$line" -lt "$test_start" ]; then
-                echo "guard-vcs: $f calls git directly (line $line); git belongs in joy-core/src/vcs"
+    spawn='(joy_process::command|Command::new)\("git"\)'
+    for f in $(grep -rlE "$spawn" crates/*/src --include='*.rs' | grep -v 'crates/joy-process/'); do
+        regions=$(awk '
+            /^#\[cfg\(test\)\]$/ { pending = NR; next }
+            pending && /^#\[/ { next }
+            pending && /^(pub )?(unsafe |async )?(mod|fn|impl)[^;]*\{$/ {
+                start = pending; pending = 0; next
+            }
+            pending { pending = 0 }
+            start && /^\}$/ { print start ":" NR; start = 0 }
+        ' "$f")
+        # a mention in a comment is prose, not a spawn
+        for line in $(grep -nE "$spawn" "$f" | grep -vE '^[0-9]+: *(//|\*|/\*)' | cut -d: -f1); do
+            sanctioned=0
+            for region in $regions; do
+                if [ "$line" -ge "${region%%:*}" ] && [ "$line" -le "${region##*:}" ]; then
+                    sanctioned=1
+                fi
+            done
+            if [ "$sanctioned" -eq 0 ]; then
+                echo "guard-vcs: $f spawns a git process (line $line); joy runs git2 only (design D3.2)"
                 bad=1
             fi
         done

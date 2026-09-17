@@ -329,6 +329,22 @@ git commit -m "chore: bump dependencies [no-item]"  # OK
 
 In multi-repo setups (umbrella with submodules), each subproject has its own acronym. CI can enforce the same rule with: `just lint-commits`
 
+**Your own hooks keep running.** Joy owns `core.hooksPath`, because git's `core.hooksPath` replaces the hook location entirely: if Joy did not set it, Joy's check would not run at all. So Joy remembers the path it replaced in `.joy/hooks/chained-path` and every Joy hook runs the same hook from there afterwards. husky, lefthook and pre-commit keep working; Joy's check simply runs first, and the other hook's exit code is the hook's. Joy says this once, at `joy init`:
+
+```text
+joy installed its hooks and kept yours: .husky still runs after joy's.
+```
+
+`.joy/hooks/` is gitignored, so the remembered path belongs to your checkout and never travels to the team.
+
+### Joy's git engine
+
+Joy does not run the `git` program. Everything Joy does with your repository - init, staging, commits, tags, fetch, push - goes through libgit2, so Joy works on a machine that has no git installed at all. Three consequences are worth knowing:
+
+- **Joy's own commits are not signed.** libgit2 cannot sign, so the commits Joy writes for you (`joy: add ...`, `bump to v1.2.3`) carry no GPG or SSH signature. A branch with "require signed commits" will refuse them. Your own `git commit` is unaffected.
+- **Joy commits only what Joy wrote.** A `joy` command stages and commits its own files - `.joy/`, and for a release the version files you configured. Work you have staged yourself stays staged and stays yours.
+- **A command may wait before it contacts a forge.** Joy spaces its requests per host so a forge does not throttle you. On Codeberg that can be up to about two seconds before a single contact starts.
+
 ### Releases
 
 A release in Joy is three explicit steps. Joy never reaches into your build system; it just updates version strings, writes a release record, and talks to your forge. Anything ecosystem-specific (lockfile refresh, uploading to a package registry, running tests) happens between the Joy steps in your project's own release script.

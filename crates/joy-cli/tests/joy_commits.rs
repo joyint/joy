@@ -249,3 +249,254 @@ fn removing_only_user_email_leaves_the_author_line_alone() {
         "removing user.email changed the author line"
     );
 }
+
+/// D3.4 on the release path. `joy release record` ran `git add -A` and
+/// then committed the whole index, so a person's half staged work went
+/// up inside a "bump to vX" commit; with no pre-commit hook left to
+/// stand in the way (D3.2) that is now the commit path's own job. It
+/// stages joy's own directory and the version files
+/// `release.version-files` names, and nothing else.
+#[test]
+fn a_release_commit_carries_joys_own_paths_only() {
+    let (_dir, root, home) = machine();
+
+    let init = joy(
+        &root,
+        &home,
+        &["init", "--name", "Rel", "--user", "scotty@example.com"],
+    );
+    assert!(init.status.success(), "{}", text(&init));
+
+    // A version file, which is joy's because `joy release bump` patches it.
+    std::fs::write(root.join("Cargo.toml"), "[package]\nversion = \"0.0.1\"\n").unwrap();
+    let set = joy(
+        &root,
+        &home,
+        &[
+            "project",
+            "set",
+            "release.version-files",
+            "--add",
+            "Cargo.toml",
+        ],
+    );
+    assert!(set.status.success(), "{}", text(&set));
+
+    // The person is in the middle of something and has staged part of it.
+    std::fs::write(root.join("src.rs"), "half finished\n").unwrap();
+    let repo = git2::Repository::open(&root).unwrap();
+    let mut index = repo.index().unwrap();
+    index.add_path(Path::new("src.rs")).unwrap();
+    index.write().unwrap();
+
+    let record = joy(&root, &home, &["release", "record", "patch"]);
+    assert!(record.status.success(), "{}", text(&record));
+
+    let head = repo.head().unwrap().peel_to_commit().unwrap();
+    let summary = head
+        .summary()
+        .ok()
+        .flatten()
+        .unwrap_or_default()
+        .to_string();
+    assert!(summary.starts_with("bump to v"), "{summary}");
+    let tree = head.tree().unwrap();
+    assert!(
+        tree.get_path(Path::new("src.rs")).is_err(),
+        "the person's staged file is not joy's to commit"
+    );
+    assert!(
+        tree.get_path(Path::new("Cargo.toml")).is_ok(),
+        "the version file joy patches is joy's"
+    );
+    assert!(
+        tree.get_path(Path::new(".joy/project.yaml")).is_ok(),
+        "joy's own directory is in the commit"
+    );
+    // The person's work is still staged, where they left it, and joy
+    // said so rather than leaving them to find out.
+    let index = repo.index().unwrap();
+    assert!(index.get_path(Path::new("src.rs"), 0).is_some());
+    assert!(
+        text(&record).contains("joy commits only what it wrote"),
+        "{}",
+        text(&record)
+    );
+
+    // The annotated tag is on that commit, written by libgit2 and
+    // signed for the acting member (D4.5), not by `git tag -a`.
+    let tag = repo.revparse_single("v0.0.1").unwrap();
+    let tag = tag.as_tag().expect("an annotated tag object");
+    assert_eq!(tag.target_id(), head.id());
+    assert_eq!(tag.tagger().unwrap().email().unwrap(), "scotty@example.com");
+}
+
+/// D3.3: libgit2 runs no hooks, so the item rule of
+/// `.joy/hooks/commit-msg` would be enforced for nobody on the commits
+/// joy writes for itself. The in-process validator enforces it instead,
+/// and for an AUTOMATIC commit it warns and proceeds: refusing would
+/// strand the write with uncommitted `.joy` changes and a message the
+/// person never typed.
+#[test]
+fn an_automatic_commit_without_an_item_warns_and_still_happens() {
+    let (_dir, root, home) = machine();
+
+    let init = joy(
+        &root,
+        &home,
+        &["init", "--name", "Warned", "--user", "scotty@example.com"],
+    );
+    assert!(init.status.success(), "{}", text(&init));
+    auto_git_commit(&root);
+
+    // `joy project set` writes "joy: project set ...": no item id, and
+    // no `[no-item]` bypass either.
+    let set = joy(
+        &root,
+        &home,
+        &[
+            "project",
+            "set",
+            "release.version-files",
+            "--add",
+            "Cargo.toml",
+        ],
+    );
+    assert!(set.status.success(), "{}", text(&set));
+    let said = text(&set);
+    assert!(
+        said.contains("references no") && said.contains("item:"),
+        "joy warned about the missing item reference: {said}"
+    );
+
+    // ...and the commit is there, which is the "proceeds" half.
+    let repo = git2::Repository::open(&root).unwrap();
+    let head = repo.head().unwrap().peel_to_commit().unwrap();
+    assert!(
+        head.summary()
+            .ok()
+            .flatten()
+            .unwrap_or_default()
+            .starts_with("joy: project set"),
+        "{:?}",
+        head.summary()
+    );
+}
+
+/// D3.8 on the last contact that sat outside the one vocabulary. With
+/// `workflow.auto-git: push` a forge contact runs after nearly every
+/// joy write, and a refused one said `Warning: auto-git push failed:
+/// <prose>`: no state word, no next step, and no object under `--json`,
+/// so the widest contact path in the product was the one an agent could
+/// not read. It says the same words as every other contact now, and it
+/// is still never fatal.
+#[test]
+fn a_refused_auto_git_push_speaks_the_one_failure_vocabulary() {
+    let (_dir, root, home) = machine();
+
+    let init = joy(
+        &root,
+        &home,
+        &["init", "--name", "Pushed", "--user", "scotty@example.com"],
+    );
+    assert!(init.status.success(), "{}", text(&init));
+
+    // A remote nothing answers, so the push after the commit is refused
+    // for certain, with no network anywhere near it.
+    let repo = git2::Repository::open(&root).unwrap();
+    repo.remote("origin", root.join("no-such-forge.git").to_str().unwrap())
+        .unwrap();
+    std::fs::write(
+        root.join(".joy/config.yaml"),
+        "workflow:\n  auto-git: push\n",
+    )
+    .unwrap();
+
+    let added = joy(&root, &home, &["add", "task", "First thing"]);
+    assert!(
+        added.status.success(),
+        "a refused push never fails the write: {}",
+        text(&added)
+    );
+    let said = String::from_utf8_lossy(&added.stderr).to_string();
+    assert!(said.contains("auto-git push failed"), "{said}");
+    assert!(said.contains("= note: state "), "{said}");
+
+    // The commit is there: what failed is the delivery.
+    let head = repo.head().unwrap().peel_to_commit().unwrap();
+    assert!(
+        head.summary()
+            .ok()
+            .flatten()
+            .unwrap_or_default()
+            .starts_with("joy: add"),
+        "{:?}",
+        head.summary()
+    );
+
+    // And for an agent: one object on stderr, while stdout stays the
+    // command's own answer (ADR-036).
+    let json = joy(&root, &home, &["--json", "add", "task", "Second thing"]);
+    assert!(json.status.success(), "{}", text(&json));
+    let answer = String::from_utf8_lossy(&json.stdout).to_string();
+    assert!(
+        !answer.contains("\"state\""),
+        "the refusal never reaches stdout: {answer:?}"
+    );
+    let stderr = String::from_utf8_lossy(&json.stderr).to_string();
+    let line = stderr
+        .lines()
+        .find(|line| line.starts_with('{'))
+        .unwrap_or_else(|| panic!("a machine readable refusal on stderr: {stderr:?}"));
+    let refusal: serde_json::Value = serde_json::from_str(line).unwrap();
+    assert!(
+        !refusal["state"].as_str().unwrap_or_default().is_empty(),
+        "the object carries the state word: {line}"
+    );
+}
+
+/// ...and it says nothing when nothing of the person's was skipped. The
+/// test used to be `!is_clean()`, which counts untracked files and
+/// answers dirty on an unreadable checkout, so `joy release record`
+/// told the person their work had been left behind in nearly every real
+/// repository, including ones where they had staged nothing at all.
+#[test]
+fn a_release_commit_stays_quiet_when_nothing_of_the_persons_was_skipped() {
+    let (_dir, root, home) = machine();
+
+    let init = joy(
+        &root,
+        &home,
+        &["init", "--name", "Quiet", "--user", "scotty@example.com"],
+    );
+    assert!(init.status.success(), "{}", text(&init));
+
+    // `joy init` stages SECURITY.md and no joy command commits it, so
+    // the person's first commit is where it lands. After it this
+    // checkout carries nothing but untracked noise, of the kind every
+    // real one has.
+    let repo = git2::Repository::open(&root).unwrap();
+    let mut index = repo.index().unwrap();
+    let tree = index.write_tree().unwrap();
+    let signature = git2::Signature::now("Scotty", "scotty@example.com").unwrap();
+    repo.commit(
+        Some("HEAD"),
+        &signature,
+        &signature,
+        "seed [no-item]",
+        &repo.find_tree(tree).unwrap(),
+        &[],
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("target/debug")).unwrap();
+    std::fs::write(root.join("target/debug/joy"), "a build artefact").unwrap();
+    std::fs::write(root.join(".notes.md.swp"), "an editor's scratch file").unwrap();
+
+    let record = joy(&root, &home, &["release", "record", "patch"]);
+    assert!(record.status.success(), "{}", text(&record));
+    assert!(
+        !text(&record).contains("joy commits only what it wrote"),
+        "nothing of the person's was staged, so nothing was skipped: {}",
+        text(&record)
+    );
+}
