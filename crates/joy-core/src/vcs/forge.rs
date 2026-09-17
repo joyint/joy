@@ -1714,9 +1714,11 @@ pub fn push(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
                 .shorthand()
                 .map_err(|_| anyhow::anyhow!("detached HEAD"))?
                 .to_string();
-            let tip = head
-                .target()
-                .ok_or_else(|| anyhow::anyhow!("unborn HEAD"))?;
+            // Read before the push and never a precondition of it: a
+            // push libgit2 refuses keeps refusing in libgit2's own
+            // words, and a tracking ref is only written for a tip
+            // there really is.
+            let tip = head.target();
             let url = remote_url_of(remote);
             let proxy = proxy_for(&url, Some(repo))?;
             let (callbacks, status) =
@@ -1729,7 +1731,9 @@ pub fn push(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
                 .push(&[refspec.as_str()], Some(&mut opts))
                 .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Push, e))?;
             status.verdict(&super::contact::host_of(&url))?;
-            write_tracking_ref(repo, remote, &status, &branch, tip);
+            if let Some(tip) = tip {
+                write_tracking_ref(repo, remote, &status, &branch, tip);
+            }
             Ok(())
         },
     );
@@ -1814,7 +1818,7 @@ pub fn push_ref(repo_dir: &Path, auth: &Auth, refname: &str) -> anyhow::Result<(
         super::contact::ContactDirection::Push,
         false,
         |repo, remote, leg_auth, _leg| {
-            let tip = repo.refname_to_id(refname).map_err(err)?;
+            let tip = repo.refname_to_id(refname).ok();
             let url = remote_url_of(remote);
             let proxy = proxy_for(&url, Some(repo))?;
             let (callbacks, status) =
@@ -1827,7 +1831,9 @@ pub fn push_ref(repo_dir: &Path, auth: &Auth, refname: &str) -> anyhow::Result<(
                 .push(&[refspec.as_str()], Some(&mut opts))
                 .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Push, e))?;
             status.verdict(&super::contact::host_of(&url))?;
-            write_chats_tracking_ref(repo, &status, refname, tip);
+            if let Some(tip) = tip {
+                write_chats_tracking_ref(repo, &status, refname, tip);
+            }
             Ok(())
         },
     )
