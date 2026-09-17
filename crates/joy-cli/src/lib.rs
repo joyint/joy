@@ -349,6 +349,50 @@ fn auto_sync_repo() {
     }
 }
 
+/// Lend joy-core this terminal for the host key question of D1.4a, and
+/// only where there is a person at it.
+///
+/// joy-core owns the one `certificate_check` closure and every
+/// known_hosts rule behind it; what it has no way to do is ask. A
+/// `Background` or `Delegated` host installs nothing, and a host that
+/// installs nothing refuses an unknown key with the file and the line
+/// to paste, which is what D1.4a asks of those two anyway.
+fn install_host_key_question(kind: joy_core::host::HostKind) {
+    if kind == joy_core::host::HostKind::Interactive {
+        joy_core::vcs::certificates::set_trust_prompt(ask_about_a_host_key);
+    }
+}
+
+/// What a person is shown before joy trusts a host key it has never
+/// seen (design D1.4a), and what joy would write if they say yes.
+///
+/// The question goes on stderr and the answer is read from stdin: the
+/// contact this interrupts owns stdout. Everything the person needs to
+/// compare with the forge's published fingerprint is in the two first
+/// lines, in the spelling the forges publish.
+fn ask_about_a_host_key(request: &joy_core::vcs::certificates::TrustRequest) -> bool {
+    eprintln!(
+        "The authenticity of {}:{} cannot be established.",
+        request.host, request.port
+    );
+    eprintln!(
+        "{} key fingerprint is {}.",
+        request.key_type, request.fingerprint
+    );
+    if let Some(published) = request.published.as_deref() {
+        eprintln!("{published}");
+    }
+    if !request.other_types.is_empty() {
+        eprintln!(
+            "This host already has lines for {}, and none for {}.",
+            request.other_types.join(", "),
+            request.key_type
+        );
+    }
+    eprintln!("joy would add one line to {}.", request.file.display());
+    prompt::ask_yn_stderr("Trust this host key?", false).unwrap_or(false)
+}
+
 /// The CLI entry (the bin shim calls this; the lib form exists so the
 /// desktop app can link single-tool setup without a process spawn).
 pub fn cli_main() -> anyhow::Result<()> {
@@ -431,6 +475,8 @@ pub fn cli_main() -> anyhow::Result<()> {
     } else {
         joy_core::host::HostKind::detect(!cli.json && prompt::is_interactive())
     });
+
+    install_host_key_question(joy_core::host::process_host());
 
     // Config subcommand handles its own validation, run it before load_config
     // to avoid duplicate warnings for invalid config state.
@@ -618,6 +664,26 @@ mod tests {
             rewrite(&["joy", "ls", "-T", "bug"]),
             &["joy", "ls", "-T", "bug"]
         );
+    }
+
+    /// D1.4a: the question exists where a person does, and nowhere
+    /// else. A `Background` or `Delegated` joy that installed one would
+    /// hand an unanswerable question to a hook or an agent; joy-core
+    /// then treats "nobody was asked" as its own answer and refuses by
+    /// name, which is what those two hosts are supposed to get.
+    #[test]
+    fn only_an_interactive_host_lends_joy_core_a_terminal() {
+        use joy_core::host::HostKind;
+        use joy_core::vcs::certificates::{clear_trust_prompt, trust_prompt_installed};
+        for kind in [HostKind::Background, HostKind::Delegated] {
+            clear_trust_prompt();
+            install_host_key_question(kind);
+            assert!(!trust_prompt_installed(), "{kind} installed a question");
+        }
+        clear_trust_prompt();
+        install_host_key_question(HostKind::Interactive);
+        assert!(trust_prompt_installed());
+        clear_trust_prompt();
     }
 
     /// Every non-hidden subcommand from the Commands enum must appear

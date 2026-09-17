@@ -31,6 +31,28 @@ pub fn ask_yn(question: &str, default: bool) -> io::Result<bool> {
     }
 }
 
+/// Ask a yes/no question ON STDERR, for the questions that interrupt a
+/// command whose stdout is an answer: the host key question of D1.4a
+/// asks in the middle of a fetch, and its stdout belongs to the fetch.
+/// Returns the default on empty input and on a closed stdin.
+pub fn ask_yn_stderr(question: &str, default: bool) -> io::Result<bool> {
+    let hint = if default { "Y/n" } else { "y/N" };
+    loop {
+        eprint!("{question} ({hint}) ");
+        io::stderr().flush()?;
+        let mut line = String::new();
+        if io::stdin().lock().read_line(&mut line)? == 0 {
+            return Ok(default);
+        }
+        match line.trim().to_ascii_lowercase().as_str() {
+            "" => return Ok(default),
+            "y" | "yes" => return Ok(true),
+            "n" | "no" => return Ok(false),
+            _ => eprintln!("Please answer y or n."),
+        }
+    }
+}
+
 /// Ask for a line of text. Empty input returns the default, if any.
 pub fn ask_text(question: &str, default: Option<&str>) -> io::Result<String> {
     loop {

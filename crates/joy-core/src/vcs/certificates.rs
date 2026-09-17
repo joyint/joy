@@ -97,6 +97,14 @@ pub fn clear_trust_prompt() {
     *PROMPT.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
 
+/// Whether this process installed one. A host proves with this that it
+/// lends its terminal in the mode it meant to and in no other; nothing
+/// in the engine reads it, because the engine asks and handles
+/// "nobody was asked" as its own answer.
+pub fn trust_prompt_installed() -> bool {
+    PROMPT.lock().unwrap_or_else(|e| e.into_inner()).is_some()
+}
+
 /// What came back from the question. "Nobody was asked" is its own
 /// answer and not a no: the two have different causes, so they have
 /// different sentences.
