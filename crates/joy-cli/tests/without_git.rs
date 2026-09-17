@@ -84,8 +84,14 @@ impl Machine {
             .expect("joy runs")
     }
 
-    /// The same, as an agent under a delegation session (D3.8).
-    fn joy_as_agent(&self, args: &[&str]) -> Output {
+    /// The same, as an agent: under a delegation session, with nothing
+    /// on stdin to read (D3.8).
+    ///
+    /// The session has to be a live one. A `JOY_SESSION` that merely
+    /// exists leaves the host as interactive as it was
+    /// (host.rs:119-133), so a value joy cannot load would prove nothing
+    /// about the delegated host this case is about.
+    fn joy_as_agent(&self, session: &str, args: &[&str]) -> Output {
         joy_process::command(env!("CARGO_BIN_EXE_joy"))
             .args(args)
             .current_dir(&self.root)
@@ -94,10 +100,45 @@ impl Machine {
             .env("XDG_STATE_HOME", self.home.join(".state"))
             .env("XDG_CONFIG_HOME", self.home.join(".config"))
             .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env("JOY_SESSION", "joy-session-that-is-not-live")
+            .env("JOY_SESSION", session)
             .stdin(std::process::Stdio::null())
             .output()
             .expect("joy runs")
+    }
+
+    /// A delegation session, minted the way an agent really gets one: an
+    /// AI member, a delegation token, and the redemption that prints the
+    /// handle. Every step of it runs on this machine without git, so the
+    /// enrolment an agent needs is part of what this file proves.
+    fn a_live_session(&self) -> String {
+        let member = "ai:claude@joy";
+        let added = self.joy(&[
+            "project",
+            "member",
+            "add",
+            member,
+            "--passphrase",
+            PASSPHRASE,
+        ]);
+        assert!(added.status.success(), "{}", text(&added));
+        let minted = self.joy(&["auth", "token", "add", member, "--passphrase", PASSPHRASE]);
+        assert!(minted.status.success(), "{}", text(&minted));
+        // The token is the quoted line among the instructions.
+        let token = text(&minted)
+            .lines()
+            .find_map(|line| {
+                let quoted = line.trim().strip_prefix('"')?;
+                Some(quoted.strip_suffix('"')?.to_string())
+            })
+            .expect("the token is printed");
+        let redeemed = self.joy(&["auth", "--token", &token]);
+        assert!(redeemed.status.success(), "{}", text(&redeemed));
+        text(&redeemed)
+            .lines()
+            .find_map(|line| line.strip_prefix("export JOY_SESSION="))
+            .expect("the redemption prints the handle")
+            .trim()
+            .to_string()
     }
 }
 
@@ -204,12 +245,13 @@ fn joy_works_end_to_end_on_a_machine_without_git() {
     );
 }
 
-/// D3.8: an agent is never asked anything, and what it reads is a stable
-/// word. The remote here is a path that does not exist, so the contact
-/// fails for certain; the run must still end by itself and name the
-/// state rather than waiting for somebody to type something.
+/// D3.8: an agent under a delegation session is never asked anything,
+/// and what it reads is a stable word. The remote here is a path that
+/// does not exist, so the contact fails for certain; the run must still
+/// end by itself and name the state rather than waiting for somebody to
+/// type something.
 #[test]
-fn an_agent_is_never_asked_and_reads_a_stable_state_word() {
+fn an_agent_under_a_delegation_is_never_asked_and_reads_a_stable_state_word() {
     let machine = Machine::new();
     assert!(!git_is_reachable(&machine.path));
 
@@ -218,27 +260,27 @@ fn an_agent_is_never_asked_and_reads_a_stable_state_word() {
     machine.set_git_identity("scotty@example.com");
     let auth = machine.joy(&["auth", "init", "--passphrase", PASSPHRASE]);
     assert!(auth.status.success(), "{}", text(&auth));
+    let session = machine.a_live_session();
 
     let repo = git2::Repository::open(&machine.root).unwrap();
     let nowhere = machine._dir.path().join("no-such-forge.git");
     repo.remote("origin", nowhere.to_str().unwrap()).unwrap();
 
     // The chat is committed locally first, so a failed delivery is not
-    // fatal and the command still succeeds.
-    let send = machine.joy_as_agent(&[
-        "--json",
-        "chat",
-        "send",
-        "general",
-        "hello",
-        "--passphrase",
-        PASSPHRASE,
-    ]);
+    // fatal and the command still succeeds. No passphrase either: the
+    // session is who the agent is, which is what makes this the agent's
+    // own path and not a person's.
+    let send = machine.joy_as_agent(&session, &["--json", "chat", "send", "general", "hello"]);
     assert!(send.status.success(), "{}", text(&send));
 
     // One JSON object on stderr, carrying the state word. stdout stays
-    // the command's own answer, because a second envelope there is a
+    // the command's own answer, because a second object there is a
     // corrupt answer.
+    let answer = String::from_utf8_lossy(&send.stdout).to_string();
+    assert!(
+        !answer.contains("\"state\""),
+        "the refusal never reaches stdout: {answer:?}"
+    );
     let said = String::from_utf8_lossy(&send.stderr).to_string();
     let line = said
         .lines()
