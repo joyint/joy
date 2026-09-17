@@ -37,6 +37,7 @@ fn evidence(
         credential,
         token_worked_before,
         host: host.to_string(),
+        proxy: None,
     }
 }
 
@@ -128,8 +129,15 @@ fn the_status_number_comes_only_from_the_two_libgit2_formats() {
 #[test]
 fn the_openssl_corpus_reads_the_same_in_english_and_in_german() {
     // (code, class, english message, german message, state)
+    //
+    // Every GIT_ERROR_OS and GIT_ERROR_NET row below is a real sentence
+    // of this build with the HOST interpolated by libgit2 and the
+    // operating system's `strerror` appended by git_error_vset
+    // (errors.c:182-203). None of them contains the word "host", which
+    // only the WinHTTP build writes.
     let corpus: Vec<(Code, Class, String, String, Failure)> = vec![
         (
+            // streams/socket.c:186, gai_strerror appended
             Code::GenericError,
             Class::Net,
             "failed to resolve address for codeberg.org: Name or service not known".into(),
@@ -137,35 +145,69 @@ fn the_openssl_corpus_reads_the_same_in_english_and_in_german() {
             Failure::Offline,
         ),
         (
+            // streams/socket.c:244, GIT_ERROR_OS with the host in the
+            // format string and errno's text appended: the forge is
+            // simply not reachable from this laptop, and reading it as
+            // "Codeberg answered with an error" sent the person into
+            // their own checkout
+            Code::GenericError,
+            Class::Os,
+            "failed to connect to codeberg.org: Connection refused".into(),
+            "failed to connect to codeberg.org: Verbindungsaufbau abgelehnt".into(),
+            Failure::Offline,
+        ),
+        (
+            // the same site with another errno
+            Code::GenericError,
+            Class::Os,
+            "failed to connect to codeberg.org: Network is unreachable".into(),
+            "failed to connect to codeberg.org: Das Netzwerk ist nicht erreichbar".into(),
+            Failure::Offline,
+        ),
+        (
+            // streams/socket.c:242, libgit2's own whole literal
             Code::GenericError,
             Class::Net,
-            "connection failed: Connection reset by peer".into(),
-            "connection failed: Die Verbindung wurde vom Kommunikationspartner zurückgesetzt"
+            "failed to connect to codeberg.org: Operation timed out".into(),
+            "failed to connect to codeberg.org: Operation timed out".into(),
+            Failure::Offline,
+        ),
+        (
+            // streams/socket.c:294 through net_set_error (socket.c:52)
+            Code::GenericError,
+            Class::Net,
+            "error receiving data from socket: Connection reset by peer".into(),
+            "error receiving data from socket: Die Verbindung wurde vom Kommunikationspartner zurückgesetzt"
                 .into(),
             Failure::Offline,
         ),
         (
-            Code::GenericError,
-            Class::Os,
-            "failed to connect to host: Connection timed out".into(),
-            "failed to connect to host: Zeitüberschreitung der Verbindung".into(),
-            Failure::Offline,
-        ),
-        (
+            // streams/socket.c:323, GIT_TIMEOUT
             Code::Timeout,
             Class::Net,
-            "the operation timed out".into(),
-            "Zeitüberschreitung bei der Operation".into(),
+            "could not read from socket: timed out".into(),
+            "could not read from socket: timed out".into(),
             Failure::Offline,
         ),
         (
             // the wait bound joy sets itself (JOY-0278-85): an SSL
-            // syscall failure is silence, not a certificate fault
+            // syscall failure is silence, not a certificate fault. It is
+            // GIT_ERROR_OS (streams/openssl.c:325), so the tail is
+            // strerror(EAGAIN) in the user's own language and only
+            // libgit2's own half of the sentence is read
             Code::GenericError,
-            Class::Ssl,
+            Class::Os,
             "SSL error: syscall failure: Resource temporarily unavailable".into(),
             "SSL error: syscall failure: Ressource vorübergehend nicht verfügbar".into(),
             Failure::Offline,
+        ),
+        (
+            // streams/openssl.c:487
+            Code::Certificate,
+            Class::Ssl,
+            "hostname does not match certificate".into(),
+            "hostname does not match certificate".into(),
+            Failure::TlsUntrusted,
         ),
         (
             // streams/openssl.c:381-384, libgit2's own literal
@@ -254,12 +296,90 @@ fn the_openssl_corpus_reads_the_same_in_english_and_in_german() {
         ),
     ];
 
+    // the two producers share no sentence (D1.8a): a WinHTTP literal in
+    // this corpus would prove nothing about this build, and one of them
+    // ("failed to connect to host") is exactly what hid a whole class of
+    // unreachable forges on Linux and macOS
+    for (_, _, english, german, _) in &corpus {
+        for message in [english, german] {
+            assert!(
+                !message.contains("failed to connect to host"),
+                "{message} is the WinHTTP wording, not this build's"
+            );
+        }
+    }
     for (code, class, english, german, expected) in corpus {
         for message in [&english, &german] {
             let ev = https_fetch(error(code, class, message), "codeberg.org");
             assert_eq!(classify(&ev), expected, "{class:?}/{code:?}: {message}");
         }
     }
+}
+
+/// The two proxy texts of D1.8c are told apart, and neither of them
+/// names the forge: a 407 is about the machine in the middle
+/// (`ContactEvidence::proxy`), and the forge host has nothing to do with
+/// it.
+#[test]
+fn a_proxy_407_names_the_proxy_and_the_two_texts_differ() {
+    let through = |message: &str| {
+        ContactEvidence {
+            error: error(Code::Auth, Class::Http, message),
+            transport: Transport::Https,
+            direction: ContactDirection::Fetch,
+            credential: CredentialSource::TokenPresented,
+            token_worked_before: true,
+            host: "github.com".to_string(),
+            proxy: None,
+        }
+        .through_proxy("proxy.acme.example:8080")
+    };
+
+    let wants_password = through("proxy authentication required but no callback set");
+    let v = verdict(&wants_password);
+    assert_eq!(v.failure, Failure::ProxyAuth);
+    assert_eq!(
+        v.sentence,
+        "The proxy proxy.acme.example:8080 needs a user name and a password."
+    );
+    assert!(
+        !v.sentence.contains("github.com"),
+        "the forge is not the proxy: {}",
+        v.sentence
+    );
+    assert_eq!(v.next_step.as_deref(), Some("sign in to the proxy"));
+
+    // the second text means, off Windows, that the proxy offered only
+    // NTLM or Negotiate (auth.c:65-71), which no password joy can ask
+    // for will satisfy
+    let integrated = through("proxy requires authentication that we do not support");
+    let v = verdict(&integrated);
+    assert_eq!(v.failure, Failure::ProxyAuth);
+    let step = v.next_step.expect("a proxy 407 always names a next step");
+    if cfg!(windows) {
+        assert_eq!(step, "sign in to the proxy");
+    } else {
+        assert!(
+            step.contains("Windows integrated authentication") && step.contains("github.com"),
+            "{step}"
+        );
+    }
+
+    // and with no proxy configured joy names none
+    let unknown = https_fetch(
+        error(
+            Code::Auth,
+            Class::Http,
+            "proxy authentication required but no callback set",
+        ),
+        "github.com",
+    );
+    let v = verdict(&unknown);
+    assert_eq!(v.failure, Failure::ProxyAuth);
+    assert_eq!(
+        v.sentence,
+        "A proxy in front of github.com needs a user name and a password."
+    );
 }
 
 /// The ssh half of the same build (`ssh_libssh2.c`): four states, and
@@ -318,6 +438,54 @@ fn the_ssh_corpus_separates_a_host_key_from_a_login_from_a_refusal() {
     let v = verdict(&refusal(ContactDirection::Push));
     assert!(!v.sentence.contains("Permission to joyint/joy.git"));
     assert!(v.detail.contains("Permission to joyint/joy.git"));
+}
+
+/// GIT_ERROR_SSH is not the same as "the remote refused this login":
+/// libgit2 marks the remote's own stderr with GIT_EEOF
+/// (ssh_libssh2.c:138-139) and uses the same class with a generic code
+/// for every transport fault of this machine. Reading those as `denied`
+/// told a person their forge refuses them, and blocked writes, for a key
+/// exchange that broke.
+#[test]
+fn a_generic_ssh_transport_fault_is_not_a_refusal() {
+    let faults = [
+        // ssh_libssh2.c:578
+        "failed to start SSH session: Unable to exchange encryption keys",
+        // ssh_libssh2.c:1118
+        "unable to initialize libssh2",
+        // ssh_libssh2.c:748
+        "unable to get the host key",
+        // ssh_libssh2.c:443
+        "error reading known_hosts",
+    ];
+    for message in faults {
+        for direction in [ContactDirection::Fetch, ContactDirection::Push] {
+            let ev = evidence(
+                error(Code::GenericError, Class::Ssh, message),
+                "github.com",
+                Transport::Ssh,
+                direction,
+                CredentialSource::AgentPresented,
+                true,
+            );
+            let v = verdict(&ev);
+            assert_eq!(v.failure, Failure::Error, "{message}");
+            assert_ne!(v.failure, Failure::Denied, "{message}");
+            assert_ne!(v.failure, Failure::NoPushRights, "{message}");
+            assert!(!v.sentence.contains("refuses this login"), "{message}");
+        }
+    }
+
+    // a timeout stays a timeout even when libssh2 reported it
+    let timed_out = evidence(
+        error(Code::Timeout, Class::Ssh, "the operation timed out"),
+        "github.com",
+        Transport::Ssh,
+        ContactDirection::Fetch,
+        CredentialSource::AgentPresented,
+        true,
+    );
+    assert_eq!(classify(&timed_out), Failure::Offline);
 }
 
 // ---- the WinHTTP corpus (every Windows build) ------------------------
@@ -531,11 +699,65 @@ fn the_oracle_is_asked_once_per_host_and_decides_the_github_403() {
     };
     assert_eq!(classify(&forbidden()), Failure::NeedsOrgApproval);
     assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 1);
-    // inside the strike window the connector is not asked again; without
-    // an answer the state stays the honest "error"
-    assert_eq!(classify(&forbidden()), Failure::Error);
+    // D2.10 limits the CALL, not the verdict: inside the strike window
+    // the connector is not asked again AND its answer still stands, so a
+    // poll that meets the same wall every two seconds keeps the same
+    // banner and the same button instead of flipping to "GitHub answered
+    // with an error"
+    for _ in 0..5 {
+        assert_eq!(classify(&forbidden()), Failure::NeedsOrgApproval);
+    }
     assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 1);
     clear_oracle();
+
+    // with no oracle installed at all nothing is remembered and nothing
+    // is invented: the honest state is "error"
+    assert_eq!(classify(&forbidden()), Failure::Error);
+}
+
+/// D4.7 writes the number into the sentence: "GitHub is rate limiting
+/// us, retrying in N minutes." The state alone cannot know N, the wait
+/// can, so the sentence is built where the wait is.
+#[test]
+fn the_rate_limit_sentence_carries_the_wait_when_there_is_one() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    clear_oracle();
+    let too_many = || {
+        https_fetch(
+            error(
+                Code::GenericError,
+                Class::Http,
+                "unexpected http status code: 429",
+            ),
+            "github.com",
+        )
+    };
+    // without an oracle there is no number, and the sentence says so
+    // instead of inventing one
+    let v = verdict(&too_many());
+    assert_eq!(v.failure, Failure::RateLimited);
+    assert_eq!(v.sentence, "GitHub is rate limiting us, retrying later.");
+
+    set_oracle(std::sync::Arc::new(CountingOracle {
+        asked: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        answer: Some(OracleAnswer::RateLimited {
+            wait: Some(Duration::from_secs(5 * 60)),
+        }),
+    }));
+    let v = verdict(&too_many());
+    assert_eq!(v.wait, Some(Duration::from_secs(5 * 60)));
+    assert_eq!(
+        v.sentence,
+        "GitHub is rate limiting us, retrying in 5 minutes."
+    );
+    clear_oracle();
+
+    // a wait under a minute reads as one minute: a person waiting is
+    // told to wait, not given a stopwatch
+    assert_eq!(
+        rate_limited_sentence("github.com", Duration::from_secs(20)),
+        "GitHub is rate limiting us, retrying in 1 minute."
+    );
 }
 
 /// The connector's own answers are states too (D1.8b, first four rows).
@@ -751,6 +973,62 @@ fn an_https_remote_without_a_credential_is_polled_every_fifteen_minutes() {
     set_gaps("");
 }
 
+/// The rule is not a constant, it is charged: the engine's poll door
+/// holds the second anonymous poll inside the window and says why, while
+/// a person's own command goes out (D1.9, J5's acceptance).
+#[test]
+fn the_poll_door_holds_an_anonymous_https_poll_and_says_why() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    reset_limits();
+    reset_throttle();
+    reset_anonymous_polls();
+    set_gaps("default=0");
+    let url = "https://public.test/o/r.git";
+
+    let mut contacts = 0;
+    let first = run_poll(url, "ls-remote", false, || {
+        contacts += 1;
+        Ok(())
+    });
+    assert!(first.is_ok(), "the first poll of the window goes out");
+
+    let held = run_poll(url, "ls-remote", false, || {
+        contacts += 1;
+        Ok(())
+    })
+    .expect_err("the second poll inside the window is held");
+    assert_eq!(contacts, 1, "the forge was contacted once");
+    assert_eq!(failure_of(&held), Failure::NeedsSignIn);
+    assert!(
+        held.to_string().contains("15 minutes") && held.to_string().contains("public.test"),
+        "the surface says why: {held}"
+    );
+    assert!(
+        next_try_of(&held).expect("the held poll names its next try") > SystemTime::now(),
+        "and when it will be asked again"
+    );
+    // no libgit2 text anywhere in it
+    assert!(detail_of(&held).is_none());
+
+    // a person's own command is not a poll and is never held
+    run(url, "ls-remote", false, || {
+        contacts += 1;
+        Ok(())
+    })
+    .expect("a person's command goes out");
+    assert_eq!(contacts, 2);
+
+    // a credentialed poll is not held either, and neither is another host
+    run_poll("https://signed-in.test/o/r", "ls-remote", true, || Ok(())).expect("credentialed");
+    run_poll("https://other-public.test/o/r", "ls-remote", false, || {
+        Ok(())
+    })
+    .expect("other host");
+
+    reset_anonymous_polls();
+    set_gaps("");
+}
+
 /// Contacts to one host are spaced by what the verb costs, and another
 /// host is not paced by them.
 #[test]
@@ -884,6 +1162,17 @@ fn a_documented_ban_sets_its_own_next_try() {
         waits > Duration::from_secs(14 * 60) && waits <= Duration::from_secs(15 * 60),
         "gitlab.com bans for 15 minutes, got {waits:?}"
     );
+    // but the STRIKE window is the design's 600 s and never the forge's
+    // number (D1.9): the doubling runs for ten minutes after the last
+    // strike, whether the forge asked for three seconds or an hour
+    let window = limited_until("gitlab.com")
+        .expect("a strike stands")
+        .duration_since(SystemTime::now())
+        .unwrap_or(Duration::ZERO);
+    assert!(
+        window > Duration::from_secs(9 * 60) && window <= Duration::from_secs(600),
+        "the strike window is ten minutes, got {window:?}"
+    );
     reset_limits();
     set_gaps("");
 }
@@ -898,11 +1187,24 @@ fn a_credential_that_worked_is_remembered_for_the_host() {
     reset_token_memory();
     set_gaps("default=0");
     assert!(!token_worked_before("worked.test"));
-    run("https://worked.test/a/b", "ls-remote", true, || Ok(())).unwrap();
+    run("https://worked.test/a/b", "ls-remote", true, || {
+        // what the engine's credential callback does when it really
+        // hands libgit2 a credential
+        note_credential_presented();
+        Ok(())
+    })
+    .unwrap();
     assert!(token_worked_before("worked.test"));
     // an anonymous contact proves nothing about a credential
     reset_token_memory();
     run("https://worked.test/a/b", "ls-remote", false, || Ok(())).unwrap();
+    assert!(!token_worked_before("worked.test"));
+    // and neither does a contact that was never asked for one: a public
+    // repository answers the first request, the callback never runs, and
+    // `Auth::Local` says "credentialed" before it knows. A 404 after
+    // this must not read as "your organisation must approve Joy".
+    reset_token_memory();
+    run("https://worked.test/a/b", "ls-remote", true, || Ok(())).unwrap();
     assert!(!token_worked_before("worked.test"));
     reset_token_memory();
     set_gaps("");

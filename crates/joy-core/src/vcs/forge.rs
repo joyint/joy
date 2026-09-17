@@ -113,6 +113,19 @@ fn remote_url_of(remote: &git2::Remote<'_>) -> String {
     remote.url().unwrap_or_default().to_string()
 }
 
+/// Note a credential the callback really handed to libgit2, and hand it
+/// on unchanged. A callback arm that ends in `Cred::default()` (which
+/// is "I have nothing to offer") notes nothing, so joy never remembers
+/// an anonymous contact as a credential that worked (D1.8b: it is what
+/// tells a 404 that means "no such repository" from a 404 that means
+/// "your organisation has not approved Joy").
+fn presented(cred: Result<git2::Cred, git2::Error>) -> Result<git2::Cred, git2::Error> {
+    if cred.is_ok() {
+        super::contact::note_credential_presented();
+    }
+    cred
+}
+
 impl Auth {
     pub fn token(token: impl Into<String>) -> Self {
         Auth::Token(token.into())
@@ -167,16 +180,18 @@ impl Auth {
                 callbacks.credentials(move |url, username, _allowed| {
                     attempts.set(attempts.get() + 1);
                     match attempts.get() {
-                        1 if !token.is_empty() => match basic_auth_user(url) {
+                        1 if !token.is_empty() => presented(match basic_auth_user(url) {
                             "" => git2::Cred::userpass_plaintext(&token, ""),
                             user => git2::Cred::userpass_plaintext(user, &token),
-                        },
-                        2 if !token.is_empty() => match basic_auth_user(url) {
+                        }),
+                        2 if !token.is_empty() => presented(match basic_auth_user(url) {
                             "" => git2::Cred::userpass_plaintext("x-access-token", &token),
                             _ => git2::Cred::userpass_plaintext(&token, ""),
-                        },
+                        }),
                         n if n <= 3 => match &config {
-                            Some(config) => git2::Cred::credential_helper(config, url, username),
+                            Some(config) => {
+                                presented(git2::Cred::credential_helper(config, url, username))
+                            }
                             None => Err(git2::Error::from_str("no credential config")),
                         },
                         _ => Err(git2::Error::from_str(
@@ -195,13 +210,16 @@ impl Auth {
                         ));
                     }
                     if allowed.contains(git2::CredentialType::SSH_KEY) {
-                        return git2::Cred::ssh_key_from_agent(username.unwrap_or("git"));
+                        return presented(git2::Cred::ssh_key_from_agent(
+                            username.unwrap_or("git"),
+                        ));
                     }
                     if allowed.contains(git2::CredentialType::USER_PASS_PLAINTEXT) {
                         if let Some(config) = &config {
-                            return git2::Cred::credential_helper(config, url, username);
+                            return presented(git2::Cred::credential_helper(config, url, username));
                         }
                     }
+                    // nothing to offer: NOT a credential (D1.8b)
                     git2::Cred::default()
                 });
             }
@@ -384,7 +402,10 @@ fn download_ref(
     // empty list since git2 0.21, and an honest "nothing there"
     let advertised = connection
         .list()
-        .map_err(err)?
+        // the advertisement is a forge contact like any other: its
+        // failure is read by the classifier, never copied raw onto a
+        // surface (D1.8b, wording rules)
+        .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Fetch, e))?
         .iter()
         .find(|r| r.name() == src)
         .map(|r| r.oid());
@@ -690,6 +711,31 @@ pub fn ls_remote_refs(
     })
 }
 
+/// [`ls_remote_ref`] as a POLL: a contact no person asked for, made by
+/// a loop that watches the forge. A poll is the one contact the no
+/// anonymous polling rule of D1.9 holds back, so a public https remote
+/// nobody is signed in for is asked at most once every fifteen minutes
+/// per host and the refusal says why. Every other caller asks
+/// [`ls_remote_ref`].
+pub fn ls_remote_ref_poll(
+    repo_dir: &Path,
+    auth: &Auth,
+    refname: &str,
+) -> anyhow::Result<Option<String>> {
+    Ok(ls_remote_refs_poll(repo_dir, auth, &[refname])?.remove(refname))
+}
+
+/// [`ls_remote_refs`] as a poll; see [`ls_remote_ref_poll`].
+pub fn ls_remote_refs_poll(
+    repo_dir: &Path,
+    auth: &Auth,
+    refnames: &[&str],
+) -> anyhow::Result<std::collections::HashMap<String, String>> {
+    super::contact::run_poll_for(repo_dir, "ls-remote", auth.credentialed(), || {
+        ls_remote_refs_raw(repo_dir, auth, refnames)
+    })
+}
+
 fn ls_remote_refs_raw(
     repo_dir: &Path,
     auth: &Auth,
@@ -707,7 +753,7 @@ fn ls_remote_refs_raw(
         .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Fetch, e))?;
     let found = connection
         .list()
-        .map_err(err)?
+        .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Fetch, e))?
         .iter()
         .filter(|r| refnames.contains(&r.name()))
         .map(|r| (r.name().to_string(), r.oid().to_string()))
@@ -2172,7 +2218,7 @@ fn fetch_heads_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<Vec<String>> 
         .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Fetch, e))?;
     let heads: Vec<(String, git2::Oid)> = connection
         .list()
-        .map_err(err)?
+        .map_err(|e| contact_failed(&url, auth, super::contact::ContactDirection::Fetch, e))?
         .iter()
         .filter_map(|r| {
             r.name()

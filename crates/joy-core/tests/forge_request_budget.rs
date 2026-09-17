@@ -16,6 +16,14 @@
 //! process: a minimal git smart-HTTP server on the loopback interface
 //! that demands Basic authentication and counts every request it
 //! answers. It needs no network and no forge.
+//!
+//! Two notes on how literally to read it. The criterion says "a private
+//! https remote" and the server below speaks plain http on 127.0.0.1:
+//! the request count is what is measured and TLS adds no HTTP request,
+//! but the handshake is not exercised here. And the gap table is
+//! process-wide state, so both tests take [`SERIAL`] before they touch
+//! it; cargo runs them on two threads in one binary, and without the
+//! lock one test could silently pay the other's gap.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -26,6 +34,10 @@ use joy_core::vcs::contact;
 use joy_core::vcs::forge::{fetch_ref, Auth};
 
 const CHATS_REF: &str = "refs/joy/chats";
+
+/// The gap table joy-core keeps is process-wide: the tests that set it
+/// run one at a time.
+static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// One HTTP request the server answered.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -216,6 +228,7 @@ fn forge_repository(dir: &std::path::Path) -> (Vec<(String, git2::Oid)>, git2::O
 /// upload-pack POST that rides the same connection.
 #[test]
 fn one_fetch_of_a_private_remote_costs_three_requests() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let tmp = tempfile::tempdir().expect("tempdir");
     let forge = tmp.path().join("forge.git");
     let (refs, tip) = forge_repository(&forge);
@@ -284,6 +297,7 @@ fn one_fetch_of_a_private_remote_costs_three_requests() {
 /// watches a branch and a chat ref asks once (D1.9).
 #[test]
 fn one_poll_tick_makes_one_contact_for_two_refs() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let tmp = tempfile::tempdir().expect("tempdir");
     let forge = tmp.path().join("forge.git");
     let (refs, tip) = forge_repository(&forge);
