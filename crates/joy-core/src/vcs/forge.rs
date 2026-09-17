@@ -3414,9 +3414,16 @@ pub fn create_worktree(
 ///
 /// Only for a checkout joy OWNS, which for this verb is the platform's
 /// job worktree (D3.4). A path an external content filter governs is
-/// refused by name: libgit2 runs no filter program, so committing a
-/// `filter=lfs` path here would store the file where the pointer
-/// belongs and nobody would notice until the next clone.
+/// left OUT of the commit and named in the log, rather than refused:
+/// libgit2 runs no filter program, so committing a `filter=lfs` path
+/// here would store the file where the pointer belongs and nobody would
+/// notice until the next clone, but this worktree has no person at it.
+/// `refuse_filtered_paths`' advice ("commit them with git, or take them
+/// out of this working tree") is advice for somebody who can act, and
+/// aborting the whole job commit for one such path would throw away
+/// every other path the agent wrote in that job. D3.4's absolute
+/// refusal is written for a person's checkout, and [`commit_everything`]
+/// and [`commit_index`] keep it.
 pub fn commit_all(
     worktree_dir: &Path,
     message: &str,
@@ -3457,7 +3464,16 @@ pub fn commit_all(
             }),
         )
         .map_err(err)?;
-    refuse_filtered_paths(filtered.into_inner())?;
+    // Skipped and said, not refused: see this function's own doc. The
+    // job's log is where a platform host says such a thing, and the
+    // rest of the agent's work still lands.
+    let skipped = filtered.into_inner();
+    if !skipped.is_empty() {
+        tracing::warn!(
+            paths = %skipped.join(", "),
+            "left out of this commit: joy's git engine runs no external content filter"
+        );
+    }
     index.write().map_err(err)?;
     let tree_id = index.write_tree().map_err(err)?;
     if parent.as_ref().map(|p| p.tree_id()) == Some(tree_id) {
@@ -4289,30 +4305,55 @@ mod clean_filter_tests {
         assert_eq!(external_filter(&repo, Path::new(".gitattributes")), None);
     }
 
-    /// So the two sweeping commit paths refuse such a path by name
-    /// instead of writing it wrong.
+    /// So a commit path with a person behind it refuses such a path by
+    /// name instead of writing it wrong.
     #[test]
-    fn the_sweeping_commit_paths_refuse_a_filtered_path_by_name() {
-        for sweeper in ["commit_everything", "commit_all"] {
-            let dir = tempfile::tempdir().unwrap();
-            let root = dir.path();
-            git2::Repository::init(root).unwrap();
-            std::fs::write(root.join(".gitattributes"), "*.bin filter=lfs -text\n").unwrap();
-            std::fs::write(root.join("big.bin"), "content").unwrap();
+    fn the_sweeping_commit_path_refuses_a_filtered_path_by_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        git2::Repository::init(root).unwrap();
+        std::fs::write(root.join(".gitattributes"), "*.bin filter=lfs -text\n").unwrap();
+        std::fs::write(root.join("big.bin"), "content").unwrap();
 
-            let failed = match sweeper {
-                "commit_everything" => {
-                    commit_everything(root, "seed [no-item]", "T", "t@example.com").err()
-                }
-                _ => commit_all(root, "work [no-item]", "T", "t@example.com").err(),
-            };
-            let text = failed
-                .map(|e| e.to_string())
-                .unwrap_or_else(|| String::from("<no refusal>"));
-            assert!(text.contains("big.bin"), "{sweeper}: {text}");
-            assert!(text.contains("filter=lfs"), "{sweeper}: {text}");
-            assert!(text.contains("runs none"), "{sweeper}: {text}");
-        }
+        let failed = commit_everything(root, "seed [no-item]", "T", "t@example.com")
+            .expect_err("a filtered path is refused");
+        let text = failed.to_string();
+        assert!(text.contains("big.bin"), "{text}");
+        assert!(text.contains("filter=lfs"), "{text}");
+        assert!(text.contains("runs none"), "{text}");
+    }
+
+    /// `commit_all` is the platform's job worktree, where nobody can act
+    /// on that refusal and where an all-or-nothing abort throws away
+    /// every other path the agent wrote in the job. It leaves the
+    /// filtered path out, says so in the log, and commits the rest.
+    #[test]
+    fn the_job_worktree_keeps_the_rest_of_the_work() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let repo = git2::Repository::init(root).unwrap();
+        std::fs::write(root.join(".gitattributes"), "*.bin filter=lfs -text\n").unwrap();
+        std::fs::write(root.join("big.bin"), "content, where a pointer belongs").unwrap();
+        std::fs::write(root.join("src.rs"), "the work of the job").unwrap();
+
+        let oid = commit_all(root, "work [no-item]", "T", "t@example.com")
+            .expect("the job commit is written")
+            .expect("something changed");
+        let tree = repo
+            .find_commit(git2::Oid::from_str(&oid).unwrap())
+            .unwrap()
+            .tree()
+            .unwrap();
+        assert!(
+            tree.get_path(Path::new("src.rs")).is_ok(),
+            "the agent's work is in the commit"
+        );
+        assert!(
+            tree.get_path(Path::new("big.bin")).is_err(),
+            "the filtered path is not, because its blob would be the file"
+        );
+        // ...and it is still there for whoever can commit it properly.
+        assert!(root.join("big.bin").is_file());
     }
 
     /// The two verbs a PERSON's checkout still reaches, which the first
