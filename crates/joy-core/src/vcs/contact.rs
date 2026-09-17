@@ -1212,6 +1212,13 @@ pub fn detail_of(error: &anyhow::Error) -> Option<String> {
 /// classifier - a local fault before any socket - keeps the old shape
 /// and the old text, so nothing that reads a git error changes.
 ///
+/// That second arm is unreachable from the three chat ref call sites
+/// as they stand: [`run`] wraps EVERY failure of theirs into a
+/// [`ContactError`], local faults included, so `push_ref`, `fetch_ref`
+/// and `ls_remote_ref` answer nothing else. It is kept because this
+/// function takes any `anyhow::Error` and a caller may hand in one that
+/// never went through a contact, and it is proven by a test that does.
+///
 /// [`JoyError`]: crate::error::JoyError
 pub fn as_joy_error(context: &str, error: anyhow::Error) -> crate::error::JoyError {
     match error.downcast::<ContactError>() {

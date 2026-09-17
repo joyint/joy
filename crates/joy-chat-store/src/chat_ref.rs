@@ -489,6 +489,13 @@ pub fn sync_with_forge(root: &Path, auth: &joy_core::vcs::forge::Auth) -> Result
     // reconcile (adopt / fast-forward / union), push again. The old
     // fetch-before-every-push paid a full extra roundtrip on the hot
     // path of every message.
+    //
+    // A failed first push is not the verdict and is not lost either:
+    // whatever stopped it stops the fetch below too, and a push the
+    // forge alone refused (a 401 on a repository anyone may read)
+    // comes back from the SECOND push with its state. Only a failure
+    // the road below heals is dropped here, which is what "the forge
+    // moved meanwhile" means.
     if open_repo(root)?.refname_to_id(CHATS_REF).is_ok()
         && joy_core::vcs::forge::push_ref(root, auth, CHATS_REF).is_ok()
     {
@@ -532,12 +539,34 @@ pub fn poll_once(root: &Path, auth: &joy_core::vcs::forge::Auth) -> Result<bool,
             // Codeberg, twice per chat opened (JP-00FA-FF, 2026-08-29).
             let local = ref_target(root)?.map(|oid| oid.to_string());
             if local != remote {
-                let _ = joy_core::vcs::forge::push_ref(root, auth, CHATS_REF);
+                // best effort, but never silent: the next poll heals
+                // what this round could not deliver, and the log says
+                // WHICH state stopped it instead of nothing at all.
+                if let Err(e) = joy_core::vcs::forge::push_ref(root, auth, CHATS_REF) {
+                    log_failed_contact(&joy_core::vcs::contact::as_joy_error("chats push", e));
+                }
             }
         }
     }
     let after = ref_target(root)?.map(|oid| oid.to_string());
     Ok(after != before)
+}
+
+/// The one log line for a chat contact that failed where no caller can
+/// be told: the detached delivery and the healing push of a poll.
+///
+/// It names the classifier's STATE and never guesses one (D1.8a): the
+/// old line said "(offline?)" for every failure, so a spent login, a
+/// throttle and a real outage all read as a network fault. The detail
+/// line follows, because that is where the operation ("chats push") and
+/// libgit2's own words live (D1.8b); the sentence itself stays the
+/// plain one a person reads.
+fn log_failed_contact(error: &JoyError) {
+    let state = error.failure().reason();
+    match error.contact().and_then(|c| c.detail.as_deref()) {
+        Some(detail) => eprintln!("joy: chats delivery failed ({state}): {error} [{detail}]"),
+        None => eprintln!("joy: chats delivery failed ({state}): {error}"),
+    }
 }
 
 /// Roots with a detached delivery in flight; the bool is "go one more
@@ -569,7 +598,7 @@ pub fn deliver_detached(root: std::path::PathBuf, auth: joy_core::vcs::forge::Au
             let gate = joy_core::vcs::forge::checkout_gate(&root);
             let _guard = gate.lock().unwrap_or_else(|e| e.into_inner());
             if let Err(e) = sync_with_forge(&root, &auth) {
-                eprintln!("joy: chats delivery failed (offline?): {e}");
+                log_failed_contact(&e);
             }
         }
         let mut guard = DELIVERIES.lock().unwrap_or_else(|e| e.into_inner());
@@ -1656,6 +1685,53 @@ mod forge_sync_tests {
         assert_eq!(error.failure(), state);
         assert_eq!(error.to_string(), sentence, "one sentence for the person");
         assert!(!error.to_string().contains("libgit2"), "{error}");
+        let detail = contact.detail.clone().expect("a detail line for the log");
+        assert!(
+            detail.starts_with("chats fetch"),
+            "the operation names itself on the detail line: {detail}"
+        );
+    }
+
+    /// The state that arrives is a DISTINGUISHING one and not the
+    /// `error` every JoyError carries anyway (JOY-02A3-E4): nobody
+    /// answers on this port, so the verdict is `offline`, and a banner
+    /// can say "no connection" and offer the one action D1.8b names
+    /// instead of showing a sentence and guessing at the rest.
+    ///
+    /// The forge is a port on THIS machine that nothing listens on: a
+    /// contact that really fails on the wire, with no network and no
+    /// forge anywhere near the test.
+    #[test]
+    fn a_chat_sync_nobody_answers_reaches_the_caller_as_offline() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("checkout");
+        let repo = git2::Repository::init(&root).unwrap();
+        let sig = git2::Signature::now("Seed", "seed@example.com").unwrap();
+        let oid = repo.index().unwrap().write_tree().unwrap();
+        {
+            let tree = repo.find_tree(oid).unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "seed", &tree, &[])
+                .unwrap();
+        }
+        // A port that was free a moment ago and has no listener now.
+        let port = {
+            let probe = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            probe.local_addr().unwrap().port()
+        };
+        repo.remote("origin", &format!("http://127.0.0.1:{port}/joyint/app.git"))
+            .unwrap();
+        drop(repo);
+
+        let auth = joy_core::vcs::forge::Auth::token("x");
+        let error =
+            sync_with_forge(&root, &auth).expect_err("a forge nobody serves cannot answer a fetch");
+        assert_eq!(
+            error.failure(),
+            joy_core::vcs::contact::Failure::Offline,
+            "{error}"
+        );
+        let contact = error.contact().expect("the verdict travels with the error");
+        assert_eq!(contact.failure, joy_core::vcs::contact::Failure::Offline);
         let detail = contact.detail.clone().expect("a detail line for the log");
         assert!(
             detail.starts_with("chats fetch"),
