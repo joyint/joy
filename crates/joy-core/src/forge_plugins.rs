@@ -1891,6 +1891,215 @@ pub fn release(
     )
 }
 
+// ---------------------------------------------------------------------
+// The sign in verbs (D2.4, D4.1c, package J3)
+// ---------------------------------------------------------------------
+
+/// The https twin of a remote (`web-url`, D1.5). `None` when the
+/// connector does not know the remote or could not be asked; the caller
+/// then keeps whatever twin it computed itself.
+pub fn web_url(spec: &ForgePluginSpec, target: &Target, ctx: &CallContext) -> Option<String> {
+    web_url_full(spec, target, ctx)
+        .ok()
+        .and_then(|answer| answer.https_url)
+}
+
+/// [`web_url`] with the reason.
+pub fn web_url_full(
+    spec: &ForgePluginSpec,
+    target: &Target,
+    ctx: &CallContext,
+) -> Result<WebUrlAnswer, PluginError> {
+    query::<WebUrlAnswer>(spec, "web-url", Some(target), &[], ctx)
+}
+
+/// What `web-url` answered.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+pub struct WebUrlAnswer {
+    pub known: bool,
+    #[serde(default)]
+    pub https_url: Option<String>,
+}
+
+/// One repository as the `repositories` verb carries it (D2.4).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+pub struct ForgeRepository {
+    pub full_name: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub private: bool,
+    #[serde(default)]
+    pub clone_url: Option<String>,
+    #[serde(default)]
+    pub ssh_url: Option<String>,
+    #[serde(default)]
+    pub default_branch: Option<String>,
+    #[serde(default)]
+    pub web_url: Option<String>,
+}
+
+/// What `repositories` answered: the list, or the state that says why
+/// there is none.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum RepositoriesAnswer {
+    Repositories {
+        repositories: Vec<ForgeRepository>,
+        #[serde(default)]
+        truncated: bool,
+        #[serde(default)]
+        next: Option<String>,
+    },
+    /// Nobody is signed in to this host.
+    NeedsSignIn {
+        #[serde(default)]
+        host: Option<String>,
+    },
+    /// The granted set cannot carry the verb (D2.7c). An answer, not a
+    /// failure.
+    ScopeMissing {
+        #[serde(default)]
+        needed: Vec<String>,
+        #[serde(default)]
+        have: Vec<String>,
+    },
+    #[serde(other)]
+    Unknown,
+}
+
+/// The repositories this account can reach (D2.4). Paginated by the
+/// connector so one answer stays well under the 64 KiB a pipe holds.
+pub fn repositories(
+    spec: &ForgePluginSpec,
+    target: &Target,
+    query_text: Option<&str>,
+    limit: Option<usize>,
+    page: Option<&str>,
+    ctx: &CallContext,
+) -> Result<RepositoriesAnswer, PluginError> {
+    let limit = limit.map(|limit| limit.to_string());
+    let mut extra: Vec<&str> = Vec::new();
+    if let Some(text) = query_text {
+        extra.push("--query");
+        extra.push(text);
+    }
+    if let Some(limit) = limit.as_deref() {
+        extra.push("--limit");
+        extra.push(limit);
+    }
+    if let Some(page) = page {
+        extra.push("--page");
+        extra.push(page);
+    }
+    query(spec, "repositories", Some(target), &extra, ctx)
+}
+
+/// What `create-repository` answered.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(untagged)]
+pub enum CreateRepositoryAnswer {
+    Created {
+        created: bool,
+        #[serde(default)]
+        clone_url: Option<String>,
+        #[serde(default)]
+        ssh_url: Option<String>,
+        #[serde(default)]
+        default_branch: Option<String>,
+        #[serde(default)]
+        web_url: Option<String>,
+    },
+    Refused {
+        state: String,
+        #[serde(default)]
+        needed: Vec<String>,
+        #[serde(default)]
+        have: Vec<String>,
+        #[serde(default)]
+        message: Option<String>,
+    },
+}
+
+/// Create a repository on the forge (D2.4). A project can only be
+/// brought to joyint.com when it has a remote repository, so this verb
+/// is what makes "picks or creates a repo" complete.
+pub fn create_repository(
+    spec: &ForgePluginSpec,
+    target: &Target,
+    name: &str,
+    owner: Option<&str>,
+    private: bool,
+    ctx: &CallContext,
+) -> Result<CreateRepositoryAnswer, PluginError> {
+    let mut extra: Vec<&str> = vec!["--name", name];
+    if let Some(owner) = owner {
+        extra.push("--owner");
+        extra.push(owner);
+    }
+    if private {
+        extra.push("--private");
+    }
+    query(spec, "create-repository", Some(target), &extra, ctx)
+}
+
+/// What `token` answered (D2.4 as amended by D4.1c).
+///
+/// The token is a secret in a struct and nowhere else: this type has no
+/// `Debug`, so no `{:?}` anywhere in joy can print it by accident, and
+/// no field of it is ever logged.
+#[derive(Clone, Deserialize)]
+pub struct ForgeToken {
+    pub known: bool,
+    #[serde(default)]
+    pub host: Option<String>,
+    /// Which login this token belongs to (D4.1c).
+    #[serde(default)]
+    pub login: Option<String>,
+    #[serde(default)]
+    pub token: Option<String>,
+    /// The name the https twin presents beside the token.
+    #[serde(default)]
+    pub username: Option<String>,
+    /// `keychain`, `file`, `gh`, `glab`, `tea` or `env`.
+    #[serde(default)]
+    pub source: Option<String>,
+    /// The granted set, space separated, where the source knows it.
+    #[serde(default)]
+    pub scopes: Option<String>,
+    #[serde(default)]
+    pub expires_at: Option<String>,
+    /// Which step of D4.1c's order chose the login: `pin`, `memory`,
+    /// `only` or `probe`.
+    #[serde(default)]
+    pub chose_by: Option<String>,
+    /// `no-login`, `no-keychain`, `unsupported-host`,
+    /// `no-login-for-repo` or `busy`.
+    #[serde(default)]
+    pub reason: Option<String>,
+    /// The sentence that names the logins that were tried, where the
+    /// connector wrote one.
+    #[serde(default)]
+    pub message: Option<String>,
+}
+
+/// The credential this machine holds for a host, and which login it
+/// belongs to (D2.4).
+///
+/// This is a READ verb: it is answered from the connector's own entry,
+/// from the forge's own environment variables or by spawning the forge
+/// CLI, and it never raises a prompt. It is therefore not one of the
+/// interactive verbs of D3.11 and stays compiled into every build.
+pub fn token(
+    spec: &ForgePluginSpec,
+    target: &Target,
+    ctx: &CallContext,
+) -> Result<ForgeToken, PluginError> {
+    query(spec, "token", Some(target), &[], ctx)
+}
+
+pub mod interactive;
+
 /// The connector responsible for this project: the `forge:` override
 /// when it names a registered forge, else the first registry row that
 /// claims one of the remotes. `None` = nobody is responsible (a
