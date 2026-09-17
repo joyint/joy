@@ -24,14 +24,20 @@
 //! every such edge fails this test instead of a release.
 //!
 //! Membership and order are two of the three things a per crate
-//! publish needs; the third is that the versions agree, and it is not
-//! in this repository's hands alone. `joy release bump` rewrites the
-//! version only in the files of `release.version-files`
-//! (.joy/project.yaml), so a crate that is in the publish list and not
-//! in that list keeps the old version while every dependent is bumped
-//! past it. `every_published_crate_has_its_version_bumped` is that
-//! third hold, and it fails today: see its message for the paths that
-//! are missing.
+//! publish needs; the third is that the versions agree after a bump.
+//! `joy release bump` rewrites the version only in the files of
+//! `release.version-files` (.joy/project.yaml), so a crate that is in
+//! the publish list and in no version file keeps the old version while
+//! every dependent is bumped past it, and `cargo publish -p
+//! <dependent>` then asks crates.io for a version that was never
+//! uploaded. That was true of joy-process, joy-forge-net and
+//! joy-telemetry, and none of them may be added to that list from
+//! here, because no package of the forge connection NG plan may edit
+//! .joy. They inherit instead: `version.workspace = true` against the
+//! `[workspace.package]` version of the root manifest, which is in the
+//! list, and the two joy-core pins they carry inherit from
+//! `[workspace.dependencies]` in the same file.
+//! `every_published_crate_has_its_version_bumped` is that third hold.
 //!
 //! What is NOT proof of any of this: a green
 //! `cargo publish --workspace --dry-run`. With `--workspace` cargo
@@ -72,7 +78,10 @@ fn every_crate_is_published_after_the_crates_it_depends_on() {
         let manifest = root.join("crates").join(crate_name).join("Cargo.toml");
         let text = std::fs::read_to_string(&manifest)
             .unwrap_or_else(|e| panic!("cannot read {}: {e}", manifest.display()));
-        for dependency in internal_dependencies(&text) {
+        for Dependency {
+            name: dependency, ..
+        } in internal_dependencies(&text)
+        {
             // Only this workspace's own crates: joy-crypt and joy-token
             // come from a sibling repository and are published on their
             // own schedule, so this list says nothing about them.
@@ -118,12 +127,28 @@ fn publish_list(justfile: &str) -> Option<Vec<String>> {
     Some(inner.split_whitespace().map(str::to_string).collect())
 }
 
+/// One `joy-*` dependency line of a manifest.
+struct Dependency {
+    name: String,
+    /// Where the version requirement of this edge is written: in this
+    /// manifest (`Pinned`), in the workspace manifest (`Inherited`), or
+    /// nowhere (`PathOnly`, which cargo refuses to publish at all).
+    pin: Pin,
+}
+
+#[derive(PartialEq)]
+enum Pin {
+    Pinned,
+    Inherited,
+    PathOnly,
+}
+
 /// The `joy-*` crates a manifest depends on for its BUILD. The caller
 /// keeps the ones that live in this workspace. `[dev-dependencies]` are
 /// left out: they carry no version here, so cargo strips them from the
 /// published manifest.
-fn internal_dependencies(manifest: &str) -> Vec<String> {
-    let mut names = Vec::new();
+fn internal_dependencies(manifest: &str) -> Vec<Dependency> {
+    let mut deps = Vec::new();
     let mut in_dependencies = false;
     for line in manifest.lines().map(str::trim) {
         if let Some(section) = line.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
@@ -137,12 +162,24 @@ fn internal_dependencies(manifest: &str) -> Vec<String> {
             continue;
         };
         let name = name.trim();
-        if name.starts_with("joy-") && (rest.contains("workspace = true") || rest.contains("path"))
-        {
-            names.push(name.to_string());
+        if !name.starts_with("joy-") {
+            continue;
         }
+        let pin = if rest.contains("workspace = true") {
+            Pin::Inherited
+        } else if rest.contains("version") {
+            Pin::Pinned
+        } else if rest.contains("path") {
+            Pin::PathOnly
+        } else {
+            continue;
+        };
+        deps.push(Dependency {
+            name: name.to_string(),
+            pin,
+        });
     }
-    names
+    deps
 }
 
 /// The other half of the justfile's rule: "Every workspace member is
@@ -267,17 +304,23 @@ fn publishes(manifest: &str) -> bool {
 /// The third hold, and the one the two tests above cannot give:
 /// `joy release bump` (joy-core/src/version_bump.rs) replaces every
 /// quoted occurrence of the current version in the files of
-/// `release.version-files` and touches no other file. A crate that
-/// `publish-crates` uploads but whose manifest is not in that list
-/// therefore keeps its old version while every crate that depends on
-/// it is bumped, and `cargo publish -p <dependent>` asks crates.io for
-/// a version of it that was never uploaded. That is what JOY-0246-B7
-/// was ("Release bump misses the chat crates: version-files list
-/// incomplete"), and three crates sit in the same gap again.
+/// `release.version-files` (.joy/project.yaml) and touches no other
+/// file. So every version literal a published crate ships has to sit
+/// in one of those files: its own `[package] version`, and the
+/// requirement of every workspace dependency it carries, because
+/// `cargo publish -p <crate>` resolves those against crates.io. A
+/// literal that sits anywhere else keeps its old value while its
+/// neighbours move past it, which is what JOY-0246-B7 was ("Release
+/// bump misses the chat crates: version-files list incomplete") and
+/// what JOY-02A4-89 found again for joy-process, joy-forge-net and
+/// joy-telemetry.
 ///
-/// This test reads .joy/project.yaml, which no package of the forge
-/// connection NG plan may edit, so it is red until the operator adds
-/// the paths its message names.
+/// A crate has two ways to satisfy this, and the test accepts both:
+/// its manifest is in `release.version-files`, or the literal is not
+/// in its manifest at all but inherited from the root manifest, which
+/// is in that list (`version.workspace = true`,
+/// `<dep> = { workspace = true }`). The second way is the one a
+/// package that may not edit .joy has.
 #[test]
 fn every_published_crate_has_its_version_bumped() {
     let root = workspace_root();
@@ -295,6 +338,10 @@ fn every_published_crate_has_its_version_bumped() {
         std::fs::read_to_string(root.join("Cargo.toml")).expect("the workspace manifest");
     let configured = joy_core::version_files::version_files_get(&root)
         .expect("release.version-files in .joy/project.yaml");
+    let bumped = |path: &str| configured.iter().any(|entry| covers(entry, path));
+    // Every inherited literal lives here, so nothing inherits its way
+    // out of the rule.
+    let root_is_bumped = bumped("Cargo.toml");
 
     // The manifest path per package name, so a crate whose directory
     // differs from its name is still looked up by the name the publish
@@ -309,24 +356,70 @@ fn every_published_crate_has_its_version_bumped() {
         }
     }
 
-    let mut missing = Vec::new();
+    let mut stale = Vec::new();
     for crate_name in &order {
         let Some(path) = manifest_of.get(crate_name) else {
             continue;
         };
-        if !configured.iter().any(|entry| covers(entry, path)) {
-            missing.push(format!("  {path}"));
+        let text = std::fs::read_to_string(root.join(path))
+            .unwrap_or_else(|e| panic!("cannot read {path}: {e}"));
+        let own_is_bumped = bumped(path);
+        if !(own_is_bumped || (inherits_version(&text) && root_is_bumped)) {
+            stale.push(format!(
+                "  {path}: its own `version` is a literal in a file the bump does not rewrite"
+            ));
+        }
+        for dependency in internal_dependencies(&text) {
+            if !root.join("crates").join(&dependency.name).is_dir() {
+                // A sibling repository's crate, published on its own
+                // schedule and never bumped by this project.
+                continue;
+            }
+            let covered = match dependency.pin {
+                Pin::Inherited => root_is_bumped,
+                Pin::Pinned => own_is_bumped,
+                // No requirement to go stale. cargo refuses to publish
+                // such an edge for a different reason, and says so.
+                Pin::PathOnly => true,
+            };
+            if !covered {
+                stale.push(format!(
+                    "  {path}: its `{}` requirement is a literal in a file the bump does not rewrite",
+                    dependency.name
+                ));
+            }
         }
     }
     assert!(
-        missing.is_empty(),
-        "these crates are published but their version is never bumped, so the next \
+        stale.is_empty(),
+        "these version literals stay behind when `joy release bump` runs, so the next \
          release resolves a dependency that was never uploaded:\n{}\n\
-         Add each path to release.version-files in .joy/project.yaml \
-         (`joy project set release.version-files --add <path>`). The same gap was \
-         JOY-0246-B7 for the chat crates and JOY-02A4-89 for these.",
-        missing.join("\n")
+         Add the manifest to release.version-files in .joy/project.yaml \
+         (`joy project set release.version-files --add <path>`), or let the literal \
+         inherit from the root manifest, which is in that list \
+         (`version.workspace = true`, `<dep> = {{ workspace = true }}`).",
+        stale.join("\n")
     );
+}
+
+/// Whether a `[package]` takes its version from `[workspace.package]`
+/// rather than spelling it out: `version.workspace = true` and
+/// `version = { workspace = true }` are the two spellings cargo takes.
+fn inherits_version(manifest: &str) -> bool {
+    let mut in_package = false;
+    for line in manifest.lines().map(str::trim) {
+        if let Some(section) = line.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+            in_package = section == "package";
+            continue;
+        }
+        if !in_package || !line.starts_with("version") {
+            continue;
+        }
+        if line.contains("workspace") && line.contains("true") {
+            return true;
+        }
+    }
+    false
 }
 
 /// Whether a `release.version-files` entry names `path`. Entries are

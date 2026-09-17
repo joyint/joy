@@ -1,6 +1,9 @@
 [package]
 name = "joy-forge-net"
-version = "0.20.0"
+# Inherited from [workspace.package]: this manifest is in no
+# release.version-files list, the workspace manifest is, so the
+# bump reaches this crate through it (JOY-02A4-89).
+version.workspace = true
 edition = "2021"
 license = "MIT"
 description = "Shared network layer of the Joy forge connectors: HTTP client, proxies, trust store, instance configuration, scope sets"
@@ -22,7 +25,9 @@ joy-process = { workspace = true }
 # The refresh lock of `auth::lock` takes that primitive, and
 # `joy_core::auth::session` says where a person's app state lives, which
 # is where the lock files and the login pin belong.
-joy-core = { version = "0.20.0", path = "../joy-core" }
+# The version pin is inherited too, so a bump cannot leave it
+# asking crates.io for a joy-core that no longer exists there.
+joy-core = { workspace = true }
 # The operating system credential store (D2.6). The feature set is the
 # corrected one: `linux-native` alone is the kernel keyutils store,
 # which is in memory and "will not persist across reboots", so the
