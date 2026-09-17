@@ -905,6 +905,38 @@ fn warn_about_a_missing_item(repo_dir: &Path, message: &str) {
     crate::commit_msg::warn_unless_referenced(message, &acronym);
 }
 
+/// The external clean/smudge filter `.gitattributes` puts on `path`,
+/// if any (D3.4's clean filter rule).
+///
+/// libgit2 runs NO filter program: `filter=lfs` on a path means a git
+/// commit stores a pointer and a libgit2 commit stores the file's whole
+/// content, which breaks the repository quietly and is only noticed by
+/// the next person who clones it. joy therefore refuses such a path
+/// instead of writing it wrong.
+fn external_filter(repo: &git2::Repository, path: &Path) -> Option<String> {
+    repo.get_attr(path, "filter", git2::AttrCheckFlags::default())
+        .ok()
+        .flatten()
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+/// The refusal for the paths [`external_filter`] named, in the words
+/// the person needs to act: which paths, which filter, and what to do
+/// with them instead.
+fn refuse_filtered_paths(filtered: Vec<String>) -> anyhow::Result<()> {
+    if filtered.is_empty() {
+        return Ok(());
+    }
+    anyhow::bail!(
+        "these paths are governed by an external content filter, and joy's git \
+         engine runs none: {}\n  = note: committing them here would store the \
+         file instead of the filter's pointer\n  \
+         = help: commit them with git, or take them out of this working tree",
+        filtered.join(", ")
+    )
+}
+
 fn origin_or_first<'r>(repo: &'r git2::Repository) -> anyhow::Result<git2::Remote<'r>> {
     match repo.find_remote("origin") {
         Ok(remote) => Ok(remote),
@@ -2782,6 +2814,12 @@ pub fn changed_paths_between(
 /// Stage EVERYTHING and commit it (seeding and harness use; product
 /// writes go through [`commit_joy`] / [`commit_all`], which respect the
 /// `.joy` boundary).
+///
+/// Only for a checkout joy OWNS (D3.4): in a person's checkout this
+/// sweeps up whatever they had lying around, and there is no pre-commit
+/// hook left to stand in the way of that. A path an external content
+/// filter governs is refused by name rather than written wrong, because
+/// libgit2 runs no filter program.
 pub fn commit_everything(
     repo_dir: &Path,
     message: &str,
@@ -2791,9 +2829,25 @@ pub fn commit_everything(
     warn_about_a_missing_item(repo_dir, message);
     let repo = open(repo_dir).map_err(err)?;
     let mut index = repo.index().map_err(err)?;
+    let filtered = std::cell::RefCell::new(Vec::new());
     index
-        .add_all(["."], git2::IndexAddOption::DEFAULT, None)
+        .add_all(
+            ["."],
+            git2::IndexAddOption::DEFAULT,
+            Some(&mut |path: &Path, _spec: &[u8]| -> i32 {
+                match external_filter(&repo, path) {
+                    Some(filter) => {
+                        filtered
+                            .borrow_mut()
+                            .push(format!("{} (filter={filter})", path.display()));
+                        1 // skip, and the refusal below says why
+                    }
+                    None => 0,
+                }
+            }),
+        )
         .map_err(err)?;
+    refuse_filtered_paths(filtered.into_inner())?;
     index.write().map_err(err)?;
     let tree_id = index.write_tree().map_err(err)?;
     let tree = repo.find_tree(tree_id).map_err(err)?;
@@ -3253,6 +3307,12 @@ pub fn create_worktree(
 /// left uncommitted — item state never rides a job branch (JP-006D-28), so
 /// `.joy` paths are excluded from staging (and any `.joy` change the agent
 /// staged itself is unstaged first).
+///
+/// Only for a checkout joy OWNS, which for this verb is the platform's
+/// job worktree (D3.4). A path an external content filter governs is
+/// refused by name: libgit2 runs no filter program, so committing a
+/// `filter=lfs` path here would store the file where the pointer
+/// belongs and nobody would notice until the next clone.
 pub fn commit_all(
     worktree_dir: &Path,
     message: &str,
@@ -3272,19 +3332,28 @@ pub fn commit_all(
         repo.reset_default(Some(p.as_object()), [".joy"]).ok();
     }
     let mut index = repo.index().map_err(err)?;
+    let filtered = std::cell::RefCell::new(Vec::new());
     index
         .add_all(
             ["*"],
             git2::IndexAddOption::DEFAULT,
             Some(&mut |path: &Path, _spec: &[u8]| -> i32 {
                 if path.starts_with(".joy") {
-                    1 // skip: item state never rides the job branch
-                } else {
-                    0
+                    return 1; // skip: item state never rides the job branch
+                }
+                match external_filter(&repo, path) {
+                    Some(filter) => {
+                        filtered
+                            .borrow_mut()
+                            .push(format!("{} (filter={filter})", path.display()));
+                        1 // skip, and the refusal below says why
+                    }
+                    None => 0,
                 }
             }),
         )
         .map_err(err)?;
+    refuse_filtered_paths(filtered.into_inner())?;
     index.write().map_err(err)?;
     let tree_id = index.write_tree().map_err(err)?;
     if parent.as_ref().map(|p| p.tree_id()) == Some(tree_id) {
@@ -4075,6 +4144,93 @@ mod init_on_git2_tests {
         // a branch that has a commit is not moved
         set_unborn_branch(&repo_dir, "other").unwrap();
         assert_eq!(repo.head().unwrap().name().ok(), Some("refs/heads/trunk"));
+    }
+}
+
+#[cfg(test)]
+mod clean_filter_tests {
+    use super::*;
+
+    /// The audit D3.4 asks for, as a fact rather than an assumption:
+    /// libgit2 runs NO external filter. A `filter=lfs` path committed
+    /// through git2 would carry the file's own bytes where git would
+    /// have stored a pointer, and nobody would notice until the next
+    /// clone.
+    #[test]
+    fn libgit2_runs_no_clean_filter_so_the_content_would_be_the_blob() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let repo = git2::Repository::init(root).unwrap();
+        std::fs::write(root.join(".gitattributes"), "*.bin filter=lfs -text\n").unwrap();
+        std::fs::write(root.join("big.bin"), "the whole file, not a pointer").unwrap();
+
+        // Staged the plain way, without the guard below.
+        let mut index = repo.index().unwrap();
+        index
+            .add_all(["."], git2::IndexAddOption::DEFAULT, None)
+            .unwrap();
+        index.write().unwrap();
+        let entry = index.get_path(Path::new("big.bin"), 0).unwrap();
+        let blob = repo.find_blob(entry.id).unwrap();
+        assert_eq!(
+            std::str::from_utf8(blob.content()).unwrap(),
+            "the whole file, not a pointer",
+            "libgit2 stored the file itself, which is why the guard exists"
+        );
+        // ...and the attribute is readable, which is what the guard reads.
+        assert_eq!(
+            external_filter(&repo, Path::new("big.bin")).as_deref(),
+            Some("lfs")
+        );
+        assert_eq!(external_filter(&repo, Path::new(".gitattributes")), None);
+    }
+
+    /// So the two sweeping commit paths refuse such a path by name
+    /// instead of writing it wrong.
+    #[test]
+    fn the_sweeping_commit_paths_refuse_a_filtered_path_by_name() {
+        for sweeper in ["commit_everything", "commit_all"] {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            git2::Repository::init(root).unwrap();
+            std::fs::write(root.join(".gitattributes"), "*.bin filter=lfs -text\n").unwrap();
+            std::fs::write(root.join("big.bin"), "content").unwrap();
+
+            let failed = match sweeper {
+                "commit_everything" => {
+                    commit_everything(root, "seed [no-item]", "T", "t@example.com").err()
+                }
+                _ => commit_all(root, "work [no-item]", "T", "t@example.com").err(),
+            };
+            let text = failed
+                .map(|e| e.to_string())
+                .unwrap_or_else(|| String::from("<no refusal>"));
+            assert!(text.contains("big.bin"), "{sweeper}: {text}");
+            assert!(text.contains("filter=lfs"), "{sweeper}: {text}");
+            assert!(text.contains("runs none"), "{sweeper}: {text}");
+        }
+    }
+
+    /// A repository without such an attribute is untouched by the
+    /// guard: every ordinary checkout commits exactly as before.
+    #[test]
+    fn an_ordinary_checkout_commits_as_it_always_did() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let repo = git2::Repository::init(root).unwrap();
+        std::fs::write(root.join(".gitattributes"), "*.yaml merge=joy-yaml\n").unwrap();
+        std::fs::write(root.join("a.txt"), "plain").unwrap();
+
+        let oid = commit_everything(root, "seed [no-item]", "T", "t@example.com").unwrap();
+        let commit = repo
+            .find_commit(git2::Oid::from_str(&oid).unwrap())
+            .unwrap();
+        assert!(commit.tree().unwrap().get_path(Path::new("a.txt")).is_ok());
+
+        std::fs::write(root.join("b.txt"), "more").unwrap();
+        assert!(commit_all(root, "work [no-item]", "T", "t@example.com")
+            .unwrap()
+            .is_some());
     }
 }
 
