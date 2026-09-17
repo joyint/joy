@@ -996,6 +996,42 @@ fn refuse_filtered_staged_paths(
     refuse_filtered_paths(filtered)
 }
 
+/// The paths this checkout has staged or changed OUTSIDE `pathspecs`:
+/// what a person had going that a scoped joy commit did not take
+/// (D3.4).
+///
+/// Tracked paths only, index against HEAD and worktree against index.
+/// Untracked files are no answer to "was something of yours skipped":
+/// `git add -A` would have taken them, but a build directory and an
+/// editor's scratch file make that sentence true in nearly every real
+/// repository, which is how a true sentence becomes noise. A checkout
+/// this cannot read answers nothing rather than guessing, for the same
+/// reason: [`worktree_dirty`] answers `true` on an unreadable checkout
+/// because it must never delete on doubt, and a SENTENCE must never be
+/// said on doubt.
+pub fn changes_outside(repo_dir: &Path, pathspecs: &[String]) -> Vec<String> {
+    let Ok(repo) = open(repo_dir) else {
+        return Vec::new();
+    };
+    let mut opts = git2::StatusOptions::new();
+    opts.include_untracked(false).include_ignored(false);
+    let Ok(statuses) = repo.statuses(Some(&mut opts)) else {
+        return Vec::new();
+    };
+    let mut paths: Vec<String> = statuses
+        .iter()
+        .filter_map(|entry| entry.path().ok().map(str::to_string))
+        .filter(|path| {
+            !pathspecs
+                .iter()
+                .any(|spec| path == spec || path.starts_with(&format!("{spec}/")))
+        })
+        .collect();
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
 fn origin_or_first<'r>(repo: &'r git2::Repository) -> anyhow::Result<git2::Remote<'r>> {
     match repo.find_remote("origin") {
         Ok(remote) => Ok(remote),
@@ -4420,6 +4456,47 @@ mod clean_filter_tests {
         std::fs::write(root.join("Cargo.toml"), "version = \"0.0.3\"\n").unwrap();
         stage_all(root).unwrap();
         assert!(commit_index(root, "bump to v0.0.3 [no-item]", "T", "t@example.com").is_ok());
+    }
+
+    /// The sentence `joy release record` prints when something of the
+    /// person's was skipped has to be true. `worktree_dirty` counts
+    /// untracked files and answers `true` on an unreadable checkout, so
+    /// it said so in nearly every real repository, including ones where
+    /// nothing of the person's was staged at all.
+    #[test]
+    fn only_a_tracked_change_outside_joys_paths_counts_as_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let repo = git2::Repository::init(root).unwrap();
+        std::fs::create_dir_all(root.join(".joy")).unwrap();
+        std::fs::write(root.join(".joy/project.yaml"), "acronym: JOY\n").unwrap();
+        std::fs::write(root.join("Cargo.toml"), "version = \"0.0.1\"\n").unwrap();
+        commit_everything(root, "seed [no-item]", "T", "t@example.com").unwrap();
+        let joys = vec![".joy".to_string(), "Cargo.toml".to_string()];
+
+        // A build directory and an editor's scratch file: untracked, and
+        // no answer to the question.
+        std::fs::create_dir_all(root.join("target/debug")).unwrap();
+        std::fs::write(root.join("target/debug/joy"), "binary").unwrap();
+        std::fs::write(root.join(".src.rs.swp"), "vim").unwrap();
+        assert!(
+            changes_outside(root, &joys).is_empty(),
+            "untracked files are not the person's skipped work"
+        );
+        assert!(worktree_dirty(root), "...which is what the old test asked");
+
+        // joy's own paths changed: also no answer, they are what joy
+        // just committed.
+        std::fs::write(root.join(".joy/project.yaml"), "acronym: JOY\nname: x\n").unwrap();
+        std::fs::write(root.join("Cargo.toml"), "version = \"0.0.2\"\n").unwrap();
+        assert!(changes_outside(root, &joys).is_empty());
+
+        // A tracked file of the person's, changed: that IS an answer.
+        std::fs::write(root.join("src.rs"), "half finished\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("src.rs")).unwrap();
+        index.write().unwrap();
+        assert_eq!(changes_outside(root, &joys), vec!["src.rs".to_string()]);
     }
 
     /// A repository without such an attribute is untouched by the

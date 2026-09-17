@@ -312,9 +312,14 @@ fn record(args: RecordArgs) -> Result<()> {
         .is_none()
     {
         println!("Nothing of joy's changed since the last commit; no release commit written.");
-    } else if !joy_core::vcs::default_vcs().is_clean(&ctx.root)? {
+    } else if !joy_core::vcs::forge::changes_outside(&ctx.root, &paths).is_empty() {
         // Said once, because it is a real change from `git add -A`:
-        // what the person had lying around is still lying around.
+        // what the person had lying around is still lying around. Said
+        // only when something of theirs really was skipped, which is a
+        // tracked change outside joy's own paths - not `is_clean`,
+        // which counts untracked files and answers dirty on an
+        // unreadable checkout, and so said this in nearly every real
+        // repository.
         println!(
             "Other changes in this checkout stay uncommitted; joy commits only what it wrote."
         );

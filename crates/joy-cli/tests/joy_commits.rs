@@ -394,3 +394,49 @@ fn a_refused_auto_git_push_speaks_the_one_failure_vocabulary() {
         "the object carries the state word: {line}"
     );
 }
+
+/// ...and it says nothing when nothing of the person's was skipped. The
+/// test used to be `!is_clean()`, which counts untracked files and
+/// answers dirty on an unreadable checkout, so `joy release record`
+/// told the person their work had been left behind in nearly every real
+/// repository, including ones where they had staged nothing at all.
+#[test]
+fn a_release_commit_stays_quiet_when_nothing_of_the_persons_was_skipped() {
+    let (_dir, root, home) = machine();
+
+    let init = joy(
+        &root,
+        &home,
+        &["init", "--name", "Quiet", "--user", "scotty@example.com"],
+    );
+    assert!(init.status.success(), "{}", text(&init));
+
+    // `joy init` stages SECURITY.md and no joy command commits it, so
+    // the person's first commit is where it lands. After it this
+    // checkout carries nothing but untracked noise, of the kind every
+    // real one has.
+    let repo = git2::Repository::open(&root).unwrap();
+    let mut index = repo.index().unwrap();
+    let tree = index.write_tree().unwrap();
+    let signature = git2::Signature::now("Scotty", "scotty@example.com").unwrap();
+    repo.commit(
+        Some("HEAD"),
+        &signature,
+        &signature,
+        "seed [no-item]",
+        &repo.find_tree(tree).unwrap(),
+        &[],
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("target/debug")).unwrap();
+    std::fs::write(root.join("target/debug/joy"), "a build artefact").unwrap();
+    std::fs::write(root.join(".notes.md.swp"), "an editor's scratch file").unwrap();
+
+    let record = joy(&root, &home, &["release", "record", "patch"]);
+    assert!(record.status.success(), "{}", text(&record));
+    assert!(
+        !text(&record).contains("joy commits only what it wrote"),
+        "nothing of the person's was staged, so nothing was skipped: {}",
+        text(&record)
+    );
+}
