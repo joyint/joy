@@ -124,7 +124,10 @@ pub fn auto_git_post_command(root: &Path, summary: &str, identity: &str) {
     let vcs = default_vcs();
     let project = store::load_project(root).ok();
 
-    let message = format!("joy: {summary}\n\nCo-Authored-By: {identity}");
+    let message = format!(
+        "joy: {summary}\n\nCo-Authored-By: {}",
+        at_rest_identity(identity, project.as_ref())
+    );
     warn_about_a_missing_item(&message, project.as_ref());
     let signature = match acting_signature(root, identity, project.as_ref()) {
         Ok(signature) => signature,
@@ -173,6 +176,39 @@ fn acting_signature(
     let project = project.ok_or(JoyError::UnknownActingMember)?;
     let member = crate::identity::acting_member(root, project, None)?;
     crate::identity::commit_signature(root, &member)
+}
+
+/// The acting member as this project writes it down (ADR-042), for the
+/// trailer of a commit message.
+///
+/// `identity` is usually already at rest, because
+/// [`crate::identity::Identity::log_user`] writes the member's id. The
+/// auth and crypt paths hand over a raw address instead (J11 moves them),
+/// and in an anonymous project that address may not be committed, in the
+/// signature nor in the message. A member the project cannot resolve is
+/// left as it is: the signature gate refuses such a member before any
+/// commit happens, so the fallthrough is unreachable where it would
+/// matter.
+fn at_rest_identity(identity: &str, project: Option<&Project>) -> String {
+    let Some(project) = project else {
+        return identity.to_string();
+    };
+    let mut words = identity.split_whitespace();
+    let Some(member) = words.next() else {
+        return identity.to_string();
+    };
+    let key = project
+        .member_by_key(member)
+        .is_some()
+        .then(|| member.to_string())
+        .or_else(|| crate::privacy::member_key_for_email(project, member))
+        .unwrap_or_else(|| member.to_string());
+    let rest: Vec<&str> = words.collect();
+    if rest.is_empty() {
+        key
+    } else {
+        format!("{key} {}", rest.join(" "))
+    }
 }
 
 /// The item reference rule of D3.3, applied to joy's own commit.
