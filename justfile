@@ -303,10 +303,17 @@ doctor:
 setup:
     cargo install cargo-insta
 
-# Install to ~/.local/bin/ (joy plus the plugins: joy-bi, and the forge
-# plugins joy-core's identity fallback queries, JOY-0251-AA)
+# Install to ~/.local/bin/ (joy plus the plugins: joy-bi, the connector
+# joy-forge, and the legacy forge plugins joy-core's identity fallback
+# queries, JOY-0251-AA)
+#
+# The layout a release archive has (JOY-029E-9D): joy, joy-forge and the
+# host key pin file of design D1.4a side by side, so a locally installed
+# joy resolves the connector by the name order of D2.2 and reads the pin
+# file beside its own binary. The three legacy names stay in this recipe
+# on purpose: a machine that carries them is the shadowing case of D2.2a.
 install:
-    cargo build --release -p joy-cli -p joy-bi -p joy-github -p joy-gitlab -p joy-gitea && mkdir -p ~/.local/bin && cp target/release/joy target/release/joy-bi target/release/joy-github target/release/joy-gitlab target/release/joy-gitea ~/.local/bin/
+    cargo build --release -p joy-cli -p joy-bi -p joy-github -p joy-gitlab -p joy-gitea && mkdir -p ~/.local/bin && cp target/release/joy target/release/joy-forge target/release/joy-bi target/release/joy-github target/release/joy-gitlab target/release/joy-gitea ~/.local/bin/ && cp crates/joy-core/data/host-keys.json ~/.local/bin/
 
 # Auto-commit known generated files (.joy/, lockfiles)
 [private]

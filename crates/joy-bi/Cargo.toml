@@ -7,6 +7,14 @@ description = "Joy BI reference plugin: milestone and velocity reports as JoyNod
 repository = "https://github.com/joyint/joy"
 homepage = "https://joyint.com/en/joy"
 
+# Not a cargo-dist App. joy-bi is a reference plugin that a person builds
+# or `cargo install`s; it is not part of the one archive set the release
+# ships (design D2.1), and as an App of its own it made the winget
+# `installers-regex` of .github/workflows/release.yml match two Windows
+# zips instead of one.
+[package.metadata.dist]
+dist = false
+
 [dependencies]
 joy-core = { version = "0.20.0", path = "../joy-core" }
 clap = { workspace = true }

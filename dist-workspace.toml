@@ -37,3 +37,13 @@ install-path = "~/.local/bin"
 install-updater = true
 # Target platforms to build for (Rust target-triple syntax).
 targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
+# The pinned host keys of design D1.4a travel with the binaries as data,
+# not as code inside them, so that a key rotation at a pinned forge is a
+# file that is replaced and not a joy that is rebuilt. The file lands in
+# the archive root, where the binaries land, and that is the first place
+# the loader looks: joy_core::vcs::known_hosts::pins::candidates reads
+# `<dir of the running binary>/host-keys.json` and then
+# `<prefix>/share/joy/host-keys.json`. An archive that lost the file
+# still runs; the loader then falls back to the copy compiled into the
+# binary, which ships empty while decision 23 is open.
+include = ["crates/joy-core/data/host-keys.json"]
