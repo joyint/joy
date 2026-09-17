@@ -346,6 +346,25 @@ fn joy_owned_paths(root: &std::path::Path) -> Vec<String> {
     paths
 }
 
+/// A line `joy release publish` says on its way: the forge it resolved,
+/// the push it is about to make, the release it created.
+///
+/// In `--json` mode stdout carries exactly ONE object and nothing else
+/// (D3.10), and this command's one object is the refusal envelope of
+/// [`crate::contact_report::Refusal::fail`]. A progress line on stdout
+/// beside it is not slightly wrong, it is unparsable: the agent reads
+/// `Pushing to origin...{"version":1,...}`. So in that mode the
+/// progress goes to stderr, which is where D3.10 puts progress and
+/// diagnostics anyway; a person at a terminal keeps the lines they
+/// have always had.
+fn say(line: &str) {
+    if crate::output::is_json() {
+        eprintln!("{line}");
+    } else {
+        println!("{line}");
+    }
+}
+
 fn publish(args: PublishArgs) -> Result<()> {
     let ctx = crate::crypt_session::load_context(None)?;
     ctx.enforce(&Action::CreateRelease, "release")?;
@@ -375,11 +394,11 @@ fn publish(args: PublishArgs) -> Result<()> {
     // because gh release create dedupes by tag.
     let forge_choice = forge::resolve(&ctx.root, project.forge.as_deref(), args.forge.as_deref())?;
     if let Some(note) = &forge_choice.note {
-        println!("{note}");
+        say(note);
     }
 
     let remote = git.default_remote(&ctx.root)?;
-    println!("Pushing to {remote}...");
+    say(&format!("Pushing to {remote}..."));
     // The one failure vocabulary of D3.8: a refused push says the
     // state, the plain sentence and the one next step, in `--json` mode
     // as the envelope this command's caller reads.
@@ -388,7 +407,7 @@ fn publish(args: PublishArgs) -> Result<()> {
         .map_err(|e| crate::contact_report::Refusal::of(&host, &e).fail())?;
     git.push_tag(&ctx.root, &remote, &version)
         .map_err(|e| crate::contact_report::Refusal::of(&host, &e).fail())?;
-    println!("Pushed {version} to {remote}.");
+    say(&format!("Pushed {version} to {remote}."));
 
     let markdown_notes = releases::render_release_markdown(&release);
     let title = release
@@ -400,8 +419,8 @@ fn publish(args: PublishArgs) -> Result<()> {
         .forge
         .create_release(&ctx.root, &version, &title, &markdown_notes)?
     {
-        Some(url) => println!("Forge release created: {url}"),
-        None => println!("Forge release skipped."),
+        Some(url) => say(&format!("Forge release created: {url}")),
+        None => say("Forge release skipped."),
     }
     Ok(())
 }

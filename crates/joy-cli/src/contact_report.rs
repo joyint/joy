@@ -30,6 +30,12 @@
 //! corrupt answer. It goes to stderr as one JSON object instead, with
 //! the same fields ([`Refusal::say_aside`]), so an agent reads the same
 //! words wherever the contact sat.
+//!
+//! The rule binds the COMMAND and not only this module. A command whose
+//! answer is the envelope says its own progress on stderr in that mode,
+//! because one line in front of the object makes the object unparsable:
+//! `Pushing to origin...{"version":1,...}` is not an answer an agent can
+//! read (D3.10; `joy release publish` does it through its own `say`).
 
 use serde::Serialize;
 

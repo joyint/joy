@@ -313,3 +313,51 @@ fn an_agent_under_a_delegation_is_never_asked_and_reads_a_stable_state_word() {
         "the refusal carries its plain sentence: {line}"
     );
 }
+
+/// D3.10 on the fatal path: with `--json`, stdout carries exactly one
+/// object and nothing else. `joy release publish` printed its progress
+/// there as well, so the whole answer an agent got was
+/// `Pushing to origin...{"version":1,...}`, which parses as nothing.
+/// The progress is still said, on stderr, where D3.10 puts progress and
+/// diagnostics anyway.
+#[test]
+fn the_json_answer_of_a_refused_publish_is_one_object_and_nothing_else() {
+    let machine = Machine::new();
+    assert!(!git_is_reachable(&machine.path));
+
+    let init = machine.joy(&["init", "--name", "Refused", "--user", "scotty@example.com"]);
+    assert!(init.status.success(), "{}", text(&init));
+    machine.set_git_identity("scotty@example.com");
+    let auth = machine.joy(&["auth", "init", "--passphrase", PASSPHRASE]);
+    assert!(auth.status.success(), "{}", text(&auth));
+
+    // A remote nothing answers, so the push is refused for certain.
+    let repo = git2::Repository::open(&machine.root).unwrap();
+    let nowhere = machine._dir.path().join("no-such-forge.git");
+    repo.remote("origin", nowhere.to_str().unwrap()).unwrap();
+
+    let record = machine.joy(&["release", "record", "patch"]);
+    assert!(record.status.success(), "{}", text(&record));
+
+    let published = machine.joy(&["--json", "release", "publish", "--forge", "none"]);
+    assert!(
+        !published.status.success(),
+        "a refused push ends the command: {}",
+        text(&published)
+    );
+    let answer = String::from_utf8_lossy(&published.stdout).to_string();
+    let envelope: serde_json::Value = serde_json::from_str(answer.trim())
+        .unwrap_or_else(|e| panic!("stdout is ONE envelope, got {answer:?}: {e}"));
+    assert_eq!(envelope["version"], 1, "{answer}");
+    let state = envelope["data"]["state"].as_str().unwrap_or_default();
+    assert!(
+        !state.is_empty(),
+        "the envelope carries the state: {answer}"
+    );
+
+    let said = String::from_utf8_lossy(&published.stderr).to_string();
+    assert!(
+        said.contains("Pushing to"),
+        "the progress line is on stderr: {said:?}"
+    );
+}
