@@ -45,8 +45,8 @@ use std::process::Stdio;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use super::host_kind::HostKind;
 use super::remote_url::RemoteUrl;
+use crate::host::HostKind;
 
 /// How long a helper may take when nobody can answer it. A worker
 /// needs this bound, because a helper that waits for a dialog nobody

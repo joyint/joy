@@ -22,7 +22,7 @@
 
 use std::path::{Path, PathBuf};
 
-use super::host_kind::HostKind;
+use crate::host::HostKind;
 
 /// The forge family a host belongs to, as far as authentication goes
 /// (design D1.6). It comes from the plugin that claims the host

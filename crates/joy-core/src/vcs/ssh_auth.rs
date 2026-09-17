@@ -25,8 +25,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use super::host_kind::HostKind;
 use super::ssh_config::HostSettings;
+use crate::host::HostKind;
 
 /// How long joy waits for the agent to answer its identity list. The
 /// agent is a local socket; anything slower than this is not there.

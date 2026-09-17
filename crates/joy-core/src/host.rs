@@ -8,20 +8,32 @@
 //! action, the platform never. The engine below takes the answer as a
 //! parameter and never reads the environment again, so "may I ask?" has
 //! one owner per process instead of a guess per call site.
+//!
+//! It is not a TTY test either: `joy_process::headless()` answers false
+//! on every unix host, so a server worker would look interactive there.
+//!
+//! This is the ONE host kind in the tree. The engine reaches it through
+//! `joy_core::vcs::HostKind`, which re-exports the type declared here,
+//! so the credential resolver, the ssh chain and the helper runner all
+//! speak about the same word (JOY-02A2-27).
 
 /// The three hosts joy runs under.
 ///
 /// [`HostKind::Background`] is the default on purpose: a host that says
 /// nothing gets the careful behaviour (refuse by name, never wait for an
 /// answer nobody is there to give).
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HostKind {
     /// A person typed this command and is watching the terminal.
     Interactive,
-    /// No person: a hook, a worker, a server.
+    /// No person: a hook, a worker, a server. THE DEFAULT, because a
+    /// host that has not said who it is must not be handed a prompt
+    /// that nobody will ever answer.
     #[default]
     Background,
     /// An agent acting under a live delegation session (ADR-033).
+    /// Never asked anything either: the person is not watching this
+    /// process.
     Delegated,
 }
 
@@ -48,13 +60,40 @@ impl HostKind {
         matches!(self, HostKind::Interactive)
     }
 
-    /// The word the plugin protocol and the logs use.
+    /// Whether joy may raise a question a person has to answer
+    /// (design D1.10). The prompt rule of the engine is this one line,
+    /// and it is [`HostKind::may_ask`] under the name D1.10 uses: joy's
+    /// own passphrase question, its host key question and the helper
+    /// runner's interactive bound all hang off it.
+    pub fn may_prompt(self) -> bool {
+        self.may_ask()
+    }
+
+    /// The word the plugin protocol and the logs use: the value of
+    /// `--host-kind` for a plugin call and the word in an error detail.
     pub fn as_str(self) -> &'static str {
         match self {
             HostKind::Interactive => "interactive",
             HostKind::Background => "background",
             HostKind::Delegated => "delegated",
         }
+    }
+
+    /// The word back, `None` for anything else. Nobody defaults a
+    /// misspelled kind to `Interactive` by accident.
+    pub fn from_word(word: &str) -> Option<Self> {
+        match word.trim().to_ascii_lowercase().as_str() {
+            "interactive" => Some(HostKind::Interactive),
+            "background" => Some(HostKind::Background),
+            "delegated" => Some(HostKind::Delegated),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for HostKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 
@@ -115,5 +154,33 @@ mod tests {
         assert!(!HostKind::default().may_ask());
         assert!(HostKind::Interactive.may_ask());
         assert!(!HostKind::Delegated.may_ask());
+    }
+
+    /// The engine's name for the same rule (D1.10). One type, one
+    /// answer, whichever of the two words a caller uses.
+    #[test]
+    fn only_an_interactive_host_may_be_asked() {
+        assert!(HostKind::Interactive.may_prompt());
+        assert!(!HostKind::Background.may_prompt());
+        assert!(!HostKind::Delegated.may_prompt());
+        assert!(!HostKind::default().may_prompt());
+    }
+
+    #[test]
+    fn the_wire_word_round_trips_and_nothing_else_parses() {
+        for kind in [
+            HostKind::Interactive,
+            HostKind::Background,
+            HostKind::Delegated,
+        ] {
+            assert_eq!(HostKind::from_word(kind.as_str()), Some(kind));
+            assert_eq!(kind.to_string(), kind.as_str());
+        }
+        assert_eq!(
+            HostKind::from_word("  Delegated "),
+            Some(HostKind::Delegated)
+        );
+        assert_eq!(HostKind::from_word("interactiv"), None);
+        assert_eq!(HostKind::from_word(""), None);
     }
 }

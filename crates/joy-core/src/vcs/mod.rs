@@ -317,13 +317,16 @@ impl GitVcs {
 pub mod contact;
 pub mod credential_helper;
 pub mod forge;
-pub mod host_kind;
 pub mod maintenance;
 pub mod remote_url;
 pub mod ssh_auth;
 pub mod ssh_config;
 
-pub use host_kind::HostKind;
+/// Who is at the other end of an operation (D1.1). The engine speaks
+/// about the host kind through `vcs::HostKind`, and it is the ONE type
+/// declared in [`crate::host`], where the entry point of each host sets
+/// it (JOY-02A2-27).
+pub use crate::host::HostKind;
 
 pub fn default_vcs() -> GitVcs {
     GitVcs

@@ -231,12 +231,30 @@ const CA_GUIDANCE: &str = "your administrator must install the CA in the Windows
 pub enum Transport {
     Https,
     Ssh,
-    /// A path or `file://` remote: neither of the two branches above
-    /// applies, and neither one's rules may be borrowed for it. Not a
-    /// state of D1.8a; joy really does contact local remotes (every
-    /// engine test does), and letting them fall into the https branch
-    /// would turn a local fault into "sign in to the forge".
+    /// A path, a `file://` remote or the unauthenticated git protocol:
+    /// neither of the two branches above applies, and neither one's
+    /// rules may be borrowed for it. Not a state of D1.8a; joy really
+    /// does contact local remotes (every engine test does), and letting
+    /// them fall into the https branch would turn a local fault into
+    /// "sign in to the forge".
     Local,
+}
+
+impl Transport {
+    /// The three words of D1.8a over the five shapes joy's one URL
+    /// parser knows (JOY-02A2-27). `http` rides the https branch
+    /// because libgit2 serves both with the same transport and produces
+    /// the same errors for them, and `git://` rides neither: it carries
+    /// no credential at all, so no rule of the two authenticated
+    /// branches applies to it.
+    fn of(parsed: super::remote_url::Transport) -> Transport {
+        use super::remote_url::Transport as Parsed;
+        match parsed {
+            Parsed::Https | Parsed::Http => Transport::Https,
+            Parsed::Ssh => Transport::Ssh,
+            Parsed::Git | Parsed::Local => Transport::Local,
+        }
+    }
 }
 
 /// Which way the objects were meant to travel. A 403 on a fetch and a
@@ -322,19 +340,15 @@ impl ContactEvidence {
 
 /// The transport a remote URL names. An scp-style remote
 /// (`git@github.com:o/r`) is ssh, a bare path is local.
+///
+/// The URL is read by joy's one parser (JOY-02A2-27), so the word the
+/// classifier gets here and the host the credential chain dials come
+/// from the same reading of the same text. A text the parser does not
+/// read as a remote URL is a path on this machine.
 pub fn transport_of(url: &str) -> Transport {
-    let lower = url.trim().to_ascii_lowercase();
-    if lower.starts_with("https://") || lower.starts_with("http://") {
-        Transport::Https
-    } else if lower.starts_with("ssh://") || lower.starts_with("git+ssh://") {
-        Transport::Ssh
-    } else if lower.starts_with("file://") || lower.starts_with('/') || lower.starts_with('.') {
-        Transport::Local
-    } else if lower.contains('@') && lower.contains(':') {
-        // scp syntax: user@host:path
-        Transport::Ssh
-    } else {
-        Transport::Local
+    match super::remote_url::RemoteUrl::parse(url) {
+        Some(parsed) => Transport::of(parsed.transport),
+        None => Transport::Local,
     }
 }
 
@@ -1460,12 +1474,38 @@ fn with_limits<T>(f: impl FnOnce(&mut HashMap<String, Limit>) -> T) -> T {
 /// The host part of a forge URL (`https://codeberg.org/o/r.git` ->
 /// `codeberg.org`, `git@github.com:o/r` -> `github.com`); empty for a
 /// path on this machine.
+///
+/// The work is done by joy's one URL parser (JOY-02A2-27), which reads
+/// the shapes a string scan gets wrong: the scp-like colon that
+/// introduces a PATH and not a port, the bracketed scp form that really
+/// does carry a port, and an IPv6 literal. The throttle key, the strike
+/// gate and the log therefore name the host the credential chain and
+/// the helper lookup name.
 pub fn host_of(url: &str) -> String {
-    let rest = url.split("://").nth(1).unwrap_or(url);
-    let rest = rest.rsplit('@').next().unwrap_or(rest);
+    match super::remote_url::RemoteUrl::parse(url) {
+        Some(parsed) => parsed.host,
+        // Not a remote URL: either a path on this machine, which has no
+        // host, or a host name that was taken out of a URL already.
+        // [`forge_name`] and the throttle are handed both.
+        None => bare_host(url),
+    }
+}
+
+/// A host that is already a host, lowercased so that every key joy
+/// builds from it matches: `github.com`, `git.example.org:2222`. A path
+/// has none, and answers with the empty string.
+fn bare_host(text: &str) -> String {
+    let text = text.trim();
+    // A path the parser refused for the same reason it refuses it as a
+    // remote (`scp_like`): `..` is not a forge, and a key built from it
+    // would name one.
+    if text.starts_with(['/', '.', '~']) {
+        return String::new();
+    }
+    let rest = text.rsplit('@').next().unwrap_or(text);
     rest.split(['/', ':'])
         .next()
-        .unwrap_or(rest)
+        .unwrap_or_default()
         .to_ascii_lowercase()
 }
 

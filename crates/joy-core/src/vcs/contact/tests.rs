@@ -1058,6 +1058,55 @@ fn hosts_and_names_come_out_of_every_url_shape() {
     assert_eq!(transport_of("file:///tmp/forge.git"), Transport::Local);
 }
 
+/// The shapes a string scan got wrong and joy's one URL parser gets
+/// right (JOY-02A2-27): the scp-like colon introduces a PATH, the
+/// bracketed scp form is the one that carries a port, an IPv6 literal
+/// is one host and not the text before its first colon, and a port
+/// belongs to the key and never to the host name.
+#[test]
+fn the_host_comes_out_of_the_one_url_parser() {
+    assert_eq!(
+        host_of("https://gitea.example.com:8443/o/r.git"),
+        "gitea.example.com"
+    );
+    assert_eq!(
+        host_of("[git@git.example.com:2222]:o/r.git"),
+        "git.example.com"
+    );
+    assert_eq!(host_of("https://[2001:db8::1]:8443/o/r.git"), "2001:db8::1");
+    assert_eq!(host_of("git@[2001:db8::1]:o/r.git"), "2001:db8::1");
+    assert_eq!(host_of("ssh://git@GitHub.com/o/r.git"), "github.com");
+    // A host that was taken out of a URL already: every sentence of
+    // D4.7 is built from one, and `forge_name` reads it here.
+    assert_eq!(host_of("github.com"), "github.com");
+    assert_eq!(forge_name("github.com"), "GitHub");
+    assert_eq!(forge_name("git.example.org"), "git.example.org");
+    // A path on this machine has no host and no forge.
+    assert_eq!(host_of("../sibling.git"), "");
+    assert_eq!(forge_name("/tmp/forge.git"), "the forge");
+}
+
+/// The three words of D1.8a over the five shapes the parser knows:
+/// `http` rides the https branch, and the unauthenticated git protocol
+/// rides neither authenticated branch.
+#[test]
+fn every_parsed_shape_gets_one_of_the_three_transport_words() {
+    assert_eq!(
+        transport_of("http://gitea.example.com:3000/a/b"),
+        Transport::Https
+    );
+    assert_eq!(
+        transport_of("git+ssh://git@example.com/a/b"),
+        Transport::Ssh
+    );
+    assert_eq!(
+        transport_of("[git@git.example.com:2222]:a/b.git"),
+        Transport::Ssh
+    );
+    assert_eq!(transport_of("git://example.com/a/b.git"), Transport::Local);
+    assert_eq!(transport_of("C:\\src\\repo"), Transport::Local);
+}
+
 /// The request weights of D1.9: the first request of a connection to a
 /// private repository is answered 401 and replayed, so a credentialed
 /// verb costs one request more; an ssh contact makes no HTTP request and
