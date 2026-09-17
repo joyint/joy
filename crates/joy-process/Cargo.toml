@@ -1,6 +1,9 @@
 [package]
 name = "joy-process"
-version = "0.20.0"
+# Inherited from [workspace.package]: this manifest is in no
+# release.version-files list, the workspace manifest is, so the
+# bump reaches this crate through it (JOY-02A4-89).
+version.workspace = true
 edition = "2021"
 license = "MIT"
 description = "Every child process joy starts, built the same way: no console window under a GUI host on Windows"

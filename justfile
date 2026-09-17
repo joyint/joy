@@ -435,7 +435,16 @@ release bump="patch":
     echo "Checking (format, lint, test)..."
     if ! just check > /dev/null 2>&1; then
         echo "Checks failed. Run 'just check' for details. Rolling bump back."
-        git restore crates/ Cargo.lock
+        # The root manifest is a version file too (release.version-files
+        # in .joy/project.yaml): it carries the `[workspace.package]`
+        # version that joy-process, joy-forge-net and joy-telemetry
+        # inherit and the joy-* pins of `[workspace.dependencies]`.
+        # Restoring only crates/ left those at the NEW version while the
+        # ten literal carrying crates went back to the old one, which is
+        # exactly the mismatch the pre-flight of `publish-crates` and
+        # `every_published_crate_has_its_version_bumped` exist to stop
+        # (JOY-02A4-89).
+        git restore Cargo.toml crates/ Cargo.lock
         exit 1
     fi
     joy release record "{{bump}}"
@@ -466,16 +475,136 @@ publish-crates: sync-tutorial
     # refresh lock takes `joy_core::util::file_lock` and its NO_PROXY
     # matcher is the engine's (D2.6a, JOY-02A3-E4); the three forge
     # connectors ride after joy-forge-net, which is what they share,
-    # and joy-cli after all of them, because it links the three and
-    # ships the `joy-forge` binary (JOY-0298-E4). Every workspace
+    # joy-telemetry rides after joy-core too, its only internal
+    # dependency; and joy-cli after all of them, because it links the
+    # three and ships the `joy-forge` binary (JOY-0298-E4).
+    # joy-telemetry is published rather than marked publish = false
+    # because joy-cli takes it with a version AND a path
+    # (JOY-02A4-89): cargo resolves such a dependency against the
+    # registry when it packages the dependent, so neither
+    # `cargo publish -p joy-cli` nor `cargo install joy-cli` can work
+    # while joy-telemetry is absent from crates.io. Every workspace
     # member is either in this list or carries publish = false -- the
-    # gap that made JOY-0247-E1.
-    # `every_crate_is_published_after_the_crates_it_depends_on`
-    # (joy-core/tests/publish_order.rs) holds this list to its own rule,
-    # so a new edge cannot break a release halfway through again.
-    crates=(joy-process joy-model joy-chat joy-core joy-bi joy-forge-net joy-github joy-gitlab joy-gitea joy-chat-store joy-ai joy-cli)
+    # gap that made JOY-0247-E1. Both halves of that rule are tests in
+    # joy-core/tests/publish_order.rs, and they hold exactly those two
+    # halves and nothing else:
+    # `every_crate_is_published_after_the_crates_it_depends_on` holds
+    # this list to the order rule, and
+    # `every_workspace_member_is_published_or_marked_unpublishable`
+    # holds it to the membership rule. A green
+    # `cargo publish --workspace --dry-run` says nothing about either:
+    # with --workspace cargo verifies each crate against the siblings
+    # it just packaged locally, while the loop below runs
+    # `cargo publish -p <crate>` one at a time and each of those
+    # resolves its version carrying dependencies against crates.io.
+    #
+    # The third thing a per crate publish needs is that the versions
+    # agree after a bump, and that is the third test,
+    # `every_published_crate_has_its_version_bumped`.
+    # `joy release bump` rewrites the version only in the files of
+    # release.version-files in .joy/project.yaml, and that list names
+    # neither crates/joy-process/Cargo.toml nor
+    # crates/joy-forge-net/Cargo.toml nor
+    # crates/joy-telemetry/Cargo.toml, so those three used to keep the
+    # old version while every dependent was bumped past them, and
+    # `cargo publish -p joy-cli` then asked crates.io for a
+    # joy-telemetry that was never uploaded (JOY-02A4-89, the shape of
+    # JOY-0246-B7). No package of the forge connection NG plan may edit
+    # .joy, so the three inherit instead: `version.workspace = true`
+    # against the `[workspace.package]` version of the root manifest,
+    # which is in the list, and their joy-core requirement inherits
+    # from `[workspace.dependencies]` in the same file. The test
+    # accepts a manifest in the list or a literal inherited from the
+    # root, and it fails on any other place a version literal could
+    # hide.
+    #
+    # The pre-flight below is the last line of defence and stays: it
+    # refuses to upload anything at all while the crate versions
+    # disagree, so a release stops before the first irreversible
+    # upload instead of after the twelfth.
+    #
+    # FIRST UPLOAD, PERMANENT NAMES. Seven of the thirteen names below
+    # have never been uploaded, so the next successful run of this recipe
+    # claims them on crates.io for good: joy-process, joy-bi,
+    # joy-telemetry, joy-forge-net, joy-github, joy-gitlab and joy-gitea
+    # (asked of the crates.io API on 2026-09-17; joy-model, joy-chat,
+    # joy-core, joy-chat-store, joy-ai and joy-cli are already there). A
+    # taken crates.io name is never released again, only yanked version
+    # by version, so this is the operator's call and it is named here
+    # rather than hidden. joy-telemetry is in the list rather than
+    # carrying publish = false for the reason at the top of this comment
+    # (joy-cli takes it with a version AND a path), and claiming its
+    # name is part of that decision (JOY-02A4-89).
+    #
+    # What a per crate dry run proves today, crate by crate
+    # (`cargo publish -p <crate> --dry-run --allow-dirty`, all thirteen
+    # run on 2026-09-17 at version 0.20.0, JOY-02A4-89). Four pass:
+    # joy-process, joy-model, joy-chat, joy-bi. Nine fail, and not one
+    # of them fails on the order in this list:
+    #   - joy-core, joy-forge-net, joy-github, joy-gitlab, joy-gitea,
+    #     joy-ai and joy-cli fail with "no matching package named
+    #     joy-process / joy-forge-net found, location searched:
+    #     crates.io index". The dependency's NAME is not on the registry
+    #     yet, which is the first upload above and not a wrong order.
+    #   - joy-telemetry and joy-chat-store fail in verification: the
+    #     tarball resolves joy-core and joy-chat 0.20.0 from crates.io,
+    #     the same version number as this tree but older content, and
+    #     the compile fails (`state_base_dir` not found in
+    #     `joy_core::store`, `ChatMessage` has no field `attempt`). The
+    #     registry again, not the order.
+    # So a per crate dry run can only go green for a crate whose
+    # internal dependencies already sit on crates.io at exactly the
+    # version this tree asks for, and after a bump that is true of none
+    # of them until the upload before it has happened. That is why the
+    # order rule is held by a test in this repository and not by a dry
+    # run, and it is what "recording what could not be proven offline"
+    # comes to.
+    crates=(joy-process joy-model joy-chat joy-core joy-bi joy-telemetry joy-forge-net joy-github joy-gitlab joy-gitea joy-chat-store joy-ai joy-cli)
+    # Pre-flight: one version for the whole list, checked before the
+    # first upload, because a crates.io version is permanent and only
+    # yankable.
+    names=()
+    versions=()
     for crate in "${crates[@]}"; do
-        version=$(cargo pkgid --quiet -p "$crate" 2>/dev/null | sed 's/.*[#@]\(.*\)/\1/')
+        # `|| true` is load bearing: under `set -e` a plain assignment
+        # takes the substitution's status, so a failing `cargo pkgid`
+        # would kill the recipe with no message and the `-z` guard below
+        # would never run (JOY-02A4-89).
+        version=$(cargo pkgid --quiet -p "$crate" 2>/dev/null | sed 's/.*[#@]\(.*\)/\1/' || true)
+        if [ -z "$version" ]; then
+            echo "Warning: could not resolve a version for $crate, leaving it out of the version check." >&2
+            continue
+        fi
+        names+=("$crate")
+        versions+=("$version")
+    done
+    if [ "${#versions[@]}" -eq 0 ]; then
+        echo "Error: cargo resolved no version for any crate in the publish list." >&2
+        exit 1
+    fi
+    # The expectation is the version the MAJORITY of the list carries,
+    # not the first crate's. A bump goes wrong by leaving one or a few
+    # crates behind, and the first name in this list (joy-process) is one
+    # of the three that hold no version literal of their own, so seeding
+    # from it would print the stale version as the expectation and then
+    # name every correctly bumped crate as the mismatch, that is, every
+    # crate except the broken one (JOY-02A4-89).
+    expected=$(printf '%s\n' "${versions[@]}" | sort | uniq -c | sort -k1,1nr -k2,2 | head -1 | awk '{print $2}')
+    mismatch=()
+    for i in "${!names[@]}"; do
+        if [ "${versions[$i]}" != "$expected" ]; then
+            mismatch+=("  ${names[$i]} is ${versions[$i]}")
+        fi
+    done
+    if [ "${#mismatch[@]}" -gt 0 ]; then
+        echo "Error: the crates in the publish list do not share one version, so a per crate publish would resolve a dependency that was never uploaded. The list carries $expected and these crates do not:" >&2
+        printf '%s\n' "${mismatch[@]}" >&2
+        echo "  = help: the crate's version literal sits in a file 'joy release bump' does not rewrite, so the bump left it behind. Either add its Cargo.toml to release.version-files in .joy/project.yaml ('joy project set release.version-files --add <path>'), or let it inherit from the root manifest with 'version.workspace = true', then bump again. Nothing has been uploaded." >&2
+        exit 1
+    fi
+    for crate in "${crates[@]}"; do
+        # `|| true` for the same reason as in the pre-flight above.
+        version=$(cargo pkgid --quiet -p "$crate" 2>/dev/null | sed 's/.*[#@]\(.*\)/\1/' || true)
         if [ -z "$version" ]; then
             echo "Warning: could not resolve version for $crate, skipping."
             continue
