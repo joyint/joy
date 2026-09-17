@@ -7,9 +7,12 @@
 #
 # `claims` decides responsibility, `resolve` is PURE (an address alone,
 # no network, no config), `identity` is the only question that may look
-# outward, and there the forge CLI or curl is the marked stub.
+# outward, and there the marked stub is the fake forge API on the
+# loopback interface (JOY-0298-E4: the connector speaks HTTP itself, so
+# there is no curl and no gh in the API path any more).
 
 load setup
+load forge_fake
 
 @test "claims: each plugin answers for its own domains and no others" {
     run -0 joy-github claims --remote git@github.com:example/r.git
@@ -80,30 +83,66 @@ load setup
 }
 
 @test "identity: the token is named by variable, and the answer carries the addresses" {
-    # curl is the forge boundary here; the stub answers only when the
-    # Bearer header actually arrived
-    STUB_DIR="$TEST_DIR/stub-bin"
-    mkdir -p "$STUB_DIR"
-    cat > "$STUB_DIR/curl" <<'STUB'
-#!/bin/sh
-for arg in "$@"; do
-    case "$arg" in
-    "Authorization: Bearer s3cr3t-value") echo '[{"email":"alice@example.com","verified":true}]'; exit 0 ;;
-    esac
-done
-exit 22
-STUB
-    chmod +x "$STUB_DIR/curl"
-    export PATH="$STUB_DIR:$PATH"
+    # The forge boundary is the fake API now (design D2.8): the
+    # connector speaks HTTP itself, so there is no curl to stub.
+    start_fake_forge
+    point_forge_at_fake github.com github
+    printf 'alice@example.com' > "$FAKE_FORGE_DIR/email"
     export GH_TOKEN="s3cr3t-value"
 
     run -0 joy-github identity --login alice-login --user-id 777 --token-env GH_TOKEN
     [[ "$output" == *'"known":true'* ]]
     [[ "$output" == *'"login":"alice-login"'* ]]
     [[ "$output" == *'alice@example.com'* ]]
+    # the token reached the forge in a header, never in a process list
+    grep -q "GET /user/emails" "$FAKE_FORGE_DIR/calls"
 
     # a variable that holds nothing yields an honest empty answer rather
     # than a guess
     run -0 joy-github identity --login alice-login --token-env NOT_SET_ANYWHERE
     [[ "$output" != *'alice@example.com'* ]]
+    stop_fake_forge
+}
+
+@test "version: every connector name answers the protocol handshake" {
+    # D2.2a: the question is about the BINARY, so no forge id goes in
+    # front of it, and the answer names every forge the file carries.
+    run -0 joy-forge version
+    [[ "$output" == *'"protocol":2'* ]]
+    [[ "$output" == *'"github"'* ]]
+    [[ "$output" == *'"gitlab"'* ]]
+    [[ "$output" == *'"gitea"'* ]]
+    for plugin in joy-github joy-gitlab joy-gitea; do
+        run -0 "$plugin" version
+        [[ "$output" == *'"protocol":2'* ]]
+    done
+}
+
+@test "claims: an internal host in forges.yaml is claimed with no forge CLI" {
+    # D2.5: until now a self hosted host was claimed only when gh, glab
+    # or tea was signed in to it, which makes the sign in door circular
+    # for an enterprise. An operator's file cuts the circle.
+    mkdir -p "$XDG_CONFIG_HOME/joy"
+    cat > "$XDG_CONFIG_HOME/joy/forges.yaml" <<'YAML'
+- host: git.internal.test
+  kind: gitea
+  api_base: https://git.internal.test/api/v1
+YAML
+
+    run -0 joy-gitea claims --remote git@git.internal.test:team/app.git
+    [ "$output" = '{"claims":true}' ]
+    # and it stays the Gitea operator's host, not everybody's
+    run -0 joy-github claims --remote git@git.internal.test:team/app.git
+    [ "$output" = '{"claims":false}' ]
+    run -0 joy-gitea claims --remote git@stranger.test:team/app.git
+    [ "$output" = '{"claims":false}' ]
+}
+
+@test "claims: the project's forge override is consulted too" {
+    # D2.5: the project level `forge:` override wins for that project,
+    # so a connector claims its remotes even where nothing else does.
+    joy init --name "Override" --acronym OV >/dev/null
+    run -0 joy project set forge gitea
+    run -0 joy-gitea claims --remote https://git.nobody-knows.test/o/r.git
+    [ "$output" = '{"claims":true}' ]
 }

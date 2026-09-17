@@ -12,9 +12,25 @@ readme = "README.md"
 name = "joy"
 path = "src/main.rs"
 
+# The one forge connector (design D2.1): a bin of the package that
+# already produces `joy`, so one archive, one installer change, one
+# receipt and one sidecar per platform cover the connector too. The
+# legacy `joy-<forge>` names stay as bins of their own crates for the
+# deprecation window of D2.2a.
+[[bin]]
+name = "joy-forge"
+path = "src/bin/joy-forge.rs"
+
 [dependencies]
 joy-process = { workspace = true }
 joy-core = { version = "0.20.0", path = "../joy-core", features = ["tutorial"] }
+# The forge connectors, linked as LIBRARIES into the `joy-forge` bin
+# above. `joy` itself never calls them: nothing in its call graph
+# references these crates, so the linker drops them from that binary.
+joy-forge-net = { workspace = true }
+joy-github = { workspace = true }
+joy-gitlab = { workspace = true }
+joy-gitea = { workspace = true }
 tempfile = "3"
 joy-chat = { version = "0.20.0", path = "../joy-chat" }
 joy-chat-store = { version = "0.20.0", path = "../joy-chat-store" }
@@ -59,6 +75,9 @@ sysinfo = { version = "0.33", default-features = false, features = ["system"] }
 
 [dev-dependencies]
 assert_cmd = "2"
+# The in process fake forge API the connector tests speak to. A dev
+# dependency, so a shipped connector never carries it.
+joy-forge-net = { workspace = true, features = ["fake-api"] }
 # Reading back what joy committed (the signature fields of D4.5). joy-core
 # already builds this exact git2; the tests just look at the result.
 git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2"] }

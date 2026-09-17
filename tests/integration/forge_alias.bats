@@ -1,14 +1,18 @@
 #!/usr/bin/env bats
 #
-# Forge-plugin alias resolution, end to end (epic JOY-0251-AA,
+# Forge-connector alias resolution, end to end (epic JOY-0251-AA,
 # JOY-0253-8A / JOY-0254-3C, reported as JP-00BF-94): a member enrolled
 # under their PRIMARY address keeps working when the clone's git config
-# carries GitHub's noreply alias. joy-core resolves via the joy-github
-# plugin; the plugin consults gh. The forge boundary (gh, the one thing
-# tests cannot have for real) is a MARKED STUB; everything else is the
-# real product path: real joy, real joy-github, real project.
+# carries GitHub's noreply alias. joy-core resolves via the GitHub
+# connector; the connector asks the forge itself over HTTP since
+# JOY-0298-E4. The forge boundary (the one thing tests cannot have for
+# real) is two MARKED STUBS: gh as a source of a TOKEN (decision 19),
+# and the fake forge API on the loopback interface (D2.8). Everything
+# else is the real product path: real joy, real connector, real
+# project.
 
 load setup
+load forge_fake
 
 FOUNDER_PASSPHRASE="correct horse battery staple extra words"
 ALICE_PASSPHRASE="alpha bravo charlie delta echo foxtrot"
@@ -17,21 +21,13 @@ extract_otp() {
     echo "$1" | sed -n 's/^[[:space:]]*One-time password:[[:space:]]*\([A-Za-z0-9-]*\).*$/\1/p' | head -1
 }
 
-# The gh STUB: answers exactly the two API reads joy-github performs.
-# This is the forge boundary; nothing else is faked.
+# The forge boundary: gh names the login and hands out a TOKEN, and the
+# fake API answers the one read the connector makes with it.
 install_gh_stub() {
-    STUB_DIR="$TEST_DIR/stub-bin"
-    mkdir -p "$STUB_DIR"
-    cat > "$STUB_DIR/gh" <<'EOF'
-#!/bin/sh
-case "$1 $2" in
-"api user/emails") echo '[{"email":"alice@example.com","verified":true}]' ;;
-"api user") echo '{"email":null}' ;;
-*) exit 1 ;;
-esac
-EOF
-    chmod +x "$STUB_DIR/gh"
-    export PATH="$STUB_DIR:$PATH"
+    start_fake_forge
+    point_forge_at_fake github.com github
+    printf 'alice@example.com' > "$FAKE_FORGE_DIR/email"
+    install_gh_token_stub "gho_alias-test-token"
     # gh's config names the signed-in login, offline
     export GH_CONFIG_DIR="$TEST_DIR/gh-config"
     mkdir -p "$GH_CONFIG_DIR"
@@ -60,8 +56,9 @@ setup_project_with_alice() {
     # the clone flips to GitHub's privacy alias (gh auth setup-git)
     git config user.email "777+alice-login@users.noreply.github.com"
 
-    # login resolves through the plugin chain: alias -> joy-github ->
-    # gh (stub) -> alice@example.com -> member
+    # login resolves through the connector chain: alias -> the GitHub
+    # connector -> gh's token (stub) -> the forge (fake) ->
+    # alice@example.com -> member
     run joy auth --passphrase "$ALICE_PASSPHRASE"
     [ "$status" -eq 0 ]
 
@@ -77,8 +74,8 @@ setup_project_with_alice() {
 
 @test "without a responsible plugin the alias stays a stranger" {
     setup_project_with_alice
-    # NO gh stub, NO gh config: joy-github answers, but can vouch for no
-    # addresses, so the resolution honestly fails like before.
+    # NO gh stub, NO gh config: the connector answers, but can vouch for
+    # no addresses, so the resolution honestly fails like before.
     export GH_CONFIG_DIR="$TEST_DIR/empty-gh-config"
     git config user.email "777+alice-login@users.noreply.github.com"
     run joy add idea "should be refused"
@@ -130,14 +127,24 @@ setup_project_with_alice() {
     [ "$status" -eq 0 ]
 }
 
-# The tea STUB: the Gitea forge boundary, same shape as the gh stub.
+# The tea STUB: the Gitea forge boundary, same shape as the gh one. tea
+# hands out a TOKEN through its credential helper (`tea login helper
+# get`, the command D2.4 names), and the fake API answers the read the
+# connector makes with it.
 install_tea_stub() {
+    start_fake_forge
+    point_forge_at_fake codeberg.org gitea
+    printf 'alice@example.com' > "$FAKE_FORGE_DIR/email"
     STUB_DIR="$TEST_DIR/stub-bin"
     mkdir -p "$STUB_DIR"
     cat > "$STUB_DIR/tea" <<'STUB'
 #!/bin/sh
 case "$*" in
-"api get user/emails") echo '[{"email":"alice@example.com","verified":true}]' ;;
+"login helper get")
+    cat >/dev/null
+    echo "username=alice-login"
+    echo "password=gta_alias-test-token"
+    ;;
 *) exit 1 ;;
 esac
 STUB
@@ -182,15 +189,8 @@ STUB
     git config user.email test@example.com
     joy project member add alice-second@example.com --passphrase "$FOUNDER_PASSPHRASE"
     install_gh_stub
-    cat > "$STUB_DIR/gh" <<'EOF'
-#!/bin/sh
-case "$1 $2" in
-"api user/emails") echo '[{"email":"alice-second@example.com","verified":true},{"email":"alice@example.com","verified":true}]' ;;
-"api user") echo '{"email":null}' ;;
-*) exit 1 ;;
-esac
-EOF
-    chmod +x "$STUB_DIR/gh"
+    # the forge vouches for BOTH addresses, pending one first
+    printf 'alice-second@example.com,alice@example.com' > "$FAKE_FORGE_DIR/email"
     git config user.email "777+alice-login@users.noreply.github.com"
 
     # the enrolled slot answers, so login and write go through
@@ -256,12 +256,21 @@ EOF
 
 # The glab STUB: the GitLab forge boundary, same shape as the gh twin.
 install_glab_stub() {
+    start_fake_forge
+    point_forge_at_fake gitlab.com gitlab
+    printf 'alice@example.com' > "$FAKE_FORGE_DIR/email"
     STUB_DIR="$TEST_DIR/stub-bin"
     mkdir -p "$STUB_DIR"
+    # glab hands out a TOKEN through its credential helper, the command
+    # D2.4 names; `glab auth token` does not exist.
     cat > "$STUB_DIR/glab" <<'STUB'
 #!/bin/sh
 case "$*" in
-"api user/emails") echo '[{"email":"alice@example.com","verified":true}]' ;;
+"auth credential-helper get")
+    cat >/dev/null
+    echo "username=oauth2"
+    echo "password=glpat_alias-test-token"
+    ;;
 *) exit 1 ;;
 esac
 STUB

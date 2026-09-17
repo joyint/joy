@@ -14,7 +14,10 @@ the whole contract.
 - **Errors**: message on stderr, non-zero exit (2 for "no project").
 - **Reads, no writes**: plugins compute over the project (joy-core or the
   files). Anything that mutates the project goes through `joy` itself so
-  Guard, event log, and audit trail apply.
+  Guard, event log, and audit trail apply. The FORGE connectors are the
+  named exception and a class of their own: they authenticate, they
+  hold state, and two of their verbs write on the forge. Their section
+  below says which, and what each one changes.
 
 ## The node tree
 
@@ -179,6 +182,127 @@ explicitly**, and joy hands every line to its caller as it arrives. That
 is what lets a person read a device code while the connector is still
 polling the forge. `login` is the verb that uses it.
 
+### What a connector reads from your machine, and how it reaches the forge
+
+A connector speaks HTTP itself since JOY-0298-E4: no `curl` and no `gh`
+sits on any API path. Two consequences a person or an operator can act
+on:
+
+**Proxies.** The connector honours the same sources the engine does:
+`http.<url>.proxy` from git config (most specific URL first), then
+`http.proxy`, then `https_proxy` / `HTTPS_PROXY` (an `http://` target
+uses `http_proxy` / `HTTP_PROXY`), then `ALL_PROXY` / `all_proxy`.
+`NO_PROXY` is evaluated by joy for every one of them, including the
+ones from git config, and its entries are trimmed, so
+`NO_PROXY="a.com, b.com"` really does cover `b.com`. A SOCKS proxy is
+refused by name: "joy cannot use the SOCKS proxy <url>; it supports
+HTTP and HTTPS proxies only." A proxy password never appears in a log
+line or an error text.
+
+**The trust store.** The operating system's own: the Windows
+certificate store, the macOS system anchors plus the Keychain trust
+settings, and on Linux the OpenSSL style default paths, which is what
+`update-ca-certificates` and `SSL_CERT_FILE` write. A corporate CA
+installed the normal way is trusted with no joy setting. **On Linux
+only**, `ca_bundle` and `ca_dir` in `forges.yaml` and `http.sslCAInfo`
+and `http.sslCAPath` in git config are honoured as well; on macOS and
+Windows they are refused with the sentence that names the system store,
+because the engine cannot honour them there either. joy never turns
+certificate verification off and does no client certificate.
+
+### Instances an operator configures: `forges.yaml`
+
+A self hosted forge used to be reachable only when gh, glab or tea was
+already signed in to it, which makes the sign in door circular for an
+enterprise: nobody can sign in through joy because joy does not claim
+the host, and joy does not claim the host because nobody signed in.
+An operator cuts that circle with one file, in joy's own configuration
+directory (`$XDG_CONFIG_HOME/joy/forges.yaml`, `~/.config/joy/forges.yaml`,
+`~/Library/Application Support/joy/forges.yaml` on macOS,
+`%APPDATA%\joy\forges.yaml` on Windows):
+
+```yaml
+- host: git.acme.test
+  kind: github            # github | gitlab | gitea
+  api_base: https://git.acme.test/api/v3
+  web_base: https://git.acme.test
+  ca_bundle: /etc/pki/tls/certs/acme-root.pem   # Linux only
+```
+
+`claims` consults it, so the internal forge is claimed with no forge
+CLI installed at all, and every verb asks the `api_base` named there.
+The project level `forge:` override keeps working and wins for that
+project.
+
+### Where a token comes from
+
+joy never reads another CLI's credential store. A foreign credential is
+obtained by SPAWNING the CLI, which is also the only way its own
+refresh runs, and it is read only for joy:
+
+| forge | command |
+| --- | --- |
+| GitHub | `gh auth token --hostname <host> [--user <login>]` |
+| GitLab | `glab auth credential-helper get` (`glab auth token` does not exist) |
+| Gitea, Forgejo | `tea login helper get` (`tea logins list` prints no token) |
+
+A caller that has a token of its own hands it over by NAME
+(`--token-env VAR`); the value travels in the child's environment and
+reaches the forge in an `Authorization` header. It is never an argument,
+so no process list can carry it.
+
+A named variable is the whole answer for that call: when it holds
+nothing, the call has no credential, and nothing else is consulted. A
+multi-account host must never act as the machine's own account because
+its variable happened to be empty.
+
+Where no caller named a variable, the connector reads the forge's own,
+which is what a person or a CI runner exports anyway, and only then does
+it spawn the forge CLI.
+
+| forge | variables | read for |
+| --- | --- | --- |
+| GitHub | `GH_TOKEN`, `GITHUB_TOKEN` | github.com only |
+| GitHub Enterprise | `GH_ENTERPRISE_TOKEN`, `GITHUB_ENTERPRISE_TOKEN` | every other host |
+| GitLab | `GITLAB_TOKEN` | every host |
+| Gitea, Forgejo | `GITEA_TOKEN` | every host |
+
+The GitHub split is gh's own: a github.com token is never sent to
+somebody's Enterprise Server, and an Enterprise token never to
+github.com.
+
+The configuration of those three CLIs is looked for per operating
+system: gh in `GH_CONFIG_DIR`, `XDG_CONFIG_HOME/gh`, `%AppData%\GitHub CLI`
+and `~/.config/gh`; glab in `GLAB_CONFIG_DIR`, `~/.config/glab-cli` and
+the XDG directory of the platform (including `%LOCALAPPDATA%\glab-cli`);
+tea in the XDG directory of the platform and then `~/.tea/tea.yml`.
+
+### Scopes, and the `scope_missing` answer
+
+Every connector knows which scope set each verb group needs, and
+answers locally instead of spending a request the forge would refuse:
+
+```
+{"state":"scope_missing","host":"gitlab.com","verb":"create-repository",
+ "needed":["api"],"have":["read_api","write_repository"],
+ "next":"sign in again with wider access"}
+```
+
+on exit code 0. It is an ANSWER, not a failure, and a host renders it
+as one sentence with one button. The sets are per forge: GitHub covers
+everything with `repo user:email` (there is no read only private scope
+there); GitLab has three, `read_api read_repository` for a read only
+member, `read_api write_repository` for a read write member and
+`api write_repository` for everything, because `write_repository`
+"Uses Git-over-HTTP. Does not support API authentication."; Gitea and
+Forgejo scope per category, `read:user read:repository` to read,
+`write:repository` to write and `write:user write:repository` to create
+a repository.
+
+Where the local check passes and the forge still refuses, the refusal
+is classified from its headers and never from prose, and a scope
+problem is never reported as "denied".
+
 ### The five outcomes a caller tells apart
 
 `{"known": false}` (exit 0) is an ANSWER: the connector was asked and
@@ -232,7 +356,10 @@ it hung). Each one carries the file that answered.
   when the repository is there without a store, with the caller's push
   permission and the branch the forge names as its default;
   `{"state": "gone"}` when the forge does not show the caller the
-  repository (deleted or no access, which forges answer alike);
+  repository (deleted or no access, which forges answer alike) AND the
+  credential could have seen a private one: GitHub and GitLab both
+  answer 404 rather than 403 for a private repository, so a 404 an
+  anonymous caller or a narrow token got is `unknown`, never `gone`;
   `{"state": "unknown"}` when the forge could not be asked. Only the
   last is not a verdict. Without `--token-env` the forge is asked
   anonymously and sees public repositories only.
@@ -240,7 +367,9 @@ it hung). Each one carries the file that answered.
   state that saw the repository. It is normalised to BYTES inside the
   connector because the unit is forge knowledge (GitHub counts
   kilobytes, Gitea KiB, GitLab bytes and only for a caller with the
-  right role). Its absence is not an error.
+  right role). Its absence is not an error: the connector reads the
+  repository record for it, and where the forge will not show that
+  record the answer simply carries no size.
 
 - `joy-<name> files --remote <url> [--token-env <VAR>]`
   (JAPP-0293-A7) Which files does the default branch carry? Answer:
@@ -249,9 +378,28 @@ it hung). Each one carries the file that answered.
   listing off; an empty repository lists no paths. `{"state": "unknown"}`
   when the forge could not be asked.
 
-- `joy-<name> release --tag <t> --title <t> --notes-file <path>`
+- `joy-<name> repositories --host <h> [--query s] [--limit n] [--page cursor]`
+  Which repositories can this account reach? Answer:
+  `{"state": "repositories", "repositories": [...], "truncated": bool,
+  "next": null|"cursor"}`. The default limit is 200, and the answer is
+  paginated so one of them stays well under 64 KiB. Each row carries
+  `full_name`, `name`, `private`, `clone_url`, `ssh_url`,
+  `default_branch` and `web_url`. Without a credential the answer is
+  `{"state": "needs_sign_in", "host": "..."}`: there is no account
+  whose repositories could be listed.
+
+- `joy-<name> create-repository --host <h> --name <n> [--owner <o>] [--private]`
+  Create a repository. Answer: `{"created": true, "clone_url": ...,
+  "ssh_url": ..., "default_branch": ..., "web_url": ...}`, or an error
+  object carrying `state` and `message`. A project can only be brought
+  to joyint.com when it has a remote repository, so this verb is what
+  makes "picks or creates a repo" complete.
+
+- `joy-<name> release --remote <url> --tag <t> --title <t> --notes-file <path>`
   (JOY-0256-64) Create — or complete — the release for this tag on
   your forge; the notes arrive as a file because they are multi-line.
+  The remote names the repository: gh used to read that out of the
+  working directory, and the connector's own REST call has to be told.
   Answer: `{"url": "..."}` on success, or `{"unsupported": true}` when
   the forge has no release backend yet (joy then keeps its tag-only
   publish). This is the contract's ONE write verb, and unlike the read
@@ -259,7 +407,10 @@ it hung). Each one carries the file that answered.
   is non-zero, and `joy release publish` fails with it. Idempotence is
   the plugin's duty: a release that already exists (a tag-triggered
   forge workflow may have made it) keeps its URL and gets the notes
-  prepended exactly once (JOY-0248-AE).
+  prepended exactly once (JOY-0248-AE). The verb carries NOTES and no
+  assets: no argument names one, and joy's own publish never uploaded
+  one. The asset upload (on uploads.github.com, from the release's own
+  `upload_url`) lands with the argument that carries it.
 
 Rules, in addition to the base contract:
 
@@ -272,8 +423,8 @@ Rules, in addition to the base contract:
   "unknown". That includes the two failures that start no process at
   all, a connector nobody installed and a connector that speaks
   protocol 1, which are the two a silent "unknown" hides best.
-- **Read-only and side-effect free**, except the explicit `release`
-  verb, whose one side effect is the release it names.
+- **Read-only and side-effect free**, except the two verbs that name
+  their own side effect: `release` and `create-repository`.
 - **No forge knowledge outside the plugin**: joy-core selects the
   responsible plugin purely by asking `claims` over the project's
   remotes (the registry in `joy_core::forge_plugins` lists the known
@@ -298,17 +449,66 @@ same archive, so `joy update` keeps them in lockstep. Sign in with your
 forge's own CLI (`gh auth login`, `glab auth login`, `tea login add`) as
 you would anyway. From then on joy resolves alias addresses
 through it, and a project on a host you are signed in to is recognized
-on its own. No environment variable, no token in joy's hands: the
-plugin reads the CLI's configuration and asks the API with it.
+on its own. No environment variable: the connector reads the CLI's
+configuration, asks that CLI for a token when it needs one, and speaks
+to the forge itself.
 
-One lever exists, per project rather than per machine: when a project
-lives on an instance nobody is signed in to locally (a GitHub
-Enterprise Server, a self-hosted GitLab, any Gitea or Forgejo), name
-its forge once and the right plugin answers for it:
+Two levers exist. Per project, when a project lives on an instance
+nobody is signed in to locally (a GitHub Enterprise Server, a
+self-hosted GitLab, any Gitea or Forgejo), name its forge once and the
+right connector answers for it:
 
     joy project set forge gitea
+
+Per machine, an operator ships `forges.yaml` (above), and then the
+instance is claimed and asked with no forge CLI installed at all.
 
 A server has neither a forge CLI nor a person in front of it, so it is
 told the same facts through its own configuration instead; the platform
 ships them as environment variables (see its `.env.example`), and hands
-the caller's login and token to the plugin per call.
+the caller's login and token to the connector per call.
+
+### The size of the connector
+
+Decision 6 of the design (one binary rather than three) rests on a
+measurement, and the measurement is kept here so it can be checked
+rather than assumed. It is to be revisited when any release target
+passes 10 MB.
+
+| target | `joy-forge`, release, stripped | measured |
+| --- | --- | --- |
+| x86_64-unknown-linux-gnu | 3.79 MB (3 971 064 bytes) | 2026-09-17 |
+| aarch64-unknown-linux-gnu | open, the release build measures it | |
+| x86_64-apple-darwin | open, the release build measures it | |
+| aarch64-apple-darwin | open, the release build measures it | |
+| x86_64-pc-windows-msvc | open, the release build measures it | |
+
+The four open rows need a cross linker the development host does not
+have; the release workflow builds every target anyway and is where they
+are filled in.
+
+How to reproduce one row:
+
+    cargo build --release --bin joy-forge
+    strip -s target/release/joy-forge -o /tmp/joy-forge.stripped
+    ls -l /tmp/joy-forge.stripped
+
+For comparison, the three separate protocol 1 plugins were 3.3 MB
+stripped together, of which about 3 MB was a duplicated std, clap and
+serde floor; the connector now carries rustls, its own HTTP stack and
+the three forges in one file for 3.79 MB.
+
+Said plainly, because it is the operator's decision and not the
+measurement's: decision 6 was argued with "three plugins cost 3.3 MB
+and one binary is about 1.2 MB", and that half of it did not survive
+contact with the build. The consolidation did not shrink the total, it
+grew it by about half a megabyte, because the three old plugins shelled out to
+curl and gh while this one brings its own TLS stack. What the decision
+still buys is what the rest of it named: one archive, one installer
+change, one receipt, one sidecar per platform, and no ambiguity in the
+winget `installers-regex`. The 10 MB revisit threshold is untouched and
+far away; the premise is what changed.
+
+`joy` itself grows by nothing worth measuring: `axoupdater`, which the
+self-update path already needs, brings `ureq` and `rustls` into that
+binary anyway.

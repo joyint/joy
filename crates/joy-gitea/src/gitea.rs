@@ -2,52 +2,44 @@
 // SPDX-License-Identifier: LicenseRef-Commercial
 
 //! The Gitea knowledge: host matching, the alias address form, tea's
-//! config, API access. Everything degrades silently to "unknown".
+//! config, the REST API. Everything a read query cannot answer degrades
+//! to "unknown".
 //!
 //! Gitea (and its fork Forgejo) is SELF-HOSTED software with no
 //! canonical host: any domain can run it, and no instance belongs in
-//! this code. So the plugin claims a remote only when the person's own
-//! tea configuration names that host as one of their Gitea instances,
-//! and otherwise waits for the project.yaml `forge:` override, exactly
-//! the road self-hosted GitLab takes.
+//! this code. So the connector claims a host only when the person's own
+//! tea configuration names it, when an operator's `forges.yaml` does
+//! (D2.5), or when the project's own `forge:` override says so.
+//!
+//! Since JOY-0298-E4 (design D2.8) every API call is made in process
+//! over the connector's own HTTP client.
 
-use std::process::Command;
+use joy_forge_net::forge::{unknown, unknown_state, Ctx, Listing, NewRepository, Target};
+use joy_forge_net::http::Answer;
+use joy_forge_net::scope::{self, Group};
+use serde_json::{json, Value};
 
-/// Does this remote URL belong to a Gitea instance THIS person is signed
-/// in to (tea's own config)? An unknown host is not claimed: a URL alone
+/// Where the store lives inside a repository.
+const PROJECT_YAML: &str = ".joy/project.yaml";
+
+/// Entries per page and pages read for one listing.
+const TREE_PAGE: usize = 1000;
+const TREE_PAGES: usize = 5;
+
+/// Does this host belong to a Gitea instance THIS person is signed in
+/// to (tea's own config)? An unknown host is not claimed: a URL alone
 /// cannot tell Gitea from anything else, and guessing would steal the
-/// remote from the plugin it really belongs to. Projects on an instance
-/// nobody is signed in to use the project.yaml `forge:` override.
-pub fn claims_remote(url: &str) -> bool {
-    let Some(host) = host_of(url) else {
-        return false;
-    };
-    configured_hosts()
-        .iter()
-        .any(|configured| configured == &host)
+/// remote from the connector it really belongs to.
+pub fn claims_host(host: &str, configured: &[String]) -> bool {
+    configured.iter().any(|known| known == host)
 }
 
 /// The hosts of every login in tea's config, lowercased.
-fn configured_hosts() -> Vec<String> {
+pub fn configured_hosts() -> Vec<String> {
     tea_logins()
         .iter()
-        .filter_map(|login| host_of(&login.url))
+        .filter_map(|login| joy_forge_net::url::host_of(&login.url))
         .collect()
-}
-
-/// The host part of a git remote URL, lowercased.
-fn host_of(url: &str) -> Option<String> {
-    let url = url.trim();
-    if !url.contains("://") {
-        let (host_part, _path) = url.split_once(':')?;
-        let host = host_part.rsplit('@').next()?;
-        return Some(host.to_ascii_lowercase());
-    }
-    let rest = url.split_once("://")?.1;
-    let authority = rest.split(['/', '?']).next()?;
-    let host = authority.rsplit('@').next()?;
-    let host = host.split(':').next()?;
-    Some(host.to_ascii_lowercase())
 }
 
 /// A parsed Gitea noreply alias: `<username>@noreply.<instance host>`.
@@ -65,8 +57,8 @@ pub fn parse_alias(email: &str) -> Option<Alias> {
         return None;
     }
     let domain = domain.to_ascii_lowercase();
-    // The GitHub and GitLab forms live under `users.noreply.<host>`; theirs
-    // are their plugins' business, never this one's.
+    // The GitHub and GitLab forms live under `users.noreply.<host>`;
+    // theirs are their connectors' business, never this one's.
     let rest = domain.strip_prefix("noreply.")?;
     if rest.is_empty() || !rest.contains('.') {
         return None;
@@ -82,18 +74,13 @@ pub struct TeaLogin {
     pub url: String,
 }
 
-/// Every login tea has on file, offline. Empty when tea is not set up.
+/// Every login tea has on file, offline, from the first of the per
+/// operating system locations of D2.4 that exists. Empty when tea is
+/// not set up.
 pub fn tea_logins() -> Vec<TeaLogin> {
-    let dir = match std::env::var("TEA_CONFIG_DIR") {
-        Ok(d) if !d.trim().is_empty() => std::path::PathBuf::from(d),
-        _ => match std::env::var_os("HOME") {
-            Some(home) => std::path::PathBuf::from(home).join(".config/tea"),
-            None => return Vec::new(),
-        },
-    };
-    match std::fs::read_to_string(dir.join("config.yml")) {
-        Ok(text) => parse_config_yml(&text),
-        Err(_) => Vec::new(),
+    match joy_forge_net::foreign::first_readable(&joy_forge_net::foreign::tea_config_files()) {
+        Some((_, text)) => parse_config_yml(&text),
+        None => Vec::new(),
     }
 }
 
@@ -144,42 +131,100 @@ pub fn parse_config_yml(text: &str) -> Vec<TeaLogin> {
     logins
 }
 
-fn run_stdout(cmd: &mut Command) -> Option<String> {
-    let out = cmd.output().ok()?;
-    if !out.status.success() {
-        return None;
+/// The API root of the instance a host runs: what an operator
+/// configured (D2.5), else the host's own `/api/v1`.
+pub fn api_base(host: &str, ctx: &Ctx) -> String {
+    if let Some(base) = ctx.instance(host).and_then(|i| i.api_base.clone()) {
+        return base;
     }
-    String::from_utf8(out.stdout).ok()
+    format!("https://{host}/api/v1")
 }
 
-/// The account's addresses, best effort. Gitea's API takes the token in
-/// the `token` scheme; the base URL is the instance tea is signed in to.
-fn verified_emails(token_env: Option<&str>, base: &str) -> Vec<String> {
-    let raw = match token_env {
-        Some(var) => {
-            let Ok(token) = std::env::var(var) else {
-                return Vec::new();
-            };
-            run_stdout(joy_process::command("curl").args([
-                "--fail",
-                "--silent",
-                "--max-time",
-                "4",
-                "-H",
-                &format!("Authorization: token {token}"),
-                &format!("{base}/api/v1/user/emails"),
-            ]))
+/// One API GET. Gitea's own scheme is `Authorization: token <t>`, and
+/// the token travels in that header, never in an argument.
+fn api_get(ctx: &Ctx, host: &str, url: &str) -> Option<Answer> {
+    let http = ctx.http(host).ok()?;
+    let mut request = http.get(url).header("Accept", "application/json");
+    if let Some(token) = ctx.token("gitea", host) {
+        request = request.token_header(&token);
+    }
+    match request.call() {
+        Ok(answer) => Some(answer),
+        Err(error) => {
+            eprintln!("joy-forge gitea: {error}");
+            None
         }
-        None => run_stdout(joy_process::command("tea").args(["api", "get", "user/emails"])),
+    }
+}
+
+/// What a refusal means (D2.7c). Gitea says which scopes it wanted, in
+/// prose it writes itself, and the `required=` list is parsed out of it.
+pub fn classify(answer: &Answer) -> &'static str {
+    match answer.status {
+        403 if required_scopes(&answer.body).is_some() => "scope_missing",
+        403 => "denied",
+        401 => "needs_sign_in",
+        429 => "rate_limited",
+        _ => "denied",
+    }
+}
+
+/// The `required=...` list out of Gitea's own refusal:
+/// "token does not have at least one of required scope(s), required=[read:repository], token scope=read:user"
+///
+/// D2.7c: this list is what goes into `needed`.
+pub fn required_scopes(body: &str) -> Option<Vec<String>> {
+    scope_list(body, "required=")
+}
+
+/// The `token scope=...` list out of the same refusal: what the token
+/// actually holds, which is what `have` carries (D2.7c). Gitea is the
+/// only forge of the three that names it in the refusal itself; until
+/// the connector keeps the granted set beside its own token (J3), this
+/// is the only place the set can be read at all.
+pub fn token_scopes(body: &str) -> Option<Vec<String>> {
+    scope_list(body, "token scope=")
+}
+
+/// One of the two lists of Gitea's refusal. Both forms occur, bracketed
+/// (`required=[a,b]`) and bare (`token scope=a,b`), so the list ends at
+/// the closing bracket or at the end of the sentence.
+fn scope_list(body: &str, key: &str) -> Option<Vec<String>> {
+    let rest = body.split(key).nth(1)?;
+    let list = rest
+        .trim_start()
+        .trim_start_matches('[')
+        .split(&[']', '\n'][..])
+        .next()
+        .unwrap_or("")
+        .split(&[',', '"', '}'][..])
+        .map(|scope| scope.trim().trim_end_matches(['.', ';']))
+        .filter(|scope| !scope.is_empty() && !scope.contains(' '))
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    (!list.is_empty()).then_some(list)
+}
+
+/// The account's addresses, best effort, from the instance's own API.
+/// Without a credential nothing is asked: an anonymous request cannot
+/// name an account (decision 20).
+fn verified_emails(ctx: &Ctx, host: &str) -> Vec<String> {
+    if ctx.token("gitea", host).is_none() {
+        return Vec::new();
+    }
+    let Some(answer) = api_get(ctx, host, &format!("{}/user/emails", api_base(host, ctx))) else {
+        return Vec::new();
     };
-    let Some(raw) = raw else { return Vec::new() };
+    if !answer.ok() {
+        return Vec::new();
+    }
     #[derive(serde::Deserialize)]
     struct Entry {
         email: String,
         #[serde(default)]
         verified: bool,
     }
-    serde_json::from_str::<Vec<Entry>>(&raw)
+    serde_json::from_str::<Vec<Entry>>(&answer.body)
         .map(|entries| {
             entries
                 .into_iter()
@@ -190,160 +235,105 @@ fn verified_emails(token_env: Option<&str>, base: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// The ACTOR answer (docs/plugins.md `identity`): handed-in caller facts
-/// win over tea's config.
-pub fn identity_answer(
-    login: Option<String>,
-    user_id: Option<String>,
-    token_env: Option<&str>,
-) -> serde_json::Value {
+/// The ACTOR answer (docs/plugins.md `identity`): handed-in caller
+/// facts win over tea's config.
+pub fn identity_answer(target: &Target, ctx: &Ctx) -> Value {
     let configured = tea_logins();
-    let first = configured.into_iter().next();
-    let base = first.as_ref().map(|l| l.url.clone());
-    let login = login.or_else(|| first.map(|l| l.user));
-    let Some(login) = login else {
-        return serde_json::json!({ "known": false });
+    let host = target.host().or_else(|| {
+        configured
+            .first()
+            .and_then(|login| joy_forge_net::url::host_of(&login.url))
+    });
+    let local = host.as_deref().and_then(|host| {
+        configured
+            .iter()
+            .find(|login| joy_forge_net::url::host_of(&login.url).as_deref() == Some(host))
+            .or_else(|| configured.first())
+            .map(|login| login.user.clone())
+    });
+    let Some(login) = ctx.login.clone().or(local) else {
+        return unknown();
     };
     // Without a known instance there is nowhere to ask; the login alone
     // is still a useful answer.
-    let emails = match &base {
-        Some(base) => verified_emails(token_env, base),
+    let emails = match host.as_deref() {
+        Some(host) => verified_emails(ctx, host),
         None => Vec::new(),
     };
-    serde_json::json!({
+    json!({
         "known": true,
         "login": login,
-        "user_id": user_id,
+        "user_id": ctx.user_id,
         "emails": emails,
     })
 }
 
-/// The PURE address attribution (docs/plugins.md `resolve`): Gitea's
-/// noreply alias carries the username, no account id. Never consults
-/// ambient state, by contract.
-pub fn resolve_answer(email: &str) -> serde_json::Value {
+/// The PURE address attribution (docs/plugins.md `resolve`).
+pub fn resolve_answer(email: &str) -> Value {
     match parse_alias(email) {
-        Some(alias) => serde_json::json!({
+        Some(alias) => json!({
             "known": true,
             "login": alias.login,
-            "user_id": serde_json::Value::Null,
+            "user_id": Value::Null,
             "emails": [],
         }),
-        None => serde_json::json!({ "known": false }),
+        None => unknown(),
     }
 }
 
 // -- the store query (JP-013C-11) ---------------------------------------------
-//
-// A multi-account host (the platform) asks whether a repository holds a joy
-// store instead of cloning it. One API call reads `.joy/project.yaml` raw
-// from the default branch; only a 404 needs a second one on the repository,
-// because Gitea answers a missing file and a missing repository alike.
 
-/// Where the store lives inside a repository.
-const PROJECT_YAML: &str = ".joy/project.yaml";
-
-/// One API answer: the HTTP status and the body.
-struct ApiAnswer {
-    status: u16,
-    body: String,
-}
-
-/// "owner/repo" from a remote URL of any wire form.
-fn repo_path_of(url: &str) -> Option<String> {
-    let url = url.trim().trim_end_matches('/');
-    let url = url.strip_suffix(".git").unwrap_or(url);
-    let path = match url.split_once("://") {
-        Some((_, rest)) => rest.split_once('/')?.1,
-        None => url.split_once(':')?.1,
+/// The STORE answer for a remote. The instance is the remote's own host.
+pub fn store_answer(target: &Target, ctx: &Ctx) -> Value {
+    let (Some(host), Some(path)) = (target.host(), target.repo_path()) else {
+        return unknown_state();
     };
-    let path = path.trim_matches('/');
-    path.contains('/').then(|| path.to_string())
+    let repo_url = format!("{}/repos/{path}", api_base(&host, ctx));
+    let file = api_get(ctx, &host, &format!("{repo_url}/raw/{PROJECT_YAML}"));
+    store_verdict(file, || api_get(ctx, &host, &repo_url))
 }
 
-/// GET through curl. The token comes from the named variable and reaches
-/// curl on stdin as a header line, never on its command line. `None` when
-/// the request did not complete (network, timeout, no curl).
-fn api_get(url: &str, token_env: Option<&str>) -> Option<ApiAnswer> {
-    use std::io::Write;
-    use std::process::Stdio;
-    let token = token_env
-        .and_then(|var| std::env::var(var).ok())
-        .filter(|t| !t.is_empty());
-    let mut child = joy_process::command("curl")
-        .args([
-            "--silent",
-            "--max-time",
-            "4",
-            "--write-out",
-            "\n%{http_code}",
-            "-H",
-            "Accept: application/json",
-            "-H",
-            "User-Agent: joy-gitea",
-            "--header",
-            "@-",
-            url,
-        ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .ok()?;
-    {
-        let mut stdin = child.stdin.take()?;
-        if let Some(token) = token {
-            writeln!(stdin, "Authorization: Bearer {token}").ok()?;
-        }
-    }
-    let out = child.wait_with_output().ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let text = String::from_utf8(out.stdout).ok()?;
-    let (body, status) = text.rsplit_once('\n')?;
-    Some(ApiAnswer {
-        status: status.trim().parse().ok()?,
-        body: body.to_string(),
-    })
-}
-
-/// The STORE answer (docs/plugins.md `store`) for a remote. The instance
-/// is the remote's own host. Without a token the instance is asked
-/// anonymously, which only sees public repositories.
-pub fn store_answer(remote: &str, token_env: Option<&str>) -> serde_json::Value {
-    let (Some(host), Some(path)) = (host_of(remote), repo_path_of(remote)) else {
-        return serde_json::json!({ "state": "unknown" });
+/// The decision over the two answers, pure.
+fn store_verdict(file: Option<Answer>, repo: impl FnOnce() -> Option<Answer>) -> Value {
+    let Some(file) = file else {
+        return unknown_state();
     };
-    let repo_url = format!("https://{host}/api/v1/repos/{path}");
-    let file = api_get(&format!("{repo_url}/raw/{PROJECT_YAML}"), token_env);
-    store_verdict(file, || api_get(&repo_url, token_env))
-}
-
-/// The decision over the two answers, pure. Anything but a clear 2xx or
-/// 404 leaves the question unanswered.
-fn store_verdict(
-    file: Option<ApiAnswer>,
-    repo: impl FnOnce() -> Option<ApiAnswer>,
-) -> serde_json::Value {
-    let unknown = serde_json::json!({ "state": "unknown" });
-    let Some(file) = file else { return unknown };
-    match file.status {
-        200..=299 => {
-            return serde_json::json!({ "state": "store", "project_yaml": file.body });
-        }
-        404 => {}
-        _ => return unknown,
-    }
-    let Some(repo) = repo() else { return unknown };
+    let store_body = match file.status {
+        200..=299 => Some(file.body.clone()),
+        404 => None,
+        _ => return unknown_state(),
+    };
+    let Some(repo) = repo() else {
+        return match store_body {
+            Some(body) => json!({ "state": "store", "project_yaml": body }),
+            None => unknown_state(),
+        };
+    };
     match repo.status {
         200..=299 => {}
-        404 => return serde_json::json!({ "state": "gone" }),
-        _ => return unknown,
+        404 => {
+            return match store_body {
+                Some(body) => json!({ "state": "store", "project_yaml": body }),
+                None => json!({ "state": "gone" }),
+            }
+        }
+        _ => return unknown_state(),
     }
-    let Ok(body) = serde_json::from_str::<serde_json::Value>(&repo.body) else {
-        return unknown;
+    let Ok(body) = serde_json::from_str::<Value>(&repo.body) else {
+        return match store_body {
+            Some(body) => json!({ "state": "store", "project_yaml": body }),
+            None => unknown_state(),
+        };
     };
+    // Gitea's API `size` is KiB (services/convert/repository.go:205);
+    // the protocol carries bytes (D2.4).
+    let size_bytes = body
+        .get("size")
+        .and_then(|v| v.as_u64())
+        .map(|kib| kib * 1024);
+    if let Some(project_yaml) = store_body {
+        return json!({ "state": "store", "project_yaml": project_yaml, "size_bytes": size_bytes });
+    }
     let may_create = body
         .pointer("/permissions/push")
         .and_then(|v| v.as_bool())
@@ -351,52 +341,48 @@ fn store_verdict(
     // an empty repository's first push goes to the branch the forge
     // names as its default, not to whatever a fresh clone guesses
     let default_branch = body.get("default_branch").and_then(|v| v.as_str());
-    serde_json::json!({ "state": "missing", "may_create": may_create, "default_branch": default_branch })
+    json!({
+        "state": "missing",
+        "may_create": may_create,
+        "default_branch": default_branch,
+        "size_bytes": size_bytes,
+    })
 }
 
 // -- the files query (JAPP-0293-A7) --------------------------------------------
-//
-// The setup of a new joy project points at the repository's documents, and
-// the person picks them from the files the default branch carries. Gitea
-// pages a recursive tree; a bounded number of pages is read, and a tree
-// that goes on beyond them is reported as cut off.
 
-/// Entries per page and pages read for one listing.
-const TREE_PAGE: usize = 1000;
-const TREE_PAGES: usize = 5;
-
-/// The FILES answer (docs/plugins.md `files`) for a remote.
-pub fn files_answer(remote: &str, token_env: Option<&str>) -> serde_json::Value {
-    let (Some(host), Some(path)) = (host_of(remote), repo_path_of(remote)) else {
-        return serde_json::json!({ "state": "unknown" });
+/// The FILES answer for a remote.
+pub fn files_answer(target: &Target, ctx: &Ctx) -> Value {
+    let (Some(host), Some(path)) = (target.host(), target.repo_path()) else {
+        return unknown_state();
     };
-    let base = format!("https://{host}/api/v1/repos/{path}/git/trees/HEAD");
+    let base = format!("{}/repos/{path}/git/trees/HEAD", api_base(&host, ctx));
     files_verdict(|page| {
         api_get(
+            ctx,
+            &host,
             &format!("{base}?recursive=true&per_page={TREE_PAGE}&page={page}"),
-            token_env,
         )
     })
 }
 
-/// The file paths over the pages, pure. An empty repository has no tree to
-/// list: no files.
-fn files_verdict(mut page: impl FnMut(usize) -> Option<ApiAnswer>) -> serde_json::Value {
-    let unknown = serde_json::json!({ "state": "unknown" });
+/// The file paths over the pages, pure. An empty repository has no tree
+/// to list: no files.
+fn files_verdict(mut page: impl FnMut(usize) -> Option<Answer>) -> Value {
     let mut paths: Vec<String> = Vec::new();
     for number in 1..=TREE_PAGES {
         let Some(answer) = page(number) else {
-            return unknown;
+            return unknown_state();
         };
         match answer.status {
             200..=299 => {}
             404 | 409 if number == 1 => {
-                return serde_json::json!({ "state": "files", "paths": [], "truncated": false })
+                return json!({ "state": "files", "paths": [], "truncated": false })
             }
-            _ => return unknown,
+            _ => return unknown_state(),
         }
-        let Ok(body) = serde_json::from_str::<serde_json::Value>(&answer.body) else {
-            return unknown;
+        let Ok(body) = serde_json::from_str::<Value>(&answer.body) else {
+            return unknown_state();
         };
         if let Some(entries) = body.get("tree").and_then(|t| t.as_array()) {
             paths.extend(
@@ -413,10 +399,175 @@ fn files_verdict(mut page: impl FnMut(usize) -> Option<ApiAnswer>) -> serde_json
             .and_then(|t| t.as_bool())
             .unwrap_or(false);
         if !more {
-            return serde_json::json!({ "state": "files", "paths": paths, "truncated": false });
+            return json!({ "state": "files", "paths": paths, "truncated": false });
         }
     }
-    serde_json::json!({ "state": "files", "paths": paths, "truncated": true })
+    json!({ "state": "files", "paths": paths, "truncated": true })
+}
+
+// -- the repository list (D2.4) ------------------------------------------------
+
+/// The REPOSITORIES answer: the repositories this account can reach.
+pub fn repositories_answer(target: &Target, listing: &Listing, ctx: &Ctx) -> Value {
+    let Some(host) = target.host() else {
+        return unknown_state();
+    };
+    if ctx.token("gitea", &host).is_none() {
+        return json!({ "state": "needs_sign_in", "host": host });
+    }
+    let base = api_base(&host, ctx);
+    let mut page: usize = listing
+        .page
+        .as_deref()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(1);
+    let limit = listing.limit.max(1);
+    // Bounded by the caller's limit as well as by the instance's page
+    // maximum, so no page is ever cut in half: a cursor is a page
+    // number, and the rest of a half read page would never be shown
+    // again (D2.4).
+    let per_page = limit.clamp(1, 50);
+    let mut repositories: Vec<Value> = Vec::new();
+    let mut more = false;
+    loop {
+        let url = format!("{base}/user/repos?page={page}&limit={per_page}");
+        let Some(answer) = api_get(ctx, &host, &url) else {
+            return unknown_state();
+        };
+        if !answer.ok() {
+            return json!({ "state": classify(&answer), "host": host });
+        }
+        let Ok(entries) = serde_json::from_str::<Vec<Value>>(&answer.body) else {
+            return unknown_state();
+        };
+        let full_page = entries.len() >= per_page;
+        let rows: Vec<Value> = entries
+            .iter()
+            .filter_map(|entry| repository_row(entry, listing.query.as_deref()))
+            .collect();
+        if !repositories.is_empty() && repositories.len() + rows.len() > limit {
+            more = true;
+            break;
+        }
+        repositories.extend(rows);
+        page += 1;
+        if !full_page {
+            // the instance had nothing more to give
+            break;
+        }
+        if repositories.len() >= limit {
+            more = true;
+            break;
+        }
+    }
+    json!({
+        "state": "repositories",
+        "repositories": repositories,
+        "truncated": more,
+        "next": more.then(|| page.to_string()),
+    })
+}
+
+fn repository_row(entry: &Value, query: Option<&str>) -> Option<Value> {
+    let full_name = entry.get("full_name").and_then(|v| v.as_str())?;
+    if let Some(query) = query {
+        let query = query.trim().to_ascii_lowercase();
+        if !query.is_empty() && !full_name.to_ascii_lowercase().contains(&query) {
+            return None;
+        }
+    }
+    Some(json!({
+        "full_name": full_name,
+        "name": entry.get("name").and_then(|v| v.as_str()),
+        "private": entry.get("private").and_then(|v| v.as_bool()).unwrap_or(false),
+        "clone_url": entry.get("clone_url").and_then(|v| v.as_str()),
+        "ssh_url": entry.get("ssh_url").and_then(|v| v.as_str()),
+        "default_branch": entry.get("default_branch").and_then(|v| v.as_str()),
+        "web_url": entry.get("html_url").and_then(|v| v.as_str()),
+    }))
+}
+
+// -- creating a repository (D2.4, decision 17) ---------------------------------
+
+/// The CREATE-REPOSITORY answer. `POST /user/repos` is checked twice by
+/// Gitea, by the /user group and by the route, which is why the scope
+/// set for it is `write:user write:repository` (D2.7a).
+///
+/// There is no local pre check here, and it is not an omission: D2.7c
+/// builds that check on "the plugin records the granted scope set
+/// beside the token in the same entry", and Gitea has no endpoint that
+/// names the set of the token in use (`GET /user` does not, and
+/// `/users/{u}/tokens` wants basic auth, not a token). Until the
+/// connector keeps its own entry (J3), the set is unknown here, and an
+/// unknown set is never reported as a missing one. What the instance
+/// refuses is classified instead, from the two lists it writes into the
+/// refusal itself, so a scope problem is still never `denied`.
+pub fn create_repository_answer(target: &Target, new: &NewRepository, ctx: &Ctx) -> Value {
+    let Some(host) = target.host() else {
+        return unknown_state();
+    };
+    let Some(token) = ctx.token("gitea", &host) else {
+        return json!({ "state": "needs_sign_in", "host": host });
+    };
+    let base = api_base(&host, ctx);
+    let url = match new.owner.as_deref() {
+        Some(owner) => format!("{base}/orgs/{owner}/repos"),
+        None => format!("{base}/user/repos"),
+    };
+    let Ok(http) = ctx.http(&host) else {
+        return unknown_state();
+    };
+    let answer = match http
+        .post(&url)
+        .header("Accept", "application/json")
+        .token_header(&token)
+        .send_json(&json!({ "name": new.name, "private": new.private, "auto_init": false }))
+    {
+        Ok(answer) => answer,
+        Err(error) => {
+            eprintln!("joy-forge gitea: {error}");
+            return unknown_state();
+        }
+    };
+    if !answer.ok() {
+        let state = classify(&answer);
+        if state == "scope_missing" {
+            // Gitea names both lists in the refusal it writes: what the
+            // route demanded goes into `needed`, what the token holds
+            // into `have` (D2.7c). Where it named no demand, joy's own
+            // set for the verb is what a person is asked to sign in
+            // with.
+            let needed = required_scopes(&answer.body)
+                .unwrap_or_else(|| scope::missing("gitea", Group::CreateRepository, &[]));
+            let have = token_scopes(&answer.body).unwrap_or_default();
+            return scope::scope_missing(&host, "create-repository", &needed, &have);
+        }
+        return json!({
+            "state": state,
+            "host": host,
+            "message": message_of(&answer),
+        });
+    }
+    let created = answer.json().unwrap_or_default();
+    json!({
+        "created": true,
+        "clone_url": created.get("clone_url").and_then(|v| v.as_str()),
+        "ssh_url": created.get("ssh_url").and_then(|v| v.as_str()),
+        "default_branch": created.get("default_branch").and_then(|v| v.as_str()),
+        "web_url": created.get("html_url").and_then(|v| v.as_str()),
+    })
+}
+
+/// Gitea's own error sentence, where it sent one.
+fn message_of(answer: &Answer) -> String {
+    answer
+        .json()
+        .and_then(|body| {
+            body.get("message")
+                .and_then(|m| m.as_str())
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| format!("the instance answered {}", answer.status))
 }
 
 #[cfg(test)]
@@ -424,29 +575,16 @@ mod tests {
     use super::*;
 
     /// Gitea and Forgejo have no canonical host, so no instance belongs
-    /// in this code: a remote is claimed only when tea is signed in to
-    /// that very host, whichever host that is.
+    /// in this code: a host is claimed only when the person is signed in
+    /// to that very host, whichever host that is.
     #[test]
     fn only_hosts_the_person_is_signed_in_to_are_claimed() {
-        let dir = std::env::temp_dir().join(format!("joy-gitea-claims-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(
-            dir.join("config.yml"),
-            "logins:\n- name: house\n  url: https://git.example.org/\n  user: alice\n",
-        )
-        .unwrap();
-        std::env::set_var("TEA_CONFIG_DIR", &dir);
-
-        assert!(claims_remote("git@git.example.org:owner/repo.git"));
-        assert!(claims_remote("https://git.example.org/owner/repo.git"));
-        // a host nobody is signed in to stays unclaimed, however
-        // gitea-ish it looks; the project.yaml forge override is its road
-        assert!(!claims_remote("https://gitea.example.com/o/r.git"));
-        assert!(!claims_remote("git@github.com:o/r.git"));
-        assert!(!claims_remote("https://git.example.org.evil.example/x.git"));
-
-        std::env::remove_var("TEA_CONFIG_DIR");
-        std::fs::remove_dir_all(&dir).ok();
+        let configured = vec!["git.example.org".to_string()];
+        assert!(claims_host("git.example.org", &configured));
+        assert!(!claims_host("gitea.example.com", &configured));
+        assert!(!claims_host("github.com", &configured));
+        assert!(!claims_host("git.example.org.evil.example", &configured));
+        assert!(!claims_host("codeberg.org", &[]));
     }
 
     #[test]
@@ -461,10 +599,8 @@ mod tests {
                 .login,
             "a.dotted-name"
         );
-        // the GitHub and GitLab forms belong to their own plugins
         assert!(parse_alias("7+login@users.noreply.github.com").is_none());
         assert!(parse_alias("7-login@users.noreply.gitlab.com").is_none());
-        // a plain address is not an alias
         assert!(parse_alias("horst@example.com").is_none());
         assert!(parse_alias("@noreply.git.example.org").is_none());
     }
@@ -479,8 +615,51 @@ mod tests {
         assert_eq!(logins[0].user, "horst");
         assert_eq!(logins[0].url, "https://git.example.org");
         assert_eq!(logins[1].user, "alice");
-        // an entry without a user is no login
         assert!(parse_config_yml("logins:\n- name: x\n  url: https://x.test/\n").is_empty());
+    }
+
+    #[test]
+    fn the_instance_is_asked_its_own_api_v1() {
+        let ctx = Ctx::bare(std::env::temp_dir());
+        assert_eq!(
+            api_base("codeberg.org", &ctx),
+            "https://codeberg.org/api/v1"
+        );
+        let configured = Ctx::bare(std::env::temp_dir()).with_instances(
+            joy_forge_net::config::Instances::from_text(
+                "- host: git.acme.test\n  kind: gitea\n  api_base: https://git.acme.test/api/v1\n",
+            )
+            .unwrap(),
+        );
+        assert_eq!(
+            api_base("git.acme.test", &configured),
+            "https://git.acme.test/api/v1"
+        );
+    }
+
+    /// D2.7c: Gitea writes the scopes it wanted into its refusal, and
+    /// that list is parsed instead of being reported as `denied`.
+    #[test]
+    fn a_scope_refusal_is_read_out_of_giteas_own_sentence() {
+        let body = r#"{"message":"token does not have at least one of required scope(s), required=[read:repository], token scope=read:user"}"#;
+        assert_eq!(
+            required_scopes(body),
+            Some(vec!["read:repository".to_string()])
+        );
+        let answer = Answer::new(403, body, Vec::new());
+        assert_eq!(classify(&answer), "scope_missing");
+        assert_eq!(classify(&Answer::new(403, "{}", Vec::new())), "denied");
+        assert_eq!(required_scopes("{}"), None);
+        // and the second list of the same sentence is what the token
+        // holds, which is what `have` carries and never the other way
+        assert_eq!(token_scopes(body), Some(vec!["read:user".to_string()]));
+        assert_eq!(
+            token_scopes(
+                r#"{"message":"... required=[write:user,write:repository], token scope=read:user,read:repository"}"#
+            ),
+            Some(vec!["read:user".to_string(), "read:repository".to_string()])
+        );
+        assert_eq!(token_scopes("{}"), None);
     }
 }
 
@@ -488,41 +667,40 @@ mod tests {
 mod store_tests {
     use super::*;
 
-    fn answer(status: u16, body: &str) -> Option<ApiAnswer> {
-        Some(ApiAnswer {
-            status,
-            body: body.to_string(),
-        })
+    fn answer(status: u16, body: &str) -> Option<Answer> {
+        Some(Answer::new(status, body, Vec::new()))
     }
 
     #[test]
-    fn a_readable_project_yaml_is_the_store() {
-        assert_eq!(
-            store_verdict(answer(200, "name: Demo\n"), || panic!("no second request")),
-            serde_json::json!({ "state": "store", "project_yaml": "name: Demo\n" })
-        );
+    fn a_readable_project_yaml_is_the_store_and_carries_the_size_in_bytes() {
+        let verdict = store_verdict(answer(200, "name: Demo\n"), || {
+            answer(200, r#"{"size": 3}"#)
+        });
+        assert_eq!(verdict["state"], "store");
+        assert_eq!(verdict["project_yaml"], "name: Demo\n");
+        // Gitea counts KiB; the protocol carries bytes (D2.4)
+        assert_eq!(verdict["size_bytes"], 3 * 1024);
     }
 
     #[test]
     fn a_404_asks_the_repository_whether_it_is_gone_or_only_storeless() {
         assert_eq!(
             store_verdict(answer(404, "{}"), || answer(404, "{}")),
-            serde_json::json!({ "state": "gone" })
+            json!({ "state": "gone" })
         );
-        assert_eq!(
-            store_verdict(answer(404, "{}"), || {
-                answer(
-                    200,
-                    r#"{"permissions": {"admin": false, "push": true, "pull": true}}"#,
-                )
-            }),
-            serde_json::json!({ "state": "missing", "may_create": true, "default_branch": null })
-        );
+        let missing = store_verdict(answer(404, "{}"), || {
+            answer(
+                200,
+                r#"{"permissions": {"admin": false, "push": true, "pull": true}}"#,
+            )
+        });
+        assert_eq!(missing["state"], "missing");
+        assert_eq!(missing["may_create"], true);
     }
 
     #[test]
     fn anything_unclear_stays_unanswered() {
-        let unknown = serde_json::json!({ "state": "unknown" });
+        let unknown = json!({ "state": "unknown" });
         assert_eq!(store_verdict(None, || None), unknown);
         assert_eq!(store_verdict(answer(401, ""), || None), unknown);
         assert_eq!(store_verdict(answer(404, ""), || answer(502, "")), unknown);
@@ -531,11 +709,11 @@ mod store_tests {
     #[test]
     fn the_path_comes_from_the_remote() {
         assert_eq!(
-            repo_path_of("https://codeberg.org/joyint/demo.git").as_deref(),
+            joy_forge_net::url::repo_path_of("https://codeberg.org/joyint/demo.git").as_deref(),
             Some("joyint/demo")
         );
         assert_eq!(
-            repo_path_of("git@codeberg.org:joyint/demo.git").as_deref(),
+            joy_forge_net::url::repo_path_of("git@codeberg.org:joyint/demo.git").as_deref(),
             Some("joyint/demo")
         );
     }
@@ -545,15 +723,16 @@ mod store_tests {
 mod files_tests {
     use super::*;
 
-    fn page(entries: &[&str], more: bool) -> Option<ApiAnswer> {
-        let tree: Vec<serde_json::Value> = entries
+    fn page(entries: &[&str], more: bool) -> Option<Answer> {
+        let tree: Vec<Value> = entries
             .iter()
-            .map(|p| serde_json::json!({ "path": p, "type": "blob" }))
+            .map(|p| json!({ "path": p, "type": "blob" }))
             .collect();
-        Some(ApiAnswer {
-            status: 200,
-            body: serde_json::json!({ "tree": tree, "truncated": more }).to_string(),
-        })
+        Some(Answer::new(
+            200,
+            json!({ "tree": tree, "truncated": more }).to_string(),
+            Vec::new(),
+        ))
     }
 
     #[test]
@@ -564,25 +743,19 @@ mod files_tests {
         });
         assert_eq!(
             verdict,
-            serde_json::json!({ "state": "files", "paths": ["VISION.md", "docs/ARCHITECTURE.md"], "truncated": false })
+            json!({ "state": "files", "paths": ["VISION.md", "docs/ARCHITECTURE.md"], "truncated": false })
         );
         let endless = files_verdict(|_| page(&["x.md"], true));
-        assert_eq!(endless["truncated"], serde_json::json!(true));
+        assert_eq!(endless["truncated"], json!(true));
         assert_eq!(endless["paths"].as_array().unwrap().len(), TREE_PAGES);
     }
 
     #[test]
     fn an_empty_repository_lists_nothing_and_a_failure_stays_unanswered() {
         assert_eq!(
-            files_verdict(|_| Some(ApiAnswer {
-                status: 404,
-                body: String::new()
-            })),
-            serde_json::json!({ "state": "files", "paths": [], "truncated": false })
+            files_verdict(|_| Some(Answer::new(404, "", Vec::new()))),
+            json!({ "state": "files", "paths": [], "truncated": false })
         );
-        assert_eq!(
-            files_verdict(|_| None),
-            serde_json::json!({ "state": "unknown" })
-        );
+        assert_eq!(files_verdict(|_| None), json!({ "state": "unknown" }));
     }
 }

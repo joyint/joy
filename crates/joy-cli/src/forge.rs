@@ -3,12 +3,13 @@
 
 //! Forge abstraction: create releases on hosting platforms.
 //!
-//! Since JOY-0256-64 the forge knowledge lives in the forge PLUGINS
+//! Since JOY-0256-64 the forge knowledge lives in the forge CONNECTORS
 //! (docs/plugins.md): joy-core's registry names them, `claims` decides
-//! whose remote a project is, and the plugin's `release` verb does the
-//! actual work (joy-github shells gh; a forge without a release backend
-//! answers `unsupported` and publish keeps its tag-only path). Nothing
-//! in here parses a forge URL or shells a forge CLI any more.
+//! whose remote a project is, and the connector's `release` verb does
+//! the actual work (over its own HTTP client since JOY-0298-E4, design
+//! D2.8; a forge without a release backend answers `unsupported` and
+//! publish keeps its tag-only path). Nothing in here parses a forge URL
+//! or shells a forge CLI any more.
 
 use std::io::{IsTerminal, Write};
 use std::path::Path;
@@ -54,7 +55,11 @@ impl ForgeRelease for PluginForge {
         // reason: missing, outdated, refused and timed out are four
         // different things to do next.
         let ctx = CallContext::in_project(root);
-        let outcome = forge_plugins::release(self.spec, tag, title, &notes_file, &ctx)
+        // Which repository the release belongs to. gh used to read this
+        // out of the working directory; the connector's own REST call
+        // has to be told (D2.8), and the remote is what tells it.
+        let target = default_remote_url(root).map(Target::remote);
+        let outcome = forge_plugins::release(self.spec, target.as_ref(), tag, title, &notes_file, &ctx)
             .map_err(|e| {
                 anyhow!(
                     "{e}\n  = note: state {}\n  \
@@ -74,6 +79,15 @@ impl ForgeRelease for PluginForge {
         }
         Ok(outcome.url)
     }
+}
+
+/// The URL of the remote a release is published to: the project's
+/// default remote, when it has one. A project with no remote has no
+/// repository on a forge either, and the connector says so.
+fn default_remote_url(root: &Path) -> Option<String> {
+    let git = vcs::default_vcs();
+    let remote = git.default_remote(root).ok()?;
+    git.remote_url(root, &remote).ok()
 }
 
 /// No-op forge for `forge: none` or explicit skip.

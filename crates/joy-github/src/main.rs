@@ -1,121 +1,23 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: LicenseRef-Commercial
 
-//! joy-github: the GitHub forge plugin (JOY-0254-3C, epic JOY-0251-AA).
+//! `joy-github`: the legacy name of the GitHub connector.
 //!
-//! Speaks the forge query contract (docs/plugins.md, "Forge plugins"):
-//! `claims --remote <url>` and `identity [...]`, one JSON object on
-//! stdout. ALL GitHub knowledge lives here — host matching, the noreply
-//! alias address forms, gh's config, the API — and nowhere else.
-//!
-//! Facts, in order of authority:
-//! - handed-in caller facts (`--login/--user-id`, a multi-account host's
-//!   session) win over anything discovered locally;
-//! - the gh CLI's config (`~/.config/gh/hosts.yml`) names the signed-in
-//!   login, offline;
-//! - a `--token-env`/gh-authenticated API call lists the account's
-//!   verified addresses (best effort: without the user:email scope the
-//!   list stays empty and the answer still names the login).
+//! One binary carries every forge now (D2.1). This name stays as a PATH
+//! fallback for people who ran `cargo install joy-github`, for the one
+//! deprecation window of D2.2a, and it is the same code: the protocol
+//! and every verb come from `joy_forge_net::cli`, with a list of one
+//! forge instead of three.
 
-mod github;
+use joy_forge_net::cli::{self, Manifest};
+use joy_forge_net::forge::Forge;
 
-use clap::{Parser, Subcommand};
+const MANIFEST: Manifest = Manifest {
+    name: "joy-github",
+    version: env!("CARGO_PKG_VERSION"),
+};
 
-#[derive(Parser)]
-#[command(name = "joy-github", about = "Joy forge plugin for GitHub")]
-struct Cli {
-    /// Run as if started in <PATH> (parity with joy's -w).
-    #[arg(short = 'w', long, global = true)]
-    working_dir: Option<std::path::PathBuf>,
-    #[command(subcommand)]
-    command: Command,
-}
-
-#[derive(Subcommand)]
-enum Command {
-    /// Does this remote belong to GitHub?
-    Claims {
-        #[arg(long)]
-        remote: String,
-    },
-    /// Who is ACTING on GitHub?
-    Identity {
-        /// Caller facts from a multi-account host (win over discovery).
-        #[arg(long)]
-        login: Option<String>,
-        #[arg(long)]
-        user_id: Option<String>,
-        /// Environment variable holding a GitHub token (never the token
-        /// itself: it must not appear in a process list).
-        #[arg(long)]
-        token_env: Option<String>,
-    },
-    /// Does the repository hold a joy store, and may the caller create
-    /// one (JP-013C-11)? Read-only.
-    Store {
-        #[arg(long)]
-        remote: String,
-        /// Environment variable holding a GitHub token (never the token
-        /// itself: it must not appear in a process list).
-        #[arg(long)]
-        token_env: Option<String>,
-    },
-    /// Whose address is this? Pure: answered from the address alone.
-    /// Which files does the repository's default branch carry
-    /// (JAPP-0293-A7)? Read-only.
-    Files {
-        #[arg(long)]
-        remote: String,
-        /// Environment variable holding a GitHub token (never the token
-        /// itself: it must not appear in a process list).
-        #[arg(long)]
-        token_env: Option<String>,
-    },
-    Resolve {
-        #[arg(long)]
-        email: String,
-    },
-    /// Create (or complete) the release for a tag on GitHub
-    /// (JOY-0256-64). Unlike the read queries this reports failures:
-    /// stderr carries the reason, the exit code is non-zero.
-    Release {
-        #[arg(long)]
-        tag: String,
-        #[arg(long)]
-        title: String,
-        /// The release notes, passed as a file (they are multi-line and
-        /// may be long).
-        #[arg(long)]
-        notes_file: std::path::PathBuf,
-    },
-}
-
-fn main() -> anyhow::Result<()> {
-    let cli = Cli::parse();
-    if let Some(dir) = &cli.working_dir {
-        std::env::set_current_dir(dir)?;
-    }
-    let answer = match cli.command {
-        Command::Claims { remote } => {
-            serde_json::json!({ "claims": github::claims_remote(&remote) })
-        }
-        Command::Identity {
-            login,
-            user_id,
-            token_env,
-        } => github::identity_answer(login, user_id, token_env.as_deref()),
-        Command::Store { remote, token_env } => github::store_answer(&remote, token_env.as_deref()),
-        Command::Files { remote, token_env } => github::files_answer(&remote, token_env.as_deref()),
-        Command::Resolve { email } => github::resolve_answer(&email),
-        Command::Release {
-            tag,
-            title,
-            notes_file,
-        } => {
-            let notes = std::fs::read_to_string(&notes_file)?;
-            github::release_answer(&tag, &title, &notes)?
-        }
-    };
-    println!("{}", serde_json::to_string(&answer)?);
-    Ok(())
+fn main() {
+    let forges: Vec<&dyn Forge> = vec![&joy_github::FORGE];
+    std::process::exit(cli::run(&forges, &MANIFEST));
 }

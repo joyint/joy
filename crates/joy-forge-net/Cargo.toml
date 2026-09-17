@@ -1,0 +1,42 @@
+[package]
+name = "joy-forge-net"
+version = "0.20.0"
+edition = "2021"
+license = "MIT"
+description = "Shared network layer of the Joy forge connectors: HTTP client, proxies, trust store, instance configuration, scope sets"
+repository = "https://github.com/joyint/joy"
+homepage = "https://joyint.com/en/joy"
+
+[dependencies]
+joy-process = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml_ng = { workspace = true }
+# The connector's own HTTP client (D2.8). Blocking, because a connector
+# is one short lived process that asks a handful of questions and exits;
+# an async runtime would be the larger half of the binary. rustls with
+# the platform verifier is the OS trust store of D1.12, and no proxy is
+# read from the environment by ureq itself: joy decides the proxy in
+# `proxy.rs` so that the rules of D1.11 (NO_PROXY with trimmed entries,
+# ALL_PROXY, git config, the SOCKS refusal) hold here exactly as they
+# hold in the engine.
+ureq = { version = "3.4", default-features = false, features = [
+    "rustls-no-provider",
+    "_ring",
+    "platform-verifier",
+    "gzip",
+] }
+rustls-pki-types = "1"
+
+[features]
+# The in process fake forge API the connector crates test against. It is
+# a dev dependency of theirs, so a shipped connector never carries it.
+fake-api = []
+
+[dev-dependencies]
+# This crate's own tests drive the fake too (the proxy cases), and a
+# crate cannot dev-depend on itself, so the feature is turned on for
+# the test build here.
+joy-forge-net = { path = ".", features = ["fake-api"] }
