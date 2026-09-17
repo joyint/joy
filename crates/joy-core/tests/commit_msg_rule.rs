@@ -132,3 +132,56 @@ fn a_project_without_an_acronym_has_no_rule() {
         assert!(joy_core::commit_msg::validate(message, "   ").is_ok());
     }
 }
+
+/// The refusing half of D3.3, where it really sits today.
+///
+/// D3.3 splits the rule: joy's own automatic commits warn and proceed,
+/// and "for a person's `joy` command it refuses". There is exactly ONE
+/// refusing call site in the product, `joy release record`
+/// (joy-cli/src/commands/release.rs:305), and the message it validates
+/// is built by joy itself: `bump to <version> [no-item]`. It therefore
+/// carries the bypass the rule names and cannot fail, which is right
+/// for a release commit and is also why no CLI run can demonstrate the
+/// refusal. What can be demonstrated, and is worth a case because the
+/// whole guard rests on it, is that the guard would fire: drop the
+/// bypass from that constant and the command refuses rather than
+/// writing an unreferenced commit.
+///
+/// No joy command takes a commit message from a person, so on a machine
+/// WITHOUT git there is nothing else for this half of D3.3 to refuse.
+/// On a machine with git the person's own `git commit` is refused by
+/// the installed hook, which `joy-cli/tests/hooks_chain.rs` drives
+/// end to end.
+#[test]
+fn the_one_refusing_call_site_would_refuse_a_message_without_the_bypass() {
+    let version = "v1.2.3";
+
+    // The message `joy release record` really validates.
+    assert!(
+        joy_core::commit_msg::validate(&format!("bump to {version} [no-item]"), ACRONYM).is_ok(),
+        "the release commit passes, because its message carries the bypass"
+    );
+
+    // The same message with the bypass taken away.
+    let refused = joy_core::commit_msg::validate(&format!("bump to {version}"), ACRONYM)
+        .expect_err("a message with no item reference and no bypass is refused");
+    let diagnostic = refused.to_string();
+    assert!(
+        diagnostic.contains("commit message must reference a Joy item"),
+        "{diagnostic}"
+    );
+    assert!(
+        diagnostic.contains(&format!("no {ACRONYM}-XXXX item ID found")),
+        "{diagnostic}"
+    );
+    // The full ADR-015 diagnostic, not the one line of the warning
+    // half: a person who ran the command can act on it.
+    assert!(
+        diagnostic.contains("= help: add an item ID"),
+        "{diagnostic}"
+    );
+    assert!(
+        diagnostic.contains("= note: use [no-item] tag"),
+        "{diagnostic}"
+    );
+}

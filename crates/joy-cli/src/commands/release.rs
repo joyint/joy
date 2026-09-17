@@ -299,9 +299,18 @@ fn record(args: RecordArgs) -> Result<()> {
     // the way of that either.
     let message = format!("bump to {version} [no-item]");
     // A person ran this command, so the item rule REFUSES here rather
-    // than warning (D3.3). The message carries `[no-item]`, which is
-    // the bypass the rule names, so this passes unless somebody
-    // changes the message without reading the rule.
+    // than warning (D3.3). Two things about that are worth saying
+    // plainly, because the acceptance of this package leans on them.
+    // This is the ONLY refusing call site in the product, and the
+    // message it validates is joy's own and carries the `[no-item]`
+    // bypass the rule names, so it cannot fire as the message stands:
+    // the guard is here so a later change to that constant cannot
+    // write an unreferenced commit, and
+    // `joy-core/tests/commit_msg_rule.rs` pins that it would.  And no
+    // joy command takes a commit message from a person, so on a machine
+    // without git this half of D3.3 has nothing else to refuse; a
+    // person's own `git commit` is refused by the installed hook, which
+    // `tests/hooks_chain.rs` drives end to end.
     joy_core::commit_msg::validate(&message, acronym).map_err(|e| anyhow::anyhow!("{e}"))?;
     let paths = joy_owned_paths(&ctx.root);
     let specs: Vec<&str> = paths.iter().map(String::as_str).collect();
