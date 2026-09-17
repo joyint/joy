@@ -29,7 +29,7 @@
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use clap::{Args, Subcommand, ValueEnum};
 use serde::Serialize;
 
@@ -63,12 +63,8 @@ enum ForgeCommand {
 #[derive(Args)]
 struct LoginArgs {
     /// Forge host to sign in to (default: the host of this project's remote)
-    #[arg(long, value_name = "HOST", conflicts_with = "remote")]
+    #[arg(long, value_name = "HOST")]
     host: Option<String>,
-
-    /// Remote URL whose host to sign in to
-    #[arg(long, value_name = "URL")]
-    remote: Option<String>,
 
     /// Read one token from stdin instead of running the forge's sign in flow
     #[arg(long = "token-stdin")]
@@ -162,7 +158,32 @@ pub fn action_line(failure: Failure, host: &str) -> Option<String> {
         Failure::PluginMissing | Failure::PluginOutdated => {
             Some("run `joy forge plugins` to see which binary answered".to_string())
         }
-        other => other.next_step().map(|step| step.to_string()),
+        // `Failure::next_step` is deliberately NOT read here: it is the
+        // BUTTON of D4.7 and says "retry" or "show the fingerprint",
+        // which is a label on a surface that has buttons and nonsense
+        // after "= help:". The prose seam is `guidance`, and a state
+        // that has none gets no help line rather than a wrong one.
+        other => other.guidance().map(|guidance| guidance.to_string()),
+    }
+}
+
+/// The classifier state behind a `state` word this command prints, where
+/// the word names a failed contact at all. `unsupported`, `cancelled`,
+/// `busy` and `error` are not contact states and have no next step this
+/// command can name: mapping them onto `needs_sign_in` told every one of
+/// them to run the command that had just refused.
+fn failure_of_state(state: &str) -> Option<Failure> {
+    match state {
+        // a credential that is spent is a credential to renew, and the
+        // door that renews it is this one
+        "needs_sign_in" | "expired" => Some(Failure::NeedsSignIn),
+        "scope_missing" => Some(Failure::ScopeMissing),
+        "plugin_missing" => Some(Failure::PluginMissing),
+        "plugin_outdated" => Some(Failure::PluginOutdated),
+        "offline" => Some(Failure::Offline),
+        "rate_limited" => Some(Failure::RateLimited),
+        "denied" => Some(Failure::Denied),
+        _ => None,
     }
 }
 
@@ -207,15 +228,30 @@ struct Refusal {
     host: String,
     state: String,
     message: String,
+    /// The ONE next step, or `None` when this state has none that this
+    /// command can name. A refusal whose own message already carries a
+    /// help line gets `None` through [`Refusal::speaks_for_itself`]:
+    /// "run the command that just failed" under a message that says why
+    /// it cannot work contradicts the sentence above it.
+    action: Option<String>,
 }
 
 impl Refusal {
     fn new(host: &str, state: &str, message: impl Into<String>) -> Refusal {
+        let action = failure_of_state(state).and_then(|failure| action_line(failure, host));
         Refusal {
             host: host.to_string(),
             state: state.to_string(),
             message: message.into(),
+            action,
         }
+    }
+
+    /// A refusal whose message is its own instruction: no second help
+    /// line is added under it.
+    fn speaks_for_itself(mut self) -> Refusal {
+        self.action = None;
+        self
     }
 
     /// The refusal a connector call produced: the connector's own
@@ -263,46 +299,65 @@ fn responsible(
     }
 }
 
+/// The remotes of this project, the one joy really CONTACTS first:
+/// `origin`, or the first configured one, which is the selection D1.1
+/// fixes for the whole engine (`origin_or_first`). A checkout whose
+/// first configured remote is not `origin` was told to sign in to a
+/// host it never pushes to, while the throttle key, the twin source and
+/// the contact itself used the other one.
+fn remote_urls(root: &Path) -> Vec<String> {
+    let mut urls: Vec<String> = Vec::new();
+    if let Some(url) = joy_core::vcs::forge::remote_url(root) {
+        urls.push(url);
+    }
+    for (_, url) in joy_core::vcs::default_vcs()
+        .all_remotes(root)
+        .unwrap_or_default()
+    {
+        if !urls.contains(&url) {
+            urls.push(url);
+        }
+    }
+    urls
+}
+
 /// The door one login, logout or status row works through: the target
 /// the verbs take, the host its sentences name, and the connector
 /// responsible for it.
-fn door(host: Option<&str>, remote: Option<&str>, login: Option<&str>) -> Result<Door, Refusal> {
+fn door(host: Option<&str>, login: Option<&str>) -> Result<Door, Refusal> {
     let ctx = context(login);
-    let target = match (host, remote) {
-        (Some(host), _) => Target::host(host.trim().to_ascii_lowercase()),
-        (None, Some(remote)) => Target::remote(remote.to_string()),
-        (None, None) => {
+    let target = match host {
+        Some(host) => Target::host(host.trim().to_ascii_lowercase()),
+        None => {
             let root = project_root().ok_or_else(|| {
                 Refusal::new(
                     "",
                     "error",
                     "no host given and this directory is not a Joy project\n  \
-                     = help: pass --host <host> or --remote <url>",
+                     = help: pass --host <host>",
                 )
             })?;
-            let remotes = joy_core::vcs::default_vcs()
-                .all_remotes(&root)
-                .unwrap_or_default();
+            let remotes = remote_urls(&root);
             if remotes.is_empty() {
                 return Err(Refusal::new(
                     "",
                     "error",
                     "this project has no git remote, so joy cannot tell which forge you mean\n  \
-                     = help: pass --host <host> or --remote <url>",
+                     = help: pass --host <host>",
                 ));
             }
             // The plugin's `claims` decides whose remote this is
             // (D3.10): joy never parses a forge URL itself.
-            let claimed = remotes.iter().find(|(_, url)| {
+            let claimed = remotes.iter().find(|url| {
                 forge_plugins::FORGE_PLUGINS
                     .iter()
                     .any(|spec| forge_plugins::claims(spec, &Target::remote(url.as_str()), &ctx))
             });
             match claimed {
-                Some((_, url)) => Target::remote(url.clone()),
+                Some(url) => Target::remote(url.clone()),
                 None => {
                     return Err(Refusal::new(
-                        &host_of(&remotes[0].1),
+                        &host_of(&remotes[0]),
                         "unsupported",
                         "no forge connector claims a remote of this project\n  \
                          = help: pass --host <host>, or run `joy forge plugins` to see which \
@@ -357,11 +412,7 @@ struct LoginFailurePayload {
 }
 
 fn login(args: LoginArgs) -> Result<()> {
-    let door = match door(
-        args.host.as_deref(),
-        args.remote.as_deref(),
-        args.login.as_deref(),
-    ) {
+    let door = match door(args.host.as_deref(), args.login.as_deref()) {
         Ok(door) => door,
         Err(refusal) => return refused(refusal),
     };
@@ -387,20 +438,22 @@ fn login(args: LoginArgs) -> Result<()> {
     // refusing without one would leave a CI runner with nothing to do.
     match door.ctx.host_kind {
         HostKind::Delegated => {
-            return refused(Refusal::new(
-                &door.host,
-                "needs_sign_in",
-                interactive::NO_PERSON_HERE,
-            ))
+            return refused(
+                Refusal::new(&door.host, "needs_sign_in", interactive::NO_PERSON_HERE)
+                    .speaks_for_itself(),
+            )
         }
         HostKind::Background => {
-            return refused(Refusal::new(
-                &door.host,
-                "needs_sign_in",
-                "joy forge login needs a person at this machine; this process has no terminal \
-                 to ask at. Run it in a terminal, or store a token with joy forge login \
-                 --token-stdin",
-            ))
+            return refused(
+                Refusal::new(
+                    &door.host,
+                    "needs_sign_in",
+                    "joy forge login needs a person at this machine; this process has no \
+                     terminal to ask at. Run it in a terminal, or store a token with joy forge \
+                     login --token-stdin",
+                )
+                .speaks_for_itself(),
+            )
         }
         HostKind::Interactive => {}
     }
@@ -445,18 +498,17 @@ fn login(args: LoginArgs) -> Result<()> {
                 Some((code, message)) => (state_of_code(&code).to_string(), message),
                 None => (error.state().to_string(), error.to_string()),
             };
-            refused(Refusal {
-                host: door.host.clone(),
-                state,
-                message,
-            })
+            refused(Refusal::new(&door.host, &state, message))
         }
     }
 }
 
 /// The token paste of D3.10: one line from stdin, never an argument.
 fn login_with_token(door: &Door, resolved: &ResolvedPlugin) -> Result<()> {
-    let token = read_token_line()?;
+    let token = match read_token_line(&door.host) {
+        Ok(token) => token,
+        Err(refusal) => return refused(refusal),
+    };
     match interactive::token_store(resolved, &door.target, &token, &door.ctx) {
         Ok(answer) if answer.known => signed_in(
             &door.host,
@@ -490,23 +542,50 @@ fn login_with_token(door: &Door, resolved: &ResolvedPlugin) -> Result<()> {
 /// Read ONE token from stdin. The trailing CR/LF goes, an empty line is
 /// refused, and at a terminal the line is not echoed. The token is
 /// never put in an error message.
-fn read_token_line() -> Result<String> {
+///
+/// Every way out of here is a [`Refusal`], because every answer of this
+/// command is exactly one envelope and a caller in `--json` mode reads
+/// a `state` (D3.10). An `anyhow` error would leave stdout empty.
+fn read_token_line(host: &str) -> Result<String, Refusal> {
     use std::io::BufRead;
     let line = if std::io::stdin().is_terminal() {
-        rpassword::prompt_password("Paste the token (it is not shown): ")?
+        rpassword::prompt_password("Paste the token (it is not shown): ")
+            .map_err(|error| token_refusal(host, format!("--token-stdin: {error}")))?
     } else {
         let mut line = String::new();
-        let read = std::io::stdin().lock().read_line(&mut line)?;
+        let read = std::io::stdin()
+            .lock()
+            .read_line(&mut line)
+            .map_err(|error| token_refusal(host, format!("--token-stdin: {error}")))?;
         if read == 0 {
-            bail!("--token-stdin: stdin closed before a token was read");
+            return Err(token_refusal(
+                host,
+                "--token-stdin: stdin closed before a token was read",
+            ));
         }
         line
     };
     let line = line.trim_end_matches('\n').trim_end_matches('\r');
     if line.trim().is_empty() {
-        bail!("--token-stdin: empty input");
+        return Err(token_refusal(host, "--token-stdin: empty input"));
     }
     Ok(line.to_string())
+}
+
+/// Nothing usable came in on stdin. The state is `error`, because no
+/// forge refused anything: the input did not arrive. The help line says
+/// how a token gets in, and it is not "run this command again".
+fn token_refusal(host: &str, message: impl Into<String>) -> Refusal {
+    let message = message.into();
+    Refusal::new(
+        host,
+        "error",
+        format!(
+            "{message}\n  \
+             = help: pipe ONE token line into joy, or run it on a terminal to be asked for it"
+        ),
+    )
+    .speaks_for_itself()
 }
 
 /// The states of D3.10, from the `code` of the connector's `error`
@@ -553,28 +632,20 @@ fn refused(refusal: Refusal) -> Result<()> {
         host,
         state,
         message,
+        action,
     } = refusal;
-    let failure = match state.as_str() {
-        "plugin_missing" => Failure::PluginMissing,
-        "plugin_outdated" => Failure::PluginOutdated,
-        "scope_missing" => Failure::ScopeMissing,
-        "offline" => Failure::Offline,
-        "rate_limited" => Failure::RateLimited,
-        _ => Failure::NeedsSignIn,
-    };
-    let action = action_line(failure, &host).unwrap_or_default();
     if output::is_json() {
         output::emit(LoginFailurePayload {
             host,
             state,
             message,
-            action,
+            action: action.unwrap_or_default(),
         })?;
         std::process::exit(1);
     }
     eprintln!("{message}");
     eprintln!("  = note: state {state}");
-    if !action.is_empty() {
+    if let Some(action) = action {
         eprintln!("  = help: {action}");
     }
     std::process::exit(1);
@@ -918,9 +989,17 @@ struct LogoutAllPayload {
 
 fn logout(args: LogoutArgs) -> Result<()> {
     if !args.all && args.host.is_none() {
-        bail!(
-            "joy forge logout needs a host\n  \
-             = help: pass --host <host>, or --all to sign out everywhere"
+        // A refusal and not a `bail!`: in `--json` mode stdout carries
+        // exactly one envelope with a `state` an agent reads, and an
+        // `anyhow` error would leave it empty (D3.10).
+        return refused(
+            Refusal::new(
+                "",
+                "error",
+                "joy forge logout needs a host\n  \
+                 = help: pass --host <host>, or --all to sign out everywhere",
+            )
+            .speaks_for_itself(),
         );
     }
     if args.all {
@@ -928,7 +1007,7 @@ fn logout(args: LogoutArgs) -> Result<()> {
         let hosts = host_set(None, &ctx);
         let mut answers: Vec<LogoutPayload> = Vec::new();
         for host in hosts {
-            let door = match door(Some(&host), None, args.login.as_deref()) {
+            let door = match door(Some(&host), args.login.as_deref()) {
                 Ok(door) => door,
                 // A host nothing claims holds no credential of joy's.
                 Err(_) => continue,
@@ -950,7 +1029,7 @@ fn logout(args: LogoutArgs) -> Result<()> {
         }
         return Ok(());
     }
-    let door = match door(args.host.as_deref(), None, args.login.as_deref()) {
+    let door = match door(args.host.as_deref(), args.login.as_deref()) {
         Ok(door) => door,
         Err(refusal) => return refused(refusal),
     };
@@ -1143,12 +1222,59 @@ mod tests {
             action_line(Failure::PluginMissing, "github.com").as_deref(),
             Some("run `joy forge plugins` to see which binary answered")
         );
-        // Everything else keeps the classifier's own next step.
-        assert_eq!(
-            action_line(Failure::Offline, "github.com").as_deref(),
-            Some("retry")
-        );
+        // Everything else keeps the classifier's own PROSE, and a
+        // state that has none says nothing: `next_step` is the button
+        // label of D4.7 ("retry", "show the fingerprint"), and a help
+        // line that reads "= help: retry" is not an instruction.
+        assert_eq!(action_line(Failure::Offline, "github.com"), None);
         assert_eq!(action_line(Failure::RateLimited, "github.com"), None);
+        assert_eq!(action_line(Failure::NeedsHostTrust, "github.com"), None);
+        assert_eq!(
+            action_line(Failure::TlsUntrusted, "github.com").as_deref(),
+            Failure::TlsUntrusted.guidance(),
+            "the one state with prose behind the button keeps it"
+        );
+    }
+
+    /// The states that are not a failed contact get NO next step. The
+    /// one that mattered: every unknown state used to be told to run
+    /// `joy forge login --host <host>`, which is the command that had
+    /// just refused.
+    #[test]
+    fn a_state_with_no_next_step_is_given_none() {
+        for state in ["unsupported", "cancelled", "busy", "error"] {
+            assert_eq!(failure_of_state(state), None, "{state}");
+            assert_eq!(
+                Refusal::new("example.invalid", state, "the connector said so").action,
+                None,
+                "{state}"
+            );
+        }
+        assert_eq!(
+            Refusal::new("codeberg.org", "expired", "the credential is spent").action,
+            Some("run `joy forge login --host codeberg.org`".to_string()),
+            "a spent credential is renewed at this door"
+        );
+    }
+
+    /// A refusal whose own message carries a help line gets no second
+    /// one: the D3.11 refusal says "store a token with joy forge login
+    /// --token-stdin", and "run `joy forge login --host x`" under it
+    /// contradicts it.
+    #[test]
+    fn a_refusal_that_says_what_to_do_gets_no_second_help_line() {
+        let refusal = Refusal::new(
+            "example.invalid",
+            "needs_sign_in",
+            interactive::NO_PERSON_HERE,
+        )
+        .speaks_for_itself();
+        assert_eq!(refusal.action, None);
+        assert_eq!(refusal.state, "needs_sign_in");
+        assert_eq!(
+            token_refusal("github.com", "--token-stdin: empty input").action,
+            None
+        );
     }
 
     #[test]

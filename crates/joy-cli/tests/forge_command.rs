@@ -68,6 +68,16 @@ case "$verb" in
     ;;
   token-store)
     read -r token
+    # A case can ask this connector to HOLD the token for a moment, so
+    # that the window in which joy has it can really be sampled. The
+    # PATH of every child here is EMPTY on purpose, so `sleep` is
+    # called by its path and a machine without one busy waits instead.
+    if [ -n "$JOY_STUB_SLEEP" ]; then
+      if [ -x /bin/sleep ]; then /bin/sleep "$JOY_STUB_SLEEP"
+      elif [ -x /usr/bin/sleep ]; then /usr/bin/sleep "$JOY_STUB_SLEEP"
+      else i=0; while [ $i -lt 300000 ]; do i=$((i+1)); done
+      fi
+    fi
     case "$token" in
       ghp_*)
         printf '{"known":true,"host":"%s","login":"scotty","source":"file","scopes":"repo"}\n' "$host"
@@ -391,29 +401,32 @@ fn a_token_from_stdin_is_stored_and_never_in_the_process_list() {
             "--token-stdin",
             "--json",
         ])
+        // The connector holds the token for a second, so the window in
+        // which joy really has the secret is long enough to sample.
+        .env("JOY_STUB_SLEEP", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .expect("joy runs");
-    let cmdlines = process_lists_of(child.id(), "--token-stdin");
+    let watch = watch_the_process_list(child.id());
+    let before_the_token = watch.until_the_child_has_its_own("--token-stdin");
+    {
+        let mut stdin = child.stdin.take().expect("the child's stdin");
+        stdin.write_all(b"ghp_the_pasted_secret\n").unwrap();
+    }
+    let answer = Answer::of(child.wait_with_output().expect("joy ends"));
+    let cmdlines = watch.stop();
+    assert!(
+        cmdlines.len() > before_the_token,
+        "the process list was not read once while joy held the token: {cmdlines:?}"
+    );
     for cmdline in &cmdlines {
         assert!(
             !cmdline.contains("ghp_"),
             "a process list carried the token: {cmdline}"
         );
     }
-    assert!(
-        cmdlines
-            .last()
-            .is_some_and(|last| last.contains("--token-stdin")),
-        "the child's own argument list was never read: {cmdlines:?}"
-    );
-    {
-        let mut stdin = child.stdin.take().expect("the child's stdin");
-        stdin.write_all(b"ghp_the_pasted_secret\n").unwrap();
-    }
-    let answer = Answer::of(child.wait_with_output().expect("joy ends"));
 
     assert!(answer.ok, "{}", answer.stderr);
     let data = answer.data();
@@ -455,6 +468,15 @@ fn login_without_a_terminal_refuses_without_inventing_a_session() {
     assert!(message.contains("no terminal to ask at"), "{message}");
     assert!(!message.contains("delegation session"), "{message}");
     assert!(message.contains("--token-stdin"), "{message}");
+    // The message says what to do, so no second help line is added
+    // under it: "run `joy forge login --host github.test`" is the
+    // command that has just refused.
+    assert_eq!(
+        answer.data()["action"],
+        "",
+        "the refusal contradicted itself: {}",
+        answer.stderr
+    );
     let log = std::fs::read_to_string(&argv).unwrap_or_default();
     assert!(!log.contains(" login "), "nothing was started: {log}");
 }
@@ -483,6 +505,98 @@ fn an_empty_line_is_refused_instead_of_stored() {
 
     assert!(!answer.ok, "{}{}", answer.stdout, answer.stderr);
     assert!(answer.stderr.contains("empty input"), "{}", answer.stderr);
+    assert!(
+        answer.stderr.contains("= note: state error"),
+        "the state word is there for a person too: {}",
+        answer.stderr
+    );
+}
+
+/// EVERY answer of this command is one envelope, and that includes the
+/// ways out that have nothing to do with a forge (D3.10). Before this
+/// case the three below left through `bail!`: stdout stayed empty, and
+/// an agent in `--json` mode got no `state` and no `action` at all.
+#[test]
+fn every_refusal_answers_with_one_envelope_in_json_mode() {
+    let machine = Machine::new();
+    machine.connector("joy-forge", CONNECTOR);
+
+    // 1. an empty line on stdin
+    let mut child = machine
+        .joy(&[
+            "forge",
+            "login",
+            "--host",
+            "github.test",
+            "--token-stdin",
+            "--json",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("joy runs");
+    child
+        .stdin
+        .take()
+        .expect("the child's stdin")
+        .write_all(b"\n")
+        .unwrap();
+    let answer = Answer::of(child.wait_with_output().expect("joy ends"));
+    assert_eq!(answer.code, Some(1), "{}", answer.stderr);
+    let data = answer.data();
+    assert_eq!(data["state"], "error");
+    assert_eq!(data["host"], "github.test");
+    assert!(
+        data["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("empty input"),
+        "{data}"
+    );
+
+    // 2. a stdin that was closed before a token arrived
+    let mut child = machine
+        .joy(&[
+            "forge",
+            "login",
+            "--host",
+            "github.test",
+            "--token-stdin",
+            "--json",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("joy runs");
+    drop(child.stdin.take().expect("the child's stdin"));
+    let answer = Answer::of(child.wait_with_output().expect("joy ends"));
+    assert_eq!(answer.code, Some(1), "{}", answer.stderr);
+    let data = answer.data();
+    assert_eq!(data["state"], "error");
+    assert!(
+        data["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("stdin closed"),
+        "{data}"
+    );
+
+    // 3. a logout that was told neither a host nor --all
+    let answer = machine.run(&["forge", "logout", "--json"]);
+    assert_eq!(answer.code, Some(1), "{}", answer.stderr);
+    let data = answer.data();
+    assert_eq!(data["state"], "error");
+    assert!(
+        data["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("needs a host"),
+        "{data}"
+    );
+    // and none of the three is told to run the command that refused
+    assert_eq!(data["action"], "", "{data}");
 }
 
 /// A token the forge refuses ends the command with exit 1 and a state
@@ -747,29 +861,77 @@ fn a_protocol_1_connector_refuses_login_with_the_path_and_the_rm_line() {
 // Helpers
 // ---------------------------------------------------------------------
 
-/// Every argument list `ps` would have shown for a running child,
-/// until the one the child really has appears.
+/// Everything `ps` would have shown for a running child, sampled for
+/// as long as the case lets it run.
 ///
-/// Sampling once is not enough and "not empty yet" is the wrong bound:
-/// between the fork and the exec the child still carries the PARENT's
-/// argv, so a single early read can be non-empty and belong to another
-/// process entirely. Every sample is kept and the caller asserts over
-/// all of them, so nothing a `ps` could have caught is thrown away.
+/// Sampling once is not enough and stopping at the child's own argv is
+/// worse than not sampling at all: that window ENDS before the token
+/// has even been written, so a joy that put the secret in an argv
+/// afterwards would pass. The watcher runs beside the child from the
+/// spawn until the case stops it, which is after the child has read
+/// the token and answered.
 #[cfg(target_os = "linux")]
-fn process_lists_of(pid: u32, until: &str) -> Vec<String> {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    let mut seen: Vec<String> = Vec::new();
-    loop {
-        let raw = std::fs::read(format!("/proc/{pid}/cmdline")).unwrap_or_default();
-        let text = String::from_utf8_lossy(&raw).replace('\0', " ");
-        let done = text.contains(until);
-        if !text.trim().is_empty() {
-            seen.push(text);
+struct ProcessWatch {
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    samples: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    thread: std::thread::JoinHandle<()>,
+}
+
+#[cfg(target_os = "linux")]
+fn watch_the_process_list(pid: u32) -> ProcessWatch {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex};
+    let stop = Arc::new(AtomicBool::new(false));
+    let samples = Arc::new(Mutex::new(Vec::new()));
+    let thread = {
+        let stop = stop.clone();
+        let samples = samples.clone();
+        std::thread::spawn(move || {
+            while !stop.load(Ordering::SeqCst) {
+                let raw = std::fs::read(format!("/proc/{pid}/cmdline")).unwrap_or_default();
+                let text = String::from_utf8_lossy(&raw).replace('\0', " ");
+                if !text.trim().is_empty() {
+                    samples.lock().expect("the samples").push(text);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+        })
+    };
+    ProcessWatch {
+        stop,
+        samples,
+        thread,
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl ProcessWatch {
+    fn seen(&self) -> Vec<String> {
+        self.samples.lock().expect("the samples").clone()
+    }
+
+    /// Wait until the child carries its OWN argv: between the fork and
+    /// the exec it still carries the parent's, so a case that asserted
+    /// on the first sample would be asserting about this test binary.
+    fn until_the_child_has_its_own(&self, needle: &str) -> usize {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            let seen = self.seen();
+            if seen.iter().any(|line| line.contains(needle)) {
+                return seen.len();
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the child's own argument list never appeared: {seen:?}"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
         }
-        if done || std::time::Instant::now() >= deadline {
-            return seen;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+
+    fn stop(self) -> Vec<String> {
+        self.stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        let _ = self.thread.join();
+        self.samples.lock().expect("the samples").clone()
     }
 }
 

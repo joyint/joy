@@ -144,30 +144,76 @@ impl Sandbox {
     }
 }
 
-/// Every argument list `ps` would have shown for a running child,
-/// until the one the child really has appears.
+/// Everything `ps` would have shown for a running child, sampled for
+/// as long as the case lets it run.
 ///
-/// Sampling once is not enough and "not empty yet" is the wrong bound:
-/// between the fork and the exec the child still carries the PARENT's
-/// argv, so a single early read can be non-empty and belong to another
-/// process entirely, which made this case fail under a loaded machine.
-/// Every sample is kept and the caller asserts over all of them, so
-/// nothing a `ps` could have caught is thrown away.
+/// Sampling once is not enough and stopping at the child's own argv is
+/// worse than not sampling at all: that window ENDS before the token
+/// has even been written, so a connector that put the secret in an
+/// argv afterwards would pass. The watcher runs beside the child from
+/// the spawn until the case stops it, which is after the child has
+/// read the token and answered.
 #[cfg(target_os = "linux")]
-fn process_lists_of(pid: u32, until: &str) -> Vec<String> {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    let mut seen: Vec<String> = Vec::new();
-    loop {
-        let raw = std::fs::read(format!("/proc/{pid}/cmdline")).unwrap_or_default();
-        let text = String::from_utf8_lossy(&raw).replace('\0', " ");
-        let done = text.contains(until);
-        if !text.trim().is_empty() {
-            seen.push(text);
+struct ProcessWatch {
+    stop: Arc<std::sync::atomic::AtomicBool>,
+    samples: Arc<std::sync::Mutex<Vec<String>>>,
+    thread: std::thread::JoinHandle<()>,
+}
+
+#[cfg(target_os = "linux")]
+fn watch_the_process_list(pid: u32) -> ProcessWatch {
+    use std::sync::atomic::AtomicBool;
+    let stop = Arc::new(AtomicBool::new(false));
+    let samples = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let thread = {
+        let stop = stop.clone();
+        let samples = samples.clone();
+        std::thread::spawn(move || {
+            while !stop.load(Ordering::SeqCst) {
+                let raw = std::fs::read(format!("/proc/{pid}/cmdline")).unwrap_or_default();
+                let text = String::from_utf8_lossy(&raw).replace('\0', " ");
+                if !text.trim().is_empty() {
+                    samples.lock().expect("the samples").push(text);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+        })
+    };
+    ProcessWatch {
+        stop,
+        samples,
+        thread,
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl ProcessWatch {
+    fn seen(&self) -> Vec<String> {
+        self.samples.lock().expect("the samples").clone()
+    }
+
+    /// Wait until the child carries its OWN argv: between the fork and
+    /// the exec it still carries the parent's, so a case that asserted
+    /// on the first sample would be asserting about this test binary.
+    fn until_the_child_has_its_own(&self, needle: &str) -> usize {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            let seen = self.seen();
+            if seen.iter().any(|line| line.contains(needle)) {
+                return seen.len();
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the child's own argument list never appeared: {seen:?}"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
         }
-        if done || std::time::Instant::now() >= deadline {
-            return seen;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+
+    fn stop(self) -> Vec<String> {
+        self.stop.store(true, Ordering::SeqCst);
+        let _ = self.thread.join();
+        self.samples.lock().expect("the samples").clone()
     }
 }
 
@@ -282,6 +328,11 @@ fn two_processes_refreshing_one_entry_produce_one_refresh_and_one_busy() {
 fn the_token_of_a_token_store_is_never_in_the_process_list() {
     let fake = FakeForge::start(|call| match call.path.as_str() {
         "/api/v3/user" => {
+            // The forge answers slowly on purpose: the window in which
+            // the connector really HOLDS the pasted token is the window
+            // this case has to sample, and an instant answer would
+            // close it before one sample fell into it.
+            std::thread::sleep(std::time::Duration::from_millis(500));
             if call.authorization() == Some("Bearer ghp_the_pasted_secret") {
                 Reply::json(200, r#"{"login":"scotty","id":7}"#)
                     .with_header("X-OAuth-Scopes", "repo, user:email")
@@ -303,26 +354,27 @@ fn the_token_of_a_token_store_is_never_in_the_process_list() {
         .stderr(Stdio::piped())
         .spawn()
         .expect("the connector");
-    // `/proc/<pid>/cmdline` is read until the child has its OWN argv,
-    // and every sample along the way is asserted over.
-    let cmdlines = process_lists_of(child.id(), "token-store");
+    // `/proc/<pid>/cmdline` is sampled from the spawn until the child
+    // has read the token and answered, and every sample is asserted
+    // over.
+    let watch = watch_the_process_list(child.id());
+    let before_the_token = watch.until_the_child_has_its_own("token-store");
+    {
+        let mut stdin = child.stdin.take().expect("the child's stdin");
+        stdin.write_all(b"ghp_the_pasted_secret\n").unwrap();
+    }
+    let output = child.wait_with_output().expect("the connector's end");
+    let cmdlines = watch.stop();
+    assert!(
+        cmdlines.len() > before_the_token,
+        "the process list was not read once while the connector held the token: {cmdlines:?}"
+    );
     for cmdline in &cmdlines {
         assert!(
             !cmdline.contains("ghp_"),
             "the process list carried a token: {cmdline}"
         );
     }
-    assert!(
-        cmdlines
-            .last()
-            .is_some_and(|last| last.contains("token-store")),
-        "the child's own argument list was never read: {cmdlines:?}"
-    );
-    {
-        let mut stdin = child.stdin.take().expect("the child's stdin");
-        stdin.write_all(b"ghp_the_pasted_secret\n").unwrap();
-    }
-    let output = child.wait_with_output().expect("the connector's end");
     let answer = answer_of(&output);
     assert_eq!(answer["known"], true, "{answer}");
     assert_eq!(answer["login"], "scotty");

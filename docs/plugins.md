@@ -357,10 +357,14 @@ asked.
 The CLI's door to all of this is one command group, and every sentence
 in joy that says "sign in to the forge" points at it:
 
-    joy forge login [--host <host> | --remote <url>] [--token-stdin] [--for read|write|create|release] [--login <name>]
+    joy forge login [--host <host>] [--token-stdin] [--for read|write|create|release] [--login <name>]
     joy forge status [--host <host>]
     joy forge logout [--host <host> | --all]
     joy forge plugins
+
+Without `--host` the host comes from this project's remote, the one joy
+really contacts (`origin`, or the first configured one). There is no
+`--remote <url>` here; that option belongs to the connector protocol.
 
 `login` runs the connector's `login` verb through the streaming runner
 and prints the verification URL and the code on stderr while the
@@ -397,9 +401,18 @@ stderr.
 ### The verbs that need a person, and the builds that do not have them
 
 `login`, `logout` and `token-store` live behind joy-core's `interactive`
-cargo feature, which is OFF by default. joy-cli and the desktop turn it
-on; the platform asks for `forge-net` alone, so the module is not in the
-server binary at all. Two more layers sit behind that one:
+cargo feature, which is OFF by default. joy-cli turns it on, because the
+CLI is what a person types at. The platform asks for `forge-net` alone,
+so the module is not in the server binary at all.
+
+The desktop is meant to carry it too (design D3.11), and its manifest
+lives in the app repository: as this is written
+`app/apps/desktop/src-tauri/Cargo.toml` still asks for `ts` and
+`forge-net` only, so a desktop build has no `login`, no `logout` and no
+`token-store` in it. That manifest line belongs with the first desktop
+call site, and until it lands no guard in THIS repository can see it.
+
+Two more layers sit behind the feature:
 
 - the call takes a progress sink and a cancel token, both mandatory, so
   nothing starts a fifteen minute browser flow by accident;
@@ -410,11 +423,14 @@ server binary at all. Two more layers sit behind that one:
   machine that owns the session, or to store a token there with
   `--token-stdin`.
 
-`just guard-interactive` checks all of it: that joy-core leaves the
-feature off, that joy-cli is the only crate here that asks for it, and,
-where the platform is checked out beside joy, that
+`just guard-interactive` checks what is in reach of this repository:
+that joy-core leaves the feature off, that joy-cli is the only crate
+here that asks for it, and, where the platform is checked out beside
+joy, that
 `cargo tree -e features -i joy-core --manifest-path ../platform/Cargo.toml`
-carries no `interactive` node.
+carries no `interactive` node. The platform's own pipeline runs that
+last check where the platform really is; the recipe says which half it
+was able to do.
 
 ### Scopes, and the `scope_missing` answer
 

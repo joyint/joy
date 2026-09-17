@@ -223,9 +223,14 @@ fn auto_detect(root: &Path) -> Result<Resolution> {
             // a host whose connector nobody is signed in to claims
             // nothing, and "add a remote" is the wrong advice for a
             // person who has the remote already.
-            let host = remotes
-                .first()
-                .map(|(_, url)| vcs::contact::host_of(url))
+            //
+            // The host it names is the remote joy really contacts,
+            // `origin` or the first configured one (D1.1), and not
+            // `remotes[0]`: in a checkout whose first remote is not
+            // `origin` the two are different hosts, and the person was
+            // sent to sign in to the one joy never talks to.
+            let host = vcs::forge::remote_url(root)
+                .map(|url| vcs::contact::host_of(&url))
                 .unwrap_or_default();
             bail!(
                 "no supported forge detected from git remotes ({remote_summary})\n  \

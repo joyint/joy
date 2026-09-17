@@ -366,31 +366,59 @@ fn install_host_key_question(kind: joy_core::host::HostKind) {
 /// What a person is shown before joy trusts a host key it has never
 /// seen (design D1.4a), and what joy would write if they say yes.
 ///
-/// The question goes on stderr and the answer is read from stdin: the
-/// contact this interrupts owns stdout. Everything the person needs to
-/// compare with the forge's published fingerprint is in the two first
-/// lines, in the spelling the forges publish.
-fn ask_about_a_host_key(request: &joy_core::vcs::certificates::TrustRequest) -> bool {
-    eprintln!(
+/// Everything the person needs to compare with the forge's published
+/// fingerprint is in the two first lines, in the spelling the forges
+/// publish.
+fn host_key_question(request: &joy_core::vcs::certificates::TrustRequest) -> String {
+    use std::fmt::Write;
+    let mut text = String::new();
+    let _ = writeln!(
+        text,
         "The authenticity of {}:{} cannot be established.",
         request.host, request.port
     );
-    eprintln!(
+    let _ = writeln!(
+        text,
         "{} key fingerprint is {}.",
         request.key_type, request.fingerprint
     );
     if let Some(published) = request.published.as_deref() {
-        eprintln!("{published}");
+        let _ = writeln!(text, "{published}");
     }
     if !request.other_types.is_empty() {
-        eprintln!(
+        let _ = writeln!(
+            text,
             "This host already has lines for {}, and none for {}.",
             request.other_types.join(", "),
             request.key_type
         );
     }
-    eprintln!("joy would add one line to {}.", request.file.display());
-    prompt::ask_yn_stderr("Trust this host key?", false).unwrap_or(false)
+    let _ = writeln!(
+        text,
+        "joy would add one line to {}.",
+        request.file.display()
+    );
+    text
+}
+
+/// Ask it. The question goes on stderr and the answer is read from
+/// stdin: the contact this interrupts owns stdout.
+fn ask_about_a_host_key(request: &joy_core::vcs::certificates::TrustRequest) -> bool {
+    let stdin = std::io::stdin();
+    decide_about_a_host_key(request, &mut stdin.lock(), &mut std::io::stderr())
+}
+
+/// The question and the answer over one reader and one writer, so that
+/// what a person reads before joy writes to `known_hosts`, and what
+/// each answer does, are cases and not hope. A closed stdin is NO: joy
+/// never trusts a key because nobody was there to refuse it.
+fn decide_about_a_host_key(
+    request: &joy_core::vcs::certificates::TrustRequest,
+    input: &mut impl std::io::BufRead,
+    out: &mut impl std::io::Write,
+) -> bool {
+    let _ = write!(out, "{}", host_key_question(request));
+    prompt::yes_or_no("Trust this host key?", false, input, out).unwrap_or(false)
 }
 
 /// The CLI entry (the bin shim calls this; the lib form exists so the
@@ -684,6 +712,69 @@ mod tests {
         install_host_key_question(HostKind::Interactive);
         assert!(trust_prompt_installed());
         clear_trust_prompt();
+    }
+
+    /// What a person reads before joy appends a line to known_hosts
+    /// (D1.4a): the host with its port, the fingerprint in the spelling
+    /// the forges publish, the published key when a pin knows one, the
+    /// fact that this host is known under other key types, and the file
+    /// that would change.
+    #[test]
+    fn the_host_key_question_says_what_is_being_decided() {
+        let request = a_host_key_request();
+        let text = host_key_question(&request);
+        assert!(
+            text.contains("The authenticity of codeberg.org:22 cannot be established."),
+            "{text}"
+        );
+        assert!(
+            text.contains("ssh-ed25519 key fingerprint is SHA256:AbCd."),
+            "{text}"
+        );
+        assert!(text.contains("Codeberg publishes this key"), "{text}");
+        assert!(
+            text.contains("This host already has lines for ssh-rsa, and none for ssh-ed25519."),
+            "{text}"
+        );
+        assert!(text.contains("joy would add one line to"), "{text}");
+        assert!(text.contains("known_hosts"), "{text}");
+        // The key itself is not the question: the fingerprint is what a
+        // person compares, and the blob would only fill the screen.
+        assert!(!text.contains("AAAAC3Nz"), "{text}");
+    }
+
+    /// Yes appends, no does not, and nobody there is a no. The three
+    /// are proved through the same function the engine calls.
+    #[test]
+    fn each_answer_to_the_host_key_question_does_what_it_says() {
+        let request = a_host_key_request();
+        for (typed, expected) in [
+            ("y\n", true),
+            ("yes\n", true),
+            ("n\n", false),
+            ("\n", false),
+            ("", false),
+        ] {
+            let mut input = typed.as_bytes();
+            let mut seen: Vec<u8> = Vec::new();
+            let answer = decide_about_a_host_key(&request, &mut input, &mut seen);
+            let seen = String::from_utf8(seen).unwrap();
+            assert_eq!(answer, expected, "typed {typed:?}: {seen}");
+            assert!(seen.contains("Trust this host key? (y/N)"), "{seen}");
+        }
+    }
+
+    fn a_host_key_request() -> joy_core::vcs::certificates::TrustRequest {
+        joy_core::vcs::certificates::TrustRequest {
+            host: "codeberg.org".to_string(),
+            port: 22,
+            key_type: "ssh-ed25519".to_string(),
+            fingerprint: "SHA256:AbCd".to_string(),
+            file: std::path::PathBuf::from("/home/s/.ssh/known_hosts"),
+            line: "codeberg.org ssh-ed25519 AAAAC3Nz".to_string(),
+            published: Some("Codeberg publishes this key at docs.codeberg.org".to_string()),
+            other_types: vec!["ssh-rsa".to_string()],
+        }
     }
 
     /// Every non-hidden subcommand from the Commands enum must appear

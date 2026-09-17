@@ -185,7 +185,9 @@ guard-certificate-check:
 #
 #   1. joy-core declares `interactive` and leaves it off by default.
 #   2. exactly one manifest in this workspace asks joy-core for it, and
-#      it is joy-cli's (the desktop asks in its own repository).
+#      it is joy-cli's. The desktop's manifest lives in the app
+#      repository and is out of reach here, so nothing below can see
+#      whether it asks: that one is the app pipeline's to check.
 #   3. the platform's OWN resolved graph carries no `interactive`
 #      feature node, which is the check D3.11 writes down and the only
 #      one no manifest reading can replace. It needs the platform
@@ -194,6 +196,10 @@ guard-certificate-check:
 #
 # The manifest path is a parameter so the guard can be pointed at a
 # fixture and shown to FAIL, which is half of what a guard has to prove.
+# The fixture needs no invention: this repository's OWN workspace graph
+# carries the feature, because joy-cli asks for it, so
+# `just guard-interactive Cargo.toml` prints the offending node and
+# exits 1.
 guard-interactive manifest="../platform/Cargo.toml":
     #!/usr/bin/env bash
     set -uo pipefail

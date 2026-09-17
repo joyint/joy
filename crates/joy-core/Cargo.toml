@@ -147,9 +147,11 @@ forge-net = ["git2/https", "git2/ssh", "git2/vendored-openssl"]
 # `login`, `logout` and the token paste (design D3.11). OFF by default,
 # so a build that must never sign in does not carry them at all: the
 # module `forge_plugins::interactive` is compiled only with this
-# feature, and the platform asks for `forge-net` alone. joy-cli and the
-# desktop turn it on; `just guard-interactive` keeps the platform's
-# manifest from drifting back.
+# feature, and the platform asks for `forge-net` alone. joy-cli turns it
+# on, and the desktop is to turn it on in its own manifest with its
+# first call site (app/apps/desktop/src-tauri/Cargo.toml, design D3.11);
+# `just guard-interactive` keeps the platform's manifest from drifting
+# back.
 interactive = []
 
 [dev-dependencies]

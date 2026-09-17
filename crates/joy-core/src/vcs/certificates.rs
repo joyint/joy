@@ -81,13 +81,13 @@ static PROMPT: Mutex<Option<Ask>> = Mutex::new(None);
 ///
 /// Only a host where a person is sitting installs one: joy-core has no
 /// terminal and no window of its own, so this is the seam through
-/// which a front end lends joy-core its terminal. joy's own CLI takes
-/// it in package J6, which owns every joy-cli call site and whose
-/// acceptance is that no ssh contact fails without a way to accept;
-/// until then no binary in this tree installs one, and a host that
-/// installs none refuses an unknown host key instead of trusting it,
-/// whatever its host kind claims. That refusal names the file and the
-/// line to paste, so the next step exists on that path too (D1.8b).
+/// which a front end lends joy-core its terminal. joy's own CLI
+/// installs one in `cli_main`, and only for an `Interactive` host
+/// (package J10, `joy-cli/src/lib.rs`); the desktop installs its own
+/// for a foreground action. A host that installs none refuses an
+/// unknown host key instead of trusting it, whatever its host kind
+/// claims. That refusal names the file and the line to paste, so the
+/// next step exists on that path too (D1.8b).
 pub fn set_trust_prompt(ask: impl Fn(&TrustRequest) -> bool + Send + Sync + 'static) {
     *PROMPT.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(ask));
 }
