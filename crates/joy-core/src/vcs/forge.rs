@@ -1014,7 +1014,12 @@ fn contact_plan(
         guard_remote(&remote)?;
         remote_url_of(&remote)
     };
-    if !auth.is_local() {
+    // A caller with its own credential, and a remote with no forge
+    // behind it (a path, a `file://` URL, the unauthenticated git
+    // protocol), both take the engine as it was: one contact over the
+    // remote that was configured. Asking a connector about a directory
+    // would spawn three processes per contact and learn nothing.
+    if !auth.is_local() || super::contact::transport_of(&url) == super::contact::Transport::Local {
         return Ok(Plan::single(&url, LegCredential::Machine));
     }
     let host = super::contact::host_of(&url);
@@ -1316,22 +1321,30 @@ fn push_callbacks(
 }
 
 /// Point the branch's tracking ref at what was just pushed, after a
-/// push that did not go over a named remote (D1.5).
+/// push that did not go over a NAMED remote (D1.5).
 ///
-/// The twin is an anonymous remote and carries zero refspecs
-/// (remote.c:273-302), so `git_remote_update_tips` writes nothing and
-/// the ahead and behind counter would freeze at "1 ahead" for ever.
+/// `git_remote_upload` rebuilds the active refspecs from the remote's
+/// CONFIGURED ones, not from the explicit push refspecs
+/// (remote.c:2995-2997), so a push over `origin` writes
+/// `refs/remotes/origin/<branch>` by itself and this does nothing. An
+/// ANONYMOUS remote carries zero refspecs (remote.c:273-302), so
+/// `git_remote_update_tips` writes nothing and the ahead and behind
+/// counter would freeze at "1 ahead" for ever. The twin is one such
+/// remote; the address joy dials when the person's ssh config renames
+/// the host (`contact_remote`) is the other, and the libgit2 fact
+/// behind both is the same one.
+///
 /// Force is not a special case: libgit2's own `git_push_update_tips`
 /// creates the ref with force 1 and the message "update by push"
 /// (push.c:200-212), and joy does the same.
 fn write_tracking_ref(
     repo: &git2::Repository,
-    leg: &Leg,
+    remote: &git2::Remote<'_>,
     status: &PushStatus,
     branch: &str,
     tip: git2::Oid,
 ) {
-    if leg.way != Way::Twin {
+    if remote.name().ok().flatten().is_some() {
         return;
     }
     let accepted = status.accepted();
@@ -1695,7 +1708,7 @@ pub fn push(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
         "push",
         super::contact::ContactDirection::Push,
         false,
-        |repo, remote, leg_auth, leg| {
+        |repo, remote, leg_auth, _leg| {
             let head = repo.head().map_err(err)?;
             let branch = head
                 .shorthand()
@@ -1716,7 +1729,7 @@ pub fn push(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
                 .push(&[refspec.as_str()], Some(&mut opts))
                 .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Push, e))?;
             status.verdict(&super::contact::host_of(&url))?;
-            write_tracking_ref(repo, leg, &status, &branch, tip);
+            write_tracking_ref(repo, remote, &status, &branch, tip);
             Ok(())
         },
     );

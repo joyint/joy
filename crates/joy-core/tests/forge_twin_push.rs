@@ -965,3 +965,40 @@ fn a_chat_push_sets_the_chat_tracking_ref_to_what_the_forge_now_holds() {
     assert_eq!(server.pushes.load(Ordering::SeqCst), 1);
     drop(machine);
 }
+
+/// D1.2 rule 1: a CONFIGURED https remote takes the forge token and
+/// then a credential from joy's own helper runner, all inside one
+/// contact. There is no twin to build and no second contact to make.
+///
+/// It is also the other half of the tracking ref rule: over a NAMED
+/// remote `git_remote_upload` rebuilds the active refspecs from the
+/// remote's configured ones (remote.c:2995-2997), so libgit2 writes
+/// `refs/remotes/origin/main` itself and the engine writes nothing.
+#[test]
+fn a_configured_https_remote_uses_the_connector_s_token_in_one_contact() {
+    let _serial = lock();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let forge_dir = tmp.path().join("forge.git");
+    let base = forge_repository(&forge_dir);
+    let server = serve(forge_dir.clone(), Answer::Ok);
+    let machine = machine(&server.url("forge.git"), "a-token");
+
+    let checkout = tmp.path().join("checkout");
+    let tip = checkout_ahead(&checkout, &forge_dir, &server.url("forge.git"), base);
+
+    forge::push(&checkout, &Auth::local(HostKind::Background)).expect("the token carried it");
+
+    assert_eq!(
+        forge::ahead_behind(&checkout).expect("ahead behind"),
+        (0, 0),
+        "a named remote updates its own tracking ref"
+    );
+    assert_eq!(server.pushes.load(Ordering::SeqCst), 1, "one contact");
+    let bare = git2::Repository::open_bare(&forge_dir).expect("bare");
+    assert_eq!(bare.refname_to_id("refs/heads/main").expect("main"), tip);
+    assert!(
+        resolver::recall("127.0.0.1").is_none(),
+        "an https remote has no ssh story to remember"
+    );
+    drop(machine);
+}
