@@ -79,9 +79,17 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
     // authenticated on this machine chose, while git config is a machine
     // setting that nobody promised joy anything about. That order is the
     // one D3.9 states, and it is the one `acting_member` below uses, so
-    // `joy auth status` and `joy auth init` can never disagree about who
-    // is acting here. A person who wants to act as somebody else on this
-    // machine names them (`--user`), and authenticating re-pins.
+    // `joy auth status` and `joy auth init` name the same HUMAN here. A
+    // person who wants to act as somebody else on this machine names them
+    // (`--user`), and authenticating re-pins.
+    //
+    // The one deliberate difference between the two: a delegation session
+    // outranks both (step 1 below), and `acting_member` does not read it,
+    // because a session names an AI and the commands that call
+    // `acting_member` enrol or authenticate a human. A command that needs
+    // the human under a delegation session asks `acting_human_key`, which
+    // answers with the operator the session was signed for, so the two
+    // still agree about the person.
     let member_key = project
         .as_ref()
         .and_then(|p| pinned_member(root, p))
@@ -182,36 +190,8 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
     }
 
     // 2. The human session of the member the key names.
-    if let Some(ref pid) = project_id {
-        if let Some(session_identity) = session_identity(root, &member_key, pid, &project) {
-            return Ok(session_identity);
-        }
-    }
-
-    // 2a. The key names nobody: ask the sessions on this device who they
-    // belong to (D3.9, J11).
-    //
-    // A person who authenticated while git config named them keeps no
-    // pin, by the rule of [`pin_acting_member`], so removing
-    // `user.email` afterwards would otherwise leave joy with nothing and
-    // a joy project would once more stand on a git setting. Their
-    // session is still here: it is this device's own state, it is bound
-    // to this terminal and it is signed by their key, so it is a
-    // stronger statement of who is acting than any config. Exactly one
-    // live human session for this project answers; two or more are
-    // ambiguous and answer nothing, and the person then names themselves
-    // (`--user`) or authenticates again.
-    if let Some(ref pid) = project_id {
-        let names_a_member = project
-            .as_ref()
-            .is_some_and(|p| p.has_member_key(&member_key));
-        if !names_a_member {
-            if let Some(member) = the_one_live_human_session(root, &project) {
-                if let Some(session_identity) = session_identity(root, &member, pid, &project) {
-                    return Ok(session_identity);
-                }
-            }
-        }
+    if let Some(session_identity) = session_identity(root, &member_key, &project) {
+        return Ok(session_identity);
     }
 
     // 3. Fallback: resolved member key (git email in open mode), not authenticated
@@ -222,62 +202,21 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
     })
 }
 
-/// The single human member of this project with a live, valid session on
-/// this device, or `None` when none or more than one has one.
-///
-/// The session files are this device's state; [`check_session`] then
-/// checks the member's signature, the project and the terminal binding,
-/// so a file somebody dropped there authenticates nobody.
-fn the_one_live_human_session(root: &Path, project: &Option<Project>) -> Option<String> {
-    let members = project.as_ref()?;
-    let mut found: Option<String> = None;
-    for key in members.member_keys() {
-        if is_ai_member(key) || !check_session(root, key, project) {
-            continue;
-        }
-        if found.is_some() {
-            return None;
-        }
-        found = Some(key.clone());
-    }
-    found
-}
-
 /// Try to build an Identity from an active session for a member.
-fn session_identity(
-    root: &Path,
-    member: &str,
-    project_id: &str,
-    project: &Option<Project>,
-) -> Option<Identity> {
+fn session_identity(root: &Path, member: &str, project: &Option<Project>) -> Option<Identity> {
     if !check_session(root, member, project) {
         return None;
     }
 
-    // Read the session to get delegated_by info
-    let delegated_by = crate::auth::session::load_session(project_id, member)
-        .ok()
-        .flatten()
-        .and_then(|_sess| {
-            // AI sessions are delegated by a human operator. Record that operator
-            // as the at-rest member key (the opaque id in anonymous mode), never
-            // their cleartext e-mail, so the audit trail and commit trailer carry
-            // no PII in anonymous mode (ADR-042). MemberRef resolves it back for
-            // authorized display.
-            if is_ai_member(member) {
-                let email = crate::vcs::default_vcs().user_email().ok()?;
-                match project.as_ref() {
-                    Some(p) => crate::privacy::delegated_by_at_rest(p, &email).map(MemberRef::from),
-                    None => Some(MemberRef::from(email)),
-                }
-            } else {
-                None
-            }
-        });
-
+    // A human member, always: [`check_session`] accepts no AI on a session
+    // file alone (ADR-033), so this path never carries a delegation and
+    // has nobody to name as the operator behind it. The AI branch of
+    // `resolve_identity` above reads its operator out of the SIGNED
+    // session claims; the reading of `git config user.email` that used to
+    // stand here guessed one, and a guess is not an identity (D3.9).
     Some(Identity {
         member: member.into(),
-        delegated_by,
+        delegated_by: None,
         authenticated: true,
     })
 }
@@ -310,16 +249,22 @@ fn read_member_pin(root: &Path) -> Option<String> {
 const MEMBER_PIN_KEY: &str = "member";
 
 /// Remember `member` as the one this device acts as in this project.
-/// Called at the two moments where a person says who they are on this
-/// machine: founding the project, and authenticating in it.
+/// Called at the three moments where a person says who they are on this
+/// machine: founding the project, enrolling in it, and authenticating in
+/// it.
 ///
-/// The pin exists for the machine git config cannot answer for, and it is
-/// REMOVED again the moment git config can: it is read before git config
-/// (D3.9), so a pin left beside a working git identity would be the one
-/// thing on the machine that can go stale, and the person who changed
-/// their git config would never guess that an old pin outranks it.
-/// Together that gives one answer per machine: the pin when there is one,
-/// git config when there is none, and never a silent disagreement.
+/// The pin is written every time, whether or not git config happens to
+/// name the same person. That is what makes the second half of D3.9 true:
+/// once the member is known on this device, removing `user.email` changes
+/// no command's behaviour, because no command was standing on it. The
+/// alternative, dropping the pin whenever git config agrees with it, puts
+/// a joy project back on a git setting the moment that setting is
+/// removed, and leaves the person with nothing but their own memory.
+///
+/// The pin is read before git config (D3.9), so it also answers on a
+/// machine whose git config names somebody else. That is the point of it:
+/// a person who wants to act as somebody else here says so once
+/// (`--user`, or authenticating as them), and that re-pins.
 ///
 /// `project` is the project the member belongs to; a pin is only worth
 /// keeping for a member it actually knows.
@@ -330,50 +275,24 @@ pub fn pin_acting_member(root: &Path, project: &Project, member: &str) {
     if project.member_by_key(member).is_none() {
         return;
     }
-    let git_email = crate::vcs::default_vcs().user_email().unwrap_or_default();
-    // The SAME resolution `resolve_identity` applies to git config, forge
-    // fallback included (JOY-0253-8A): a machine whose git config holds a
-    // forge alias that the plugin maps to this member is answered
-    // correctly without a pin, so it must not keep one either. The two
-    // functions would otherwise disagree about what "git config names
-    // them" means, and the pin would outrank a config that was fine.
-    let git_config_names_them = !git_email.trim().is_empty()
-        && (git_email == member
-            || crate::privacy::member_key_for_email_or_forge(project, root, &git_email, None)
-                .as_deref()
-                == Some(member));
-    let wanted = (!git_config_names_them).then_some(member);
-    if let Err(e) = set_member_pin(root, wanted) {
+    if let Err(e) = set_member_pin(root, member) {
         eprintln!("Warning: could not remember the acting member on this device: {e}");
     }
 }
 
-/// Set or clear the pin in the per-project app state file, keeping every
-/// other key in it (the forge login of D4.1c lives in the same object).
-fn set_member_pin(root: &Path, member: Option<&str>) -> Result<(), JoyError> {
+/// Write the pin into the per-project app state file, keeping every other
+/// key in it (the forge login of D4.1c lives in the same object).
+fn set_member_pin(root: &Path, member: &str) -> Result<(), JoyError> {
     let path = crate::auth::session::app_state_project_file(root)?;
-    let existing = std::fs::read_to_string(&path).ok();
-    if existing.is_none() && member.is_none() {
-        return Ok(());
-    }
-    let mut state: serde_json::Value = existing
+    let mut state: serde_json::Value = std::fs::read_to_string(&path)
+        .ok()
         .as_deref()
         .and_then(|text| serde_json::from_str(text).ok())
         .unwrap_or_else(|| serde_json::json!({}));
     if !state.is_object() {
         state = serde_json::json!({});
     }
-    match member {
-        Some(member) => state[MEMBER_PIN_KEY] = serde_json::Value::String(member.to_string()),
-        None => {
-            let Some(object) = state.as_object_mut() else {
-                return Ok(());
-            };
-            if object.remove(MEMBER_PIN_KEY).is_none() {
-                return Ok(());
-            }
-        }
-    }
+    state[MEMBER_PIN_KEY] = serde_json::Value::String(member.to_string());
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| JoyError::CreateDir {
             path: parent.to_path_buf(),
@@ -404,12 +323,60 @@ fn set_member_pin(root: &Path, member: Option<&str>) -> Result<(), JoyError> {
 /// session, no pin and no git config. A command that lets a person name
 /// somebody (`--user`) asks [`acting_member`] instead, which takes that
 /// name first.
+///
+/// This answers with the AI member under a delegation session, because
+/// that is who is acting. A command that needs the human BEHIND the
+/// action, which is every command that unwraps a passphrase identity,
+/// asks [`acting_human_key`].
 pub fn acting_member_key(root: &Path) -> Result<String, JoyError> {
     let member = resolve_identity(root)?.member.id().to_string();
     if member.trim().is_empty() {
         return Err(JoyError::UnknownActingMember);
     }
     Ok(member)
+}
+
+/// The at-rest member key of the HUMAN the current command acts for
+/// (D3.9, package J11): the same answer as [`acting_member_key`] for a
+/// person at a terminal, and the delegating operator under a delegation
+/// session, never the AI.
+///
+/// This is the question every command asks that needs a passphrase, a
+/// seed or a wrap: an AI member has no `kdf_nonce` and no
+/// `seed_wrap_passphrase` and can never have one, so resolving the AI
+/// there would refuse work the operator is entitled to do. The operator
+/// is not guessed: it is the `delegated_by` claim the session was signed
+/// with at redemption, so it names the person who issued the token and
+/// nobody else.
+///
+/// [`JoyError::UnknownActingMember`] when nothing answers, and the same
+/// error when a session names an AI without an operator, because that
+/// session cannot say whose passphrase to ask for.
+pub fn acting_human_key(root: &Path) -> Result<String, JoyError> {
+    let identity = resolve_identity(root)?;
+    let member = identity.member.id().to_string();
+    if !is_ai_member(&member) {
+        if member.trim().is_empty() {
+            return Err(JoyError::UnknownActingMember);
+        }
+        return Ok(member);
+    }
+    let operator = identity
+        .delegated_by
+        .map(|human| human.id().to_string())
+        .filter(|human| !human.trim().is_empty())
+        .ok_or(JoyError::UnknownActingMember)?;
+    // The claim carries whichever identifier the issuer held: the at-rest
+    // key in anonymous mode and in every app-issued token, an address
+    // when a person typed one (`joy auth token add --user`). Answer with
+    // the key in both cases, so the caller's lookups are all by key.
+    let key = load_project_optional(root).and_then(|project| {
+        project
+            .has_member_key(&operator)
+            .then(|| operator.clone())
+            .or_else(|| crate::privacy::member_key_for_email(&project, &operator))
+    });
+    Ok(key.unwrap_or(operator))
 }
 
 /// The address joy OFFERS a person when it asks them who they are: git
@@ -459,10 +426,10 @@ pub fn acting_member(
 /// git config is consulted for the display name only, and only when it
 /// maps to this very member; everything else comes from the member id.
 ///
-/// `member` may be an address rather than a member key: until J11 lands,
-/// every auth and crypt path still holds one. The project decides what is
-/// signed, so an address in an anonymous project is signed as its opaque
-/// id and never as itself (ADR-042).
+/// `member` may be an address rather than a member key: a host that names
+/// the member itself holds one (`--user`, the desktop's mask, enrolment).
+/// The project decides what is signed, so an address in an anonymous
+/// project is signed as its opaque id and never as itself (ADR-042).
 pub fn commit_signature(root: &Path, member: &str) -> Result<(String, String), JoyError> {
     let project = load_project_optional(root);
     // The at-rest key of the acting member, so the name check below

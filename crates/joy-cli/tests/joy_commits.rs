@@ -6,11 +6,11 @@
 //! binary because both rules are only true if they hold on the paths the
 //! commands actually take.
 //!
-//! The auth commands are the interesting ones: they still hold a raw
-//! address (J11 moves them onto `resolve_identity`), so they are the ones
-//! that would put a person's address into a commit of an anonymous
-//! project if the signature gate decided by the shape of the string it
-//! was handed instead of by the project.
+//! The auth commands are the interesting ones: a host may still name the
+//! member to them as a raw address (`--user`, the desktop's mask), so
+//! they are the ones that would put a person's address into a commit of
+//! an anonymous project if the signature gate decided by the shape of the
+//! string it was handed instead of by the project.
 
 use std::path::Path;
 use std::process::Output;

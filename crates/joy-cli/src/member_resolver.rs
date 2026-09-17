@@ -65,7 +65,7 @@ fn passphrase_members_key(root: &std::path::Path, project: &Project) -> Option<Z
     let passphrase = std::env::var("JOY_PASSPHRASE")
         .ok()
         .filter(|s| !s.is_empty())?;
-    let member_key = joy_core::identity::acting_member_key(root).ok()?;
+    let member_key = joy_core::identity::acting_human_key(root).ok()?;
     let member = project.member_by_key(&member_key)?;
     let unlocked = auth::unlock_identity(member, &passphrase).ok()?;
     let wrap = member.members_wrap.as_deref()?;

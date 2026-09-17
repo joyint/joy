@@ -152,26 +152,32 @@ fn the_pin_answers_before_git_config_and_the_two_resolvers_agree() {
     );
 
     // 6. Bea authenticates here, on a machine whose git config already
-    //    names her: nothing is pinned, because the machine answers
-    //    correctly on its own...
-    pin_acting_member(root, &project, "bea@example.com");
-    assert_eq!(pinned_member(root, &project), None);
-
-    // ...and an older pin, from the time this machine had no git
-    // identity, is dropped rather than left to outrank the git config
-    // that now names the person who just authenticated.
-    pin_acting_member(root, &project, "a@b.c");
-    assert_eq!(pinned_member(root, &project).as_deref(), Some("a@b.c"));
+    //    names her: the pin is written anyway. Dropping it because the
+    //    config agrees today would stand this project back on a git
+    //    setting tomorrow, when the setting goes.
     pin_acting_member(root, &project, "bea@example.com");
     assert_eq!(
-        pinned_member(root, &project),
-        None,
-        "the stale pin is gone, not merely outvoted"
+        pinned_member(root, &project).as_deref(),
+        Some("bea@example.com")
     );
+    forget_the_git_config(home.path());
     assert_eq!(
         acting_member(root, &project, None).unwrap(),
+        "bea@example.com",
+        "removing user.email changes nothing once the member is known here"
+    );
+    assert_eq!(
+        resolve_identity(root).unwrap().member.id(),
         "bea@example.com"
     );
+
+    // ...and the next person who authenticates here replaces the pin,
+    // which is the one way the answer on this machine changes.
+    git_config_says(home.path(), "bea@example.com");
+    pin_acting_member(root, &project, "a@b.c");
+    assert_eq!(pinned_member(root, &project).as_deref(), Some("a@b.c"));
+    assert_eq!(acting_member(root, &project, None).unwrap(), "a@b.c");
+    assert_eq!(resolve_identity(root).unwrap().member.id(), "a@b.c");
 
     // 7. Neither pin nor git config, and a project with exactly one human
     //    member: joy says it does not know, and names the way out. It does

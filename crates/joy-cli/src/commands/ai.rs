@@ -265,10 +265,13 @@ fn ensure_human_auth_initialized(
 ) -> anyhow::Result<Option<String>> {
     let project_path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
     let project = joy_core::store::read_project(&project_path)?;
-    // Who acts here comes from the session, then this device's pin, then
-    // git config as a prefill (D3.9), and it is already an at-rest member
-    // key, so anonymous mode (ADR-042) needs no second lookup path.
-    let member_key = joy_core::identity::acting_member_key(root)?;
+    // The human this command sets authentication up for: the operator
+    // behind a delegation session, else the member pinned here, and git
+    // config only as the prefill behind both (D3.9). It is already an
+    // at-rest member key, so anonymous mode (ADR-042) needs no second
+    // lookup path, and it is the same member `joy auth init` resolves,
+    // so the two cannot disagree about who is being initialised.
+    let member_key = joy_core::identity::acting_human_key(root)?;
     let member = project.member_by_key(&member_key).ok_or_else(|| {
         anyhow::anyhow!(
             "{} is not a registered project member. Run `joy project member add {}` first.",
@@ -1013,12 +1016,14 @@ fn setup_new_tools(
 
             // Derive the attesting human's keypair on first need.
             if acting.is_none() {
-                // The attester is the member acting here (D3.9), named by
-                // their on-disk member key: in anonymous mode (ADR-042) the
-                // stored attester is then the opaque id and never a cleartext
-                // address, and verification resolves it through the member
-                // map, which is keyed by that id.
-                let attester_id = joy_core::identity::acting_member_key(root)?;
+                // The attester is the human this command acts for (D3.9),
+                // named by their on-disk member key: in anonymous mode
+                // (ADR-042) the stored attester is then the opaque id and
+                // never a cleartext address, and verification resolves it
+                // through the member map, which is keyed by that id. An AI
+                // cannot attest, so a delegation session attests as the
+                // operator whose passphrase opens the identity.
+                let attester_id = joy_core::identity::acting_human_key(root)?;
                 let kp = crate::commands::project::derive_acting_keypair(
                     &project,
                     &attester_id,

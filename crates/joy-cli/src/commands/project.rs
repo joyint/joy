@@ -606,7 +606,7 @@ fn set_privacy(
     }
 
     // A real switch: unlock the acting member's seed (auth), then migrate.
-    let member_key = joy_core::identity::acting_member_key(&ctx.root)?;
+    let member_key = joy_core::identity::acting_human_key(&ctx.root)?;
     let member = project
         .member_by_key(&member_key)
         .ok_or_else(|| anyhow::anyhow!("{member_key} is not a member of this project"))?;
@@ -1063,7 +1063,7 @@ fn run_member(
             // Authenticate the acting manage member by passphrase. Their
             // identity key will sign the attestation placed on the new
             // member's entry (JOY-00FC-1D).
-            let attester_key = joy_core::identity::acting_member_key(&ctx.root)?;
+            let attester_key = joy_core::identity::acting_human_key(&ctx.root)?;
             let is_ai = a.id.starts_with("ai:");
 
             // When `--with-token` is set for an AI member, the same
@@ -1330,7 +1330,7 @@ fn run_member(
             // 5. Re-sign: any capability or interaction-level change invalidates
             //    the stored attestation (it covers `capabilities`), so the
             //    acting manage member re-signs over the new fields.
-            let acting_key = joy_core::identity::acting_member_key(&ctx.root)?;
+            let acting_key = joy_core::identity::acting_human_key(&ctx.root)?;
             let acting_kp = derive_acting_keypair(
                 project,
                 &acting_key,
@@ -1377,7 +1377,7 @@ fn run_member(
 
             // JOY-00FE-F6: self-remove is blocked and directs the user to
             // another manage member.
-            let acting_key = joy_core::identity::acting_member_key(&ctx.root)?;
+            let acting_key = joy_core::identity::acting_human_key(&ctx.root)?;
             if a.id == acting_key {
                 let others: Vec<&String> = project
                     .members()
@@ -1491,7 +1491,7 @@ fn run_member(
                 bail!("erasure applies only to anonymous projects (privacy: anonymous)");
             }
             // Unlock the acting manage member's seed; it grants members.yaml access.
-            let operator_key = joy_core::identity::acting_member_key(&ctx.root)?;
+            let operator_key = joy_core::identity::acting_human_key(&ctx.root)?;
             let operator = project
                 .member_by_key(&operator_key)
                 .ok_or_else(|| anyhow::anyhow!("{operator_key} is not a member of this project"))?;
@@ -1571,8 +1571,8 @@ fn default_member_capabilities() -> MemberCapabilities {
 /// passphrase. Used to sign attestations on `joy project member add`.
 ///
 /// `member_key` is an at-rest member map key, the shape
-/// [`joy_core::identity::acting_member_key`] answers with, so an
-/// anonymous project (ADR-042) needs no second lookup path.
+/// [`joy_core::identity::acting_human_key`] answers with, so an anonymous
+/// project (ADR-042) needs no second lookup path.
 pub(crate) fn derive_acting_keypair(
     project: &Project,
     member_key: &str,

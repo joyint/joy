@@ -162,18 +162,22 @@ pub fn run(args: CryptArgs) -> Result<()> {
     }
 }
 
-/// The root, the project, and the at-rest key of the member acting
-/// here. The member comes from [`joy_core::identity::acting_member_key`]
-/// and therefore from the session, then this device's pin, then git
-/// config as a prefill (D3.9); it is a member map key, so every lookup
-/// below is by key and an anonymous project (ADR-042) needs no special
-/// case.
+/// The root, the project, and the at-rest key of the member acting here.
+/// The member comes from [`joy_core::identity::acting_human_key`] and
+/// therefore from the session, then this device's pin, then git config as
+/// a prefill (D3.9); it is a member map key, so every lookup below is by
+/// key and an anonymous project (ADR-042) needs no special case.
+///
+/// The HUMAN, not the AI: every caller here unwraps a zone with a
+/// passphrase, and under a delegation session that passphrase belongs to
+/// the operator the session names. The AI's own door to a zone is its
+/// delegation wrap, which `crypt_session` opens without a passphrase.
 fn load_context() -> Result<(std::path::PathBuf, Project, String)> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
     let project = store::read_project(&project_path)?;
-    let acting = joy_core::identity::acting_member_key(&root)?;
+    let acting = joy_core::identity::acting_human_key(&root)?;
     Ok((root, project, acting))
 }
 
@@ -455,7 +459,7 @@ fn unlock_for_file(
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
     let project = store::read_project(&project_path)?;
-    let acting_key = joy_core::identity::acting_member_key(&root)?;
+    let acting_key = joy_core::identity::acting_human_key(&root)?;
     let acting = project
         .member_by_key(&acting_key)
         .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member", acting_key))?;

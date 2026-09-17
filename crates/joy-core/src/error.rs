@@ -21,10 +21,15 @@ pub enum JoyError {
     /// The first line is the sentence D4.5 writes for the desktop, where
     /// the remedy is the member picker. The second names the remedy of a
     /// host that has no picker, because this error reaches the command
-    /// line too (`joy auth init`, a commit joy writes).
+    /// line too, and from commands that take no `--user` of their own
+    /// (`joy crypt`, `joy deauth`, `joy auth passphrase`). The one remedy
+    /// that works for all of them is to authenticate once: that pins the
+    /// member on this device (D3.9), and every later command knows them.
     #[error(
         "this project does not know who you are, pick your member\n\
-         On the command line, name it: --user <address>"
+         On the command line, name yourself once: joy auth --user <address>, \
+         or joy auth init --user <address> when this member has no passphrase \
+         here yet. This device remembers the member afterwards."
     )]
     UnknownActingMember,
 

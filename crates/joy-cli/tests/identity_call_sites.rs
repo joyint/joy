@@ -5,12 +5,14 @@
 //! connection NG design, JOY-02A0-6E).
 //!
 //! Every command that needs to know who is acting asks
-//! `joy_core::identity::resolve_identity` through
-//! `identity::acting_member_key`: the delegation session first, then the
-//! member this device pinned, then git config, and git config only as
-//! the prefill a person is offered. These tests drive the real binary,
-//! because the question is what a command does on a machine, and the
-//! machine is what they take away.
+//! `joy_core::identity::resolve_identity`, through
+//! `identity::acting_member_key` where the actor is whoever acts, and
+//! through `identity::acting_human_key` where a passphrase is needed and
+//! the answer must be a person. Both read the delegation session first,
+//! then the member this device pinned, then git config, and git config
+//! only as the prefill a person is offered. These tests drive the real
+//! binary, because the question is what a command does on a machine, and
+//! the machine is what they take away.
 
 use std::path::PathBuf;
 use std::process::Output;
@@ -76,6 +78,48 @@ impl Machine {
 
     fn forget_the_git_config(&self) {
         std::fs::remove_file(self.home.join(".gitconfig")).unwrap();
+    }
+
+    /// Model another machine, or a fresh clone: the project file travels,
+    /// this device's own state does not. Both the sessions and the member
+    /// pin live in it.
+    fn forget_the_device_state(&self) {
+        let state = self.home.join(".state");
+        if state.exists() {
+            std::fs::remove_dir_all(&state).unwrap();
+        }
+    }
+
+    /// Register an AI member with full rights, issue a delegation token
+    /// for it and redeem it. Returns the `JOY_SESSION` value.
+    fn a_delegation_session(&self, ai: &str) -> String {
+        let add = self.joy(&[
+            "project",
+            "member",
+            "add",
+            ai,
+            "--capabilities",
+            "all",
+            "--passphrase",
+            PASSPHRASE,
+        ]);
+        assert!(add.status.success(), "{}", text(&add));
+
+        let issued = self.joy(&[
+            "auth",
+            "token",
+            "add",
+            ai,
+            "--passphrase",
+            PASSPHRASE,
+            "--json",
+        ]);
+        assert!(issued.status.success(), "{}", text(&issued));
+        let token = json_string(&text(&issued), "token");
+
+        let redeemed = self.joy(&["auth", "--token", &token, "--json"]);
+        assert!(redeemed.status.success(), "{}", text(&redeemed));
+        json_string(&text(&redeemed), "session_env")
     }
 }
 
@@ -316,31 +360,7 @@ fn a_delegation_session_outranks_the_git_config() {
     machine.git_config_says("a@b.c");
     found_and_enrol(&machine);
 
-    let add = machine.joy(&[
-        "project",
-        "member",
-        "add",
-        "ai:claude@joy",
-        "--passphrase",
-        PASSPHRASE,
-    ]);
-    assert!(add.status.success(), "{}", text(&add));
-
-    let issued = machine.joy(&[
-        "auth",
-        "token",
-        "add",
-        "ai:claude@joy",
-        "--passphrase",
-        PASSPHRASE,
-        "--json",
-    ]);
-    assert!(issued.status.success(), "{}", text(&issued));
-    let token = json_string(&text(&issued), "token");
-
-    let redeemed = machine.joy(&["auth", "--token", &token, "--json"]);
-    assert!(redeemed.status.success(), "{}", text(&redeemed));
-    let session_env = json_string(&text(&redeemed), "session_env");
+    let session_env = machine.a_delegation_session("ai:claude@joy");
 
     let deauth = machine.joy_with_session(&["deauth"], Some(&session_env));
     assert!(deauth.status.success(), "{}", text(&deauth));
@@ -369,12 +389,11 @@ fn without_a_session_a_pin_or_a_config_joy_names_the_remedy() {
     let machine = Machine::new();
     machine.git_config_says("a@b.c");
     found_and_enrol(&machine);
-    // Enrolment happened while git config named the founder, so this
-    // device keeps no pin (that is the rule of `pin_acting_member`).
+    // Another machine, or a fresh clone: the project file travels, this
+    // device's session and pin do not, and this one has no git config
+    // either. That is the only state in which nothing can answer.
+    machine.forget_the_device_state();
     machine.forget_the_git_config();
-
-    let deauth = machine.joy(&["deauth"]);
-    assert!(deauth.status.success(), "{}", text(&deauth));
 
     let refused = machine.joy(&["auth", "--passphrase", PASSPHRASE]);
     assert!(!refused.status.success(), "{}", text(&refused));
@@ -384,18 +403,99 @@ fn without_a_session_a_pin_or_a_config_joy_names_the_remedy() {
         text(&refused)
     );
     assert!(
-        text(&refused).contains("--user <address>"),
+        text(&refused).contains("joy auth --user <address>"),
         "the refusal names the remedy: {}",
         text(&refused)
+    );
+
+    // A command that takes no `--user` of its own says the same thing,
+    // and the remedy it names is one it can actually be given.
+    let crypt = machine.joy(&["crypt", "status"]);
+    assert!(!crypt.status.success(), "{}", text(&crypt));
+    assert!(
+        text(&crypt).contains("joy auth --user <address>"),
+        "{}",
+        text(&crypt)
     );
 
     let named = machine.joy(&["auth", "--user", "a@b.c", "--passphrase", PASSPHRASE]);
     assert!(named.status.success(), "{}", text(&named));
 
-    // Authenticating pinned the member, so the next command needs
-    // neither a name nor a git config.
+    // Authenticating pinned the member, so the next command needs neither
+    // a name nor a git config, including the one that has no `--user`.
     let status = machine.joy(&["auth", "status"]);
     assert!(text(&status).contains("a@b.c"), "{}", text(&status));
+    let crypt = machine.joy(&["crypt", "status"]);
+    assert!(crypt.status.success(), "{}", text(&crypt));
+}
+
+/// Under a delegation session, every command that needs a PASSPHRASE acts
+/// for the operator who delegated, never for the AI the session names: an
+/// AI member has no `kdf_nonce` and can never have one, so resolving it
+/// there would refuse the operator work they are entitled to do.
+///
+/// This is the shape the CLI had before J11, where these commands read
+/// git config and therefore always found the human. It must hold on a
+/// machine with no git config at all.
+#[test]
+fn a_delegation_session_acts_for_the_operator_where_a_passphrase_is_needed() {
+    let machine = Machine::new();
+    found_and_enrol(&machine);
+    let item = machine.joy(&["add", "task", "First thing"]);
+    assert!(item.status.success(), "{}", text(&item));
+    let session = machine.a_delegation_session("ai:claude@joy");
+
+    // The zone commands: the operator's passphrase opens the operator's
+    // seed, under the AI's session.
+    let crypt_add = machine.joy_with_session(
+        &["crypt", "add", "LG-0001", "--passphrase", PASSPHRASE],
+        Some(&session),
+    );
+    assert!(crypt_add.status.success(), "{}", text(&crypt_add));
+    let crypt_status = machine.joy_with_session(&["crypt", "status"], Some(&session));
+    assert!(crypt_status.status.success(), "{}", text(&crypt_status));
+
+    // A member write is a different matter: the guard refuses an AI
+    // manage action whatever the passphrase says, and it names the AI in
+    // the refusal, because the AI is who is acting. Identity and rights
+    // are two questions, and only the first one moved in J11.
+    let member_add = machine.joy_with_session(
+        &[
+            "project",
+            "member",
+            "add",
+            "b@c.d",
+            "--passphrase",
+            PASSPHRASE,
+        ],
+        Some(&session),
+    );
+    assert!(!member_add.status.success(), "{}", text(&member_add));
+    assert!(
+        text(&member_add).contains("ai:claude@joy"),
+        "{}",
+        text(&member_add)
+    );
+
+    // And the passphrase change, which names the operator in what it
+    // prints, not the AI.
+    let changed = machine.joy_with_session(
+        &[
+            "auth",
+            "passphrase",
+            "--passphrase",
+            PASSPHRASE,
+            "--new-passphrase",
+            SECOND_PASSPHRASE,
+        ],
+        Some(&session),
+    );
+    assert!(changed.status.success(), "{}", text(&changed));
+    assert!(
+        text(&changed).contains("a@b.c") && !text(&changed).contains("ai:claude@joy"),
+        "the operator is the one whose passphrase changed: {}",
+        text(&changed)
+    );
 }
 
 /// Pull one string field out of a `--json` payload without a JSON parser

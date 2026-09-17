@@ -412,9 +412,10 @@ pub(crate) fn run_init(
     session_token.chat_seed = Some(hex::encode(seed.as_bytes()));
     session::save_session(&project_id, &session_token)?;
 
-    // Remember who acts here when git config cannot say it (D3.9): a
-    // founder who set this project up with `joy init --user` on a machine
-    // without a git identity is known to the next command too.
+    // Remember who acts here (D3.9): a founder who set this project up
+    // with `joy init --user` on a machine without a git identity is known
+    // to the next command too, and so is one whose git config named them
+    // today and will not tomorrow.
     joy_core::identity::pin_acting_member(&root, &project, &session_member);
 
     if anonymous {
@@ -856,7 +857,7 @@ fn run_reset(args: ResetArgs, passphrase_flag: Option<&str>, passphrase_stdin: b
     // The acting member comes from the session, then this device's pin,
     // then git config as a prefill (D3.9), and it is already an at-rest
     // member key, which is what `target` is consumed as below.
-    let acting = joy_core::identity::acting_member_key(&root)?;
+    let acting = joy_core::identity::acting_human_key(&root)?;
 
     let target = args.member.as_deref().unwrap_or(&acting);
     let resetting_other = target != acting;
@@ -1007,7 +1008,7 @@ pub(crate) fn create_delegation_token(
     // opaque id in anonymous mode, ADR-042). Sessions, the guard identity and
     // the attestation are all keyed by this id, never by the cleartext
     // e-mail. The caller holds either an address a person typed (`--user`)
-    // or an at-rest member key (`joy_core::identity::acting_member_key`, and
+    // or an at-rest member key (`joy_core::identity::acting_human_key`, and
     // the device pin behind it, D3.9); both must find the same member.
     let member_key = project
         .member_key_for_email(operator_email)
@@ -1285,7 +1286,7 @@ fn run_passphrase(
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
     let mut project = store::read_project(&project_path)?;
 
-    let acting = joy_core::identity::acting_member_key(&root)?;
+    let acting = joy_core::identity::acting_human_key(&root)?;
     let member = project
         .member_by_key(&acting)
         .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member", acting))?;
@@ -1370,9 +1371,8 @@ fn run_passphrase(
     let _ = session::remove_session(&project_id, &acting);
 
     // This command ends the session it just authenticated, so it must not
-    // also lose the person's name: remember who acts here when git config
-    // cannot say it (D3.9). `pin_acting_member` writes nothing when git
-    // config already names them.
+    // also lose the person's name: remember who acts here, whether or not
+    // git config can say it (D3.9).
     joy_core::identity::pin_acting_member(&root, &project, &acting);
 
     println!("Passphrase changed for {}.", color::user(&acting));
@@ -1410,7 +1410,7 @@ fn run_recover(
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
     let mut project = store::read_project(&project_path)?;
 
-    let acting = joy_core::identity::acting_member_key(&root)?;
+    let acting = joy_core::identity::acting_human_key(&root)?;
     let member = project
         .member_by_key(&acting)
         .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member", acting))?;
@@ -1459,13 +1459,15 @@ fn run_recover(
         let project_id = session::project_id(&root)?;
         let _ = session::remove_session(&project_id, &acting);
 
-        // This command ends the session it just authenticated, so it must not
-        // also lose the person's name: remember who acts here when git config
-        // cannot say it (D3.9). `pin_acting_member` writes nothing when git
-        // config already names them.
+        // This command ends the session it just authenticated, so it must
+        // not also lose the person's name: remember who acts here, whether
+        // or not git config can say it (D3.9).
         joy_core::identity::pin_acting_member(&root, &project, &acting);
 
-        println!("Recovery successful. Passphrase reset for {}.", acting);
+        println!(
+            "Recovery successful. Passphrase reset for {}.",
+            color::user(&acting)
+        );
         println!(
             "Run `joy auth` with the new passphrase to start a session. The recovery key remains valid."
         );
@@ -1574,7 +1576,7 @@ pub fn run_ai_rotate(
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
     let project = store::load_project(&root)?;
-    let acting = joy_core::identity::acting_member_key(&root)?;
+    let acting = joy_core::identity::acting_human_key(&root)?;
 
     if !is_ai_member(member) {
         anyhow::bail!("{} is not an AI member (must start with ai:)", member);

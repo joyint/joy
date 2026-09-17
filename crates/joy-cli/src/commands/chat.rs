@@ -478,7 +478,7 @@ fn establish_reader_seed(
     let Ok(project) = joy_core::store::load_project(root) else {
         return Ok(());
     };
-    let Ok(member_key) = joy_core::identity::acting_member_key(root) else {
+    let Ok(member_key) = joy_core::identity::acting_human_key(root) else {
         return Ok(());
     };
     let Some(member) = project.member_by_key(&member_key) else {
