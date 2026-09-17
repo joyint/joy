@@ -1023,10 +1023,6 @@ fn contact_plan(
         return Ok(Plan::single(&url, LegCredential::Machine));
     }
     let host = super::contact::host_of(&url);
-    // The connector is asked per HOST and not per contact (D1.7); the
-    // answer of the last five minutes is what a 1 Hz poll reads.
-    let root = repo.workdir().map(Path::to_path_buf);
-    let facts = super::resolver::host_facts(&url, root.as_deref(), auth.host_kind(), direction);
     // Trigger (a) of D1.2, established BEFORE the contact: has this
     // machine any ssh credential for the host at all?
     let probe = match super::contact::transport_of(&url) {
@@ -1036,6 +1032,21 @@ fn contact_plan(
         _ => super::resolver::SshProbe::empty(),
     };
     let memory = fresh_memory(&host, &probe);
+    // A host ssh already worked for never goes to the twin, whatever
+    // tokens exist (D1.2 rule 3), so no connector is asked for one. A
+    // person who reaches their forge over ssh is never sent through a
+    // sign in door for a credential the contact would not use.
+    let ssh_works = memory
+        .as_ref()
+        .is_some_and(|memory| memory.state == super::resolver::TransportState::SshWorked);
+    // The connector is asked per HOST and not per contact (D1.7); the
+    // answer of the last five minutes is what a 1 Hz poll reads.
+    let root = repo.workdir().map(Path::to_path_buf);
+    let facts = if ssh_works {
+        super::resolver::HostFacts::none()
+    } else {
+        super::resolver::host_facts(&url, root.as_deref(), auth.host_kind(), direction)
+    };
     // The insteadOf prediction of D1.5: `git_remote_create_anonymous`
     // applies the person's rules to the twin, and git2 0.21 cannot be
     // told to skip them, so joy asks the config what WOULD happen.

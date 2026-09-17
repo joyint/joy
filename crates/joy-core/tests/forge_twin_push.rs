@@ -711,6 +711,10 @@ fn a_host_that_ssh_worked_for_is_never_taken_to_the_twin() {
         0,
         "the twin was never dialled, and a token existed the whole time"
     );
+    assert!(
+        machine.calls("token").is_empty(),
+        "and no connector was asked for a credential the contact would not use"
+    );
     drop(machine);
 }
 
