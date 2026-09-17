@@ -1,7 +1,7 @@
 id: JOY-029C-01
 title: 'J4b: resolver assembly'
 type: story
-status: new
+status: closed
 priority: medium
 deps:
 - JOY-029B-B0
@@ -16,7 +16,7 @@ capabilities:
 effort: 5
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-16T23:23:35.990911720Z
-updated: 2026-09-16T23:24:20.319199723Z
+updated: 2026-09-17T15:35:43.143228586Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Package J4b of the forge connection NG rebuild (JI epic JI-0190-3A; wave 2; owner project JOY). Design: joy/docs/design/forge-connection-ng.md (v5), section 4, and the design sections the package names. Read those sections before starting; every rule there is binding.
@@ -26,3 +26,32 @@ description: |-
   Work: the candidate order of D1.2 with the twin trigger of decision 11 and the transport memory, twin computation and refusal conditions, insteadOf prediction, the push side tracking ref write and `push_update_reference`, the token cache with TTL, the `ContactEvidence` assembly handed to the classifier **J5 owns** (this package no longer defines the classifier, it feeds it), and the host kind parameter.
   Acceptance: an ssh remote on a machine with a working agent stays on ssh even when a gh token exists, and `.git/config` is unchanged; the same remote on a machine with no agent and no readable key goes to the twin on the first contact and says which credential it used; a repository with a `pushInsteadOf` rule stays on ssh and says why; after a push over the twin, ahead and behind reads 0; a push whose ref the server rejected fails with the server's sentence instead of returning success; a 403 on a private organisation repository produces `needs_org_approval` with the approval URL; a 404 over https is never reported as offline, and each of these reads the state names J5 defined in wave 0.
   Parallel with: J3, J10, A1, J8, P3, P7, P4, P5, P9.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-17T15:35:43.067340852Z
+  text: |-
+    Result (implemented, adversarially reviewed, findings fixed; branch feat/forge-connection-ng-j4b, 13 commits; merged into feat/forge-connection-ng by the integrator).
+
+    All three must_fix items are fixed and each one has a regression test that fails without its fix. (1) The thread-local of D1.2 rule 3b is now taken at the start of every leg, not only after a contact inside over_plan, so a refusal left by a clone or by any verb that contacts outside a plan can no longer send the next operation to the twin or write a 24 hour ssh-failed row for a host whose credential was never refused; a leg the throttle holds back is covered too, because the take happens before contact::run. (2) may_follow now reads the classified verdict: each way has exactly one refusal it may be followed for, the one where the leg presented a credential and that credential was refused (rule 3b for ssh, needs_sign_in for the twin). A 403 that means "your organisation must approve Joy", a ref the forge rejected by name, a rate limit and a fault inside the checkout are answers, not reasons for a second contact, and the twin's verdict is no longer overwritten by the ssh leg's. (3) The approval URL lands: OracleAnswer::NeedsOrgApproval carries the page, the decision carries it into the verdict, the verdict into ContactError, and contact::action_of reads it; the needs_sso URL of D2.7c, which plugin_verdict filled and error_of dropped, now reaches a caller by the same road. Nine of the ten should_fix items are fixed as well (the facts cache keyed on the access the call really carries, fresh_memory run only for an ssh operation so an https project no longer deletes the ssh project's row on the same host, the probe's early refusal gated on a caller that resolves, set_state_file(None) restoring the default instead of disabling the memory, the fifth twin refusal removed so an Interactive one-off operation may reach a public repository over the twin, a real case for rule 3a at t
+
+    Acceptance:
+    - [met] an ssh remote on a machine with a working agent stays on ssh even when a gh token exists, and .git/config is unchanged: resolver::tests::an_ssh_remote_with_a_working_chain_stays_on_ssh_even_with_a_token and a_host_whose_memory_says_ssh_worked_never_goes_to_the_twin; the engine case a_host_that_ssh_worked_for_is_never_taken_to_the_twin als
+    - [met] the same remote on a machine with no agent and no readable key goes to the twin on the first contact and says which credential it : forge_twin_push::a_push_over_the_twin_updates_the_tracking_ref_and_leaves_git_config_alone asserts one receive-pack over the twin and resolver::used(host) == 'joy reached 127.0.0.1 over https with the access token from y
+    - [met] a repository with a pushInsteadOf rule stays on ssh and says why: resolver::tests::a_push_insteadof_rule_that_matches_the_twin_keeps_the_remote_on_ssh, plus the_longest_prefix_wins_exactly_as_libgit2_picks_it and push_insteadof_is_read_on_a_push_and_not_on_a_fetch.
+    - [met] after a push over the twin, ahead and behind reads 0: same engine case: (1,0) before, (0,0) after, because the engine writes the tracking ref itself for the refspec-less anonymous remote.
+    - [met] a push whose ref the server rejected fails with the server's sentence instead of returning success: forge_twin_push::a_ref_the_forge_rejected_fails_the_push_with_the_forge_s_own_sentence; the forge's words are on the detail line and no tracking ref is written.
+    - [met] a 403 on a private organisation repository produces needs_org_approval with the approval URL: This was the third must_fix and is now met end to end. OracleAnswer::NeedsOrgApproval carries a url, Decision and Verdict carry an action, ContactError has an action field and contact::action_of reads it. Proven twice: c
+    - [met] a 404 over https is never reported as offline: forge_twin_push::the_states_j5_defined_read_through_a_contact_over_the_twin asserts the state is not Offline and is Error, over a contact that really carried a token before.
+    - [met] each of these reads the state names J5 defined: Every assertion uses contact::Failure (needs_org_approval, needs_sign_in, no_push_rights, error); J4b defines no state of its own and only assembles the ContactEvidence.
+    - [met] package work: candidate order of D1.2, twin trigger of decision 11, transport memory: vcs/resolver.rs with 26 unit cases; the twin is a consequence of 'no working local ssh credential', never of 'a token exists'.
+    - [met] package work: twin computation and refusal conditions, insteadOf prediction: D1.5's four refusals each have a case. The fifth refusal the review found ('nobody is signed in') is gone: an Interactive one-off operation may now dial the twin with what the machine holds, a poll or a worker tick may n
+    - [met] package work: push side tracking ref write and push_update_reference: Proven against a real git-receive-pack server that indexes the pack and answers ok or ng per ref.
+    - [met] package work: token cache with TTL: min(expires_at - 60s, 5 minutes), now keyed on the access the call carries; the absence of a token has a short window of its own.
+    - [met] package work: the ContactEvidence assembly handed to the classifier J5 owns: contact_failed builds the evidence from the raw error, the transport, the direction, the credential that really answered the callback and the proxy the contact went through; J4b defines no classifier.
+    - [met] package work: the host kind parameter: Threaded from Auth::host_kind() into probe_ssh, host_facts, every connector call (--host-kind) and now into plan_with, where it decides the one anonymous contact D1.2 allows.
+
+    Open questions (carried to the packages named or to follow up items):
+    - Pre-existing flake, not J4b's: crates/joy-cli/tests/forge_sign_in.rs:300, the_token_of_a_token_store_is_never_in_the_process_list, fails in roughly half of the `cargo test --workspace` runs and passes in isolation every time. Cause: process_list_of loops until /proc/<pid>/cmdline
+    - The rate limit oracle of D2.10 is not installed by any host yet, so on a machine today a real GitHub 403 on a fetch classifies as `error` rather than `needs_org_approval`. J4b carries the answer and the page end to end and proves it with an in-process fake oracle; the connector s
+    - A `joy forge login --host <host>` that makes a connector claim a host it did not claim before is still invisible to a running desktop for up to five minutes: only the absence of a TOKEN is re-asked quickly. Closing that needs a cross-process signal (a generation counter beside th
+    - The twin is followed by the configured remote for exactly one verdict, `needs_sign_in`. D1.2 names the ssh -> twin trigger explicitly and says nothing about the reverse direction beyond 'at most two contacts'. The rule chosen is the mirror of rule 3b (the credential the leg prese

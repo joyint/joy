@@ -1,0 +1,13 @@
+id: JOY-02A4-89
+title: 'J0d: publishable crate set after the rebuild, and the design touch ups from Wave 2'
+type: task
+status: new
+priority: high
+capabilities:
+- implement
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-17T15:35:43.629108777Z
+updated: 2026-09-17T15:35:43.629108777Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Follow ups from the Wave 2 integration (JI epic JI-0190-3A). (1) Release breaker: crates/joy-cli/Cargo.toml takes joy-telemetry = { version, path } but joy-telemetry is neither in the justfile publish list nor publish = false and does not exist on crates.io, so just publish-crates dies after eleven uploads; joy-forge-net had the same shape until J0c fixed the order. Decide per crate (publish in order, or publish = false) and prove the order with cargo publish --dry-run where the registry allows. (2) Design document touch ups that other packages could not write through their symlink: D2.7a and the P4 acceptance line say the Gitea default set is now write:user write:repository; D4.1a and D5 gain the ListSessions and RevokeSession pair P3 built; the desktop release path (release_ops.rs) is excluded from G3 in writing until J6 lands or the app moves it onto forge::commit_index and tag_annotated (D4.5). (3) The rate limit oracle of D2.10 is installed by no host yet; name the owner (A5 for the desktop, P2 for the platform).'

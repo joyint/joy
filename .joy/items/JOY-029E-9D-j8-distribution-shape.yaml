@@ -1,8 +1,10 @@
 id: JOY-029E-9D
 title: 'J8: distribution shape'
 type: story
-status: new
+status: closed
 priority: medium
+assignees:
+- member: ai:claude@joy
 deps:
 - JOY-0298-E4
 capabilities:
@@ -12,7 +14,7 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-16T23:23:36.063574104Z
-updated: 2026-09-16T23:24:20.524830Z
+updated: 2026-09-17T15:35:42.728320663Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Package J8 of the forge connection NG rebuild (JI epic JI-0190-3A; wave 2; owner project JOY). Design: joy/docs/design/forge-connection-ng.md (v5), section 4, and the design sections the package names. Read those sections before starting; every rule there is binding.
@@ -21,3 +23,10 @@ description: |-
   Files: joy/dist-workspace.toml, the crate manifests, joy/.github/workflows/release.yml.
   Acceptance: a tag produces exactly one archive set per target containing joy and the connector, and winget matches exactly one asset; the Windows binaries are signed before bundling.
   Parallel with: J3, J4b, J10, A1.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-17T10:32:51.167213157Z
+  text: 'Plan (J8): dist-workspace.toml ships joy and joy-forge in one archive per target with the host-keys.json pin file beside the binary, dist = false on every other crate, winget installers-regex fixed, Windows signing of the extra binary before bundling, the install receipt lists every file. Worktree .claude/worktrees/fcng-J8/joy, branch feat/forge-connection-ng-j8.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-17T15:35:42.655571364Z
+  text: "Result (implemented, adversarially reviewed, findings fixed; branch feat/forge-connection-ng-j8, 2 commits; merged into feat/forge-connection-ng by the integrator).\n\nThe must fix is closed by naming an owner instead of a commit message. D1.4a now has two new paragraphs: where the pin file lives and who puts it there (archive root is J8's, <prefix>/share/joy/host-keys.json is the installer's, never the install directory itself because candidate one shadows candidate two forever), and what still nobody places (the cargo-dist generated installers and joy update), with the three candidate answers and the note that an empty pin set makes none of it urgent yet. W1 gains a Work line and an acceptance criterion for writing, replacing and receipting the file; J8's acceptance names the pin file and points at both. dist-workspace.toml stops implying that the archive settles the question. Four of the five should fixes are applied: the Windows signature gate is positive (Valid only, status and message in the error), the winget asset expression is one workflow level env read by both the plan check and winget-releaser, the seven copied dist = false comments are one sentence with a pointer to the step that states and enforces the rule (joy-bi keeps its own reason as the crate that really was a second App), and just install writes the pin file to ~/.local/share/joy and clears the stale copy in ~/.local/bin. The fifth, komac's behaviour with a second executable in the nested installer directory, is unverified: the instruction to do a winget dry run at the first tag is written into the winget job and repeated as an open question. dist plan, the shape check's jq, just -n install, cargo fmt and the tests of all nine touched crates (joy-core with --features forge-net) are green. Nothing outside the worktree was edited and nothing was pushed.\n\nAcceptance:\n- [met] A tag produces exactly one archive set per target containing joy and the connector: dist = false on every publishable crate beside joy-cli leaves one App; dist plan shows five archives, each with joy and joy-forge. The plan job fails the release before any build when the App count is not 1 or a member i\n- [met] The archive also carries the pin file of D1.4a (added to J8's acceptance this round): dist-workspace.toml include puts crates/joy-core/data/host-keys.json into the archive root, verified in the plan manifest and enforced by the same shape check.\n- [met] winget matches exactly one asset: The expression now exists once, as the workflow level WINGET_INSTALLERS_REGEX, read by the plan check and by winget-releaser, so the guard cannot drift away from what winget uses. It matches one asset in the current mani\n- [partly] The Windows binaries are signed before bundling: The check step runs only on a Windows runner with Azure OIDC, so it was not executed here. It now requires Status -eq Valid for joy.exe and joy-forge.exe and prints the status and StatusMessage on refusal, instead of let\n- [partly] D1.4a: the pin file can be replaced without rebuilding, on installed machines: The archive is J8's and is done. Placing the file at <prefix>/share/joy/host-keys.json on an install is now written into W1's Work line and acceptance. The cargo-dist generated installers and joy update place no pin file\n\nOpen questions (carried to the packages named or to follow up items):\n- Two install paths still carry no pin file: an install through the cargo-dist generated joy-cli-installer.sh or .ps1, and every joy update, which downloads and runs that same script. dist 0.31 copies _bins, _libs and _staticlibs and has no setting for a data file. The three ways o\n- winget and komac were not verified against the published joyint.joy manifest (no dry run, and I did not contact the network for it). The zip now holds joy.exe, joy-forge.exe and host-keys.json where it held one binary, and the manifest's NestedInstallerFiles names joy.exe alone. \n- The Windows signature gate is now strict (Valid only). If Azure Trusted Signing on a GitHub runner can legitimately report something other than Valid, the first tag will fail loudly rather than ship an unsigned or altered binary. I chose that direction deliberately; if a run ever\n- A rotation still does not reach an installed machine by itself even after W1: the W1 installer replaces the share copy when a person re-runs the one command install, and joy update does not. Whether joy update should refresh the pin file is part of open question 1."
