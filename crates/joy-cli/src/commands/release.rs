@@ -100,9 +100,10 @@ pub fn run(args: ReleaseArgs) -> Result<()> {
     }
 }
 
-/// joy_core::releases::resolve_version with the CLI's shelled-git tag
-/// fallback and its errors mapped onto anyhow (same Display output as
-/// before the move).
+/// joy_core::releases::resolve_version with the tag fallback this CLI
+/// has always had (`git describe --tags --abbrev=0 --match v*`, on
+/// libgit2 since D3.2) and its errors mapped onto anyhow (same Display
+/// output as before the move).
 fn resolve_version(
     root: &std::path::Path,
     arg: Option<&str>,

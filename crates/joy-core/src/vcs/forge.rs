@@ -6,11 +6,13 @@
 //! the platform's runtime-checkout layer and shared by the platform, the
 //! desktop app, and everything else that syncs a checkout with a forge.
 //!
-//! Two mechanics live under the one vcs roof, each with its reason: the
-//! CLI verbs in [`super`] run the git BINARY because user hooks and user
-//! config must fire; everything here is HEADLESS work (server worker,
-//! app worker) that must never fire hooks and authenticates with tokens
-//! or the machine's stored credentials.
+//! There is ONE mechanic under the vcs roof now (design D3.2,
+//! JOY-01FD-ED): everything is this engine. The CLI verbs in [`super`]
+//! used to run the git BINARY so that a person's hooks and config would
+//! fire; they run here instead, because a machine without a git binary
+//! has to work too. What the binary did for them is done in process: the
+//! item rule of D3.3, the path scoped commits of D3.4, and the hook
+//! chaining of D3.5 that keeps a person's own hooks running.
 //!
 //! FETCH_HEAD is never written or read here. It is the one file git
 //! updates without a lock, and sharing it tore syncs apart twice: a
