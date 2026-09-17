@@ -406,15 +406,16 @@ fn a_certificate_host_key_is_named_by_its_own_blob() {
     assert_eq!(key_type_in_blob(&[]), None);
 }
 
-/// Decision 23's data half: every pinned blob really is the key whose
-/// fingerprint the forge publishes, so answering the decision needs no
-/// second key hunt. The published fingerprints are the ones recorded in
-/// the file from the forges' own pages; `just check-host-key-pins`
-/// takes the keys off the forges again and checks the same equality
-/// against the live pages.
+/// Decision 23's data half: every blob parked beside the release
+/// really is the key whose fingerprint the forge publishes, so
+/// answering the decision needs no second key hunt. The published
+/// fingerprints are the ones recorded in the parked file from the
+/// forges' own pages; `just check-host-key-pins` takes the keys off the
+/// forges again and checks the same equality against the live pages,
+/// and the nightly CI job runs it.
 #[test]
 fn pins_match_the_published_fingerprints() {
-    let hosts = pins::recorded();
+    let hosts = pins::published();
     let names: Vec<&str> = hosts.iter().map(|pin| pin.host.as_str()).collect();
     assert_eq!(
         names,
@@ -461,7 +462,7 @@ fn pins_match_the_published_fingerprints() {
         }
     }
     // github.com's ed25519 fingerprint, as GitHub publishes it
-    let github = pins::recorded_for("github.com").expect("github.com is pinned");
+    let github = pins::published_for("github.com").expect("github.com is parked");
     assert_eq!(
         github
             .keys
@@ -475,13 +476,13 @@ fn pins_match_the_published_fingerprints() {
         ("github.com", "ssh.github.com"),
         ("gitlab.com", "altssh.gitlab.com"),
     ] {
-        let main: Vec<&str> = pins::recorded_for(main)
+        let main: Vec<&str> = pins::published_for(main)
             .unwrap()
             .keys
             .iter()
             .map(|k| k.key.as_str())
             .collect();
-        let alternate: Vec<&str> = pins::recorded_for(alternate)
+        let alternate: Vec<&str> = pins::published_for(alternate)
             .unwrap()
             .keys
             .iter()
@@ -491,13 +492,63 @@ fn pins_match_the_published_fingerprints() {
     }
 }
 
-/// Decision 23 is open, so no contact may consult a pin yet: an unknown
-/// host stays unknown even where the pin file has an answer.
+/// Decision 23 is open, so the pin file a release ships is EMPTY and no
+/// contact can consult anything: an unknown host stays unknown, which
+/// is what J4h's acceptance asks for. The blobs the answer would ship
+/// are parked beside the release and reach no binary.
 #[test]
-fn no_pin_is_consulted_while_decision_23_is_open() {
-    const { assert!(!pins::CONSULTED) };
+fn the_pin_file_a_release_ships_is_empty_while_decision_23_is_open() {
+    assert!(pins::shipped().is_empty(), "{:?}", pins::shipped());
     assert!(pins::consulted_for("github.com").is_none());
-    assert!(pins::recorded_for("github.com").is_some());
+    // and the material for the answer is there, unshipped
+    assert!(pins::published_for("github.com").is_some());
+}
+
+/// D1.4a asks for the pins as DATA in the release: a key rotation at a
+/// pinned forge has to be a file that is replaced, never a joy that is
+/// rebuilt. So the file is looked for in the release, in both layouts
+/// the installers produce, and the compiled-in copy answers only where
+/// a binary stands alone.
+#[test]
+fn the_pin_file_is_read_from_the_release_and_not_only_from_the_binary() {
+    let dir = Path::new("/opt/joy/bin");
+    assert_eq!(
+        pins::candidates(dir),
+        vec![
+            PathBuf::from("/opt/joy/bin/host-keys.json"),
+            PathBuf::from("/opt/joy/share/joy/host-keys.json"),
+        ]
+    );
+    // a binary with no directory above it still has the one beside it
+    assert_eq!(
+        pins::candidates(Path::new("/")),
+        vec![PathBuf::from("/host-keys.json")]
+    );
+    // and a file that is really there is really read, which is what
+    // makes a key rotation at a pinned forge a file that is replaced
+    let release = tempfile::tempdir().unwrap();
+    let bin = release.path().join("bin");
+    std::fs::create_dir(&bin).unwrap();
+    assert!(pins::file_beside(&bin).is_none());
+    let share = release.path().join("share").join("joy");
+    std::fs::create_dir_all(&share).unwrap();
+    let one = r#"{"hosts": [{"host": "forge.example.com", "port": 22, "forge": "Example",
+        "source": "a test", "published_at": "https://example.com/keys", "keys": []}]}"#;
+    std::fs::write(share.join("host-keys.json"), one).unwrap();
+    let (path, text) = pins::file_beside(&bin).expect("the release carries a pin file");
+    assert_eq!(path, share.join("host-keys.json"));
+    let hosts = pins::hosts_in(&text, "a test release");
+    assert_eq!(hosts.len(), 1);
+    assert_eq!(hosts[0].host, "forge.example.com");
+    // the copy beside the binary wins over the one in the share
+    // directory, because that is the one an installer drops
+    std::fs::write(bin.join("host-keys.json"), r#"{"hosts": []}"#).unwrap();
+    let (path, text) = pins::file_beside(&bin).expect("the release carries a pin file");
+    assert_eq!(path, bin.join("host-keys.json"));
+    assert!(pins::hosts_in(&text, "a test release").is_empty());
+    // and a pin file joy cannot read leaves joy without pins, never
+    // without a contact
+    assert!(pins::hosts_in("{ not json", "a broken pin file").is_empty());
 }
 
 /// The file libgit2 reads by itself, which is the file the
@@ -530,8 +581,8 @@ fn the_pre_validated_file_is_the_one_libgit2_reads() {
 fn the_broken_file_sentence_names_the_file_and_the_line() {
     let path = PathBuf::from("/home/troi/.ssh/known_hosts");
     let good = format!("github.com ssh-ed25519 {GITHUB_ED25519}");
-    assert_eq!(refusal_for(&path, &format!("{good}\n")), None);
-    let sentence = refusal_for(&path, &format!("{good}\nbroken.example.com\n"))
+    assert_eq!(refusal_for(&path, format!("{good}\n").as_bytes()), None);
+    let sentence = refusal_for(&path, format!("{good}\nbroken.example.com\n").as_bytes())
         .expect("the second line is refused");
     assert!(
         sentence.starts_with("/home/troi/.ssh/known_hosts line 2: "),
@@ -539,4 +590,77 @@ fn the_broken_file_sentence_names_the_file_and_the_line() {
     );
     assert!(sentence.contains("names a host and no key"), "{sentence}");
     assert!(sentence.contains("every ssh contact fails"), "{sentence}");
+}
+
+/// The pre-validation walks BYTES. A host field of at most two
+/// characters sends libssh2 into its hashed branch, which reads the
+/// salt out of the key field, so joy reads from the line's fourth byte
+/// on; slicing a `&str` there panics when a character straddles the
+/// index, and that panic would happen inside the `OnceLock` the
+/// transport guard reads before every ssh contact: the contact dies and
+/// the cell stays empty for the next one. The line below is the
+/// smallest real shape of it.
+#[test]
+fn a_line_whose_key_field_is_not_ascii_is_reported_and_never_panics() {
+    // libssh2 finds no separator in this one, stores nothing and reads
+    // on, so the file is fine and the answer is that there is no fault
+    let no_separator = "a \u{e9}aaaaaaaaaaaaaaaaaaaaaaaa\n";
+    assert_eq!(validate_text(no_separator), None);
+    // and this one it does refuse, with the byte that is not a
+    // character boundary sitting in the salt
+    let malformed = "a \u{e9}|aaaaaaaaaaaaaaaaaaaaaaaa\n";
+    assert_eq!(
+        validate_text(malformed),
+        Some(Fault {
+            line: 1,
+            reason: "the hashed host field is malformed"
+        })
+    );
+    // among good lines it is still line 2 and nothing else
+    let good = format!("github.com ssh-ed25519 {GITHUB_ED25519}");
+    assert_eq!(
+        validate_text(&format!("{good}\n{malformed}{good}\n")).map(|f| f.line),
+        Some(2)
+    );
+    assert_eq!(
+        validate_text(&format!("{good}\n{no_separator}{good}\n")),
+        None
+    );
+    // and a multi-byte comment on an ordinary line is no fault at all
+    assert_eq!(
+        validate_text(&format!("{good} schl\u{fc}ssel von zara\n")),
+        None
+    );
+    // bytes that are not UTF-8 at all reach the same rules
+    let mut raw = format!("{good} ").into_bytes();
+    raw.extend_from_slice(&[0xff, 0xfe, b'\n']);
+    assert_eq!(validate_bytes(&raw), None);
+}
+
+/// A known_hosts file is bytes, not a Rust string: a comment field
+/// copied out of a key file can carry anything. libssh2 and OpenSSH
+/// read such a file, so joy reads it too. Dropping it would make joy
+/// call a host unknown that the file names, which a `Background` host
+/// then refuses.
+#[test]
+fn a_file_with_a_byte_that_is_not_utf8_is_still_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("known_hosts");
+    let mut bytes = format!("github.com ssh-ed25519 {GITHUB_ED25519} zara").into_bytes();
+    // a latin-1 u-umlaut, as a key file's comment would carry it
+    bytes.extend_from_slice(&[0xfc, b'r', b'\n']);
+    std::fs::write(&path, &bytes).unwrap();
+    assert_eq!(
+        look_up(
+            std::slice::from_ref(&path),
+            "github.com",
+            22,
+            "ssh-ed25519",
+            &blob(GITHUB_ED25519)
+        ),
+        Verdict::Known {
+            file: path.clone(),
+            line: 1
+        }
+    );
 }

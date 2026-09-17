@@ -140,6 +140,11 @@ guard-certificate-check:
     cd "{{justfile_directory()}}"
     owner='crates/joy-core/src/vcs/certificates'
     installer='crates/joy-core/src/vcs/forge.rs'
+    # EVERY Rust file of the workspace, not only crates/*/src: a
+    # builder in an integration test or in a build script takes the
+    # decision away from joy just as quietly as one beside the engine.
+    # Both spellings of the builder count, `new()` and `default()`.
+    builder='RemoteCallbacks::(new|default)\('
     bad=0
     while IFS=: read -r file line _; do
         case "$file" in
@@ -148,8 +153,9 @@ guard-certificate-check:
         esac
         echo "guard-certificate-check: $file:$line installs a second certificate_check; the one closure lives in $owner.rs"
         bad=1
-    done < <(grep -rn 'certificate_check(' crates/*/src --include='*.rs' || true)
-    installs=$(grep -c 'certificate_check(' "$installer" || true)
+    done < <(grep -rn --include='*.rs' 'certificate_check(' crates || true)
+    # occurrences, not lines: two installs written on one line are two
+    installs=$(grep -o 'certificate_check(' "$installer" | wc -l | tr -d '[:space:]')
     if [ "$installs" != "1" ]; then
         echo "guard-certificate-check: $installer installs certificate_check $installs times, expected exactly 1"
         bad=1
@@ -164,20 +170,30 @@ guard-certificate-check:
         esac
         echo "guard-certificate-check: $file:$line builds a RemoteCallbacks outside $installer, so it carries no certificate_check"
         bad=1
-    done < <(grep -rn 'RemoteCallbacks::new()' crates/*/src --include='*.rs' || true)
+    done < <(grep -rnE --include='*.rs' "$builder" crates || true)
+    builds=$(grep -oE "$builder" "$installer" | wc -l | tr -d '[:space:]')
+    if [ "$builds" != "1" ]; then
+        echo "guard-certificate-check: $installer builds RemoteCallbacks $builds times, expected exactly 1"
+        bad=1
+    fi
     exit $bad
 
 # Take the pinned host keys off the three public forges again and check
-# them against crates/joy-core/data/host-keys.json and against the
-# fingerprints the forges publish (design D1.4a: the Codeberg pin is a
-# blob taken once and checked against a page that publishes
-# fingerprints only). Needs the network; the offline half of the same
-# check is the unit test pins_match_the_published_fingerprints.
+# them against crates/joy-core/data/host-keys.published.json and
+# against the fingerprints the forges publish (design D1.4a: the
+# Codeberg pin is a blob taken once and checked against a page that
+# publishes fingerprints only). This is the build step of D1.4a, and CI
+# runs it every night (.github/workflows/ci.yaml, job host-key-pins),
+# so a rotation or a hand-edited pin is noticed by a job and not by a
+# person whose contact failed. Needs the network; the offline half of
+# the same check is the unit test pins_match_the_published_fingerprints.
+# The file it checks is the one parked BESIDE the release: the pin file
+# a release ships is empty while decision 23 is open.
 check-host-key-pins:
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{justfile_directory()}}"
-    pins=crates/joy-core/data/host-keys.json
+    pins=crates/joy-core/data/host-keys.published.json
     bad=0
     # 1. every recorded blob is the key its recorded fingerprint names
     while read -r host type key fingerprint; do

@@ -80,9 +80,14 @@ static PROMPT: Mutex<Option<Ask>> = Mutex::new(None);
 /// Install the question joy asks before it trusts a host key.
 ///
 /// Only a host where a person is sitting installs one: joy-core has no
-/// terminal and no window of its own. A host that installs none refuses
-/// an unknown host key instead of trusting it, whatever its host kind
-/// claims.
+/// terminal and no window of its own, so this is the seam through
+/// which a front end lends joy-core its terminal. joy's own CLI takes
+/// it in package J6, which owns every joy-cli call site and whose
+/// acceptance is that no ssh contact fails without a way to accept;
+/// until then no binary in this tree installs one, and a host that
+/// installs none refuses an unknown host key instead of trusting it,
+/// whatever its host kind claims. That refusal names the file and the
+/// line to paste, so the next step exists on that path too (D1.8b).
 pub fn set_trust_prompt(ask: impl Fn(&TrustRequest) -> bool + Send + Sync + 'static) {
     *PROMPT.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(ask));
 }
@@ -92,15 +97,27 @@ pub fn clear_trust_prompt() {
     *PROMPT.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
 
-fn ask_to_trust(request: &TrustRequest) -> bool {
+/// What came back from the question. "Nobody was asked" is its own
+/// answer and not a no: the two have different causes, so they have
+/// different sentences.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Answer {
+    Yes,
+    No,
+    /// No question is installed on this host.
+    Unasked,
+}
+
+fn ask_to_trust(request: &TrustRequest) -> Answer {
     let ask = PROMPT
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .as_ref()
         .cloned();
     match ask {
-        Some(ask) => ask(request),
-        None => false,
+        Some(ask) if ask(request) => Answer::Yes,
+        Some(_) => Answer::No,
+        None => Answer::Unasked,
     }
 }
 
@@ -401,6 +418,18 @@ impl Trust {
                 other_types.join(", ")
             );
         }
+        // Every refusal on this path ends in the same next step
+        // (D1.8b: one, and named): the line to paste and the file it
+        // goes in. Only the middle clause differs, because only the
+        // reason differs.
+        let unseen_refusal = |because: &str| {
+            format!(
+                "This machine has never seen the host key of {host} (port {port}): {key_type} \
+                 {fingerprint}.{known_for} {because} To trust it, add this line to {}: {}",
+                file.display(),
+                to_paste.trim_end()
+            )
+        };
         // The person's own `StrictHostKeyChecking yes` refuses before
         // anything else may accept, pins included: it is the one
         // setting that says "never add a host for me".
@@ -421,19 +450,13 @@ impl Trust {
                 tracing::info!(host, port, key_type, published, "pinned host key accepted");
                 return Ok(Status::CertificateOk);
             }
-            return refuse(format!(
-                "This machine has never seen the host key of {host} (port {port}): {key_type} \
-                 {fingerprint}.{known_for} Nobody can be asked here, so joy refuses. To trust it, \
-                 add this line to {}: {}",
-                file.display(),
-                to_paste.trim_end()
-            ));
+            return refuse(unseen_refusal("Nobody can be asked here, so joy refuses."));
         }
-        let accepted = match strict {
+        let answer = match strict {
             // `accept-new`, and `no` and `off` with it: add it without
             // asking. joy never skips the check itself, it only skips
             // the question.
-            StrictHostKeys::AcceptNew => true,
+            StrictHostKeys::AcceptNew => Answer::Yes,
             StrictHostKeys::Ask => ask_to_trust(&TrustRequest {
                 host: host.to_string(),
                 port,
@@ -445,12 +468,28 @@ impl Trust {
                 other_types,
             }),
             // returned above, before anything could accept
-            StrictHostKeys::Yes => false,
+            StrictHostKeys::Yes => Answer::No,
         };
-        if !accepted {
-            return refuse(format!(
-                "The host key of {host} (port {port}) was not trusted: {key_type} {fingerprint}."
-            ));
+        match answer {
+            Answer::Yes => {}
+            Answer::No => {
+                return refuse(format!(
+                    "The host key of {host} (port {port}) was not trusted: {key_type} \
+                     {fingerprint}. joy added nothing. If you decide to trust it after all, add \
+                     this line to {}: {}",
+                    file.display(),
+                    to_paste.trim_end()
+                ))
+            }
+            // An `Interactive` host whose front end lends joy-core no
+            // terminal: the host kind says a person is there, and
+            // nothing here can reach them, so this refusal says both
+            // and still names the next step.
+            Answer::Unasked => {
+                return refuse(unseen_refusal(
+                    "This joy has no way to put the question to you, so it refuses.",
+                ))
+            }
         }
         if let Err(e) = known_hosts::append(&file, &to_write) {
             return refuse(format!(
@@ -477,16 +516,20 @@ impl Trust {
         }
     }
 
-    /// Read the pins decision 23 has not switched on yet, so the
-    /// branch that will use them is exercised before it does.
+    /// Read the blobs parked beside the release, so the branch that
+    /// will use a pin once decision 23 is answered is exercised before
+    /// it is.
     fn reading_pins(mut self) -> Trust {
-        self.pins = pins::recorded_for;
+        self.pins = pins::published_for;
         self
     }
 
     /// The same closure [`check`] installs, around a site a test chose.
     /// Lets a real libgit2 ssh contact run against known_hosts files a
-    /// test wrote instead of the machine's own.
+    /// test wrote instead of the machine's own. Only the network tests
+    /// need it, so it is gated on their feature: a plain `cargo test -p
+    /// joy-core` then has no dead code to warn about.
+    #[cfg(feature = "forge-net")]
     fn into_check(
         mut self,
     ) -> impl FnMut(&Cert<'_>, &str) -> Result<Status, git2::Error> + 'static {

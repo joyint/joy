@@ -159,7 +159,7 @@ pub fn look_up(files: &[PathBuf], host: &str, port: u16, key_type: &str, key: &[
     let mut known_types: Vec<String> = Vec::new();
     let mut matched: Option<Verdict> = None;
     for file in files {
-        let Ok(text) = std::fs::read_to_string(file) else {
+        let Some(text) = read_text(file) else {
             continue;
         };
         for entry in parse(&text) {
@@ -453,25 +453,47 @@ pub struct Fault {
 /// stricter reading of man sshd: the point is to name the line libssh2
 /// will die on, so every rule here has its source beside it.
 pub fn validate_text(text: &str) -> Option<Fault> {
-    text.lines().enumerate().find_map(|(index, line)| {
-        line_fault(line).map(|reason| Fault {
-            line: index + 1,
-            reason,
-        })
-    })
+    validate_bytes(text.as_bytes())
 }
 
-fn line_fault(raw: &str) -> Option<&'static str> {
+/// The same rules over the BYTES a file really holds.
+///
+/// libssh2 and OpenSSH read known_hosts as bytes, and joy reads it the
+/// same way: a comment field copied out of a key file carries whatever
+/// bytes that file carried, and a line that is not UTF-8 is a line
+/// libssh2 still parses. Counting bytes is also the only way to index
+/// a line safely: `text[3..]` on a host field of two characters and a
+/// key field that starts with a multi-byte one would panic on a char
+/// boundary, inside the check that is there to keep one bad line from
+/// killing every ssh contact.
+pub fn validate_bytes(bytes: &[u8]) -> Option<Fault> {
+    bytes
+        .split(|byte| *byte == b'\n')
+        .enumerate()
+        .find_map(|(index, line)| {
+            // a file written on Windows is a file, and `str::lines`
+            // drops the carriage return as well
+            let line = line.strip_suffix(b"\r").unwrap_or(line);
+            line_fault(line).map(|reason| Fault {
+                line: index + 1,
+                reason,
+            })
+        })
+}
+
+fn line_fault(raw: &[u8]) -> Option<&'static str> {
     // libssh2_knownhost_readline, knownhost.c:879-945
-    let text = raw.trim_start_matches([' ', '\t']);
-    if text.is_empty() || text.starts_with('#') {
+    let text = trim_blanks(raw);
+    if text.first() == Some(&b'#') {
         return None;
     }
-    let (host, rest) = match text.find([' ', '\t']) {
-        Some(at) => (&text[..at], text[at..].trim_start_matches([' ', '\t'])),
-        // "illegal line": a host and no key at all
-        None => return Some("the line names a host and no key"),
+    let Some(at) = text.iter().position(|byte| *byte == b' ' || *byte == b'\t') else {
+        // "illegal line": a host and no key at all, and an empty line,
+        // which libssh2 skips
+        return (!text.is_empty()).then_some("the line names a host and no key");
     };
+    let host = &text[..at];
+    let rest = trim_blanks(&text[at..]);
     if rest.is_empty() {
         return Some("the line names a host and no key");
     }
@@ -480,9 +502,12 @@ fn line_fault(raw: &str) -> Option<&'static str> {
     if rest.len() < 20 {
         return Some("the key field is shorter than twenty characters");
     }
-    if host.len() > 2 && !host.starts_with("|1|") {
+    if host.len() > 2 && !host.starts_with(b"|1|") {
         // oldstyle_hostline, knownhost.c:620-647
-        if host.split(',').any(|name| name.len() >= 255) {
+        if host
+            .split(|byte| *byte == b',')
+            .any(|name| name.len() >= 255)
+        {
             return Some("a host name on the line is longer than 254 characters");
         }
         return None;
@@ -493,7 +518,7 @@ fn line_fault(raw: &str) -> Option<&'static str> {
     // is the whole line from the host field's fourth byte and not the
     // host field alone.
     let after_marker = &text[3.min(text.len())..];
-    let Some(bar) = after_marker.find('|') else {
+    let Some(bar) = after_marker.iter().position(|byte| *byte == b'|') else {
         // no separator: libssh2 returns 0 and simply stores nothing
         return None;
     };
@@ -538,15 +563,14 @@ pub fn user_file_refusal() -> Option<String> {
     CHECKED
         .get_or_init(|| {
             let path = user_file()?;
-            let text = std::fs::read_to_string(&path).ok()?;
-            refusal_for(&path, &text)
+            refusal_for(&path, &read_bytes(&path)?)
         })
         .clone()
 }
 
-/// The sentence for one file and the text it holds.
-fn refusal_for(path: &Path, text: &str) -> Option<String> {
-    let fault = validate_text(text)?;
+/// The sentence for one file and the bytes it holds.
+fn refusal_for(path: &Path, text: &[u8]) -> Option<String> {
+    let fault = validate_bytes(text)?;
     Some(format!(
         "{} line {}: {}. libssh2 reads this file before joy does and refuses the WHOLE file for \
          one line it cannot parse, so every ssh contact fails until that line is repaired or \
@@ -562,10 +586,66 @@ pub fn user_file() -> Option<PathBuf> {
     Some(super::ssh_config::user_config_path()?.with_file_name("known_hosts"))
 }
 
-fn base64_digits(text: &str) -> usize {
-    text.bytes()
-        .filter(|b| b.is_ascii_alphanumeric() || *b == b'+' || *b == b'/')
+fn base64_digits(bytes: &[u8]) -> usize {
+    bytes
+        .iter()
+        .filter(|b| b.is_ascii_alphanumeric() || **b == b'+' || **b == b'/')
         .count()
+}
+
+/// A line without its leading blanks.
+fn trim_blanks(bytes: &[u8]) -> &[u8] {
+    let at = bytes
+        .iter()
+        .position(|byte| *byte != b' ' && *byte != b'\t')
+        .unwrap_or(bytes.len());
+    &bytes[at..]
+}
+
+/// The bytes of one known_hosts file, with every skip said out loud.
+///
+/// A file that is not there is the normal case and the quiet one. A
+/// file joy may not read is not: ssh reads it, so joy would decide
+/// about a host on less than ssh knows, and a `Background` host would
+/// refuse a host the file names.
+fn read_bytes(file: &Path) -> Option<Vec<u8>> {
+    match std::fs::read(file) {
+        Ok(bytes) => Some(bytes),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            tracing::debug!(file = %file.display(), "no known_hosts file here");
+            None
+        }
+        Err(e) => {
+            tracing::warn!(
+                file = %file.display(),
+                error = %e,
+                "a known_hosts file was skipped, so joy knows less about this host than ssh does"
+            );
+            None
+        }
+    }
+}
+
+/// The text of one known_hosts file, decoded the way it has to be
+/// decoded: every field joy reads is ASCII (a host name, a key type, a
+/// base64 blob), so a byte no UTF-8 decoder accepts can only sit in a
+/// comment, and reading it as a replacement character changes no host,
+/// no type and no key. Dropping the whole file for such a byte would
+/// make joy call a host unknown that the file names, which a
+/// `Background` host then refuses and an `accept-new` host answers
+/// with a duplicate line.
+fn read_text(file: &Path) -> Option<String> {
+    match String::from_utf8(read_bytes(file)?) {
+        Ok(text) => Some(text),
+        Err(e) => {
+            tracing::debug!(
+                file = %file.display(),
+                "a known_hosts file holds bytes that are not UTF-8; they are read as replacement \
+                 characters, which changes no host and no key"
+            );
+            Some(String::from_utf8_lossy(e.as_bytes()).into_owned())
+        }
+    }
 }
 
 // ---- the small primitives --------------------------------------------

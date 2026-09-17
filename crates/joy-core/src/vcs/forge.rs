@@ -692,6 +692,21 @@ impl ChainState {
 /// otherwise be contacted directly and fail with a DNS or connect
 /// error that names the wrong cause.
 fn guard_transport(url: Option<&str>) -> anyhow::Result<()> {
+    guard_transport_with(url, super::known_hosts::user_file_refusal)
+}
+
+/// [`guard_transport`] with the known_hosts verdict handed in.
+///
+/// The production verdict is read once per process from the machine's
+/// own `~/.ssh/known_hosts` ([`super::known_hosts::user_file_refusal`],
+/// a `OnceLock` around the real HOME), which is exactly what a test
+/// cannot arrange. The rule this guard carries is the branch, not the
+/// reading, so the branch is a function of two arguments and the
+/// reading is passed in.
+fn guard_transport_with(
+    url: Option<&str>,
+    known_hosts_refusal: impl FnOnce() -> Option<String>,
+) -> anyhow::Result<()> {
     if let Some(sentence) = url.and_then(super::ssh_config::refusal_for_url) {
         anyhow::bail!("{sentence}");
     }
@@ -699,9 +714,10 @@ fn guard_transport(url: Option<&str>) -> anyhow::Result<()> {
     // joy's own callback runs, and ONE line libssh2 cannot parse makes
     // it discard the whole file and end the connection with "error
     // reading known_hosts" (D1.4a). Said here, once per process, with
-    // the line number.
+    // the line number. Only an ssh contact reads that file at all, so
+    // no other transport pays for the check.
     if url.map(super::contact::transport_of) == Some(super::contact::Transport::Ssh) {
-        if let Some(sentence) = super::known_hosts::user_file_refusal() {
+        if let Some(sentence) = known_hosts_refusal() {
             anyhow::bail!("{sentence}");
         }
     }
@@ -4553,5 +4569,29 @@ mod credential_shape_tests {
         assert!(guard_transport(None).is_ok());
         assert!(guard_transport(Some("https://github.com/o/r.git")).is_ok());
         assert!(guard_transport(Some("/srv/git/local.git")).is_ok());
+    }
+
+    /// D1.4a's pre-validation, at the one place it acts: an ssh contact
+    /// stops before libgit2 opens a socket and reads the line number
+    /// instead of "error reading known_hosts", and no other transport
+    /// even looks at the file. The host is a name no ssh config can
+    /// hold an opinion about, so the answer is the guard's and not the
+    /// machine's.
+    #[test]
+    fn a_broken_known_hosts_file_stops_an_ssh_contact_with_the_line_number() {
+        let sentence = || Some("/home/troi/.ssh/known_hosts line 7: ... ".to_string());
+        let ssh = "git@known-hosts.invalid:owner/repo.git";
+        let refused = guard_transport_with(Some(ssh), sentence).expect_err("the file is broken");
+        assert!(refused.to_string().contains("line 7"), "{refused}");
+        // a file libssh2 can read lets the same contact through
+        assert!(guard_transport_with(Some(ssh), || None).is_ok());
+        // and nothing else reads known_hosts at all
+        for other in ["https://github.com/o/r.git", "/srv/git/local.git"] {
+            assert!(
+                guard_transport_with(Some(other), || { panic!("{other} read known_hosts") })
+                    .is_ok()
+            );
+        }
+        assert!(guard_transport_with(None, || panic!("no remote read known_hosts")).is_ok());
     }
 }

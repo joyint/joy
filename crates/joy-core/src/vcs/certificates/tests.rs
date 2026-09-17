@@ -364,8 +364,54 @@ fn a_no_that_the_person_gave_is_a_refusal_and_not_a_write() {
     ));
     assert_eq!(code, git2::ErrorCode::Certificate);
     assert!(sentence.contains("not trusted"), "{sentence}");
+    // a no is not a dead end either: the line stays in reach
+    assert!(
+        sentence.contains(&format!("github.com ssh-ed25519 {GITHUB_ED25519}")),
+        "{sentence}"
+    );
+    assert!(sentence.contains(&file.display().to_string()), "{sentence}");
     assert!(!file.exists());
     clear_trust_prompt();
+}
+
+/// The path a person really hits today: nothing in this tree installs a
+/// question yet, because joy-cli's call sites are package J6's and its
+/// acceptance is that no ssh contact fails without a way to accept. So
+/// an `Interactive` host refuses here, and D1.8b's rule holds on that
+/// path too: the sentence says why nobody was asked and names the one
+/// next step, the file and the line to paste.
+#[test]
+fn an_interactive_host_with_no_question_installed_still_names_the_next_step() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    clear_trust_prompt();
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("known_hosts");
+    let mut trust = Trust::at(
+        HostKind::Interactive,
+        "github.com",
+        settings(vec![file.clone()], StrictHostKeys::Ask, true),
+        22,
+    );
+    let (code, sentence) = refusal(trust.host_key(
+        "github.com",
+        Some(SshHostKeyType::Ed255219),
+        Some(&key(GITHUB_ED25519)),
+    ));
+    assert_eq!(code, git2::ErrorCode::Certificate);
+    for part in [
+        "github.com",
+        "port 22",
+        "ssh-ed25519",
+        GITHUB_ED25519_FINGERPRINT,
+        "no way to put the question to you",
+        &file.display().to_string(),
+        &format!("github.com ssh-ed25519 {GITHUB_ED25519}"),
+    ] {
+        assert!(sentence.contains(part), "{part} missing in {sentence}");
+    }
+    // nothing was written, and the hashed form is what a yes WOULD
+    // have written, not what a person is asked to paste
+    assert!(!file.exists());
 }
 
 #[test]
@@ -739,7 +785,7 @@ fn a_fresh_machine_is_offered_the_fingerprint_github_publishes() {
     assert_eq!(request.port, 22);
     // whichever type libssh2 negotiated, the fingerprint is one GitHub
     // publishes
-    let published = pins::recorded_for("github.com").expect("github.com is pinned");
+    let published = pins::published_for("github.com").expect("github.com is parked");
     assert!(
         published
             .keys
