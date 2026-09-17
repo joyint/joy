@@ -13,11 +13,14 @@
 //!   only while git applies it always. Entries are trimmed, because
 //!   libgit2 does not trim and `NO_PROXY="a.com, b.com"` silently loses
 //!   `b.com` there. There is ONE such matcher for the whole product
-//!   ([`no_proxy_matches`], JOY-02A3-E4): the engine's
-//!   `joy_core::vcs::proxy::no_proxy_matches` is this function, so an
-//!   excluded host is excluded for a git contact and for a REST call
-//!   by the same rule. It sits here and not in the engine because a
-//!   connector must not link libgit2 (D2.1).
+//!   ([`no_proxy_matches`], JOY-02A3-E4): this function IS the
+//!   engine's `joy_core::vcs::proxy::no_proxy_matches`, so an excluded
+//!   host is excluded for a git contact and for a REST call by the
+//!   same rule. It sits in the engine and is re-exported here, because
+//!   this crate depends on the engine already (D2.6a's refresh lock
+//!   takes `joy_core::util::file_lock`) and the other direction would
+//!   be a cycle. A connector still links no libgit2 transport (D2.1):
+//!   joy-core's default build has none.
 //! - `ALL_PROXY` / `all_proxy` is read, because libgit2 never reads it
 //!   and git does.
 //!
@@ -200,12 +203,18 @@ pub fn redact(proxy: &str) -> String {
     }
 }
 
-/// THE NO_PROXY matcher (D1.11), and there is one: the engine's
-/// `joy_core::vcs::proxy::no_proxy_matches` is this function, so a host
-/// the person excluded is excluded for a git contact and for a
-/// connector's REST call by the same rule. It lives on this side of the
-/// two because a connector must not link libgit2 (D2.1) while the
-/// engine may depend on the shared network layer.
+/// THE NO_PROXY matcher (D1.11), and there is one: this function IS
+/// [`joy_core::vcs::proxy::no_proxy_matches`], so a host the person
+/// excluded is excluded for a git contact and for a connector's REST
+/// call by the same rule and with the same answer.
+///
+/// The implementation lives on the engine's side of the two, because
+/// this crate depends on the engine already (the refresh lock of D2.6a
+/// takes `joy_core::util::file_lock`, which landed once with J4a) and
+/// the other direction would close a cycle. It costs a connector
+/// nothing it must not link: joy-core's default build carries no
+/// network transport, so no libgit2 transport comes with the matcher
+/// (D2.1).
 ///
 /// The grammar is libgit2's (net.c:1070-1117): a comma separated list
 /// of `*`, `*.domain`, `.domain`, `host` and `host:port`, with no CIDR
@@ -213,70 +222,9 @@ pub fn redact(proxy: &str) -> String {
 /// every entry is TRIMMED, because libgit2 compares the bytes as they
 /// stand and `NO_PROXY="a.com, b.com"` therefore silently loses
 /// `b.com`, which is the shape a person writes.
+#[inline]
 pub fn no_proxy_matches(host: &str, port: u16, list: &str) -> bool {
-    list.split(',')
-        .map(str::trim)
-        .any(|pattern| pattern_matches(host, port, pattern))
-}
-
-fn pattern_matches(host: &str, port: u16, pattern: &str) -> bool {
-    if pattern.is_empty() {
-        return false;
-    }
-    if pattern == "*" {
-        return true;
-    }
-    let (wildcard, rest) = if let Some(rest) = pattern.strip_prefix("*.") {
-        (true, rest)
-    } else if let Some(rest) = pattern.strip_prefix('.') {
-        (true, rest)
-    } else {
-        (false, pattern)
-    };
-    // An IPv6 pattern is written in brackets, and so is the host in a
-    // URL; joy compares the bare addresses.
-    let rest = rest.trim_start_matches('[');
-    let (domain, wanted_port) = match rest.rsplit_once(':') {
-        // `[::1]:8080` splits at the LAST colon, which is the port
-        // separator; a bare IPv6 address has no port and its colons
-        // belong to the address.
-        Some((domain, tail)) if tail.chars().all(|c| c.is_ascii_digit()) && !tail.is_empty() => {
-            match tail.parse::<u16>() {
-                Ok(port) => (domain, Some(port)),
-                // A port no contact can have: libgit2 compares the port
-                // TEXT (net.c:1100-1103), so `acme.example:99999` matches
-                // nothing there. It must not become "this pattern names
-                // no port", which would bypass the proxy for the host on
-                // every port.
-                Err(_) => return false,
-            }
-        }
-        _ => (rest, None),
-    };
-    let domain = domain.trim_end_matches(']');
-    if domain.is_empty() {
-        return false;
-    }
-    // A pattern's port MUST match when it names one (net.c:1100-1103).
-    if let Some(wanted) = wanted_port {
-        if wanted != port {
-            return false;
-        }
-    }
-    let host = host.trim_start_matches('[').trim_end_matches(']');
-    if !wildcard {
-        return host.eq_ignore_ascii_case(domain);
-    }
-    if host.len() < domain.len() {
-        return false;
-    }
-    let suffix = &host[host.len() - domain.len()..];
-    if !suffix.eq_ignore_ascii_case(domain) {
-        return false;
-    }
-    // `*.domain` matches `domain` itself and `foo.domain`, and nothing
-    // that merely ends in those letters (net.c:1109-1116).
-    host.len() == domain.len() || host.as_bytes()[host.len() - domain.len() - 1] == b'.'
+    joy_core::vcs::proxy::no_proxy_matches(host, port, list)
 }
 
 /// The port a contact to `url` really opens, which is what a `host:port`
@@ -478,6 +426,60 @@ mod tests {
             ProxyChoice::Proxy("http://proxy.example:3128".into()),
             "a port no contact can have must not turn the proxy off"
         );
+    }
+
+    /// One matcher for the whole product (JOY-02A3-E4): the
+    /// connector's evaluation IS the engine's, so a NO_PROXY the person
+    /// wrote cannot mean one thing to a REST call and another to a git
+    /// contact. The corpus is the grammar's corners plus the port that
+    /// is not a port, which is where the two had drifted apart.
+    ///
+    /// Every row carries the answer D1.11 requires, because the
+    /// identity alone would hold just as well if both sides were wrong
+    /// together; the identity is asserted after it, as the cheap guard
+    /// against a second copy growing somewhere. This side owns the
+    /// identity because only this side may name the other: the engine
+    /// cannot depend back on the shared network layer without a cycle
+    /// (D2.6a's refresh lock takes `joy_core::util::file_lock`).
+    #[test]
+    fn the_connector_and_the_engine_share_one_matcher() {
+        for (host, port, list, expected) in [
+            ("acme.example", 443u16, "*", true),
+            // `*.domain` and `.domain` cover the domain itself
+            ("acme.example", 443, "*.acme.example", true),
+            ("git.acme.example", 443, "*.acme.example", true),
+            ("git.acme.example", 443, ".acme.example", true),
+            // and nothing that merely ends in those letters
+            ("notacme.example", 443, "*.acme.example", false),
+            // a port no contact can have matches nothing, on no port
+            ("acme.example", 443, "acme.example:99999", false),
+            ("acme.example", 99, "acme.example:99999", false),
+            // and the rest of the list still counts
+            ("b.com", 443, "acme.example:99999, b.com", true),
+            // a pattern's port must match when it names one
+            ("acme.example", 8443, "acme.example:8443", true),
+            ("acme.example", 443, "acme.example:8443", false),
+            // entries are trimmed, which libgit2 does not do
+            ("b.com", 443, "a.com, b.com", true),
+            // no CIDR in this grammar
+            ("10.0.0.7", 443, "10.0.0.0/8", false),
+            // an IPv6 literal is compared bare, bracket or not
+            ("::1", 8443, "[::1]", true),
+            ("::1", 8443, "[::1]:8443", true),
+            ("::1", 443, "[::1]:8443", false),
+            ("acme.example", 443, ",,", false),
+        ] {
+            assert_eq!(
+                no_proxy_matches(host, port, list),
+                expected,
+                "{host}:{port} against {list:?}"
+            );
+            assert_eq!(
+                no_proxy_matches(host, port, list),
+                joy_core::vcs::proxy::no_proxy_matches(host, port, list),
+                "two matchers again: {host}:{port} against {list:?}"
+            );
+        }
     }
 
     /// A `host:port` entry is compared against the port the contact

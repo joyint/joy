@@ -18,12 +18,6 @@ dist = false
 [dependencies]
 joy-process = { workspace = true }
 joy-model = { workspace = true }
-# The shared network layer of the connectors, for ONE thing (JOY-02A3-E4):
-# `vcs::proxy::no_proxy_matches` is `joy_forge_net::proxy::no_proxy_matches`,
-# so the engine and a connector exclude exactly the same hosts (D1.11,
-# D2.8). The direction is this way round because a connector must not
-# link libgit2 (D2.1); the engine may carry the network layer.
-joy-forge-net = { workspace = true }
 joy-crypt = { workspace = true }
 joy-token = { workspace = true }
 # The helpers moved in from joy-cli (version_bump, version_files,

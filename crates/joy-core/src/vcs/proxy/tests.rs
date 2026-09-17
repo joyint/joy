@@ -113,10 +113,12 @@ fn a_port_that_is_not_a_port_matches_nothing() {
 /// corpus is the grammar's corners plus the port that is not a port,
 /// which is where the two had drifted apart.
 ///
-/// Every row carries the answer D1.11 requires, because the identity
-/// alone would hold just as well if both sides were wrong together;
-/// the identity is asserted after it, as the cheap guard against a
-/// second copy growing somewhere.
+/// Every row carries the answer D1.11 requires, because an identity
+/// would hold just as well if both sides were wrong together. The
+/// identity itself is asserted on the connector's side, in
+/// `joy_forge_net::proxy`'s own corpus, because this crate may not name
+/// that one: the shared network layer depends on the engine (D2.6a's
+/// refresh lock), and a second edge back would be a cycle.
 #[test]
 fn the_engine_and_the_connector_share_one_matcher() {
     for (host, port, list, expected) in [
@@ -149,11 +151,6 @@ fn the_engine_and_the_connector_share_one_matcher() {
             no_proxy_matches(host, port, list),
             expected,
             "{host}:{port} against {list:?}"
-        );
-        assert_eq!(
-            no_proxy_matches(host, port, list),
-            joy_forge_net::proxy::no_proxy_matches(host, port, list),
-            "two matchers again: {host}:{port} against {list:?}"
         );
     }
 }

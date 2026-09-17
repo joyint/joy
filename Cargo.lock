@@ -2327,7 +2327,6 @@ dependencies = [
  "inquire",
  "insta",
  "joy-crypt",
- "joy-forge-net",
  "joy-model",
  "joy-process",
  "joy-token",

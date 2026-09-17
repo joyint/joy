@@ -11,9 +11,16 @@
 //! The justfile's `publish-crates` list says the rule out loud ("Order
 //! matters: dependents after dependencies") and nothing held the list
 //! to it: adding one edge in a Cargo.toml was enough to break the next
-//! release, and did (joy-core gained joy-forge-net while joy-forge-net
-//! still rode after joy-core). This test is that hold: it reads the
-//! list and the manifests and answers the same question cargo will.
+//! release, and did. This test is that hold: it reads the list and the
+//! manifests and answers the same question cargo will.
+//!
+//! The edge that prompted it was joy-core -> joy-forge-net, added for
+//! the shared NO_PROXY matcher while joy-forge-net still rode after
+//! joy-core in the list. That edge is gone: the matcher lives in the
+//! engine and the connector layer re-exports it, because the layer
+//! already depends on the engine for the refresh lock of D2.6a and the
+//! second edge would have been a cycle. The rule it exposed stays, and
+//! so does its guard.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
