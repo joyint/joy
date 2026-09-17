@@ -1,0 +1,13 @@
+id: JOY-02A3-E4
+title: 'J0c: one NO_PROXY matcher, and the chat ref sync carries the contact verdict'
+type: task
+status: new
+priority: medium
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-17T10:32:12.690000589Z
+updated: 2026-09-17T10:32:12.690000589Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Two follow ups from the Wave 1 integration and the A3 review: (1) crates/joy-forge-net/src/proxy.rs no_proxy_matches parses an entry port with parse::<u16>().ok(), so NO_PROXY="acme.example:99999" degrades to no port named and bypasses the proxy, while joy-core''s matcher of D1.11 treats it differently; make the connector use joy-core''s matcher or share one function. (2) joy_chat_store::chat_ref::sync_with_forge stringifies the contact error into JoyError::Git, so a chat ref failure cannot carry the classifier''s verdict to the desktop banner (D1.8b); carry the ContactError through. JI epic JI-0190-3A.'
