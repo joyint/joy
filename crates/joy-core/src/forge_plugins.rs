@@ -22,8 +22,10 @@
 //!    (exit 2 with empty stdout, or any answer that does not parse).
 //! 3. **The runner** (D2.3): [`run_once`] reads stdout concurrently with
 //!    waiting under a per verb deadline and pipes stderr, [`run_stream`]
-//!    reads newline delimited JSON events while the child runs, and both
-//!    kill the child's whole process group when they give up.
+//!    reads newline delimited JSON events while the child runs, and
+//!    both end the child's whole process group once the call is over,
+//!    however it ended: a `gh` the connector left behind holds the
+//!    pipes open and would outlast every deadline.
 //!
 //! The ANSWER of the read verbs stays best effort by design: a missing
 //! binary, a timeout or a garbled answer degrades to "no claim /
@@ -55,7 +57,12 @@ pub const COMBINED_BINARY: &str = "joy-forge";
 
 /// The documented TEST HOOK of D2.2, and nothing else: a list of
 /// directories (separated like PATH) searched before everything else.
-/// It is not a product switch; no joy surface offers it.
+///
+/// It is read in DEVELOPMENT builds only. D2.2 calls it "a documented
+/// test hook, not a product switch", and a shipped joy must not let one
+/// environment variable redirect a connector call, and with it the
+/// forge token that call carries, to any executable a stray line in a
+/// person's shell profile names.
 pub const PLUGIN_DIR_ENV: &str = "JOY_PLUGIN_DIR";
 
 /// One row per known forge connector, adapter-registry style
@@ -214,17 +221,18 @@ fn registered_dirs() -> &'static RwLock<Vec<PathBuf>> {
 pub fn set_plugin_dirs(dirs: Vec<PathBuf>) {
     *registered_dirs().write().unwrap_or_else(|e| e.into_inner()) = dirs;
     // A directory list that changed may point at another file for the
-    // same name, so nothing resolved under the old list may survive.
-    resolution_cache()
+    // same name, so no verdict reached under the old list may survive.
+    handshake_cache()
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clear();
 }
 
-/// The search order of D2.2, as directories: the test hook, then the
-/// directories the host registered, then the directory of the current
-/// executable, then PATH. Duplicates are dropped, so a directory that
-/// is both registered and on PATH is searched once and reported by the
+/// The search order of D2.2, as directories: the directories the host
+/// registered, then the directory of the current executable, then PATH,
+/// with the test hook of [`PLUGIN_DIR_ENV`] in front of all three in a
+/// development build. Duplicates are dropped, so a directory that is
+/// both registered and on PATH is searched once and reported by the
 /// earlier of the two.
 pub fn search_dirs() -> Vec<(PathBuf, FoundIn)> {
     let mut out: Vec<(PathBuf, FoundIn)> = Vec::new();
@@ -233,6 +241,7 @@ pub fn search_dirs() -> Vec<(PathBuf, FoundIn)> {
             out.push((dir, found_in));
         }
     };
+    #[cfg(debug_assertions)]
     if let Some(value) = std::env::var_os(PLUGIN_DIR_ENV) {
         for dir in std::env::split_paths(&value) {
             push(dir, FoundIn::TestHook);
@@ -298,9 +307,14 @@ fn may_execute(_meta: &std::fs::Metadata) -> bool {
     true
 }
 
-/// The resolution plus the handshake, cached per forge id for this
-/// process (the handshake itself is cached per path and mtime, so a
-/// connector replaced under a running joy is asked again).
+/// The resolution plus the handshake.
+///
+/// The handshake belongs to the FILE, not to the forge (D2.2a): one
+/// `joy-forge` answers for every forge it carries, which is why its
+/// answer lists them. It is therefore asked once per canonical path and
+/// mtime, so a machine with one connector and three registry rows spawns
+/// one `version` process and not three, and a connector replaced under a
+/// running joy is asked again.
 pub fn resolve_plugin(spec: &ForgePluginSpec) -> Result<ResolvedPlugin, PluginError> {
     let (path, found_in) =
         candidates(spec)
@@ -310,39 +324,78 @@ pub fn resolve_plugin(spec: &ForgePluginSpec) -> Result<ResolvedPlugin, PluginEr
                 display: spec.display,
                 names: spec.binary_names.iter().map(|n| (*n).to_string()).collect(),
             })?;
-    if let Some(hit) = resolution_cache()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .get(&(spec.id, path.clone(), mtime_of(&path)))
-    {
-        return Ok(hit.clone());
-    }
-    let handshake = handshake(spec, &path)?;
-    let resolved = ResolvedPlugin {
+    let handshake = handshake_cached(&path).map_err(|failure| failure.into_error(spec, &path))?;
+    Ok(ResolvedPlugin {
         id: spec.id,
         display: spec.display,
         binary_names: spec.binary_names,
-        resolved_path: path.clone(),
+        resolved_path: path,
         found_in,
         protocol: handshake.protocol,
         plugin_version: handshake.plugin,
-    };
-    resolution_cache()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .insert((spec.id, path.clone(), mtime_of(&path)), resolved.clone());
-    Ok(resolved)
+    })
 }
 
-/// The resolution cache: forge id, file and its mtime to the answer.
-/// The mtime is part of the key on purpose (D2.2a): `cargo install`
-/// replacing the file under a running desktop must not keep answering
-/// from the old handshake.
-type CacheKey = (&'static str, PathBuf, Option<std::time::SystemTime>);
+/// The handshake cache's key: the file, canonicalised because two names
+/// can be one file, and its mtime, because `cargo install` replacing the
+/// file under a running desktop must not keep answering from the old
+/// handshake (D2.2a).
+type CacheKey = (PathBuf, Option<std::time::SystemTime>);
 
-fn resolution_cache() -> &'static Mutex<HashMap<CacheKey, ResolvedPlugin>> {
-    static CACHE: OnceLock<Mutex<HashMap<CacheKey, ResolvedPlugin>>> = OnceLock::new();
+/// One verdict about one file, and when it was reached.
+struct Verdict {
+    result: Result<Handshake, HandshakeFailure>,
+    at: Instant,
+}
+
+/// How long a FAILED handshake stays cached. Without caching it at all,
+/// a connector whose `version` hangs costs a fresh 5 s spawn on every
+/// verb and D2.2a's "it is not asked per verb, so the 1 Hz chat poll
+/// costs no extra process" would hold for the working case only. The
+/// window is short, because the fix for a broken connector is to
+/// replace it and the next call should see that.
+const HANDSHAKE_FAILURE_TTL: Duration = Duration::from_secs(60);
+
+fn handshake_cache() -> &'static Mutex<HashMap<CacheKey, Verdict>> {
+    static CACHE: OnceLock<Mutex<HashMap<CacheKey, Verdict>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// [`handshake`] asked at most once per file per process, and at most
+/// once per [`HANDSHAKE_FAILURE_TTL`] while it keeps failing.
+fn handshake_cached(path: &Path) -> Result<Handshake, HandshakeFailure> {
+    let key = (canonical(path), mtime_of(path));
+    if let Some(verdict) = handshake_cache()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(&key)
+    {
+        match &verdict.result {
+            Ok(handshake) => return Ok(handshake.clone()),
+            Err(failure) if verdict.at.elapsed() < HANDSHAKE_FAILURE_TTL => {
+                return Err(failure.clone())
+            }
+            Err(_) => {}
+        }
+    }
+    let result = handshake(path);
+    handshake_cache()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(
+            key,
+            Verdict {
+                result: result.clone(),
+                at: Instant::now(),
+            },
+        );
+    result
+}
+
+/// The file's canonical path, or the path itself when the filesystem
+/// will not say (a file that vanished between the two calls).
+fn canonical(path: &Path) -> PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 fn mtime_of(path: &Path) -> Option<std::time::SystemTime> {
@@ -365,42 +418,67 @@ pub struct VersionAnswer {
 }
 
 /// The handshake's verdict for one file.
+#[derive(Clone)]
 struct Handshake {
     protocol: u32,
     plugin: Option<String>,
 }
 
-/// Ask one file what protocol it speaks, under the 5 s query class.
+/// Why a file could not be asked what protocol it speaks. It carries no
+/// forge display name on purpose: one verdict serves every registry row
+/// that resolved to the same file, and the row that asks turns it into
+/// its own [`PluginError`].
+#[derive(Clone)]
+enum HandshakeFailure {
+    Spawn(String),
+    TimedOut { stderr: String },
+}
+
+impl HandshakeFailure {
+    fn into_error(self, spec: &ForgePluginSpec, path: &Path) -> PluginError {
+        match self {
+            HandshakeFailure::Spawn(error) => PluginError::Spawn {
+                display: spec.display,
+                path: path.to_path_buf(),
+                error,
+            },
+            HandshakeFailure::TimedOut { stderr } => PluginError::TimedOut {
+                display: spec.display,
+                path: path.to_path_buf(),
+                verb: "version".to_string(),
+                timeout: QUERY_TIMEOUT,
+                stderr,
+            },
+        }
+    }
+}
+
+/// Ask one FILE what protocol it speaks, under the 5 s query class.
+///
+/// The question is `version` and nothing before it, for the combined
+/// binary as much as for a legacy one (D2.2a: "`joy-forge version` (and
+/// every legacy `joy-<forge> version`) answers exactly one object"). The
+/// answer is about the binary and not about one forge inside it, which
+/// is why it carries a `forges` list.
 ///
 /// A protocol 1 binary needs no cooperation to be recognised: its clap
 /// parser rejects the unknown subcommand and exits 2 with usage on
 /// stderr and nothing on stdout. The rule of D2.2a is therefore: exit
 /// code 2 with empty stdout, or any answer that does not parse as the
 /// object above, means protocol 1.
-fn handshake(spec: &ForgePluginSpec, path: &Path) -> Result<Handshake, PluginError> {
-    let combined = path
+fn handshake(path: &Path) -> Result<Handshake, HandshakeFailure> {
+    let file = path
         .file_stem()
         .and_then(|stem| stem.to_str())
-        .is_some_and(|stem| stem.eq_ignore_ascii_case(COMBINED_BINARY));
-    let mut args: Vec<String> = Vec::new();
-    if combined {
-        args.push(spec.id.to_string());
-    }
-    args.push("version".to_string());
-    let outcome = run_path(path, spec.id, "version", &args, &[], None, QUERY_TIMEOUT);
-    if let Some(error) = outcome.spawn_error.clone() {
-        return Err(PluginError::Spawn {
-            display: spec.display,
-            path: path.to_path_buf(),
-            error,
-        });
+        .unwrap_or(COMBINED_BINARY);
+    let args = vec!["version".to_string()];
+    let outcome = run_path(path, file, "version", &args, &[], None, QUERY_TIMEOUT);
+    if let Some(error) = outcome.spawn_error.or(outcome.wait_error) {
+        return Err(HandshakeFailure::Spawn(error));
     }
     if outcome.timed_out {
-        return Err(PluginError::TimedOut {
-            display: spec.display,
-            path: path.to_path_buf(),
-            verb: "version".to_string(),
-            timeout: QUERY_TIMEOUT,
+        return Err(HandshakeFailure::TimedOut {
+            stderr: outcome.stderr_text,
         });
     }
     match outcome
@@ -459,12 +537,16 @@ pub enum PluginError {
         stderr: String,
     },
     /// The connector did not answer inside the verb's deadline and its
-    /// process group was killed.
+    /// process group was killed. Whatever it wrote on stderr before it
+    /// hung comes along: piping stderr was done so that the connector's
+    /// one explaining sentence reaches the caller, and a connector that
+    /// hangs is exactly where that sentence is worth most.
     TimedOut {
         display: &'static str,
         path: PathBuf,
         verb: String,
         timeout: Duration,
+        stderr: String,
     },
     /// The connector answered something this joy cannot read.
     Unparsable {
@@ -577,13 +659,27 @@ impl std::fmt::Display for PluginError {
                 path,
                 verb,
                 timeout,
-            } => write!(
-                f,
-                "the {display} connector at {} did not answer `{verb}` within {} s and was \
-                 stopped",
-                path.display(),
-                timeout.as_secs()
-            ),
+                stderr,
+            } => {
+                let text = one_line(stderr, 400);
+                if text.is_empty() {
+                    write!(
+                        f,
+                        "the {display} connector at {} did not answer `{verb}` within {} s and \
+                         was stopped",
+                        path.display(),
+                        timeout.as_secs()
+                    )
+                } else {
+                    write!(
+                        f,
+                        "the {display} connector at {} did not answer `{verb}` within {} s and \
+                         was stopped; the last thing it said was: {text}",
+                        path.display(),
+                        timeout.as_secs()
+                    )
+                }
+            }
             PluginError::Unparsable {
                 display,
                 path,
@@ -630,16 +726,23 @@ const LOGIN_FIRST_EVENT: Duration = Duration::from_secs(15);
 /// `expires_in` decides, and this is the most it may ask for.
 const LOGIN_TOTAL_CAP: Duration = Duration::from_secs(900);
 
-/// The deadline for one verb (D2.3). Every verb of the catalogue is
-/// named; anything else gets the careful class, because a verb nobody
-/// wrote down must not be the one that stalls a command.
+/// The deadline for ONE SHOT of one verb (D2.3), the bound
+/// [`run_once`] and therefore [`query`] use. Every verb of the
+/// catalogue is named; anything else gets the shortest class, because a
+/// verb nobody wrote down must not be the one that stalls a command.
+///
+/// `login` is here with its FIRST EVENT bound and not with its 900 s
+/// cap on purpose: the cap belongs to the streaming call, where
+/// [`StreamBounds`] carries both halves and an event may ask for more.
+/// A one shot `query("login")` is a caller mistake, and a caller
+/// mistake must cost 15 s, not a quarter of an hour.
 pub fn timeout_for(verb: &str) -> Duration {
     match verb {
         "claims" | "identity" | "resolve" | "web-url" | "version" => QUERY_TIMEOUT,
         "store" | "files" | "repositories" | "create-repository" | "token" | "token-store"
         | "logout" => STORE_TIMEOUT,
         "release" => RELEASE_TIMEOUT,
-        "login" => LOGIN_TOTAL_CAP,
+        "login" => LOGIN_FIRST_EVENT,
         _ => QUERY_TIMEOUT,
     }
 }
@@ -665,6 +768,10 @@ pub struct PluginOutcome {
     pub timed_out: bool,
     /// The child never started, with the reason.
     pub spawn_error: Option<String>,
+    /// The child DID start and this process could not wait for it, with
+    /// the reason. Its own field because "never started" and "started
+    /// and then joy lost it" are two different sentences for a reader.
+    pub wait_error: Option<String>,
 }
 
 /// A stop signal shared between a caller and a running connector
@@ -853,11 +960,22 @@ fn run_path(
                 );
                 group.kill(&mut child);
                 let _ = child.wait();
-                outcome.spawn_error = Some(e.to_string());
+                outcome.wait_error = Some(e.to_string());
                 break None;
             }
         }
     };
+    // The connector has been reaped, and now its whole GROUP goes, on
+    // every path including the normal one (D2.3, "cancellation kills
+    // the process group ... because child.kill() leaves curl or gh
+    // grandchildren behind"). A `gh` the connector started in the
+    // background inherited stdout, and a pipe reaches end of file only
+    // when every write end is closed: without this kill the two joins
+    // below wait for that grandchild instead of for the connector, and
+    // the verb's deadline would bound nothing at all. What the
+    // connector itself wrote is already inside the pipe and is still
+    // read to its end.
+    group.kill_group();
     outcome.stdout_text = out_reader.join();
     outcome.stderr_text = err_reader.join();
     outcome.stdout_json = serde_json::from_str(outcome.stdout_text.trim()).ok();
@@ -948,6 +1066,7 @@ pub fn run_stream(
     let mut deadline = Instant::now() + bounds.first_event;
     let cap = Instant::now() + bounds.total;
     let mut cancelled = false;
+    let mut reaped = false;
     loop {
         if cancel.is_cancelled() {
             cancelled = true;
@@ -975,7 +1094,20 @@ pub fn run_stream(
                 }
                 Err(_) => sink.line_noise(&line),
             },
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                // The only other way out of this loop is end of file on
+                // stdout, and a `gh` the connector started holds that
+                // open after the connector itself is gone. Ending the
+                // group closes the last write end; what is already in
+                // the pipe stays readable, so the reader drains every
+                // line the connector wrote and the loop leaves through
+                // `Disconnected` with the connector's own answer rather
+                // than through the deadline with `timed_out`.
+                if !reaped && matches!(child.try_wait(), Ok(Some(_))) {
+                    reaped = true;
+                    group.kill_group();
+                }
+            }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
         }
     }
@@ -992,6 +1124,10 @@ pub fn run_stream(
         let _ = child.wait();
     }
     outcome.exit_code = child.wait().ok().and_then(|status| status.code());
+    // The connector is reaped; whatever it started is not, and it still
+    // holds both pipes open. Both joins below wait for end of file, so
+    // the group goes first, on every path (D2.3).
+    group.kill_group();
     drop(lines_rx);
     let _ = line_reader.join();
     outcome.stderr_text = err_reader.join();
@@ -1078,27 +1214,35 @@ impl ProcessGroup {
         ProcessGroup {}
     }
 
-    /// End the connector and everything it started. Best effort by
-    /// definition: a process that already exited is not an error here.
+    /// End everything in the connector's group: the connector itself
+    /// while it still runs, and every `gh`, `glab`, `tea` or `curl` it
+    /// started. Best effort by definition: a group that is already
+    /// empty is not an error here.
     #[cfg(unix)]
-    fn kill(&self, child: &mut Child) {
+    fn kill_group(&self) {
         // The child is the leader of its own group (process_group(0)),
         // so its pid IS the group id and one killpg reaches the
-        // connector and every `gh` or `curl` below it.
+        // connector and every `gh` or `curl` below it. It stays correct
+        // after the connector itself was reaped: a process group keeps
+        // its id reserved for as long as it has one member, so this
+        // signal can never reach a stranger that took the pid over.
         unsafe { libc::killpg(self.pid, libc::SIGKILL) };
-        let _ = child.kill();
     }
 
     #[cfg(windows)]
-    fn kill(&self, child: &mut Child) {
+    fn kill_group(&self) {
         if let Some(job) = &self.job {
             job.terminate();
         }
-        let _ = child.kill();
     }
 
     #[cfg(not(any(unix, windows)))]
+    fn kill_group(&self) {}
+
+    /// [`ProcessGroup::kill_group`] plus the connector itself, for the
+    /// paths that give up while it is still running.
     fn kill(&self, child: &mut Child) {
+        self.kill_group();
         let _ = child.kill();
     }
 }
@@ -1390,6 +1534,35 @@ fn refuse_outdated(
     })
 }
 
+/// The warn line for the two failures that happen BEFORE any process
+/// exists (D5, package P1a: "silent failure is fixed at the source").
+///
+/// [`run_path`] logs everything a running connector can do to a call:
+/// it could not be started, it refused, it did not answer in time. The
+/// two states below never reach it, because no file is spawned: nothing
+/// is installed, or the file that answers speaks protocol 1. Those are
+/// the two an operator most needs in the log, since `claims` turns both
+/// into `false` and `identity` into `None` for the person.
+fn warn_before_the_spawn(plugin: &str, verb: &str, error: &PluginError) {
+    match error {
+        PluginError::Missing { names, .. } => tracing::warn!(
+            plugin,
+            verb,
+            names = %names.join(", "),
+            "the forge plugin is not installed"
+        ),
+        PluginError::Outdated { path, protocol, .. } => tracing::warn!(
+            plugin,
+            verb,
+            path = %path.display(),
+            protocol,
+            "the forge plugin speaks an older protocol and was not asked"
+        ),
+        // Everything else was logged where it happened, by the runner.
+        _ => {}
+    }
+}
+
 /// Ask one verb and read its one JSON answer, with every failure named
 /// (D2.3). This is the door every verb of the catalogue goes through,
 /// the ones J3 adds included.
@@ -1400,7 +1573,13 @@ pub fn query<T: serde::de::DeserializeOwned>(
     extra: &[&str],
     ctx: &CallContext,
 ) -> Result<T, PluginError> {
-    let resolved = resolve_plugin(spec)?;
+    let resolved = match resolve_plugin(spec) {
+        Ok(resolved) => resolved,
+        Err(error) => {
+            warn_before_the_spawn(spec.id, verb, &error);
+            return Err(error);
+        }
+    };
     query_resolved(&resolved, verb, target, extra, ctx)
 }
 
@@ -1413,7 +1592,10 @@ pub fn query_resolved<T: serde::de::DeserializeOwned>(
     extra: &[&str],
     ctx: &CallContext,
 ) -> Result<T, PluginError> {
-    refuse_outdated(resolved, verb, target)?;
+    if let Err(error) = refuse_outdated(resolved, verb, target) {
+        warn_before_the_spawn(resolved.id, verb, &error);
+        return Err(error);
+    }
     let args = call_args(resolved, verb, target, extra, ctx);
     let outcome = run_once_in(resolved, &args, &ctx.env(), ctx.root(), timeout_for(verb));
     if let Some(error) = outcome.spawn_error {
@@ -1429,19 +1611,40 @@ pub fn query_resolved<T: serde::de::DeserializeOwned>(
             path: resolved.resolved_path.clone(),
             verb: verb.to_string(),
             timeout: timeout_for(verb),
+            stderr: outcome.stderr_text,
+        });
+    }
+    if let Some(error) = outcome.wait_error {
+        // The connector DID start, so "could not be started" would be
+        // untrue; this is joy losing a child it spawned.
+        return Err(PluginError::Failed {
+            display: resolved.display,
+            path: resolved.resolved_path.clone(),
+            verb: verb.to_string(),
+            exit_code: None,
+            stderr: format!("joy could not wait for the connector: {error}"),
         });
     }
     if outcome.exit_code != Some(0) {
         // A protocol 1 binary that slipped past the handshake (a file
         // replaced between the two calls) still exits 2 with an empty
-        // stdout, and that is the detector of D2.2a.
-        if outcome.exit_code == Some(2) && outcome.stdout_text.trim().is_empty() {
-            return Err(PluginError::Outdated {
+        // stdout, and that is the detector of D2.2a. It is asked only
+        // of a connector this joy has NOT just heard say "protocol 2":
+        // D2.2a scopes the rule to the handshake, and a protocol 2
+        // connector that rejects an unknown flag exits 2 as well, which
+        // must not be reported as a stale binary to remove.
+        if resolved.protocol < PROTOCOL
+            && outcome.exit_code == Some(2)
+            && outcome.stdout_text.trim().is_empty()
+        {
+            let error = PluginError::Outdated {
                 display: resolved.display,
                 path: resolved.resolved_path.clone(),
                 protocol: 1,
                 verb: verb.to_string(),
-            });
+            };
+            warn_before_the_spawn(resolved.id, verb, &error);
+            return Err(error);
         }
         return Err(PluginError::Failed {
             display: resolved.display,
@@ -1534,9 +1737,20 @@ pub fn identity_full(
 /// the address alone, never from ambient state. `None` on every failure
 /// or `known:false`.
 pub fn resolve(spec: &ForgePluginSpec, email: &str, ctx: &CallContext) -> Option<ForgeIdentity> {
-    query::<ForgeIdentity>(spec, "resolve", None, &["--email", email], ctx)
+    resolve_full(spec, email, ctx)
         .ok()
         .filter(|identity| identity.known)
+}
+
+/// [`resolve`] with `known:false` kept apart from every failure (D2.3:
+/// plugin missing, plugin outdated, plugin failed and timed out are
+/// four facts, and an answer of `known:false` is a fifth).
+pub fn resolve_full(
+    spec: &ForgePluginSpec,
+    email: &str,
+    ctx: &CallContext,
+) -> Result<ForgeIdentity, PluginError> {
+    query::<ForgeIdentity>(spec, "resolve", None, &["--email", email], ctx)
 }
 
 /// What a forge says about a repository's joy store (JP-013C-11), the
@@ -1576,9 +1790,22 @@ pub enum StoreAnswer {
 /// create one? `None` on every connector failure and on `unknown`: the
 /// question stayed unanswered.
 pub fn store(spec: &ForgePluginSpec, target: &Target, ctx: &CallContext) -> Option<StoreAnswer> {
-    query::<StoreAnswer>(spec, "store", Some(target), &[], ctx)
+    store_full(spec, target, ctx)
         .ok()
         .filter(|answer| *answer != StoreAnswer::Unknown)
+}
+
+/// [`store`] with the reason. The repository-facing verbs are what the
+/// desktop's setup mask and the platform's forge facts ask, and both
+/// have a different sentence for "no connector installed", "the
+/// connector is stale", "the connector refused" and "the forge could
+/// not be asked" (D2.3).
+pub fn store_full(
+    spec: &ForgePluginSpec,
+    target: &Target,
+    ctx: &CallContext,
+) -> Result<StoreAnswer, PluginError> {
+    query::<StoreAnswer>(spec, "store", Some(target), &[], ctx)
 }
 
 /// The files a repository's default branch carries (JAPP-0293-A7), the
@@ -1594,9 +1821,18 @@ pub enum FilesAnswer {
 /// The files of the repository at `target`; `None` on every connector
 /// failure and on `unknown`.
 pub fn files(spec: &ForgePluginSpec, target: &Target, ctx: &CallContext) -> Option<FilesAnswer> {
-    query::<FilesAnswer>(spec, "files", Some(target), &[], ctx)
+    files_full(spec, target, ctx)
         .ok()
         .filter(|answer| *answer != FilesAnswer::Unknown)
+}
+
+/// [`files`] with the reason, for the same callers as [`store_full`].
+pub fn files_full(
+    spec: &ForgePluginSpec,
+    target: &Target,
+    ctx: &CallContext,
+) -> Result<FilesAnswer, PluginError> {
+    query::<FilesAnswer>(spec, "files", Some(target), &[], ctx)
 }
 
 /// What the release verb answered (JOY-0256-64). `unsupported` is the
@@ -1781,8 +2017,41 @@ mod tests {
         let login = StreamBounds::for_verb("login");
         assert_eq!(login.first_event, Duration::from_secs(15));
         assert_eq!(login.total, Duration::from_secs(900));
-        // a verb nobody wrote down gets the careful class
+        // The 900 s cap belongs to the STREAM. A one shot call of a
+        // streaming verb is a caller mistake, and it costs the first
+        // event bound, not a quarter of an hour.
+        assert_eq!(timeout_for("login"), Duration::from_secs(15));
+        // a verb nobody wrote down gets the shortest class
         assert_eq!(timeout_for("something-new"), Duration::from_secs(5));
+    }
+
+    /// D2.3: stderr is piped so the connector's one explaining sentence
+    /// reaches the caller, and a connector that hangs is where that
+    /// sentence is worth most.
+    #[test]
+    fn a_timeout_carries_what_the_connector_said_before_it_hung() {
+        let error = PluginError::TimedOut {
+            display: "GitLab",
+            path: PathBuf::from("/usr/local/bin/joy-forge"),
+            verb: "store".to_string(),
+            timeout: Duration::from_secs(30),
+            stderr: "  waiting for git.acme.com\n  to answer\n".to_string(),
+        };
+        assert_eq!(error.state(), "plugin_timed_out");
+        let text = error.to_string();
+        assert!(text.contains("within 30 s"), "{text}");
+        assert!(
+            text.contains("waiting for git.acme.com to answer"),
+            "{text}"
+        );
+        let silent = PluginError::TimedOut {
+            display: "GitLab",
+            path: PathBuf::from("/usr/local/bin/joy-forge"),
+            verb: "store".to_string(),
+            timeout: Duration::from_secs(30),
+            stderr: String::new(),
+        };
+        assert!(silent.to_string().ends_with("was stopped"), "{silent}");
     }
 
     /// Every call carries the host kind (D1.10) and the login pin

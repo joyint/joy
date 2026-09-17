@@ -79,12 +79,18 @@ const PROTOCOL_2: &str = r#"#!/bin/sh
 if [ -n "$JOY_STUB_ARGV" ]; then
   echo "$@" >> "$JOY_STUB_ARGV"
 fi
+# The handshake asks the BINARY what protocol it speaks, never a forge
+# inside it (D2.2a), so `version` arrives as the first argument with
+# nothing before it and answers for every forge this file carries.
+if [ "$1" = "version" ]; then
+  echo '{"protocol":2,"plugin":"joy-forge 0.21.0","forges":["github","gitlab","gitea"]}'
+  exit 0
+fi
 forge="$1"
 shift
 verb="$1"
 shift
 case "$verb" in
-  version) echo '{"protocol":2,"plugin":"joy-forge 0.21.0","forges":["github","gitlab","gitea"]}' ;;
   claims) echo '{"claims":true}' ;;
   identity) echo '{"known":true,"login":"alice","user_id":"12345","emails":["a@example.com"]}' ;;
   unknown-identity) echo '{"known":false}' ;;
@@ -101,12 +107,24 @@ case "$verb" in
   slow)
     sleep 60 &
     echo "$!" > "$JOY_STUB_PIDFILE"
+    echo "waiting for github.com to answer" >&2
     sleep 60
+    ;;
+  answer-and-leave)
+    sleep 60 &
+    echo "$!" > "$JOY_STUB_PIDFILE"
+    echo '{"claims":true}'
     ;;
   garbage) echo 'not json at all' ;;
   login)
     echo '{"event":"verification","host":"github.com","url":"https://github.com/login/device","url_complete":null,"code":"WDJB-MJHT","expires_in":900,"interval":5}'
     sleep 1
+    echo '{"event":"result","known":true,"login":"scotty","stored":"keychain"}'
+    ;;
+  login-and-leave)
+    sleep 60 &
+    echo "$!" > "$JOY_STUB_PIDFILE"
+    echo '{"event":"verification","host":"github.com","url":"https://github.com/login/device","url_complete":null,"code":"WDJB-MJHT","expires_in":900,"interval":5}'
     echo '{"event":"result","known":true,"login":"scotty","stored":"keychain"}'
     ;;
   login-hangs)
@@ -232,9 +250,12 @@ fn a_connector_beside_the_calling_executable_is_found_without_path() {
     assert_eq!(resolved.protocol, 2);
 }
 
-/// The test hook of D2.2 is a hook: it is searched before everything
-/// the host registered, which is the only thing that makes it useful to
-/// a test and useless as a product switch.
+/// The test hook of D2.2 is a hook: in a DEVELOPMENT build it is
+/// searched before everything the host registered, which is what makes
+/// it useful to a test, and a shipped joy does not read it at all,
+/// which is what keeps it from being a product switch. The case is
+/// compiled for the build that has it, for the same reason.
+#[cfg(debug_assertions)]
 #[test]
 fn the_test_hook_is_searched_first() {
     let _guard = lock();
@@ -249,6 +270,35 @@ fn the_test_hook_is_searched_first() {
     forge_plugins::set_plugin_dirs(Vec::new());
     assert_eq!(resolved.resolved_path, hook.path().join(COMBINED_BINARY));
     assert_eq!(resolved.found_in, FoundIn::TestHook);
+}
+
+/// D2.2a: the handshake is asked of the FILE, once per path and mtime.
+/// `joy-forge` answers for every forge it carries, which is why its
+/// answer lists them, so a machine with one connector and three
+/// registry rows spawns ONE `version` process, and the question that
+/// goes over the wire is `version` with no forge id before it.
+#[test]
+fn one_file_is_asked_its_protocol_once_for_every_forge_it_carries() {
+    let _guard = lock();
+    let dir = tempfile::tempdir().expect("a temp directory");
+    stub(dir.path(), COMBINED_BINARY, PROTOCOL_2);
+    only(dir.path());
+    let log = argv_log(dir.path());
+    for id in ["github", "gitlab", "gitea"] {
+        let spec = forge_plugins::by_id(id).expect("a registry row");
+        let resolved = forge_plugins::resolve_plugin(spec).expect("the one connector answers");
+        assert_eq!(resolved.id, id);
+        assert_eq!(resolved.protocol, 2);
+        assert_eq!(resolved.plugin_version.as_deref(), Some("joy-forge 0.21.0"));
+        assert_eq!(resolved.resolved_path, dir.path().join(COMBINED_BINARY));
+    }
+    let seen = argv_lines(&log);
+    std::env::remove_var("JOY_STUB_ARGV");
+    assert_eq!(
+        seen,
+        vec!["version".to_string()],
+        "one file, one handshake, and no forge id in front of it"
+    );
 }
 
 /// Nothing installed is its own state, with the names that were looked
@@ -441,6 +491,10 @@ fn a_connector_that_never_answers_is_stopped_with_its_grandchildren() {
         elapsed < Duration::from_secs(10),
         "the runner returned after {elapsed:?}, so the grandchild still held the pipe"
     );
+    assert!(
+        outcome.stderr_text.contains("waiting for github.com"),
+        "what the connector said before it hung is captured: {outcome:?}"
+    );
     let pid: i32 = std::fs::read_to_string(&pidfile)
         .expect("the stub wrote its grandchild's pid")
         .trim()
@@ -461,8 +515,106 @@ fn a_connector_that_never_answers_is_stopped_with_its_grandchildren() {
     );
 }
 
+/// D2.3: the deadline bounds the CALL, not the connector's own
+/// lifetime, and the process group is killed on EVERY path.
+///
+/// This is the shape a connector that shells out to `gh`, `glab`, `tea`
+/// or `curl` takes when it works: it starts the foreign CLI, prints its
+/// answer and exits 0. The grandchild inherited stdout, and a pipe
+/// reaches end of file only when every write end is closed, so a runner
+/// that reaps the connector and then reads stdout to its end waits for
+/// the grandchild, with `timed_out == false` and nothing killed.
+#[test]
+fn a_connector_that_leaves_a_grandchild_behind_does_not_hold_the_call() {
+    let _guard = lock();
+    let dir = tempfile::tempdir().expect("a temp directory");
+    stub(dir.path(), COMBINED_BINARY, PROTOCOL_2);
+    only(dir.path());
+    let resolved = forge_plugins::resolve_plugin(github()).expect("the stub is there");
+    let pidfile = dir.path().join("grandchild.pid");
+    let started = Instant::now();
+    let outcome = forge_plugins::run_once(
+        &resolved,
+        &["github".to_string(), "answer-and-leave".to_string()],
+        &[(
+            "JOY_STUB_PIDFILE".to_string(),
+            pidfile.display().to_string(),
+        )],
+        Duration::from_secs(5),
+    );
+    let elapsed = started.elapsed();
+    assert!(
+        !outcome.timed_out,
+        "the connector answered and exited 0: {outcome:?}"
+    );
+    assert_eq!(outcome.exit_code, Some(0));
+    assert_eq!(
+        outcome
+            .stdout_json
+            .as_ref()
+            .and_then(|value| value.get("claims"))
+            .and_then(serde_json::Value::as_bool),
+        Some(true),
+        "the answer the connector did print is intact: {outcome:?}"
+    );
+    assert!(
+        elapsed < Duration::from_secs(3),
+        "the grandchild held the call for {elapsed:?}, so the deadline bounded nothing"
+    );
+    let pid: i32 = std::fs::read_to_string(&pidfile)
+        .expect("the stub wrote its grandchild's pid")
+        .trim()
+        .parse()
+        .expect("a pid");
+    let mut alive = true;
+    for _ in 0..50 {
+        if unsafe { libc::kill(pid, 0) } != 0 {
+            alive = false;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(
+        !alive,
+        "the grandchild {pid} outlived the connector's normal exit"
+    );
+}
+
+/// D2.2a scopes "exit 2 with empty stdout" to the HANDSHAKE. A protocol
+/// 2 connector that rejects an unknown subcommand or an unknown flag (a
+/// joy-forge built before `web-url`, say) exits 2 in the same way, and
+/// telling its owner to `rm` it would contradict the protocol 2 this
+/// joy just heard it claim.
+#[test]
+fn an_unknown_verb_on_a_protocol_two_connector_is_a_refusal_not_a_stale_binary() {
+    let _guard = lock();
+    let dir = tempfile::tempdir().expect("a temp directory");
+    let path = stub(dir.path(), COMBINED_BINARY, PROTOCOL_2);
+    only(dir.path());
+    let error = forge_plugins::query::<serde_json::Value>(
+        github(),
+        "web-url",
+        Some(&Target::remote("git@github.com:o/r.git")),
+        &[],
+        &CallContext::rootless(),
+    )
+    .expect_err("this stub knows no web-url");
+    assert_eq!(error.state(), "plugin_failed");
+    assert_eq!(error.resolved_path(), Some(path.as_path()));
+    let text = error.to_string();
+    assert!(!text.contains("speaks protocol 1"), "{text}");
+    assert!(!text.contains("rm "), "{text}");
+    assert!(text.contains("unrecognized subcommand"), "{text}");
+}
+
 /// D2.3: `claims --host github.com` works with no project on disk, and
 /// every call carries the host kind (D1.10) and the login pin (D4.1c).
+///
+/// "No project on disk" is observed and not assumed: this test binary
+/// runs inside the joy repository, which IS a project, so the case
+/// moves the working directory into an empty one for the duration of
+/// the call. Without that it would only show that no `current_dir` is
+/// passed, which is a different sentence.
 #[test]
 fn a_rootless_call_carries_the_host_the_host_kind_and_the_pin() {
     let _guard = lock();
@@ -479,18 +631,24 @@ fn a_rootless_call_carries_the_host_the_host_kind_and_the_pin() {
             ..CallerFacts::default()
         });
     assert!(ctx.root.is_none(), "there is no project on disk");
-    // The handshake and the verb both run without a working directory.
-    assert!(forge_plugins::claims(
-        github(),
-        &Target::host("github.com"),
-        &ctx
-    ));
+    // The handshake and the verb both run with nothing but an empty
+    // directory around them.
+    let nowhere = tempfile::tempdir().expect("a directory that is no project");
+    let back = std::env::current_dir().expect("a working directory");
+    std::env::set_current_dir(nowhere.path()).expect("move out of every project");
+    let claimed = forge_plugins::claims(github(), &Target::host("github.com"), &ctx);
+    std::env::set_current_dir(&back).expect("move back");
+    assert!(claimed, "a rootless claims call is answered");
     let seen = argv_lines(&log);
     std::env::remove_var("JOY_STUB_ARGV");
     let call = seen
         .iter()
         .find(|line| line.contains("claims") && line.contains("--host-kind"))
         .unwrap_or_else(|| panic!("no claims call in {seen:?}"));
+    assert!(
+        seen.iter().any(|line| line == "version"),
+        "the handshake ran without a working directory too: {seen:?}"
+    );
     assert!(
         call.starts_with("github claims --host github.com"),
         "{call}"
@@ -609,6 +767,66 @@ fn every_failed_call_is_warned_with_the_connector_and_the_verb() {
         .unwrap_or_else(|| panic!("no line about the missing connector in {lines:?}"));
     assert!(unstartable.contains("removed"), "{unstartable}");
     assert!(unstartable.contains("claims"), "{unstartable}");
+}
+
+/// P1a's acceptance sentence: "a deliberately removed plugin produces a
+/// warn log line and a failing startup probe instead of a silent
+/// unknown". The two states that reach no process, `plugin_missing` and
+/// `plugin_outdated`, are the ones a caller turns into `false` and
+/// `None`, so they are the two an operator most needs in the log.
+#[test]
+fn a_removed_and_a_stale_connector_are_warned_about_on_the_normal_call_path() {
+    let _guard = lock();
+
+    // Removed: nothing with any of the names exists anywhere.
+    let empty = tempfile::tempdir().expect("an empty directory");
+    only(empty.path());
+    let ghost = ForgePluginSpec {
+        id: "ghost",
+        display: "Ghost",
+        binary_names: &["joy-does-not-exist-anywhere"],
+    };
+    let log = WarnLog::default();
+    let claimed = tracing::subscriber::with_default(log.clone(), || {
+        forge_plugins::claims(
+            &ghost,
+            &Target::host("github.com"),
+            &CallContext::rootless(),
+        )
+    });
+    assert!(!claimed, "the answer still degrades to no claim");
+    let lines = log.lines();
+    let missing = lines
+        .iter()
+        .find(|line| line.contains("not installed"))
+        .unwrap_or_else(|| panic!("the removed connector was silent: {lines:?}"));
+    assert!(missing.contains("ghost"), "{missing}");
+    assert!(missing.contains("claims"), "{missing}");
+
+    // Stale: the file that answers speaks protocol 1 and the verb is
+    // not one it knows.
+    let old = tempfile::tempdir().expect("a temp directory");
+    stub(old.path(), "joy-github", PROTOCOL_1);
+    only(old.path());
+    let log = WarnLog::default();
+    tracing::subscriber::with_default(log.clone(), || {
+        assert!(forge_plugins::query::<serde_json::Value>(
+            github(),
+            "token",
+            Some(&Target::host("github.com")),
+            &[],
+            &CallContext::rootless(),
+        )
+        .is_err());
+    });
+    let lines = log.lines();
+    let stale = lines
+        .iter()
+        .find(|line| line.contains("older protocol"))
+        .unwrap_or_else(|| panic!("the stale connector was silent: {lines:?}"));
+    assert!(stale.contains("github"), "{stale}");
+    assert!(stale.contains("token"), "{stale}");
+    assert!(stale.contains("joy-github"), "{stale}");
 }
 
 // ---------------------------------------------------------------------
@@ -749,6 +967,75 @@ fn the_first_event_sets_the_deadline_for_the_rest() {
         elapsed >= Duration::from_millis(400),
         "and it was not cut short either: {elapsed:?}"
     );
+}
+
+/// D2.3, the streaming half of the same rule: a connector that answered
+/// and exited must end the call, even when something it started still
+/// holds stdout open. End of file is the only other way out of the
+/// event loop, and a `gh` grandchild postpones it past every bound the
+/// caller set.
+#[test]
+fn a_stream_ends_at_the_connector_and_not_at_its_grandchild() {
+    let _guard = lock();
+    let dir = tempfile::tempdir().expect("a temp directory");
+    stub(dir.path(), COMBINED_BINARY, PROTOCOL_2);
+    only(dir.path());
+    let resolved = forge_plugins::resolve_plugin(github()).expect("the stub is there");
+    let pidfile = dir.path().join("grandchild.pid");
+    let mut sink = Events {
+        started: Some(Instant::now()),
+        // What the forge granted, shortened so the case is quick: the
+        // call must end at the connector's exit, well inside it.
+        grant: Some(Duration::from_millis(400)),
+        ..Events::default()
+    };
+    let started = Instant::now();
+    let outcome = forge_plugins::run_stream(
+        &resolved,
+        &["github".to_string(), "login-and-leave".to_string()],
+        &[(
+            "JOY_STUB_PIDFILE".to_string(),
+            pidfile.display().to_string(),
+        )],
+        &mut sink,
+        &CancelToken::new(),
+        StreamBounds::for_verb("login"),
+        None,
+    );
+    let elapsed = started.elapsed();
+    assert!(
+        !outcome.timed_out,
+        "the connector answered and exited 0: {outcome:?}"
+    );
+    assert_eq!(outcome.exit_code, Some(0));
+    assert_eq!(
+        sink.seen.len(),
+        2,
+        "every line it wrote arrived: {:?}",
+        sink.seen
+    );
+    assert_eq!(
+        sink.seen[1].get("event").and_then(|e| e.as_str()),
+        Some("result")
+    );
+    assert!(
+        elapsed < Duration::from_secs(3),
+        "the grandchild held the stream for {elapsed:?}"
+    );
+    let pid: i32 = std::fs::read_to_string(&pidfile)
+        .expect("the stub wrote its grandchild's pid")
+        .trim()
+        .parse()
+        .expect("a pid");
+    let mut alive = true;
+    for _ in 0..50 {
+        if unsafe { libc::kill(pid, 0) } != 0 {
+            alive = false;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(!alive, "the grandchild {pid} outlived the stream");
 }
 
 /// D2.3: cancelling ends the call at once, and the process group goes

@@ -48,7 +48,7 @@ how to test against a temp project.
 
 ## Forge connectors: the query contract (JOY-0251-AA, protocol 2)
 
-A FORGE plugin - the connector - is a plugin like any other, with one
+A FORGE plugin (the connector) is a plugin like any other, with one
 addition: besides printing node trees for humans it answers **typed
 queries** that joy-core consumes. All forge knowledge (host names, alias
 address formats, API access) lives in the connector; joy-core only
@@ -58,14 +58,23 @@ except the one streaming verb described under "Two output modes".
 ### The protocol number and the `version` verb
 
 The protocol has a number, and the first verb of every call sequence
-asks for it:
+asks for it. The question is about the BINARY and not about one forge
+inside it, so no forge id goes in front of it, and the answer names
+every forge the file carries:
 
-    joy-forge github version
+    joy-forge version
     {"protocol":2,"plugin":"joy-forge 0.21.0","forges":["github","gitlab","gitea"]}
 
+Every legacy `joy-<forge> version` answers the same object for its own
+one forge.
+
 joy asks this **once per resolved file per process**, cached by the
-file's path and its modification time, under the 5 s deadline class. It
-is not asked per verb, so a 1 Hz poll costs no extra process.
+file's canonical path and its modification time, under the 5 s deadline
+class. It is not asked per verb, so a 1 Hz poll costs no extra process,
+and one `joy-forge` is asked once however many registry rows resolve to
+it. A handshake that fails (the file cannot be started, or it does not
+answer in time) is remembered for a minute, so a connector whose
+`version` hangs does not cost a fresh 5 s spawn per verb.
 
 A connector from before the number existed (protocol 1) is recognised
 without its cooperation: its argument parser rejects the unknown
@@ -106,8 +115,11 @@ deleted, the new name simply wins, and `joy forge plugins` prints the
 `rm` line for the old one.
 
 `JOY_PLUGIN_DIR` (a list of directories, separated like PATH) is
-searched before all three. It exists as a documented **test hook** and
-not as a product switch; no joy surface offers it.
+searched before all three, **in a development build only**. It exists as
+a documented **test hook** and not as a product switch: no joy surface
+offers it, and a released joy does not read it at all, so no line in a
+person's shell profile can redirect a connector call, and with it the
+forge token that call carries, to another executable.
 
 When the combined binary answers, the forge id is its first argument
 (`joy-forge github claims ...`). When a legacy binary answers, it is not
@@ -149,9 +161,13 @@ Every verb has its own deadline:
 | `release` | 120 s |
 | `login` | 15 s to the first event, then that event's `expires_in`, capped at 900 s |
 
-When the deadline passes, or when the caller cancels, joy ends the
-connector's **whole process group** (a job object on Windows), so a
-`gh`, `glab`, `tea` or `curl` grandchild does not outlive the call.
+joy ends the connector's **whole process group** (a job object on
+Windows) on every path: when the deadline passes, when the caller
+cancels, AND when the connector itself exits normally. The last one is
+not politeness. A grandchild inherited the connector's stdout, and a
+pipe reaches end of file only when every write end is closed, so a
+`gh`, `glab`, `tea` or `curl` left running would hold the call open long
+after the connector answered and the deadline would bound nothing.
 A connector should therefore treat any step it starts as its own to
 clean up, and should not detach one.
 
@@ -171,7 +187,8 @@ that are: `plugin_missing` (no file with any of the names anywhere in
 the search order), `plugin_outdated` (a protocol 1 file was asked a
 protocol 2 verb), `plugin_failed` (a non-zero exit, with the
 connector's own stderr, or an answer that does not parse) and
-`plugin_timed_out`. Each one carries the file that answered.
+`plugin_timed_out` (with whatever the connector wrote on stderr before
+it hung). Each one carries the file that answered.
 
 ### The verbs
 
@@ -252,8 +269,10 @@ Rules, in addition to the base contract:
   degrades; the REASON does not: every failed call leaves one warn line
   naming the connector, the verb and the file, and the typed state
   above is available to every caller that wants to say more than
-  "unknown".
-- **Read-only and side-effect free** — except the explicit `release`
+  "unknown". That includes the two failures that start no process at
+  all, a connector nobody installed and a connector that speaks
+  protocol 1, which are the two a silent "unknown" hides best.
+- **Read-only and side-effect free**, except the explicit `release`
   verb, whose one side effect is the release it names.
 - **No forge knowledge outside the plugin**: joy-core selects the
   responsible plugin purely by asking `claims` over the project's
