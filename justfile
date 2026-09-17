@@ -118,13 +118,20 @@ check: _toolchain-check sync-tutorial fmt-check lint check-windows guard-vcs gua
 #
 #   1. It looked only for `joy_process::command("git")`. A plain
 #      `Command::new("git")` walked straight past it.
-#   2. It treated everything after a file's FIRST `#[cfg(test)]` as test
-#      code. `ai_setup.rs` has a `#[cfg(test)] fn` helper at line 195
-#      with production code below it, so every line after 195 had a free
-#      pass; JOY-01FD-ED names the same accident in chat_ref.rs, whose
-#      `gc --auto` spawn passed the guard by luck and not by sanction.
-#      The boundary is now the `#[cfg(test)]` that carries a MODULE,
-#      which is the one that runs to the end of the file.
+#   2. It treated everything after ONE `#[cfg(test)]` as test code, so a
+#      file with production code after a test module had a free pass for
+#      the rest of its length. Taking the first `#[cfg(test)] mod`
+#      instead only narrowed the hole: `crates/joy-core/src/store.rs`
+#      carries `mod platform_dir_tests` at line 190 and roughly a
+#      thousand lines of production code after it. The boundary is now
+#      EVERY `#[cfg(test)]` region of the file, each one from its
+#      attribute to the end of the item it carries. rustfmt puts a top
+#      level item at column zero, so that end is the next line which is
+#      exactly `}`; an item whose signature wraps, and a nested
+#      (indented) test module, are not recognised at all, and a spawn
+#      inside one of those is REPORTED rather than excused. The guard
+#      errs towards refusing, which is the only direction a guard may
+#      err in.
 #
 # Test code may still build a fixture with git: a fixture is not the
 # product. joy-process is exempt as a whole because it names no program
@@ -137,11 +144,24 @@ guard-vcs:
     bad=0
     spawn='(joy_process::command|Command::new)\("git"\)'
     for f in $(grep -rlE "$spawn" crates/*/src --include='*.rs' | grep -v 'crates/joy-process/'); do
-        test_start=$(grep -n -A 1 -E '^ *#\[cfg\(test\)\] *$' "$f" \
-            | grep -B 1 -E '^[0-9]+-[ ]*(pub )?mod ' | head -1 | cut -d: -f1)
+        regions=$(awk '
+            /^#\[cfg\(test\)\]$/ { pending = NR; next }
+            pending && /^#\[/ { next }
+            pending && /^(pub )?(unsafe |async )?(mod|fn|impl)[^;]*\{$/ {
+                start = pending; pending = 0; next
+            }
+            pending { pending = 0 }
+            start && /^\}$/ { print start ":" NR; start = 0 }
+        ' "$f")
         # a mention in a comment is prose, not a spawn
         for line in $(grep -nE "$spawn" "$f" | grep -vE '^[0-9]+: *(//|\*|/\*)' | cut -d: -f1); do
-            if [ -z "$test_start" ] || [ "$line" -lt "$test_start" ]; then
+            sanctioned=0
+            for region in $regions; do
+                if [ "$line" -ge "${region%%:*}" ] && [ "$line" -le "${region##*:}" ]; then
+                    sanctioned=1
+                fi
+            done
+            if [ "$sanctioned" -eq 0 ]; then
                 echo "guard-vcs: $f spawns a git process (line $line); joy runs git2 only (design D3.2)"
                 bad=1
             fi
