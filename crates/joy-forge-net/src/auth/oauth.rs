@@ -91,10 +91,11 @@ pub mod clients {
     /// by design.
     pub const GITLAB_COM: &str = "299407d616bd7e050092e60b512a5e8e6c2d35bde91ae612f8e68e9b0dcef1dc";
 
-    /// PLACEHOLDER, replace when the codeberg.org application is
-    /// registered. Its redirect URI must be exactly `http://127.0.0.1`,
-    /// with no port and no path (D2.7).
-    pub const CODEBERG_ORG: &str = "REPLACE-ME-codeberg-org-client-id";
+    /// The public application "Joyint Desktop" registered on codeberg.org
+    /// on 2026-09-18 through the Gitea API (owner joydev-horst): redirect
+    /// exactly `http://127.0.0.1`, confidential off (D2.7). No secret is
+    /// used; a client id is public by design.
+    pub const CODEBERG_ORG: &str = "9cf771c7-6d91-459b-8947-05d45ec3637b";
 
     /// Whether this id is still one of the three above.
     pub fn is_placeholder(client_id: &str) -> bool {
@@ -737,9 +738,14 @@ mod tests {
 
     #[test]
     fn the_placeholder_client_ids_are_marked_as_placeholders() {
-        assert!(clients::is_placeholder(clients::CODEBERG_ORG));
-        assert!(!clients::is_placeholder(clients::GITHUB_COM));
-        assert!(!clients::is_placeholder(clients::GITLAB_COM));
+        for id in [
+            clients::GITHUB_COM,
+            clients::GITLAB_COM,
+            clients::CODEBERG_ORG,
+        ] {
+            assert!(!clients::is_placeholder(id), "{id}");
+        }
+        assert!(clients::is_placeholder("REPLACE-ME-anything"));
         assert!(!clients::is_placeholder("Ov23liRealLookingId"));
         let sentence = unregistered_sentence("github.com");
         assert!(sentence.contains("--token-stdin"));
