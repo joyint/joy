@@ -235,7 +235,16 @@ impl Keys {
             // in to; `NoStorageAccess` and `PlatformFailure` are a
             // store that could not answer. Both end here, and the
             // caller falls through to the 0600 file of D2.6.
-            Keys::Os => keyring::Entry::new(service, user).ok()?.get_password().ok(),
+            Keys::Os => {
+                let (service, user) = (service.to_string(), user.to_string());
+                bounded(move || {
+                    keyring::Entry::new(&service, &user)
+                        .ok()?
+                        .get_password()
+                        .ok()
+                })
+                .flatten()
+            }
             #[cfg(feature = "fake-api")]
             Keys::Fake(store) => store
                 .lock()
@@ -248,8 +257,15 @@ impl Keys {
     fn set(&self, service: &str, user: &str, secret: &str) -> bool {
         match self {
             Keys::None => false,
-            Keys::Os => keyring::Entry::new(service, user)
-                .is_ok_and(|entry| entry.set_password(secret).is_ok()),
+            Keys::Os => {
+                let (service, user, secret) =
+                    (service.to_string(), user.to_string(), secret.to_string());
+                bounded(move || {
+                    keyring::Entry::new(&service, &user)
+                        .is_ok_and(|entry| entry.set_password(&secret).is_ok())
+                })
+                .unwrap_or(false)
+            }
             #[cfg(feature = "fake-api")]
             Keys::Fake(store) => {
                 store
@@ -264,8 +280,14 @@ impl Keys {
     fn delete(&self, service: &str, user: &str) -> bool {
         match self {
             Keys::None => false,
-            Keys::Os => keyring::Entry::new(service, user)
-                .is_ok_and(|entry| entry.delete_credential().is_ok()),
+            Keys::Os => {
+                let (service, user) = (service.to_string(), user.to_string());
+                bounded(move || {
+                    keyring::Entry::new(&service, &user)
+                        .is_ok_and(|entry| entry.delete_credential().is_ok())
+                })
+                .unwrap_or(false)
+            }
             #[cfg(feature = "fake-api")]
             Keys::Fake(store) => store
                 .lock()
@@ -287,6 +309,52 @@ impl Keys {
             return false;
         }
         self.get(service, user).as_deref() == Some(secret)
+    }
+}
+
+/// How long one call into the operating system's store may take before
+/// it counts as a store that could not answer.
+///
+/// The Secret Service unlocks a locked collection by PROMPTING, and the
+/// prompt is drawn by the desktop session, not by the caller. On a
+/// machine whose keyring is locked and which has no desktop session to
+/// draw the prompt (an ssh login, a headless box, a session whose
+/// prompter died) that call never returns: on 2026-09-18 a `login` sat
+/// in the write after GitHub had already granted the token, until the
+/// device code expired and the grant was lost (JOY-02AA-ED). D2.6 says
+/// a store that cannot answer is the file's turn, and a store that does
+/// not answer in this time is that store. The bound is well under the
+/// 20 seconds joy gives the connector as a whole (D1.9a), so a locked
+/// keyring costs one wait per process and never a "plugin did not
+/// answer" on top.
+pub const KEYRING_BOUND: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Whether a call into the store already failed to answer in this
+/// process. One wait is the price of finding out; a second call into
+/// the same stuck prompt would pay it again for the same answer, so
+/// after the first silence the store is skipped for the rest of the
+/// process and every read and write goes to the file.
+static KEYRING_SILENT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Run one store call on its own thread and wait [`KEYRING_BOUND`] for
+/// it. `None` is the store not answering; the thread is left behind
+/// with its prompt, which the process end collects. The silence is
+/// remembered (see [`KEYRING_SILENT`]) so the next call does not wait.
+fn bounded<T: Send + 'static>(call: impl FnOnce() -> T + Send + 'static) -> Option<T> {
+    use std::sync::atomic::Ordering;
+    if KEYRING_SILENT.load(Ordering::Relaxed) {
+        return None;
+    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(call());
+    });
+    match rx.recv_timeout(KEYRING_BOUND) {
+        Ok(answer) => Some(answer),
+        Err(_) => {
+            KEYRING_SILENT.store(true, Ordering::Relaxed);
+            None
+        }
     }
 }
 
@@ -769,6 +837,37 @@ fn private_dir(_dir: &Path) {}
 
 #[cfg(test)]
 mod tests {
+
+    /// D2.6's "a store that cannot answer" includes one that never
+    /// answers: the Secret Service waiting on an unlock prompt nobody
+    /// can see (JOY-02AA-ED). The bound turns that silence into `None`
+    /// within [`KEYRING_BOUND`], and the second call does not wait at
+    /// all, because the silence is remembered for the process.
+    #[test]
+    fn a_store_that_never_answers_is_a_store_that_could_not_answer() {
+        let started = std::time::Instant::now();
+        let answer = bounded(|| {
+            std::thread::sleep(std::time::Duration::from_secs(3600));
+            1
+        });
+        assert_eq!(answer, None);
+        let waited = started.elapsed();
+        assert!(
+            waited >= KEYRING_BOUND,
+            "the bound was not waited for: {waited:?}"
+        );
+        assert!(
+            waited < KEYRING_BOUND * 2,
+            "the bound was overshot: {waited:?}"
+        );
+        let again = std::time::Instant::now();
+        assert_eq!(
+            bounded(|| 2),
+            None,
+            "a remembered silence must skip the store"
+        );
+        assert!(again.elapsed() < std::time::Duration::from_secs(1));
+    }
     use super::*;
 
     fn record(token: &str, login: &str) -> Record {
