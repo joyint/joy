@@ -116,6 +116,10 @@ case "$verb" in
     echo '{"claims":true}'
     ;;
   garbage) echo 'not json at all' ;;
+  noted-claims)
+    echo "the login keychain refused the ca_bundle, the system trust store was used" >&2
+    echo '{"claims":true}'
+    ;;
   login)
     echo '{"event":"verification","host":"github.com","url":"https://github.com/login/device","url_complete":null,"code":"WDJB-MJHT","expires_in":900,"interval":5}'
     sleep 1
@@ -461,6 +465,45 @@ fn a_refusal_with_stderr_becomes_an_error_that_carries_both() {
         }
         other => panic!("expected a refusal, got {other:?}"),
     }
+}
+
+/// JOY-02A8-F4: a connector that exits 0 and still had something to say
+/// is heard. Its stderr used to be read off the pipe and thrown away at
+/// the first zero exit, so the macOS refusal of a `ca_bundle` that
+/// names the system trust store reached nobody: the answer looked like
+/// a plain success and the sentence was gone.
+#[test]
+fn a_clean_answer_carries_what_the_connector_said_while_it_answered() {
+    let _guard = lock();
+    let dir = tempfile::tempdir().expect("a temp directory");
+    stub(dir.path(), COMBINED_BINARY, PROTOCOL_2);
+    only(dir.path());
+    let noted = forge_plugins::query_noted::<serde_json::Value>(
+        github(),
+        "noted-claims",
+        Some(&Target::host("github.com")),
+        &[],
+        &CallContext::rootless(),
+    )
+    .expect("exit 0 is an answer");
+    assert_eq!(noted.answer["claims"], true);
+    let note = noted.note.expect("the connector said something");
+    assert!(
+        note.contains("the login keychain refused the ca_bundle"),
+        "{note}"
+    );
+    assert!(note.contains("the system trust store was used"), "{note}");
+    // and a connector that said nothing gets no note, so a caller
+    // cannot print an empty line under every row.
+    let quiet = forge_plugins::query_noted::<serde_json::Value>(
+        github(),
+        "claims",
+        Some(&Target::host("github.com")),
+        &[],
+        &CallContext::rootless(),
+    )
+    .expect("exit 0 is an answer");
+    assert_eq!(quiet.note, None, "silence is not a note");
 }
 
 /// D2.3: the deadline ends the call, and the process GROUP is killed,
