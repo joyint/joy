@@ -73,7 +73,15 @@ impl Machine {
         command
             .args(args)
             .current_dir(&self.root)
+            // `USERPROFILE`, `HOMEDRIVE` and `HOMEPATH` move with
+            // `HOME`: on Windows libgit2 reads the global config out of
+            // every one of those that exists
+            // (`git_win32__find_global_dirs`), so moving `HOME` alone
+            // still found the machine's own identity.
             .env("HOME", &self.home)
+            .env("USERPROFILE", &self.home)
+            .env("HOMEDRIVE", "")
+            .env("HOMEPATH", "")
             .env("XDG_STATE_HOME", self.home.join(".state"))
             .env("XDG_CONFIG_HOME", self.home.join(".config"))
             .env("GIT_CONFIG_NOSYSTEM", "1")
