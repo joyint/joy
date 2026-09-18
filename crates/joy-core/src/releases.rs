@@ -223,8 +223,9 @@ fn looks_like_explicit(s: &str) -> bool {
 ///
 /// `latest_tag_fallback` supplies the newest local `v*` version tag and
 /// is only consulted when the release ledger has no entry: the CLI and
-/// the desktop shell out through `vcs::default_vcs()`, the platform
-/// answers from its git2 layer.
+/// the desktop pass `vcs::default_vcs().latest_version_tag`, which
+/// reaches `vcs::forge::describe_version_tag` and spawns nothing since
+/// D3.2, and the platform answers from its own git2 layer.
 pub fn resolve_version(
     root: &Path,
     arg: Option<&str>,

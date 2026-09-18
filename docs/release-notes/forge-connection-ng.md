@@ -182,8 +182,10 @@ and no partial clone, so depth is the only footprint reducer there is:
 history is what is saved, the tip is not.
 
 Before cloning, the app asks the forge how large the repository is. It
-warns above 250 MB and pre-selects the platform project above 1 GB, and
-you may continue in both cases. The warning reads "up to about N MB",
+warns above 250 MB, and above 1 GB it pre-selects the platform project
+where the platform is on offer, and you may continue in both cases. A
+host that cannot register a project on joyint.com reads the same figure
+without being sent to a place it does not have. The warning reads "up to about N MB",
 because the forge's figure covers the full history while a depth 1 clone
 downloads roughly one snapshot. A forge that reports no size is not an
 error and the clone goes ahead without a warning.
