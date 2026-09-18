@@ -962,20 +962,23 @@ pub fn reaches_repo(host: &str, repo_path: &str, token: &str, ctx: &Ctx) -> Opti
 /// repository has climbed no wall, and a login that does not is either
 /// the wrong login or behind one.
 ///
-/// Two readings, and neither invents a wall:
+/// ONE reading, and it never invents a wall: the OWNER's own
+/// organisation record is refused with the restriction named
+/// (`GET /orgs/{owner}` answering 403 with the OAuth App access
+/// restrictions message). That is the forge saying the wall exists, for
+/// this application, on this organisation. Nothing else may name one.
 ///
-/// 1. the token's user BELONGS to the owner organisation
-///    (`GET /user/orgs`), and the repository still answers 404. That is
-///    the wall wearing the number GitHub uses to avoid confirming a
-///    private repository ("GitHub uses a 404 Not Found response instead
-///    of a 403 Forbidden response");
-/// 2. the owner's own organisation record is refused with the
-///    restriction named, which is the reading that still works when the
-///    restriction hides the organisation from `/user/orgs` too.
-///
-/// Anything else is not a wall: telling a person their organisation has
-/// to approve Joy for a repository that was renamed would send them to
-/// an owner with nothing to approve.
+/// Membership is deliberately NOT a reading (JOY-02A9-48). "The token's
+/// user belongs to the owner organisation and the repository answers
+/// 404" is true of every mistyped, renamed or deleted repository under
+/// an organisation a person belongs to, and of every private repository
+/// the token has no scope for, so it would send a member of `acme` who
+/// asked for `acme/widgts` to an owner with nothing to approve, which
+/// is exactly what this function must never do. It could not buy the
+/// right answer either: joy's own [`SCOPES`] carry no `read:org`, so
+/// `GET /user/orgs` is empty or refused for the tokens joy itself
+/// issues, and the reading fired only for a foreign `gh` token, which
+/// is the one case where it is also wrong.
 pub fn organisation_wall(host: &str, repo_path: &str, token: &str, ctx: &Ctx) -> bool {
     let Some(owner) = repo_path.trim_matches('/').split('/').next() else {
         return false;
@@ -984,20 +987,6 @@ pub fn organisation_wall(host: &str, repo_path: &str, token: &str, ctx: &Ctx) ->
         return false;
     }
     let base = api_base(host, ctx);
-    if let Some(orgs) = api_get_as_or_say(ctx, host, &format!("{base}/user/orgs"), token) {
-        if orgs.ok() {
-            #[derive(serde::Deserialize)]
-            struct Org {
-                #[serde(default)]
-                login: String,
-            }
-            if let Ok(list) = serde_json::from_str::<Vec<Org>>(&orgs.body) {
-                if list.iter().any(|org| org.login.eq_ignore_ascii_case(owner)) {
-                    return true;
-                }
-            }
-        }
-    }
     api_get_as_or_say(ctx, host, &format!("{base}/orgs/{owner}"), token)
         .is_some_and(|org| org.status == 403 && classify(&org) == "needs_org_approval")
 }

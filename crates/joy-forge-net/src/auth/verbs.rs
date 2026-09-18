@@ -974,6 +974,16 @@ fn message_of(poll: &Poll) -> String {
 /// How long joy waits between two attempts at the same exchange.
 const EXCHANGE_RETRY_GAP: std::time::Duration = std::time::Duration::from_secs(5);
 
+/// The room one more attempt needs: the gap before it plus what the
+/// attempt itself may cost. An exchange against a black hole runs to
+/// the per request bound of [`crate::http::DEFAULT_TIMEOUT`], so a
+/// retry started with six seconds left overran its own deadline by
+/// fifteen and the host stopped the connector before it could say how
+/// the sign in ended (JOY-02A9-48).
+const ONE_MORE_EXCHANGE: std::time::Duration = std::time::Duration::from_secs(
+    EXCHANGE_RETRY_GAP.as_secs() + crate::http::DEFAULT_TIMEOUT.as_secs(),
+);
+
 fn pkce_login(
     http: &crate::http::Http,
     config: &oauth::OAuth,
@@ -1020,7 +1030,9 @@ fn pkce_login(
             return Err(poll);
         }
         let left = seconds_left(clock, deadline);
-        if left <= EXCHANGE_RETRY_GAP.as_secs() as i64 {
+        if left <= ONE_MORE_EXCHANGE.as_secs() as i64 {
+            // No room for an attempt that could finish: starting one
+            // here would spend the deadline and then some.
             return Err(poll);
         }
         events.emit(oauth::waiting_event(left, Some(&message_of(&poll))));

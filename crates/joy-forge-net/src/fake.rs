@@ -291,9 +291,10 @@ pub struct TestForge {
     pub walls_orgs: bool,
 }
 
-/// Whether the token's user belongs to the organisation that owns
-/// `owner/repo`, which is the paid reading of D2.7c.
-fn belongs_to_owner(
+/// Whether the OWNER's own organisation record is refused with the
+/// restriction named, which is the paid reading of D2.7c and the only
+/// one: the forge itself says the wall exists (JOY-02A9-48).
+fn owner_record_is_walled(
     host: &str,
     repo_path: &str,
     token: &str,
@@ -301,23 +302,20 @@ fn belongs_to_owner(
     base: &str,
 ) -> bool {
     let owner = repo_path.trim_matches('/').split('/').next().unwrap_or("");
+    if owner.is_empty() {
+        return false;
+    }
     let Ok(http) = ctx.http(host) else {
         return false;
     };
-    let Ok(orgs) = http.get(&format!("{base}/user/orgs")).bearer(token).call() else {
+    let Ok(org) = http
+        .get(&format!("{base}/orgs/{owner}"))
+        .bearer(token)
+        .call()
+    else {
         return false;
     };
-    orgs.ok()
-        && orgs
-            .json()
-            .and_then(|body| {
-                body.as_array().map(|list| {
-                    list.iter()
-                        .filter_map(|org| org.get("login").and_then(|v| v.as_str()))
-                        .any(|login| login.eq_ignore_ascii_case(owner))
-                })
-            })
-            .unwrap_or(false)
+    org.status == 403 && org.body.contains("OAuth App access restrictions")
 }
 
 impl TestForge {
@@ -529,9 +527,11 @@ impl crate::forge::Forge for TestForge {
     }
 
     fn org_wall(&self, host: &str, repo_path: &str, token: &str, ctx: &crate::forge::Ctx) -> bool {
-        // The paid reading: does the token's user belong to the owner
-        // organisation, while the repository answers 404?
-        self.walls_orgs && belongs_to_owner(host, repo_path, token, ctx, &self.base)
+        // The paid reading: is the OWNER's own record refused with the
+        // restriction named? Membership is not a reading, because every
+        // mistyped repository under an organisation a person belongs to
+        // would answer 404 too (JOY-02A9-48).
+        self.walls_orgs && owner_record_is_walled(host, repo_path, token, ctx, &self.base)
     }
 
     fn web_url(&self, target: &crate::forge::Target, ctx: &crate::forge::Ctx) -> serde_json::Value {

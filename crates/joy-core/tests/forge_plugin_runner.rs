@@ -1002,8 +1002,13 @@ fn the_first_event_sets_the_deadline_for_the_rest() {
     let elapsed = started.elapsed();
     assert!(outcome.timed_out, "{outcome:?}");
     assert_eq!(sink.seen.len(), 1, "{:?}", sink.seen);
+    // The granted deadline plus the last word grace, which is longer
+    // than one request of a connector on purpose (JOY-02A9-48): a poll
+    // started with a second of the code left may cost fifteen, and joy
+    // must not kill the connector before it can say so. Either way it
+    // is nowhere near the 900 s cap.
     assert!(
-        elapsed < Duration::from_secs(10),
+        elapsed < Duration::from_secs(30),
         "the granted deadline decided, not the 900 s cap: {elapsed:?}"
     );
     assert!(

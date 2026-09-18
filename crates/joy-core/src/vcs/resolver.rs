@@ -776,8 +776,12 @@ fn repo_key(url: &str) -> String {
     let path = super::remote_url::RemoteUrl::parse(url)
         .map(|parsed| parsed.path)
         .unwrap_or_default();
-    path.trim_matches('/')
-        .trim_end_matches(".git")
+    let path = path.trim_matches('/');
+    // ONE `.git` tail, not every one of them: `trim_end_matches` strips
+    // repeatedly, so a repository genuinely called `thing.git` keyed as
+    // `thing` and collided with its neighbour (JOY-02A9-48).
+    path.strip_suffix(".git")
+        .unwrap_or(path)
         .to_ascii_lowercase()
 }
 

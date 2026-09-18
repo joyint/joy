@@ -1507,13 +1507,13 @@ fn a_403_that_names_the_restriction_answers_needs_org_approval() {
 
 /// The second reading of D2.7c, and the one the operator's own probe
 /// met: GitHub answers 404 rather than 403 for a private repository a
-/// token may not see. A 404 for a repository owned by an organisation
-/// the token's user BELONGS to is the same wall, and the organisation
-/// list is what says so.
+/// token may not see. The 404 alone decides nothing; the OWNER's own
+/// record, refused with the restriction named, is what says the wall is
+/// there.
 #[test]
-fn a_404_on_a_repository_of_my_own_organisation_is_the_wall() {
+fn a_404_with_the_owner_record_refused_is_the_wall() {
     let fake = FakeForge::start(|call| match call.path.as_str() {
-        "/user/orgs" => Reply::json(200, r#"[{"login":"acme"},{"login":"other"}]"#),
+        "/orgs/acme" => Reply::json(403, RESTRICTED),
         _ => Reply::not_found(),
     });
     let dir = tempfile::tempdir().unwrap();
@@ -1536,19 +1536,21 @@ fn a_404_on_a_repository_of_my_own_organisation_is_the_wall() {
     let asked: Vec<String> = fake.calls().iter().map(|call| call.path.clone()).collect();
     assert_eq!(
         asked,
-        vec!["/repos/acme/widgets", "/repos/acme/widgets", "/user/orgs"],
+        vec!["/repos/acme/widgets", "/repos/acme/widgets", "/orgs/acme"],
         "one request per candidate, and the wall question asked ONCE, at the end"
     );
 }
 
-/// And joy invents no wall: a 404 for a repository of an organisation
-/// the token's user does not belong to is a repository that was
-/// renamed, deleted or never visible to these logins, which is D4.1c's
-/// step 5 and says so.
+/// And joy invents no wall: where the owner's record names no
+/// restriction, a 404 is a repository that was renamed, deleted or
+/// never visible to these logins, which is D4.1c's step 5 and says so.
+/// This is the mistyped `acme/widgts` of a member of `acme` too
+/// (JOY-02A9-48): belonging to the owner organisation is not evidence
+/// of a wall, and joy no longer asks who belongs to what.
 #[test]
-fn a_404_outside_my_organisations_is_still_no_login_for_repo() {
+fn a_404_with_no_restriction_named_is_still_no_login_for_repo() {
     let fake = FakeForge::start(|call| match call.path.as_str() {
-        "/user/orgs" => Reply::json(200, r#"[{"login":"other"}]"#),
+        "/user/orgs" => Reply::json(200, r#"[{"login":"acme"},{"login":"other"}]"#),
         _ => Reply::not_found(),
     });
     let dir = tempfile::tempdir().unwrap();
@@ -1565,6 +1567,11 @@ fn a_404_outside_my_organisations_is_still_no_login_for_repo() {
 
     assert_eq!(answer["reason"], "no-login-for-repo", "{answer}");
     assert!(answer.get("action").is_none(), "{answer}");
+    let asked: Vec<String> = fake.calls().iter().map(|call| call.path.clone()).collect();
+    assert!(
+        !asked.iter().any(|path| path == "/user/orgs"),
+        "membership is not a reading, so it is not asked for: {asked:#?}"
+    );
 }
 
 /// JOY-02A9-48, finding 2, second half: whether a person is told about

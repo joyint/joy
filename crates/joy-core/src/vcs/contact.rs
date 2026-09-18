@@ -310,9 +310,11 @@ pub struct ContactEvidence {
     /// good, the login is the right one, and the organisation has not
     /// approved Joy", with the approval page where the connector named
     /// one. Only the connector can tell that wall from "not this
-    /// login": it reads the forge's own 403 body and asks which
-    /// organisations the token's user belongs to, and the git contact
-    /// sees neither (JOY-02A9-48).
+    /// login": it reads the forge's own 403 body, and where the number
+    /// says nothing it asks the OWNER's own organisation record, which
+    /// the git contact never sees. Nothing else may name a wall, and in
+    /// particular a bare 404 may not: it is what a renamed, deleted or
+    /// out of scope repository answers too (JOY-02A9-48).
     pub org_wall: Option<super::resolver::OrgWall>,
 }
 
@@ -982,22 +984,24 @@ fn decide_by_status(ev: &ContactEvidence, family: HostFamily, status: u16) -> De
                 _ => plain(Failure::Error),
             }
         }
-        404 if ev.direction == ContactDirection::Fetch => {
-            if family == HostFamily::GitHub && ev.token_worked_before {
-                plain(Failure::NeedsOrgApproval)
-            } else {
-                Decision {
-                    failure: Failure::Error,
-                    wait: None,
-                    sentence: Some(format!(
-                        "{} does not have this repository (renamed, deleted or not visible to this login)",
-                        ev.host
-                    )),
-                    guidance: None,
-                    action: None,
-                }
-            }
-        }
+        // A 404 to a fetch is a missing repository, and a token that
+        // authenticated on this host does not make it a wall
+        // (JOY-02A9-48). That reading fired for every renamed or
+        // deleted repository under your own account, and for every
+        // repository of an organisation you have nothing to do with,
+        // on any machine that had signed in once. The wall has its own
+        // evidence: the connector names it, and it is read fifteen
+        // lines above, with the page an owner acts on.
+        404 if ev.direction == ContactDirection::Fetch => Decision {
+            failure: Failure::Error,
+            wait: None,
+            sentence: Some(format!(
+                "{} does not have this repository (renamed, deleted or not visible to this login)",
+                ev.host
+            )),
+            guidance: None,
+            action: None,
+        },
         502..=504 => Decision {
             failure: Failure::Offline,
             wait: None,

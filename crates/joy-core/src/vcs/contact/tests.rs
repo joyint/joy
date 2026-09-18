@@ -610,6 +610,12 @@ fn the_winhttp_corpus_reads_the_same_in_english_and_in_german() {
 
 /// A 404 on a fetch is never "offline": either the organisation has not
 /// approved Joy, or the repository is not there for this login (D1.8b).
+///
+/// Which of the two it is comes from the CONNECTOR and never from "a
+/// token authenticated here once" (JOY-02A9-48). On a signed-in machine
+/// that older reading turned every renamed repository under your own
+/// account into "Your organisation must approve Joy for this
+/// repository", with no page to go to.
 #[test]
 fn a_404_is_never_offline() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
@@ -620,10 +626,38 @@ fn a_404_is_never_offline() {
         "unexpected http status code: 404",
     );
     let github = https_fetch(not_found, "github.com");
+    let v = verdict(&github);
     assert_eq!(
-        classify(&github),
-        Failure::NeedsOrgApproval,
-        "a token that works elsewhere plus a 404 on GitHub is the approval wall"
+        v.failure,
+        Failure::Error,
+        "a signed-in machine plus a 404 on GitHub is still a missing repository"
+    );
+    assert!(
+        v.sentence.contains("does not have this repository"),
+        "{}",
+        v.sentence
+    );
+
+    // Where the connector found the wall, the same 404 is the wall, and
+    // the page an owner acts on travels with it.
+    let mut walled = https_fetch(
+        error(
+            Code::GenericError,
+            Class::Http,
+            "unexpected http status code: 404",
+        ),
+        "github.com",
+    );
+    walled.org_wall = Some(super::super::resolver::OrgWall {
+        repo: "acme/widgets".to_string(),
+        url: Some(
+            "https://github.com/organizations/acme/settings/oauth_application_policy".to_string(),
+        ),
+    });
+    assert_eq!(classify(&walled), Failure::NeedsOrgApproval);
+    assert_eq!(
+        verdict(&walled).action.as_deref(),
+        Some("https://github.com/organizations/acme/settings/oauth_application_policy")
     );
 
     let elsewhere = evidence(

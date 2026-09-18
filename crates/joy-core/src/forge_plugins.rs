@@ -731,7 +731,18 @@ const LOGIN_TOTAL_CAP: Duration = Duration::from_secs(900);
 /// and then writes one `error` event; without this, joy kills it in the
 /// same instant and the person reads joy's timeout instead of the
 /// connector's sentence.
-const LAST_WORD_GRACE: Duration = Duration::from_secs(5);
+///
+/// It is longer than ONE request of the connector, on purpose
+/// (JOY-02A9-48). A poll may start with a second of the code left, and
+/// a black-holed network makes that poll cost the connector's whole per
+/// request bound (fifteen seconds in `joy-forge-net`), so a grace of
+/// five seconds killed the connector before it could say
+/// "github.test could not be reached while joy waited for the sign in"
+/// and printed joy's own "joy stopped the sign in ..." over it, which
+/// is the substitution this grace exists to prevent. Twenty seconds is
+/// that bound plus a margin; joy-core does not depend on the connector
+/// crate, so the number is written here and not imported.
+const LAST_WORD_GRACE: Duration = Duration::from_secs(20);
 
 /// The deadline for ONE SHOT of one verb (D2.3), the bound
 /// [`run_once`] and therefore [`query`] use. Every verb of the

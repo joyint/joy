@@ -708,9 +708,14 @@ struct LoginProgress {
     /// this the refusal was printed INTO "Still waiting, 13 minutes
     /// left." and the person read both at once.
     standing: usize,
-    /// The last countdown the connector reported, for the sentence a
-    /// stopped call ends with.
-    seconds_left: Option<u64>,
+    /// The last countdown the connector reported, and the moment it
+    /// reported it, for the sentence a stopped call ends with. Both
+    /// halves are needed: the number the connector wrote is the code's
+    /// life at THAT moment, and joy waits on after it. Reporting it as
+    /// it stands made a silent connector's one second code read "the
+    /// code had 1 second left" after joy had waited twenty (the review
+    /// of JOY-02A9-48).
+    seconds_left: Option<(u64, std::time::Instant)>,
     /// The connector has said its last word (`result` or `error`).
     /// Nothing is printed after it, and the call has only as long as it
     /// takes the process to exit.
@@ -752,7 +757,7 @@ impl LoginProgress {
     /// act on. The next step is the help line under it, which is this
     /// command's own door.
     fn stopped_sentence(&self, host: &str) -> String {
-        match self.seconds_left {
+        match self.left_now() {
             Some(left) if left > 0 => format!(
                 "joy stopped the sign in to {host} while it was still waiting for you; \
                  the code had {} left.",
@@ -760,6 +765,13 @@ impl LoginProgress {
             ),
             _ => format!("joy stopped the sign in to {host} before it finished."),
         }
+    }
+
+    /// What is left of the code NOW, counted from the last number the
+    /// connector reported. `None` when the connector never named one.
+    fn left_now(&self) -> Option<u64> {
+        self.seconds_left
+            .map(|(left, seen)| left.saturating_sub(seen.elapsed().as_secs()))
     }
 }
 
@@ -782,7 +794,7 @@ impl forge_plugins::EventSink for LoginProgress {
                 eprintln!("Open {url}");
                 eprintln!("Enter the code {code}");
                 if let Some(seconds) = seconds {
-                    self.seconds_left = Some(seconds);
+                    self.seconds_left = Some((seconds, std::time::Instant::now()));
                     eprintln!(
                         "Waiting for you; the code is good for {}.",
                         minutes(seconds)
@@ -797,7 +809,7 @@ impl forge_plugins::EventSink for LoginProgress {
             // noise on top of the sentence that matters.
             "waiting" if !self.finished => {
                 if let Some(left) = event.get("seconds_left").and_then(|s| s.as_u64()) {
-                    self.seconds_left = Some(left);
+                    self.seconds_left = Some((left, std::time::Instant::now()));
                     // The reason of D2.4, where the connector named
                     // one: a poll that is waiting out a name that does
                     // not resolve says so instead of counting silently.
@@ -1465,6 +1477,45 @@ fn plugins() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The sentence a stopped sign in ends with names what was left
+    /// WHEN JOY STOPPED, not the last number the connector wrote
+    /// (JOY-02A9-48). joy waits on after that event, so the number
+    /// ages, and a code with ten minutes on it when the connector last
+    /// spoke has ten minutes less thirty seconds a half minute later.
+    #[test]
+    fn the_stopped_sentence_counts_the_code_down_to_now() {
+        let mut progress = LoginProgress {
+            seconds_left: Some((
+                600,
+                std::time::Instant::now() - std::time::Duration::from_secs(120),
+            )),
+            ..LoginProgress::default()
+        };
+        assert_eq!(
+            progress.stopped_sentence("github.test"),
+            "joy stopped the sign in to github.test while it was still waiting for you; \
+             the code had 8 minutes left."
+        );
+
+        // A code that ran out while joy waited gets no number at all,
+        // because there is none to give.
+        progress.seconds_left = Some((
+            1,
+            std::time::Instant::now() - std::time::Duration::from_secs(20),
+        ));
+        assert_eq!(
+            progress.stopped_sentence("github.test"),
+            "joy stopped the sign in to github.test before it finished."
+        );
+
+        // And a connector that never named one says so too.
+        progress.seconds_left = None;
+        assert_eq!(
+            progress.stopped_sentence("github.test"),
+            "joy stopped the sign in to github.test before it finished."
+        );
+    }
 
     /// The one sentence every "sign in" text in this CLI ends with.
     #[test]

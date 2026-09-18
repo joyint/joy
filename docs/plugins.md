@@ -628,11 +628,18 @@ it hung). Each one carries the file that answered.
   (`https://github.com/organizations/<owner>/settings/oauth_application_policy`),
   because a person told that their organisation must approve Joy and
   not told where cannot act on the sentence. The connector reads it off
-  the forge: a 403 that names the restriction, or a 404 for a
-  repository of an organisation the token's user belongs to, which is
-  the same wall wearing the number GitHub uses for what a token may not
-  see. It is asked once, and only where no login reached the repository
-  at all.
+  the forge and nowhere else: a 403 whose body names the restriction,
+  or, where the refusal carried no such body, the OWNER's own
+  organisation record refused with the restriction named. Membership is
+  NOT a reading. "The token's user belongs to the owner and the
+  repository answers 404" is equally true of a mistyped, renamed,
+  deleted or out of scope repository, and it would send that person to
+  an owner with nothing to approve. The question is asked once, and
+  only where no login reached the repository at all, so one `token`
+  call for a walled remote costs at most two requests: the repository,
+  and the owner. That is the one request per remote of D4.1c plus the
+  one the wall costs, spent only on the path that would otherwise print
+  the wrong sentence, and never on a remote a login reaches.
   `--for` is the DIRECTION the credential is wanted for, and it decides
   what the probe accepts: `write`, `create` and `release` take only a
   login the forge reports as able to push, `read` takes the first that

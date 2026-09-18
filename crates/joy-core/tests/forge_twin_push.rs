@@ -1216,17 +1216,21 @@ fn another_process_signed_in(home: &Path, host: &str) {
 /// JOY-02A9-48, finding 1: a one shot CLI command makes exactly ONE
 /// contact, so "a credentialed contact to this host has already
 /// succeeded" can never be true in it as long as the fact lives in a
-/// process local map. The 404 row of D1.8b then never fires, and a
-/// person behind an organisation wall reads "github.com does not have
-/// this repository".
-///
+/// process local map. The rows of D1.8b that need it then never fire.
 /// The fact lives in joy's own state file now, beside the transport
 /// memory of D1.2, so the row fires on the FIRST contact of a process.
 /// The connector here answers a credential it read out of `gh`, which
 /// joy never validated: the state file is the only thing that can
 /// answer, which is what makes this test about the state file.
+///
+/// The row it feeds is the PUSH row: a push refused where the read
+/// worked is "you can read this and not write it". A fetch 404 is NOT
+/// one of them (the review of JOY-02A9-48): this remote is
+/// `ssh://git@127.0.0.1/forge.git`, not an organisation repository at
+/// all, and calling it an organisation wall would send a person to a
+/// settings page that does not exist.
 #[test]
-fn a_404_after_a_token_that_authenticated_in_another_process_is_the_wall() {
+fn a_token_that_authenticated_in_another_process_feeds_the_push_row() {
     let _serial = lock();
     let tmp = tempfile::tempdir().expect("tempdir");
     let forge_dir = tmp.path().join("forge.git");
@@ -1241,7 +1245,7 @@ fn a_404_after_a_token_that_authenticated_in_another_process_is_the_wall() {
     checkout_ahead(&checkout, &forge_dir, "ssh://git@127.0.0.1/forge.git", base);
     server.refuse.store(404, Ordering::SeqCst);
 
-    let walled = forge::fetch_ref(
+    let missing = forge::fetch_ref(
         &checkout,
         &Auth::local(HostKind::Background),
         "refs/joy/chats",
@@ -1249,15 +1253,41 @@ fn a_404_after_a_token_that_authenticated_in_another_process_is_the_wall() {
     )
     .expect_err("the forge answered 404");
 
+    // The fetch reads as what it is, on every machine, signed in or not.
     assert_eq!(
-        contact::failure_of(&walled),
-        contact::Failure::NeedsOrgApproval,
-        "the first contact of this process carried a token that authenticated in another: {walled}"
+        contact::failure_of(&missing),
+        contact::Failure::Error,
+        "no connector named a wall here: {missing}"
+    );
+    assert!(
+        missing
+            .to_string()
+            .contains("does not have this repository"),
+        "{missing}"
     );
     assert!(
         server.requests.load(Ordering::SeqCst) >= 2,
         "the 401 and its replay: the token really went over the wire"
     );
+
+    // The same fact, on the row it belongs to: a push the forge refuses
+    // where the read worked is "you can read this and not write it".
+    assert!(contact::token_worked_before("127.0.0.1"));
+    let refused = contact::classify(&contact::ContactEvidence {
+        error: git2::Error::new(
+            git2::ErrorCode::GenericError,
+            git2::ErrorClass::Http,
+            "unexpected http status code: 404",
+        ),
+        transport: contact::Transport::Https,
+        direction: contact::ContactDirection::Push,
+        credential: contact::CredentialSource::TokenPresented,
+        token_worked_before: contact::token_worked_before("127.0.0.1"),
+        host: "127.0.0.1".to_string(),
+        proxy: None,
+        org_wall: None,
+    });
+    assert_eq!(refused, contact::Failure::NoPushRights);
     drop(machine);
 }
 
@@ -1320,7 +1350,7 @@ fn a_token_the_connector_validated_counts_at_once_and_is_written_down() {
     checkout_ahead(&checkout, &forge_dir, "ssh://git@127.0.0.1/forge.git", base);
     server.refuse.store(404, Ordering::SeqCst);
 
-    let walled = forge::fetch_ref(
+    let missing = forge::fetch_ref(
         &checkout,
         &Auth::local(HostKind::Background),
         "refs/joy/chats",
@@ -1329,9 +1359,9 @@ fn a_token_the_connector_validated_counts_at_once_and_is_written_down() {
     .expect_err("the forge answered 404");
 
     assert_eq!(
-        contact::failure_of(&walled),
-        contact::Failure::NeedsOrgApproval,
-        "the connector answered a token out of its own vault: {walled}"
+        contact::failure_of(&missing),
+        contact::Failure::Error,
+        "the fetch is a missing repository; the fact is what is written down: {missing}"
     );
     let written = std::fs::read_to_string(machine.root.join("forge-state.json"))
         .expect("joy's own state file");

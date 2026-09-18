@@ -1340,9 +1340,18 @@ fn a_login_joy_stopped_names_the_sign_in_and_what_was_left_of_the_code() {
         seen.contains("joy stopped the sign in to github.test"),
         "the sentence names the sign in: {seen}"
     );
+    // And what the code had left when joy stopped, which after joy's
+    // own wait on a one second code is nothing. Reporting the last
+    // number the connector wrote would read "the code had 1 second
+    // left" twenty seconds after that second ran out (the review of
+    // JOY-02A9-48).
     assert!(
-        seen.contains("1 second left"),
-        "and what the code had left: {seen}"
+        seen.contains("joy stopped the sign in to github.test before it finished."),
+        "the code was long gone, so no number is invented: {seen}"
+    );
+    assert!(
+        !seen.contains("1 second left"),
+        "the stale countdown is not the sentence: {seen}"
     );
     assert!(
         seen.contains("= note: state expired"),
@@ -1356,7 +1365,7 @@ fn a_login_joy_stopped_names_the_sign_in_and_what_was_left_of_the_code() {
     // needs to say its last word, and it starts when the code is
     // issued, not when the process was spawned.
     assert!(
-        took < std::time::Duration::from_secs(40),
+        took < std::time::Duration::from_secs(60),
         "the call is bounded by the code, not by the fifteen minute cap: {took:?}"
     );
 }
