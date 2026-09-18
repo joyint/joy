@@ -190,7 +190,7 @@ It lists each known host with its login, its state (`signed-in`, `expired` or `n
 
 ### The three commands a delegation session cannot run
 
-- `joy forge login` is refused before any connector is started: "joy forge login needs a person at this machine; this process runs under a delegation session. Sign in on the machine that owns the session, or store a token there with joy forge login --token-stdin". The state is `needs_sign_in`.
+- `joy forge login` is refused before the sign in flow starts, so there is no wait: "joy forge login needs a person at this machine; this process runs under a delegation session. Sign in on the machine that owns the session, or store a token there with joy forge login --token-stdin". The state is `needs_sign_in`.
 
 - `joy forge login --token-stdin` reaches the connector, which refuses to store the token: "this process runs under a delegation session, which may use the credential this machine holds and may never store one. Store the token on the machine that owns the session with joy forge login --token-stdin". The state is `unsupported`.
 
