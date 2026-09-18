@@ -1,0 +1,17 @@
+id: JOY-02A6-88
+title: 'J10b: joy forge logout under a delegation session prints the connector''s refusal'
+type: task
+status: closed
+priority: medium
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-18T04:28:20.125259621Z
+updated: 2026-09-18T04:36:56.469190332Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Found by the tutorial review (2026-09-18): under a delegation session the connector answers logout with removed:false, revoked:false and the delegation sentence (auth/verbs.rs NO_LOGOUT_HERE), but the CLI (crates/joy-cli/src/commands/forge.rs) drops the sentence and prints a bare removed: false, so the agent learns nothing. Print the connector''s sentence and the state. Also correct the comment at commands/forge.rs:430 that claims the login refusal happens before the connector is started (it happens after the claims call). JI epic JI-0190-3A.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-18T04:36:56.396936771Z
+  text: 'Result: commit 7e1e670. joy forge logout under a delegation session prints the connector''s sentence and the state word (exit 1, one JSON envelope with --json); the login refusal comment corrected; test logout_under_a_delegation_session_prints_the_connectors_refusal added; cargo test -p joy-cli 181 passed, clippy clean.'
