@@ -567,7 +567,6 @@ pub fn store_token(forge: &dyn Forge, target: &Target, ctx: &Ctx, raw: &str) -> 
     // credential store, and refused BEFORE the token is validated, so
     // that a token nobody may keep is never spent on a request.
     if ctx.vault().is_read_only() {
-        eprintln!("joy: {NO_STORE_HERE}");
         return json!({ "known": false, "reason": "unsupported", "message": NO_STORE_HERE });
     }
     let token = raw.trim();
@@ -584,14 +583,16 @@ pub fn store_token(forge: &dyn Forge, target: &Target, ctx: &Ctx, raw: &str) -> 
     // either (JOY-02A8-F4).
     let account = match forge.account(&host, token, ctx) {
         AccountAnswer::Known(account) => account,
+        // Neither sentence is ALSO printed on stderr: it travels in
+        // `message`, the caller renders it, and a connector that prints
+        // what it returns makes the person read the same failure twice
+        // (JOY-02A8-F4).
         AccountAnswer::Unreachable(detail) => {
             let message = unreachable_sentence(forge, &host, &detail);
-            eprintln!("joy: {message}");
             return json!({ "known": false, "reason": "offline", "message": message });
         }
         AccountAnswer::Refused => {
             let message = format!("{} did not accept this token", forge.display());
-            eprintln!("joy: {message}");
             return json!({ "known": false, "reason": "no-login", "message": message });
         }
     };

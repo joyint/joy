@@ -661,11 +661,7 @@ fn instance_root(host: &str, ctx: &Ctx) -> String {
 /// said nothing at all" (JOY-02A8-F4). It is the client's own text,
 /// which never carries a header value, so no token can travel in it.
 fn api_get_as(ctx: &Ctx, host: &str, url: &str, token: &str) -> Result<Answer, String> {
-    let http = ctx.http(host).map_err(|error| {
-        let message = error.to_string();
-        eprintln!("joy-forge gitea: {message}");
-        message
-    })?;
+    let http = ctx.http(host).map_err(|error| error.to_string())?;
     match http
         .get(url)
         .header("Accept", "application/json")
@@ -673,10 +669,20 @@ fn api_get_as(ctx: &Ctx, host: &str, url: &str, token: &str) -> Result<Answer, S
         .call()
     {
         Ok(answer) => Ok(answer),
-        Err(error) => {
-            let message = error.to_string();
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+/// [`api_get_as`] for a caller with nowhere to put the reason. The
+/// sentence is printed HERE, because this is where it would otherwise
+/// be lost; a caller that carries it onward must not print it as well,
+/// or the person reads the same failure twice (JOY-02A8-F4).
+fn api_get_as_or_say(ctx: &Ctx, host: &str, url: &str, token: &str) -> Option<Answer> {
+    match api_get_as(ctx, host, url, token) {
+        Ok(answer) => Some(answer),
+        Err(message) => {
             eprintln!("joy-forge gitea: {message}");
-            Err(message)
+            None
         }
     }
 }
@@ -706,7 +712,7 @@ pub fn account_of(host: &str, token: &str, ctx: &Ctx) -> AccountAnswer {
         return AccountAnswer::Refused;
     };
     let mut emails: Vec<String> = Vec::new();
-    if let Ok(list) = api_get_as(ctx, host, &format!("{base}/user/emails"), token) {
+    if let Some(list) = api_get_as_or_say(ctx, host, &format!("{base}/user/emails"), token) {
         if list.ok() {
             #[derive(serde::Deserialize)]
             struct Entry {
@@ -738,7 +744,7 @@ pub fn account_of(host: &str, token: &str, ctx: &Ctx) -> AccountAnswer {
 /// (the probe of D4.1c).
 pub fn reaches_repo(host: &str, repo_path: &str, token: &str, ctx: &Ctx) -> Option<Reach> {
     let url = format!("{}/repos/{repo_path}", api_base(host, ctx));
-    let answer = api_get_as(ctx, host, &url, token).ok()?;
+    let answer = api_get_as_or_say(ctx, host, &url, token)?;
     if !answer.ok() {
         return Some(Reach::default());
     }

@@ -418,9 +418,10 @@ fn a_pasted_token_at_an_unreachable_forge_is_not_a_refused_token() {
         !message.contains("did not accept"),
         "nothing accepted or refused anything: {message}"
     );
-    // and what the connector printed while it worked came along
-    let note = noted.note.expect("the connector said something");
-    assert!(note.contains("could not be reached"), "{note}");
+    // and it said it ONCE: the sentence travels in `message`, so the
+    // connector does not also print it on stderr and the person does
+    // not read the same failure twice.
+    assert_eq!(noted.note, None, "{:?}", noted.note);
 }
 
 /// The connector's own credential file (D2.6), written the way a
