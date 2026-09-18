@@ -691,6 +691,19 @@ publish-crates: sync-tutorial
 # what `just release-all -P` in the umbrella calls per sub. Running
 # crates.io upload first means a failed upload leaves only a local
 # tag to drop.
+#
+# The macOS lane has no recipe here: the apple archives are built,
+# Developer ID signed and verified by the `build-local-artifacts` job of
+# .github/workflows/release.yml, which the tag this step pushes starts
+# (JOY-02A8-F4, design decision 6). What that lane REQUIRES, wherever it
+# runs, is one identity for both copies of the connector: the Developer
+# ID Application certificate of Joydev GmbH, the same one the desktop
+# app signs its sidecars with. On a GitHub hosted runner it arrives as
+# the APPLE_CERTIFICATE secret; on a self-hosted Mac it lives in the
+# runner user's login keychain, and that runner has to be in a logged-in
+# user session with the keychain unlocked. A runner started over ssh
+# cannot sign: macOS refuses the login keychain to a non-interactive
+# session with "User interaction is not allowed".
 # Publish workspace crates, then push + forge release.
 publish: publish-crates
     joy release publish
