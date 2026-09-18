@@ -218,11 +218,22 @@ impl Events for Vec<Value> {
     }
 }
 
-/// How long the connector waits between two polls. Real time in a
-/// shipped connector; no time at all in a test, which is the only way
-/// to prove a five second `slow_down` without spending five seconds.
+/// How long the connector waits between two polls, and what the time
+/// is. Real time in a shipped connector; no time at all in a test,
+/// which is the only way to prove a five second `slow_down` without
+/// spending five seconds.
+///
+/// [`Clock::now`] is what makes the countdown of D2.4 honest. Counting
+/// the code's life in whole intervals assumes every poll is free, and a
+/// poll that waits fifteen seconds for a name that does not resolve is
+/// not: the connector then reported "870 seconds left" while the code
+/// had four minutes, and the host above it stopped the call for a
+/// timeout the person could not see coming (JOY-02A9-48).
 pub trait Clock {
     fn sleep(&self, how_long: Duration);
+
+    /// The moment this clock is at.
+    fn now(&self) -> Instant;
 }
 
 /// The clock a connector runs on.
@@ -232,15 +243,33 @@ impl Clock for RealClock {
     fn sleep(&self, how_long: Duration) {
         std::thread::sleep(how_long);
     }
+
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
 }
 
 /// A clock that records what it was asked to wait and waits nothing.
 /// Behind the `fake-api` feature, so a shipped connector never carries
 /// it (the same rule as the in process fake forge).
+///
+/// Its `now` moves by exactly what it was asked to sleep, so a fifteen
+/// minute device grant is proved in a millisecond and the countdown the
+/// events carry is the one a real clock would produce.
 #[cfg(feature = "fake-api")]
-#[derive(Default)]
 pub struct NoWait {
     waits: std::sync::Mutex<Vec<Duration>>,
+    started: Instant,
+}
+
+#[cfg(feature = "fake-api")]
+impl Default for NoWait {
+    fn default() -> Self {
+        NoWait {
+            waits: std::sync::Mutex::new(Vec::new()),
+            started: Instant::now(),
+        }
+    }
 }
 
 #[cfg(feature = "fake-api")]
@@ -258,6 +287,10 @@ impl Clock for NoWait {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .push(how_long);
+    }
+
+    fn now(&self) -> Instant {
+        self.started + self.waits().iter().sum::<Duration>()
     }
 }
 
@@ -695,6 +728,32 @@ pub fn verification_event(
         "expires_in": expires_in,
         "interval": interval,
     })
+}
+
+/// The `waiting` event of D2.4, with the reason where the wait has one.
+///
+/// A transient transport failure during a device poll is a wait and not
+/// an end: the code is still good, the person is still on the forge's
+/// page, and the poll is tried again (D2.4, JOY-02A9-48). The reason
+/// says what is being waited out, so a host can show it instead of
+/// leaving a person to guess.
+pub fn waiting_event(seconds_left: i64, reason: Option<&str>) -> Value {
+    let mut event = json!({
+        "event": "waiting",
+        "seconds_left": seconds_left.max(0),
+    });
+    if let Some(reason) = reason.map(str::trim).filter(|text| !text.is_empty()) {
+        event["reason"] = Value::String(reason.to_string());
+    }
+    event
+}
+
+/// Whether a poll ended in a TRANSPORT failure: no answer arrived at
+/// all, so the forge said nothing about the code. DNS, a refused
+/// connection, a timeout and a TLS fault all wear this code
+/// ([`transport`]).
+pub fn is_transport_failure(poll: &Poll) -> bool {
+    matches!(poll, Poll::Failed { code, .. } if code == "network")
 }
 
 /// The `error` event of D2.4.

@@ -921,14 +921,25 @@ pub fn account_of(host: &str, token: &str, ctx: &Ctx) -> AccountAnswer {
 }
 
 /// Whether this token reaches `owner/repo`, and whether it may push
-/// (the probe of D4.1c). One request, per remote and never per contact.
+/// (the probe of D4.1c). One request, per remote and never per contact,
+/// plus at most one more where the answer looks like an organisation
+/// wall (D2.7c).
 pub fn reaches_repo(host: &str, repo_path: &str, token: &str, ctx: &Ctx) -> Option<Reach> {
     let url = format!("{}/repos/{repo_path}", api_base(host, ctx));
     let answer = api_get_as_or_say(ctx, host, &url, token)?;
     if !answer.ok() {
-        // GitHub answers 404 rather than 403 for a private repository
-        // the caller may not see, so both mean "this login is not the
-        // one" and neither is an error.
+        // Two refusals wear these numbers, and they are not the same
+        // thing for the person (D2.7c, JOY-02A9-48):
+        //
+        // - the organisation owns the repository, has OAuth App access
+        //   restrictions switched on and has not approved Joy. GitHub
+        //   says so in the body of a 403, and answers 404 for a private
+        //   repository because it does not confirm what a token may not
+        //   see. NO login of this machine gets in;
+        // - this login is simply not the one. Another login may be.
+        if answer.status == 403 && classify(&answer) == "needs_org_approval" {
+            return Some(Reach::org_wall());
+        }
         return Some(Reach::default());
     }
     let body = answer.json().unwrap_or_default();
@@ -938,7 +949,75 @@ pub fn reaches_repo(host: &str, repo_path: &str, token: &str, ctx: &Ctx) -> Opti
             .pointer("/permissions/push")
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
+        wall: false,
     })
+}
+
+/// Whether the OWNER organisation walls this application out of
+/// `owner/repo`, asked only where NO login reached the repository at
+/// all (D2.7c, D4.1c step 5).
+///
+/// It is asked there and nowhere else because it costs a request, and
+/// because the question only arises then: a login that reads the
+/// repository has climbed no wall, and a login that does not is either
+/// the wrong login or behind one.
+///
+/// Two readings, and neither invents a wall:
+///
+/// 1. the token's user BELONGS to the owner organisation
+///    (`GET /user/orgs`), and the repository still answers 404. That is
+///    the wall wearing the number GitHub uses to avoid confirming a
+///    private repository ("GitHub uses a 404 Not Found response instead
+///    of a 403 Forbidden response");
+/// 2. the owner's own organisation record is refused with the
+///    restriction named, which is the reading that still works when the
+///    restriction hides the organisation from `/user/orgs` too.
+///
+/// Anything else is not a wall: telling a person their organisation has
+/// to approve Joy for a repository that was renamed would send them to
+/// an owner with nothing to approve.
+pub fn organisation_wall(host: &str, repo_path: &str, token: &str, ctx: &Ctx) -> bool {
+    let Some(owner) = repo_path.trim_matches('/').split('/').next() else {
+        return false;
+    };
+    if owner.is_empty() {
+        return false;
+    }
+    let base = api_base(host, ctx);
+    if let Some(orgs) = api_get_as_or_say(ctx, host, &format!("{base}/user/orgs"), token) {
+        if orgs.ok() {
+            #[derive(serde::Deserialize)]
+            struct Org {
+                #[serde(default)]
+                login: String,
+            }
+            if let Ok(list) = serde_json::from_str::<Vec<Org>>(&orgs.body) {
+                if list.iter().any(|org| org.login.eq_ignore_ascii_case(owner)) {
+                    return true;
+                }
+            }
+        }
+    }
+    api_get_as_or_say(ctx, host, &format!("{base}/orgs/{owner}"), token)
+        .is_some_and(|org| org.status == 403 && classify(&org) == "needs_org_approval")
+}
+
+/// Where an owner approves Joy for an organisation (D2.7c). On
+/// github.com this is the documented settings page; on a GitHub
+/// Enterprise Server instance the same path under the instance's own
+/// web address, which is the host itself and never `api.github.com`.
+pub fn org_approval_page(host: &str, owner: &str) -> Option<String> {
+    let owner = owner.trim().trim_matches('/');
+    if owner.is_empty() {
+        return None;
+    }
+    let web = match host.trim().to_ascii_lowercase().as_str() {
+        "" | "github.com" | "api.github.com" => "github.com".to_string(),
+        other => other.to_string(),
+    };
+    Some(format!(
+        "https://{web}/organizations/{owner}/settings/oauth_application_policy"
+    ))
 }
 
 /// Revoke a token at GitHub: `DELETE /applications/{client_id}/token`,
@@ -1264,6 +1343,30 @@ mod tests {
             files_verdict(answer(401, "")),
             json!({ "state": "unknown" })
         );
+    }
+
+    /// D2.7c: the page an owner of the organisation acts on. It is the
+    /// instance's OWN web address, which on a GitHub Enterprise Server
+    /// is the host itself and never `api.github.com`; a person sent to
+    /// github.com for an internal organisation finds nothing there.
+    #[test]
+    fn the_approval_page_is_the_organisations_own_settings_page() {
+        assert_eq!(
+            org_approval_page("github.com", "acme").as_deref(),
+            Some("https://github.com/organizations/acme/settings/oauth_application_policy")
+        );
+        assert_eq!(
+            org_approval_page("api.github.com", "acme"),
+            org_approval_page("github.com", "acme"),
+            "the API host and the web host are one organisation"
+        );
+        assert_eq!(
+            org_approval_page("github.acme.example", "acme").as_deref(),
+            Some(
+                "https://github.acme.example/organizations/acme/settings/oauth_application_policy"
+            )
+        );
+        assert_eq!(org_approval_page("github.com", " "), None);
     }
 
     /// D2.7c, the classification rules that must never say `denied` for

@@ -520,3 +520,66 @@ fn a_stored_public_only_set_refuses_a_private_repository_without_a_request() {
         "the pre check spends no request at all"
     );
 }
+
+/// D2.7c and JOY-02A9-48: the GitHub connector tells the ORGANISATION's
+/// wall from "this login is not the one", and it does it on the forge's
+/// own evidence.
+///
+/// The cheap reading first: GitHub names the restriction in the body of
+/// its 403, so the probe answers the wall without spending a second
+/// request.
+#[test]
+fn a_403_naming_the_restriction_is_read_as_the_organisations_wall() {
+    let fake = FakeForge::start(|call| match call.path.as_str() {
+        "/repos/acme/demo" => Reply::json(
+            403,
+            r#"{"message":"Although you appear to have the correct authorization credentials, the `acme` organization has enabled OAuth App access restrictions."}"#,
+        ),
+        _ => Reply::not_found(),
+    });
+    let host = "ghe.acme.test";
+    let ctx = ctx(&fake, host, true);
+
+    let reach = joy_github::github::reaches_repo(host, "acme/demo", TOKEN, &ctx)
+        .expect("the forge answered");
+
+    assert!(reach.wall, "the restriction is named in the body");
+    assert!(!reach.read && !reach.push);
+    assert_eq!(fake.calls().len(), 1, "and nothing else is asked");
+}
+
+/// The paid reading, asked only where no login reached the repository:
+/// a 404 for a repository of an organisation the token's user belongs
+/// to is the same wall wearing the number GitHub uses for what a token
+/// may not see.
+#[test]
+fn a_404_is_the_wall_only_for_an_organisation_the_user_belongs_to() {
+    let fake = FakeForge::start(|call| match call.path.as_str() {
+        "/user/orgs" => Reply::json(200, r#"[{"login":"ACME"},{"login":"other"}]"#),
+        _ => Reply::not_found(),
+    });
+    let host = "ghe.acme.test";
+    let ctx = ctx(&fake, host, true);
+
+    // The repository answers 404 and says nothing about a wall.
+    let reach = joy_github::github::reaches_repo(host, "acme/demo", TOKEN, &ctx)
+        .expect("the forge answered");
+    assert!(!reach.wall && !reach.read);
+
+    // The second question does, and the organisation name is compared
+    // the way GitHub writes it: case does not decide this.
+    assert!(joy_github::github::organisation_wall(
+        host,
+        "acme/demo",
+        TOKEN,
+        &ctx
+    ));
+    // An organisation this user does not belong to is no wall: the
+    // repository was renamed, deleted or never visible to this login.
+    assert!(!joy_github::github::organisation_wall(
+        host,
+        "someone-else/demo",
+        TOKEN,
+        &ctx
+    ));
+}

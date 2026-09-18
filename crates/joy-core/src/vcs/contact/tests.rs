@@ -38,6 +38,7 @@ fn evidence(
         token_worked_before,
         host: host.to_string(),
         proxy: None,
+        org_wall: None,
     }
 }
 
@@ -331,6 +332,7 @@ fn a_proxy_407_names_the_proxy_and_the_two_texts_differ() {
             token_worked_before: true,
             host: "github.com".to_string(),
             proxy: None,
+            org_wall: None,
         }
         .through_proxy("proxy.acme.example:8080")
     };
@@ -1678,6 +1680,11 @@ fn a_documented_ban_sets_its_own_next_try() {
 #[test]
 fn a_credential_that_worked_is_remembered_for_the_host() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    // The fact outlives the process, so it is written to joy's own
+    // state file (D1.2, JOY-02A9-48) - and a test writes it HERE and
+    // never into the person's own state directory.
+    let home = tempfile::tempdir().expect("tempdir");
+    crate::vcs::resolver::set_state_file(Some(home.path().join("forge-state.json")));
     reset_limits();
     reset_throttle();
     reset_token_memory();
@@ -1704,6 +1711,7 @@ fn a_credential_that_worked_is_remembered_for_the_host() {
     assert!(!token_worked_before("worked.test"));
     reset_token_memory();
     set_gaps("");
+    crate::vcs::resolver::set_state_file(None);
 }
 
 /// D1.7's one re-ask: only a token that has already worked here and is

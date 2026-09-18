@@ -181,6 +181,25 @@ impl AccountAnswer {
 pub struct Reach {
     pub read: bool,
     pub push: bool,
+    /// The forge refused this login for an ORGANISATION's reason and
+    /// not for this login's (D2.7c): the OAuth application is not
+    /// approved for the owner organisation. No other login of this
+    /// machine will do better, so "sign in with the login that can" is
+    /// the wrong sentence and an approval page is the right one
+    /// (JOY-02A9-48).
+    pub wall: bool,
+}
+
+impl Reach {
+    /// The answer of a forge that refused this login for the
+    /// organisation's reason.
+    pub fn org_wall() -> Reach {
+        Reach {
+            read: false,
+            push: false,
+            wall: true,
+        }
+    }
 }
 
 /// One forge, as the dispatcher sees it.
@@ -244,6 +263,30 @@ pub trait Forge: Sync {
     /// One request per candidate, never per contact. `None` means the
     /// forge did not answer at all.
     fn reaches(&self, host: &str, repo_path: &str, token: &str, ctx: &Ctx) -> Option<Reach>;
+
+    /// Where an owner approves this application for an organisation
+    /// (D2.7c), for the forges that have such a page. It is forge
+    /// knowledge: only the forge knows its own web base, which on a
+    /// self hosted instance is not the API base.
+    ///
+    /// `None` is the honest answer of a forge whose access model has no
+    /// such wall; the state is then never answered either.
+    fn org_approval_url(&self, _host: &str, _owner: &str) -> Option<String> {
+        None
+    }
+
+    /// Whether the OWNER organisation walls this application out of
+    /// `owner/repo`, asked with one login's token and only where no
+    /// login reached the repository at all (D2.7c).
+    ///
+    /// It is a second question and not part of [`Forge::reaches`]
+    /// because it costs a request: the probe of D4.1c spends one per
+    /// candidate, and a refusal that is simply the wrong login must not
+    /// double that bill. `false` is the answer of every forge that has
+    /// no such wall.
+    fn org_wall(&self, _host: &str, _repo_path: &str, _token: &str, _ctx: &Ctx) -> bool {
+        false
+    }
 
     /// The https twin of a remote (D1.5, the `web-url` verb). Answered
     /// from the address and the instance configuration alone: only the

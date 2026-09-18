@@ -726,6 +726,13 @@ const LOGIN_FIRST_EVENT: Duration = Duration::from_secs(15);
 /// `expires_in` decides, and this is the most it may ask for.
 const LOGIN_TOTAL_CAP: Duration = Duration::from_secs(900);
 
+/// How long a connector has to say its last word after the span it
+/// asked for has run out. A device grant polls until the code expires
+/// and then writes one `error` event; without this, joy kills it in the
+/// same instant and the person reads joy's timeout instead of the
+/// connector's sentence.
+const LAST_WORD_GRACE: Duration = Duration::from_secs(5);
+
 /// The deadline for ONE SHOT of one verb (D2.3), the bound
 /// [`run_once`] and therefore [`query`] use. Every verb of the
 /// catalogue is named; anything else gets the shortest class, because a
@@ -1077,7 +1084,16 @@ pub fn run_stream(
         }
     });
     let mut deadline = Instant::now() + bounds.first_event;
-    let cap = Instant::now() + bounds.total;
+    // The cap the FIRST event asks for, and never a second one: D2.3
+    // gives `login` the verification code's own `expires_in` capped at
+    // `bounds.total`, and that span starts when the forge issues the
+    // code, not when the connector was spawned. Counting it from the
+    // spawn stopped a sign in a moment BEFORE the code expired, so the
+    // person read "the forge plugin did not answer in time" instead of
+    // the connector's own word about their code (JOY-02A9-48). The
+    // grace is what the connector needs to say that word.
+    let mut cap = Instant::now() + bounds.total;
+    let mut cap_set = false;
     let mut cancelled = false;
     let mut reaped = false;
     loop {
@@ -1102,8 +1118,15 @@ pub fn run_stream(
                 Ok(event) => {
                     let asked = sink.event(&event);
                     outcome.stdout_json = Some(event);
-                    let next = asked.unwrap_or(bounds.total);
-                    deadline = (Instant::now() + next).min(cap);
+                    let now = Instant::now();
+                    // What the sink asked for, plus the moment the
+                    // connector needs to say how its own span ended.
+                    let span = asked.map(|asked| asked.min(bounds.total) + LAST_WORD_GRACE);
+                    if let (false, Some(span)) = (cap_set, span) {
+                        cap_set = true;
+                        cap = now + span;
+                    }
+                    deadline = (now + span.unwrap_or(bounds.total)).min(cap);
                 }
                 Err(_) => sink.line_noise(&line),
             },
@@ -2166,13 +2189,18 @@ pub struct ForgeToken {
     #[serde(default)]
     pub chose_by: Option<String>,
     /// `no-login`, `no-keychain`, `unsupported-host`,
-    /// `no-login-for-repo` or `busy`.
+    /// `no-login-for-repo`, `needs_org_approval` or `busy`.
     #[serde(default)]
     pub reason: Option<String>,
     /// The sentence that names the logins that were tried, where the
     /// connector wrote one.
     #[serde(default)]
     pub message: Option<String>,
+    /// The one page this refusal is acted on: the organisation's
+    /// settings page for `needs_org_approval` (D2.7c). A sentence about
+    /// an approval nobody is told where to give is not a next step.
+    #[serde(default)]
+    pub action: Option<String>,
 }
 
 /// What a call asks a credential FOR (`--for`, D2.7a and D4.1c). The

@@ -194,6 +194,30 @@ mod tests {
         assert!(refusal.detail.is_none());
     }
 
+    /// JOY-02A9-48: what the person reads when the organisation has not
+    /// approved Joy. One plain sentence, and the page an owner acts on
+    /// as the one next step: the state's own next step ("open the
+    /// approval page") is a button label and no use on a terminal,
+    /// while the URL is what a person can follow from here.
+    #[test]
+    fn the_organisation_wall_names_the_approval_page() {
+        let page = "https://github.com/organizations/acme/settings/oauth_application_policy";
+        let error = JoyError::Contact(Box::new(ContactError {
+            failure: Failure::NeedsOrgApproval,
+            message: Failure::NeedsOrgApproval.sentence("github.com"),
+            detail: None,
+            action: Some(page.to_string()),
+            next_try: None,
+        }));
+        let refusal = Refusal::of("github.com", &error);
+        assert_eq!(refusal.state, "needs_org_approval");
+        assert_eq!(
+            refusal.message,
+            "Your organisation must approve Joy for this repository."
+        );
+        assert_eq!(refusal.action.as_deref(), Some(page));
+    }
+
     /// A state that names no next step gets no help line rather than a
     /// wrong one.
     #[test]

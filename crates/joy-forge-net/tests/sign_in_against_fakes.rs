@@ -1439,3 +1439,431 @@ fn a_delegated_session_reads_the_stored_credential_and_never_changes_it() {
     );
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
+
+// -- the organisation wall of D2.7c (JOY-02A9-48) ------------------------------
+
+/// The body GitHub writes when an OAuth application is not approved for
+/// an organisation. It is the cheap reading of D2.7c: the forge names
+/// the restriction itself and joy spends no second request on it.
+const RESTRICTED: &str = r#"{"message":"Although you appear to have the correct authorization credentials, the `acme` organization has enabled OAuth App access restrictions, meaning that data access to third-parties is limited."}"#;
+
+fn two_logins(ctx: &Ctx) {
+    for login in ["scotty", "work"] {
+        ctx.vault()
+            .put(
+                "forge.test",
+                &Record {
+                    token: format!("token-of-{login}"),
+                    login: Some(login.into()),
+                    ..Record::default()
+                },
+            )
+            .unwrap();
+    }
+}
+
+/// JOY-02A9-48, finding 2: a 403 that names OAuth App access
+/// restrictions is the ORGANISATION's wall and not "this login is not
+/// the one". Telling a person to "sign in with the login that can"
+/// sends them round a door that refuses every account they have, while
+/// the one action that helps belongs to an owner of the organisation,
+/// on one page (D2.7c).
+#[test]
+fn a_403_that_names_the_restriction_answers_needs_org_approval() {
+    let fake = FakeForge::start(|call| match call.path.as_str() {
+        "/repos/acme/widgets" => Reply::json(403, RESTRICTED),
+        _ => Reply::not_found(),
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let forge = TestForge::device(fake.base()).with_org_walls();
+    let ctx = sandbox(dir.path());
+    two_logins(&ctx);
+
+    let answer = verbs::token(
+        &forge,
+        &Target::Remote("https://forge.test/acme/widgets.git".into()),
+        None,
+        &ctx,
+    );
+
+    assert_eq!(answer["known"], false, "{answer}");
+    assert_eq!(answer["reason"], "needs_org_approval", "{answer}");
+    let message = answer["message"].as_str().unwrap();
+    assert!(
+        message.starts_with("Your organisation must approve Joy for this repository."),
+        "{message}"
+    );
+    assert_eq!(
+        answer["action"], "https://forge.test/organizations/acme/settings/oauth_application_policy",
+        "the page an owner acts on: {answer}"
+    );
+    assert_eq!(
+        fake.calls().len(),
+        2,
+        "the forge named the restriction itself, so nothing else is asked: {:#?}",
+        fake.calls()
+    );
+}
+
+/// The second reading of D2.7c, and the one the operator's own probe
+/// met: GitHub answers 404 rather than 403 for a private repository a
+/// token may not see. A 404 for a repository owned by an organisation
+/// the token's user BELONGS to is the same wall, and the organisation
+/// list is what says so.
+#[test]
+fn a_404_on_a_repository_of_my_own_organisation_is_the_wall() {
+    let fake = FakeForge::start(|call| match call.path.as_str() {
+        "/user/orgs" => Reply::json(200, r#"[{"login":"acme"},{"login":"other"}]"#),
+        _ => Reply::not_found(),
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let forge = TestForge::device(fake.base()).with_org_walls();
+    let ctx = sandbox(dir.path());
+    two_logins(&ctx);
+
+    let answer = verbs::token(
+        &forge,
+        &Target::Remote("https://forge.test/acme/widgets.git".into()),
+        None,
+        &ctx,
+    );
+
+    assert_eq!(answer["reason"], "needs_org_approval", "{answer}");
+    assert_eq!(
+        answer["action"],
+        "https://forge.test/organizations/acme/settings/oauth_application_policy"
+    );
+    let asked: Vec<String> = fake.calls().iter().map(|call| call.path.clone()).collect();
+    assert_eq!(
+        asked,
+        vec!["/repos/acme/widgets", "/repos/acme/widgets", "/user/orgs"],
+        "one request per candidate, and the wall question asked ONCE, at the end"
+    );
+}
+
+/// And joy invents no wall: a 404 for a repository of an organisation
+/// the token's user does not belong to is a repository that was
+/// renamed, deleted or never visible to these logins, which is D4.1c's
+/// step 5 and says so.
+#[test]
+fn a_404_outside_my_organisations_is_still_no_login_for_repo() {
+    let fake = FakeForge::start(|call| match call.path.as_str() {
+        "/user/orgs" => Reply::json(200, r#"[{"login":"other"}]"#),
+        _ => Reply::not_found(),
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let forge = TestForge::device(fake.base()).with_org_walls();
+    let ctx = sandbox(dir.path());
+    two_logins(&ctx);
+
+    let answer = verbs::token(
+        &forge,
+        &Target::Remote("https://forge.test/acme/widgets.git".into()),
+        None,
+        &ctx,
+    );
+
+    assert_eq!(answer["reason"], "no-login-for-repo", "{answer}");
+    assert!(answer.get("action").is_none(), "{answer}");
+}
+
+/// JOY-02A9-48, finding 2, second half: whether a person is told about
+/// the wall may not depend on a memory row. The pin and the memory of
+/// D4.1c choose the LOGIN without spending a request, which is what
+/// they are for; they know nothing about the repository, and a call
+/// that skipped the question entirely answered "here is your token" for
+/// a repository the token cannot reach.
+#[test]
+fn the_wall_is_answered_whether_a_pin_a_memory_or_the_probe_chose_the_login() {
+    let fake = FakeForge::start(|call| match call.path.as_str() {
+        "/repos/acme/widgets" => Reply::json(403, RESTRICTED),
+        _ => Reply::not_found(),
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let forge = TestForge::device(fake.base()).with_org_walls();
+    let remote = "https://forge.test/acme/widgets.git";
+    let state = dir.path().join("state");
+
+    // The memory: this machine pushed to this remote as `work` before.
+    let by_memory = sandbox(dir.path()).with_remote(remote);
+    two_logins(&by_memory);
+    joy_forge_net::auth::pin::remember(Some(&state), remote, "work");
+    let answer = verbs::token(&forge, &Target::Remote(remote.into()), None, &by_memory);
+    assert_eq!(answer["reason"], "needs_org_approval", "{answer}");
+    assert!(
+        answer["token"].is_null(),
+        "no token is handed out: {answer}"
+    );
+    assert_eq!(
+        fake.calls().len(),
+        1,
+        "the memory chose the login and one question settled the repository: {:#?}",
+        fake.calls()
+    );
+
+    // The pin: the caller named the login itself.
+    let by_pin = sandbox(dir.path()).with_remote(remote).with_login("scotty");
+    let answer = verbs::token(&forge, &Target::Remote(remote.into()), None, &by_pin);
+    assert_eq!(answer["reason"], "needs_org_approval", "{answer}");
+    assert_eq!(answer["chose_by"], serde_json::Value::Null);
+
+    // The only login this machine holds, which is step 3 and also spends
+    // no request on the choice.
+    let alone = tempfile::tempdir().unwrap();
+    let only = sandbox(alone.path());
+    only.vault()
+        .put(
+            "forge.test",
+            &Record {
+                token: "token-of-scotty".into(),
+                login: Some("scotty".into()),
+                ..Record::default()
+            },
+        )
+        .unwrap();
+    let answer = verbs::token(&forge, &Target::Remote(remote.into()), None, &only);
+    assert_eq!(answer["reason"], "needs_org_approval", "{answer}");
+}
+
+/// A login that reaches the repository is not asked anything else: the
+/// memory keeps its promise of D4.1c and the call spends one request,
+/// not two.
+#[test]
+fn a_remembered_login_that_reaches_the_repository_still_answers_at_once() {
+    let fake = FakeForge::start(|call| match call.path.as_str() {
+        "/repos/acme/widgets" => Reply::json(200, r#"{"permissions":{"push":true}}"#),
+        _ => Reply::not_found(),
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let forge = TestForge::device(fake.base()).with_org_walls();
+    let remote = "https://forge.test/acme/widgets.git";
+    let ctx = sandbox(dir.path()).with_remote(remote);
+    two_logins(&ctx);
+    joy_forge_net::auth::pin::remember(Some(&dir.path().join("state")), remote, "work");
+
+    let answer = verbs::token(&forge, &Target::Remote(remote.into()), None, &ctx);
+
+    assert_eq!(answer["known"], true, "{answer}");
+    assert_eq!(answer["login"], "work");
+    assert_eq!(answer["chose_by"], "memory");
+    assert_eq!(fake.calls().len(), 1, "{:#?}", fake.calls());
+}
+
+// -- transient transport failures while polling (JOY-02A9-48) ------------------
+
+/// The device code answer every case below starts from.
+fn device_code(expires_in: i64, interval: i64) -> Reply {
+    Reply::json(
+        200,
+        format!(
+            r#"{{"device_code":"dev-1","user_code":"WDJB-MJHT",
+                "verification_uri":"https://forge.test/login/device",
+                "expires_in":{expires_in},"interval":{interval}}}"#
+        ),
+    )
+}
+
+/// JOY-02A9-48, finding 3: a DNS hiccup while the person is still on
+/// the forge's page is a wait, not an end. The poll that got no answer
+/// says what it is waiting out and is tried again until the code
+/// expires; the sign in then finishes as if nothing had happened.
+#[test]
+fn a_device_poll_rides_out_a_transport_failure_and_still_signs_in() {
+    let polls = Arc::new(AtomicUsize::new(0));
+    let counter = polls.clone();
+    let fake = FakeForge::start(move |call| match call.path.as_str() {
+        "/login/device/code" => device_code(900, 5),
+        "/login/oauth/access_token" => match counter.fetch_add(1, Ordering::SeqCst) {
+            // the name did not resolve, twice
+            0 | 1 => Reply::hang_up(),
+            2 => Reply::json(200, r#"{"error":"authorization_pending"}"#),
+            _ => Reply::json(
+                200,
+                r#"{"access_token":"gho_after_the_hiccup","token_type":"bearer","scope":"repo"}"#,
+            ),
+        },
+        "/user" => user_reply(),
+        _ => Reply::not_found(),
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let forge = TestForge::device(fake.base());
+    let ctx = interactive(sandbox(dir.path()));
+    let mut events: Vec<Value> = Vec::new();
+
+    let code = verbs::login(
+        &forge,
+        &Target::Host("forge.test".into()),
+        Purpose::Write,
+        &ctx,
+        &mut events,
+        &NoWait::default(),
+    );
+
+    assert_eq!(code, 0);
+    assert!(
+        events_of(&events, "error").is_empty(),
+        "nothing failed here: {events:#?}"
+    );
+    let result = &events_of(&events, "result")[0];
+    assert_eq!(result["login"], "scotty");
+    assert_eq!(polls.load(Ordering::SeqCst), 4, "every poll was made");
+    let waiting = events_of(&events, "waiting");
+    assert_eq!(waiting.len(), 3, "two rode out the fault, one was pending");
+    let reasons: Vec<&str> = waiting
+        .iter()
+        .filter_map(|event| event["reason"].as_str())
+        .collect();
+    assert_eq!(reasons.len(), 2, "the two faults said what they waited out");
+    assert!(
+        reasons[0].contains("could not be reached"),
+        "and the reason is the client's own sentence: {reasons:?}"
+    );
+    // The countdown is the code's real life and not a count of
+    // intervals: 900 seconds, five at a time.
+    assert_eq!(waiting[0]["seconds_left"], 895);
+    assert_eq!(waiting[1]["seconds_left"], 890);
+    assert_eq!(waiting[2]["seconds_left"], 885);
+}
+
+/// The other half of the rule: `network` is reported only where the
+/// code ran out without ONE answer from the forge. Then it is the
+/// truth, and it names the host.
+#[test]
+fn a_device_poll_that_never_reached_the_forge_reports_network_when_the_code_expires() {
+    let fake = FakeForge::start(|call| match call.path.as_str() {
+        "/login/device/code" => device_code(30, 5),
+        _ => Reply::hang_up(),
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let forge = TestForge::device(fake.base());
+    let mut events: Vec<Value> = Vec::new();
+    let clock = NoWait::default();
+
+    verbs::login(
+        &forge,
+        &Target::Host("forge.test".into()),
+        Purpose::Write,
+        &interactive(sandbox(tempfile::tempdir().unwrap().path())),
+        &mut events,
+        &clock,
+    );
+
+    let error = &events_of(&events, "error")[0];
+    assert_eq!(error["code"], "network", "{error}");
+    let message = error["message"].as_str().unwrap();
+    assert!(message.contains("forge.test"), "{message}");
+    assert!(message.contains("waited for the sign in"), "{message}");
+    assert_eq!(
+        clock.waits().len(),
+        6,
+        "it kept trying for the whole life of the code"
+    );
+    let _ = fake.calls();
+    let _ = dir;
+}
+
+/// And a code that really expired says so, even when the last polls
+/// found nothing: the forge answered once, so the person's code running
+/// out is the story and "no connection" would be a second, wrong one.
+#[test]
+fn a_code_that_expired_after_one_answer_is_expired_and_not_a_network_fault() {
+    let polls = Arc::new(AtomicUsize::new(0));
+    let counter = polls.clone();
+    let fake = FakeForge::start(move |call| match call.path.as_str() {
+        "/login/device/code" => device_code(20, 5),
+        "/login/oauth/access_token" => match counter.fetch_add(1, Ordering::SeqCst) {
+            0 => Reply::json(200, r#"{"error":"authorization_pending"}"#),
+            _ => Reply::hang_up(),
+        },
+        _ => Reply::not_found(),
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let mut events: Vec<Value> = Vec::new();
+
+    verbs::login(
+        &TestForge::device(fake.base()),
+        &Target::Host("forge.test".into()),
+        Purpose::Write,
+        &interactive(sandbox(dir.path())),
+        &mut events,
+        &NoWait::default(),
+    );
+
+    let error = &events_of(&events, "error")[0];
+    assert_eq!(error["code"], "expired_token", "{error}");
+    assert_eq!(polls.load(Ordering::SeqCst), 4);
+}
+
+/// The same rule at the PKCE exchange (JOY-02A9-48, finding 3): the
+/// person has approved joy in their browser by then, and throwing the
+/// authorization code away for a DNS hiccup makes them do the whole
+/// flow again. The exchange is retried inside the same window, and the
+/// wait says what it is waiting out.
+#[test]
+fn a_pkce_exchange_rides_out_a_transport_failure_and_still_signs_in() {
+    let tries = Arc::new(AtomicUsize::new(0));
+    let counter = tries.clone();
+    let fake = FakeForge::start(move |call| {
+        if call.path.starts_with("/login/oauth/access_token") {
+            return match counter.fetch_add(1, Ordering::SeqCst) {
+                0 | 1 => Reply::hang_up(),
+                _ => Reply::json(200, r#"{"access_token":"gitea_token","expires_in":3600}"#),
+            };
+        }
+        match call.path.as_str() {
+            "/user" => Reply::json(200, r#"{"login":"scotty","id":12345}"#),
+            _ => Reply::not_found(),
+        }
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let base = fake.base();
+    let root = dir.path().to_path_buf();
+    let (tx, rx) = std::sync::mpsc::channel::<Value>();
+
+    let handle = std::thread::spawn(move || {
+        let forge = TestForge::pkce(base);
+        let ctx = interactive(
+            Ctx::bare(root.join("project"))
+                .with_vault(Vault::file_at(root.join("config")))
+                .with_state_dir(root.join("state")),
+        );
+        let mut sink = Channel(tx);
+        verbs::login(
+            &forge,
+            &Target::Host("forge.test".into()),
+            Purpose::Write,
+            &ctx,
+            &mut sink,
+            &NoWait::default(),
+        )
+    });
+
+    let verification = rx
+        .recv_timeout(std::time::Duration::from_secs(15))
+        .expect("the verification event");
+    let url = verification["url"].as_str().unwrap().to_string();
+    let query = url.split_once('?').unwrap().1;
+    let state = field(query, "state");
+    let redirect = field(query, "redirect_uri");
+    let port: u16 = redirect.rsplit(':').next().unwrap().parse().unwrap();
+    knock(port, &format!("/?code=the-code&state={state}"));
+
+    assert_eq!(handle.join().unwrap(), 0);
+    let events: Vec<Value> = rx.try_iter().collect();
+    assert!(
+        events_of(&events, "error").is_empty(),
+        "the code survived the two faults: {events:#?}"
+    );
+    assert_eq!(events_of(&events, "result")[0]["login"], "scotty");
+    assert_eq!(
+        tries.load(Ordering::SeqCst),
+        3,
+        "two faults, then the token"
+    );
+    let reasons: Vec<String> = events_of(&events, "waiting")
+        .iter()
+        .filter_map(|event| event["reason"].as_str().map(str::to_string))
+        .collect();
+    assert_eq!(reasons.len(), 2, "each attempt said what it waited out");
+    assert!(reasons[0].contains("could not be reached"), "{reasons:?}");
+}

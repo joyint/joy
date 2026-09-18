@@ -77,6 +77,24 @@ impl Reply {
         Reply::json(404, r#"{"message":"Not Found"}"#)
     }
 
+    /// Answer nothing at all and close the connection: the fake's way
+    /// of being a name that does not resolve, a connection that is
+    /// refused or a network that drops. The client sees a transport
+    /// failure and no status, which is the evidence D1.8a insists on
+    /// keeping apart from a refusal.
+    pub fn hang_up() -> Self {
+        Reply {
+            status: 0,
+            headers: Vec::new(),
+            body: String::new(),
+        }
+    }
+
+    /// Whether this is [`Reply::hang_up`].
+    fn is_hang_up(&self) -> bool {
+        self.status == 0
+    }
+
     pub fn with_header(mut self, name: &str, value: &str) -> Self {
         self.headers.push((name.to_string(), value.to_string()));
         self
@@ -211,6 +229,12 @@ where
     let reply = handler(&call);
     calls.lock().unwrap_or_else(|e| e.into_inner()).push(call);
     let mut out = stream;
+    if reply.is_hang_up() {
+        // The request was seen and counted; nothing is answered, and
+        // the connection closes under the client.
+        let _ = out.shutdown(std::net::Shutdown::Both);
+        return;
+    }
     let mut response = format!(
         "HTTP/1.1 {} {}\r\nContent-Length: {}\r\nConnection: close\r\n",
         reply.status,
@@ -262,6 +286,38 @@ pub struct TestForge {
     pub client_id: String,
     /// What a forge CLI would report as signed in on this host.
     pub foreign: Vec<String>,
+    /// Whether this forge knows the organisation wall of D2.7c, which
+    /// is a GitHub behaviour and not a GitLab or Gitea one.
+    pub walls_orgs: bool,
+}
+
+/// Whether the token's user belongs to the organisation that owns
+/// `owner/repo`, which is the paid reading of D2.7c.
+fn belongs_to_owner(
+    host: &str,
+    repo_path: &str,
+    token: &str,
+    ctx: &crate::forge::Ctx,
+    base: &str,
+) -> bool {
+    let owner = repo_path.trim_matches('/').split('/').next().unwrap_or("");
+    let Ok(http) = ctx.http(host) else {
+        return false;
+    };
+    let Ok(orgs) = http.get(&format!("{base}/user/orgs")).bearer(token).call() else {
+        return false;
+    };
+    orgs.ok()
+        && orgs
+            .json()
+            .and_then(|body| {
+                body.as_array().map(|list| {
+                    list.iter()
+                        .filter_map(|org| org.get("login").and_then(|v| v.as_str()))
+                        .any(|login| login.eq_ignore_ascii_case(owner))
+                })
+            })
+            .unwrap_or(false)
 }
 
 impl TestForge {
@@ -272,6 +328,7 @@ impl TestForge {
             flow: crate::auth::oauth::Flow::Device,
             client_id: "test-client".to_string(),
             foreign: Vec::new(),
+            walls_orgs: false,
         }
     }
 
@@ -282,12 +339,19 @@ impl TestForge {
             flow: crate::auth::oauth::Flow::Pkce,
             client_id: "test-client".to_string(),
             foreign: Vec::new(),
+            walls_orgs: false,
         }
     }
 
     /// Say which logins a forge CLI holds on this host.
     pub fn with_foreign(mut self, logins: &[&str]) -> TestForge {
         self.foreign = logins.iter().map(|login| login.to_string()).collect();
+        self
+    }
+
+    /// A forge that knows GitHub's organisation wall (D2.7c).
+    pub fn with_org_walls(mut self) -> TestForge {
+        self.walls_orgs = true;
         self
     }
 }
@@ -436,6 +500,15 @@ impl crate::forge::Forge for TestForge {
             .call()
             .ok()?;
         if !answer.ok() {
+            // The cheap reading of D2.7c, the way the GitHub connector
+            // reads it: the forge names the restriction in the body of
+            // its own 403, and that costs no request.
+            if self.walls_orgs
+                && answer.status == 403
+                && answer.body.contains("OAuth App access restrictions")
+            {
+                return Some(crate::forge::Reach::org_wall());
+            }
             return Some(crate::forge::Reach::default());
         }
         let body = answer.json().unwrap_or_default();
@@ -445,7 +518,20 @@ impl crate::forge::Forge for TestForge {
                 .pointer("/permissions/push")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false),
+            wall: false,
         })
+    }
+
+    fn org_approval_url(&self, _host: &str, owner: &str) -> Option<String> {
+        self.walls_orgs.then(|| {
+            format!("https://forge.test/organizations/{owner}/settings/oauth_application_policy")
+        })
+    }
+
+    fn org_wall(&self, host: &str, repo_path: &str, token: &str, ctx: &crate::forge::Ctx) -> bool {
+        // The paid reading: does the token's user belong to the owner
+        // organisation, while the repository answers 404?
+        self.walls_orgs && belongs_to_owner(host, repo_path, token, ctx, &self.base)
     }
 
     fn web_url(&self, target: &crate::forge::Target, ctx: &crate::forge::Ctx) -> serde_json::Value {

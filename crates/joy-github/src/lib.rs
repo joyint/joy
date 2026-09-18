@@ -98,6 +98,14 @@ impl Forge for GitHub {
         github::reaches_repo(host, repo_path, token, ctx)
     }
 
+    fn org_approval_url(&self, host: &str, owner: &str) -> Option<String> {
+        github::org_approval_page(host, owner)
+    }
+
+    fn org_wall(&self, host: &str, repo_path: &str, token: &str, ctx: &Ctx) -> bool {
+        github::organisation_wall(host, repo_path, token, ctx)
+    }
+
     fn web_url(&self, target: &Target, ctx: &Ctx) -> Value {
         joy_forge_net::auth::verbs::https_twin(target, ctx)
     }

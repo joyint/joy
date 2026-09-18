@@ -305,6 +305,15 @@ pub struct ContactEvidence {
     /// (D1.8c). `None` when no proxy was configured, which is when joy
     /// cannot name one.
     pub proxy: Option<String>,
+    /// What the CONNECTOR said about this repository before the contact
+    /// (D2.7c, and the first rows of D1.8b): `Some` is "the token is
+    /// good, the login is the right one, and the organisation has not
+    /// approved Joy", with the approval page where the connector named
+    /// one. Only the connector can tell that wall from "not this
+    /// login": it reads the forge's own 403 body and asks which
+    /// organisations the token's user belongs to, and the git contact
+    /// sees neither (JOY-02A9-48).
+    pub org_wall: Option<super::resolver::OrgWall>,
 }
 
 impl ContactEvidence {
@@ -324,6 +333,7 @@ impl ContactEvidence {
             direction,
             credential,
             token_worked_before: token_worked_before(&host),
+            org_wall: super::resolver::org_wall(&host, url),
             host,
             proxy: None,
         }
@@ -865,15 +875,41 @@ fn decide(ev: &ContactEvidence) -> Decision {
         return plain(Failure::Offline);
     }
 
-    // An https 401 that libgit2 turned into GIT_EAUTH itself.
+    // An https 401 that libgit2 turned into GIT_EAUTH itself. Under a
+    // wall the connector named, that 401 is the wall and not a missing
+    // login: the person IS signed in, and telling them to sign in again
+    // sends them round a door that will refuse them for the same reason
+    // (JOY-02A9-48).
     if code == Code::Auth && ev.transport == Transport::Https {
-        return plain(Failure::NeedsSignIn);
+        return match &ev.org_wall {
+            Some(wall) => Decision {
+                action: wall.url.clone(),
+                ..plain(Failure::NeedsOrgApproval)
+            },
+            None => plain(Failure::NeedsSignIn),
+        };
     }
 
     plain(Failure::Error)
 }
 
 fn decide_by_status(ev: &ContactEvidence, family: HostFamily, status: u16) -> Decision {
+    // The connector already asked the forge who this token is and what
+    // the organisation does with it (D2.7c). Where it found the wall,
+    // the forge's refusal of THIS repository is that wall, whichever of
+    // the three numbers it wears: 404 because GitHub hides what a token
+    // may not see, 403 with the restriction named, and 401 for the
+    // private repository the unauthenticated twin then asked for.
+    // Nothing else is overruled: a certificate, a timeout and a 5xx
+    // never reach this function.
+    if let Some(wall) = &ev.org_wall {
+        if matches!(status, 401 | 403 | 404) {
+            return Decision {
+                action: wall.url.clone(),
+                ..plain(Failure::NeedsOrgApproval)
+            };
+        }
+    }
     match status {
         401 => plain(Failure::NeedsSignIn),
         429 => {
@@ -1754,18 +1790,29 @@ pub(crate) fn reset_limits() {
 
 static TOKEN_WORKED: Mutex<Option<HashMap<String, bool>>> = Mutex::new(None);
 
-/// Whether a credentialed contact to this host has already succeeded in
-/// this process. It is the difference between "you cannot read this" and
-/// "you can read this and not write it" (D1.8b, the push rules), and
-/// between a 404 that means "no such repository" and a 404 that means
-/// "your organisation has not approved Joy".
+/// Whether a credential has already authenticated on this host. It is
+/// the difference between "you cannot read this" and "you can read this
+/// and not write it" (D1.8b, the push rules), and between a 404 that
+/// means "no such repository" and a 404 that means "your organisation
+/// has not approved Joy".
+///
+/// The map above is the fast path and nothing more. The FACT lives in
+/// joy's own state file beside the transport memory (D1.2), because a
+/// one shot CLI command makes exactly one contact: a fact that only the
+/// second contact of a process can read is never read at all, and a
+/// real 404 to a fetch that carried a valid token was reported as
+/// "github.com does not have this repository" (JOY-02A9-48).
 pub fn token_worked_before(host: &str) -> bool {
-    TOKEN_WORKED
+    if TOKEN_WORKED
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .as_ref()
         .and_then(|t| t.get(host).copied())
         .unwrap_or(false)
+    {
+        return true;
+    }
+    super::resolver::token_worked(host)
 }
 
 thread_local! {
@@ -1866,20 +1913,49 @@ fn note_credential_worked(host: &str) {
     if host.is_empty() {
         return;
     }
+    let first = TOKEN_WORKED
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(HashMap::new)
+        .insert(host.to_string(), true)
+        .is_none();
+    // The file is written once per host per process: the map above
+    // answers every contact after it, so a 1 Hz poll writes nothing
+    // (D1.7's rule for the connector, held for the state file too).
+    if first {
+        super::resolver::note_token_worked(host, super::resolver::TokenProof::Contact);
+    }
+}
+
+/// Take that fact back for one host: the credential it was about is
+/// gone (a logout), so the next 404 there is a 404 again and not a
+/// wall. Process state AND the state file, like everything else this
+/// fact lives in; the tests that teach it use the same door.
+pub fn forget_token_worked(host: &str) {
     TOKEN_WORKED
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .get_or_insert_with(HashMap::new)
-        .insert(host.to_string(), true);
+        .remove(host);
+    super::resolver::forget_token(host);
+    super::resolver::forget_org_wall(host);
 }
 
 #[cfg(test)]
 pub(crate) fn reset_token_memory() {
-    TOKEN_WORKED
+    let hosts: Vec<String> = TOKEN_WORKED
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .get_or_insert_with(HashMap::new)
-        .clear();
+        .drain()
+        .map(|(host, _)| host)
+        .collect();
+    // The fact outlives the process now, so a test that takes it back
+    // has to take back the row as well, or the next case in this binary
+    // inherits it.
+    for host in hosts {
+        super::resolver::forget_token(&host);
+    }
 }
 
 fn unix(t: SystemTime) -> u64 {
