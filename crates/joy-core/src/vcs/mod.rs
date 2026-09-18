@@ -271,6 +271,7 @@ impl GitVcs {
 }
 
 /// Default VCS provider. Returns the Git implementation.
+pub mod bound;
 pub mod certificates;
 pub mod contact;
 pub mod credential_helper;

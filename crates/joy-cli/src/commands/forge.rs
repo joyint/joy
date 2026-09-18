@@ -732,6 +732,17 @@ fn minutes(seconds: u64) -> String {
 #[derive(Serialize)]
 struct StatusPayload {
     hosts: Vec<HostRow>,
+    /// What the whole answer says: `signed-in` when one host is,
+    /// `expired` when a credential is there but past its date, `none`
+    /// when this machine holds none - which is also what an empty
+    /// `hosts` means (D3.10). Without it a `--json` caller read
+    /// `{"hosts":[]}` and exit 1 and had nothing to act on
+    /// (JOY-02A7-A2 finding 8).
+    state: &'static str,
+    /// The one next step, present exactly when the command exits 1: the
+    /// same sentence the human answer prints under `= help`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    help: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -759,8 +770,23 @@ fn status(args: StatusArgs) -> Result<()> {
     let hosts = host_set(args.host.as_deref(), &ctx);
     let rows: Vec<HostRow> = hosts.iter().map(|host| host_row(host, &ctx)).collect();
     let signed_in = rows.iter().any(|row| row.state == "signed-in");
+    // The state of the ANSWER, which is the state of the best row: a
+    // machine signed in to one host of three is signed in.
+    let state = if signed_in {
+        "signed-in"
+    } else if rows.iter().any(|row| row.state == "expired") {
+        "expired"
+    } else {
+        "none"
+    };
     if output::is_json() {
-        output::emit(StatusPayload { hosts: rows })?;
+        let help = (!signed_in)
+            .then(|| sign_in_line(rows.first().map(|row| row.host.as_str()).unwrap_or("")));
+        output::emit(StatusPayload {
+            hosts: rows,
+            state,
+            help,
+        })?;
         if !signed_in {
             std::process::exit(1);
         }

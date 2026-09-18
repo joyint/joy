@@ -1058,8 +1058,22 @@ fn log_all_ref_updates_sentence(store: &Path) -> String {
         "Warning: core.logAllRefUpdates=always is set in {}, so git keeps a reflog for every ref. \
 Unreachable objects stay reachable through it and joy's maintenance can free almost nothing. \
 Unset it, or set it to true, to let joy reclaim the store.",
-        store.display()
+        native(store)
     )
+}
+
+/// A path in the spelling the machine writes it in.
+///
+/// libgit2 answers every path with forward slashes, on Windows too
+/// (`git_repository_commondir` and everything built from it), so a
+/// sentence that printed it raw told a Windows person to look in
+/// `C:/Users/.../.git/`, which is not what anything else on that
+/// machine calls it (JOY-02A7-A2 finding 7).
+fn native(path: &Path) -> String {
+    let shown = path.display().to_string();
+    #[cfg(windows)]
+    let shown = shown.replace('/', "\\");
+    shown
 }
 
 /// Say it once per store and process. Answers whether THIS call said it.
@@ -1084,7 +1098,7 @@ fn report_log_all_ref_updates_once(git_dir: &Path) -> bool {
     }
     eprintln!("{}", log_all_ref_updates_sentence(git_dir));
     tracing::warn!(
-        store = %git_dir.display(),
+        store = %native(git_dir),
         "core.logAllRefUpdates=always keeps a reflog for every ref, so unreachable objects stay reachable and joy's maintenance can free almost nothing"
     );
     true
@@ -1141,8 +1155,36 @@ mod tests {
     }
 
     fn backdate(path: &Path, age: Duration) {
-        let when = SystemTime::now() - age;
+        set_mtime(path, SystemTime::now() - age);
+    }
+
+    /// An object's mtime, set the way a case needs it.
+    ///
+    /// git writes a loose object read only (mode 0444, which is
+    /// `FILE_ATTRIBUTE_READONLY` on Windows), and setting a time on it
+    /// opens it for write, which Windows refuses: every case that ages
+    /// an object failed there with "Access is denied" (JOY-02A7-A2
+    /// finding 7). The attribute is cleared for the one call and put
+    /// back, so the case still runs against the store git would have
+    /// left behind.
+    fn set_mtime(path: &Path, when: SystemTime) {
+        #[cfg(windows)]
+        let was_readonly = {
+            let readonly = fs::metadata(path).unwrap().permissions().readonly();
+            if readonly {
+                let mut perms = fs::metadata(path).unwrap().permissions();
+                perms.set_readonly(false);
+                fs::set_permissions(path, perms).unwrap();
+            }
+            readonly
+        };
         filetime::set_file_mtime(path, filetime::FileTime::from_system_time(when)).unwrap();
+        #[cfg(windows)]
+        if was_readonly {
+            let mut perms = fs::metadata(path).unwrap().permissions();
+            perms.set_readonly(true);
+            fs::set_permissions(path, perms).unwrap();
+        }
     }
 
     fn eager() -> Options {
@@ -1229,7 +1271,7 @@ mod tests {
         let orphan = orphan_commit(&repo, "a skewed mount");
         let path = loose_path(&dir.path().join(".git"), orphan);
         let ahead = SystemTime::now() + Duration::from_secs(3600);
-        filetime::set_file_mtime(&path, filetime::FileTime::from_system_time(ahead)).unwrap();
+        set_mtime(&path, ahead);
 
         let outcome = maintain(&repo, &eager()).unwrap();
 
@@ -1343,7 +1385,12 @@ mod tests {
         );
         let sentence = log_all_ref_updates_sentence(&store);
         assert!(sentence.contains("core.logAllRefUpdates=always"));
-        assert!(sentence.contains(&dir.path().to_string_lossy().to_string()));
+        // The path the machine writes, not the one libgit2 answers:
+        // `commondir` is all forward slashes, on Windows too.
+        assert!(
+            sentence.contains(&dir.path().to_string_lossy().to_string()),
+            "{sentence}"
+        );
     }
 
     /// The first ask for a store reports, every later one is silent.

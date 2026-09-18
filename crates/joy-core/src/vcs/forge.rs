@@ -177,6 +177,14 @@ pub enum Auth {
 const CONNECT_BOUND_MS: i32 = 10_000;
 const SILENCE_BOUND_MS: i32 = 15_000;
 
+/// joy's OWN bound on one contact, for the transport that reads neither
+/// of the two above (WinHTTP; see [`over_plan`]). It stands
+/// BEHIND the socket bounds, so it is wider than either of them, and it
+/// is a silence bound like them: a transfer that keeps arriving keeps
+/// the contact alive however long it takes, and a person answering a
+/// prompt holds it open (`super::bound::hold`).
+const CONTACT_BOUND: std::time::Duration = std::time::Duration::from_secs(20);
+
 fn bound_forge_waits() {
     static BOUND: std::sync::Once = std::sync::Once::new();
     BOUND.call_once(|| {
@@ -385,6 +393,10 @@ impl Auth {
         let mut attempts = 0u32;
         let mut token_refused = false;
         move |url: &str, username: Option<&str>, allowed: git2::CredentialType| {
+            // The forge asked joy something, so it is talking to us
+            // (`super::bound`): a credential dance can take longer than
+            // the silence bound when a helper opens a window.
+            super::bound::heartbeat();
             // Design D1.6: honour the `allowed` mask. Without this, an
             // insteadOf rewrite to ssh answers "authentication
             // callback returned unsupported credentials type"
@@ -449,8 +461,37 @@ impl Auth {
         let trust = super::certificates::check(kind, source.configured.clone());
         callbacks.credentials(self.credential_source_as(kind, source));
         callbacks.certificate_check(trust);
+        beating(&mut callbacks);
         callbacks
     }
+}
+
+/// Every callback libgit2 has that says "the forge is still talking to
+/// us", wired to the heartbeat of [`super::bound`].
+///
+/// This is what makes joy's own bound a SILENCE bound rather than a cap
+/// on the operation: while bytes keep arriving the heartbeat keeps
+/// moving and the bound never runs out, and a transfer that stops dead
+/// is given up on after the same wait libgit2's socket bound would have
+/// used. Only the slots joy does not fill itself are taken here; the
+/// two it does fill (`credentials`, `certificate_check`) beat inside
+/// their own closures, and a caller that replaces `transfer_progress`
+/// (the clone of D4.3) beats inside its own.
+fn beating(callbacks: &mut git2::RemoteCallbacks<'static>) {
+    callbacks.transfer_progress(|_| {
+        super::bound::heartbeat();
+        true
+    });
+    callbacks.sideband_progress(|_| {
+        super::bound::heartbeat();
+        true
+    });
+    callbacks.pack_progress(|_, _, _| super::bound::heartbeat());
+    callbacks.push_transfer_progress(|_, _, _| super::bound::heartbeat());
+    callbacks.update_tips(|_, _, _| {
+        super::bound::heartbeat();
+        true
+    });
 }
 
 /// The other of the two names, for the one host joy knows nothing
@@ -516,6 +557,16 @@ struct ChainState {
     presented: Option<Presented>,
     usernames: u32,
     defaulted: bool,
+    /// The remote is an ssh one, which decides the error class an
+    /// exhausted chain carries (see [`LocalChain::credential`]).
+    ssh: bool,
+    /// The agent step was offered BLIND: joy's own probe found no agent
+    /// and the Windows carve out of D1.4 offered one anyway. A refusal
+    /// then says no agent answered, because none was known to be there;
+    /// saying "the agent's identities were refused" in the same
+    /// sentence that says joy does not know what the agent holds is a
+    /// contradiction a person cannot act on (JOY-02A7-A2 finding 6).
+    blind_agent: bool,
     /// `SSH_AUTH_SOCK` pointed at this host's `IdentityAgent`, for as
     /// long as this contact lasts. Dropped with the chain, which is
     /// dropped with the callbacks of this contact, so the socket of a
@@ -573,7 +624,26 @@ impl LocalChain {
                     // noted as one (D1.8b, [`presented`])
                     return git2::Cred::default();
                 }
-                return Err(git2::Error::from_str(&state.exhausted()));
+                // Typed, not a bare sentence: an exhausted chain means
+                // this machine has no credential for this host, which
+                // is `needs_sign_in` and never "the forge answered with
+                // an error" (D1.8b, JOY-02A7-A2 finding 5).
+                // `Error::from_str` carried class `Invalid` and the
+                // generic code, so the classifier had nothing to read
+                // and a person with no login was told to debug their
+                // forge. The class follows the transport, because the
+                // ssh branch of the classifier reads the class and the
+                // https branch reads the transport.
+                let class = if state.ssh {
+                    git2::ErrorClass::Ssh
+                } else {
+                    git2::ErrorClass::Http
+                };
+                return Err(git2::Error::new(
+                    git2::ErrorCode::Auth,
+                    class,
+                    state.exhausted(),
+                ));
             };
             match step {
                 Step::Agent => {
@@ -658,6 +728,8 @@ impl ChainState {
         let mut notes = Vec::new();
         let mut steps = std::collections::VecDeque::new();
         let mut user = url_user.clone().unwrap_or_else(|| "git".to_string());
+        let ssh = parsed.as_ref().map(|p| p.transport) == Some(super::remote_url::Transport::Ssh);
+        let mut blind_agent = false;
         let mut agent_scope = super::ssh_config::AgentScope::none();
         match parsed.as_ref().map(|p| p.transport) {
             Some(super::remote_url::Transport::Ssh) => {
@@ -682,6 +754,7 @@ impl ChainState {
                             cfg!(windows),
                         );
                         user = chain.user;
+                        blind_agent = chain.agent_blind;
                         notes.extend(chain.notes);
                         for candidate in chain.candidates {
                             steps.push_back(match candidate {
@@ -712,6 +785,8 @@ impl ChainState {
             presented: None,
             usernames: 0,
             defaulted: false,
+            ssh,
+            blind_agent,
             _agent: agent_scope,
         }
     }
@@ -731,6 +806,13 @@ impl ChainState {
     /// A re-entry means the forge refused what was offered last.
     fn note_refusal(&mut self, url: &str) {
         match self.presented.take() {
+            // "refused" only where joy knows there was something to
+            // refuse. Where the agent was offered blind (the Windows
+            // carve out of D1.4), nothing is known about what it holds,
+            // and the honest sentence is that nobody answered.
+            Some(Presented::Agent) if self.blind_agent => self
+                .notes
+                .push(format!("no ssh agent answered for {}", self.host)),
             Some(Presented::Agent) => self.notes.push(format!(
                 "the ssh agent's identities were refused by {}",
                 self.host
@@ -1288,7 +1370,55 @@ fn leg_remote<'r>(
 /// budget (D1.9: the throttle is charged per contact, with the verb it
 /// already receives), and the second only when the first's failure is
 /// one the design lets it follow.
-fn over_plan<T>(
+fn over_plan<T, W>(
+    repo_dir: &Path,
+    auth: &Auth,
+    verb: &'static str,
+    direction: super::contact::ContactDirection,
+    poll: bool,
+    work: W,
+) -> anyhow::Result<T>
+where
+    T: Send + 'static,
+    W: FnMut(&git2::Repository, &mut git2::Remote<'_>, &Auth, &Leg) -> anyhow::Result<T>
+        + Send
+        + 'static,
+{
+    let host = super::contact::host_of(&remote_url(repo_dir).unwrap_or_default());
+    let repo_dir = repo_dir.to_path_buf();
+    let auth = auth.clone();
+    // joy's OWN bound on a contact, for the build whose transport has
+    // none (`super::bound`). On Windows the https transport is WinHTTP,
+    // which hardcodes an infinite receive timeout and reads neither of
+    // the two libgit2 options `bound_forge_waits` sets
+    // (winhttp.c:381-382, :423, :785-786, :856), so a forge that
+    // accepts the connection and then says nothing holds the contact
+    // for ever. Everywhere else the socket bounds fire inside libgit2
+    // and this stands behind them; the work runs on a thread of its own
+    // in both cases, so one code path is proven by every test run.
+    let bounded = super::bound::within_silence(&host, verb, CONTACT_BOUND, move || {
+        over_plan_inner(&repo_dir, &auth, verb, direction, poll, work)
+    });
+    bounded.unwrap_or_else(|| Err(nobody_answered(&host, verb)))
+}
+
+/// The failure of a contact joy gave up on: the state is `offline`,
+/// because nobody answered, and the detail says who decided that. The
+/// words are joy's own, because libgit2 said nothing at all.
+fn nobody_answered(host: &str, verb: &'static str) -> anyhow::Error {
+    anyhow::Error::new(super::contact::ContactError {
+        failure: super::contact::Failure::Offline,
+        message: super::contact::Failure::Offline.sentence(host),
+        detail: Some(format!(
+            "joy: the {verb} was given up on after {} seconds without an answer",
+            CONTACT_BOUND.as_secs()
+        )),
+        action: None,
+        next_try: None,
+    })
+}
+
+fn over_plan_inner<T>(
     repo_dir: &Path,
     auth: &Auth,
     verb: &'static str,
@@ -1664,9 +1794,25 @@ pub fn clone(
     depth: i32,
     progress: &mut dyn FnMut(CloneProgress) -> bool,
 ) -> anyhow::Result<()> {
-    super::contact::run(url, "clone", auth.credentialed(), || {
-        clone_raw(url, auth, dest, depth, progress)
-    })
+    // The clone runs on its own thread like every other contact (see
+    // [`over_plan`]), and the person's progress callback stays where the
+    // person is: every count crosses back to this thread and the
+    // transfer waits for the answer, which is the order libgit2's own
+    // callback has. That keeps this function's signature - a plain
+    // `&mut dyn FnMut`, which a desktop closes over its window with -
+    // and still bounds the contact.
+    let host = super::contact::host_of(url);
+    let (url_owned, auth_owned, dest_owned) = (url.to_string(), auth.clone(), dest.to_path_buf());
+    let bounded = super::bound::reporting(&host, "clone", CONTACT_BOUND, progress, move |say| {
+        super::contact::run(&url_owned, "clone", auth_owned.credentialed(), || {
+            clone_raw(&url_owned, &auth_owned, &dest_owned, depth, &mut |count| {
+                super::bound::heartbeat();
+                // A caller that has gone away is a stop.
+                say.say(count).unwrap_or(false)
+            })
+        })
+    });
+    bounded.unwrap_or_else(|| Err(nobody_answered(&host, "clone")))
 }
 
 /// A clone of the whole history with nobody watching it, for the tests of
@@ -1847,13 +1993,14 @@ fn download_over(
 pub fn fetch_branch(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
     let span = tracing::info_span!("git.fetch", repo = %repo_dir.display());
     let _s = span.enter();
+    let kind = auth.host_kind();
     over_plan(
         repo_dir,
         auth,
         "fetch",
         super::contact::ContactDirection::Fetch,
         false,
-        |repo, remote, leg_auth, _leg| {
+        move |repo, remote, leg_auth, _leg| {
             let head = repo.head().map_err(err)?;
             let branch = head
                 .shorthand()
@@ -1861,7 +2008,7 @@ pub fn fetch_branch(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
                 .to_string();
             let src = format!("refs/heads/{branch}");
             let dst = tracking_ref_name(repo, &branch)?;
-            match download_over(repo, remote, leg_auth, auth.host_kind(), &src, &dst)? {
+            match download_over(repo, remote, leg_auth, kind, &src, &dst)? {
                 Some(_) => Ok(()),
                 None => {
                     anyhow::bail!("branch {branch} not found on the forge (renamed or deleted?)")
@@ -1967,19 +2114,20 @@ pub fn probe_write_access(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
     // The probe runs on THE TRANSPORT THAT CARRIES THE CREDENTIAL for
     // this operation (D1.5), which is the first leg of the plan: where
     // the push would go over the twin, the probe goes over the twin.
+    let kind = auth.host_kind();
     over_plan(
         repo_dir,
         auth,
         "probe",
         super::contact::ContactDirection::Push,
         false,
-        |repo, remote, leg_auth, _leg| {
+        move |repo, remote, leg_auth, _leg| {
             let url = remote_url_of(remote);
             let proxy = proxy_for(&url, Some(repo))?;
             remote
                 .connect_auth(
                     git2::Direction::Push,
-                    Some(leg_auth.callbacks_as(auth.host_kind(), cred_source(Some(repo)))),
+                    Some(leg_auth.callbacks_as(kind, cred_source(Some(repo)))),
                     Some(proxy.options()),
                 )
                 .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Push, e))?;
@@ -1992,13 +2140,14 @@ pub fn probe_write_access(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
 pub fn push(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
     let span = tracing::info_span!("git.push", repo = %repo_dir.display());
     let _s = span.enter();
+    let kind = auth.host_kind();
     let result = over_plan(
         repo_dir,
         auth,
         "push",
         super::contact::ContactDirection::Push,
         false,
-        |repo, remote, leg_auth, _leg| {
+        move |repo, remote, leg_auth, _leg| {
             let head = repo.head().map_err(err)?;
             let branch = head
                 .shorthand()
@@ -2011,8 +2160,7 @@ pub fn push(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
             let tip = head.target();
             let url = remote_url_of(remote);
             let proxy = proxy_for(&url, Some(repo))?;
-            let (callbacks, status) =
-                push_callbacks(leg_auth, auth.host_kind(), cred_source(Some(repo)));
+            let (callbacks, status) = push_callbacks(leg_auth, kind, cred_source(Some(repo)));
             let mut opts = git2::PushOptions::new();
             opts.remote_callbacks(callbacks);
             opts.proxy_options(proxy.options());
@@ -2046,23 +2194,20 @@ pub fn push(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
 /// removed) — the stale destination is deleted then, so reconciles run
 /// against nothing rather than a stale state.
 pub fn fetch_ref(repo_dir: &Path, auth: &Auth, src: &str, dst: &str) -> anyhow::Result<bool> {
+    let kind = auth.host_kind();
+    let (src, dst) = (src.to_string(), dst.to_string());
     over_plan(
         repo_dir,
         auth,
         "fetch",
         super::contact::ContactDirection::Fetch,
         false,
-        |repo, remote, leg_auth, _leg| match download_over(
-            repo,
-            remote,
-            leg_auth,
-            auth.host_kind(),
-            src,
-            dst,
+        move |repo, remote, leg_auth, _leg| match download_over(
+            repo, remote, leg_auth, kind, &src, &dst,
         )? {
             Some(_) => Ok(true),
             None => {
-                if let Ok(mut stale) = repo.find_reference(dst) {
+                if let Ok(mut stale) = repo.find_reference(&dst) {
                     stale.delete().ok();
                 }
                 Ok(false)
@@ -2101,18 +2246,19 @@ pub fn checkout_gate(repo_dir: &Path) -> std::sync::Arc<std::sync::Mutex<()>> {
 
 /// Push one local ref to the same name on the forge.
 pub fn push_ref(repo_dir: &Path, auth: &Auth, refname: &str) -> anyhow::Result<()> {
+    let kind = auth.host_kind();
+    let refname = refname.to_string();
     over_plan(
         repo_dir,
         auth,
         "push",
         super::contact::ContactDirection::Push,
         false,
-        |repo, remote, leg_auth, _leg| {
-            let tip = repo.refname_to_id(refname).ok();
+        move |repo, remote, leg_auth, _leg| {
+            let tip = repo.refname_to_id(&refname).ok();
             let url = remote_url_of(remote);
             let proxy = proxy_for(&url, Some(repo))?;
-            let (callbacks, status) =
-                push_callbacks(leg_auth, auth.host_kind(), cred_source(Some(repo)));
+            let (callbacks, status) = push_callbacks(leg_auth, kind, cred_source(Some(repo)));
             let mut opts = git2::PushOptions::new();
             opts.remote_callbacks(callbacks);
             opts.proxy_options(proxy.options());
@@ -2122,7 +2268,7 @@ pub fn push_ref(repo_dir: &Path, auth: &Auth, refname: &str) -> anyhow::Result<(
                 .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Push, e))?;
             status.verdict(&super::contact::host_of(&url))?;
             if let Some(tip) = tip {
-                write_chats_tracking_ref(repo, &status, refname, tip);
+                write_chats_tracking_ref(repo, &status, &refname, tip);
             }
             Ok(())
         },
@@ -2188,19 +2334,21 @@ fn ls_remote_refs_over(
     refnames: &[&str],
     poll: bool,
 ) -> anyhow::Result<std::collections::HashMap<String, String>> {
+    let kind = auth.host_kind();
+    let refnames: Vec<String> = refnames.iter().map(|r| r.to_string()).collect();
     over_plan(
         repo_dir,
         auth,
         "ls-remote",
         super::contact::ContactDirection::Fetch,
         poll,
-        |repo, remote, leg_auth, _leg| {
+        move |repo, remote, leg_auth, _leg| {
             let url = remote_url_of(remote);
             let proxy = proxy_for(&url, Some(repo))?;
             let connection = remote
                 .connect_auth(
                     git2::Direction::Fetch,
-                    Some(leg_auth.callbacks_as(auth.host_kind(), cred_source(Some(repo)))),
+                    Some(leg_auth.callbacks_as(kind, cred_source(Some(repo)))),
                     Some(proxy.options()),
                 )
                 .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Fetch, e))?;
@@ -2208,7 +2356,7 @@ fn ls_remote_refs_over(
                 .list()
                 .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Fetch, e))?
                 .iter()
-                .filter(|r| refnames.contains(&r.name()))
+                .filter(|r| refnames.iter().any(|want| want == r.name()))
                 .map(|r| (r.name().to_string(), r.oid().to_string()))
                 .collect();
             Ok(found)
@@ -3461,17 +3609,18 @@ pub fn tag_lightweight(repo_dir: &Path, name: &str) -> anyhow::Result<()> {
 
 /// Push one tag to the forge (joy release publish's tag push).
 pub fn push_tag(repo_dir: &Path, auth: &Auth, tag: &str) -> anyhow::Result<()> {
+    let kind = auth.host_kind();
+    let tag = tag.to_string();
     over_plan(
         repo_dir,
         auth,
         "push",
         super::contact::ContactDirection::Push,
         false,
-        |repo, remote, leg_auth, _leg| {
+        move |repo, remote, leg_auth, _leg| {
             let url = remote_url_of(remote);
             let proxy = proxy_for(&url, Some(repo))?;
-            let (callbacks, status) =
-                push_callbacks(leg_auth, auth.host_kind(), cred_source(Some(repo)));
+            let (callbacks, status) = push_callbacks(leg_auth, kind, cred_source(Some(repo)));
             let mut opts = git2::PushOptions::new();
             opts.remote_callbacks(callbacks);
             opts.proxy_options(proxy.options());
@@ -3487,17 +3636,17 @@ pub fn push_tag(repo_dir: &Path, auth: &Auth, tag: &str) -> anyhow::Result<()> {
 /// Push every local tag to the forge, which is what `git push --tags`
 /// did: one refspec, one connection, whatever the tags are called.
 pub fn push_all_tags(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
+    let kind = auth.host_kind();
     over_plan(
         repo_dir,
         auth,
         "push",
         super::contact::ContactDirection::Push,
         false,
-        |repo, remote, leg_auth, _leg| {
+        move |repo, remote, leg_auth, _leg| {
             let url = remote_url_of(remote);
             let proxy = proxy_for(&url, Some(repo))?;
-            let (callbacks, status) =
-                push_callbacks(leg_auth, auth.host_kind(), cred_source(Some(repo)));
+            let (callbacks, status) = push_callbacks(leg_auth, kind, cred_source(Some(repo)));
             let mut opts = git2::PushOptions::new();
             opts.remote_callbacks(callbacks);
             opts.proxy_options(proxy.options());
@@ -4021,20 +4170,21 @@ fn land_branch_yaml_inner(
 /// the merge). Errors (offline, unborn remote ref) leave the local state.
 pub fn refresh_branch_from_forge(repo_dir: &Path, branch: &str, auth: &Auth) {
     let refresh = || -> anyhow::Result<()> {
+        let kind = auth.host_kind();
+        let branch = branch.to_string();
         over_plan(
             repo_dir,
             auth,
             "fetch",
             super::contact::ContactDirection::Fetch,
             false,
-            |repo, remote, leg_auth, _leg| {
+            move |repo, remote, leg_auth, _leg| {
                 let tracking = format!("refs/joy/branch-refresh/{branch}");
                 let src = format!("refs/heads/{branch}");
                 // download_over, like every fetch here: libgit2's
                 // update_tips (and its unconditional FETCH_HEAD
                 // truncation) never runs
-                let Some(tip) =
-                    download_over(repo, remote, leg_auth, auth.host_kind(), &src, &tracking)?
+                let Some(tip) = download_over(repo, remote, leg_auth, kind, &src, &tracking)?
                 else {
                     anyhow::bail!("branch {branch} not on the forge");
                 };
@@ -4264,13 +4414,14 @@ pub fn ensure_local_branch(repo_dir: &Path, branch: &str) -> anyhow::Result<()> 
 pub fn fetch_heads(repo_dir: &Path, auth: &Auth) -> anyhow::Result<Vec<String>> {
     let span = tracing::info_span!("git.fetch-heads", repo = %repo_dir.display());
     let _s = span.enter();
+    let kind = auth.host_kind();
     over_plan(
         repo_dir,
         auth,
         "fetch",
         super::contact::ContactDirection::Fetch,
         false,
-        |repo, remote, leg_auth, _leg| {
+        move |repo, remote, leg_auth, _leg| {
             // The tracking refs are named after the CONFIGURED remote,
             // which is read before the contact: the contact itself may
             // run over an anonymous remote, either because the ssh
@@ -4291,7 +4442,7 @@ pub fn fetch_heads(repo_dir: &Path, auth: &Auth) -> anyhow::Result<Vec<String>> 
             let mut connection = remote
                 .connect_auth(
                     git2::Direction::Fetch,
-                    Some(leg_auth.callbacks_as(auth.host_kind(), cred_source(Some(repo)))),
+                    Some(leg_auth.callbacks_as(kind, cred_source(Some(repo)))),
                     Some(proxy.options()),
                 )
                 .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Fetch, e))?;
@@ -4314,7 +4465,7 @@ pub fn fetch_heads(repo_dir: &Path, auth: &Auth) -> anyhow::Result<Vec<String>> 
                 .collect();
             let refspec_strs: Vec<&str> = refspecs.iter().map(String::as_str).collect();
             let mut opts = git2::FetchOptions::new();
-            opts.remote_callbacks(leg_auth.callbacks_as(auth.host_kind(), cred_source(Some(repo))));
+            opts.remote_callbacks(leg_auth.callbacks_as(kind, cred_source(Some(repo))));
             opts.proxy_options(proxy.options());
             connection
                 .remote()
@@ -4987,15 +5138,24 @@ mod tests {
             sentence.contains("No connection to 127.0.0.1"),
             "the sentence names the host: {sentence}"
         );
-        // libgit2's own words stay in the detail line (D1.8b)
+        // libgit2's own words stay in the detail line (D1.8b), and
+        // where joy's own bound fired instead there are none: WinHTTP
+        // reads neither libgit2 option and never returned, so the
+        // detail is joy's own sentence and says so (`super::bound`).
         let detail = crate::vcs::contact::detail_of(&error).unwrap_or_default();
+        assert!(!sentence.contains("libgit2"), "sentence {sentence:?}");
         assert!(
-            !sentence.contains("libgit2") && detail.starts_with("libgit2:"),
+            detail.starts_with("libgit2:") || detail.starts_with("joy:"),
             "sentence {sentence:?}, detail {detail:?}"
+        );
+        #[cfg(windows)]
+        assert!(
+            detail.starts_with("joy:"),
+            "WinHTTP has no socket bound, so this must be joy's own: {detail:?}"
         );
         assert!(
             took >= std::time::Duration::from_secs(10) && took < std::time::Duration::from_secs(25),
-            "gave up after {took:?}: expected the 15s socket bound, not the forge's timing"
+            "gave up after {took:?}: expected joy's own bound or the 15s socket bound, not the forge's timing"
         );
         assert_eq!(
             unsafe { git2::opts::get_server_connect_timeout_in_milliseconds() }.unwrap(),
@@ -6202,6 +6362,94 @@ mod credential_shape_tests {
             error.message()
         );
         let _ = state.take_next(git2::CredentialType::USER_PASS_PLAINTEXT);
+    }
+
+    /// JOY-02A7-A2 finding 5: a machine with NO credential for a host is
+    /// not signed in, and the classifier has to be able to read that off
+    /// the error the chain returns. `Error::from_str` carried class
+    /// `Invalid` and the generic code, which falls through every rule of
+    /// D1.8b to `error`: the person was told "GitHub answered with an
+    /// error." with no next step, for a forge that had answered nothing
+    /// at all.
+    #[test]
+    fn an_exhausted_chain_is_needs_sign_in_and_not_an_error() {
+        for url in ["https://github.com/o/r.git", "ssh://git@github.com/o/r.git"] {
+            let mut chain = LocalChain::new(HostKind::Background);
+            let mut error = None;
+            // The https chain offers the helper and the ssh chain its
+            // own candidates; both end with nothing, which is the case
+            // under test. DEFAULT is answered once with "I have
+            // nothing" before the chain gives up, exactly as libgit2
+            // re-enters the callback.
+            for _ in 0..8 {
+                match chain.credential(
+                    url,
+                    None,
+                    git2::CredentialType::USER_PASS_PLAINTEXT
+                        | git2::CredentialType::SSH_KEY
+                        | git2::CredentialType::DEFAULT,
+                    &CredSource::none(),
+                ) {
+                    Ok(_) => continue,
+                    Err(e) => {
+                        error = Some(e);
+                        break;
+                    }
+                }
+            }
+            let error = error.expect("a chain with nothing in it gives up");
+            assert_eq!(error.code(), git2::ErrorCode::Auth, "for {url}");
+            let evidence = super::super::contact::ContactEvidence::new(
+                error,
+                url,
+                super::super::contact::ContactDirection::Fetch,
+                super::super::contact::CredentialSource::NonePresented,
+            );
+            assert_eq!(
+                super::super::contact::classify(&evidence),
+                super::super::contact::Failure::NeedsSignIn,
+                "for {url}"
+            );
+        }
+    }
+
+    /// JOY-02A7-A2 finding 6: on Windows the agent is offered even when
+    /// joy's own probe found none, and the note that goes with it says
+    /// joy does not know what that agent holds. The refusal note then
+    /// may not claim it held identities: the two sentences stood side
+    /// by side in one detail line and contradicted each other.
+    #[test]
+    fn an_agent_offered_blind_is_not_reported_as_having_refused() {
+        let blind = super::super::ssh_auth::chain_for(
+            "github.com",
+            None,
+            &super::super::ssh_config::HostSettings::default(),
+            HostKind::Background,
+            &super::super::ssh_auth::Agent::Missing,
+            true,
+        );
+        assert!(blind.agent_blind, "the Windows carve out offers the agent");
+        let mut state = ChainState::prepare(
+            "ssh://git@github.com/o/r.git",
+            None,
+            HostKind::Background,
+            None,
+        );
+        state.blind_agent = true;
+        state.presented = Some(Presented::Agent);
+        state.note_refusal("ssh://git@github.com/o/r.git");
+        assert_eq!(
+            state.notes.last().unwrap(),
+            "no ssh agent answered for github.com"
+        );
+        // An agent joy DID find keeps the sentence it earned.
+        state.blind_agent = false;
+        state.presented = Some(Presented::Agent);
+        state.note_refusal("ssh://git@github.com/o/r.git");
+        assert_eq!(
+            state.notes.last().unwrap(),
+            "the ssh agent's identities were refused by github.com"
+        );
     }
 
     #[test]

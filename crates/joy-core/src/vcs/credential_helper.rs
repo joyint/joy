@@ -283,6 +283,19 @@ pub enum Spawn {
 pub struct Search {
     pub dirs: Vec<PathBuf>,
     pub shell: Option<PathBuf>,
+    /// Directories put IN FRONT of the child's own PATH, because the
+    /// helper's own bootstrap needs them.
+    ///
+    /// Git Credential Manager is a .NET application that runs git
+    /// itself for parts of its work, and the first thing its bootstrap
+    /// does is look for `git.exe` on PATH; without it the helper dies
+    /// with "Failed to locate git.exe executable on the path" and no
+    /// credential is obtained. joy already knows where Git for Windows
+    /// keeps it, from the same registry keys it resolves the helper
+    /// with (D1.3), so it hands the child that directory. This is the
+    /// HELPER spawning git, not joy: joy's own rule is that it never
+    /// builds a git command line, and it does not (ADR: git2 only).
+    pub child_path: Vec<PathBuf>,
 }
 
 impl Search {
@@ -290,6 +303,7 @@ impl Search {
     pub fn of_this_machine() -> Search {
         let mut dirs = Vec::new();
         let mut shell = None;
+        let child_path = git_binary_dirs();
         #[cfg(windows)]
         {
             for install in git_for_windows_dirs() {
@@ -328,7 +342,11 @@ impl Search {
         // each of them again for every helper name.
         let mut seen = std::collections::HashSet::new();
         dirs.retain(|dir| seen.insert(dir.clone()));
-        Search { dirs, shell }
+        Search {
+            dirs,
+            shell,
+            child_path,
+        }
     }
 
     /// The binary called `git-credential-<name>`, if this machine has
@@ -550,6 +568,34 @@ fn which(name: &str) -> Option<PathBuf> {
     })
 }
 
+/// Where this machine keeps `git.exe` for a helper's OWN bootstrap
+/// (see [`Search::child_path`]). Only a directory that really holds it
+/// is named, so the child's PATH grows by what the helper needs and by
+/// nothing else.
+#[cfg(windows)]
+fn git_binary_dirs() -> Vec<PathBuf> {
+    let mut found: Vec<PathBuf> = Vec::new();
+    for install in git_for_windows_dirs() {
+        for holds_git in [
+            install.join("cmd"),
+            install.join("bin"),
+            install.join("mingw64").join("bin"),
+        ] {
+            if holds_git.join("git.exe").is_file() && !found.contains(&holds_git) {
+                found.push(holds_git);
+            }
+        }
+    }
+    found
+}
+
+/// On unix a helper that wants git finds it the same way joy found the
+/// helper: on the PATH the child inherits. Nothing is prepended.
+#[cfg(not(windows))]
+fn git_binary_dirs() -> Vec<PathBuf> {
+    Vec::new()
+}
+
 /// Git for Windows' install paths, from its own registry keys
 /// (install.iss:157-162 writes them), user hive first.
 #[cfg(windows)]
@@ -639,6 +685,23 @@ pub struct Answer {
     pub quit: bool,
 }
 
+/// How one helper call is made: what goes on the child's input, what
+/// the child is allowed to do, and what its PATH needs in front of it.
+///
+/// One value for all three, so that `get` and the `store` and `erase`
+/// that follow it reach the same binary in the same way, and so that
+/// adding a fourth fact later does not add a fourth parameter.
+#[derive(Debug, Clone, Default)]
+pub struct Manner {
+    /// `path=` rides on the request (`credential.useHttpPath`).
+    pub with_path: bool,
+    /// Who is at this machine, which decides whether the helper may
+    /// raise a window of its own (D1.10).
+    pub kind: HostKind,
+    /// [`Search::child_path`], for the helper's own bootstrap.
+    pub child_path: Vec<PathBuf>,
+}
+
 /// Run one helper for one operation.
 pub fn run(
     spawn: &Spawn,
@@ -646,9 +709,14 @@ pub fn run(
     op: Op,
     request: &Request,
     credential: Option<&Credential>,
-    with_path: bool,
-    kind: HostKind,
+    manner: &Manner,
 ) -> Result<Answer, HelperFailure> {
+    let Manner {
+        with_path,
+        kind,
+        child_path,
+    } = manner;
+    let (with_path, kind) = (*with_path, *kind);
     let failure = |detail: String| HelperFailure {
         helper: label.to_string(),
         detail,
@@ -675,6 +743,25 @@ pub fn run(
         command.env("GCM_INTERACTIVE", "never");
         command.env("GCM_GUI_PROMPT", "0");
         command.env("GIT_TERMINAL_PROMPT", "0");
+    }
+    // The helper's own bootstrap may need a binary joy knows where to
+    // find and the child's inherited PATH does not name: Git Credential
+    // Manager looks for `git.exe` before it does anything at all
+    // (`Search::child_path`). Per spawn, in front of what the child
+    // would have had, and never through this process's own environment.
+    if !child_path.is_empty() {
+        let mut dirs: Vec<PathBuf> = child_path.to_vec();
+        for dir in path_dirs() {
+            if !dirs.contains(&dir) {
+                dirs.push(dir);
+            }
+        }
+        match std::env::join_paths(&dirs) {
+            Ok(joined) => {
+                command.env("PATH", joined);
+            }
+            Err(e) => tracing::debug!(error = %e, "the helper's PATH was left as it was"),
+        }
     }
     command
         .stdin(Stdio::piped())
@@ -709,6 +796,11 @@ pub fn run(
     } else {
         QUIET_DEADLINE
     };
+    // A helper that may open its own window is answered by a PERSON,
+    // and the wait for that is not silence: joy's own contact bound is
+    // held open while this runs, and THIS deadline is the one that
+    // applies (design D1.3, `super::bound`).
+    let _hold = kind.may_prompt().then(super::bound::hold);
     let status = wait_bounded(&mut child, bound);
     let stdout = out_reader.join().unwrap_or_default();
     let stderr = err_reader.join().unwrap_or_default();
@@ -764,18 +856,32 @@ fn wait_bounded(
 /// has been disabled." An exit code in front of it would add a number
 /// nobody can act on to a sentence that already says everything. The
 /// code is not lost: [`run`] logs it beside the detail.
+///
+/// The FIRST sentence and no more. Git Credential Manager is a .NET
+/// application and prints its unhandled exceptions with a full stack
+/// trace under the one line that says what went wrong; joining all of
+/// them put a hundred frames of `at GitCredentialManager...` into a
+/// line a person reads on a banner. The rest is not lost either: the
+/// whole stderr goes to the log.
 fn quoted(what: &str, stderr: &str) -> String {
-    let said = stderr
+    match first_sentence(stderr) {
+        Some(said) => said,
+        None => what.to_string(),
+    }
+}
+
+/// The first sentence of a helper's stderr: its first non-empty line, cut
+/// at the first full stop that has more text behind it.
+fn first_sentence(stderr: &str) -> Option<String> {
+    let line = stderr
         .lines()
         .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ");
-    if said.is_empty() {
-        what.to_string()
-    } else {
-        said
-    }
+        .find(|line| !line.is_empty())?;
+    let sentence = match line.find(". ") {
+        Some(at) => &line[..=at],
+        None => line,
+    };
+    Some(sentence.to_string())
 }
 
 fn parse_answer(stdout: &str) -> Answer {
@@ -809,8 +915,9 @@ struct Remembered {
     /// fills a `cache` helper standing in front of `manager` and what
     /// erases a revoked entry a second helper still holds (D1.3).
     chain: Vec<(String, Spawn)>,
-    with_path: bool,
-    kind: HostKind,
+    /// How `get` ran, so `store` and `erase` reach the same binaries in
+    /// the same way.
+    manner: Manner,
 }
 
 struct State {
@@ -871,7 +978,11 @@ pub fn get_from(
     }) {
         return Ok(Some(hit));
     }
-    let with_path = use_http_path(config, &request);
+    let manner = Manner {
+        with_path: use_http_path(config, &request),
+        kind,
+        child_path: search.child_path.clone(),
+    };
     // The whole chain is resolved before the first helper runs, so
     // that `store` and `erase` can reach every one of them later, the
     // way git does: a `cache` helper standing in front of `manager`
@@ -899,7 +1010,7 @@ pub fn get_from(
     let mut password = None;
     for (at, value, spawn) in &resolved {
         let mut quit = false;
-        match run(spawn, value, Op::Get, &request, None, with_path, kind) {
+        match run(spawn, value, Op::Get, &request, None, &manner) {
             Ok(answer) => {
                 if username.is_none() {
                     username = answer.username;
@@ -930,8 +1041,7 @@ pub fn get_from(
                         request: request.clone(),
                         credential: credential.clone(),
                         chain: chain.clone(),
-                        with_path,
-                        kind,
+                        manner: manner.clone(),
                     },
                 );
             });
@@ -968,8 +1078,7 @@ fn tell(remembered: &Remembered, op: Op) {
             op,
             &remembered.request,
             Some(&remembered.credential),
-            remembered.with_path,
-            remembered.kind,
+            &remembered.manner,
         ) {
             tracing::debug!(helper = %label, op = op.word(), detail = %e.detail, "credential helper did not take the outcome");
         }
@@ -1148,10 +1257,7 @@ mod tests {
     fn ghs_single_quoted_windows_path_is_split_not_shelled() {
         let value = "!'C:\\Program Files\\GitHub CLI\\gh.exe' auth git-credential";
         assert!(!needs_shell(value.strip_prefix('!').unwrap()));
-        let search = Search {
-            dirs: Vec::new(),
-            shell: None,
-        };
+        let search = Search::default();
         let spawn = resolve(value, &search).unwrap();
         assert_eq!(
             spawn,
@@ -1165,8 +1271,8 @@ mod tests {
     #[test]
     fn a_value_that_really_needs_a_shell_gets_one_by_absolute_path() {
         let search = Search {
-            dirs: Vec::new(),
             shell: Some(PathBuf::from("/bin/sh")),
+            ..Search::default()
         };
         let spawn = resolve("!f() { echo password=x; }; f", &search).unwrap();
         match spawn {
@@ -1189,7 +1295,7 @@ mod tests {
         std::fs::write(&binary, b"#!/bin/sh\n").unwrap();
         let search = Search {
             dirs: vec![dir.path().to_path_buf()],
-            shell: None,
+            ..Search::default()
         };
         let spawn = resolve("manager", &search).unwrap();
         assert_eq!(
@@ -1205,7 +1311,7 @@ mod tests {
     fn a_short_name_with_no_binary_is_named_and_never_guessed() {
         let search = Search {
             dirs: vec![PathBuf::from("/nowhere/at/all")],
-            shell: None,
+            ..Search::default()
         };
         let failure = resolve("manager", &search).unwrap_err();
         assert!(
@@ -1247,11 +1353,13 @@ mod tests {
 
     // ---- the fake helpers -------------------------------------------
     //
-    // These run a real child process, which needs a shell interpreter
-    // for the script: unix only. The Windows leg of CI runs every test
-    // above this line, and the parts that are platform specific there
-    // (the registry lookup, the .exe suffix) are covered by the
-    // resolution tests, which need no child at all.
+    // These run a real child process, so the script they run is written
+    // in the interpreter of the machine that runs the test: a `sh`
+    // script on unix, a `.cmd` batch file on Windows (`windows_leg`
+    // below). Both legs run in CI, because the blocker this module was
+    // rewritten for - a helper whose own bootstrap dies because the
+    // child's PATH names no git - can only fail on Windows
+    // (JOY-02A7-A2).
 
     /// The cache, the "presented" record and the fake scripts are
     /// process-wide, so the tests that run a helper run one at a time.
@@ -1313,7 +1421,7 @@ mod tests {
         let config = config_from("[credential]\n\thelper = fake\n", dir.path());
         let search = Search {
             dirs: vec![dir.path().to_path_buf()],
-            shell: None,
+            ..Search::default()
         };
         let credential = get_retrying(
             &config,
@@ -1358,7 +1466,7 @@ mod tests {
             let config = config_from("[credential]\n\thelper = fake\n", dir.path());
             let search = Search {
                 dirs: vec![dir.path().to_path_buf()],
-                shell: None,
+                ..Search::default()
             };
             get_retrying(&config, "https://github.com/o/r.git", kind, &search)
                 .unwrap()
@@ -1386,7 +1494,7 @@ mod tests {
         let config = config_from("[credential]\n\thelper = manager\n", dir.path());
         let search = Search {
             dirs: vec![dir.path().to_path_buf()],
-            shell: None,
+            ..Search::default()
         };
         let failure = get_retrying(
             &config,
@@ -1420,7 +1528,7 @@ mod tests {
             let config = config_from("[credential]\n\thelper = fake\n", dir.path());
             let search = Search {
                 dirs: vec![dir.path().to_path_buf()],
-                shell: None,
+                ..Search::default()
             };
             let url = "https://codeberg.org/o/r.git";
             get_retrying(&config, url, HostKind::Background, &search)
@@ -1458,7 +1566,7 @@ mod tests {
         let config = config_from("[credential]\n\thelper = fake\n", dir.path());
         let search = Search {
             dirs: vec![dir.path().to_path_buf()],
-            shell: None,
+            ..Search::default()
         };
         let url = "https://gitlab.com/o/r.git";
         for _ in 0..3 {
@@ -1491,8 +1599,8 @@ mod tests {
             dir.path(),
         );
         let search = Search {
-            dirs: Vec::new(),
             shell: Some(PathBuf::from("/bin/sh")),
+            ..Search::default()
         };
         let credential = get_retrying(
             &config,
@@ -1530,6 +1638,148 @@ mod tests {
             .expect_err("a child that never answers is stopped");
         assert!(detail.contains("was stopped"), "{detail}");
         assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    /// The first sentence of a helper's stderr and nothing behind it.
+    ///
+    /// Git Credential Manager is a .NET application: an unhandled
+    /// exception arrives as one sentence followed by a stack trace, and
+    /// the detail line a person reads is the sentence (design D1.3).
+    #[test]
+    fn a_helpers_stack_trace_stays_out_of_the_detail_line() {
+        let gcm = "fatal: Cannot prompt because user interactivity has been disabled.\n\
+             Unhandled exception. System.Exception: Failed to locate git.exe executable on the path\n\
+                at GitCredentialManager.Application.Execute()\n\
+                at GitCredentialManager.Program.Main(String[] args)\n";
+        assert_eq!(
+            quoted("exit 1", gcm),
+            "fatal: Cannot prompt because user interactivity has been disabled."
+        );
+        // A line that runs two sentences together keeps the first.
+        assert_eq!(
+            quoted("exit 1", "error: no such host. try again later.\n"),
+            "error: no such host."
+        );
+        // A helper that said nothing keeps what happened to it.
+        assert_eq!(quoted("exit 128", "  \n\n"), "exit 128");
+    }
+
+    // ---- the Windows leg --------------------------------------------
+
+    #[cfg(windows)]
+    mod windows_leg {
+        use super::*;
+
+        /// A `.cmd` helper, which is what a helper installed beside Git
+        /// for Windows can be and what `named_helper` already probes
+        /// for. `std::process::Command` runs a batch file through
+        /// `cmd.exe` itself, so joy spawns the helper by its own name
+        /// here too and never builds a command line for a shell.
+        fn cmd_helper(dir: &Path, name: &str, body: &str) -> PathBuf {
+            let path = dir.join(format!("{name}.cmd"));
+            std::fs::write(&path, format!("@echo off\r\n{body}\r\n")).unwrap();
+            path
+        }
+
+        /// The protocol exchange, on Windows, against a real child.
+        #[test]
+        fn a_cmd_helper_is_asked_in_gits_own_protocol_and_answers() {
+            let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+            forget_all();
+            let dir = tempfile::tempdir().unwrap();
+            let log = dir.path().join("asked");
+            cmd_helper(
+                dir.path(),
+                "git-credential-fake",
+                &format!(
+                    "echo op=%1>>\"{log}\"\r\nmore >>\"{log}\"\r\necho username=x-access-token\r\necho password=s3cret",
+                    log = log.display()
+                ),
+            );
+            let config = config_from("[credential]\n\thelper = fake\n", dir.path());
+            let search = Search {
+                dirs: vec![dir.path().to_path_buf()],
+                ..Search::default()
+            };
+            let credential = get_from(
+                &config,
+                "https://ghes.internal.example/o/r.git",
+                None,
+                HostKind::Background,
+                &search,
+            )
+            .unwrap()
+            .expect("a credential");
+            assert_eq!(credential.username, "x-access-token");
+            assert_eq!(credential.password, "s3cret");
+            let asked = std::fs::read_to_string(&log).unwrap();
+            assert!(asked.contains("op=get"), "{asked}");
+            assert!(asked.contains("protocol=https"), "{asked}");
+            assert!(asked.contains("host=ghes.internal.example"), "{asked}");
+            forget_all();
+        }
+
+        /// THE Windows blocker (JOY-02A7-A2 finding 1): Git Credential
+        /// Manager's own bootstrap looks for `git.exe` on the PATH of
+        /// the process joy spawns, and dies with "Failed to locate
+        /// git.exe executable on the path" when the inherited PATH has
+        /// none. joy knows where Git for Windows keeps it and puts that
+        /// directory in front of the child's PATH.
+        #[test]
+        fn the_childs_path_carries_the_directory_git_lives_in() {
+            let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+            forget_all();
+            let dir = tempfile::tempdir().unwrap();
+            let git_dir = dir.path().join("cmd");
+            std::fs::create_dir_all(&git_dir).unwrap();
+            let log = dir.path().join("path");
+            cmd_helper(
+                dir.path(),
+                "git-credential-manager",
+                &format!(
+                    "echo %PATH%>\"{log}\"\r\necho username=u\r\necho password=p",
+                    log = log.display()
+                ),
+            );
+            let config = config_from("[credential]\n\thelper = manager\n", dir.path());
+            let search = Search {
+                dirs: vec![dir.path().to_path_buf()],
+                child_path: vec![git_dir.clone()],
+                ..Search::default()
+            };
+            get_from(
+                &config,
+                "https://github.com/o/r.git",
+                None,
+                HostKind::Background,
+                &search,
+            )
+            .unwrap()
+            .expect("a credential");
+            let seen = std::fs::read_to_string(&log).unwrap();
+            assert!(
+                seen.to_lowercase()
+                    .starts_with(&git_dir.display().to_string().to_lowercase()),
+                "the helper's own PATH must start with the directory git lives in: {seen}"
+            );
+            forget_all();
+        }
+
+        /// And the machine's own search names that directory when Git
+        /// for Windows is installed: every entry holds `git.exe`, and a
+        /// machine without Git for Windows gets an empty list rather
+        /// than a guess.
+        #[test]
+        fn the_machines_own_child_path_only_names_directories_with_git() {
+            let search = Search::of_this_machine();
+            for dir in &search.child_path {
+                assert!(
+                    dir.join("git.exe").is_file(),
+                    "{} was named without git.exe in it",
+                    dir.display()
+                );
+            }
+        }
     }
 
     #[test]

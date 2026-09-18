@@ -664,6 +664,10 @@ fn status_lists_the_host_with_its_source_and_scopes() {
 
     assert!(answer.ok, "{}", answer.stderr);
     let data = answer.data();
+    // The answer says what it is as a whole, not only per host, and a
+    // signed in machine needs no next step.
+    assert_eq!(data["state"], "signed-in");
+    assert!(data["help"].is_null(), "{data}");
     let host = &data["hosts"][0];
     assert_eq!(host["host"], "github.test");
     assert_eq!(host["forge"], "github");
@@ -700,6 +704,34 @@ fn status_exits_one_when_nothing_is_signed_in() {
     let data = answer.data();
     assert_eq!(data["hosts"][0]["state"], "none");
     assert_eq!(data["hosts"][0]["source"], "none");
+    // and the envelope says WHY the exit code is 1 and what to do,
+    // which is the same sentence the human answer prints
+    assert_eq!(data["state"], "none");
+    assert_eq!(data["help"], "run `joy forge login --host github.test`");
+}
+
+/// A machine that knows no forge host at all: the empty list is an
+/// answer, so it carries the state and the next step rather than being
+/// `{"hosts":[]}` and exit 1 with nothing to read (JOY-02A7-A2).
+#[test]
+fn status_with_no_host_at_all_still_says_what_to_do() {
+    let machine = Machine::new();
+    machine.connector("joy-forge", CONNECTOR);
+
+    let output = machine
+        .joy(&["forge", "status", "--json"])
+        .output()
+        .expect("joy runs");
+    let answer = Answer::of(output);
+
+    assert_eq!(answer.code, Some(1), "{}", answer.stdout);
+    let data = answer.data();
+    assert!(
+        data["hosts"].as_array().is_some_and(|rows| rows.is_empty()),
+        "{data}"
+    );
+    assert_eq!(data["state"], "none");
+    assert_eq!(data["help"], "run `joy forge login --host <host>`");
 }
 
 // ---------------------------------------------------------------------

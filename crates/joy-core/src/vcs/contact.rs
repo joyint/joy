@@ -1548,6 +1548,11 @@ fn take_turn(host: &str, verb: &str, transport: Transport, credentialed: bool) -
         (start.saturating_duration_since(now), start)
     });
     if !waited.is_zero() {
+        // joy's own wait, with joy's own bound on it: the contact has
+        // not gone out yet, so this is not silence from the forge and
+        // the contact bound of `super::bound` must not run out on it
+        // (a strike widens this gap by up to 64 times).
+        let _hold = super::bound::hold();
         std::thread::sleep(waited);
     }
     Turn {
