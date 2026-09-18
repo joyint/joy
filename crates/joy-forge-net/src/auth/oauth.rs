@@ -77,11 +77,12 @@ pub mod clients {
     /// The marker every unregistered client id carries.
     pub const PLACEHOLDER: &str = "REPLACE-ME";
 
-    /// PLACEHOLDER, replace when the github.com OAuth App is
-    /// registered. Device flow must be enabled on the registration, and
-    /// "Expire user access tokens" decides whether a refresh token
-    /// exists at all (D2.7).
-    pub const GITHUB_COM: &str = "REPLACE-ME-github-com-client-id";
+    /// The public client "Joyint Desktop" the operator registered on
+    /// github.com on 2026-09-18 (owner: the joyint organisation): device
+    /// flow enabled, redirect `http://127.0.0.1`, token expiry off, so no
+    /// refresh token exists (D2.7, decision 3). A client id is public by
+    /// design; the client secret GitHub generates is never used.
+    pub const GITHUB_COM: &str = "Ov23liNJt50pUmo28YPy";
 
     /// PLACEHOLDER, replace when the gitlab.com application is
     /// registered. It must be registered with Confidential OFF and with
@@ -735,13 +736,10 @@ mod tests {
 
     #[test]
     fn the_placeholder_client_ids_are_marked_as_placeholders() {
-        for id in [
-            clients::GITHUB_COM,
-            clients::GITLAB_COM,
-            clients::CODEBERG_ORG,
-        ] {
+        for id in [clients::GITLAB_COM, clients::CODEBERG_ORG] {
             assert!(clients::is_placeholder(id), "{id}");
         }
+        assert!(!clients::is_placeholder(clients::GITHUB_COM));
         assert!(!clients::is_placeholder("Ov23liRealLookingId"));
         let sentence = unregistered_sentence("github.com");
         assert!(sentence.contains("--token-stdin"));
