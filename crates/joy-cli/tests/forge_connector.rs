@@ -16,6 +16,10 @@ use std::sync::Once;
 use joy_core::forge_plugins::{self, CallContext, CallerFacts, Target};
 use joy_forge_net::fake::{FakeForge, Reply};
 
+mod process_list;
+
+use process_list::argv_of;
+
 /// The connector as cargo built it for this test run.
 const CONNECTOR: &str = env!("CARGO_BIN_EXE_joy-forge");
 
@@ -376,6 +380,49 @@ fn the_token_verb_answers_from_the_connectors_own_entry() {
     assert_eq!(directed.chose_by.as_deref(), Some("only"));
 }
 
+/// JOY-02A8-F4, through the SHIPPED binary: a token pasted at a forge
+/// that cannot be reached is answered `offline` with a sentence about
+/// the contact, and it is not stored. The old answer was `no-login`
+/// with "the forge did not accept this token", which reads as a
+/// rejected credential and sends the person to revoke a token that is
+/// perfectly good.
+#[test]
+fn a_pasted_token_at_an_unreachable_forge_is_not_a_refused_token() {
+    let dir = setup();
+    // A port nobody listens on: the fake is started for its address
+    // alone and stopped again, so the connection is refused at once.
+    let base = {
+        let fake = FakeForge::start(|_| Reply::not_found());
+        fake.base()
+    };
+    write_forges_yaml(&dir, "ghe-offline.test", "github", &base);
+    let resolved = forge_plugins::resolve_plugin(spec("github")).expect("the connector resolves");
+    let noted = forge_plugins::interactive::token_store(
+        &resolved,
+        &Target::host("ghe-offline.test"),
+        "gho_a_token_nobody_could_check",
+        &CallContext::rootless(),
+    )
+    .expect("the connector answers");
+    let answer = noted.answer;
+    assert!(!answer.known);
+    assert_eq!(
+        answer.reason.as_deref(),
+        Some("offline"),
+        "an unreachable forge is not a refused token"
+    );
+    let message = answer.message.expect("a sentence for the person");
+    assert!(message.contains("ghe-offline.test"), "{message}");
+    assert!(message.contains("could not be reached"), "{message}");
+    assert!(
+        !message.contains("did not accept"),
+        "nothing accepted or refused anything: {message}"
+    );
+    // and what the connector printed while it worked came along
+    let note = noted.note.expect("the connector said something");
+    assert!(note.contains("could not be reached"), "{note}");
+}
+
 /// The connector's own credential file (D2.6), written the way a
 /// finished `login` would have written it. The cases share one config
 /// directory, so the entry is merged under a lock.
@@ -427,7 +474,7 @@ fn no_call_ever_carries_a_token_in_its_argument_list() {
 
     let dir = setup();
     // The fake holds the first request open long enough for this test
-    // to read the child's own argument list out of /proc.
+    // to read the child's own argument list out of the process list.
     let fake = FakeForge::start(|_| {
         std::thread::sleep(Duration::from_millis(900));
         Reply::json(200, "[]")
@@ -454,14 +501,13 @@ fn no_call_ever_carries_a_token_in_its_argument_list() {
         .expect("the connector starts");
 
     // Poll until the argument list is the CONNECTOR's own and complete.
-    // Right after the fork /proc holds the parent's argv, and a moment
-    // later a half written one, so "not empty" is not the signal: the
-    // last argument joy passes is, and it is read last.
+    // Right after the fork the process list still holds the parent's
+    // argv, and a moment later a half written one, so "not empty" is not
+    // the signal: the last argument joy passes is, and it is read last.
     let deadline = Instant::now() + Duration::from_secs(5);
     let mut seen = String::new();
     while Instant::now() < deadline {
-        if let Ok(raw) = std::fs::read(format!("/proc/{}/cmdline", child.id())) {
-            let text = String::from_utf8_lossy(&raw).replace('\0', " ");
+        if let Some(text) = argv_of(child.id()) {
             if text.contains("--host-kind background") {
                 seen = text;
                 break;

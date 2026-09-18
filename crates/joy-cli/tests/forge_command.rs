@@ -28,6 +28,10 @@ use std::process::Stdio;
 
 use serde_json::Value;
 
+mod process_list;
+
+use process_list::argv_of;
+
 /// A connector that speaks protocol 2 and answers every verb this
 /// package's cases need. It records its own argv, so a case can prove
 /// what was NOT run as well as what was.
@@ -55,9 +59,18 @@ done
 source="${JOY_STUB_SOURCE:-keychain}"
 case "$verb" in
   claims)
-    if [ "$forge" = "github" ]; then echo '{"claims":true}'; else echo '{"claims":false}'; fi
+    # JOY_STUB_CLAIMS=0 is the machine on which NO connector knows the
+    # host: `forges.yaml` has no entry for it and no builtin matches.
+    if [ "$forge" = "github" ] && [ "${JOY_STUB_CLAIMS:-1}" = "1" ]; then
+      echo '{"claims":true}'
+    else
+      echo '{"claims":false}'
+    fi
     ;;
   token)
+    # A connector that answers and still has something to say says it
+    # on stderr, on a ZERO exit (JOY-02A8-F4).
+    if [ -n "$JOY_STUB_NOTE" ]; then echo "$JOY_STUB_NOTE" >&2; fi
     if [ "${JOY_STUB_SIGNED_IN:-1}" = "1" ]; then
       printf '{"known":true,"host":"%s","login":"scotty","token":"x","username":"x-access-token","source":"%s","scopes":"repo user:email","expires_at":null,"chose_by":"only"}\n' "$host" "$source"
     else
@@ -397,7 +410,7 @@ fn login_under_a_delegation_session_refuses_by_name_and_spawns_no_login() {
 /// D2.4, written for exactly the machines that have no person at them,
 /// and this case runs with pipes, which is a `Background` host.
 #[test]
-#[cfg(target_os = "linux")]
+#[cfg(unix)]
 fn a_token_from_stdin_is_stored_and_never_in_the_process_list() {
     let machine = Machine::new();
     machine.connector("joy-forge", CONNECTOR);
@@ -702,6 +715,83 @@ fn status_exits_one_when_nothing_is_signed_in() {
     assert_eq!(data["hosts"][0]["source"], "none");
 }
 
+/// JOY-02A8-F4: a host no connector claims is not a host to sign in to.
+/// The help line used to be `joy forge login --host <that host>` in
+/// every case, which sends a person at a command that refuses them for
+/// exactly the reason the row above already states.
+#[test]
+fn status_for_a_host_nobody_claims_points_at_forges_yaml_and_not_at_a_login() {
+    let machine = Machine::new();
+    machine.connector("joy-forge", CONNECTOR);
+
+    let output = machine
+        .joy(&["forge", "status", "--host", "nowhere.example"])
+        .env("JOY_STUB_CLAIMS", "0")
+        .output()
+        .expect("joy runs");
+    let answer = Answer::of(output);
+
+    assert_eq!(answer.code, Some(1), "{}", answer.stdout);
+    assert!(
+        answer.stdout.contains("nowhere.example"),
+        "the row names the host: {}",
+        answer.stdout
+    );
+    assert!(
+        answer
+            .stdout
+            .contains("connector: none answered for this host"),
+        "{}",
+        answer.stdout
+    );
+    assert!(
+        answer
+            .stderr
+            .contains("add the instance to forges.yaml, or name a host a connector knows"),
+        "the next step is the configuration: {}",
+        answer.stderr
+    );
+    assert!(
+        !answer.stderr.contains("joy forge login"),
+        "no door exists to point at yet: {}",
+        answer.stderr
+    );
+}
+
+/// JOY-02A8-F4: what the connector said while it answered reaches the
+/// person. Its stderr used to be read off the pipe and dropped at the
+/// first zero exit, so a keychain that refused and was fallen back from
+/// was invisible on the surface that exists to report exactly that.
+#[test]
+fn status_prints_what_the_connector_said_while_it_answered() {
+    let machine = Machine::new();
+    machine.connector("joy-forge", CONNECTOR);
+    machine.forges_yaml("github.test", "github");
+    const SAID: &str = "the login keychain refused the ca_bundle, the system trust store was used";
+
+    let output = machine
+        .joy(&["forge", "status"])
+        .env("JOY_STUB_NOTE", SAID)
+        .output()
+        .expect("joy runs");
+    let answer = Answer::of(output);
+
+    assert!(answer.ok, "{}", answer.stderr);
+    assert!(
+        answer.stderr.contains(&format!("= note: {SAID}")),
+        "the sentence reaches the person, on stderr: {}",
+        answer.stderr
+    );
+    // and a quiet connector produces no empty note line
+    let quiet = Answer::of(
+        machine
+            .joy(&["forge", "status"])
+            .output()
+            .expect("joy runs"),
+    );
+    assert!(!quiet.stderr.contains("= note:"), "{}", quiet.stderr);
+}
+
 // ---------------------------------------------------------------------
 // logout (D3.10, D2.6)
 // ---------------------------------------------------------------------
@@ -943,14 +1033,14 @@ fn a_protocol_1_connector_refuses_login_with_the_path_and_the_rm_line() {
 /// afterwards would pass. The watcher runs beside the child from the
 /// spawn until the case stops it, which is after the child has read
 /// the token and answered.
-#[cfg(target_os = "linux")]
+#[cfg(unix)]
 struct ProcessWatch {
     stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
     samples: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
     thread: std::thread::JoinHandle<()>,
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(unix)]
 fn watch_the_process_list(pid: u32) -> ProcessWatch {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex};
@@ -961,9 +1051,7 @@ fn watch_the_process_list(pid: u32) -> ProcessWatch {
         let samples = samples.clone();
         std::thread::spawn(move || {
             while !stop.load(Ordering::SeqCst) {
-                let raw = std::fs::read(format!("/proc/{pid}/cmdline")).unwrap_or_default();
-                let text = String::from_utf8_lossy(&raw).replace('\0', " ");
-                if !text.trim().is_empty() {
+                if let Some(text) = argv_of(pid) {
                     samples.lock().expect("the samples").push(text);
                 }
                 std::thread::sleep(std::time::Duration::from_millis(5));
@@ -977,7 +1065,7 @@ fn watch_the_process_list(pid: u32) -> ProcessWatch {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(unix)]
 impl ProcessWatch {
     fn seen(&self) -> Vec<String> {
         self.samples.lock().expect("the samples").clone()
