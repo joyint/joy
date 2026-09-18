@@ -246,9 +246,9 @@ project.
 **The OAuth client id is configuration, not code.** An instance signs
 in through the application its own operator registered, which is what
 `client_id` and the three endpoints carry; only the defaults for
-github.com, gitlab.com and codeberg.org are built in, and those are
-still PLACEHOLDERS marked `REPLACE-ME` until joy's public clients are
-registered. Where a host has no usable client id, `login` says so in
+github.com, gitlab.com and codeberg.org are built in (the public
+clients "Joyint Desktop" registered on 2026-09-18). Where a host has no
+usable client id, `login` says so in
 one sentence and names the two ways forward: store a token with
 `--token-stdin`, or put a `client_id` for that host into this file.
 Nothing is sent to a forge in the meantime.
