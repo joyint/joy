@@ -18,6 +18,9 @@ use joy_forge_net::fake::{FakeForge, Reply};
 
 mod process_list;
 
+// The two cases that read the process list are unix gated (see the
+// module); on Windows the import would be the one unused name.
+#[cfg(unix)]
 use process_list::argv_of;
 
 /// The connector as cargo built it for this test run.

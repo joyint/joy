@@ -9,6 +9,10 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-18T18:34:17.544262616Z
-updated: 2026-09-18T18:34:17.544262616Z
+updated: 2026-09-18T18:46:48.016549212Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Found on 2026-09-18 while signing in to github.com on zara. The GNOME keyring collection Login was locked and no graphical session existed to show the unlock prompt. keyring::Entry::set_password waits on the Secret Service prompt with no bound, so joy-forge login sat in do_select forever after GitHub had already granted the token, and joy forge login printed Still waiting until the device code expired. The grant was lost. Design D2.6 says the store must fall back to the 0600 file when the OS store cannot answer; a store that never answers is that case. Fix: every keyring call in joy-forge-net auth::store runs on its own thread with a 20 second bound (the same bound as vcs::bound); a call that does not answer in time counts as a store that could not answer, so put falls through to forge-tokens.json and says so, get reads the file, and delete removes the file entry. Also the CLI countdown must stop when the connector has stopped emitting events. Tests: a keyring stub that never answers must lead to Source::File within the bound.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-18T18:46:48.016548340Z
+  text: 'Verified on zara 2026-09-18 20:44: with the Login keyring locked and no desktop session, joy forge login --host github.com now completes in the file store (stored in: file, joydev-horst, repo user:email). The earlier attempt hit a full disk on the file fallback (No space left on device), which the connector reported as ''state unsupported''; the disk was the cause, not the store. Windows: cargo check --tests and the workspace suite compile on the Windows runner; process list cases stay unix gated. Organisation probe: the Joyint Desktop token reaches joyint-test/restricted-probe (API 200) because the org owner approved the app while confirming the device code; needs_org_approval needs a revoke of the app in the org settings to be provoked.'

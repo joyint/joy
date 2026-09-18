@@ -30,6 +30,9 @@ use serde_json::Value;
 
 mod process_list;
 
+// The two cases that read the process list are unix gated (see the
+// module); on Windows the import would be the one unused name.
+#[cfg(unix)]
 use process_list::argv_of;
 
 /// A connector that speaks protocol 2 and answers every verb this

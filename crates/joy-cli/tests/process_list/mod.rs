@@ -15,6 +15,12 @@
 //! process object itself says, read with PowerShell, so the acceptance
 //! holds on the third platform as well instead of failing to compile
 //! (the Windows job of CI on 1bb6134 did exactly that).
+//!
+//! The cases that call this are unix gated still: PowerShell answers in
+//! hundreds of milliseconds, too slow for the sampler of J2's second
+//! case. Until they run there, the reader is dead code on Windows and
+//! says so, because CI builds with warnings as errors.
+#![cfg_attr(windows, allow(dead_code))]
 
 /// One running process's argument list, its arguments separated by
 /// single spaces. `None` while the process has not exec'd yet, or once
