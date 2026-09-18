@@ -44,9 +44,11 @@ shift
 verb="$1"
 shift
 host=""
+host_kind=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --host) host="$2"; shift 2 ;;
+    --host-kind) host_kind="$2"; shift 2 ;;
     *) shift ;;
   esac
 done
@@ -88,7 +90,15 @@ case "$verb" in
     esac
     ;;
   logout)
-    printf '{"removed":true,"revoked":true,"source":"%s","login":"scotty"}\n' "$source"
+    # What joy-forge-net answers a delegated call (auth/verbs.rs,
+    # NO_LOGOUT_HERE): a delegated session reads the person's vault and
+    # never writes it, so nothing is removed, nothing is revoked, and
+    # the sentence says why.
+    if [ "$host_kind" = "delegated" ]; then
+      echo '{"removed":false,"revoked":false,"source":null,"reason":"unsupported","message":"this process runs under a delegation session, which may use the credential this machine holds and may never sign it out. Sign out on the machine that owns the session with joy forge logout"}'
+    else
+      printf '{"removed":true,"revoked":true,"source":"%s","login":"scotty"}\n' "$source"
+    fi
     ;;
   *)
     echo "error: unrecognized subcommand '$verb'" >&2
@@ -751,6 +761,69 @@ fn logout_all_answers_for_every_host_of_the_set() {
     let data = answer.data();
     assert_eq!(data["hosts"][0]["host"], "github.test");
     assert_eq!(data["hosts"][0]["removed"], true);
+}
+
+/// Under a delegation session the connector removes nothing and says
+/// why (G2, D3.8): a delegated process may use the credential this
+/// machine holds and may never sign it out. The CLI prints THAT
+/// sentence and the state word, in both modes. A bare `removed: false`
+/// would leave an agent with nothing to read and a call to retry for
+/// ever.
+#[test]
+fn logout_under_a_delegation_session_prints_the_connectors_refusal() {
+    let machine = Machine::new();
+    machine.connector("joy-forge", CONNECTOR);
+    let session = a_live_session(&machine);
+
+    let seen = Answer::of(
+        machine
+            .joy(&["forge", "logout", "--host", "github.test"])
+            .env("JOY_SESSION", &session)
+            .output()
+            .expect("joy runs"),
+    );
+
+    assert_eq!(seen.code, Some(1), "{}{}", seen.stdout, seen.stderr);
+    assert!(
+        seen.stderr.contains("delegation session") && seen.stderr.contains("may never sign it out"),
+        "the connector's sentence is missing: {}{}",
+        seen.stdout,
+        seen.stderr
+    );
+    assert!(
+        seen.stderr.contains("state unsupported"),
+        "the state word is missing: {}",
+        seen.stderr
+    );
+    assert!(
+        !seen.stdout.contains("No credential for"),
+        "the refusal was printed as an answer: {}",
+        seen.stdout
+    );
+
+    let answer = Answer::of(
+        machine
+            .joy(&["forge", "logout", "--host", "github.test", "--json"])
+            .env("JOY_SESSION", &session)
+            .output()
+            .expect("joy runs"),
+    );
+
+    assert_eq!(answer.code, Some(1), "{}{}", answer.stdout, answer.stderr);
+    let data = answer.data();
+    assert_eq!(data["host"], "github.test");
+    assert_eq!(data["state"], "unsupported");
+    let message = data["message"].as_str().unwrap_or_default();
+    assert!(
+        message.contains("delegation session")
+            && message.contains("may never sign it out")
+            && message.contains("joy forge logout"),
+        "{message}"
+    );
+    assert!(
+        data["removed"].is_null(),
+        "a refusal is not an answer with two false flags: {data}"
+    );
 }
 
 /// Neither a host nor `--all`: joy refuses rather than guessing which

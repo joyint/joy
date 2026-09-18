@@ -194,7 +194,7 @@ It lists each known host with its login, its state (`signed-in`, `expired` or `n
 
 - `joy forge login --token-stdin` reaches the connector, which refuses to store the token: "this process runs under a delegation session, which may use the credential this machine holds and may never store one. Store the token on the machine that owns the session with joy forge login --token-stdin". The state is `unsupported`.
 
-- `joy forge logout` removes nothing and revokes nothing. The answer says `removed: false`.
+- `joy forge logout` reaches the connector, which removes nothing and revokes nothing: "this process runs under a delegation session, which may use the credential this machine holds and may never sign it out. Sign out on the machine that owns the session with joy forge logout". The state is `unsupported`.
 
 Do not retry any of the three and do not look for another way in. Name the host to your person and ask them to run the command in their own terminal, on the machine that owns the session. The flags they have are `--host <host>`, `--token-stdin`, `--for read|write|create|release` and `--login <name>`; there is no `--remote`.
 

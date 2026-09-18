@@ -427,15 +427,16 @@ fn login(args: LoginArgs) -> Result<()> {
     if args.token_stdin {
         return login_with_token(&door, &resolved);
     }
-    // Layer 3 of D3.11, before the connector is started: a host with
-    // nobody at it cannot type a verification code, and the refusal is
-    // instant rather than a fifteen minute wait for one. joy-core
-    // refuses the same call for itself; this refusal exists so the
-    // sentence reaches the caller without a spawn, and so that it can
-    // be true: a hook and a piped run are not delegation sessions, and
-    // telling them they are sends a person looking for an agent that
-    // does not exist. Both sentences name the headless door, because
-    // refusing without one would leave a CI runner with nothing to do.
+    // Layer 3 of D3.11, after the claims call that named the connector
+    // and before the `login` verb is started: a host with nobody at it
+    // cannot type a verification code, and the refusal is instant
+    // rather than a fifteen minute wait for one. joy-core refuses the
+    // same call for itself; this refusal exists so the sentence reaches
+    // the caller without the login spawn, and so that it can be true: a
+    // hook and a piped run are not delegation sessions, and telling
+    // them they are sends a person looking for an agent that does not
+    // exist. Both sentences name the headless door, because refusing
+    // without one would leave a CI runner with nothing to do.
     match door.ctx.host_kind {
         HostKind::Delegated => {
             return refused(
@@ -1048,6 +1049,9 @@ fn logout(args: LogoutArgs) -> Result<()> {
 fn logout_one(door: &Door) -> Result<LogoutPayload, Refusal> {
     let outcome = interactive::logout(door.spec, &door.target, &door.ctx)
         .map_err(|error| Refusal::of(&door.host, error))?;
+    if let Some(refusal) = refused_removal(door, &outcome) {
+        return Err(refusal);
+    }
     let command = outcome
         .command
         .clone()
@@ -1059,6 +1063,42 @@ fn logout_one(door: &Door) -> Result<LogoutPayload, Refusal> {
         source: outcome.source,
         command,
     })
+}
+
+/// A `logout` that removed nothing and said WHY is a refusal, not an
+/// answer (D3.8). Under a delegation session the connector answers
+/// `removed: false, revoked: false` with the sentence of G2: a
+/// delegated process may use the credential this machine holds and may
+/// never sign it out. `removed: false` alone drops that sentence, so
+/// the caller learns nothing and an agent retries a call that can never
+/// work. The same holds for the refresh lock (`busy`), for a host with
+/// several of joy's own logins, and for a state directory that would
+/// not take the delete.
+///
+/// The state word is the connector's own `reason` through the CLI's
+/// one list, so `unsupported` and `busy` read here as they do
+/// everywhere else, and a `reason` the connector named none for is
+/// `error`. A sentence beside a foreign `command` is NOT this: that
+/// answer already names the tool that owns the credential, and
+/// [`print_logout`] prints it.
+fn refused_removal(door: &Door, outcome: &interactive::LogoutOutcome) -> Option<Refusal> {
+    if outcome.removed || outcome.command.is_some() {
+        return None;
+    }
+    let message = outcome.message.as_deref()?.trim();
+    if message.is_empty() {
+        return None;
+    }
+    let state = outcome
+        .reason
+        .as_deref()
+        .map(state_of_code)
+        .unwrap_or("error");
+    // The connector's sentence carries its own next step ("sign out on
+    // the machine that owns the session", "try again in a moment",
+    // "say which one with --login"), so no second help line goes under
+    // it.
+    Some(Refusal::new(&door.host, state, message).speaks_for_itself())
 }
 
 /// The foreign command that removes a foreign credential (D3.10), when
