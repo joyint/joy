@@ -81,10 +81,7 @@ impl RemoteUrl {
             Some(("file", rest)) => return local(rest),
             Some(_) => return None,
             // No scheme: either the scp-like ssh form or a plain path.
-            None => match scp_like(url) {
-                Some(parsed) => return Some(parsed),
-                None => return None,
-            },
+            None => return scp_like(url),
         };
         let (authority, path) = match rest.find('/') {
             Some(at) => (&rest[..at], &rest[at + 1..]),
