@@ -1226,7 +1226,28 @@ mod tests {
                 continue;
             }
             for object in std::fs::read_dir(fanout.path()).unwrap().flatten() {
-                filetime::set_file_mtime(object.path(), when).unwrap();
+                let path = object.path();
+                // libgit2 writes a loose object read only. On Windows
+                // that attribute refuses a new mtime with "Access is
+                // denied", so it is lifted for the touch and put back.
+                // Unix touches a read only file it owns without help.
+                #[cfg(windows)]
+                let restore = {
+                    let mut permissions = std::fs::metadata(&path).unwrap().permissions();
+                    let was_read_only = permissions.readonly();
+                    if was_read_only {
+                        #[allow(clippy::permissions_set_readonly_false)]
+                        permissions.set_readonly(false);
+                        std::fs::set_permissions(&path, permissions.clone()).unwrap();
+                    }
+                    was_read_only.then_some(permissions)
+                };
+                filetime::set_file_mtime(&path, when).unwrap();
+                #[cfg(windows)]
+                if let Some(mut permissions) = restore {
+                    permissions.set_readonly(true);
+                    std::fs::set_permissions(&path, permissions).unwrap();
+                }
             }
         }
     }
