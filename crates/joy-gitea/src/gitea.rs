@@ -990,9 +990,10 @@ mod sign_in_tests {
             codeberg.token_endpoint,
             "https://codeberg.org/login/oauth/access_token"
         );
-        assert!(joy_forge_net::auth::oauth::clients::is_placeholder(
-            &codeberg.client_id
-        ));
+        assert!(
+            !joy_forge_net::auth::oauth::clients::is_placeholder(&codeberg.client_id),
+            "codeberg.org carries the registered Joyint Desktop client id"
+        );
         // A self hosted instance has no door until its operator
         // registers one and puts the client id into forges.yaml.
         assert!(oauth_for("git.acme.test", Purpose::Write, &ctx).is_none());

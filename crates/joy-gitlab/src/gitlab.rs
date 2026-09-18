@@ -1180,9 +1180,10 @@ mod sign_in_tests {
         );
         assert_eq!(public.token_endpoint, "https://gitlab.com/oauth/token");
         assert_eq!(public.scopes, "read_api write_repository");
-        assert!(joy_forge_net::auth::oauth::clients::is_placeholder(
-            &public.client_id
-        ));
+        assert!(
+            !joy_forge_net::auth::oauth::clients::is_placeholder(&public.client_id),
+            "gitlab.com carries the registered application id"
+        );
         assert!(oauth_for("gitlab.acme.test", Purpose::Write, &ctx).is_none());
     }
 

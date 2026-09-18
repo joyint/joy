@@ -1292,8 +1292,8 @@ mod tests {
         );
         assert_eq!(public.scopes, SCOPES);
         assert!(
-            joy_forge_net::auth::oauth::clients::is_placeholder(&public.client_id),
-            "the public client id is a placeholder until it is registered"
+            !joy_forge_net::auth::oauth::clients::is_placeholder(&public.client_id),
+            "github.com carries the registered Joyint Desktop client id"
         );
         // A GHES host with nothing configured has no client id, so
         // `login` says so instead of asking github.com about it.
