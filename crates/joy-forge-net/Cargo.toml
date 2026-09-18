@@ -1,0 +1,93 @@
+[package]
+name = "joy-forge-net"
+# Inherited from [workspace.package]: this manifest is in no
+# release.version-files list, the workspace manifest is, so the
+# bump reaches this crate through it (JOY-02A4-89).
+version.workspace = true
+edition = "2021"
+license = "MIT"
+description = "Shared network layer of the Joy forge connectors: HTTP client, proxies, trust store, instance configuration, scope sets"
+repository = "https://github.com/joyint/joy"
+homepage = "https://joyint.com/en/joy"
+
+# Not a cargo-dist App: only joy-cli is (design D2.1). Why every
+# publishable crate beside it carries this key is written once, in the
+# "Check the release shape" step of .github/workflows/release.yml, which
+# is also what fails when a crate loses it.
+[package.metadata.dist]
+dist = false
+
+[dependencies]
+joy-process = { workspace = true }
+# The cross process advisory file lock of D2.6a. It landed ONCE, with
+# J4a, as `joy_core::util::file_lock`, and the design says so: "no
+# package after J4a carries a lock dependency of its own for locking".
+# The refresh lock of `auth::lock` takes that primitive, and
+# `joy_core::auth::session` says where a person's app state lives, which
+# is where the lock files and the login pin belong.
+# The version pin is inherited too, so a bump cannot leave it
+# asking crates.io for a joy-core that no longer exists there.
+joy-core = { workspace = true }
+# The operating system credential store (D2.6). The feature set is the
+# corrected one: `linux-native` alone is the kernel keyutils store,
+# which is in memory and "will not persist across reboots", so the
+# persistent Secret Service collection is asked for beside it.
+# `crypto-rust` keeps the session encryption off OpenSSL.
+keyring = { version = "3.6", default-features = false, features = [
+    "apple-native",
+    "windows-native",
+    "linux-native-sync-persistent",
+    "crypto-rust",
+    # `vendored` is not a fifth store, it is how the fourth one links.
+    # `linux-native-sync-persistent` reaches the Secret Service through
+    # libdbus, and without this the connector needs libdbus-1-dev to
+    # build and libdbus-1.so at run time: the agent image builds
+    # joy-cli from source, and a minimal container would then carry a
+    # binary that cannot start at all, which is worse than the 0600
+    # fallback it would otherwise take. joy vendors libgit2 and OpenSSL
+    # for exactly this reason (joy-core/Cargo.toml), and this is the
+    # same rule applied to the same kind of dependency. Inert off
+    # Linux, where no dbus dependency exists.
+    "vendored",
+] }
+# PKCE S256, the token fingerprint of D2.6a and the lock file name are
+# all SHA-256; the challenge and the verifier are base64url without
+# padding, and the verifier and the CSRF state come from the OS random
+# source.
+sha2 = "0.10"
+base64ct = { version = "1", features = ["alloc"] }
+rand = "0.8"
+hex = "0.4"
+chrono = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml_ng = { workspace = true }
+# The connector's own HTTP client (D2.8). Blocking, because a connector
+# is one short lived process that asks a handful of questions and exits;
+# an async runtime would be the larger half of the binary. rustls with
+# the platform verifier is the OS trust store of D1.12, and no proxy is
+# read from the environment by ureq itself: joy decides the proxy in
+# `proxy.rs` so that the rules of D1.11 (NO_PROXY with trimmed entries,
+# ALL_PROXY, git config, the SOCKS refusal) hold here exactly as they
+# hold in the engine.
+ureq = { version = "3.4", default-features = false, features = [
+    "rustls-no-provider",
+    "_ring",
+    "platform-verifier",
+    "gzip",
+] }
+rustls-pki-types = "1"
+
+[features]
+# The in process fake forge API the connector crates test against. It is
+# a dev dependency of theirs, so a shipped connector never carries it.
+fake-api = []
+
+[dev-dependencies]
+# This crate's own tests drive the fake too (the proxy cases), and a
+# crate cannot dev-depend on itself, so the feature is turned on for
+# the test build here.
+joy-forge-net = { path = ".", features = ["fake-api"] }
+tempfile = "3"

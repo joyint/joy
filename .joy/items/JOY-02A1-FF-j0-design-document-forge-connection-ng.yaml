@@ -1,0 +1,26 @@
+id: JOY-02A1-FF
+title: 'J0: design document forge connection NG in joy/docs/design'
+type: task
+status: closed
+priority: high
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-16T23:23:36.642811761Z
+updated: 2026-09-17T15:35:43.588170387Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: Carries the design document joy/docs/design/forge-connection-ng.md (v5) and the package index of the forge connection NG rebuild (JI epic JI-0190-3A) into the joy repository on branch feat/forge-connection-ng. The document is the binding reference for packages J0 to J11.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-16T23:25:37.220667568Z
+  text: Design v5 copied to joy/docs/design/forge-connection-ng.md; the package index lives in the JI epic JI-0190-3A and in the JOY stories JOY-0293-12 to JOY-02A1-FF. Closed with the commit that adds the document.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-17T04:15:47.709482411Z
+  text: 'Wave 0 integrated into feat/forge-connection-ng at 0aa4edd841: feat/forge-connection-ng-j5 (72852be) -> merge commit b3be737, no conflicts; feat/forge-connection-ng-j4a (3c17e5f) -> merge commit ca74044, 12 conflicts in crates/joy; feat/forge-connection-ng-j7 (c105a9c) -> merge commit bc6fb62, 2 conflicts in crates/joy-c; feat/forge-connection-ng-j9 (91a22c8) -> merge commit 534cccb, no conflicts; fix commit 0aa4edd [JOY-02A1-FF] Pin the credential note across the J5 and J4a seam. Tests: cargo fmt --all --check: clean, exit 0. cargo fmt -p joy-core was run once after the ; cargo build --workspace: Finished dev profile, exit 0, no warnings and no errors; cargo test --workspace: exit 0: 950 passed, 0 failed, 3 ignored across 39 test binar; cargo test -p joy-core --features forge-: exit 0: 594 passed, 0 failed, 3 ignored across 14 test binar. Problems left for J0b: Two independent HostKind types for the one word D1.1 defines now live in joy-core: joy_core::host::HostKind (J9, with detect(terminal) and may_ask(), used by joy-cli''s cli_main, init.rs and four J9 test binaries) and joy | Two URL parsers for the same seam sit side by side in vcs: contact::transport_of / contact::host_of (J5, a string scan with the three-variant Transport of D1.8a) and remote_url::RemoteUrl::parse (J4a, a real parser with '
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-17T10:32:12.568260281Z
+  text: 'Wave 1 integrated into feat/forge-connection-ng at aef127f556: J1, J4h, J4p, J2 merged; cargo test --workspace 1146 passed, joy-core with forge-net 703 passed, clippy clean, joy-forge 3.97 MB stripped answers version with protocol 2. Follow up: the two NO_PROXY matchers (joy-forge-net proxy.rs and joy-core) must become one.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-17T15:35:43.588168874Z
+  text: 'Wave 2 integrated at 9775b55686: J0c, J3, J8, J4b, J10 merged; cargo test --workspace 1317 passed, joy-core with forge-net 752, clippy, guard-vcs, guard-certificate-check, guard-interactive and check-host-key-pins green. App at e405aa27d1 (A0, A1; lint, typecheck, 174 JS tests, 156 Rust tests green). Platform at e032f587a7 (P3, P7, P4, P5, P9; 341 tests green without a database).'

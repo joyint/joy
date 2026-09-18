@@ -100,9 +100,10 @@ pub fn run(args: ReleaseArgs) -> Result<()> {
     }
 }
 
-/// joy_core::releases::resolve_version with the CLI's shelled-git tag
-/// fallback and its errors mapped onto anyhow (same Display output as
-/// before the move).
+/// joy_core::releases::resolve_version with the tag fallback this CLI
+/// has always had (`git describe --tags --abbrev=0 --match v*`, on
+/// libgit2 since D3.2) and its errors mapped onto anyhow (same Display
+/// output as before the move).
 fn resolve_version(
     root: &std::path::Path,
     arg: Option<&str>,
@@ -288,15 +289,94 @@ fn record(args: RecordArgs) -> Result<()> {
         &log_user,
     );
 
-    // Git: add + commit + local tag. No push, no forge call.
+    // Git: stage + commit + local tag. No push, no forge call.
+    //
+    // Only what joy wrote (D3.4): its own directory and the version
+    // files `joy release bump` patched. This used to be `git add -A`
+    // followed by a commit of the whole index, so a half finished
+    // `git add -p` of the person's went up inside a "bump to vX"
+    // commit; after the git2 only move no pre-commit hook stands in
+    // the way of that either.
+    let message = format!("bump to {version} [no-item]");
+    // A person ran this command, so the item rule REFUSES here rather
+    // than warning (D3.3). Two things about that are worth saying
+    // plainly, because the acceptance of this package leans on them.
+    // This is the ONLY refusing call site in the product, and the
+    // message it validates is joy's own and carries the `[no-item]`
+    // bypass the rule names, so it cannot fire as the message stands:
+    // the guard is here so a later change to that constant cannot
+    // write an unreferenced commit, and
+    // `joy-core/tests/commit_msg_rule.rs` pins that it would. And no
+    // joy command takes a commit message from a person, so on a machine
+    // without git this half of D3.3 has nothing else to refuse; a
+    // person's own `git commit` is refused by the installed hook, which
+    // `tests/hooks_chain.rs` drives end to end.
+    joy_core::commit_msg::validate(&message, acronym).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let paths = joy_owned_paths(&ctx.root);
+    let specs: Vec<&str> = paths.iter().map(String::as_str).collect();
     let git = vcs::default_vcs();
-    git.check_version()?;
-    git.add_all(&ctx.root)?;
-    git.commit(&ctx.root, &format!("bump to {version} [no-item]"))?;
+    git.add(&ctx.root, &specs)?;
+    let (author, email) = joy_core::identity::acting_signature(&ctx.root)?;
+    if joy_core::vcs::forge::commit_index_paths(&ctx.root, &paths, &message, &author, &email)?
+        .is_none()
+    {
+        println!("Nothing of joy's changed since the last commit; no release commit written.");
+    } else if !joy_core::vcs::forge::changes_outside(&ctx.root, &paths).is_empty() {
+        // Said once, because it is a real change from `git add -A`:
+        // what the person had lying around is still lying around. Said
+        // only when something of theirs really was skipped, which is a
+        // tracked change outside joy's own paths - not `is_clean`,
+        // which counts untracked files and answers dirty on an
+        // unreadable checkout, and so said this in nearly every real
+        // repository.
+        println!(
+            "Other changes in this checkout stay uncommitted; joy commits only what it wrote."
+        );
+    }
     let markdown_notes = releases::render_release_markdown(&release);
     git.tag_annotated(&ctx.root, &version, &markdown_notes)?;
     println!("Tag {version} created locally. Next: `joy release publish`.");
     Ok(())
+}
+
+/// The paths a release commit may touch: joy's own directory, plus the
+/// files `release.version-files` names, which are the ones
+/// `joy release bump` patched. Repository relative, with forward
+/// slashes, the way an index entry spells them.
+fn joy_owned_paths(root: &std::path::Path) -> Vec<String> {
+    let mut paths = vec![store::JOY_DIR.to_string()];
+    for file in read_version_files(root) {
+        for full in version_bump::expand(root, &file.path).unwrap_or_default() {
+            if let Ok(rel) = full.strip_prefix(root) {
+                let rel = rel.to_string_lossy().replace('\\', "/");
+                if !rel.is_empty() {
+                    paths.push(rel);
+                }
+            }
+        }
+    }
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
+/// A line `joy release publish` says on its way: the forge it resolved,
+/// the push it is about to make, the release it created.
+///
+/// In `--json` mode stdout carries exactly ONE object and nothing else
+/// (D3.10), and this command's one object is the refusal envelope of
+/// [`crate::contact_report::Refusal::fail`]. A progress line on stdout
+/// beside it is not slightly wrong, it is unparsable: the agent reads
+/// `Pushing to origin...{"version":1,...}`. So in that mode the
+/// progress goes to stderr, which is where D3.10 puts progress and
+/// diagnostics anyway; a person at a terminal keeps the lines they
+/// have always had.
+fn say(line: &str) {
+    if crate::output::is_json() {
+        eprintln!("{line}");
+    } else {
+        println!("{line}");
+    }
 }
 
 fn publish(args: PublishArgs) -> Result<()> {
@@ -307,7 +387,6 @@ fn publish(args: PublishArgs) -> Result<()> {
     let acronym = project.acronym.as_deref().unwrap_or("JOY");
 
     let git = vcs::default_vcs();
-    git.check_version()?;
 
     let version = match args.version {
         Some(v) if v.starts_with('v') => v,
@@ -329,14 +408,20 @@ fn publish(args: PublishArgs) -> Result<()> {
     // because gh release create dedupes by tag.
     let forge_choice = forge::resolve(&ctx.root, project.forge.as_deref(), args.forge.as_deref())?;
     if let Some(note) = &forge_choice.note {
-        println!("{note}");
+        say(note);
     }
 
     let remote = git.default_remote(&ctx.root)?;
-    println!("Pushing to {remote}...");
-    git.push(&ctx.root, &remote)?;
-    git.push_tag(&ctx.root, &remote, &version)?;
-    println!("Pushed {version} to {remote}.");
+    say(&format!("Pushing to {remote}..."));
+    // The one failure vocabulary of D3.8: a refused push says the
+    // state, the plain sentence and the one next step, in `--json` mode
+    // as the envelope this command's caller reads.
+    let host = crate::contact_report::host_of_checkout(&ctx.root);
+    git.push(&ctx.root, &remote)
+        .map_err(|e| crate::contact_report::Refusal::of(&host, &e).fail())?;
+    git.push_tag(&ctx.root, &remote, &version)
+        .map_err(|e| crate::contact_report::Refusal::of(&host, &e).fail())?;
+    say(&format!("Pushed {version} to {remote}."));
 
     let markdown_notes = releases::render_release_markdown(&release);
     let title = release
@@ -348,8 +433,8 @@ fn publish(args: PublishArgs) -> Result<()> {
         .forge
         .create_release(&ctx.root, &version, &title, &markdown_notes)?
     {
-        Some(url) => println!("Forge release created: {url}"),
-        None => println!("Forge release skipped."),
+        Some(url) => say(&format!("Forge release created: {url}")),
+        None => say("Forge release skipped."),
     }
     Ok(())
 }

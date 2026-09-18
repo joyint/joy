@@ -7,8 +7,14 @@ description = "Git storage for Joy's sealed chats: blobs, trees and the chats re
 repository = "https://github.com/joyint/joy"
 homepage = "https://joyint.com/en/joy"
 
+# Not a cargo-dist App: only joy-cli is (design D2.1). Why every
+# publishable crate beside it carries this key is written once, in the
+# "Check the release shape" step of .github/workflows/release.yml, which
+# is also what fails when a crate loses it.
+[package.metadata.dist]
+dist = false
+
 [dependencies]
-joy-process = { workspace = true }
 joy-chat = { version = "0.20.0", path = "../joy-chat" }
 joy-core = { version = "0.20.0", path = "../joy-core" }
 joy-model = { workspace = true }
@@ -24,11 +30,15 @@ uuid = { version = "1", features = ["v4", "v7", "serde"] }
 # Chats live on a dedicated ref (refs/joy/chats, ADR JAPP-00DC-FC), which is
 # never checked out, so it needs git plumbing (blob/tree/commit/ref) that the
 # CLI cannot express cleanly.
-git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2", "cred"] }
+git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2"] }
 
 [features]
 ts = ["joy-chat/ts", "joy-core/ts"]
 
 [dev-dependencies]
 tempfile = "3"
+# The maintenance cases age the store the way the operator's store is
+# aged, so the shipped 14 day window can be asserted instead of a zero
+# window no host ever runs.
+filetime = "0.2"
 insta = { version = "1.41", features = ["yaml"] }

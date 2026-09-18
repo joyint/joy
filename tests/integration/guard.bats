@@ -164,23 +164,19 @@ EOF
 @test "developer without manage cannot add members" {
     setup_team_project
     setup_member_auth dev@example.com "$DEV_PASSPHRASE"
-    git config user.email dev@example.com
-    joy auth --passphrase "$DEV_PASSPHRASE"
+    act_as dev@example.com "$DEV_PASSPHRASE"
     run joy project member add newbie@example.com --passphrase "$TEST_PASSPHRASE"
     [ "$status" -ne 0 ]
     [[ "$output" == *"manage"* ]]
-    git config user.email test@example.com
 }
 
 @test "developer without manage cannot delete items" {
     setup_team_project
     setup_member_auth dev@example.com "$DEV_PASSPHRASE"
-    git config user.email dev@example.com
-    joy auth --passphrase "$DEV_PASSPHRASE"
+    act_as dev@example.com "$DEV_PASSPHRASE"
     run joy rm "$ITEM_ID" --force
     [ "$status" -ne 0 ]
     [[ "$output" == *"delete"* ]]
-    git config user.email test@example.com
 }
 
 # ============================================================
@@ -190,31 +186,25 @@ EOF
 @test "developer with implement can start work" {
     setup_team_project
     setup_member_auth dev@example.com "$DEV_PASSPHRASE"
-    git config user.email dev@example.com
-    joy auth --passphrase "$DEV_PASSPHRASE"
+    act_as dev@example.com "$DEV_PASSPHRASE"
     run joy status "$ITEM_ID" in-progress
     [ "$status" -eq 0 ]
-    git config user.email test@example.com
 }
 
 @test "developer with create can add items" {
     setup_team_project
     setup_member_auth dev@example.com "$DEV_PASSPHRASE"
-    git config user.email dev@example.com
-    joy auth --passphrase "$DEV_PASSPHRASE"
+    act_as dev@example.com "$DEV_PASSPHRASE"
     run joy add task "Dev task"
     [ "$status" -eq 0 ]
-    git config user.email test@example.com
 }
 
 @test "developer with create can comment" {
     setup_team_project
     setup_member_auth dev@example.com "$DEV_PASSPHRASE"
-    git config user.email dev@example.com
-    joy auth --passphrase "$DEV_PASSPHRASE"
+    act_as dev@example.com "$DEV_PASSPHRASE"
     run joy comment "$ITEM_ID" "Dev comment"
     [ "$status" -eq 0 ]
-    git config user.email test@example.com
 }
 
 # ============================================================
@@ -235,12 +225,10 @@ EOF
     setup_member_auth dev@example.com "$DEV_PASSPHRASE"
     # Developer tries to submit for review (needs Review cap, dev lacks it)
     joy status "$ITEM_ID" in-progress
-    git config user.email dev@example.com
-    joy auth --passphrase "$DEV_PASSPHRASE"
+    act_as dev@example.com "$DEV_PASSPHRASE"
     run joy status "$ITEM_ID" review
     [ "$status" -eq 0 ]  # Warn allows but logs
     grep -q "guard.warned" .joy/logs/*.log
-    git config user.email test@example.com
 }
 
 # ============================================================
@@ -249,11 +237,20 @@ EOF
 
 @test "unregistered member cannot perform actions" {
     setup_team_project
-    git config user.email stranger@example.com
-    run joy comment "$ITEM_ID" "Stranger comment"
+    # Naming yourself is the only way to act as somebody in a project
+    # since package J11: git config decides nothing any more, so a
+    # stranger has to say who they are, and the project answers that it
+    # does not know them.
+    run joy auth --user stranger@example.com --passphrase "$TEST_PASSPHRASE"
     [ "$status" -ne 0 ]
     [[ "$output" == *"not a registered project member"* ]]
-    git config user.email test@example.com
+
+    # And on a machine nobody has named themselves on, the write is
+    # refused outright rather than credited to whoever worked here last.
+    forget_this_device
+    run joy comment "$ITEM_ID" "Stranger comment"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"does not know who you are"* ]]
 }
 
 # ============================================================

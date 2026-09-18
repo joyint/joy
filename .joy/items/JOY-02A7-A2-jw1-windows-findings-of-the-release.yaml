@@ -1,0 +1,19 @@
+id: JOY-02A7-A2
+title: 'JW1: Windows findings of the release check (GCM child PATH, silent forge bound, agent pipe timeout, maintenance on read-only objects, sentences)'
+type: task
+status: closed
+priority: critical
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-18T12:07:41.131287281Z
+updated: 2026-09-18T13:41:01.066442987Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Found on the Windows runner VM on 2026-09-18 with the branch built there (build clean, 677 joy-core tests passed, 6 failed, 1 hung). (1) BLOCKER: crates/joy-core/src/vcs/credential_helper.rs fn run (line 643) spawns git-credential-manager.exe found through the registry but hands the child a PATH without the Git for Windows cmd directory, so GCM''s own bootstrap dies (''Failed to locate git.exe executable on the path'') and no credential is obtained; Search::of_this_machine (line 298) already knows the directory: prepend it to the child''s PATH (GCM may spawn git itself, that is not joy spawning git). (2) fn quoted (line 767) pastes a whole .NET stack trace into the detail line; keep the first sentence of the helper''s stderr only. (3) vcs::forge::tests::a_silent_forge_is_given_up_on_within_the_bound (forge.rs:4949) never returns on Windows: the 10 s connect and 15 s silence bounds (bound_forge_waits) do not fire there, a silent forge hangs joy forever; find why (WinHTTP path, libgit2 timeouts) and bound it. (4) ssh_auth.rs:104-111: the Windows named pipe connect has no timeout, AGENT_TIMEOUT is unused (build warning); apply a bound. (5) A host with no credential at all is classified Failure::Error (''GitHub answered with an error.'', no help line) instead of needs_sign_in with ''run joy forge login --host github.com'' (contact.rs:174 vs :141): an exhausted resolver with nothing presented is needs_sign_in. (6) The ssh detail sentence contradicts itself on Windows (''no SSH_AUTH_SOCK ... offered whatever the agent holds'' then ''the agent''s identities were refused''): say ''no agent answered'' when nothing was offered (forge.rs:734-737). (7) Five vcs::maintenance tests fail on Windows with Access is denied: git creates loose objects read-only, the sweep must clear FILE_ATTRIBUTE_READONLY before unlink (maintenance.rs:1145, :1232); log_all_ref_updates_always_is_detected_and_said_once compares a forward slash path (maintenance.rs:1346): print the native path. (8) joy forge status --json exits 1 with {hosts:[]} and no reason: add the state and the help to the envelope. (9) The credential helper tests that spawn a child are unix only (credential_helper.rs:1248-1264): add a Windows leg with a .cmd or .ps1 helper so CI catches (1). Verify every fix on the Windows runner VM (ssh -i ~/.ssh/joyint-windows-vm -p 2222 joyint@localhost, PowerShell 5.1 default, clone under C:\joyint-check). JI epic JI-0190-3A.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-18T13:41:00.991023379Z
+  text: 'Result: commits 486b52e, 8624914, eb64727, 93ee2ce merged at e015a41. All nine findings fixed and verified on the Windows runner VM: 728 joy-core tests and 152 joy-cli tests pass there, no hang (the silent forge case returns in 20 s through joy''s own silence bound in vcs::bound, because WinHTTP has none), GCM obtains a credential with no git on PATH, an exhausted chain is needs_sign_in with the login help, the ssh sentence no longer contradicts itself, maintenance runs on read only objects, status --json carries state and help; plus a ~ expansion fix in the ssh config and clippy clean on Windows. Design D1.9a records the bound and its cost (an abandoned thread per given up contact, at most two per host).'

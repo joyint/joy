@@ -3,19 +3,20 @@
 
 //! Forge abstraction: create releases on hosting platforms.
 //!
-//! Since JOY-0256-64 the forge knowledge lives in the forge PLUGINS
+//! Since JOY-0256-64 the forge knowledge lives in the forge CONNECTORS
 //! (docs/plugins.md): joy-core's registry names them, `claims` decides
-//! whose remote a project is, and the plugin's `release` verb does the
-//! actual work (joy-github shells gh; a forge without a release backend
-//! answers `unsupported` and publish keeps its tag-only path). Nothing
-//! in here parses a forge URL or shells a forge CLI any more.
+//! whose remote a project is, and the connector's `release` verb does
+//! the actual work (over its own HTTP client since JOY-0298-E4, design
+//! D2.8; a forge without a release backend answers `unsupported` and
+//! publish keeps its tag-only path). Nothing in here parses a forge URL
+//! or shells a forge CLI any more.
 
 use std::io::{IsTerminal, Write};
 use std::path::Path;
 
 use anyhow::{anyhow, bail, Result};
 
-use joy_core::forge_plugins::{self, ForgePluginSpec};
+use joy_core::forge_plugins::{self, CallContext, ForgePluginSpec, Target};
 use joy_core::vcs;
 
 /// Trait for hosting platform operations.
@@ -48,14 +49,26 @@ impl ForgeRelease for PluginForge {
         let dir = tempfile::tempdir()?;
         let notes_file = dir.path().join("notes.md");
         std::fs::write(&notes_file, notes)?;
-        let outcome = forge_plugins::release(self.spec, root, tag, title, &notes_file)
-            .ok_or_else(|| {
-                anyhow!(
-                    "the forge plugin {} could not create the release (its message is above)\n  \
-                     = help: install the plugin or set `forge: none` to publish without a forge release",
-                    self.spec.binary
-                )
-            })?;
+        // The connector's own stderr is captured now (D2.3), so its
+        // message travels INSIDE the error instead of on a terminal
+        // that may not exist. The state name comes along for the same
+        // reason: missing, outdated, refused and timed out are four
+        // different things to do next.
+        let ctx = CallContext::in_project(root);
+        // Which repository the release belongs to. gh used to read this
+        // out of the working directory; the connector's own REST call
+        // has to be told (D2.8), and the remote is what tells it.
+        let target = default_remote_url(root).map(Target::remote);
+        let outcome =
+            forge_plugins::release(self.spec, target.as_ref(), tag, title, &notes_file, &ctx)
+                .map_err(|e| {
+                    anyhow!(
+                        "{e}\n  = note: state {}\n  \
+                     = help: run `joy forge plugins` to see which binary answered, install the \
+                     connector, or set `forge: none` to publish without a forge release",
+                        e.state()
+                    )
+                })?;
         if outcome.unsupported {
             // the plugin's forge has no release backend yet: same
             // downgrade the lenient project.yaml path always offered
@@ -68,6 +81,15 @@ impl ForgeRelease for PluginForge {
         }
         Ok(outcome.url)
     }
+}
+
+/// The URL of the remote a release is published to: the project's
+/// default remote, when it has one. A project with no remote has no
+/// repository on a forge either, and the connector says so.
+fn default_remote_url(root: &Path) -> Option<String> {
+    let git = vcs::default_vcs();
+    let remote = git.default_remote(root).ok()?;
+    git.remote_url(root, &remote).ok()
 }
 
 /// No-op forge for `forge: none` or explicit skip.
@@ -174,11 +196,12 @@ fn auto_detect(root: &Path) -> Result<Resolution> {
     // One claims round per registry plugin: a plugin that claims any
     // remote is a candidate. The plugin decides what is "its" URL —
     // joy never parses a forge URL itself (JOY-0256-64).
+    let ctx = CallContext::in_project(root);
     let mut claimed: Vec<(String, &'static ForgePluginSpec)> = Vec::new();
     for spec in forge_plugins::FORGE_PLUGINS {
         if let Some((name, _)) = remotes
             .iter()
-            .find(|(_, url)| forge_plugins::claims(spec, root, url))
+            .find(|(_, url)| forge_plugins::claims(spec, &Target::remote(url.as_str()), &ctx))
         {
             claimed.push((name.clone(), spec));
         }
@@ -196,11 +219,26 @@ fn auto_detect(root: &Path) -> Result<Resolution> {
                     .join(", ");
                 format!("configured remotes: {list}")
             };
+            // The second half of the sentence is the new door (D3.10):
+            // a host whose connector nobody is signed in to claims
+            // nothing, and "add a remote" is the wrong advice for a
+            // person who has the remote already.
+            //
+            // The host it names is the remote joy really contacts,
+            // `origin` or the first configured one (D1.1), and not
+            // `remotes[0]`: in a checkout whose first remote is not
+            // `origin` the two are different hosts, and the person was
+            // sent to sign in to the one joy never talks to.
+            let host = vcs::forge::remote_url(root)
+                .map(|url| vcs::contact::host_of(&url))
+                .unwrap_or_default();
             bail!(
                 "no supported forge detected from git remotes ({remote_summary})\n  \
                  = help: add a remote on a supported host ({}), pass --forge <value>, \
-                 or set `forge: none` with `joy project set forge none` to publish without a forge release",
-                supported_forges().join(", ")
+                 {}, or set `forge: none` with `joy project set forge none` to publish \
+                 without a forge release",
+                supported_forges().join(", "),
+                crate::commands::forge::sign_in_line(&host)
             )
         }
         1 => {

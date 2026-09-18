@@ -9,19 +9,40 @@
 
 load setup
 
-@test "joy init fails fast without a git identity and leaves nothing behind" {
+@test "joy init refuses by name when nobody can be asked, and leaves nothing behind" {
     # setup() configured a git identity; remove it to model a fresh repo whose
     # author never ran `git config`. HOME is isolated to TEST_DIR, so there is no
-    # global identity to fall back on either.
+    # global identity to fall back on either. bats gives joy no terminal, so
+    # this is the background host of D3.9: it refuses instead of asking.
     git config --unset user.email
     git config --unset user.name || true
 
     run joy init --name "Late Identity"
     [ "$status" -ne 0 ]
-    # The error names the fix (set git user.email or pass --user).
-    [[ "$output" == *"user.email"* ]]
+    # The named refusal sentence, with the way out in it.
+    [[ "$output" == *"this project does not know who you are; run joy init --user <address>"* ]]
     # Fail-fast must not leave a half-initialized project on disk.
     [ ! -d .joy ]
+}
+
+@test "joy init under a live delegation session refuses by name" {
+    # A REAL session, not a leftover value: setup_ai_session mints one the
+    # way an agent gets it. bats gives joy no terminal, so the terminal
+    # beating part of the rule is proven in the pty cases of joy-cli's
+    # founder_terminal.rs; what this case adds is that the whole chain
+    # (a live session, a fresh checkout, no git identity) refuses by name.
+    setup_human_auth
+    setup_ai_session ai:test@joy
+
+    mkdir -p "$TEST_DIR/delegated"
+    cd "$TEST_DIR/delegated"
+    git init --quiet
+
+    run joy init --name "Delegated"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"this project does not know who you are; run joy init --user <address>"* ]]
+    [ ! -d .joy ]
+    cd "$TEST_DIR"
 }
 
 @test "joy init succeeds once a git identity is set (the documented recovery)" {

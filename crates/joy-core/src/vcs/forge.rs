@@ -6,11 +6,13 @@
 //! the platform's runtime-checkout layer and shared by the platform, the
 //! desktop app, and everything else that syncs a checkout with a forge.
 //!
-//! Two mechanics live under the one vcs roof, each with its reason: the
-//! CLI verbs in [`super`] run the git BINARY because user hooks and user
-//! config must fire; everything here is HEADLESS work (server worker,
-//! app worker) that must never fire hooks and authenticates with tokens
-//! or the machine's stored credentials.
+//! There is ONE mechanic under the vcs roof now (design D3.2,
+//! JOY-01FD-ED): everything is this engine. The CLI verbs in [`super`]
+//! used to run the git BINARY so that a person's hooks and config would
+//! fire; they run here instead, because a machine without a git binary
+//! has to work too. What the binary did for them is done in process: the
+//! item rule of D3.3, the path scoped commits of D3.4, and the hook
+//! chaining of D3.5 that keeps a person's own hooks running.
 //!
 //! FETCH_HEAD is never written or read here. It is the one file git
 //! updates without a lock, and sharing it tore syncs apart twice: a
@@ -22,40 +24,146 @@
 
 use std::path::{Path, PathBuf};
 
-/// The user name a forge expects beside an access token in HTTP basic auth.
-/// Every forge takes the token as the password, but each one wants its own
-/// name in front of it, and sending the wrong one is refused as if we could
-/// not authenticate at all (JP-00D8-94: Codeberg answered
-/// "server requires authentication that we do not support" for a token it
-/// would have accepted). Host-based, because that is all the credentials
-/// callback is handed.
-fn basic_auth_user(url: &str) -> &'static str {
-    let lower = url.to_ascii_lowercase();
-    if lower.contains("github.com") {
-        // GitHub ignores the name but documents this one.
-        "x-access-token"
-    } else if lower.contains("gitlab") {
-        // GitLab: an OAuth token rides under this fixed name.
-        "oauth2"
-    } else {
-        // Gitea and Codeberg: the token IS the name, with no password.
-        ""
+use crate::host::HostKind;
+
+/// The forge family a host belongs to, as far as authentication goes
+/// (design D1.6). It comes from the plugin that claims the host
+/// (`claims`), and from the engine's own table for the three hosts
+/// every joy knows when no plugin claimed it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ForgeKind {
+    GitHub,
+    /// GitHub Enterprise Server. The same shape as github.com on a
+    /// host name that says nothing about it, which is why the claim
+    /// matters: without it the first attempt is a guess.
+    GitHubEnterprise,
+    GitLab,
+    /// Gitea, Forgejo and Codeberg: one implementation, one shape.
+    Gitea,
+}
+
+impl ForgeKind {
+    /// The kind a forge plugin's id names (`forge_plugins::FORGE_PLUGINS`).
+    pub fn from_plugin_id(id: &str) -> Option<ForgeKind> {
+        match id.trim().to_ascii_lowercase().as_str() {
+            "github" => Some(ForgeKind::GitHub),
+            "github-enterprise" | "ghes" => Some(ForgeKind::GitHubEnterprise),
+            "gitlab" => Some(ForgeKind::GitLab),
+            "gitea" | "forgejo" | "codeberg" => Some(ForgeKind::Gitea),
+            _ => None,
+        }
     }
+
+    /// The user name this forge expects beside an access token.
+    ///
+    /// Every forge takes the token as the PASSWORD; each one wants its
+    /// own name in front of it. GitHub documents `x-access-token`,
+    /// GitLab requires `oauth2` (doc/api/oauth2.md:409-417), and the
+    /// Gitea family takes the token as the password under any name and
+    /// is given `oauth2` too (forgejo services/auth/method/util.go:60-67).
+    pub fn token_user(self) -> &'static str {
+        match self {
+            ForgeKind::GitHub | ForgeKind::GitHubEnterprise => "x-access-token",
+            ForgeKind::GitLab | ForgeKind::Gitea => "oauth2",
+        }
+    }
+}
+
+/// The engine's own table, for github.com, gitlab.com and codeberg.org
+/// and for nothing else (design D1.1, D1.5: "Engine fallback table for
+/// github.com, gitlab.com and codeberg.org only").
+///
+/// There is no guess by name here, and that is the point of D1.6. A
+/// substring rule would classify a Gitea reachable at
+/// `github.internal.example` as GitHub Enterprise, send it
+/// `x-access-token` and, because the second shape is offered only to a
+/// host no table knows, never offer it `oauth2` either: a valid token
+/// would look refused. That is exactly what the deleted
+/// `basic_auth_user` did with `lower.contains("gitlab")`. A
+/// self-hosted host is identified by the plugin that claims it (D2
+/// `claims`), never by its name.
+///
+/// The sub-domain form is part of the table because the two public
+/// forges answer ssh under one: ssh.github.com is github.com and
+/// altssh.gitlab.com is gitlab.com (D1.5).
+pub fn known_forge_kind(host: &str) -> Option<ForgeKind> {
+    let host = host.trim().to_ascii_lowercase();
+    let host = host.split(':').next().unwrap_or(&host);
+    let is = |name: &str| host == name || host.ends_with(&format!(".{name}"));
+    if is("github.com") {
+        return Some(ForgeKind::GitHub);
+    }
+    if is("gitlab.com") {
+        return Some(ForgeKind::GitLab);
+    }
+    if is("codeberg.org") {
+        return Some(ForgeKind::Gitea);
+    }
+    None
+}
+
+/// The user name to send beside an access token for this host.
+///
+/// The shape "token as the user name with an EMPTY password" is never
+/// sent (design D1.6). It is what joy sent to Codeberg and to every
+/// unknown host until now; on GitLab it always fails and counts
+/// towards the failed-authentication ban, and on Codeberg it produced
+/// "server requires authentication that we do not support" for a token
+/// that would have been accepted (JP-00D8-94). An unknown host gets
+/// `oauth2`, the name GitLab requires, the Gitea family accepts and
+/// GitHub ignores.
+pub fn token_user(host: &str, claimed: Option<ForgeKind>) -> &'static str {
+    claimed
+        .or_else(|| known_forge_kind(host))
+        .map(ForgeKind::token_user)
+        .unwrap_or("oauth2")
+}
+
+/// Whether the libgit2 this build links can reach an https or ssh
+/// remote at all (D3.1).
+///
+/// The `forge-net` feature is what compiles the two transports in, and
+/// a build without it answers every contact with "unsupported URL
+/// protocol", which is a fault of the BUILD and not of the person's
+/// network, credential or host. Callers use it to say that once, in
+/// plain words, instead of letting the classifier read a packaging
+/// mistake as `error`.
+pub fn transports_available() -> bool {
+    let version = git2::Version::get();
+    version.https() && version.ssh()
 }
 
 /// How this checkout talks to its forge.
 ///
-/// The platform authenticates with the account's OAuth token; the desktop
-/// app with whatever the person's machine holds (ssh-agent, credential
-/// helper). One enum instead of two engines, so every caller gets the
-/// same retry discipline and the same honest errors.
+/// The platform authenticates with the account's OAuth token; the
+/// desktop app with whatever the person's machine holds (ssh-agent,
+/// credential helper). One enum instead of two engines, so every
+/// caller gets the same retry discipline and the same honest errors.
+///
+/// Two of the four variants carry a host fact the other two default:
+/// the forge kind a plugin claimed (design D1.6) and the host kind
+/// (design D1.1). They are separate variants and not fields so that
+/// every caller written before the resolver keeps compiling and keeps
+/// working, under the quiet defaults.
+#[derive(Clone)]
 pub enum Auth {
-    /// A forge access token (platform): tried in the shape this forge
-    /// expects, then the other common shape, then the machine's helper.
+    /// A forge access token (platform), for a host whose forge kind
+    /// joy reads from the host name.
     Token(String),
-    /// The machine's own credentials (desktop): ssh-agent for ssh
-    /// remotes, the git credential helper for https ones.
+    /// A forge access token for a host whose forge kind a plugin
+    /// claimed: the credential has the right shape on the FIRST
+    /// attempt, which is what a GitHub Enterprise Server host whose
+    /// name says nothing needs.
+    ClaimedToken(String, ForgeKind),
+    /// The machine's own credentials (desktop), for a host that has
+    /// not said who it is. Defaults to [`HostKind::Background`], the
+    /// quiet one: a host that never named its kind must not be handed
+    /// a prompt nobody will answer.
     Local,
+    /// The machine's own credentials for a host that named its kind
+    /// (design D1.1): the whole prompt rule of design D1.10 hangs off
+    /// this word.
+    LocalAs(HostKind),
 }
 
 /// How long a forge contact waits on a silent forge, set once for the
@@ -68,6 +176,14 @@ pub enum Auth {
 /// on the transfer as a whole.
 const CONNECT_BOUND_MS: i32 = 10_000;
 const SILENCE_BOUND_MS: i32 = 15_000;
+
+/// joy's OWN bound on one contact, for the transport that reads neither
+/// of the two above (WinHTTP; see [`over_plan`]). It stands
+/// BEHIND the socket bounds, so it is wider than either of them, and it
+/// is a silence bound like them: a transfer that keeps arriving keeps
+/// the contact alive however long it takes, and a person answering a
+/// prompt holds it open (`super::bound::hold`).
+const CONTACT_BOUND: std::time::Duration = std::time::Duration::from_secs(20);
 
 fn bound_forge_waits() {
     static BOUND: std::sync::Once = std::sync::Once::new();
@@ -86,95 +202,918 @@ fn bound_forge_waits() {
     });
 }
 
-/// What a forge contact's libgit2 error means, in words. A forge that
-/// runs into the wait bound surfaces as libgit2's raw EAGAIN, "SSL
-/// error: syscall failure: Resource temporarily unavailable", which says
-/// nothing about what happened (JOY-0278-85); that case is named for what
-/// it is, everything else is quoted as libgit2 says it.
-fn contact_error(e: &git2::Error) -> String {
-    let message = e.message();
-    let lower = message.to_ascii_lowercase();
-    if lower.contains("resource temporarily unavailable") || lower.contains("timed out") {
-        format!(
-            "the forge sent nothing for {} seconds (timed out): {message}",
-            SILENCE_BOUND_MS / 1000
-        )
-    } else {
-        message.to_string()
+/// What a forge contact's libgit2 error means, for the person
+/// (JOY-0295-36, design D1.8a). The error is handed to the classifier
+/// WHOLE - code, class, status number and message - because joy used to
+/// pass `e.message()` alone and prefix "(offline?)" onto it, which made
+/// a 404 over https read as "no connection to github.com". The plain
+/// sentence comes back from the state; libgit2's own words go to the
+/// detail line and never to a surface.
+fn contact_failed(
+    url: &str,
+    direction: super::contact::ContactDirection,
+    e: git2::Error,
+) -> anyhow::Error {
+    let transport = super::contact::transport_of(url);
+    // The two facts the RESOLVER reads, and it reads them off the raw
+    // error before anyone classifies it (D1.2 rule 3b, D1.8a): whether
+    // this was an ssh authentication failure, which is the one refusal
+    // that sends a contact to the twin.
+    super::resolver::note_contact_error(transport, &e);
+    // WHAT JOY PUT ON THE WIRE for this contact, which is what D1.8a
+    // asks for and what the field is documented as. It used to be the
+    // coarse claim an `Auth` can make before a contact: `Auth::Local`
+    // claims a credential for every host, and a contact that ended in
+    // `Cred::default()` (which is "I have nothing") was then handed to
+    // the classifier as one that presented the machine's own credential.
+    let credential = super::contact::presented_source()
+        .unwrap_or(super::contact::CredentialSource::NonePresented);
+    let mut evidence = super::contact::ContactEvidence::new(e, url, direction, credential);
+    // The proxy THIS contact really went through (D1.8c): a 407 names
+    // the proxy and never the forge, and the name is joy's own
+    // decision, so it travels in the cell `proxy::options_for` filled
+    // rather than through fifteen call sites.
+    if let Some(proxy) = super::proxy::current() {
+        evidence = evidence.through_proxy(proxy);
     }
+    // D1.7: "A 401 invalidates the cache immediately and triggers one re
+    // ask." The one re-ask is the next operation's own plan; nothing
+    // here loops.
+    if super::contact::wants_token_refresh(&evidence) {
+        super::resolver::invalidate_facts(&evidence.host);
+    }
+    super::contact::failed(&evidence)
+}
+
+/// THE proxy options of one contact (D1.11), with the refusal of a
+/// proxy joy cannot speak to turned into the failure the caller
+/// returns. No socket is opened for a refused proxy.
+fn proxy_for(url: &str, repo: Option<&git2::Repository>) -> anyhow::Result<super::proxy::Proxy> {
+    super::proxy::options_for(url, repo).map_err(|refused| anyhow::anyhow!("{refused}"))
+}
+
+/// The remote URL a contact travels over, for the evidence above.
+fn remote_url_of(remote: &git2::Remote<'_>) -> String {
+    remote.url().unwrap_or_default().to_string()
+}
+
+/// Note a credential the callback really handed to libgit2, and hand it
+/// on unchanged. A callback arm that ends in `Cred::default()` (which
+/// is "I have nothing to offer") notes nothing, so joy never remembers
+/// an anonymous contact as a credential that worked (D1.8b: it is what
+/// tells a 404 that means "no such repository" from a 404 that means
+/// "your organisation has not approved Joy").
+fn presented(
+    source: super::contact::CredentialSource,
+    word: &'static str,
+    cred: Result<git2::Cred, git2::Error>,
+) -> Result<git2::Cred, git2::Error> {
+    if cred.is_ok() {
+        super::contact::note_credential(source);
+        USED_CREDENTIAL.with(|used| used.set(Some(word)));
+    }
+    cred
+}
+
+thread_local! {
+    /// The credential source of this contact in the four words the
+    /// transport memory keeps (`agent`, `key`, `helper`, `token`).
+    /// [`super::contact::CredentialSource`] has no word for a key FILE,
+    /// and the sentence a person reads about their own machine should
+    /// not call their `~/.ssh/id_ed25519` an agent (D1.2, D1.5).
+    static USED_CREDENTIAL: std::cell::Cell<Option<&'static str>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// The word the last credential of THIS contact carried, read and
+/// cleared.
+fn take_used_credential() -> Option<&'static str> {
+    USED_CREDENTIAL.with(|used| used.take())
 }
 
 impl Auth {
+    /// A token for a host joy identifies by its name.
     pub fn token(token: impl Into<String>) -> Self {
         Auth::Token(token.into())
     }
 
-    fn callbacks(&self, config: Option<git2::Config>) -> git2::RemoteCallbacks<'static> {
-        bound_forge_waits();
-        let mut callbacks = git2::RemoteCallbacks::new();
+    /// Whether a credential rides with a contact under this auth, which
+    /// is what decides its request weight (D1.9): a credentialed
+    /// request to a private repository is answered 401 once and
+    /// replayed, so it costs one request more than an anonymous one.
+    fn credentialed(&self) -> bool {
         match self {
-            Auth::Token(token) => {
-                let token = token.clone();
-                // Attempt 1: the account token, in the shape this forge
-                // expects. Attempt 2: the other common shape, so a forge we
-                // have not met (a self-hosted GitLab behind a custom host
-                // name, say) still gets a fair try instead of a
-                // wrong-looking refusal. Attempt 3: the machine's git
-                // credential helper (gh, osxkeychain) — the dev fake-login
-                // has no real token, and local devs DO have helper
-                // credentials. Then STOP: retrying the same credentials
-                // forever is exactly what libgit2 reports as "too many
-                // redirects or authentication replays".
-                let attempts = std::cell::Cell::new(0u32);
-                callbacks.credentials(move |url, username, _allowed| {
-                    attempts.set(attempts.get() + 1);
-                    match attempts.get() {
-                        1 if !token.is_empty() => match basic_auth_user(url) {
-                            "" => git2::Cred::userpass_plaintext(&token, ""),
-                            user => git2::Cred::userpass_plaintext(user, &token),
-                        },
-                        2 if !token.is_empty() => match basic_auth_user(url) {
-                            "" => git2::Cred::userpass_plaintext("x-access-token", &token),
-                            _ => git2::Cred::userpass_plaintext(&token, ""),
-                        },
-                        n if n <= 3 => match &config {
-                            Some(config) => git2::Cred::credential_helper(config, url, username),
-                            None => Err(git2::Error::from_str("no credential config")),
-                        },
-                        _ => Err(git2::Error::from_str(
-                            "authentication failed (token and credential helper both rejected)",
-                        )),
-                    }
-                });
+            Auth::Token(token) | Auth::ClaimedToken(token, _) => !token.is_empty(),
+            Auth::Local | Auth::LocalAs(_) => true,
+        }
+    }
+
+    /// A token for a host a plugin claimed, whose shape is therefore
+    /// right on the first attempt.
+    pub fn token_for(token: impl Into<String>, forge: ForgeKind) -> Self {
+        Auth::ClaimedToken(token.into(), forge)
+    }
+
+    /// The machine's own credentials, for a host that names its kind.
+    pub fn local(kind: HostKind) -> Self {
+        Auth::LocalAs(kind)
+    }
+
+    /// Who is at the other end (design D1.1). A token host is the
+    /// platform or a worker, which is never asked anything.
+    pub fn host_kind(&self) -> HostKind {
+        match self {
+            Auth::Token(_) | Auth::ClaimedToken(..) => HostKind::Background,
+            Auth::Local => HostKind::default(),
+            Auth::LocalAs(kind) => *kind,
+        }
+    }
+
+    /// Whether this caller resolves (D1.1): `Auth::Local` is "the
+    /// machine's own credentials", and the machine is what the resolver
+    /// of D1.2 is about. A caller that already holds a token (the
+    /// platform) makes one contact over the remote it was given.
+    fn is_local(&self) -> bool {
+        matches!(self, Auth::Local | Auth::LocalAs(_))
+    }
+
+    /// The forge kind a plugin claimed for this host, if any.
+    fn claimed_kind(&self) -> Option<ForgeKind> {
+        match self {
+            Auth::ClaimedToken(_, forge) => Some(*forge),
+            _ => None,
+        }
+    }
+
+    /// The credentials callback for this host, as the closure itself.
+    ///
+    /// It is built here and not inside [`Auth::callbacks`] so that it
+    /// can be driven the way libgit2 drives it: git2 0.21 keeps the
+    /// installed callback in a private field
+    /// (remote_callbacks.rs:20-29), so a `RemoteCallbacks` cannot be
+    /// asked what it would answer, and the shape decision of D1.6
+    /// would have no test.
+    /// The resolver under this `Auth`'s own host kind. Every contact
+    /// goes through [`Auth::callbacks_as`], which states the kind; this
+    /// is the shape tests' door to the closure, which git2 0.21 keeps
+    /// in a private field of `RemoteCallbacks` (remote_callbacks.rs:20-29)
+    /// and never hands back.
+    #[cfg(test)]
+    fn credential_source(
+        &self,
+        source: CredSource,
+    ) -> impl FnMut(&str, Option<&str>, git2::CredentialType) -> Result<git2::Cred, git2::Error> + 'static
+    {
+        self.credential_source_as(self.host_kind(), source)
+    }
+
+    /// [`Auth::credential_source`] for a host kind that is not this
+    /// `Auth`'s own. A leg of the resolver's plan carries a token the
+    /// connector handed out (which would read as `Background`), while
+    /// the person behind the operation has not changed: the prompt rule
+    /// of D1.10 hangs off the CALLER's kind, not off the credential the
+    /// leg happens to use.
+    fn credential_source_as(
+        &self,
+        kind: HostKind,
+        source: CredSource,
+    ) -> impl FnMut(&str, Option<&str>, git2::CredentialType) -> Result<git2::Cred, git2::Error> + 'static
+    {
+        let token = match self {
+            Auth::Token(token) | Auth::ClaimedToken(token, _) => {
+                Some(token.clone()).filter(|t| !t.is_empty())
             }
-            Auth::Local => {
-                let attempts = std::cell::Cell::new(0u32);
-                callbacks.credentials(move |url, username, allowed| {
-                    attempts.set(attempts.get() + 1);
-                    if attempts.get() > 3 {
-                        return Err(git2::Error::from_str(
-                            "authentication failed (agent and credential helper both rejected)",
+            Auth::Local | Auth::LocalAs(_) => None,
+        };
+        let claimed = self.claimed_kind();
+        // The same resolver for both: for a token host it serves the
+        // two cases a token cannot, a remote an insteadOf rule rewrote
+        // to ssh and a token the forge refused.
+        let mut chain = LocalChain::new(kind);
+        let mut attempts = 0u32;
+        let mut token_refused = false;
+        move |url: &str, username: Option<&str>, allowed: git2::CredentialType| {
+            // The forge asked joy something, so it is talking to us
+            // (`super::bound`): a credential dance can take longer than
+            // the silence bound when a helper opens a window.
+            super::bound::heartbeat();
+            // Design D1.6: honour the `allowed` mask. Without this, an
+            // insteadOf rewrite to ssh answers "authentication
+            // callback returned unsupported credentials type"
+            // (ssh_libssh2.c:415-418) and the person is told the token
+            // is wrong.
+            let Some(token) = token
+                .as_deref()
+                .filter(|_| allowed.contains(git2::CredentialType::USER_PASS_PLAINTEXT))
+            else {
+                return chain.credential(url, username, allowed, &source);
+            };
+            attempts += 1;
+            let host = host_of_url(url);
+            let token_presented = super::contact::CredentialSource::TokenPresented;
+            match attempts {
+                1 => presented(
+                    token_presented,
+                    "token",
+                    git2::Cred::userpass_plaintext(token_user(&host, claimed), token),
+                ),
+                // Only for a host nobody claimed and no table knows: a
+                // self-hosted forge joy has not met. Never the
+                // empty-password shape (D1.6).
+                2 if claimed.is_none() && known_forge_kind(&host).is_none() => presented(
+                    token_presented,
+                    "token",
+                    git2::Cred::userpass_plaintext(other_token_user(&host), token),
+                ),
+                _ => {
+                    if !token_refused {
+                        token_refused = true;
+                        // The chain's sentence would otherwise name
+                        // only what came after the token.
+                        chain.note(format!(
+                            "{host} refused the access token (sent as {})",
+                            token_user(&host, claimed)
                         ));
                     }
-                    if allowed.contains(git2::CredentialType::SSH_KEY) {
-                        return git2::Cred::ssh_key_from_agent(username.unwrap_or("git"));
-                    }
-                    if allowed.contains(git2::CredentialType::USER_PASS_PLAINTEXT) {
-                        if let Some(config) = &config {
-                            return git2::Cred::credential_helper(config, url, username);
-                        }
-                    }
-                    git2::Cred::default()
-                });
+                    chain.credential(url, username, allowed, &source)
+                }
             }
         }
+    }
+
+    /// THE callbacks of one contact. Both slots are filled here and
+    /// nowhere else: the credential resolver of D1.1, and the ONE
+    /// `certificate_check` closure of D1.4a, which git2 0.21 holds one
+    /// of per contact (remote_callbacks.rs:27) and which decides the
+    /// ssh host key and lets libgit2 decide the TLS chain.
+    fn callbacks(&self, source: CredSource) -> git2::RemoteCallbacks<'static> {
+        self.callbacks_as(self.host_kind(), source)
+    }
+
+    /// [`Auth::callbacks`] for a stated host kind; see
+    /// [`Auth::credential_source_as`].
+    fn callbacks_as(&self, kind: HostKind, source: CredSource) -> git2::RemoteCallbacks<'static> {
+        bound_forge_waits();
+        let mut callbacks = git2::RemoteCallbacks::new();
+        // built before the resolver takes `source`: both read the
+        // remote URL as the person configured it, which is what carries
+        // the port and the `Host` alias (D1.4)
+        let trust = super::certificates::check(kind, source.configured.clone());
+        callbacks.credentials(self.credential_source_as(kind, source));
+        callbacks.certificate_check(trust);
+        beating(&mut callbacks);
         callbacks
     }
+}
+
+/// Every callback libgit2 has that says "the forge is still talking to
+/// us", wired to the heartbeat of [`super::bound`].
+///
+/// This is what makes joy's own bound a SILENCE bound rather than a cap
+/// on the operation: while bytes keep arriving the heartbeat keeps
+/// moving and the bound never runs out, and a transfer that stops dead
+/// is given up on after the same wait libgit2's socket bound would have
+/// used. Only the slots joy does not fill itself are taken here; the
+/// two it does fill (`credentials`, `certificate_check`) beat inside
+/// their own closures, and a caller that replaces `transfer_progress`
+/// (the clone of D4.3) beats inside its own.
+fn beating(callbacks: &mut git2::RemoteCallbacks<'static>) {
+    callbacks.transfer_progress(|_| {
+        super::bound::heartbeat();
+        true
+    });
+    callbacks.sideband_progress(|_| {
+        super::bound::heartbeat();
+        true
+    });
+    callbacks.pack_progress(|_, _, _| super::bound::heartbeat());
+    callbacks.push_transfer_progress(|_, _, _| super::bound::heartbeat());
+    callbacks.update_tips(|_, _, _| {
+        super::bound::heartbeat();
+        true
+    });
+}
+
+/// The other of the two names, for the one host joy knows nothing
+/// about. The empty-password shape is not one of the two.
+fn other_token_user(host: &str) -> &'static str {
+    match token_user(host, None) {
+        "oauth2" => "x-access-token",
+        _ => "oauth2",
+    }
+}
+
+fn host_of_url(url: &str) -> String {
+    super::remote_url::RemoteUrl::parse(url)
+        .map(|parsed| parsed.host)
+        .unwrap_or_default()
+}
+
+/// One candidate the resolver offers libgit2, in the order of design
+/// D1.2.
+enum Step {
+    Agent,
+    Key {
+        path: PathBuf,
+        public: Option<PathBuf>,
+        passphrase: Option<String>,
+    },
+    Helper,
+}
+
+/// What was handed over last. libgit2 re-enters the credentials
+/// callback while the answer is `GIT_EAUTH` (ssh_libssh2.c:855-880),
+/// so a second call IS the refusal of the first answer, and the only
+/// place joy can see one from inside the callback.
+enum Presented {
+    Agent,
+    Key(PathBuf),
+    Helper,
+}
+
+/// The resolver of design D1.1 for one contact: built on the first
+/// callback invocation from the URL libgit2 is really contacting
+/// (after insteadOf and after a redirect), then walked one candidate
+/// per re-entry. There is no three-attempt cap any more, only the
+/// length of the chain.
+struct LocalChain {
+    kind: HostKind,
+    /// Notes from before the chain was built (the token the forge
+    /// refused), so that the one sentence at the end names everything
+    /// that was tried and not only the ssh and helper half.
+    prelude: Vec<String>,
+    state: Option<ChainState>,
+}
+
+struct ChainState {
+    kind: HostKind,
+    host: String,
+    /// The user name, decided once and never changed: libgit2 keeps
+    /// the first one for the whole contact (ssh_libssh2.c:865).
+    user: String,
+    steps: std::collections::VecDeque<Step>,
+    /// Why each missing candidate is missing, in the person's words.
+    notes: Vec<String>,
+    presented: Option<Presented>,
+    usernames: u32,
+    defaulted: bool,
+    /// The remote is an ssh one, which decides the error class an
+    /// exhausted chain carries (see [`LocalChain::credential`]).
+    ssh: bool,
+    /// The agent step was offered BLIND: joy's own probe found no agent
+    /// and the Windows carve out of D1.4 offered one anyway. A refusal
+    /// then says no agent answered, because none was known to be there;
+    /// saying "the agent's identities were refused" in the same
+    /// sentence that says joy does not know what the agent holds is a
+    /// contradiction a person cannot act on (JOY-02A7-A2 finding 6).
+    blind_agent: bool,
+    /// `SSH_AUTH_SOCK` pointed at this host's `IdentityAgent`, for as
+    /// long as this contact lasts. Dropped with the chain, which is
+    /// dropped with the callbacks of this contact, so the socket of a
+    /// `Host work` does not follow every later github.com contact of
+    /// the same desktop process (design D1.4).
+    _agent: super::ssh_config::AgentScope,
+}
+
+impl LocalChain {
+    fn new(kind: HostKind) -> LocalChain {
+        LocalChain {
+            kind,
+            prelude: Vec::new(),
+            state: None,
+        }
+    }
+
+    /// Add something the person should read in the final sentence.
+    fn note(&mut self, note: String) {
+        match &mut self.state {
+            Some(state) => state.notes.push(note),
+            None => self.prelude.push(note),
+        }
+    }
+
+    fn credential(
+        &mut self,
+        url: &str,
+        username_from_url: Option<&str>,
+        allowed: git2::CredentialType,
+        source: &CredSource,
+    ) -> Result<git2::Cred, git2::Error> {
+        if self.state.is_none() {
+            let mut state = ChainState::prepare(
+                url,
+                username_from_url,
+                self.kind,
+                source.configured.as_deref(),
+            );
+            let mut notes = std::mem::take(&mut self.prelude);
+            notes.append(&mut state.notes);
+            state.notes = notes;
+            self.state = Some(state);
+        }
+        let state = self.state.as_mut().expect("the chain was just prepared");
+        if allowed.contains(git2::CredentialType::USERNAME) {
+            return state.user_name();
+        }
+        state.note_refusal(url);
+        loop {
+            let Some(step) = state.take_next(allowed) else {
+                if !state.defaulted && allowed.contains(git2::CredentialType::DEFAULT) {
+                    state.defaulted = true;
+                    // nothing to offer: NOT a credential, so it is not
+                    // noted as one (D1.8b, [`presented`])
+                    return git2::Cred::default();
+                }
+                // Typed, not a bare sentence: an exhausted chain means
+                // this machine has no credential for this host, which
+                // is `needs_sign_in` and never "the forge answered with
+                // an error" (D1.8b, JOY-02A7-A2 finding 5).
+                // `Error::from_str` carried class `Invalid` and the
+                // generic code, so the classifier had nothing to read
+                // and a person with no login was told to debug their
+                // forge. The class follows the transport, because the
+                // ssh branch of the classifier reads the class and the
+                // https branch reads the transport.
+                let class = if state.ssh {
+                    git2::ErrorClass::Ssh
+                } else {
+                    git2::ErrorClass::Http
+                };
+                return Err(git2::Error::new(
+                    git2::ErrorCode::Auth,
+                    class,
+                    state.exhausted(),
+                ));
+            };
+            match step {
+                Step::Agent => {
+                    state.presented = Some(Presented::Agent);
+                    return presented(
+                        super::contact::CredentialSource::AgentPresented,
+                        "agent",
+                        git2::Cred::ssh_key_from_agent(&state.user),
+                    );
+                }
+                Step::Key {
+                    path,
+                    public,
+                    passphrase,
+                } => {
+                    state.presented = Some(Presented::Key(path.clone()));
+                    return presented(
+                        // D1.8a knows four sources and no fifth: a key
+                        // file is the machine's own ssh credential, the
+                        // same branch of the classifier the agent is on.
+                        super::contact::CredentialSource::AgentPresented,
+                        "key",
+                        git2::Cred::ssh_key(
+                            &state.user,
+                            public.as_deref(),
+                            &path,
+                            passphrase.as_deref(),
+                        ),
+                    );
+                }
+                Step::Helper => match source.config.as_ref() {
+                    Some(config) => {
+                        match super::credential_helper::get(
+                            config,
+                            url,
+                            username_from_url,
+                            state.kind,
+                        ) {
+                            Ok(Some(credential)) => {
+                                state.presented = Some(Presented::Helper);
+                                return presented(
+                                    super::contact::CredentialSource::HelperPresented,
+                                    "helper",
+                                    git2::Cred::userpass_plaintext(
+                                        &credential.username,
+                                        &credential.password,
+                                    ),
+                                );
+                            }
+                            Ok(None) => state.notes.push(format!(
+                                "no credential helper is configured for {}",
+                                state.host
+                            )),
+                            Err(failure) => state.notes.push(failure.to_string()),
+                        }
+                    }
+                    None => state.notes.push(
+                        "there is no git configuration to read a credential helper from"
+                            .to_string(),
+                    ),
+                },
+            }
+        }
+    }
+}
+
+impl ChainState {
+    fn prepare(
+        url: &str,
+        username_from_url: Option<&str>,
+        kind: HostKind,
+        configured: Option<&str>,
+    ) -> ChainState {
+        let parsed = super::remote_url::RemoteUrl::parse(url);
+        let host = parsed
+            .as_ref()
+            .map(|p| p.host.clone())
+            .unwrap_or_else(|| url.to_string());
+        let url_user = username_from_url
+            .map(str::to_string)
+            .or_else(|| parsed.as_ref().and_then(|p| p.user.clone()));
+        let mut notes = Vec::new();
+        let mut steps = std::collections::VecDeque::new();
+        let mut user = url_user.clone().unwrap_or_else(|| "git".to_string());
+        let ssh = parsed.as_ref().map(|p| p.transport) == Some(super::remote_url::Transport::Ssh);
+        let mut blind_agent = false;
+        let mut agent_scope = super::ssh_config::AgentScope::none();
+        match parsed.as_ref().map(|p| p.transport) {
+            Some(super::remote_url::Transport::Ssh) => {
+                let settings = super::ssh_config::for_contact(&host, configured);
+                match settings.refusal() {
+                    // A host joy cannot reach at all. The contact is
+                    // refused before this by `guard_transport`; this
+                    // is the second line of defence, for a URL that
+                    // only appeared after an insteadOf rewrite.
+                    Some(sentence) => notes.push(sentence),
+                    None => {
+                        // Before the agent is probed, because the probe
+                        // reads the same variable libssh2 will read.
+                        agent_scope = super::ssh_config::AgentScope::apply(&settings);
+                        let agent = super::ssh_auth::probe_agent();
+                        let chain = super::ssh_auth::chain_for(
+                            &host,
+                            url_user.as_deref(),
+                            &settings,
+                            kind,
+                            &agent,
+                            cfg!(windows),
+                        );
+                        user = chain.user;
+                        blind_agent = chain.agent_blind;
+                        notes.extend(chain.notes);
+                        for candidate in chain.candidates {
+                            steps.push_back(match candidate {
+                                super::ssh_auth::SshCandidate::Agent => Step::Agent,
+                                super::ssh_auth::SshCandidate::Key {
+                                    path,
+                                    public,
+                                    passphrase,
+                                } => Step::Key {
+                                    path,
+                                    public,
+                                    passphrase,
+                                },
+                            });
+                        }
+                    }
+                }
+            }
+            Some(transport) if transport.takes_helper() => steps.push_back(Step::Helper),
+            _ => {}
+        }
+        ChainState {
+            kind,
+            host,
+            user,
+            steps,
+            notes,
+            presented: None,
+            usernames: 0,
+            defaulted: false,
+            ssh,
+            blind_agent,
+            _agent: agent_scope,
+        }
+    }
+
+    /// The one user name, however often libgit2 asks for it.
+    fn user_name(&mut self) -> Result<git2::Cred, git2::Error> {
+        self.usernames += 1;
+        if self.usernames > 3 {
+            return Err(git2::Error::from_str(&format!(
+                "{} kept asking for a user name; joy answered {} every time",
+                self.host, self.user
+            )));
+        }
+        git2::Cred::username(&self.user)
+    }
+
+    /// A re-entry means the forge refused what was offered last.
+    fn note_refusal(&mut self, url: &str) {
+        match self.presented.take() {
+            // "refused" only where joy knows there was something to
+            // refuse. Where the agent was offered blind (the Windows
+            // carve out of D1.4), nothing is known about what it holds,
+            // and the honest sentence is that nobody answered.
+            Some(Presented::Agent) if self.blind_agent => self
+                .notes
+                .push(format!("no ssh agent answered for {}", self.host)),
+            Some(Presented::Agent) => self.notes.push(format!(
+                "the ssh agent's identities were refused by {}",
+                self.host
+            )),
+            Some(Presented::Key(path)) => self.notes.push(format!(
+                "key {} was refused by {}",
+                path.display(),
+                self.host
+            )),
+            Some(Presented::Helper) => {
+                self.notes.push(format!(
+                    "the credential from your credential helper was refused by {}",
+                    self.host
+                ));
+                // The half git2 never runs: the helper is told to
+                // erase it, so the next contact does not replay a
+                // revoked entry (cred.rs:395, :415).
+                super::credential_helper::refused(url);
+            }
+            None => {}
+        }
+    }
+
+    fn take_next(&mut self, allowed: git2::CredentialType) -> Option<Step> {
+        while let Some(step) = self.steps.pop_front() {
+            let fits = match &step {
+                Step::Agent | Step::Key { .. } => allowed.contains(git2::CredentialType::SSH_KEY),
+                Step::Helper => allowed.contains(git2::CredentialType::USER_PASS_PLAINTEXT),
+            };
+            if fits {
+                return Some(step);
+            }
+            self.notes.push(format!(
+                "{} does not accept the credential joy had for it",
+                self.host
+            ));
+        }
+        None
+    }
+
+    /// Everything joy tried and everything it could not try, in one
+    /// sentence. This is what the person reads instead of libgit2's
+    /// "error authenticating".
+    fn exhausted(&self) -> String {
+        let mut sentence = format!("no usable credential for {}", self.host);
+        if !self.notes.is_empty() {
+            sentence.push_str(": ");
+            sentence.push_str(&self.notes.join("; "));
+        }
+        sentence
+    }
+}
+
+/// Refuse a remote joy cannot speak to BEFORE libgit2 opens a socket
+/// (design D1.4). A host behind `ProxyCommand` or `ProxyJump` would
+/// otherwise be contacted directly and fail with a DNS or connect
+/// error that names the wrong cause.
+fn guard_transport(url: Option<&str>) -> anyhow::Result<()> {
+    guard_transport_with(url, super::known_hosts::user_file_refusal)
+}
+
+/// [`guard_transport`] with the known_hosts verdict handed in.
+///
+/// The production verdict is read once per process from the machine's
+/// own `~/.ssh/known_hosts` ([`super::known_hosts::user_file_refusal`],
+/// a `OnceLock` around the real HOME), which is exactly what a test
+/// cannot arrange. The rule this guard carries is the branch, not the
+/// reading, so the branch is a function of two arguments and the
+/// reading is passed in.
+fn guard_transport_with(
+    url: Option<&str>,
+    known_hosts_refusal: impl FnOnce() -> Option<String>,
+) -> anyhow::Result<()> {
+    if let Some(sentence) = url.and_then(super::ssh_config::refusal_for_url) {
+        anyhow::bail!("{sentence}");
+    }
+    // An ssh contact reads `~/.ssh/known_hosts` inside libgit2 before
+    // joy's own callback runs, and ONE line libssh2 cannot parse makes
+    // it discard the whole file and end the connection with "error
+    // reading known_hosts" (D1.4a). Said here, once per process, with
+    // the line number. Only an ssh contact reads that file at all, so
+    // no other transport pays for the check.
+    if url.map(super::contact::transport_of) == Some(super::contact::Transport::Ssh) {
+        if let Some(sentence) = known_hosts_refusal() {
+            anyhow::bail!("{sentence}");
+        }
+    }
+    Ok(())
+}
+
+/// [`guard_transport`] for a remote that is already open.
+fn guard_remote(remote: &git2::Remote<'_>) -> anyhow::Result<()> {
+    guard_transport(remote.url().ok())
+}
+
+/// The remote joy really contacts for this checkout: the configured
+/// one ([`origin_or_first`]), refused when joy cannot speak to it at
+/// all, and dialled at the address the person's ssh config names.
+///
+/// libgit2 reads no ssh config and opens the socket itself from the
+/// URL, so `git@work:owner/repo.git` with `Host work / HostName
+/// git.example.com / Port 2222` would be looked up as the literal
+/// name `work` on port 22 and fail with a DNS error (design D1.4).
+/// Where the config renames the host or moves the port, joy therefore
+/// hands libgit2 an anonymous remote on the real address. The
+/// configured remote and `.git/config` are never touched, and a remote
+/// the config does not rename is returned exactly as it is, so the
+/// named remote (with its refspecs) stays the normal case.
+fn contact_remote(
+    repo: &git2::Repository,
+    direction: super::contact::ContactDirection,
+) -> anyhow::Result<git2::Remote<'_>> {
+    let remote = origin_or_first(repo)?;
+    guard_remote(&remote)?;
+    let Some(configured) = remote.url().ok().map(str::to_string) else {
+        return Ok(remote);
+    };
+    // git honours `remote.<name>.pushurl` for a push, and libgit2 only
+    // half does: `git_remote__urlfordirection` picks the TRANSPORT from
+    // the push url and the local transport then pushes to
+    // `remote->url` (transports/local.c:396-397). A remote with an
+    // https url and a path push url - the shape a person uses to keep a
+    // push on the machine while the fetch url names the forge - fails
+    // there with "failed to resolve path <the https url>". Dialling the
+    // push url itself is what git does, and it makes the two agree.
+    let push_url = (direction == super::contact::ContactDirection::Push)
+        .then(|| remote.pushurl().ok().flatten().map(str::to_string))
+        .flatten()
+        .filter(|pushurl| *pushurl != configured);
+    let url = push_url.clone().unwrap_or(configured);
+    // joy's own `HostName` rewrite, unless an `insteadOf` rule owns the
+    // address (libgit2 applies those itself).
+    let dialled = (!rewritten_by_insteadof(repo, &url))
+        .then(|| super::ssh_config::effective_url(&url))
+        .flatten();
+    match (push_url, dialled) {
+        // Nothing to change: the CONFIGURED remote, so its refspecs and
+        // its tracking refs still stand.
+        (None, None) => Ok(remote),
+        (push, dialled) => {
+            let url = dialled.or(push).unwrap_or(url);
+            drop(remote);
+            repo.remote_anonymous(&url).map_err(err)
+        }
+    }
+}
+
+/// Whether an `insteadOf` rule rewrites this URL, in which case joy
+/// leaves the address alone.
+///
+/// libgit2 applies those rules itself, to the URL as CONFIGURED
+/// (remote.c:254-255, :509-510), and git applies them before ssh ever
+/// reads its config. joy's own `HostName` rewrite runs before libgit2
+/// builds the remote, so it would hide such a rule and dial the alias's
+/// `HostName` where the person meant the rule's target. Which rule wins
+/// (the longest prefix) is J4b's prediction (design D1.5); the question
+/// here is only whether there is one at all.
+fn rewritten_by_insteadof(repo: &git2::Repository, url: &str) -> bool {
+    let Ok(config) = repo.config() else {
+        return false;
+    };
+    let mut matched = false;
+    for glob in ["url.*.insteadof", "url.*.pushinsteadof"] {
+        let Ok(entries) = config.entries(Some(glob)) else {
+            continue;
+        };
+        let _ = entries.for_each(|entry| {
+            if let Ok(prefix) = entry.value() {
+                if !prefix.is_empty() && url.starts_with(prefix) {
+                    matched = true;
+                }
+            }
+        });
+    }
+    matched
 }
 
 /// `origin`, or the first configured remote — a checkout the product
 /// made always has `origin`, but a repo a person wired by hand may not
 /// (the desktop opens those too).
+/// The item reference rule of D3.3, applied to a commit the ENGINE
+/// writes for a host that has nobody to ask: the platform's job and
+/// item writes, the seeding paths, the agent fallback commit.
+///
+/// libgit2 runs no hooks, so `.joy/hooks/commit-msg` never sees these
+/// messages and the rule it enforces for a person's `git commit` would
+/// be enforced for nobody. It warns and proceeds here, because a
+/// refusal would strand a write that already happened (D3.3); the
+/// commands a person runs refuse instead.
+fn warn_about_a_missing_item(repo_dir: &Path, message: &str) {
+    let Some(acronym) = crate::store::load_project(repo_dir)
+        .ok()
+        .and_then(|project| project.acronym)
+    else {
+        return;
+    };
+    crate::commit_msg::warn_unless_referenced(message, &acronym);
+}
+
+/// The external clean/smudge filter `.gitattributes` puts on `path`,
+/// if any (D3.4's clean filter rule).
+///
+/// libgit2 runs NO filter program: `filter=lfs` on a path means a git
+/// commit stores a pointer and a libgit2 commit stores the file's whole
+/// content, which breaks the repository quietly and is only noticed by
+/// the next person who clones it. joy therefore refuses such a path
+/// instead of writing it wrong.
+fn external_filter(repo: &git2::Repository, path: &Path) -> Option<String> {
+    repo.get_attr(path, "filter", git2::AttrCheckFlags::default())
+        .ok()
+        .flatten()
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+/// The refusal for the paths [`external_filter`] named, in the words
+/// the person needs to act: which paths, which filter, and what to do
+/// with them instead.
+fn refuse_filtered_paths(filtered: Vec<String>) -> anyhow::Result<()> {
+    if filtered.is_empty() {
+        return Ok(());
+    }
+    anyhow::bail!(
+        "these paths are governed by an external content filter, and joy's git \
+         engine runs none: {}\n  = note: committing them here would store the \
+         file instead of the filter's pointer\n  \
+         = help: commit them with git, or take them out of this working tree",
+        filtered.join(", ")
+    )
+}
+
+/// The paths a commit of `index` would write that an external content
+/// filter governs, refused by name (D3.4).
+///
+/// The question is asked of the paths the commit really carries, which
+/// is the index against the parent's tree: a deletion writes no content
+/// and is not one of them, and a filtered path nobody staged is none of
+/// this verb's business.
+fn refuse_filtered_staged_paths(
+    repo: &git2::Repository,
+    index: &git2::Index,
+    parent: Option<&git2::Commit>,
+) -> anyhow::Result<()> {
+    let tree = parent
+        .map(|commit| commit.tree())
+        .transpose()
+        .map_err(err)?;
+    let diff = repo
+        .diff_tree_to_index(tree.as_ref(), Some(index), None)
+        .map_err(err)?;
+    let mut filtered = Vec::new();
+    for delta in diff.deltas() {
+        if delta.status() == git2::Delta::Deleted {
+            continue;
+        }
+        let Some(path) = delta.new_file().path() else {
+            continue;
+        };
+        if let Some(filter) = external_filter(repo, path) {
+            filtered.push(format!("{} (filter={filter})", path.display()));
+        }
+    }
+    refuse_filtered_paths(filtered)
+}
+
+/// The paths this checkout has staged or changed OUTSIDE `pathspecs`:
+/// what a person had going that a scoped joy commit did not take
+/// (D3.4).
+///
+/// Tracked paths only, index against HEAD and worktree against index.
+/// Untracked files are no answer to "was something of yours skipped":
+/// `git add -A` would have taken them, but a build directory and an
+/// editor's scratch file make that sentence true in nearly every real
+/// repository, which is how a true sentence becomes noise. A checkout
+/// this cannot read answers nothing rather than guessing, for the same
+/// reason: [`worktree_dirty`] answers `true` on an unreadable checkout
+/// because it must never delete on doubt, and a SENTENCE must never be
+/// said on doubt.
+pub fn changes_outside(repo_dir: &Path, pathspecs: &[String]) -> Vec<String> {
+    let Ok(repo) = open(repo_dir) else {
+        return Vec::new();
+    };
+    let mut opts = git2::StatusOptions::new();
+    opts.include_untracked(false).include_ignored(false);
+    let Ok(statuses) = repo.statuses(Some(&mut opts)) else {
+        return Vec::new();
+    };
+    let mut paths: Vec<String> = statuses
+        .iter()
+        .filter_map(|entry| entry.path().ok().map(str::to_string))
+        .filter(|path| {
+            !pathspecs
+                .iter()
+                .any(|spec| path == spec || path.starts_with(&format!("{spec}/")))
+        })
+        .collect();
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
 fn origin_or_first<'r>(repo: &'r git2::Repository) -> anyhow::Result<git2::Remote<'r>> {
     match repo.find_remote("origin") {
         Ok(remote) => Ok(remote),
@@ -190,15 +1129,28 @@ fn origin_or_first<'r>(repo: &'r git2::Repository) -> anyhow::Result<git2::Remot
     }
 }
 
+/// The process state libgit2 needs before joy reads anything through it:
+/// git's system config rule below, and the one TLS trust decision of
+/// D1.12. Every entry into libgit2 in this file calls this FIRST, and
+/// that includes every call that only reads git config, because the
+/// first of the two decides what git config even is.
+fn git_environment() {
+    git_config_environment();
+    // The one process wide TLS trust decision of D1.12, which must run
+    // before the first contact and does so here, because every entry
+    // into libgit2 passes through this function. It reads git config,
+    // so it runs after the search path above is settled.
+    crate::apply_ca_locations();
+}
+
 /// git's own rule for its system config, which libgit2 does not know: with
 /// `GIT_CONFIG_NOSYSTEM` true, the system-wide gitconfig is not read
 /// (git-config(1)). libgit2 always adds it, so a script that isolates
 /// HOME and sets the variable still found an identity from the machine's
 /// /etc/gitconfig in joy, where git itself found none (JOY-028D-46).
-/// Every entry into libgit2 below calls this first. The search path is
-/// process state, so it is changed only when the variable changes, under
-/// one lock.
-fn git_environment() {
+/// The search path is process state, so it is changed only when the
+/// variable changes, under one lock.
+fn git_config_environment() {
     static APPLIED: std::sync::Mutex<Option<bool>> = std::sync::Mutex::new(None);
     let nosystem = std::env::var("GIT_CONFIG_NOSYSTEM").is_ok_and(|value| git_bool(&value));
     let mut applied = APPLIED.lock().unwrap_or_else(|e| e.into_inner());
@@ -226,7 +1178,7 @@ fn git_bool(value: &str) -> bool {
     matches!(value.as_str(), "true" | "yes" | "on") || value.parse::<i64>().is_ok_and(|n| n != 0)
 }
 
-/// Open the repository that holds `dir` — `discover`, not `open`: the
+/// Open the repository that holds `dir` (`discover`, not `open`): the
 /// desktop opens project roots that may sit inside a larger repo, and
 /// for an exact root (every platform checkout) discover is the same
 /// thing.
@@ -235,35 +1187,695 @@ fn open(dir: &Path) -> Result<git2::Repository, git2::Error> {
     git2::Repository::discover(dir)
 }
 
-/// The credential-helper config for a repo: repo-level settings
-/// (insteadOf, per-repo helpers) included; the global config as the
-/// fallback when there is no repo yet (clone).
-fn cred_config(repo: Option<&git2::Repository>) -> Option<git2::Config> {
+/// Everything the credential resolver needs about one contact beside
+/// the URL libgit2 hands it.
+pub(crate) struct CredSource {
+    /// The credential-helper config for a repo: repo-level settings
+    /// (insteadOf, per-repo helpers) included; the global config as
+    /// the fallback when there is no repo yet (clone).
+    config: Option<git2::Config>,
+    /// The remote URL as the person configured it.
+    ///
+    /// libgit2 hands the callback the URL it is DIALLING, which after
+    /// joy's own `HostName` rewrite ([`contact_remote`]) names the real
+    /// host. The `Host work` block that produced that rewrite, and with
+    /// it the `IdentityFile`, the `IdentityAgent` and the `User` the
+    /// person wrote under it, would then be invisible to the chain
+    /// (design D1.4).
+    configured: Option<String>,
+}
+
+/// The source for a contact on a repository: its config, and the URL
+/// of the remote the contact runs over ([`origin_or_first`]).
+fn cred_source(repo: Option<&git2::Repository>) -> CredSource {
     git_environment();
     match repo {
-        Some(r) => r.config().and_then(|mut c| c.snapshot()).ok(),
-        None => git2::Config::open_default().ok(),
+        Some(r) => CredSource {
+            config: r.config().and_then(|mut c| c.snapshot()).ok(),
+            configured: origin_or_first(r)
+                .ok()
+                .and_then(|remote| remote.url().ok().map(str::to_string)),
+        },
+        None => CredSource {
+            config: git2::Config::open_default().ok(),
+            configured: None,
+        },
     }
 }
 
+impl CredSource {
+    /// Nothing to read: no config and no configured remote. What the
+    /// shape tests hand the resolver, so that the decision under test
+    /// is the one the URL and the claim make.
+    #[cfg(test)]
+    fn none() -> CredSource {
+        CredSource {
+            config: None,
+            configured: None,
+        }
+    }
+}
+
+// ---- the resolver of D1.1, assembled (package J4b) --------------------
+
+use super::resolver::{Leg, LegCredential, Plan, Way};
+
+/// The candidate order for one operation on this checkout (D1.2).
+///
+/// A caller that already holds a credential (the platform's token)
+/// keeps the engine exactly as it was: one contact over the configured
+/// remote. Only `Auth::Local` resolves, which is what D1.1 means by
+/// "its body becomes a resolver".
+fn contact_plan(
+    repo: &git2::Repository,
+    auth: &Auth,
+    direction: super::contact::ContactDirection,
+) -> anyhow::Result<Plan> {
+    let url = {
+        let remote = origin_or_first(repo)?;
+        guard_remote(&remote)?;
+        remote_url_of(&remote)
+    };
+    // A caller with its own credential, and a remote with no forge
+    // behind it (a path, a `file://` URL, the unauthenticated git
+    // protocol), both take the engine as it was: one contact over the
+    // remote that was configured. Asking a connector about a directory
+    // would spawn three processes per contact and learn nothing.
+    let transport = super::contact::transport_of(&url);
+    if !auth.is_local() || transport == super::contact::Transport::Local {
+        return Ok(Plan::single(&url, LegCredential::Machine));
+    }
+    let host = super::contact::host_of(&url);
+    let over_ssh = transport == super::contact::Transport::Ssh;
+    // Trigger (a) of D1.2, established BEFORE the contact: has this
+    // machine any ssh credential for the host at all?
+    let probe = if over_ssh {
+        super::resolver::probe_ssh(&host, Some(&url), auth.host_kind())
+    } else {
+        super::resolver::SshProbe::empty()
+    };
+    let memory = fresh_memory(&host, &probe, over_ssh);
+    // A host ssh already worked for never goes to the twin, whatever
+    // tokens exist (D1.2 rule 3), so no connector is asked for one. A
+    // person who reaches their forge over ssh is never sent through a
+    // sign in door for a credential the contact would not use.
+    let ssh_works = memory
+        .as_ref()
+        .is_some_and(|memory| memory.state == super::resolver::TransportState::SshWorked);
+    // The connector is asked per HOST and not per contact (D1.7); the
+    // answer of the last five minutes is what a 1 Hz poll reads.
+    let root = repo.workdir().map(Path::to_path_buf);
+    let facts = if ssh_works {
+        super::resolver::HostFacts::none()
+    } else {
+        super::resolver::host_facts(&url, root.as_deref(), auth.host_kind(), direction)
+    };
+    // The insteadOf prediction of D1.5: `git_remote_create_anonymous`
+    // applies the person's rules to the twin, and git2 0.21 cannot be
+    // told to skip them, so joy asks the config what WOULD happen.
+    let config = repo.config().and_then(|mut c| c.snapshot()).ok();
+    let rule = |candidate: &str| -> Option<String> {
+        config
+            .as_ref()
+            .and_then(|config| super::resolver::insteadof_rewrite(config, candidate, direction))
+    };
+    Ok(super::resolver::plan_with(
+        &url,
+        &facts,
+        memory.as_ref(),
+        &probe,
+        auth.host_kind(),
+        &rule,
+    ))
+}
+
+/// This host's memory row, unless one of the facts it was written under
+/// has changed (D1.2 rule 3a: an agent that appears, an identity that
+/// appears, a key file whose mtime moved).
+///
+/// `over_ssh` says whether THIS operation's remote is an ssh one, and it
+/// is what makes the comparison honest. Only an ssh operation runs the
+/// probe; every other transport is handed `SshProbe::empty()`, whose
+/// signals hold no key file at all, while a row written from an ssh
+/// contact carries the six identity files `ssh_auth::identity_files`
+/// names. The two can never compare equal, so an https remote on the
+/// same host would drop the row of the ssh remote beside it and the
+/// machine would forget which credential reached that forge.
+fn fresh_memory(
+    host: &str,
+    probe: &super::resolver::SshProbe,
+    over_ssh: bool,
+) -> Option<super::resolver::HostMemory> {
+    let memory = super::resolver::recall(host)?;
+    if over_ssh
+        && memory.state == super::resolver::TransportState::NoSshCredential
+        && memory.signals != probe.signals
+    {
+        super::resolver::forget(host);
+        return None;
+    }
+    Some(memory)
+}
+
+/// The `Auth` one leg contacts with: the caller's own for the
+/// configured remote, and the connector's token for the twin.
+fn leg_auth(auth: &Auth, leg: &Leg) -> Auth {
+    match &leg.credential {
+        LegCredential::Machine => auth.clone(),
+        LegCredential::Token(token) => match token.kind {
+            Some(kind) => Auth::token_for(token.token.clone(), kind),
+            None => Auth::token(token.token.clone()),
+        },
+    }
+}
+
+/// The remote one leg dials. The configured leg goes through
+/// [`contact_remote`], so the ssh config's `HostName` still applies; the
+/// twin is an anonymous remote on an address that is never written into
+/// `.git/config`.
+fn leg_remote<'r>(
+    repo: &'r git2::Repository,
+    leg: &Leg,
+    direction: super::contact::ContactDirection,
+) -> anyhow::Result<git2::Remote<'r>> {
+    match leg.way {
+        Way::Configured => contact_remote(repo, direction),
+        Way::Twin => repo.remote_anonymous(&leg.url).map_err(err),
+    }
+}
+
+/// Run one operation over the legs of its plan.
+///
+/// At most two contacts (D1.2), each with its own turn of the host's
+/// budget (D1.9: the throttle is charged per contact, with the verb it
+/// already receives), and the second only when the first's failure is
+/// one the design lets it follow.
+fn over_plan<T, W>(
+    repo_dir: &Path,
+    auth: &Auth,
+    verb: &'static str,
+    direction: super::contact::ContactDirection,
+    poll: bool,
+    work: W,
+) -> anyhow::Result<T>
+where
+    T: Send + 'static,
+    W: FnMut(&git2::Repository, &mut git2::Remote<'_>, &Auth, &Leg) -> anyhow::Result<T>
+        + Send
+        + 'static,
+{
+    let host = super::contact::host_of(&remote_url(repo_dir).unwrap_or_default());
+    let repo_dir = repo_dir.to_path_buf();
+    let auth = auth.clone();
+    // joy's OWN bound on a contact, for the build whose transport has
+    // none (`super::bound`). On Windows the https transport is WinHTTP,
+    // which hardcodes an infinite receive timeout and reads neither of
+    // the two libgit2 options `bound_forge_waits` sets
+    // (winhttp.c:381-382, :423, :785-786, :856), so a forge that
+    // accepts the connection and then says nothing holds the contact
+    // for ever. Everywhere else the socket bounds fire inside libgit2
+    // and this stands behind them; the work runs on a thread of its own
+    // in both cases, so one code path is proven by every test run.
+    let bounded = super::bound::within_silence(&host, verb, CONTACT_BOUND, move || {
+        over_plan_inner(&repo_dir, &auth, verb, direction, poll, work)
+    });
+    bounded.unwrap_or_else(|| Err(nobody_answered(&host, verb)))
+}
+
+/// The failure of a contact joy gave up on: the state is `offline`,
+/// because nobody answered, and the detail says who decided that. The
+/// words are joy's own, because libgit2 said nothing at all.
+fn nobody_answered(host: &str, verb: &'static str) -> anyhow::Error {
+    anyhow::Error::new(super::contact::ContactError {
+        failure: super::contact::Failure::Offline,
+        message: super::contact::Failure::Offline.sentence(host),
+        detail: Some(format!(
+            "joy: the {verb} was given up on after {} seconds without an answer",
+            CONTACT_BOUND.as_secs()
+        )),
+        action: None,
+        next_try: None,
+    })
+}
+
+fn over_plan_inner<T>(
+    repo_dir: &Path,
+    auth: &Auth,
+    verb: &'static str,
+    direction: super::contact::ContactDirection,
+    poll: bool,
+    mut work: impl FnMut(&git2::Repository, &mut git2::Remote<'_>, &Auth, &Leg) -> anyhow::Result<T>,
+) -> anyhow::Result<T> {
+    let repo = open(repo_dir).map_err(err)?;
+    let plan = contact_plan(&repo, auth, direction)?;
+    if !plan.notes.is_empty() {
+        tracing::debug!(forge = %plan.host, why = %plan.why(), "forge transport decided");
+    }
+    // D1.5: "If neither transport has a credential, the probe is not run
+    // at all and the state is `needs_sign_in`, never `no_push_rights`."
+    // This is the Windows case of D1.2 rule 5, where WinCNG reads no
+    // openssh-key-v1 file and the machine has no token either: a probe
+    // would come back "the forge refuses you" for a person who is
+    // simply not signed in, and the banner would offer the wrong action.
+    // Only a caller that resolves has a probe to read: every other one
+    // gets `Plan::single`, whose probe is empty because none was ever
+    // RUN, and an ssh remote plus a token holding caller would be
+    // refused here without a socket being opened.
+    if verb == "probe" && auth.is_local() && nothing_to_present(&plan) {
+        return Err(anyhow::Error::new(super::contact::ContactError {
+            failure: super::contact::Failure::NeedsSignIn,
+            message: format!(
+                "Not signed in to {}, so joy cannot say whether you may push.",
+                super::contact::forge_name(&plan.host)
+            ),
+            detail: (!plan.notes.is_empty()).then(|| plan.why()),
+            action: None,
+            next_try: None,
+        }));
+    }
+    let last_leg = plan.legs.len().saturating_sub(1);
+    let mut last: Option<anyhow::Error> = None;
+    for (at, leg) in plan.legs.iter().enumerate() {
+        let auth_for_leg = leg_auth(auth, leg);
+        // Whatever an earlier contact on this thread left in the two
+        // cells is not this leg's. The credential cell is taken below,
+        // inside the contact; the ssh refusal cell is taken HERE,
+        // because `clone` and every verb that contacts outside a plan
+        // set it too and nothing there clears it, and because a leg the
+        // throttle holds back never enters the closure at all. A
+        // refusal that is not this leg's would send the next operation
+        // to the twin and write a 24 hour `ssh-failed` row for a host
+        // whose ssh credential was never refused (D1.2 rule 3b).
+        super::resolver::took_ssh_auth_failure();
+        let used: std::cell::Cell<Option<&'static str>> = std::cell::Cell::new(None);
+        let outcome = {
+            let repo = &repo;
+            let work = &mut work;
+            let auth_for_leg = &auth_for_leg;
+            let used = &used;
+            let contact = move || -> anyhow::Result<T> {
+                take_used_credential();
+                let mut remote = leg_remote(repo, leg, direction)?;
+                let answer = work(repo, &mut remote, auth_for_leg, leg);
+                used.set(take_used_credential());
+                answer
+            };
+            if poll {
+                super::contact::run_poll(&leg.url, verb, auth_for_leg.credentialed(), contact)
+            } else {
+                super::contact::run(&leg.url, verb, auth_for_leg.credentialed(), contact)
+            }
+        };
+        // Read before the next leg runs: one contact's refusal must
+        // never be read as the next one's.
+        let ssh_auth_failed = super::resolver::took_ssh_auth_failure();
+        match outcome {
+            Ok(value) => {
+                remember_success(&plan, leg, used.get());
+                return Ok(value);
+            }
+            Err(e) => {
+                let follow = at < last_leg
+                    && may_follow(leg, ssh_auth_failed, super::contact::failure_of(&e));
+                remember_failure(&plan, leg, ssh_auth_failed);
+                last = Some(e);
+                if !follow {
+                    break;
+                }
+            }
+        }
+    }
+    Err(last.unwrap_or_else(|| anyhow::anyhow!("no remote configured")))
+}
+
+/// Whether this plan has any credential to present at all: every leg is
+/// the configured ssh remote, and the machine holds no ssh credential
+/// for the host (D1.5, the probe rule).
+fn nothing_to_present(plan: &Plan) -> bool {
+    !plan.probe.usable()
+        && plan.legs.iter().all(|leg| {
+            leg.way == Way::Configured
+                && leg.transport == super::contact::Transport::Ssh
+                && !leg.credential.is_token()
+        })
+}
+
+/// Whether the next leg may be tried after this one failed.
+///
+/// Each way has exactly one refusal it may be followed for, and the
+/// reason is the same on both sides: the leg presented a credential and
+/// that credential was refused, so the other transport's credential is
+/// worth one contact. Everything else is a verdict the forge or the
+/// network already gave about THIS operation.
+///
+/// - An ssh contact is followed by the twin for the authentication class
+///   failure of D1.2 rule 3b and for nothing else. A DNS fault, a
+///   timeout, a refused host key or a proxy that wants a login of its
+///   own say nothing about the person's ssh credential.
+/// - A twin contact is followed by the configured remote when the token
+///   it carried was refused, which is `needs_sign_in` (`code == Auth` on
+///   https, or status 401, D1.8b). Following any other verdict would
+///   spend a second contact and then report the wrong cause, because
+///   this loop returns the LAST leg's error: a 403 that means "your
+///   organisation must approve Joy" would reach the person as an ssh
+///   sign in prompt, a ref the forge rejected by name would be pushed a
+///   second time, and a fault inside this checkout would be contacted
+///   for twice.
+fn may_follow(leg: &Leg, ssh_auth_failed: bool, failure: super::contact::Failure) -> bool {
+    match leg.way {
+        Way::Configured => leg.transport == super::contact::Transport::Ssh && ssh_auth_failed,
+        Way::Twin => failure == super::contact::Failure::NeedsSignIn,
+    }
+}
+
+/// Write what authenticated into joy's own state file, and never into
+/// the person's `.git/config` (D1.2).
+fn remember_success(plan: &Plan, leg: &Leg, used: Option<&'static str>) {
+    let Some(credential) = used else {
+        // Nothing was handed over: a public repository answered the
+        // first request. That proves nothing about a transport.
+        return;
+    };
+    let state = match leg.way {
+        Way::Configured if leg.transport == super::contact::Transport::Ssh => {
+            super::resolver::TransportState::SshWorked
+        }
+        Way::Configured => return,
+        // The twin carried it, so the ssh side is what it was: either
+        // this machine has no ssh credential for the host, or the host
+        // refused the one it has.
+        Way::Twin if plan.probe.usable() => super::resolver::TransportState::SshFailed,
+        Way::Twin => super::resolver::TransportState::NoSshCredential,
+    };
+    let mut memory = super::resolver::HostMemory::new(state)
+        .with_credential(leg.transport, credential)
+        .with_signals(plan.probe.signals.clone());
+    // D1.6: "The shape that worked is remembered per host next to the
+    // transport memory." It is a user name and never a secret.
+    if let LegCredential::Token(token) = &leg.credential {
+        memory.shape = Some(token_user(&plan.host, token.kind).to_string());
+    }
+    super::resolver::remember(&plan.host, memory);
+}
+
+/// Trigger (b) of D1.2: the ssh contact failed with an authentication
+/// class failure, so the host is remembered as `ssh-failed` for the TTL
+/// and the next operation starts at the twin.
+fn remember_failure(plan: &Plan, leg: &Leg, ssh_auth_failed: bool) {
+    if leg.way != Way::Configured || !ssh_auth_failed {
+        return;
+    }
+    super::resolver::remember(
+        &plan.host,
+        super::resolver::HostMemory::new(super::resolver::TransportState::SshFailed)
+            .with_signals(plan.probe.signals.clone()),
+    );
+}
+
+/// The per-ref statuses one push came back with (D1.5).
+///
+/// Without `push_update_reference` a push whose every ref was rejected
+/// returns `Ok(())`: `git_push_finish` fails only when the pack could
+/// not be unpacked (push.c:537-540), and the per-ref status is
+/// delivered only through that callback (remote.c:3034-3038).
+/// One ref's name and what the forge said about it: `None` is "taken".
+type RefStatus = (String, Option<String>);
+
+#[derive(Clone, Default)]
+struct PushStatus(std::rc::Rc<std::cell::RefCell<Vec<RefStatus>>>);
+
+impl PushStatus {
+    /// The refs the forge accepted. Empty when the server advertised no
+    /// `report-status` at all, which is "unconfirmed" and not "rejected"
+    /// (smart_protocol.c:1246-1250).
+    fn accepted(&self) -> Vec<String> {
+        self.0
+            .borrow()
+            .iter()
+            .filter(|(_, reason)| reason.is_none())
+            .map(|(name, _)| name.clone())
+            .collect()
+    }
+
+    /// The operation's verdict: every rejection the forge named, in the
+    /// forge's own words, on the detail line and nowhere else.
+    fn verdict(&self, host: &str) -> anyhow::Result<()> {
+        let rejected: Vec<String> = self
+            .0
+            .borrow()
+            .iter()
+            .filter_map(|(name, reason)| reason.as_ref().map(|reason| format!("{name}: {reason}")))
+            .collect();
+        if rejected.is_empty() {
+            return Ok(());
+        }
+        let refs: Vec<String> = self
+            .0
+            .borrow()
+            .iter()
+            .filter(|(_, reason)| reason.is_some())
+            .map(|(name, _)| name.clone())
+            .collect();
+        Err(anyhow::Error::new(super::contact::ContactError {
+            // D1.8b: the forge answered, so this is not "offline" and
+            // not a refusal of the login; a rejected ref is the row
+            // `error` is written for.
+            failure: super::contact::Failure::Error,
+            message: format!("{host} refused to update {}", refs.join(", ")),
+            detail: Some(rejected.join("; ")),
+            action: None,
+            next_try: None,
+        }))
+    }
+}
+
+/// The callbacks of one push: the two slots of [`Auth::callbacks`] plus
+/// the per-ref status reader of D1.5.
+fn push_callbacks(
+    auth: &Auth,
+    kind: HostKind,
+    source: CredSource,
+) -> (git2::RemoteCallbacks<'static>, PushStatus) {
+    let status = PushStatus::default();
+    let mut callbacks = auth.callbacks_as(kind, source);
+    let seen = status.0.clone();
+    callbacks.push_update_reference(move |refname, reason| {
+        seen.borrow_mut()
+            .push((refname.to_string(), reason.map(str::to_string)));
+        Ok(())
+    });
+    (callbacks, status)
+}
+
+/// Point the branch's tracking ref at what was just pushed, after a
+/// push that did not go over a NAMED remote (D1.5).
+///
+/// `git_remote_upload` rebuilds the active refspecs from the remote's
+/// CONFIGURED ones, not from the explicit push refspecs
+/// (remote.c:2995-2997), so a push over `origin` writes
+/// `refs/remotes/origin/<branch>` by itself and this does nothing. An
+/// ANONYMOUS remote carries zero refspecs (remote.c:273-302), so
+/// `git_remote_update_tips` writes nothing and the ahead and behind
+/// counter would freeze at "1 ahead" for ever. The twin is one such
+/// remote; the address joy dials when the person's ssh config renames
+/// the host (`contact_remote`) is the other, and the libgit2 fact
+/// behind both is the same one.
+///
+/// Force is not a special case: libgit2's own `git_push_update_tips`
+/// creates the ref with force 1 and the message "update by push"
+/// (push.c:200-212), and joy does the same.
+fn write_tracking_ref(
+    repo: &git2::Repository,
+    remote: &git2::Remote<'_>,
+    status: &PushStatus,
+    branch: &str,
+    tip: git2::Oid,
+) {
+    if remote.name().ok().flatten().is_some() {
+        return;
+    }
+    let accepted = status.accepted();
+    if !accepted
+        .iter()
+        .any(|name| name == &format!("refs/heads/{branch}"))
+    {
+        // Either the ref was rejected (the caller is failing already) or
+        // the server advertised no `report-status`: unconfirmed, so no
+        // tracking ref, and the next ls-remote establishes the truth.
+        return;
+    }
+    let Ok(name) = tracking_ref_name(repo, branch) else {
+        return;
+    };
+    if let Err(e) = repo.reference(&name, tip, true, "update by push") {
+        tracing::debug!(error = %e, tracking = %name, "the tracking ref could not be written");
+    }
+}
+
+/// The chat ref has no libgit2 tracking ref on either remote and needs
+/// none; joy keeps its own (`refs/joy/chats-remote`), written by the
+/// fetch side. After a push of the chat ref the engine sets it to the
+/// pushed oid as well, so the union merge reconciles against what the
+/// forge holds (D1.5).
+pub const CHATS_REF: &str = "refs/joy/chats";
+pub const CHATS_TRACKING_REF: &str = "refs/joy/chats-remote";
+
+fn write_chats_tracking_ref(
+    repo: &git2::Repository,
+    status: &PushStatus,
+    refname: &str,
+    tip: git2::Oid,
+) {
+    if refname != CHATS_REF || !status.accepted().iter().any(|name| name == CHATS_REF) {
+        return;
+    }
+    if let Err(e) = repo.reference(CHATS_TRACKING_REF, tip, true, "update by push") {
+        tracing::debug!(error = %e, "the chat tracking ref could not be written");
+    }
+}
+
+/// The source for a contact that has no repository yet: a clone, where
+/// the URL the caller named IS the configured remote.
+fn cred_source_for_url(url: &str) -> CredSource {
+    let mut source = cred_source(None);
+    source.configured = Some(url.to_string());
+    source
+}
+
+/// A fault of libgit2 on this machine's own data: the index, a ref, a
+/// tree, a checkout. It reads exactly as it always did ("git: reference
+/// not found"), but it is TYPED, so the contact boundary can tell
+/// libgit2's words from joy's own plain sentences and keep them off the
+/// surface when such a fault happens inside a contact (D1.8b, wording
+/// rules).
 fn err(e: git2::Error) -> anyhow::Error {
-    anyhow::anyhow!("git: {}", e.message())
+    super::contact::engine_fault("git", &e)
+}
+
+/// How much history a clone downloads (D4.3, design R6). `0` is
+/// libgit2's `GIT_FETCH_DEPTH_FULL`, the whole history, which is what
+/// the CLI and the platform ask for; the desktop asks for `1`, the lean
+/// shape: one snapshot of the default branch, with the full working tree
+/// on disk, because neither sparse checkout nor partial clone exists in
+/// libgit2 1.9.6.
+///
+/// Caveat that belongs to the number, not to its callers: the LOCAL
+/// transport refuses any depth at all ("shallow fetch is not supported
+/// by the local transport", transports/local.c:310), so a clone from a
+/// path on this machine must stay at [`CLONE_DEPTH_FULL`].
+pub const CLONE_DEPTH_FULL: i32 = 0;
+
+/// How far a running clone has got, as libgit2 counts it (D4.3: "a
+/// progress callback (bytes and objects)").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CloneProgress {
+    /// Bytes of the pack that have arrived.
+    pub received_bytes: u64,
+    /// Objects the forge has sent so far, and the number it announced.
+    pub received_objects: u32,
+    pub total_objects: u32,
+    /// Objects the indexer has written; the tail of a download that is
+    /// otherwise complete.
+    pub indexed_objects: u32,
 }
 
 /// Clone a forge URL into `dest` using the account token.
-pub fn clone(url: &str, auth: &Auth, dest: &Path) -> anyhow::Result<()> {
-    super::contact::run(url, "clone", || clone_raw(url, auth, dest))
+///
+/// `depth` is [`CLONE_DEPTH_FULL`] for the whole history and `1` for the
+/// lean shape of D4.3. `progress` is called while the pack arrives and
+/// decides whether it goes on: returning `false` STOPS the transfer,
+/// which is how a person's cancel reaches libgit2 instead of waiting for
+/// the last byte of a download nobody wants any more. A stopped clone is
+/// an error here, and the caller that asked for the stop knows it did.
+pub fn clone(
+    url: &str,
+    auth: &Auth,
+    dest: &Path,
+    depth: i32,
+    progress: &mut dyn FnMut(CloneProgress) -> bool,
+) -> anyhow::Result<()> {
+    // The clone runs on its own thread like every other contact (see
+    // [`over_plan`]), and the person's progress callback stays where the
+    // person is: every count crosses back to this thread and the
+    // transfer waits for the answer, which is the order libgit2's own
+    // callback has. That keeps this function's signature - a plain
+    // `&mut dyn FnMut`, which a desktop closes over its window with -
+    // and still bounds the contact.
+    let host = super::contact::host_of(url);
+    let (url_owned, auth_owned, dest_owned) = (url.to_string(), auth.clone(), dest.to_path_buf());
+    let bounded = super::bound::reporting(&host, "clone", CONTACT_BOUND, progress, move |say| {
+        super::contact::run(&url_owned, "clone", auth_owned.credentialed(), || {
+            clone_raw(&url_owned, &auth_owned, &dest_owned, depth, &mut |count| {
+                super::bound::heartbeat();
+                // A caller that has gone away is a stop.
+                say.say(count).unwrap_or(false)
+            })
+        })
+    });
+    bounded.unwrap_or_else(|| Err(nobody_answered(&host, "clone")))
 }
 
-fn clone_raw(url: &str, auth: &Auth, dest: &Path) -> anyhow::Result<()> {
+/// A clone of the whole history with nobody watching it, for the tests of
+/// this crate that clone from a path: the local transport refuses any
+/// depth at all, and a test repository on disk has no progress worth
+/// counting. The depth and the callback are exercised where they can be,
+/// against a server in process (tests/clone_depth_and_progress.rs).
+#[cfg(test)]
+fn clone_full(url: &str, auth: &Auth, dest: &Path) -> anyhow::Result<()> {
+    clone(url, auth, dest, CLONE_DEPTH_FULL, &mut |_| true)
+}
+
+fn clone_raw(
+    url: &str,
+    auth: &Auth,
+    dest: &Path,
+    depth: i32,
+    progress: &mut dyn FnMut(CloneProgress) -> bool,
+) -> anyhow::Result<()> {
+    guard_transport(Some(url))?;
     std::fs::create_dir_all(dest.parent().expect("checkout dir has a parent"))?;
-    let mut fetch = git2::FetchOptions::new();
-    fetch.remote_callbacks(auth.callbacks(cred_config(None)));
+    // Before anything that reads git config, the proxy decision
+    // included: a clone is the one verb that reaches libgit2 without
+    // going through `open`, and `options_for` opens the default config
+    // (JOY-028D-46, the invariant above `git_config_environment`).
     git_environment();
-    git2::build::RepoBuilder::new()
+    // The proxy of D1.11, before the first socket: a proxy joy cannot
+    // speak to (SOCKS) is refused here by name and nothing is dialled.
+    let proxy = proxy_for(url, None)?;
+    let mut fetch = git2::FetchOptions::new();
+    let mut callbacks = auth.callbacks(cred_source_for_url(url));
+    // The transfer callback of D4.3: the only place that knows how far a
+    // clone has got, and the only place a cancel can stop it.
+    callbacks.transfer_progress(move |stats| {
+        progress(CloneProgress {
+            received_bytes: stats.received_bytes() as u64,
+            received_objects: stats.received_objects() as u32,
+            total_objects: stats.total_objects() as u32,
+            indexed_objects: stats.indexed_objects() as u32,
+        })
+    });
+    fetch.remote_callbacks(callbacks);
+    fetch.proxy_options(proxy.options());
+    // `0` is libgit2's own "the whole history", so a caller that wants
+    // everything sets nothing (include/git2/remote.h:771-778).
+    if depth != CLONE_DEPTH_FULL {
+        fetch.depth(depth);
+    }
+    // The same address the other verbs dial (see `contact_remote`): a
+    // clone from an ssh alias reaches the `HostName` the person's ssh
+    // config names, which libgit2 reads nothing of (design D1.4).
+    let dialled = super::ssh_config::effective_url(url);
+    let cloned = git2::build::RepoBuilder::new()
         .fetch_options(fetch)
-        .clone(url, dest)
-        .map_err(err)?;
+        .clone(dialled.as_deref().unwrap_or(url), dest)
+        .map_err(|e| contact_failed(url, super::contact::ContactDirection::Fetch, e))?;
+    if dialled.is_some() {
+        // The new checkout keeps the remote the caller named, not the
+        // address joy dialled it at: the alias is the person's, the
+        // rewrite belongs to one contact.
+        cloned.remote_set_url("origin", url).map_err(err)?;
+    }
+    drop(cloned);
     // the clone machinery runs libgit2's update_tips once; nothing here
     // ever reads FETCH_HEAD, so the checkout starts without one
     std::fs::remove_file(dest.join(".git/FETCH_HEAD")).ok();
@@ -318,40 +1930,53 @@ fn tracking_ref_name(repo: &git2::Repository, branch: &str) -> anyhow::Result<St
 /// libgit2 remote.c truncate_fetch_head) — and that bare truncation is
 /// the whole torn-FETCH_HEAD class (JP-00DB-61, JAPP-0198-EA).
 /// `Ok(None)` when the forge does not advertise `src`.
-fn download_ref(
+fn download_over(
     repo: &git2::Repository,
+    remote: &mut git2::Remote<'_>,
     auth: &Auth,
+    kind: HostKind,
     src: &str,
     dst: &str,
 ) -> anyhow::Result<Option<git2::Oid>> {
-    let mut remote = origin_or_first(repo)?;
-    let advertised = {
-        let connection = remote
-            .connect_auth(
-                git2::Direction::Fetch,
-                Some(auth.callbacks(cred_config(Some(repo)))),
-                None,
-            )
-            .map_err(|e| anyhow::anyhow!("fetch failed (offline?): {}", contact_error(&e)))?;
-        // an empty advertisement (freshly created forge) is a plain
-        // empty list since git2 0.21 — and an honest "nothing there"
-        connection
-            .list()
-            .map_err(err)?
-            .iter()
-            .find(|r| r.name() == src)
-            .map(|r| r.oid())
-    };
+    let url = remote_url_of(remote);
+    let proxy = proxy_for(&url, Some(repo))?;
+    // ONE connection for the advertisement AND the download (D1.9): the
+    // RemoteConnection disconnects on drop, and joy used to drop it
+    // before `remote.download`, so git_remote_download reconnected and
+    // paid the 401 challenge a second time. Downloading through
+    // `connection.remote()` while the connection is alive removes one
+    // handshake and one challenge per fetch, which is two HTTP requests
+    // of the host's budget.
+    let mut connection = remote
+        .connect_auth(
+            git2::Direction::Fetch,
+            Some(auth.callbacks_as(kind, cred_source(Some(repo)))),
+            Some(proxy.options()),
+        )
+        .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Fetch, e))?;
+    // an empty advertisement (freshly created forge) is a plain
+    // empty list since git2 0.21, and an honest "nothing there"
+    let advertised = connection
+        .list()
+        // the advertisement is a forge contact like any other: its
+        // failure is read by the classifier, never copied raw onto a
+        // surface (D1.8b, wording rules)
+        .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Fetch, e))?
+        .iter()
+        .find(|r| r.name() == src)
+        .map(|r| r.oid());
     let Some(tip) = advertised else {
         return Ok(None);
     };
     let mut opts = git2::FetchOptions::new();
-    opts.remote_callbacks(auth.callbacks(cred_config(Some(repo))));
+    opts.remote_callbacks(auth.callbacks_as(kind, cred_source(Some(repo))));
+    opts.proxy_options(proxy.options());
     let refspec = format!("+{src}:{dst}");
-    remote
+    connection
+        .remote()
         .download(&[refspec.as_str()], Some(&mut opts))
-        .map_err(|e| anyhow::anyhow!("fetch failed (offline?): {}", contact_error(&e)))?;
-    let _ = remote.disconnect();
+        .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Fetch, e))?;
+    drop(connection);
     repo.reference(dst, tip, true, "joy-vcs: fetch")
         .map_err(err)?;
     Ok(Some(tip))
@@ -366,24 +1991,31 @@ fn download_ref(
 /// A branch that is gone from the forge (renamed or deleted) is said out
 /// loud instead of surfacing as a phantom state.
 pub fn fetch_branch(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
-    super::contact::run_for(repo_dir, "fetch", || fetch_branch_raw(repo_dir, auth))
-}
-
-fn fetch_branch_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
     let span = tracing::info_span!("git.fetch", repo = %repo_dir.display());
     let _s = span.enter();
-    let repo = open(repo_dir).map_err(err)?;
-    let head = repo.head().map_err(err)?;
-    let branch = head
-        .shorthand()
-        .map_err(|_| anyhow::anyhow!("detached HEAD"))?
-        .to_string();
-    let src = format!("refs/heads/{branch}");
-    let dst = tracking_ref_name(&repo, &branch)?;
-    match download_ref(&repo, auth, &src, &dst)? {
-        Some(_) => Ok(()),
-        None => anyhow::bail!("branch {branch} not found on the forge (renamed or deleted?)"),
-    }
+    let kind = auth.host_kind();
+    over_plan(
+        repo_dir,
+        auth,
+        "fetch",
+        super::contact::ContactDirection::Fetch,
+        false,
+        move |repo, remote, leg_auth, _leg| {
+            let head = repo.head().map_err(err)?;
+            let branch = head
+                .shorthand()
+                .map_err(|_| anyhow::anyhow!("detached HEAD"))?
+                .to_string();
+            let src = format!("refs/heads/{branch}");
+            let dst = tracking_ref_name(repo, &branch)?;
+            match download_over(repo, remote, leg_auth, kind, &src, &dst)? {
+                Some(_) => Ok(()),
+                None => {
+                    anyhow::bail!("branch {branch} not found on the forge (renamed or deleted?)")
+                }
+            }
+        },
+    )
 }
 
 /// The LOCAL half of a pull: fast-forward the working branch onto its
@@ -424,6 +2056,7 @@ pub fn commit_joy(
     author_name: &str,
     author_email: &str,
 ) -> anyhow::Result<Option<String>> {
+    warn_about_a_missing_item(repo_dir, message);
     let repo = open(repo_dir).map_err(err)?;
     let mut status_opts = git2::StatusOptions::new();
     status_opts
@@ -444,7 +2077,7 @@ pub fn commit_joy(
     index.write().map_err(err)?;
     let tree_id = index.write_tree().map_err(err)?;
     let tree = repo.find_tree(tree_id).map_err(err)?;
-    let signature = git2::Signature::now(author_name, author_email).map_err(err)?;
+    let signature = signature_now(repo_dir, author_name, author_email)?;
     let parent = repo
         .head()
         .ok()
@@ -476,48 +2109,72 @@ pub fn commit_joy(
 /// object and no ref is sent. A refusal here is exactly the refusal a real
 /// push would meet.
 pub fn probe_write_access(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
-    super::contact::run_for(repo_dir, "probe", || probe_write_access_raw(repo_dir, auth))
-}
-
-fn probe_write_access_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
     let span = tracing::info_span!("git.probe_write", repo = %repo_dir.display());
     let _s = span.enter();
-    let repo = open(repo_dir).map_err(err)?;
-    let mut remote = origin_or_first(&repo)?;
-    remote
-        .connect_auth(
-            git2::Direction::Push,
-            Some(auth.callbacks(cred_config(Some(&repo)))),
-            None,
-        )
-        .map_err(|e| anyhow::anyhow!("push failed: {}", contact_error(&e)))?;
-    let _ = remote.disconnect();
-    Ok(())
+    // The probe runs on THE TRANSPORT THAT CARRIES THE CREDENTIAL for
+    // this operation (D1.5), which is the first leg of the plan: where
+    // the push would go over the twin, the probe goes over the twin.
+    let kind = auth.host_kind();
+    over_plan(
+        repo_dir,
+        auth,
+        "probe",
+        super::contact::ContactDirection::Push,
+        false,
+        move |repo, remote, leg_auth, _leg| {
+            let url = remote_url_of(remote);
+            let proxy = proxy_for(&url, Some(repo))?;
+            remote
+                .connect_auth(
+                    git2::Direction::Push,
+                    Some(leg_auth.callbacks_as(kind, cred_source(Some(repo)))),
+                    Some(proxy.options()),
+                )
+                .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Push, e))?;
+            let _ = remote.disconnect();
+            Ok(())
+        },
+    )
 }
 
 pub fn push(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
-    super::contact::run_for(repo_dir, "push", || push_raw(repo_dir, auth))
-}
-
-fn push_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
     let span = tracing::info_span!("git.push", repo = %repo_dir.display());
     let _s = span.enter();
-    let result = (|| -> anyhow::Result<()> {
-        let repo = open(repo_dir).map_err(err)?;
-        let head = repo.head().map_err(err)?;
-        let branch = head
-            .shorthand()
-            .map_err(|_| anyhow::anyhow!("detached HEAD"))?
-            .to_string();
-        let mut remote = origin_or_first(&repo)?;
-        let mut opts = git2::PushOptions::new();
-        opts.remote_callbacks(auth.callbacks(cred_config(Some(&repo))));
-        let refspec = format!("refs/heads/{branch}:refs/heads/{branch}");
-        remote
-            .push(&[refspec.as_str()], Some(&mut opts))
-            .map_err(|e| anyhow::anyhow!("push failed: {}", contact_error(&e)))?;
-        Ok(())
-    })();
+    let kind = auth.host_kind();
+    let result = over_plan(
+        repo_dir,
+        auth,
+        "push",
+        super::contact::ContactDirection::Push,
+        false,
+        move |repo, remote, leg_auth, _leg| {
+            let head = repo.head().map_err(err)?;
+            let branch = head
+                .shorthand()
+                .map_err(|_| anyhow::anyhow!("detached HEAD"))?
+                .to_string();
+            // Read before the push and never a precondition of it: a
+            // push libgit2 refuses keeps refusing in libgit2's own
+            // words, and a tracking ref is only written for a tip
+            // there really is.
+            let tip = head.target();
+            let url = remote_url_of(remote);
+            let proxy = proxy_for(&url, Some(repo))?;
+            let (callbacks, status) = push_callbacks(leg_auth, kind, cred_source(Some(repo)));
+            let mut opts = git2::PushOptions::new();
+            opts.remote_callbacks(callbacks);
+            opts.proxy_options(proxy.options());
+            let refspec = format!("refs/heads/{branch}:refs/heads/{branch}");
+            remote
+                .push(&[refspec.as_str()], Some(&mut opts))
+                .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Push, e))?;
+            status.verdict(&super::contact::host_of(&url))?;
+            if let Some(tip) = tip {
+                write_tracking_ref(repo, remote, &status, &branch, tip);
+            }
+            Ok(())
+        },
+    );
     if let Err(e) = &result {
         // some callers defer a failed push to the write-behind worker; the
         // event still carries the cause with the repo context
@@ -537,22 +2194,26 @@ fn push_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
 /// removed) — the stale destination is deleted then, so reconciles run
 /// against nothing rather than a stale state.
 pub fn fetch_ref(repo_dir: &Path, auth: &Auth, src: &str, dst: &str) -> anyhow::Result<bool> {
-    super::contact::run_for(repo_dir, "fetch", || {
-        fetch_ref_raw(repo_dir, auth, src, dst)
-    })
-}
-
-fn fetch_ref_raw(repo_dir: &Path, auth: &Auth, src: &str, dst: &str) -> anyhow::Result<bool> {
-    let repo = open(repo_dir).map_err(err)?;
-    match download_ref(&repo, auth, src, dst)? {
-        Some(_) => Ok(true),
-        None => {
-            if let Ok(mut stale) = repo.find_reference(dst) {
-                stale.delete().ok();
+    let kind = auth.host_kind();
+    let (src, dst) = (src.to_string(), dst.to_string());
+    over_plan(
+        repo_dir,
+        auth,
+        "fetch",
+        super::contact::ContactDirection::Fetch,
+        false,
+        move |repo, remote, leg_auth, _leg| match download_over(
+            repo, remote, leg_auth, kind, &src, &dst,
+        )? {
+            Some(_) => Ok(true),
+            None => {
+                if let Ok(mut stale) = repo.find_reference(&dst) {
+                    stale.delete().ok();
+                }
+                Ok(false)
             }
-            Ok(false)
-        }
-    }
+        },
+    )
 }
 
 // ---- the ONE per-checkout gate (JP-00DB-61) ----------------------------
@@ -585,19 +2246,33 @@ pub fn checkout_gate(repo_dir: &Path) -> std::sync::Arc<std::sync::Mutex<()>> {
 
 /// Push one local ref to the same name on the forge.
 pub fn push_ref(repo_dir: &Path, auth: &Auth, refname: &str) -> anyhow::Result<()> {
-    super::contact::run_for(repo_dir, "push", || push_ref_raw(repo_dir, auth, refname))
-}
-
-fn push_ref_raw(repo_dir: &Path, auth: &Auth, refname: &str) -> anyhow::Result<()> {
-    let repo = open(repo_dir).map_err(err)?;
-    let mut remote = origin_or_first(&repo)?;
-    let mut opts = git2::PushOptions::new();
-    opts.remote_callbacks(auth.callbacks(cred_config(Some(&repo))));
-    let refspec = format!("{refname}:{refname}");
-    remote
-        .push(&[refspec.as_str()], Some(&mut opts))
-        .map_err(|e| anyhow::anyhow!("push of {refname} failed: {}", contact_error(&e)))?;
-    Ok(())
+    let kind = auth.host_kind();
+    let refname = refname.to_string();
+    over_plan(
+        repo_dir,
+        auth,
+        "push",
+        super::contact::ContactDirection::Push,
+        false,
+        move |repo, remote, leg_auth, _leg| {
+            let tip = repo.refname_to_id(&refname).ok();
+            let url = remote_url_of(remote);
+            let proxy = proxy_for(&url, Some(repo))?;
+            let (callbacks, status) = push_callbacks(leg_auth, kind, cred_source(Some(repo)));
+            let mut opts = git2::PushOptions::new();
+            opts.remote_callbacks(callbacks);
+            opts.proxy_options(proxy.options());
+            let refspec = format!("{refname}:{refname}");
+            remote
+                .push(&[refspec.as_str()], Some(&mut opts))
+                .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Push, e))?;
+            status.verdict(&super::contact::host_of(&url))?;
+            if let Some(tip) = tip {
+                write_chats_tracking_ref(repo, &status, &refname, tip);
+            }
+            Ok(())
+        },
+    )
 }
 
 /// The oid the forge holds for `refname`, without fetching anything
@@ -605,37 +2280,88 @@ fn push_ref_raw(repo_dir: &Path, auth: &Auth, refname: &str) -> anyhow::Result<(
 /// when the forge does not have the ref. Callers hold a registered
 /// project, so the remote always advertises at least its working branch
 /// (a fully ref-less remote trips a git2 empty-list edge).
+///
+/// A caller that wants two refs asks [`ls_remote_refs`] for both at
+/// once: the advertisement it reads carries every ref anyway.
 pub fn ls_remote_ref(
     repo_dir: &Path,
     auth: &Auth,
     refname: &str,
 ) -> anyhow::Result<Option<String>> {
-    super::contact::run_for(repo_dir, "ls-remote", || {
-        ls_remote_ref_raw(repo_dir, auth, refname)
-    })
+    Ok(ls_remote_refs(repo_dir, auth, &[refname])?.remove(refname))
 }
 
-fn ls_remote_ref_raw(
+/// The oids the forge holds for SEVERAL refs, from one advertisement
+/// (D1.9). `connection.list()` downloads the forge's whole ref list, so
+/// asking for a second ref costs nothing on top; asking twice costs a
+/// second connection and, on a private https remote, a second 401
+/// challenge. One poll tick that watches two refs therefore makes one
+/// contact. Refs the forge does not have are absent from the map.
+pub fn ls_remote_refs(
+    repo_dir: &Path,
+    auth: &Auth,
+    refnames: &[&str],
+) -> anyhow::Result<std::collections::HashMap<String, String>> {
+    ls_remote_refs_over(repo_dir, auth, refnames, false)
+}
+
+/// [`ls_remote_ref`] as a POLL: a contact no person asked for, made by
+/// a loop that watches the forge. A poll is the one contact the no
+/// anonymous polling rule of D1.9 holds back, so a public https remote
+/// nobody is signed in for is asked at most once every fifteen minutes
+/// per host and the refusal says why. Every other caller asks
+/// [`ls_remote_ref`].
+pub fn ls_remote_ref_poll(
     repo_dir: &Path,
     auth: &Auth,
     refname: &str,
 ) -> anyhow::Result<Option<String>> {
-    let repo = open(repo_dir).map_err(err)?;
-    let mut remote = origin_or_first(&repo)?;
-    let connection = remote
-        .connect_auth(
-            git2::Direction::Fetch,
-            Some(auth.callbacks(cred_config(Some(&repo)))),
-            None,
-        )
-        .map_err(|e| anyhow::anyhow!("ls-remote failed (offline?): {}", contact_error(&e)))?;
-    let head = connection
-        .list()
-        .map_err(err)?
-        .iter()
-        .find(|r| r.name() == refname)
-        .map(|r| r.oid().to_string());
-    Ok(head)
+    Ok(ls_remote_refs_poll(repo_dir, auth, &[refname])?.remove(refname))
+}
+
+/// [`ls_remote_refs`] as a poll; see [`ls_remote_ref_poll`].
+pub fn ls_remote_refs_poll(
+    repo_dir: &Path,
+    auth: &Auth,
+    refnames: &[&str],
+) -> anyhow::Result<std::collections::HashMap<String, String>> {
+    ls_remote_refs_over(repo_dir, auth, refnames, true)
+}
+
+fn ls_remote_refs_over(
+    repo_dir: &Path,
+    auth: &Auth,
+    refnames: &[&str],
+    poll: bool,
+) -> anyhow::Result<std::collections::HashMap<String, String>> {
+    let kind = auth.host_kind();
+    let refnames: Vec<String> = refnames.iter().map(|r| r.to_string()).collect();
+    over_plan(
+        repo_dir,
+        auth,
+        "ls-remote",
+        super::contact::ContactDirection::Fetch,
+        poll,
+        move |repo, remote, leg_auth, _leg| {
+            let url = remote_url_of(remote);
+            let proxy = proxy_for(&url, Some(repo))?;
+            let connection = remote
+                .connect_auth(
+                    git2::Direction::Fetch,
+                    Some(leg_auth.callbacks_as(kind, cred_source(Some(repo)))),
+                    Some(proxy.options()),
+                )
+                .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Fetch, e))?;
+            let found = connection
+                .list()
+                .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Fetch, e))?
+                .iter()
+                .filter(|r| refnames.iter().any(|want| want == r.name()))
+                .map(|r| (r.name().to_string(), r.oid().to_string()))
+                .collect();
+            Ok(found)
+        },
+    )
 }
 
 /// Pull with a REAL merge (ADR JAPP-00D8): fetch, fast-forward when
@@ -692,7 +2418,7 @@ pub fn pull_merge(
     resolve_conflicts_yaml_aware(&repo, &mut index)?;
     let tree_id = index.write_tree_to(&repo).map_err(err)?;
     let tree = repo.find_tree(tree_id).map_err(err)?;
-    let sig = git2::Signature::now(author_name, author_email).map_err(err)?;
+    let sig = signature_now(repo_dir, author_name, author_email)?;
     repo.commit(
         Some("HEAD"),
         &sig,
@@ -842,6 +2568,34 @@ pub fn user_email() -> Option<String> {
         .filter(|email| !email.trim().is_empty())
 }
 
+/// `user.name` and `user.email` as `dir`'s merged config answers them
+/// (local over global over system), each `None` when it is unset or
+/// empty.
+///
+/// Unlike [`repo_identity`] this asks for neither of the two: libgit2's
+/// `Repository::signature` refuses to answer at all when `user.email` is
+/// missing, which would take the display NAME with it. D4.5 uses the name
+/// on its own, as a prefill, so the two values are read separately
+/// (package J11).
+pub fn user_identity(dir: &Path) -> (Option<String>, Option<String>) {
+    git_environment();
+    let config = match open(dir)
+        .and_then(|repo| repo.config())
+        .or_else(|_| git2::Config::open_default())
+    {
+        Ok(config) => config,
+        Err(_) => return (None, None),
+    };
+    let value = |key: &str| {
+        config
+            .get_string(key)
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+    };
+    (value("user.name"), value("user.email"))
+}
+
 /// A value of the repository's own config file (`git config --local`).
 pub fn local_config_get(dir: &Path, key: &str) -> Option<String> {
     let repo = open(dir).ok()?;
@@ -881,6 +2635,22 @@ pub fn remotes(dir: &Path) -> Vec<(String, String)> {
             Some((name.to_string(), url))
         })
         .collect()
+}
+
+/// The remote joy contacts for this checkout: `origin` when it is
+/// configured, otherwise the first one git2 lists (D1.1).
+///
+/// This is [`origin_or_first`]'s rule by name, so a caller that asks
+/// which remote it is talking to and the engine that talks to it name
+/// the same one. The git process this replaced answered `git remote`
+/// and took the first line, which is alphabetical order: in a checkout
+/// with a `backup` remote beside `origin` the two disagreed, and the
+/// person was told about a host joy never contacted.
+pub fn default_remote_name(dir: &Path) -> Option<String> {
+    let repo = open(dir).ok()?;
+    origin_or_first(&repo)
+        .ok()
+        .and_then(|remote| remote.name().ok().flatten().map(str::to_string))
 }
 
 /// `path`, given relative to `dir`, as the repository sees it: relative
@@ -928,6 +2698,280 @@ pub fn stage_paths(dir: &Path, paths: &[&str]) -> anyhow::Result<()> {
         .map_err(err)?;
     index.update_all(specs.iter(), None).map_err(err)?;
     index.write().map_err(err)
+}
+
+/// Stage every change in the working tree, as `git add -A` does: new and
+/// changed files go in, deleted ones come out, ignored ones are left
+/// alone. The pathspec is the whole tree, so it does not matter where
+/// inside the checkout `dir` sits.
+///
+/// Callers in a PERSON's checkout should prefer [`stage_paths`]: this
+/// one sweeps whatever else the person had lying around into the index
+/// (D3.4). It stays for the checkouts joy owns.
+///
+/// A path an external content filter governs is refused by name and
+/// nothing is written: this is the verb that turns a file into a blob,
+/// and libgit2 runs no filter program, so staging a changed
+/// `filter=lfs` asset here puts the file's own bytes where the pointer
+/// belongs (D3.4). The refusal happens before the index is written, so
+/// the checkout is left exactly as it was.
+pub fn stage_all(dir: &Path) -> anyhow::Result<()> {
+    let repo = open(dir).map_err(err)?;
+    let mut index = repo.index().map_err(err)?;
+    let filtered = std::cell::RefCell::new(Vec::new());
+    // Both halves need the guard: `update_all` writes the blob of a
+    // CHANGED tracked file, which is exactly the lfs asset case.
+    index
+        .add_all(
+            ["*"],
+            git2::IndexAddOption::DEFAULT,
+            Some(&mut skip_filtered(&repo, &filtered)),
+        )
+        .map_err(err)?;
+    index
+        .update_all(["*"], Some(&mut skip_filtered(&repo, &filtered)))
+        .map_err(err)?;
+    refuse_filtered_paths(filtered.into_inner())?;
+    index.write().map_err(err)
+}
+
+/// The staging callback of the sweeping verbs: skip a path an external
+/// content filter governs and remember it for [`refuse_filtered_paths`].
+///
+/// libgit2 calls this only for paths that really differ from the index
+/// (`git_index_add_all` walks the index to worktree diff, index.c:3599),
+/// so a filtered asset nobody touched costs nothing and an unchanged
+/// pointer git wrote stays exactly as git wrote it.
+fn skip_filtered<'a>(
+    repo: &'a git2::Repository,
+    filtered: &'a std::cell::RefCell<Vec<String>>,
+) -> impl FnMut(&Path, &[u8]) -> i32 + 'a {
+    move |path: &Path, _spec: &[u8]| -> i32 {
+        // A path that is GONE from the working tree is a deletion, and
+        // a deletion writes no content: there is no blob a filter could
+        // have rewritten, so removing the entry is exactly what
+        // `git add -A` does and joy lets it through. Asked with
+        // `symlink_metadata`, so a dangling symlink counts as present
+        // rather than as a deletion.
+        let present = repo
+            .workdir()
+            .map(|workdir| workdir.join(path).symlink_metadata().is_ok())
+            .unwrap_or(true);
+        if !present {
+            return 0;
+        }
+        match external_filter(repo, path) {
+            Some(filter) => {
+                let named = format!("{} (filter={filter})", path.display());
+                let mut list = filtered.borrow_mut();
+                if !list.contains(&named) {
+                    list.push(named);
+                }
+                1 // skip, and the refusal says why
+            }
+            None => 0,
+        }
+    }
+}
+
+/// Every local tag whose name starts with `v` or `V`, newest first:
+/// `git tag --list --sort=-v:refname` without a git process.
+///
+/// The order is git's version order and not a string sort, so `v1.10.0`
+/// comes before `v1.9.0`. A name that carries no numbers at all keeps
+/// its place among its equals by name, descending, which is what git's
+/// version sort falls back to.
+pub fn version_tags(dir: &Path) -> Vec<String> {
+    let Ok(repo) = open(dir) else {
+        return Vec::new();
+    };
+    let Ok(names) = repo.tag_names(None) else {
+        return Vec::new();
+    };
+    let mut tags: Vec<String> = names
+        .iter()
+        .flatten()
+        .flatten()
+        .filter(|name| name.starts_with('v') || name.starts_with('V'))
+        .map(str::to_string)
+        .collect();
+    tags.sort_by(|a, b| version_key(b).cmp(&version_key(a)).then_with(|| b.cmp(a)));
+    tags
+}
+
+/// A tag name as the numbers git's `v:refname` sort compares: every run
+/// of digits in order, so `v1.10.0` sorts above `v1.9.0`.
+fn version_key(name: &str) -> Vec<u64> {
+    let mut parts = Vec::new();
+    let mut digits = String::new();
+    for c in name.chars() {
+        if c.is_ascii_digit() {
+            digits.push(c);
+        } else if !digits.is_empty() {
+            parts.push(digits.parse().unwrap_or(0));
+            digits.clear();
+        }
+    }
+    if !digits.is_empty() {
+        parts.push(digits.parse().unwrap_or(0));
+    }
+    parts
+}
+
+/// The newest `v*` tag REACHABLE from HEAD:
+/// `git describe --tags --abbrev=0 --match 'v*'`.
+///
+/// Not the same question as [`latest_version_tag`], which takes the
+/// newest tag in the repository whether HEAD can see it or not. A
+/// release branch that has not merged the newest tag needs this one.
+pub fn describe_version_tag(dir: &Path) -> Option<String> {
+    let repo = open(dir).ok()?;
+    let mut options = git2::DescribeOptions::new();
+    options.describe_tags().pattern("v*");
+    let described = repo.describe(&options).ok()?;
+    let mut format = git2::DescribeFormatOptions::new();
+    format.abbreviated_size(0);
+    described
+        .format(Some(&format))
+        .ok()
+        .filter(|name| !name.is_empty())
+}
+
+/// Whether a tag names HEAD itself: `git describe --tags --exact-match
+/// HEAD`, which is `--candidates=0` and nothing else.
+pub fn head_is_tagged(dir: &Path) -> bool {
+    let Ok(repo) = open(dir) else {
+        return false;
+    };
+    let mut options = git2::DescribeOptions::new();
+    options.describe_tags().max_candidates_tags(0);
+    repo.describe(&options)
+        .and_then(|described| described.format(None))
+        .is_ok()
+}
+
+/// Whether the index tracks `path`, a file or a directory:
+/// `git ls-files --error-unmatch -- <path>`.
+///
+/// The match is literal, the way every other path rule in this file
+/// matches (`commit_index_paths`): the entry itself, or an entry under
+/// it when `path` names a directory. joy's own paths are literal
+/// (`AGENTS.md`, `.vibe/`, `.joy/capabilities/`), never globs, and a
+/// libgit2 pathspec would answer a different question for a name that
+/// happens to carry a glob character.
+pub fn path_is_tracked(dir: &Path, path: &str) -> bool {
+    let Ok(repo) = open(dir) else {
+        return false;
+    };
+    let Some(rel) = workdir_relative(&repo, dir, path) else {
+        return false;
+    };
+    let Ok(index) = repo.index() else {
+        return false;
+    };
+    let tracked = index_paths_under(&index, &rel).next().is_some();
+    tracked
+}
+
+/// The index entries `spec` covers, as repository relative paths: the
+/// entry that IS the path, plus everything below it when the path names
+/// a directory. A trailing slash is part of how joy writes a directory
+/// and is not part of the entry name.
+fn index_paths_under<'i>(index: &'i git2::Index, spec: &str) -> impl Iterator<Item = PathBuf> + 'i {
+    let spec = spec.trim_end_matches('/').to_string();
+    let below = format!("{spec}/");
+    index.iter().filter_map(move |entry| {
+        let path = entry_path(&entry)?;
+        let name = path.to_string_lossy().replace('\\', "/");
+        (name == spec || name.starts_with(&below)).then_some(path)
+    })
+}
+
+/// Drop `path` from the index and leave the file on disk:
+/// `git rm --cached -r -- <path>`. Answers how many entries went.
+pub fn untrack_path(dir: &Path, path: &str) -> anyhow::Result<usize> {
+    let repo = open(dir).map_err(err)?;
+    let rel = workdir_relative(&repo, dir, path)
+        .ok_or_else(|| anyhow::anyhow!("{path} is outside the working tree"))?;
+    let mut index = repo.index().map_err(err)?;
+    let doomed: Vec<PathBuf> = index_paths_under(&index, &rel).collect();
+    for path in &doomed {
+        index.remove_path(path).map_err(err)?;
+    }
+    if !doomed.is_empty() {
+        index.write().map_err(err)?;
+    }
+    Ok(doomed.len())
+}
+
+/// Drop `path` from the index AND from the working tree:
+/// `git rm -r --ignore-unmatch -- <path>`.
+///
+/// The file goes whether or not the index tracked it, which is what the
+/// one caller (joy's own legacy artefact cleanup) means and what it had
+/// to write a second `remove_dir_all` for around the git process.
+pub fn remove_path(dir: &Path, path: &str) -> anyhow::Result<()> {
+    untrack_path(dir, path)?;
+    let full = dir.join(path);
+    let gone = if full.is_dir() {
+        std::fs::remove_dir_all(&full)
+    } else {
+        std::fs::remove_file(&full)
+    };
+    match gone {
+        Ok(()) => Ok(()),
+        // `--ignore-unmatch`: a path that is not there is done, not failed.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(anyhow::anyhow!("{}: {e}", full.display())),
+    }
+}
+
+/// The commit time of `rev` in seconds since the epoch:
+/// `git log -1 --format=%ct <rev>`. `None` when the rev does not
+/// resolve or `dir` is no checkout.
+pub fn commit_unix_time(dir: &Path, rev: &str) -> Option<i64> {
+    let rev = rev.trim();
+    if rev.is_empty() {
+        return None;
+    }
+    let repo = open(dir).ok()?;
+    let object = repo.revparse_single(rev).ok()?;
+    let seconds = object.peel_to_commit().ok()?.time().seconds();
+    Some(seconds)
+}
+
+/// The paths the index adds, changes or renames against HEAD:
+/// `git diff --cached --name-only --diff-filter=ACMR`, repository
+/// relative and in the order the diff reports them.
+///
+/// A repository with no commit yet compares against the empty tree, so
+/// the first commit's staged files are named like any other.
+pub fn staged_paths(dir: &Path) -> Vec<String> {
+    let Ok(repo) = open(dir) else {
+        return Vec::new();
+    };
+    let head = repo.head().ok().and_then(|head| head.peel_to_tree().ok());
+    let Ok(diff) = repo.diff_tree_to_index(head.as_ref(), None, None) else {
+        return Vec::new();
+    };
+    diff.deltas()
+        .filter(|delta| {
+            matches!(
+                delta.status(),
+                git2::Delta::Added
+                    | git2::Delta::Modified
+                    | git2::Delta::Renamed
+                    | git2::Delta::Copied
+            )
+        })
+        .filter_map(|delta| {
+            delta
+                .new_file()
+                .path()
+                .map(|p| p.to_string_lossy().replace('\\', "/"))
+        })
+        .filter(|path| !path.is_empty())
+        .collect()
 }
 
 /// Is `dir` itself a repository, bare or the top of a working tree? Unlike
@@ -988,6 +3032,16 @@ pub fn set_unborn_branch(dir: &Path, branch: &str) -> anyhow::Result<()> {
 
 /// Commit exactly what the index holds, as `author`: joy init stages the
 /// files it wrote, and a host commits them without guessing which.
+///
+/// It commits the WHOLE index, so it belongs to a host that staged what
+/// it wanted and to no other. A path an external content filter governs
+/// is refused by name here as well, wherever its index entry came from:
+/// D3.4's rule is absolute for a person's checkout ("joy never commits
+/// such a path"), and this verb is the one the desktop's release record
+/// still reaches. That also refuses a pointer git's own filter wrote
+/// correctly, and that is the safe direction on purpose: joy cannot
+/// tell the two entries apart, and the sentence it prints ("commit them
+/// with git") is the right instruction for both.
 pub fn commit_index(
     repo_dir: &Path,
     message: &str,
@@ -996,14 +3050,15 @@ pub fn commit_index(
 ) -> anyhow::Result<String> {
     let repo = open(repo_dir).map_err(err)?;
     let mut index = repo.index().map_err(err)?;
-    let tree_id = index.write_tree().map_err(err)?;
-    let tree = repo.find_tree(tree_id).map_err(err)?;
-    let signature = git2::Signature::now(author_name, author_email).map_err(err)?;
+    let signature = signature_now(repo_dir, author_name, author_email)?;
     let parent = repo
         .head()
         .ok()
         .and_then(|h| h.target())
         .and_then(|oid| repo.find_commit(oid).ok());
+    refuse_filtered_staged_paths(&repo, &index, parent.as_ref())?;
+    let tree_id = index.write_tree().map_err(err)?;
+    let tree = repo.find_tree(tree_id).map_err(err)?;
     let parents: Vec<&git2::Commit> = parent.iter().collect();
     let oid = repo
         .commit(
@@ -1016,6 +3071,101 @@ pub fn commit_index(
         )
         .map_err(err)?;
     Ok(oid.to_string())
+}
+
+/// The commit joy writes for itself after a command
+/// (`auto_git_post_command`), scoped to the paths joy wrote (D3.4 of the
+/// forge connection NG design).
+///
+/// The tree is the parent's tree with the entries under `pathspecs`
+/// replaced by what the index holds there, so nothing else in the index
+/// reaches the commit: a person's half finished `git add -p` is neither
+/// swept into a "joy: ..." commit nor able to hide joy's own change
+/// behind a whole tree comparison. After the git2 only move there is no
+/// pre-commit hook left to stand in the way, which is why the rule lives
+/// in the commit path itself.
+///
+/// `Ok(None)` when that scoped tree is the parent's: the "nothing to
+/// commit" the git binary used to answer.
+///
+/// A pathspec is a literal path relative to the repository root, and it
+/// covers everything below it when it names a directory. joy's own paths
+/// are literal (`.joy`, `SECURITY.md`, a version file a release bumped),
+/// never globs.
+pub fn commit_index_paths(
+    repo_dir: &Path,
+    pathspecs: &[String],
+    message: &str,
+    author_name: &str,
+    author_email: &str,
+) -> anyhow::Result<Option<String>> {
+    let repo = open(repo_dir).map_err(err)?;
+    let index = repo.index().map_err(err)?;
+    if index.has_conflicts() {
+        anyhow::bail!("the index has unresolved conflicts");
+    }
+    let parent = repo
+        .head()
+        .ok()
+        .and_then(|h| h.target())
+        .and_then(|oid| repo.find_commit(oid).ok());
+
+    // Start from what is committed, so every path outside the scope is
+    // exactly what the parent had, whatever the index says about it.
+    let mut scoped = git2::Index::new().map_err(err)?;
+    if let Some(parent) = &parent {
+        scoped
+            .read_tree(&parent.tree().map_err(err)?)
+            .map_err(err)?;
+    }
+    let in_scope = |path: &str| {
+        pathspecs
+            .iter()
+            .any(|spec| path == spec || path.starts_with(&format!("{spec}/")))
+    };
+    // Drop the scope from the snapshot (this is what commits a deletion),
+    // then take it back from the index.
+    let doomed: Vec<PathBuf> = scoped
+        .iter()
+        .filter_map(|entry| entry_path(&entry))
+        .filter(|path| in_scope(&path.to_string_lossy()))
+        .collect();
+    for path in doomed {
+        scoped.remove_path(&path).map_err(err)?;
+    }
+    for entry in index.iter() {
+        let Some(path) = entry_path(&entry) else {
+            continue;
+        };
+        if in_scope(&path.to_string_lossy()) {
+            scoped.add(&entry).map_err(err)?;
+        }
+    }
+
+    let tree_id = scoped.write_tree_to(&repo).map_err(err)?;
+    if parent.as_ref().map(|p| p.tree_id()) == Some(tree_id) {
+        return Ok(None);
+    }
+    let tree = repo.find_tree(tree_id).map_err(err)?;
+    let signature = signature_now(repo_dir, author_name, author_email)?;
+    let parents: Vec<&git2::Commit> = parent.iter().collect();
+    let oid = repo
+        .commit(
+            Some("HEAD"),
+            &signature,
+            &signature,
+            message,
+            &tree,
+            &parents,
+        )
+        .map_err(err)?;
+    Ok(Some(oid.to_string()))
+}
+
+/// The path of an index entry as a path, or `None` for a name no
+/// filesystem on this machine could hold anyway.
+fn entry_path(entry: &git2::IndexEntry) -> Option<PathBuf> {
+    std::str::from_utf8(&entry.path).ok().map(PathBuf::from)
 }
 
 /// Configure a named remote.
@@ -1078,21 +3228,34 @@ pub fn changed_paths_between(
 /// Stage EVERYTHING and commit it (seeding and harness use; product
 /// writes go through [`commit_joy`] / [`commit_all`], which respect the
 /// `.joy` boundary).
+///
+/// Only for a checkout joy OWNS (D3.4): in a person's checkout this
+/// sweeps up whatever they had lying around, and there is no pre-commit
+/// hook left to stand in the way of that. A path an external content
+/// filter governs is refused by name rather than written wrong, because
+/// libgit2 runs no filter program.
 pub fn commit_everything(
     repo_dir: &Path,
     message: &str,
     author_name: &str,
     author_email: &str,
 ) -> anyhow::Result<String> {
+    warn_about_a_missing_item(repo_dir, message);
     let repo = open(repo_dir).map_err(err)?;
     let mut index = repo.index().map_err(err)?;
+    let filtered = std::cell::RefCell::new(Vec::new());
     index
-        .add_all(["."], git2::IndexAddOption::DEFAULT, None)
+        .add_all(
+            ["."],
+            git2::IndexAddOption::DEFAULT,
+            Some(&mut skip_filtered(&repo, &filtered)),
+        )
         .map_err(err)?;
+    refuse_filtered_paths(filtered.into_inner())?;
     index.write().map_err(err)?;
     let tree_id = index.write_tree().map_err(err)?;
     let tree = repo.find_tree(tree_id).map_err(err)?;
-    let sig = git2::Signature::now(author_name, author_email).map_err(err)?;
+    let sig = signature_now(repo_dir, author_name, author_email)?;
     let parent = repo
         .head()
         .ok()
@@ -1155,9 +3318,99 @@ pub fn joy_dirty_fingerprint(repo_dir: &Path) -> Vec<String> {
         .collect()
 }
 
-/// The repo's configured identity (user.name, user.email) — what the CLI
-/// would commit as; it must map to a Joy member (Git-Integration
-/// concept). An honest error when it is not configured.
+/// The commit signature of the acting member (D4.5 of the forge
+/// connection NG design): the ONE place that decides what git2 stamps on
+/// a commit joy writes.
+///
+/// `project` is the project the commit lands in, and it is what decides
+/// the rule, never the shape of `member`: the caller may hand this an
+/// address (every auth and crypt path still holds one until J11 lands),
+/// and in an anonymous project that address is resolved to its opaque id
+/// before anything is signed. Deciding by shape would have signed the
+/// address that was handed in, which is exactly what ADR-042 forbids.
+///
+/// * Open mode: the e-mail is the member id (the member's address) and
+///   the name is `config_name` when the caller established that git
+///   config maps to THIS member, else the member id. joy never signs with
+///   a name it cannot attribute.
+/// * Anonymous mode (ADR-042): the opaque `m-<id>` in BOTH fields, never
+///   the address and never a person's name, so a git2 commit cannot undo
+///   the privacy mode. An address the project cannot map to a member is
+///   refused rather than signed with: in an anonymous project there is no
+///   safe way to write it down.
+/// * Both fields are guaranteed non-empty, because `git_signature_new`
+///   refuses an empty name or e-mail; when no member is known at all the
+///   caller gets the typed error instead of a commit signed by nobody.
+pub fn member_signature(
+    project: Option<&crate::model::project::Project>,
+    member: &str,
+    config_name: Option<&str>,
+) -> Result<(String, String), crate::error::JoyError> {
+    let member = member.trim();
+    if member.is_empty() {
+        return Err(crate::error::JoyError::UnknownActingMember);
+    }
+    let anonymous =
+        project.is_some_and(|p| p.privacy_mode() == crate::model::project::PrivacyMode::Anonymous);
+    // The at-rest key of this member in THIS project: the map key when the
+    // caller already had one, else the key the address resolves to.
+    let key = project.and_then(|p| {
+        p.member_by_key(member)
+            .is_some()
+            .then(|| member.to_string())
+            .or_else(|| crate::privacy::member_key_for_email(p, member))
+    });
+    let key = match key {
+        Some(key) => key,
+        // An anonymous project that cannot name this member must not fall
+        // back to what it was handed: that string is an address.
+        None if anonymous => return Err(crate::error::JoyError::UnknownActingMember),
+        None => member.to_string(),
+    };
+    if anonymous || crate::member_id::is_opaque_member_id(&key) {
+        return Ok((key.clone(), key));
+    }
+    let name = config_name
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .unwrap_or(&key);
+    Ok((name.to_string(), key))
+}
+
+/// The ONE way joy builds a `git2::Signature` (D4.5): every commit, tag
+/// and merge joy writes goes through here, so the rule cannot be true in
+/// one function and false in the next.
+///
+/// It applies [`member_signature`] to what the caller carries, against
+/// the project in `repo_dir`, which guarantees the three things libgit2
+/// and ADR-042 need: both strings are non-empty (`git_signature_new`
+/// refuses an empty name or e-mail, signature.c:68-99), an anonymous
+/// project signs with the opaque member id whether the caller carried the
+/// id or the address, and a caller with no member at all gets the typed
+/// `UnknownActingMember` instead of libgit2's "failed to parse signature".
+fn signature_now(
+    repo_dir: &Path,
+    author_name: &str,
+    author_email: &str,
+) -> anyhow::Result<git2::Signature<'static>> {
+    let project = crate::store::load_project(repo_dir).ok();
+    let (name, email) = member_signature(project.as_ref(), author_email, Some(author_name))?;
+    git2::Signature::now(&name, &email).map_err(err)
+}
+
+/// PREFILL ONLY (D4.5): the identity the repository's git config carries.
+/// It is a suggestion for a mask, never the identity of a commit and
+/// never a member key on its own. Demoted from "what the CLI commits
+/// as": a Joy commit is signed for the acting member, which joy resolves
+/// through `joy_core::identity`, and a project may have no git config at
+/// all.
+///
+/// No joy command calls this any more. `commit_signature` used to take
+/// the display name from it and lost the name whenever `user.email` went
+/// missing, because `Repository::signature` answers only when both are
+/// set; it asks [`user_identity`] for the two values separately now
+/// (package J11). This stays public for the desktop, whose two callers
+/// D4.5 moves onto the acting member.
 pub fn repo_identity(repo_dir: &Path) -> anyhow::Result<(String, String)> {
     let repo = open(repo_dir).map_err(err)?;
     let sig = repo.signature().map_err(|e| {
@@ -1222,12 +3475,18 @@ pub fn remote_branch_names(repo_dir: &Path) -> Vec<String> {
     names
 }
 
-/// The first remote's URL (forge detection lives with the caller).
+/// The URL of the remote joy actually contacts: `origin`, or the
+/// first configured one ([`origin_or_first`]). Forge detection lives
+/// with the caller.
+///
+/// This used to read `remotes.get(0)` while every contact took
+/// `origin` (design D1.1). In a checkout with more than one remote the
+/// two disagreed, and with them the throttle key, the credential
+/// shape, the transport memory and the ownership join key - all keyed
+/// on a host joy was not talking to.
 pub fn remote_url(repo_dir: &Path) -> Option<String> {
     let repo = open(repo_dir).ok()?;
-    let remotes = repo.remotes().ok()?;
-    let name = remotes.get(0).ok()??;
-    let remote = repo.find_remote(name).ok()?;
+    let remote = origin_or_first(&repo).ok()?;
     remote.url().ok().map(|u| u.to_string())
 }
 
@@ -1290,6 +3549,7 @@ pub fn commit_paths(
     author_name: &str,
     author_email: &str,
 ) -> anyhow::Result<Option<String>> {
+    warn_about_a_missing_item(repo_dir, message);
     let repo = open(repo_dir).map_err(err)?;
     let mut index = repo.index().map_err(err)?;
     index
@@ -1306,7 +3566,7 @@ pub fn commit_paths(
         return Ok(None);
     }
     let tree = repo.find_tree(tree_id).map_err(err)?;
-    let signature = git2::Signature::now(author_name, author_email).map_err(err)?;
+    let signature = signature_now(repo_dir, author_name, author_email)?;
     let parents: Vec<&git2::Commit> = parent.iter().collect();
     let oid = repo
         .commit(
@@ -1332,27 +3592,70 @@ pub fn tag_annotated(
 ) -> anyhow::Result<()> {
     let repo = open(repo_dir).map_err(err)?;
     let head = repo.head().map_err(err)?.peel_to_commit().map_err(err)?;
-    let signature = git2::Signature::now(author_name, author_email).map_err(err)?;
+    let signature = signature_now(repo_dir, author_name, author_email)?;
     repo.tag(name, head.as_object(), &signature, message, true)
+        .map_err(err)?;
+    Ok(())
+}
+
+/// Create a lightweight tag on HEAD, replacing one of the same name.
+pub fn tag_lightweight(repo_dir: &Path, name: &str) -> anyhow::Result<()> {
+    let repo = open(repo_dir).map_err(err)?;
+    let head = repo.head().map_err(err)?.peel_to_commit().map_err(err)?;
+    repo.tag_lightweight(name, head.as_object(), true)
         .map_err(err)?;
     Ok(())
 }
 
 /// Push one tag to the forge (joy release publish's tag push).
 pub fn push_tag(repo_dir: &Path, auth: &Auth, tag: &str) -> anyhow::Result<()> {
-    super::contact::run_for(repo_dir, "push", || push_tag_raw(repo_dir, auth, tag))
+    let kind = auth.host_kind();
+    let tag = tag.to_string();
+    over_plan(
+        repo_dir,
+        auth,
+        "push",
+        super::contact::ContactDirection::Push,
+        false,
+        move |repo, remote, leg_auth, _leg| {
+            let url = remote_url_of(remote);
+            let proxy = proxy_for(&url, Some(repo))?;
+            let (callbacks, status) = push_callbacks(leg_auth, kind, cred_source(Some(repo)));
+            let mut opts = git2::PushOptions::new();
+            opts.remote_callbacks(callbacks);
+            opts.proxy_options(proxy.options());
+            let refspec = format!("refs/tags/{tag}:refs/tags/{tag}");
+            remote
+                .push(&[refspec.as_str()], Some(&mut opts))
+                .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Push, e))?;
+            status.verdict(&super::contact::host_of(&url))
+        },
+    )
 }
 
-fn push_tag_raw(repo_dir: &Path, auth: &Auth, tag: &str) -> anyhow::Result<()> {
-    let repo = open(repo_dir).map_err(err)?;
-    let mut remote = origin_or_first(&repo)?;
-    let mut opts = git2::PushOptions::new();
-    opts.remote_callbacks(auth.callbacks(cred_config(Some(&repo))));
-    let refspec = format!("refs/tags/{tag}:refs/tags/{tag}");
-    remote
-        .push(&[refspec.as_str()], Some(&mut opts))
-        .map_err(|e| anyhow::anyhow!("tag push failed: {}", contact_error(&e)))?;
-    Ok(())
+/// Push every local tag to the forge, which is what `git push --tags`
+/// did: one refspec, one connection, whatever the tags are called.
+pub fn push_all_tags(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
+    let kind = auth.host_kind();
+    over_plan(
+        repo_dir,
+        auth,
+        "push",
+        super::contact::ContactDirection::Push,
+        false,
+        move |repo, remote, leg_auth, _leg| {
+            let url = remote_url_of(remote);
+            let proxy = proxy_for(&url, Some(repo))?;
+            let (callbacks, status) = push_callbacks(leg_auth, kind, cred_source(Some(repo)));
+            let mut opts = git2::PushOptions::new();
+            opts.remote_callbacks(callbacks);
+            opts.proxy_options(proxy.options());
+            remote
+                .push(&["refs/tags/*:refs/tags/*"], Some(&mut opts))
+                .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Push, e))?;
+            status.verdict(&super::contact::host_of(&url))
+        },
+    )
 }
 
 /// The newest local `v*` version tag by semver order, or None (no tags,
@@ -1416,12 +3719,26 @@ pub fn create_worktree(
 /// left uncommitted — item state never rides a job branch (JP-006D-28), so
 /// `.joy` paths are excluded from staging (and any `.joy` change the agent
 /// staged itself is unstaged first).
+///
+/// Only for a checkout joy OWNS, which for this verb is the platform's
+/// job worktree (D3.4). A path an external content filter governs is
+/// left OUT of the commit and named in the log, rather than refused:
+/// libgit2 runs no filter program, so committing a `filter=lfs` path
+/// here would store the file where the pointer belongs and nobody would
+/// notice until the next clone, but this worktree has no person at it.
+/// `refuse_filtered_paths`' advice ("commit them with git, or take them
+/// out of this working tree") is advice for somebody who can act, and
+/// aborting the whole job commit for one such path would throw away
+/// every other path the agent wrote in that job. D3.4's absolute
+/// refusal is written for a person's checkout, and [`commit_everything`]
+/// and [`commit_index`] keep it.
 pub fn commit_all(
     worktree_dir: &Path,
     message: &str,
     author_name: &str,
     author_email: &str,
 ) -> anyhow::Result<Option<String>> {
+    warn_about_a_missing_item(worktree_dir, message);
     let repo = open(worktree_dir).map_err(err)?;
     let parent = repo
         .head()
@@ -1434,26 +3751,44 @@ pub fn commit_all(
         repo.reset_default(Some(p.as_object()), [".joy"]).ok();
     }
     let mut index = repo.index().map_err(err)?;
+    let filtered = std::cell::RefCell::new(Vec::new());
     index
         .add_all(
             ["*"],
             git2::IndexAddOption::DEFAULT,
             Some(&mut |path: &Path, _spec: &[u8]| -> i32 {
                 if path.starts_with(".joy") {
-                    1 // skip: item state never rides the job branch
-                } else {
-                    0
+                    return 1; // skip: item state never rides the job branch
+                }
+                match external_filter(&repo, path) {
+                    Some(filter) => {
+                        filtered
+                            .borrow_mut()
+                            .push(format!("{} (filter={filter})", path.display()));
+                        1 // skip, and the refusal below says why
+                    }
+                    None => 0,
                 }
             }),
         )
         .map_err(err)?;
+    // Skipped and said, not refused: see this function's own doc. The
+    // job's log is where a platform host says such a thing, and the
+    // rest of the agent's work still lands.
+    let skipped = filtered.into_inner();
+    if !skipped.is_empty() {
+        tracing::warn!(
+            paths = %skipped.join(", "),
+            "left out of this commit: joy's git engine runs no external content filter"
+        );
+    }
     index.write().map_err(err)?;
     let tree_id = index.write_tree().map_err(err)?;
     if parent.as_ref().map(|p| p.tree_id()) == Some(tree_id) {
         return Ok(None); // nothing but (excluded) .joy noise changed
     }
     let tree = repo.find_tree(tree_id).map_err(err)?;
-    let signature = git2::Signature::now(author_name, author_email).map_err(err)?;
+    let signature = signature_now(worktree_dir, author_name, author_email)?;
     let parents: Vec<&git2::Commit> = parent.iter().collect();
     let oid = repo
         .commit(
@@ -1818,7 +4153,7 @@ fn land_branch_yaml_inner(
     resolve_conflicts_yaml_aware(&repo, &mut index)?;
     let tree_id = index.write_tree_to(&repo).map_err(err)?;
     let tree = repo.find_tree(tree_id).map_err(err)?;
-    let sig = git2::Signature::now(author_name, author_email).map_err(err)?;
+    let sig = signature_now(repo_dir, author_name, author_email)?;
     let oid = repo
         .commit(Some("HEAD"), &sig, &sig, message, &tree, &[&head, &their])
         .map_err(err)?;
@@ -1835,25 +4170,37 @@ fn land_branch_yaml_inner(
 /// the merge). Errors (offline, unborn remote ref) leave the local state.
 pub fn refresh_branch_from_forge(repo_dir: &Path, branch: &str, auth: &Auth) {
     let refresh = || -> anyhow::Result<()> {
-        let repo = open(repo_dir).map_err(err)?;
-        let tracking = format!("refs/joy/branch-refresh/{branch}");
-        let src = format!("refs/heads/{branch}");
-        // download_ref, like every fetch here: libgit2's update_tips (and
-        // its unconditional FETCH_HEAD truncation) never runs
-        let Some(tip) = download_ref(&repo, auth, &src, &tracking)? else {
-            anyhow::bail!("branch {branch} not on the forge");
-        };
-        repo.reference(
-            &format!("refs/heads/{branch}"),
-            tip,
-            true,
-            "joy-vcs: refresh job branch from forge",
+        let kind = auth.host_kind();
+        let branch = branch.to_string();
+        over_plan(
+            repo_dir,
+            auth,
+            "fetch",
+            super::contact::ContactDirection::Fetch,
+            false,
+            move |repo, remote, leg_auth, _leg| {
+                let tracking = format!("refs/joy/branch-refresh/{branch}");
+                let src = format!("refs/heads/{branch}");
+                // download_over, like every fetch here: libgit2's
+                // update_tips (and its unconditional FETCH_HEAD
+                // truncation) never runs
+                let Some(tip) = download_over(repo, remote, leg_auth, kind, &src, &tracking)?
+                else {
+                    anyhow::bail!("branch {branch} not on the forge");
+                };
+                repo.reference(
+                    &format!("refs/heads/{branch}"),
+                    tip,
+                    true,
+                    "joy-vcs: refresh job branch from forge",
+                )
+                .map_err(err)?;
+                if let Ok(mut done) = repo.find_reference(&tracking) {
+                    done.delete().ok();
+                }
+                Ok(())
+            },
         )
-        .map_err(err)?;
-        if let Ok(mut done) = repo.find_reference(&tracking) {
-            done.delete().ok();
-        }
-        Ok(())
     };
     if let Err(e) = refresh() {
         tracing::debug!(%branch, error = %e, "job branch refresh skipped; using local state");
@@ -1917,7 +4264,7 @@ pub fn merge_branch(
     }
     let mut index = repo.index()?;
     let tree = repo.find_tree(index.write_tree()?)?;
-    let sig = git2::Signature::now(author_name, author_email)?;
+    let sig = signature_now(repo_dir, author_name, author_email)?;
     let oid = repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &[&head, &their])?;
     repo.cleanup_state().ok();
     // reset the working tree to the merged commit
@@ -2065,64 +4412,80 @@ pub fn ensure_local_branch(repo_dir: &Path, branch: &str) -> anyhow::Result<()> 
 /// memory of its first day). FETCH_HEAD is not touched. Returns the
 /// branch names the forge advertises.
 pub fn fetch_heads(repo_dir: &Path, auth: &Auth) -> anyhow::Result<Vec<String>> {
-    super::contact::run_for(repo_dir, "fetch", || fetch_heads_raw(repo_dir, auth))
-}
-
-fn fetch_heads_raw(repo_dir: &Path, auth: &Auth) -> anyhow::Result<Vec<String>> {
     let span = tracing::info_span!("git.fetch-heads", repo = %repo_dir.display());
     let _s = span.enter();
-    let repo = open(repo_dir).map_err(err)?;
-    let mut remote = origin_or_first(&repo)?;
-    let remote_name = remote
-        .name()
-        .map_err(err)?
-        .ok_or_else(|| anyhow::anyhow!("remote name is not utf-8"))?
-        .to_string();
-    let heads: Vec<(String, git2::Oid)> = {
-        let connection = remote
-            .connect_auth(
-                git2::Direction::Fetch,
-                Some(auth.callbacks(cred_config(Some(&repo)))),
-                None,
-            )
-            .map_err(|e| anyhow::anyhow!("fetch failed (offline?): {}", contact_error(&e)))?;
-        connection
-            .list()
-            .map_err(err)?
-            .iter()
-            .filter_map(|r| {
-                r.name()
-                    .strip_prefix("refs/heads/")
-                    .map(|b| (b.to_string(), r.oid()))
-            })
-            .collect()
-    };
-    if heads.is_empty() {
-        return Ok(Vec::new());
-    }
-    let refspecs: Vec<String> = heads
-        .iter()
-        .map(|(b, _)| format!("+refs/heads/{b}:refs/remotes/{remote_name}/{b}"))
-        .collect();
-    let refspec_strs: Vec<&str> = refspecs.iter().map(String::as_str).collect();
-    let mut opts = git2::FetchOptions::new();
-    opts.remote_callbacks(auth.callbacks(cred_config(Some(&repo))));
-    remote
-        .download(&refspec_strs, Some(&mut opts))
-        .map_err(|e| anyhow::anyhow!("fetch failed (offline?): {}", contact_error(&e)))?;
-    let _ = remote.disconnect();
-    // the tracking refs by hand, as download_ref does: update_tips would
-    // write FETCH_HEAD
-    for (b, tip) in &heads {
-        repo.reference(
-            &format!("refs/remotes/{remote_name}/{b}"),
-            *tip,
-            true,
-            "joy-vcs: fetch heads",
-        )
-        .map_err(err)?;
-    }
-    Ok(heads.into_iter().map(|(b, _)| b).collect())
+    let kind = auth.host_kind();
+    over_plan(
+        repo_dir,
+        auth,
+        "fetch",
+        super::contact::ContactDirection::Fetch,
+        false,
+        move |repo, remote, leg_auth, _leg| {
+            // The tracking refs are named after the CONFIGURED remote,
+            // which is read before the contact: the contact itself may
+            // run over an anonymous remote, either because the ssh
+            // config renames the host (`contact_remote`) or because it
+            // is the https twin, and an anonymous remote has no name.
+            let remote_name = {
+                let configured = origin_or_first(repo)?;
+                configured
+                    .name()
+                    .map_err(err)?
+                    .ok_or_else(|| anyhow::anyhow!("remote name is not utf-8"))?
+                    .to_string()
+            };
+            let url = remote_url_of(remote);
+            let proxy = proxy_for(&url, Some(repo))?;
+            // one connection for the advertisement and the download, as
+            // download_over does (D1.9)
+            let mut connection = remote
+                .connect_auth(
+                    git2::Direction::Fetch,
+                    Some(leg_auth.callbacks_as(kind, cred_source(Some(repo)))),
+                    Some(proxy.options()),
+                )
+                .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Fetch, e))?;
+            let heads: Vec<(String, git2::Oid)> = connection
+                .list()
+                .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Fetch, e))?
+                .iter()
+                .filter_map(|r| {
+                    r.name()
+                        .strip_prefix("refs/heads/")
+                        .map(|b| (b.to_string(), r.oid()))
+                })
+                .collect();
+            if heads.is_empty() {
+                return Ok(Vec::new());
+            }
+            let refspecs: Vec<String> = heads
+                .iter()
+                .map(|(b, _)| format!("+refs/heads/{b}:refs/remotes/{remote_name}/{b}"))
+                .collect();
+            let refspec_strs: Vec<&str> = refspecs.iter().map(String::as_str).collect();
+            let mut opts = git2::FetchOptions::new();
+            opts.remote_callbacks(leg_auth.callbacks_as(kind, cred_source(Some(repo))));
+            opts.proxy_options(proxy.options());
+            connection
+                .remote()
+                .download(&refspec_strs, Some(&mut opts))
+                .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Fetch, e))?;
+            drop(connection);
+            // the tracking refs by hand, as download_over does:
+            // update_tips would write FETCH_HEAD
+            for (b, tip) in &heads {
+                repo.reference(
+                    &format!("refs/remotes/{remote_name}/{b}"),
+                    *tip,
+                    true,
+                    "joy-vcs: fetch heads",
+                )
+                .map_err(err)?;
+            }
+            Ok(heads.into_iter().map(|(b, _)| b).collect())
+        },
+    )
 }
 
 /// The forge's default branch as the clone recorded it (`origin/HEAD`,
@@ -2215,8 +4578,518 @@ mod init_on_git2_tests {
 }
 
 #[cfg(test)]
+mod clean_filter_tests {
+    use super::*;
+
+    /// The audit D3.4 asks for, as a fact rather than an assumption:
+    /// libgit2 runs NO external filter. A `filter=lfs` path committed
+    /// through git2 would carry the file's own bytes where git would
+    /// have stored a pointer, and nobody would notice until the next
+    /// clone.
+    #[test]
+    fn libgit2_runs_no_clean_filter_so_the_content_would_be_the_blob() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let repo = git2::Repository::init(root).unwrap();
+        std::fs::write(root.join(".gitattributes"), "*.bin filter=lfs -text\n").unwrap();
+        std::fs::write(root.join("big.bin"), "the whole file, not a pointer").unwrap();
+
+        // Staged the plain way, without the guard below.
+        let mut index = repo.index().unwrap();
+        index
+            .add_all(["."], git2::IndexAddOption::DEFAULT, None)
+            .unwrap();
+        index.write().unwrap();
+        let entry = index.get_path(Path::new("big.bin"), 0).unwrap();
+        let blob = repo.find_blob(entry.id).unwrap();
+        assert_eq!(
+            std::str::from_utf8(blob.content()).unwrap(),
+            "the whole file, not a pointer",
+            "libgit2 stored the file itself, which is why the guard exists"
+        );
+        // ...and the attribute is readable, which is what the guard reads.
+        assert_eq!(
+            external_filter(&repo, Path::new("big.bin")).as_deref(),
+            Some("lfs")
+        );
+        assert_eq!(external_filter(&repo, Path::new(".gitattributes")), None);
+    }
+
+    /// So a commit path with a person behind it refuses such a path by
+    /// name instead of writing it wrong.
+    #[test]
+    fn the_sweeping_commit_path_refuses_a_filtered_path_by_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        git2::Repository::init(root).unwrap();
+        std::fs::write(root.join(".gitattributes"), "*.bin filter=lfs -text\n").unwrap();
+        std::fs::write(root.join("big.bin"), "content").unwrap();
+
+        let failed = commit_everything(root, "seed [no-item]", "T", "t@example.com")
+            .expect_err("a filtered path is refused");
+        let text = failed.to_string();
+        assert!(text.contains("big.bin"), "{text}");
+        assert!(text.contains("filter=lfs"), "{text}");
+        assert!(text.contains("runs none"), "{text}");
+    }
+
+    /// A DELETED filtered path is not refused: there is no content for a
+    /// filter to have rewritten, so committing the deletion is what
+    /// `git add -A` followed by `git commit` did, and refusing it would
+    /// leave a person unable to record a release after deleting an
+    /// asset.
+    #[test]
+    fn a_deleted_filtered_path_is_not_a_refusal() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let repo = git2::Repository::init(root).unwrap();
+        std::fs::write(root.join(".gitattributes"), "*.bin filter=lfs -text\n").unwrap();
+        // Tracked the way git would have left it: the pointer git's own
+        // clean filter wrote, committed. Seeded through git2 directly,
+        // because joy's own commit verbs are the ones under test and
+        // they refuse exactly this.
+        std::fs::write(root.join("big.bin"), "version https://git-lfs/spec/v1\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new(".gitattributes")).unwrap();
+        index.add_path(Path::new("big.bin")).unwrap();
+        index.write().unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let signature = git2::Signature::now("T", "t@example.com").unwrap();
+        repo.commit(
+            Some("HEAD"),
+            &signature,
+            &signature,
+            "seed [no-item]",
+            &repo.find_tree(tree_id).unwrap(),
+            &[],
+        )
+        .unwrap();
+
+        std::fs::remove_file(root.join("big.bin")).unwrap();
+        stage_all(root).expect("a deletion carries no content to rewrite");
+        let oid = commit_index(root, "drop it [no-item]", "T", "t@example.com").unwrap();
+        let tree = repo
+            .find_commit(git2::Oid::from_str(&oid).unwrap())
+            .unwrap()
+            .tree()
+            .unwrap();
+        assert!(
+            tree.get_path(Path::new("big.bin")).is_err(),
+            "the deletion is committed"
+        );
+    }
+
+    /// `commit_all` is the platform's job worktree, where nobody can act
+    /// on that refusal and where an all-or-nothing abort throws away
+    /// every other path the agent wrote in the job. It leaves the
+    /// filtered path out, says so in the log, and commits the rest.
+    #[test]
+    fn the_job_worktree_keeps_the_rest_of_the_work() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let repo = git2::Repository::init(root).unwrap();
+        std::fs::write(root.join(".gitattributes"), "*.bin filter=lfs -text\n").unwrap();
+        std::fs::write(root.join("big.bin"), "content, where a pointer belongs").unwrap();
+        std::fs::write(root.join("src.rs"), "the work of the job").unwrap();
+
+        let oid = commit_all(root, "work [no-item]", "T", "t@example.com")
+            .expect("the job commit is written")
+            .expect("something changed");
+        let tree = repo
+            .find_commit(git2::Oid::from_str(&oid).unwrap())
+            .unwrap()
+            .tree()
+            .unwrap();
+        assert!(
+            tree.get_path(Path::new("src.rs")).is_ok(),
+            "the agent's work is in the commit"
+        );
+        assert!(
+            tree.get_path(Path::new("big.bin")).is_err(),
+            "the filtered path is not, because its blob would be the file"
+        );
+        // ...and it is still there for whoever can commit it properly.
+        assert!(root.join("big.bin").is_file());
+    }
+
+    /// The two verbs a PERSON's checkout still reaches, which the first
+    /// audit missed because this package created them: the desktop's
+    /// release record is `add_all` plus `commit` (release_ops.rs:343),
+    /// and before the git2 only move those were `git add -A` and
+    /// `git commit`, which DID run the person's clean filter. Now they
+    /// refuse the path instead of writing the file where the pointer
+    /// belongs, and the index is left exactly as it was.
+    #[test]
+    fn the_verbs_a_persons_checkout_reaches_refuse_a_filtered_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let repo = git2::Repository::init(root).unwrap();
+        std::fs::write(root.join(".gitattributes"), "*.psd filter=lfs -text\n").unwrap();
+        std::fs::write(root.join("art.psd"), "pointer, please").unwrap();
+
+        // 1. the staging verb: this is where a file becomes a blob.
+        let failed = stage_all(root).expect_err("a filtered path is refused");
+        let text = failed.to_string();
+        assert!(text.contains("art.psd"), "{text}");
+        assert!(text.contains("filter=lfs"), "{text}");
+        let index = repo.index().unwrap();
+        assert!(
+            index.get_path(Path::new("art.psd"), 0).is_none(),
+            "nothing was written to the index"
+        );
+
+        // 2. the commit verb, for an entry that got in some other way.
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("art.psd")).unwrap();
+        index.write().unwrap();
+        let failed = commit_index(root, "bump to v1.2.3 [no-item]", "T", "t@example.com")
+            .expect_err("a commit of a filtered path is refused wherever the entry came from");
+        let text = failed.to_string();
+        assert!(text.contains("art.psd"), "{text}");
+        assert!(repo.head().is_err(), "no commit was written: {text}");
+    }
+
+    /// ...and the same two verbs are untouched in a checkout that has
+    /// no such attribute, including the release record shape the
+    /// desktop runs: stage everything, commit the index.
+    #[test]
+    fn the_same_verbs_commit_an_ordinary_checkout_as_before() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let repo = git2::Repository::init(root).unwrap();
+        std::fs::write(root.join("Cargo.toml"), "version = \"0.0.2\"\n").unwrap();
+
+        stage_all(root).unwrap();
+        let oid = commit_index(root, "bump to v0.0.2 [no-item]", "T", "t@example.com").unwrap();
+        let commit = repo
+            .find_commit(git2::Oid::from_str(&oid).unwrap())
+            .unwrap();
+        assert!(commit
+            .tree()
+            .unwrap()
+            .get_path(Path::new("Cargo.toml"))
+            .is_ok());
+
+        // A second round, where the path is tracked and CHANGED: that is
+        // `update_all`'s half of `git add -A`, and the guard sits on it
+        // too.
+        std::fs::write(root.join("Cargo.toml"), "version = \"0.0.3\"\n").unwrap();
+        stage_all(root).unwrap();
+        assert!(commit_index(root, "bump to v0.0.3 [no-item]", "T", "t@example.com").is_ok());
+    }
+
+    /// The sentence `joy release record` prints when something of the
+    /// person's was skipped has to be true. `worktree_dirty` counts
+    /// untracked files and answers `true` on an unreadable checkout, so
+    /// it said so in nearly every real repository, including ones where
+    /// nothing of the person's was staged at all.
+    #[test]
+    fn only_a_tracked_change_outside_joys_paths_counts_as_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let repo = git2::Repository::init(root).unwrap();
+        std::fs::create_dir_all(root.join(".joy")).unwrap();
+        std::fs::write(root.join(".joy/project.yaml"), "acronym: JOY\n").unwrap();
+        std::fs::write(root.join("Cargo.toml"), "version = \"0.0.1\"\n").unwrap();
+        commit_everything(root, "seed [no-item]", "T", "t@example.com").unwrap();
+        let joys = vec![".joy".to_string(), "Cargo.toml".to_string()];
+
+        // A build directory and an editor's scratch file: untracked, and
+        // no answer to the question.
+        std::fs::create_dir_all(root.join("target/debug")).unwrap();
+        std::fs::write(root.join("target/debug/joy"), "binary").unwrap();
+        std::fs::write(root.join(".src.rs.swp"), "vim").unwrap();
+        assert!(
+            changes_outside(root, &joys).is_empty(),
+            "untracked files are not the person's skipped work"
+        );
+        assert!(worktree_dirty(root), "...which is what the old test asked");
+
+        // joy's own paths changed: also no answer, they are what joy
+        // just committed.
+        std::fs::write(root.join(".joy/project.yaml"), "acronym: JOY\nname: x\n").unwrap();
+        std::fs::write(root.join("Cargo.toml"), "version = \"0.0.2\"\n").unwrap();
+        assert!(changes_outside(root, &joys).is_empty());
+
+        // A tracked file of the person's, changed: that IS an answer.
+        std::fs::write(root.join("src.rs"), "half finished\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("src.rs")).unwrap();
+        index.write().unwrap();
+        assert_eq!(changes_outside(root, &joys), vec!["src.rs".to_string()]);
+    }
+
+    /// A repository without such an attribute is untouched by the
+    /// guard: every ordinary checkout commits exactly as before.
+    #[test]
+    fn an_ordinary_checkout_commits_as_it_always_did() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let repo = git2::Repository::init(root).unwrap();
+        std::fs::write(root.join(".gitattributes"), "*.yaml merge=joy-yaml\n").unwrap();
+        std::fs::write(root.join("a.txt"), "plain").unwrap();
+
+        let oid = commit_everything(root, "seed [no-item]", "T", "t@example.com").unwrap();
+        let commit = repo
+            .find_commit(git2::Oid::from_str(&oid).unwrap())
+            .unwrap();
+        assert!(commit.tree().unwrap().get_path(Path::new("a.txt")).is_ok());
+
+        std::fs::write(root.join("b.txt"), "more").unwrap();
+        assert!(commit_all(root, "work [no-item]", "T", "t@example.com")
+            .unwrap()
+            .is_some());
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The proxy of THIS contact reaches the failure (D1.11, D1.8c).
+    /// joy's own decision travels in a cell, because the alternative is
+    /// a parameter on fifteen call sites, and `contact_failed` puts it
+    /// into the evidence: a 407 then names the machine in the middle
+    /// and never the forge.
+    #[test]
+    fn a_407_behind_a_proxy_names_the_proxy_and_the_cell_is_per_contact() {
+        let libgit2 = || {
+            git2::Error::new(
+                git2::ErrorCode::Auth,
+                git2::ErrorClass::Http,
+                "proxy authentication required but no callback set",
+            )
+        };
+        super::super::proxy::note(Some("proxy.acme.example:8080"), false);
+        let failure = contact_failed(
+            "https://github.com/joyint/joy.git",
+            super::super::contact::ContactDirection::Fetch,
+            libgit2(),
+        );
+        let text = format!("{failure}");
+        assert!(
+            text.contains("proxy.acme.example:8080"),
+            "the proxy is named: {text}"
+        );
+        assert!(!text.contains("github.com"), "and the forge is not: {text}");
+
+        // The cell belongs to one contact: the boundary forgets it
+        // before the next one runs, and a contact that took no proxy
+        // names none.
+        super::super::proxy::forget();
+        let failure = contact_failed(
+            "https://github.com/joyint/joy.git",
+            super::super::contact::ContactDirection::Fetch,
+            libgit2(),
+        );
+        let text = format!("{failure}");
+        assert!(
+            !text.contains("proxy.acme.example"),
+            "the last contact's proxy is not this one's: {text}"
+        );
+        assert!(
+            text.contains("A proxy in front of github.com"),
+            "and an unnamed proxy is said to be in front of the forge: {text}"
+        );
+    }
+
+    /// D1.11's promise is absolute: the proxy password never appears in
+    /// a log line or an error text. libgit2 has one message that echoes
+    /// the proxy URL joy built straight back ("invalid URL: '%s'",
+    /// http.c:340-342), so the detail line takes the credential out of
+    /// libgit2's own words whenever this contact carried one.
+    #[test]
+    fn a_libgit2_message_that_carries_the_proxy_url_loses_the_password() {
+        let libgit2 = || {
+            git2::Error::new(
+                git2::ErrorCode::GenericError,
+                git2::ErrorClass::Http,
+                "invalid URL: 'http://picard:tea-earl-grey-hot@proxy.acme.example:8080'",
+            )
+        };
+        super::super::proxy::note(Some("proxy.acme.example:8080"), true);
+        let evidence = super::super::contact::ContactEvidence::new(
+            libgit2(),
+            "https://github.com/joyint/joy.git",
+            super::super::contact::ContactDirection::Fetch,
+            super::super::contact::CredentialSource::TokenPresented,
+        )
+        .through_proxy("proxy.acme.example:8080".to_string());
+        let verdict = super::super::contact::verdict(&evidence);
+        assert!(
+            !verdict.detail.contains("tea-earl-grey-hot"),
+            "the password is out of the detail line: {}",
+            verdict.detail
+        );
+        assert_eq!(
+            verdict.detail,
+            "libgit2: invalid URL: 'http://<credential>@proxy.acme.example:8080'"
+        );
+
+        // A contact whose proxy carried no credential keeps libgit2's
+        // words exactly as they stand.
+        super::super::proxy::note(Some("proxy.acme.example:8080"), false);
+        let evidence = super::super::contact::ContactEvidence::new(
+            git2::Error::new(
+                git2::ErrorCode::GenericError,
+                git2::ErrorClass::Net,
+                "failed to resolve address for ssh://git@forge.acme.example",
+            ),
+            "https://github.com/joyint/joy.git",
+            super::super::contact::ContactDirection::Fetch,
+            super::super::contact::CredentialSource::TokenPresented,
+        );
+        assert!(
+            super::super::contact::verdict(&evidence)
+                .detail
+                .contains("ssh://git@forge.acme.example"),
+            "nothing is scrubbed off that path"
+        );
+        super::super::proxy::forget();
+    }
+
+    /// D4.5, open mode: the e-mail is the member, and the display name is
+    /// the git config name only when that config maps to this member.
+    #[test]
+    fn an_open_mode_signature_carries_the_member_as_the_address() {
+        assert_eq!(
+            member_signature(None, "scotty@example.com", Some("Scotty")).unwrap(),
+            ("Scotty".to_string(), "scotty@example.com".to_string())
+        );
+        // no name joy can attribute: the member id stands in for it
+        assert_eq!(
+            member_signature(None, "scotty@example.com", None).unwrap(),
+            (
+                "scotty@example.com".to_string(),
+                "scotty@example.com".to_string()
+            )
+        );
+        // an empty or blank configured name is not a name (git2 refuses it)
+        assert_eq!(
+            member_signature(None, "scotty@example.com", Some("   ")).unwrap(),
+            (
+                "scotty@example.com".to_string(),
+                "scotty@example.com".to_string()
+            )
+        );
+    }
+
+    /// D4.5, anonymous mode (ADR-042): the opaque id in BOTH fields, and
+    /// no git config name can smuggle a person's name into a commit.
+    #[test]
+    fn an_anonymous_signature_is_the_opaque_id_in_both_fields() {
+        let id = crate::member_id::opaque_member_id(&"ab".repeat(32)).unwrap();
+        assert!(crate::member_id::is_opaque_member_id(&id));
+        assert_eq!(
+            member_signature(None, &id, Some("Scotty")).unwrap(),
+            (id.clone(), id.clone())
+        );
+    }
+
+    /// D4.5, at the gate every commit goes through: `signature_now` is
+    /// the only way joy builds a signature, so an empty display name can
+    /// no longer reach libgit2 as "failed to parse signature", and an
+    /// anonymous member id cannot pick up a name on the way in.
+    #[test]
+    fn every_commit_passes_the_signature_gate() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        std::fs::write(dir.path().join("a.txt"), "a").unwrap();
+        stage_paths(dir.path(), &["a.txt"]).unwrap();
+
+        // A member with no configured name: the member stands in for it,
+        // where git2 would have refused the empty string outright.
+        let oid = commit_index(dir.path(), "first", "", "scotty@example.com").unwrap();
+        let commit = repo
+            .find_commit(git2::Oid::from_str(&oid).unwrap())
+            .unwrap();
+        assert_eq!(commit.author().name().ok(), Some("scotty@example.com"));
+        assert_eq!(commit.author().email().ok(), Some("scotty@example.com"));
+
+        // An anonymous member id keeps both fields, whatever name a
+        // caller carries beside it.
+        let id = crate::member_id::opaque_member_id(&"cd".repeat(32)).unwrap();
+        std::fs::write(dir.path().join("a.txt"), "b").unwrap();
+        stage_paths(dir.path(), &["a.txt"]).unwrap();
+        let oid = commit_index(dir.path(), "second", "Scotty", &id).unwrap();
+        let commit = repo
+            .find_commit(git2::Oid::from_str(&oid).unwrap())
+            .unwrap();
+        assert_eq!(commit.author().name().ok(), Some(id.as_str()));
+        assert_eq!(commit.author().email().ok(), Some(id.as_str()));
+
+        // Nobody at all: the typed error, not libgit2's parse failure.
+        let err = commit_index(dir.path(), "third", "Scotty", "  ").unwrap_err();
+        assert!(
+            err.to_string()
+                .starts_with("this project does not know who you are, pick your member"),
+            "{err}"
+        );
+    }
+
+    /// D3.4: a commit joy writes carries joy's own paths and nothing
+    /// else, and a person's half staged work neither rides along nor
+    /// hides joy's change behind a whole tree comparison.
+    #[test]
+    fn a_scoped_commit_leaves_the_persons_staged_work_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        std::fs::create_dir_all(dir.path().join(".joy")).unwrap();
+        std::fs::write(dir.path().join(".joy/project.yaml"), "name: first").unwrap();
+        std::fs::write(dir.path().join("src.rs"), "half finished").unwrap();
+        stage_paths(dir.path(), &[".joy", "src.rs"]).unwrap();
+
+        let scope = vec![".joy".to_string()];
+        let oid = commit_index_paths(dir.path(), &scope, "joy: first", "m", "m@e.c")
+            .unwrap()
+            .expect("joy's own path changed");
+        let tree = repo
+            .find_commit(git2::Oid::from_str(&oid).unwrap())
+            .unwrap()
+            .tree()
+            .unwrap();
+        assert!(tree.get_path(Path::new(".joy/project.yaml")).is_ok());
+        assert!(
+            tree.get_path(Path::new("src.rs")).is_err(),
+            "the person's staged file is not joy's to commit"
+        );
+
+        // Nothing of joy's changed since: the staged `src.rs` must not
+        // make joy believe there is something to commit.
+        assert!(
+            commit_index_paths(dir.path(), &scope, "joy: again", "m", "m@e.c")
+                .unwrap()
+                .is_none()
+        );
+
+        // A deletion under joy's own paths is a change like any other.
+        std::fs::remove_file(dir.path().join(".joy/project.yaml")).unwrap();
+        stage_paths(dir.path(), &[".joy"]).unwrap();
+        let oid = commit_index_paths(dir.path(), &scope, "joy: gone", "m", "m@e.c")
+            .unwrap()
+            .expect("the deletion is a change");
+        let tree = repo
+            .find_commit(git2::Oid::from_str(&oid).unwrap())
+            .unwrap()
+            .tree()
+            .unwrap();
+        assert!(tree.get_path(Path::new(".joy/project.yaml")).is_err());
+        assert!(tree.get_path(Path::new("src.rs")).is_err());
+    }
+
+    /// D4.5: no member, no commit, and the sentence says what to do.
+    #[test]
+    fn a_signature_without_a_member_is_the_typed_error() {
+        let err = member_signature(None, "   ", Some("Scotty")).unwrap_err();
+        assert!(
+            err.to_string()
+                .starts_with("this project does not know who you are, pick your member"),
+            "{err}"
+        );
+        // the command line has no picker, so the sentence names its remedy
+        assert!(err.to_string().contains("--user <address>"), "{err}");
+        assert!(matches!(err, crate::error::JoyError::UnknownActingMember));
+    }
 
     /// A forge that accepts the connection and then says nothing, the way
     /// Codeberg's proxy did on 2026-09-03 before its own 504 at thirty
@@ -2251,17 +5124,38 @@ mod tests {
         let started = std::time::Instant::now();
         let result = fetch_branch(tmp.path(), &Auth::token("x"));
         let took = started.elapsed();
-        let error = result
-            .expect_err("a silent forge cannot deliver a branch")
-            .to_string();
-        // and the error says so, not libgit2's raw EAGAIN (JOY-0278-85)
+        let error = result.expect_err("a silent forge cannot deliver a branch");
+        // and the state is "nobody answered", not a certificate fault:
+        // the bound surfaces as libgit2's raw EAGAIN under class Ssl
+        // (JOY-0278-85), and the classifier reads it for what it is
+        let sentence = error.to_string();
+        assert_eq!(
+            crate::vcs::contact::failure_of(&error),
+            crate::vcs::contact::Failure::Offline,
+            "the bound fired: {sentence}"
+        );
         assert!(
-            error.contains("sent nothing for 15 seconds"),
-            "the error names the bound: {error}"
+            sentence.contains("No connection to 127.0.0.1"),
+            "the sentence names the host: {sentence}"
+        );
+        // libgit2's own words stay in the detail line (D1.8b), and
+        // where joy's own bound fired instead there are none: WinHTTP
+        // reads neither libgit2 option and never returned, so the
+        // detail is joy's own sentence and says so (`super::bound`).
+        let detail = crate::vcs::contact::detail_of(&error).unwrap_or_default();
+        assert!(!sentence.contains("libgit2"), "sentence {sentence:?}");
+        assert!(
+            detail.starts_with("libgit2:") || detail.starts_with("joy:"),
+            "sentence {sentence:?}, detail {detail:?}"
+        );
+        #[cfg(windows)]
+        assert!(
+            detail.starts_with("joy:"),
+            "WinHTTP has no socket bound, so this must be joy's own: {detail:?}"
         );
         assert!(
             took >= std::time::Duration::from_secs(10) && took < std::time::Duration::from_secs(25),
-            "gave up after {took:?}: expected the 15s socket bound, not the forge's timing"
+            "gave up after {took:?}: expected joy's own bound or the 15s socket bound, not the forge's timing"
         );
         assert_eq!(
             unsafe { git2::opts::get_server_connect_timeout_in_milliseconds() }.unwrap(),
@@ -2308,7 +5202,7 @@ mod tests {
 
         // Clone like the server does (file URLs ignore the token callback).
         let checkout = base.join("checkout");
-        clone(
+        clone_full(
             forge.to_str().unwrap(),
             &Auth::token("irrelevant"),
             &checkout,
@@ -2327,7 +5221,7 @@ mod tests {
             .is_none());
 
         let second = base.join("second");
-        clone(forge.to_str().unwrap(), &Auth::token("irrelevant"), &second).expect("clone 2");
+        clone_full(forge.to_str().unwrap(), &Auth::token("irrelevant"), &second).expect("clone 2");
         assert!(second.join(".joy/item.yaml").exists());
         pull_ff(&checkout, &Auth::token("irrelevant")).expect("pull up-to-date");
 
@@ -2372,7 +5266,7 @@ mod tests {
             .unwrap();
 
         let checkout = base.join("checkout");
-        clone(forge.to_str().unwrap(), &Auth::token("x"), &checkout).expect("clone");
+        clone_full(forge.to_str().unwrap(), &Auth::token("x"), &checkout).expect("clone");
 
         // job worktree on a fresh branch
         let wt = base.join("wt");
@@ -2459,7 +5353,7 @@ mod tests {
             .push(&[format!("refs/heads/{b}:refs/heads/{b}").as_str()], None)
             .unwrap();
         let checkout = base.join("checkout");
-        clone(forge.to_str().unwrap(), &Auth::token("x"), &checkout).unwrap();
+        clone_full(forge.to_str().unwrap(), &Auth::token("x"), &checkout).unwrap();
 
         // a dirty branch: code plus a direct .joy commit
         let wt = base.join("wt-dirty");
@@ -2531,7 +5425,7 @@ mod engine_invariant_tests {
         seed_repo.remote("origin", forge.to_str().unwrap()).unwrap();
         push_current_branch(&seed_repo);
         let clone_dir = tmp.path().join("clone");
-        clone(forge.to_str().unwrap(), &Auth::token(""), &clone_dir).expect("clone");
+        clone_full(forge.to_str().unwrap(), &Auth::token(""), &clone_dir).expect("clone");
         Rig {
             _tmp: tmp,
             forge,
@@ -2777,6 +5671,51 @@ mod engine_invariant_tests {
         );
     }
 
+    /// ONE advertisement answers for several refs (D1.9): the working
+    /// branch and a side ref come back from the same contact, and a ref
+    /// the forge does not have is simply absent. This is what turns a
+    /// poll tick that watches two refs into one contact.
+    #[test]
+    fn one_advertisement_answers_for_several_refs() {
+        let rig = rig();
+        let auth = Auth::token("");
+        // a side ref on the forge, the way the chat store pushes one
+        let forge_repo = git2::Repository::open_bare(&rig.forge).unwrap();
+        let tip = forge_repo.head().unwrap().target().unwrap();
+        forge_repo
+            .reference("refs/joy/chats", tip, true, "chats")
+            .unwrap();
+        let branch = open(&rig.clone_dir)
+            .unwrap()
+            .head()
+            .unwrap()
+            .shorthand()
+            .unwrap()
+            .to_string();
+        let head_ref = format!("refs/heads/{branch}");
+
+        let found = ls_remote_refs(
+            &rig.clone_dir,
+            &auth,
+            &[head_ref.as_str(), "refs/joy/chats", "refs/joy/absent"],
+        )
+        .unwrap();
+        assert_eq!(found.len(), 2, "{found:?}");
+        assert_eq!(found[&head_ref], tip.to_string());
+        assert_eq!(found["refs/joy/chats"], tip.to_string());
+        assert!(!found.contains_key("refs/joy/absent"));
+
+        // the single ref verb is that same advertisement, one name wide
+        assert_eq!(
+            ls_remote_ref(&rig.clone_dir, &auth, "refs/joy/chats").unwrap(),
+            Some(tip.to_string())
+        );
+        assert_eq!(
+            ls_remote_ref(&rig.clone_dir, &auth, "refs/joy/absent").unwrap(),
+            None
+        );
+    }
+
     /// The 30-second re-clone loop of 2026-08-25: a forge WITHOUT
     /// refs/joy/chats must not poison anything — every round lands, and
     /// a stale tracking ref from earlier days is cleaned up.
@@ -2988,32 +5927,891 @@ mod pull_merge_tests {
 }
 
 #[cfg(test)]
-mod basic_auth_tests {
+mod credential_shape_tests {
+    use super::*;
+
+    /// The user name and the password inside a plaintext credential.
+    ///
+    /// git2 0.21 exposes no accessor for either (`Cred` holds one raw
+    /// pointer and hands out only `credtype`), so the test reads
+    /// libgit2's own public struct, `git_credential_userpass_plaintext`
+    /// from include/git2/credential.h: the credential header, then the
+    /// two strings. This is the only way to see what joy would send
+    /// over the wire. The credential is leaked, which is what a test
+    /// can afford.
+    fn userpass(cred: git2::Cred) -> (String, String) {
+        #[repr(C)]
+        struct RawUserpass {
+            credtype: u32,
+            free: Option<extern "C" fn(*mut std::ffi::c_void)>,
+            username: *const std::ffi::c_char,
+            password: *const std::ffi::c_char,
+        }
+        assert_eq!(
+            cred.credtype(),
+            git2::Cred::userpass_plaintext("u", "p").unwrap().credtype(),
+            "not a user-and-password credential"
+        );
+        unsafe {
+            let raw = cred.unwrap().cast::<RawUserpass>();
+            let user = std::ffi::CStr::from_ptr((*raw).username)
+                .to_string_lossy()
+                .into_owned();
+            let password = std::ffi::CStr::from_ptr((*raw).password)
+                .to_string_lossy()
+                .into_owned();
+            (user, password)
+        }
+    }
+
+    fn is_userpass(cred: &git2::Cred) -> bool {
+        cred.credtype() == git2::Cred::userpass_plaintext("u", "p").unwrap().credtype()
+    }
+
+    /// The claim decides the shape, and the FIRST attempt carries it.
+    /// This is the acceptance sentence of J4a for a GitHub Enterprise
+    /// Server host whose name says nothing about GitHub: without the
+    /// claim there is no first attempt that can be right, because the
+    /// engine's table knows three hosts and guesses at none.
+    #[test]
+    fn a_claimed_ghes_host_is_sent_x_access_token_on_the_first_attempt() {
+        let url = "https://source.acme-internal.example/o/r.git";
+        assert_eq!(known_forge_kind("source.acme-internal.example"), None);
+        let mut credentials = Auth::token_for("ghp_token", ForgeKind::GitHubEnterprise)
+            .credential_source(CredSource::none());
+        let first = credentials(url, None, git2::CredentialType::USER_PASS_PLAINTEXT)
+            .expect("a credential on the first attempt");
+        assert_eq!(
+            userpass(first),
+            ("x-access-token".to_string(), "ghp_token".to_string())
+        );
+        // A claimed host never gets the other name on the second
+        // attempt: the claim is not a guess to be corrected.
+        let mut gitlab =
+            Auth::token_for("glpat", ForgeKind::GitLab).credential_source(CredSource::none());
+        let first = gitlab(url, None, git2::CredentialType::USER_PASS_PLAINTEXT).unwrap();
+        assert_eq!(userpass(first), ("oauth2".to_string(), "glpat".to_string()));
+        let second = gitlab(url, None, git2::CredentialType::USER_PASS_PLAINTEXT);
+        assert!(
+            second.is_err(),
+            "a claimed host has one shape, not two, and then the chain"
+        );
+    }
+
+    #[test]
+    fn an_unclaimed_host_tries_the_second_shape_and_a_known_one_does_not() {
+        let unknown = "https://forge.acme-internal.example/o/r.git";
+        let mut credentials = Auth::token("tok").credential_source(CredSource::none());
+        let first = credentials(unknown, None, git2::CredentialType::USER_PASS_PLAINTEXT).unwrap();
+        assert_eq!(userpass(first), ("oauth2".to_string(), "tok".to_string()));
+        let second = credentials(unknown, None, git2::CredentialType::USER_PASS_PLAINTEXT).unwrap();
+        assert_eq!(
+            userpass(second),
+            ("x-access-token".to_string(), "tok".to_string()),
+            "the empty-password shape is never one of the two (D1.6)"
+        );
+        // Then the chain, and its sentence names the token as well as
+        // what came after it.
+        let exhausted = match credentials(unknown, None, git2::CredentialType::USER_PASS_PLAINTEXT)
+        {
+            Ok(_) => panic!("nothing else to offer"),
+            Err(e) => e,
+        };
+        assert!(
+            exhausted.message().contains("refused the access token"),
+            "{}",
+            exhausted.message()
+        );
+        assert!(
+            exhausted.message().contains("forge.acme-internal.example"),
+            "{}",
+            exhausted.message()
+        );
+
+        // github.com is in the table, so there is no second shape to
+        // try: one attempt, then the chain.
+        let known = "https://github.com/o/r.git";
+        let mut credentials = Auth::token("tok").credential_source(CredSource::none());
+        let first = credentials(known, None, git2::CredentialType::USER_PASS_PLAINTEXT).unwrap();
+        assert_eq!(
+            userpass(first),
+            ("x-access-token".to_string(), "tok".to_string())
+        );
+        let exhausted = match credentials(known, None, git2::CredentialType::USER_PASS_PLAINTEXT) {
+            Ok(_) => panic!("nothing else to offer"),
+            Err(e) => e,
+        };
+        assert!(
+            exhausted
+                .message()
+                .contains("refused the access token (sent as x-access-token)"),
+            "{}",
+            exhausted.message()
+        );
+    }
+
+    /// Design D1.6: the callback honours the `allowed` mask. Without
+    /// it, an insteadOf rewrite to ssh makes libgit2 answer
+    /// "authentication callback returned unsupported credentials type"
+    /// (ssh_libssh2.c:415-418) and the person is told the token is
+    /// wrong.
+    #[test]
+    fn a_mask_without_user_and_password_never_gets_the_token() {
+        let mut credentials =
+            Auth::token_for("ghp_token", ForgeKind::GitHub).credential_source(CredSource::none());
+        // An https URL with an ssh-only mask: the chain holds a helper
+        // step, which this mask cannot take, so the answer is the
+        // sentence and never the token.
+        let refused = match credentials(
+            "https://github.com/o/r.git",
+            None,
+            git2::CredentialType::SSH_KEY,
+        ) {
+            Ok(_) => panic!("a token is not an ssh key"),
+            Err(e) => e,
+        };
+        assert!(refused.message().contains("github.com"), "{refused}");
+        assert!(
+            !refused.message().contains("refused the access token"),
+            "the token was never offered, so it was never refused: {refused}"
+        );
+
+        // And the ssh URL an insteadOf rewrite produces: libgit2 asks
+        // for the user name first, then for a key. Whatever this
+        // machine's agent and key files hold, a user-and-password
+        // credential is the one answer that must not come back.
+        let ssh = "ssh://git@nothing.example.invalid/o/r.git";
+        let user = credentials(ssh, None, git2::CredentialType::USERNAME)
+            .expect("the one user name of this contact");
+        assert_eq!(
+            user.credtype(),
+            git2::Cred::username("git").unwrap().credtype()
+        );
+        if let Ok(offered) = credentials(ssh, Some("git"), git2::CredentialType::SSH_KEY) {
+            assert!(
+                !is_userpass(&offered),
+                "an ssh mask must never be answered with the token"
+            );
+        }
+    }
+
+    #[test]
+    fn a_host_with_no_token_goes_straight_to_the_local_chain() {
+        for auth in [
+            Auth::Local,
+            Auth::local(HostKind::Interactive),
+            Auth::token(""),
+        ] {
+            let mut credentials = auth.credential_source(CredSource::none());
+            let answer = credentials(
+                "https://gitea.example.com/o/r.git",
+                None,
+                git2::CredentialType::USER_PASS_PLAINTEXT,
+            );
+            let error = answer.err().expect("no configuration, so no credential");
+            assert!(
+                error.message().contains("git configuration"),
+                "{}",
+                error.message()
+            );
+        }
+    }
+
     /// Each forge wants its own name in front of the token. Sending
     /// GitHub's convention to Codeberg is what made a valid token look
-    /// like an unsupported authentication method.
+    /// like an unsupported authentication method (JP-00D8-94).
     #[test]
     fn every_forge_gets_the_name_it_expects() {
+        assert_eq!(token_user("github.com", None), "x-access-token");
+        assert_eq!(token_user("gitlab.com", None), "oauth2");
+        assert_eq!(token_user("gitlab.self-hosted.example", None), "oauth2");
+        // Design D1.6: the Gitea family takes oauth2 as well, never
+        // the token as the user name with an empty password.
+        assert_eq!(token_user("codeberg.org", None), "oauth2");
+        assert_eq!(token_user("gitea.int.joydev.com", None), "oauth2");
+    }
+
+    /// The table knows three hosts and guesses at no other, which is
+    /// what D1.1 and D1.5 say it holds. A Gitea that answers at
+    /// `github.internal.example` would otherwise be classified as
+    /// GitHub Enterprise by its name alone, be sent `x-access-token`,
+    /// and never be offered `oauth2` either, because the second shape
+    /// is kept for hosts no table knows: a valid token would look
+    /// refused.
+    #[test]
+    fn the_engine_table_holds_three_hosts_and_guesses_at_none() {
+        assert_eq!(known_forge_kind("github.com"), Some(ForgeKind::GitHub));
+        assert_eq!(known_forge_kind("ssh.github.com"), Some(ForgeKind::GitHub));
+        assert_eq!(known_forge_kind("gitlab.com"), Some(ForgeKind::GitLab));
         assert_eq!(
-            super::basic_auth_user("https://github.com/owner/repo.git"),
+            known_forge_kind("altssh.gitlab.com"),
+            Some(ForgeKind::GitLab)
+        );
+        assert_eq!(known_forge_kind("codeberg.org"), Some(ForgeKind::Gitea));
+        for guessable in [
+            "github.internal.example",
+            "gitlab.acme.example",
+            "gitea.int.joydev.com",
+            "forgejo.example.org",
+            "source.acme-internal.example",
+        ] {
+            assert_eq!(known_forge_kind(guessable), None, "for {guessable}");
+        }
+        // A Gitea behind a name that says GitHub gets both shapes, one
+        // per attempt, and the second one is the one it accepts.
+        let url = "https://github.internal.example/o/r.git";
+        let mut credentials = Auth::token("tok").credential_source(CredSource::none());
+        let first = credentials(url, None, git2::CredentialType::USER_PASS_PLAINTEXT).unwrap();
+        assert_eq!(userpass(first), ("oauth2".to_string(), "tok".to_string()));
+        let second = credentials(url, None, git2::CredentialType::USER_PASS_PLAINTEXT).unwrap();
+        assert_eq!(
+            userpass(second),
+            ("x-access-token".to_string(), "tok".to_string())
+        );
+    }
+
+    #[test]
+    fn a_claimed_host_decides_the_shape_whatever_its_name_says() {
+        // A GitHub Enterprise Server host with nothing in its name:
+        // only the plugin's claim gets the shape right on the first
+        // attempt.
+        let host = "source.acme-internal.example";
+        assert_eq!(known_forge_kind(host), None);
+        assert_eq!(
+            token_user(host, Some(ForgeKind::GitHubEnterprise)),
             "x-access-token"
         );
+        assert_eq!(token_user(host, Some(ForgeKind::Gitea)), "oauth2");
+        // And the claim wins over a name that points elsewhere.
         assert_eq!(
-            super::basic_auth_user("https://gitlab.com/owner/repo.git"),
-            "oauth2"
+            token_user("gitlab.acme.example", Some(ForgeKind::GitHubEnterprise)),
+            "x-access-token"
         );
+    }
+
+    #[test]
+    fn the_empty_password_shape_is_never_sent() {
+        for host in [
+            "github.com",
+            "gitlab.com",
+            "codeberg.org",
+            "gitea.example.com",
+            "anything.else.example",
+            "",
+        ] {
+            assert!(!token_user(host, None).is_empty(), "for {host}");
+            assert!(!other_token_user(host).is_empty(), "for {host}");
+            assert_ne!(token_user(host, None), other_token_user(host));
+        }
+    }
+
+    #[test]
+    fn the_plugin_ids_map_onto_the_families() {
+        assert_eq!(ForgeKind::from_plugin_id("github"), Some(ForgeKind::GitHub));
+        assert_eq!(ForgeKind::from_plugin_id("GitLab"), Some(ForgeKind::GitLab));
+        assert_eq!(ForgeKind::from_plugin_id("forgejo"), Some(ForgeKind::Gitea));
+        assert_eq!(ForgeKind::from_plugin_id("sourcehut"), None);
+    }
+
+    #[test]
+    fn a_host_that_never_named_its_kind_is_the_quiet_one() {
+        assert_eq!(Auth::Local.host_kind(), HostKind::Background);
+        assert!(!Auth::Local.host_kind().may_prompt());
         assert_eq!(
-            super::basic_auth_user("https://gitlab.self-hosted.example/o/r.git"),
-            "oauth2"
+            Auth::local(HostKind::Interactive).host_kind(),
+            HostKind::Interactive
         );
-        // Gitea and Codeberg take the token AS the name, with no password.
+        assert!(Auth::local(HostKind::Interactive).host_kind().may_prompt());
+        // A token host is the platform or a worker: never asked.
+        assert_eq!(Auth::token("t").host_kind(), HostKind::Background);
         assert_eq!(
-            super::basic_auth_user("https://codeberg.org/joyint/forge-test.git"),
-            ""
+            Auth::token_for("t", ForgeKind::GitLab).claimed_kind(),
+            Some(ForgeKind::GitLab)
         );
+        assert_eq!(Auth::token("t").claimed_kind(), None);
+    }
+
+    /// The normal case stays the normal case: a remote the ssh config
+    /// does not rename is handed to libgit2 exactly as configured, with
+    /// its name and its refspecs. The rewrite itself, and the settings
+    /// that keep coming from the alias's own `Host` block, are pinned
+    /// in tests/ssh_config_alias.rs, which owns HOME.
+    /// `remote.<name>.pushurl`, which git honours for a push and
+    /// libgit2 only half does: it picks the transport from the push url
+    /// and then hands the local transport `remote->url`
+    /// (transports/local.c:396-397), so the shape "fetch from the forge,
+    /// push to a path on this machine" failed with "failed to resolve
+    /// path <the https url>". joy dials the push url itself.
+    #[test]
+    fn a_push_goes_to_the_push_url_and_a_fetch_does_not() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        repo.remote("origin", "https://github.com/joyint/joy.git")
+            .unwrap();
+        repo.config()
+            .unwrap()
+            .set_str("remote.origin.pushurl", "/srv/mirrors/joy.git")
+            .unwrap();
+
+        let push = contact_remote(&repo, super::super::contact::ContactDirection::Push).unwrap();
+        assert_eq!(push.url().ok(), Some("/srv/mirrors/joy.git"));
+        drop(push);
+
+        let fetch = contact_remote(&repo, super::super::contact::ContactDirection::Fetch).unwrap();
+        assert_eq!(fetch.url().ok(), Some("https://github.com/joyint/joy.git"));
         assert_eq!(
-            super::basic_auth_user("https://gitea.int.joydev.com/joyint/joy.git"),
-            ""
+            fetch.name().ok().flatten(),
+            Some("origin"),
+            "a fetch keeps the named remote and its refspecs"
+        );
+    }
+
+    /// A remote without a push url is the named remote in both
+    /// directions, so nothing about the ordinary case changes.
+    #[test]
+    fn a_remote_without_a_push_url_is_the_named_one_either_way() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        repo.remote("origin", "https://codeberg.org/joyint/joy.git")
+            .unwrap();
+        for direction in [
+            super::super::contact::ContactDirection::Push,
+            super::super::contact::ContactDirection::Fetch,
+        ] {
+            let remote = contact_remote(&repo, direction).unwrap();
+            assert_eq!(remote.name().ok().flatten(), Some("origin"));
+            assert_eq!(
+                remote.url().ok(),
+                Some("https://codeberg.org/joyint/joy.git")
+            );
+        }
+    }
+
+    #[test]
+    fn a_remote_no_ssh_config_renames_is_contacted_as_it_stands() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        repo.remote("origin", "https://github.com/joyint/joy.git")
+            .unwrap();
+        let remote = contact_remote(&repo, super::super::contact::ContactDirection::Fetch)
+            .expect("the configured remote");
+        assert_eq!(remote.url().ok(), Some("https://github.com/joyint/joy.git"));
+        assert_eq!(
+            remote.name().ok().flatten(),
+            Some("origin"),
+            "the named remote, so its refspecs and its tracking refs stand"
+        );
+    }
+
+    /// git applies an `insteadOf` rule before ssh ever reads its
+    /// config, and so does libgit2 (remote.c:254-255, :509-510). Where
+    /// there is such a rule, joy's own `HostName` rewrite stands back,
+    /// so the rule's target is what is dialled.
+    #[test]
+    fn an_insteadof_rule_keeps_joys_own_rewrite_out_of_the_way() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        {
+            let mut config = repo.config().unwrap();
+            config
+                .set_str("url.git@github.com:.insteadOf", "work:")
+                .unwrap();
+            config
+                .set_str("url.git@codeberg.org:.pushInsteadOf", "cb:")
+                .unwrap();
+        }
+        assert!(rewritten_by_insteadof(&repo, "work:joyint/joy.git"));
+        assert!(rewritten_by_insteadof(&repo, "cb:joyint/joy.git"));
+        assert!(!rewritten_by_insteadof(&repo, "git@work:joyint/joy.git"));
+        assert!(!rewritten_by_insteadof(
+            &repo,
+            "https://github.com/joyint/joy.git"
+        ));
+    }
+
+    #[test]
+    fn an_https_remote_offers_the_helper_and_says_so_when_it_has_none() {
+        let mut state = ChainState::prepare(
+            "https://gitea.example.com/o/r.git",
+            None,
+            HostKind::Background,
+            None,
+        );
+        assert_eq!(state.host, "gitea.example.com");
+        assert_eq!(state.steps.len(), 1);
+        // With no git config in hand the chain is exhausted at once,
+        // and the sentence says which host and why.
+        let mut chain = LocalChain::new(HostKind::Background);
+        let error = match chain.credential(
+            "https://gitea.example.com/o/r.git",
+            None,
+            git2::CredentialType::USER_PASS_PLAINTEXT,
+            &CredSource::none(),
+        ) {
+            Ok(_) => panic!("a chain with no configuration cannot answer"),
+            Err(e) => e,
+        };
+        assert!(
+            error.message().contains("gitea.example.com"),
+            "{}",
+            error.message()
+        );
+        assert!(
+            error.message().contains("git configuration"),
+            "{}",
+            error.message()
+        );
+        let _ = state.take_next(git2::CredentialType::USER_PASS_PLAINTEXT);
+    }
+
+    /// JOY-02A7-A2 finding 5: a machine with NO credential for a host is
+    /// not signed in, and the classifier has to be able to read that off
+    /// the error the chain returns. `Error::from_str` carried class
+    /// `Invalid` and the generic code, which falls through every rule of
+    /// D1.8b to `error`: the person was told "GitHub answered with an
+    /// error." with no next step, for a forge that had answered nothing
+    /// at all.
+    #[test]
+    fn an_exhausted_chain_is_needs_sign_in_and_not_an_error() {
+        for url in ["https://github.com/o/r.git", "ssh://git@github.com/o/r.git"] {
+            let mut chain = LocalChain::new(HostKind::Background);
+            let mut error = None;
+            // The https chain offers the helper and the ssh chain its
+            // own candidates; both end with nothing, which is the case
+            // under test. DEFAULT is answered once with "I have
+            // nothing" before the chain gives up, exactly as libgit2
+            // re-enters the callback.
+            for _ in 0..8 {
+                match chain.credential(
+                    url,
+                    None,
+                    git2::CredentialType::USER_PASS_PLAINTEXT
+                        | git2::CredentialType::SSH_KEY
+                        | git2::CredentialType::DEFAULT,
+                    &CredSource::none(),
+                ) {
+                    Ok(_) => continue,
+                    Err(e) => {
+                        error = Some(e);
+                        break;
+                    }
+                }
+            }
+            let error = error.expect("a chain with nothing in it gives up");
+            assert_eq!(error.code(), git2::ErrorCode::Auth, "for {url}");
+            let evidence = super::super::contact::ContactEvidence::new(
+                error,
+                url,
+                super::super::contact::ContactDirection::Fetch,
+                super::super::contact::CredentialSource::NonePresented,
+            );
+            assert_eq!(
+                super::super::contact::classify(&evidence),
+                super::super::contact::Failure::NeedsSignIn,
+                "for {url}"
+            );
+        }
+    }
+
+    /// JOY-02A7-A2 finding 6: on Windows the agent is offered even when
+    /// joy's own probe found none, and the note that goes with it says
+    /// joy does not know what that agent holds. The refusal note then
+    /// may not claim it held identities: the two sentences stood side
+    /// by side in one detail line and contradicted each other.
+    #[test]
+    fn an_agent_offered_blind_is_not_reported_as_having_refused() {
+        let blind = super::super::ssh_auth::chain_for(
+            "github.com",
+            None,
+            &super::super::ssh_config::HostSettings::default(),
+            HostKind::Background,
+            &super::super::ssh_auth::Agent::Missing,
+            true,
+        );
+        assert!(blind.agent_blind, "the Windows carve out offers the agent");
+        let mut state = ChainState::prepare(
+            "ssh://git@github.com/o/r.git",
+            None,
+            HostKind::Background,
+            None,
+        );
+        state.blind_agent = true;
+        state.presented = Some(Presented::Agent);
+        state.note_refusal("ssh://git@github.com/o/r.git");
+        assert_eq!(
+            state.notes.last().unwrap(),
+            "no ssh agent answered for github.com"
+        );
+        // An agent joy DID find keeps the sentence it earned.
+        state.blind_agent = false;
+        state.presented = Some(Presented::Agent);
+        state.note_refusal("ssh://git@github.com/o/r.git");
+        assert_eq!(
+            state.notes.last().unwrap(),
+            "the ssh agent's identities were refused by github.com"
+        );
+    }
+
+    #[test]
+    fn the_user_name_stays_the_same_however_often_it_is_asked() {
+        let mut state = ChainState::prepare(
+            "ssh://deploy@git.example.invalid/o/r.git",
+            None,
+            HostKind::Background,
+            None,
+        );
+        let first = state.user.clone();
+        assert_eq!(first, "deploy");
+        for _ in 0..3 {
+            assert!(state.user_name().is_ok());
+            assert_eq!(state.user, first);
+        }
+        // And it does not loop for ever when a forge keeps asking.
+        assert!(state.user_name().is_err());
+    }
+
+    #[test]
+    fn a_candidate_the_forge_does_not_accept_is_skipped_not_offered() {
+        let mut state = ChainState::prepare(
+            "https://gitea.example.com/o/r.git",
+            None,
+            HostKind::Background,
+            None,
+        );
+        // An https chain holds a helper step, which an ssh-only mask
+        // cannot take: it is skipped, and the chain is then empty.
+        assert!(state.take_next(git2::CredentialType::SSH_KEY).is_none());
+        assert!(state.exhausted().contains("gitea.example.com"));
+    }
+
+    #[test]
+    fn a_remote_with_nothing_in_the_way_is_not_guarded_against() {
+        assert!(guard_transport(None).is_ok());
+        assert!(guard_transport(Some("https://github.com/o/r.git")).is_ok());
+        assert!(guard_transport(Some("/srv/git/local.git")).is_ok());
+    }
+
+    /// D1.4a's pre-validation, at the one place it acts: an ssh contact
+    /// stops before libgit2 opens a socket and reads the line number
+    /// instead of "error reading known_hosts", and no other transport
+    /// even looks at the file. The host is a name no ssh config can
+    /// hold an opinion about, so the answer is the guard's and not the
+    /// machine's.
+    #[test]
+    fn a_broken_known_hosts_file_stops_an_ssh_contact_with_the_line_number() {
+        let sentence = || Some("/home/troi/.ssh/known_hosts line 7: ... ".to_string());
+        let ssh = "git@known-hosts.invalid:owner/repo.git";
+        let refused = guard_transport_with(Some(ssh), sentence).expect_err("the file is broken");
+        assert!(refused.to_string().contains("line 7"), "{refused}");
+        // a file libssh2 can read lets the same contact through
+        assert!(guard_transport_with(Some(ssh), || None).is_ok());
+        // and nothing else reads known_hosts at all
+        for other in ["https://github.com/o/r.git", "/srv/git/local.git"] {
+            assert!(
+                guard_transport_with(Some(other), || { panic!("{other} read known_hosts") })
+                    .is_ok()
+            );
+        }
+        assert!(guard_transport_with(None, || panic!("no remote read known_hosts")).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod resolver_assembly_tests {
+    //! The rules the engine applies BETWEEN two legs of a plan
+    //! (package J4b, design D1.2 and D1.5). The twin push itself has a
+    //! real forge behind it in `tests/forge_twin_push.rs`; what is
+    //! decided here is which failure is followed and which row it
+    //! writes, and neither needs a socket.
+    use super::*;
+    use crate::vcs::resolver::{HostToken, SshProbe, SshSignals, TransportState};
+
+    fn ssh_leg() -> Leg {
+        Leg {
+            way: Way::Configured,
+            url: "git@github.com:acme/widgets.git".to_string(),
+            transport: super::super::contact::Transport::Ssh,
+            credential: LegCredential::Machine,
+        }
+    }
+
+    fn twin_leg() -> Leg {
+        Leg {
+            way: Way::Twin,
+            url: "https://github.com/acme/widgets.git".to_string(),
+            transport: super::super::contact::Transport::Https,
+            credential: LegCredential::Token(HostToken {
+                token: "a-token".to_string(),
+                kind: Some(ForgeKind::GitHub),
+                login: None,
+                source: Some("keychain".to_string()),
+            }),
+        }
+    }
+
+    fn plan_of(legs: Vec<Leg>, probe: SshProbe) -> Plan {
+        Plan {
+            host: "github.com".to_string(),
+            legs,
+            notes: Vec::new(),
+            probe,
+        }
+    }
+
+    fn with_candidates(candidates: usize) -> SshProbe {
+        SshProbe {
+            candidates,
+            signals: SshSignals::default(),
+            notes: Vec::new(),
+        }
+    }
+
+    /// D1.2 rule 3b names ONE refusal, and the engine follows that one
+    /// and no other. A DNS fault or a refused host key says nothing
+    /// about the person's ssh credential, and following it to the twin
+    /// would spend a second contact and report the wrong cause.
+    #[test]
+    fn only_an_ssh_authentication_failure_is_followed_to_the_twin() {
+        use super::super::contact::Failure;
+        assert!(may_follow(&ssh_leg(), true, Failure::NeedsSignIn));
+        assert!(!may_follow(&ssh_leg(), false, Failure::Offline));
+        assert!(
+            !may_follow(&ssh_leg(), false, Failure::NeedsSignIn),
+            "an https 401 and an ssh refusal are the same state; only the raw error tells them apart"
+        );
+    }
+
+    /// The twin has exactly one refusal it may be followed for too: the
+    /// token it carried was refused. Every other verdict is one the
+    /// forge already gave about this operation, and following it would
+    /// hand the person the LAST leg's error instead - an ssh sign in
+    /// prompt for an organisation that has not approved Joy, a second
+    /// push of a ref the forge rejected by name, a second contact for a
+    /// fault inside this checkout.
+    #[test]
+    fn a_twin_is_followed_only_when_the_token_it_carried_was_refused() {
+        use super::super::contact::Failure;
+        assert!(may_follow(&twin_leg(), false, Failure::NeedsSignIn));
+        for verdict in [
+            Failure::NeedsOrgApproval,
+            Failure::NoPushRights,
+            Failure::RateLimited,
+            Failure::Offline,
+            Failure::TlsUntrusted,
+            Failure::Denied,
+            // a rejected ref and a fault of this checkout both arrive
+            // as `error` (contact.rs wraps every failure of the closure)
+            Failure::Error,
+        ] {
+            assert!(
+                !may_follow(&twin_leg(), false, verdict),
+                "{verdict:?} is an answer, not a reason for a second contact"
+            );
+        }
+    }
+
+    #[test]
+    fn an_ssh_authentication_failure_writes_the_row_and_nothing_else_does() {
+        crate::vcs::resolver::with_state_file(|_| {
+            let plan = plan_of(vec![ssh_leg(), twin_leg()], with_candidates(1));
+            remember_failure(&plan, &plan.legs[0], false);
+            assert!(
+                crate::vcs::resolver::recall("github.com").is_none(),
+                "a timeout is not a refusal of a credential"
+            );
+            remember_failure(&plan, &plan.legs[0], true);
+            let memory = crate::vcs::resolver::recall("github.com").expect("the row of rule 3b");
+            assert_eq!(memory.state, TransportState::SshFailed);
+        });
+    }
+
+    #[test]
+    fn a_twin_that_carried_the_contact_records_why_the_ssh_side_did_not() {
+        crate::vcs::resolver::with_state_file(|_| {
+            // Nothing to offer over ssh at all: the row says so, and it
+            // is the row that is dropped as soon as an agent appears.
+            let plan = plan_of(vec![twin_leg()], with_candidates(0));
+            remember_success(&plan, &plan.legs[0], Some("token"));
+            let memory = crate::vcs::resolver::recall("github.com").expect("a row");
+            assert_eq!(memory.state, TransportState::NoSshCredential);
+            assert_eq!(memory.transport.as_deref(), Some("https"));
+
+            // The machine DOES hold an ssh credential and the host
+            // refused it: the same twin, a different reason.
+            let plan = plan_of(vec![twin_leg()], with_candidates(2));
+            remember_success(&plan, &plan.legs[0], Some("token"));
+            assert_eq!(
+                crate::vcs::resolver::recall("github.com").unwrap().state,
+                TransportState::SshFailed
+            );
+        });
+    }
+
+    /// A contact that handed nothing over proves nothing about a
+    /// transport: a public repository answers the first request.
+    #[test]
+    fn a_contact_that_presented_nothing_writes_no_row() {
+        crate::vcs::resolver::with_state_file(|_| {
+            let plan = plan_of(vec![ssh_leg()], with_candidates(1));
+            remember_success(&plan, &plan.legs[0], None);
+            assert!(crate::vcs::resolver::recall("github.com").is_none());
+            remember_success(&plan, &plan.legs[0], Some("agent"));
+            assert_eq!(
+                crate::vcs::resolver::recall("github.com").unwrap().state,
+                TransportState::SshWorked
+            );
+        });
+    }
+
+    /// D1.2 rule 3a, at the one place that implements it: the row is
+    /// dropped as soon as one of the facts it was written under changes.
+    /// Nothing else in the tree drops it, so deleting this rule's body
+    /// has to fail here.
+    #[test]
+    fn a_no_ssh_credential_row_is_dropped_when_the_machine_changes_under_it() {
+        crate::vcs::resolver::with_state_file(|_| {
+            let written = SshSignals {
+                agent_socket: None,
+                agent_identities: 0,
+                keys: [("/home/scotty/.ssh/id_ed25519".to_string(), 111)]
+                    .into_iter()
+                    .collect(),
+            };
+            let row = |signals: &SshSignals| {
+                crate::vcs::resolver::remember(
+                    "github.com",
+                    crate::vcs::resolver::HostMemory::new(TransportState::NoSshCredential)
+                        .with_signals(signals.clone()),
+                );
+            };
+            let probe = |signals: &SshSignals| SshProbe {
+                candidates: 0,
+                signals: signals.clone(),
+                notes: Vec::new(),
+            };
+
+            // The same machine: the row stands.
+            row(&written);
+            assert_eq!(
+                fresh_memory("github.com", &probe(&written), true)
+                    .expect("the row survives an unchanged machine")
+                    .state,
+                TransportState::NoSshCredential
+            );
+
+            // An agent that appears is exactly the change D1.2 names.
+            let with_an_agent = SshSignals {
+                agent_socket: Some("/tmp/agent.sock".to_string()),
+                agent_identities: 2,
+                ..written.clone()
+            };
+            assert!(fresh_memory("github.com", &probe(&with_an_agent), true).is_none());
+            assert!(
+                crate::vcs::resolver::recall("github.com").is_none(),
+                "and the row is gone, not merely unread"
+            );
+
+            // So is a key file whose mtime moved.
+            row(&written);
+            let key_touched = SshSignals {
+                keys: [("/home/scotty/.ssh/id_ed25519".to_string(), 222)]
+                    .into_iter()
+                    .collect(),
+                ..written.clone()
+            };
+            assert!(fresh_memory("github.com", &probe(&key_touched), true).is_none());
+
+            // The two states rule 3a does not name keep their rows
+            // whatever the machine looks like: `ssh-failed` is the
+            // forge's verdict and `ssh-worked` is a fact about the
+            // credential, and neither is a claim about this machine's
+            // chain.
+            for state in [TransportState::SshFailed, TransportState::SshWorked] {
+                crate::vcs::resolver::remember(
+                    "github.com",
+                    crate::vcs::resolver::HostMemory::new(state).with_signals(written.clone()),
+                );
+                assert_eq!(
+                    fresh_memory("github.com", &probe(&with_an_agent), true)
+                        .expect("kept")
+                        .state,
+                    state
+                );
+            }
+        });
+    }
+
+    /// The same rule, from the other side: an https or a local remote
+    /// runs no probe at all, so the empty signals it carries are not
+    /// evidence that the machine changed. Two projects on one host, one
+    /// over ssh and one over https, are the normal case, and every
+    /// operation on the https one used to delete the ssh one's row.
+    #[test]
+    fn a_remote_that_is_not_ssh_never_drops_the_ssh_row_beside_it() {
+        crate::vcs::resolver::with_state_file(|_| {
+            let written = SshSignals {
+                agent_socket: Some("/tmp/agent.sock".to_string()),
+                agent_identities: 1,
+                keys: [("/home/scotty/.ssh/id_ed25519".to_string(), 111)]
+                    .into_iter()
+                    .collect(),
+            };
+            crate::vcs::resolver::remember(
+                "github.com",
+                crate::vcs::resolver::HostMemory::new(TransportState::NoSshCredential)
+                    .with_signals(written)
+                    .with_credential(super::super::contact::Transport::Https, "token"),
+            );
+            let memory = fresh_memory("github.com", &SshProbe::empty(), false)
+                .expect("an https contact leaves the ssh row alone");
+            assert_eq!(memory.credential.as_deref(), Some("token"));
+            assert!(
+                crate::vcs::resolver::used("github.com").is_some(),
+                "and the sentence that says which credential joy used is still there"
+            );
+        });
+    }
+
+    /// must_fix of the J4b review: the thread local of D1.2 rule 3b is
+    /// read and cleared, and a refusal one operation left behind is
+    /// never read as the next one's. `clone` fails outside any plan and
+    /// clears nothing, so the clearing has to happen where the next leg
+    /// starts.
+    #[test]
+    fn a_refusal_left_by_an_earlier_contact_is_not_this_leg_s() {
+        let auth_failure = git2::Error::new(
+            git2::ErrorCode::Auth,
+            git2::ErrorClass::Ssh,
+            "the forge refused this key",
+        );
+        crate::vcs::resolver::note_contact_error(
+            super::super::contact::Transport::Ssh,
+            &auth_failure,
+        );
+        // What the leg preamble does before the contact runs.
+        crate::vcs::resolver::took_ssh_auth_failure();
+        assert!(
+            !crate::vcs::resolver::took_ssh_auth_failure(),
+            "a stale refusal would send this operation to the twin and write a 24 hour row"
+        );
+    }
+
+    /// D1.5: with neither an ssh credential nor a token there is
+    /// nothing to probe with, and the answer is `needs_sign_in` and
+    /// never `no_push_rights`. This is the Windows case of D1.2 rule 5.
+    #[test]
+    fn a_machine_with_nothing_to_present_is_not_probed_at_all() {
+        assert!(nothing_to_present(&plan_of(
+            vec![ssh_leg()],
+            with_candidates(0)
+        )));
+        assert!(
+            !nothing_to_present(&plan_of(vec![twin_leg()], with_candidates(0))),
+            "a token is something to present"
+        );
+        assert!(
+            !nothing_to_present(&plan_of(vec![ssh_leg()], with_candidates(1))),
+            "an ssh candidate is something to present"
         );
     }
 }

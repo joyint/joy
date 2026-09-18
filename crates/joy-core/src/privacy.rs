@@ -78,10 +78,10 @@ pub fn member_key_for_email_or_forge(
     let remotes = crate::vcs::default_vcs()
         .all_remotes(root)
         .unwrap_or_default();
-    let spec = crate::forge_plugins::responsible_plugin(project.forge.as_deref(), root, &remotes)?;
-    let default_facts = crate::forge_plugins::CallerFacts::default();
-    let facts = facts.unwrap_or(&default_facts);
-    let acting = crate::forge_plugins::identity(spec, root, facts)?;
+    let ctx = crate::forge_plugins::CallContext::in_project(root)
+        .with_facts(facts.cloned().unwrap_or_default());
+    let spec = crate::forge_plugins::responsible_plugin(project.forge.as_deref(), &ctx, &remotes)?;
+    let acting = crate::forge_plugins::identity(spec, None, &ctx)?;
     // Direction one: the unresolved address belongs to the ACTOR (their
     // alias in the git config) and the plugin can vouch for their real
     // addresses — try those through the same resolution.
@@ -100,7 +100,7 @@ pub fn member_key_for_email_or_forge(
         .map(|(key, _)| key)
         .filter(|key| !key.starts_with("ai:"))
         .find(|key| {
-            crate::forge_plugins::resolve(spec, root, key).is_some_and(|owner| {
+            crate::forge_plugins::resolve(spec, key, &ctx).is_some_and(|owner| {
                 match (&owner.user_id, &acting.user_id) {
                     // the numeric account id is the strongest join
                     (Some(a), Some(b)) => a == b,
@@ -208,21 +208,35 @@ pub fn email_for(
 
 /// The at-rest representation of a delegating operator for the audit trail.
 ///
-/// `operator_email` is the cleartext e-mail recorded in a delegation token
-/// (create_delegation_token stores `operator_email` as the token's `delegated_by`
-/// for the human-readable git trailer). When an AI acts under that delegation,
-/// the operator is recorded as the `delegated-by:` part of the actor in items
-/// (`created_by`/`updated_by`), logs, and the commit trailer. In `open` mode the
-/// member key *is* the e-mail, returned as-is. In `anonymous` mode it resolves to
-/// the operator's opaque member id, so no cleartext e-mail is written into a
-/// committed file; `MemberRef` resolves it back for authorized display. Returns
-/// `None` in anonymous mode when the operator is not a resolvable member, so a
-/// cleartext e-mail is never written even as a fallback (ADR-042).
-pub fn delegated_by_at_rest(project: &Project, operator_email: &str) -> Option<String> {
-    match project.member_key_for_email(operator_email) {
+/// `operator` is what the delegation token recorded as its `delegated_by`.
+/// That is EITHER a cleartext e-mail, when a person typed one (`joy auth
+/// token add --user`), OR the operator's at-rest member key, which is what
+/// identity resolution answers with since package J11 (D3.9) and what the
+/// app's attested issuance always held. When an AI acts under that
+/// delegation, the operator is recorded as the `delegated-by:` part of the
+/// actor in items (`created_by`/`updated_by`), logs, and the commit
+/// trailer, and in the signed claims of the session the token redeems to.
+///
+/// Both forms answer with the at-rest key: a key is already one, and an
+/// address is resolved through the member map (in `open` mode the key IS
+/// the address; in `anonymous` mode it is the opaque id, so no cleartext
+/// e-mail is written into a committed file and `MemberRef` resolves it
+/// back for an authorized viewer).
+///
+/// Returns `None` in anonymous mode when the operator is not a resolvable
+/// member, so a cleartext e-mail is never written even as a fallback
+/// (ADR-042). Accepting the key form is what keeps that `None` for the
+/// cases it was written for: an anonymous project used to land here with
+/// its own opaque id, no address matched it, and the session was minted
+/// with no operator at all, which the F2 check then refused.
+pub fn delegated_by_at_rest(project: &Project, operator: &str) -> Option<String> {
+    if project.has_member_key(operator) {
+        return Some(operator.to_string());
+    }
+    match project.member_key_for_email(operator) {
         Some(key) => Some(key),
         None if project.privacy_mode() == PrivacyMode::Anonymous => None,
-        None => Some(operator_email.to_string()),
+        None => Some(operator.to_string()),
     }
 }
 
@@ -604,5 +618,52 @@ mod tests {
         assert!(pj2.has_member_key(EMAIL));
         assert_eq!(pj2.privacy_mode(), PrivacyMode::Open);
         assert!(pj2.member_by_key(EMAIL).unwrap().email_match.is_none());
+    }
+
+    /// The delegating operator of a token is written down as a member
+    /// KEY, whichever of the two forms the token recorded.
+    ///
+    /// The key form is the one an anonymous project hands in since
+    /// identity resolution stopped reading git config (D3.9, package
+    /// J11), and it used to resolve to nothing: the address matcher
+    /// cannot match an opaque id against itself, anonymous mode answers
+    /// `None` rather than leak a fallback, and the session minted from
+    /// the token therefore named no operator at all. The F2 check then
+    /// refused that session on the AI's very next command, so an AI in an
+    /// anonymous project could be given a token and still not act.
+    #[test]
+    fn a_delegating_operator_is_named_by_key_or_by_address() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let seed = [7u8; 32];
+        let mut project = setup(root, &seed);
+
+        // Open mode: the key IS the address, and both spellings of the
+        // question are the same question.
+        assert_eq!(
+            delegated_by_at_rest(&project, EMAIL).as_deref(),
+            Some(EMAIL)
+        );
+
+        let id = switch_to_anonymous(root, &mut project, &seed).unwrap()[0]
+            .1
+            .clone();
+
+        // The at-rest key, which is what the CLI holds here now.
+        assert_eq!(
+            delegated_by_at_rest(&project, &id).as_deref(),
+            Some(id.as_str()),
+            "an operator named by their opaque id is that id"
+        );
+        // The address, which is what a token issued with `--user` carries.
+        assert_eq!(
+            delegated_by_at_rest(&project, EMAIL).as_deref(),
+            Some(id.as_str()),
+            "an operator named by address resolves to their opaque id"
+        );
+        // And a stranger still writes nothing, in either spelling: the
+        // address must not be kept as a cleartext fallback (ADR-042).
+        assert_eq!(delegated_by_at_rest(&project, "nobody@example.com"), None);
+        assert_eq!(delegated_by_at_rest(&project, "m-notamember"), None);
     }
 }

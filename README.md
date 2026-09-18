@@ -55,7 +55,7 @@ joy init     # installs commit-msg hook, sets up git hooks path
 joy ai init  # optional: configure AI tool integration
 ```
 
-`joy init` detects the existing project and switches to onboarding mode - it installs the commit-msg hook and sets `core.hooksPath` without touching project data.
+`joy init` detects the existing project and switches to onboarding mode - it installs the commit-msg hook and sets `core.hooksPath` without touching project data. If your repository already had hooks (husky, lefthook, pre-commit), Joy remembers their path and runs them after its own check, and says so once.
 
 ## Features
 
@@ -70,7 +70,8 @@ joy ai init  # optional: configure AI tool integration
 - [VISION.md](./VISION.md) - product vision and data model
 - [ARCHITECTURE.md](./ARCHITECTURE.md) - technical overview
 - [CONTRIBUTING.md](./CONTRIBUTING.md) - conventions, testing, release
-- [Plugins](docs/plugins.md) - writing `joy-<name>` plugins (joy-bi is the reference)
+- [Plugins](docs/plugins.md) - writing `joy-<name>` plugins (joy-bi is the reference), and the forge connector contract
+- [Upgrading](docs/migration/forge-connection-ng.md) - what an upgrade across the forge connection rebuild does with what is already on your machine
 
 Architecture decisions are tracked as Joy decision items in this repository; run `joy ls -D` to list them.
 

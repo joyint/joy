@@ -3,17 +3,25 @@
 
 //! VCS abstraction layer (see ADR-010, ADR-017).
 //! All version control operations go through the `Vcs` trait.
-//! Currently only Git is implemented. The trait's verbs and the staging
-//! that joy init needs run on git2 (JOY-0288-72), so a project can be
-//! created where no git binary exists; the named CLI helpers below stay
-//! on the binary.
+//! Currently only Git is implemented.
+//!
+//! Since JOY-01FD-ED (design D3.2) there is ONE git engine and it is
+//! git2: no verb in this module, and nothing it calls, starts a git
+//! process. The reason is the operator's, recorded on that item and
+//! mobile: the app must work on a machine that has no git binary at
+//! all, and a layer that is "mostly git2" is a layer that fails there
+//! on the one path nobody tested.
+//!
+//! What that costs is written down rather than discovered: libgit2 runs
+//! no hooks and no clean or smudge filter, and it cannot sign (D3.6).
+//! The hook rule joy's own commits would have missed is enforced in
+//! process instead ([`crate::commit_msg::validate`], D3.3), and the
+//! commit paths are scoped to the paths joy wrote so a filtered path in
+//! a person's checkout is never one of them (D3.4).
 
 use std::path::Path;
-use std::process::Command;
 
 use crate::error::JoyError;
-
-const MIN_GIT_MAJOR: u32 = 2;
 
 /// VCS read operations that Joy needs.
 pub trait Vcs {
@@ -46,90 +54,13 @@ pub trait Vcs {
 /// Git implementation of the VCS trait.
 pub struct GitVcs;
 
-/// The git binary, built for this host. Every git the vcs module runs
-/// starts here (guard-vcs keeps the binary inside this module).
-///
-/// A headless host (joy-process: on Windows a process without a
-/// console, the desktop app or a joy started hidden) has nobody to
-/// answer a question, and git's questions do not fail on their own
-/// there: they wait on the child's window-less console for ever, where
-/// they used to flash a window a person could at least type into
-/// (JOY-028F-0B). So the same host that hides the window disarms the
-/// prompts: git's own (`GIT_TERMINAL_PROMPT=0`, Git Credential Manager
-/// still draws its own window) and ssh's passphrase and host-key
-/// prompts (`BatchMode=yes`). The ssh part yields to anyone who chose
-/// their own ssh: `GIT_SSH_COMMAND`, `GIT_SSH`, or `core.sshCommand` in
-/// the person's config all win.
-fn git() -> Command {
-    git_for(joy_process::headless())
-}
-
-fn git_for(headless: bool) -> Command {
-    let mut command = joy_process::command("git");
-    if headless {
-        command.env("GIT_TERMINAL_PROMPT", "0");
-        if !ssh_is_chosen() {
-            command.env("GIT_SSH_COMMAND", "ssh -o BatchMode=yes");
-        }
-    }
-    command
-}
-
-/// Whether the person picked their own ssh for git, by any of git's
-/// three ways, in which case a batch-mode default would override it.
-fn ssh_is_chosen() -> bool {
-    std::env::var_os("GIT_SSH_COMMAND").is_some()
-        || std::env::var_os("GIT_SSH").is_some()
-        || git2::Config::open_default()
-            .and_then(|config| config.get_string("core.sshCommand"))
-            .is_ok()
-}
-
-/// Run a git command and return stdout as a trimmed string.
-/// Returns a descriptive error if git is not found or the command fails.
-fn git_output(root: &Path, args: &[&str]) -> Result<String, JoyError> {
-    let output = git().args(args).current_dir(root).output().map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            JoyError::Git("git is not installed or not in PATH".into())
-        } else {
-            JoyError::Git(format!("failed to run git {}: {e}", args.join(" ")))
-        }
-    })?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        let cmd = format!("git {}", args.join(" "));
-        return Err(JoyError::Git(if stderr.is_empty() {
-            format!("{cmd} failed (exit {})", output.status.code().unwrap_or(-1))
-        } else {
-            format!("{cmd} failed: {stderr}")
-        }));
-    }
-
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-}
-
-/// Run a git command silently (ignore stdout/stderr), return Ok/Err.
-fn git_run(root: &Path, args: &[&str]) -> Result<(), JoyError> {
-    let output = git().args(args).current_dir(root).output().map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            JoyError::Git("git is not installed or not in PATH".into())
-        } else {
-            JoyError::Git(format!("failed to run git {}: {e}", args.join(" ")))
-        }
-    })?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        let cmd = format!("git {}", args.join(" "));
-        return Err(JoyError::Git(if stderr.is_empty() {
-            format!("{cmd} failed (exit {})", output.status.code().unwrap_or(-1))
-        } else {
-            format!("{cmd} failed: {stderr}")
-        }));
-    }
-
-    Ok(())
+/// How this host contacts a forge from a person's or an agent's
+/// checkout: the machine's own credentials, for the host kind the entry
+/// point of this process decided (D1.1). The engine's prompt rule of
+/// D1.10 hangs off that word, so a hook, a worker and an agent under
+/// `JOY_SESSION` are never asked anything.
+fn local_auth() -> forge::Auth {
+    forge::Auth::LocalAs(crate::host::process_host())
 }
 
 impl Vcs for GitVcs {
@@ -146,22 +77,11 @@ impl Vcs for GitVcs {
     }
 
     fn version_tags(&self, root: &Path) -> Result<Vec<String>, JoyError> {
-        let output = git_output(root, &["tag", "--list", "--sort=-v:refname"]).unwrap_or_default();
-
-        let tags: Vec<String> = output
-            .lines()
-            .filter(|l| l.starts_with('v') || l.starts_with('V'))
-            .map(|l| l.to_string())
-            .collect();
-
-        Ok(tags)
+        Ok(forge::version_tags(root))
     }
 
     fn latest_version_tag(&self, root: &Path) -> Result<Option<String>, JoyError> {
-        match git_output(root, &["describe", "--tags", "--abbrev=0", "--match", "v*"]) {
-            Ok(tag) if !tag.is_empty() => Ok(Some(tag)),
-            _ => Ok(None),
-        }
+        Ok(forge::describe_version_tag(root))
     }
 
     fn config_get(&self, root: &Path, key: &str) -> Result<String, JoyError> {
@@ -175,11 +95,16 @@ impl Vcs for GitVcs {
     }
 }
 
-// -- Git config operations: now part of the Vcs trait. --
+// -- The git engine this build carries --
 
-// -- Git version check --
-
-/// Parsed git version.
+/// The version of the git engine joy runs on.
+///
+/// It used to be the version of the git BINARY on PATH, read from
+/// `git --version`. There is no such binary in joy's path any more, and
+/// the version that decides what joy can do is the library's, so this is
+/// libgit2's (D3.2). A machine with no git installed reports the same
+/// version as a machine with git 2.51, because for joy it is the same
+/// machine.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GitVersion {
     pub major: u32,
@@ -188,45 +113,37 @@ pub struct GitVersion {
     pub raw: String,
 }
 
+/// The oldest libgit2 whose behaviour joy is written against. The
+/// vendored library is compiled into this binary, so this can only fail
+/// for a build that linked a system libgit2 on purpose.
+const MIN_ENGINE_MAJOR: u32 = 1;
+
 impl GitVcs {
-    /// Get the installed git version. Returns error if git is not found.
+    /// The git engine's version. Infallible in practice (the library is
+    /// linked in), and fallible in signature so the callers that check
+    /// it keep reading the same way.
     pub fn version(&self) -> Result<GitVersion, JoyError> {
-        let raw = git_output(Path::new("."), &["--version"])?;
-        parse_git_version(&raw)
+        let (major, minor, patch) = git2::Version::get().libgit2_version();
+        Ok(GitVersion {
+            major,
+            minor,
+            patch,
+            raw: format!("libgit2 {major}.{minor}.{patch}"),
+        })
     }
 
-    /// Check that git meets the minimum version requirement.
+    /// Check that the engine meets the minimum version joy is written
+    /// against.
     pub fn check_version(&self) -> Result<GitVersion, JoyError> {
         let v = self.version()?;
-        if v.major < MIN_GIT_MAJOR {
+        if v.major < MIN_ENGINE_MAJOR {
             return Err(JoyError::Git(format!(
-                "git {}.{}.{} is too old (minimum: {MIN_GIT_MAJOR}.0)\n  \
-                 = help: update git to version {MIN_GIT_MAJOR}.0 or newer",
-                v.major, v.minor, v.patch
+                "the git engine is {} and joy needs libgit2 {MIN_ENGINE_MAJOR}.0 or newer",
+                v.raw
             )));
         }
         Ok(v)
     }
-}
-
-fn parse_git_version(raw: &str) -> Result<GitVersion, JoyError> {
-    // "git version 2.43.0" or "git version 2.43.0.windows.1"
-    let version_str = raw.strip_prefix("git version ").unwrap_or(raw).trim();
-
-    let parts: Vec<&str> = version_str.splitn(4, '.').collect();
-    let major: u32 = parts
-        .first()
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(|| JoyError::Git(format!("cannot parse git version: {raw}")))?;
-    let minor: u32 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
-    let patch: u32 = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
-
-    Ok(GitVersion {
-        major,
-        minor,
-        patch,
-        raw: raw.to_string(),
-    })
 }
 
 // -- Git write operations --
@@ -246,200 +163,203 @@ impl GitVcs {
         forge::is_ignored(root, path)
     }
 
-    /// Stage all changes (git add -A).
+    /// Stage all changes (what `git add -A` did).
+    ///
+    /// In a PERSON's checkout the scoped [`GitVcs::add`] is the right
+    /// verb (D3.4): this one takes whatever else was lying around with
+    /// it, and no pre-commit hook stands in the way any more. What it
+    /// will NOT do is write a path an external content filter governs:
+    /// libgit2 runs no filter program, so a changed `filter=lfs` asset
+    /// would be staged as its own bytes where the pointer belongs, and
+    /// [`forge::stage_all`] refuses such a path by name instead
+    /// (D3.4). The desktop's release record is the caller that made
+    /// this necessary here and not only in the sweeping commit verbs.
     pub fn add_all(&self, root: &Path) -> Result<(), JoyError> {
-        git_run(root, &["add", "-A"])
+        forge::stage_all(root).map_err(|e| JoyError::Git(format!("git add -A failed: {e}")))
     }
 
-    /// Create a commit with a message.
+    /// Create a commit with a message, signed for the member this
+    /// project says is acting (D4.5): libgit2 asks who commits, and the
+    /// answer is joy's identity resolution and not `git config`, so a
+    /// project founded without one can still be committed to.
+    ///
+    /// It commits the WHOLE index, so like [`GitVcs::add_all`] it is a
+    /// verb for a host that staged what it wanted; the scoped path a
+    /// person's checkout wants is
+    /// [`forge::commit_index_paths`](forge::commit_index_paths), which
+    /// `joy release record` and the auto-git commit both take. A path
+    /// an external content filter governs is refused by name here too,
+    /// whoever staged it (D3.4).
     pub fn commit(&self, root: &Path, message: &str) -> Result<(), JoyError> {
-        git_run(root, &["commit", "--quiet", "-m", message])
+        let (name, email) = crate::identity::acting_signature(root)?;
+        forge::commit_index(root, message, &name, &email)
+            .map(|_| ())
+            .map_err(|e| JoyError::Git(format!("git commit failed: {e}")))
     }
 
     /// Create an annotated tag with a message body.
     pub fn tag_annotated(&self, root: &Path, name: &str, body: &str) -> Result<(), JoyError> {
-        git_run(root, &["tag", "-a", name, "-m", body])
+        let (author, email) = crate::identity::acting_signature(root)?;
+        forge::tag_annotated(root, name, body, &author, &email)
+            .map_err(|e| JoyError::Git(format!("git tag -a {name} failed: {e}")))
     }
 
     /// Create a lightweight tag.
     pub fn tag(&self, root: &Path, name: &str) -> Result<(), JoyError> {
-        git_run(root, &["tag", name])
+        forge::tag_lightweight(root, name)
+            .map_err(|e| JoyError::Git(format!("git tag {name} failed: {e}")))
     }
 
-    /// Push the current branch to a remote.
+    /// Push the current branch to the forge.
+    ///
+    /// `remote` names what the caller believed it was pushing to; the
+    /// remote really contacted is the one D1.1 picks, `origin` or else
+    /// the first configured one, which is what
+    /// [`GitVcs::default_remote`] answers too. The two therefore agree
+    /// by construction, and the throttle key, the credential and the
+    /// contacted host cannot disagree in a multi remote checkout.
     pub fn push(&self, root: &Path, remote: &str) -> Result<(), JoyError> {
-        git_run(root, &["push", "--quiet", remote])
+        forge::push(root, &local_auth())
+            .map_err(|e| contact::as_joy_error(&format!("git push {remote}"), e))
     }
 
-    /// Push a specific tag to a remote.
+    /// Push a specific tag to the forge.
     pub fn push_tag(&self, root: &Path, remote: &str, tag: &str) -> Result<(), JoyError> {
-        git_run(root, &["push", "--quiet", remote, tag])
+        forge::push_tag(root, &local_auth(), tag)
+            .map_err(|e| contact::as_joy_error(&format!("git push {remote} {tag}"), e))
     }
 
-    /// Push current branch and tags in one call.
+    /// Push current branch and every local tag.
     pub fn push_with_tags(&self, root: &Path, remote: &str) -> Result<(), JoyError> {
         self.push(root, remote)?;
-        git_run(root, &["push", "--quiet", remote, "--tags"])
+        forge::push_all_tags(root, &local_auth())
+            .map_err(|e| contact::as_joy_error(&format!("git push {remote} --tags"), e))
     }
 
-    /// Get the default remote name (usually "origin").
+    /// The remote joy contacts for this checkout: `origin` when it is
+    /// configured, otherwise the first one (D1.1).
     pub fn default_remote(&self, root: &Path) -> Result<String, JoyError> {
-        let remote = git_output(root, &["remote"])?;
-        let first = remote.lines().next().unwrap_or("origin");
-        Ok(first.to_string())
+        forge::default_remote_name(root).ok_or_else(|| JoyError::Git("no remote configured".into()))
     }
 
     /// Get the remote URL for a given remote name.
     pub fn remote_url(&self, root: &Path, remote: &str) -> Result<String, JoyError> {
-        git_output(root, &["remote", "get-url", remote])
+        forge::remotes(root)
+            .into_iter()
+            .find(|(name, _)| name == remote)
+            .map(|(_, url)| url)
+            .ok_or_else(|| JoyError::Git(format!("remote {remote} is not configured")))
     }
 
     /// List every configured remote as `(name, url)` pairs, in the
-    /// order `git remote` returns them. Empty when the repo has no
+    /// order git2 returns them. Empty when the repo has no
     /// remotes configured.
     pub fn all_remotes(&self, root: &Path) -> Result<Vec<(String, String)>, JoyError> {
         Ok(forge::remotes(root))
     }
 
-    /// Check if the working tree is clean.
+    /// Check if the working tree is clean (what `git status --porcelain`
+    /// answered: an untracked file counts as dirty).
     pub fn is_clean(&self, root: &Path) -> Result<bool, JoyError> {
-        let output = git_output(root, &["status", "--porcelain"])?;
-        Ok(output.is_empty())
+        Ok(!forge::worktree_dirty(root))
     }
 
     /// Check if HEAD is exactly on a tag.
     pub fn head_is_tagged(&self, root: &Path) -> bool {
-        git_output(root, &["describe", "--tags", "--exact-match", "HEAD"]).is_ok()
+        forge::head_is_tagged(root)
     }
 }
 
 /// Default VCS provider. Returns the Git implementation.
+pub mod bound;
+pub mod certificates;
 pub mod contact;
+pub mod credential_helper;
 pub mod forge;
+pub mod known_hosts;
+pub mod maintenance;
+pub mod proxy;
+pub mod remote_url;
+pub mod resolver;
+pub mod ssh_auth;
+pub mod ssh_config;
+
+/// Who is at the other end of an operation (D1.1). The engine speaks
+/// about the host kind through `vcs::HostKind`, and it is the ONE type
+/// declared in [`crate::host`], where the entry point of each host sets
+/// it (JOY-02A2-27).
+pub use crate::host::HostKind;
 
 pub fn default_vcs() -> GitVcs {
     GitVcs
 }
-// ---- named CLI-git helpers (JOY-0265-D7) --------------------------------
+
+// ---- named git helpers (JOY-0265-D7, now on git2) -----------------------
 //
 // The scattered direct `git` invocations of joy-cli and joy-ai live here
-// now, each as ONE named verb. They stay on the git BINARY on purpose:
-// they run in a person's own checkout, where the user's config,
-// credential setup and hooks must apply. Headless sync belongs to
-// [`forge`].
+// as ONE named verb each. They used to stay on the git BINARY on
+// purpose, so a person's config, credential setup and hooks applied;
+// D3.2 ends that, because a machine without git has no such binary and
+// the product still has to work there. What the binary did for them is
+// done here instead: libgit2 reads the same config files, the
+// credentials come from `vcs::resolver`, and the hooks a person
+// installed are chained from joy's own (D3.5) rather than run by joy.
 
 /// The unix time of a commit, resolved in the CURRENT directory (merge
 /// drivers run with the repo as cwd). `None` when the rev does not
-/// resolve or git is unavailable.
+/// resolve or the directory is no checkout.
 pub fn commit_unix_time(rev: &str) -> Option<i64> {
     let rev = rev.trim();
+    // A merge driver whose %O/%A/%B was not substituted hands the
+    // placeholder through; it is not a rev and must not be looked up.
     if rev.is_empty() || rev.starts_with('%') {
         return None;
     }
-    let out = git()
-        .args(["log", "-1", "--format=%ct", rev])
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    String::from_utf8(out.stdout).ok()?.trim().parse().ok()
+    forge::commit_unix_time(Path::new("."), rev)
 }
 
-/// Staged paths relative to the repo root (added/modified/renamed), via
-/// `git diff --cached --name-only`.
+/// Staged paths relative to the repo root (added/modified/renamed),
+/// which is what `git diff --cached --name-only --diff-filter=ACMR`
+/// answered.
 pub fn staged_paths(root: &Path) -> Vec<String> {
-    let out = git()
-        .arg("-C")
-        .arg(root)
-        .args(["diff", "--cached", "--name-only", "--diff-filter=ACMR"])
-        .output();
-    match out {
-        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
-            .lines()
-            .map(|l| l.trim().to_string())
-            .filter(|l| !l.is_empty())
-            .collect(),
-        _ => Vec::new(),
-    }
+    forge::staged_paths(root)
 }
 
 /// Whether `remote` is configured in this checkout.
+///
+/// git2, not a git process. Reading the remote list is local plumbing:
+/// it needs no transport, so it needs neither the `forge-net` feature
+/// nor the user's ambient credentials, and there is nothing a git
+/// process adds. It sat on the chat write path as
+/// `git -C <root> remote get-url origin`, one spawn per send and per
+/// read, and the git2 only rule leaves no room for it (D3.2, D3.7).
+///
+/// The two answers are not identical, and the difference is deliberate:
+/// `git remote get-url <name>` fails for a remote that carries only
+/// `remote.<name>.pushurl`, while `git_remote_lookup` succeeds whenever
+/// either `url` or `pushurl` is configured. A remote joy can push to is
+/// a remote that exists, so the git2 answer is the better one, and it
+/// is pinned by the cases below because it is a silent change. The chat
+/// gate that used to ask this by NAME asks
+/// [`forge::default_remote_name`] instead, so that the probe and the
+/// contact name one remote (D1.1).
 pub fn remote_exists(root: &Path, remote: &str) -> bool {
-    git()
-        .arg("-C")
-        .arg(root)
-        .args(["remote", "get-url", remote])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-}
-
-/// One CLI-git ref transfer (fetch or push) with the outcome a caller
-/// can phrase honestly.
-pub enum RefTransfer {
-    Done,
-    /// git ran and refused; the raw stderr for classification.
-    Refused(String),
-    /// git itself could not run.
-    GitUnavailable(String),
-}
-
-/// Fetch one refspec from `remote`, quietly, with the user's own
-/// credential world (helpers, ssh agent, config).
-pub fn fetch_ref(root: &Path, remote: &str, refspec: &str) -> RefTransfer {
-    transfer(root, &["fetch", "--quiet", remote, refspec])
-}
-
-/// Push one refspec to `remote`, quietly, with the user's own
-/// credential world.
-pub fn push_ref(root: &Path, remote: &str, refspec: &str) -> RefTransfer {
-    transfer(root, &["push", "--quiet", remote, refspec])
-}
-
-fn transfer(root: &Path, args: &[&str]) -> RefTransfer {
-    // The CLI's forge contact (JOY-0268-2A): the same span the engine's
-    // git2 verbs open, so a CLI run reads like a desktop run.
-    let span = tracing::info_span!(
-        "forge.contact",
-        verb = args.first().copied().unwrap_or("git"),
-        forge = %forge::remote_url(root)
-            .map(|u| contact::host_of(&u))
-            .unwrap_or_default()
-    );
-    let _s = span.enter();
-    match git().arg("-C").arg(root).args(args).output() {
-        Ok(out) if out.status.success() => RefTransfer::Done,
-        Ok(out) => RefTransfer::Refused(String::from_utf8_lossy(&out.stderr).into_owned()),
-        Err(e) => RefTransfer::GitUnavailable(e.to_string()),
-    }
+    git2::Repository::discover(root)
+        .and_then(|repo| repo.find_remote(remote).map(|_| ()))
+        .is_ok()
 }
 
 /// Whether git tracks `path` in this checkout.
 pub fn path_is_tracked(root: &Path, path: &str) -> bool {
-    let output = git()
-        .arg("-C")
-        .arg(root)
-        .args(["ls-files", "--error-unmatch", "--", path])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
-    matches!(output, Ok(s) if s.code() == Some(0))
+    forge::path_is_tracked(root, path)
 }
 
 /// Untrack `path` (keep the file). Warns and answers false on failure.
 pub fn rm_cached(root: &Path, path: &str) -> bool {
-    let status = git()
-        .arg("-C")
-        .arg(root)
-        .args(["rm", "--cached", "-r", "--quiet", "--", path])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
-    match status {
-        Ok(s) if s.success() => true,
-        _ => {
-            eprintln!("Warning: could not untrack {path}");
+    match forge::untrack_path(root, path) {
+        Ok(gone) => gone > 0,
+        Err(e) => {
+            eprintln!("Warning: could not untrack {path}: {e}");
             false
         }
     }
@@ -447,17 +367,10 @@ pub fn rm_cached(root: &Path, path: &str) -> bool {
 
 /// Remove `path` from tree and index. Warns and answers false on failure.
 pub fn rm_hard(root: &Path, path: &str) -> bool {
-    let status = git()
-        .arg("-C")
-        .arg(root)
-        .args(["rm", "-r", "--quiet", "--ignore-unmatch", "--", path])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
-    match status {
-        Ok(s) if s.success() => true,
-        _ => {
-            eprintln!("Warning: could not remove {path}");
+    match forge::remove_path(root, path) {
+        Ok(()) => true,
+        Err(e) => {
+            eprintln!("Warning: could not remove {path}: {e}");
             false
         }
     }
@@ -466,35 +379,6 @@ pub fn rm_hard(root: &Path, path: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// A host with a person at it keeps git's questions: nothing is
-    /// added to the environment.
-    #[test]
-    fn a_seen_host_leaves_the_prompts_alone() {
-        assert_eq!(git_for(false).get_envs().count(), 0);
-    }
-
-    /// A headless host disarms them, and yields on ssh to a person's
-    /// own choice.
-    #[test]
-    fn a_headless_host_disarms_the_prompts() {
-        let command = git_for(true);
-        let env: Vec<(String, String)> = command
-            .get_envs()
-            .map(|(k, v)| {
-                (
-                    k.to_string_lossy().into_owned(),
-                    v.map(|v| v.to_string_lossy().into_owned())
-                        .unwrap_or_default(),
-                )
-            })
-            .collect();
-        assert!(env.contains(&("GIT_TERMINAL_PROMPT".into(), "0".into())));
-        let batch = env
-            .iter()
-            .any(|(k, v)| k == "GIT_SSH_COMMAND" && v == "ssh -o BatchMode=yes");
-        assert_eq!(batch, !ssh_is_chosen());
-    }
 
     #[test]
     #[ignore] // requires git user.email configured
@@ -505,49 +389,49 @@ mod tests {
         assert!(!result.unwrap().is_empty());
     }
 
+    /// `remote_exists` moved from a `git remote get-url` spawn to
+    /// git2, so what it answers is pinned here rather than only "no git
+    /// process ran".
+    #[test]
+    fn remote_exists_answers_off_the_configured_remotes() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        repo.remote("origin", "https://example.invalid/a.git")
+            .unwrap();
+
+        assert!(remote_exists(dir.path(), "origin"));
+        assert!(!remote_exists(dir.path(), "upstream"));
+
+        // A remote with a push url and no fetch url exists too. The git
+        // process this replaced said no here; joy asks whether there is
+        // a remote to push to, and there is.
+        repo.config()
+            .unwrap()
+            .set_str("remote.mirror.pushurl", "https://example.invalid/b.git")
+            .unwrap();
+        assert!(remote_exists(dir.path(), "mirror"));
+
+        // A directory that is no checkout at all has no remotes, and the
+        // answer is false rather than an error.
+        let plain = tempfile::tempdir().unwrap();
+        assert!(!remote_exists(plain.path(), "origin"));
+    }
+
     #[test]
     fn git_vcs_is_repo() {
         let vcs = GitVcs;
         assert!(vcs.is_repo(Path::new(".")));
     }
 
+    /// The version is the ENGINE's now, and it is there without a git
+    /// binary anywhere near the machine.
     #[test]
-    #[ignore] // requires full clone with tags
-    fn git_vcs_version_tags() {
-        let vcs = GitVcs;
-        let tags = vcs.version_tags(Path::new(".")).unwrap();
-        assert!(!tags.is_empty());
-    }
-
-    #[test]
-    fn parse_git_version_standard() {
-        let v = parse_git_version("git version 2.43.0").unwrap();
-        assert_eq!(v.major, 2);
-        assert_eq!(v.minor, 43);
-        assert_eq!(v.patch, 0);
-    }
-
-    #[test]
-    fn parse_git_version_windows() {
-        let v = parse_git_version("git version 2.43.0.windows.1").unwrap();
-        assert_eq!(v.major, 2);
-        assert_eq!(v.minor, 43);
-        assert_eq!(v.patch, 0);
-    }
-
-    #[test]
-    fn parse_git_version_old() {
-        let v = parse_git_version("git version 1.8.5").unwrap();
-        assert_eq!(v.major, 1);
-        assert_eq!(v.minor, 8);
-        assert_eq!(v.patch, 5);
-    }
-
-    #[test]
-    fn git_version_check() {
+    fn the_engine_reports_its_own_version() {
         let vcs = GitVcs;
         let v = vcs.check_version().unwrap();
-        assert!(v.major >= MIN_GIT_MAJOR);
+        assert!(v.major >= MIN_ENGINE_MAJOR);
+        assert!(v.raw.starts_with("libgit2 "), "{}", v.raw);
+        assert_eq!(v, vcs.version().unwrap());
     }
 
     #[test]

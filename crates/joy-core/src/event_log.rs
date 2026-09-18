@@ -535,29 +535,27 @@ pub fn actors_for_items(root: &Path, item_ids: &[String]) -> Result<Vec<ActorSta
     Ok(result)
 }
 
-/// Get git user.email for the current user.
+/// Read `git config user.email`.
+///
+/// No joy command uses this any more: the CLI's actors come from
+/// [`crate::identity::resolve_identity`] since package J11, and the
+/// convenience twin `log_event`, which read this for the log's actor,
+/// is gone with it. It stays public for the desktop, whose four
+/// remaining callers move onto the acting member in D4.5, and it is
+/// named after what it does rather than after an identity, so nobody
+/// reaches for it by accident.
 pub fn get_git_email() -> Result<String, JoyError> {
     crate::vcs::default_vcs().user_email()
 }
 
-/// Convenience: append an event, loading git email automatically.
-/// Errors are silently ignored to avoid breaking the main command flow.
-pub fn log_event(root: &Path, event_type: EventType, target: &str, details: Option<&str>) {
-    let Ok(user) = get_git_email() else {
-        return;
-    };
-    let event = Event {
-        event_type,
-        target: target.to_string(),
-        details: details.map(|s| s.to_string()),
-        user,
-    };
-    let _ = append_event(root, &event);
-}
-
-/// Like `log_event`, but uses a pre-resolved identity string.
-/// This allows the caller to pass the `Identity::log_user()` value
-/// which may include `delegated-by:` for AI members.
+/// Append an event as a pre-resolved identity string: the caller passes
+/// the `Identity::log_user()` value, which may include `delegated-by:`
+/// for AI members.
+///
+/// This is the only way joy writes the log. The convenience twin that
+/// took the actor from `git config user.email` is gone with D3.9: the
+/// log's actor is the resolved identity and nothing else, and it had no
+/// callers left.
 pub fn log_event_as(
     root: &Path,
     event_type: EventType,

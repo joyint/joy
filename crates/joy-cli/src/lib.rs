@@ -4,6 +4,7 @@
 mod color;
 mod commands;
 mod complete;
+mod contact_report;
 mod crypt_session;
 mod editor;
 mod effort;
@@ -75,6 +76,7 @@ Project & Members:
   config   Show or modify configuration
   ai       AI tool integration
   chat     Inspect the project chats (.joy/chats)
+  forge    Sign in to a forge, and see which connector answers
 
 Maintenance:
   update       Update the joy binary and sync this repo's joy-managed state
@@ -190,6 +192,8 @@ enum Commands {
     Find(commands::find::FindArgs),
     /// Show release notes for a version
     Release(commands::release::ReleaseArgs),
+    /// Sign in to a forge, and see which connector answers
+    Forge(commands::forge::ForgeArgs),
     /// Show the board (default when no command given)
     #[command(hide = true)]
     Board(BoardArgs),
@@ -346,6 +350,92 @@ fn auto_sync_repo() {
     }
 }
 
+/// Say a forge refusal joy-core met on a path that is not the command's
+/// answer, in the words of [`contact_report`] (D3.8): the state, the
+/// plain sentence and the one next step, as one JSON object on stderr in
+/// `--json` mode so that stdout stays the command's one envelope.
+fn say_a_contact_aside(
+    root: &std::path::Path,
+    headline: &str,
+    tail: &str,
+    error: &joy_core::error::JoyError,
+) {
+    let host = contact_report::host_of_checkout(root);
+    contact_report::Refusal::of(&host, error).say_aside(headline, tail);
+}
+
+/// Lend joy-core this terminal for the host key question of D1.4a, and
+/// only where there is a person at it.
+///
+/// joy-core owns the one `certificate_check` closure and every
+/// known_hosts rule behind it; what it has no way to do is ask. A
+/// `Background` or `Delegated` host installs nothing, and a host that
+/// installs nothing refuses an unknown key with the file and the line
+/// to paste, which is what D1.4a asks of those two anyway.
+fn install_host_key_question(kind: joy_core::host::HostKind) {
+    if kind == joy_core::host::HostKind::Interactive {
+        joy_core::vcs::certificates::set_trust_prompt(ask_about_a_host_key);
+    }
+}
+
+/// What a person is shown before joy trusts a host key it has never
+/// seen (design D1.4a), and what joy would write if they say yes.
+///
+/// Everything the person needs to compare with the forge's published
+/// fingerprint is in the two first lines, in the spelling the forges
+/// publish.
+fn host_key_question(request: &joy_core::vcs::certificates::TrustRequest) -> String {
+    use std::fmt::Write;
+    let mut text = String::new();
+    let _ = writeln!(
+        text,
+        "The authenticity of {}:{} cannot be established.",
+        request.host, request.port
+    );
+    let _ = writeln!(
+        text,
+        "{} key fingerprint is {}.",
+        request.key_type, request.fingerprint
+    );
+    if let Some(published) = request.published.as_deref() {
+        let _ = writeln!(text, "{published}");
+    }
+    if !request.other_types.is_empty() {
+        let _ = writeln!(
+            text,
+            "This host already has lines for {}, and none for {}.",
+            request.other_types.join(", "),
+            request.key_type
+        );
+    }
+    let _ = writeln!(
+        text,
+        "joy would add one line to {}.",
+        request.file.display()
+    );
+    text
+}
+
+/// Ask it. The question goes on stderr and the answer is read from
+/// stdin: the contact this interrupts owns stdout.
+fn ask_about_a_host_key(request: &joy_core::vcs::certificates::TrustRequest) -> bool {
+    let stdin = std::io::stdin();
+    decide_about_a_host_key(request, &mut stdin.lock(), &mut std::io::stderr())
+}
+
+/// The question and the answer over one reader and one writer, so that
+/// what a person reads before joy writes to `known_hosts`, and what
+/// each answer does, are cases and not hope. A closed stdin is NO: joy
+/// never trusts a key because nobody was there to refuse it.
+fn decide_about_a_host_key(
+    request: &joy_core::vcs::certificates::TrustRequest,
+    input: &mut impl std::io::BufRead,
+    out: &mut impl std::io::Write,
+) -> bool {
+    let _ = write!(out, "{}", host_key_question(request));
+    prompt::yes_or_no("Trust this host key?", false, input, out).unwrap_or(false)
+}
+
 /// The CLI entry (the bin shim calls this; the lib form exists so the
 /// desktop app can link single-tool setup without a process spawn).
 pub fn cli_main() -> anyhow::Result<()> {
@@ -405,6 +495,39 @@ pub fn cli_main() -> anyhow::Result<()> {
     } else {
         output::OutputMode::Display
     });
+
+    // Who is behind this process, decided ONCE, here, before anything
+    // dispatches (D1.1). Everything downstream reads the answer through
+    // `joy_core::host::process_host()` and never looks at the environment
+    // again. Two facts go into it: whether a person can be asked anything
+    // at all (a terminal on both ends, and not a `--json` run, whose
+    // stdout carries one envelope and nothing else), and whether joy's own
+    // session variable names a live delegation, which wins over the
+    // terminal because an agent that owns a terminal is still an agent.
+    //
+    // The subcommands git itself invokes are `Background` whoever started
+    // them: the hook helper and the merge driver run inside a `git commit`
+    // or a `git merge`, where a question has nobody to reach and a prompt
+    // would hang the git process that is waiting for them.
+    let machine_invoked = matches!(
+        &cli.command,
+        Some(Commands::PrepareCommitMsg(_)) | Some(Commands::Merge(_))
+    );
+    joy_core::host::set_process_host(if machine_invoked {
+        joy_core::host::HostKind::Background
+    } else {
+        joy_core::host::HostKind::detect(!cli.json && prompt::is_interactive())
+    });
+
+    install_host_key_question(joy_core::host::process_host());
+
+    // ...and this host's way of saying a forge refusal that is not the
+    // command's answer, so joy-core's own contacts speak the one
+    // vocabulary of D3.8 too. The auto-git push is the one that needed
+    // it: with `workflow.auto-git: push` it runs after nearly every joy
+    // write, and it said `Warning: auto-git push failed: <prose>` with
+    // no state word, no next step and no object under `--json`.
+    joy_core::git_ops::set_contact_aside(say_a_contact_aside);
 
     // Config subcommand handles its own validation, run it before load_config
     // to avoid duplicate warnings for invalid config state.
@@ -497,6 +620,7 @@ pub fn cli_main() -> anyhow::Result<()> {
             ),
             Some(Commands::Find(args)) => commands::find::run(args),
             Some(Commands::Release(args)) => commands::release::run(args),
+            Some(Commands::Forge(args)) => commands::forge::run(args),
             Some(Commands::Board(args)) => commands::board::run(args),
             Some(Commands::Config(_)) => unreachable!("handled above"),
             Some(Commands::Ai(args)) => commands::ai::run(args),
@@ -591,6 +715,89 @@ mod tests {
             rewrite(&["joy", "ls", "-T", "bug"]),
             &["joy", "ls", "-T", "bug"]
         );
+    }
+
+    /// D1.4a: the question exists where a person does, and nowhere
+    /// else. A `Background` or `Delegated` joy that installed one would
+    /// hand an unanswerable question to a hook or an agent; joy-core
+    /// then treats "nobody was asked" as its own answer and refuses by
+    /// name, which is what those two hosts are supposed to get.
+    #[test]
+    fn only_an_interactive_host_lends_joy_core_a_terminal() {
+        use joy_core::host::HostKind;
+        use joy_core::vcs::certificates::{clear_trust_prompt, trust_prompt_installed};
+        for kind in [HostKind::Background, HostKind::Delegated] {
+            clear_trust_prompt();
+            install_host_key_question(kind);
+            assert!(!trust_prompt_installed(), "{kind} installed a question");
+        }
+        clear_trust_prompt();
+        install_host_key_question(HostKind::Interactive);
+        assert!(trust_prompt_installed());
+        clear_trust_prompt();
+    }
+
+    /// What a person reads before joy appends a line to known_hosts
+    /// (D1.4a): the host with its port, the fingerprint in the spelling
+    /// the forges publish, the published key when a pin knows one, the
+    /// fact that this host is known under other key types, and the file
+    /// that would change.
+    #[test]
+    fn the_host_key_question_says_what_is_being_decided() {
+        let request = a_host_key_request();
+        let text = host_key_question(&request);
+        assert!(
+            text.contains("The authenticity of codeberg.org:22 cannot be established."),
+            "{text}"
+        );
+        assert!(
+            text.contains("ssh-ed25519 key fingerprint is SHA256:AbCd."),
+            "{text}"
+        );
+        assert!(text.contains("Codeberg publishes this key"), "{text}");
+        assert!(
+            text.contains("This host already has lines for ssh-rsa, and none for ssh-ed25519."),
+            "{text}"
+        );
+        assert!(text.contains("joy would add one line to"), "{text}");
+        assert!(text.contains("known_hosts"), "{text}");
+        // The key itself is not the question: the fingerprint is what a
+        // person compares, and the blob would only fill the screen.
+        assert!(!text.contains("AAAAC3Nz"), "{text}");
+    }
+
+    /// Yes appends, no does not, and nobody there is a no. The three
+    /// are proved through the same function the engine calls.
+    #[test]
+    fn each_answer_to_the_host_key_question_does_what_it_says() {
+        let request = a_host_key_request();
+        for (typed, expected) in [
+            ("y\n", true),
+            ("yes\n", true),
+            ("n\n", false),
+            ("\n", false),
+            ("", false),
+        ] {
+            let mut input = typed.as_bytes();
+            let mut seen: Vec<u8> = Vec::new();
+            let answer = decide_about_a_host_key(&request, &mut input, &mut seen);
+            let seen = String::from_utf8(seen).unwrap();
+            assert_eq!(answer, expected, "typed {typed:?}: {seen}");
+            assert!(seen.contains("Trust this host key? (y/N)"), "{seen}");
+        }
+    }
+
+    fn a_host_key_request() -> joy_core::vcs::certificates::TrustRequest {
+        joy_core::vcs::certificates::TrustRequest {
+            host: "codeberg.org".to_string(),
+            port: 22,
+            key_type: "ssh-ed25519".to_string(),
+            fingerprint: "SHA256:AbCd".to_string(),
+            file: std::path::PathBuf::from("/home/s/.ssh/known_hosts"),
+            line: "codeberg.org ssh-ed25519 AAAAC3Nz".to_string(),
+            published: Some("Codeberg publishes this key at docs.codeberg.org".to_string()),
+            other_types: vec!["ssh-rsa".to_string()],
+        }
     }
 
     /// Every non-hidden subcommand from the Commands enum must appear

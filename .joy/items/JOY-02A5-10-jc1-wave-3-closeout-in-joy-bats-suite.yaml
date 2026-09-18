@@ -1,0 +1,22 @@
+id: JOY-02A5-10
+title: 'JC1: Wave 3 closeout in joy (bats suite green, anonymous AI token, engine half of A4, design lines)'
+type: task
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-17T21:01:13.575255342Z
+updated: 2026-09-17T23:22:45.415227292Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'After the Wave 3 merge at 6057410943 (JI epic JI-0190-3A): (1) just test-int is red, 28 of 576 bats cases. 27 use the retired member switching idiom (git config user.email <member> inline in guard.bats, identity.bats, auth.bats, forge_alias.bats, crypt.bats, ai_init_auth_inline.bats, show_history_audit.bats and through the helper setup_member_auth); move them to the idiom J11 made true (joy auth --user, the member pin, sessions). One is a real break from J11: ''an AI token issued in anonymous mode redeems and the AI can act'' (anonymous_member_commands.bats:49); fix the product. just test-smoke has 2 failures of the same family. (2) The engine half of A4 (commit 1f710ec, the depth parameter of forge::clone and what A4 needs) is not on the joy branch, so the desktop crate does not compile; bring it in. (3) The design lines J11 made stale (D3.9 and the Level 1 journey row) say what is true now. Acceptance: just check, just test-int and just test-smoke green; the app sibling compiles against this branch.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-17T21:01:31.453628817Z
+  text: 'Plan: merge the branch feat/forge-connection-ng-a4 of the joy repository (commit 1f710ec, written by the A4 implementer under the id JOY-02A5-47, which names no item; this task owns it); fix the anonymous mode AI token redemption; move the 27 bats fixtures and the two smoke cases to the session and pin idiom; correct the stale design lines; run just check, just test-int, just test-smoke. Worktree .claude/worktrees/fcng-JC1/joy, branch feat/forge-connection-ng-jc1.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-17T23:22:45.359237172Z
+  text: 'Result: merged at 2ec0588. The engine half of A4 is in; two product defects J11 introduced are fixed with tests (a delegation is registered by member key so an anonymous AI token redeems and acts; a returning member of an anonymous project authenticates from the pin); 40 bats cases moved to the J11 idiom with no assertion weakened (reviewed case by case); just check, just test-int (576 ok) and just test-smoke (5 ok) green; the design''s D3.9 and the Level 1 row say what is true now (Level 1 solo: yes).'

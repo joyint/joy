@@ -1,11 +1,21 @@
 [package]
 name = "joy-process"
-version = "0.20.0"
+# Inherited from [workspace.package]: this manifest is in no
+# release.version-files list, the workspace manifest is, so the
+# bump reaches this crate through it (JOY-02A4-89).
+version.workspace = true
 edition = "2021"
 license = "MIT"
 description = "Every child process joy starts, built the same way: no console window under a GUI host on Windows"
 repository = "https://github.com/joyint/joy"
 homepage = "https://joyint.com/en/joy"
+
+# Not a cargo-dist App: only joy-cli is (design D2.1). Why every
+# publishable crate beside it carries this key is written once, in the
+# "Check the release shape" step of .github/workflows/release.yml, which
+# is also what fails when a crate loses it.
+[package.metadata.dist]
+dist = false
 
 # Bindings only, so the test's extra module (IsWindowVisible) costs the
 # library nothing and one declaration serves both.

@@ -46,6 +46,16 @@ on:
     tags:
       - '**[0-9]+.[0-9]+.[0-9]+*'
 
+# The one expression that says which release asset is the Windows
+# package (JOY-029E-9D). It is read twice: the plan job checks it against
+# the dist manifest before anything is built, and the winget job hands it
+# to winget-releaser as `installers-regex`. One source, because two
+# literals drift and the drift is silent: the guard keeps passing while
+# winget-releaser matches nothing and komac fails on an empty --urls
+# list, which is the v0.16.5 incident.
+env:
+  WINGET_INSTALLERS_REGEX: 'x86_64-pc-windows-msvc\.zip$'
+
 jobs:
   # Run 'dist plan' (or host) to determine what tasks we need to do
   plan:
@@ -89,6 +99,48 @@ jobs:
           echo "dist ran successfully"
           cat plan-dist-manifest.json
           echo "manifest=$(jq -c "." plan-dist-manifest.json)" >> "$GITHUB_OUTPUT"
+      # JOY-029E-9D: the shape design D2.1 asks for, checked before anything
+      # is built. One App, so the winget step below finds exactly one asset;
+      # joy and the connector in every archive, so an install has both; the
+      # host key pin file of D1.4a beside them, so the loader finds it next
+      # to the binary. A publishable crate that grows a binary would
+      # otherwise become an App of its own at the next tag: give it
+      # `[package.metadata.dist] dist = false`, the way every crate beside
+      # joy-cli has it.
+      - name: Check the release shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          apps=$(jq -r '.releases | length' plan-dist-manifest.json)
+          if [ "$apps" != "1" ]; then
+            echo "expected exactly one dist App, got $apps:" >&2
+            jq -r '.releases[].app_name' plan-dist-manifest.json >&2
+            exit 1
+          fi
+          missing=$(jq -r '
+            .artifacts | to_entries[]
+            | select(.value.kind == "executable-zip") | . as $archive
+            | (["joy", "joy-forge", "host-keys.json"] - [$archive.value.assets[].name])
+            | select(length > 0)
+            | "\($archive.key) is missing \(join(", "))"' plan-dist-manifest.json)
+          if [ -n "$missing" ]; then
+            echo "$missing" >&2
+            exit 1
+          fi
+          # The winget job's installers-regex, read from the workflow's
+          # WINGET_INSTALLERS_REGEX so that both places see one string.
+          # A rename of the archive therefore cannot reach winget-releaser
+          # as an empty --urls list: it fails here first.
+          windows=$(jq -r --arg re "$WINGET_INSTALLERS_REGEX" '
+            .artifacts | keys[]
+            | select(test($re))' plan-dist-manifest.json)
+          matched=$(printf '%s\n' "$windows" | grep -c . || true)
+          if [ "$matched" != "1" ]; then
+            echo "the winget installers-regex must match exactly one asset, it matches:" >&2
+            echo "$windows" >&2
+            exit 1
+          fi
+          echo "one App, joy and joy-forge and host-keys.json in every archive, one Windows asset: $windows"
       - name: "Upload dist-manifest.json"
         uses: actions/upload-artifact@v6
         with:
@@ -162,13 +214,17 @@ jobs:
           # Actually do builds and make zips and whatnot
           dist build ${{ needs.plan.outputs.tag-flag }} --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
           echo "dist ran successfully"
-      # --- JOY-0190: Authenticode-sign the Windows binary, then repackage ---
+      # --- JOY-0190: Authenticode-sign the Windows binaries, then repackage ---
       # dist build compiles AND archives in one step and has no native Trusted
-      # Signing support. So we sign the freshly built joy.exe in place and then
-      # re-run dist build: cargo does not recompile (no source change), so it
-      # re-archives the *signed* binary and refreshes the manifest hashes.
+      # Signing support. So we sign the freshly built binaries in place and
+      # then re-run dist build: cargo does not recompile (no source change), so
+      # it re-archives the *signed* binaries and refreshes the manifest hashes.
+      # Since JOY-029E-9D that folder holds two binaries, joy.exe and the
+      # connector joy-forge.exe (design D2.1), and both ship in the same
+      # archive. The action signs every .exe in the folder, so both are covered
+      # by this one step; the check below is the proof.
       # Windows + publishing only (fork PRs have no OIDC credentials).
-      - name: Sign Windows binary (Artifact Signing)
+      - name: Sign Windows binaries (Artifact Signing)
         if: ${{ needs.plan.outputs.publishing == 'true' && contains(join(matrix.targets, ','), 'windows') }}
         uses: ./.github/actions/sign-windows-exe
         with:
@@ -176,10 +232,189 @@ jobs:
           azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
           azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      - name: Re-archive signed Windows binary
+      # JOY-029E-9D: both binaries exist and both carry a signature, checked
+      # before dist re-archives them. A connector that failed to build, or a
+      # signing step that walked past it, fails the release here instead of
+      # shipping an unsigned binary inside a signed release.
+      - name: Check the signed Windows binaries
+        if: ${{ needs.plan.outputs.publishing == 'true' && contains(join(matrix.targets, ','), 'windows') }}
+        shell: pwsh
+        run: |
+          $dir = "target/${{ join(matrix.targets, '_') }}/dist"
+          $failed = $false
+          foreach ($name in @("joy.exe", "joy-forge.exe")) {
+            $path = Join-Path $dir $name
+            if (-not (Test-Path $path)) {
+              Write-Host "::error::$path is missing, the archive would ship without it"
+              $failed = $true
+              continue
+            }
+            # Only Valid passes. Get-AuthenticodeSignature has four other
+            # ways to say no and every one of them matters here:
+            # NotSigned (the signing step walked past the file),
+            # HashMismatch (the bytes changed after signing, which is the
+            # worst one to ship), NotTrusted (the chain does not build on
+            # the runner), UnknownError (a malformed signature). The
+            # Trusted Signing certificate is short lived but it is
+            # countersigned by the Microsoft timestamp service and its
+            # root ships in the Windows root store, so a healthy run
+            # reports Valid; anything else is a release that stops here.
+            $sig = Get-AuthenticodeSignature $path
+            if ($sig.Status -ne "Valid") {
+              Write-Host "::error::$name has signature status $($sig.Status): $($sig.StatusMessage)"
+              $failed = $true
+              continue
+            }
+            Write-Host "$name is signed and valid, by $($sig.SignerCertificate.Subject)"
+          }
+          if ($failed) { exit 1 }
+      - name: Re-archive signed Windows binaries
         if: ${{ needs.plan.outputs.publishing == 'true' && contains(join(matrix.targets, ','), 'windows') }}
         run: |
           dist build ${{ needs.plan.outputs.tag-flag }} --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
+      # --- JOY-02A8-F4: Developer ID sign the macOS binaries, then repackage ---
+      # Same shape as the Windows block above and for the same reason:
+      # dist build compiles AND archives in one step, so the binaries are
+      # signed in place and dist build is run again, which re-archives the
+      # signed files and refreshes the manifest hashes.
+      #
+      # Why this has to happen at all (T4 of the design, decision 6):
+      # without it the CLI binaries in the apple archives are ad hoc
+      # signed, with a designated requirement that is a bare cdhash. A
+      # keychain item is bound to the designated requirement of the
+      # program that created it, so the connector the desktop app ships
+      # as a sidecar (signed by the app with the Developer ID of Joydev
+      # GmbH) and a separately installed copy of the same connector would
+      # be two different identities to the macOS keychain, and every CLI
+      # update would change the cdhash and re-prompt for every stored
+      # forge token.
+      #
+      # Two things make the identity stable, and both are needed:
+      # the Developer ID Application certificate, which anchors the
+      # requirement to Apple and to the team, and an explicit identifier
+      # per binary. Without `-i`, codesign derives the identifier from
+      # the file name, which is a name anybody can take; with it the
+      # requirement names com.joydev.joy and com.joydev.joy-forge and
+      # stays the same across every version.
+      - name: Sign the macOS binaries (Developer ID Application)
+        if: ${{ needs.plan.outputs.publishing == 'true' && contains(join(matrix.targets, ','), 'apple') }}
+        shell: bash
+        env:
+          # The identity the app signs with, so that the sidecar copy and
+          # this copy are one identity: "Developer ID Application: Joydev
+          # GmbH (<team id>)". Same secret name as in joyint/app.
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          # The certificate as a base64 .p12, for a runner that has no
+          # keychain of its own. On the operator's Mac these two are
+          # empty and the identity comes from that Mac's login keychain
+          # (see the requirement named below).
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          TARGETS: ${{ join(matrix.targets, ' ') }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APPLE_SIGNING_IDENTITY:-}" ]; then
+            echo "::error::APPLE_SIGNING_IDENTITY is empty, so the macOS binaries would ship ad hoc signed."
+            echo "::error::Decision 6 of the forge connection NG design makes one identity mandatory:"
+            echo "::error::set the repository secret, and on a self-hosted Mac keep the Developer ID"
+            echo "::error::Application certificate in the runner user's login keychain."
+            exit 1
+          fi
+          # A runner with no keychain identity brings the certificate as
+          # a secret and gets a throwaway keychain for the length of the
+          # job. A Mac that already holds the identity (the operator's
+          # release Mac) sets neither secret and signs from its login
+          # keychain, which the runner agent must be able to reach: it
+          # has to run in a logged-in user session with that keychain
+          # unlocked. A runner started over ssh cannot, because macOS
+          # refuses the login keychain to a non-interactive session with
+          # "User interaction is not allowed".
+          if [ -n "${APPLE_CERTIFICATE:-}" ]; then
+            keychain="$RUNNER_TEMP/joy-signing.keychain-db"
+            password="$(uuidgen)"
+            security create-keychain -p "$password" "$keychain"
+            security set-keychain-settings -lut 21600 "$keychain"
+            security unlock-keychain -p "$password" "$keychain"
+            printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+            security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" \
+              -P "${APPLE_CERTIFICATE_PASSWORD:-}" -T /usr/bin/codesign
+            rm -f "$RUNNER_TEMP/certificate.p12"
+            security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain" >/dev/null
+            security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+            echo "JOY_SIGNING_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+          else
+            echo "No certificate secret: signing from the runner's own keychain."
+          fi
+          # The identifier is the binary's, not the archive's, and both
+          # binaries of design D2.1 ride in every apple archive.
+          for target in $TARGETS; do
+            case "$target" in *apple*) ;; *) continue ;; esac
+            dir="target/$target/dist"
+            for pair in "joy:com.joydev.joy" "joy-forge:com.joydev.joy-forge"; do
+              name="${pair%%:*}"
+              identifier="${pair##*:}"
+              path="$dir/$name"
+              if [ ! -f "$path" ]; then
+                echo "::error::$path is missing, the archive would ship without it"
+                exit 1
+              fi
+              # --timestamp because a Developer ID signature without a
+              # secure timestamp stops verifying when the certificate
+              # expires; --options runtime because the hardened runtime
+              # is what a notarized build needs and what the app already
+              # uses, so both copies of the connector carry the same
+              # flags.
+              codesign --force --timestamp --options runtime \
+                --sign "$APPLE_SIGNING_IDENTITY" --identifier "$identifier" "$path"
+              echo "Signed $path as $identifier"
+            done
+          done
+      # The proof, and the release stops here without it: the identifier
+      # is the one the keychain requirement is written against, and the
+      # authority is Apple's Developer ID and not an ad hoc signature.
+      - name: Check the signed macOS binaries
+        if: ${{ needs.plan.outputs.publishing == 'true' && contains(join(matrix.targets, ','), 'apple') }}
+        shell: bash
+        env:
+          TARGETS: ${{ join(matrix.targets, ' ') }}
+        run: |
+          set -euo pipefail
+          failed=0
+          for target in $TARGETS; do
+            case "$target" in *apple*) ;; *) continue ;; esac
+            dir="target/$target/dist"
+            for pair in "joy:com.joydev.joy" "joy-forge:com.joydev.joy-forge"; do
+              name="${pair%%:*}"
+              identifier="${pair##*:}"
+              path="$dir/$name"
+              # codesign -dvv writes its report to stderr.
+              report="$(codesign -dvv "$path" 2>&1 || true)"
+              echo "$report"
+              if ! printf '%s' "$report" | grep -qx "Identifier=$identifier"; then
+                echo "::error::$path does not carry the identifier $identifier"
+                failed=1
+              fi
+              if ! printf '%s' "$report" | grep -q "^Authority=Developer ID Application:"; then
+                echo "::error::$path is not signed by a Developer ID Application certificate"
+                failed=1
+              fi
+              # An ad hoc signature has no authority line at all and says
+              # so here; a signature over changed bytes fails --verify.
+              if ! codesign --verify --strict --verbose=2 "$path"; then
+                echo "::error::$path does not verify"
+                failed=1
+              fi
+            done
+          done
+          if [ "$failed" != 0 ]; then exit 1; fi
+      - name: Re-archive the signed macOS binaries
+        if: ${{ needs.plan.outputs.publishing == 'true' && contains(join(matrix.targets, ','), 'apple') }}
+        run: |
+          dist build ${{ needs.plan.outputs.tag-flag }} --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
+      - name: Remove the throwaway signing keychain
+        if: ${{ always() && env.JOY_SIGNING_KEYCHAIN != '' }}
+        shell: bash
+        run: security delete-keychain "$JOY_SIGNING_KEYCHAIN" || true
       - id: cargo-dist
         name: Post-build
         # We force bash here just because github makes it really hard to get values up
@@ -384,7 +619,22 @@ jobs:
           # Read assets from the release this run just published.
           release-tag: ${{ needs.plan.outputs.tag }}
           # Match the signed Windows zip produced by the release workflow.
-          installers-regex: 'x86_64-pc-windows-msvc\.zip$'
+          # Exactly one asset may match: komac fails on an empty --urls list
+          # and picks the wrong package when a second App ships a Windows zip
+          # of its own. The plan job's "Check the release shape" step runs
+          # this same string over the dist manifest and fails the release
+          # before anything is built when it matches anything but one asset,
+          # which is what `dist = false` on every crate beside joy-cli buys
+          # (design D2.1, JOY-029E-9D).
+          #
+          # Watch the first tag after JOY-029E-9D by hand: that zip now holds
+          # joy.exe, joy-forge.exe and host-keys.json where it used to hold
+          # one binary, and the joyint.joy manifest is a zip package whose
+          # NestedInstallerFiles list names joy.exe alone. Whether komac
+          # keeps that list or re-detects the nested files, and what it makes
+          # of a second executable, was not verified in this package. Do a
+          # winget manifest dry run before the submission is merged.
+          installers-regex: ${{ env.WINGET_INSTALLERS_REGEX }}
           # The fork of microsoft/winget-pkgs lives under the joyint org, not
           # under the token owner's personal account.
           fork-user: joyint

@@ -8,12 +8,22 @@ members = [
     "crates/joy-chat",
     "crates/joy-chat-store",
     "crates/joy-bi",
+    "crates/joy-forge-net",
     "crates/joy-github",
     "crates/joy-gitlab",
     "crates/joy-gitea",
     "crates/joy-telemetry",
     "crates/joy-process",
 ]
+
+[workspace.package]
+# The one version of every crate this workspace publishes. Cargo.toml
+# is in release.version-files (.joy/project.yaml), so `joy release bump`
+# rewrites this literal, and a crate that inherits it with
+# `version.workspace = true` is bumped even when its own manifest is in
+# no list. That is how crates/joy-process, crates/joy-forge-net and
+# crates/joy-telemetry stay in step with their dependents (JOY-02A4-89).
+version = "0.20.0"
 
 [workspace.dependencies]
 serde = { version = "1.0", features = ["derive"] }
@@ -27,6 +37,11 @@ chrono = { version = "0.4", features = ["serde"] }
 minijinja = "2.18"
 joy-model = { version = "0.20.0", path = "crates/joy-model" }
 joy-process = { version = "0.20.0", path = "crates/joy-process" }
+joy-core = { version = "0.20.0", path = "crates/joy-core" }
+joy-forge-net = { version = "0.20.0", path = "crates/joy-forge-net" }
+joy-github = { version = "0.20.0", path = "crates/joy-github" }
+joy-gitlab = { version = "0.20.0", path = "crates/joy-gitlab" }
+joy-gitea = { version = "0.20.0", path = "crates/joy-gitea" }
 joy-crypt = { version = "0", path = "../crypt/crates/joy-crypt" }
 joy-token = { version = "0", path = "../crypt/crates/joy-token" }
 

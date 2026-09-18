@@ -1,0 +1,14 @@
+id: JOY-02AB-F3
+title: bats 'parallel sends never lose a message silently' fails now and then with libgit2 object not found
+type: bug
+status: new
+priority: medium
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-18T18:55:29.187609017Z
+updated: 2026-09-18T18:55:29.187609017Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Seen once in CI on feat/forge-connection-ng, run 35382098053 (2026-09-18 18:48Z, ubuntu): joy chat show general failed with ''git error: object not found - no match for id (8e92949d...); class=Odb (9); code=NotFound (-3)'' right after the parallel sends of tests/integration/chat_concurrent_writes.bats. The same test passed on the previous run of the branch (1bb6134) and six times in a row locally on zara, and the commits between the two runs touch only joy-forge-net auth::store and a test helper, so this is a race in the chat ref sweep (chat_ref) or in how a reader opens objects a parallel writer is still packing, not a regression of the forge work. To find: run the bats file in a loop under load, and read chat_ref''s sweep for a window where a ref is moved before its objects are fully written or where a loose object is pruned by a concurrent gc. Also seen on the Windows runner VM once as chat_ref::tests::the_sweep_reclaims_lost_writes_and_every_chat_survives.'

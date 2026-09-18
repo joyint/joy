@@ -1,0 +1,54 @@
+id: JOY-029D-3E
+title: 'J10: the CLI forge command group and the interactive gate (new)'
+type: story
+status: closed
+priority: medium
+deps:
+- JOY-0293-12
+- JOY-029B-B0
+capabilities:
+- plan
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-16T23:23:36.027483013Z
+updated: 2026-09-17T15:35:43.274806088Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Package J10 of the forge connection NG rebuild (JI epic JI-0190-3A; wave 2; owner project JOY). Design: joy/docs/design/forge-connection-ng.md (v5), section 4, and the design sections the package names. Read those sections before starting; every rule there is binding.
+
+  Depends on: J1, J3.
+  Files: joy/crates/joy-cli/src/lib.rs (one `Commands` variant), joy/crates/joy-cli/src/commands/forge.rs (new), joy/crates/joy-core/Cargo.toml, joy/crates/joy-cli/Cargo.toml, app/apps/desktop/src-tauri/Cargo.toml, joy/crates/joy-github/src/github.rs:297,310, joy/docs/plugins.md, the platform CI pipeline.
+  Work: the whole of D3.10 and D3.11, the host kind set once in `cli_main`, the two help strings, and the approved JI item of decision 29, working title "forge connection NG: new commands, flags and features", which names every flag, option and feature the design adds and which exists before this package's first commit.
+  Acceptance: `joy forge login --host github.com` on a machine with no gh prints a URL and a code and ends with a stored credential; `joy forge login --token-stdin --host codeberg.org < token` stores a validated token and `ps` during the run shows no token; `joy forge status --json` lists the host with source, scopes and expiry and exits 1 when nothing is signed in; a protocol 1 `joy-github` in the executable's directory makes `joy forge login` print the binary's path and the `rm` line while `joy release publish` still works; `cargo tree -e features -i joy-core --manifest-path platform/Cargo.toml` contains no `interactive` and the CI guard fails when it does; `JOY_SESSION=... joy forge login --host github.com` refuses immediately with the delegation sentence.
+  Parallel with: J3, J4b, A1, J8, P3, P7, P4, P5, P9.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-17T15:35:43.192643254Z
+  text: |-
+    Result (implemented, adversarially reviewed, findings fixed; branch feat/forge-connection-ng-j10, 7 commits; merged into feat/forge-connection-ng by the integrator).
+
+    All three must_fix findings are addressed and six of the nine should_fix ones, in commit 212618d on feat/forge-connection-ng-j10.
+
+    MUST 1: `--remote <URL>` is gone from `joy forge login` (neither decision 29 nor the approved JI-0191-99 names it), and D3.10's prose signature is corrected in the design so the contradiction cannot come back. The connector protocol's own `--remote` is untouched, since it predates this design. MUST 2: the three failures that left through `bail!` (empty token line, stdin closed before a token, `logout` with neither `--host` nor `--all`) are refusals now, each with a `state`, and a new case drives all three with `--json` and reads the envelope off stdout; verified against the built binary. MUST 3: the desktop manifest could not be changed (the app repository is not in this worktree), so the docs that claimed it was are corrected and the missing line is named where a reader will look for it.
+
+    SHOULD 1: `action_line` no longer prints `Failure::next_step`, which is the D4.7 button label; it uses the prose seam `Failure::guidance` and says nothing where there is no prose. SHOULD 2: states map one by one, so `unsupported`, `error`, `denied` and `busy` are no longer told to run the command that just refused, and a refusal whose message is its own instruction (the D3.11 sentence) carries no second help line. SHOULD 3: the transfer direction is evidence now, so a 403 on a fetch is `needs_sign_in` and not the false "you can read but not write". SHOULD 4: the state word and the raw git line are back as `= note` and `= detail`. SHOULD 6: the `/proc` sampler runs from the spawn until the child has read the token and answered, and both cases assert that the window in which the secret was held was really sampled. SHOULD 7: the host key question is split int
+
+    Acceptance:
+    - [met] `joy forge login --host github.com` on a machine with no gh prints a URL and a code and ends with a stored credential: forge_command.rs::login_on_a_terminal_prints_the_url_and_the_code_and_signs_in drives the shipped binary on a pty against an in-process fake connector; no real forge is contacted.
+    - [met] `joy forge login --token-stdin --host codeberg.org < token` stores a validated token and `ps` during the run shows no token: Now really tested: the sampler runs beside the child from the spawn until it has read the token and answered, and the case asserts that at least one sample fell into the window in which joy held the secret (the fake conn
+    - [met] `joy forge status --json` lists the host with source, scopes and expiry and exits 1 when nothing is signed in: forge_command.rs::status_lists_the_host_with_its_source_and_scopes and status_exits_one_when_nothing_is_signed_in; the envelope is printed before the exit.
+    - [met] a protocol 1 `joy-github` makes `joy forge login` print the binary's path and the `rm` line while `joy release publish` still work: forge_command.rs::a_protocol_1_connector_refuses_login_with_the_path_and_the_rm_line; the same case then publishes a release through the legacy binary.
+    - [partly] `cargo tree -e features -i joy-core --manifest-path platform/Cargo.toml` contains no `interactive` and the CI guard fails when it : The recipe exists, the failing half is proved (`just guard-interactive Cargo.toml` exits 1 and names the node), and joy's CI runs it. The platform pipeline itself was NOT changed: the platform repository is not in this w
+    - [met] `JOY_SESSION=... joy forge login --host github.com` refuses immediately with the delegation sentence: forge_command.rs::login_under_a_delegation_session_refuses_by_name_and_spawns_no_login mints a real delegation session and proves from the connector's argv log that no `login` was ever started; the refusal now also carri
+    - [met] the whole of D3.10: one envelope per answer, exit codes, the four sentences that point at the door: The three `bail!` ways out (empty token line, closed stdin, logout without a host) are refusals now, each with a state, and a case drives all three with --json. The four sentences point at `joy forge login`/`joy forge pl
+    - [partly] the whole of D3.11: the cargo feature, no silent call path, the runtime refusal, a CI guard: joy-core's `interactive` feature, the mandatory progress sink, the instant Background/Delegated refusal and the manifest guard are in. The desktop half of layer 1 (app/apps/desktop/src-tauri/Cargo.toml) is not changed, b
+    - [met] the approved JI item of decision 29 names every flag this package adds: JI-0191-99 is accepted and approved. `--remote <URL>` on `joy forge login` was named by neither the item nor decision 29, so it is dropped, and D3.10's prose signature is corrected to match its own decision.
+    - [met] the two help strings and the superseded vision document: joy-github's release_answer names `joy forge login`, joy-cli's release path names `joy forge plugins`, and docs/dev/vision/ForgeSync.md carries the superseded note.
+
+    Open questions (carried to the packages named or to follow up items):
+    - SHOULD FIX 5 (`joy forge login --json` can never run the device flow) is NOT fixed, because the cheap version is not safe. The term sits in the base branch (crates/joy-cli/src/lib.rs:476, `HostKind::detect(!cli.json && prompt::is_interactive())`, commit c46c66a, not J10's), and d
+    - SHOULD FIX 8 (the platform half of the CI guard runs nowhere) is NOT fixed: platform/ is not in this worktree, so no platform pipeline file could be touched. What is in reach is done and honest now: the recipe says which half it was able to do, the failing half is proved by point
+    - The `interactive` feature is now a real compile-time gate (`#[cfg(feature = "interactive")] pub mod interactive`), so the first desktop call site in package D4/A1 will fail to compile until the app manifest line lands. Whoever owns that package has to add `"interactive"` to app/a
+    - `joy forge login` inside a project with several remotes now asks the connectors about `origin` first (D1.1). If a person really wants a different remote's host there is no flag for it any more; `--host <hostname>` is the named way, which is what the item allows.

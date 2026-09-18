@@ -1,0 +1,19 @@
+id: JOY-02A8-F4
+title: 'JM1: macOS findings of the release check (unreachable forge reported as rejected token, connector stderr lost, status help, /proc test, unsigned macOS CLI binaries)'
+type: task
+status: closed
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-18T12:07:41.186485545Z
+updated: 2026-09-18T13:41:01.203999949Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Found on halcyon on 2026-09-18 (build clean, joy-core 763 passed; joy-cli 2 failures). (1) crates/joy-cli/tests/forge_connector.rs:423 no_call_ever_carries_a_token_in_its_argument_list is cfg(unix) but reads /proc/<pid>/cmdline: gate it to linux or read ''ps -o args= -p <pid>'' on Darwin so J2''s acceptance is proven on macOS. (2) crates/joy-forge-net/src/auth/verbs.rs:579 collapses ''the forge refused the token'' and ''the forge could not be reached'' into reason no-login, so an unreachable host prints ''the forge did not accept this token'' with state needs_sign_in; carry an offline or unreachable reason with the connector''s own sentence. (3) crates/joy-core/src/forge_plugins.rs discards the connector''s stderr on a zero exit, so the sentences the connector prints (for example the macOS refusal of ca_bundle naming the system trust store) never reach the person; carry stderr as a note on successful answers too. (4) crates/joy-cli/src/commands/forge.rs:798 prints ''run joy forge login --host X'' even when no connector claims the host (say ''add the instance to forges.yaml'' instead) and names only rows[0].host with several rows. (5) release.yml signs Windows binaries only; the macOS CLI binaries from the installer are ad hoc signed with a bare cdhash requirement, so the keychain entry the app''s sidecar writes is a different identity and every CLI update would re prompt (T4 answered, decision 6 is mandatory): sign the aarch64 and x86_64 apple archives with the Developer ID Application certificate that signs the app (Joydev GmbH) and an explicit stable identifier per binary (-i com.joydev.joy, -i com.joydev.joy-forge) in the macOS release lane (release-macos runs on the Mac). (6) docs/design/forge-connection-ng.md section 6: close the T4 open point with this evidence. (7) The checklist gets the constraint that the keychain dialog half of T4 cannot be run from ssh (macOS refuses the login keychain to non interactive sessions with ''User interaction is not allowed''). Verify (1) to (4) on halcyon (SSH_AUTH_SOCK=/run/user/1000/gcr/ssh ssh -o RemoteCommand=none -o RequestTTY=no halcyon, DEVELOPER_DIR=/Library/Developer/CommandLineTools, checkout under ~/Work/Joyint-check). JI epic JI-0190-3A.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-18T13:41:01.117111492Z
+  text: 'Result: commits 57bc045, 94696e8, d4ed730, 6fffcff, 4716009, 3a13665 merged at 0977e7a, verified on halcyon (joy-cli and joy-forge-net green, the two macOS failures gone; an unreachable forge now says it could not be reached; status for an unclaimed host gives the forges.yaml help). release.yml signs the two apple archives with the Developer ID Application identity and the identifiers com.joydev.joy and com.joydev.joy-forge (not yet exercised by a real release run). T4 closed in design section 6; the checklist records that the keychain dialog half cannot run over ssh.'

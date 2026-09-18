@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # For the host key pins alone (job host-key-pins): the three public
+  # forges rotate keys, and a pin that nothing checks again is a pin
+  # that is right until the day it is not.
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -29,6 +35,11 @@ jobs:
   fmt:
     name: Format
     runs-on: ubuntu-latest
+    # The nightly schedule is for the pins and nothing else. Every
+    # other job needs this one, and a skipped job skips what needs it,
+    # so this single condition keeps the build and test matrix off the
+    # nightly run.
+    if: github.event_name != 'schedule'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -70,6 +81,15 @@ jobs:
           # scratch on the next run (matters most for the slow windows leg).
           cache-on-failure: true
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        working-directory: joy
+      - uses: extractions/setup-just@v3
+      # The interactive gate of design D3.11: the sign in verbs may be
+      # compiled into joy-cli and the desktop and into nothing else. The
+      # half that reads the manifests runs here; the half that reads the
+      # platform's own `cargo tree` runs in the platform's pipeline,
+      # where that repository is checked out. The recipe says which half
+      # it did.
+      - run: just guard-interactive
         working-directory: joy
 
   test:
@@ -136,6 +156,27 @@ jobs:
           git config --global user.email "ci@joyint.dev"
           git config --global user.name "Joyint CI"
       - run: cargo test --workspace --no-fail-fast
+        working-directory: joy
+
+  # The Codeberg pin build step of design D1.4a, run again: every
+  # recorded blob is checked against the key the host really serves and
+  # against the fingerprint its forge publishes (`just
+  # check-host-key-pins`). It runs nightly and on demand, never on a
+  # pull request, because it talks to three forges over the network and
+  # their outage is nobody's merge to block. A red run means a forge
+  # rotated a key or a pin was edited by hand; both need a person.
+  host-key-pins:
+    name: Host key pins
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: joy
+      - uses: extractions/setup-just@v3
+      # jq, curl, ssh-keygen and ssh-keyscan are on the hosted image;
+      # no cargo runs here, so the crypt sibling is not needed either.
+      - run: just check-host-key-pins
         working-directory: joy
 
   integration:

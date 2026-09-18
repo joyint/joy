@@ -12,7 +12,6 @@ use joy_core::auth::{
     IdentityKeypair, PublicKey, Salt,
 };
 use joy_core::store;
-use joy_core::vcs::Vcs;
 
 use crate::color;
 
@@ -188,7 +187,7 @@ pub fn run(args: AuthArgs) -> Result<()> {
         Some(AuthCommand::Recover(a)) => run_recover(a, args.passphrase.as_deref(), stdin),
         None => {
             if let Some(otp) = args.otp.as_deref() {
-                run_auth_otp(otp, args.passphrase.as_deref(), stdin)
+                run_auth_otp(otp, args.passphrase.as_deref(), stdin, args.user.as_deref())
             } else {
                 run_auth(
                     args.passphrase.as_deref(),
@@ -202,13 +201,17 @@ pub fn run(args: AuthArgs) -> Result<()> {
 }
 
 /// Resolve the member-selector for this invocation. `--user` always
-/// wins; otherwise we fall back to git config user.email. Centralised
-/// here so every auth path uses the same rule (JOY-00F3-AE).
-fn resolve_user(user_flag: Option<&str>) -> Result<String> {
-    match user_flag {
-        Some(u) if !u.is_empty() => Ok(u.to_string()),
-        _ => Ok(joy_core::vcs::default_vcs().user_email()?),
-    }
+/// wins; otherwise the member this device pinned when a person last
+/// authenticated in this project, and git config only as the prefill
+/// behind both (D3.9). Centralised here so every auth path uses the same
+/// rule (JOY-00F3-AE), and the same rule `joy auth init` uses, so a
+/// founder who never had a git config is not locked out of his own
+/// project when the session expires.
+fn resolve_user(root: &Path, user_flag: Option<&str>) -> Result<String> {
+    let project = store::load_project(root)?;
+    Ok(joy_core::identity::acting_member(
+        root, &project, user_flag,
+    )?)
 }
 
 /// Resolve token from --token flag or JOY_TOKEN env var.
@@ -301,8 +304,13 @@ pub(crate) fn run_init(
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
     let mut project = store::read_project(&project_path)?;
 
-    // Determine who we are
-    let email = resolve_user(user_flag)?;
+    // Determine who we are. The member is NAMED here (D3.9): `--user`,
+    // else the member this device pinned, else git config as a prefill.
+    // The project is never guessed from, not even when it has exactly one
+    // member: the project file travels with every clone. A founder
+    // created with `joy init --user` on a machine without a git config
+    // enrols through the pin.
+    let email = joy_core::identity::acting_member(&root, &project, user_flag)?;
     let member = project.member_by_email(&email);
     if member.is_none() {
         anyhow::bail!(
@@ -404,6 +412,12 @@ pub(crate) fn run_init(
     session_token.chat_seed = Some(hex::encode(seed.as_bytes()));
     session::save_session(&project_id, &session_token)?;
 
+    // Remember who acts here (D3.9): a founder who set this project up
+    // with `joy init --user` on a machine without a git identity is known
+    // to the next command too, and so is one whose git config named them
+    // today and will not tomorrow.
+    joy_core::identity::pin_acting_member(&root, &project, &session_member);
+
     if anonymous {
         println!("Authentication initialized for {email} (anonymous mode).");
         println!(
@@ -453,7 +467,7 @@ fn run_auth(
     }
 
     // Human authentication via passphrase
-    let email = resolve_user(user_flag)?;
+    let email = resolve_user(&root, user_flag)?;
     auth_with_passphrase(
         &root,
         &project,
@@ -521,7 +535,16 @@ fn auth_with_passphrase(
     if outcome.relocked > 0 {
         println!("Re-locked {} unlocked file(s).", outcome.relocked);
     }
-    println!("Authenticated as {}. Session active (24h).", email);
+    // Who authenticated, as the person reads it. Not `email`: since
+    // package J11 that is the member this device pinned (D3.9), which in
+    // an anonymous project is an opaque `m-<hex>` id, and telling
+    // somebody they are "m-kapvns3ors" is the one thing ADR-042 asks
+    // every output not to do. The login resolved the address on its way
+    // through members.yaml and hands it back.
+    println!(
+        "Authenticated as {}. Session active (24h).",
+        outcome.address
+    );
 
     Ok(())
 }
@@ -656,6 +679,32 @@ fn auth_with_token(
     Ok(())
 }
 
+/// Where `joy auth status` got the member it just named (D3.9), in the
+/// words a person can act on.
+///
+/// The order is the resolver's own: a delegation session names the AI and
+/// the operator behind it, the device pin is this machine's own state,
+/// and nothing else answers. The pin is worth naming because it is
+/// invisible otherwise: a person who once ran `joy auth --user
+/// somebody-else` has changed what this machine answers with, and the
+/// only way to see it was to guess. Naming it also names the way to
+/// change it, which is to authenticate as somebody else.
+fn identity_source(
+    root: &std::path::Path,
+    project: &joy_core::model::project::Project,
+    identity: &joy_core::identity::Identity,
+) -> String {
+    if identity.delegated_by.is_some() {
+        return "delegation session in JOY_SESSION".to_string();
+    }
+    match joy_core::identity::pinned_member(root, project).as_deref() {
+        Some(pin) if pin == identity.member.id() => {
+            "remembered on this device (`joy auth --user <address>` changes it)".to_string()
+        }
+        _ => "this session".to_string(),
+    }
+}
+
 /// `joy auth status` — show current session state and any AI sessions
 /// the calling user has delegated to.
 fn run_status() -> Result<()> {
@@ -664,8 +713,23 @@ fn run_status() -> Result<()> {
 
     let identity =
         joy_core::identity::resolve_identity(&root).map_err(|e| anyhow::anyhow!("{e}"))?;
+    // Nothing on this device says who acts here: no delegation session
+    // and no pin, which is a fresh clone or a second machine, and git
+    // config is not an answer (D3.9). Say the sentence that names the
+    // remedy instead of printing "No active session for " with an empty
+    // name in it.
+    if identity.member.id().trim().is_empty() {
+        return Err(joy_core::error::JoyError::UnknownActingMember.into());
+    }
     let project = store::load_project(&root)?;
     let project_id = session::project_id(&root)?;
+    // Where the answer came from, so a person can see that this machine
+    // decided it once and how to decide it again: a delegation session
+    // names the AI, a pin is this device's own state, and `joy auth
+    // --user <address>` replaces it (D3.9). Without this line a machine
+    // that answers with a member nobody expected looks like a machine
+    // reading somebody's mind.
+    let source = identity_source(&root, &project, &identity);
 
     // AI identities authenticate via the env-carried session (per-session
     // file); humans via their per-member slot. Try env first, slot second.
@@ -745,6 +809,7 @@ fn run_status() -> Result<()> {
                 color::label("Member:    "),
                 color::user(&identity.member)
             );
+            println!("  {} {}", color::label("Source:    "), source);
             if let Some(ref by) = identity.delegated_by {
                 println!("  {} {}", color::label("Delegated: "), by);
             }
@@ -771,6 +836,7 @@ fn run_status() -> Result<()> {
                 identity.member
             ))
         );
+        println!("  {} {}", color::label("Source:    "), source);
     } else {
         println!(
             "  {}",
@@ -779,6 +845,7 @@ fn run_status() -> Result<()> {
                 identity.member
             ))
         );
+        println!("  {} {}", color::label("Source:    "), source);
     }
 
     if !delegated_sessions.is_empty() {
@@ -840,20 +907,23 @@ fn run_reset(args: ResetArgs, passphrase_flag: Option<&str>, passphrase_stdin: b
 
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
     let mut project = store::read_project(&project_path)?;
-    let email = joy_core::vcs::default_vcs().user_email()?;
+    // The acting member comes from the session, then this device's pin,
+    // then git config as a prefill (D3.9), and it is already an at-rest
+    // member key, which is what `target` is consumed as below.
+    let acting = joy_core::identity::acting_human_key(&root)?;
 
-    let target = args.member.as_deref().unwrap_or(&email);
-    let resetting_other = target != email;
+    let target = args.member.as_deref().unwrap_or(&acting);
+    let resetting_other = target != acting;
 
     // Verify the acting user's identity via passphrase
     let acting_member = project
-        .member_by_email(&email)
-        .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member.", email))?;
+        .member_by_key(&acting)
+        .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member.", acting))?;
 
     if acting_member.verify_key.is_none() {
         anyhow::bail!(
             "Authentication not initialized for {}. Run `joy auth init`.",
-            email
+            acting
         );
     }
 
@@ -898,7 +968,7 @@ fn run_reset(args: ResetArgs, passphrase_flag: Option<&str>, passphrase_stdin: b
         println!("Run `joy auth init` to set up again.");
     }
 
-    joy_core::git_ops::auto_git_post_command(&root, &format!("auth reset {}", target), &email);
+    joy_core::git_ops::auto_git_post_command(&root, &format!("auth reset {}", target), &acting);
 
     Ok(())
 }
@@ -924,7 +994,7 @@ fn run_token_add(
 ) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
-    let email = resolve_user(user_flag)?;
+    let email = resolve_user(&root, user_flag)?;
     let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "Passphrase: ")?;
 
     let (encoded, hours) =
@@ -953,8 +1023,17 @@ fn run_token_add(
     Ok(())
 }
 
-/// Create a delegation token for `ai_member` issued by the human at
-/// `operator_email`. Returns `(encoded_token, ttl_hours)`.
+/// Create a delegation token for `ai_member` issued by the human
+/// `operator`. Returns `(encoded_token, ttl_hours)`.
+///
+/// `operator` names the issuing human in EITHER of the two forms a
+/// caller can hold: an address a person typed (`joy auth token add
+/// --user`), or their at-rest member key, which is what identity
+/// resolution answers with since package J11 (D3.9) and what `joy
+/// project member add --with-token` has always passed. It is not an
+/// e-mail: in an anonymous project the key is the opaque `m-<hex>` id
+/// (ADR-042). The first thing this function does is resolve it to the
+/// key, and nothing below looks at the raw string again.
 ///
 /// Shared between `joy auth token add` and `joy project member add
 /// --with-token` so both code paths use the same delegation key
@@ -962,7 +1041,7 @@ fn run_token_add(
 /// caller is responsible for any user-facing output.
 pub(crate) fn create_delegation_token(
     root: &Path,
-    operator_email: &str,
+    operator: &str,
     operator_passphrase: &str,
     ai_member: &str,
     ttl_hours_override: Option<i64>,
@@ -989,17 +1068,25 @@ pub(crate) fn create_delegation_token(
     // (JOY-00EF-E5).
     // Resolve the operator's at-rest map key (the e-mail in open mode, the
     // opaque id in anonymous mode, ADR-042). Sessions, the guard identity and
-    // the attestation are all keyed by this id, never by the cleartext e-mail.
+    // the attestation are all keyed by this id, never by the cleartext
+    // e-mail. The caller holds either an address a person typed (`--user`)
+    // or an at-rest member key (`joy_core::identity::acting_human_key`, and
+    // the device pin behind it, D3.9); both must find the same member.
     let member_key = project
-        .member_key_for_email(operator_email)
-        .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member.", operator_email))?;
+        .member_key_for_email(operator)
+        .or_else(|| {
+            project
+                .has_member_key(operator)
+                .then(|| operator.to_string())
+        })
+        .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member.", operator))?;
     let member = project
         .member_by_key(&member_key)
         .expect("member_key came from the member map");
     if member.verify_key.is_none() {
         anyhow::bail!(
             "Authentication not initialized for {}. Run `joy auth init`.",
-            operator_email
+            operator
         );
     }
 
@@ -1106,8 +1193,20 @@ pub(crate) fn create_delegation_token(
             delegation_seed: &delegation_seed,
         },
         token::TokenIssueParams {
+            // The RESOLVED key, never the string the caller handed in.
+            // The claim is what redemption looks the operator up by and
+            // what `delegated_by_at_rest` turns into the `delegated-by:`
+            // of every committed actor, so a token issued with `--user
+            // alice@example.com` used to carry a cleartext address while
+            // one issued from the member pin carried `m-<hex>`: the same
+            // operator, two spellings, and both ends had to accept both.
+            // Issuing the key closes that at the source. In open mode
+            // the key IS the address, so nothing changes there; in
+            // anonymous mode no address is written into the token at
+            // all, which is what ADR-042 asks of everything that leaves
+            // this project.
             ai_member,
-            human: operator_email,
+            human: &member_key,
             project_id: &project_id,
             ttl,
         },
@@ -1119,17 +1218,33 @@ pub(crate) fn create_delegation_token(
     let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
     let mut project_mut = store::read_project(&project_path)?;
     if new_entry {
-        if let Some(m) = project_mut.member_by_email_mut(operator_email) {
-            m.ai_delegations.insert(
-                ai_member.to_string(),
-                joy_core::model::project::AiDelegationEntry {
-                    delegation_verifier: delegation_keypair.public_key().to_hex(),
-                    delegation_salt: delegation_salt_hex.clone(),
-                    created: chrono::Utc::now(),
-                    rotated: None,
-                },
-            );
-        }
+        // By the operator's at-rest KEY, the one resolved at the top of
+        // this function, and never by their address again. The lookup
+        // here used to be `member_by_email_mut` on the caller's raw
+        // string, which resolves an ADDRESS through the member map's
+        // e-mail matcher. It found the operator while the acting member
+        // was still a git config address; since identity resolution
+        // answers with the member this device pinned (D3.9, package
+        // J11), an anonymous project hands this function the operator's
+        // opaque `m-<hex>` id, no address matches it, and the `if let`
+        // wrote NOTHING. The token was printed all the same, and
+        // redeeming it then failed with "no delegation registered for
+        // <ai> by <operator>": a token that could never work, from a
+        // command that reported success. A member the map cannot find is
+        // an error here now, so the next shape of this mistake cannot be
+        // a silent one.
+        let m = project_mut
+            .member_by_key_mut(&member_key)
+            .ok_or_else(|| anyhow::anyhow!("{member_key} is not a registered project member."))?;
+        m.ai_delegations.insert(
+            ai_member.to_string(),
+            joy_core::model::project::AiDelegationEntry {
+                delegation_verifier: delegation_keypair.public_key().to_hex(),
+                delegation_salt: delegation_salt_hex.clone(),
+                created: chrono::Utc::now(),
+                rotated: None,
+            },
+        );
     }
 
     // F4 (JI-0175-B0): give the AI member its own verify_key so chats wrap
@@ -1261,20 +1376,20 @@ fn run_passphrase(
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
     let mut project = store::read_project(&project_path)?;
 
-    let email = joy_core::vcs::default_vcs().user_email()?;
+    let acting = joy_core::identity::acting_human_key(&root)?;
     let member = project
-        .member_by_email(&email)
-        .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member", email))?;
+        .member_by_key(&acting)
+        .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member", acting))?;
     let current_pub_hex = member.verify_key.as_ref().ok_or_else(|| {
         anyhow::anyhow!(
             "Authentication not initialized for {}. Run `joy auth init`.",
-            email
+            acting
         )
     })?;
     let current_salt_hex = member
         .kdf_nonce
         .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("No salt registered for {}.", email))?;
+        .ok_or_else(|| anyhow::anyhow!("No salt registered for {}.", acting))?;
     let current_pub = PublicKey::from_hex(current_pub_hex)?;
     let current_salt = Salt::from_hex(current_salt_hex)?;
 
@@ -1296,7 +1411,7 @@ fn run_passphrase(
         // becomes the seed.
         let migrated_seed = seed_mod::Seed::from_derived_key(&current_key);
         let recovery = seed_mod::RecoveryKey::generate();
-        let m = project.member_by_email_mut(&email).unwrap();
+        let m = project.member_by_key_mut(&acting).unwrap();
         m.seed_wrap_passphrase = Some(seed_mod::wrap_seed_for_migration(&migrated_seed));
         m.seed_wrap_recovery = Some(seed_mod::wrap_seed_with_recovery(
             &migrated_seed,
@@ -1336,19 +1451,24 @@ fn run_passphrase(
     // keypair derives from the unchanged seed.
     let new_wrap_passphrase = seed_mod::wrap_seed_with_passphrase(&seed, &new_pass, &current_salt)?;
 
-    let m = project.member_by_email_mut(&email).unwrap();
+    let m = project.member_by_key_mut(&acting).unwrap();
     m.seed_wrap_passphrase = Some(new_wrap_passphrase);
     store::write_yaml_preserve(&project_path, &project)?;
     let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
     joy_core::git_ops::auto_git_add(&root, &[&rel]);
 
     let project_id = session::project_id(&root)?;
-    let _ = session::remove_session(&project_id, &email);
+    let _ = session::remove_session(&project_id, &acting);
 
-    println!("Passphrase changed for {}.", email);
+    // This command ends the session it just authenticated, so it must not
+    // also lose the person's name: remember who acts here, whether or not
+    // git config can say it (D3.9).
+    joy_core::identity::pin_acting_member(&root, &project, &acting);
+
+    println!("Passphrase changed for {}.", color::user(&acting));
     println!("Prior sessions are invalidated. Run `joy auth` to start a fresh session.");
 
-    joy_core::git_ops::auto_git_post_command(&root, "auth passphrase", &email);
+    joy_core::git_ops::auto_git_post_command(&root, "auth passphrase", &acting);
 
     Ok(())
 }
@@ -1380,14 +1500,14 @@ fn run_recover(
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
     let mut project = store::read_project(&project_path)?;
 
-    let email = joy_core::vcs::default_vcs().user_email()?;
+    let acting = joy_core::identity::acting_human_key(&root)?;
     let member = project
-        .member_by_email(&email)
-        .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member", email))?;
+        .member_by_key(&acting)
+        .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member", acting))?;
     let salt_hex = member
         .kdf_nonce
         .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("Authentication not initialized for {}.", email))?;
+        .ok_or_else(|| anyhow::anyhow!("Authentication not initialized for {}.", acting))?;
     let salt = Salt::from_hex(salt_hex)?;
 
     if args.recovery_key {
@@ -1395,7 +1515,7 @@ fn run_recover(
             anyhow::anyhow!(
                 "{} has no recovery wrap. The legacy auth schema needs `joy auth` once first \
                  to migrate, which also reveals the recovery key.",
-                email
+                acting
             )
         })?;
 
@@ -1420,26 +1540,34 @@ fn run_recover(
         }
 
         let new_wrap_passphrase = seed_mod::wrap_seed_with_passphrase(&seed, &new_pass, &salt)?;
-        let m = project.member_by_email_mut(&email).unwrap();
+        let m = project.member_by_key_mut(&acting).unwrap();
         m.seed_wrap_passphrase = Some(new_wrap_passphrase);
         store::write_yaml_preserve(&project_path, &project)?;
         let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
         joy_core::git_ops::auto_git_add(&root, &[&rel]);
 
         let project_id = session::project_id(&root)?;
-        let _ = session::remove_session(&project_id, &email);
+        let _ = session::remove_session(&project_id, &acting);
 
-        println!("Recovery successful. Passphrase reset for {}.", email);
+        // This command ends the session it just authenticated, so it must
+        // not also lose the person's name: remember who acts here, whether
+        // or not git config can say it (D3.9).
+        joy_core::identity::pin_acting_member(&root, &project, &acting);
+
+        println!(
+            "Recovery successful. Passphrase reset for {}.",
+            color::user(&acting)
+        );
         println!(
             "Run `joy auth` with the new passphrase to start a session. The recovery key remains valid."
         );
-        joy_core::git_ops::auto_git_post_command(&root, "auth recover --recovery-key", &email);
+        joy_core::git_ops::auto_git_post_command(&root, "auth recover --recovery-key", &acting);
     } else {
         // --regenerate-key: rotate the recovery wrap.
         let wrap_passphrase_hex = member.seed_wrap_passphrase.as_ref().ok_or_else(|| {
             anyhow::anyhow!(
                 "{} has no passphrase wrap. The legacy auth schema needs `joy auth` once first.",
-                email
+                acting
             )
         })?;
 
@@ -1448,20 +1576,20 @@ fn run_recover(
 
         let new_recovery = seed_mod::RecoveryKey::generate();
         let new_wrap_recovery = seed_mod::wrap_seed_with_recovery(&seed, &new_recovery, &salt)?;
-        let m = project.member_by_email_mut(&email).unwrap();
+        let m = project.member_by_key_mut(&acting).unwrap();
         m.seed_wrap_recovery = Some(new_wrap_recovery);
         store::write_yaml_preserve(&project_path, &project)?;
         let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
         joy_core::git_ops::auto_git_add(&root, &[&rel]);
 
-        println!("Recovery key rotated for {}.", email);
+        println!("Recovery key rotated for {}.", color::user(&acting));
         println!();
         println!("NEW RECOVERY KEY (write this down now, it is shown only once):");
         println!();
         println!("    {}", new_recovery.to_display_string());
         println!();
         println!("The previous recovery key is now invalid.");
-        joy_core::git_ops::auto_git_post_command(&root, "auth recover --regenerate-key", &email);
+        joy_core::git_ops::auto_git_post_command(&root, "auth recover --regenerate-key", &acting);
     }
 
     Ok(())
@@ -1475,20 +1603,31 @@ fn run_recover(
 /// currently has no attestation, reverse-attests the founder with the
 /// redeemer's fresh identity key (JOY-00FD-93). Closes the attestation
 /// chain implicitly, without CLI output.
-fn run_auth_otp(otp: &str, passphrase_flag: Option<&str>, passphrase_stdin: bool) -> Result<()> {
+fn run_auth_otp(
+    otp: &str,
+    passphrase_flag: Option<&str>,
+    passphrase_stdin: bool,
+    user_flag: Option<&str>,
+) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
-    let email = joy_core::vcs::default_vcs().user_email()?;
+    // Who redeems is the host's answer, not git config's (D3.9). When
+    // nothing here names a member, the OTP still does: it is an identity
+    // proof of its own (JOY-0257-FC), so an unresolvable name is no reason
+    // to refuse before the redemption was even tried.
+    let project = store::load_project(&root)?;
+    let member = joy_core::identity::acting_member(&root, &project, user_flag).ok();
 
     // The redemption itself (verify the OTP, derive and apply the wrapped
     // seed, close the founder attestation, open a session) lives in joy-core
     // so the desktop app runs the exact same flow instead of shelling out or
     // re-implementing it; only the I/O below is the CLI's.
     let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "Choose passphrase: ")?;
-    let outcome = joy_core::auth::enroll::redeem_with_passphrase(&root, otp, &passphrase)?;
+    let outcome =
+        joy_core::auth::enroll::redeem_with_passphrase(&root, otp, &passphrase, member.as_deref())?;
 
-    println!("Authentication initialized for {}.", email);
+    println!("Authentication initialized for {}.", outcome.member_key);
     println!("Public key registered. Session active (24h).");
     println!();
     println!("RECOVERY KEY (write this down now, it is shown only once):");
@@ -1498,7 +1637,7 @@ fn run_auth_otp(otp: &str, passphrase_flag: Option<&str>, passphrase_stdin: bool
     println!("Use it with `joy auth recover --recovery-key` if you ever forget");
     println!("your passphrase. Joy never stores the plaintext recovery key.");
 
-    joy_core::git_ops::auto_git_post_command(&root, "auth otp", &email);
+    joy_core::git_ops::auto_git_post_command(&root, "auth otp", &outcome.member_key);
 
     Ok(())
 }
@@ -1527,7 +1666,7 @@ pub fn run_ai_rotate(
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
     let project = store::load_project(&root)?;
-    let email = joy_core::vcs::default_vcs().user_email()?;
+    let acting = joy_core::identity::acting_human_key(&root)?;
 
     if !is_ai_member(member) {
         anyhow::bail!("{} is not an AI member (must start with ai:)", member);
@@ -1539,12 +1678,12 @@ pub fn run_ai_rotate(
     joy_core::guard::enforce(&root, &joy_core::guard::Action::ManageProject, "project")?;
 
     let human = project
-        .member_by_email(&email)
-        .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member.", email))?;
+        .member_by_key(&acting)
+        .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member.", acting))?;
     if human.verify_key.is_none() {
         anyhow::bail!(
             "Authentication not initialized for {}. Run `joy auth init`.",
-            email
+            acting
         );
     }
 
@@ -1553,7 +1692,7 @@ pub fn run_ai_rotate(
     // happen lazily on the very first issuance.
     if !human.ai_delegations.contains_key(member) {
         anyhow::bail!(
-            "No delegation for {m} is recorded in project.yaml under {email}. \
+            "No delegation for {m} is recorded in project.yaml under {acting}. \
              Rotation replaces an existing keypair; to create the initial \
              delegation, run `joy auth token add {m}` instead.",
             m = member
@@ -1581,7 +1720,7 @@ pub fn run_ai_rotate(
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
     let mut project_mut = store::read_project(&project_path)?;
     let entry = project_mut
-        .member_by_email_mut(&email)
+        .member_by_key_mut(&acting)
         .and_then(|m| m.ai_delegations.get_mut(member))
         .expect("delegation entry exists -- validated above");
     entry.delegation_verifier = new_kp.public_key().to_hex();
@@ -1602,7 +1741,7 @@ pub fn run_ai_rotate(
     println!("Any prior tokens and any sessions bound to them are invalidated.");
     println!("Issue a fresh token with `joy auth token add {member}`.");
 
-    joy_core::git_ops::auto_git_post_command(&root, &format!("ai rotate {}", member), &email);
+    joy_core::git_ops::auto_git_post_command(&root, &format!("ai rotate {}", member), &acting);
 
     Ok(())
 }

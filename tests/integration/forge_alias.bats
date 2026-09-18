@@ -1,14 +1,26 @@
 #!/usr/bin/env bats
 #
-# Forge-plugin alias resolution, end to end (epic JOY-0251-AA,
+# Forge-connector alias resolution, end to end (epic JOY-0251-AA,
 # JOY-0253-8A / JOY-0254-3C, reported as JP-00BF-94): a member enrolled
 # under their PRIMARY address keeps working when the clone's git config
-# carries GitHub's noreply alias. joy-core resolves via the joy-github
-# plugin; the plugin consults gh. The forge boundary (gh, the one thing
-# tests cannot have for real) is a MARKED STUB; everything else is the
-# real product path: real joy, real joy-github, real project.
+# carries GitHub's noreply alias.
+#
+# Since package J11 that git config is a PREFILL and nothing more (D3.9):
+# it is the address joy OFFERS on a machine that has not been told who
+# acts. So every case here is a CLONE, and `forget_this_device` is what
+# makes it one: the project travels, the device's pin and sessions do
+# not, and the address the clone carries is the one that reaches the
+# resolution. Without that the pin would answer first and no alias would
+# ever be looked at. joy-core resolves via the GitHub
+# connector; the connector asks the forge itself over HTTP since
+# JOY-0298-E4. The forge boundary (the one thing tests cannot have for
+# real) is two MARKED STUBS: gh as a source of a TOKEN (decision 19),
+# and the fake forge API on the loopback interface (D2.8). Everything
+# else is the real product path: real joy, real connector, real
+# project.
 
 load setup
+load forge_fake
 
 FOUNDER_PASSPHRASE="correct horse battery staple extra words"
 ALICE_PASSPHRASE="alpha bravo charlie delta echo foxtrot"
@@ -17,21 +29,13 @@ extract_otp() {
     echo "$1" | sed -n 's/^[[:space:]]*One-time password:[[:space:]]*\([A-Za-z0-9-]*\).*$/\1/p' | head -1
 }
 
-# The gh STUB: answers exactly the two API reads joy-github performs.
-# This is the forge boundary; nothing else is faked.
+# The forge boundary: gh names the login and hands out a TOKEN, and the
+# fake API answers the one read the connector makes with it.
 install_gh_stub() {
-    STUB_DIR="$TEST_DIR/stub-bin"
-    mkdir -p "$STUB_DIR"
-    cat > "$STUB_DIR/gh" <<'EOF'
-#!/bin/sh
-case "$1 $2" in
-"api user/emails") echo '[{"email":"alice@example.com","verified":true}]' ;;
-"api user") echo '{"email":null}' ;;
-*) exit 1 ;;
-esac
-EOF
-    chmod +x "$STUB_DIR/gh"
-    export PATH="$STUB_DIR:$PATH"
+    start_fake_forge
+    point_forge_at_fake github.com github
+    printf 'alice@example.com' > "$FAKE_FORGE_DIR/email"
+    install_gh_token_stub "gho_alias-test-token"
     # gh's config names the signed-in login, offline
     export GH_CONFIG_DIR="$TEST_DIR/gh-config"
     mkdir -p "$GH_CONFIG_DIR"
@@ -47,8 +51,7 @@ setup_project_with_alice() {
     otp=$(extract_otp "$out")
     [ -n "$otp" ]
     # alice enrolls normally, under her primary address
-    git config user.email alice@example.com
-    joy auth --otp "$otp" --passphrase "$ALICE_PASSPHRASE"
+    joy auth --otp "$otp" --user alice@example.com --passphrase "$ALICE_PASSPHRASE"
     # a GitHub remote makes joy-github the responsible plugin
     git remote add origin git@github.com:example/forge-alias.git
 }
@@ -57,11 +60,14 @@ setup_project_with_alice() {
     setup_project_with_alice
     install_gh_stub
 
-    # the clone flips to GitHub's privacy alias (gh auth setup-git)
+    # alice's own clone: it carries GitHub's privacy alias (gh auth
+    # setup-git) and knows nothing about who acts here yet
+    forget_this_device
     git config user.email "777+alice-login@users.noreply.github.com"
 
-    # login resolves through the plugin chain: alias -> joy-github ->
-    # gh (stub) -> alice@example.com -> member
+    # login resolves through the connector chain: alias -> the GitHub
+    # connector -> gh's token (stub) -> the forge (fake) ->
+    # alice@example.com -> member
     run joy auth --passphrase "$ALICE_PASSPHRASE"
     [ "$status" -eq 0 ]
 
@@ -77,13 +83,25 @@ setup_project_with_alice() {
 
 @test "without a responsible plugin the alias stays a stranger" {
     setup_project_with_alice
-    # NO gh stub, NO gh config: joy-github answers, but can vouch for no
-    # addresses, so the resolution honestly fails like before.
+    # NO gh stub, NO gh config: the connector answers, but can vouch for
+    # no addresses, so the resolution honestly fails like before.
     export GH_CONFIG_DIR="$TEST_DIR/empty-gh-config"
+    forget_this_device
     git config user.email "777+alice-login@users.noreply.github.com"
+
+    # the clone offers the alias, and nothing can place it
+    run joy auth --passphrase "$ALICE_PASSPHRASE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"not a registered project member"* ]]
+
+    # so nobody acts here, and the write is refused as well. The refused
+    # login left no session and no pin behind, and git config names
+    # nobody since J11, so there is exactly ONE sentence a write can
+    # answer with here: name yourself. Asserting it by name is what
+    # keeps a regression in that sentence from passing as a refusal.
     run joy add idea "should be refused"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"not a registered project member"* ]] || [[ "$output" == *"must authenticate"* ]]
+    [[ "$output" == *"this project does not know who you are, pick your member"* ]]
 }
 
 @test "joy init refuses a forge alias as founder identity" {
@@ -101,10 +119,17 @@ setup_project_with_alice() {
     joy init --name "Local Only" --acronym LO
     joy auth init --passphrase "$FOUNDER_PASSPHRASE"
     # no remotes at all; a stranger address fails exactly like always
+    forget_this_device
     git config user.email "stranger@example.com"
+    run joy auth --passphrase "$FOUNDER_PASSPHRASE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"not a registered project member"* ]]
+
+    # nothing was pinned and no session was opened, so the write asks the
+    # caller to name themselves, in those words
     run joy add idea "stranger writes"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"not a registered project member"* ]] || [[ "$output" == *"must authenticate"* ]]
+    [[ "$output" == *"this project does not know who you are, pick your member"* ]]
 }
 
 @test "a legacy alias member key resolves back to the actor (direction two)" {
@@ -122,6 +147,7 @@ setup_project_with_alice() {
     # member key (pure resolve) and matches it to the signed-in actor.
     git remote add origin git@github.com:example/legacy-alias.git
     install_gh_stub
+    forget_this_device
     git config user.email alice@example.com
 
     run joy auth --passphrase "$FOUNDER_PASSPHRASE"
@@ -130,14 +156,24 @@ setup_project_with_alice() {
     [ "$status" -eq 0 ]
 }
 
-# The tea STUB: the Gitea forge boundary, same shape as the gh stub.
+# The tea STUB: the Gitea forge boundary, same shape as the gh one. tea
+# hands out a TOKEN through its credential helper (`tea login helper
+# get`, the command D2.4 names), and the fake API answers the read the
+# connector makes with it.
 install_tea_stub() {
+    start_fake_forge
+    point_forge_at_fake codeberg.org gitea
+    printf 'alice@example.com' > "$FAKE_FORGE_DIR/email"
     STUB_DIR="$TEST_DIR/stub-bin"
     mkdir -p "$STUB_DIR"
     cat > "$STUB_DIR/tea" <<'STUB'
 #!/bin/sh
 case "$*" in
-"api get user/emails") echo '[{"email":"alice@example.com","verified":true}]' ;;
+"login helper get")
+    cat >/dev/null
+    echo "username=alice-login"
+    echo "password=gta_alias-test-token"
+    ;;
 *) exit 1 ;;
 esac
 STUB
@@ -158,6 +194,7 @@ STUB
     install_tea_stub
 
     # the clone flips to Gitea's private-email alias
+    forget_this_device
     git config user.email "alice-login@noreply.codeberg.org"
 
     run joy auth --passphrase "$ALICE_PASSPHRASE"
@@ -178,19 +215,14 @@ STUB
 # bats test_tags=smoke
 @test "an enrolled member wins over an open invitation for the same person" {
     setup_project_with_alice
-    # the founder speaks the invitation (alice holds no manage)
-    git config user.email test@example.com
+    # the founder speaks the invitation (alice holds no manage), which
+    # means naming the founder: alice is who this device acts as now
+    act_as test@example.com "$FOUNDER_PASSPHRASE"
     joy project member add alice-second@example.com --passphrase "$FOUNDER_PASSPHRASE"
     install_gh_stub
-    cat > "$STUB_DIR/gh" <<'EOF'
-#!/bin/sh
-case "$1 $2" in
-"api user/emails") echo '[{"email":"alice-second@example.com","verified":true},{"email":"alice@example.com","verified":true}]' ;;
-"api user") echo '{"email":null}' ;;
-*) exit 1 ;;
-esac
-EOF
-    chmod +x "$STUB_DIR/gh"
+    # the forge vouches for BOTH addresses, pending one first
+    printf 'alice-second@example.com,alice@example.com' > "$FAKE_FORGE_DIR/email"
+    forget_this_device
     git config user.email "777+alice-login@users.noreply.github.com"
 
     # the enrolled slot answers, so login and write go through
@@ -209,6 +241,7 @@ EOF
 @test "the legacy alias form without a numeric id resolves too" {
     setup_project_with_alice
     install_gh_stub
+    forget_this_device
     git config user.email "alice-login@users.noreply.github.com"
 
     run joy auth --passphrase "$ALICE_PASSPHRASE"
@@ -231,6 +264,7 @@ EOF
         > "$GH_CONFIG_DIR/hosts.yml"
     git remote remove origin
     git remote add origin git@ghe.example.com:example/forge-alias.git
+    forget_this_device
     git config user.email "777+alice-login@users.noreply.ghe.example.com"
 
     run joy auth --passphrase "$ALICE_PASSPHRASE"
@@ -247,21 +281,37 @@ EOF
     install_gh_stub
     git remote remove origin
     git remote add origin git@github.com.evil.example:example/forge-alias.git
+    forget_this_device
     git config user.email "777+alice-login@users.noreply.github.com.evil.example"
 
+    run joy auth --passphrase "$ALICE_PASSPHRASE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"not a registered project member"* ]]
+
+    # and the write after it asks the caller to name themselves, in those
+    # words: the lookalike host placed nobody, so nobody acts here
     run joy add idea "should be refused"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"not a registered project member"* ]] || [[ "$output" == *"must authenticate"* ]]
+    [[ "$output" == *"this project does not know who you are, pick your member"* ]]
 }
 
 # The glab STUB: the GitLab forge boundary, same shape as the gh twin.
 install_glab_stub() {
+    start_fake_forge
+    point_forge_at_fake gitlab.com gitlab
+    printf 'alice@example.com' > "$FAKE_FORGE_DIR/email"
     STUB_DIR="$TEST_DIR/stub-bin"
     mkdir -p "$STUB_DIR"
+    # glab hands out a TOKEN through its credential helper, the command
+    # D2.4 names; `glab auth token` does not exist.
     cat > "$STUB_DIR/glab" <<'STUB'
 #!/bin/sh
 case "$*" in
-"api user/emails") echo '[{"email":"alice@example.com","verified":true}]' ;;
+"auth credential-helper get")
+    cat >/dev/null
+    echo "username=oauth2"
+    echo "password=glpat_alias-test-token"
+    ;;
 *) exit 1 ;;
 esac
 STUB
@@ -279,6 +329,7 @@ STUB
     git remote remove origin
     git remote add origin git@gitlab.com:example/forge-alias.git
     install_glab_stub
+    forget_this_device
     git config user.email "4711-alice-login@users.noreply.gitlab.com"
 
     run joy auth --passphrase "$ALICE_PASSPHRASE"
@@ -291,12 +342,15 @@ STUB
     grep -q "created_by: alice@example.com" .joy/items/*.yaml
 }
 
-# The session is stored under the member key, not under whatever the git
-# config happens to say (JOY-0253-8A): --user must carry through to the
+# The session is stored under the member key, not under whatever the
+# caller was holding (JOY-0253-8A): --user must carry through to the
 # lookup, or status reports unauthenticated right after a good login.
+# The alias in the clone's git config is the prefill `--user` overrides,
+# which is the one job git config has left since J11 (D3.9).
 @test "joy auth --user carries through to the session lookup" {
     setup_project_with_alice
     install_gh_stub
+    forget_this_device
     git config user.email "777+alice-login@users.noreply.github.com"
 
     run joy auth --user alice@example.com --passphrase "$ALICE_PASSPHRASE"

@@ -8,6 +8,13 @@ repository = "https://github.com/joyint/joy"
 homepage = "https://joyint.com/en/joy"
 readme = "README.md"
 
+# Not a cargo-dist App: only joy-cli is (design D2.1). Why every
+# publishable crate beside it carries this key is written once, in the
+# "Check the release shape" step of .github/workflows/release.yml, which
+# is also what fails when a crate loses it.
+[package.metadata.dist]
+dist = false
+
 [dependencies]
 joy-process = { workspace = true }
 joy-model = { workspace = true }
@@ -30,6 +37,14 @@ sha2 = "0.10.9"
 argon2 = "0.5"
 rand = "0.8"
 hex = "0.4"
+# vcs::maintenance asks whether it may set an object's mtime before it
+# removes an unreferenced neighbour of it (D3.7): libgit2 protects an
+# object it reuses with `utimes`, so where that call is refused joy must
+# not sweep. filetime is the one portable `utimes`: on Windows it opens
+# with FILE_WRITE_ATTRIBUTES exactly like libgit2 does, which std's
+# File::set_modified cannot (a loose object carries the read only
+# attribute there).
+filetime = "0.2"
 zeroize = { version = "1", features = ["derive"] }
 base64ct = { version = "1", features = ["alloc"] }
 uuid = { version = "1", features = ["v4", "v7", "serde"] }
@@ -37,13 +52,37 @@ minijinja = { workspace = true }
 # The vcs::forge engine (JOY-0265-D7) is the ONE headless git layer for
 # every consumer; local plumbing needs no transport, so the lean default
 # stays. Network transports are opt-in via the `forge-net` feature below:
-# the platform and the desktop app enable it, the CLI stays lean (its
-# user-facing verbs run the git binary so hooks and user config fire).
+# the platform, the desktop app and the CLI enable it (D3.1; before the
+# git2 only move the CLI's user-facing verbs ran the git binary).
 # `vendored-libgit2` compiles the bundled libgit2 from source and links it
 # statically: nothing external is expected on the system, so the single
 # binary/library stays self-contained and cross-compiles cleanly.
-git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2", "cred"] }
+# git2's `cred` feature is NOT asked for: its only content is
+# `Cred::credential_helper` and `CredentialHelper`, the API design D1.3
+# forbids because it spawns `git credential-<name>` through `sh -c`
+# (cred.rs:310-316, :395). joy runs helpers itself in
+# vcs::credential_helper. The lean build therefore cannot call it at
+# all; under `forge-net` git2 pulls `cred` in behind `https` and `ssh`
+# (git2 0.21 Cargo.toml), so there the rule stays a convention that
+# this comment and the module doc carry.
+git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2"] }
 tracing = "0.1"
+# The person's ssh config, parsed by joy: libgit2 reads none of it (no
+# hit for ssh_config, IdentityFile or SSH_AUTH_SOCK in its sources), so
+# HostName, Port, User, IdentityFile and the known-hosts settings would
+# otherwise be invisible to every joy contact (design D1.4).
+ssh2-config = "0.8"
+# A hashed known_hosts entry is `HMAC-SHA1(salt, host)` and nothing
+# else (knownhost.c:416-441), and Ubuntu ships `HashKnownHosts yes`, so
+# joy cannot answer "do I know this host" without it (design D1.4a).
+# SHA-1 is used here exactly as ssh uses it, to look a name up in a
+# file joy did not write, and for nothing joy signs or trusts.
+hmac = "0.12"
+sha1 = "0.10"
+# The one cross-process advisory file lock (design D2.6a): flock on
+# unix, LockFileEx on Windows, no libc of its own. It lands here once so
+# that no later package grows a lock dependency beside it.
+fs4 = "1.1"
 
 # TypeScript binding generation for the canonical wire types the desktop
 # consumes (e.g. AgentMode). Optional so library consumers stay lean; the
@@ -60,6 +99,30 @@ terminal_size = { version = "0.4", optional = true }
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# The runner's process group kill is proved by asking whether a
+# grandchild is still alive, which is `kill(pid, 0)` and nothing else.
+[target.'cfg(unix)'.dev-dependencies]
+libc = "0.2"
+
+# Git for Windows writes its install path into its own registry keys
+# (install.iss:157-162), and that is where a credential helper binary
+# lives on Windows. Bindings only, the same crate joy-process already
+# uses there.
+#
+# The job object is the second reason (design D2.3): Windows has no
+# process group joy could signal, so the connector runner puts every
+# child into a job object and ends the job. `Win32_Security` and
+# `Win32_System_Threading` come along because the job object's own
+# signatures name `SECURITY_ATTRIBUTES` and `IO_COUNTERS`.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_JobObjects",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+] }
+
 [features]
 fast-kdf = ["joy-crypt/fast-kdf"]   # Use minimal Argon2id params (for testing only, NOT secure)
 # Shared tutorial / markdown rendering and interactive chapter browsing,
@@ -70,9 +133,11 @@ tutorial = ["dep:termimad", "dep:inquire", "dep:terminal_size"]
 # unions come from the single Rust definition. Off by default.
 ts = ["dep:ts-rs", "joy-model/ts"]
 # Network transports for vcs::forge (https for token auth, ssh for the
-# desktop's agent auth). Off by default so CLI builds stay lean; a lean
-# build still compiles the engine, it just cannot reach an https/ssh
-# remote at runtime.
+# desktop's agent auth). Off by default so a library consumer that never
+# contacts a forge stays lean; a lean build still compiles the engine, it
+# just cannot reach an https/ssh remote at runtime. Every host that DOES
+# contact a forge asks for it: the platform, the desktop, and since D3.1
+# joy-cli too, whose forge contacts used to be git processes.
 #
 # `vendored-openssl` for the same reason libgit2 is vendored above: the
 # ssh transport needs OpenSSL as libssh2's crypto backend (and, off
@@ -87,7 +152,28 @@ ts = ["dep:ts-rs", "joy-model/ts"]
 # bundle at runtime. On Windows openssl-sys is not a dependency at all
 # (WinHTTP / WinCNG), so the feature is inert there.
 forge-net = ["git2/https", "git2/ssh", "git2/vendored-openssl"]
+# The three connector verbs that need a person at the machine:
+# `login`, `logout` and the token paste (design D3.11). OFF by default,
+# so a build that must never sign in does not carry them at all: the
+# module `forge_plugins::interactive` is compiled only with this
+# feature, and the platform asks for `forge-net` alone. joy-cli turns it
+# on, and the desktop is to turn it on in its own manifest with its
+# first call site (app/apps/desktop/src-tauri/Cargo.toml, design D3.11);
+# `just guard-interactive` keeps the platform's manifest from drifting
+# back.
+interactive = []
 
 [dev-dependencies]
 insta = { version = "1.41", features = ["yaml"] }
 tempfile = "3"
+# An integration test sees only the dev-dependencies, so the two crates
+# the connector runner's tests read answers and log lines with are named
+# again here. Same versions as above, so cargo unifies them and nothing
+# extra is compiled.
+serde_json = { workspace = true }
+tracing = "0.1"
+# The credential helper runner takes a `git2::Config`, so the test that
+# proves the J4a acceptance "a credential on a machine with no git on
+# PATH" has to build one. Same version and features as above, so cargo
+# unifies it and nothing extra is compiled.
+git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2"] }

@@ -16,6 +16,7 @@ pub mod deps;
 pub mod edit;
 pub mod filter_args;
 pub mod find;
+pub mod forge;
 pub mod init;
 pub mod log;
 pub mod ls;

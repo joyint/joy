@@ -12,9 +12,39 @@ readme = "README.md"
 name = "joy"
 path = "src/main.rs"
 
+# The one forge connector (design D2.1): a bin of the package that
+# already produces `joy`, so one archive, one installer change, one
+# receipt and one sidecar per platform cover the connector too. The
+# legacy `joy-<forge>` names stay as bins of their own crates for the
+# deprecation window of D2.2a.
+[[bin]]
+name = "joy-forge"
+path = "src/bin/joy-forge.rs"
+
 [dependencies]
 joy-process = { workspace = true }
-joy-core = { version = "0.20.0", path = "../joy-core", features = ["tutorial"] }
+# `interactive` is the feature of D3.11: this binary is the CLI a person
+# types at, so it carries `login`, `logout` and the token paste. The
+# platform asks for `forge-net` alone and must never see this feature,
+# which `just guard-interactive` checks.
+#
+# `forge-net` is the packaging fact of D3.1. Until now only the desktop
+# asked for it, and the CLI reached a forge by spawning the git binary.
+# With the git2 only move (D3.2) every CLI contact - the chat ref
+# transfer, the release push, the tag push - travels through libgit2, and
+# without the https and ssh transports compiled in libgit2 answers each
+# of them with "unsupported URL protocol", which the classifier reads as
+# `error` and no person can act on. The cost is stated rather than
+# hidden: on unix this pulls vendored OpenSSL into every CLI build and
+# into `cargo install joy-cli`.
+joy-core = { version = "0.20.0", path = "../joy-core", features = ["tutorial", "interactive", "forge-net"] }
+# The forge connectors, linked as LIBRARIES into the `joy-forge` bin
+# above. `joy` itself never calls them: nothing in its call graph
+# references these crates, so the linker drops them from that binary.
+joy-forge-net = { workspace = true }
+joy-github = { workspace = true }
+joy-gitlab = { workspace = true }
+joy-gitea = { workspace = true }
 tempfile = "3"
 joy-chat = { version = "0.20.0", path = "../joy-chat" }
 joy-chat-store = { version = "0.20.0", path = "../joy-chat-store" }
@@ -59,6 +89,12 @@ sysinfo = { version = "0.33", default-features = false, features = ["system"] }
 
 [dev-dependencies]
 assert_cmd = "2"
+# The in process fake forge API the connector tests speak to. A dev
+# dependency, so a shipped connector never carries it.
+joy-forge-net = { workspace = true, features = ["fake-api"] }
+# Reading back what joy committed (the signature fields of D4.5). joy-core
+# already builds this exact git2; the tests just look at the result.
+git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2"] }
 predicates = "3"
 tempfile = "3"
 trycmd = "0.15"
@@ -69,3 +105,9 @@ tui = ["dep:ratatui", "dep:crossterm"]
 server = ["dep:axum", "dep:tower-http"]
 full = ["tui", "server"]
 fast-kdf = ["joy-core/fast-kdf"]
+
+# A terminal for the founding question of D3.9: the only way to prove what
+# `joy init` does for a person at a terminal is to give it one, and
+# `openpty` is the whole of what that takes. Tests only, unix only.
+[target.'cfg(unix)'.dev-dependencies]
+libc = "0.2"

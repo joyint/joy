@@ -3,9 +3,25 @@
 
 //! Identity resolution for Joy CLI operations.
 //!
-//! Resolves the acting user's identity from:
-//! 1. Active session (if one exists for any member)
-//! 2. `git config user.email` (fallback for projects without auth)
+//! Resolves the acting user's identity from, in this order (D3.9):
+//! 1. The delegation session in `JOY_SESSION`
+//! 2. The member this device pinned, written when a person founded this
+//!    project, enrolled in it, or authenticated here
+//!
+//! That is the whole list, and it is two items long. `git config
+//! user.email` is NOT in it: since package J11 no joy command decides an
+//! identity from it, which is what makes "removing `user.email` from git
+//! config in a joy project changes no joy command's behaviour" a true
+//! sentence. git config appears in exactly two places afterwards, both of
+//! them prefills: [`git_config_prefill`], the address joy OFFERS a person
+//! when it asks them who they are, and the display name in
+//! [`commit_signature`].
+//!
+//! A machine that can answer neither question, a fresh clone or a second
+//! machine, is told so instead of being guessed at:
+//! [`acting_member_key`] and [`acting_human_key`] answer
+//! [`JoyError::UnknownActingMember`], whose text names the one command
+//! that settles it for good.
 //!
 //! AI members authenticate via `joy auth --token`, which creates a
 //! session. There is no self-declared identity override.
@@ -47,32 +63,50 @@ impl Identity {
 
 /// Resolve the acting identity for the current operation.
 ///
-/// Priority:
+/// Priority (D3.9 of the forge connection NG design): the delegation
+/// session first, then the member this device pinned, and nothing else.
 /// 1. JOY_SESSION -- ephemeral-key-bound AI session handle (ADR-033)
-/// 2. Human session by git email
-/// 3. Fallback: git email, unauthenticated
+/// 2. The member key: the member this device pinned
+/// 3. A human session for that member
+/// 4. Fallback: the same key, unauthenticated
+///
+/// There is no git config step. A machine that pinned nobody answers with
+/// an EMPTY member, and the callers that need a name
+/// ([`acting_member_key`], [`acting_human_key`]) turn that into
+/// [`JoyError::UnknownActingMember`]; a read-only command keeps working
+/// with no member, exactly as it does on a machine with no git identity
+/// today. The prefill a person is OFFERED lives in
+/// [`git_config_prefill`], which only `--user`-shaped paths call.
 pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
-    // An AI identity comes entirely from JOY_SESSION and does not need a
-    // git e-mail; a missing `user.email` must not abort before that branch
-    // runs (JI-0175-B0). A bare checkout or a container without a git user
-    // then still authenticates a valid session. The e-mail is only needed
-    // for the human/fallback path below, where its absence degrades to an
-    // unauthenticated identity (the guard denies writes with a clear
-    // message) rather than hard-failing every command.
-    let git_email = crate::vcs::default_vcs().user_email().unwrap_or_default();
+    // No git config is read here, in any branch: an identity is a session
+    // or a pin (D3.9, package J11). An AI identity comes entirely from
+    // JOY_SESSION and never needed one (JI-0175-B0); a human identity is
+    // the member this device pinned when the person said who they are.
     let project = load_project_optional(root);
     let project_id = crate::auth::session::project_id(root).ok();
 
-    // In anonymous mode (ADR-042) the member map is keyed by an opaque id, not
-    // the git e-mail; resolve the e-mail to that id so membership checks,
-    // sessions and the audit actor all use the same key. A miss consults
-    // the project's forge plugin (JOY-0253-8A): a forge alias address in
-    // the git config then still resolves to its member. In open mode (or
-    // when nothing resolves) this is just the e-mail.
+    // The device pin is the whole human answer (D3.9): it is what the
+    // person who founded, enrolled or authenticated on this machine
+    // chose, while git config is a machine setting that nobody promised
+    // joy anything about, and that a second person on the same machine or
+    // a fresh clone would answer wrongly. It is a key of the member map,
+    // so an anonymous project (ADR-042) needs no special case here.
+    //
+    // `acting_member` uses the same order and then falls back to the git
+    // config PREFILL, because it serves the paths where a person is being
+    // asked for an address and can correct the offer.
+    //
+    // The one deliberate difference between the two: a delegation session
+    // outranks both (step 1 below), and `acting_member` does not read it,
+    // because a session names an AI and the commands that call
+    // `acting_member` enrol or authenticate a human. A command that needs
+    // the human under a delegation session asks `acting_human_key`, which
+    // answers with the operator the session was signed for, so the two
+    // still agree about the person.
     let member_key = project
         .as_ref()
-        .and_then(|p| crate::privacy::member_key_for_email_or_forge(p, root, &git_email, None))
-        .unwrap_or_else(|| git_email.clone());
+        .and_then(|p| pinned_member(root, p))
+        .unwrap_or_default();
 
     // 1. JOY_SESSION: env var carries the ephemeral private key bound to
     //    the session (ADR-033). We derive the public key from it and match
@@ -119,7 +153,7 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
                                     // with state-dir write could author. Emit a
                                     // hint and fall through unauthenticated, as
                                     // the job and cross-project paths do.
-                                    eprintln!("{reason}");
+                                    hint_once(&reason);
                                 } else {
                                     return Ok(Identity {
                                         member: sess.claims.member.clone().into(),
@@ -143,34 +177,32 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
                     } else if let Some(ref current_pid) = project_id {
                         // JOY_SESSION is a valid live AI session, but for a
                         // different project. Silently falling back to the
-                        // git-email identity would confuse the caller when
+                        // pinned identity would confuse the caller when
                         // the subsequent guard denial names the human
                         // instead of the AI they thought they were acting
                         // as. Emit a one-line stderr hint and continue
                         // with the fallback so read-only commands still
                         // work.
-                        eprintln!(
-                            "{}",
-                            cross_project_session_warning(
-                                &sess.claims.project_id,
-                                &sess.claims.member,
-                                current_pid,
-                            )
-                        );
+                        hint_once(&cross_project_session_warning(
+                            &sess.claims.project_id,
+                            &sess.claims.member,
+                            current_pid,
+                        ));
                     }
                 }
             }
         }
     }
 
-    // 2. Human session by git email
-    if let Some(ref pid) = project_id {
-        if let Some(session_identity) = session_identity(root, &member_key, pid, &project) {
-            return Ok(session_identity);
-        }
+    // 2. The human session of the member the key names.
+    if let Some(session_identity) = session_identity(root, &member_key, &project) {
+        return Ok(session_identity);
     }
 
-    // 3. Fallback: resolved member key (git email in open mode), not authenticated
+    // 3. Fallback: the pinned member key, not authenticated. Empty when
+    //    this device pinned nobody, which is a fresh clone or a second
+    //    machine; the callers that need a name say so (see the note on
+    //    this function).
     Ok(Identity {
         member: member_key.into(),
         delegated_by: None,
@@ -178,43 +210,335 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
     })
 }
 
+/// Print one identity hint to stderr, at most once per process.
+///
+/// [`resolve_identity`] is asked more than once by some commands (the
+/// guard asks, and then the command asks for the acting member), and a
+/// warning that a person has already read is noise the second time: the
+/// same `JOY_SESSION` fact would be printed twice by `joy add`. The set
+/// is per process and tiny, because the number of distinct hints is.
+fn hint_once(hint: &str) {
+    use std::collections::BTreeSet;
+    use std::sync::Mutex;
+    static PRINTED: Mutex<Option<BTreeSet<String>>> = Mutex::new(None);
+    let Ok(mut printed) = PRINTED.lock() else {
+        eprintln!("{hint}");
+        return;
+    };
+    if printed
+        .get_or_insert_with(BTreeSet::new)
+        .insert(hint.to_string())
+    {
+        eprintln!("{hint}");
+    }
+}
+
 /// Try to build an Identity from an active session for a member.
-fn session_identity(
-    root: &Path,
-    member: &str,
-    project_id: &str,
-    project: &Option<Project>,
-) -> Option<Identity> {
+fn session_identity(root: &Path, member: &str, project: &Option<Project>) -> Option<Identity> {
     if !check_session(root, member, project) {
         return None;
     }
 
-    // Read the session to get delegated_by info
-    let delegated_by = crate::auth::session::load_session(project_id, member)
-        .ok()
-        .flatten()
-        .and_then(|_sess| {
-            // AI sessions are delegated by a human operator. Record that operator
-            // as the at-rest member key (the opaque id in anonymous mode), never
-            // their cleartext e-mail, so the audit trail and commit trailer carry
-            // no PII in anonymous mode (ADR-042). MemberRef resolves it back for
-            // authorized display.
-            if is_ai_member(member) {
-                let email = crate::vcs::default_vcs().user_email().ok()?;
-                match project.as_ref() {
-                    Some(p) => crate::privacy::delegated_by_at_rest(p, &email).map(MemberRef::from),
-                    None => Some(MemberRef::from(email)),
-                }
-            } else {
-                None
-            }
-        });
-
+    // A human member, always: [`check_session`] accepts no AI on a session
+    // file alone (ADR-033), so this path never carries a delegation and
+    // has nobody to name as the operator behind it. The AI branch of
+    // `resolve_identity` above reads its operator out of the SIGNED
+    // session claims; the reading of `git config user.email` that used to
+    // stand here guessed one, and a guess is not an identity (D3.9).
     Some(Identity {
         member: member.into(),
-        delegated_by,
+        delegated_by: None,
         authenticated: true,
     })
+}
+
+/// The member this device acts as in this project, as
+/// [`pin_acting_member`] wrote it. `None` when nothing is pinned or the
+/// pinned member is no longer a member of the project (removed, or the
+/// project was rekeyed to anonymous mode).
+pub fn pinned_member(root: &Path, project: &Project) -> Option<String> {
+    let pin = read_member_pin(root)?;
+    project.member_by_key(&pin).is_some().then_some(pin)
+}
+
+/// The raw pin, whether or not it still names a member.
+fn read_member_pin(root: &Path) -> Option<String> {
+    let path = crate::auth::session::app_state_project_file(root).ok()?;
+    let text = std::fs::read_to_string(path).ok()?;
+    let state: serde_json::Value = serde_json::from_str(&text).ok()?;
+    state
+        .get(MEMBER_PIN_KEY)?
+        .as_str()
+        .map(str::to_string)
+        .filter(|pin| !pin.is_empty())
+}
+
+/// The key of the pin inside the per-project app state file (ADR
+/// JAPP-02BD-56). The file is the person's own device state, never the
+/// repository: a pin is one person's choice on one machine and must not
+/// travel to the team through a committed file.
+const MEMBER_PIN_KEY: &str = "member";
+
+/// Remember `member` as the one this device acts as in this project.
+/// Called at the three moments where a person says who they are on this
+/// machine: founding the project, enrolling in it, and authenticating in
+/// it.
+///
+/// The pin is written every time, whether or not git config happens to
+/// name the same person. That is what makes the second half of D3.9 true:
+/// once the member is known on this device, removing `user.email` changes
+/// no command's behaviour, because no command was standing on it. The
+/// alternative, dropping the pin whenever git config agrees with it, puts
+/// a joy project back on a git setting the moment that setting is
+/// removed, and leaves the person with nothing but their own memory.
+///
+/// The pin is read before git config (D3.9), so it also answers on a
+/// machine whose git config names somebody else. That is the point of it:
+/// a person who wants to act as somebody else here says so once
+/// (`--user`, or authenticating as them), and that re-pins.
+///
+/// `project` is the project the member belongs to; a pin is only worth
+/// keeping for a member it actually knows.
+///
+/// Best effort: a state directory that cannot be written costs a pin, not
+/// the enrolment that just succeeded.
+pub fn pin_acting_member(root: &Path, project: &Project, member: &str) {
+    if project.member_by_key(member).is_none() {
+        return;
+    }
+    if let Err(e) = set_member_pin(root, member) {
+        eprintln!("Warning: could not remember the acting member on this device: {e}");
+    }
+}
+
+/// Write the pin into the per-project app state file, keeping every other
+/// key in it (the forge login of D4.1c lives in the same object).
+fn set_member_pin(root: &Path, member: &str) -> Result<(), JoyError> {
+    let path = crate::auth::session::app_state_project_file(root)?;
+    let mut state: serde_json::Value = std::fs::read_to_string(&path)
+        .ok()
+        .as_deref()
+        .and_then(|text| serde_json::from_str(text).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    if !state.is_object() {
+        state = serde_json::json!({});
+    }
+    state[MEMBER_PIN_KEY] = serde_json::Value::String(member.to_string());
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| JoyError::CreateDir {
+            path: parent.to_path_buf(),
+            source: e,
+        })?;
+    }
+    let text = serde_json::to_string_pretty(&state)
+        .map_err(|e| JoyError::AuthFailed(format!("cannot write the member pin: {e}")))?;
+    std::fs::write(&path, text).map_err(|e| JoyError::WriteFile {
+        path: path.clone(),
+        source: e,
+    })
+}
+
+/// The at-rest member key the current command acts as (D3.9, package
+/// J11). Every joy-cli command that needs to know who is acting asks
+/// this and nothing else, so the order lives in one place:
+/// [`resolve_identity`] reads the delegation session first, then the
+/// member this device pinned, and nothing after that.
+///
+/// The answer is a key of the member map, never an address: an anonymous
+/// project (ADR-042) answers with its opaque `m-<hex>` id, so a caller
+/// that puts the answer into `project.yaml`, a session file or a commit
+/// trailer writes no cleartext address there by accident.
+///
+/// [`JoyError::UnknownActingMember`] when nothing answers at all: no
+/// session and no pin, which is a fresh clone or a second machine. git
+/// config is not consulted, not even as a last resort, so a machine
+/// whose `user.email` happens to name a member is refused here as
+/// clearly as one with no git identity at all. A command that lets a
+/// person name somebody (`--user`) asks [`acting_member`] instead, which
+/// takes that name first and offers the git config as a prefill.
+///
+/// This answers with the AI member under a delegation session, because
+/// that is who is acting. A command that needs the human BEHIND the
+/// action, which is every command that unwraps a passphrase identity,
+/// asks [`acting_human_key`].
+pub fn acting_member_key(root: &Path) -> Result<String, JoyError> {
+    let member = resolve_identity(root)?.member.id().to_string();
+    if member.trim().is_empty() {
+        return Err(JoyError::UnknownActingMember);
+    }
+    Ok(member)
+}
+
+/// The at-rest member key of the HUMAN the current command acts for
+/// (D3.9, package J11): the same answer as [`acting_member_key`] for a
+/// person at a terminal, and the delegating operator under a delegation
+/// session, never the AI.
+///
+/// This is the question every command asks that needs a passphrase, a
+/// seed or a wrap: an AI member has no `kdf_nonce` and no
+/// `seed_wrap_passphrase` and can never have one, so resolving the AI
+/// there would refuse work the operator is entitled to do. The operator
+/// is not guessed: it is the `delegated_by` claim the session was signed
+/// with at redemption, so it names the person who issued the token and
+/// nobody else.
+///
+/// [`JoyError::UnknownActingMember`] when nothing answers, and the same
+/// error when a session names an AI without an operator, because that
+/// session cannot say whose passphrase to ask for.
+pub fn acting_human_key(root: &Path) -> Result<String, JoyError> {
+    let identity = resolve_identity(root)?;
+    let member = identity.member.id().to_string();
+    if !is_ai_member(&member) {
+        if member.trim().is_empty() {
+            return Err(JoyError::UnknownActingMember);
+        }
+        return Ok(member);
+    }
+    let operator = identity
+        .delegated_by
+        .map(|human| human.id().to_string())
+        .filter(|human| !human.trim().is_empty())
+        .ok_or(JoyError::UnknownActingMember)?;
+    // The claim carries whichever identifier the issuer held: the at-rest
+    // key in anonymous mode and in every app-issued token, an address
+    // when a person typed one (`joy auth token add --user`). Answer with
+    // the key in both cases, so the caller's lookups are all by key.
+    let key = load_project_optional(root).and_then(|project| {
+        project
+            .has_member_key(&operator)
+            .then(|| operator.clone())
+            .or_else(|| crate::privacy::member_key_for_email(&project, &operator))
+    });
+    Ok(key.unwrap_or(operator))
+}
+
+/// The address joy OFFERS a person when it asks them who they are: git
+/// config `user.email`, empty treated as absent.
+///
+/// This is the one use of git config that D3.9 keeps, and it is a
+/// prefill, never a source: the person at the terminal sees it and can
+/// type something else. Nothing that decides an identity on its own may
+/// call it; those call [`acting_member_key`] or [`acting_member`].
+pub fn git_config_prefill() -> Option<String> {
+    crate::vcs::default_vcs()
+        .user_email()
+        .ok()
+        .map(|email| email.trim().to_string())
+        .filter(|email| !email.is_empty())
+}
+
+/// The member a local enrolment or authentication acts as, resolved
+/// WITHOUT demanding a git config (D3.9): the address the host named
+/// (`--user`, the app's mask), then the member pinned on this device,
+/// then git config as a prefill. The typed error when nothing answers.
+///
+/// These three are the whole list. Guessing a member from the project
+/// (for instance "it has only one human") is deliberately not in it: the
+/// project file travels with every clone, so a guess would let anyone who
+/// clones a project claim the member it guesses, while the pin is this
+/// device's own state and `--user` is a person speaking.
+///
+/// The git config address is returned raw, not resolved to a member key,
+/// so every existing "X is not a registered project member" text keeps
+/// naming what the person configured.
+pub fn acting_member(
+    root: &Path,
+    project: &Project,
+    named: Option<&str>,
+) -> Result<String, JoyError> {
+    if let Some(named) = named.map(str::trim).filter(|n| !n.is_empty()) {
+        return Ok(named.to_string());
+    }
+    if let Some(pin) = pinned_member(root, project) {
+        return Ok(pin);
+    }
+    git_config_prefill().ok_or(JoyError::UnknownActingMember)
+}
+
+/// The signature a commit of `member` carries in THIS checkout (D4.5).
+/// git config is consulted for the display name only, and only when that
+/// name maps to this very member; everything else comes from the member
+/// id.
+///
+/// `member` may be an address rather than a member key: a host that names
+/// the member itself holds one (`--user`, the desktop's mask, enrolment).
+/// The project decides what is signed, so an address in an anonymous
+/// project is signed as its opaque id and never as itself (ADR-042).
+pub fn commit_signature(root: &Path, member: &str) -> Result<(String, String), JoyError> {
+    let project = load_project_optional(root);
+    // The at-rest key of the acting member, so the name check below
+    // compares like with like whatever the caller was holding.
+    let key = project.as_ref().and_then(|p| {
+        p.member_by_key(member)
+            .is_some()
+            .then(|| member.to_string())
+            .or_else(|| crate::privacy::member_key_for_email(p, member))
+    });
+    let (config_name, config_email) = crate::vcs::forge::user_identity(root);
+    let config_name = config_name.filter(|_| {
+        config_name_belongs_to(
+            root,
+            project.as_ref(),
+            key.as_deref(),
+            member,
+            config_email.as_deref(),
+        )
+    });
+    crate::vcs::forge::member_signature(project.as_ref(), member, config_name.as_deref())
+}
+
+/// Whether this checkout's `user.name` may stand in as the display name
+/// of `member` (D4.5: "name is git config `user.name` when it maps to the
+/// acting member, else the member id").
+///
+/// Two ways a name maps to a member, and the config decides which
+/// question is asked:
+///
+/// - With a `user.email`, that address answers it. A checkout configured
+///   for somebody else does not lend its display name to my commit, and
+///   an address the project cannot place lends nothing either.
+/// - With NO `user.email`, the config names nobody, and the member this
+///   device pinned answers instead (D3.9). This is the half of J11's
+///   acceptance that the email branch alone would break: removing ONLY
+///   `user.email` and keeping `user.name` used to drop the author's name
+///   from every commit joy writes, because the name was gated on the
+///   address. Now it does not, and the author line is byte identical
+///   before and after the removal.
+fn config_name_belongs_to(
+    root: &Path,
+    project: Option<&Project>,
+    key: Option<&str>,
+    member: &str,
+    config_email: Option<&str>,
+) -> bool {
+    match config_email {
+        Some(email) => match (project, key) {
+            (Some(p), Some(key)) => {
+                crate::privacy::member_key_for_email(p, email).as_deref() == Some(key)
+            }
+            _ => email == member,
+        },
+        None => match (project, key) {
+            (Some(project), Some(key)) => pinned_member(root, project).as_deref() == Some(key),
+            _ => false,
+        },
+    }
+}
+
+/// The two signature fields the member acting in `root` commits with
+/// (D4.5), for a caller that holds no identity of its own.
+///
+/// This is what the git binary used to take from `user.name` and
+/// `user.email` when joy shelled `git commit`. libgit2 asks for the
+/// signature instead, and joy knows who acts, so the answer is joy's
+/// identity resolution: the session's member under a delegation, else
+/// the member this device pinned (D3.9, package J11, which took the git
+/// config step out of [`resolve_identity`] altogether). A project
+/// founded without a git config is therefore committable, which it was
+/// not while a git process wrote the commit.
+pub fn acting_signature(root: &Path) -> Result<(String, String), JoyError> {
+    let member = resolve_identity(root)?.member.id().to_string();
+    commit_signature(root, &member)
 }
 
 /// Check whether the project has any AI members.

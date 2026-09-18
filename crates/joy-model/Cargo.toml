@@ -7,6 +7,13 @@ description = "The small shared types of Joy: member references and interaction 
 repository = "https://github.com/joyint/joy"
 homepage = "https://joyint.com/en/joy"
 
+# Not a cargo-dist App: only joy-cli is (design D2.1). Why every
+# publishable crate beside it carries this key is written once, in the
+# "Check the release shape" step of .github/workflows/release.yml, which
+# is also what fails when a crate loses it.
+[package.metadata.dist]
+dist = false
+
 [dependencies]
 serde = { workspace = true }
 ts-rs = { version = "12", features = ["serde-compat"], optional = true }

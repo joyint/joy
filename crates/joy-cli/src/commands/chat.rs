@@ -14,7 +14,10 @@ use anyhow::Result;
 use crate::color;
 use clap::{Args, Subcommand};
 
-use joy_core::vcs::Vcs;
+// No `Vcs` and no `contact::Failure` import is left here: J6 retired this
+// file's own stderr classifier in favour of `contact::as_joy_error`, and
+// J11 took the last `user_email()` call off the `Vcs` trait (D3.9). The
+// test module below imports the `Failure` words it names itself.
 
 #[derive(Args)]
 pub struct ChatArgs {
@@ -95,136 +98,128 @@ fn acting_member(root: &std::path::Path) -> Result<joy_core::member_ref::MemberR
 /// Sync `refs/joy/chats` with the project's remote (JOY-0227-5E): fetch
 /// into the tracking ref, reconcile locally through joy-chat (adopt /
 /// fast-forward / message-union merge), push when the local ref is
-/// ahead. Network runs through the git CLI so the user's ambient auth
-/// (ssh agent, credential helper) applies -- no token plumbing.
+/// ahead.
+///
+/// The transfer runs through the git2 engine, like every other host's
+/// (D3.2): the CLI used to spawn `git fetch` and `git push` here, which
+/// was the last git process on the chat write path and the one thing a
+/// machine without a git binary could not do. The chat SEMANTICS were
+/// never this file's - they live in `joy_chat_store::chat_ref` and every
+/// host composes the same ones now.
 ///
 /// NEVER fatal: a chat is committed locally before any network I/O, so a
-/// failed sync only delays visibility. Failures classify like the app
-/// sync worker: a missing remote ref is the normal first sync; auth
-/// errors are permanent (fix access); everything else is transient and
-/// the next send or read retries.
+/// failed sync only delays visibility. What the failure MEANS comes from
+/// the engine's classifier (D1.8a) and is said in the one vocabulary of
+/// D3.8; the four substring rules that used to read git's stderr here
+/// are gone with the git process that wrote it.
+fn chat_auth() -> joy_core::vcs::forge::Auth {
+    // The machine's own credentials, for the host kind `cli_main`
+    // decided (D1.1). An agent under JOY_SESSION is `Delegated`, so
+    // nothing below can raise a prompt (D1.10).
+    joy_core::vcs::forge::Auth::LocalAs(joy_core::host::process_host())
+}
+
+/// Whether this project has a forge a chat sync can reach at all. A
+/// project without one is local only: chats stay local and nothing is
+/// said about a forge that is not there.
+///
+/// The probe asks the question the transfer that follows really asks.
+/// `chat_ref::sync_with_forge` and `forge::push_ref` contact the remote
+/// `origin_or_first` picks (D1.1), which is what
+/// `forge::default_remote_name` names. This used to read
+/// `sync.remote` (default `origin`) instead, the only reader of that key
+/// in the product, and the two questions disagreed in both directions:
+/// a project with `sync: {remote: upstream}` and both remotes
+/// configured passed the probe and then pushed `refs/joy/chats` to
+/// `origin`, a host the person never nominated, while a project whose
+/// only remote is `upstream` skipped chat sync entirely although the
+/// engine would have used `upstream`. The key is not honoured anywhere
+/// now, and `model::config::SyncConfig` says so.
+fn has_chat_remote(root: &std::path::Path) -> bool {
+    joy_core::vcs::forge::default_remote_name(root).is_some()
+}
+
 /// Push-first delivery after a write (JOY-026C-34): the local chats ref
 /// goes up as it is; a refusal (someone else pushed first) is the one
-/// case that fetches, unites and pushes again through [`sync_ref`].
+/// case that fetches, unites and pushes again. That whole decision is
+/// `chat_ref::sync_with_forge`, which is what the desktop and the
+/// platform run too.
 fn deliver_ref(root: &std::path::Path) {
-    let remote = joy_core::store::load_config()
-        .sync
-        .map(|s| s.remote)
-        .unwrap_or_else(|| "origin".to_string());
-    if !joy_core::vcs::remote_exists(root, &remote) {
+    if !has_chat_remote(root) {
         return;
     }
-    let push_spec = format!(
-        "{}:{}",
-        joy_chat_store::chat_ref::CHATS_REF,
-        joy_chat_store::chat_ref::CHATS_REF
-    );
-    match joy_core::vcs::push_ref(root, &remote, &push_spec) {
-        joy_core::vcs::RefTransfer::Done => {}
-        joy_core::vcs::RefTransfer::Refused(stderr) => {
-            let lower = stderr.to_ascii_lowercase();
-            // nothing local to push yet: not a refusal
-            if lower.contains("src refspec") {
-                return;
-            }
-            // the forge moved first: the full round unites and retries
-            if lower.contains("rejected")
-                || lower.contains("fetch first")
-                || lower.contains("non-fast-forward")
-            {
-                sync_ref(root);
-                return;
-            }
-            eprintln!(
-                "chat stays committed locally, push failed ({}); the next send or read retries",
-                classify_sync_error(&stderr)
-            );
-        }
-        joy_core::vcs::RefTransfer::GitUnavailable(e) => {
-            eprintln!("chat stays committed locally, push failed (git unavailable: {e})");
-        }
+    if let Err(e) = joy_chat_store::chat_ref::sync_with_forge(root, &chat_auth()) {
+        report_refusal(root, Way::Push, &e);
     }
 }
 
+/// Fetch, reconcile, and push back what the forge still lacks: what a
+/// READ does before it shows anything (JOY-022A-4D).
 fn sync_ref(root: &std::path::Path) {
-    let remote = joy_core::store::load_config()
-        .sync
-        .map(|s| s.remote)
-        .unwrap_or_else(|| "origin".to_string());
-    // A project without this remote is local-only: chats stay local.
-    if !joy_core::vcs::remote_exists(root, &remote) {
+    if !has_chat_remote(root) {
         return;
     }
-    let fetch_spec = format!(
-        "+{}:{}",
-        joy_chat_store::chat_ref::CHATS_REF,
-        joy_chat_store::chat_ref::CHATS_TRACKING_REF
-    );
-    match joy_core::vcs::fetch_ref(root, &remote, &fetch_spec) {
-        joy_core::vcs::RefTransfer::Done => {}
-        joy_core::vcs::RefTransfer::Refused(stderr) => {
-            // No remote chats yet: the normal first sync, nothing to merge.
-            if !stderr.contains("couldn't find remote ref") {
-                eprintln!(
-                    "chats not fetched ({}); local state shown, the next send or read retries",
-                    classify_sync_error(&stderr)
-                );
-            }
-        }
-        joy_core::vcs::RefTransfer::GitUnavailable(e) => {
-            eprintln!("chats not fetched (git unavailable: {e}); local state shown");
-            return;
-        }
-    }
-    let push_needed = match joy_chat_store::chat_ref::reconcile_with_tracking(root) {
+    let auth = chat_auth();
+    // A forge that does not have the chat ref yet is the normal first
+    // sync: the engine answers `Ok(false)` for it and says nothing.
+    let push_needed = match joy_chat_store::chat_ref::pull_from_forge(root, &auth) {
         Ok(needed) => needed,
         Err(e) => {
-            eprintln!("chat ref reconcile failed: {e}");
+            report_refusal(root, Way::Fetch, &e);
             return;
         }
     };
     if !push_needed {
         return;
     }
-    let push_spec = format!(
-        "{}:{}",
-        joy_chat_store::chat_ref::CHATS_REF,
-        joy_chat_store::chat_ref::CHATS_REF
-    );
-    match joy_core::vcs::push_ref(root, &remote, &push_spec) {
-        joy_core::vcs::RefTransfer::Done => {}
-        joy_core::vcs::RefTransfer::Refused(stderr) => {
-            eprintln!(
-                "chat stays committed locally, push failed ({}); the next send or read retries",
-                classify_sync_error(&stderr)
-            );
+    if let Err(e) = joy_core::vcs::forge::push_ref(root, &auth, joy_chat_store::chat_ref::CHATS_REF)
+    {
+        report_refusal(
+            root,
+            Way::Push,
+            &joy_core::vcs::contact::as_joy_error("chats push", e),
+        );
+    }
+}
+
+/// Which way the refused transfer went. It no longer decides what the
+/// failure MEANS - the engine's classifier reads the direction itself
+/// (D1.8a), so the same HTTP status can mean two things there - it
+/// decides only what this command says did not happen.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Way {
+    Fetch,
+    Push,
+}
+
+impl Way {
+    /// What did not happen, and what happens next; the two halves of
+    /// the line this file has always printed.
+    fn headline(self) -> &'static str {
+        match self {
+            Way::Fetch => "chats not fetched",
+            Way::Push => "chat stays committed locally, push failed",
         }
-        joy_core::vcs::RefTransfer::GitUnavailable(e) => {
-            eprintln!("chat stays committed locally, push failed (git unavailable: {e})")
+    }
+
+    fn tail(self) -> &'static str {
+        match self {
+            Way::Fetch => "local state shown, the next send or read retries",
+            Way::Push => "the next send or read retries",
         }
     }
 }
 
-/// One-line failure classification, mirroring the app sync worker's
-/// transient/permanent split.
-fn classify_sync_error(stderr: &str) -> String {
-    let s = stderr.to_lowercase();
-    if s.contains("permission denied")
-        || s.contains("authentication")
-        || s.contains("403")
-        || s.contains("401")
-        || s.contains("access denied")
-    {
-        "no access to the remote -- check your credentials".to_string()
-    } else if s.contains("could not resolve")
-        || s.contains("unable to access")
-        || s.contains("connection")
-    {
-        "offline?".to_string()
-    } else {
-        let line = stderr.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
-        format!("transient: {}", line.trim())
-    }
+/// What a refused chat sync says, in the one vocabulary of D3.8: the
+/// state's sentence, the state WORD an agent reads, the ONE next step
+/// (for `needs_sign_in` the door this CLI now has, D3.10), and the
+/// engine's detail line.
+///
+/// A sync is never this command's answer, so it never writes to stdout
+/// and never changes the exit code.
+fn report_refusal(root: &std::path::Path, way: Way, error: &joy_core::error::JoyError) {
+    let host = crate::contact_report::host_of_checkout(root);
+    crate::contact_report::Refusal::of(&host, error).say_aside(way.headline(), way.tail());
 }
 
 /// The @mention view of one chat for `me` (JOY-0226-27): when the newest
@@ -405,10 +400,10 @@ fn establish_reader_seed(
     let Ok(project) = joy_core::store::load_project(root) else {
         return Ok(());
     };
-    let Ok(email) = joy_core::vcs::default_vcs().user_email() else {
+    let Ok(member_key) = joy_core::identity::acting_human_key(root) else {
         return Ok(());
     };
-    let Some(member) = project.member_by_email(&email) else {
+    let Some(member) = project.member_by_key(&member_key) else {
         return Ok(());
     };
     if member.verify_key.is_none() {
@@ -819,4 +814,83 @@ fn run_command(root: &std::path::Path, command: ChatCommand) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod sync_tests {
+    use super::*;
+    use joy_core::error::JoyError;
+    use joy_core::vcs::contact::{ContactError, Failure};
+
+    fn refused(failure: Failure, message: &str) -> JoyError {
+        JoyError::Contact(Box::new(ContactError {
+            failure,
+            message: message.to_string(),
+            detail: Some("chats push; libgit2 said so".into()),
+            action: None,
+            next_try: None,
+        }))
+    }
+
+    /// The vocabulary is the classifier's, and this file only decides
+    /// what did not happen. The four substring rules that used to read
+    /// git's stderr here are gone with the git process (D3.8).
+    #[test]
+    fn the_words_of_the_classifier_are_the_words_of_this_file() {
+        let error = refused(Failure::NoPushRights, "You can read this repository.");
+        let refusal = crate::contact_report::Refusal::of("github.com", &error);
+        assert_eq!(refusal.state, "no_push_rights");
+        assert_eq!(refusal.message, "You can read this repository.");
+        assert_eq!(
+            refusal.detail.as_deref(),
+            Some("chats push; libgit2 said so")
+        );
+    }
+
+    /// The two halves of the line this file has always printed: a chat
+    /// is committed before any contact, so a failed delivery says the
+    /// chat is safe and a failed fetch says what is on the screen.
+    #[test]
+    fn each_direction_says_what_did_not_happen_and_what_comes_next() {
+        assert_eq!(
+            Way::Push.headline(),
+            "chat stays committed locally, push failed"
+        );
+        assert_eq!(Way::Push.tail(), "the next send or read retries");
+        assert_eq!(Way::Fetch.headline(), "chats not fetched");
+        assert_eq!(
+            Way::Fetch.tail(),
+            "local state shown, the next send or read retries"
+        );
+    }
+
+    /// A project with no remote is local only: nothing is contacted and
+    /// nothing is said about a forge that is not there.
+    #[test]
+    fn a_checkout_without_the_remote_contacts_nobody() {
+        let dir = tempfile::tempdir().unwrap();
+        git2::Repository::init(dir.path()).unwrap();
+        assert!(!has_chat_remote(dir.path()));
+        // Neither entry point may panic or contact anything here.
+        sync_ref(dir.path());
+        deliver_ref(dir.path());
+    }
+
+    /// The probe and the contact ask ONE question. A checkout whose only
+    /// remote is not called `origin` syncs chats, because that is the
+    /// remote `origin_or_first` contacts; the old probe asked
+    /// `sync.remote` (default `origin`) and skipped it.
+    #[test]
+    fn a_checkout_whose_only_remote_is_not_origin_still_syncs() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        repo.remote("upstream", "https://example.invalid/a.git")
+            .unwrap();
+        assert!(has_chat_remote(dir.path()));
+        assert_eq!(
+            joy_core::vcs::forge::default_remote_name(dir.path()).as_deref(),
+            Some("upstream"),
+            "the probe names the remote the engine contacts"
+        );
+    }
 }

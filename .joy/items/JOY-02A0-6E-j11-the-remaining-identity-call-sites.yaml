@@ -1,0 +1,51 @@
+id: JOY-02A0-6E
+title: 'J11: the remaining identity call sites in the CLI (new)'
+type: story
+status: closed
+priority: medium
+assignees:
+- member: ai:claude@joy
+deps:
+- JOY-0297-1A
+capabilities:
+- plan
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-16T23:23:36.476221991Z
+updated: 2026-09-17T21:01:12.713775421Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Package J11 of the forge connection NG rebuild (JI epic JI-0190-3A; wave 3; owner project JOY). Design: joy/docs/design/forge-connection-ng.md (v5), section 4, and the design sections the package names. Read those sections before starting; every rule there is binding.
+
+  Depends on: J9.
+  Files: joy/crates/joy-cli/src (the auth, crypt, chat, board, project, ai, event log and enroll commands), joy/crates/joy-core/src/identity.rs.
+  Work: the remaining `user_email()` call sites of D3.9 (20 in 9 files at the time of writing, minus the two J9 moves) move onto `joy_core::identity::resolve_identity`, which reads the delegation session first, then the project's member pin, and git config only as a prefill where a person is asked for an address. No command reads git config as its identity source afterwards.
+  Acceptance: every joy command that needs an identity works in a repository with no git config once the member is known; removing `user.email` from git config in a joy project changes no joy command's behaviour. Until this package is green, the "Level 1 solo" journey row stays partly and names J11.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-17T15:36:10.681987647Z
+  text: 'Plan (J11): the remaining user_email() call sites in joy-cli move onto joy_core::identity::resolve_identity (session, member pin, git config as a prefill only); no command reads git config as its identity source afterwards. Worktree .claude/worktrees/fcng-J11/joy, branch feat/forge-connection-ng-j11.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-17T21:01:12.642705200Z
+  text: |-
+    Result (implemented, adversarially reviewed, findings fixed; branch feat/forge-connection-ng-j11, 4 commits; merged into feat/forge-connection-ng by the integrator).
+
+    All three must_fix findings are fixed and four of the five should_fix ones are in; the fifth (resolve once per command) is listed above with its reason. `resolve_identity` now reads the delegation session and the device pin and nothing else, so git config decides no identity anywhere: a fresh clone whose `user.email` names a registered member is refused with `UnknownActingMember`, whose text names the one command that settles it, and the guard says the same instead of putting an empty name in front of 'is not a registered project member'. Read-only commands still need no member. `commit_signature` no longer gates the display name on the config email alone, so removing only `user.email` leaves the author line of every commit joy writes byte identical. `joy crypt grant`, `joy crypt revoke` and `joy crypt zone rm` now ask the guard for the manage capability, so an AI delegation session cannot revoke a human's zone access on the machine shape this package creates. Two unrequested fixes came out of writing the coverage: `joy project set privacy` re-pins the acting member after it rekeys them (without it the command bricked the machine that ran it), and `joy auth reset` was already fixed by the earlier commits and is now tested. Testing grew from 5 to 13 cases across three crates: three line-for-line differential scripts covering 32 command runs, a fresh-clone-with-a-config case, a delegation-session-cannot-change-a-zone case, the commit author line, the first test of `init_tool` in joy-ai, and a comparison that redacts by value instead of dropping whole lines. Whole workspace tests, clippy and fmt are clean; one commit, 6de3206, with the item id and the package trailers.
+
+    Acceptance:
+    - [met] Every joy command that needs an identity works in a repository with no git config once the member is known: Three differential scripts in crates/joy-cli/tests/identity_call_sites.rs drive 13 + 13 + 6 commands on machines whose HOME, XDG dirs and system config carry no git identity: auth status/init/passphrase/recover/reset/aga
+    - [met] Removing `user.email` from git config in a joy project changes no joy command's behaviour: The three scripts compare two identical machines, one keeping the config and one losing it, line for line, and the comparison now redacts by value rather than dropping whole lines. The one observable the old test could n
+    - [met] The remaining `user_email()` call sites of D3.9 move onto `joy_core::identity::resolve_identity`: `git grep 'user_email()' -- crates/joy-cli/src` is empty; the base branch has 18 hits in 9 files. The one site outside joy-cli (joy-ai/src/ai_setup.rs init_tool) moved too and now has a test.
+    - [partly] No command reads git config as its identity source afterwards: `resolve_identity` no longer reads git config in any branch, so no command decides an identity from it. Two documented prefills remain, both where a person is being asked or offered something: `joy init` without `--user`
+    - [met] A delegation session answers who acts, not what they may do: The crypt verbs that change who can read a zone (grant, revoke, zone rm) now ask the guard for `Action::ManageProject`, so an AI session is refused whatever its capability list says. Covered by a_delegation_session_canno
+    - [not_testable_here] The 'Level 1 solo' journey row is upgraded from partly: docs/design/forge-connection-ng.md:887 and :1123 are design text, and design edits for joy live in the J0d worktree. The code half of the row is done; the row needs J0d.
+
+    Open questions (carried to the closeout tasks or named follow ups):
+    - should_fix 1, second half: the pin has no removal path. `joy auth --user <address>` REPLACES it and `joy auth status` now names it as the source, which closes the invisibility. A true removal (back to 'this device knows nobody') would need a new flag, and JI-0191-99 names none, s
+    - should_fix 2, second half: `resolve_identity` is still called more than once per command. Not done, because it is not cheap: `Context` holds an identity but the crypt, auth, ai and member-resolver call sites are free functions, so threading it through changes about twenty signatu
+    - The 'Level 1 solo' journey row (docs/design/forge-connection-ng.md:887) still says partly and names J11, and D3.9:651 still describes git config as a prefill in `resolve_identity` in a way that now reads as an understatement (it is not consulted at all). Both are design edits and
+    - `event_log::get_git_email` and `forge::repo_identity` now have zero callers inside joy. Both stay public and documented as such, because D4.5 names their remaining desktop callers (git_ops.rs:157, :202) as A-package work. They can be deleted when that lands.
+    - The review named `joy ai setup` as an uncovered call site; there is no `joy ai setup` verb (`joy ai` has init, tutorial and the rest). Both call sites the review pointed at, ai.rs:272 and ai.rs:1025, are exercised by the `joy ai init --tool claude` step in the main script.
+    - `joy project member erase` is covered only in anonymous mode, which is the only mode it works in by design (it refuses in open mode).

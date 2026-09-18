@@ -810,19 +810,27 @@ pub fn has_ai_member(root: &Path) -> bool {
 
 /// The acting human's identity, unlocked for attestations. No prompt:
 /// the passphrase comes from the caller.
+///
+/// `member` is either an at-rest member key, the shape
+/// `joy_core::identity::acting_human_key` answers with, or the address a
+/// host named. An anonymous project (ADR-042) has no address in its
+/// member map, so the key path is the one that works there.
 pub fn unlock_acting_keypair(
     project: &joy_core::model::Project,
-    email: &str,
+    member: &str,
     passphrase: &str,
 ) -> Result<(String, joy_core::auth::IdentityKeypair), JoyError> {
-    let member_key = joy_core::privacy::member_key_for_email(project, email)
-        .ok_or_else(|| JoyError::Other(format!("{email} is not a registered project member")))?;
+    let member_key = project
+        .has_member_key(member)
+        .then(|| member.to_string())
+        .or_else(|| joy_core::privacy::member_key_for_email(project, member))
+        .ok_or_else(|| JoyError::Other(format!("{member} is not a registered project member")))?;
     let member = project
         .member_by_key(&member_key)
-        .expect("member_key resolved from email must exist");
+        .expect("member_key came from the member map");
     if member.verify_key.is_none() {
         return Err(JoyError::Other(format!(
-            "{email} has no registered public key. Run `joy auth init` first."
+            "{member_key} has no registered public key. Run `joy auth init` first."
         )));
     }
     let unlocked = joy_core::auth::unlock_identity(member, passphrase)
@@ -893,8 +901,13 @@ pub fn init_tool(
     let mut project = joy_core::store::read_project(&project_path)?;
     let member_id = format!("ai:{tool}@joy");
     if !project.has_member_key(&member_id) {
-        let email = joy_core::event_log::get_git_email()?;
-        let attester = unlock_acting_keypair(&project, &email, passphrase)?;
+        // The attester is the human this device acts for (D3.9): the
+        // operator behind a delegation session, else the member pinned
+        // here, and git config only as the prefill behind both. An
+        // anonymous project (ADR-042) answers with the opaque id, which
+        // is exactly what the member map is keyed by.
+        let attester_key = joy_core::identity::acting_human_key(root)?;
+        let attester = unlock_acting_keypair(&project, &attester_key, passphrase)?;
         if register_tool_member(&mut project, root, &member_id, &attester)? {
             joy_core::store::write_yaml_preserve(&project_path, &project)?;
             let rel = format!(

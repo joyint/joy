@@ -1,105 +1,21 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: LicenseRef-Commercial
 
-//! joy-gitea: the Gitea forge plugin (JOY-025B-F6, epic JOY-0251-AA).
+//! `joy-gitea`: the legacy name of the Gitea connector.
 //!
-//! The third implementation of the forge query contract
-//! (docs/plugins.md, "Forge plugins"). All Gitea knowledge lives here:
-//! host matching (Gitea and Forgejo are self-hosted with no canonical
-//! domain, so a remote is claimed when tea is signed in to that host;
-//! everything else takes the project.yaml `forge:` override), the
-//! noreply alias form `<username>@noreply.<instance>`, tea's config,
-//! the API.
+//! One binary carries every forge now (D2.1). This name stays as a PATH
+//! fallback for people who ran `cargo install joy-gitea`, for the one
+//! deprecation window of D2.2a, and it is the same code.
 
-mod gitea;
+use joy_forge_net::cli::{self, Manifest};
+use joy_forge_net::forge::Forge;
 
-use clap::{Parser, Subcommand};
+const MANIFEST: Manifest = Manifest {
+    name: "joy-gitea",
+    version: env!("CARGO_PKG_VERSION"),
+};
 
-#[derive(Parser)]
-#[command(name = "joy-gitea", about = "Joy forge plugin for Gitea")]
-struct Cli {
-    /// Run as if started in <PATH> (parity with joy's -w).
-    #[arg(short = 'w', long, global = true)]
-    working_dir: Option<std::path::PathBuf>,
-    #[command(subcommand)]
-    command: Command,
-}
-
-#[derive(Subcommand)]
-enum Command {
-    /// Does this remote belong to Gitea?
-    Claims {
-        #[arg(long)]
-        remote: String,
-    },
-    /// Who is ACTING on Gitea?
-    Identity {
-        #[arg(long)]
-        login: Option<String>,
-        #[arg(long)]
-        user_id: Option<String>,
-        /// Environment variable holding a Gitea token (never the token
-        /// itself: it must not appear in a process list).
-        #[arg(long)]
-        token_env: Option<String>,
-    },
-    /// Whose address is this? Pure: answered from the address alone.
-    /// Does the repository hold a joy store, and may the caller create
-    /// one (JP-013C-11)? Read-only.
-    Store {
-        #[arg(long)]
-        remote: String,
-        /// Environment variable holding a Gitea token (never the token
-        /// itself: it must not appear in a process list).
-        #[arg(long)]
-        token_env: Option<String>,
-    },
-    /// Which files does the repository's default branch carry
-    /// (JAPP-0293-A7)? Read-only.
-    Files {
-        #[arg(long)]
-        remote: String,
-        /// Environment variable holding a Gitea token (never the token
-        /// itself: it must not appear in a process list).
-        #[arg(long)]
-        token_env: Option<String>,
-    },
-    Resolve {
-        #[arg(long)]
-        email: String,
-    },
-    /// Create the release for a tag (JOY-0256-64). Gitea has no release
-    /// backend yet: the honest answer is `unsupported`, and joy keeps
-    /// the tag-only publish instead of failing the release.
-    Release {
-        #[arg(long)]
-        tag: String,
-        #[arg(long)]
-        title: String,
-        #[arg(long)]
-        notes_file: std::path::PathBuf,
-    },
-}
-
-fn main() -> anyhow::Result<()> {
-    let cli = Cli::parse();
-    if let Some(dir) = &cli.working_dir {
-        std::env::set_current_dir(dir)?;
-    }
-    let answer = match cli.command {
-        Command::Claims { remote } => {
-            serde_json::json!({ "claims": gitea::claims_remote(&remote) })
-        }
-        Command::Identity {
-            login,
-            user_id,
-            token_env,
-        } => gitea::identity_answer(login, user_id, token_env.as_deref()),
-        Command::Store { remote, token_env } => gitea::store_answer(&remote, token_env.as_deref()),
-        Command::Files { remote, token_env } => gitea::files_answer(&remote, token_env.as_deref()),
-        Command::Resolve { email } => gitea::resolve_answer(&email),
-        Command::Release { .. } => serde_json::json!({ "unsupported": true }),
-    };
-    println!("{}", serde_json::to_string(&answer)?);
-    Ok(())
+fn main() {
+    let forges: Vec<&dyn Forge> = vec![&joy_gitea::FORGE];
+    std::process::exit(cli::run(&forges, &MANIFEST));
 }
