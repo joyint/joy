@@ -15,7 +15,7 @@
 use joy_forge_net::auth::oauth::{Flow, OAuth};
 use joy_forge_net::auth::Purpose;
 use joy_forge_net::forge::{
-    unknown, unknown_state, Account, Ctx, Listing, NewRepository, Reach, Target,
+    unknown, unknown_state, Account, AccountAnswer, Ctx, Listing, NewRepository, Reach, Target,
 };
 use joy_forge_net::http::Answer;
 use joy_forge_net::scope::{self, Group};
@@ -748,33 +748,54 @@ fn instance_root(host: &str, ctx: &Ctx) -> String {
 
 /// One API GET with a NAMED token, for the calls that validate a token
 /// the context does not hold yet.
-fn api_get_as(ctx: &Ctx, host: &str, url: &str, token: &str) -> Option<Answer> {
-    let http = ctx.http(host).ok()?;
+///
+/// The error half is a sentence and not a bare `None`, because a caller
+/// has to be able to tell "the instance said no" from "the instance
+/// said nothing at all" (JOY-02A8-F4). It is the client's own text,
+/// which never carries a header value, so no token can travel in it.
+fn api_get_as(ctx: &Ctx, host: &str, url: &str, token: &str) -> Result<Answer, String> {
+    let http = ctx.http(host).map_err(|error| {
+        let message = error.to_string();
+        eprintln!("joy-forge gitlab: {message}");
+        message
+    })?;
     match http
         .get(url)
         .header("Accept", "application/json")
         .bearer(token)
         .call()
     {
-        Ok(answer) => Some(answer),
+        Ok(answer) => Ok(answer),
         Err(error) => {
-            eprintln!("joy-forge gitlab: {error}");
-            None
+            let message = error.to_string();
+            eprintln!("joy-forge gitlab: {message}");
+            Err(message)
         }
     }
 }
 
 /// Who this token speaks for, asked of the instance's own API.
-pub fn account_of(host: &str, token: &str, ctx: &Ctx) -> Option<Account> {
+pub fn account_of(host: &str, token: &str, ctx: &Ctx) -> AccountAnswer {
     let base = api_base(host, ctx);
-    let answer = api_get_as(ctx, host, &format!("{base}/user"), token)?;
+    let answer = match api_get_as(ctx, host, &format!("{base}/user"), token) {
+        Ok(answer) => answer,
+        Err(message) => return AccountAnswer::Unreachable(message),
+    };
     if !answer.ok() {
-        return None;
+        return AccountAnswer::Refused;
     }
-    let body = answer.json()?;
-    let login = body.get("username").and_then(|v| v.as_str())?.to_string();
+    let Some(body) = answer.json() else {
+        return AccountAnswer::Refused;
+    };
+    let Some(login) = body
+        .get("username")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+    else {
+        return AccountAnswer::Refused;
+    };
     let mut emails: Vec<String> = Vec::new();
-    if let Some(list) = api_get_as(ctx, host, &format!("{base}/user/emails"), token) {
+    if let Ok(list) = api_get_as(ctx, host, &format!("{base}/user/emails"), token) {
         if list.ok() {
             #[derive(serde::Deserialize)]
             struct Entry {
@@ -785,7 +806,7 @@ pub fn account_of(host: &str, token: &str, ctx: &Ctx) -> Option<Account> {
             }
         }
     }
-    Some(Account {
+    AccountAnswer::Known(Account {
         login,
         user_id: body
             .get("id")
@@ -801,7 +822,7 @@ pub fn account_of(host: &str, token: &str, ctx: &Ctx) -> Option<Account> {
 /// and an unknown set is never reported as a missing one (D2.7c).
 fn scopes_of(ctx: &Ctx, host: &str, token: &str) -> Option<Vec<String>> {
     let base = api_base(host, ctx);
-    if let Some(answer) = api_get_as(
+    if let Ok(answer) = api_get_as(
         ctx,
         host,
         &format!("{base}/personal_access_tokens/self"),
@@ -818,7 +839,8 @@ fn scopes_of(ctx: &Ctx, host: &str, token: &str) -> Option<Vec<String>> {
         host,
         &format!("{}/oauth/token/info", instance_root(host, ctx)),
         token,
-    )?;
+    )
+    .ok()?;
     answer.ok().then(|| string_list(&answer, "scope")).flatten()
 }
 
@@ -830,7 +852,7 @@ pub fn reaches_repo(host: &str, repo_path: &str, token: &str, ctx: &Ctx) -> Opti
         api_base(host, ctx),
         encode_segment(repo_path)
     );
-    let answer = api_get_as(ctx, host, &url, token)?;
+    let answer = api_get_as(ctx, host, &url, token).ok()?;
     if !answer.ok() {
         // GitLab answers 404, not 403, for a private project the caller
         // may not see: both mean "this login is not the one".

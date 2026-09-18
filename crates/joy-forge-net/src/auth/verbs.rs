@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 use super::oauth::{self, Clock, Events, Flow, Poll};
 use super::store::Record;
 use super::{choose, lock, pin, ChoseBy, Purpose, Resolved, Source};
-use crate::forge::{Ctx, Forge, HostKind, Target};
+use crate::forge::{AccountAnswer, Ctx, Forge, HostKind, Target};
 
 /// What the connector's own entry had to say.
 pub enum Own {
@@ -576,10 +576,24 @@ pub fn store_token(forge: &dyn Forge, target: &Target, ctx: &Ctx, raw: &str) -> 
         return json!({ "known": false, "reason": "no-login" });
     }
     // The validation D2.4 asks for: the token names an account on THIS
-    // instance, or it is not stored at all.
-    let Some(account) = forge.account(&host, token, ctx) else {
-        eprintln!("joy: {} did not accept this token", forge.display());
-        return json!({ "known": false, "reason": "no-login" });
+    // instance, or it is not stored at all. A forge that could not be
+    // reached is a THIRD answer and gets its own reason and its own
+    // sentence: telling somebody on a train that their token was
+    // rejected sends them to revoke a credential that is fine, and the
+    // state `needs_sign_in` points them at a door that cannot open
+    // either (JOY-02A8-F4).
+    let account = match forge.account(&host, token, ctx) {
+        AccountAnswer::Known(account) => account,
+        AccountAnswer::Unreachable(detail) => {
+            let message = unreachable_sentence(forge, &host, &detail);
+            eprintln!("joy: {message}");
+            return json!({ "known": false, "reason": "offline", "message": message });
+        }
+        AccountAnswer::Refused => {
+            let message = format!("{} did not accept this token", forge.display());
+            eprintln!("joy: {message}");
+            return json!({ "known": false, "reason": "no-login", "message": message });
+        }
     };
     let login = ctx
         .login
@@ -636,6 +650,25 @@ fn read_stdin() -> Option<String> {
 }
 
 // -- the login verb (D2.4, D2.7, D3.11) ---------------------------------------
+
+/// The sentence for a forge that did not answer at all.
+///
+/// It names the host, says that nothing was checked and nothing was
+/// stored, and carries the client's own detail. It never says "did not
+/// accept", because nothing accepted or refused anything: the request
+/// did not arrive (JOY-02A8-F4).
+pub(crate) fn unreachable_sentence(forge: &dyn Forge, host: &str, detail: &str) -> String {
+    let detail = detail.trim();
+    let tail = if detail.is_empty() {
+        String::new()
+    } else {
+        format!(" ({detail})")
+    };
+    format!(
+        "{host} could not be reached, so this {} token was neither checked nor stored{tail}",
+        forge.display()
+    )
+}
 
 /// The sentence a delegated session gets when it tries to STORE a
 /// credential. It may use what the person stored and may never add to
@@ -818,12 +851,26 @@ fn finish(
     ctx: &Ctx,
     events: &mut dyn Events,
 ) -> i32 {
-    let Some(account) = forge.account(host, &grant.access_token, ctx) else {
-        events.emit(oauth::error_event(
-            "unsupported",
-            "the forge granted a token it then did not accept",
-        ));
-        return 0;
+    let account = match forge.account(host, &grant.access_token, ctx) {
+        AccountAnswer::Known(account) => account,
+        // The grant arrived, so the forge was reachable a moment ago.
+        // Saying "it refused its own token" for a contact that broke
+        // between the two requests is the same collapse D2.4 forbids
+        // (JOY-02A8-F4).
+        AccountAnswer::Unreachable(detail) => {
+            events.emit(oauth::error_event(
+                "network",
+                &unreachable_sentence(forge, host, &detail),
+            ));
+            return 0;
+        }
+        AccountAnswer::Refused => {
+            events.emit(oauth::error_event(
+                "unsupported",
+                "the forge granted a token it then did not accept",
+            ));
+            return 0;
+        }
     };
     // Gitea's AccessTokenResponse has no scope field, so for the Gitea
     // family the set stored is the set requested (D2.7c). Whichever
