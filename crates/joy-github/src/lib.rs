@@ -23,7 +23,7 @@ use joy_forge_net::auth::oauth::OAuth;
 use joy_forge_net::auth::store::Record;
 use joy_forge_net::auth::Purpose;
 use joy_forge_net::forge::{
-    Account, Ctx, Forge, Listing, NewRepository, Reach, ReleaseRequest, Target,
+    AccountAnswer, Ctx, Forge, Listing, NewRepository, Reach, ReleaseRequest, Target,
 };
 use serde_json::Value;
 
@@ -90,7 +90,7 @@ impl Forge for GitHub {
         github::oauth_for(host, purpose, ctx)
     }
 
-    fn account(&self, host: &str, token: &str, ctx: &Ctx) -> Option<Account> {
+    fn account(&self, host: &str, token: &str, ctx: &Ctx) -> AccountAnswer {
         github::account_of(host, token, ctx)
     }
 

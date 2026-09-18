@@ -142,6 +142,39 @@ pub struct Account {
     pub scopes: Option<String>,
 }
 
+/// What asking the instance who a token speaks for produced.
+///
+/// Three answers and not two, because "the forge refused this token"
+/// and "the forge could not be reached" are two different facts for the
+/// person in front of the machine, and collapsing them told somebody on
+/// a train that their token had been rejected (JOY-02A8-F4). The
+/// refusal is a sign in problem; the silence is a network problem, and
+/// the only honest thing to do with the token is to leave it alone.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AccountAnswer {
+    /// The instance answered and this is who the token speaks for.
+    Known(Account),
+    /// The instance answered and it does not accept this token. An
+    /// answer joy could not read an account out of counts here too: the
+    /// forge was reached, so the contact is not the problem.
+    Refused,
+    /// No answer arrived at all: DNS, connection, TLS or a timeout. The
+    /// sentence is the client's own and carries no header value, so a
+    /// token cannot travel inside it.
+    Unreachable(String),
+}
+
+impl AccountAnswer {
+    /// The account, where there is one. For the callers that only have
+    /// the one branch.
+    pub fn known(self) -> Option<Account> {
+        match self {
+            AccountAnswer::Known(account) => Some(account),
+            _ => None,
+        }
+    }
+}
+
 /// What one probe of D4.1c found: whether this login sees the
 /// repository at all, and whether it may push to it.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -202,9 +235,10 @@ pub trait Forge: Sync {
     ) -> Option<crate::auth::oauth::OAuth>;
 
     /// Who this token speaks for, asked of the instance's own API.
-    /// `None` when the forge does not accept it, which is what makes
-    /// `token-store` a validation and not a paste.
-    fn account(&self, host: &str, token: &str, ctx: &Ctx) -> Option<Account>;
+    /// `Refused` is what makes `token-store` a validation and not a
+    /// paste; `Unreachable` is the answer that must never be reported
+    /// as a refusal (D2.4, JOY-02A8-F4).
+    fn account(&self, host: &str, token: &str, ctx: &Ctx) -> AccountAnswer;
 
     /// Whether this token reaches `owner/repo` (the probe of D4.1c).
     /// One request per candidate, never per contact. `None` means the

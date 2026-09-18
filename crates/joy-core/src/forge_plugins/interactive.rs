@@ -35,7 +35,7 @@ use serde::Deserialize;
 
 use super::{
     run_stream, timeout_for, CallContext, CancelToken, EventSink, ForgePluginSpec, ForgeToken,
-    PluginError, ResolvedPlugin, StreamBounds, Target,
+    Noted, PluginError, ResolvedPlugin, StreamBounds, Target,
 };
 use crate::host::HostKind;
 
@@ -223,10 +223,10 @@ pub fn token_store(
     target: &Target,
     token: &str,
     ctx: &CallContext,
-) -> Result<ForgeToken, PluginError> {
+) -> Result<Noted<ForgeToken>, PluginError> {
     super::refuse_outdated(spec, "token-store", Some(target))?;
     let args = super::call_args(spec, "token-store", Some(target), &[], ctx);
-    let outcome = run_with_stdin(
+    let (value, stderr) = run_with_stdin(
         spec,
         &args,
         token,
@@ -234,11 +234,15 @@ pub fn token_store(
         &ctx.env(),
         timeout_for("token-store"),
     )?;
-    serde_json::from_value(outcome).map_err(|e| PluginError::Unparsable {
+    let answer = serde_json::from_value(value).map_err(|e| PluginError::Unparsable {
         display: spec.display,
         path: spec.resolved_path.clone(),
         verb: "token-store".to_string(),
         answer: e.to_string(),
+    })?;
+    Ok(Noted {
+        answer,
+        note: super::note_of(&stderr),
     })
 }
 
@@ -246,6 +250,11 @@ pub fn token_store(
 /// separate on purpose: every other verb closes stdin so a connector
 /// that would ask something fails instead of waiting for ever, and this
 /// is the one that must not.
+///
+/// The answer comes back with the connector's stderr beside it, because
+/// a `token-store` that exits 0 can still have a sentence the person
+/// needs: a keychain that refused and fell back to the 0600 file says
+/// so here and nowhere else (JOY-02A8-F4).
 fn run_with_stdin(
     spec: &ResolvedPlugin,
     args: &[String],
@@ -253,7 +262,7 @@ fn run_with_stdin(
     root: Option<&Path>,
     env: &[(String, String)],
     timeout: Duration,
-) -> Result<serde_json::Value, PluginError> {
+) -> Result<(serde_json::Value, String), PluginError> {
     let mut command = joy_process::command(&spec.resolved_path);
     command
         .args(args)
@@ -316,21 +325,24 @@ fn run_with_stdin(
         stderr: e.to_string(),
     })?;
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     if !output.status.success() {
         return Err(PluginError::Failed {
             display: spec.display,
             path: spec.resolved_path.clone(),
             verb: "token-store".to_string(),
             exit_code: output.status.code(),
-            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            stderr,
         });
     }
-    serde_json::from_str(stdout.trim()).map_err(|_| PluginError::Unparsable {
-        display: spec.display,
-        path: spec.resolved_path.clone(),
-        verb: "token-store".to_string(),
-        answer: stdout,
-    })
+    let value: serde_json::Value =
+        serde_json::from_str(stdout.trim()).map_err(|_| PluginError::Unparsable {
+            display: spec.display,
+            path: spec.resolved_path.clone(),
+            verb: "token-store".to_string(),
+            answer: stdout,
+        })?;
+    Ok((value, stderr))
 }
 
 #[cfg(test)]

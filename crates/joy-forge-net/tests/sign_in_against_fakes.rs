@@ -597,6 +597,45 @@ fn token_store_validates_the_token_with_the_forge_before_it_stores_it() {
     }
 }
 
+/// JOY-02A8-F4: "the forge refused this token" and "the forge could not
+/// be reached" are two facts and get two answers. Collapsing them into
+/// `no-login` told a person on a train that their credential had been
+/// rejected and sent them, through `needs_sign_in`, at a door that
+/// could not open either.
+#[test]
+fn a_forge_that_cannot_be_reached_is_not_a_forge_that_refused_the_token() {
+    // A base nobody listens on: the fake is started for its address and
+    // stopped again, so the connection is REFUSED rather than hanging
+    // and the case stays as fast as every other one here.
+    let base = {
+        let fake = FakeForge::start(|_| Reply::not_found());
+        fake.base()
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let forge = TestForge::device(base);
+    let ctx = sandbox(dir.path());
+    let host = Target::Host("forge.test".into());
+
+    let answer = verbs::store_token(&forge, &host, &ctx, "the-right-token");
+    assert_eq!(answer["known"], false);
+    assert_eq!(
+        answer["reason"], "offline",
+        "an unreachable forge is not a refused token: {answer}"
+    );
+    let message = answer["message"]
+        .as_str()
+        .expect("the person gets a sentence, not a bare reason");
+    assert!(message.contains("forge.test"), "{message}");
+    assert!(message.contains("could not be reached"), "{message}");
+    assert!(
+        !message.contains("did not accept"),
+        "nothing accepted or refused anything: {message}"
+    );
+    // The token is not stored either: a credential that was never
+    // checked is not a credential this machine may keep.
+    assert_eq!(verbs::token(&forge, &host, None, &ctx)["known"], false);
+}
+
 /// D2.4: `logout` removes the entry and revokes the token at the forge
 /// where the forge offers it, with `DELETE /applications/{client_id}/token`
 /// and never `.../grant`.

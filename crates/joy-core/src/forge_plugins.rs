@@ -981,6 +981,19 @@ fn run_path(
     outcome.stdout_json = serde_json::from_str(outcome.stdout_text.trim()).ok();
     if let Some(status) = status {
         outcome.exit_code = status.code();
+        // A connector that exits 0 and still wrote something wrote it
+        // for a reason, and the read verbs degrade to "unknown" without
+        // a place to show it. The line is the operator's copy; the
+        // person's copy is the note of [`Noted`] (JOY-02A8-F4).
+        if status.success() && !outcome.stderr_text.trim().is_empty() {
+            tracing::info!(
+                plugin,
+                verb,
+                path = %path.display(),
+                stderr = %one_line(&outcome.stderr_text, 200),
+                "the forge plugin answered and had something to say"
+            );
+        }
         if !status.success() {
             let code = status
                 .code()
@@ -1576,6 +1589,56 @@ fn warn_before_the_spawn(plugin: &str, verb: &str, error: &PluginError) {
     }
 }
 
+/// An answer together with what the connector said WHILE it answered
+/// (JOY-02A8-F4).
+///
+/// A connector that exits 0 can still have something to say: the macOS
+/// keychain that refused a `ca_bundle` and named the system trust
+/// store, a certificate joy fell back from, a login that was chosen
+/// because another one had gone stale. Until this type existed, every
+/// one of those sentences was read off the pipe and thrown away at the
+/// first zero exit, so the failure a person had to act on was visible
+/// to nobody and the answer looked like a plain success.
+///
+/// The note is the connector's stderr, trimmed, and nothing else. It is
+/// not a state and not a reason: a caller renders it beside the answer
+/// and decides nothing by it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Noted<T> {
+    pub answer: T,
+    /// What the connector wrote on stderr, when it wrote anything.
+    pub note: Option<String>,
+}
+
+impl<T> Noted<T> {
+    /// The answer, with the note dropped. For the callers that have
+    /// nowhere to show one.
+    pub fn answer(self) -> T {
+        self.answer
+    }
+}
+
+/// The connector's stderr as a note: trimmed, and `None` when it said
+/// nothing. Bounded, because a connector that loops on a warning must
+/// not be able to fill a terminal through this door.
+fn note_of(stderr: &str) -> Option<String> {
+    let text = stderr.trim();
+    if text.is_empty() {
+        return None;
+    }
+    const LIMIT: usize = 2000;
+    if text.len() <= LIMIT {
+        return Some(text.to_string());
+    }
+    let cut = text
+        .char_indices()
+        .map(|(at, _)| at)
+        .take_while(|at| *at <= LIMIT)
+        .last()
+        .unwrap_or(0);
+    Some(format!("{}...", &text[..cut]))
+}
+
 /// Ask one verb and read its one JSON answer, with every failure named
 /// (D2.3). This is the door every verb of the catalogue goes through,
 /// the ones J3 adds included.
@@ -1586,6 +1649,17 @@ pub fn query<T: serde::de::DeserializeOwned>(
     extra: &[&str],
     ctx: &CallContext,
 ) -> Result<T, PluginError> {
+    query_noted(spec, verb, target, extra, ctx).map(Noted::answer)
+}
+
+/// [`query`] with the connector's own sentences kept (JOY-02A8-F4).
+pub fn query_noted<T: serde::de::DeserializeOwned>(
+    spec: &ForgePluginSpec,
+    verb: &str,
+    target: Option<&Target>,
+    extra: &[&str],
+    ctx: &CallContext,
+) -> Result<Noted<T>, PluginError> {
     let resolved = match resolve_plugin(spec) {
         Ok(resolved) => resolved,
         Err(error) => {
@@ -1593,7 +1667,7 @@ pub fn query<T: serde::de::DeserializeOwned>(
             return Err(error);
         }
     };
-    query_resolved(&resolved, verb, target, extra, ctx)
+    query_resolved_noted(&resolved, verb, target, extra, ctx)
 }
 
 /// [`query`] against a connector that is already resolved, so a caller
@@ -1605,6 +1679,18 @@ pub fn query_resolved<T: serde::de::DeserializeOwned>(
     extra: &[&str],
     ctx: &CallContext,
 ) -> Result<T, PluginError> {
+    query_resolved_noted(resolved, verb, target, extra, ctx).map(Noted::answer)
+}
+
+/// [`query_resolved`] with the connector's own sentences kept
+/// (JOY-02A8-F4).
+pub fn query_resolved_noted<T: serde::de::DeserializeOwned>(
+    resolved: &ResolvedPlugin,
+    verb: &str,
+    target: Option<&Target>,
+    extra: &[&str],
+    ctx: &CallContext,
+) -> Result<Noted<T>, PluginError> {
     if let Err(error) = refuse_outdated(resolved, verb, target) {
         warn_before_the_spawn(resolved.id, verb, &error);
         return Err(error);
@@ -1673,11 +1759,15 @@ pub fn query_resolved<T: serde::de::DeserializeOwned>(
         verb: verb.to_string(),
         answer: outcome.stdout_text.clone(),
     })?;
-    serde_json::from_value(value).map_err(|e| PluginError::Unparsable {
+    let answer = serde_json::from_value(value).map_err(|e| PluginError::Unparsable {
         display: resolved.display,
         path: resolved.resolved_path.clone(),
         verb: verb.to_string(),
         answer: format!("{}: {e}", one_line(&outcome.stdout_text, 200)),
+    })?;
+    Ok(Noted {
+        answer,
+        note: note_of(&outcome.stderr_text),
     })
 }
 

@@ -511,32 +511,58 @@ fn login_with_token(door: &Door, resolved: &ResolvedPlugin) -> Result<()> {
         Err(refusal) => return refused(refusal),
     };
     match interactive::token_store(resolved, &door.target, &token, &door.ctx) {
-        Ok(answer) if answer.known => signed_in(
-            &door.host,
-            LoginPayload {
-                host: answer.host.unwrap_or_else(|| door.host.clone()),
-                state: "signed-in",
-                login: answer.login,
-                user_id: None,
-                emails: Vec::new(),
-                source: Some("token".to_string()),
-                stored: answer.source,
-                scopes: answer.scopes,
-                expires_at: answer.expires_at,
-            },
-        ),
-        Ok(answer) => {
+        Ok(noted) => {
+            // Whatever the connector said while it worked reaches the
+            // person here, on both paths. It used to be read off the
+            // pipe and dropped on a zero exit, which is how a keychain
+            // that refused and fell back to a file stayed invisible
+            // (JOY-02A8-F4).
+            print_note(noted.note.as_deref());
+            let answer = noted.answer;
+            if answer.known {
+                return signed_in(
+                    &door.host,
+                    LoginPayload {
+                        host: answer.host.unwrap_or_else(|| door.host.clone()),
+                        state: "signed-in",
+                        login: answer.login,
+                        user_id: None,
+                        emails: Vec::new(),
+                        source: Some("token".to_string()),
+                        stored: answer.source,
+                        scopes: answer.scopes,
+                        expires_at: answer.expires_at,
+                    },
+                );
+            }
             let state = answer
                 .reason
                 .as_deref()
                 .map(state_of_code)
                 .unwrap_or("needs_sign_in");
+            // The fallback stays the refusal sentence, and it is
+            // reached only where the connector named no reason at all:
+            // a connector that could not REACH the forge names
+            // `offline` and its own sentence, and neither is overwritten
+            // here (JOY-02A8-F4).
             let message = answer
                 .message
                 .unwrap_or_else(|| "the forge did not accept this token".to_string());
             refused(Refusal::new(&door.host, state, message))
         }
         Err(error) => refused(Refusal::of(&door.host, error)),
+    }
+}
+
+/// What the connector said while it answered, on stderr, under the
+/// answer it belongs to (D3.10: diagnostics go to stderr, in both
+/// output modes, so one JSON envelope stays one JSON envelope).
+fn print_note(note: Option<&str>) {
+    let Some(note) = note else {
+        return;
+    };
+    for line in note.lines().filter(|line| !line.trim().is_empty()) {
+        eprintln!("  = note: {}", line.trim_end());
     }
 }
 
@@ -768,36 +794,53 @@ struct PluginRef {
 fn status(args: StatusArgs) -> Result<()> {
     let ctx = context(None);
     let hosts = host_set(args.host.as_deref(), &ctx);
-    let rows: Vec<HostRow> = hosts.iter().map(|host| host_row(host, &ctx)).collect();
-    let signed_in = rows.iter().any(|row| row.state == "signed-in");
+    let rows: Vec<(HostRow, Option<String>)> =
+        hosts.iter().map(|host| host_row(host, &ctx)).collect();
+    let signed_in = rows.iter().any(|(row, _)| row.state == "signed-in");
     // The state of the ANSWER, which is the state of the best row: a
-    // machine signed in to one host of three is signed in.
+    // machine signed in to one host of three is signed in
+    // (JOY-02A7-A2 finding 8).
     let state = if signed_in {
         "signed-in"
-    } else if rows.iter().any(|row| row.state == "expired") {
+    } else if rows.iter().any(|(row, _)| row.state == "expired") {
         "expired"
     } else {
         "none"
     };
+    // ONE next step for both surfaces, so the envelope's `help` is
+    // literally the sentence the human answer prints. A machine that
+    // knows no host at all keeps the line it has always had; a machine
+    // with rows gets the step the rows themselves decide, which is the
+    // configuration and not a login when nothing claims them
+    // (JOY-02A8-F4 finding 1).
+    let help = if rows.is_empty() {
+        sign_in_line("")
+    } else {
+        status_help(&rows)
+    };
     if output::is_json() {
-        let help = (!signed_in)
-            .then(|| sign_in_line(rows.first().map(|row| row.host.as_str()).unwrap_or("")));
+        // The notes are diagnostics and go to stderr in this mode too,
+        // so stdout stays exactly one envelope (D3.10).
+        for (_, note) in &rows {
+            print_note(note.as_deref());
+        }
         output::emit(StatusPayload {
-            hosts: rows,
+            hosts: rows.into_iter().map(|(row, _)| row).collect(),
             state,
-            help,
+            help: (!signed_in).then(|| help.clone()),
         })?;
         if !signed_in {
+            eprintln!("  = help: {help}");
             std::process::exit(1);
         }
         return Ok(());
     }
     if rows.is_empty() {
         println!("No forge host is known on this machine.");
-        eprintln!("  = help: {}", sign_in_line(""));
+        eprintln!("  = help: {help}");
         std::process::exit(1);
     }
-    for row in &rows {
+    for (row, note) in &rows {
         let login = row.login.as_deref().unwrap_or("-");
         let forge = row.forge.unwrap_or("-");
         println!(
@@ -819,37 +862,88 @@ fn status(args: StatusArgs) -> Result<()> {
             ),
             None => println!("  connector: none answered for this host"),
         }
+        print_note(note.as_deref());
     }
     if !signed_in {
-        eprintln!("  = help: {}", sign_in_line(&rows[0].host));
+        eprintln!("  = help: {help}");
         std::process::exit(1);
     }
     Ok(())
 }
 
+/// The sentence for a host no connector claims. `joy forge login` is
+/// not it: there is no door to knock on until the instance is
+/// configured, and sending somebody to a command that will refuse them
+/// for the same reason is the wrong next step (JOY-02A8-F4, D2.5).
+const NOTHING_CLAIMS_ANY_HOST: &str =
+    "add the instance to forges.yaml, or name a host a connector knows";
+
+/// The ONE next step under a `joy forge status` where nothing is signed
+/// in (D3.8: one next step, never a list).
+///
+/// Three cases, because one help line for all of them was wrong in two
+/// of them: it named `rows[0].host` whatever that row was, so a machine
+/// whose first row was an unclaimed host was sent to sign in to it,
+/// and a machine with several rows was told about one of them with no
+/// word about the others (JOY-02A8-F4).
+///
+/// - No row has a connector: the instance is not configured, and the
+///   step is `forges.yaml`.
+/// - Exactly one row has a connector and is not signed in: that host is
+///   named, because there is nothing to choose between.
+/// - Several: the host is left out, and the person picks from the rows
+///   printed right above.
+fn status_help(rows: &[(HostRow, Option<String>)]) -> String {
+    let claimed: Vec<&HostRow> = rows
+        .iter()
+        .map(|(row, _)| row)
+        .filter(|row| row.forge.is_some())
+        .collect();
+    match claimed.as_slice() {
+        [] => NOTHING_CLAIMS_ANY_HOST.to_string(),
+        [only] => sign_in_line(&only.host),
+        _ => sign_in_line(""),
+    }
+}
+
 /// One row of `joy forge status`: who this machine is on this host, and
-/// which binary answered.
-fn host_row(host: &str, ctx: &CallContext) -> HostRow {
+/// which binary answered, with whatever the connector said while it
+/// answered (JOY-02A8-F4).
+fn host_row(host: &str, ctx: &CallContext) -> (HostRow, Option<String>) {
     let target = Target::host(host.to_string());
     let spec = forge_plugins::FORGE_PLUGINS
         .iter()
         .find(|spec| forge_plugins::claims(spec, &target, ctx));
     let Some(spec) = spec else {
-        return HostRow {
-            host: host.to_string(),
-            forge: None,
-            login: None,
-            state: "none",
-            source: "none".to_string(),
-            scopes: None,
-            expires_at: None,
-            plugin: None,
-        };
+        return (
+            HostRow {
+                host: host.to_string(),
+                forge: None,
+                login: None,
+                state: "none",
+                source: "none".to_string(),
+                scopes: None,
+                expires_at: None,
+                plugin: None,
+            },
+            None,
+        );
     };
     let resolved = forge_plugins::resolve_plugin(spec).ok();
-    let token = resolved.as_ref().and_then(|resolved| {
-        forge_plugins::query_resolved::<ForgeToken>(resolved, "token", Some(&target), &[], ctx).ok()
+    let noted = resolved.as_ref().and_then(|resolved| {
+        forge_plugins::query_resolved_noted::<ForgeToken>(
+            resolved,
+            "token",
+            Some(&target),
+            &[],
+            ctx,
+        )
+        .ok()
     });
+    let (token, note) = match noted {
+        Some(noted) => (Some(noted.answer), noted.note),
+        None => (None, None),
+    };
     let known = token.as_ref().is_some_and(|token| token.known);
     let expires_at = token.as_ref().and_then(|token| token.expires_at.clone());
     let state = match (known, expires_at.as_deref().map(is_past)) {
@@ -857,19 +951,22 @@ fn host_row(host: &str, ctx: &CallContext) -> HostRow {
         (true, _) => "signed-in",
         (false, _) => "none",
     };
-    HostRow {
-        host: host.to_string(),
-        forge: Some(spec.id),
-        login: token.as_ref().and_then(|token| token.login.clone()),
-        state,
-        source: token
-            .as_ref()
-            .and_then(|token| token.source.clone())
-            .unwrap_or_else(|| "none".to_string()),
-        scopes: token.as_ref().and_then(|token| token.scopes.clone()),
-        expires_at,
-        plugin: resolved.as_ref().map(plugin_ref),
-    }
+    (
+        HostRow {
+            host: host.to_string(),
+            forge: Some(spec.id),
+            login: token.as_ref().and_then(|token| token.login.clone()),
+            state,
+            source: token
+                .as_ref()
+                .and_then(|token| token.source.clone())
+                .unwrap_or_else(|| "none".to_string()),
+            scopes: token.as_ref().and_then(|token| token.scopes.clone()),
+            expires_at,
+            plugin: resolved.as_ref().map(plugin_ref),
+        },
+        note,
+    )
 }
 
 fn plugin_ref(resolved: &ResolvedPlugin) -> PluginRef {
@@ -1340,6 +1437,66 @@ mod tests {
         assert_eq!(
             token_refusal("github.com", "--token-stdin: empty input").action,
             None
+        );
+    }
+
+    /// One row for the help line cases below.
+    fn row(
+        host: &str,
+        forge: Option<&'static str>,
+        state: &'static str,
+    ) -> (HostRow, Option<String>) {
+        (
+            HostRow {
+                host: host.to_string(),
+                forge,
+                login: None,
+                state,
+                source: "none".to_string(),
+                scopes: None,
+                expires_at: None,
+                plugin: None,
+            },
+            None,
+        )
+    }
+
+    /// JOY-02A8-F4: the help line under a `joy forge status` that found
+    /// nobody signed in used to be `sign_in_line(rows[0].host)` in every
+    /// case. That is wrong twice: it sent a person to sign in to a host
+    /// no connector claims, where the door cannot open at all, and with
+    /// several rows it named whichever host happened to be first and
+    /// said nothing about the rest.
+    #[test]
+    fn the_status_help_names_a_host_only_where_there_is_one_to_name() {
+        // Nothing claims the host: the step is the configuration, not
+        // a sign in.
+        assert_eq!(
+            status_help(&[row("nowhere.example", None, "none")]),
+            "add the instance to forges.yaml, or name a host a connector knows"
+        );
+        // One claimed host and nothing to choose between.
+        assert_eq!(
+            status_help(&[row("github.com", Some("github"), "none")]),
+            "run `joy forge login --host github.com`"
+        );
+        // One claimed host beside an unclaimed one: the claimed one is
+        // the one that can be signed in to.
+        assert_eq!(
+            status_help(&[
+                row("nowhere.example", None, "none"),
+                row("github.com", Some("github"), "none"),
+            ]),
+            "run `joy forge login --host github.com`"
+        );
+        // Several: the person picks from the rows printed above, and
+        // the help line does not pick for them.
+        assert_eq!(
+            status_help(&[
+                row("github.com", Some("github"), "none"),
+                row("codeberg.org", Some("gitea"), "none"),
+            ]),
+            "run `joy forge login --host <host>`"
         );
     }
 

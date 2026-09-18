@@ -376,19 +376,31 @@ impl crate::forge::Forge for TestForge {
         host: &str,
         token: &str,
         ctx: &crate::forge::Ctx,
-    ) -> Option<crate::forge::Account> {
-        let http = ctx.http(host).ok()?;
-        let answer = http
+    ) -> crate::forge::AccountAnswer {
+        use crate::forge::AccountAnswer;
+        let http = match ctx.http(host) {
+            Ok(http) => http,
+            Err(error) => return AccountAnswer::Unreachable(error.to_string()),
+        };
+        let answer = match http
             .get(&format!("{}/user", self.base))
             .bearer(token)
             .call()
-            .ok()?;
+        {
+            Ok(answer) => answer,
+            Err(error) => return AccountAnswer::Unreachable(error.to_string()),
+        };
         if !answer.ok() {
-            return None;
+            return AccountAnswer::Refused;
         }
-        let body = answer.json()?;
-        Some(crate::forge::Account {
-            login: body.get("login")?.as_str()?.to_string(),
+        let Some(body) = answer.json() else {
+            return AccountAnswer::Refused;
+        };
+        let Some(login) = body.get("login").and_then(|v| v.as_str()) else {
+            return AccountAnswer::Refused;
+        };
+        AccountAnswer::Known(crate::forge::Account {
+            login: login.to_string(),
             user_id: body
                 .get("id")
                 .and_then(|v| v.as_i64())

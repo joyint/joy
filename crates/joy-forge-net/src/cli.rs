@@ -566,8 +566,8 @@ mod tests {
         ) -> Option<crate::auth::oauth::OAuth> {
             None
         }
-        fn account(&self, _h: &str, _t: &str, _c: &Ctx) -> Option<crate::forge::Account> {
-            None
+        fn account(&self, _h: &str, _t: &str, _c: &Ctx) -> crate::forge::AccountAnswer {
+            crate::forge::AccountAnswer::Refused
         }
         fn reaches(&self, _h: &str, _p: &str, _t: &str, _c: &Ctx) -> Option<crate::forge::Reach> {
             None

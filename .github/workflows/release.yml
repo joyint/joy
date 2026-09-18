@@ -272,6 +272,149 @@ jobs:
         if: ${{ needs.plan.outputs.publishing == 'true' && contains(join(matrix.targets, ','), 'windows') }}
         run: |
           dist build ${{ needs.plan.outputs.tag-flag }} --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
+      # --- JOY-02A8-F4: Developer ID sign the macOS binaries, then repackage ---
+      # Same shape as the Windows block above and for the same reason:
+      # dist build compiles AND archives in one step, so the binaries are
+      # signed in place and dist build is run again, which re-archives the
+      # signed files and refreshes the manifest hashes.
+      #
+      # Why this has to happen at all (T4 of the design, decision 6):
+      # without it the CLI binaries in the apple archives are ad hoc
+      # signed, with a designated requirement that is a bare cdhash. A
+      # keychain item is bound to the designated requirement of the
+      # program that created it, so the connector the desktop app ships
+      # as a sidecar (signed by the app with the Developer ID of Joydev
+      # GmbH) and a separately installed copy of the same connector would
+      # be two different identities to the macOS keychain, and every CLI
+      # update would change the cdhash and re-prompt for every stored
+      # forge token.
+      #
+      # Two things make the identity stable, and both are needed:
+      # the Developer ID Application certificate, which anchors the
+      # requirement to Apple and to the team, and an explicit identifier
+      # per binary. Without `-i`, codesign derives the identifier from
+      # the file name, which is a name anybody can take; with it the
+      # requirement names com.joydev.joy and com.joydev.joy-forge and
+      # stays the same across every version.
+      - name: Sign the macOS binaries (Developer ID Application)
+        if: ${{ needs.plan.outputs.publishing == 'true' && contains(join(matrix.targets, ','), 'apple') }}
+        shell: bash
+        env:
+          # The identity the app signs with, so that the sidecar copy and
+          # this copy are one identity: "Developer ID Application: Joydev
+          # GmbH (<team id>)". Same secret name as in joyint/app.
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          # The certificate as a base64 .p12, for a runner that has no
+          # keychain of its own. On the operator's Mac these two are
+          # empty and the identity comes from that Mac's login keychain
+          # (see the requirement named below).
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          TARGETS: ${{ join(matrix.targets, ' ') }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APPLE_SIGNING_IDENTITY:-}" ]; then
+            echo "::error::APPLE_SIGNING_IDENTITY is empty, so the macOS binaries would ship ad hoc signed."
+            echo "::error::Decision 6 of the forge connection NG design makes one identity mandatory:"
+            echo "::error::set the repository secret, and on a self-hosted Mac keep the Developer ID"
+            echo "::error::Application certificate in the runner user's login keychain."
+            exit 1
+          fi
+          # A runner with no keychain identity brings the certificate as
+          # a secret and gets a throwaway keychain for the length of the
+          # job. A Mac that already holds the identity (the operator's
+          # release Mac) sets neither secret and signs from its login
+          # keychain, which the runner agent must be able to reach: it
+          # has to run in a logged-in user session with that keychain
+          # unlocked. A runner started over ssh cannot, because macOS
+          # refuses the login keychain to a non-interactive session with
+          # "User interaction is not allowed".
+          if [ -n "${APPLE_CERTIFICATE:-}" ]; then
+            keychain="$RUNNER_TEMP/joy-signing.keychain-db"
+            password="$(uuidgen)"
+            security create-keychain -p "$password" "$keychain"
+            security set-keychain-settings -lut 21600 "$keychain"
+            security unlock-keychain -p "$password" "$keychain"
+            printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+            security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" \
+              -P "${APPLE_CERTIFICATE_PASSWORD:-}" -T /usr/bin/codesign
+            rm -f "$RUNNER_TEMP/certificate.p12"
+            security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain" >/dev/null
+            security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+            echo "JOY_SIGNING_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+          else
+            echo "No certificate secret: signing from the runner's own keychain."
+          fi
+          # The identifier is the binary's, not the archive's, and both
+          # binaries of design D2.1 ride in every apple archive.
+          for target in $TARGETS; do
+            case "$target" in *apple*) ;; *) continue ;; esac
+            dir="target/$target/dist"
+            for pair in "joy:com.joydev.joy" "joy-forge:com.joydev.joy-forge"; do
+              name="${pair%%:*}"
+              identifier="${pair##*:}"
+              path="$dir/$name"
+              if [ ! -f "$path" ]; then
+                echo "::error::$path is missing, the archive would ship without it"
+                exit 1
+              fi
+              # --timestamp because a Developer ID signature without a
+              # secure timestamp stops verifying when the certificate
+              # expires; --options runtime because the hardened runtime
+              # is what a notarized build needs and what the app already
+              # uses, so both copies of the connector carry the same
+              # flags.
+              codesign --force --timestamp --options runtime \
+                --sign "$APPLE_SIGNING_IDENTITY" --identifier "$identifier" "$path"
+              echo "Signed $path as $identifier"
+            done
+          done
+      # The proof, and the release stops here without it: the identifier
+      # is the one the keychain requirement is written against, and the
+      # authority is Apple's Developer ID and not an ad hoc signature.
+      - name: Check the signed macOS binaries
+        if: ${{ needs.plan.outputs.publishing == 'true' && contains(join(matrix.targets, ','), 'apple') }}
+        shell: bash
+        env:
+          TARGETS: ${{ join(matrix.targets, ' ') }}
+        run: |
+          set -euo pipefail
+          failed=0
+          for target in $TARGETS; do
+            case "$target" in *apple*) ;; *) continue ;; esac
+            dir="target/$target/dist"
+            for pair in "joy:com.joydev.joy" "joy-forge:com.joydev.joy-forge"; do
+              name="${pair%%:*}"
+              identifier="${pair##*:}"
+              path="$dir/$name"
+              # codesign -dvv writes its report to stderr.
+              report="$(codesign -dvv "$path" 2>&1 || true)"
+              echo "$report"
+              if ! printf '%s' "$report" | grep -qx "Identifier=$identifier"; then
+                echo "::error::$path does not carry the identifier $identifier"
+                failed=1
+              fi
+              if ! printf '%s' "$report" | grep -q "^Authority=Developer ID Application:"; then
+                echo "::error::$path is not signed by a Developer ID Application certificate"
+                failed=1
+              fi
+              # An ad hoc signature has no authority line at all and says
+              # so here; a signature over changed bytes fails --verify.
+              if ! codesign --verify --strict --verbose=2 "$path"; then
+                echo "::error::$path does not verify"
+                failed=1
+              fi
+            done
+          done
+          if [ "$failed" != 0 ]; then exit 1; fi
+      - name: Re-archive the signed macOS binaries
+        if: ${{ needs.plan.outputs.publishing == 'true' && contains(join(matrix.targets, ','), 'apple') }}
+        run: |
+          dist build ${{ needs.plan.outputs.tag-flag }} --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
+      - name: Remove the throwaway signing keychain
+        if: ${{ always() && env.JOY_SIGNING_KEYCHAIN != '' }}
+        shell: bash
+        run: security delete-keychain "$JOY_SIGNING_KEYCHAIN" || true
       - id: cargo-dist
         name: Post-build
         # We force bash here just because github makes it really hard to get values up

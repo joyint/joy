@@ -19,7 +19,7 @@ pub mod gitea;
 use joy_forge_net::auth::oauth::OAuth;
 use joy_forge_net::auth::Purpose;
 use joy_forge_net::forge::{
-    Account, Ctx, Forge, Listing, NewRepository, Reach, ReleaseRequest, Target,
+    AccountAnswer, Ctx, Forge, Listing, NewRepository, Reach, ReleaseRequest, Target,
 };
 use serde_json::{json, Value};
 
@@ -83,7 +83,7 @@ impl Forge for Gitea {
         gitea::oauth_for(host, purpose, ctx)
     }
 
-    fn account(&self, host: &str, token: &str, ctx: &Ctx) -> Option<Account> {
+    fn account(&self, host: &str, token: &str, ctx: &Ctx) -> AccountAnswer {
         gitea::account_of(host, token, ctx)
     }
 

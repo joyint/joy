@@ -14,7 +14,8 @@
 use joy_forge_net::auth::oauth::{Flow, OAuth};
 use joy_forge_net::auth::Purpose;
 use joy_forge_net::forge::{
-    unknown, unknown_state, Account, Ctx, Listing, NewRepository, Reach, ReleaseRequest, Target,
+    unknown, unknown_state, Account, AccountAnswer, Ctx, Listing, NewRepository, Reach,
+    ReleaseRequest, Target,
 };
 use joy_forge_net::http::Answer;
 use joy_forge_net::scope::{self, Group};
@@ -833,17 +834,33 @@ pub fn oauth_for(host: &str, purpose: Purpose, ctx: &Ctx) -> Option<OAuth> {
 
 /// One API GET with a NAMED token, for the calls that validate a token
 /// the context does not hold yet (`token-store`, the probe of D4.1c).
-fn api_get_as(ctx: &Ctx, host: &str, url: &str, token: &str) -> Option<Answer> {
-    let http = ctx.http(host).ok()?;
+///
+/// The error half is a sentence and not a bare `None`, because a caller
+/// has to be able to tell "the instance said no" from "the instance
+/// said nothing at all" (JOY-02A8-F4). It is the client's own text,
+/// which never carries a header value, so no token can travel in it.
+fn api_get_as(ctx: &Ctx, host: &str, url: &str, token: &str) -> Result<Answer, String> {
+    let http = ctx.http(host).map_err(|error| error.to_string())?;
     match http
         .get(url)
         .header("Accept", ACCEPT_JSON)
         .bearer(token)
         .call()
     {
+        Ok(answer) => Ok(answer),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+/// [`api_get_as`] for a caller with nowhere to put the reason. The
+/// sentence is printed HERE, because this is where it would otherwise
+/// be lost; a caller that carries it onward must not print it as well,
+/// or the person reads the same failure twice (JOY-02A8-F4).
+fn api_get_as_or_say(ctx: &Ctx, host: &str, url: &str, token: &str) -> Option<Answer> {
+    match api_get_as(ctx, host, url, token) {
         Ok(answer) => Some(answer),
-        Err(error) => {
-            eprintln!("joy-forge github: {error}");
+        Err(message) => {
+            eprintln!("joy-forge github: {message}");
             None
         }
     }
@@ -852,16 +869,27 @@ fn api_get_as(ctx: &Ctx, host: &str, url: &str, token: &str) -> Option<Answer> {
 /// Who this token speaks for, asked of the instance's own API. This is
 /// the `identity` validation `token-store` runs before it stores
 /// anything, and what a finished `login` reports.
-pub fn account_of(host: &str, token: &str, ctx: &Ctx) -> Option<Account> {
+pub fn account_of(host: &str, token: &str, ctx: &Ctx) -> AccountAnswer {
     let base = api_base(host, ctx);
-    let answer = api_get_as(ctx, host, &format!("{base}/user"), token)?;
+    let answer = match api_get_as(ctx, host, &format!("{base}/user"), token) {
+        Ok(answer) => answer,
+        Err(message) => return AccountAnswer::Unreachable(message),
+    };
     if !answer.ok() {
-        return None;
+        return AccountAnswer::Refused;
     }
-    let body = answer.json()?;
-    let login = body.get("login").and_then(|v| v.as_str())?.to_string();
+    let Some(body) = answer.json() else {
+        return AccountAnswer::Refused;
+    };
+    let Some(login) = body
+        .get("login")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+    else {
+        return AccountAnswer::Refused;
+    };
     let mut emails: Vec<String> = Vec::new();
-    if let Some(list) = api_get_as(ctx, host, &format!("{base}/user/emails"), token) {
+    if let Some(list) = api_get_as_or_say(ctx, host, &format!("{base}/user/emails"), token) {
         if list.ok() {
             #[derive(serde::Deserialize)]
             struct Entry {
@@ -878,7 +906,7 @@ pub fn account_of(host: &str, token: &str, ctx: &Ctx) -> Option<Account> {
             }
         }
     }
-    Some(Account {
+    AccountAnswer::Known(Account {
         login,
         user_id: body
             .get("id")
@@ -896,7 +924,7 @@ pub fn account_of(host: &str, token: &str, ctx: &Ctx) -> Option<Account> {
 /// (the probe of D4.1c). One request, per remote and never per contact.
 pub fn reaches_repo(host: &str, repo_path: &str, token: &str, ctx: &Ctx) -> Option<Reach> {
     let url = format!("{}/repos/{repo_path}", api_base(host, ctx));
-    let answer = api_get_as(ctx, host, &url, token)?;
+    let answer = api_get_as_or_say(ctx, host, &url, token)?;
     if !answer.ok() {
         // GitHub answers 404 rather than 403 for a private repository
         // the caller may not see, so both mean "this login is not the
